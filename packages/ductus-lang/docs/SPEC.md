@@ -105,6 +105,13 @@ Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
 - User-defined type names: PascalCase (`Vec3`, `Person`, `Event`).
 - Identifiers (functions, variables, fields): snake_case (`full_name`, `first_name`).
 
+Identifier character set: identifiers may contain `#` as a leading,
+infix, or terminating character — for example `#default`,
+`audio#main`, `note#`. The `#` character behaves like a letter for
+identifier purposes; it is a valid identifier character in every
+position. Precise lexical rules are in `GRAMMAR.md`; this rule is
+normative and takes precedence over any conflicting grammar.
+
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
 be concrete.
@@ -1894,7 +1901,7 @@ fn duplicate[T: Copy](value: T) -> (T, T):
 
 This category is distinct from two superficially similar things:
 
-- `Drop` (§14.9) is compiler-aware but carries a method (`fn drop`); it
+- `Drop` (§14.8) is compiler-aware but carries a method (`fn drop`); it
   is therefore not a marker trait.
 - The empty `trait Marker` shown in §3.1 illustrates a *user-writable*
   pattern — empty traits whose only purpose is to act as a nominal tag.
@@ -6419,7 +6426,7 @@ require cleanup (heap allocations, file handles via stdlib, etc.), the
 type's drop behavior is invoked.
 
 Drop semantics for user-defined types are specified through the trait
-system; the precise mechanism is specified in §14.9.
+system; the precise mechanism is specified in §14.8.
 
 ### 11.4 The `Copy` Trait
 
@@ -8179,7 +8186,7 @@ remain inside the iterator's internal storage. When the iterator is
 dropped (at loop exit), the remaining elements are dropped per their
 `Drop` semantics, and the underlying buffer is released.
 
-The exact `Drop` mechanism for non-Copy types is specified in §14.9.
+The exact `Drop` mechanism for non-Copy types is specified in §14.8.
 For Copy types, drop is a no-op.
 
 #### 12.9.4 Implementing `IntoIterable`
@@ -11291,15 +11298,15 @@ operation on the producer thread:
 
    **Arm selection at evaluation.** Multi-arm recurrent evaluation
    proceeds in two stages within the publish cycle:
-   1. **Guard evaluation order**: each arm's `where` guard expression
-      evaluates in topological order over the per-publish DAG
-      (alongside other dirty deriveds). This produces a fired/not-fired
-      bit per arm.
-   2. **Arm selection order**: among the arms with fired triggers AND
-      guards evaluated to true (or no guard), the first one in
-      declaration order (per §13.2.4) wins. Only the winning arm's
-      `next_expr` evaluates; remaining arms' `next_expr` expressions
-      are skipped this publish.
+    1. **Guard evaluation order**: each arm's `where` guard expression
+       evaluates in topological order over the per-publish DAG
+       (alongside other dirty deriveds). This produces a fired/not-fired
+       bit per arm.
+    2. **Arm selection order**: among the arms with fired triggers AND
+       guards evaluated to true (or no guard), the first one in
+       declaration order (per §13.2.4) wins. Only the winning arm's
+       `next_expr` evaluates; remaining arms' `next_expr` expressions
+       are skipped this publish.
 4. **Commit recurrent advancement.** Write the next values
    computed in step 3 into the recurrent cells. After this step,
    recurrent reads return their newly-advanced values.
@@ -11672,7 +11679,7 @@ from the type's size and shape:
 
 - Per-type pools. Each reactive cell type that requires handle-based
   storage has its own pool, sized at kernel construction based on
-  graph metadata.
+  graph specification.
 - The cell still occupies one i64 slot in the reactive state buffer
   (the handle); the triple-buffer atomic swap publishes the handle
   unchanged.
@@ -11753,7 +11760,7 @@ uses inline+heap; RingBuf uses fixed ring) are observably
 indistinguishable from "always returns new" semantics. Sharing
 and in-place optimization are kernel concerns, transparent at
 the language level. See §14.3 (extensible pools) for the runtime
-mechanism, §14.9 for triple-buffer eviction ordering.
+mechanism, §14.8 for triple-buffer eviction ordering.
 
 **Cost model for users not using dynamic types:**
 
@@ -11872,7 +11879,7 @@ The kernel's lifecycle proceeds in phases:
 
 **Startup:**
 
-1. Load metadata (per §14.7).
+1. Load the graph specification (per §15.4).
 2. Allocate the reactive state buffer (per §14.3).
 3. Initialize all reactive cells (signals, attrs, recurrents,
    deriveds) and evaluate all `when` predicates in topological order
@@ -11916,7 +11923,7 @@ sentinel (or block, per implementation choice).
 3. Drop reactive cells in reverse-of-construction order: connections
    drop before their endpoint instances; within each instance,
    attrs, recurrents, and deriveds drop in reverse declaration
-   order (per §14.9 Drop rules).
+   order (per §14.8 Drop rules).
 4. Drop top-level signals.
 5. Drop string pool entries (per §14.5).
 6. Deallocate the reactive state buffer.
@@ -11951,13 +11958,13 @@ write targets one specific cell.
 
 Both arities must be called from the producer thread (the kernel's
 designated thread for write/evaluation/publish operations; see
-§14.8). Other threads write indirectly by enqueueing requests for
+§14.7). Other threads write indirectly by enqueueing requests for
 the producer thread to apply — that's a host-application concern,
 not a kernel concern.
 
 Signal IDs and instance IDs are obtained at compile time from the
-graph metadata (each signal and each placement has a stable ID
-assigned during compilation, per §14.7).
+graph specification (each signal and each placement has a stable ID
+assigned during compilation, per §15.4).
 
 #### 13.13.3 `kernel.write_attr`
 
@@ -12045,7 +12052,7 @@ publishing without disturbing held views.
 ### 13.14 Hot Reload of the Reactive Graph
 
 The kernel supports hot reload of the reactive graph when the host
-provides updated source code (per §14.11). The reactive system's
+provides updated source code (per §14.9). The reactive system's
 specific hot reload semantics are as follows.
 
 #### 13.14.1 Compile-time validation gate
@@ -12066,7 +12073,13 @@ type.
 Reactive cells are identified across reloads by their *fully-
 qualified declaration path*: the dotted sequence of module path,
 instance name, and attribute/recurrent/signal/derived name. For
-example, `audio.synth_a.osc_1.frequency`.
+example, `audio.synth_a.osc_1.frequency`. The wire-format syntax for
+declaration paths is specified in §15.4.1.1.
+
+For anonymous or duplicated sibling placements (rare; the language
+encourages explicit naming per §13.7), the compiler appends an
+ordinal suffix `:N` where N is the declaration-order index among
+siblings of the same type at the same nesting depth (zero-based).
 
 When a cell with the same fully-qualified path exists in both old
 and new source AND has the same type, it is treated as the *same
@@ -12098,7 +12111,7 @@ in the following order:
    removed.
 5. For added cells: allocate space in the reactive state buffer
    and initialize per the new source.
-6. For removed cells: invoke their Drop per §14.9, in
+6. For removed cells: invoke their Drop per §14.8, in
    reverse-declaration order. Connections drop before endpoint
    instances; within each instance, attrs, recurrents, and
    deriveds drop in reverse declaration order.
@@ -12133,11 +12146,11 @@ restart — either full-kernel or per-instance, depending on the change:
   reorganization. **Full-kernel restart required.**
 - Operator-specific changes that require restart for the affected
   operator instances:
-  - Operator signature changes (parameters added, removed, or
-    retyped; return type changed).
-  - Internal cell type changes within an operator body.
-  - Changes to a cell's `= initial` expression in a way that would
-    alter its current state semantics.
+    - Operator signature changes (parameters added, removed, or
+      retyped; return type changed).
+    - Internal cell type changes within an operator body.
+    - Changes to a cell's `= initial` expression in a way that would
+      alter its current state semantics.
 
   See §13.16.10 for full operator-reload rules. **Per-instance
   restart** suffices: the affected operator instances are
@@ -12156,13 +12169,13 @@ specifies the implementation model. Cross-references:
 - Reactive cells (signal, attr, recurrent, derived) live in the
   triple-buffered reactive state buffer per §14.3. Single-cell
   types (per §13.11.4) map to single AtomicI64 cells.
-- The producer role per §14.8 is the kernel's reactive evaluation
+- The producer role per §14.7 is the kernel's reactive evaluation
   thread. It applies host writes to the back buffer, runs publish
   cycles (recurrent arm evaluation, derived behavior
   invocations, atomic swap). In typical deployments, the host's
   main thread plays the producer role; in other deployments, a
   kernel-configured thread does.
-- The consumer role per §14.8 is any thread reading published
+- The consumer role per §14.7 is any thread reading published
   state via swap. Consumer threads do not invoke behaviors; they
   read the results of past publishes.
 - Behaviors invoked during reactive evaluation — both derived
@@ -12170,11 +12183,11 @@ specifies the implementation model. Cross-references:
   ABI of §14.6: a uniform `fn(kernel: &KernelHandle, instance:
   InstanceId) -> ()` signature, with stateless semantics and
   content-addressed identity (§14.6.4).
-- The graph metadata (§14.7) carries the structural information
+- The graph specification (§15.4) carries the structural information
   the kernel needs to construct the reactive state buffer, build
   dependency edges, distinguish attr cells from recurrent cells,
   and dispatch behaviors.
-- Hot reload at the source level (§13.14) maps to the §14.11
+- Hot reload at the source level (§13.14) maps to the §14.9
   mechanism: the kernel diffs behaviors and cells between old
   and new compiled output, applies the diff atomically, and
   publishes.
@@ -12445,10 +12458,10 @@ the instance. For reload-identity purposes (§13.16.10), the same
 identity scheme is used, with tolerance for positional moves within
 the same scope; the binding name has no role.
 
-##### 13.16.6.2 Graph metadata
+##### 13.16.6.2 Graph specification
 
-Operator instances contribute to the kernel's graph metadata
-(§14.7) the same way node placements and connection placements do.
+Operator instances contribute to the kernel's graph specification
+(§15.4) the same way node placements and connection placements do.
 Each instance's internal cells (recurrents, deriveds, synthesized
 cells from the operator body and from `let` bindings) are counted
 against the reactive state buffer's allocation and against any
@@ -12579,7 +12592,7 @@ The reload-unsafe operator changes are:
 
 If a call site changes which operator is invoked (`source |> op_a`
 becomes `source |> op_b`), the old instance's cells are dropped
-per §14.9 eviction; the new instance's cells initialize fresh.
+per §14.8 eviction; the new instance's cells initialize fresh.
 The two operators are treated as distinct instances even if
 op_b's signature matches op_a's.
 
@@ -12634,7 +12647,7 @@ reactive-transparent in the standard way.
 recurrents may hold dynamic-size types (`Vec[T]`, etc.). Storage
 follows the same pool-with-handle mechanism. The operator's
 instance-specific allocation contributes to per-type pool sizing
-in graph metadata.
+in graph specification.
 
 #### 13.16.12 Diagnostics
 
@@ -12747,7 +12760,7 @@ The frontend performs:
 3. **Borrow and ownership checking** per §11. Catches use-after-move,
    borrow conflicts, and other ownership violations.
 4. **Reactive analysis** per §13. Identifies reactive declarations,
-   computes dependency graphs, and extracts graph metadata.
+   computes dependency graphs, and extracts graph specification.
 5. **Monomorphization** per §2.3. Resolves all generic instantiations
    in Ductus before lowering. Ductus's compiler does not delegate
    monomorphization to Rust; emitted code is fully concrete.
@@ -12766,7 +12779,7 @@ Characteristics:
 - Sub-second compilation time, suitable for live editing.
 - Performance lower than native (a typical interpretation overhead is
   5–20× slower in tight loops; acceptable for development).
-- Supports hot reload (§14.11): individual behaviors can be replaced
+- Supports hot reload (§14.9): individual behaviors can be replaced
   in a running kernel without restarting.
 - The bytecode format is implementation-internal and not stable across
   Ductus versions. It is not a distribution format.
@@ -12784,14 +12797,14 @@ Characteristics:
 - Compilation time is dominated by `rustc` (typically seconds to tens
   of seconds for non-trivial programs).
 - Produces a single executable embedding both the compiled behaviors
-  and the graph metadata (§14.7).
+  and the graph specification (§15.4).
 - Does not support hot reload at runtime; rebuild is required to
   change the program.
 
 The emitted Rust source is **fully monomorphic and Ductus-trait-free**
 (with the narrow exception of Rust operator-overloading impls per
-§14.10.2). Per
-§14.10, the Rust emitter produces concrete struct definitions and
+§15.5.2). Per
+§15.5, the Rust emitter produces concrete struct definitions and
 specialized function definitions per Ductus instantiation. Ductus's
 trait system is not exported into the emitted Rust; trait dispatch
 sites are resolved to direct function calls during frontend processing.
@@ -12812,7 +12825,7 @@ required.
 - **`ductus watch <file>`** — interpreter mode with file watching
   and hot reload. The kernel runs continuously; saved changes to the
   source trigger recompilation and reload of affected behaviors per
-  §14.11.
+  §14.9.
 
 - **`ductus build <file> [--release]`** — invokes native mode.
   Compiles via Rust to a native executable. `--release` enables
@@ -13055,7 +13068,7 @@ work is bounded by the value's size.
 
 **Initial allocation:**
 
-Pool sizes are chosen at kernel construction based on graph metadata
+Pool sizes are chosen at kernel construction based on graph specification
 (static count of cells per type) plus a configurable headroom for
 versioning. Pools may grow at runtime if the configured headroom is
 exceeded; growth is amortized but not guaranteed wait-free. Hosts
@@ -13072,7 +13085,7 @@ headroom up front.
   overhead depends on the type. Persistent structures share storage
   across versions; flat structures replicate per buffer.
 
-**Drop and eviction:** see §14.9.
+**Drop and eviction:** see §14.8.
 
 ### 14.4 What Lives in the Reactive State Buffer
 
@@ -13128,7 +13141,7 @@ handles; the pool holds the data. This separation allows:
 
 #### 14.5.2 Pool operations
 
-- **Allocation**: the producer (§14.8) allocates a new string in the pool;
+- **Allocation**: the producer (§14.7) allocates a new string in the pool;
   pool returns a handle. Refcount initialized to 1 for the cell that
   will hold it.
 - **Refcount increment**: when a handle is copied into another cell,
@@ -13142,19 +13155,19 @@ handles; the pool holds the data. This separation allows:
 
 The pool's allocation and refcount operations are atomic but may
 block briefly under contention. These operations are performed by
-the producer role (§14.8); the consumer role only reads via handles,
+the producer role (§14.7); the consumer role only reads via handles,
 which is wait-free. The role-to-thread mapping is implementation-defined:
 in typical native deployments the host's main thread plays the producer
 role and one or more application threads play the consumer role; other
 deployments may assign a kernel-configured thread to the producer role.
-The mechanism (§14.3.3, §14.8) does not depend on the mapping choice.
+The mechanism (§14.3.3, §14.7) does not depend on the mapping choice.
 
 ### 14.6 The Behavior ABI
 
 Each reactive behavior — a `derived` expression body or a `recurrent`
 arm body — is exposed to the kernel via a uniform **behavior ABI**.
 Functions called from reactive bodies are reactive-transparent per
-§13.11.2: they compile to ordinary Rust functions (per §14.10) reached
+§13.11.2: they compile to ordinary Rust functions (per §15.5) reached
 transitively from the registered behaviors, not as separately-registered
 behaviors of their own.
 
@@ -13230,8 +13243,8 @@ declarations, renaming local bindings — do not perturb the ID.
 Semantic changes — different operations, different inputs, different
 output type — produce different IDs.
 
-The hash algorithm is fixed per Ductus toolchain version (§14.12)
-so that hot reload (§14.11) within one version reliably matches
+The hash algorithm is fixed per Ductus toolchain version (§14.10)
+so that hot reload (§14.9) within one version reliably matches
 unchanged behaviors across recompilations. Across major toolchain
 versions the canonicalization may change; cross-version hot reload
 is not supported.
@@ -13246,82 +13259,14 @@ behaviors by ID; debug names appear only in diagnostic output.
 Behaviors are invoked by the kernel; the specific thread that
 invokes each behavior is the producer-role thread, which the kernel
 maps to a specific OS thread at startup (implementation-defined per
-§14.8.1). Ductus source does not specify thread roles.
+§14.7.1). Ductus source does not specify thread roles.
 
 Ductus source code does not encounter cross-thread concerns:
 behaviors are thread-safe by construction (no shared mutable state
 outside reactive cells, which are coordinated by the kernel per
 §14.3.3).
 
-### 14.7 Graph Metadata
-
-The compiler produces, alongside the executable behaviors, a binary
-**graph metadata** structure describing the program's reactive shape.
-
-#### 14.7.1 Contents
-
-The metadata describes:
-
-- **Cell layout**: position (cell index) and primitive type tag for
-  each reactive cell. Used by the kernel to allocate the buffer and
-  by the host API to read/write cells.
-
-- **Signal declarations**: name, cell index, type tag, initial value.
-  Used to register signals at startup.
-
-- **Node types**: type name, list of attrs and deriveds, layout of
-  their cells per instance. Used to allocate per-instance cell groups.
-
-- **Connection types**: source/destination types, attrs and deriveds.
-  Same as nodes.
-
-- **Instances**: declared node/connection instances and their cell
-  allocations.
-
-- **Dependency edges**: which behaviors read which cells, which
-  behaviors write which cells. Used to compute dirty-set propagation
-  and topological evaluation order.
-
-- **Behavior references**: behavior IDs paired with debug names. The
-  kernel resolves IDs to function pointers via the behavior table
-  registered at program startup.
-
-- **String pool entries**: any string literals used by the program,
-  pre-loaded into the pool at startup.
-
-- **Schema version**: the Ductus toolchain version that produced the
-  metadata. Used for cross-version compatibility checks (§14.12).
-
-#### 14.7.2 Format
-
-The graph metadata is a binary format. The reference implementation
-uses a schema-based serialization (e.g., FlatBuffers, Cap'n Proto, or
-a custom binary format). The exact byte layout is implementation-
-defined; the schema content (the fields and types listed above) is
-normative.
-
-In native mode (§14.1.3), the graph metadata is embedded in the
-output executable as a binary blob (e.g., via Rust's `include_bytes!`
-or the linker's data sections). At program startup, the kernel
-deserializes the embedded blob and constructs the runtime graph.
-
-In interpreter mode (§14.1.2), the metadata is held in memory by the
-running kernel and may be updated by hot reload.
-
-#### 14.7.3 What metadata does not contain
-
-The metadata is intentionally type-erased at the kernel boundary. It
-contains primitive type tags (i32, f64, string, etc.) and cell
-layouts, but **not** Ductus's full type system (record definitions,
-trait conformances, generic parameters). Those are compile-time
-artifacts of Ductus, not runtime artifacts the kernel consumes.
-
-The kernel's view of the program is: a graph of cells with primitive
-types, dependency edges, and behavior references. The kernel does
-not need to understand records as records, or traits as traits — it
-manages bits in cells and invokes functions by ID.
-
-### 14.8 Producer and Consumer Roles
+### 14.7 Producer and Consumer Roles
 
 The triple-buffer mechanism (§14.3.3) operates in terms of two roles:
 
@@ -13348,7 +13293,7 @@ between publishes are implementation-defined; the trigger that
 initiates a publish is specified in §13.9 (the kernel's evaluation
 cycle).
 
-#### 14.8.1 Thread-safety properties of the mechanism
+#### 14.7.1 Thread-safety properties of the mechanism
 
 By construction of the SPSC triple buffer:
 
@@ -13365,10 +13310,10 @@ These properties hold regardless of the role-to-thread mapping, which
 is implementation-defined: in typical native deployments the host's
 main thread plays the producer role and one or more application threads
 play the consumer role; other deployments may assign a kernel-configured
-thread to the producer role. The mechanism (§14.3.3, §14.8) does not
+thread to the producer role. The mechanism (§14.3.3, §14.7) does not
 depend on the mapping choice.
 
-#### 14.8.2 Behaviors invoked by the mechanism
+#### 14.7.2 Behaviors invoked by the mechanism
 
 Reactive behaviors (derived expression bodies and recurrent arm
 expressions) are invoked by the producer. Functions called from
@@ -13382,12 +13327,12 @@ The behavior ABI (§14.6) is the contract between the producer and
 each invoked behavior. Each invocation receives a kernel handle
 and an instance ID; behavior bodies read from and write to cells
 via the handle. Behaviors are thread-safe by construction
-(§14.8.3).
+(§14.7.3).
 
-#### 14.8.3 Why Ductus behaviors are thread-safe by construction
+#### 14.7.3 Why Ductus behaviors are thread-safe by construction
 
 Regardless of the role-to-thread mapping (implementation-defined per
-§14.8.1), Ductus source code never sees cross-thread concerns:
+§14.7.1), Ductus source code never sees cross-thread concerns:
 
 - No shared mutable state outside reactive cells.
 - Reactive cells are coordinated through the triple-buffer
@@ -13396,15 +13341,15 @@ Regardless of the role-to-thread mapping (implementation-defined per
 - Closure captures are by-value Copy (§11.10), no shared mutability.
 
 A Ductus program does not declare thread affinity; it does not
-need to. The kernel determines (implementation-defined per §14.8.1)
+need to. The kernel determines (implementation-defined per §14.7.1)
 which thread plays which role.
 
-### 14.9 Drop Semantics
+### 14.8 Drop Semantics
 
 Ductus's `Drop` trait — referenced from §11.3.3 and §12.9.3 — is
 specified here.
 
-#### 14.9.1 The Drop trait
+#### 14.8.1 The Drop trait
 
 ```
 trait Drop:
@@ -13417,7 +13362,7 @@ value by `mut` (the only place in the language where a `mut`
 parameter is permitted — internally generated by the compiler at the
 scope-exit point).
 
-#### 14.9.2 When drop runs
+#### 14.8.2 When drop runs
 
 The compiler inserts drop calls at:
 
@@ -13432,20 +13377,20 @@ The compiler inserts drop calls at:
 Compound values (records, enums) drop in **reverse declaration
 order** of their fields: the last-declared field drops first.
 
-#### 14.9.3 Partial moves
+#### 14.8.3 Partial moves
 
 If only some fields of a record have been moved out when the binding
 goes out of scope, only the un-moved fields drop. The compiler tracks
 per-binding move flags during semantic analysis.
 
-#### 14.9.4 Drop and panic
+#### 14.8.4 Drop and panic
 
 If a `drop` method panics, the process aborts (the standard trap
 behavior per §4.6.1). This prevents double-drop hazards from
 mid-drop panics that would otherwise leave the program in an
 inconsistent state.
 
-#### 14.9.5 Drop on reactive cells
+#### 14.8.5 Drop on reactive cells
 
 The kernel manages drop for reactive cells. When a node or connection
 instance is removed (removal mechanics are specified in §13.14), its
@@ -13453,7 +13398,7 @@ attr and derived cells are dropped per their type's `Drop` impl.
 Initial declarations (signals declared at program startup) live for the
 program's lifetime; their cells are dropped at program shutdown.
 
-#### 14.9.6 Drop and triple-buffer eviction for dynamic-size cells
+#### 14.8.6 Drop and triple-buffer eviction for dynamic-size cells
 
 Dynamic-size cells (per §13.11.4 and §14.3.5) require eviction
 ordering across triple-buffer rotation. When the kernel commits a
@@ -13500,181 +13445,51 @@ quarantined slots before releasing them to the free list. No drop
 runs while any buffer still references the slot's handle.
 
 **Drop and panic:** if `drop` panics on a dynamic-size cell value,
-process abort applies per §14.9.4. The pool slot is leaked but the
+process abort applies per §14.8.4. The pool slot is leaked but the
 process is terminating anyway.
 
-### 14.10 Ductus → Rust Lowering
-
-The Rust emitter (§14.1.3) lowers the typed IR to Rust source per
-the following rules.
-
-#### 14.10.1 Type lowering
-
-| Ductus                 | Rust                                                        |
-|------------------------|-------------------------------------------------------------|
-| `i8`–`i64`, `u8`–`u64` | Same Rust types.                                            |
-| `i128`, `u128`         | Same Rust types (on supporting targets).                    |
-| `f32`, `f64`           | Same Rust types.                                            |
-| `bool`, `char`         | `bool`, `char`.                                             |
-| `string`               | A newtype wrapping a kernel string handle (see §14.10.1.1). |
-| Tuples                 | Rust tuples.                                                |
-| Arrays `T[N]`          | Rust arrays `[T; N]`.                                       |
-| Records                | Rust structs with same field order.                         |
-| Enums                  | Rust enums with same variant order.                         |
-| Newtypes (§6.3)        | Rust newtype structs.                                       |
-
-##### 14.10.1.1 String storage uniformity
-
-The `string` type lowers to the same Rust representation regardless
-of whether the binding is reactive or non-reactive: a newtype around
-a u64 handle into the kernel's string pool (§14.5).
-
-Reactive context (signal/attr/recurrent/derived value of type `string`):
-the handle lives in a reactive cell. The pool entry's refcount tracks
-how many cells reference the string across all buffer copies.
-
-Non-reactive context (local `let s = "hello"`, function parameter,
-record field outside reactive declaration): the handle lives in
-ordinary Rust memory. The pool entry is still refcounted; ownership
-of the handle increments the refcount, dropping the handle (per
-§14.9) decrements it. Strings created in non-reactive scopes are
-reclaimed when their last handle is dropped — typically when the
-function returns and locals go out of scope.
-
-This uniformity means: all `string` values share one storage backend
-(the kernel pool), regardless of where their handles are held. There
-is no separate "Rust-local string" representation distinct from the
-"kernel string" representation; the only difference is *where the
-handle is stored* (cell vs ordinary memory), not what the handle
-points to.
-
-The §11.6 "refcount-shared immutable backing" model maps directly
-onto the kernel pool. The pool *is* the shared backing.
-
-#### 14.10.2 Function and trait lowering
-
-Ductus resolves all generic instantiations and trait dispatch
-during frontend processing (§14.1.1). Emitted Rust is fully
-monomorphic and trait-free:
-
-- A generic Ductus function `fn f[T](...)` becomes multiple
-  monomorphic Rust functions, one per instantiation: `f_i32`,
-  `f_f64`, etc.
-- Trait method calls dispatch in Ductus to a specific function;
-  the emitted Rust call is direct, not through a trait.
-- Ductus traits are not declared in the emitted Rust. No `trait`
-  or `impl` blocks appear (with the exception below).
-- Operator overloading on Ductus numeric primitives uses Rust's
-  built-in operators (`+`, `-`, etc.) directly; no trait emission
-  needed.
-
-The one exception: when a Ductus record overloads a Ductus
-operator (e.g., a user-defined `Vec3` with `Add`), the emitter
-generates an explicit `impl std::ops::Add for Vec3` block in Rust so
-that `+` works on the type at the Rust level. This is a narrow
-mechanical emission, not a full trait export.
-
-#### 14.10.3 Ownership lowering
-
-Ductus's ownership rules map directly to Rust's:
-
-| Ductus                  | Rust                     |
-|-------------------------|--------------------------|
-| `let x = e`             | `let x = e;`             |
-| `mut x = e`             | `let mut x = e;`         |
-| Pass by value (move)    | Pass by value (move).    |
-| `&T` parameter (borrow) | `&T` parameter.          |
-| `for x in v:` (consume) | `for x in v` (consumes). |
-| `for x in &v:` (borrow) | `for x in &v` (borrows). |
-| `Copy` types            | `Copy` trait derived.    |
-| `Clone`                 | `Clone` trait derived.   |
-
-Ductus's `&v` form in for-loops compiles to Rust's `&v`. Ductus's
-parameter borrow `&T` compiles to Rust's `&T`. Rust's borrow checker
-enforces the same rules that Ductus's frontend already verified;
-any code that passed Ductus's checks passes Rust's.
-
-#### 14.10.4 Iterator lowering
-
-Ductus's `Iterator` trait (§12.7) has signature `fn next(iter:
-Self) -> (Option[Item], Self)`. Rust's standard `Iterator` trait has
-signature `fn next(&mut self) -> Option<Item>`.
-
-The Ductus emitter generates Rust code using Rust's `Iterator`
-pattern internally for performance, while Ductus source code
-continues to see the tuple-return form. The translation is
-mechanical: each Ductus iterator implementation lowers to a Rust
-struct with a `next(&mut self) -> Option<Item>` method, plus a
-wrapper that exposes the tuple-return form for Ductus-internal
-use during compilation.
-
-The final emitted Rust module contains only the `&mut self` form.
-The tuple-return wrapper exists in Ductus's IR during lowering for
-type-system consistency with the source-level Iterator trait, and
-is eliminated before Rust code generation. No runtime overhead from
-the dual representation reaches the emitted binary.
-
-This translation is invisible to Ductus source code. Ductus users
-never see `&mut` in their code or in error messages.
-
-#### 14.10.5 Reactive primitive lowering
-
-Ductus's `signal`, `attr`, `recurrent`, and `derived` declarations
-do not lower to Rust types directly. They lower to:
-
-- Cell allocations in the kernel state buffer (described in graph
-  metadata).
-- Behavior registrations (the body of a `derived` expression OR the
-  body of a `recurrent` arm becomes a Rust function matching the
-  behavior ABI, §14.6).
-- Dependency edges in the graph metadata.
-
-The lowered Rust code contains no syntactic trace of `signal`/`attr`/
-`derived` keywords. They are pure graph-construction directives,
-encoded into the metadata and behavior table.
-
-### 14.11 Hot Reload
+### 14.9 Hot Reload
 
 Interpreter mode (§14.1.2) supports hot reload of individual
 behaviors in a running kernel.
 
-#### 14.11.1 Granularity
+#### 14.9.1 Granularity
 
 The unit of hot reload is the **behavior**. When a Ductus source
 file changes:
 
 1. The CLI's watch mode detects the change.
 2. The frontend re-runs on the changed file.
-3a. **Behavior identity (§14.6.4).** The frontend computes
+   3a. **Behavior identity (§14.6.4).** The frontend computes
    content-addressed IDs for each behavior per §14.6.4. Behaviors
    whose IDs are present only in the old program are *removed*;
    behaviors present only in the new program are *added*; behaviors
    present in both are *carried over* unchanged.
-3b. **Cell identity (§13.14.2).** The kernel computes the cell-diff
+   3b. **Cell identity (§13.14.2).** The kernel computes the cell-diff
    by fully-qualified declaration path. Cells with matching path and
    type carry forward (preserving values); new cells are added;
-   removed cells are dropped per §14.9.
-3c. **Operator instance identity (§13.16.10).** Operator instances
+   removed cells are dropped per §14.8.
+   3c. **Operator instance identity (§13.16.10).** Operator instances
    are matched by (enclosing scope, operator name, argument bindings)
    with tolerance for positional moves within the same scope. Matched
    instances preserve their internal cell state via 3b; unmatched
    instances are dropped/added with the corresponding cell churn.
 4. **Apply additions.**
-   - For each added behavior: register in the behavior table at its
-     content-addressed ID; graph metadata edges and cell allocations
-     referencing the new behavior's ID become live; subsequent
-     invocations dispatch through the new behavior's ID.
-   - For each added cell: allocate space in the reactive state buffer
-     and initialize per the new source.
-   - For each added operator instance: allocate internal cell state
-     and initialize per the new source.
+    - For each added behavior: register in the behavior table at its
+      content-addressed ID; graph specification edges and cell allocations
+      referencing the new behavior's ID become live; subsequent
+      invocations dispatch through the new behavior's ID.
+    - For each added cell: allocate space in the reactive state buffer
+      and initialize per the new source.
+    - For each added operator instance: allocate internal cell state
+      and initialize per the new source.
 
 5. **Apply removals.**
-   - For each removed behavior: deregister from the behavior table.
-   - For each removed cell: invoke drop per §14.9 in
-     reverse-declaration order.
-   - For each removed operator instance: drop internal cells per
-     §14.9.
+    - For each removed behavior: deregister from the behavior table.
+    - For each removed cell: invoke drop per §14.8 in
+      reverse-declaration order.
+    - For each removed operator instance: drop internal cells per
+      §14.8.
 
 6. **Run re-initialization evaluation pass.** For each derived whose
    behavior body changed (different content-addressed ID), recompute
@@ -13686,7 +13501,7 @@ file changes:
 8. **Release the reload lock.** Resume signal/attr writes; apply any
    queued writes to the new state.
 
-#### 14.11.2 State preservation
+#### 14.9.2 State preservation
 
 Reactive cell values persist across hot reload. Signal values, attr
 values, and derived cached values are unchanged unless the source
@@ -13699,7 +13514,7 @@ positional moves within the same scope). Matched instances preserve
 their internal cell state via the same cell-identity mechanism
 (§13.14.2) used for top-level cells.
 
-#### 14.11.3 Reload-safe and reload-unsafe changes
+#### 14.9.3 Reload-safe and reload-unsafe changes
 
 Changes safe to hot reload:
 
@@ -13730,7 +13545,7 @@ either rejects them (kernel keeps running old version) or applies
 the appropriate restart — full-kernel or per-instance per §13.14.4
 — cleanly. The choice is implementation-defined.
 
-#### 14.11.4 Reload failure
+#### 14.9.4 Reload failure
 
 If the new source fails to compile (parse error, type error,
 ownership error), the reload is abandoned. The kernel keeps running
@@ -13741,14 +13556,14 @@ Hot reload never produces a kernel in an inconsistent state. Either
 the old version continues running, or the new version is fully
 applied, never a mix.
 
-### 14.12 Versioning
+### 14.10 Versioning
 
-Ductus's source format, graph metadata format, behavior ABI, and
+Ductus's source format, graph specification format, behavior ABI, and
 kernel build are versioned together. Each Ductus release is a
 matched set:
 
 - Ductus source format version.
-- Graph metadata schema version.
+- Graph specification schema version.
 - Behavior ABI version.
 - Kernel binary version.
 
@@ -13759,9 +13574,599 @@ boundaries are explicit, not implicit.
 
 The exact syntactic form of the `@version` directive is reserved for
 a future spec revision; v1 implementations are not required to
-recognize it. Version metadata is recorded in the graph metadata
-header (§14.7); cross-version compatibility checks happen there.
+recognize it. Version metadata is recorded in the graph specification
+header (§15.4); cross-version compatibility checks happen there.
 
 ---
 
 *End of §14.*
+
+---
+
+## 15. Compilation Model
+
+Ductus compilation transforms source files into executable form plus
+the build-time artifacts the kernel consumes at startup. This section
+specifies the semantic obligations of the compiler (§15.2), the
+artifacts it produces (§15.3), the normative format of the reactive
+graph specification (§15.4), the Ductus-to-Rust lowering rules
+(§15.5), the two compilation modes (§15.6), the diff algorithm hot
+reload depends on (§15.7), and what implementations must satisfy to
+be conformant (§15.8).
+
+Runtime concerns — cells, kernel mechanics, threading, drop, hot-
+reload application — are the subject of §14.
+
+### 15.1 Overview
+
+The compiler ingests Ductus source files and emits two artifact
+classes:
+
+- **Executable code** — bytecode (interpreter mode, §14.1.2) or Rust
+  source compiled by `rustc` (native mode, §14.1.3).
+- **The reactive graph specification** — a build-time description of
+  the program's reactive shape that the kernel consumes at startup
+  and that hot reload diffs against (§15.4, §15.7).
+
+Both artifacts share the same frontend (§14.1.1), which performs
+name resolution, type checking, trait resolution, borrow checking,
+monomorphization, and reactive-graph extraction (§15.2). Backends
+fork only at the final lowering step (§15.5).
+
+This section does not prescribe the compiler's internal IR shape.
+Implementations may use any phase organization that satisfies the
+obligations of §15.2.
+
+### 15.2 Compilation Obligations
+
+A conformant Ductus compiler performs the analyses below and rejects
+programs that fail any of them. The analyses are listed as
+obligations, not phases; the compiler may organize them into any
+combination of passes as long as each program is accepted or rejected
+according to the language semantics defined in §§1–13.
+
+#### 15.2.1 Required analyses
+
+| Obligation                  | Spec reference            |
+|-----------------------------|----------------------------|
+| Lexical and syntactic parse | `GRAMMAR.md`               |
+| Name resolution             | §3.4, §10                  |
+| Type checking               | §2, §4, §6, §7, §9         |
+| Trait resolution            | §3.4.2, §3.7               |
+| Borrow checking             | §11.9                      |
+| Monomorphization            | §2.3                       |
+| Reactive-graph extraction   | §13, §15.4                 |
+
+Failure to satisfy any obligation is a compile error; the compiler
+rejects the program before emitting any artifact.
+
+#### 15.2.2 Ordering constraints
+
+The obligations form a partial order by data dependency:
+
+- Name resolution depends on parsing.
+- Type checking depends on name resolution.
+- Trait resolution depends on type checking.
+- Borrow checking depends on type checking.
+- Monomorphization depends on trait resolution and type checking.
+- Reactive-graph extraction depends on monomorphization (cells in
+  generic node types are extracted per-instantiation).
+
+The compiler may interleave these obligations across passes as long
+as the partial order is preserved. The spec does not prescribe a
+particular IR layering or pass count. The reference implementation's
+canonical layering (AST → HIR → MIR → backend) is non-normative.
+
+#### 15.2.3 Diagnostics
+
+Diagnostic quality, error message formatting, and recovery behavior
+are implementation-defined. The spec requires only that ill-formed
+programs be rejected and well-formed programs be accepted per the
+semantics of §§1–13.
+
+### 15.3 Compilation Artifacts
+
+A successful compilation produces two artifact classes:
+
+- **Executable code** — the per-mode artifact described in §15.5
+  and §15.6.
+- **Reactive graph specification** — the normative build-time
+  description of the program's reactive shape, specified in §15.4.
+  The specification carries all build-time metadata the kernel
+  needs (behavior table, string pool seed, schema and format
+  versions); see §15.4.1 for the complete field list.
+
+Both backends produce the same graph specification; only the
+executable-code form differs.
+
+#### 15.3.1 Embedding and packaging
+
+In **interpreter mode** (§14.1.2), both artifacts are held in memory
+by the running kernel. Hot reload (§14.9) replaces them in place.
+
+In **native mode** (§14.1.3), both artifacts are embedded in the
+compiled binary, typically as data sections produced by Rust's
+`include_bytes!` or analogous mechanism. At program startup the
+kernel deserializes the graph specification and registers the
+behavior table.
+
+### 15.4 The Reactive Graph Specification
+
+The reactive graph specification is the build-time artifact
+describing the program's reactive shape. It is the **interop
+boundary** between the compiler and the kernel, and between two
+builds of the same program for hot reload (§15.7).
+
+The specification is defined as an abstract data model (§15.4.1).
+The **canonical serialization** is JSON (§15.4.2); implementations
+may additionally support binary or in-memory representations for
+performance, but the canonical JSON form is the cross-implementation
+reference.
+
+#### 15.4.1 Abstract data model
+
+The specification is a structured record with the following fields.
+
+**Cells.** A list of cell entries. Each cell entry contains:
+
+- `id`: the cell's fully-qualified declaration path (§15.4.1.1).
+- `type`: the cell's primitive type tag, per §4.1, plus the
+  string-handle (§14.5) and dynamic-pool-handle (§14.3.5) types.
+- `observability`: one of `cross_thread_snapshot`,
+  `cross_thread_atomic`, or `confined` (§15.4.1.2).
+- `cadence_hint` (optional): one of `realtime`, `bounded`, or `lazy`
+  (§15.4.1.3).
+- `initial_value` (optional): the compile-time initial value for
+  reactive-safe initializers per §13.7.2.1.
+- `size`, `alignment`: derived from `type`, recorded explicitly for
+  cross-implementation interop.
+
+**Connections.** A list of connection entries. Each:
+
+- `from`: source instance's fully-qualified path.
+- `to`: destination instance's fully-qualified path (or `null` for
+  sink-side connections).
+- `connection_type`: the connection's declared type.
+- `attrs`: ordered list of `(name, value)` pairs (§13.7.4).
+- `when` (optional): gate predicate, encoded as a behavior ID and
+  its input-cell list.
+
+**Derived dependency edges.** A list of `(derived_cell_id,
+[input_cell_ids])` pairs. Used by the kernel for dirty-set
+propagation and topological evaluation ordering.
+
+**Recurrent trigger sets.** A list of `(recurrent_cell_id,
+[trigger_cell_or_event_ids], where_guard?)` tuples, encoding the
+arm semantics of §13.2.4.
+
+**`when`-gates.** Per gated instance, the predicate expression in
+compiled form (behavior ID per §14.6.4, plus input cell IDs the
+predicate reads).
+
+**Behavior table.** A list of `(behavior_id, debug_name,
+input_cell_ids, output_cell_id?)` entries. Behavior IDs are
+content-addressed per §14.6.4. The kernel binds IDs to function
+pointers at program startup.
+
+**String pool seed.** String literals used by the program,
+pre-loaded into the pool at startup (§14.5).
+
+**Schema version.** The Ductus toolchain version that produced the
+specification, per §14.10.
+
+**Format version.** The version of the abstract data model itself,
+distinct from the toolchain version. Allows the schema to evolve
+independently of the source language.
+
+##### 15.4.1.1 Cell ID syntax
+
+A cell ID is the cell's fully-qualified declaration path: a
+dot-separated sequence of identifiers naming the lexical nesting
+from module root through enclosing instances to the cell name.
+
+Example: `audio.synth_a.osc_1.frequency` — module `audio`,
+top-level instance `synth_a`, nested part `osc_1`, attr
+`frequency`.
+
+The path is derived deterministically from source: nesting plus
+declared instance/cell names. The syntax is identical to that of
+§13.14.2 (cell identity across reloads); the two are the same
+mechanism: §13.14.2 specifies hot-reload identity in source-level
+terms, §15.4.1.1 specifies the wire format.
+
+For anonymous or duplicated sibling placements (rare; the language
+encourages explicit naming per §13.7), the compiler appends an
+ordinal suffix `:N` where N is the declaration-order index among
+siblings of the same type at the same nesting depth (zero-based).
+
+Cell IDs are stable across the same source compiled by any
+conformant compiler. Cross-implementation hot reload at the same
+source version yields matching cell IDs by construction.
+
+##### 15.4.1.2 Observability class
+
+The `observability` field declares what concurrency contract the
+cell must satisfy. The kernel selects a storage mechanism that
+honors the contract.
+
+| Value                    | Contract                                         |
+|--------------------------|--------------------------------------------------|
+| `cross_thread_snapshot`  | Multi-thread readers see a snapshot-consistent view; cross-cell consistency within one publish transaction; no torn reads. |
+| `cross_thread_atomic`    | Multi-thread readers see single-cell atomic reads; no cross-cell consistency guarantee. Cell value must fit in one 64-bit atomic slot. |
+| `confined`               | Cell accessed only from one thread; no atomic required. |
+
+The mapping from observability to kernel storage is a runtime
+concern, not a spec mandate. Typical mappings on a conformant
+kernel:
+
+| `observability`         | Typical mechanism      |
+|-------------------------|------------------------|
+| `cross_thread_snapshot` | Triple-buffer (§14.3.3) |
+| `cross_thread_atomic`   | AtomicBuffer            |
+| `confined`              | Plain memory            |
+
+Alternative kernels may select different mechanisms as long as the
+observability contract is met.
+
+##### 15.4.1.3 Cadence hint
+
+The `cadence_hint` field, when present, tells the kernel about the
+update-timing expectation for the cell. It is informational; the
+kernel uses it to bias storage-mechanism selection. Defined values:
+
+- `realtime` — updates are deadline-bound; readers (e.g., audio
+  thread) cannot block. Typically pairs with `cross_thread_snapshot`
+  and selects a triple-buffer mapping.
+- `bounded` — updates are committed but not deadline-bound. Pairs
+  with any `observability` value.
+- `lazy` — updates are best-effort; the cell tolerates large
+  staleness. Typically pairs with `confined` and selects plain
+  memory.
+
+A cell without a `cadence_hint` is treated as `bounded`.
+
+##### 15.4.1.4 Determining observability class
+
+The compiler assigns each cell an observability class based on its
+declaration kind and access pattern observed during reactive
+analysis (§14.1.1 step 4). Defaults:
+
+| Declaration kind                              | Default `observability`     |
+|-----------------------------------------------|------------------------------|
+| `signal` (top-level)                          | `cross_thread_snapshot`     |
+| `attr` on a node/connection instance          | `cross_thread_snapshot`     |
+| `recurrent` on a node/connection instance     | `cross_thread_snapshot`     |
+| `derived` reactive cell                       | `cross_thread_snapshot`     |
+| Stdlib single-cell types per §13.11.4         | `cross_thread_atomic`       |
+| Local `let`/`mut` inside a function body      | not in the graph spec (§14.4 — non-reactive) |
+| Closure captures, function parameters         | not in the graph spec       |
+
+The compiler may downgrade `cross_thread_snapshot` to `confined` for
+cells provably accessed from only one thread (e.g., a `derived` on a
+node instance whose enclosing graph context is single-threaded).
+This optimization is implementation-defined. The compiler may not
+upgrade observability — a `confined` cell becoming
+`cross_thread_snapshot` would silently change concurrency semantics.
+
+The default `cadence_hint` follows from the declaration's enclosing
+graph context: cells declared inside placements that participate in
+the kernel's evaluation cycle (§13.9) get `realtime`; cells on
+non-realtime paths get `bounded`.
+
+#### 15.4.2 Canonical serialization
+
+The canonical serialization is JSON.
+
+A conformant compiler produces graph specifications in JSON form,
+conforming to a normative JSON Schema published alongside this
+specification (`graph-spec.schema.json`, schema version per
+§15.4.3).
+
+Layout requirements for canonical JSON:
+
+- Two-space indent.
+- Object keys ordered as specified in §15.4.1 (field order is
+  normative).
+- Arrays in declaration order (cells in source order; behaviors in
+  lexicographic order of content-addressed ID; exact ordering rules
+  in the JSON Schema).
+- UTF-8 encoding, no BOM, Unix line endings.
+
+These layout rules make canonical JSON diff-friendly: two builds of
+equivalent source produce byte-identical canonical JSON.
+
+Implementations may additionally produce:
+
+- **Binary serializations** (e.g., FlatBuffers, Cap'n Proto, custom
+  bit-packed) for fast startup loading. The reference kernel
+  supports a binary form for native-mode embedding.
+- **In-memory representations** (e.g., direct Rust structs) for
+  interpreter mode.
+
+Cross-implementation interop requires that the canonical JSON form
+be readable by all conformant kernels.
+
+#### 15.4.3 Versioning
+
+The specification carries two version numbers:
+
+- **Schema version** — the Ductus toolchain version that produced
+  the spec, per §14.10.
+- **Format version** — the version of the abstract data model and
+  JSON Schema themselves.
+
+A conformant kernel accepts specifications whose format version it
+understands. Format-version mismatches are diagnosed at load time
+per §14.10.
+
+#### 15.4.4 What the specification does not contain
+
+The specification is type-erased at the kernel boundary. It contains
+primitive type tags and cell layouts, but **not** Ductus's full type
+system — no record definitions, trait conformances, or generic
+parameters. These are compile-time artifacts of the frontend, fully
+resolved before the specification is emitted.
+
+The kernel's view of the program is: a graph of cells with primitive
+types, dependency edges, behavior references, and gate predicates.
+It does not need to understand records as records or traits as
+traits; it manages bits in cells and invokes functions by ID.
+
+### 15.5 Lowering (Ductus → Rust)
+
+The native-mode Rust emitter (§14.1.3) lowers the typed IR to Rust
+source per the rules below. Interpreter-mode bytecode emission is
+implementation-defined and out of scope for this section.
+
+#### 15.5.1 Type lowering
+
+| Ductus                 | Rust                                                        |
+|------------------------|-------------------------------------------------------------|
+| `i8`–`i64`, `u8`–`u64` | Same Rust types.                                            |
+| `i128`, `u128`         | Same Rust types (on supporting targets).                    |
+| `f32`, `f64`           | Same Rust types.                                            |
+| `bool`, `char`         | `bool`, `char`.                                             |
+| `string`               | A newtype wrapping a kernel string handle (see §15.5.1.1).  |
+| Tuples                 | Rust tuples.                                                |
+| Arrays `T[N]`          | Rust arrays `[T; N]`.                                       |
+| Records                | Rust structs with same field order.                         |
+| Enums                  | Rust enums with same variant order.                         |
+| Newtypes (§6.3)        | Rust newtype structs.                                       |
+
+##### 15.5.1.1 String storage uniformity
+
+The `string` type lowers to the same Rust representation regardless
+of whether the binding is reactive or non-reactive: a newtype around
+a u64 handle into the kernel's string pool (§14.5).
+
+Reactive context (signal/attr/recurrent/derived value of type
+`string`): the handle lives in a reactive cell. The pool entry's
+refcount tracks how many cells reference the string across all
+buffer copies.
+
+Non-reactive context (local `let s = "hello"`, function parameter,
+record field outside reactive declaration): the handle lives in
+ordinary Rust memory. The pool entry is still refcounted; ownership
+of the handle increments the refcount, dropping the handle (per
+§14.8) decrements it. Strings created in non-reactive scopes are
+reclaimed when their last handle is dropped — typically when the
+function returns and locals go out of scope.
+
+This uniformity means: all `string` values share one storage backend
+(the kernel pool), regardless of where their handles are held.
+There is no separate "Rust-local string" representation distinct
+from the "kernel string" representation; the only difference is
+*where the handle is stored* (cell vs ordinary memory), not what
+the handle points to.
+
+The §11.6 "refcount-shared immutable backing" model maps directly
+onto the kernel pool. The pool *is* the shared backing.
+
+#### 15.5.2 Function and trait lowering
+
+Ductus resolves all generic instantiations and trait dispatch during
+frontend processing (§14.1.1). Emitted Rust is fully monomorphic and
+trait-free:
+
+- A generic Ductus function `fn f[T](...)` becomes multiple
+  monomorphic Rust functions, one per instantiation: `f_i32`,
+  `f_f64`, etc.
+- Trait method calls dispatch in Ductus to a specific function; the
+  emitted Rust call is direct, not through a trait.
+- Ductus traits are not declared in the emitted Rust. No `trait` or
+  `impl` blocks appear (with the exception below).
+- Operator overloading on Ductus numeric primitives uses Rust's
+  built-in operators (`+`, `-`, etc.) directly; no trait emission
+  needed.
+
+The one exception: when a Ductus record overloads a Ductus operator
+(e.g., a user-defined `Vec3` with `Add`), the emitter generates an
+explicit `impl std::ops::Add for Vec3` block in Rust so that `+`
+works on the type at the Rust level. This is a narrow mechanical
+emission, not a full trait export.
+
+#### 15.5.3 Ownership lowering
+
+Ductus's ownership rules map directly to Rust's:
+
+| Ductus                  | Rust                     |
+|-------------------------|--------------------------|
+| `let x = e`             | `let x = e;`             |
+| `mut x = e`             | `let mut x = e;`         |
+| Pass by value (move)    | Pass by value (move).    |
+| `&T` parameter (borrow) | `&T` parameter.          |
+| `for x in v:` (consume) | `for x in v` (consumes). |
+| `for x in &v:` (borrow) | `for x in &v` (borrows). |
+| `Copy` types            | `Copy` trait derived.    |
+| `Clone`                 | `Clone` trait derived.   |
+
+Ductus's `&v` form in for-loops compiles to Rust's `&v`. Ductus's
+parameter borrow `&T` compiles to Rust's `&T`. Rust's borrow checker
+enforces the same rules that Ductus's frontend already verified; any
+code that passed Ductus's checks passes Rust's.
+
+#### 15.5.4 Iterator lowering
+
+Ductus's `Iterator` trait (§12.7) has signature `fn next(iter: Self)
+-> (Option[Item], Self)`. Rust's standard `Iterator` trait has
+signature `fn next(&mut self) -> Option<Item>`.
+
+The Ductus emitter generates Rust code using Rust's `Iterator`
+pattern internally for performance, while Ductus source code
+continues to see the tuple-return form. The translation is
+mechanical: each Ductus iterator implementation lowers to a Rust
+struct with a `next(&mut self) -> Option<Item>` method, plus a
+wrapper that exposes the tuple-return form for Ductus-internal use
+during compilation.
+
+The final emitted Rust module contains only the `&mut self` form.
+The tuple-return wrapper exists in Ductus's IR during lowering for
+type-system consistency with the source-level Iterator trait, and is
+eliminated before Rust code generation. No runtime overhead from the
+dual representation reaches the emitted binary.
+
+This translation is invisible to Ductus source code. Ductus users
+never see `&mut` in their code or in error messages.
+
+#### 15.5.5 Reactive primitive lowering
+
+Ductus's `signal`, `attr`, `recurrent`, and `derived` declarations
+do not lower to Rust types directly. They lower to:
+
+- Cell allocations in the kernel state buffer, described in the
+  graph specification (§15.4).
+- Behavior registrations (the body of a `derived` expression OR the
+  body of a `recurrent` arm becomes a Rust function matching the
+  behavior ABI, §14.6).
+- Dependency edges in the graph specification.
+
+The lowered Rust code contains no syntactic trace of `signal` /
+`attr` / `recurrent` / `derived` keywords. They are pure
+graph-construction directives, encoded into the graph specification
+and behavior table.
+
+### 15.6 Compilation Modes
+
+The compiler supports two output modes, described in §14.1.2
+(interpreter) and §14.1.3 (native). Both modes share the entire
+frontend (§14.1.1) and produce identical graph specifications
+(§15.4); they differ only in the executable-code artifact.
+
+This section does not specify the bytecode format (interpreter mode)
+or the per-mode build pipeline. Mode selection and toolchain
+integration are implementation concerns documented in §14.2.
+
+### 15.7 Hot-Reload Diff
+
+Hot reload (§14.9) operates by comparing the graph specifications
+(§15.4) of two builds of the same program: the currently running
+build (`old_spec`) and the newly compiled build (`new_spec`). The
+diff algorithm computes the changes the kernel applies.
+
+This section specifies the diff algorithm and its result format. The
+kernel's mechanics for applying the diff are §14.9; the source-level
+identity rules the diff implements are §13.14.
+
+#### 15.7.1 Diff algorithm
+
+The diff is computed entry-by-entry across each artifact field of
+the graph specification:
+
+- **Cells.** Matched by `id` (the fully-qualified declaration path
+  of §15.4.1.1, identical to §13.14.2). Outcomes:
+    - Same `id`, same `type` → **carried over** (kernel preserves cell
+      value).
+    - Same `id`, different `type` → **changed** (drop + re-allocate;
+      initial value from `new_spec`).
+    - `id` in `old_spec` only → **removed** (kernel drops per §14.8).
+    - `id` in `new_spec` only → **added** (kernel allocates and
+      initializes).
+
+- **Connections.** Matched by `(from, to, connection_type)`. Diff
+  semantics as for cells: matched → carried over; otherwise removed
+    + added. Attr value changes on a matched connection are value
+      changes, not identity changes; the connection itself is carried
+      over and its attrs updated per the kernel mechanics of §14.9.
+
+- **Behaviors.** Matched by content-addressed `behavior_id` per
+  §14.6.4. Same ID → carried over (no rebinding needed). Different
+  ID → removed + added (kernel rebinds function-pointer table).
+
+- **Derived dependency edges, recurrent trigger sets, when-gates.**
+  Set diff by their respective keys (derived cell ID, recurrent cell
+  ID, gated instance ID).
+
+#### 15.7.2 Reload classification
+
+The diff classifies the overall change set per §13.14.4 into one of
+three categories:
+
+- **Reload-safe** — applied in place per §14.9 (hot reload).
+- **Per-instance restart required** — operator-specific reinit per
+  §13.16.10.
+- **Full-kernel restart required** — buffer-layout relocation per
+  §13.14.4.
+
+The classification is computed from the diff alone; the kernel does
+not need to re-parse source.
+
+#### 15.7.3 Diff result format
+
+The diff produces a **reload plan**: a sequenced list of (cell
+add/remove/change, connection add/remove/change, behavior
+add/remove) operations the kernel applies in topological order.
+
+The plan format is implementation-defined but must preserve the
+ordering constraints of §14.8 (drop reverse-declaration order;
+connections before endpoint instances; etc.) and §14.9.
+
+### 15.8 Conformance
+
+A Ductus implementation consists of a **compiler** and a **kernel**
+that operate on the same graph specification format. An
+implementation is conformant if both components meet their
+respective criteria.
+
+#### 15.8.1 Compiler conformance
+
+A conformant compiler:
+
+1. Accepts every program that the language semantics of §§1–13
+   define as well-formed.
+2. Rejects every program that the language semantics define as
+   ill-formed (with diagnostics; format is implementation-defined
+   per §15.2.3).
+3. Produces a reactive graph specification conforming to the
+   abstract data model of §15.4.1, serializable in the canonical
+   JSON form of §15.4.2.
+4. Produces executable code that, when run against a conformant
+   kernel with the produced graph specification, exhibits the
+   observable behavior defined by §§1–13.
+
+#### 15.8.2 Kernel conformance
+
+A conformant kernel:
+
+1. Accepts any reactive graph specification conforming to the
+   abstract data model of §15.4.1 (in canonical JSON form or any
+   other format the kernel additionally supports).
+2. Allocates cells per the observability and cadence contracts of
+   §15.4.1, using any mechanism satisfying those contracts.
+3. Implements the runtime semantics of §13 and §14: cell evaluation
+   order, drop semantics, hot reload, thread orchestration.
+
+#### 15.8.3 Interoperability
+
+A conformant compiler's canonical-JSON graph specification must be
+loadable by any conformant kernel at the same format version.
+Cross-implementation mixing (compiler from implementation A, kernel
+from implementation B) is permitted at the same schema and format
+version per §15.4.3.
+
+#### 15.8.4 Conformance testing
+
+The spec does not prescribe a reference test suite. Implementations
+may publish conformance suites; passing such a suite is not a
+normative requirement.
+
+---
