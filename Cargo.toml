@@ -1,0 +1,3 @@
+[workspace]
+members = ["packages/synaptic-kernel", "packages/kernel-wasm", "packages/symphony-engine"]
+resolver = "3"

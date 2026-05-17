@@ -1,0 +1,6 @@
+// Widgets module entry. Declares the connection linking Counter to Display.
+
+connection ShowsCount:
+  from: Counter
+  to: Display
+  derived value: i32 = self.from.count

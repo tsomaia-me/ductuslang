@@ -1,0 +1,30 @@
+[package]
+name = "synaptic-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1"
+loom = "0.7"
+
+[features]
+# Gate the model-based loom tests under a feature so the default `cargo test`
+# run stays fast. The loom files (tests/loom_*.rs) re-implement each SPSC
+# handshake protocol directly against `loom::sync::atomic` and exhaust
+# plausible interleavings — they don't exercise the kernel itself.
+loom_tests = []
+
+[[bench]]
+name = "ring_buffer_bench"
+harness = false
+
+[[bench]]
+name = "simple_free_list_bench"
+harness = false
+
+[[bench]]
+name = "triple_buffer_bench"
+harness = false

@@ -1,0 +1,10 @@
+// Counter widget. Advances per host-written `tick`.
+
+use root::tick
+
+node Counter:
+  out: ShowsCount [=1]
+  attr label: string = "Counter"
+  recurrent count: i32 = 0
+    | next: self.count + 1
+    | on: tick

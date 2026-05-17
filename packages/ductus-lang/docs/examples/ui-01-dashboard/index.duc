@@ -1,0 +1,13 @@
+// Dashboard root. Composes one Counter feeding one Display.
+
+use root::theme::(PRIMARY_COLOR, DEFAULT_PADDING)
+use root::widgets::(Counter, Display, ShowsCount)
+
+Counter c1:
+  label: "Visits"
+  ShowsCount/d1
+
+Display d1:
+  label: "Counter"
+  color: PRIMARY_COLOR
+  padding: DEFAULT_PADDING

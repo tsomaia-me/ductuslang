@@ -1,0 +1,4 @@
+// Theme tokens. Compile-time constants, shared across widgets.
+
+const PRIMARY_COLOR: string = "#3498db"
+const DEFAULT_PADDING: i32 = 8
