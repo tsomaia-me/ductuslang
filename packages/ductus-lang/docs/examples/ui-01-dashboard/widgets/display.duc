@@ -1,9 +1,0 @@
-// Display widget. Renders the count read through its inbound connection.
-
-node Display:
-  in: ShowsCount [=1]
-  attr label: string = "Display"
-  attr color: string = "#000000"
-  attr padding: i32 = 0
-  derived shown: string =
-    "{self.label} [{self.color}/{self.padding}px]: {self.in.ShowsCount[0].value}"

@@ -1,5 +1,0 @@
-// Top-level signal driven by the host. The language has no built-in clock
-// primitive (§13.1); the host writes to `tick` at whatever cadence its
-// domain requires (e.g., per UI frame).
-
-signal tick: i64 = 0

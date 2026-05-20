@@ -88,7 +88,7 @@ structurally via orphan rules.
 interchangeable syntactic forms for the same underlying operation: a
 function `f(x, y)` may equivalently be called as `x.f(y)`. Records
 carry data; functions carry behavior; the call site chooses the form
-that reads best. Operator application uses the `|>` token (§13.16);
+that reads best. Operator application uses the `|>` token (§13.17);
 `>>` is bitwise right shift only.
 
 **Two-track failure model.** Failures are either bugs (traps, process abort, no
@@ -104,6 +104,16 @@ Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
 - Trait names: PascalCase (`Numeric`, `Add`, `Display`, `Ord`).
 - User-defined type names: PascalCase (`Vec3`, `Person`, `Event`).
 - Identifiers (functions, variables, fields): snake_case (`full_name`, `first_name`).
+
+**Keywords are always lowercase.** No keyword has a capitalized form.
+This includes all declaration keywords (`node`, `connection`, `trait`,
+`type`, `fn`, `operator`, `signal`, `attr`, `recurrent`, `derived`,
+`const`, `let`, `mut`), all clause keywords (`parts`, `in`, `out`,
+`expose`, `when`, `satisfies`, `fulfill`, `default`, `from`, `to`,
+`pairs`, `on`, `where`), all control-flow keywords (`if`, `else`,
+`match`, `for`, `while`, `break`, `continue`, `return`), and all
+operator-context keywords (`as`, `is`, `and`, `or`, `not`). The rule
+is normative and takes precedence over any conflicting grammar.
 
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
@@ -1380,7 +1390,7 @@ display(person)               // conventional form, requires `display` in scope
 Display::display(person)      // trait-path form, no import needed
 ```
 
-Operator application uses the `|>` token (§13.16); it is not a
+Operator application uses the `|>` token (§13.17); it is not a
 function-call form. `>>` is bitwise right shift only. Functions are
 called via the three forms above.
 
@@ -1620,7 +1630,7 @@ follows:
 - **Mixed form** (positional then named) is still forbidden per §3.5.2.
 
 The relaxation (defaulted-before-non-defaulted permitted) is uniform
-across functions, operators (§13.16.3), and constructor invocations.
+across functions, operators (§13.17.3), and constructor invocations.
 The rule rewards named-argument call sites for readability.
 
 ```
@@ -1887,7 +1897,7 @@ The members of the category in Ductus v1 are:
 - `Copy` (§11.4) — flags a type whose values are duplicated implicitly
   at every use site. The compiler enforces the auto-derivation rules
   and the use-site duplication semantics.
-- `Circularity` (§13.5.5) — flags a connection type that may participate
+- `Circularity` (§13.6.5) — flags a connection type that may participate
   in topology cycles in the node graph. The compiler enforces the static
   cycle rule against this flag.
 
@@ -2449,14 +2459,15 @@ error. Bit-level operations on floats require an explicit reinterpret cast
 through `as` to an integer type of the same width.
 
 The `&` and `|` characters are reused at the type level (`&` for trait
-intersection per §5, `|` for placement-attribute pipes per grammar §3.10
-and for enum sum types per grammar §3.6). At the value level — that is,
+intersection per §5, `|` as the leader of the placement attribute clause
+per grammar §3.10 and for enum sum types per grammar §3.6). At the value
+level — that is,
 inside expressions — they are bitwise operators. The grammar's context-based
 disambiguation determines which interpretation applies; user-visible
 overloading is avoided through positional context.
 
 At the value level, `|` is bitwise OR (dispatching through `BitOr`); the
-operator-application token is `|>` (§13.16), a distinct token. Bitwise
+operator-application token is `|>` (§13.17), a distinct token. Bitwise
 `|` and `|>` share the same low precedence and left-associativity, so
 expressions mixing bitwise OR with higher-precedence arithmetic parse
 naturally; users mixing bitwise OR with operator application across the
@@ -3708,6 +3719,11 @@ let bad = car with insured_record         // ✗ Car and Insured are different t
 For combining different types' fields into a new type, the user constructs
 a record-intersection type per §5.3 and constructs values of it
 explicitly.
+
+When `with` appears in a reactive declaration context, additional
+per-field rules apply: bare reactive names alias, reactive expressions
+become implicit derived cells, and literals/non-reactive values become
+static fields. See §13.2.9.8 for the reactive-context extension.
 
 ##### Field-override constraints
 
@@ -5670,12 +5686,12 @@ is a stdlib concern.
 #### 9.4.3 Reactive cell compatibility
 
 Both `duration` and `instant` are i64-sized values and satisfy the
-direct in-cell storage criteria of §13.11.4. They may appear directly
+direct in-cell storage criteria of §13.12.4. They may appear directly
 as the type of `signal`, `attr`, `recurrent`, and `derived`
 declarations.
 
 Wrapping in `Result[duration, E]`, `Option[duration]`,
-`Result[instant, E]`, or `Option[instant]` is governed by §13.11.4's
+`Result[instant, E]`, or `Option[instant]` is governed by §13.12.4's
 general storage rules: if the total bit width (discriminant + payload)
 fits the platform atomic word, direct storage applies; otherwise the
 cell uses handle-based pool storage. On platforms supporting wide
@@ -5887,14 +5903,14 @@ declaration's own section and summarized below:
   trait declaration is uniform with the trait's visibility — no
   per-method visibility.
 - **Free functions**: visibility specifier on the `fn` declaration.
-- **Operators** (§13.16): visibility specifier on the `operator`
+- **Operators** (§13.17): visibility specifier on the `operator`
   declaration; same rules as functions.
 - **Constants** (§2.4.1.1): visibility specifier on the `const`
   declaration.
 - **Reactive declarations** (§13.2.1, §13.2.3, §13.2.4): module-level
   `signal`, `derived`, and `recurrent` accept visibility specifiers
   on the same line as the declaration.
-- **Node and connection types** (§13.3, §13.5): visibility specifier
+- **Node and connection types** (§13.3, §13.6): visibility specifier
   on the type declaration.
 - **Instantiations**: any top-level placement (`Foo bar:`,
   `signal x = ...`, `let y = ...`) accepts a visibility specifier.
@@ -6046,7 +6062,7 @@ to both cross-module cycles and within-module initializer cycles.
 Note: this rule applies to the *static reference graph* (use
 statements, path-qualified references, type references between
 sibling files, initializer-time references). It is distinct from
-reactive-graph cycles (§13.10), which operate at the runtime
+reactive-graph cycles (§13.11), which operate at the runtime
 dependency level and have their own rules.
 
 #### 10.4.5 Cross-module initialization order
@@ -6286,6 +6302,14 @@ it transfers ownership back to (a new binding in) the caller. Assigning a
 non-`Copy` value to a new binding transfers ownership. The compiler tracks
 ownership at every binding site; using a value after ownership has been
 transferred is a compile error.
+
+*Exception — reference-typed reactive bindings.* `Signal[T]` parameters
+(§13.2.8) and reactive composite bindings (§13.2.9.6) name reactive
+cells (specified by §13, §14) rather than stack-owned values;
+multiple live aliases to the same cell may coexist without violating
+single ownership. For reactive composites, materialization at the
+boundaries of §13.2.9.7 produces a concrete instance subject to
+standard single-ownership rules from that point on.
 
 **Single writer.** A `mut` binding is the only path through which its
 underlying value may be mutated. While a borrow of the value is active,
@@ -7257,7 +7281,7 @@ forward-compatibility:
 
 The reactive boundary is one of the "global" scopes referenced in
 §11.1's principles. The full specification of how values cross this
-boundary is given in §13.11 (the reactivity boundary).
+boundary is given in §13.12 (the reactivity boundary).
 
 ---
 
@@ -8435,8 +8459,8 @@ follow §11.14:
 - The `while` loop's condition may depend on reactive values, but
   reactive updates do not interrupt an in-progress loop iteration.
 
-Full specification is given in §13 (see §13.9 for the evaluation
-cycle and §13.11 for the reactivity boundary).
+Full specification is given in §13 (see §13.10 for the evaluation
+cycle and §13.12 for the reactivity boundary).
 
 ### 12.14 Restrictions and Edge Cases
 
@@ -8503,14 +8527,14 @@ The reactive system is built on seven load-bearing principles.
 
 **Declarative composition.** A reactive graph is built declaratively
 from signal, attr, recurrent, derived, node, and connection
-declarations. Placement syntax (§13.7) constructs instances.
+declarations. Placement syntax (§13.8) constructs instances.
 Composition is structural — the graph's shape is known at compile
 time.
 
 **Static graph.** Once constructed, the reactive graph's structure
 is fixed for the lifetime of the kernel instance. Signals, attrs,
 recurrents, nodes, and connections are created at startup and not
-added or removed at runtime — except by hot reload (§13.14), which
+added or removed at runtime — except by hot reload (§13.15), which
 replaces the program source and applies a diff atomically.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
@@ -8526,7 +8550,7 @@ cells dirty without immediate recomputation. The kernel evaluates
 the dirty set in topological order, advances recurrent cells per
 their firing arm expressions in lockstep, and swaps the back
 buffer atomically — all in a single `kernel.publish()` operation
-(§13.13.4). Writes accumulate between publishes; one publish
+(§13.14.4). Writes accumulate between publishes; one publish
 processes the union.
 
 **Cycles handled at two layers.** Reactive expression cycles are
@@ -8535,12 +8559,12 @@ handled at the cell level: derived↔derived cycles are forbidden
 cross-reference are allowed because lockstep treats recurrent
 reads as previous-committed values. Topology cycles between nodes
 via connections are handled separately via the `Circularity` trait
-(§13.5, §13.10): a topology cycle is valid only if it traverses at
+(§13.6, §13.11): a topology cycle is valid only if it traverses at
 least one connection type satisfying `Circularity`.
 
 **Reactive composition uses nodes, parts, and connections.**
 Reactive cells (signal, attr, recurrent, derived) may hold values
-of any type; the kernel chooses a storage strategy from §13.11.4:
+of any type; the kernel chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
 word, or handle-based pool storage for larger or dynamically-sized
 values. Imperative data structures (`Vec`, `HashMap`, etc.) are
@@ -8565,7 +8589,7 @@ languages (Haskell `IO`, Elm `Cmd`) work by producing values that
 *describe* what should happen; a runtime then interprets those
 descriptions. The reactive graph already provides exactly that
 mechanism: deriveds and recurrents produce values; the host reads
-them via swap (§13.13.6) and acts on them. Adding a separate
+them via swap (§13.14.6) and acts on them. Adding a separate
 effects layer would duplicate the mechanism — the runtime would
 still need to walk descriptions and dispatch interpretations, just
 for two parallel systems instead of one.
@@ -8617,10 +8641,9 @@ connection ShowsCount:
 
 -- Placements (instances).
 Counter c1:
-  ShowsCount /d1                -- outgoing connection to d1
+  ShowsCount: d1                -- outgoing connection to d1
 
-Display d1:
-  label: "Main"
+Display d1 | label="Main"
 ```
 
 The host drives the program via:
@@ -8664,7 +8687,7 @@ signal name: Type = initial
 
 A `signal` declares a writable reactive cell. The initial value is
 supplied at the declaration. After construction, the value is written
-only through the host API (§13.13.2); Ductus source has no
+only through the host API (§13.14.2); Ductus source has no
 syntactic form for assigning to a signal.
 
 Signals represent reactive *entry points* — values fed into the
@@ -8725,7 +8748,7 @@ definitions.)
 In all three scopes, signals share the same semantics: host-written,
 not source-assignable, reactive (writes trigger downstream
 re-evaluation). The scope determines instance multiplicity and how
-the host addresses the signal when writing (§13.13.2).
+the host addresses the signal when writing (§13.14.2).
 
 Use cases by scope:
 
@@ -8747,7 +8770,7 @@ attr name: Type                 // no default — placement must supply
 An `attr` declares a writable reactive cell that is *per-instance* of
 its enclosing node or connection type. Each instance carries its own
 cell. Like signals, attrs are written only through the host API or
-at placement time (§13.7).
+at placement time (§13.8).
 
 An attr declaration may include a `= default` initializer or omit it:
 
@@ -8756,10 +8779,9 @@ An attr declaration may include a `= default` initializer or omit it:
   with an explicit value but is not required to.
 - **Without default** (`attr name: Type`): the attr has no fallback.
   Every placement of the enclosing type must supply a value for this
-  attr (via the body form, an inline pipe, a flag, or the `/expr`
-  slot if the attr is also the type's `default attr`). Omitting it
-  at placement is a compile error. This is the *required-at-placement*
-  form.
+  attr (via the attribute clause, a flag, or the `/expr` slot if the
+  attr is also the type's `default attr`). Omitting it at placement
+  is a compile error. This is the *required-at-placement* form.
 
 The required form is used when no sensible default exists — an
 identifier the user must choose, an external resource handle, an
@@ -8798,12 +8820,10 @@ node Filter:
 ```
 
 At placement time, the user may override the default by supplying a
-value (§13.7.2):
+value (§13.8.2):
 
 ```
-Filter f1:
-  cutoff_hz: 500.0                    // override default
-  // resonance and enabled use defaults
+Filter f1 | cutoff_hz=500.0          // override default; resonance and enabled use defaults
 ```
 
 For attrs without defaults, the placement value is mandatory; the
@@ -8812,38 +8832,52 @@ that point on, exactly as if the value were a default.
 
 ##### 13.2.2.1 `default attr`
 
-A *node* type may designate one of its attrs as the
+A node or connection type may designate one of its attrs as the
 *positional default* by prefixing the declaration with `default`:
 
 ```
 node Log:
   default attr message: string
+
+connection Drives:
+  from: Driver
+  to: Drivable
+  default attr aggressiveness: f32 = 0.5
 ```
 
 A `default attr` is a regular attr in every respect (writable,
 overridable at placement, can have a default value) plus one
 property: it becomes the target of the positional `/expr` syntax at
-placement time (§13.7.5), so the attr can be set without naming it:
+placement time (§13.8.5), so the attr can be set without naming it.
+
+The positional and named forms are equivalent and interchangeable —
+the default attr remains settable by name via the attribute clause
+(§13.8.7) or by flag (§13.8.8), exactly like any other attr; `/expr`
+is an additional, optional positional shortcut:
 
 ```
-Log /"Hello World"        // sets the default attr `message` to "Hello World"
+// Node:
+Log /"Hello World"                          // /expr sets default attr `message`
+Log | message="Hello World"                 // equivalent attribute-clause form
 
-// Equivalent body form:
-Log:
-  message: "Hello World"
+// Connection (assuming Drives declares `default attr aggressiveness: f32 = 0.5`):
+Drives/0.8: some_car                        // /expr sets default attr `aggressiveness`
+Drives | aggressiveness=0.8: some_car       // equivalent attribute-clause form
 ```
 
 Rules:
 
-- At most one `default attr` per node type. Declaring two is a
-  compile error.
+- At most one `default attr` per type. Declaring two is a compile
+  error.
 - The `default attr` marker applies only to `attr` declarations.
   `recurrent`, `derived`, `const`, and `signal` cannot be marked
   `default`.
-- **`default attr` is node-only.** Connection types may not declare
-  `default attr`, because their positional `/expr` slot is reserved
-  for the destination endpoint (§13.7.5.1) and cannot also target
-  an attribute.
+- The mechanism is uniform across nodes and connections: at placement
+  time, `/expr` binds the type's default attr regardless of whether
+  the placed type is a node (§13.8.5.2) or a connection (§13.8.5.1).
+  Connections supply their destination separately, in the placement's
+  body (§13.8.5.1); the destination is not an attr and is not
+  targeted by `/expr`.
 
 #### 13.2.3 `derived`
 
@@ -8855,7 +8889,7 @@ A `derived` declares a *read-only* reactive value defined by an
 expression. The kernel maintains the value consistent with its
 inputs: when any signal, attr, recurrent, or other derived that
 the expression reads changes, the expression re-evaluates (under
-the lazy-batched rules of §13.9).
+the lazy-batched rules of §13.10).
 
 ```
 node Driver:
@@ -8873,11 +8907,11 @@ no statements. It may include:
 - Reads of signals, attrs, recurrents, and other deriveds (these
   create reactive dependencies).
 - Field accesses and indexed reads.
-- Function calls (functions are reactive-transparent; §13.11.2).
+- Function calls (functions are reactive-transparent; §13.12.2).
 - Pattern matching (`match` expressions).
 - Conditional expressions (`if`/`else`).
 - Closure construction (the closure captures values at construction
-  time; §13.11.3).
+  time; §13.12.3).
 
 The expression's *provenance* — the set of reactive cells it reads,
 including transitively through function calls — determines its
@@ -9020,8 +9054,7 @@ The `= initial` value may be overridden at placement, similar to
 attrs:
 
 ```
-Counter c1:
-  count: 100      // override initial value
+Counter c1 | count=100      // override initial value
 ```
 
 The arm structure (triggers, guards, and `next_expr` expressions)
@@ -9037,8 +9070,7 @@ node Counter:
   recurrent count: i32 = 0
     | on tick_signal: self.count + self.step_size
 
-Counter c1:
-  step_size: 5        // per-instance step via attr override
+Counter c1 | step_size=5    // per-instance step via attr override
 ```
 
 ##### 13.2.4.4 Value-change semantics for triggers
@@ -9119,7 +9151,7 @@ its previous-committed value. Cross-references within the tuple
 read previous-committed values, the same way independent
 recurrents do.
 
-In the per-publish DAG (§13.10.3), tuple-coupled recurrents
+In the per-publish DAG (§13.11.3), tuple-coupled recurrents
 contribute one evaluation node with N output edges, not N
 independent evaluation nodes.
 
@@ -9205,7 +9237,7 @@ fixed-size types. Dynamic-size types include:
 - `SmallVec[T; N]` — inline up to N elements, then heap
 - `RingBuf[T; N]` — fixed-capacity ring buffer
 
-Storage and cost details are specified in §13.11.4 (cell types
+Storage and cost details are specified in §13.12.4 (cell types
 and storage). An arm's `next_expr` returns a new value of the
 declared type; the kernel handles allocation and triple-buffer
 rotation transparently. Source code never mutates a cell in
@@ -9249,7 +9281,7 @@ node Delay:
   lifetime. It does not occupy a cell in the reactive state buffer
   and does not participate in dirty propagation.
 - **Allowed complex types.** Because consts are not stored in the
-  single-cell reactive buffer (§13.11.4), they may hold complex
+  single-cell reactive buffer (§13.12.4), they may hold complex
   values: records, arrays, tuples, nested structures. The
   single-cell constraint does not apply.
 - **Not overridable at placement.** A const's value is fixed by the
@@ -9319,9 +9351,9 @@ For each cell:
 - **Signals** evaluate their `= initial` expression.
 - **Attrs** are initialized when their containing instance is
   placed. For each attr:
-    - If the placement supplies an explicit value (via body form,
-      inline pipe, flag, or `/expr` for the default attr), that
-      value is evaluated and stored.
+    - If the placement supplies an explicit value (via the
+      attribute clause, flag, or `/expr` for the default attr),
+      that value is evaluated and stored.
     - Otherwise, if the attr was declared with `= default`, the
       default expression is evaluated.
     - Otherwise, the attr was declared without a default and the
@@ -9338,11 +9370,11 @@ For each cell:
   same snapshot semantic applies to attrs and signals whose initial
   expressions read other reactive cells.
 - **Deriveds** evaluate their expression body.
-- **`when` predicates** (§13.8) are evaluated alongside deriveds
+- **`when` predicates** (§13.9) are evaluated alongside deriveds
   in the topological order. Each instance's initial gate state is
   established here. An instance whose `when` evaluates to false at
   the end of startup begins inactive, with its other cells holding
-  their just-computed initial values per Model B (§13.8.7).
+  their just-computed initial values per Model B (§13.9.7).
 
 **Init-time dependency rules:**
 
@@ -9353,7 +9385,7 @@ For each cell:
 - **Init-time cycles are compile errors.** A cycle in the init
   dependency graph (cell A's initial reads B; B's initial reads
   A; or longer cycles) cannot be resolved by topological sort.
-  This is distinct from runtime cycles (§13.10), which the
+  This is distinct from runtime cycles (§13.11), which the
   per-publish DAG handles via recurrents-as-delays. Init time
   has no notion of "previous publish," so cycles flat-out fail.
 - Within a node body, an attr or recurrent's initial may
@@ -9370,7 +9402,7 @@ For each cell:
 
 Traps during initial evaluation (signal initializers, attr defaults,
 recurrent initial values, or initial derived evaluation) follow
-§13.12.1 — the process aborts. There is no recovery path for traps
+§13.13.1 — the process aborts. There is no recovery path for traps
 encountered during startup.
 
 **Cross-instance init cycles.** When a cell's initial value references
@@ -9389,16 +9421,16 @@ them.
 Writes occur only through:
 
 - The host API (`kernel.write_signal`, `kernel.write_attr`,
-  `kernel.transaction`) per §13.13. The host cannot directly write
+  `kernel.transaction`) per §13.14. The host cannot directly write
   to recurrents, deriveds, or consts at runtime; influence is
   indirect via signals and attrs.
 - Placement-time initial values for attrs and recurrents
-  (per §13.7.2). Consts are *not* settable at placement.
+  (per §13.8.2). Consts are *not* settable at placement.
 - The kernel's own evaluation of `derived` expressions, which
   writes the derived's output cell with the newly computed value.
 - The kernel's own evaluation of arm expressions on `recurrent`
   cells, which commits the computed value at the end of the
-  publish cycle (per §13.2.4.1 and §13.9.2).
+  publish cycle (per §13.2.4.1 and §13.10.2).
 
 Consts are immutable for the kernel's lifetime: their values are
 fixed at compile time and never change. The "no source-level
@@ -9416,7 +9448,7 @@ positions, return types, and generic arguments.
 `Signal[T]`:
 
 - `signal X = init` — host-writable `Signal[T]`. Host pushes
-  values via `kernel.write_signal` (§13.13.2).
+  values via `kernel.write_signal` (§13.14.2).
 - `derived X = expr` — projected `Signal[T]`. Kernel maintains
   the value consistent with its inputs.
 - `recurrent X: T = init | on triggers: expr` — memoryful
@@ -9431,7 +9463,7 @@ here and elsewhere referenced as "the `Signal[T]` type" vs "a
 
 **Where `Signal[T]` is used:**
 
-- **Operator parameters** (§13.16) — operators take `Signal[T]`
+- **Operator parameters** (§13.17) — operators take `Signal[T]`
   to bind to a reactive cell at instantiation, allocating
   internal state tied to that cell.
 - **Operator return types** — operators return `Signal[T]`
@@ -9440,7 +9472,7 @@ here and elsewhere referenced as "the `Signal[T]` type" vs "a
   parameter type. The compiler distinguishes call-site semantics
   by the function's declared signature: a `fn(x: T)` parameter
   receives the cell's current value (with reactive transparency
-  per §13.11.2); a `fn(s: Signal[T])` parameter receives the
+  per §13.12.2); a `fn(s: Signal[T])` parameter receives the
   cell reference. No call-site syntactic difference; resolution
   is by type.
 
@@ -9476,7 +9508,360 @@ inside a derived expression projects the field, and the derived
 re-evaluates whenever the cell's value changes (any field). This
 is coarse-grained: changes to one field invalidate consumers of
 all other fields. For finer granularity, project early into
-stable derived cells, or expose distinct cells from the source.
+stable derived cells, expose distinct cells from the source, or
+use a **reactive composite** (§13.2.9) to give each field its own
+cell within a record/tuple/array shape.
+
+#### 13.2.9 Reactive composites
+
+A **reactive composite** is a record, tuple, or fixed-array binding
+whose fields or elements are independently reactive. Reactive
+composites address the coarse-grained limitation noted in §13.2.8
+(where a `Signal[Record]` re-evaluates all consumers on any field
+change) by giving each reactive field or element its own cell while
+preserving the composite's record/tuple/array type at the type-system
+level.
+
+##### 13.2.9.1 Form
+
+Reactive composites are constructed in any reactive declaration
+context by binding individual fields or elements to reactive sources,
+static values, or reactive expressions. The composite's type is the
+underlying record, tuple, or fixed-array type — no new type qualifier
+is introduced (per §13.2.9.10).
+
+**Records:**
+
+```
+type PeakResult:
+  some_property: f32
+  some_other_property: f32
+  some_regular_property: i32
+
+derived A = PeakResult(
+  some_property: signal_a,
+  some_other_property: signal_b,
+  some_regular_property: 15,
+)
+```
+
+**Tuples:**
+
+```
+derived t = (signal_a, 15, signal_b)
+// t: (f32, i32, f32)
+```
+
+**Fixed arrays:**
+
+```
+derived arr: f32[4] = [signal_a, signal_b, 0.0, signal_c]
+```
+
+The same forms apply in `attr` declarations on node and connection
+instances. Use in `signal` and `recurrent` declarations is
+constrained by their host-write and arm-update semantics
+respectively; see §13.2.1, §13.2.4 for the underlying constraints.
+The most natural fit is `derived`.
+
+##### 13.2.9.2 Per-field reactivity model
+
+The composite is a structural grouping; it does not have its own
+outer cell. Each field or element is independently reactive based on
+its binding form (§13.2.9.3). When a constituent reactive cell
+updates, only that field is dirty — consumers reading other fields
+through the same composite are not invalidated.
+
+This distinguishes reactive composites from the §13.2.8
+`Signal[Record]` case, where the entire record value is one cell and
+any field change invalidates all consumers of any field. Reactive
+composites are the recommended construct when fine-grained per-field
+update propagation matters.
+
+##### 13.2.9.3 Field binding form
+
+The form of each field's right-hand side determines that field's
+reactive status:
+
+| RHS form                                  | Field becomes                       |
+|-------------------------------------------|-------------------------------------|
+| Bare reactive name (signal/attr/derived/recurrent) | Alias to that cell — no new cell |
+| Reactive expression                       | Implicit derived cell (§13.2.9.4)   |
+| Literal or compile-time constant          | Static field — no cell, embedded constant |
+| Non-reactive value expression             | Static field — evaluated once at startup |
+
+**Bare-name aliasing.** `some_property: signal_a` does not allocate a
+new cell. `A.some_property` *is* `signal_a` for all purposes —
+including cell identity (§15.4.1.1), hot reload (§13.15.2), and any
+type change to the underlying signal on reload.
+
+**Implicit derived cells.** `some_property: signal_a * 2 + signal_b`
+allocates a fresh derived cell with ID `A.some_property` (§13.2.9.4).
+Dependency edges to `signal_a` and `signal_b` are added to the graph
+specification (§15.4). The expression's evaluation rules are
+identical to those of an explicit `derived A.some_property = ...`
+declaration.
+
+**Static fields.** `some_regular_property: 15` is a compile-time
+constant. No reactive cell is allocated; the value is embedded in
+the composite's lowered representation per §15.5. Static fields
+participate in the composite's value but do not contribute cell
+entries to the graph specification.
+
+##### 13.2.9.4 Cell identity and the graph specification
+
+Reactive-expression fields and aliased fields contribute or
+reference cell entries in the graph specification (§15.4.1) using
+the path syntax of §15.4.1.1:
+
+- Records: `<binding>.<field_name>` (e.g., `A.some_property`).
+- Tuples: `<binding>.<index>` (e.g., `t.0`, `t.1`, `t.2`).
+- Fixed arrays: `<binding>.<index>` (e.g., `arr.0`, `arr.3`).
+
+Implicit derived cells (§13.2.9.3) contribute a new cell entry at
+their composite-field path with the appropriate dependency edges.
+
+Aliased fields do not contribute new cell entries — the alias
+target's existing entry is referenced. Hot-reload identity matches
+follow the alias target (§13.15.2).
+
+Static fields contribute no cell entries; they appear only in the
+composite's lowered value representation.
+
+The composite binding itself (`A`, `t`, `arr`) is a naming prefix,
+not a cell. It does not appear as a standalone cell in the graph
+specification.
+
+##### 13.2.9.5 Reading a reactive composite
+
+**Field access** reads the corresponding cell (for aliased fields
+and implicit derived cells) or returns the embedded constant (for
+static fields):
+
+```
+derived peak_x: f32 = A.some_property         // reads A.some_property cell
+let r: i32 = A.some_regular_property          // returns embedded 15
+```
+
+**Whole-composite reads** — passing the composite to a function
+parameter typed as the composite's type, returning it from a
+function, or binding it to a `let` of the composite's type — do not
+allocate a snapshot. Per §13.12.2, function bodies are
+reactive-transparent templates; expressions in the body that read
+fields of the parameter resolve through to the underlying cells of
+the caller's composite:
+
+```
+fn report(p: PeakResult) -> string:
+  // p.some_property here resolves to A.some_property's cell
+  // when this function is reached from a context where p was A
+  ...
+
+derived msg: string = report(A)
+```
+
+Materialization to a concrete value happens only at the boundaries
+of §13.2.9.7.
+
+##### 13.2.9.6 `let` bindings
+
+A `let` binding whose declared (or inferred) type is the
+composite's type may name a reactive composite. The binding is an
+alias to the same underlying cells; reading through the let-bound
+name resolves to the kernel's current cell values, not to a
+snapshot taken at let-binding time:
+
+```
+fn process(p: PeakResult) -> f32:
+  let q = p                         // q aliases p; same cells
+  q.some_property * 2.0             // reads p.some_property's cell live
+```
+
+This is the composite-typed analogue of the §13.2.8 `Signal[T]`
+binding form: when the binding's type is the composite's type, the
+binding is structural — it preserves the live cell references of
+its RHS. The standard scalar auto-deref rules of §13.2.8 still
+apply to single-cell reads (`let v: f32 = A.some_property`
+auto-derefs per the existing rules).
+
+**Ownership.** A reactive composite binding names cells held by
+the kernel, not stack-owned data; multiple live aliases to the
+same composite may coexist without violating §11's single-
+ownership rule, just as multiple `Signal[T]` parameters may name
+the same cell. Materialization to a concrete value (§13.2.9.7)
+produces a `PeakResult`/tuple/array instance subject to the
+standard §11 ownership rules from that point on.
+
+##### 13.2.9.7 Materialization boundaries
+
+Reactive transparency through functions and `let` bindings means
+reactive composites stay live across most of the language. Three
+boundaries force materialization to a concrete value:
+
+- **Storage in non-reactive collections.** Pushing a reactive
+  composite into a `Vec`, `Map`, or analogous container materializes
+  the current per-field values:
+
+  ```
+  // vec: Vec[PeakResult]
+  let vec2 = vec.push(A)             // A materialized at push time;
+                                      // vec2 holds a concrete snapshot.
+  ```
+
+  The pushed element is a concrete snapshot; subsequent changes to
+  the underlying cells do not propagate to `vec2`'s contents.
+
+- **FFI handoff to host code.** Any value crossing into the host
+  via the Host API (§13.14) is materialized; host code does not see
+  reactive cells.
+
+- **Serialization and persistence.** Hot reload state save, debug
+  dumps, and any explicit serialization path materializes
+  composites to concrete values.
+
+Within Ductus source code outside these boundaries, reactive
+composites remain live.
+
+##### 13.2.9.8 The `with` expression in reactive contexts
+
+The `with` expression (§6.1.5) extends to reactive composites
+without syntactic change. Field overrides in a `with` applied
+within a reactive declaration context follow the per-field binding
+rules of §13.2.9.3:
+
+```
+derived A2 = A with some_regular_property: signal_c
+// A2.some_regular_property is now aliased to signal_c;
+// A.some_regular_property remains the static value 15.
+
+derived A3 = A with some_property: 0.0
+// A3.some_property is now a static 0.0;
+// A.some_property remains aliased to signal_a.
+
+derived A4 = A with some_property: signal_a * 0.5
+// A4.some_property is an implicit derived cell;
+// A.some_property remains aliased to signal_a.
+```
+
+The result of `with` is a new reactive composite binding with its
+own per-field reactive shape. The base composite is unchanged. Each
+`with`-produced binding has its own cell IDs (§15.4.1.1) for any
+fields that contribute cells.
+
+The interpretation of a `with` RHS — alias, implicit derived,
+static — depends on the **binding form**, not the RHS syntax alone:
+
+- A reactive declaration (`derived A2 = base with field: signal_c`,
+  `attr a = base with ...`) produces a reactive composite per the
+  rules of §13.2.9.3; `signal_c` aliases as a reactive field.
+- A plain `let` binding to the `with` expression's result, not
+  itself flowing into a reactive declaration, produces a concrete
+  value per the standard §6.1.5 semantics — `signal_c` is read for
+  its current value at the let-binding's evaluation and the result
+  is a concrete `PeakResult`.
+
+##### 13.2.9.9 Distinction from nodes
+
+Reactive composites are data-only. They have no placement, no
+participation in node/connection topology, no lifecycle beyond the
+declaration that introduces them, and no `recurrent` or behavioral
+content. Nodes (§13.3) provide the full instance machinery —
+hierarchical placement, connections, hot-reload identity at the
+instance level — and remain the appropriate construct when behavior
+or topology is needed.
+
+The two have overlapping flavor (both expose per-field reactive
+cells) but distinct purposes: nodes are *runtime entities* in the
+reactive graph; reactive composites are *value forms* that group
+reactive cells under a record, tuple, or fixed-array shape.
+
+##### 13.2.9.10 Type system
+
+A reactive composite's type is the underlying record, tuple, or
+fixed-array type — `PeakResult`, `(f32, i32, f32)`, `f32[4]` in the
+examples above. There is no `reactive PeakResult` qualifier; the
+type system does not distinguish reactive composites from
+non-reactive values of the same type. Reactivity is a property of
+the *binding* (recorded in the graph specification per §15.4) and of
+the per-field cells, not of the type.
+
+This means a function `fn report(p: PeakResult) -> string` works
+identically whether called with a reactive composite binding or a
+concrete `PeakResult` value. The reactivity is invisible at the
+type signature; transparency flows through (§13.12.2). The
+distinction between live and snapshotted access is determined by
+the caller's context, not by the function's signature.
+
+#### 13.2.10 The `Node[T]` type
+
+`Node[T]` is the type of a node **specification** — a placement
+expression captured as a value, whose later invocation by a
+receiving node instantiates a node whose `default attr`
+(§13.2.2.1) accepts a `T`. `Node[T]` values are first-class:
+they may appear as attr types, function parameters, return
+types, and generic arguments.
+
+A `Node[T]` value is constructed by writing a placement
+expression in a position expecting `Node[T]`. The placement
+syntax is identical to inline placement (§13.8.5.2); the only
+difference is the *context* — when used as an attr value, the
+placement is captured as a specification rather than performed
+in-line.
+
+```
+node ItemHost:
+  attr item: Node[Post]            // accepts a Node[Post] specification
+
+ItemHost host | item=PostItem/some_post   // PostItem/some_post is the Node[Post] value
+```
+
+Here `PostItem/some_post` is a `Node[Post]` value — a placement
+specification of a `PostItem` whose `default attr` is bound to
+`some_post`. The specification is *deferred*: it is not evaluated
+when the attr is set, but invoked by the receiving node (`ItemHost`)
+when it chooses to instantiate.
+
+##### 13.2.10.1 What can be placed as a `Node[T]`
+
+Any node type `N` declaring `default attr d: T` (per §13.2.2.1) is
+a valid `Node[T]` value via the placement form `N/expr`. Nodes
+without a `default attr` cannot be used as `Node[T]` values in v1;
+future spec revisions may add a form for binding non-default attrs
+via the same mechanism.
+
+`T` is the type accepted at the `default attr` position. A node
+`PostItem` with `default attr post: Post` produces a `Node[Post]`
+value when written as `PostItem/<expr>`.
+
+##### 13.2.10.2 Lifetime and identity
+
+A `Node[T]` value held in an attr is a specification, not an
+allocated instance. Cell allocation happens only when the receiving
+node instantiates the specification — typically once at startup,
+producing one set of template cells with paths under the receiving
+node's path (e.g., `host.item.<template_field>`). Drop of the
+receiving node drops the template cells per §14.8.
+
+For *child-placement-style* external supply with cardinality, list
+semantics, and possible per-instance scoping (the pattern used by
+`Repeat`, §13.5.4), the `parts:` clause and §13.5 keyed-scope
+primitive are the appropriate mechanism — not `Node[T]` attrs.
+`Node[T]` is for attr-shaped *singular* template slots; `parts:`
+is for child-placement slots with cardinality.
+
+##### 13.2.10.3 Restrictions
+
+- `Node[T]` values cannot be read in user expressions or evaluated
+  for their structure; they are consumed only by receiving nodes
+  that know how to instantiate them.
+- A `Node[T]` attr cannot be `mut` and cannot be written to from
+  Ductus source after the attr is set (per §13.2.7).
+- A `Node[T]` value's captured references (e.g., to exposed attrs
+  of the receiving node via its placement name) are bound by
+  reference; per-invocation, the receiving node updates those
+  references and re-invokes the specification.
+- Generic constraints on `T` behave as standard generic bounds
+  (§3.1, §5.1).
 
 ### 13.3 Nodes
 
@@ -9494,7 +9879,7 @@ Composition takes two forms:
   *parts* (§13.4). The parent owns the parts; their lifetimes are
   bound to the parent's.
 - *Communication* — nodes communicate with each other through
-  *connections* (§13.5). Connections are typed directed links
+  *connections* (§13.6). Connections are typed directed links
   carrying their own reactive content; they are not passive
   pointers.
 
@@ -9515,11 +9900,11 @@ node TypeName[GenericParams]?:
   parts: Type1, Type2                                 // optional permitted part types
   in: Conn1, Conn2                                    // optional incoming connection types
   out: Conn3, Conn4                                   // optional outgoing connection types
-  when: predicate                                     // optional activation predicate (§13.8)
+  when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
-  default attr name: Type = default                   // positional default attr (at most one; node-only)
+  default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent name: Type = init | on t1: expr           // per-instance memory cells
   derived name: Type = expr                           // per-instance reactive values
 ```
@@ -9582,7 +9967,7 @@ this node at placement time:
 
 The clause does not place specific instances — it only constrains
 what types and how many of each are permitted. The actual children
-appear at placement (§13.7.3).
+appear at placement (§13.8.3).
 
 ```
 -- Restricted parts with cardinality:
@@ -9632,6 +10017,11 @@ Bracketed range forms support arbitrary bounds:
 A part type may carry exactly one cardinality specifier (sigil OR
 bracket, not both); duplicate specifiers are a compile error.
 
+Sigils attach directly to the type name with no intervening
+whitespace: `Type?`, `Type+`, `Type!`. Bracket forms may optionally
+have a space before the bracket: `Type[=1]` and `Type [=1]` are both
+valid.
+
 ##### 13.3.3.2 Access from inside the node body
 
 Parts of a given type are accessible as `self.parts.<NodeType>`,
@@ -9665,8 +10055,8 @@ The `in` and `out` clauses list the *types* of connections in which
 instances of this node may participate as endpoints, with optional
 cardinality constraints. `in` connections target this node (the
 node is the `to` endpoint); `out` connections originate from this
-node (the node is the `from` endpoint). See §13.5 for connection
-declarations and §13.7.4 for connection placement.
+node (the node is the `from` endpoint). See §13.6 for connection
+declarations and §13.8.4 for connection placement.
 
 Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
 sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
@@ -9725,6 +10115,116 @@ This separation enforces the "node bodies are declarative" rule:
 nodes describe structure and reactive content; functions and
 methods are imperative computation, distinct in kind.
 
+#### 13.3.7 Exposition (the `expose:` clause)
+
+The `expose:` clause declares the node type's **structural output**
+— the list of `Node[T]` placements the kernel traverses when it
+encounters an instance of this type. The clause is the node's
+"return value" in the structural sense: it determines what an
+external reader (and the kernel) sees as the node's content.
+
+```
+node TypeName:
+  satisfies SomeTrait
+  parts: SomeA, SomeB
+  in: ConnIn1
+  out: ConnOut1
+  expose:
+    SomeA
+    SomeB
+  attr foo: i32
+  signal user_name: string = "world"
+  derived greeting: string = "hello " ++ self.user_name
+```
+
+The canonical clause order is: `satisfies` → `parts:` → `in:` →
+`out:` → `expose:` → cell declarations.
+
+##### 13.3.7.1 Content
+
+The body of `expose:` is a list of placements — each entry is a
+`Node[T]` value, with the same syntax as inline child placements
+elsewhere (§13.8). Entries reference:
+
+- A part of self by type-bulk access (`self.parts.SomeA` — the full
+  list of supplied parts of that type, in placement order).
+- A named part instance (`self.osc1` — see §13.4.1) — when the
+  exposition needs a specific named child rather than all parts of
+  a type.
+- A wrapper placement that contains parts as its own children. The
+  wrapper is a node-internal type the exposition uses for structural
+  composition:
+
+  ```
+  node MyContainer:
+    parts: Item
+    expose:
+      SomeInternalWrapper:
+        self.parts.Item
+  ```
+
+  Here `SomeInternalWrapper` is a wrapper node whose body contains
+  the supplied `Item` children. Internal nodes used this way are
+  declared (in stdlib or user code) and accept children via their
+  own `parts:` clause.
+
+Each entry in `expose:` may carry a per-placement `when` gate
+(§13.9) for conditional activation. Conditionality inside
+exposition uses the same `when` clause mechanism that applies
+elsewhere — no new control-flow syntax is introduced.
+
+##### 13.3.7.2 Default
+
+When `expose:` is omitted, the node's exposition defaults to
+`expose: self.parts` — the kernel traverses all supplied parts in
+declaration order. When the node has no `parts:` clause and no
+`expose:` clause, the exposition is empty (the node has no
+structural output and exists only for its state and connections).
+
+##### 13.3.7.3 External access via `.exposition`
+
+The exposed list is readable from outside the node via the reserved
+`.exposition` field: `instance.exposition` returns the list of
+`Node[T]` values the instance currently exposes. This is the same
+content the kernel traverses; external readers and the kernel see
+identical output.
+
+Inside the node body, `self.exposition` is the same list. The
+field is read-only; the exposition is fixed by the type's `expose:`
+clause (and the placer's supplied parts), not mutable at runtime.
+
+##### 13.3.7.4 Kernel traversal
+
+The kernel traverses what `expose:` produces, not the `parts:`
+clause directly. This is the load-bearing distinction:
+
+- **`parts:`** is the constraint and supply mechanism — declares
+  what child types are accepted, with cardinality; placement-time
+  child placements fill the parts (§13.4, §13.8.3).
+- **`expose:`** is the structural-output mechanism — declares which
+  parts (and/or wrapping internal nodes containing them) participate
+  in the kernel's traversal of this instance.
+
+A node may receive parts that its exposition does not include — for
+example, a node may accept administrative or diagnostic parts that
+are queried only via the host API, not traversed by the kernel. In
+practice the default `expose: self.parts` covers the common case
+where every supplied part is exposed.
+
+##### 13.3.7.5 Connections and exposition
+
+Connections (§13.6) are **not** part of exposition. Connections are
+instance-to-instance edges, placed at the instantiation site of the
+nodes they connect. They are not declared in any node's `expose:`
+clause and do not appear in `instance.exposition`.
+
+The motherboard analogy: the parts a motherboard exposes (RAM
+slots, CPU socket, expansion slots) are the structural surface of
+the board. The wires connecting those parts to each other and to
+external components are connections — held by the parts, owned by
+no single one, traversed by signals rather than by structural
+descent.
+
 ### 13.4 Parts
 
 #### 13.4.0 Concept
@@ -9760,7 +10260,18 @@ containment.
 
 The parent declares the types of children it accepts via its
 `parts:` clause (§13.3.3) with optional cardinality; the specific
-instances appear via placement (§13.7.3).
+instances appear via placement (§13.8.3).
+
+**Kernel traversal goes through `expose:`, not through `parts:`
+directly.** The `parts:` clause is the constraint and supply
+mechanism — declared types, cardinality, and placement-time
+filling. The `expose:` clause (§13.3.7) is the structural output
+the kernel walks; it references parts (via `self.parts.<Type>` or
+by named instance), possibly wrapping them in internal nodes.
+Parts that the exposition does not include are not traversed by
+the kernel — they remain queryable via the host API and addressable
+within the parent's own reactive expressions, but they do not
+contribute to the structural descent.
 
 #### 13.4.1 Access forms
 
@@ -9786,7 +10297,7 @@ clause is declared:
 - **Named individual:** `self.<name>` (or `paramName.<name>` from
   outside the node body) — accesses a specific part by its
   placement-time name. Names are assigned in the placement body
-  (§13.7.3) and visible wherever the placement scope is known.
+  (§13.8.3) and visible wherever the placement scope is known.
   Available in both forms (with or without `parts:`).
 
 Summary table:
@@ -9900,7 +10411,7 @@ dependency set. In the example above:
   part's `output` derived.
 - When any one part's `output` changes, `total` is dirty.
 
-This works because dependency tracking is provenance-based (§13.11.1):
+This works because dependency tracking is provenance-based (§13.12.1):
 the compiler tracks reactive cells read by an expression,
 transitively through function calls.
 
@@ -9956,9 +10467,252 @@ indexed, bounded by cardinality), `for p in c.parts: ...`
 (heterogeneous), and `c.osc_a` (named individual, requires the
 caller to know placement names).
 
-### 13.5 Connections
+### 13.5 Template Scopes and Keyed Instantiation
 
-#### 13.5.0 Concept
+Some stdlib host nodes (like `Repeat`, §13.5.4) instantiate a child
+*template* — a part placed in their body — zero, one, or many
+times, each instantiation backed by its own state cells. This
+section specifies the **keyed-scope primitive** that standardizes
+how the kernel manages per-instantiation state and how such host
+nodes drive instantiation.
+
+The primitive is **runtime-implementable**: any conformant kernel
+exposes the three operations of §13.5.1 to its stdlib host nodes;
+the stdlib's documented hosts (the canonical user `Repeat` in
+§13.5.4, and future siblings such as `Conditional` and `Switch`)
+are layered on top of these operations.
+
+#### 13.5.1 The primitive
+
+For each template-typed parts entry on a host instance — a part
+declared in the host's `parts:` clause that the host's exposition
+(§13.3.7) treats as a per-instantiation template — the kernel
+exposes three operations. The bound template (the part supplied at
+the host's placement site) is fixed for the host's lifetime; the
+operations therefore parameterize only the **key**.
+
+- **`scope_obtain(key)`** — return the scope for `key`, allocating
+  from the host's per-template pool if absent. Newly-allocated
+  scopes initialize the template's state cells to their declared
+  initial values (per §13.2.6).
+- **`scope_drop(key)`** — drop scope `key`: invoke `Drop` (§14.8)
+  on its state cells in reverse declaration order; return the pool
+  slot.
+- **`scope_evaluate(key)`** — evaluate the template's deriveds and
+  any recurrent arm bodies eligible to fire within scope `key`'s
+  state context. References to `self` inside the template body
+  resolve to scope `key`'s cells; references to the host's own
+  attrs (e.g., via the host's placement name per §13.4.1) resolve
+  to the host instance's cells.
+
+The host is responsible for sequencing these operations correctly:
+typically `scope_obtain` for new keys, `scope_evaluate` for active
+keys, and `scope_drop` for keys no longer active.
+
+##### 13.5.1.1 Per-template pool
+
+Each template-typed parts entry on a host instance has its own
+keyed pool. The pool's element shape is the template type's
+**state-shape** (§13.5.2). The pool's index space is the host's
+key domain. Scopes are independent — no cell sharing across keys.
+
+Pool sizing follows the §14.3.5 extensible-pool model: pools grow
+as keys are added and shrink as keys are dropped, subject to the
+kernel's pool-management policy.
+
+#### 13.5.2 State-shape and the no-pool optimization
+
+A template's **state-shape** is the set of stateful cells it
+declares:
+
+- `signal` declarations inside the template's body (§13.2.1).
+- `attr` declarations inside the template's body (§13.2.2).
+- `recurrent` declarations inside the template's body (§13.2.4).
+
+`derived` declarations are *not* part of the state-shape; they are
+pure functions of state cells and the host's exposed attrs.
+`const` declarations are static and not state.
+
+**When the state-shape is empty** (the template declares only
+deriveds, or no body cells at all), the kernel allocates **no pool**
+for the host's template entry. `scope_obtain(key)` becomes a no-op,
+`scope_drop(key)` is a no-op, and `scope_evaluate(key)` evaluates
+the template's deriveds against the host's exposed attrs without
+any per-key state context.
+
+This is the **stateless-template fast path**: data-driven
+multiplicity with O(1) cost per data change beyond per-element
+derived evaluation. Programs that use only stateless templates
+incur no per-key allocation overhead.
+
+The compiler determines a template's state-shape at compile time
+and statically selects between the pool and no-pool case per
+host-template instantiation.
+
+#### 13.5.3 Hot reload and cell identity
+
+When state-shape is non-empty, per-key state cells participate in
+hot reload per §13.15.2's cell-identity rules. The cell path
+follows §15.4.1.1:
+
+```
+<host_placement_path>.<key>.<template_field>
+```
+
+Keys are required to be stringifiable primitives (the exact bound
+is specified per host node; §13.5.4 specifies it for `Repeat`).
+The key value serves as the path component.
+
+Hot-reload changes to the template's body follow the standard
+reload-safe / reload-unsafe rules of §13.15.4, applied uniformly
+across all live keys.
+
+#### 13.5.4 Repeat: data-driven multiplicity
+
+The stdlib provides `Repeat`, the canonical template-hosting node
+for iterating over a `Signal[T[]]` source. `Repeat` declares a
+single template-typed part (`Item`); the placer supplies the
+template by placing it in `Repeat`'s body. `Repeat` uses the
+§13.5.1 primitive directly: it sequences `scope_obtain`,
+`scope_drop`, and `scope_evaluate` per its iteration semantics.
+
+##### 13.5.4.1 Signature
+
+```
+node Repeat[T]:
+  default attr source: Signal[T[]]
+  parts: Item!                           // exactly one template part
+  attr key: fn(T, usize) -> K            // K: StringifiableKey, inferred
+
+  attr current: T                        // kernel-updated per iteration
+  attr index: usize                      // kernel-updated per iteration
+  attr first: bool                       // kernel-updated per iteration
+  attr last: bool                        // kernel-updated per iteration
+  attr count: usize                      // kernel-updated per iteration
+
+  expose: self.parts.Item
+```
+
+`K` is the key function's return type, inferred at placement. `K`
+must satisfy the `StringifiableKey` trait — the stdlib trait
+admitting `i8`–`i64`, `u8`–`u64`, `bool`, `char`, `string`. When
+`key` is omitted, the stdlib default returns `index` unchanged and
+`K` is `usize`.
+
+- `source` is the iterated signal (default attr; set via `/expr`
+  per §13.8.5.2).
+- `parts: Item!` declares that placements may supply exactly one
+  part of type `Item`. The Item type is what the placer provides
+  at the `Repeat` body — the template that `Repeat` invokes per
+  source element. The Item's underlying node type must declare a
+  `default attr` whose type is `T` (so `/ref.current` can bind it
+  at placement).
+- `key` is a function from `(element, index)` to a stringifiable
+  primitive.
+- `current`, `index`, `first`, `last`, `count` are attrs the
+  template references via Repeat's placement name (§13.4.1). The
+  kernel updates these as part of Repeat's iteration semantics
+  (§13.5.4.2); they are not host-writable.
+- `expose: self.parts.Item` declares the exposition (§13.3.7):
+  the kernel traverses the supplied Item template. Repeat's
+  kernel-aware iteration semantics drive that traversal per
+  source element with §13.5.1's scope operations.
+
+##### 13.5.4.2 Iteration
+
+Whenever `source` is dirty, the kernel:
+
+1. Computes the key for each element via the `key` function.
+2. Keys in `old ∩ new` carry over: their scopes are preserved per
+   §13.5.1; exposed attrs (`current`, `index`, etc.) are updated
+   for re-invocation.
+3. Keys in `old − new` are dropped: `scope_drop(key)` is invoked.
+4. Keys in `new − old` are added: `scope_obtain(key)` is invoked.
+5. For each key in `new` in element order, the kernel updates
+   exposed attrs and calls `scope_evaluate(key)`.
+
+Reordering elements in `source` without changing the key set
+performs no scope allocations or drops — only the exposed attrs
+(`index`, `first`, `last`) update.
+
+##### 13.5.4.3 Use
+
+```
+node PostItem:
+  default attr post: Post
+  attr expanded: bool = false
+  derived title: string = self.post.title
+
+UI app:
+  signal posts_data: Post[] = []
+  Repeat ref/posts_data:
+    PostItem/ref.current
+```
+
+`Repeat` iterates `posts_data`; for each post, the kernel
+`scope_obtain`s a scope keyed by index (since `key` is omitted),
+binds `ref.current` to that post, and `scope_evaluate`s the
+template. `PostItem`'s `expanded` cell is allocated per-key.
+
+For reordering-stable state, supply `key` on Repeat's placement:
+
+```
+Repeat ref/posts_data | key=post_id_key:
+  PostItem/ref.current
+```
+
+where `post_id_key` is `fn(p: Post, _: usize) -> i64` returning
+`p.id` (defined as a free function or stdlib utility).
+
+##### 13.5.4.4 Cell identity
+
+Per the §13.5.3 path rule, the per-key cell for `PostItem`'s
+`expanded` attr in the example above (with `posts_data` containing
+a post whose key evaluates to `42`) is at path
+`app.ref.42.expanded`.
+
+When the template is **stateless** (its state-shape is empty per
+§13.5.2), no per-key cells are allocated.
+
+##### 13.5.4.5 Hot reload
+
+`Repeat`'s per-key cells follow §13.5.3 / §13.15.2. A change to
+the `key` function is reload-unsafe at the per-instance level
+(§13.15.4): old keys may not match new ones, so per-instance
+restart of the `Repeat` is required. The kernel diagnoses this
+and performs the restart cleanly.
+
+##### 13.5.4.6 Performance
+
+- Stateless template (state-shape empty per §13.5.2): O(1) per
+  data change beyond per-element derived evaluation. No
+  allocation.
+- Stateful template, element add/remove: O(K) per data change
+  where K is the number of added/removed keys (key-set diff plus
+  per-key cell init/drop).
+- Stateful template, reorder: O(1) per moved element. State
+  follows key; no allocation or drop.
+
+Programs that do not use `Repeat` incur no runtime cost from its
+machinery; the cost model is "pay for what you iterate."
+
+##### 13.5.4.7 Restrictions
+
+- The template's underlying node type must declare `default attr
+  d: T` so that `/expr` at the template's placement (e.g.,
+  `PostItem/ref.current`) binds correctly.
+- The template references Repeat's exposed attrs via the
+  placement name; closure-over-outer-state beyond §13.12's
+  reactive transparency is not supported.
+- Nested `Repeat` instances are permitted but each requires a
+  distinct placement name to avoid path collisions (§13.5.4.4).
+- The `key` function must be reactive-pure: no dependencies
+  beyond `(item, index)` per §13.12. This guarantees key
+  stability across evaluations.
+
+### 13.6 Connections
+
+#### 13.6.0 Concept
 
 A connection is a directional, typed link between two node
 instances. Connections are first-class entities — they have identity,
@@ -9971,7 +10725,7 @@ relationship* rather than about either endpoint. A `Drives`
 connection between a Driver and a Vehicle holds attrs like
 `aggressiveness` that belong to neither node individually but to
 the act of driving. Connections also satisfy traits (like
-`Circularity`, §13.5.5) that govern static graph properties.
+`Circularity`, §13.6.5) that govern static graph properties.
 
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
@@ -9982,7 +10736,16 @@ connection participates in the source node's outgoing surface
 A node declares which connection types it can participate in via
 its `in:` and `out:` clauses (§13.3.4), with optional cardinality
 constraints. The actual connection instances appear at placement
-(§13.7.4).
+(§13.8.4).
+
+**Connections and exposition.** Connections are not part of any
+node's `expose:` clause (§13.3.7); they are not structural output.
+A connection is held by its endpoint nodes but owned by no single
+one — it lives at the instance graph level, traversed by signals
+rather than by the kernel's structural descent. The motherboard
+analogy: parts compose into the board (`expose:`); wires between
+parts are connections (instance-to-instance edges held by, but
+not contained within, the parts they connect).
 
 Connection vs. node-typed attr: a node could in principle hold a
 direct reference to another node (e.g., `attr target: SomeNode`),
@@ -9992,31 +10755,33 @@ handling. Connections solve all three: they carry state about the
 relationship, give the type system structural information for
 compile-time graph analysis, and integrate with traits.
 
-#### 13.5.1 Declaration
+#### 13.6.1 Declaration
 
 A connection declares its endpoint types in one of three forms:
 single, cartesian, or pairs. A connection uses exactly one form;
 mixing forms (e.g., `pairs:` alongside `from:`+`to:`) is a compile
 error.
 
-##### 13.5.1.1 Single form (one from-type, one to-type)
+##### 13.6.1.1 Single form (one from-type, one to-type)
 
 ```
 connection TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
   from: SourceType                                    // required, exactly once
   to: DestType                                        // required, exactly once
-  when: predicate                                     // optional activation predicate (§13.8)
+  when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance writable cells
+  default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent name: Type = init | on t1: expr           // per-instance memory cells
   derived name: Type = expr                           // per-instance reactive values
 ```
 
-Note: `default attr` is not permitted in connection bodies — the
-positional `/expr` slot on a connection placement targets the
-destination endpoint (§13.7.5.1), not an attr.
+A connection type may declare a `default attr` per §13.2.2.1. At
+placement, `/expr` targets the connection's default attr (§13.8.5.1);
+the destination endpoint is supplied separately in the placement's
+body, not via `/expr`.
 
 Example:
 
@@ -10032,19 +10797,19 @@ connection Drives:
 
 `from` and `to` are not attributes — they are endpoint slots,
 first-class structural elements of every connection. Attribute
-syntax (placement-time `name: expr` settings, inline pipes, flags)
-does not target them.
+syntax (placement-time `name=value` settings via the attribute
+clause, flags) does not target them.
 
 Inside the body, `self.from` and `self.to` resolve to the endpoint
 instances directly (their concrete types).
 
-##### 13.5.1.2 Cartesian form (multiple from-types and/or to-types)
+##### 13.6.1.2 Cartesian form (multiple from-types and/or to-types)
 
 ```
 connection TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, signal, attr, recurrent, derived) per §13.5.1.1
+  // body declarations (when, const, signal, attr, recurrent, derived) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
@@ -10070,7 +10835,7 @@ connection Owns:
 The compiler requires the match to be exhaustive over the cartesian
 product (4 combinations in this example).
 
-##### 13.5.1.3 Pairs form (constrained from-to combinations)
+##### 13.6.1.3 Pairs form (constrained from-to combinations)
 
 ```
 connection TypeName:
@@ -10078,7 +10843,7 @@ connection TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, signal, attr, recurrent, derived) per §13.5.1.1
+  // body declarations (when, const, signal, attr, recurrent, derived) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
@@ -10119,10 +10884,10 @@ Rules for pairs form:
 A connection body does not contain `fn` declarations, paralleling
 node bodies (§13.3.6).
 
-#### 13.5.2 `from`, `to`, and `pair` references in expressions
+#### 13.6.2 `from`, `to`, and `pair` references in expressions
 
 The endpoint access inside a connection body depends on the form
-of its declaration (§13.5.1):
+of its declaration (§13.6.1):
 
 - **Single form** (`from: X / to: Y`): `self.from` is typed as `X`
   directly; `self.to` is typed as `Y` directly. Attrs and deriveds
@@ -10139,12 +10904,11 @@ of its declaration (§13.5.1):
 
 `self.from`, `self.to`, and `self.pair` are bound at the
 connection's *placement* time. Each placement specifies its source
-(the enclosing instance) and destination (via the `/expr` form or
-the `to:` endpoint-slot syntax in the connection's body). Inside
-the connection's body, these identifiers resolve to those specific
-instances.
+(the enclosing instance) and destination (a bare-identifier reference
+in the placement's body, §13.8.5.1). Inside the connection type's
+body, these identifiers resolve to those specific instances.
 
-#### 13.5.3 Generic connections
+#### 13.6.3 Generic connections
 
 Connections may declare generic parameters:
 
@@ -10159,19 +10923,19 @@ Generic parameters scope over the connection's `from`, `to`, attrs,
 recurrents, and deriveds. Each unique instantiation produces a
 distinct connection type per §2.3.
 
-#### 13.5.4 No methods in connection body
+#### 13.6.4 No methods in connection body
 
 A connection body does not contain `fn` declarations. Functions on
 connections are free functions taking the connection type, dispatched
 via uniform call syntax. Trait methods are implemented in `fulfill`
 blocks. Same rule as nodes (§13.3.6).
 
-#### 13.5.5 The `Circularity` trait
+#### 13.6.5 The `Circularity` trait
 
 A connection type may declare conformance to the `Circularity` trait
 — a language-defined marker trait (§3.7.4) — to indicate that
 placements of this connection type may participate in topology cycles
-in the node graph (§13.10.2).
+in the node graph (§13.11.2).
 
 ```
 trait Circularity                          -- marker trait, no methods
@@ -10200,12 +10964,12 @@ simultaneity (e.g., "destination plays alongside source") should
 *not* satisfy `Circularity`, since cycles through such connections
 would imply infinite simultaneous activation.
 
-### 13.6 The `self` Keyword
+### 13.7 The `self` Keyword
 
 `self` is a context-restricted keyword that resolves to the instance
 currently being declared or constructed.
 
-#### 13.6.1 Scope
+#### 13.7.1 Scope
 
 `self` is available only inside the body of a node or connection
 declaration. Specifically, in:
@@ -10240,7 +11004,7 @@ fn aggressive(d: Driver) -> bool:
   d.risk_tolerance > 0.7        // function uses parameter name, not self
 ```
 
-#### 13.6.2 Resolution and reactive dependencies
+#### 13.7.2 Resolution and reactive dependencies
 
 A reference through `self` to an attr, recurrent, or derived
 participates in the reactive dependency graph in the usual way.
@@ -10253,7 +11017,7 @@ instance. The compiler emits dependency edges per-instance: instance
 includes instance `A`'s `expertise_level` cell, not the cell of
 some other Driver instance.
 
-#### 13.6.3 Self vs Self (lowercase vs capitalized)
+#### 13.7.3 Self vs Self (lowercase vs capitalized)
 
 The capitalized `Self` is the type-level identifier used in trait
 declarations and `fulfill` blocks (§3.1.1). It refers to the
@@ -10267,45 +11031,67 @@ The two are distinct: `Self` is a type-system concept usable only
 in type positions; `self` is a value usable only in expression
 positions inside node/connection bodies. They never overlap.
 
-### 13.7 Placement
+### 13.8 Placement
 
 *Placement* is the syntax for instantiating nodes, parts, and
 connections into a concrete reactive graph. It is distinct from
 value construction of records (which uses constructor syntax per
 §6.1.3).
 
-#### 13.7.1 Top-level instances
+#### 13.8.1 Top-level instances
 
 A top-level placement creates a named instance of a node type at
 module scope:
 
 ```
-Driver john_doe:
-  expertise_level: 10
-  risk_tolerance: 0.8
-  Drives/some_car | enhanced_handling: true | aggressiveness: 0.8
+Driver john_doe | expertise_level=10 risk_tolerance=0.8:
+  Drives | enhanced_handling=true aggressiveness=0.8: some_car
 ```
 
-The first line is `TypeName instance_name:`. The body sets
-attributes and declares child parts and connections (§13.7.3,
-§13.7.4).
+The first line is `TypeName instance_name` followed (optionally) by
+attribute settings (§13.8.7) and (optionally) by `:` introducing a
+body of child placements (§13.8.3, §13.8.4). The syntax is identical
+to internal part placements (§13.8.3); the only distinction is that
+top-level placements *must* declare a name (internal parts may
+omit the name when not referenced from outside the placement).
 
 Instance names are unique within their declaring scope. Two
 top-level placements with the same name in the same module is a
 compile error.
 
-#### 13.7.2 Setting attrs and recurrent initial values
+#### 13.8.2 Setting attrs and recurrent initial values
 
-A line `name: expr` inside a placement body sets the named attr or
-recurrent initial value of the enclosing instance:
+Attrs and recurrent initial values are set via inline attribute
+syntax on the placement line. The body of a placement is reserved
+exclusively for child placements (§13.8.3, §13.8.6); attribute
+settings do not appear in the body.
+
+A single-line placement with attrs uses one leading `|` followed by
+one or more `name=value` settings separated by whitespace:
 
 ```
-Driver john_doe:
-  expertise_level: 10         // sets attr `expertise_level`
-  risk_tolerance: 0.8         // sets attr `risk_tolerance`
+Driver john_doe | expertise_level=10 risk_tolerance=0.8
 
-Counter c1:
-  count: 100                  // overrides recurrent `count` initial value
+Counter c1 | count=100
+```
+
+A multi-line placement keeps the first attribute on the placement's
+main line; subsequent attributes continue on lines indented exactly
+to the column of the first attribute (no further `|` characters):
+
+```
+Driver john_doe | expertise_level=10
+                  risk_tolerance=0.8
+                  license_class="full"
+```
+
+A placement with attrs *and* children combines the forms: attributes
+inline (or via aligned continuation), then `:` introducing the
+body:
+
+```
+Driver john_doe | expertise_level=10 risk_tolerance=0.8:
+  Drives | enhanced_handling=true: some_car
 ```
 
 The named cell must be declared on the placed type as either an
@@ -10314,9 +11100,9 @@ The named cell must be declared on the placed type as either an
 The value's type must match the cell's declared type (subject to
 the standard widening rules).
 
-##### 13.7.2.1 Reactive vs. compile-time placement values
+##### 13.8.2.1 Reactive vs. compile-time placement values
 
-The right-hand side of an attr setting at placement may be:
+The right-hand side of an attribute setting at placement may be:
 
 - A **compile-time expression** — a literal, a `const` reference, a
   compile-time-evaluable computation. The value is fixed at
@@ -10331,19 +11117,19 @@ The right-hand side of an attr setting at placement may be:
 ```
 App my_app:
   Fetch fetcher / "url"
-  Log / fetcher.response                 // reactive binding: Log's default attr
-                                          // tracks fetcher.response
+  Log / fetcher.response                  // reactive binding: Log's default attr
+                                           // tracks fetcher.response
 
 App other_app:
   Counter c1
-  Display d1 | label: format(c1.count)   // reactive: d1.label tracks c1.count,
-                                          // formatted as a string
+  Display d1 | label=format(c1.count)     // reactive: d1.label tracks c1.count,
+                                           // formatted as a string
 ```
 
 Mechanically, a reactive placement value introduces a synthesized
 derived in the parent's scope; the target attr is bound to that
 derived. When any cell in the expression's provenance changes
-(§13.11.1), the synthesized derived re-evaluates and the target
+(§13.12.1), the synthesized derived re-evaluates and the target
 attr updates.
 
 The compiler determines reactivity from the expression's provenance
@@ -10351,7 +11137,7 @@ set: any reference to a reactive cell makes the expression
 reactive; otherwise the expression is compile-time and the value is
 fixed at placement.
 
-##### 13.7.2.2 Restrictions
+##### 13.8.2.2 Restrictions
 
 - **`const` declarations are not settable at placement.** A const's
   value is fixed by its declaration on the type; placement bodies
@@ -10360,32 +11146,36 @@ fixed at placement.
 - **`signal` declarations are not settable at placement.** Signals
   receive their values from the host/runtime, not from placement
   syntax. Their declared initial value applies at construction;
-  subsequent values come through the host API (§13.13.2).
+  subsequent values come through the host API (§13.14.2).
 - **Recurrent initial-value overrides accept only compile-time
-  values.** Unlike attrs, the placement body form for recurrents
-  (`count: 100`) does *not* accept reactive expressions. A
+  values.** Unlike attrs, the placement form for recurrents
+  (`count=100`) does *not* accept reactive expressions. A
   recurrent's initial value is a fixed compile-time constant at
   construction; runtime advancement happens via the recurrent's
   arms (§13.2.4).
 
-For attrs only, the same value may also be set via inline pipes
-(§13.7.7) or flags (§13.7.8). The three mechanisms (body form,
-pipes, flags) all target the same underlying attr cells; setting
-the same attr via two mechanisms is a compile error (duplicate-set).
+For boolean attrs, the same value may also be set via flags
+(§13.8.8). The two mechanisms (`name=value` / `name` / `!name`
+inline form, and flag form) target the same underlying attr cells;
+setting the same attr via two mechanisms is a compile error
+(duplicate-set).
 
-Reactive bindings apply to **body form and pipe form** for attrs.
-Flag form has no expression slot — a flag always sets a literal
-boolean (true for `'name`, false for `!name`) — so reactive
+Reactive bindings apply to the **`name=value` inline form** for
+attrs. Flag form has no expression slot — a flag always sets a
+literal boolean (true for `'name`, false for `!name`) — so reactive
 bindings do not apply to flags.
 
-A node type's `default attr` (§13.2.2.1) — when declared — is
-additionally settable via the positional `/expr` form (§13.7.5).
-Connection types do not have `default attr`; their `/expr` slot is
-the to-endpoint (§13.7.5.1).
+A type's `default attr` (§13.2.2.1) — when declared — is
+additionally settable via the positional `/expr` form (§13.8.5). The
+rule is uniform across nodes and connections: `/expr` targets the
+`default attr`. Connection destinations are supplied in the
+placement's body, not via `/expr` (§13.8.5.1).
 
-Pipes and flags do *not* target recurrent cells or consts.
-Recurrent initial values can be overridden only via the body form
-(with compile-time values). Consts cannot be overridden at all.
+The attribute clause and flags do *not* target consts. Consts
+cannot be overridden at placement (§13.8.2.2). Recurrent initial
+values are overridable via the same `name=value` form in the
+attribute clause, but only with compile-time-evaluable expressions
+(no reactive bindings).
 
 For recurrent cells, only the initial value is overridable at
 placement. The arm structure (triggers, guards, and `next_expr`
@@ -10396,15 +11186,16 @@ If a cell is not set at placement, its declared default (for attrs)
 or declared initial value (for recurrents) applies. Consts always
 have their type-declared value.
 
-#### 13.7.3 Child parts
+#### 13.8.3 Child parts
 
-A line beginning with a type name (no `:` immediately after the
-first identifier) declares a child placement — a part or a
-connection:
+The body of a placement (the indented block introduced by `:`) is
+reserved exclusively for child placements — parts and connections.
+Attribute settings on the enclosing instance do not appear in the
+body; they live on the placement's main line via inline attribute
+syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
 
 ```
-Component chip_b:
-  label: "B"                              // attr setting
+Component chip_b | label="B":
   Pin out1                                // child part (Pin instance named out1)
   Pin in1                                 // another child part
 ```
@@ -10440,138 +11231,115 @@ enforced at placement: the number of placed parts of each type
 must satisfy the declared cardinality. Violations are compile
 errors at the placement site.
 
-Disambiguation: a line is an *attribute setting* if it has `: expr`
-immediately after the first identifier; otherwise it is a
-*placement*.
-
-#### 13.7.4 Connections
+#### 13.8.4 Connections
 
 A connection placement creates a directional edge from a source
-instance to a destination instance. The placement form differs by
-context:
-
-- **Node-owned connection** — placed at the same level as the
-  source node instance; the source is named explicitly.
-- **Part-owned connection** — placed inside the source part's body
-  using a `->` prefix; the source is the enclosing part instance
-  implicitly.
-
-**Node-owned connection.** When the source is the immediately
-enclosing instance (a top-level placement or a parent node), the
-connection is placed as a sibling declaration inside that
-instance's body. No `->` prefix is used:
+instance to a destination instance. The placement is written inside
+the source instance's body. **The source is always the immediately
+enclosing instance** — the instance whose body directly contains the
+placement line. There is no special prefix or sigil: the source is
+determined positionally.
 
 ```
 App my_app:
   Fetcher fetcher / "url"                       // part placement
-  WiresToExternal / external_target             // node-owned conn from my_app
-                                                 // to external_target
-```
+  WiresToExternal: external_target              // source = my_app
 
-Here `WiresToExternal` originates from `my_app` (the enclosing
-instance); the source is unambiguous because the placement is
-directly inside `my_app`'s body and is not nested inside any part.
-
-**Part-owned connection.** When the source is a specific *part*
-inside a parent, the connection placement appears inside the part's
-body, prefixed with `->`. The arrow marks the line as an outbound
-edge originating from that part:
-
-```
-App my_app:
   Filter filter / "low-pass":
-    -> Cascade / next_filter                    // outbound from filter to next_filter
-    -> WiresTo / monitor | gain: 0.5            // outbound from filter to monitor
+    Cascade: next_filter                        // source = filter
+    WiresTo | gain=0.5: monitor                 // source = filter
   Filter next_filter / "high-pass"
   Monitor monitor
 ```
 
-The `->` prefix is **required** for part-owned connections and
-**not used** for node-owned connections. The distinction reflects
-where the source instance lives:
+`WiresToExternal: external_target` is placed in `my_app`'s body, so
+its source is `my_app`. `Cascade: next_filter` and
+`WiresTo | gain=0.5: monitor` are placed in `filter`'s body, so
+their source is `filter`. The rule is uniform across nesting depth;
+the depth at which the connection appears does not change how the
+source is determined.
 
-- No `->`: source is the immediately enclosing instance.
-- `->`: source is the part whose body contains this line.
+The connection type must match a type listed in the source instance's
+`out:` clause (or in the type's traits' contributions).
 
-Rationale for `->` on part-owned only:
+The destination is supplied in the connection placement's body as a
+single bare-identifier reference (§13.8.5.1). The `/expr` slot, when
+present, sets the connection's `default attr` (§13.2.2.1); the
+attribute clause (`| name=value …`) sets named attrs. None of these
+target the destination.
 
-1. **Visual delimitation.** A connection inside a part's body could
-   otherwise be mistaken for an attr setting or a nested child
-   placement. The arrow makes "outbound edge from this part"
-   immediately visible.
-2. **Reuse of `->` symbol.** `->` is already used in connection
-   declarations (`pairs: From -> To`) to denote a directional pair
-   at the type level; using `->` in placement contexts denotes a
-   directional edge at the instance level. Both share the same
-   conceptual meaning: directed flow from left to right.
-
-The connection type must match a type listed in the source
-instance's `out:` clause (or in the type's traits' contributions).
-
-In both forms, the expression after `/` is the destination
-(§13.7.5.1). Connection attrs are set via inline pipes (`| name: value`)
-or the connection's body.
-
-A placement-level `when` modifier may be attached to either form to
-gate this specific connection instance (§13.8). The modifier appears
-in the inline-parts ordering between `/Expr` and the inline pipes
-(§13.7.9).
+A placement-level `when` modifier may be attached to gate the
+connection instance (§13.9). The modifier appears in the inline-parts
+ordering between `/Expr` and the attribute clause (§13.8.9), before
+the body's `:`:
 
 ```
 // (presumes Filter declares signal_active and App declares debug_enabled)
 App my_app:
   Filter filter / "low-pass":
-    -> Cascade / next_filter when self.signal_active          // part-owned, gated on filter's own attr
+    Cascade when self.signal_active: next_filter      // gated on filter's own attr
   Filter next_filter / "high-pass"
   Monitor monitor
-  WiresTo / monitor when self.debug_enabled                   // node-owned, gated on my_app's attr
+  WiresTo when self.debug_enabled: monitor            // gated on my_app's attr
 ```
 
-**Scope of placement-level `when` on part-owned connections.** A
-placement-level `when` clause on a part-owned connection
-(`-> ConnType / dest when predicate`) evaluates in the scope of the
-*enclosing part instance*, not the connection-being-placed. The
-connection has not yet been constructed; its `self` is unavailable. To
-reference the connection's own attrs in a gate, use a type-level
-`when:` clause inside the connection's body (§13.5.1.1) instead.
+**Scope of placement-level `when`.** The `when` predicate evaluates
+in the scope of the enclosing source instance, not the
+connection-being-placed. The connection has not yet been constructed;
+its `self` is unavailable. To reference the connection's own attrs in
+a gate, use a type-level `when:` clause inside the connection type's
+body (§13.6.1.1) instead.
 
-**Scope of placement-level `when` on node-owned connections.** A
-placement-level `when` clause on a node-owned connection (e.g.,
-`WiresTo / monitor when self.debug_enabled` placed at the same level
-as the source node instance) evaluates in the scope of the *enclosing
-instance* (typically a parent node containing both source and
-destination). `self` here refers to that enclosing instance, not the
-connection-being-placed. To reference the connection's own attrs in a
-gate, use a type-level `when:` clause inside the connection's body
-(§13.5.1.1) instead.
+`self` in the predicate resolves to the enclosing source instance.
+In `Cascade when self.signal_active: next_filter` (inside `filter`'s
+body), `self.signal_active` is `filter.signal_active`. In
+`WiresTo when self.debug_enabled: monitor` (inside `my_app`'s body),
+`self.debug_enabled` is `my_app.debug_enabled`.
 
-#### 13.7.5 The `/expr` form
+##### 13.8.4.1 Terminology
+
+Connections are not "owned" by either endpoint. A connection is an
+*edge* between two instances: it is *initiated from* its source (the
+enclosing instance whose body contains the placement) and
+*terminated at* its destination (the bare-identifier reference in
+the placement's body). "Source" and "destination" are the canonical
+terms; "owner" is not.
+
+#### 13.8.5 The `/expr` form
 
 The `/expr` form appears immediately after the placed type name
-(and any flags), before any optional instance name and before any
-inline attribute pipes. The expression after `/` is the *positional
-argument* of the placement; its meaning depends on what kind of
-type is being placed.
+(and any flags), before any optional instance name and before the
+attribute clause (§13.8.7). The expression after `/` is the
+*positional argument* of the placement: it targets the placed type's
+`default attr` (§13.2.2.1), whether the placed type is a node or a
+connection. Using `/expr` on a type without a declared `default attr`
+is a compile error.
 
-##### 13.7.5.1 For connection placements
+##### 13.8.5.1 For connection placements
 
-For a connection placement, `/expr` sets the `to` endpoint slot:
+For a connection placement, `/expr` sets the connection type's
+`default attr` (when declared); the destination endpoint is supplied
+in the placement's body as a single bare-identifier reference to an
+existing instance whose type satisfies the connection's `to:` clause
+(§13.6.1.1).
 
 ```
-Drives/some_car | enhanced_handling: true | aggressiveness: 0.8
+// connection Drives: from: Driver; to: Drivable; default attr aggressiveness: f32 = 0.5
+
+Drives: some_car                          // no /expr; destination only
+Drives/0.8: some_car                      // /expr sets default attr; destination in body
+Drives | enhanced_handling=true: some_car // attr clause + destination
+Drives/0.8 | enhanced_handling=true:      // /expr + attr clause + multi-line body
+  some_car
 ```
 
-This places a `Drives` connection whose `to` endpoint is `some_car`,
-with two attrs set inline. Equivalent body form:
+The destination is a bare identifier resolving to a named instance in
+scope. Inline placement specs as destinations are not supported in v1;
+a future revision may admit them in the same body slot. The
+syntactic shape (`:` followed by a single placement) leaves room for
+that extension without further syntax changes.
 
-```
-Drives:
-  to: some_car             // endpoint-slot syntax (not an attribute)
-  enhanced_handling: true  // attribute setting
-  aggressiveness: 0.8      // attribute setting
-```
-
-##### 13.7.5.2 For node (part) placements
+##### 13.8.5.2 For node (part) placements
 
 For a node placement (typically a part placed inside a parent),
 `/expr` sets the type's `default attr` (§13.2.2.1). The expression
@@ -10587,98 +11355,138 @@ Program p1:
 ```
 
 Each `Log /"..."` placement creates a Log part with its `message`
-attr set to the string. Equivalent body form:
+attr set to the string. Equivalent inline form:
 
 ```
 Program p1:
-  Log:
-    message: "Hello World"
-  Log:
-    message: "System ready"
+  Log | message="Hello World"
+  Log | message="System ready"
 ```
 
 A node-placement `/expr` form requires the type to have a declared
 `default attr`. Using `/expr` on a node type without a `default
 attr` is a compile error.
 
-##### 13.7.5.3 Summary
+##### 13.8.5.3 Summary
 
-The `/expr` form is positional shorthand:
+The `/expr` form is positional shorthand for the type's `default
+attr` (§13.2.2.1):
 
-- On connections, it targets the `to` endpoint (always present).
-- On nodes, it targets the `default attr` (present only when the
-  type declares one).
+- On both nodes and connections, `/expr` targets the type's
+  `default attr` (when declared).
+- Connection placements additionally supply the destination as a
+  single bare-identifier reference in the placement body, introduced
+  by `:` (§13.8.5.1).
 
-#### 13.7.6 Disambiguation summary
+#### 13.8.6 Disambiguation summary
 
-Within a placement body, each non-blank line falls into one of
-three categories:
+Both node and connection placements may have a body, but the body's
+content differs by placement kind:
 
-- **Attribute setting:** `Ident : Expr`. Sets an attr of the
-  enclosing instance.
-- **Endpoint slot setting** (connection placements only):
-  `to : Expr` or `from : Expr`. Sets the connection's endpoint
-  slot rather than an attribute. The identifiers `to` and `from`
-  are reserved as endpoint slots inside connection bodies; they
-  cannot be used as attr names on connections.
-- **Placement:** the placement form (see §13.7.9 for the canonical
-  ordering of inline parts), optionally followed by `:` and an
-  indented body. Creates a child part or connection. The optional
-  `when` modifier gates the placement (§13.8).
+- **Node placement body** — the indented block after `:` on a node
+  placement line — contains child placements: parts and connections
+  (§13.8.3, §13.8.4). Multiple children allowed; same-line
+  multi-placement uses commas per §13.8.10.
+- **Connection placement body** — the indented block (or inline
+  single-line form) after `:` on a connection placement line —
+  contains exactly *one* bare-identifier reference: the destination
+  instance (§13.8.5.1). No child placements, no inline placement
+  specs, no attr settings, no multiple values.
 
-The parser distinguishes by what follows the first identifier: `:`
-(with an expression after) → attribute setting or endpoint slot
-setting (the identifier determines which: `to`/`from` inside a
-connection body resolve to endpoint slots, all other identifiers
-resolve to attr names); otherwise → placement.
+**Attribute settings do not appear in the body** of either
+placement kind; they live on the placement's main line via the
+attribute clause (`| name=value …`, §13.8.7) or aligned multi-line
+continuation per §13.8.2.
 
-#### 13.7.7 Inline attribute pipes
+The identifiers `to` and `from` are reserved as endpoint slots inside
+connection *type* bodies (§13.6.1.1); they cannot be used as attr
+names on connections, and they do not appear in connection
+*placement* bodies.
+
+A single line of a node placement body may contain multiple child
+placements separated by commas (§13.8.10). A placement that
+introduces its own children body via `:` cannot share its line with
+sibling placements; multi-line layout is required when both same-line
+siblings and `:`-introduced children are needed.
+
+The parser distinguishes attribute settings from placements
+lexically: attribute settings appear after a single leading `|` on
+the placement's main line (or on aligned continuation lines) and use
+`name=expr` form; placements use the placement form per §13.8.9.
+
+#### 13.8.7 Attribute clause
 
 After the `TypeRef` (and optional flags, instance name, and `/expr`
-slot) of any placement, zero or more attribute pipes may follow on
-the same line. Each pipe is introduced by `|`. Three syntactic
-forms:
+slot) of any placement, an attribute clause may follow on the same
+line, introduced by exactly **one leading `|`**. After the leading
+`|`, attributes are written one after another separated by
+whitespace; intermediate `|` characters between attributes are not
+permitted.
+
+Three syntactic forms within the attribute clause:
 
 ```
-| name: value      -- set attribute `name` to expression `value`
-| name             -- set boolean attribute `name` to true
-| !name            -- set boolean attribute `name` to false
+name=value         -- set attribute `name` to expression `value`
+name               -- set boolean attribute `name` to true (bare form)
+!name              -- set boolean attribute `name` to false
 ```
 
 ```
-Sensor s1 | gain: 0.5 | active | !calibrated
+Sensor s1 | gain=0.5 active !calibrated
 ```
 
-Setting the same attribute via two pipes on one placement, or via
-an inline pipe and the placement body, is a compile error
+Parentheses may be used freely around values for grouping or
+disambiguation:
+
+```
+Sensor s1 | gain=(base + offset) active
+```
+
+When the attribute clause extends across multiple lines, the
+continuation lines have no `|` and are aligned exactly to the column
+of the first attribute on the placement's main line:
+
+```
+Sensor s1 | gain=0.5
+            active
+            !calibrated
+```
+
+Multi-line continuation does not change semantics — it is purely a
+formatting variant.
+
+Setting the same attribute twice on one placement is a compile error
 (duplicate-set, parallel to the rule for record-field
 duplicate-set).
 
-Pipes target *attrs* declared on the placed type (directly or
-inherited via satisfied traits). Pipes do not target recurrent,
-derived, signal, or const declarations — targeting a non-attr
-identifier is a compile error. The expression in `| name: value`
-must match the attr's type subject to standard widening rules. The
-boolean-true (`| name`) and boolean-false (`| !name`) forms require
-the attr to be of type `bool`; non-boolean attrs used with the bare
-form are a compile error.
+Attribute settings target *attrs* declared on the placed type
+(directly or inherited via satisfied traits). They do not target
+recurrent, derived, signal, or const declarations — targeting a
+non-attr identifier is a compile error. The expression in
+`name=value` must match the attr's type subject to standard widening
+rules. The boolean-true (`name`) and boolean-false (`!name`) forms
+require the attr to be of type `bool`; non-boolean attrs used with
+those bare forms are a compile error.
 
-The expression in `| name: value` may be a compile-time constant
-*or* a reactive expression, per §13.7.2.1. A reactive expression
-in a pipe creates a synthesized derived bridging the source cells
-to the target attr — identical mechanics to the body form. All
-three setting mechanisms (body, pipe, flag) handle reactive
-bindings uniformly for attrs.
+The expression in `name=value` may be a compile-time constant *or*
+a reactive expression, per §13.8.2.1. A reactive expression creates
+a synthesized derived bridging the source cells to the target attr.
+All three forms (value, bare, negated-bare) and the flag form
+(§13.8.8) handle attr binding uniformly.
 
-#### 13.7.8 Flags
+#### 13.8.8 Flags
 
 A *flag* is a single non-letter character appearing adjacent to a
 placed type's `TypeRef` (no intervening whitespace), aliasing a
-boolean attribute of the type.
+boolean attribute of the type. **Flags apply uniformly to node and
+connection placements** — any boolean attr on a node or connection
+type may be annotated with `@flag` and set via the flag form at
+placement.
 
 ```
-Pin' p1                            // ' is a flag on Pin
-Component?* c1                      // two flags: ? and *
+Pin' p1                                // ' is a flag on Pin (node placement)
+Component?* c1                         // two flags: ? and *
+WiresTo'! my_wire: chip_b.in1          // two flags on a connection placement
 ```
 
 Flags are declared on attr declarations via the `@flag('c')`
@@ -10691,13 +11499,21 @@ node Pin:
 
   @flag('\'')
   attr is_power: bool = false
+
+connection WiresTo:
+  from: Component
+  to: Pin
+  @flag('\'')
+  attr enhanced_signal: bool = false
+  @flag('!')
+  attr reverse_polarity: bool = false
 ```
 
 The annotation argument is a `char` literal per §9.1.2. Only boolean
 attrs may carry `@flag`; non-boolean attrs with `@flag` are a
 compile error.
 
-##### 13.7.8.1 Flag character set
+##### 13.8.8.1 Flag character set
 
 The permitted flag characters are:
 
@@ -10707,25 +11523,25 @@ The permitted flag characters are:
 
 Each is a non-letter character not part of identifier syntax.
 
-##### 13.7.8.2 Flag-character uniqueness
+##### 13.8.8.2 Flag-character uniqueness
 
 Within a type's effective attribute surface (its own attrs plus
 those inherited via satisfied traits), each flag character must be
 unique. Two attrs claiming the same flag character is a compile
 error at the type declaration site, identifying both attrs.
 
-##### 13.7.8.3 Flag semantics
+##### 13.8.8.3 Flag semantics
 
 At a placement site, each flag character in the run resolves to the
 boolean attr it aliases, setting that attr to `true`. There is no
 flag form for setting `false`; users who need to override a
-default-`true` attr to `false` use the inline pipe `| !name`.
+default-`true` attr to `false` use the inline `!name` form (§13.8.7).
 
 The asymmetry — flags set true only — is deliberate. Flags are for
 the *unusual* case; the default should be chosen so most placements
 omit the flag.
 
-##### 13.7.8.4 Flag/operator disambiguation
+##### 13.8.8.4 Flag/operator disambiguation
 
 Several flag characters double as operator tokens elsewhere in the
 language:
@@ -10748,74 +11564,81 @@ let r = some_fallible()?           // postfix Try in expression context
   ...
 ```
 
-##### 13.7.8.5 No duplicate-set across forms
+##### 13.8.8.5 No duplicate-set across forms
 
 A boolean attr may be set via at most one mechanism per placement:
-the flag form, the inline pipe form (`| name` or `| !name`), or the
-body form (`name: expr`). Using two mechanisms on the same attr in
-one placement is a compile error.
+the flag form, or the inline `name` / `!name` / `name=value` form
+(§13.8.7). Using two mechanisms on the same attr in one placement
+is a compile error.
 
 ```
-Pin' p1 | reverse_polarity: false    // ✗ duplicate: ' flag and pipe both target reverse_polarity
+Pin' p1 | reverse_polarity=false    // ✗ duplicate: ' flag and inline both target reverse_polarity
 ```
 
-The diagnostic class is the same as duplicate-set for attribute
-pipes (§13.7.7).
+The diagnostic class is the same as duplicate-set for inline
+attributes (§13.8.7).
 
-#### 13.7.9 Ordering of inline parts
+#### 13.8.9 Ordering of inline parts
 
 A placement's inline parts have a fixed order:
 
 ```
-["->"]? TypeRef [FlagsRun]? [InstanceName]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrPipe]*
+TypeRef [FlagsRun]? [InstanceName]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
 ```
 
-- The optional `->` prefix marks a part-owned outbound connection
-  placement (§13.7.4). Present only when the placement is a
-  connection originating from the enclosing part. Not allowed on
-  node-owned connection placements or on node placements.
 - Flags immediately adjacent to TypeRef (no whitespace).
 - Optional instance name follows the type/flags.
-- The `/Expr` default-arg slot follows the name. For connection
-  placements, `/Expr` sets the `to` endpoint. For node placements,
-  `/Expr` sets the type's `default attr` (§13.2.2.1).
+- The `/Expr` default-arg slot follows the name. For both node and
+  connection placements, `/Expr` sets the type's `default attr`
+  (§13.2.2.1). Permitted only when the placed type declares a
+  `default attr`.
 - The optional `when` clause follows next. It gates the placement
-  (§13.8). The predicate is a boolean expression in placement scope.
+  (§13.9). The predicate is a boolean expression in placement scope.
   Use `when` to make the placement conditional. When `/Expr` is
-  absent (the node has no default attr, or the default value is not
+  absent (the type has no default attr, or the default value is not
   being overridden), `when` slots immediately after whichever
   preceding element is present.
-- Inline pipes follow last.
+- The attribute clause (§13.8.7) — a single leading `|` followed
+  by attribute settings — follows next.
+- The optional body — introduced by `:` — comes last. For node
+  placements, the body holds zero or more child placements (parts
+  and connections, §13.8.3, §13.8.4). For connection placements,
+  the body holds exactly one bare-identifier reference to the
+  destination instance (§13.8.5.1, §13.8.6). A `when` predicate
+  containing an unparenthesized `:` must be parenthesized to avoid
+  colliding with the body-introducer `:`; common predicates are
+  flat boolean expressions and do not require parens.
 
-Example (connection placement):
+Example (connection placement, default attr + flags + destination):
 
 ```
-WiresTo'! my_wire / chip_b.in1 | resistance: 50 | reverse_polarity
-^^^^^^^^                                              -- TypeRef + 2 flags
-         ^^^^^^^^                                     -- instance name
-                  ^^^^^^^^^^^^                        -- /Expr (connection target)
-                               ^^^^^^^^^^^^^^^        -- pipe 1
-                                                ^^^^^^^^^^^^^^^^^  -- pipe 2
+Drives'! my_drive / 0.8 | enhanced_handling: some_car
+^^^^^^^                                                  -- TypeRef + 2 flags
+         ^^^^^^^^                                        -- instance name
+                   ^^^                                   -- /Expr (sets default attr)
+                        ^^^^^^^^^^^^^^^^^^^^^            -- attribute clause
+                                              ^^^^^^^^^  -- destination in body
 ```
 
 Example (node placement with `default attr`):
 
 ```
-Log / "Hello World" | level: "info"
+Log / "Hello World" | level="info"
 ^^^                                       -- TypeRef
       ^^^^^^^^^^^^^^                      -- /Expr (sets default attr `message`)
-                      ^^^^^^^^^^^^^^^^^   -- pipe (sets attr `level`)
+                      ^^^^^^^^^^^^^^^^    -- attribute clause (sets attr `level`)
 ```
 
-Example (gated placement with `when`):
+Example (gated connection placement with `when` + body):
 
 ```
-Debugger d1 / target when self.verbose | level: "trace"
-^^^^^^^^                                                   -- TypeRef
-         ^^                                                -- instance name
-            ^^^^^^^^                                       -- /Expr
-                     ^^^^^^^^^^^^^^^^^                     -- when clause (predicate)
-                                          ^^^^^^^^^^^^^^^  -- pipe
+Debugger d1 / "trace" when self.verbose | level=2: target
+^^^^^^^^                                                     -- TypeRef
+         ^^                                                  -- instance name
+            ^^^^^^^^^                                        -- /Expr (default attr)
+                      ^^^^^^^^^^^^^^^^^                      -- when clause (predicate)
+                                          ^^^^^^^^^          -- attribute clause
+                                                    ^^^^^^^  -- destination in body
 ```
 
 Example (gated placement, no `/Expr`):
@@ -10826,30 +11649,75 @@ Logger when self.debug_enabled
        ^^^^^^^^^^^^^^^^^^^^^^^^^    -- when clause (no /Expr present)
 ```
 
-The `/Expr` form requires the placed type to have a valid target
-for it: connections must have a `to` endpoint type (always true);
-nodes must have a declared `default attr`. Using `/Expr` on a node
-without a `default attr` is a compile error.
+The `/Expr` form requires the placed type to have a declared
+`default attr` (§13.2.2.1) — the same rule for both node and
+connection placements. Using `/Expr` on a type without a `default
+attr` is a compile error.
 
-### 13.8 Conditional Activation
+#### 13.8.10 Same-line multi-placement
+
+Multiple placements may appear on a single line, separated by
+commas. The comma always terminates a placement at the current
+scope level — there is no context-sensitive disambiguation:
+
+```
+A3, rest, A4                              // three bare placements
+G4/4, G5/4                                // two /expr placements
+Sensor s1 | gain=0.5, Sensor s2 | gain=0.7  // two attributed placements
+```
+
+The comma rule is universal: same-line placements are *always*
+comma-separated, regardless of whether the placements have names,
+`/expr`, attribute clauses, or any combination. This removes
+parser context-sensitivity — the comma is the unambiguous
+delimiter.
+
+**A placement that introduces its own children body via `:`
+cannot share its line with sibling placements.** Such a placement
+owns the rest of its line (and the indented block that follows).
+To combine `:`-bearing children with same-line siblings, use
+multi-line layout:
+
+```
+// ✗ ambiguous and disallowed:
+//   SomePart: Child1, Child2, AnotherPart
+
+// ✓ SomePart with three inline children (no siblings on this line):
+SomePart: Child1, Child2, Child3
+
+// ✓ Same-line siblings, no `:` children:
+SomePartA, SomePartB | attr=1, SomePartC
+
+// ✓ Multi-line — `:`-bearing placement on its own line:
+SomePart:
+  Child1
+  Child2
+AnotherPart                                // sibling on next line
+```
+
+Same-line multi-placement is opt-in: one placement per line remains
+the dominant form. Same-line layout is intended for dense sequences
+(e.g., music notation) where vertical compactness aids readability.
+
+### 13.9 Conditional Activation
 
 A *gate* is a boolean predicate that conditions whether a node
 instance or a connection instance is *active*. Gates are declared
 with the `when` clause. While the predicate is true the instance
 participates in propagation; while it is false the instance is
-*inactive* and its propagation behavior is constrained per §13.8.7.
+*inactive* and its propagation behavior is constrained per §13.9.7.
 
 Gates are a language feature: the compiler reasons about the graph
 under the assumption that gates may open or close at any publish,
 and the runtime enforces gate state at edge level. Routing is not a
 host concern; it lives in the source.
 
-#### 13.8.1 Concept
+#### 13.9.1 Concept
 
 A `when` predicate is, for reactive-evaluation purposes, a derived
 expression of type `bool`: it follows the same purity rules
-(§13.2.3), provenance tracking (§13.11.1), cycle-detection rules
-(§13.10.2), and recurrent-read semantics (§13.10.4) as any other
+(§13.2.3), provenance tracking (§13.12.1), cycle-detection rules
+(§13.11.2), and recurrent-read semantics (§13.11.4) as any other
 derived. The expression forms accepted are identical. What differs
 is the structural role — the predicate's value is consumed by the
 kernel to gate propagation through the construct it modifies, not
@@ -10883,7 +11751,7 @@ Two design moves justify the clause:
   identifier for what is fundamentally a structural concern. The
   `when` keyword takes the role explicitly.
 
-#### 13.8.2 Type-level `when:`
+#### 13.9.2 Type-level `when:`
 
 A node or connection body may declare a single `when:` predicate as
 a schema member. It uses colon form, consistent with other body
@@ -10917,7 +11785,7 @@ per-type structural metadata, not behavior: two types satisfying
 the same trait may have different gates (or none at all). A trait
 declaration containing a `when:` clause is a compile error.
 
-#### 13.8.3 Placement-level `when`
+#### 13.9.3 Placement-level `when`
 
 A placement may attach a `when` modifier to override or introduce a
 gate for that specific instance. It uses no colon, consistent with
@@ -10925,8 +11793,8 @@ modifier-style clauses:
 
 ```
 Logger l1 when self.debug_enabled
-Filter f1 / "low-pass" when self.dsp_mode == DspMode::Realtime | gain: 0.5
-ShowsCount/d1 when self.from.count > 0
+Filter f1 / "low-pass" when self.dsp_mode == DspMode::Realtime | gain=0.5
+ShowsCount when self.from.count > 0: d1
 ```
 
 Parts placed inside a parent's body may carry `when` clauses
@@ -10950,21 +11818,19 @@ rule of §13.1 holds — the graph's shape is fixed at compile time).
 What `when` controls is propagation: when `self.verbose` is false,
 `l2`'s recurrents do not advance, its deriveds do not recompute,
 and its outputs do not propagate. Its cells hold their initial
-values per Model B (§13.8.7).
+values per Model B (§13.9.7).
 
-Position in the inline-parts ordering is fixed by §13.7.9: after
-`/Expr` (if present), before the inline pipes. When `/Expr` is
+Position in the inline-parts ordering is fixed by §13.8.9: after
+`/Expr` (if present), before the attribute clause. When `/Expr` is
 absent the `when` clause follows whatever element does precede it.
 
 The asymmetric punctuation between type level (`when:`) and
 placement level (`when`) reflects the underlying grammatical
 distinction. In a declaration body, members are labeled schema
 slots; the colon is the labeling marker. At a placement, modifiers
-are positional and keyword-introduced; no colon is used. The same
-distinction is what separates `from:` (a schema slot) from `->`
-(a placement-level directional sigil).
+are positional and keyword-introduced; no colon is used.
 
-#### 13.8.4 Predicate type and scope
+#### 13.9.4 Predicate type and scope
 
 The predicate must have type `bool`. A non-bool predicate is a
 compile error.
@@ -10985,7 +11851,7 @@ state binds the type to that state) are style, not correctness.
 The visibility system (`public`, `shared`, `private` — §10.1) is
 the mechanism that controls how far that coupling can leak.
 
-#### 13.8.5 Override semantics
+#### 13.9.5 Override semantics
 
 A placement-level `when` *replaces* the type-level `when` on that
 specific instance. The two predicates are not conjoined and not
@@ -11000,15 +11866,15 @@ connection Pulse:
 App my_app:
   Driver d1
   Listener l1
-  Pulse/l1                                            // gate: self.from.is_emitting
-  Pulse/l1 when self.debug_audio                      // gate: self.debug_audio (overrides type-level)
+  Pulse: l1                                           // gate: self.from.is_emitting
+  Pulse when self.debug_audio: l1                     // gate: self.debug_audio (overrides type-level)
 ```
 
 If a placement needs both predicates, the placement-level form must
 combine them explicitly:
 
 ```
-Pulse/l1 when self.from.is_emitting and self.debug_audio
+Pulse when self.from.is_emitting and self.debug_audio: l1
 ```
 
 Override is not implicit conjunction because conjunction would make
@@ -11019,7 +11885,7 @@ A placement with no `when` modifier inherits the type-level `when`,
 if any. A placement on a type with no type-level `when` and no
 placement-level `when` is unconditional — always active.
 
-#### 13.8.6 Self-conditional gates
+#### 13.9.6 Self-conditional gates
 
 A gate predicate may reference cells of the gated instance itself.
 The kernel evaluates the predicate against the cells' current
@@ -11027,7 +11893,7 @@ committed values; cyclic self-reference is well-defined: the gate
 predicate evaluates against the gated cell's *previously-committed*
 values from the prior publish. The gate-open transition is itself a
 propagation event scheduled within the publish that flips the
-predicate (per §13.8.7's snap-on-gate-open rule).
+predicate (per §13.9.7's snap-on-gate-open rule).
 
 ```
 connection WeightedEdge:
@@ -11038,9 +11904,9 @@ connection WeightedEdge:
 ```
 
 Type-level self-conditional gates on nodes are likewise allowed
-(refractory, threshold, debounce — §13.8.2 example).
+(refractory, threshold, debounce — §13.9.2 example).
 
-#### 13.8.7 Runtime semantics
+#### 13.9.7 Runtime semantics
 
 The runtime model is *Model B — frozen-when-gated, snap on
 activation*. The kernel evaluates gate state at edge level on each
@@ -11116,24 +11982,24 @@ On a gated node or connection, reads return frozen values: the
 last committed value during an active period, or the initial value
 if the instance has never been active.
 
-#### 13.8.8 Interaction with the per-publish DAG
+#### 13.9.8 Interaction with the per-publish DAG
 
-The compiler builds the reactive dependency graph (§13.10.1)
+The compiler builds the reactive dependency graph (§13.11.1)
 independent of gate state — gates do not remove edges from the
 static graph, they suspend propagation through edges at runtime.
-The per-publish DAG (§13.10.3) is constructed each publish; during
+The per-publish DAG (§13.11.3) is constructed each publish; during
 construction, gated edges contribute no dirty propagation to their
 destinations' output-affecting cells, but do contribute to input
 cells and `when` predicate provenance.
 
-A single delegating note in §13.9.2 records this: edges whose gate
+A single delegating note in §13.10.2 records this: edges whose gate
 predicate evaluates false do not propagate to destination outputs;
 the gate-open transition itself is a propagation event scheduled
 within the same publish that flips the predicate.
 
-#### 13.8.9 Interaction with `Circularity`
+#### 13.9.9 Interaction with `Circularity`
 
-Gates do not relax the `Circularity` rule (§13.10.5). Every
+Gates do not relax the `Circularity` rule (§13.11.5). Every
 topology cycle must traverse at least one connection type that
 satisfies `Circularity`, regardless of whether any edge in the
 cycle is gated. A gated edge is structurally still an edge; gate
@@ -11151,17 +12017,17 @@ connection Edge:
 // error unless at least one Edge type satisfies Circularity.
 ```
 
-#### 13.8.10 Hot reload of `when` predicates
+#### 13.9.10 Hot reload of `when` predicates
 
 Adding, removing, or modifying a `when` predicate is a
-reload-safe change (§13.14.3). The predicate is structural
+reload-safe change (§13.15.3). The predicate is structural
 metadata, not cell identity. On reload, the new predicate
 participates in the next publish; cells retain their values.
 Changes to the predicate that would have caused a state to differ
 historically are not retroactive — the new predicate takes effect
 prospectively only.
 
-#### 13.8.11 Diagnostics
+#### 13.9.11 Diagnostics
 
 The compiler emits the following diagnostic classes for `when`
 clauses. Concrete wording is implementation-defined; the classes
@@ -11176,7 +12042,7 @@ error: `when` predicate must be of type `bool`
   hint: introduce a comparison (e.g., `self.weight > 0.0`)
 ```
 
-**Multiple `when:` clauses in a single type body.** Per §13.8.2.
+**Multiple `when:` clauses in a single type body.** Per §13.9.2.
 
 ```
 error: multiple `when:` clauses in connection body
@@ -11186,7 +12052,7 @@ error: multiple `when:` clauses in connection body
   hint: at most one `when:` per type; combine predicates with `and`/`or`
 ```
 
-**`when:` in a trait declaration.** Per §13.8.2.
+**`when:` in a trait declaration.** Per §13.9.2.
 
 ```
 error: `when:` is not permitted in a trait declaration
@@ -11203,7 +12069,7 @@ error: unknown identifier `self.frobnicate` in `when` predicate
   hint: did you mean `self.activate`?
 ```
 
-**Cycle through `when` provenance.** Per §13.10.2; gate predicates
+**Cycle through `when` provenance.** Per §13.11.2; gate predicates
 participate in cycle detection identically to deriveds.
 
 ```
@@ -11214,7 +12080,55 @@ error: instantaneous cycle in reactive expressions
         eliminate the cyclic dependency
 ```
 
-### 13.9 Reactive Evaluation
+#### 13.9.12 Stdlib pattern: `When` / `Then` / `Else`
+
+The combination of `parts:` declarations, the `expose:` clause
+(§13.3.7), and per-placement `when` gates supports a canonical
+stdlib pattern for conditional activation. The stdlib provides
+`When`, `Then`, and `Else` as cooperating node types:
+
+```
+node When:
+  default attr cond: Signal[bool]
+  parts: Then!, Else?
+  expose:
+    self.parts.Then when self.cond
+    self.parts.Else when !self.cond
+```
+
+`Then` and `Else` are simple stdlib wrapper nodes; each accepts a
+single child via its `parts:` slot and re-exposes it (the same
+pattern Repeat uses with `parts: Item!` + `expose: self.parts.Item`,
+§13.5.4.1).
+
+Placement:
+
+```
+When/some_cond:
+  Then: SomeDecision
+  Else: SomeFallback
+```
+
+The placer supplies a `Then` and (optionally) an `Else` as parts
+of the `When` instance. The exposition gates each by `cond`: when
+`cond` is true the Then's child is active and the Else's child is
+inactive; when `cond` is false the roles reverse. The wrapping
+types (`Then`, `Else`) carry no other state; they are pure
+structural markers that the exposition's `when` gates discriminate.
+
+The same pattern generalizes:
+
+- A two-way `When` with no `Else` is just `When` with `Else?`
+  declared and not supplied at placement; the cond-false case has
+  no active child.
+- `Match` (sum-type-driven, multiple variants) is a future stdlib
+  node following the same pattern: `parts:` lists one wrapper per
+  variant; `expose:` gates each by the corresponding tag.
+- User-defined conditional nodes can follow the same idiom — there
+  is no kernel-aware special-casing of `When`/`Then`/`Else`. They
+  are documented stdlib types using the general mechanism.
+
+### 13.10 Reactive Evaluation
 
 The kernel processes reactive state via two operations:
 **writes** (signal/attr) accumulate dirty bits without evaluation;
@@ -11222,7 +12136,7 @@ The kernel processes reactive state via two operations:
 firing arm expressions, and swaps the back buffer atomically so that
 consumers see the new state.
 
-#### 13.9.1 Lazy writes
+#### 13.10.1 Lazy writes
 
 A write call (`kernel.write_signal`, `kernel.write_attr`, or any
 write inside `kernel.transaction`) records the new value in the
@@ -11231,7 +12145,7 @@ or recurrent advancement happens at write time.** Writes accumulate
 in the back buffer until the next `kernel.publish()`.
 
 Dirty bits are determined at publish time, not per write
-(§13.9.2 step 1). This makes value-change semantics correct under
+(§13.10.2 step 1). This makes value-change semantics correct under
 net-revert patterns: a sequence of writes that ends with the cell's
 value equal to the previous-published value produces no dirty bit
 and fires no triggers — regardless of intermediate values during
@@ -11248,7 +12162,7 @@ This decouples writes from evaluation. Multiple writes between
 publishes batch automatically: only the net change from the
 previous publish matters.
 
-#### 13.9.2 Publish
+#### 13.10.2 Publish
 
 `kernel.publish()` performs the full evaluation-and-visibility
 operation on the producer thread:
@@ -11266,7 +12180,7 @@ operation on the producer thread:
    publish. No new dirty bits are added during the rest of the
    publish cycle.
 2. **Compute evaluation order.** Topologically sort the per-publish
-   DAG (§13.10.3). Nodes in the DAG are:
+   DAG (§13.11.3). Nodes in the DAG are:
     - Dirty derived expressions.
     - Each recurrent **arm** whose triggers fired this publish. A
       multi-arm recurrent (§13.2.4) contributes one DAG node per
@@ -11279,7 +12193,7 @@ operation on the producer thread:
    (their previous-committed values), which breaks reactive cycles.
    Reads of deriveds, signals, and attrs follow normal dependency
    edges within this publish. Edges whose gate predicate evaluates
-   false do not propagate to destination outputs; see §13.8
+   false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
    gate-open transition rule.
 3. **Evaluate in topological order.** For each node in topo order,
@@ -11319,7 +12233,7 @@ Writes that occur during publish execution are forbidden (single
 producer; the producer is busy in the publish call). Writes from
 the same thread between publish calls accumulate as usual.
 
-#### 13.9.3 Topological order and tiebreaker
+#### 13.10.3 Topological order and tiebreaker
 
 Within a publish cycle, dirty deriveds and recurrent arm
 expressions evaluate in topological order over the per-publish DAG.
@@ -11341,7 +12255,7 @@ lockstep (§13.2.4.1); no internal ordering between them is
 observable, because none of them sees another's just-advanced
 value.
 
-#### 13.9.4 Transactions
+#### 13.10.4 Transactions
 
 The host may opt into transactional batching of multiple writes
 that should commit as one logical change:
@@ -11356,7 +12270,7 @@ kernel.transaction(|tx| {
 Writes within a transaction accumulate in the back buffer and
 commit atomically at transaction close. Properties:
 
-- **Panic during the closure:** trap-track semantics of §13.12.1
+- **Panic during the closure:** trap-track semantics of §13.13.1
   apply — the process aborts. There is no rollback; the back-buffer
   state at the moment of abort is irrelevant because the process
   is terminating. Atomicity of grouped writes is trivially
@@ -11378,14 +12292,14 @@ commit atomically at transaction close. Properties:
 Outside transactions, individual `kernel.write_*` calls behave as
 if each were its own one-write transaction.
 
-### 13.10 Cycle Handling
+### 13.11 Cycle Handling
 
 Cycles in Ductus's reactive graph are handled at two distinct
 layers: **reactive expression cycles** between reactive cells
 within and across nodes, and **topology cycles** between node
 instances via connection placements. Each has its own rules.
 
-#### 13.10.1 The reactive dependency graph
+#### 13.11.1 The reactive dependency graph
 
 The compiler constructs the reactive dependency graph by walking
 every `derived` expression's body and every recurrent arm
@@ -11395,9 +12309,9 @@ output cell. Signal, attr, derived, and recurrent reads all
 contribute edges.
 
 The reactive dependency graph is the basis for the per-publish DAG
-constructed each publish (§13.9.2 step 2).
+constructed each publish (§13.10.2 step 2).
 
-#### 13.10.2 Reactive expression cycle rules
+#### 13.11.2 Reactive expression cycle rules
 
 **Derived↔derived cycles are forbidden.** A cycle consisting only
 of derived-to-derived edges has no temporal delay element. Within
@@ -11440,7 +12354,7 @@ well-defined: each publish, `current` reads `previous`'s last-
 committed value, then `previous` advances to `current`'s new value
 at commit time.
 
-#### 13.10.3 The per-publish DAG
+#### 13.11.3 The per-publish DAG
 
 To evaluate a publish, the kernel constructs the *per-publish DAG*
 by treating every recurrent read as an *input* — its value is
@@ -11455,20 +12369,20 @@ reactive cycles.
 
 Reads FROM a `where` guard (its own input cells) are NOT treated as
 previous-publish inputs. The guard evaluates within the current
-publish to determine whether its arm fires (per §13.9.2 step 2). The
+publish to determine whether its arm fires (per §13.10.2 step 2). The
 two rules are not in conflict: "reads OF recurrents" refers to what
 value a recurrent cell yields when read; "reads FROM a guard" refers
 to which cells the guard's expression itself reads.
 
-The per-publish DAG is what gets topologically sorted in §13.9.2
+The per-publish DAG is what gets topologically sorted in §13.10.2
 step 2.
 
-#### 13.10.4 Recurrents as delay elements
+#### 13.11.4 Recurrents as delay elements
 
 A recurrent cell on a cycle behaves as a one-publish delay
 element: it always reads the previous-committed value, regardless
 of what its firing arm computes this publish. The end-of-publish
-commit (§13.9.2 step 4) is what advances the cell for the next
+commit (§13.10.2 step 4) is what advances the cell for the next
 publish to observe.
 
 This is the same semantic primitive used by hardware registers
@@ -11478,7 +12392,7 @@ languages (Lustre `fby`), and signal-flow audio languages
 level; the kernel requires no per-implementation convention beyond
 the `recurrent` declaration.
 
-#### 13.10.5 Topology cycles
+#### 13.11.5 Topology cycles
 
 Distinct from reactive expression cycles, a *topology cycle* is a
 cycle in the construction-time *topology graph*.
@@ -11494,7 +12408,7 @@ returning to its starting node.
 Example: instance A has a connection to B; B has a connection back
 to A. The edges A→B and B→A form a topology cycle.
 
-Topology cycles are governed by the `Circularity` trait (§13.5.5):
+Topology cycles are governed by the `Circularity` trait (§13.6.5):
 
 > Every topology cycle in the construction-time node graph must
 > traverse at least one connection whose type satisfies
@@ -11527,12 +12441,12 @@ expression cycles can exist within a single node with no
 involvement of connections. Each cycle layer has its own
 validation pass.
 
-### 13.11 The Reactivity Boundary
+### 13.12 The Reactivity Boundary
 
 The reactivity boundary determines which expressions become reactive
 and which remain ordinary computation.
 
-#### 13.11.1 Provenance tracking
+#### 13.12.1 Provenance tracking
 
 The compiler computes, for each expression, its *provenance set*:
 the set of reactive cells (signals, attrs, recurrents, derived
@@ -11543,14 +12457,14 @@ its provenance set is non-empty.
 The compiler uses provenance to:
 
 - Decide which cells to include in a derived's dependency set
-  (used by the dirty-bit propagation in §13.9.1).
+  (used by the dirty-bit propagation in §13.10.1).
 - Diagnose reactivity-where-compile-time-required errors with
   precise blame: *"value of `x` is reactive because it depends on
   signal `mouse_position` at line 14."*
 - Reject use of reactive values in positions where compile-time-
   known values are required (§2.4.2).
 
-#### 13.11.2 Functions are reactive-transparent
+#### 13.12.2 Functions are reactive-transparent
 
 A function body is not itself reactive. A function takes parameters
 as ordinary values and returns ordinary values; it has no knowledge
@@ -11569,7 +12483,7 @@ expression becomes dirty and re-evaluates. Re-evaluation re-runs
 the new concrete values; it never observes "the signal."
 
 Reactive transparency applies to `fn` declarations only. Operators
-(§13.16) are *not* reactive-transparent — they allocate cells per
+(§13.17) are *not* reactive-transparent — they allocate cells per
 instantiation and have distinct call-site semantics. The
 distinction at the call site is by callee declaration kind:
 `some_fn(my_signal)` evaluates per-emission via reactive
@@ -11585,7 +12499,7 @@ call-site syntactic difference. Use cases for `fn(Signal[T])` are
 narrow; the typical `fn` declaration uses bare `T` parameters and
 relies on reactive transparency at the call site.
 
-##### 13.11.2.1 Transitive provenance through functions
+##### 13.12.2.1 Transitive provenance through functions
 
 If a function's body reads a reactive cell directly (e.g., reads
 a signal declared at module scope), the function's return value
@@ -11607,7 +12521,7 @@ The compiler's provenance analysis is transitive — it follows
 function calls to find all reactive reads. Module-level globals
 read by called functions are included.
 
-##### 13.11.2.2 Conservative branching
+##### 13.12.2.2 Conservative branching
 
 When a function's body branches based on its arguments, the
 provenance contribution of each branch is computed independently
@@ -11619,7 +12533,7 @@ when the A branch is taken, potentially causing unnecessary
 re-evaluation. This is correct (the system never under-tracks
 dependencies) and is the standard reactive-runtime treatment.
 
-#### 13.11.3 Closures snapshot reactive values
+#### 13.12.3 Closures snapshot reactive values
 
 Per §11.10, closures capture by value (Copy types only). If a
 closure is constructed with a reactive value in scope, it captures
@@ -11640,7 +12554,7 @@ that reads the reactive cell directly (or calls a function that
 reads it). Closures are for snapshot semantics; derived expressions
 are for live reactive semantics.
 
-#### 13.11.4 Reactive cell types and storage
+#### 13.12.4 Reactive cell types and storage
 
 Reactive cells (signal, attr, recurrent, derived values) accept
 **any type**. The compiler determines the cell's storage strategy
@@ -11786,7 +12700,7 @@ collection types (`Vec[T]`, etc.) work via pool storage but each
 write involves rebuilding/replacing the collection — fine for
 batch updates, less suited for fine-grained mutations.
 
-#### 13.11.5 Reactivity vs compile-time evaluation
+#### 13.12.5 Reactivity vs compile-time evaluation
 
 A reactive value cannot be used where a compile-time-known value
 is required (§2.4.2, §2.4.4). Specifically:
@@ -11800,12 +12714,12 @@ is required (§2.4.2, §2.4.4). Specifically:
 The compiler tracks reactivity provenance to provide precise
 diagnostics for these cases.
 
-### 13.12 Error Handling in Reactive Contexts
+### 13.13 Error Handling in Reactive Contexts
 
 Ductus's two-track failure model (§8.1) applies uniformly to
 reactive contexts.
 
-#### 13.12.1 Traps abort the process
+#### 13.13.1 Traps abort the process
 
 A reactive expression — derived expression or recurrent arm
 expression — that traps during evaluation, from arithmetic
@@ -11818,7 +12732,7 @@ is no "errored cell" sentinel state at the kernel level, no
 `catch_unwind` boundary, no continuation past a trap. A trap is a
 bug, and bugs end the program.
 
-#### 13.12.2 Recoverable failures via value-track errors
+#### 13.13.2 Recoverable failures via value-track errors
 
 Programs that need to handle recoverable failures use the
 value-track error model (§8). Specifically: declare the derived's
@@ -11857,7 +12771,7 @@ recoverable errors, use the checked variants (`+?`, `-?`, etc.)
 per §4.6.4. Their results are `Option[T]` values that flow through
 the type system.
 
-#### 13.12.3 The reactive context is not an exception
+#### 13.13.3 The reactive context is not an exception
 
 The reactive evaluation context does not modify Ductus's trap
 semantics. A behavior that traps aborts the process, same as a
@@ -11865,7 +12779,7 @@ free function or function-body trap. Authors expecting graceful
 handling must use value-track errors; the language does not
 provide a hidden recovery mechanism.
 
-### 13.13 Host API
+### 13.14 Host API
 
 The kernel exposes an API for host code (the application embedding
 the kernel) to drive and observe the reactive graph. The shape of
@@ -11873,7 +12787,7 @@ the API is normative; the specific syntax in user-facing code
 depends on the host language (Rust, etc.) and is implementation-
 defined.
 
-#### 13.13.1 Lifecycle
+#### 13.14.1 Lifecycle
 
 The kernel's lifecycle proceeds in phases:
 
@@ -11890,9 +12804,9 @@ The kernel's lifecycle proceeds in phases:
    `next_expr` is NOT evaluated at startup); derived cells are
    computed by evaluating their expression bodies; `when` predicates
    are evaluated to determine each instance's initial gate state.
-   Placement-level `when` predicates (§13.8.3) are evaluated
+   Placement-level `when` predicates (§13.9.3) are evaluated
    alongside type-level `when:` predicates in the same topological
-   pass; placement-level overrides type-level per §13.8.5 with the
+   pass; placement-level overrides type-level per §13.9.5 with the
    placement's predicate evaluating in its placement scope rather
    than the type's `self` scope. The kernel does not separate this
    work into per-declaration-kind phases; the topological sort
@@ -11929,7 +12843,7 @@ sentinel (or block, per implementation choice).
 6. Deallocate the reactive state buffer.
 7. Kernel is terminated. Subsequent consumer swaps return a sentinel.
 
-#### 13.13.2 `kernel.write_signal`
+#### 13.14.2 `kernel.write_signal`
 
 A single overloaded call, dispatched by arity:
 
@@ -11966,7 +12880,7 @@ Signal IDs and instance IDs are obtained at compile time from the
 graph specification (each signal and each placement has a stable ID
 assigned during compilation, per §15.4).
 
-#### 13.13.3 `kernel.write_attr`
+#### 13.14.3 `kernel.write_attr`
 
 ```
 kernel.write_attr(instance_id, attr_id, value)
@@ -11983,13 +12897,13 @@ The same call applies to attrs declared on node instances or
 connection instances — both kinds of instance live in the same ID
 space.
 
-#### 13.13.4 `kernel.publish`
+#### 13.14.4 `kernel.publish`
 
 ```
 kernel.publish()
 ```
 
-Performs the complete publish operation specified in §13.9.2:
+Performs the complete publish operation specified in §13.10.2:
 evaluates dirty deriveds and recurrent arm expressions in
 topological order, commits recurrent advancements, and atomically
 swaps the back buffer pointer (§14.3.3.1) so consumers see the new
@@ -12009,7 +12923,7 @@ may publish per audio block; UI hosts may publish per frame;
 event-driven hosts may publish per event. The kernel imposes no
 cadence.
 
-#### 13.13.5 `kernel.transaction`
+#### 13.14.5 `kernel.transaction`
 
 ```
 kernel.transaction(|tx| {
@@ -12023,13 +12937,13 @@ Provides atomic grouping of writes.
 The transaction's closure executes synchronously. Writes accumulate
 in the back buffer and commit atomically at closure completion. The
 full semantic rules for atomicity, panic-on-abort, nesting flattening,
-and `tx.abort()` rollback are specified in §13.9.4; the API surface
+and `tx.abort()` rollback are specified in §13.10.4; the API surface
 here is the syntactic invocation form. Transactions provide
 *atomicity of grouped writes*; dirty cells remain dirty until the
 next `kernel.publish()`, which performs evaluation and consumer
 visibility.
 
-#### 13.13.6 `kernel.swap`
+#### 13.14.6 `kernel.swap`
 
 ```
 kernel.swap() -> BufferView
@@ -12049,13 +12963,13 @@ Consumers may hold multiple views concurrently if needed; the
 triple-buffer arrangement allows the producer to continue
 publishing without disturbing held views.
 
-### 13.14 Hot Reload of the Reactive Graph
+### 13.15 Hot Reload of the Reactive Graph
 
 The kernel supports hot reload of the reactive graph when the host
 provides updated source code (per §14.9). The reactive system's
 specific hot reload semantics are as follows.
 
-#### 13.14.1 Compile-time validation gate
+#### 13.15.1 Compile-time validation gate
 
 Before any kernel-side action occurs, the new source must compile
 under the full Ductus type system (§§1–12) and reactive system
@@ -12068,7 +12982,7 @@ This ensures the kernel never enters a state where compiled
 behaviors reference cells that no longer exist or have changed
 type.
 
-#### 13.14.2 Cell identity across reloads
+#### 13.15.2 Cell identity across reloads
 
 Reactive cells are identified across reloads by their *fully-
 qualified declaration path*: the dotted sequence of module path,
@@ -12077,7 +12991,7 @@ example, `audio.synth_a.osc_1.frequency`. The wire-format syntax for
 declaration paths is specified in §15.4.1.1.
 
 For anonymous or duplicated sibling placements (rare; the language
-encourages explicit naming per §13.7), the compiler appends an
+encourages explicit naming per §13.8), the compiler appends an
 ordinal suffix `:N` where N is the declaration-order index among
 siblings of the same type at the same nesting depth (zero-based).
 
@@ -12095,7 +13009,7 @@ declared initial value or default.
 When a cell exists in both but with different type, it is treated
 as removal of the old + addition of the new.
 
-#### 13.14.3 Reload sequence
+#### 13.15.3 Reload sequence
 
 The kernel performs the reload atomically on the producer thread,
 in the following order:
@@ -12128,14 +13042,14 @@ in the following order:
 10. Release the reload lock. Resume signal/attr writes; apply any
     queued writes to the new state.
 
-Changes to `when` predicates (added, removed, or modified — §13.8)
+Changes to `when` predicates (added, removed, or modified — §13.9)
 are reload-safe. The predicate is structural metadata, not cell
 identity; the new predicate participates in the next publish, and
 cells retain their values across the reload. The new predicate
 takes effect prospectively — historical gate state is not
 recomputed.
 
-#### 13.14.4 Constraints on reloadability
+#### 13.15.4 Constraints on reloadability
 
 Some changes are not safely hot-reloadable in place and require a
 restart — either full-kernel or per-instance, depending on the change:
@@ -12152,7 +13066,7 @@ restart — either full-kernel or per-instance, depending on the change:
     - Changes to a cell's `= initial` expression in a way that would
       alter its current state semantics.
 
-  See §13.16.10 for full operator-reload rules. **Per-instance
+  See §13.17.10 for full operator-reload rules. **Per-instance
   restart** suffices: the affected operator instances are
   recreated; the rest of the kernel continues without restart.
 
@@ -12161,14 +13075,14 @@ reject the reload or schedule the appropriate restart (full-kernel
 or per-instance). The kernel diagnoses which class of change
 occurred.
 
-### 13.15 Interaction with the Implementation (§14)
+### 13.16 Interaction with the Implementation (§14)
 
 §13 specifies the reactive system's source-level semantics; §14
 specifies the implementation model. Cross-references:
 
 - Reactive cells (signal, attr, recurrent, derived) live in the
   triple-buffered reactive state buffer per §14.3. Single-cell
-  types (per §13.11.4) map to single AtomicI64 cells.
+  types (per §13.12.4) map to single AtomicI64 cells.
 - The producer role per §14.7 is the kernel's reactive evaluation
   thread. It applies host writes to the back buffer, runs publish
   cycles (recurrent arm evaluation, derived behavior
@@ -12187,12 +13101,12 @@ specifies the implementation model. Cross-references:
   the kernel needs to construct the reactive state buffer, build
   dependency edges, distinguish attr cells from recurrent cells,
   and dispatch behaviors.
-- Hot reload at the source level (§13.14) maps to the §14.9
+- Hot reload at the source level (§13.15) maps to the §14.9
   mechanism: the kernel diffs behaviors and cells between old
   and new compiled output, applies the diff atomically, and
   publishes.
 
-### 13.16 Operators
+### 13.17 Operators
 
 An *operator* is a reusable, cell-allocating reactive transformation
 declared with the `operator` keyword. Operators take `Signal[T]`
@@ -12203,14 +13117,14 @@ primary mechanism for composing reactive transformations.
 
 Operators are distinct from `fn` declarations:
 
-- `fn` is reactive-transparent (§13.11.2). It takes value
+- `fn` is reactive-transparent (§13.12.2). It takes value
   parameters, returns values, and allocates no cells.
 - `operator` is *not* reactive-transparent. It takes cell
   references (`Signal[T]`), allocates internal cells per
   instantiation, and is wired into the reactive graph at the call
   site.
 
-#### 13.16.1 Concept
+#### 13.17.1 Concept
 
 Stateless operators wrap a pure projection over a source cell:
 
@@ -12231,7 +13145,7 @@ operator smooth(source: Signal[f32], rate: f32 = 0.1, clock: Signal[u64]) -> Sig
 Each instantiation of a stateful operator creates fresh internal
 cells; multiple call sites do not share state.
 
-#### 13.16.2 Declaration
+#### 13.17.2 Declaration
 
 ```
 operator name[GenericParams]?(params...) -> Signal[T]:
@@ -12241,7 +13155,7 @@ operator name[GenericParams]?(params...) -> Signal[T]:
 - `name` is a snake_case identifier.
 - `GenericParams` are optional type parameters with optional trait
   bounds (§3, §5).
-- `params` is a comma-separated parameter list (§13.16.3).
+- `params` is a comma-separated parameter list (§13.17.3).
 - The return type is always `Signal[T]` for some value type `T`.
 - The body is a sequence of reactive declarations (recurrents,
   deriveds) followed by a final expression that becomes the output.
@@ -12249,7 +13163,7 @@ operator name[GenericParams]?(params...) -> Signal[T]:
 Operators may carry visibility modifiers (`public`, `shared`,
 `private`) per §10.
 
-#### 13.16.3 Parameters
+#### 13.17.3 Parameters
 
 Operator parameters are of two kinds, distinguished by declared
 type:
@@ -12301,12 +13215,12 @@ relaxation.
 - Cells passed to `Signal[T]` parameters bind directly.
 - Values passed to `T` parameters are evaluated and snapshotted.
 
-##### 13.16.3.1 Signal[T] auto-deref in expression contexts
+##### 13.17.3.1 Signal[T] auto-deref in expression contexts
 
 When an expression context requires a value of type `T` and the
 supplied expression has type `Signal[T]`, the compiler implicitly
 inserts a read of the cell — `signal` is dereferenced to its current
-value. The provenance tracking (§13.11.1) records the cell read as a
+value. The provenance tracking (§13.12.1) records the cell read as a
 dependency, so the surrounding expression becomes reactive on changes
 to that cell.
 
@@ -12327,7 +13241,7 @@ is bound without dereferencing.
 The auto-deref is a compile-time mechanism; no runtime cost beyond
 the cell read itself.
 
-#### 13.16.4 Body
+#### 13.17.4 Body
 
 The operator body is a sequence of reactive declarations followed
 by a final expression. Permitted body items:
@@ -12362,7 +13276,7 @@ output. If the type is already `Signal[T]` (e.g., a named recurrent
 or derived in the body), that cell is the output directly — no
 synthesis needed.
 
-#### 13.16.5 Output
+#### 13.17.5 Output
 
 Every operator returns a single `Signal[T]`. For multiple outputs,
 return a record or tuple type:
@@ -12396,7 +13310,7 @@ project early into stable derived cells, or expose distinct
 cells from the source. (See §13.2.8 for details on `Signal[T]`
 field access.)
 
-#### 13.16.6 Instantiation
+#### 13.17.6 Instantiation
 
 Two equivalent call-site syntaxes:
 
@@ -12444,7 +13358,7 @@ sites of the same operator do not share state. The compiler emits
 one allocation set per call site at compile time; the reactive
 state buffer reserves space for each instance's internal cells.
 
-##### 13.16.6.1 Operator instance identity
+##### 13.17.6.1 Operator instance identity
 
 An operator instance is identified by its enclosing scope, the
 operator name, and its argument bindings. Two `|>` chains in
@@ -12454,11 +13368,11 @@ state.
 
 Operator instances do not have user-assignable names. Assigning an
 operator's output to a `let` binding names the *output cell*, not
-the instance. For reload-identity purposes (§13.16.10), the same
+the instance. For reload-identity purposes (§13.17.10), the same
 identity scheme is used, with tolerance for positional moves within
 the same scope; the binding name has no role.
 
-##### 13.16.6.2 Graph specification
+##### 13.17.6.2 Graph specification
 
 Operator instances contribute to the kernel's graph specification
 (§15.4) the same way node placements and connection placements do.
@@ -12472,7 +13386,7 @@ recursion through operators is forbidden (an operator may not
 transitively instantiate itself), so the static count of operator
 instances is bounded and known.
 
-#### 13.16.7 The `|>` operator
+#### 13.17.7 The `|>` operator
 
 `|>` is the operator-application token. Its semantics:
 
@@ -12527,7 +13441,7 @@ operator some_op(source: Signal[f32]) -> Signal[f32]:
   some_fn(source)
 ```
 
-#### 13.16.8 Generic operators
+#### 13.17.8 Generic operators
 
 Operators may take type parameters with optional trait bounds:
 
@@ -12546,7 +13460,7 @@ Type parameters are resolved at the call site from argument types;
 explicit instantiation is supported via turbofish syntax where
 inference is ambiguous.
 
-#### 13.16.9 Visibility
+#### 13.17.9 Visibility
 
 Operators carry the standard three-level visibility (§10): `public`,
 `shared` (default), `private`. Module-private operators are not
@@ -12560,10 +13474,10 @@ private operator internal_helper(source: Signal[i32]) -> Signal[i32]:
   ...
 ```
 
-#### 13.16.10 Hot reload of operators
+#### 13.17.10 Hot reload of operators
 
 An operator instance is a scoped reload boundary. Within an
-instance, the cell-identity rules of §13.14.3 apply: each internal
+instance, the cell-identity rules of §13.15.3 apply: each internal
 cell is identified by its declared name and type within the
 operator body.
 
@@ -12574,11 +13488,11 @@ operator body.
   recurrent/derived reload safety.
 - Adding a new internal cell — new cells are initialized fresh.
 
-**Reload-unsafe changes** are handled per §13.14.4: operator-specific
+**Reload-unsafe changes** are handled per §13.15.4: operator-specific
 cases (signature changes, internal cell type changes) trigger
 per-instance restart — only the affected operator instances are
 recreated, not the whole kernel. Other reload-unsafe changes
-(buffer-layout relocation per §13.14.4) require full-kernel restart.
+(buffer-layout relocation per §13.15.4) require full-kernel restart.
 
 The reload-unsafe operator changes are:
 
@@ -12614,9 +13528,9 @@ body — the reload uses syntactic order to match old to new
 instances. Adding a third identical call between them treats the
 new call as fresh; the existing two preserve state.
 
-#### 13.16.11 Interaction with other reactive features
+#### 13.17.11 Interaction with other reactive features
 
-**With `when` clauses (§13.8):** an operator instance has no
+**With `when` clauses (§13.9):** an operator instance has no
 `when` predicate of its own. To gate an operator's effect, gate
 its output cell or its consumer. The author can also write a
 gated wrapper operator that conditionally falls through:
@@ -12627,29 +13541,29 @@ operator conditional_smooth(source: Signal[f32], gate: Signal[bool], clock: Sign
   effective
 ```
 
-**With cycles (§13.10):** operator-internal cells participate in
+**With cycles (§13.11):** operator-internal cells participate in
 the same cycle-detection rules. A recurrent inside an operator
 acts as a delay element identical to a top-level recurrent.
 
-**With the per-publish DAG (§13.10.3):** each operator instance's
+**With the per-publish DAG (§13.11.3):** each operator instance's
 internal cells contribute their evaluation nodes to the per-publish
 DAG. Operators do not cross publish boundaries — all internal
 evaluation happens within a single publish.
 
-**With reactive transparency (§13.11.2):** operator bodies are
+**With reactive transparency (§13.12.2):** operator bodies are
 *not* reactive-transparent. Reading a cell-bound parameter reads
 through the reactive engine (provenance tracked at the call site).
 Calls to other operators inside the body create further
 instantiations; calls to `fn`s inside the body remain
 reactive-transparent in the standard way.
 
-**With dynamic-size types (§13.11.4, §14.3.5):** operator-internal
+**With dynamic-size types (§13.12.4, §14.3.5):** operator-internal
 recurrents may hold dynamic-size types (`Vec[T]`, etc.). Storage
 follows the same pool-with-handle mechanism. The operator's
 instance-specific allocation contributes to per-type pool sizing
 in graph specification.
 
-#### 13.16.12 Diagnostics
+#### 13.17.12 Diagnostics
 
 Normative diagnostic classes for operator usage:
 
@@ -12967,7 +13881,7 @@ swap itself is O(1).
 The "copy" here refers to the producer's carry-forward of unchanged
 cells from the previous-current buffer to the back buffer, not a
 re-copy of dirty cells. Dirty cells were written into the back buffer
-incrementally between publishes per §13.9.1; the publish operation
+incrementally between publishes per §13.10.1; the publish operation
 copies forward only the cells the producer did not touch (so the new
 back buffer is a complete snapshot). This carry-forward is O(N) in the
 buffer size; the atomic swap itself is O(1).
@@ -12977,7 +13891,7 @@ atomic operation. This cost is paid on the producer side, not on
 the consumer side; consumers are unaffected.
 
 When the producer chooses to publish (the trigger is specified in
-§13.9 — the kernel's evaluation cycle) is outside the scope of this
+§13.10 — the kernel's evaluation cycle) is outside the scope of this
 section.
 
 ##### 14.3.3.2 Swap operation
@@ -13028,7 +13942,7 @@ the full per-publish cost for those cells.
 #### 14.3.5 Extensible pools for dynamic-size types
 
 Dynamic-size cell types (`Vec[T]`, `SmallVec[T; N]`, `RingBuf[T; N]`,
-`string`, etc., per §13.11.4) cannot live directly in the fixed-size
+`string`, etc., per §13.12.4) cannot live directly in the fixed-size
 cell slots. Their storage uses **extensible pools** alongside the
 reactive state buffer.
 
@@ -13167,7 +14081,7 @@ The mechanism (§14.3.3, §14.7) does not depend on the mapping choice.
 Each reactive behavior — a `derived` expression body or a `recurrent`
 arm body — is exposed to the kernel via a uniform **behavior ABI**.
 Functions called from reactive bodies are reactive-transparent per
-§13.11.2: they compile to ordinary Rust functions (per §15.5) reached
+§13.12.2: they compile to ordinary Rust functions (per §15.5) reached
 transitively from the registered behaviors, not as separately-registered
 behaviors of their own.
 
@@ -13221,14 +14135,14 @@ only within the behavior's invocation; they do not escape.
 
 #### 14.6.3 Error handling
 
-Behaviors follow Ductus's two-track failure model per §13.12:
+Behaviors follow Ductus's two-track failure model per §13.13:
 trap-track failures (arithmetic overflow under default operators,
 division by zero, out-of-range indices, explicit `panic`) abort the
 process; recoverable conditions are expressed as value-track
 `Option`/`Result` values flowing through the type system. The
 kernel does not isolate behavior traps — there is no `catch_unwind`
 boundary, no errored-cell sentinel, no continuation past a trap.
-See §13.12.1 for full rules and worked examples; the same semantics
+See §13.13.1 for full rules and worked examples; the same semantics
 apply uniformly to all behaviors invoked by the producer.
 
 #### 14.6.4 Behavior identity
@@ -13277,7 +14191,7 @@ The triple-buffer mechanism (§14.3.3) operates in terms of two roles:
   do not go through the triple-buffer pointer swap. What the
   producer writes (signal/attr updates from host API, derived and
   recurrent arm expression results) and what triggers it to publish
-  are specified in §13.9.
+  are specified in §13.10.
 - **Consumer**: the role that reads the current buffer via the swap
   operation. Loads the current pointer and reads cells from the
   buffer it points to. Never writes; never invokes behaviors. There
@@ -13290,7 +14204,7 @@ permitted to do, how the two coordinate via the triple buffer, and
 the costs of the swap and publish operations. The mapping of roles
 to physical threads and the choreography of what the producer does
 between publishes are implementation-defined; the trigger that
-initiates a publish is specified in §13.9 (the kernel's evaluation
+initiates a publish is specified in §13.10 (the kernel's evaluation
 cycle).
 
 #### 14.7.1 Thread-safety properties of the mechanism
@@ -13317,11 +14231,11 @@ depend on the mapping choice.
 
 Reactive behaviors (derived expression bodies and recurrent arm
 expressions) are invoked by the producer. Functions called from
-reactive contexts are reactive-transparent per §13.11.2 and reached
+reactive contexts are reactive-transparent per §13.12.2 and reached
 transitively from registered behaviors; they are not themselves
 separately invoked by the producer. The trigger, the selection of
 which behaviors are invoked, and the ordering of invocations within
-a publish cycle are all specified in §13.9.
+a publish cycle are all specified in §13.10.
 
 The behavior ABI (§14.6) is the contract between the producer and
 each invoked behavior. Each invocation receives a kernel handle
@@ -13393,14 +14307,14 @@ inconsistent state.
 #### 14.8.5 Drop on reactive cells
 
 The kernel manages drop for reactive cells. When a node or connection
-instance is removed (removal mechanics are specified in §13.14), its
+instance is removed (removal mechanics are specified in §13.15), its
 attr and derived cells are dropped per their type's `Drop` impl.
 Initial declarations (signals declared at program startup) live for the
 program's lifetime; their cells are dropped at program shutdown.
 
 #### 14.8.6 Drop and triple-buffer eviction for dynamic-size cells
 
-Dynamic-size cells (per §13.11.4 and §14.3.5) require eviction
+Dynamic-size cells (per §13.12.4 and §14.3.5) require eviction
 ordering across triple-buffer rotation. When the kernel commits a
 new value for a dynamic-size cell, the previous value is still
 referenced by the rotating-out buffer slot until rotation makes
@@ -13465,11 +14379,11 @@ file changes:
    whose IDs are present only in the old program are *removed*;
    behaviors present only in the new program are *added*; behaviors
    present in both are *carried over* unchanged.
-   3b. **Cell identity (§13.14.2).** The kernel computes the cell-diff
+   3b. **Cell identity (§13.15.2).** The kernel computes the cell-diff
    by fully-qualified declaration path. Cells with matching path and
    type carry forward (preserving values); new cells are added;
    removed cells are dropped per §14.8.
-   3c. **Operator instance identity (§13.16.10).** Operator instances
+   3c. **Operator instance identity (§13.17.10).** Operator instances
    are matched by (enclosing scope, operator name, argument bindings)
    with tolerance for positional moves within the same scope. Matched
    instances preserve their internal cell state via 3b; unmatched
@@ -13508,11 +14422,11 @@ values, and derived cached values are unchanged unless the source
 explicitly changes them. The graph topology persists.
 
 Operator instance state is preserved across reload by the
-operator-instance-identity scheme of §13.16.10 (matched by enclosing
+operator-instance-identity scheme of §13.17.10 (matched by enclosing
 scope, operator name, and argument bindings, with tolerance for
 positional moves within the same scope). Matched instances preserve
 their internal cell state via the same cell-identity mechanism
-(§13.14.2) used for top-level cells.
+(§13.15.2) used for top-level cells.
 
 #### 14.9.3 Reload-safe and reload-unsafe changes
 
@@ -13525,24 +14439,24 @@ Changes safe to hot reload:
 - Adding new signals, attrs, derived declarations.
 
 Changes unsafe for in-place hot reload fall into two classes per
-§13.14.4:
+§13.15.4:
 
 - **Full-kernel restart** is required for changes to the reactive
   state buffer layout that would require relocating live cells.
 - **Per-instance restart** is sufficient for operator-specific
   cases (operator signature changes, internal cell type changes
-  per §13.16.10); only the affected operator instances are
+  per §13.17.10); only the affected operator instances are
   recreated, not the whole kernel.
 
 All other changes — including cell removal (which the new source's
 compile gate verifies is unreferenced), cell type changes (handled
-via remove + add per §13.14.2), and connection topology changes
-(handled via remove + add per §13.14.2) — are reload-safe and need
+via remove + add per §13.15.2), and connection topology changes
+(handled via remove + add per §13.15.2) — are reload-safe and need
 no restart.
 
 The implementation diagnoses unsafe changes at reload time and
 either rejects them (kernel keeps running old version) or applies
-the appropriate restart — full-kernel or per-instance per §13.14.4
+the appropriate restart — full-kernel or per-instance per §13.15.4
 — cleanly. The choice is implementation-defined.
 
 #### 14.9.4 Reload failure
@@ -13717,7 +14631,7 @@ The specification is a structured record with the following fields.
 - `cadence_hint` (optional): one of `realtime`, `bounded`, or `lazy`
   (§15.4.1.3).
 - `initial_value` (optional): the compile-time initial value for
-  reactive-safe initializers per §13.7.2.1.
+  reactive-safe initializers per §13.8.2.1.
 - `size`, `alignment`: derived from `type`, recorded explicitly for
   cross-implementation interop.
 
@@ -13727,7 +14641,7 @@ The specification is a structured record with the following fields.
 - `to`: destination instance's fully-qualified path (or `null` for
   sink-side connections).
 - `connection_type`: the connection's declared type.
-- `attrs`: ordered list of `(name, value)` pairs (§13.7.4).
+- `attrs`: ordered list of `(name, value)` pairs (§13.8.4).
 - `when` (optional): gate predicate, encoded as a behavior ID and
   its input-cell list.
 
@@ -13770,12 +14684,12 @@ top-level instance `synth_a`, nested part `osc_1`, attr
 
 The path is derived deterministically from source: nesting plus
 declared instance/cell names. The syntax is identical to that of
-§13.14.2 (cell identity across reloads); the two are the same
-mechanism: §13.14.2 specifies hot-reload identity in source-level
+§13.15.2 (cell identity across reloads); the two are the same
+mechanism: §13.15.2 specifies hot-reload identity in source-level
 terms, §15.4.1.1 specifies the wire format.
 
 For anonymous or duplicated sibling placements (rare; the language
-encourages explicit naming per §13.7), the compiler appends an
+encourages explicit naming per §13.8), the compiler appends an
 ordinal suffix `:N` where N is the declaration-order index among
 siblings of the same type at the same nesting depth (zero-based).
 
@@ -13837,7 +14751,7 @@ analysis (§14.1.1 step 4). Defaults:
 | `attr` on a node/connection instance          | `cross_thread_snapshot`     |
 | `recurrent` on a node/connection instance     | `cross_thread_snapshot`     |
 | `derived` reactive cell                       | `cross_thread_snapshot`     |
-| Stdlib single-cell types per §13.11.4         | `cross_thread_atomic`       |
+| Stdlib single-cell types per §13.12.4         | `cross_thread_atomic`       |
 | Local `let`/`mut` inside a function body      | not in the graph spec (§14.4 — non-reactive) |
 | Closure captures, function parameters         | not in the graph spec       |
 
@@ -13850,7 +14764,7 @@ upgrade observability — a `confined` cell becoming
 
 The default `cadence_hint` follows from the declaration's enclosing
 graph context: cells declared inside placements that participate in
-the kernel's evaluation cycle (§13.9) get `realtime`; cells on
+the kernel's evaluation cycle (§13.10) get `realtime`; cells on
 non-realtime paths get `bounded`.
 
 #### 15.4.2 Canonical serialization
@@ -14065,7 +14979,7 @@ diff algorithm computes the changes the kernel applies.
 
 This section specifies the diff algorithm and its result format. The
 kernel's mechanics for applying the diff are §14.9; the source-level
-identity rules the diff implements are §13.14.
+identity rules the diff implements are §13.15.
 
 #### 15.7.1 Diff algorithm
 
@@ -14073,7 +14987,7 @@ The diff is computed entry-by-entry across each artifact field of
 the graph specification:
 
 - **Cells.** Matched by `id` (the fully-qualified declaration path
-  of §15.4.1.1, identical to §13.14.2). Outcomes:
+  of §15.4.1.1, identical to §13.15.2). Outcomes:
     - Same `id`, same `type` → **carried over** (kernel preserves cell
       value).
     - Same `id`, different `type` → **changed** (drop + re-allocate;
@@ -14098,14 +15012,14 @@ the graph specification:
 
 #### 15.7.2 Reload classification
 
-The diff classifies the overall change set per §13.14.4 into one of
+The diff classifies the overall change set per §13.15.4 into one of
 three categories:
 
 - **Reload-safe** — applied in place per §14.9 (hot reload).
 - **Per-instance restart required** — operator-specific reinit per
-  §13.16.10.
+  §13.17.10.
 - **Full-kernel restart required** — buffer-layout relocation per
-  §13.14.4.
+  §13.15.4.
 
 The classification is computed from the diff alone; the kernel does
 not need to re-parse source.
