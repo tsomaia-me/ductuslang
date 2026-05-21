@@ -9076,10 +9076,11 @@ recurrent counter: i32 = counter.previous(0) + step_value
 recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)
 //   [2] permits up to 2-step lookback.
 
-// Moving average over last 3
-recurrent[3] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
-//   .past on `input` (an upstream stream — see §13.18.8) allocates
-//   per-input history. Output history [3] is for `avg.past(...)` if used.
+// Moving average over last 3 commits of `input`
+recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
+//   `input` is an input signal; .past on it allocates per-input
+//   history (2 slots for k up to 2). Output [N] default to 1 here
+//   since the expression doesn't use `avg.past(...)`. See §13.2.4.3.
 ```
 
 **Triggers are implicit from non-self references.** A recurrent
@@ -9150,33 +9151,64 @@ Use `attr` for parameters, configuration, and host-controlled
 inputs. Use `recurrent` for cells that carry computed values that
 depend on their own past.
 
-##### 13.2.4.3 Self-history access
+##### 13.2.4.3 Self-history and input-history access
 
-Inside a recurrent's expression, the cell's past values are accessed
-via two methods on the cell's own name:
+Inside a recurrent's expression, past values are accessed via two
+methods on a cell's name:
 
 ```
-name.previous(fallback)         // one step back; sugar for .past(1, fallback)
-name.past(k, fallback)          // k steps back; k must be 1..N (the declared depth)
+cell_name.previous(fallback)         // one step back; sugar for .past(1, fallback)
+cell_name.past(k, fallback)          // k steps back
 ```
 
-- `k` must be a positive integer literal between 1 and N inclusive
-  (where N is the recurrent's declared `[N]` depth, defaulting to 1).
-- `fallback` is an expression of the cell's value type, returned when
-  fewer than k commits have happened (i.e., not enough history
-  exists).
+These accessors work on two distinct subjects:
+
+- **Self-history** — the recurrent's own past values. `name.past(k,
+  fallback)` reads the recurrent's value k publishes ago. `k` is
+  bounded by the declared `[N]` depth (defaulting to 1): `k > N` is a
+  compile error.
+- **Input history** — past values of any reactive cell referenced in
+  the expression. `input_cell.past(k, fallback)` reads that input's
+  value k commits ago. The compiler scans the expression for
+  `.past(k, ...)` calls per input cell and allocates the maximum
+  observed `k` of history per input. Inputs not accessed via `.past`
+  add no history overhead.
+
+This is symmetric with stream recurrents (§13.18.8.4) — the same
+mechanism applies; the difference is signals contribute commits and
+streams contribute events.
+
+```
+// Self-history only
+recurrent counter: i32 = counter.previous(0) + 1
+
+// Input history — moving average over last 3 commits of `input`
+recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
+// `input` is an input signal; the compiler allocates 2 slots of history
+// for it (max k referenced = 2). Output history defaults to [1].
+
+// Both — self-feedback with input lookback
+recurrent[2] smoothed: f32 =
+  0.5 * smoothed.past(1, 0.0) + 0.3 * input + 0.2 * input.past(1, 0.0)
+```
+
+Common rules:
+
+- `k` must be a positive integer literal. Non-literal expressions
+  are rejected at parse time.
+- `fallback` is an expression of the accessed cell's value type,
+  returned when fewer than `k` commits have happened.
 - Each `.previous` / `.past` call is an ordinary function call.
-  Multiple calls within the same expression with different
-  fallbacks are independent — each returns its own fallback when no
-  history exists.
+  Multiple calls on the same cell with different fallbacks are
+  independent — each returns its own fallback when no history
+  exists.
 
-`name.past(k, fallback)` with `k > N` is a compile error: the cell's
-history allocation cannot hold that many past values.
-
-Bare references to the cell's own name in its expression are not
-permitted (compile error). Past-value access must go through the
+Bare references to the recurrent's own name in its expression are
+not permitted (compile error). Self-past access must go through the
 explicit `.previous`/`.past` accessors. References to OTHER cells
-(non-self) use bare names normally.
+(non-self) use bare names normally for their current values;
+`.previous(fallback)` / `.past(k, fallback)` on those names access
+their history.
 
 ##### 13.2.4.4 Value-change semantics
 
@@ -9203,7 +9235,7 @@ and `derived`:
 - **Module-level** — declared at module top level. One cell shared
   across the program. References use the bare name (no `self.`
   prefix). Useful for global stateful counters, accumulators, or
-  state machines driven by module-level signals.
+  state machines whose inputs are module-scope reactive cells.
 - **Node-level** — declared inside a node body. Per-instance.
 - **Connection-level** — declared inside a connection body.
   Per-instance per-connection.
@@ -9235,11 +9267,11 @@ values:
 signal source: f32 = 0.0
 signal noise: f32 = 0.01
 
-fn kalman_step(mean: f32, variance: f32, source: f32, noise: f32) -> (f32, f32):
-  let gain = variance / (variance + noise)        // computed once per call
+fn kalman_step(prev_mean: f32, prev_variance: f32, source: f32, noise: f32) -> (f32, f32):
+  let gain = prev_variance / (prev_variance + noise)   // computed once per call
   (
-    mean + gain * (source - mean),                // updated mean
-    (1.0 - gain) * variance,                      // updated variance
+    prev_mean + gain * (source - prev_mean),           // updated mean
+    (1.0 - gain) * prev_variance,                      // updated variance
   )
 
 recurrent (mean, variance): (f32, f32) =
@@ -9286,7 +9318,7 @@ Use `observe` when:
   clock signal whose value is irrelevant to the computation).
 - Different triggers should produce different update expressions
   (multi-arm logic).
-- Trigger sets need explicit filtering via `where` (§13.18.11).
+- Trigger sets need explicit filtering via `where` (§13.18.10).
 
 When all references in the expression naturally drive re-evaluation
 (spreadsheet-style implicit triggers), `observe` is not needed.
@@ -9956,7 +9988,7 @@ observe:
 ```
 
 - Each arm consists of an **`on` clause** listing one or more
-  trigger cells, an optional **`where` filter** (§13.18.11), and a
+  trigger cells, an optional **`where` filter** (§13.18.10), and a
   colon followed by the **arm expression**.
 - A `default:` arm has no `on` clause — its expression is the
   observe's value when no `on` arm has yet activated.
@@ -9972,7 +10004,7 @@ An arm's trigger set is the cells listed in its `on` clause. When
 any cell in the trigger set commits a new value (signal) or emits
 an event (stream), the arm becomes a candidate for selection. The
 candidate set is filtered by the arm's `where` clause if present
-(§13.18.11).
+(§13.18.10).
 
 When multiple arms become candidates in the same publish, **arm
 selection follows declaration order**: the first arm in declaration
@@ -10024,20 +10056,28 @@ A `default:` arm has no trigger clause. Its expression supplies the
 observe's value when no `on` arm has yet been selected — i.e.,
 before the first activating trigger fires.
 
-The `default:` arm is **required** when, in a signal context, every
-`on` arm's trigger set consists entirely of stream cells. Stream
-cells begin empty (no first emission until events arrive), so
-without a `default:` arm the observe would have no value at startup,
-violating the signal invariant (§13.9.7 cell-value reads).
+**Placement.** The `default:` arm, when present, must be the **last
+arm in declaration order**. A `default:` arm appearing before any
+`on` arm is a compile error. This matches the convention of
+catch-all arms in `match` expressions (§6.2.4) and reinforces that
+`default:` is a fallback for the no-prior-activation state, not a
+candidate competing with `on` arms.
 
-The `default:` arm is **optional** when at least one `on` arm has a
-signal in its trigger set. Signal initial values count as their
-first emission (per §13.2.6 startup pass and §13.18.7.2), so at
-least one signal-triggered arm is selectable from publish zero. The
-first signal-triggered arm in declaration order activates at startup
-and supplies the observe's value.
+**When required.** The `default:` arm is required when, in a signal
+context, every `on` arm's trigger set consists entirely of stream
+cells. Stream cells begin empty (no first emission until events
+arrive), so without a `default:` arm the observe would have no value
+at startup, violating the signal invariant (§13.9.7 cell-value
+reads).
 
-In a stream context, the `default:` arm is **optional** — streams
+**When optional.** The `default:` arm is optional when at least one
+`on` arm has a signal in its trigger set. Signal initial values
+count as their first emission (per §13.2.6 startup pass and
+§13.18.7.2), so at least one signal-triggered arm is selectable from
+publish zero. The first signal-triggered arm in declaration order
+activates at startup and supplies the observe's value.
+
+In a stream context, the `default:` arm is optional — streams
 may begin empty and emit their first event when the first arm
 activates.
 
@@ -10079,17 +10119,33 @@ Each arm's `on` clause may carry a trailing `where` filter that
 restricts arm activation:
 
 ```
-observe:
+recurrent counter: i32 = observe:
   on tick where counter.previous(0) < 100: counter.previous(0) + 1
   on tick where counter.previous(0) >= 100: 100
   on reset: 0
 ```
 
 The `where` clause uses the general `where` stream filter
-(§13.18.11), where the filtered stream is `T where C` (T is the
-trigger cell, C the boolean expression). When `where` is false, the
-arm is skipped during selection and subsequent arms are considered
-per declaration order.
+(§13.18.10), producing a filtered trigger `T where C`. From the
+arm's perspective, this is just an ordinary trigger cell — the arm
+does not distinguish between a bare `T` and a filtered `T where C`;
+both are reactive cells whose emissions cause the arm to be a
+candidate for selection.
+
+**Combine_latest semantics propagate** (§13.18.10.2): a `C`-cell
+change can cause the filtered trigger to emit (and thus the arm to
+become a candidate) even if `T` itself did not fire. This means
+non-active arms may activate when their predicate transitions to
+true with their `T`'s latest value.
+
+**Active arm + falsy `where` does not deactivate.** When arm A is
+the currently-active arm and A's `where` later evaluates to false
+(without any other arm activating), A stays active. The `where`
+clause gates arm SELECTION at moments of candidacy, not the
+continued activeness of an already-selected arm. A's body remains
+reactive to its references. A is supplanted only when a different
+arm's filtered trigger emits and that arm becomes the new active
+arm per declaration-order selection.
 
 ### 13.3 Nodes
 
@@ -15016,25 +15072,51 @@ stream ring above_threshold = sensor_signal where sensor_signal > 100
 // equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
 ```
 
-##### 13.18.10.2 References inside `C`
+##### 13.18.10.2 References inside `C` and reactive predicate semantics
 
-Inside the predicate `C`, references work per the reactive-
-expression rules of §13.18.7:
+The predicate `C` is a reactive expression. Inside `C`, references
+work per the rules of §13.18.7:
 
-- The LHS stream's name (`A` above) refers to the **current event
-  being filtered**: `A.field` accesses a field of the current event;
-  a bare reference to a primitive-typed stream is the current event
-  value.
-- Other reactive cells referenced in `C` participate in the
-  combine_latest semantics: changes to those cells re-evaluate the
-  filter at subsequent events. (They do NOT trigger re-filtering
-  of past events; filters are forward-looking.)
+- The LHS stream's name (`A` above) refers to the **current event**
+  available at the filter: `A.field` accesses a field of that
+  event; a bare reference to a primitive-typed stream is its
+  current event value.
+- Other reactive cells referenced in `C` are tracked as inputs to
+  the filter expression.
+
+**Combine_latest semantics.** The filter is itself a reactive
+expression participating in combine_latest (§13.18.7.2): a change to
+ANY input — the LHS stream emitting a new event, or any cell
+referenced in `C` committing a new value — triggers re-evaluation of
+the filter. On re-evaluation:
+
+- If `C` evaluates to `true` with the latest LHS event in scope,
+  the filter emits that LHS event.
+- If `C` evaluates to `false`, no event is emitted on this
+  re-evaluation.
+
+A consequence: a `C`-cell change can cause the filter to re-emit
+the latest LHS event (if `C` transitions from false to true with
+that LHS event still being the latest). The predicate is "live" —
+it doesn't merely sample at LHS-emission time.
 
 ```
+stream ring active_events = events where active_signal
+// emits each event of `events` while active_signal is true;
+// when active_signal flips false→true, re-emits the latest event.
+
 stream ring x_clicks_in_zone = clicks where clicks.x > zone_threshold
-// zone_threshold is sampled at each click event;
-// changes to zone_threshold affect future clicks, not past ones.
+// each click event is checked; if x exceeds threshold, emit.
+// If zone_threshold drops below the latest click's x value, that
+// latest click re-emits.
 ```
+
+The same value-change rule (§13.2.4.4) applies as for any reactive
+expression: emissions only occur when the filter's output would
+genuinely change (a new LHS event passing, or a transition from
+false→true with a different latest LHS than was previously emitted).
+Idempotent re-evaluations (same input cells, same value) do not
+produce duplicate emissions.
 
 ##### 13.18.10.3 Output type, policy, and capacity
 
@@ -15069,18 +15151,29 @@ stream ring scaled_relevant = (numbers |> map(double)) where numbers > 100
 ##### 13.18.10.5 Use inside `observe` arm-triggers
 
 The `where` filter is the mechanism by which observe arms (§13.2.11)
-express conditional triggers. The trigger `T where C` is a
-filtered stream; the arm activates only when the filtered stream
-emits — i.e., when `T` fires AND `C` is true.
+express conditional triggers. The trigger `T where C` is a filtered
+stream; from the arm's perspective, this is just an ordinary trigger
+cell — the arm doesn't distinguish between a bare `T` and a filtered
+`T where C`. The arm activates when its trigger emits.
+
+Combined with the combine_latest filter semantics (§13.18.10.2),
+the filtered trigger emits whenever either `T` fires or a `C`-
+referenced cell changes such that the predicate now holds true with
+the latest `T` value. The arm then activates per the normal
+arm-selection rules of §13.2.11.
 
 ```
-observe:
-  on tick where counter.previous(0) < 100: counter.previous(0) + 1
-  on tick where counter.previous(0) >= 100: 100
+recurrent counter: i32 = observe:
+  on tick where active_mode: counter.previous(0) + 1
+  on reset: 0
 ```
 
-The arm-selection rules of §13.2.11 apply uniformly: the first
-arm whose filtered trigger emits in the current publish wins.
+Within a recurrent body, the arm expression may reference the
+recurrent's self-history via `.previous(fallback)` and
+`.past(k, fallback)` (§13.2.4.3).
+
+The arm-selection rules of §13.2.11 apply uniformly: the first arm
+whose filtered trigger emits in the current publish wins.
 
 ##### 13.18.10.6 Restrictions
 
