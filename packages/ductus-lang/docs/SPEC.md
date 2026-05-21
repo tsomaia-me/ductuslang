@@ -418,7 +418,70 @@ Dynamic dispatch is available as an opt-in mechanism via `dyn` trait objects
 (§5). This is the only path through which trait method calls incur runtime
 indirection.
 
-#### 2.3.6 Binary size
+#### 2.3.6 Const-generic default expressions
+
+Const-generic parameters may declare default values, including
+*expressions* that reference other generic parameters of the same
+declaration. The defaults are resolved at instantiation time
+alongside type-parameter defaults.
+
+```
+operator merge[
+  T,
+  const N: usize = A.capacity + B.capacity,
+](
+  a: RingStream[T, A],
+  b: RingStream[T, B],
+) -> RingStream[T, N]
+```
+
+Here `N` defaults to `A.capacity + B.capacity` — an expression
+referencing the const-generic values `A.capacity` and `B.capacity`
+associated with the inferred type parameters. The default is
+evaluated at instantiation time using the concrete arguments and
+must produce a compile-time-known value of the declared type
+(here, `usize`).
+
+**Evaluation rules.**
+
+- The default expression is evaluated in the const evaluation
+  context (§2.4) at instantiation time.
+- The expression may reference other generic parameters of the same
+  declaration that precede it in the parameter list. Forward
+  references are not permitted.
+- The expression may reference projections of generic-parameter
+  types that are const-generics (e.g., `A.capacity` where `A` is
+  itself a type parameter that carries a capacity).
+- The expression must produce a value of the declared parameter
+  type. Compile error otherwise.
+
+**Inference and override.**
+
+At a call site, the const-generic parameter may be:
+- Omitted entirely — the default expression is evaluated and used.
+- Specified explicitly via turbofish — the explicit value overrides
+  the default, subject to type-correctness.
+
+```
+// Use default: N = a.capacity + b.capacity
+let m1 = merge(stream_a, stream_b)
+
+// Override: N = 1024 (must be type-correct; the override is
+// the caller's assertion that 1024 suffices)
+let m2 = merge::<Event, 1024>(stream_a, stream_b)
+```
+
+**Type-parameter defaults** (§3.1.6.1) and const-generic defaults
+follow the same evaluation order: the defaults are resolved in
+left-to-right declaration order, each having access to the resolved
+values of preceding parameters.
+
+**No circular dependencies.** A default expression referencing a
+later-declared parameter is a compile error. The dependency graph
+among defaults is required to be a DAG; the compiler enforces this
+during instantiation.
+
+#### 2.3.7 Binary size
 
 Monomorphization trades binary size for runtime performance and type
 information preservation. For typical programs the tradeoff is favorable; for
@@ -8575,7 +8638,7 @@ composition and propagation; cell content is governed by ordinary
 type rules.
 
 **Separation of topology and outside-world alignment.** The reactive
-system carries five distinct construct kinds, each with a focused
+system carries the following construct kinds, each with a focused
 role:
 
 - `fn` (§11) — pure compute. Reactive-transparent.
@@ -13052,10 +13115,10 @@ declared policy:
 
 - For `ring` streams, the push always succeeds; if the buffer is
   full, the oldest unconsumed event is overwritten. The stream's
-  `dropped_total` cell increments (§13.18.5).
+  `dropped_total` cell increments (§13.18.6).
 - For `gate` streams, the push succeeds if a slot is free; otherwise
   the push fails. The stream's `rejected_total` cell increments
-  (§13.18.5). The call returns a `bool` indicating success/failure;
+  (§13.18.6). The call returns a `bool` indicating success/failure;
   the host decides how to handle rejection.
 
 The push is dirty-tracked: consumers of the stream become dirty and
@@ -13241,7 +13304,7 @@ restart — either full-kernel or per-instance, depending on the change:
     - Policy changes (`ring` ↔ `gate`).
     - Capacity changes.
 
-  See §13.18.10 for full stream-reload rules. **Per-instance
+  See §13.18.11 for full stream-reload rules. **Per-instance
   restart** suffices.
 - Effect-specific changes that require restart for the affected
   effect instances:
@@ -13304,7 +13367,7 @@ after the reload. A removed consumer's cursor is dropped.
 
 **Observation cell continuity.** The synthesized observation cells
 (`pending_count`, `pressure`, `is_full`, `dropped_total`,
-`rejected_total`, `last_overflow_at` — see §13.18.5) survive reload
+`rejected_total`, `last_overflow_at` — see §13.18.6) survive reload
 along with the buffer when type signature matches; they reset when
 the buffer resets.
 
@@ -13367,6 +13430,13 @@ specifies the implementation model. Cross-references:
 - Reactive cells (signal, attr, recurrent, derived) live in the
   triple-buffered reactive state buffer per §14.3. Single-cell
   types (per §13.12.4) map to single AtomicI64 cells.
+- Stream cells (§13.18) allocate ring buffers from per-`(T, N)`
+  pools per §14.3.5; their metadata (head pointer, observation
+  cells) lives in the standard triple-buffered area per §14.4.
+- Effect instances (§13.19) are groupings of standard reactive
+  cells (signal, stream, sink) plus host-side reconciler state.
+  No new storage category per §14.4; per-instance state in the
+  reconciler is managed by the host outside the kernel's buffer.
 - The producer role per §14.7 is the kernel's reactive evaluation
   thread. It applies host writes to the back buffer, runs publish
   cycles (recurrent arm evaluation, derived behavior
@@ -13381,11 +13451,18 @@ specifies the implementation model. Cross-references:
   ABI of §14.6: a uniform `fn(kernel: &KernelHandle, instance:
   InstanceId) -> ()` signature, with stateless semantics and
   content-addressed identity (§14.6.4).
+- Host-registered reconcilers (§13.19.14) are dispatched at the
+  publish boundary via the host API (§13.14.7, §13.14.9). They
+  run on the kernel's producer thread; long-running operations
+  are dispatched to host-managed worker threads with results
+  written back via the host API on completion.
 - The graph specification (§15.4) carries the structural information
   the kernel needs to construct the reactive state buffer, build
   dependency edges, distinguish attr cells from recurrent cells,
-  and dispatch behaviors.
-- Hot reload at the source level (§13.15) maps to the §14.9
+  enumerate stream cells and effect instances, and dispatch
+  behaviors.
+- Hot reload at the source level (§13.15, including stream and
+  effect reload in §13.15.5–§13.15.6) maps to the §14.9
   mechanism: the kernel diffs behaviors and cells between old
   and new compiled output, applies the diff atomically, and
   publishes.
@@ -13562,8 +13639,11 @@ synthesis needed.
 
 #### 13.17.5 Output
 
-Every operator returns a single `Signal[T]`. For multiple outputs,
-return a record or tuple type:
+Every operator returns a single reactive cell. The return type is
+typically `Signal[T]` for value-shaped operators, but may be any
+`Cell[T]` per §13.18.5 — including `Stream[T]` for event-producing
+operators (e.g., `to_stream`, `filter`, `merge`) and `Sink[T]` for
+operators that expose write-end stream handles.
 
 ```
 type PeakResult:
@@ -13578,7 +13658,14 @@ operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
       )
 
   PeakResult(peak: peak, count: count)
+
+operator changes[T](source: Signal[T]) -> Stream[T]:
+  // emits an event each time source changes
+  ...
 ```
+
+For multiple outputs, return a record or tuple containing reactive
+cells:
 
 Consumers project fields via reactive expressions:
 
@@ -13672,17 +13759,20 @@ instances is bounded and known.
 
 #### 13.17.7 The `|>` operator
 
-`|>` is the operator-application token. Its semantics:
+`|>` is the pipe-application token. Its semantics:
 
-- LHS must be an expression of type `Signal[T]` (or convertible to
-  one — literals are wrapped as implicit constant signal cells
-  (compile-time-fixed `Signal[T]` values) automatically).
-- RHS must be an operator call (the operator name optionally
-  followed by parenthesized arguments).
-- The operator is instantiated; the LHS is bound to the operator's
+- LHS must be an expression of a reactive cell type (`Signal[T]`,
+  `Stream[T, P, N]`, `Sink[T, P, N]`, or any other `Cell[T]` — see
+  §13.18.6), or an expression convertible to one (literals are
+  wrapped as implicit constant signal cells automatically).
+- RHS must be either an **operator call** (§13.17) or an **effect
+  call** (§13.19) — the construct's name optionally followed by
+  parenthesized arguments.
+- The operator or effect is instantiated; the LHS is bound to its
   first positional parameter.
-- The result is the operator's output cell, of type `Signal[U]`
-  where `U` is the operator's declared return value type.
+- The result is the instantiated construct's output: for operators,
+  the declared output cell (typically `Signal[U]`); for effects,
+  the effect instance value (a composite accessed per §13.19.7).
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -13693,21 +13783,21 @@ a |> op1 |> op2        // parses as (a |> op1) |> op2
 ```
 
 Bitwise `|` (§4.4.2) has the same low precedence as `|>`. Expressions
-mixing bitwise OR with operator application may need parentheses for
-the desired grouping.
+mixing bitwise OR with pipe application may need parentheses for the
+desired grouping.
 
-**`|>` exclusivity:** `|>` may only apply operators. Using `|>`
-with a `fn` is a compile error:
+**`|>` applicability:** `|>` may only apply operators or effects.
+Using `|>` with a `fn` is a compile error:
 
 ```
-let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator
+let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator or effect
 ```
 
 Diagnostic class:
 ```
-error: `|>` requires an operator on the right-hand side
+error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -13717,8 +13807,7 @@ For applying pure functions to reactive cells, use a derived:
 derived bar: f32 = some_fn(source_cell)
 ```
 
-Or wrap the function in an operator (Path B from the curve recovery
-discussion):
+Or wrap the function in an operator:
 
 ```
 operator some_op(source: Signal[f32]) -> Signal[f32]:
@@ -13850,7 +13939,7 @@ in graph specification.
 **With streams (§13.18) and effects (§13.19):** operators share
 the same composition surface (`|>` pipe form, instance identity,
 parameter rules, generics, visibility) as effects, and produce or
-consume streams via the standard stream operators (§13.18.6). The
+consume streams via the standard stream operators (§13.18.7). The
 distinction is semantic role: operators perform pure reactive
 transforms with no outside-world side effects, while effects align
 program state with external reality through the reconciliation
@@ -13955,7 +14044,7 @@ Streams are distinct from `Signal[T]`:
 - `Signal[T]` has a single current value, always defined (§13.2.6).
 - `Stream[T]` has zero or more pending events, each consumed
   independently. There is no "current value" of a stream; consumers
-  project a stream to a signal explicitly (§13.18.6).
+  project a stream to a signal explicitly (§13.18.7).
 
 #### 13.18.2 Declaration
 
@@ -13971,7 +14060,7 @@ stream policy[capacity]? name: Type? = source
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
 - **`source`** is a stream-producing expression — typically an
-  operator chain ending in a stream-producing operator (§13.18.6),
+  operator chain ending in a stream-producing operator (§13.18.7),
   another stream, or a merge of streams.
 
 Examples:
@@ -14106,7 +14195,64 @@ Stream view; the Sink view is accessed via the producer-side
 machinery (the source expression in the declaration, or the sink
 field of an effect's desired block).
 
-#### 13.18.5 Observation cells
+#### 13.18.5 The `Cell` trait
+
+`Cell[T]` is the common abstraction over the reactive cell types
+that carry values of type `T`. It is implemented by `Signal[T]`,
+`Stream[T]`, and `Sink[T]` (and their concrete sub-types).
+
+```
+Cell[T]                       // abstract base — any reactive cell carrying values of type T
+  Signal[T]                   // single current value (§13.2.8)
+  Stream[T]                   // append-only event sequence (§13.18.3)
+    RingStream[T, N]
+    GateStream[T, N]
+  Sink[T]                     // write-only stream end (§13.18.4)
+    RingSink[T, N]
+    GateSink[T, N]
+```
+
+`Cell[T]` is used in operator and function signatures that accept any
+reactive cell containing values of `T`, without constraining which
+kind:
+
+```
+operator monitor[T, C: Cell[T]](source: C) -> Signal[bool]:
+  // works with any Signal, Stream, or Sink carrying T
+  ...
+```
+
+The trait has no required methods at the language level; it is a
+marker indicating participation in the reactive system as a typed
+cell. Concrete behavior (current-value reads, event observation,
+push semantics) is specific to each implementing type and is
+expressed through the type's own methods and operators.
+
+**Direction-specific sub-traits.** Where an operator needs to
+constrain by direction, two sub-traits refine `Cell[T]`:
+
+- `Readable[T]: Cell[T]` — implemented by `Signal[T]` and `Stream[T]`
+  (the read views).
+- `Writable[T]: Cell[T]` — implemented by `Sink[T]` (and by
+  `Signal[T]` from the host's perspective, though program code
+  cannot write to signals — see §13.2.7).
+
+These finer-grained traits are stdlib-provided; most operators use
+the parent `Cell[T]` or a concrete type directly.
+
+**Why a trait, not a union type.** Ductus does not have ad-hoc union
+types at value position (§5.2 `dyn` is for trait objects). A common
+abstraction over heterogeneous reactive cells must be expressed as
+a trait. `Cell[T]` plays that role.
+
+**Use in generic signatures.** Operators returning a `Cell[T]`
+declare the concrete kind through their return type. For example,
+`to_stream` returns `Stream[T]` (a concrete `Cell[T]`); `to_signal`
+returns `Signal[T]`. The trait is rarely the return type of an
+operator — concrete types carry more information and are preferred
+unless the operator genuinely produces a polymorphic output.
+
+#### 13.18.6 Observation cells
 
 Every stream automatically exposes a set of derived signal cells
 describing its state. These cells are accessed via field syntax on
@@ -14116,7 +14262,7 @@ the stream value:
 stream ring[1024] events: LogEntry = source
 
 derived current_pressure: f32 = events.pressure
-derived dropped_so_far: i32 = events.dropped_total
+derived dropped_so_far: i64 = events.dropped_total
 derived backed_up: bool = events.is_full
 ```
 
@@ -14137,15 +14283,16 @@ reload identity. They are not separately declared in user code; the
 compiler synthesizes them as part of the stream's storage.
 
 **Pressure-driven self-throttling.** The observation cells let
-producer-side operators react to consumer lag. The pattern:
+producer-side code react to consumer lag. A producer that wishes to
+self-throttle reads the stream's `pressure` (or `is_full`) signal
+and gates emission based on it — e.g., by feeding the signal into a
+conditional `derived` upstream of the stream-producing chain, or by
+using a stream operator that consults the back-pressure signal.
 
-```
-stream ring[1024] events: Event = raw_events |> throttle_when(events.pressure > 0.8)
-```
-
-The `throttle_when` operator gates the stream's effective input rate
-on the pressure signal — when the buffer is more than 80% full, the
-throttle reduces upstream emission until pressure drops.
+The exact throttling pattern depends on the producing chain's
+shape; the stdlib provides operators that combine well with the
+observation surface (e.g., `throttle` per §13.18.7 with a
+pressure-derived gating signal).
 
 **Gate-side back-pressure.** For `gate` streams, the `rejected_total`
 signal lets the producer-side code observe rejections and take
@@ -14153,7 +14300,7 @@ corrective action (retry, log, surface error). The pattern is the
 same shape, reading `rejected_total` or `is_full` instead of
 `pressure`.
 
-#### 13.18.6 Stream operators
+#### 13.18.7 Stream operators
 
 Operators that produce, transform, or consume streams are stdlib
 primitives. All use the standard operator-application syntax
@@ -14237,9 +14384,16 @@ operator map[T, U](source: Stream[T], f: T -> U) -> Stream[U]:
 operator filter[T](source: Stream[T], pred: T -> bool) -> Stream[T]:
   // policy and capacity preserved from source
 
-operator merge[T](a: Stream[T], b: Stream[T]) -> Stream[T]:
+operator merge[
+  T,
+  const N: usize = A.capacity + B.capacity,
+](
+  a: RingStream[T, A],
+  b: RingStream[T, B],
+) -> RingStream[T, N]:
   // interleaves events from both sources in publish-commit order;
-  // policy and capacity of result are implementation-defined defaults
+  // default capacity is the sum of input capacities, ensuring no
+  // overflow if both inputs fill simultaneously
 
 operator throttle[T](source: Stream[T], window: duration, clock: Signal[u64]) -> Stream[T]:
   // rate-limits events to at most one per window
@@ -14247,9 +14401,21 @@ operator throttle[T](source: Stream[T], window: duration, clock: Signal[u64]) ->
 
 Transformation operators that preserve policy and capacity do so by
 construction: their output stream uses the same ring buffer
-configuration as their input. Operators that combine multiple
-streams (`merge`) or that change the rate (`throttle`) declare
-their output's policy and capacity at the declaration site.
+configuration as their input.
+
+The `merge` operator uses a const-generic capacity parameter with a
+default expression referencing the input streams' capacities (per
+§2.3.6 const-generic default expressions). Callers may override the
+capacity at the call site via turbofish if they have tighter bounds:
+
+```
+let merged: RingStream[Event, 1024] = merge::<Event, 1024>(a, b)
+```
+
+A separate `merge_gate` variant is provided for gate streams with
+the same shape; cross-policy merges (one ring, one gate) are not
+permitted (compile error — the result's overflow semantics would be
+ambiguous).
 
 **Composition operator** (Stream → Sink):
 
@@ -14263,7 +14429,7 @@ The `into` operator returns the unit type `()` — it is a forwarding
 construct, not a transformation. Its scope-bound lifetime maintains
 the forwarding link.
 
-#### 13.18.7 Policy as type
+#### 13.18.8 Policy as type
 
 Stream policy is encoded in the type rather than as a runtime
 attribute. This means operators that care about policy can constrain
@@ -14314,7 +14480,7 @@ error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
 This catches a class of errors that would otherwise surface only at
 runtime as silent data loss.
 
-#### 13.18.8 Consumer cursors
+#### 13.18.9 Consumer cursors
 
 Each consumer of a stream maintains its own cursor — a position into
 the ring buffer marking the oldest event the consumer has not yet
@@ -14352,7 +14518,7 @@ to rewind a cursor to an earlier position; the buffer's events are
 not persistently stored beyond the ring buffer's lifetime, and
 events may have been overwritten.
 
-#### 13.18.9 Memory model
+#### 13.18.10 Memory model
 
 A stream's storage consists of:
 
@@ -14382,7 +14548,7 @@ slots; consumers read from pre-allocated slots; cursors advance
 through indices. The fixed buffer is the entire memory cost of the
 stream.
 
-#### 13.18.10 Hot reload
+#### 13.18.11 Hot reload
 
 Stream hot reload preserves the ring buffer iff the stream's
 *type signature* is byte-identical between old and new code. The
@@ -14435,7 +14601,7 @@ full-kernel restart per §13.15.4:
 
 Implementations detect these during the diff phase.
 
-#### 13.18.11 Restrictions
+#### 13.18.12 Restrictions
 
 - **Streams may not appear inside function bodies.** Functions are
   reactive-transparent (§13.12.2); they have no place to host
@@ -14444,7 +14610,7 @@ Implementations detect these during the diff phase.
   feeds into an operator that emits a stream.
 - **A stream's `source` expression must produce a stream.** Passing
   a signal directly is a type error — explicit conversion via
-  `to_stream` is required (§13.18.6).
+  `to_stream` is required (§13.18.7).
 - **Cursors are not first-class values.** Programs cannot construct,
   store, or pass cursors. Cursors are implementation state of
   consuming operators; they are observable only through the
@@ -14538,10 +14704,26 @@ effect name[GenericParams]?(params...):
 - **`GenericParams`** are optional type parameters with optional
   trait bounds (§3, §5), parallel to operators (§13.17.8).
 - **`params`** is a comma-separated parameter list (§13.19.3).
-- **`desired:`** is an optional block declaring cells the program
-  writes (§13.19.4).
-- **`observed:`** is an optional block declaring cells the host
-  writes (§13.19.5).
+- **`desired:`** is an optional block declaring cells the host's
+  reconciler reads (§13.19.4).
+- **`observed:`** is an optional block declaring cells the host's
+  reconciler writes (§13.19.5).
+
+Cell declarations inside each block carry an explicit role keyword
+matching the cell's kind, parallel to the language's other reactive
+declarations:
+
+- `derived` (in `desired:`) — parameter-tracking reactive expression
+  (§13.19.4).
+- `sink` (in `desired:`) — write-only stream end (§13.19.4).
+- `signal` (in `observed:`) — host-written value cell (§13.19.5).
+- `stream` (in `observed:`) — host-written event sequence (§13.19.5).
+
+No other declaration kinds are permitted inside the blocks.
+Reactive declarations not listed above (e.g., `recurrent`, `attr`,
+top-level `signal`) cannot appear inside an effect's body; stateful
+behavior wrapping an effect is expressed via wrapping operators
+(§13.19.15).
 
 At least one of `desired:` or `observed:` must be present (an effect
 with neither would have no surface at all). The blocks may be
@@ -14557,24 +14739,26 @@ or through expression position (§13.19.13).
 
 ```
 effect fetch(url: Signal[Url], method: Method = Method::GET):
+  desired:
+    derived request: Request = Request { method: method, target: url }
   observed:
-    response: Signal[Option[Response]] = none
-    error: Signal[Option[FetchError]] = none
-    in_flight: Signal[bool] = false
+    signal response: Option[Response] = none
+    signal error: Option[FetchError] = none
+    signal in_flight: bool = false
 ```
 
-A minimal request/response effect. No `desired:` block (all inputs
-arrive via parameters); the `observed:` block declares three cells
-the host writes.
+A minimal request/response effect. The `desired:` block declares a
+parameter-tracking `derived` cell expressing the request; the
+`observed:` block declares three host-written signal cells.
 
 ```
 effect websocket(url: Signal[Url]):
   desired:
-    outbound: RingSink[Message, 1024]
+    sink ring[1024] outbound: Message
   observed:
-    inbound: RingStream[Message, 1024]
-    is_open: Signal[bool] = false
-    last_error: Signal[Option[WSError]] = none
+    stream ring[1024] inbound: Message
+    signal is_open: bool = false
+    signal last_error: Option[WSError] = none
 ```
 
 A long-lived resource effect with bidirectional message flow. The
@@ -14587,13 +14771,14 @@ signal cells.
 Effect parameters are cell-bound or value-typed, with the same rules
 as operator parameters (§13.17.3):
 
-**Cell-bound parameters** (`name: Signal[T]`):
+**Cell-bound parameters** (`name: Signal[T]`, `name: Stream[T, P, N]`,
+`name: <other Cell[T] type>`):
 - Bind to a reactive cell at instantiation.
-- The host's reconciler reads the cell's current value during each
-  publish in which the parameter is dirty.
-- Inside the effect's `desired:` and `observed:` initial-value
-  expressions, the parameter is treated as a cell of value type `T`
-  (auto-deref per §13.17.3.1).
+- The host's reconciler reads the cell's current value (or observes
+  events, for stream parameters) during each invocation in which
+  the parameter is dirty.
+- Inside the effect's `desired:` cell expressions, the parameter is
+  treated as a cell of value type `T` (auto-deref per §13.17.3.1).
 
 **Value parameters** (`name: T`):
 - Snapshotted at instantiation. Fixed for the effect instance's
@@ -14605,8 +14790,9 @@ as operator parameters (§13.17.3):
 apply); not on `Signal[T]` parameters in v1.
 
 **Pipe target.** The first positional parameter is the implicit
-pipe target (§13.17.6). For an effect intended to be used with `|>`,
-authors place the primary upstream cell as the first parameter:
+pipe target (§13.17.7 generalized to effects). For an effect
+intended to be used with `|>`, authors place the primary upstream
+cell as the first parameter:
 
 ```
 effect fetch(url: Signal[Url], method: Method = Method::GET):
@@ -14634,102 +14820,102 @@ tracked independently for dirty propagation to the reconciler.
 
 #### 13.19.4 Desired block
 
-The `desired:` block declares cells that the program writes (or
-that derive reactively from the effect's parameters). The host's
-reconciler reads these cells to determine the desired external state.
+The `desired:` block declares cells that the host's reconciler reads
+to determine what alignment to perform. Two cell forms are permitted,
+each introduced by an explicit role keyword:
 
-Three cell forms are permitted in `desired:`:
-
-**Writable `Signal[T]`** — the program writes via assignment on the
-effect instance (§13.19.7):
-
-```
-desired:
-  volume: Signal[f32] = 1.0
-  is_playing: Signal[bool] = true
-  seek_to: Signal[Option[duration]] = none
-```
-
-Initial values are mandatory (Signal invariant per §13.2.6). The
-program writes via `audio.volume = 0.8` syntax.
-
-**`Sink[T]`** — the program pushes events via the `into` operator
-(§13.18.6):
+**`derived` cells** — parameter-tracking reactive expressions. The
+cell's value is the expression's value, recomputed reactively when
+any input cell changes:
 
 ```
 desired:
-  outbound: RingSink[Message, 1024]
+  derived request: Request = Request { method: method, target: url }
+  derived auth_header: Option[string] = current_token |> as_bearer
 ```
 
-No initial value (streams have no initial value). The program
-pushes via `messages |> into(ws.outbound)`.
+The form matches a regular `derived` declaration (§13.2.3): the
+expression is pure and reactive, reads from parameters and any
+in-scope cells, and the cell value updates when those inputs change.
+The host's reconciler reads the cell's current value on each
+invocation. Program code can also read `derived` cells in `desired:`
+via the standard access path (`f.request` — see §13.19.7), but
+cannot write to them.
 
-**Parameter-derived `Signal[T] = expr`** — the cell's value derives
-reactively from the effect's parameters. The program cannot write
-to it directly; it tracks the derivation expression:
+**`sink` cells** — write-only stream ends. The program pushes events
+into the sink via the `into` operator (§13.18.7); the host's
+reconciler consumes events from the paired Stream view:
 
 ```
 desired:
-  request: Signal[Request] = Request {
-    method: method,
-    target: url,
-  }
+  sink ring[1024] outbound: Message
+  sink gate[256] outgoing_writes: PendingWrite
 ```
 
-Where `method` and `url` are parameters. This form is distinguished
-from a writable cell by whether the initial-value expression
-references parameters: if it does, the cell is treated as a derived
-projection; if it does not, the cell is a writable signal with the
-expression as its initial value.
+The declaration shape parallels the `stream` declaration (§13.18.2)
+— policy keyword (`ring` or `gate`), optional capacity in brackets
+(defaulting to 1024), name, element type. The difference is the
+leading `sink` keyword instead of `stream`, and the absence of an
+`= source` clause: a sink's events come from program-side `into`
+operations, not from a declared source expression.
 
 **Cell name uniqueness.** Within a single `desired:` block, cell
 names must be distinct. Cells in `desired:` may not share names
 with cells in the same effect's `observed:` block (§13.19.6).
 
-**Host-side semantics.** The reconciler reads desired cells on each
-publish in which any of them is dirty. The reconciler is responsible
-for maintaining the alignment: if the desired state implies a
-running operation (a pending request, an open connection), the
-reconciler manages that operation's lifecycle. If the desired state
-implies the operation should not run, the reconciler tears it down.
-
-The reconciler does not "complete" desired cells — they are
-persistent declarations of intent. They change only when the
-program writes (or, for parameter-derived cells, when parameters
-change).
+**Host-side semantics.** The reconciler reads `derived` cells on
+each invocation where any of them is dirty. For `sink` cells, the
+reconciler consumes the buffered events in order. The reconciler is
+responsible for maintaining the alignment between the desired state
+and the external environment.
 
 #### 13.19.5 Observed block
 
-The `observed:` block declares cells that the host writes. The
-program reads these cells through the standard reactive machinery.
+The `observed:` block declares cells that the host's reconciler
+writes. The program reads these cells through the standard reactive
+machinery. Two cell forms are permitted, each introduced by an
+explicit role keyword:
 
-Two cell forms are permitted in `observed:`:
-
-**`Signal[T]` with initial value** — the program reads the cell's
-current value; the host updates it via the host API (§13.14):
-
-```
-observed:
-  response: Signal[Option[Response]] = none
-  error: Signal[Option[FetchError]] = none
-  in_flight: Signal[bool] = false
-  is_open: Signal[bool] = false
-```
-
-Initial values are mandatory. The initial value is what the program
-reads before the host has written anything (i.e., on first publish
-after instance creation).
-
-**`Stream[T]`** — the program observes events the host appends:
+**`signal` cells** — host-written value cells. The program reads the
+cell's current value; the host updates it via the host API
+(§13.14.2):
 
 ```
 observed:
-  inbound: RingStream[Message, 1024]
+  signal response: Option[Response] = none
+  signal error: Option[FetchError] = none
+  signal in_flight: bool = false
+  signal is_open: bool = false
 ```
 
-No initial value. The stream begins empty; the host appends events
-as they arrive. Consumers observe via the standard stream consumption
-operators (§13.18.6).
+The declaration shape matches a regular `signal` declaration
+(§13.2.1): name, value type, and an initial value. The initial value
+is what the program reads before the host's first write — typically
+a sentinel like `none` for `Option[T]` or `false` for `bool`.
+
+The host writes signal cells via `kernel.write_signal` against the
+effect instance ID (§13.14.2 per-instance form; §13.14.9 reconciler
+protocol). Writes are dirty-tracked in the standard publish-cycle
+way.
+
+**`stream` cells** — host-written event sequences. The program
+observes events the host appends via stream operators (§13.18.7);
+the host pushes events via the host API (§13.14.8):
+
+```
+observed:
+  stream ring[1024] inbound: Message
+  stream gate[256] notifications: Notification
+```
+
+The declaration shape parallels the top-level `stream` declaration
+(§13.18.2), but with no `= source` clause — the source is the host's
+reconciler pushing events via `kernel.push_stream`. Policy and
+capacity work as in regular stream declarations.
+
+The stream begins empty. Consumers in program code project the stream
+to a signal via `to_signal`, or fold/count/filter/etc. via the
+standard stream operators.
 
 **Cell name uniqueness.** Within a single `observed:` block, cell
 names must be distinct. Cells in `observed:` may not share names
@@ -14739,48 +14925,43 @@ with cells in the same effect's `desired:` block (§13.19.6).
 program code is a compile error:
 
 ```
-error: cannot write to observed cell `response` of effect `fetch`
+error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: observed cells are written only by the host's reconciler;
-        program code may only read them. To inject test data,
-        construct a different effect instance or use a stub effect.
+  hint: effect cells are not writable from program code. The host's
+        reconciler is the sole writer of cells in `observed:`. To
+        inject test data, construct a different effect instance or
+        use a stub effect.
 ```
 
-**Host-side semantics.** The host writes observed cells via the
-host API (§13.14.2 for signal cells, §13.14.8 for stream cells).
-Writes are dirty-tracked in the standard publish-cycle way; downstream
-deriveds in program code re-evaluate on the next publish.
+**Host-side semantics.** The host writes observed signal cells via
+`kernel.write_signal` (§13.14.2) and pushes into observed stream
+cells via `kernel.push_stream` (§13.14.8), keyed by effect instance
+ID and cell name. Writes are dirty-tracked in the standard
+publish-cycle way; downstream deriveds in program code re-evaluate
+on the next publish.
 
 #### 13.19.6 Reserved keywords
 
-The identifiers `desired` and `observed` are reserved within two
-contexts:
-
-- As block introducers inside `effect` declarations (the syntax
-  itself).
-- As access-path qualifiers on effect instance values
-  (`instance.desired.field`, `instance.observed.field`).
-
-Cells inside a `desired:` or `observed:` block cannot be named
-`desired` or `observed` — these names are reserved for the qualifier
-role. An effect declaration that violates this rule is a compile
-error:
+The identifiers `desired` and `observed` are reserved as block
+introducers inside `effect` declarations. Cell declarations inside
+either block cannot use these names:
 
 ```
 error: cell name `desired` is reserved inside an effect's blocks
   --> effect example():
         desired:
-          desired: Signal[i32] = 0
-          ^^^^^^^ this name is reserved
+          derived desired: bool = false
+                  ^^^^^^^ this name is reserved
   hint: `desired` and `observed` are reserved within `effect`
-        declarations to serve as access-path qualifiers on instances.
-        Choose a different cell name.
+        declarations as block introducers. Choose a different cell
+        name.
 ```
 
 Outside of effect declarations, `desired` and `observed` are
-ordinary identifiers and may be used as variable names, function
-names, etc. The reservation is scoped to the effect-related uses.
+ordinary identifiers and may be used freely (as variable names,
+function names, etc.). The reservation is scoped to the effect
+declaration body.
 
 **Cross-block name collision.** An effect cannot declare cells with
 the same name in both `desired:` and `observed:`:
@@ -14789,86 +14970,91 @@ the same name in both `desired:` and `observed:`:
 error: cell name `target` appears in both `desired:` and `observed:` of effect `example`
   --> effect example():
         desired:
-          target: Signal[Url] = "..."
+          derived target: Url = some_expr
         observed:
-          target: Signal[Url] = "..."
-          ^^^^^^ duplicate name
+          signal target: Url = "..."
+                 ^^^^^^ duplicate name
   hint: cells across `desired:` and `observed:` share a flat
-        namespace via the access shortcut `instance.field`.
-        Rename one of the cells to avoid the collision.
+        namespace via the access path `instance.field`. Rename one
+        of the cells to avoid the collision.
 ```
 
-The collision rule supports the default-direction access rule
-(§13.19.7): the unqualified `instance.field` accesses a single
-cell, regardless of which block it lives in.
+The collision rule supports unambiguous flat access: `f.field`
+resolves to whichever block declares `field`, with the compiler
+enforcing that exactly one block does.
 
 #### 13.19.7 Access rules
 
-Reading and writing an effect instance's cells uses asymmetric
-default-direction rules that match the natural use of each
-operation:
-
-**Unqualified read** — `instance.field` reads from the `observed:`
-block:
+Effect instances expose their cells through a flat access path.
+Cells in `desired:` and `observed:` share a single namespace at the
+instance:
 
 ```
 let f = current_url |> fetch
-let r = f.response             // reads f.observed.response
-let loading = f.in_flight      // reads f.observed.in_flight
+let req = f.request           // reads desired.request (a `derived` cell)
+let r = f.response            // reads observed.response (a `signal` cell)
+let loading = f.in_flight     // reads observed.in_flight
 ```
 
-**Unqualified write** — `instance.field = value` writes to the
-`desired:` block:
+The cell-name collision rule (§13.19.6) ensures `f.<name>` is
+unambiguous.
+
+**No write-to-cell from program code.** Effect cells are not writable
+from program code via assignment. The only program-side writes are
+pushes into sinks via the `into` operator. Writing to any effect
+cell — signal, stream, or derived — via assignment is a compile
+error:
 
 ```
-let audio = sample_buffer |> play_audio
-audio.volume = 0.8             // writes audio.desired.volume
-audio.is_playing = false       // writes audio.desired.is_playing
+error: cannot assign to cell `response` on effect instance
+  --> f.response = some(custom_response)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  hint: effect cells are not writable from program code. To control
+        the effect's behavior, change the upstream signal(s) bound
+        to its parameters, or push events into the effect's
+        sink(s) via the `into` operator.
 ```
 
-**Explicit qualifier for cross-direction read** —
-`instance.desired.field` reads from the `desired:` block:
-
-```
-let f = current_url |> fetch
-let requested_method = f.desired.request.method     // reads the program-side desired
-```
-
-This is uncommon — typically used for debugging, diff-with-observed
-comparisons, or multi-effect coordination where one effect's desired
-informs another's behavior.
-
-**Explicit qualifier for write to observed** — not legal. Writes to
-`instance.observed.field` from program code are a compile error
-(§13.19.5).
-
-**Sink push** — sinks in `desired:` are not written via assignment.
-They are pushed into via the `into` operator (§13.18.6):
+**Pushing into a sink:**
 
 ```
 let ws = current_url |> websocket
 my_outgoing_messages |> into(ws.outbound)
 ```
 
-The compiler rejects `ws.outbound = something`:
+The `into` operator pipes a Stream into a Sink. The Sink is accessed
+on the effect instance by name (`ws.outbound`). Multiple `into`
+chains may target the same Sink (multi-producer pattern); their
+events arrive in publish-commit order.
 
-```
-error: cannot assign to sink `outbound`; use `|> into(...)` instead
-  --> ws.outbound = some_message
-      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: sinks receive events through stream forwarding, not assignment.
-        Write `stream_of_messages |> into(ws.outbound)`.
-```
+**Reading a stream:**
 
-**Stream observation** — streams in `observed:` are not read via
-ordinary reads. They are consumed via the stream operators
-(§13.18.6) or projected to signals via `to_signal`:
+Streams are consumed via stream operators, not via direct value
+reads:
 
 ```
 let ws = current_url |> websocket
-let latest_message = ws.inbound |> to_signal(empty_message)
-let total_messages = ws.inbound |> count
+let latest = ws.inbound |> to_signal(empty_message)    // project to signal
+let total = ws.inbound |> count                         // running count
+let recent_text: stream ring[64] = ws.inbound |> filter(is_text)
 ```
+
+The stream value is the program-readable cursor view; the program
+attaches operators to consume events.
+
+**Reading observation cells of a stream:**
+
+Stream cells expose their observation surface (§13.18.6) via field
+access on the stream value:
+
+```
+let ws = current_url |> websocket
+let pressure = ws.inbound.pressure
+let dropped = ws.inbound.dropped_total
+```
+
+These reads project the synthesized signals describing the stream's
+state.
 
 #### 13.19.8 Effect instance identity
 
@@ -14919,9 +15105,9 @@ effect cached_fetch[T: Cacheable](
   cache: Signal[Cache[T]],
 ):
   observed:
-    value: Signal[Option[T]] = none
-    cache_hit: Signal[bool] = false
-    error: Signal[Option[FetchError]] = none
+    signal value: Option[T] = none
+    signal cache_hit: bool = false
+    signal error: Option[FetchError] = none
 ```
 
 Standard generics machinery applies (§3 traits, §2.2 inference).
@@ -14940,7 +15126,7 @@ Effects carry the standard three-level visibility (§10): `public`,
 reachable from other modules; public effects may be re-exported.
 
 ```
-public effect fetch(url: Signal[Url]) -> ...:
+public effect fetch(url: Signal[Url]):
   ...
 
 private effect internal_health_check():
@@ -14959,24 +15145,26 @@ declared name and type within the effect's body.
 
 **Reload-safe changes:**
 
-- Changes to the initial-value expression of an `observed:` Signal
+- Changes to the initial-value expression of an `observed:` `signal`
   cell (the initial value affects only the pre-first-write
   behavior; existing live cells retain their committed values).
-- Changes to the initial-value expression of a `desired:` Signal
-  cell (same rationale).
-- Adding a new `observed:` or `desired:` cell — new cells are
-  initialized fresh per their declared initial value.
-- Changes to parameter-derived `desired:` cell expressions — the
-  cell re-evaluates on the next publish with new logic.
+- Adding a new cell in `observed:` or `desired:` — new cells are
+  initialized fresh per their declared initial value (signals) or
+  empty (streams, sinks).
+- Changes to `desired:` `derived` cell expressions — the cell
+  re-evaluates on the next publish with new logic.
 
 **Reload-unsafe changes** (per-instance restart per §13.15.4):
 
 - Effect parameter signature changes (parameters added, removed,
   retyped, reordered).
-- `desired:` or `observed:` cell type changes (a Signal[i32]
-  becoming a Signal[i64], a Stream's element type changing, etc.).
-- Policy or capacity changes on Stream/Sink cells in the effect's
-  blocks.
+- Cell type changes in `desired:` or `observed:` (a `signal` cell's
+  value type changing from `i32` to `i64`, a stream's element type
+  changing, etc.).
+- Policy or capacity changes on `stream` or `sink` cells in the
+  effect's blocks.
+- Changes to a cell's role keyword (`derived` becoming `sink`,
+  `signal` becoming `stream`, etc.).
 
 When per-instance restart fires, the host's reconciler receives a
 teardown call for the affected instances (releasing any host-side
@@ -14995,7 +15183,7 @@ preserve instance identity per the same rule as operators
 (§13.17.10).
 
 **Stream cells inside effects** follow the stream hot-reload rules
-(§13.18.10): the buffer is preserved iff `(element type, policy,
+(§13.18.11): the buffer is preserved iff `(element type, policy,
 capacity)` is byte-identical; `@reset_on_reload` on a stream cell
 forces clear.
 
@@ -15021,30 +15209,31 @@ Effect instance lifetimes follow the scope hierarchy:
   effects are subject to the same restriction).
 
 **"Desired says no resource needed" is not the same as "effect
-dies."** When a `desired:` cell's value implies the host should
-not be holding a resource (e.g., `desired.target: Signal[Option[Url]]
-= none` for a websocket), the host tears down the resource but the
-effect instance is still alive. The host remains ready to re-
-establish the resource if the desired changes back. Only scope
-death causes instance teardown.
+dies."** When a `desired:` cell's value implies the host should not
+be holding a resource (e.g., a `derived target: Option[Url] = none`
+that evaluates to `none` because the program hasn't supplied a URL),
+the host tears down the resource but the effect instance is still
+alive. The host remains ready to re-establish the resource if the
+desired changes back. Only scope death causes instance teardown.
 
 #### 13.19.13 Effects in `|>` chains
 
-Effect instances participate in pipe chains identically to operators:
+Effect instances participate in pipe chains identically to operators
+(per the extended `|>` rule in §13.17.7):
 
 ```
 let f = current_url |> fetch
 ```
 
 The LHS of `|>` binds to the effect's first positional parameter.
-The pipe's *value* is the effect instance — the composite of
-desired and observed cells, accessed via the rules in §13.19.7.
+The pipe's *value* is the effect instance — the composite of cells
+in `desired:` and `observed:`, accessed via the rules in §13.19.7.
 
-**No implicit principal projection.** An effect instance does not
-auto-project to a single cell when used in pipe-out position.
-Operators downstream of an effect either take the whole instance
-(declared with the effect's type as the parameter type) or take a
-specific cell projected explicitly:
+**No implicit projection.** An effect instance does not auto-project
+to a single cell when used in pipe-out position. Operators downstream
+of an effect either take the whole instance (declared with the
+effect's type as the parameter type) or take a specific cell
+projected by field access:
 
 ```
 operator render_fetch_card(f: fetch) -> Signal[VNode]:
@@ -15053,28 +15242,27 @@ operator render_fetch_card(f: fetch) -> Signal[VNode]:
 
 // At call site:
 let card = (current_url |> fetch) |> render_fetch_card
-let display = (current_url |> fetch).observed.response |> render_response
+let display = (current_url |> fetch).response |> render_response
 ```
 
 The first form passes the composite; the second projects a specific
-cell. The pipe operator carries whatever the LHS evaluates to; no
-implicit projection occurs.
+cell via field access before piping. The pipe operator carries
+whatever the LHS evaluates to; no implicit projection occurs.
 
 Naming the instance for downstream use is the common pattern:
 
 ```
 let f = current_url |> fetch
-let display = f.response |> render_response   // default-to-observed read
+let display = f.response |> render_response
 let loading = f.in_flight |> as_loading_class
 let err_msg = f.error |> as_error_message
 ```
 
-This makes both halves of the composite accessible from a single
-binding, with the asymmetric default rules of §13.19.7 minimizing
-qualifier verbosity.
+This makes all cells accessible from a single binding via the flat
+namespace rule (§13.19.7).
 
 **Stream-typed observed cells** are accessed via the stream
-operators (§13.18.6):
+operators (§13.18.7):
 
 ```
 let ws = current_url |> websocket
@@ -15125,9 +15313,10 @@ must be registered before the kernel becomes live.
 
 **Reconciler error reporting.** Reconciler errors (network failure,
 resource exhaustion, etc.) are reported to the program through the
-effect's `observed:` cells (typically an `error: Signal[Option[E]]`
-cell). The reconciler does not panic the kernel; reconciler-internal
-errors are domain errors expressed through the value track (§8).
+effect's `observed:` cells (typically a `signal error: Option[E] =
+none` cell). The reconciler does not panic the kernel;
+reconciler-internal errors are domain errors expressed through the
+value track (§8).
 
 #### 13.19.15 Restrictions
 
@@ -15144,17 +15333,13 @@ errors are domain errors expressed through the value track (§8).
   reactive-transparent (§13.12.2); they cannot host reactive
   declarations or instantiations. An effect-using function would
   need to be promoted to an operator.
-- **Effect instances are not first-class values that can be
-  reassigned.** A `let f = url |> fetch` binding names a specific
-  instance; the binding cannot be re-pointed to a different
-  instance after creation. Re-instantiating with different parameters
-  creates a distinct instance (or replaces the previous if in the
-  same scope, per the identity rule).
-- **No `signal`, `attr`, `recurrent`, or `derived` declarations
-  inside an effect body.** The effect's body consists only of the
-  `desired:` and `observed:` blocks. Stateful behavior wrapping an
-  effect is expressed via wrapping operators, not via internal
-  reactive declarations in the effect.
+- **No reactive declarations outside `desired:` and `observed:`
+  blocks inside an effect body.** The effect's body consists only of
+  the `desired:` and `observed:` blocks containing role-keyword cell
+  declarations (`derived`, `sink`, `signal`, `stream`). Stateful
+  behavior wrapping an effect — recurrent state, accumulators,
+  retry logic — is expressed via wrapping operators, not via
+  internal declarations in the effect.
 
 ---
 
@@ -15535,8 +15720,6 @@ headroom up front.
   overhead depends on the type. Persistent structures share storage
   across versions; flat structures replicate per buffer.
 
-**Drop and eviction:** see §14.8.
-
 **Stream ring buffers** (§13.18) are a special case of pool-managed
 allocation. Each stream declaration with element type `T` and
 capacity `N` allocates a ring buffer of `N * sizeof(T)` bytes. All
@@ -15548,20 +15731,27 @@ program draw from a per-`(T, N)` pool:
   instances of that combination.
 - Each pool slot holds one complete ring buffer. The stream's
   metadata cells (head pointer, dropped/rejected counters,
-  observation cells per §13.18.5) live in the standard reactive
+  observation cells per §13.18.6) live in the standard reactive
   state buffer; only the ring buffer's slot array lives in the
   per-`(T, N)` pool.
 - Hot reload can grow or shrink these pools as stream declarations
   are added or removed, per the same extensible-pool mechanism. A
-  preserved stream (per §13.18.10's preservation rule) retains its
+  preserved stream (per §13.18.11's preservation rule) retains its
   pool slot across reload; a new stream allocates a new slot.
 
-Unlike persistent data structures, ring buffers are not shared
-across triple-buffer copies — the head pointer advances at producer
-push time and consumers observe through the head pointer at the
-swapped buffer's view. The ring buffer's slot array itself is a
-single allocation; triple-buffering applies to the head pointer and
-metadata, not to the buffer contents.
+Unlike persistent data structures, ring buffer slot arrays are not
+shared across triple-buffer copies. The synchronization protocol
+relies on the head pointer (which IS triple-buffered): producers
+write to slot positions, then advance the head pointer at publish
+time; consumers reading via swap observe events only up to the
+head pointer committed by the most recent publish. Producer writes
+to slot positions that haven't reached the committed head are
+invisible to consumers until the next publish. Overwrites of
+previously-committed slots (under `ring` policy) happen only at
+positions past any cursor that's caught up; lagging cursors that
+were pointing at overwritten positions jump forward per §13.18.9.
+
+**Drop and eviction:** see §14.8.
 
 ### 14.4 What Lives in the Reactive State Buffer
 
@@ -15573,7 +15763,7 @@ buffer. Specifically, the values held by:
 - `recurrent` declarations on node and connection instances.
 - `derived` declarations (the cached computed value).
 - `stream` declarations (head pointer, metadata, and synthesized
-  observation cells per §13.18.5; the ring buffer slot array itself
+  observation cells per §13.18.6; the ring buffer slot array itself
   lives in the per-`(T, N)` pool per §14.3.5).
 - Cells declared inside an `effect`'s `desired:` and `observed:`
   blocks (§13.19.4, §13.19.5). These are ordinary Signal or
@@ -16246,7 +16436,7 @@ pointers at program startup.
   expression reads (used for dirty-set propagation when the
   source is a derived chain).
 - `observation_cell_ids`: IDs of the synthesized observation cells
-  (per §13.18.5) — `pending_count`, `pressure`, `is_full`,
+  (per §13.18.6) — `pending_count`, `pressure`, `is_full`,
   `dropped_total`, `rejected_total`, `last_overflow_at`.
 - `reset_on_reload`: boolean, true if the stream carries the
   `@reset_on_reload` annotation.
@@ -16367,7 +16557,7 @@ analysis (§14.1.1 step 4). Defaults:
 | `recurrent` on a node/connection instance     | `cross_thread_snapshot`     |
 | `derived` reactive cell                       | `cross_thread_snapshot`     |
 | `stream` cell (head pointer + metadata)       | `cross_thread_snapshot`     |
-| Stream observation cells (§13.18.5)           | `cross_thread_snapshot`     |
+| Stream observation cells (§13.18.6)           | `cross_thread_snapshot`     |
 | Effect `observed:` cells (host-written)       | `cross_thread_snapshot`     |
 | Effect `desired:` cells (program-written)     | `cross_thread_snapshot`     |
 | Stdlib single-cell types per §13.12.4         | `cross_thread_atomic`       |
