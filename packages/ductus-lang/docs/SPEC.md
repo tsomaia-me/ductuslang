@@ -8765,8 +8765,9 @@ The reactive system has six declaration kinds, distinguished by
 who controls the value and how (or whether) it changes over time.
 Four declare value-shaped reactive cells (signal, attr, recurrent,
 derived); one declares an event-sequence-shaped reactive cell
-(stream, full treatment in §13.18); one is a compile-time constant
-(const).
+(stream, full treatment in §13.18, with the history-aware
+`recurrent[N] stream` variant in §13.18.8); one is a compile-time
+constant (const).
 
 #### 13.2.1 `signal`
 
@@ -13310,7 +13311,7 @@ restart — either full-kernel or per-instance, depending on the change:
     - Policy changes (`ring` ↔ `gate`).
     - Capacity changes.
 
-  See §13.18.11 for full stream-reload rules. **Per-instance
+  See §13.18.13 for full stream-reload rules. **Per-instance
   restart** suffices.
 - Effect-specific changes that require restart for the affected
   effect instances:
@@ -13439,6 +13440,10 @@ specifies the implementation model. Cross-references:
 - Stream cells (§13.18) allocate ring buffers from per-`(T, N)`
   pools per §14.3.5; their metadata (head pointer, observation
   cells) lives in the standard triple-buffered area per §14.4.
+  Recurrent stream declarations (§13.18.8) add fixed-size
+  per-stream history allocations on top of the base ring buffer,
+  sized from the `[N]` and from compiler-inferred per-input
+  lookback (§13.18.12).
 - Effect instances (§13.19) are groupings of standard reactive
   cells (signal, stream, sink) plus host-side reconciler state.
   No new storage category per §14.4; per-instance state in the
@@ -13808,7 +13813,7 @@ LHS rules common to all cases:
   constant signal cells automatically.
 - For Case 3 specifically, the LHS's concrete type must be a
   `Stream[T]` of matching element type. Piping a `Signal[T]` into a
-  sink is a type error; use `to_stream` (§13.18.7) to convert first
+  sink is a type error; use `to_stream` (§13.18.9) to convert first
   if event semantics are desired.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
@@ -13976,7 +13981,7 @@ in graph specification.
 **With streams (§13.18) and effects (§13.19):** operators share
 the same composition surface (`|>` pipe form, instance identity,
 parameter rules, generics, visibility) as effects, and produce or
-consume streams via the standard stream operators (§13.18.7). The
+consume streams via the standard stream operators (§13.18.9). The
 distinction is semantic role: operators perform pure reactive
 transforms with no outside-world side effects, while effects align
 program state with external reality through the reconciliation
@@ -14081,7 +14086,7 @@ Streams are distinct from `Signal[T]`:
 - `Signal[T]` has a single current value, always defined (§13.2.6).
 - `Stream[T]` has zero or more pending events, each consumed
   independently. There is no "current value" of a stream; consumers
-  project a stream to a signal explicitly (§13.18.7).
+  project a stream to a signal explicitly (§13.18.9).
 
 #### 13.18.2 Declaration
 
@@ -14096,22 +14101,37 @@ stream policy[capacity]? name: Type? = source
 - **`name`** is a snake_case identifier naming the stream.
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
-- **`source`** is a stream-producing expression — typically an
-  operator chain ending in a stream-producing operator (§13.18.7),
-  another stream, or a merge of streams.
+- **`source`** is a reactive expression producing events. Valid
+  source forms:
+  - A stream-producing operator chain (e.g., `signal |> to_stream`).
+  - A reference to another stream (direct forwarding).
+  - A reactive expression involving one or more streams and/or
+    signals (§13.18.7). Streams contribute events; signals
+    contribute commits via implicit `to_stream` semantics.
+  - A single signal or signal-only expression — equivalent to
+    `signal_expr |> to_stream` (§13.18.7.4).
 
 Examples:
 
 ```
+// Operator chain source
 stream ring[2048] user_clicks: ClickEvent = button_press |> to_stream
 
-stream gate[256] db_writes = pending_writes        // type inferred
+// Type inferred from source
+stream gate[256] db_writes = pending_writes
 
+// Default capacity (1024) + inferred type + operator chain
 stream ring url_changes: Url = current_url |> to_stream |> skip_first
-```
 
-The third example uses the default capacity (1024) and an inferred
-element type.
+// Reactive expression source (one stream + one signal)
+stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
+
+// Multi-stream expression (combine_latest)
+stream ring sum: i32 = stream_a + stream_b
+
+// Single signal source (implicit to_stream)
+stream ring url_events: Url = current_url
+```
 
 **Where streams may be declared.** Streams are reactive declarations.
 They may appear in the same scopes as other reactive declarations
@@ -14329,7 +14349,7 @@ using a stream operator that consults the back-pressure signal.
 
 The exact throttling pattern depends on the producing chain's
 shape; the stdlib provides operators that combine well with the
-observation surface (e.g., `throttle` per §13.18.7 with a
+observation surface (e.g., `throttle` per §13.18.9 with a
 pressure-derived gating signal).
 
 **Gate-side back-pressure.** For `gate` streams, the `rejected_total`
@@ -14338,7 +14358,254 @@ corrective action (retry, log, surface error). The pattern is the
 same shape, reading `rejected_total` or `is_full` instead of
 `pressure`.
 
-#### 13.18.7 Stream operators
+#### 13.18.7 Reactive expressions involving streams
+
+Streams participate in reactive expressions on equal footing with
+signals. A reactive expression containing one or more streams
+evaluates per-event, producing a derived stream; a reactive
+expression containing only signals produces a derived signal as
+before (§13.2.3).
+
+##### 13.18.7.1 Expression evaluation model
+
+A reactive input to an expression participates uniformly:
+
+- **A stream** contributes its events. The surrounding expression
+  is re-evaluated once per event, producing one output event per
+  input event.
+- **A signal** contributes its commits (via the same semantics as
+  `to_stream` per §13.18.9: initial value as first contribution,
+  every subsequent committed value as a new contribution).
+
+The expression is recomputed whenever *any* of its reactive inputs
+emit. The output stream emits the freshly-computed value as its
+next event.
+
+##### 13.18.7.2 Combine semantics
+
+When an expression has multiple reactive inputs, the default
+combining behavior is **combine_latest**: a new output event is
+emitted whenever any input emits, using the latest value of each
+other input. The first output event is emitted once every input
+has emitted at least once (signal initial values count as their
+first emission).
+
+```
+stream price_in_eur = price_in_usd * usd_to_eur_rate
+// price_in_usd is a stream; usd_to_eur_rate is a signal.
+// Emits whenever either changes — at the stream's events with
+// the rate's current value, and at the rate's commits with the
+// last price.
+
+stream sum = stream_a + stream_b
+// Two streams. Emits whenever either emits; combine_latest pairs
+// the latest of each.
+```
+
+Other combining behaviors (`zip`, `sample`, `merge`, etc.) require
+explicit stdlib operators (§13.18.9).
+
+##### 13.18.7.3 Stream-wins rule
+
+An expression's reactive-output type is determined by its inputs:
+
+- **Zero streams** in the expression → result is a signal. The
+  surrounding declaration must be `signal`-typed (typically a
+  `derived` — §13.2.3).
+- **One or more streams** in the expression → result is a stream.
+  The surrounding declaration must be `stream`-typed.
+
+The rule follows from input types alone; there is no type-directed
+dispatch on the binding's LHS context. An expression containing
+streams cannot be coerced into a signal silently — explicit
+projection via `to_signal(default)` is required.
+
+##### 13.18.7.4 Assignment rules
+
+| Binding form | RHS expression | Behavior |
+|---|---|---|
+| `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
+| `derived X = expr` | Has streams | Compile error — use `to_signal(default)`. |
+| `stream X = expr` | Has streams | Output stream; per-event evaluation. |
+| `stream X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
+| `stream X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive source (use `to_stream(constant_signal)` or similar). |
+
+The `stream X = signal_expr` form is the implicit-conversion case:
+each signal's commits become events in the output stream. To
+control the conversion mechanism (e.g., to skip the initial value),
+use `to_stream` explicitly with the desired operator chain.
+
+##### 13.18.7.5 Worked examples
+
+**Single signal as stream source:**
+
+```
+signal current_url: Url = "https://example.com"
+stream url_events: Url = current_url
+// Equivalent to: stream url_events = current_url |> to_stream
+// Emits "https://example.com" on creation, then each subsequent
+// commit of current_url.
+```
+
+**Signal-and-stream mixed:**
+
+```
+stream price_in_eur = price_in_usd * usd_to_eur_rate
+// Per-event of price_in_usd: sample rate, compute product.
+// Also emits on rate commits (combine_latest).
+```
+
+**Multi-stream combine_latest:**
+
+```
+stream sum: i32 = stream_a + stream_b
+// Emits whenever a or b emits; output = latest_a + latest_b.
+```
+
+**Conditional transformation:**
+
+```
+stream clamped: i32 = if raw > max_allowed then max_allowed else raw
+// Per-event of raw, output the clamped value.
+```
+
+**Composition with operators downstream:**
+
+```
+stream filtered = (count * 2) |> filter(is_positive)
+// Expression part produces a Stream[i32]; the operator chain continues.
+```
+
+##### 13.18.7.6 Compile-error examples
+
+```
+error: cannot assign stream-valued expression to derived `count_signal`
+  --> derived count_signal: i32 = some_stream * 2
+                                  ^^^^^^^^^^^^^^^
+  hint: a stream-valued expression cannot be coerced to a signal
+        silently. Project to a signal via `to_signal`:
+        `derived count_signal: i32 = (some_stream * 2) |> to_signal(0)`
+```
+
+#### 13.18.8 Recurrent streams
+
+A `recurrent[N] stream` is a stream declaration whose reactive
+expression body may reference past events of itself and of its
+input streams via the `.past(n, fallback)` access form.
+
+##### 13.18.8.1 Declaration form
+
+```
+recurrent[N]? stream NAME: T = EXPR
+```
+
+- `[N]` is the output stream's self-memory size — the maximum
+  lookback `k` permitted in `NAME.past(k, ...)` self-references.
+  Must be a positive integer literal.
+- `recurrent stream NAME` (with no brackets) is shorthand for
+  `recurrent[1] stream NAME` — one step of self-memory.
+- `EXPR` is a reactive expression (§13.18.7) that may use
+  `.past(n, fallback)` and `.previous(init)` on any stream
+  referenced (including `NAME` itself).
+
+```
+recurrent stream filtered: i32 = if count % 2 == 0 then count else count.previous(0)
+recurrent[3] stream avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
+recurrent stream smoothed: f32 = (count + smoothed.previous(0.0)) / 2
+recurrent[5] stream debounced: i32 = if count.past(5, 0) == count then count else debounced.previous(0)
+```
+
+##### 13.18.8.2 Access form
+
+```
+stream_name.past(n, fallback)
+```
+
+- `n` is a positive integer literal specifying the lookback
+  distance. `n=1` is the immediately-previous event; `n=2` is
+  two events back; etc.
+- `fallback` is an expression of type `T` (the stream's element
+  type), returned when fewer than `n` events of `stream_name`
+  have been observed.
+- Returns `T` directly (not `Option[T]`); the fallback ensures the
+  read is always well-typed.
+
+```
+stream_name.previous(init)
+```
+
+is sugar for `stream_name.past(1, init)`.
+
+**Per-stream history semantics.** `count.past(1, 0)` refers to the
+*immediately-previous event of `count`*, regardless of the timing
+of other streams' events. Each stream's history is advanced
+independently per its own event count.
+
+##### 13.18.8.3 Per-call independence
+
+Each `.past(n, fallback)` invocation is an ordinary function call;
+its arguments are evaluated when read. Multiple calls to
+`.past(n, fallback)` on the same stream may use different
+fallback values within the same expression:
+
+```
+recurrent stream blend: i32 =
+  if condition then count.previous(0) else count.previous(99)
+// Two calls on count.previous, with different fallbacks. Both
+// are valid; each contributes independently to its branch.
+```
+
+##### 13.18.8.4 Memory allocation
+
+- **Output stream history**: declared explicitly via `[N]`. The
+  output's ring of past events allocates `N` slots of `sizeof(T)`.
+- **Input stream history**: the compiler statically scans the
+  expression for `.past(k, ...)` calls per input stream and
+  allocates the maximum `k` observed per input. An input
+  referenced only via `.past(1, ...)` and `.past(2, ...)` gets 2
+  slots. An input not accessed via `.past` gets 0 slots
+  (no history allocation).
+
+The total per-declaration memory cost is the sum of:
+`N * sizeof(T_output)` + Σ `max_k(input_i) * sizeof(T_i)` across
+all referenced inputs.
+
+##### 13.18.8.5 Compile-time checks
+
+- `NAME.past(k, ...)` with `k > N` on the declared output: compile
+  error.
+- `.past` or `.previous` access outside the body of a `recurrent[N]
+  stream` declaration: compile error.
+- `n` argument of `.past(n, fallback)` must be a positive integer
+  literal; non-literal expressions are rejected at parse time.
+
+##### 13.18.8.6 Composition with operators
+
+A `recurrent[N] stream` declaration produces an ordinary
+`Stream[T]` for downstream consumers. Operators apply normally:
+
+```
+recurrent[3] stream avg: f32 = (c + c.past(1, 0) + c.past(2, 0)) / 3
+stream scaled: f32 = avg |> map(fn(x): x * 2)
+stream filtered: f32 = avg |> filter(fn(x): x > 0.5)
+```
+
+The recurrent declaration's special semantics are contained within
+its own body; consumers see a regular stream.
+
+##### 13.18.8.7 Restrictions
+
+- **Effect `observed:` blocks** (§13.19.5) declare bare host-written
+  stream cells (no reactive expression body). `recurrent[N] stream`
+  is not valid in `observed:` blocks because there is no expression
+  for `.past` to reference. Effects needing history-aware behavior
+  must compute it in the host's reconciler.
+- `recurrent` (signal) keyword retains its current syntax
+  (§13.2.4). The stream-side `recurrent[N]` extension is distinct;
+  symmetric generalization to recurrent signals is deferred to a
+  later spec revision.
+
+#### 13.18.9 Stream operators
 
 Operators that produce, transform, or consume streams are stdlib
 primitives. All use the standard operator-application syntax
@@ -14466,7 +14733,29 @@ The pipe establishes a forwarding subscription that lives for the
 enclosing scope. There is no dedicated operator wrapper; the pipe's
 type-directed dispatch handles the case when the RHS is a Sink.
 
-#### 13.18.8 Policy as type
+**History-aware operators** (Stream → Stream with state):
+
+```
+operator scan[T, A](source: Stream[T], init: A, f: (A, T) -> A) -> Stream[A]:
+  // emits f(state, event) on each event, threading state through.
+  // The output's first event is f(init, first_input_event).
+
+operator pairwise[T](source: Stream[T]) -> Stream[(T, Option[T])]:
+  // emits each event paired with the previous event;
+  // the first output is (first_input, none).
+```
+
+These are the operator-form equivalents of `recurrent[N] stream`'s
+self-feedback (`scan`) and one-step input pairing (`pairwise`). Use
+them when a closure-style accumulator is preferred — for complex
+state types, or for cases where the inline expression form of
+`recurrent[N] stream` becomes unwieldy.
+
+The native expression form (§13.18.8) is generally preferred for
+straightforward arithmetic and conditional history use; `scan` and
+`pairwise` shine for richer accumulator structures.
+
+#### 13.18.10 Policy as type
 
 Stream policy is encoded in the type rather than as a runtime
 attribute. This means operators that care about policy can constrain
@@ -14517,7 +14806,7 @@ error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
 This catches a class of errors that would otherwise surface only at
 runtime as silent data loss.
 
-#### 13.18.9 Consumer cursors
+#### 13.18.11 Consumer cursors
 
 Each consumer of a stream maintains its own cursor — a position into
 the ring buffer marking the oldest event the consumer has not yet
@@ -14555,7 +14844,7 @@ to rewind a cursor to an earlier position; the buffer's events are
 not persistently stored beyond the ring buffer's lifetime, and
 events may have been overwritten.
 
-#### 13.18.10 Memory model
+#### 13.18.12 Memory model
 
 A stream's storage consists of:
 
@@ -14585,7 +14874,30 @@ slots; consumers read from pre-allocated slots; cursors advance
 through indices. The fixed buffer is the entire memory cost of the
 stream.
 
-#### 13.18.11 Hot reload
+**Recurrent stream history** (§13.18.8) adds additional fixed-size
+allocations on top of the base stream storage:
+
+4. **Output history**: a `recurrent[N] stream X` allocates `N`
+   slots of `sizeof(T_X)` for `X.past(k, ...)` reads. Without an
+   explicit `[N]`, the default is `[1]`.
+5. **Per-input history**: for each input stream referenced via
+   `.past(k, ...)` calls in the expression body, the compiler
+   statically determines the maximum `k` per input and allocates
+   that many slots of `sizeof(T_input)` per input.
+
+Total memory for a `recurrent[N] stream X = expr` declaration:
+
+```
+ring_buffer(X)                          // base stream storage
++ N * sizeof(T_X)                       // output history
++ Σ max_k(input_i) * sizeof(T_input_i)  // per-input history
+```
+
+Inputs not accessed via `.past` add no history overhead. All
+history allocations are made once at stream creation; nothing is
+allocated at runtime.
+
+#### 13.18.13 Hot reload
 
 Stream hot reload preserves the ring buffer iff the stream's
 *type signature* is byte-identical between old and new code. The
@@ -14649,16 +14961,46 @@ full-kernel restart per §13.15.4:
 
 Implementations detect these during the diff phase.
 
-#### 13.18.12 Restrictions
+**Recurrent stream history reload rules** (§13.18.8). In addition
+to the base stream reload rules above:
+
+- **Output history (`[N]`) preserved** iff `(element type, policy,
+  capacity, N)` is byte-identical between old and new code. Source
+  expression changes (rewriting the `.past`-using expression) do
+  not affect history preservation as long as the type signature
+  matches.
+- **Increasing `[N]`** (e.g., `recurrent[3]` → `recurrent[5]`):
+  reload-safe. Preserved history fills the lower-index slots; new
+  slots initialize empty (fallback values used until they fill).
+- **Decreasing `[N]`** (e.g., `recurrent[5]` → `recurrent[3]`):
+  reload-unsafe; per-instance restart of the affected
+  recurrent-stream declarations. The trailing history would have
+  no place to live.
+- **Per-input history**: preserved iff the input stream's type
+  signature is byte-identical AND the max `k` referenced for that
+  input does not decrease. Increasing max `k` for an input
+  reload-safely extends its history allocation (older positions
+  initialize from fallbacks). Decreasing max `k` reload-safely
+  truncates allocation. Removing all `.past` references to an
+  input reload-safely releases its history.
+- **`@reset_on_reload`** on a `recurrent[N] stream` resets both
+  the output history and all per-input history, in addition to
+  the base ring buffer.
+
+#### 13.18.14 Restrictions
 
 - **Streams may not appear inside function bodies.** Functions are
   reactive-transparent (§13.12.2); they have no place to host
   reactive declarations. A function that needs to produce events
   for downstream reactive consumption returns a value the caller
   feeds into an operator that emits a stream.
-- **A stream's `source` expression must produce a stream.** Passing
-  a signal directly is a type error — explicit conversion via
-  `to_stream` is required (§13.18.7).
+- **A stream's `source` must be reactive-valued.** The source
+  expression must include at least one reactive input (signal,
+  stream, or other Cell). Pure-value expressions with no reactive
+  references cannot produce a stream (there's nothing to emit on).
+  Signals participate via implicit `to_stream` semantics
+  (§13.18.7.4); explicit `to_stream` is still available when the
+  user wants different conversion mechanics.
 - **Cursors are not first-class values.** Programs cannot construct,
   store, or pass cursors. Cursors are implementation state of
   consuming operators; they are observable only through the
@@ -14672,8 +15014,20 @@ Implementations detect these during the diff phase.
   `kernel.write_attr`.** Streams are not signal-shaped or attr-
   shaped cells. Host-side writes into a stream go through the
   dedicated host API (§13.14.8 `kernel.push_stream`).
+- **`.past(n, fallback)` and `.previous(init)` are only valid
+  inside the expression body of a `recurrent[N] stream` declaration**
+  (§13.18.8). Use elsewhere — in plain `stream` declarations,
+  `derived` expressions, signal arms, etc. — is a compile error.
+- **Output stream `.past(k, ...)` must satisfy `k ≤ N`.** A
+  declaration `recurrent[N] stream X = ... X.past(k, ...) ...`
+  with `k > N` is a compile error: the output's history allocation
+  cannot hold that many past events.
+- **Stream-valued expressions cannot be assigned to signal-typed
+  bindings.** `derived X = stream_expr` and `signal X = stream_expr`
+  are compile errors; use `to_signal(default)` to project explicitly
+  (§13.18.7.3).
 
-#### 13.18.13 Diagnostics
+#### 13.18.15 Diagnostics
 
 Normative diagnostic classes for stream usage.
 
@@ -14689,17 +15043,33 @@ error: stream declaration requires a policy keyword (`ring` or `gate`)
         `stream ring[1024] my_events: Event = source`
 ```
 
-**Signal passed where Stream expected (missing `to_stream`):**
+**Signal passed where Stream specifically required:**
+
+A `stream X = signal_expr` binding is valid via implicit `to_stream`
+(§13.18.7.4). But operator or effect parameters typed as a specific
+`Stream[T]` (not via reactive-expression coercion) still require an
+actual stream:
 
 ```
 error: cannot pass `Signal[T]` to `Stream[T, _, _]` parameter
-  --> stream ring[1024] events: Event = current_signal
-                                        ^^^^^^^^^^^^^^ expected a stream
-  hint: signal-to-stream conversion is explicit. Apply `to_stream`:
-        `stream ring[1024] events: Event = current_signal |> to_stream`
+  --> persist(my_signal)
+              ^^^^^^^^^ expected a stream
+  hint: `persist`'s parameter requires a stream. Apply `to_stream`
+        explicitly: `persist(my_signal |> to_stream)`.
 ```
 
-**Stream read as a value (missing `to_signal`):**
+**Stream-valued expression assigned to a signal binding:**
+
+```
+error: cannot assign stream-valued expression to signal binding
+  --> derived latest: Event = some_stream * 2
+                              ^^^^^^^^^^^^^^^
+  hint: a stream-valued expression cannot be coerced to a signal
+        silently. Project explicitly via `to_signal(default)`:
+        `derived latest: Event = (some_stream * 2) |> to_signal(default_event)`
+```
+
+**Stream read as a value (no expression context):**
 
 ```
 error: cannot read `Stream[T, _, _]` as a value
@@ -14743,6 +15113,41 @@ error: `stream` declarations are not permitted inside function bodies
         reactive-transparent (§13.12.2) and cannot host reactive
         declarations. Move the stream to a module, node, operator,
         or effect scope.
+```
+
+**`.past` or `.previous` outside `recurrent[N] stream`:**
+
+```
+error: `.past` and `.previous` are only valid inside a `recurrent[N] stream` declaration
+  --> stream filtered = if count % 2 == 0 then count else count.previous(0)
+                                                                ^^^^^^^^^^^
+  hint: history access requires opting into a recurrent stream
+        declaration, which allocates the per-stream memory:
+        `recurrent stream filtered = if count % 2 == 0 then count else count.previous(0)`
+```
+
+**Output `.past(k, ...)` exceeds declared `[N]`:**
+
+```
+error: lookback k=5 exceeds declared output history capacity [N=3]
+  --> recurrent[3] stream x = x.past(5, 0)
+                                ^^^^^^^^^^
+  hint: increase the output history capacity (`recurrent[5]`) or
+        reduce the lookback depth. The output's `.past(k, ...)` calls
+        must satisfy `k ≤ N`.
+```
+
+**Non-literal `n` in `.past(n, fallback)`:**
+
+```
+error: lookback index in `.past(n, fallback)` must be a positive integer literal
+  --> recurrent stream x = source.past(some_variable, 0)
+                                       ^^^^^^^^^^^^^
+  hint: the lookback distance must be a compile-time integer literal,
+        so the compiler can statically determine per-stream memory
+        allocation. For runtime-variable lookback, use the `scan` or
+        `pairwise` operators (§13.18.9) with appropriate accumulator
+        state.
 ```
 
 ### 13.19 Effects
@@ -15020,7 +15425,7 @@ protocol). Writes are dirty-tracked in the standard publish-cycle
 way.
 
 **`stream` cells** — host-written event sequences. The program
-observes events the host appends via stream operators (§13.18.7);
+observes events the host appends via stream operators (§13.18.9);
 the host pushes events via the host API (§13.14.8):
 
 ```
@@ -15305,7 +15710,7 @@ preserve instance identity per the same rule as operators
 (§13.17.10).
 
 **Stream cells inside effects** follow the stream hot-reload rules
-(§13.18.11): the buffer is preserved iff `(element type, policy,
+(§13.18.13): the buffer is preserved iff `(element type, policy,
 capacity)` is byte-identical; `@reset_on_reload` on a stream cell
 forces clear.
 
@@ -15384,7 +15789,7 @@ This makes all cells accessible from a single binding via the flat
 namespace rule (§13.19.7).
 
 **Stream-typed observed cells** are accessed via the stream
-operators (§13.18.7):
+operators (§13.18.9):
 
 ```
 let ws = current_url |> websocket
@@ -15969,7 +16374,7 @@ program draw from a per-`(T, N)` pool:
   per-`(T, N)` pool.
 - Hot reload can grow or shrink these pools as stream declarations
   are added or removed, per the same extensible-pool mechanism. A
-  preserved stream (per §13.18.11's preservation rule) retains its
+  preserved stream (per §13.18.13's preservation rule) retains its
   pool slot across reload; a new stream allocates a new slot.
 
 Unlike persistent data structures, ring buffer slot arrays are not
@@ -15982,7 +16387,7 @@ to slot positions that haven't reached the committed head are
 invisible to consumers until the next publish. Overwrites of
 previously-committed slots (under `ring` policy) happen only at
 positions past any cursor that's caught up; lagging cursors that
-were pointing at overwritten positions jump forward per §13.18.9.
+were pointing at overwritten positions jump forward per §13.18.11.
 
 **Drop and eviction:** see §14.8.
 
@@ -16673,6 +17078,16 @@ pointers at program startup.
   `dropped_total`, `rejected_total`, `last_overflow_at`.
 - `reset_on_reload`: boolean, true if the stream carries the
   `@reset_on_reload` annotation.
+- `output_history_size`: integer N from `recurrent[N] stream`, or
+  0 if not a recurrent stream declaration. Determines the number
+  of past-event slots allocated for `NAME.past(k, ...)` access on
+  this stream's output (§13.18.8.4).
+- `input_lookback_map`: a map from input cell IDs (referenced via
+  `.past(k, ...)` in this stream's expression body, when this is
+  a recurrent stream) to integer max-`k` values. Empty for
+  non-recurrent streams or for recurrent streams whose body does
+  not call `.past` on any inputs. Determines per-input history
+  allocation (§13.18.8.4).
 
 A Sink declared in an effect's `desired:` block shares its cell ID
 with the corresponding Stream view; the spec records a single
