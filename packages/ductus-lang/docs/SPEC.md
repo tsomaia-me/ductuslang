@@ -14625,6 +14625,78 @@ Implementations detect these during the diff phase.
   shaped cells. Host-side writes into a stream go through the
   dedicated host API (§13.14.8 `kernel.push_stream`).
 
+#### 13.18.13 Diagnostics
+
+Normative diagnostic classes for stream usage.
+
+**Missing policy keyword in stream declaration:**
+
+```
+error: stream declaration requires a policy keyword (`ring` or `gate`)
+  --> stream my_events: Event = source
+             ^^^^^^^^^^ no policy specified
+  hint: streams must declare an overflow policy. Use `ring` for
+        lossy-acceptable streams (overwrites oldest on full) or
+        `gate` for lossless streams (rejects new pushes on full):
+        `stream ring[1024] my_events: Event = source`
+```
+
+**Signal passed where Stream expected (missing `to_stream`):**
+
+```
+error: cannot pass `Signal[T]` to `Stream[T, _, _]` parameter
+  --> stream ring[1024] events: Event = current_signal
+                                        ^^^^^^^^^^^^^^ expected a stream
+  hint: signal-to-stream conversion is explicit. Apply `to_stream`:
+        `stream ring[1024] events: Event = current_signal |> to_stream`
+```
+
+**Stream read as a value (missing `to_signal`):**
+
+```
+error: cannot read `Stream[T, _, _]` as a value
+  --> derived latest: Event = events
+                              ^^^^^^ this is a stream, not a value cell
+  hint: streams have no current value. Project to a signal via
+        `to_signal`, or fold the stream:
+        `derived latest = events |> to_signal(default_event)`
+```
+
+**Policy mismatch in pipe chain:**
+
+```
+error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
+  --> writes |> persist
+                ^^^^^^^
+  hint: `persist` requires a gate stream because lost writes would
+        be incorrect; the source stream uses ring policy. Either
+        reconstruct the producing chain as a gate stream, or use a
+        lossy-acceptable variant of `persist`.
+```
+
+**Assignment to a sink:**
+
+```
+error: cannot assign to sink `outbound`; use `|> into(...)` instead
+  --> ws.outbound = some_message
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  hint: sinks receive events through stream forwarding, not assignment.
+        Write `stream_of_messages |> into(ws.outbound)`.
+```
+
+**Stream declaration inside a function body:**
+
+```
+error: `stream` declarations are not permitted inside function bodies
+  --> fn helper():
+        stream ring[1024] events: Event = source
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  hint: streams are reactive declarations. Functions are
+        reactive-transparent (§13.12.2) and cannot host reactive
+        declarations. Move the stream to a module, node, operator,
+        or effect scope.
+```
+
 ### 13.19 Effects
 
 An *effect* is a reusable, cell-allocating reactive construct that
@@ -15340,6 +15412,117 @@ value track (§8).
   behavior wrapping an effect — recurrent state, accumulators,
   retry logic — is expressed via wrapping operators, not via
   internal declarations in the effect.
+
+#### 13.19.16 Diagnostics
+
+Normative diagnostic classes for effect usage.
+
+**Cell name is reserved inside an effect's blocks:**
+
+```
+error: cell name `desired` is reserved inside an effect's blocks
+  --> effect example():
+        desired:
+          derived desired: bool = false
+                  ^^^^^^^ this name is reserved
+  hint: `desired` and `observed` are reserved within `effect`
+        declarations as block introducers. Choose a different cell
+        name.
+```
+
+**Cross-block cell name collision:**
+
+```
+error: cell name `target` appears in both `desired:` and `observed:` of effect `example`
+  --> effect example():
+        desired:
+          derived target: Url = some_expr
+        observed:
+          signal target: Url = "..."
+                 ^^^^^^ duplicate name
+  hint: cells across `desired:` and `observed:` share a flat
+        namespace via the access path `instance.field`. Rename one
+        of the cells to avoid the collision.
+```
+
+**Write to effect cell from program code:**
+
+```
+error: cannot assign to cell `response` on effect instance
+  --> f.response = some(custom_response)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  hint: effect cells are not writable from program code. To control
+        the effect's behavior, change the upstream signal(s) bound
+        to its parameters, or push events into the effect's sink(s)
+        via the `into` operator.
+```
+
+**Effect type with no registered reconciler:**
+
+```
+error: effect type `fetch` has no registered reconciler
+  --> at kernel startup
+  hint: every effect type appearing in the graph specification must
+        have a reconciler registered via
+        `kernel.register_reconciler("fetch", ...)` (§13.14.7) before
+        the kernel enters the live state. Generic effects require
+        one registration per concrete instantiation.
+```
+
+**Effect instantiation inside a function body:**
+
+```
+error: effect instantiations are not permitted inside function bodies
+  --> fn helper(x: i32):
+        let f = some_url |> fetch
+                            ^^^^^ effect instantiation
+  hint: functions are reactive-transparent (§13.12.2) and cannot host
+        reactive declarations or instantiations. Promote `helper` to
+        an operator, or perform the effect instantiation in a
+        reactive scope (module level, node body, operator body, or
+        effect cell expression).
+```
+
+**Effect instantiation inside another effect's body:**
+
+```
+error: effect instantiation inside another effect's body is not permitted
+  --> effect outer(input: Signal[T]):
+        desired:
+          derived chained = input |> inner_effect
+                                     ^^^^^^^^^^^^ effect-in-effect not allowed
+  hint: effects-from-effects composition is deferred to a future
+        revision (§13.19.15). Compose effects at the consumer site by
+        feeding one effect's observed cells into another's parameters:
+        `derived a = input |> first_effect`
+        `derived b = a.result |> second_effect`
+```
+
+**Disallowed declaration inside an effect's blocks:**
+
+```
+error: only role-keyword declarations are permitted inside effect blocks
+  --> effect example():
+        desired:
+          recurrent count: i32 = 0
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+            | on input: self.count + 1
+  hint: effect blocks accept only `derived`, `sink` (in `desired:`)
+        and `signal`, `stream` (in `observed:`). For stateful behavior
+        wrapping an effect, use a wrapping operator (§13.17) that
+        holds the recurrent state and consumes/produces effect cells.
+```
+
+**Effect appearing in node-placement position:**
+
+```
+error: effects cannot be placed via node-style placement syntax
+  --> Fetcher f1                       // ✗ effect type used as placement
+      ^^^^^^^^^^
+  hint: effects are instantiated by appearance in expression position
+        (pipe chains or function-call form), not via topological
+        placement. Use `let f = some_url |> fetch` instead.
+```
 
 ---
 
