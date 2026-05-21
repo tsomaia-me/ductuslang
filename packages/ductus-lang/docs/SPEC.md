@@ -14665,7 +14665,7 @@ primitives. All use the standard operator-application syntax
 **Signal-to-stream bridge:**
 
 ```
-operator to_stream[T](source: Signal[T]) -> Stream[T]:
+operator to_stream[T, const N: usize = 1024](source: Signal[T]) -> RingStream[T, N]:
   // emits initial value as first event;
   // emits each subsequent committed value of source as a new event
   ...
@@ -14676,9 +14676,23 @@ current value is emitted as event 0; thereafter, each commit of a new
 value by the source (per the publish cycle) appends an event. Same-
 value commits do not emit (per the value-change semantics of §13.2.4.4).
 
-The output stream's policy defaults to `ring` and capacity to `1024`;
-overrides are supplied at the declaration site (`stream ring[N]
-name = sig |> to_stream`).
+The output is a `RingStream[T, N]`. The capacity `N` defaults to
+`1024`; callers may override via turbofish:
+
+```
+let s = some_signal |> to_stream                       // RingStream[T, 1024]
+let s = some_signal |> to_stream::<Url, 2048>          // RingStream[Url, 2048]
+```
+
+The `to_stream` operator always produces `ring` policy. To convert
+a signal to a stream with a different policy, apply additional
+operators after `to_stream` (e.g., to coerce to gate, the user
+declares a `gate`-policied output and threads through). Most cases
+need only the default ring semantics.
+
+The implicit signal-to-stream conversion in reactive expressions
+(§13.18.7.4) uses the default `N = 1024`, matching this operator's
+default.
 
 **Stream-to-signal bridge:**
 
@@ -14856,6 +14870,27 @@ error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
 
 This catches a class of errors that would otherwise surface only at
 runtime as silent data loss.
+
+**Mixing policies in reactive expressions** (§13.18.7) is allowed
+without compiler intervention. When an expression contains streams
+of differing policies — `stream ring X = ring_a + gate_b` — the
+output's policy is the LHS-declared policy (`ring` in this example),
+regardless of input policies. There is no inference of output
+policy from inputs.
+
+The rationale: a stream's policy is an *output-buffer* property —
+it controls what happens when the OUTPUT's consumers can't keep up.
+It is independent of input semantics. Mixing a gate input into a
+ring output means the gate input still tracks its own `rejected_total`
+(its producer-facing guarantee remains), but the COMBINED output
+behaves per the LHS-declared ring policy: consumers of the output
+may miss events under load.
+
+Authors are responsible for understanding the implication: if an
+expression mixes lossless (gate) inputs into a lossy (ring) output,
+the gate's lossless guarantee does not propagate to downstream
+consumers of the combined output. To preserve the gate semantics
+end-to-end, declare the output as `gate` too.
 
 #### 13.18.11 Consumer cursors
 
