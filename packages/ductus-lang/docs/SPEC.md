@@ -13759,20 +13759,51 @@ instances is bounded and known.
 
 #### 13.17.7 The `|>` operator
 
-`|>` is the pipe-application token. Its semantics:
+`|>` is the pipe-application token. It expresses a connection from
+a source cell on the left to a destination on the right. The kind
+of connection — apply-and-bind or forward-into — is determined by
+the RHS's kind.
+
+**Three dispatch cases**, distinguished by the RHS:
+
+**Case 1: RHS is an operator call** (§13.17). The operator is
+instantiated; the LHS is bound to its first positional parameter.
+The result is the operator's declared output cell.
+
+```
+let smoothed: Signal[f32] = source |> smooth(rate: 0.1, clock: tick)
+```
+
+**Case 2: RHS is an effect call** (§13.19). The effect is
+instantiated; the LHS is bound to its first positional parameter.
+The result is the effect instance value (a composite accessed per
+§13.19.7).
+
+```
+let f = current_url |> fetch
+```
+
+**Case 3: RHS is a `Sink[T]`** (§13.18.4). The LHS must be a
+`Stream[T]` of matching element type. A forwarding subscription is
+established: each event observed from the source stream is pushed
+into the sink. The expression's value is the unit type `()`; the
+forwarding subscription lives as long as the enclosing scope.
+
+```
+let ws = current_url |> websocket
+messages_to_send |> ws.outbound       // forwards stream into the sink
+```
+
+LHS rules common to all cases:
 
 - LHS must be an expression of a reactive cell type (`Signal[T]`,
-  `Stream[T, P, N]`, `Sink[T, P, N]`, or any other `Cell[T]` — see
-  §13.18.6), or an expression convertible to one (literals are
-  wrapped as implicit constant signal cells automatically).
-- RHS must be either an **operator call** (§13.17) or an **effect
-  call** (§13.19) — the construct's name optionally followed by
-  parenthesized arguments.
-- The operator or effect is instantiated; the LHS is bound to its
-  first positional parameter.
-- The result is the instantiated construct's output: for operators,
-  the declared output cell (typically `Signal[U]`); for effects,
-  the effect instance value (a composite accessed per §13.19.7).
+  `Stream[T]`, `Sink[T]`, or any other `Cell[T]` per §13.18.5), or
+  an expression convertible to one. Literals are wrapped as implicit
+  constant signal cells automatically.
+- For Case 3 specifically, the LHS's concrete type must be a
+  `Stream[T]` of matching element type. Piping a `Signal[T]` into a
+  sink is a type error; use `to_stream` (§13.18.7) to convert first
+  if event semantics are desired.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -14170,22 +14201,23 @@ operator that constructs a stream and returns both its stream view
 push into) as a record.
 
 **Pushing into a sink.** Sinks are not written via assignment.
-Producers push into a sink by piping a stream into it via the
-`into` operator:
+Producers push into a sink by piping a stream into it directly via
+`|>` (§13.17.7 Case 3):
 
 ```
 let events_to_log: Stream[LogEntry] = ...
 let log_sink: Sink[LogEntry] = ...
-events_to_log |> into(log_sink)          // routes events from stream to sink
+events_to_log |> log_sink                // forwards stream into sink
 ```
 
-The `into` operator establishes a forwarding subscription: each
-event observed from the stream is pushed into the sink.
+The pipe establishes a forwarding subscription: each event observed
+from the stream is pushed into the sink. The expression's value is
+the unit type `()`; the subscription lives for the enclosing scope.
 
 A single sink may receive from multiple stream-sources via multiple
-`into` chains (multi-producer pattern). The receiving sink's ring
-buffer is shared; events from all producers arrive in their
-publish-commit order.
+pipe-into-sink expressions (multi-producer pattern). The receiving
+sink's ring buffer is shared; events from all producers arrive in
+their publish-commit order.
 
 **No standalone sink declaration.** Sinks are not declared with a
 top-level `sink` keyword. A sink exists only as the write-side
@@ -14417,17 +14449,16 @@ the same shape; cross-policy merges (one ring, one gate) are not
 permitted (compile error — the result's overflow semantics would be
 ambiguous).
 
-**Composition operator** (Stream → Sink):
+**Stream-to-sink forwarding** is not an operator — it is expressed
+directly via `|>` Case 3 (§13.17.7):
 
 ```
-operator into[T](source: Stream[T], target: Sink[T]) -> ():
-  // forwards events from source into target;
-  // a long-lived subscription, alive while both source and target are in scope
+source_stream |> target_sink
 ```
 
-The `into` operator returns the unit type `()` — it is a forwarding
-construct, not a transformation. Its scope-bound lifetime maintains
-the forwarding link.
+The pipe establishes a forwarding subscription that lives for the
+enclosing scope. There is no dedicated operator wrapper; the pipe's
+type-directed dispatch handles the case when the RHS is a Sink.
 
 #### 13.18.8 Policy as type
 
@@ -14677,11 +14708,11 @@ error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
 **Assignment to a sink:**
 
 ```
-error: cannot assign to sink `outbound`; use `|> into(...)` instead
+error: cannot assign to sink `outbound`
   --> ws.outbound = some_message
       ^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: sinks receive events through stream forwarding, not assignment.
-        Write `stream_of_messages |> into(ws.outbound)`.
+        Pipe a stream into the sink: `stream_of_messages |> ws.outbound`.
 ```
 
 **Stream declaration inside a function body:**
@@ -14915,8 +14946,9 @@ via the standard access path (`f.request` — see §13.19.7), but
 cannot write to them.
 
 **`sink` cells** — write-only stream ends. The program pushes events
-into the sink via the `into` operator (§13.18.7); the host's
-reconciler consumes events from the paired Stream view:
+into the sink by piping a stream into it via `|>` (§13.17.7
+Case 3); the host's reconciler consumes events from the paired
+Stream view:
 
 ```
 desired:
@@ -14928,8 +14960,8 @@ The declaration shape parallels the `stream` declaration (§13.18.2)
 — policy keyword (`ring` or `gate`), optional capacity in brackets
 (defaulting to 1024), name, element type. The difference is the
 leading `sink` keyword instead of `stream`, and the absence of an
-`= source` clause: a sink's events come from program-side `into`
-operations, not from a declared source expression.
+`= source` clause: a sink's events come from program-side pipe-
+into-sink expressions, not from a declared source.
 
 **Cell name uniqueness.** Within a single `desired:` block, cell
 names must be distinct. Cells in `desired:` may not share names
@@ -15073,7 +15105,7 @@ unambiguous.
 
 **No write-to-cell from program code.** Effect cells are not writable
 from program code via assignment. The only program-side writes are
-pushes into sinks via the `into` operator. Writing to any effect
+pipe-into-sink expressions (§13.17.7 Case 3). Writing to any effect
 cell — signal, stream, or derived — via assignment is a compile
 error:
 
@@ -15083,21 +15115,22 @@ error: cannot assign to cell `response` on effect instance
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. To control
         the effect's behavior, change the upstream signal(s) bound
-        to its parameters, or push events into the effect's
-        sink(s) via the `into` operator.
+        to its parameters, or pipe a stream into the effect's
+        sink(s) via `|>`.
 ```
 
 **Pushing into a sink:**
 
 ```
 let ws = current_url |> websocket
-my_outgoing_messages |> into(ws.outbound)
+my_outgoing_messages |> ws.outbound
 ```
 
-The `into` operator pipes a Stream into a Sink. The Sink is accessed
-on the effect instance by name (`ws.outbound`). Multiple `into`
-chains may target the same Sink (multi-producer pattern); their
-events arrive in publish-commit order.
+Piping a `Stream[T]` into a `Sink[T]` establishes a forwarding
+subscription. The sink is accessed on the effect instance by name
+(`ws.outbound`). Multiple pipes may target the same sink
+(multi-producer pattern); their events arrive in publish-commit
+order.
 
 **Reading a stream:**
 
@@ -15453,8 +15486,8 @@ error: cannot assign to cell `response` on effect instance
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. To control
         the effect's behavior, change the upstream signal(s) bound
-        to its parameters, or push events into the effect's sink(s)
-        via the `into` operator.
+        to its parameters, or pipe a stream into the effect's
+        sink(s) via `|>` (§13.17.7 Case 3).
 ```
 
 **Effect type with no registered reconciler:**
