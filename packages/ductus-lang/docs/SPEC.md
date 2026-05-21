@@ -9994,6 +9994,7 @@ node TypeName[GenericParams]?:
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent name: Type = init | on t1: expr           // per-instance memory cells
   derived name: Type = expr                           // per-instance reactive values
+  stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
@@ -10863,6 +10864,7 @@ connection TypeName[GenericParams]?:
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent name: Type = init | on t1: expr           // per-instance memory cells
   derived name: Type = expr                           // per-instance reactive values
+  stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
 
 A connection type may declare a `default attr` per §13.2.2.1. At
@@ -10896,7 +10898,7 @@ instances directly (their concrete types).
 connection TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, signal, attr, recurrent, derived) per §13.6.1.1
+  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
@@ -10930,7 +10932,7 @@ connection TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, signal, attr, recurrent, derived) per §13.6.1.1
+  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
