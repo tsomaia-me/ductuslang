@@ -14614,6 +14614,17 @@ buffer is reset to empty. This is appropriate when buffered events
 from the prior program version would be misinterpreted by the new
 version's consumers.
 
+**Annotation changes between reloads apply prospectively.** Adding
+`@reset_on_reload` to a stream declaration that previously did not
+carry it does *not* retroactively reset the current buffer; the
+current reload preserves the buffer per the type-signature rule.
+The new annotation takes effect on the *next* reload affecting this
+stream's declaration site. Removing the annotation behaves
+symmetrically: the current reload still resets the buffer (the old
+annotation applied to the in-progress reload); subsequent reloads
+preserve. This matches the precedent for `when` predicate changes
+(§13.15.3): structural-metadata changes apply prospectively.
+
 **Cursor identity across reload.** A consumer's cursor is preserved
 when the consuming operator (or derived) instance is preserved per
 its own identity rule. When the consumer is added (a new
