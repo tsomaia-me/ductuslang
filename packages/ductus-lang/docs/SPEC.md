@@ -11605,10 +11605,12 @@ compile error.
 The permitted flag characters are:
 
 ```
-' ! ? * + ^ ~ @ $ #
+' ! ? * + ^ ~ @ $
 ```
 
-Each is a non-letter character not part of identifier syntax.
+Each is a non-letter character not part of identifier syntax. (`#`
+is a valid identifier character per §1.4 and is therefore excluded
+from the flag set.)
 
 ##### 13.8.8.2 Flag-character uniqueness
 
