@@ -8603,7 +8603,7 @@ added or removed at runtime — except by hot reload (§13.15), which
 replaces the program source and applies a diff atomically.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
-declarations, attr default expressions, recurrent arm expressions)
+declarations, attr default expressions, recurrent expressions)
 are pure expressions over signal, attr, recurrent, and derived
 values. They contain no `mut` bindings, no loops, no
 statement-level imperative constructs. When imperative work is
@@ -8613,7 +8613,7 @@ which may use `mut` internally.
 **Lazy, batched evaluation.** Writes (signal, attr) mark dependent
 cells dirty without immediate recomputation. The kernel evaluates
 the dirty set in topological order, advances recurrent cells per
-their firing arm expressions in lockstep, and swaps the back
+their expressions in lockstep, and swaps the back
 buffer atomically — all in a single `kernel.publish()` operation
 (§13.14.4). Writes accumulate between publishes; one publish
 processes the union.
@@ -8710,8 +8710,8 @@ signal tick: i64 = 0
 
 -- Counter advances its count whenever the host changes `tick`.
 node Counter:
-  recurrent count: i32 = 0
-    | on tick: self.count + 1
+  recurrent count: i32 = observe:
+    on tick: self.count.previous(0) + 1
   out: ShowsCount [=1]
 
 -- Display reads the count through its incoming connection.
@@ -9030,150 +9030,170 @@ only cells visible at module scope per the topological-init rule
 #### 13.2.4 `recurrent`
 
 ```
-recurrent name: Type = initial
-  | on triggers: next_expr
-  | on triggers where guard: next_expr
-  ...
+recurrent[N]? name: Type? = expression
 ```
 
-A `recurrent` declares a *per-instance* writable cell with memory
-across triggering events. It is the mechanism for values that
-depend on their own past — counters, accumulators, smoothing
-curves, running statistics, sequencer step indices, and other
-patterns where the new value depends on the previous value.
+A `recurrent` declares a *per-instance* reactive cell whose
+expression may reference its own past values via `.previous(fallback)`
+and `.past(k, fallback)`. It is the mechanism for values that depend
+on their own past — counters, accumulators, smoothing curves,
+running statistics, sequencer step indices, and other patterns where
+the new value depends on the previous value.
 
-A recurrent declaration consists of:
+A recurrent declaration has:
 
-- **`= initial`** — the value the cell holds before any arm fires.
-  Mandatory.
-- **One or more arms** — each beginning with `| on`, specifying the
-  trigger cells whose value changes cause the arm to fire, an
-  optional `where guard` clause, and the `next_expr` to apply when
-  the arm fires. At least one arm is required; a recurrent with no
-  arms is a compile error.
+- **`[N]`** (optional) — the cell's self-history depth, used to bound
+  `name.past(k, fallback)` accesses. Must be a positive integer
+  literal. When omitted, defaults to `[1]` (only `.previous`
+  accessible).
+- **`name`** — a snake_case identifier naming the cell.
+- **`Type`** — the value type. Optional when inferable from the
+  expression's result type and from fallback values supplied to
+  `.previous` / `.past`.
+- **`expression`** — a pure reactive expression defining the cell's
+  value at every moment.
 
-An arm has the shape:
+The expression must use `.previous(fallback)` or `.past(k, fallback)`
+to read prior self-values. Bare self-references (writing the cell's
+own name in its own expression) are forbidden — there is no
+"current value being defined" for the bare name to refer to. The
+expression IS the cell's value at every moment; past values require
+the explicit accessor.
 
-```
-| on triggers: next_expr
-| on triggers where guard: next_expr
-```
-
-where:
-
-- **`triggers`** is one or more reactive cells (signals, attrs,
-  recurrents, deriveds) whose value changes cause the arm to fire.
-  A single trigger is written as a bare name (`on tick`); a group
-  of two or more triggers is written parenthesized
-  (`on (tick1, tick2)`). Parens are optional for a single trigger
-  and required for groups. Trigger semantics is value-change
-  (§13.2.4.4).
-- **`where guard`** is an optional reactive boolean expression
-  evaluated in the recurrent's scope (§13.2.4.7), with the same
-  purity rules as derived expressions (§13.2.3). When present, the
-  arm fires only if at least one trigger changed value AND the
-  guard is currently true.
-- **`next_expr`** is a pure reactive expression. When the arm
-  fires, the expression evaluates against current inputs and the
-  cell's *previous-committed* value; the result becomes the cell's
-  new value after the evaluation pass commits.
+The fallback in `.previous(fallback)` / `.past(k, fallback)` is the
+value returned when there is no committed value at that depth yet —
+i.e., before the cell has received its k-th publish commit. The
+fallback type must match the cell's element type.
 
 ```
-signal increment: i32 = 0
+// Counter that depends on an external input
+recurrent counter: i32 = counter.previous(0) + step_value
+//   counter has 1 step of self-memory (default [1]);
+//   re-evaluates when step_value changes (implicit trigger);
+//   on first publish, counter.previous(0) = 0, so counter = 0 + step_value.
 
-node Counter:
-  attr step_size: i32 = 1
-  recurrent count: i32 = 0
-    | on increment: self.count + self.step_size
+// Fibonacci-style sum of last two
+recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)
+//   [2] permits up to 2-step lookback.
+
+// Moving average over last 3
+recurrent[3] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
+//   .past on `input` (an upstream stream — see §13.18.8) allocates
+//   per-input history. Output history [3] is for `avg.past(...)` if used.
 ```
 
-The cell starts at 0. When `increment`'s value changes (host
-writes a new value via `write_signal`), the arm fires: the
-`next_expr` reads `self.count` (previous-committed value) and
-`self.step_size`, computes the new value, and commits at the end
-of the evaluation pass.
+**Triggers are implicit from non-self references.** A recurrent
+re-evaluates whenever any cell it references (other than via
+`.previous`/`.past` on itself) commits a new value. This is the
+same spreadsheet-style reactive default as `derived` (§13.2.3): the
+expression's value is its definition at all times, and the kernel
+maintains that invariant.
 
-**Priority on overlapping fires.** When multiple arms' triggers
-fire in the same publish, arms are evaluated in declaration order;
-the first arm whose trigger fired AND whose `where` guard (if
-present) is true wins. The remaining arms are not evaluated.
-Earlier-declared arms have higher priority. If no arm fires (no
-triggers changed, or all guards are false), the recurrent holds
-its previous value.
+A recurrent whose expression contains only self-references
+(`recurrent count = count.previous(0) + 1` with no other inputs)
+evaluates once and freezes — there is nothing to trigger
+re-evaluation. This is valid behavior, not a bug: the expression
+correctly describes the cell's value, which happens to be constant
+after the first evaluation.
+
+**Explicit triggers** require wrapping the expression in an
+`observe` block (§13.2.11):
+
+```
+recurrent counter: i32 = observe:
+  on tick: counter.previous(0) + 1
+  on reset: 0
+```
+
+`observe` provides per-trigger arms with arm-selection semantics —
+necessary when the trigger is not a value-contributing reference
+(e.g., a pure clock signal) or when different triggers should
+produce different update expressions.
 
 ##### 13.2.4.1 Lockstep advancement
 
-When multiple recurrent cells' triggers fire in the same
-evaluation pass (a single `kernel.publish()` cycle), they advance
-in **lockstep**: every triggered recurrent's firing arm expression
-reads the *previous-committed* values of all recurrent cells in
-the system (including other triggered ones), computes a new value,
-and commits together at the end of the pass. No recurrent cell
-sees another recurrent cell's just-advanced value within the same
-pass.
+When multiple recurrent cells re-evaluate in the same publish cycle,
+they advance in **lockstep**: every triggered recurrent's expression
+reads the *previous-committed* values of all recurrent cells in the
+system (including other triggered ones), computes a new value, and
+commits together at the end of the pass. No recurrent cell sees
+another recurrent cell's just-advanced value within the same pass.
 
-Recurrents whose triggers did not fire in this pass do not
-re-evaluate; they retain their existing values.
+In particular, a recurrent's own `.previous(fallback)` and
+`.past(k, fallback)` accesses always return previously-committed
+values; the value being computed in the current publish is not
+visible through these accessors during that same publish.
+
+Recurrents whose expressions did not re-evaluate in this pass do not
+advance; they retain their existing values.
 
 This is the standard synchronous-dataflow semantics (Lustre,
 Esterel, Verilog `<=` non-blocking assignment). The new value of
-any triggered recurrent is a pure function of the previous-
+any re-evaluated recurrent is a pure function of the previous-
 committed values and the inputs received during this pass.
 
 ##### 13.2.4.2 Recurrent vs attr
 
-`attr` and `recurrent` are both per-instance writable cells. The
-distinction is who advances the value:
+`attr` and `recurrent` are both per-instance cells. The distinction
+is who advances the value:
 
 - `attr` cells change only when the host writes via
   `kernel.write_attr`. The kernel does not advance them
   automatically.
-- `recurrent` cells advance automatically per their firing arm's
-  expression whenever a trigger in an arm fires. The host cannot
-  directly write a recurrent cell at runtime; control is indirect
-  — the host triggers signals (or writes attrs) that an arm's
-  expression reads or that appear in an arm's trigger list.
+- `recurrent` cells re-evaluate automatically when any non-self
+  reference in the expression commits a new value. The host cannot
+  directly write a recurrent cell at runtime; control is indirect —
+  the host writes signals/attrs that the recurrent's expression
+  reads.
 
 Use `attr` for parameters, configuration, and host-controlled
-inputs. Use `recurrent` for cells that carry computed values
-across triggers.
+inputs. Use `recurrent` for cells that carry computed values that
+depend on their own past.
 
-##### 13.2.4.3 Override at placement
+##### 13.2.4.3 Self-history access
 
-The `= initial` value may be overridden at placement, similar to
-attrs:
-
-```
-Counter c1 | count=100      // override initial value
-```
-
-The arm structure (triggers, guards, and `next_expr` expressions)
-is a structural type property and *cannot* be overridden at
-placement. If per-instance variation is needed, parametrize via
-attrs read inside `next_expr`:
+Inside a recurrent's expression, the cell's past values are accessed
+via two methods on the cell's own name:
 
 ```
-signal tick_signal: u64 = 0
-
-node Counter:
-  attr step_size: i32 = 1
-  recurrent count: i32 = 0
-    | on tick_signal: self.count + self.step_size
-
-Counter c1 | step_size=5    // per-instance step via attr override
+name.previous(fallback)         // one step back; sugar for .past(1, fallback)
+name.past(k, fallback)          // k steps back; k must be 1..N (the declared depth)
 ```
 
-##### 13.2.4.4 Value-change semantics for triggers
+- `k` must be a positive integer literal between 1 and N inclusive
+  (where N is the recurrent's declared `[N]` depth, defaulting to 1).
+- `fallback` is an expression of the cell's value type, returned when
+  fewer than k commits have happened (i.e., not enough history
+  exists).
+- Each `.previous` / `.past` call is an ordinary function call.
+  Multiple calls within the same expression with different
+  fallbacks are independent — each returns its own fallback when no
+  history exists.
 
-A trigger in an arm's trigger list fires when the listed cell's
-value changes from the perspective of the evaluation pass. Writing
-the same value to a signal does not fire its triggers. This is
+`name.past(k, fallback)` with `k > N` is a compile error: the cell's
+history allocation cannot hold that many past values.
+
+Bare references to the cell's own name in its expression are not
+permitted (compile error). Past-value access must go through the
+explicit `.previous`/`.past` accessors. References to OTHER cells
+(non-self) use bare names normally.
+
+##### 13.2.4.4 Value-change semantics
+
+A reactive cell's commit fires downstream re-evaluation only when
+its value changes from its previously-committed value. Writing the
+same value to a signal does not fire its dependents. This is
 standard reactive semantics — only meaningful changes propagate.
 
-To express "fire on every event regardless of value," use a
-counter pattern: the signal is a monotonically increasing count;
-each "event" increments the count; downstream cells trigger on
-every increment because the value changes each time.
+The rule applies uniformly across signal commits, attr writes,
+recurrent advancements, and derived re-evaluations. A recurrent
+whose expression re-evaluates and produces the same value as the
+previous-committed value does not propagate a change downstream.
+
+To express "fire on every event regardless of value," use a counter
+pattern: the signal is a monotonically increasing count; each
+"event" increments the count; downstream cells trigger on every
+increment because the value changes each time.
 
 ##### 13.2.4.5 Scope
 
@@ -9190,25 +9210,26 @@ and `derived`:
 
 ##### 13.2.4.6 Tuple-coupled recurrents
 
-Multiple recurrents may share a single arm evaluation by declaring
-them as a tuple:
+Multiple recurrents may share a single expression evaluation by
+declaring them as a tuple:
 
 ```
-recurrent (name1, name2, ...): (Type1, Type2, ...) = (init1, init2, ...)
-  | on triggers: tuple_expression_returning_same_shape
+recurrent[N]? (name1, name2, ...): (Type1, Type2, ...) = tuple_expression
 ```
 
-The declaration creates N independent cells, each named and
-typed individually. The arm's `next_expr` returns a tuple of the
-same shape and types; all N cells advance atomically from a single
-evaluation. Shared computation in the arm body is performed once,
-not N times.
+The declaration creates N independent cells, each named and typed
+individually. The expression returns a tuple of the same shape and
+types; all cells advance atomically from a single evaluation.
+Shared computation in the expression is performed once, not N times.
 
-Example — a Kalman filter sharing the gain computation across
-mean and variance updates. The arm body is a single pure
-expression and cannot directly contain `let` bindings; the shared
-work is factored into a helper function whose body computes the
-gain once and returns the pair of updated values:
+Each cell in the tuple has its own self-history accessor
+(`name1.previous(fb1)`, `name2.previous(fb2)`), and the optional
+`[N]` applies to all cells (they all have the same depth).
+
+Example — a Kalman filter sharing the gain computation across mean
+and variance updates. Shared work is factored into a helper function
+whose body computes the gain once and returns the pair of updated
+values:
 
 ```
 signal source: f32 = 0.0
@@ -9221,102 +9242,54 @@ fn kalman_step(mean: f32, variance: f32, source: f32, noise: f32) -> (f32, f32):
     (1.0 - gain) * variance,                      // updated variance
   )
 
-recurrent (mean, variance): (f32, f32) = (source, 1.0)
-  | on source: kalman_step(mean, variance, source, noise)
+recurrent (mean, variance): (f32, f32) =
+  kalman_step(mean.previous(0.0), variance.previous(1.0), source, noise)
 ```
 
 The single function call evaluates the shared `gain` once per
-publish and returns both updated values atomically. Without
-tuple-coupled recurrents, the same logic would require two
-independent recurrents each calling the helper separately, doing
-the gain computation twice per publish.
+publish and returns both updated values atomically. The recurrent
+re-evaluates whenever `source` or `noise` changes (implicit
+triggers).
 
 Reads of any cell within the tuple use its individual name
 (`self.mean`, `self.variance`, or bare `mean`/`variance` at
-module scope).
+module scope) — but inside the tuple's own expression, self-history
+access for each individual cell uses its own `.previous`/`.past`.
 
 Lockstep semantics (§13.2.4.1) are preserved across the tuple:
-during arm evaluation, reads of any cell in the group return
-its previous-committed value. Cross-references within the tuple
-read previous-committed values, the same way independent
+during expression evaluation, each cell's `.previous`/`.past`
+returns its previous-committed value, the same way independent
 recurrents do.
 
 In the per-publish DAG (§13.11.3), tuple-coupled recurrents
 contribute one evaluation node with N output edges, not N
 independent evaluation nodes.
 
-Initial values follow the topological-init rule (§13.2.6) — each
-cell's initial may reference any reactive cell in scope, provided
-no init-time cycle exists. If any one cell's initial creates a
-cycle, the entire group is rejected.
+##### 13.2.4.7 Explicit triggers (via `observe`)
 
-##### 13.2.4.7 Conditional triggers (`where` clauses)
-
-An arm may carry a `where guard` clause placed after its trigger
-list and before the colon:
+A recurrent's expression may be an `observe` expression (§13.2.11)
+when explicit per-trigger arms are needed:
 
 ```
-recurrent name: Type = init
-  | on trigger_cell where guard: expr
+recurrent counter: i32 = observe:
+  on tick: counter.previous(0) + 1
+  on reset: 0
 ```
 
-The arm fires when `trigger_cell` changes value AND `guard` is
-currently true. A change in `guard` alone (without `trigger_cell`
-changing) does not fire the arm.
+In this form, `observe`'s arms supply the trigger sets and the
+per-arm expressions. The active arm's expression may use
+`.previous`/`.past` to access the recurrent's history just like
+any other recurrent expression body.
 
-Each arm carries its own optional `where` clause; different arms
-may apply different guards:
+Use `observe` when:
+- Triggers do not appear naturally in the expression (e.g., a
+  clock signal whose value is irrelevant to the computation).
+- Different triggers should produce different update expressions
+  (multi-arm logic).
+- Trigger sets need explicit filtering via `where` (§13.18.11).
 
-```
-recurrent name: Type = init
-  | on A where p1: next_A_expr
-  | on B where p2: next_B_expr
-  | on C: next_C_expr
-```
-
-Reads as: "fire on A-change if p1; or on B-change if p2; or on
-any C-change," evaluated in declaration order per the priority
-rule in §13.2.4.
-
-The guard is a reactive boolean expression evaluated in the
-recurrent's scope, with the same purity rules as derived
-expressions (§13.2.3).
-
-Pedagogically, an arm guard is equivalent to inlining the
-guard into the arm's `next_expr`:
-
-```
-// guard form
-recurrent x: T = init
-  | on trigger_cell where guard: expr
-
-// inline-conditional form, observationally identical
-recurrent x: T = init
-  | on trigger_cell: if guard then expr else x
-```
-
-The two produce identical observable behavior, but the `where`
-form allows the kernel to skip the arm's evaluation entirely when
-the guard is false. This is a perf benefit when the `next_expr`
-is expensive and the guard is cheap, and it allows the priority
-rule to fall through to subsequent arms when the guard fails.
-
-Example shown at module scope (cell references are bare; inside a
-node body, references would use `self.counter` etc.):
-
-```
-signal reset_signal: bool = false
-signal tick: u64 = 0
-signal running: bool = true
-
-recurrent counter: i32 = 0
-  | on reset_signal: 0                         // arm 1: reset to zero
-  | on tick where running: counter + 1         // arm 2: increment if running
-```
-
-If both `reset_signal` and `tick` change in the same publish, arm
-1 wins per the priority rule (§13.2.4) and `counter` becomes 0
-(not `counter + 1`).
+When all references in the expression naturally drive re-evaluation
+(spreadsheet-style implicit triggers), `observe` is not needed.
 
 ##### 13.2.4.8 Dynamic-size cell types
 
@@ -9327,12 +9300,18 @@ fixed-size types. Dynamic-size types include:
 - `SmallVec[T; N]` — inline up to N elements, then heap
 - `RingBuf[T; N]` — fixed-capacity ring buffer
 
-Storage and cost details are specified in §13.12.4 (cell types
-and storage). An arm's `next_expr` returns a new value of the
-declared type; the kernel handles allocation and triple-buffer
-rotation transparently. Source code never mutates a cell in
-place — the functional builder API (`.with(value)`, `+`
-operator) returns new collection values.
+Storage and cost details are specified in §13.12.4 (cell types and
+storage). The expression returns a new value of the declared type;
+the kernel handles allocation and triple-buffer rotation
+transparently. Source code never mutates a cell in place — the
+functional builder API (`.with(value)`, `+` operator) returns new
+collection values.
+
+The `[N]` self-history depth allocates `N` slots per cell. For
+recurrents holding dynamic-size types, total memory cost is
+proportional to `N * average_value_size`; deep history of large
+collections can be expensive. The compiler may emit a warning when
+the static product exceeds a configurable threshold.
 
 #### 13.2.5 `const`
 
@@ -9478,20 +9457,23 @@ For each cell:
   This is distinct from runtime cycles (§13.11), which the
   per-publish DAG handles via recurrents-as-delays. Init time
   has no notion of "previous publish," so cycles flat-out fail.
-- Within a node body, an attr or recurrent's initial may
-  reference previously-declared cells of the same body. The
-  topological sort catches forward references that would
+- Within a node body, an attr's default or a recurrent's
+  expression may reference previously-declared cells of the same
+  body. The topological sort catches forward references that would
   otherwise be ambiguous; the compiler may permit them when the
   dependency graph is well-defined.
-- At type-declaration time, attr defaults and recurrent initial
-  values may reference same-instance cells (via `self.X`),
-  same-type consts, module-level cells (signals, deriveds,
-  recurrents, consts), and compile-time-evaluable expressions.
-  Cross-instance references are resolved only at placement time,
-  not at type declaration.
+- At type-declaration time, attr defaults and recurrent expressions
+  may reference same-instance cells (via `self.X`), same-type
+  consts, module-level cells (signals, deriveds, recurrents,
+  consts), and compile-time-evaluable expressions. Cross-instance
+  references are resolved only at placement time, not at type
+  declaration. A recurrent's self-history fallbacks
+  (`.previous(fallback)`, `.past(k, fallback)`) follow the same
+  rules — fallback expressions are evaluated in the same context.
 
 Traps during initial evaluation (signal initializers, attr defaults,
-recurrent initial values, or initial derived evaluation) follow
+recurrent expressions on first publish, or initial derived
+evaluation) follow
 §13.13.1 — the process aborts. There is no recovery path for traps
 encountered during startup.
 
@@ -9541,9 +9523,10 @@ positions, return types, and generic arguments.
   values via `kernel.write_signal` (§13.14.2).
 - `derived X = expr` — projected `Signal[T]`. Kernel maintains
   the value consistent with its inputs.
-- `recurrent X: T = init | on triggers: expr` — memoryful
-  `Signal[T]`. Kernel advances per the arm's expression when an
-  arm fires.
+- `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
+  self-history accessible via `.previous(fallback)` and
+  `.past(k, fallback)`. Kernel re-evaluates the expression when any
+  non-self reference commits (§13.2.4).
 
 The keyword `signal` is overloaded with the type `Signal[T]`:
 the keyword declares one specific subkind (the writable cell);
@@ -9953,6 +9936,161 @@ is for child-placement slots with cardinality.
 - Generic constraints on `T` behave as standard generic bounds
   (§3.1, §5.1).
 
+#### 13.2.11 The `observe` expression
+
+`observe` is a reactive expression form that selects an active arm
+based on which trigger has most recently fired and evaluates that
+arm's expression reactively. It is the mechanism for explicit
+per-trigger logic, used inside `recurrent` (§13.2.4.7), inside
+`derived` declarations, as the source of `stream` declarations
+(§13.18), or anywhere else a reactive expression appears.
+
+##### 13.2.11.1 Form
+
+```
+observe:
+  on T1: expr1
+  on (T1, T2): expr_paired
+  on T3 where C: expr_filtered
+  default: expr_default
+```
+
+- Each arm consists of an **`on` clause** listing one or more
+  trigger cells, an optional **`where` filter** (§13.18.11), and a
+  colon followed by the **arm expression**.
+- A `default:` arm has no `on` clause — its expression is the
+  observe's value when no `on` arm has yet activated.
+- All arm expressions must produce the same type T (like `match`
+  expressions, §6.2.4).
+- The observe expression's value is a `Cell[T]`; its concrete
+  reactive type (`Signal[T]` or `Stream[T]`) is determined by the
+  context where the observe is used.
+
+##### 13.2.11.2 Trigger sets and arm selection
+
+An arm's trigger set is the cells listed in its `on` clause. When
+any cell in the trigger set commits a new value (signal) or emits
+an event (stream), the arm becomes a candidate for selection. The
+candidate set is filtered by the arm's `where` clause if present
+(§13.18.11).
+
+When multiple arms become candidates in the same publish, **arm
+selection follows declaration order**: the first arm in declaration
+order whose trigger set fired and whose `where` filter (if any)
+passes wins. This mirrors `match` semantics (§6.2.4).
+
+The selected arm becomes the **active arm** of the observe expression.
+A subsequent publish in which a different arm fires changes the
+active arm.
+
+##### 13.2.11.3 Reactive-arm semantics
+
+While an arm is active, the arm's expression is fully reactive: any
+cell referenced in that expression (signal, stream, recurrent self-
+history, etc.) participates in dependency tracking, and a change to
+any of those cells re-evaluates the arm's expression. The observe's
+value updates accordingly — without requiring the arm's `on`
+trigger to re-fire.
+
+The `on` clause's role is **arm selection**, not exclusive re-
+evaluation triggering: it determines which arm is in scope and
+also acts as one of that arm's reactive references (so re-firing
+the `on` trigger also re-evaluates the active arm).
+
+When a different arm activates, the previous arm's references are
+no longer tracked; the new arm's references become active.
+
+This means an observe expression's value can change without any
+`on` clause trigger firing — the active arm's other references
+continue to drive re-evaluation while the arm is in scope. This is
+intentional: arm-selection and intra-arm reactivity are independent
+concerns.
+
+##### 13.2.11.4 Multi-cell trigger sets
+
+An arm may list multiple trigger cells, parenthesized:
+
+```
+on (T1, T2, T3): expr
+```
+
+The arm activates when ANY listed cell fires (logical OR over the
+trigger set). All listed cells are also reactive references of the
+arm while it is active.
+
+##### 13.2.11.5 The `default:` arm
+
+A `default:` arm has no trigger clause. Its expression supplies the
+observe's value when no `on` arm has yet been selected — i.e.,
+before the first activating trigger fires.
+
+The `default:` arm is **required** when, in a signal context, every
+`on` arm's trigger set consists entirely of stream cells. Stream
+cells begin empty (no first emission until events arrive), so
+without a `default:` arm the observe would have no value at startup,
+violating the signal invariant (§13.9.7 cell-value reads).
+
+The `default:` arm is **optional** when at least one `on` arm has a
+signal in its trigger set. Signal initial values count as their
+first emission (per §13.2.6 startup pass and §13.18.7.2), so at
+least one signal-triggered arm is selectable from publish zero. The
+first signal-triggered arm in declaration order activates at startup
+and supplies the observe's value.
+
+In a stream context, the `default:` arm is **optional** — streams
+may begin empty and emit their first event when the first arm
+activates.
+
+##### 13.2.11.6 Output type
+
+An observe expression produces a `Cell[T]` (§13.18.5) whose concrete
+type is determined by the surrounding context:
+
+- Assigned to a `Signal`/`derived`/`recurrent` binding, or used in a
+  context expecting `Signal[T]`: produces `Signal[T]`.
+- Assigned to a `stream` declaration, or used in a context expecting
+  `Stream[T]`: produces `Stream[T, P, N]` per the stream context's
+  policy/capacity.
+
+All arms' expressions must produce values of the same type T,
+matched against the surrounding context. Type mismatch across arms
+is a compile error.
+
+##### 13.2.11.7 Use sites
+
+`observe` is an expression form. It can appear anywhere a reactive
+expression of compatible type is expected:
+
+- As the RHS of a `derived`, `signal`, `recurrent`, `recurrent[N]
+  stream`, or `stream` declaration.
+- As a sub-expression inside a larger reactive expression.
+- As an argument to a function call (functions are reactive-
+  transparent per §13.12.2; the observe's reactive dependencies
+  propagate through the call site).
+- Anywhere a `Cell[T]` value is valid.
+
+Inside a recurrent declaration, the observe's arm expressions may
+use `.previous(fallback)` / `.past(k, fallback)` on the enclosing
+recurrent's name to access its self-history (§13.2.4.3).
+
+##### 13.2.11.8 Composition with `where`
+
+Each arm's `on` clause may carry a trailing `where` filter that
+restricts arm activation:
+
+```
+observe:
+  on tick where counter.previous(0) < 100: counter.previous(0) + 1
+  on tick where counter.previous(0) >= 100: 100
+  on reset: 0
+```
+
+The `where` clause uses the general `where` stream filter
+(§13.18.11), where the filtered stream is `T where C` (T is the
+trigger cell, C the boolean expression). When `where` is false, the
+arm is skipped during selection and subsequent arms are considered
+per declaration order.
+
 ### 13.3 Nodes
 
 #### 13.3.0 Concept
@@ -9995,7 +10133,7 @@ node TypeName[GenericParams]?:
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent name: Type = init | on t1: expr           // per-instance memory cells
+  recurrent[N]? name: Type = expression                // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
@@ -10590,7 +10728,7 @@ operations therefore parameterize only the **key**.
   on its state cells in reverse declaration order; return the pool
   slot.
 - **`scope_evaluate(key)`** — evaluate the template's deriveds and
-  any recurrent arm bodies eligible to fire within scope `key`'s
+  any recurrent expressions eligible to fire within scope `key`'s
   state context. References to `self` inside the template body
   resolve to scope `key`'s cells; references to the host's own
   attrs (e.g., via the host's placement name per §13.4.1) resolve
@@ -10865,7 +11003,7 @@ connection TypeName[GenericParams]?:
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance writable cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent name: Type = init | on t1: expr           // per-instance memory cells
+  recurrent[N]? name: Type = expression                // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
@@ -11067,8 +11205,8 @@ currently being declared or constructed.
 declaration. Specifically, in:
 
 - Attr default expressions: `attr x: i32 = self.other_attr + 1`.
-- Recurrent initial-value expressions: `recurrent x: i32 = self.other_attr | ...`.
-- Recurrent arm expressions: `... | on tick: self.x + 1`.
+- Recurrent expressions: `recurrent x: i32 = self.x.previous(0) + self.other_attr`.
+- `observe` arm expressions: `recurrent x: i32 = observe: on tick: self.x.previous(0) + 1`.
 - Derived expressions: `derived y: bool = self.x > 0`.
 - Iteration over parts in reactive expressions inside a node body:
   `for p in self.parts: ...`. Inside free functions that receive
@@ -11151,12 +11289,18 @@ Instance names are unique within their declaring scope. Two
 top-level placements with the same name in the same module is a
 compile error.
 
-#### 13.8.2 Setting attrs and recurrent initial values
+#### 13.8.2 Setting attrs at placement
 
-Attrs and recurrent initial values are set via inline attribute
-syntax on the placement line. The body of a placement is reserved
-exclusively for child placements (§13.8.3, §13.8.6); attribute
-settings do not appear in the body.
+Attrs are set via inline attribute syntax on the placement line.
+The body of a placement is reserved exclusively for child
+placements (§13.8.3, §13.8.6); attribute settings do not appear in
+the body.
+
+Recurrent cells are not set at placement; a recurrent's value is
+fully defined by its expression and its self-history fallbacks
+(§13.2.4). Per-instance variation of a recurrent's behavior is
+achieved by parameterizing its expression via attrs the recurrent
+reads.
 
 A single-line placement with attrs uses one leading `|` followed by
 one or more `name=value` settings separated by whitespace:
@@ -11239,12 +11383,12 @@ fixed at placement.
   receive their values from the host/runtime, not from placement
   syntax. Their declared initial value applies at construction;
   subsequent values come through the host API (§13.14.2).
-- **Recurrent initial-value overrides accept only compile-time
-  values.** Unlike attrs, the placement form for recurrents
-  (`count=100`) does *not* accept reactive expressions. A
-  recurrent's initial value is a fixed compile-time constant at
-  construction; runtime advancement happens via the recurrent's
-  arms (§13.2.4).
+- **Recurrents are not settable at placement.** A recurrent's
+  value is fully defined by its expression and its self-history
+  fallbacks (§13.2.4); there is no separate initial value to
+  override. Per-instance variation of recurrent behavior is
+  expressed via attrs the recurrent reads, which are settable at
+  placement.
 
 For boolean attrs, the same value may also be set via flags
 (§13.8.8). The two mechanisms (`name=value` / `name` / `!name`
@@ -11264,19 +11408,28 @@ rule is uniform across nodes and connections: `/expr` targets the
 placement's body, not via `/expr` (§13.8.5.1).
 
 The attribute clause and flags do *not* target consts. Consts
-cannot be overridden at placement (§13.8.2.2). Recurrent initial
-values are overridable via the same `name=value` form in the
-attribute clause, but only with compile-time-evaluable expressions
-(no reactive bindings).
+cannot be overridden at placement (§13.8.2.2). Recurrent cells
+cannot be overridden at placement either — a recurrent's value is
+fully defined by its expression (§13.2.4), with fallbacks supplied
+inline via `.previous(fallback)` / `.past(k, fallback)`. There is
+no separate initial value to override.
 
-For recurrent cells, only the initial value is overridable at
-placement. The arm structure (triggers, guards, and `next_expr`
-expressions) is a structural type property and cannot be overridden
-per-instance (§13.2.4.3).
+Per-instance variation of recurrent behavior is achieved by
+parameterizing the recurrent's expression via attrs the recurrent
+reads. The attrs can be overridden at placement; the recurrent's
+evaluation uses those values:
+
+```
+node Counter:
+  attr start_value: i32 = 0
+  attr step: i32 = 1
+  recurrent count: i32 = count.previous(start_value) + step
+
+Counter c1 | start_value=100 step=5    // per-instance configuration via attrs
+```
 
 If a cell is not set at placement, its declared default (for attrs)
-or declared initial value (for recurrents) applies. Consts always
-have their type-declared value.
+applies. Consts always have their type-declared value.
 
 #### 13.8.3 Child parts
 
@@ -11856,8 +12009,9 @@ signal trigger: u64 = 0
 
 node OneShot:
   out: Pulse
-  recurrent fired: bool = false
-    | on trigger: true
+  recurrent fired: bool = observe:
+    on trigger: true
+    default: false
   when: not self.fired                        // intrinsic refractory gate
 
 connection ActiveEdge:
@@ -12066,7 +12220,10 @@ defined value of type T (no `Option[T]`), because:
 
 - All attrs have values (defaults or required-at-placement —
   §13.2.2).
-- All recurrents have initial values (mandatory — §13.2.6).
+- All recurrents have well-defined first-publish values
+  (fallbacks in `.previous(fallback)` / `.past(k, fallback)` ensure
+  the expression evaluates to a defined value on first publish —
+  §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
 - All connection-level deriveds compute against `self.from` which
@@ -12227,7 +12384,7 @@ The same pattern generalizes:
 The kernel processes reactive state via two operations:
 **writes** (signal/attr) accumulate dirty bits without evaluation;
 **publish** evaluates dirty cells, advances recurrents per their
-firing arm expressions, and swaps the back buffer atomically so that
+expressions, and swaps the back buffer atomically so that
 consumers see the new state.
 
 #### 13.10.1 Lazy writes
@@ -12276,16 +12433,17 @@ operation on the producer thread:
 2. **Compute evaluation order.** Topologically sort the per-publish
    DAG (§13.11.3). Nodes in the DAG are:
     - Dirty derived expressions.
-    - Each recurrent **arm** whose triggers fired this publish. A
-      multi-arm recurrent (§13.2.4) contributes one DAG node per
-      fired arm, not one node per recurrent. The arm's `where` guard
-      expression (if present) contributes its own dependency edges
-      into the DAG — guard reads are not deferred to evaluation;
-      they participate in the topological sort.
+    - Each recurrent whose expression became dirty this publish. A
+      recurrent contributes one DAG node per cell (or one node per
+      tuple group for tuple-coupled recurrents, §13.2.4.6). A
+      recurrent wrapped in `observe` (§13.2.11) contributes the
+      observe expression as the DAG node; arm-selection happens
+      during evaluation.
 
-   Edges are dependencies; recurrent reads are treated as inputs
-   (their previous-committed values), which breaks reactive cycles.
-   Reads of deriveds, signals, and attrs follow normal dependency
+   Edges are dependencies; recurrent self-history reads
+   (`.previous`/`.past`) are treated as inputs at their previous-
+   committed values, which breaks reactive cycles. Reads of
+   deriveds, signals, attrs, and streams follow normal dependency
    edges within this publish. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
@@ -12297,24 +12455,24 @@ operation on the producer thread:
     - Derived reads → this-publish computed values for deriveds
       evaluated earlier in this step; previous-publish committed
       values for deriveds not in the dirty set.
-    - Recurrent reads → previous-committed values, always
-      (lockstep — §13.2.4.1).
+    - Recurrent self-history reads (`.previous`/`.past`) →
+      previous-committed values, always (lockstep — §13.2.4.1).
 
    Derived behaviors write their results into the back buffer.
-   Recurrent arm expression results are held aside (not yet
-   visible to in-pass evaluation) until step 4.
+   Recurrent expression results are held aside (not yet visible to
+   in-pass evaluation) until step 4.
 
-   **Arm selection at evaluation.** Multi-arm recurrent evaluation
-   proceeds in two stages within the publish cycle:
-    1. **Guard evaluation order**: each arm's `where` guard expression
-       evaluates in topological order over the per-publish DAG
-       (alongside other dirty deriveds). This produces a fired/not-fired
-       bit per arm.
-    2. **Arm selection order**: among the arms with fired triggers AND
-       guards evaluated to true (or no guard), the first one in
-       declaration order (per §13.2.4) wins. Only the winning arm's
-       `next_expr` evaluates; remaining arms' `next_expr` expressions
-       are skipped this publish.
+   **`observe` arm selection.** When a recurrent's expression (or
+   any reactive expression) is an `observe` block (§13.2.11), arm
+   selection proceeds in two stages within the publish cycle:
+    1. **Activation evaluation**: each arm's trigger set (and
+       `where` filter, if present) is checked. The arms with
+       triggers that fired this publish AND filters that pass are
+       candidates.
+    2. **Declaration-order selection**: the first candidate arm in
+       declaration order wins; its expression evaluates and produces
+       the observe's value for this publish. Other candidate arms'
+       expressions are not evaluated.
 4. **Commit recurrent advancement.** Write the next values
    computed in step 3 into the recurrent cells. After this step,
    recurrent reads return their newly-advanced values.
@@ -12329,7 +12487,7 @@ the same thread between publish calls accumulate as usual.
 
 #### 13.10.3 Topological order and tiebreaker
 
-Within a publish cycle, dirty deriveds and recurrent arm
+Within a publish cycle, dirty deriveds and recurrent expression
 expressions evaluate in topological order over the per-publish DAG.
 Topological order ensures that each node's dependencies have stable
 values when the node itself is evaluated.
@@ -12396,7 +12554,7 @@ instances via connection placements. Each has its own rules.
 #### 13.11.1 The reactive dependency graph
 
 The compiler constructs the reactive dependency graph by walking
-every `derived` expression's body and every recurrent arm
+every `derived` expression's body and every recurrent expression
 expression's body, recording for each the set of reactive cells it
 reads. Edges go from each read cell to the reading expression's
 output cell. Signal, attr, derived, and recurrent reads all
@@ -12423,7 +12581,7 @@ error: instantaneous cycle in reactive expressions
 ```
 
 **Recurrent self-reference and cross-reference are allowed.** A
-recurrent cell's arm expression may read the recurrent's own
+recurrent cell's expression may read the recurrent's own
 previous value (`on t: self.x + 1`) or another recurrent cell's
 previous value (`on t: self.other.value`). These do not form
 instantaneous cycles because recurrent reads always return the
@@ -12436,17 +12594,18 @@ Example (allowed):
 ```
 node Filter:
   attr input: f32 = 0.0
-  recurrent previous: f32 = 0.0
-    | on sample_clock: self.current
+  recurrent previous_value: f32 = observe:
+    on sample_clock: self.current
+    default: 0.0
   derived current: f32 =
-    0.5 * self.input + 0.5 * self.previous
+    0.5 * self.input + 0.5 * self.previous_value
 ```
 
-`current` reads `previous`; `previous`'s arm reads `current`.
-The static graph has a cycle, but the lockstep semantics make this
-well-defined: each publish, `current` reads `previous`'s last-
-committed value, then `previous` advances to `current`'s new value
-at commit time.
+`current` reads `previous_value`; `previous_value`'s observe arm
+reads `current`. The static graph has a cycle, but the lockstep
+semantics make this well-defined: each publish, `current` reads
+`previous_value`'s last-committed value, then `previous_value`
+advances to `current`'s new value at commit time.
 
 #### 13.11.3 The per-publish DAG
 
@@ -12457,7 +12616,7 @@ what will be committed at the end of this publish. This breaks
 all valid reactive cycles, producing a DAG.
 
 Reads OF a recurrent cell — from any expression context (derived
-bodies, recurrent arm `next_expr` bodies, `where` guards) — always
+bodies, recurrent expressions, `where` guards) — always
 return the previous-committed value. This is the rule that breaks
 reactive cycles.
 
@@ -12475,7 +12634,7 @@ step 2.
 
 A recurrent cell on a cycle behaves as a one-publish delay
 element: it always reads the previous-committed value, regardless
-of what its firing arm computes this publish. The end-of-publish
+of what its expression computes this publish. The end-of-publish
 commit (§13.10.2 step 4) is what advances the cell for the next
 publish to observe.
 
@@ -12760,7 +12919,7 @@ The functional builder API preserves the no-mutation rule
 
 - `vec.with(value)` returns a new `Vec[T]` with `value` appended.
 - `vec + value` is equivalent (operator form).
-- The `recurrent`'s arm expression returns the new value;
+- The `recurrent`'s expression returns the new value;
   the kernel commits it through triple-buffer rotation.
 
 Implementation strategies (Vec uses persistent trie; SmallVec
@@ -12815,7 +12974,7 @@ reactive contexts.
 
 #### 13.13.1 Traps abort the process
 
-A reactive expression — derived expression or recurrent arm
+A reactive expression — derived expression or recurrent expression
 expression — that traps during evaluation, from arithmetic
 overflow under default operators (§4.6.1), division by zero, an
 out-of-range array index, or explicit `panic`, follows the
@@ -12890,14 +13049,16 @@ The kernel's lifecycle proceeds in phases:
 1. Load the graph specification (per §15.4).
 2. Allocate the reactive state buffer (per §14.3).
 3. Initialize all reactive cells (signals, attrs, recurrents,
-   deriveds) and evaluate all `when` predicates in topological order
-   over their init-time read dependencies, per §13.2.6's startup
-   pass rules. Signal cells receive declared initial values; attr
-   cells receive declared defaults (or placement-supplied values);
-   recurrent cells receive declared initial values (the arm
-   `next_expr` is NOT evaluated at startup); derived cells are
-   computed by evaluating their expression bodies; `when` predicates
-   are evaluated to determine each instance's initial gate state.
+   deriveds, streams) and evaluate all `when` predicates in
+   topological order over their init-time read dependencies, per
+   §13.2.6's startup pass rules. Signal cells receive declared
+   initial values; attr cells receive declared defaults (or
+   placement-supplied values); recurrent cells evaluate their
+   expressions for the first time (`.previous`/`.past` calls return
+   their fallback values since no history exists yet); derived
+   cells are computed by evaluating their expression bodies;
+   stream cells begin empty; `when` predicates are evaluated to
+   determine each instance's initial gate state.
    Placement-level `when` predicates (§13.9.3) are evaluated
    alongside type-level `when:` predicates in the same topological
    pass; placement-level overrides type-level per §13.9.5 with the
@@ -12918,7 +13079,7 @@ sentinel (or block, per implementation choice).
   or `kernel.transaction(...)` to update reactive state. Writes
   mark dirty bits; no evaluation runs.
 - Host calls `kernel.publish()` to evaluate dirty cells, advance
-  recurrent cells per their firing arm expressions, and atomically
+  recurrent cells per their expressions, and atomically
   swap the back buffer for consumer visibility.
 - Consumer threads call `kernel.swap(...)` to obtain the latest
   published state and read cell values.
@@ -12998,7 +13159,7 @@ kernel.publish()
 ```
 
 Performs the complete publish operation specified in §13.10.2:
-evaluates dirty deriveds and recurrent arm expressions in
+evaluates dirty deriveds and recurrent expressions in
 topological order, commits recurrent advancements, and atomically
 swaps the back buffer pointer (§14.3.3.1) so consumers see the new
 state.
@@ -13311,7 +13472,7 @@ restart — either full-kernel or per-instance, depending on the change:
     - Policy changes (`ring` ↔ `gate`).
     - Capacity changes.
 
-  See §13.18.13 for full stream-reload rules. **Per-instance
+  See §13.18.14 for full stream-reload rules. **Per-instance
   restart** suffices.
 - Effect-specific changes that require restart for the affected
   effect instances:
@@ -13443,14 +13604,14 @@ specifies the implementation model. Cross-references:
   Recurrent stream declarations (§13.18.8) add fixed-size
   per-stream history allocations on top of the base ring buffer,
   sized from the `[N]` and from compiler-inferred per-input
-  lookback (§13.18.12).
+  lookback (§13.18.13).
 - Effect instances (§13.19) are groupings of standard reactive
   cells (signal, stream, sink) plus host-side reconciler state.
   No new storage category per §14.4; per-instance state in the
   reconciler is managed by the host outside the kernel's buffer.
 - The producer role per §14.7 is the kernel's reactive evaluation
   thread. It applies host writes to the back buffer, runs publish
-  cycles (recurrent arm evaluation, derived behavior
+  cycles (recurrent expression evaluation, derived behavior
   invocations, atomic swap). In typical deployments, the host's
   main thread plays the producer role; in other deployments, a
   kernel-configured thread does.
@@ -13458,7 +13619,7 @@ specifies the implementation model. Cross-references:
   state via swap. Consumer threads do not invoke behaviors; they
   read the results of past publishes.
 - Behaviors invoked during reactive evaluation — both derived
-  expressions and recurrent arm expressions — conform to the
+  expressions and recurrent expressions — conform to the
   ABI of §14.6: a uniform `fn(kernel: &KernelHandle, instance:
   InstanceId) -> ()` signature, with stateless semantics and
   content-addressed identity (§14.6.4).
@@ -13509,8 +13670,9 @@ Stateful operators allocate recurrent state per instantiation:
 
 ```
 operator smooth(source: Signal[f32], rate: f32 = 0.1, clock: Signal[u64]) -> Signal[f32]:
-  recurrent state: f32 = source
-    | on clock: state + (source - state) * rate
+  recurrent state: f32 = observe:
+    on clock: state.previous(source) + (source - state.previous(source)) * rate
+    default: source
   state
 ```
 
@@ -13605,7 +13767,7 @@ operator example(s: Signal[f32]) -> Signal[f32]:
 The implicit deref applies wherever a `Signal[T]` flows into a
 position expecting `T`: arithmetic operands, function-call arguments
 typed `T`, attribute initial-value expressions, derived bodies,
-recurrent arm expressions. It does NOT apply when the context expects
+recurrent expressions. It does NOT apply when the context expects
 `Signal[T]` directly (operator parameters, function parameters typed
 `Signal[T]`, pipe-form `|>` LHS) — in those cases the cell reference
 is bound without dereferencing.
@@ -13662,11 +13824,10 @@ type PeakResult:
   count: u32
 
 operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
-  recurrent (peak, count): (f32, u32) = (source, 0)
-    | on source: (
-        max(peak, source),
-        if source > peak then count + 1 else count,
-      )
+  recurrent (peak, count): (f32, u32) = (
+    max(peak.previous(source), source),
+    if source > peak.previous(source) then count.previous(0) + 1 else count.previous(0),
+  )
 
   PeakResult(peak: peak, count: count)
 
@@ -13864,9 +14025,8 @@ Operators may take type parameters with optional trait bounds:
 operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
-operator scan[T: Add + Copy](source: Signal[T]) -> Signal[T]:
-  recurrent acc: T = source
-    | on source: acc + source
+operator running_total[T: Add + Copy](source: Signal[T]) -> Signal[T]:
+  recurrent acc: T = acc.previous(source) + source
   acc
 ```
 
@@ -13898,7 +14058,7 @@ operator body.
 
 **Reload-safe changes:**
 
-- Changes to the body of recurrent arm expressions, `where`
+- Changes to the body of recurrent expressions, `where`
   guards, or final-expression bodies — same as plain
   recurrent/derived reload safety.
 - Adding a new internal cell — new cells are initialized fresh.
@@ -14435,7 +14595,7 @@ An expression's reactive-output type is determined by its inputs:
 - **Zero streams** in the expression → result is a signal. The
   surrounding declaration must be a binding context that produces
   a Signal-typed cell (`derived`, `attr` default expression,
-  `recurrent` arm expression).
+  `recurrent`'s expression).
 - **One or more streams** in the expression → result is a stream.
   The surrounding declaration must be a `stream` declaration
   (§13.18.2) or `recurrent[N] stream` (§13.18.8).
@@ -14651,10 +14811,12 @@ its own body; consumers see a regular stream.
   is not valid in `observed:` blocks because there is no expression
   for `.past` to reference. Effects needing history-aware behavior
   must compute it in the host's reconciler.
-- `recurrent` (signal) keyword retains its current syntax
-  (§13.2.4). The stream-side `recurrent[N]` extension is distinct;
-  symmetric generalization to recurrent signals is deferred to a
-  later spec revision.
+- **Signal recurrents share this design.** Signal-typed
+  `recurrent[N]` declarations (§13.2.4) use the same
+  `.previous(fallback)` / `.past(k, fallback)` accessors with the
+  same compile-time bounds. The two are symmetric: same syntax,
+  same memory model, same semantics — differing only in whether
+  the cell is a value-shaped Signal or an event-shaped Stream.
 
 #### 13.18.9 Stream operators
 
@@ -14820,7 +14982,121 @@ The native expression form (§13.18.8) is generally preferred for
 straightforward arithmetic and conditional history use; `scan` and
 `pairwise` shine for richer accumulator structures.
 
-#### 13.18.10 Policy as type
+#### 13.18.10 The `where` stream filter
+
+`where` is a stream-filter expression at the expression level. It
+takes a stream (or a signal — implicitly converted via `to_stream`
+per §13.18.9) and a boolean predicate; it produces a new stream
+emitting only those events of the input whose predicate evaluates
+to true.
+
+##### 13.18.10.1 Form
+
+```
+A where C
+```
+
+- **`A`** is a stream of element type `T`, or a signal whose value
+  type is `T` (with implicit `to_stream` per §13.18.7.4).
+- **`C`** is a boolean expression evaluated per event of `A`.
+- The output is a stream of `T` emitting events from `A` whose
+  evaluation of `C` is true; events whose `C` is false are not
+  emitted.
+
+```
+stream ring big_clicks = clicks where clicks.position.x > 1000
+stream ring positive = numbers where numbers > 0
+stream ring relevant = events where (events.priority == high and active_signal)
+```
+
+For signals on the LHS, the implicit `to_stream` semantics apply:
+
+```
+stream ring above_threshold = sensor_signal where sensor_signal > 100
+// equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
+```
+
+##### 13.18.10.2 References inside `C`
+
+Inside the predicate `C`, references work per the reactive-
+expression rules of §13.18.7:
+
+- The LHS stream's name (`A` above) refers to the **current event
+  being filtered**: `A.field` accesses a field of the current event;
+  a bare reference to a primitive-typed stream is the current event
+  value.
+- Other reactive cells referenced in `C` participate in the
+  combine_latest semantics: changes to those cells re-evaluate the
+  filter at subsequent events. (They do NOT trigger re-filtering
+  of past events; filters are forward-looking.)
+
+```
+stream ring x_clicks_in_zone = clicks where clicks.x > zone_threshold
+// zone_threshold is sampled at each click event;
+// changes to zone_threshold affect future clicks, not past ones.
+```
+
+##### 13.18.10.3 Output type, policy, and capacity
+
+The output stream's element type matches the input's. Policy and
+capacity follow:
+
+- **Policy** is inherited from the input. A `RingStream[T, ...]`
+  filter produces `RingStream[T, ...]`; a `GateStream[T, ...]`
+  produces `GateStream[T, ...]`. A signal input (implicit
+  `to_stream`) produces a ring stream.
+- **Capacity** defaults per §13.18.2 (sum of input capacities;
+  signals contribute 1024). Explicit `[capacity]` at the surrounding
+  stream declaration overrides.
+
+##### 13.18.10.4 Composition and chaining
+
+`where` is left-associative; multiple filters chain naturally:
+
+```
+stream ring active_big_clicks = clicks where clicks.area > 100 where clicks.priority == high
+// equivalent to: (clicks where clicks.area > 100) where clicks.priority == high
+```
+
+`where` composes with other stream operators (§13.18.9) at any
+position in a pipeline:
+
+```
+stream ring filtered_pairs = (events where events.value > 0) |> pairwise
+stream ring scaled_relevant = (numbers |> map(double)) where numbers > 100
+```
+
+##### 13.18.10.5 Use inside `observe` arm-triggers
+
+The `where` filter is the mechanism by which observe arms (§13.2.11)
+express conditional triggers. The trigger `T where C` is a
+filtered stream; the arm activates only when the filtered stream
+emits — i.e., when `T` fires AND `C` is true.
+
+```
+observe:
+  on tick where counter.previous(0) < 100: counter.previous(0) + 1
+  on tick where counter.previous(0) >= 100: 100
+```
+
+The arm-selection rules of §13.2.11 apply uniformly: the first
+arm whose filtered trigger emits in the current publish wins.
+
+##### 13.18.10.6 Restrictions
+
+- **Not for non-reactive collections.** `where` filters reactive
+  streams (and signals lifted to streams). For non-reactive
+  collections (arrays, vectors, etc.), use `Iterator` operations
+  (§12.7).
+- **Predicate must be boolean.** `C` must evaluate to `bool`. Other
+  types are a compile error.
+- **Output is always a stream.** A filter may emit zero events per
+  input, so signal semantics (always-defined value) don't fit.
+  Assigning a `where` expression to a `derived` binding is a
+  compile error; project explicitly via `to_signal(default)` if a
+  signal-typed result is needed.
+
+#### 13.18.11 Policy as type
 
 Stream policy is encoded in the type rather than as a runtime
 attribute. This means operators that care about policy can constrain
@@ -14892,7 +15168,7 @@ the gate's lossless guarantee does not propagate to downstream
 consumers of the combined output. To preserve the gate semantics
 end-to-end, declare the output as `gate` too.
 
-#### 13.18.11 Consumer cursors
+#### 13.18.12 Consumer cursors
 
 Each consumer of a stream maintains its own cursor — a position into
 the ring buffer marking the oldest event the consumer has not yet
@@ -14930,7 +15206,7 @@ to rewind a cursor to an earlier position; the buffer's events are
 not persistently stored beyond the ring buffer's lifetime, and
 events may have been overwritten.
 
-#### 13.18.12 Memory model
+#### 13.18.13 Memory model
 
 A stream's storage consists of:
 
@@ -14983,7 +15259,7 @@ Inputs not accessed via `.past` add no history overhead. All
 history allocations are made once at stream creation; nothing is
 allocated at runtime.
 
-#### 13.18.13 Hot reload
+#### 13.18.14 Hot reload
 
 Stream hot reload preserves the ring buffer iff the stream's
 *type signature* is byte-identical between old and new code. The
@@ -15073,7 +15349,7 @@ to the base stream reload rules above:
   the output history and all per-input history, in addition to
   the base ring buffer.
 
-#### 13.18.14 Restrictions
+#### 13.18.15 Restrictions
 
 - **Streams may not appear inside function bodies.** Functions are
   reactive-transparent (§13.12.2); they have no place to host
@@ -15113,7 +15389,7 @@ to the base stream reload rules above:
   are compile errors; use `to_signal(default)` to project explicitly
   (§13.18.7.3).
 
-#### 13.18.15 Diagnostics
+#### 13.18.16 Diagnostics
 
 Normative diagnostic classes for stream usage.
 
@@ -15802,7 +16078,7 @@ preserve instance identity per the same rule as operators
 (§13.17.10).
 
 **Stream cells inside effects** follow the stream hot-reload rules
-(§13.18.13): the buffer is preserved iff `(element type, policy,
+(§13.18.14): the buffer is preserved iff `(element type, policy,
 capacity)` is byte-identical; `@reset_on_reload` on a stream cell
 forces clear.
 
@@ -16051,9 +16327,8 @@ error: effect instantiation inside another effect's body is not permitted
 error: only role-keyword declarations are permitted inside effect blocks
   --> effect example():
         desired:
-          recurrent count: i32 = 0
-          ^^^^^^^^^^^^^^^^^^^^^^^^^
-            | on input: self.count + 1
+          recurrent count: i32 = count.previous(0) + 1
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect blocks accept only `derived`, `sink` (in `desired:`)
         and `signal`, `stream` (in `observed:`). For stateful behavior
         wrapping an effect, use a wrapping operator (§13.17) that
@@ -16466,7 +16741,7 @@ program draw from a per-`(T, N)` pool:
   per-`(T, N)` pool.
 - Hot reload can grow or shrink these pools as stream declarations
   are added or removed, per the same extensible-pool mechanism. A
-  preserved stream (per §13.18.13's preservation rule) retains its
+  preserved stream (per §13.18.14's preservation rule) retains its
   pool slot across reload; a new stream allocates a new slot.
 
 Unlike persistent data structures, ring buffer slot arrays are not
@@ -16479,7 +16754,7 @@ to slot positions that haven't reached the committed head are
 invisible to consumers until the next publish. Overwrites of
 previously-committed slots (under `ring` policy) happen only at
 positions past any cursor that's caught up; lagging cursors that
-were pointing at overwritten positions jump forward per §13.18.11.
+were pointing at overwritten positions jump forward per §13.18.12.
 
 **Drop and eviction:** see §14.8.
 
@@ -16683,7 +16958,7 @@ The triple-buffer mechanism (§14.3.3) operates in terms of two roles:
   buffer it is writing; such reads are local to the producer and
   do not go through the triple-buffer pointer swap. What the
   producer writes (signal/attr updates from host API, derived and
-  recurrent arm expression results) and what triggers it to publish
+  recurrent expression results) and what triggers it to publish
   are specified in §13.10.
 - **Consumer**: the role that reads the current buffer via the swap
   operation. Loads the current pointer and reads cells from the
@@ -16722,7 +16997,7 @@ depend on the mapping choice.
 
 #### 14.7.2 Behaviors invoked by the mechanism
 
-Reactive behaviors (derived expression bodies and recurrent arm
+Reactive behaviors (derived expression bodies and recurrent expression
 expressions) are invoked by the producer. Functions called from
 reactive contexts are reactive-transparent per §13.12.2 and reached
 transitively from registered behaviors; they are not themselves
@@ -16927,7 +17202,7 @@ Changes safe to hot reload:
 
 - Body of an existing behavior (same signature, different
   implementation).
-- Adding new behaviors (new derived expressions, new recurrent arm
+- Adding new behaviors (new derived expressions, new recurrent expression
   bodies).
 - Adding new signals, attrs, derived declarations.
 
@@ -17499,7 +17774,7 @@ do not lower to Rust types directly. They lower to:
 - Cell allocations in the kernel state buffer, described in the
   graph specification (§15.4).
 - Behavior registrations (the body of a `derived` expression OR the
-  body of a `recurrent` arm becomes a Rust function matching the
+  body of a `recurrent`'s expression becomes a Rust function matching the
   behavior ABI, §14.6).
 - Dependency edges in the graph specification.
 
