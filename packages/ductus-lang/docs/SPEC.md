@@ -14097,7 +14097,20 @@ stream policy[capacity]? name: Type? = source
 - **`policy`** is one of the policy keywords `ring` or `gate`
   (§13.18.3). Mandatory; the declaration has no default policy.
 - **`[capacity]`** is an optional positive integer literal specifying
-  the ring buffer's slot count. When omitted, defaults to `1024`.
+  the ring buffer's slot count. When omitted:
+  - For declarations whose source is a single stream or a stream-
+    producing operator chain whose output capacity is known,
+    capacity defaults to that output's capacity.
+  - For declarations whose source is a reactive expression
+    (§13.18.7) involving streams and/or signals, capacity defaults
+    to the **sum of input capacities** across all reactive inputs.
+    Each stream contributes its declared capacity; each signal
+    contributes its implicit `to_stream` default (1024).
+  - For `recurrent[N] stream` declarations (§13.18.8), the rule
+    is `sum_of_input_capacities + N` — the recurrent's history
+    depth adds to the base default.
+  - In all other cases (e.g., bare `to_stream` calls without
+    surrounding context), capacity defaults to `1024`.
 - **`name`** is a snake_case identifier naming the stream.
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
@@ -14391,13 +14404,13 @@ has emitted at least once (signal initial values count as their
 first emission).
 
 ```
-stream price_in_eur = price_in_usd * usd_to_eur_rate
+stream ring price_in_eur = price_in_usd * usd_to_eur_rate
 // price_in_usd is a stream; usd_to_eur_rate is a signal.
 // Emits whenever either changes — at the stream's events with
 // the rate's current value, and at the rate's commits with the
 // last price.
 
-stream sum = stream_a + stream_b
+stream ring sum = stream_a + stream_b
 // Two streams. Emits whenever either emits; combine_latest pairs
 // the latest of each.
 ```
@@ -14405,20 +14418,32 @@ stream sum = stream_a + stream_b
 Other combining behaviors (`zip`, `sample`, `merge`, etc.) require
 explicit stdlib operators (§13.18.9).
 
+**First-emission timing.** A reactive expression emits its first
+output event during the startup pass (§13.2.6) iff every reactive
+input has a value to contribute at that moment: signals
+contribute their initial values immediately, and streams
+contribute only after their first event has been produced. A
+stream expression whose inputs are all signals (no streams) emits
+one event during startup. A stream expression with one or more
+streams emits its first event when those streams have collectively
+produced at least one event each — possibly later than startup.
+
 ##### 13.18.7.3 Stream-wins rule
 
 An expression's reactive-output type is determined by its inputs:
 
 - **Zero streams** in the expression → result is a signal. The
-  surrounding declaration must be `signal`-typed (typically a
-  `derived` — §13.2.3).
+  surrounding declaration must be a binding context that produces
+  a Signal-typed cell (`derived`, `attr` default expression,
+  `recurrent` arm expression).
 - **One or more streams** in the expression → result is a stream.
-  The surrounding declaration must be `stream`-typed.
+  The surrounding declaration must be a `stream` declaration
+  (§13.18.2) or `recurrent[N] stream` (§13.18.8).
 
 The rule follows from input types alone; there is no type-directed
 dispatch on the binding's LHS context. An expression containing
 streams cannot be coerced into a signal silently — explicit
-projection via `to_signal(default)` is required.
+projection via `to_signal(default)` (§13.18.9) is required.
 
 ##### 13.18.7.4 Assignment rules
 
@@ -14428,7 +14453,7 @@ projection via `to_signal(default)` is required.
 | `derived X = expr` | Has streams | Compile error — use `to_signal(default)`. |
 | `stream X = expr` | Has streams | Output stream; per-event evaluation. |
 | `stream X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
-| `stream X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive source (use `to_stream(constant_signal)` or similar). |
+| `stream X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
 
 The `stream X = signal_expr` form is the implicit-conversion case:
 each signal's commits become events in the output stream. To
@@ -14437,42 +14462,52 @@ use `to_stream` explicitly with the desired operator chain.
 
 ##### 13.18.7.5 Worked examples
 
+Examples below omit explicit `[capacity]` to demonstrate the
+defaulting rule of §13.18.2; an explicit capacity is always
+allowed and overrides the default.
+
 **Single signal as stream source:**
 
 ```
 signal current_url: Url = "https://example.com"
-stream url_events: Url = current_url
-// Equivalent to: stream url_events = current_url |> to_stream
-// Emits "https://example.com" on creation, then each subsequent
+stream ring url_events: Url = current_url
+// Equivalent to: stream ring url_events = current_url |> to_stream
+// Default capacity: 1024 (signal contributes its implicit
+// to_stream default).
+// Emits "https://example.com" during startup, then each subsequent
 // commit of current_url.
 ```
 
 **Signal-and-stream mixed:**
 
 ```
-stream price_in_eur = price_in_usd * usd_to_eur_rate
+stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
 // Per-event of price_in_usd: sample rate, compute product.
 // Also emits on rate commits (combine_latest).
+// Default capacity: price_in_usd.capacity + 1024 (the signal).
 ```
 
 **Multi-stream combine_latest:**
 
 ```
-stream sum: i32 = stream_a + stream_b
+stream ring sum: i32 = stream_a + stream_b
 // Emits whenever a or b emits; output = latest_a + latest_b.
+// First output fires once both a and b have produced at least
+// one event each.
+// Default capacity: stream_a.capacity + stream_b.capacity.
 ```
 
 **Conditional transformation:**
 
 ```
-stream clamped: i32 = if raw > max_allowed then max_allowed else raw
+stream ring clamped: i32 = if raw > max_allowed then max_allowed else raw
 // Per-event of raw, output the clamped value.
 ```
 
 **Composition with operators downstream:**
 
 ```
-stream filtered = (count * 2) |> filter(is_positive)
+stream ring filtered: i32 = (count * 2) |> filter(is_positive)
 // Expression part produces a Stream[i32]; the operator chain continues.
 ```
 
@@ -14496,24 +14531,39 @@ input streams via the `.past(n, fallback)` access form.
 ##### 13.18.8.1 Declaration form
 
 ```
-recurrent[N]? stream NAME: T = EXPR
+recurrent[N]? stream policy[capacity]? NAME: Type? = EXPR
 ```
 
-- `[N]` is the output stream's self-memory size — the maximum
-  lookback `k` permitted in `NAME.past(k, ...)` self-references.
-  Must be a positive integer literal.
-- `recurrent stream NAME` (with no brackets) is shorthand for
-  `recurrent[1] stream NAME` — one step of self-memory.
+- `recurrent[N]?` is the recurrent prefix. `[N]` is the output
+  stream's self-history size — the maximum lookback `k` permitted
+  in `NAME.past(k, ...)` self-references. Must be a positive
+  integer literal. `recurrent stream` (with no brackets) is
+  shorthand for `recurrent[1] stream` (one step of self-memory).
+- `policy[capacity]?` follows the standard stream declaration form
+  (§13.18.2): policy is mandatory; capacity is optional. When
+  capacity is omitted, the default is `sum_of_input_capacities + N`
+  per §13.18.2 — the recurrent's self-history allocation adds to
+  the inferred consumer-buffer capacity.
+- `NAME` is the snake_case identifier naming the output stream.
+- `Type` is optional when inferable from `EXPR`.
 - `EXPR` is a reactive expression (§13.18.7) that may use
   `.past(n, fallback)` and `.previous(init)` on any stream
   referenced (including `NAME` itself).
 
 ```
-recurrent stream filtered: i32 = if count % 2 == 0 then count else count.previous(0)
-recurrent[3] stream avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
-recurrent stream smoothed: f32 = (count + smoothed.previous(0.0)) / 2
-recurrent[5] stream debounced: i32 = if count.past(5, 0) == count then count else debounced.previous(0)
+recurrent stream ring filtered: i32 = if count % 2 == 0 then count else count.previous(0)
+recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
+recurrent stream ring smoothed: f32 = (count + smoothed.previous(0.0)) / 2
+recurrent[5] stream ring debounced: i32 = if count.past(5, 0) == count then count else debounced.previous(0)
 ```
+
+Each example uses the default capacity. Assuming `count: ring[1024]`:
+- `filtered` has capacity `1024 + 1 = 1025` (N=1 default).
+- `avg` has capacity `1024 + 3 = 1027`.
+- `smoothed` has capacity `1024 + 1 = 1025`.
+- `debounced` has capacity `1024 + 5 = 1029`.
+
+Explicit capacity overrides the default: `recurrent[3] stream ring[2048] avg: f32 = ...`.
 
 ##### 13.18.8.2 Access form
 
@@ -14549,7 +14599,7 @@ its arguments are evaluated when read. Multiple calls to
 fallback values within the same expression:
 
 ```
-recurrent stream blend: i32 =
+recurrent stream ring blend: i32 =
   if condition then count.previous(0) else count.previous(99)
 // Two calls on count.previous, with different fallbacks. Both
 // are valid; each contributes independently to its branch.
@@ -14582,12 +14632,13 @@ all referenced inputs.
 ##### 13.18.8.6 Composition with operators
 
 A `recurrent[N] stream` declaration produces an ordinary
-`Stream[T]` for downstream consumers. Operators apply normally:
+`Stream[T]` for downstream consumers. Operators apply normally
+(assuming `count` is a stream in scope):
 
 ```
-recurrent[3] stream avg: f32 = (c + c.past(1, 0) + c.past(2, 0)) / 3
-stream scaled: f32 = avg |> map(fn(x): x * 2)
-stream filtered: f32 = avg |> filter(fn(x): x > 0.5)
+recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
+stream ring scaled: f32 = avg |> map(fn(x): x * 2)
+stream ring filtered: f32 = avg |> filter(fn(x): x > 0.5)
 ```
 
 The recurrent declaration's special semantics are contained within
@@ -15438,6 +15489,12 @@ The declaration shape parallels the top-level `stream` declaration
 (§13.18.2), but with no `= source` clause — the source is the host's
 reconciler pushing events via `kernel.push_stream`. Policy and
 capacity work as in regular stream declarations.
+
+`recurrent[N] stream` (§13.18.8) is not valid in `observed:` blocks
+— a recurrent stream requires a reactive expression body, but
+observed-block cells have no body (the host populates them
+directly via the kernel API). Effects that need history-aware
+behavior must compute it in the host's reconciler.
 
 The stream begins empty. Consumers in program code project the stream
 to a signal via `to_signal`, or fold/count/filter/etc. via the
