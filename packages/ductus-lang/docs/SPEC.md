@@ -10132,16 +10132,17 @@ does not distinguish between a bare `T` and a filtered `T where C`;
 both are reactive cells whose emissions cause the arm to be a
 candidate for selection.
 
-**Combine_latest semantics propagate** (§13.18.10.2): a `C`-cell
-change can cause the filtered trigger to emit (and thus the arm to
-become a candidate) even if `T` itself did not fire. This means
-non-active arms may activate when their predicate transitions to
-true with their `T`'s latest value.
+**Per-LHS-event filter semantics** (§13.18.10.2): the filtered
+trigger `T where C` emits only when `T` itself fires AND `C`
+evaluates to true at that moment, sampling any cells `C`
+references at their current values. A `C`-cell change between `T`
+emissions does NOT cause the filtered trigger to emit; the arm
+becomes a candidate only when `T` actually emits with `C` passing.
 
 **Active arm + falsy `where` does not deactivate.** When arm A is
 the currently-active arm and A's `where` later evaluates to false
 (without any other arm activating), A stays active. The `where`
-clause gates arm SELECTION at moments of candidacy, not the
+clause gates arm SELECTION at moments of `T` emission, not the
 continued activeness of an already-selected arm. A's body remains
 reactive to its references. A is supplanted only when a different
 arm's filtered trigger emits and that arm becomes the new active
@@ -14634,6 +14635,28 @@ stream ring sum = stream_a + stream_b
 Other combining behaviors (`zip`, `sample`, `merge`, etc.) require
 explicit stdlib operators (§13.18.9).
 
+**Combine_latest applies to value-producing operations only.**
+The combine_latest default of this subsection governs reactive
+expressions whose output's value depends on all inputs —
+arithmetic (`*`, `+`, etc.), function calls, `map`, conditional
+expressions, and similar. For these, any input change can change
+the output value, so emitting on any input change is natural.
+
+**Subset operations are per-LHS-event, not combine_latest.**
+Operators that produce a subset of an LHS stream's events
+(`where` §13.18.10, `filter` §13.18.9, `skip`, `take`,
+`pairwise`, and similar) are per-LHS-event: only the LHS stream
+drives emission. Any reactive cells referenced inside the
+operation's predicate or transformation contribute their current
+values at LHS-emission time, but their commits between LHS events
+do not cause re-emission. See §13.18.10.2 for the canonical
+formulation in the `where` context.
+
+The distinction is semantic: value-producing operations have a
+value that depends on all inputs (combine_latest is natural);
+subset operations select from an LHS stream (per-LHS-event is
+natural).
+
 **First-emission timing.** A reactive expression emits its first
 output event during the startup pass (§13.2.6) iff every reactive
 input has a value to contribute at that moment: signals
@@ -15072,64 +15095,77 @@ stream ring above_threshold = sensor_signal where sensor_signal > 100
 // equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
 ```
 
-##### 13.18.10.2 References inside `C` and reactive predicate semantics
+##### 13.18.10.2 References inside `C` and per-LHS-event semantics
 
-The predicate `C` is a reactive expression. Inside `C`, references
-work per the rules of §13.18.7:
+The predicate `C` may reference any reactive cells in scope. Inside
+`C`, references work per the rules of §13.18.7 in two ways:
 
 - The LHS stream's name (`A` above) refers to the **current event**
   available at the filter: `A.field` accesses a field of that
   event; a bare reference to a primitive-typed stream is its
   current event value.
-- Other reactive cells referenced in `C` are tracked as inputs to
-  the filter expression.
+- Other reactive cells referenced in `C` (signals, derived signals,
+  attrs, other stream projections) contribute their **current
+  committed values** at the moment the filter evaluates.
 
-**Combine_latest semantics.** The filter is itself a reactive
-expression participating in combine_latest (§13.18.7.2): a change to
-ANY input — the LHS stream emitting a new event, or any cell
-referenced in `C` committing a new value — triggers re-evaluation of
-the filter. On re-evaluation:
+**Per-LHS-event evaluation.** The filter evaluates exactly once
+per LHS event. When `A` emits an event:
 
-- If `C` evaluates to `true` with the latest LHS event in scope,
-  the filter emits that LHS event.
-- If `C` evaluates to `false`, no event is emitted on this
-  re-evaluation.
+1. `C` is evaluated using A's current event and the current
+   committed values of any other cells referenced in `C`.
+2. If `C` is true, the filter emits the event. If false, no
+   emission.
 
-A consequence: a `C`-cell change can cause the filter to re-emit
-the latest LHS event (if `C` transitions from false to true with
-that LHS event still being the latest). The predicate is "live" —
-it doesn't merely sample at LHS-emission time.
+Cells referenced in `C` are *sampled* at LHS emission time — they
+contribute their current values to the per-event check. **Commits
+to those cells between LHS emissions do not trigger filter
+re-evaluation.** The filter is per-LHS-event; the LHS stream is the
+sole driver of emission.
+
+This matches the semantics of the `filter` operator (§13.18.9): both
+forms are per-LHS-event with the predicate sampled at emission. The
+distinction is syntactic: `where` is the keyword form (predicate is
+a reactive expression referencing in-scope cells directly); `filter`
+is the operator form (predicate is a closure).
 
 ```
-stream ring active_events = events where active_signal
-// emits each event of `events` while active_signal is true;
-// when active_signal flips false→true, re-emits the latest event.
+stream ring active_events = events where active_signal == true
+// emits each event of `events` for which `active_signal` is true
+// at that moment. If `active_signal` flips false then true again
+// between events, no event is re-emitted — the filter only fires on
+// `events` emissions.
 
 stream ring x_clicks_in_zone = clicks where clicks.x > zone_threshold
-// each click event is checked; if x exceeds threshold, emit.
-// If zone_threshold drops below the latest click's x value, that
-// latest click re-emits.
+// each click event is checked against zone_threshold's current
+// value. If zone_threshold changes between clicks, the new value
+// applies to subsequent clicks. Past clicks are not re-evaluated.
 ```
 
-The same value-change rule (§13.2.4.4) applies as for any reactive
-expression: emissions only occur when the filter's output would
-genuinely change (a new LHS event passing, or a transition from
-false→true with a different latest LHS than was previously emitted).
-Idempotent re-evaluations (same input cells, same value) do not
-produce duplicate emissions.
+**Distinction from value-producing expressions.** Filters are a
+*subset operation*: the output is a subset of LHS events, governed
+by the predicate. This differs from value-producing expressions
+(arithmetic, function calls, `map`) where the expression value
+depends on all reactive inputs and combine_latest is the natural
+emission rule (§13.18.7.2). For filters, the LHS stream alone
+drives emission; predicate cells contribute values but not
+emissions. See §13.18.7.2 for the broader contrast.
 
 ##### 13.18.10.3 Output type, policy, and capacity
 
 The output stream's element type matches the input's. Policy and
 capacity follow:
 
-- **Policy** is inherited from the input. A `RingStream[T, ...]`
+- **Policy** is inherited from the LHS. A `RingStream[T, ...]`
   filter produces `RingStream[T, ...]`; a `GateStream[T, ...]`
   produces `GateStream[T, ...]`. A signal input (implicit
   `to_stream`) produces a ring stream.
-- **Capacity** defaults per §13.18.2 (sum of input capacities;
-  signals contribute 1024). Explicit `[capacity]` at the surrounding
-  stream declaration overrides.
+- **Capacity** defaults to the LHS stream's capacity. Predicate-
+  referenced cells do not contribute to the capacity sum because
+  they don't drive emission — they're sampled at LHS events.
+  This differs from §13.18.2's default for value-producing
+  expressions, which sums all input capacities. Filter outputs
+  only need to buffer what the LHS produces. Explicit `[capacity]`
+  at the surrounding stream declaration overrides.
 
 ##### 13.18.10.4 Composition and chaining
 
@@ -15154,19 +15190,24 @@ The `where` filter is the mechanism by which observe arms (§13.2.11)
 express conditional triggers. The trigger `T where C` is a filtered
 stream; from the arm's perspective, this is just an ordinary trigger
 cell — the arm doesn't distinguish between a bare `T` and a filtered
-`T where C`. The arm activates when its trigger emits.
+`T where C`.
 
-Combined with the combine_latest filter semantics (§13.18.10.2),
-the filtered trigger emits whenever either `T` fires or a `C`-
-referenced cell changes such that the predicate now holds true with
-the latest `T` value. The arm then activates per the normal
-arm-selection rules of §13.2.11.
+Per the per-LHS-event semantics of §13.18.10.2, the filtered
+trigger emits when `T` emits AND `C` evaluates to true with the
+current values of any cells `C` references. Predicate-cell commits
+do not, by themselves, emit on the filtered trigger. The arm
+activates only when `T` actually emits with the predicate passing.
 
 ```
 recurrent counter: i32 = observe:
   on tick where active_mode: counter.previous(0) + 1
   on reset: 0
 ```
+
+When `tick` emits, `active_mode`'s current value is sampled; if
+true, the arm activates. If `active_mode` flips false then true
+between ticks, no arm activation occurs — the filtered trigger
+requires `tick` to actually emit.
 
 Within a recurrent body, the arm expression may reference the
 recurrent's self-history via `.previous(fallback)` and
