@@ -113,10 +113,15 @@ keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`), all control-flow
 keywords (`if`, `else`, `match`, `for`, `in`, `while`, `break`,
-`continue`, `return`), the scope-anchor keywords (`self`, `module`),
-and all operator-context keywords (`as`, `is`, `and`, `or`, `not`).
-The rule is normative and takes precedence over any conflicting
-grammar.
+`continue`, `return`), the scope-anchor namespaces (`here`, `module`),
+the instance value (`subject`), and all operator-context keywords
+(`as`, `is`, `and`, `or`, `not`). The rule is normative and takes
+precedence over any conflicting grammar.
+
+The sole reserved *type* identifier is `Subject` (§13.7.7), the
+subject-type alias used in trait and `fulfill` type positions. Being a
+type alias rather than a keyword, it is capitalized by the type-naming
+convention; it does not fall under the lowercase-keyword rule above.
 
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
@@ -315,7 +320,7 @@ fresh parameters per the same rule.
 #### 2.2.4 Trait-based constraints
 
 Inferred constraints reference traits (§3). Operations in the body resolve to
-trait methods (`+` resolves to `Add::add`, where `Add` denotes `Add[Self]`
+trait methods (`+` resolves to `Add::add`, where `Add` denotes `Add[Subject]`
 per §3.1.6's default-type-parameter resolution), and the relevant trait
 becomes the constraint on the corresponding parameter. The trait system's
 umbrella traits (§3.6) let the compiler simplify inferred constraint sets for
@@ -777,15 +782,15 @@ traits, and optionally default values for the trait's defaulting behavior.
 
 ```
 trait Display:
-  fn display(value: Self) -> string
+  fn display(value: Subject) -> string
 
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 
 trait Producer:
   type Item
-  fn produce(value: Self) -> Option[Item]
+  fn produce(value: Subject) -> Option[Item]
 ```
 
 A trait declaration may be empty:
@@ -802,24 +807,25 @@ existence by the compiler.
 #### 3.1.1 Method signatures
 
 Trait methods are declared with the `fn` keyword inside the trait body. The
-signatures use `Self` (capitalized, the type-level identifier) to refer to the
+signatures use `Subject` (capitalized, the type-level identifier) to refer to the
 implementing type:
 
 ```
 trait Eq:
-  fn eq(a: Self, b: Self) -> bool
+  fn eq(a: Subject, b: Subject) -> bool
 ```
 
-`Self` is a type-level placeholder bound during implementation: in a `fulfill
-Eq for i32` block, `Self` resolves to `i32`, so the method's signature becomes
+`Subject` is a type-level placeholder bound during implementation: in a `fulfill
+Eq for i32` block, `Subject` resolves to `i32`, so the method's signature becomes
 `fn eq(a: i32, b: i32) -> bool`.
 
-Trait methods do not use a `self` parameter. The lowercase `self` keyword is
-reserved exclusively for reactive context inside node and connection bodies
-(§13). Trait method signatures name their receiver
-parameter explicitly. The first parameter's type is conventionally `Self` for
+Trait methods do not use a `self` parameter. The instance value `subject`
+(§13.7.7) is reserved for reactive context inside node and connection bodies
+(§13); trait methods have no implicit receiver. Trait method signatures name
+their receiver parameter explicitly. The first parameter's type is
+conventionally `Subject` for
 methods that operate on instances, but trait methods may have any parameter
-list — including no `Self` parameter at all (for "associated functions" like
+list — including no `Subject` parameter at all (for "associated functions" like
 constructors).
 
 #### 3.1.2 Associated types
@@ -829,7 +835,7 @@ A trait may declare associated types using the `type` keyword inside the body:
 ```
 trait Producer:
   type Item
-  fn produce(p: Self) -> Option[Item]
+  fn produce(p: Subject) -> Option[Item]
 ```
 
 `Item` is an associated type — a type-level name whose concrete value is bound
@@ -839,9 +845,9 @@ method signatures and in other associated-type expressions.
 An associated type may declare a default value:
 
 ```
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 ```
 
 When an implementation does not bind `Output` explicitly, the default applies.
@@ -865,9 +871,9 @@ including a function body in the trait declaration:
 
 ```
 trait Greet:
-  fn greet(value: Self) -> string
+  fn greet(value: Subject) -> string
 
-  fn shout(value: Self) -> string:
+  fn shout(value: Subject) -> string:
     greet(value).to_upper() + "!"
 ```
 
@@ -884,7 +890,7 @@ Requirements are declared with the `requires` keyword (grammar §3.7):
 ```
 trait Student:
   requires Person
-  fn enrollment_id(value: Self) -> string
+  fn enrollment_id(value: Subject) -> string
 ```
 
 A type `T` satisfies `Student` only if `T` also satisfies `Person`. The
@@ -894,8 +900,8 @@ transitively), the declaration is rejected.
 
 A child trait may not redeclare a method already declared by any of its
 required traits (directly or transitively). If `Person` declares `fn display(
-value: Self) -> string`, then `Student` declaring its own `fn display(value:
-Self) -> string` is a compile error at the trait declaration site. The
+value: Subject) -> string`, then `Student` declaring its own `fn display(value:
+Subject) -> string` is a compile error at the trait declaration site. The
 reasoning: any type satisfying `Student` would also satisfy `Person` via
 `requires`, so the type's effective method set would contain two `display`
 methods — exactly the conflict §3.2.1 forbids. Rejecting redeclaration at the
@@ -968,11 +974,11 @@ Traits may declare type parameters (grammar §3.7's `GenericParams`):
 
 ```
 trait From[T]:
-  fn from(value: T) -> Self
+  fn from(value: T) -> Subject
 
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 ```
 
 Type parameters on a trait are part of the trait's identity at the
@@ -990,19 +996,19 @@ type-system level. Two terms are useful when discussing generic traits:
 A type may implement multiple trait instances of the same parent trait
 (`fulfill From[i32] for MyNumber` and `fulfill From[i64] for MyNumber`
 coexist; both share the parent `From`). Default type parameters (`Rhs =
-Self`) follow the rules for generic parameters in §3.1.6.1 and §2.2.
+Subject`) follow the rules for generic parameters in §3.1.6.1 and §2.2.
 
 ##### 3.1.6.1 Default-type-parameter resolution
 
 When a generic trait has defaulted type parameters (e.g., `trait
-Add[Rhs = Self]`), references to the bare trait name resolve to the
+Add[Rhs = Subject]`), references to the bare trait name resolve to the
 trait instance with all defaults applied:
 
-- In `requires` clauses: `requires Add` is sugar for `requires Add[Self]`.
-- In trait bounds: `T: Add` is sugar for `T: Add[Self]`.
-- In `satisfies` clauses: `satisfies Add` is sugar for `satisfies Add[Self]`.
-- In `fulfill` blocks: `fulfill Add for T` is sugar for `fulfill Add[Self] for T`.
-- In inferred constraints: the compiler infers `T: Add[Self]` unless the
+- In `requires` clauses: `requires Add` is sugar for `requires Add[Subject]`.
+- In trait bounds: `T: Add` is sugar for `T: Add[Subject]`.
+- In `satisfies` clauses: `satisfies Add` is sugar for `satisfies Add[Subject]`.
+- In `fulfill` blocks: `fulfill Add for T` is sugar for `fulfill Add[Subject] for T`.
+- In inferred constraints: the compiler infers `T: Add[Subject]` unless the
   operation's operand types force a cross-type form.
 
 This rule is universal across all generic traits with default type
@@ -1132,7 +1138,7 @@ type maps to exactly one trait-method origin.
 ##### Generic trait instantiations do not conflict
 
 Different generic instantiations of the *same parent trait* — e.g.,
-`From[i32]` and `From[i64]`, or `Add[Self]` and `Add[Other]` — are
+`From[i32]` and `From[i64]`, or `Add[Subject]` and `Add[Other]` — are
 distinct trait instances per §3.1.6, but they share a parent trait
 identity. Their method names refer to the same underlying trait method
 parameterized over the trait's generic arguments. They do not conflict
@@ -1280,19 +1286,19 @@ AssocTypeBinding := 'type' Ident '=' TypeExpr NEWLINE
 
 `fulfill` is a reserved keyword.
 
-#### 3.3.1 Method signatures and `Self` usage
+#### 3.3.1 Method signatures and `Subject` usage
 
-`Self` is a type-level identifier that appears in trait declarations to refer
+`Subject` is a type-level identifier that appears in trait declarations to refer
 to the implementing type. Its use is asymmetric across declaration contexts:
 
-- **In trait declarations**, `Self` is the standard way to refer to the
+- **In trait declarations**, `Subject` is the standard way to refer to the
   implementing type, because the implementing type is not yet known. Trait
-  authors write `fn display(value: Self) -> string`; there is no concrete
-  name available to substitute, so `Self` is necessary.
+  authors write `fn display(value: Subject) -> string`; there is no concrete
+  name available to substitute, so `Subject` is necessary.
 
 - **In `fulfill` blocks**, the implementing type *is* known — it appears in
   the `for Type` portion of the `fulfill` declaration. The recommended form
-  is to write the explicit type name in method signatures, not `Self`:
+  is to write the explicit type name in method signatures, not `Subject`:
 
 ```
 fulfill Eq for Person:
@@ -1300,14 +1306,14 @@ fulfill Eq for Person:
     a.first_name is b.first_name and a.last_name is b.last_name
 ```
 
-`Self` remains *permitted* inside `fulfill` blocks and is treated as a
-synonym for the implementing type (the compiler substitutes `Self` →
+`Subject` remains *permitted* inside `fulfill` blocks and is treated as a
+synonym for the implementing type (the compiler substitutes `Subject` →
 `Person` during type checking). The two forms produce identical signatures
 and identical compiled code. The explicit-type-name form is preferred for
 readability: a reader sees concrete types at every position, without an extra
-indirection through `Self`.
+indirection through `Subject`.
 
-Generic implementing types may make `Self` more convenient by keeping the
+Generic implementing types may make `Subject` more convenient by keeping the
 signature shorter:
 
 ```
@@ -1323,14 +1329,14 @@ fulfill Display for Result[T, E] where T: Display, E: Display:
       Err(error): "Err({error.display()})"
 ```
 
-For generic types specifically, users may prefer `Self` to avoid repeating
-the parameterization (`fn display(result: Self) -> string`). Both forms are
+For generic types specifically, users may prefer `Subject` to avoid repeating
+the parameterization (`fn display(result: Subject) -> string`). Both forms are
 valid; the choice is stylistic.
 
 The receiver parameter name (`a`, `value`, `result`, `left`, etc.) is always
-the implementer's choice. There is no `self` keyword for trait method
-receivers — that lowercase form is reserved exclusively for reactive context
-inside node and connection bodies (§13). Explicit parameter naming is the
+the implementer's choice. There is no implicit receiver for trait methods —
+the instance value `subject` is reserved for reactive context inside node and
+connection bodies (§13, §13.7.7). Explicit parameter naming is the
 language's general principle under uniform function call syntax: every
 parameter has a chosen name, not an implicit one.
 
@@ -1351,7 +1357,7 @@ fulfill Add for i32:
     // built-in integer addition
 ```
 
-Note: with the §4.9.1 default `type Output = Self`, the `type Output =
+Note: with the §4.9.1 default `type Output = Subject`, the `type Output =
 i32` binding shown here is explicit but optional. It could be omitted;
 the default applies. Explicit binding is shown for clarity in examples
 and remains valid where the implementer wants to make the choice
@@ -1369,8 +1375,8 @@ override it by providing its own body:
 
 ```
 trait Greet:
-  fn greet(value: Self) -> string
-  fn shout(value: Self) -> string:
+  fn greet(value: Subject) -> string
+  fn shout(value: Subject) -> string:
     greet(value).to_upper() + "!"
 
 fulfill Greet for Loud:
@@ -1781,20 +1787,20 @@ Fine-grained traits each declare exactly one method or one closely related
 group of methods, defining a single capability:
 
 ```
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 
-trait Sub[Rhs = Self]:
-  type Output = Self
-  fn sub(a: Self, b: Rhs) -> Output
+trait Sub[Rhs = Subject]:
+  type Output = Subject
+  fn sub(a: Subject, b: Rhs) -> Output
 
-trait Mul[Rhs = Self]:
-  type Output = Self
-  fn mul(a: Self, b: Rhs) -> Output
+trait Mul[Rhs = Subject]:
+  type Output = Subject
+  fn mul(a: Subject, b: Rhs) -> Output
 
 trait Neg:
-  fn neg(value: Self) -> Self
+  fn neg(value: Subject) -> Subject
 ```
 
 Umbrella traits combine fine-grained traits via `requires` clauses,
@@ -2418,7 +2424,7 @@ corresponds to one or more trait methods in §4.9's trait hierarchy.
 | `+`          | `Add`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
 | `-` (binary) | `Sub`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
 | `*`          | `Mul`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
-| `/`          | `Numeric`          | Self (on Float umbrella; mixed-kind operands widen per §4.4.1.1)  | mathematical division; see §4.4.1.1 |
+| `/`          | `Numeric`          | Subject (on Float umbrella; mixed-kind operands widen per §4.4.1.1)  | mathematical division; see §4.4.1.1 |
 | `//`         | `IntDiv`           | Output (associated type)                                          | truncating integer division         |
 | `%`          | `Rem`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
 | `-` (unary)  | `Neg`              | same as operand                                                   | type error on unsigned              |
@@ -2611,7 +2617,7 @@ This table specifies the mapping:
 | `+`                                         | `Add`                                   | `Output` (associated type)                           |
 | `-` (binary)                                | `Sub`                                   | `Output` (associated type)                           |
 | `*`                                         | `Mul`                                   | `Output` (associated type)                           |
-| `/`                                         | `Numeric`                               | `Self` on `Float` umbrella (per §4.4.1.1)            |
+| `/`                                         | `Numeric`                               | `Subject` on `Float` umbrella (per §4.4.1.1)            |
 | `//`                                        | `IntDiv`                                | `Output` (associated type)                           |
 | `%`                                         | `Rem`                                   | `Output` (associated type)                           |
 | `-` (unary)                                 | `Neg`                                   | same type as operand                                 |
@@ -2641,7 +2647,7 @@ explicit cast.
 
 Per §3.1.6's default-type-parameter resolution, each table entry that
 names a bare trait (e.g., `Add`) refers to the trait instance with
-default type parameters applied — `Add` is `Add[Self]`. For operands
+default type parameters applied — `Add` is `Add[Subject]`. For operands
 of different types, the compiler may infer cross-type instances
 (`Add[T2] for T1`) if such an instance is in scope; otherwise the
 operand types must be unified per the implicit-widening rules of §4.5.
@@ -2994,9 +3000,9 @@ Available on all `Numeric` types (both integer and float):
 
 | Operation | Trait | Signature                          |
 |-----------|-------|------------------------------------|
-| `abs`     | `Abs` | `fn abs(value: Self) -> Self`      |
-| `min`     | `Min` | `fn min(a: Self, b: Self) -> Self` |
-| `max`     | `Max` | `fn max(a: Self, b: Self) -> Self` |
+| `abs`     | `Abs` | `fn abs(value: Subject) -> Subject`      |
+| `min`     | `Min` | `fn min(a: Subject, b: Subject) -> Subject` |
+| `max`     | `Max` | `fn max(a: Subject, b: Subject) -> Subject` |
 
 Note on `abs`: applying `abs` to the minimum value of a signed integer type
 (e.g., `i32::MIN.abs()`) traps on overflow per §4.6.1, because the
@@ -3112,74 +3118,74 @@ Each operator from §4.4 has its own trait, with the method name matching
 the conventional operator name:
 
 ```
-trait Add[Rhs = Self]:    type Output = Self; fn add(a: Self, b: Rhs) -> Output
-trait Sub[Rhs = Self]:    type Output = Self; fn sub(a: Self, b: Rhs) -> Output
-trait Mul[Rhs = Self]:    type Output = Self; fn mul(a: Self, b: Rhs) -> Output
-trait Div:                fn div(a: Self, b: Self) -> Self      -- on Float umbrella only; see §4.4.1.1 for widening
-trait IntDiv[Rhs = Self]: type Output = Self; fn intdiv(a: Self, b: Rhs) -> Output
-trait Rem[Rhs = Self]:    type Output = Self; fn rem(a: Self, b: Rhs) -> Output
-trait Neg:                fn neg(value: Self) -> Self
+trait Add[Rhs = Subject]:    type Output = Subject; fn add(a: Subject, b: Rhs) -> Output
+trait Sub[Rhs = Subject]:    type Output = Subject; fn sub(a: Subject, b: Rhs) -> Output
+trait Mul[Rhs = Subject]:    type Output = Subject; fn mul(a: Subject, b: Rhs) -> Output
+trait Div:                fn div(a: Subject, b: Subject) -> Subject      -- on Float umbrella only; see §4.4.1.1 for widening
+trait IntDiv[Rhs = Subject]: type Output = Subject; fn intdiv(a: Subject, b: Rhs) -> Output
+trait Rem[Rhs = Subject]:    type Output = Subject; fn rem(a: Subject, b: Rhs) -> Output
+trait Neg:                fn neg(value: Subject) -> Subject
 
-trait BitAnd: fn bitand(a: Self, b: Self) -> Self
-trait BitOr:  fn bitor(a: Self, b: Self) -> Self
-trait BitXor: fn bitxor(a: Self, b: Self) -> Self
-trait BitNot: fn bitnot(value: Self) -> Self
-trait Shl:    fn shl(value: Self, n: u32) -> Self
-trait Shr:    fn shr(value: Self, n: u32) -> Self
+trait BitAnd: fn bitand(a: Subject, b: Subject) -> Subject
+trait BitOr:  fn bitor(a: Subject, b: Subject) -> Subject
+trait BitXor: fn bitxor(a: Subject, b: Subject) -> Subject
+trait BitNot: fn bitnot(value: Subject) -> Subject
+trait Shl:    fn shl(value: Subject, n: u32) -> Subject
+trait Shr:    fn shr(value: Subject, n: u32) -> Subject
 
-trait WrappingAdd[Rhs = Self]:    type Output = Self; fn wrapping_add(a: Self, b: Rhs) -> Output
-trait WrappingSub[Rhs = Self]:    type Output = Self; fn wrapping_sub(a: Self, b: Rhs) -> Output
-trait WrappingMul[Rhs = Self]:    type Output = Self; fn wrapping_mul(a: Self, b: Rhs) -> Output
-trait WrappingIntDiv[Rhs = Self]: type Output = Self; fn wrapping_intdiv(a: Self, b: Rhs) -> Output
-trait WrappingRem[Rhs = Self]:    type Output = Self; fn wrapping_rem(a: Self, b: Rhs) -> Output
-trait WrappingNeg:                fn wrapping_neg(value: Self) -> Self
+trait WrappingAdd[Rhs = Subject]:    type Output = Subject; fn wrapping_add(a: Subject, b: Rhs) -> Output
+trait WrappingSub[Rhs = Subject]:    type Output = Subject; fn wrapping_sub(a: Subject, b: Rhs) -> Output
+trait WrappingMul[Rhs = Subject]:    type Output = Subject; fn wrapping_mul(a: Subject, b: Rhs) -> Output
+trait WrappingIntDiv[Rhs = Subject]: type Output = Subject; fn wrapping_intdiv(a: Subject, b: Rhs) -> Output
+trait WrappingRem[Rhs = Subject]:    type Output = Subject; fn wrapping_rem(a: Subject, b: Rhs) -> Output
+trait WrappingNeg:                fn wrapping_neg(value: Subject) -> Subject
 
-trait SaturatingAdd[Rhs = Self]:    type Output = Self; fn saturating_add(a: Self, b: Rhs) -> Output
-trait SaturatingSub[Rhs = Self]:    type Output = Self; fn saturating_sub(a: Self, b: Rhs) -> Output
-trait SaturatingMul[Rhs = Self]:    type Output = Self; fn saturating_mul(a: Self, b: Rhs) -> Output
-trait SaturatingIntDiv[Rhs = Self]: type Output = Self; fn saturating_intdiv(a: Self, b: Rhs) -> Output
-trait SaturatingRem[Rhs = Self]:    type Output = Self; fn saturating_rem(a: Self, b: Rhs) -> Output
-trait SaturatingNeg:                fn saturating_neg(value: Self) -> Self
+trait SaturatingAdd[Rhs = Subject]:    type Output = Subject; fn saturating_add(a: Subject, b: Rhs) -> Output
+trait SaturatingSub[Rhs = Subject]:    type Output = Subject; fn saturating_sub(a: Subject, b: Rhs) -> Output
+trait SaturatingMul[Rhs = Subject]:    type Output = Subject; fn saturating_mul(a: Subject, b: Rhs) -> Output
+trait SaturatingIntDiv[Rhs = Subject]: type Output = Subject; fn saturating_intdiv(a: Subject, b: Rhs) -> Output
+trait SaturatingRem[Rhs = Subject]:    type Output = Subject; fn saturating_rem(a: Subject, b: Rhs) -> Output
+trait SaturatingNeg:                fn saturating_neg(value: Subject) -> Subject
 
-trait CheckedAdd[Rhs = Self]:    type Output = Self; fn checked_add(a: Self, b: Rhs) -> Option[Output]
-trait CheckedSub[Rhs = Self]:    type Output = Self; fn checked_sub(a: Self, b: Rhs) -> Option[Output]
-trait CheckedMul[Rhs = Self]:    type Output = Self; fn checked_mul(a: Self, b: Rhs) -> Option[Output]
-trait CheckedDiv[Rhs = Self]:    type Output = Self; fn checked_div(a: Self, b: Rhs) -> Option[Output]
-trait CheckedIntDiv[Rhs = Self]: type Output = Self; fn checked_intdiv(a: Self, b: Rhs) -> Option[Output]
-trait CheckedRem[Rhs = Self]:    type Output = Self; fn checked_rem(a: Self, b: Rhs) -> Option[Output]
-trait CheckedNeg:                fn checked_neg(value: Self) -> Option[Self]
+trait CheckedAdd[Rhs = Subject]:    type Output = Subject; fn checked_add(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedSub[Rhs = Subject]:    type Output = Subject; fn checked_sub(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedMul[Rhs = Subject]:    type Output = Subject; fn checked_mul(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedDiv[Rhs = Subject]:    type Output = Subject; fn checked_div(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedIntDiv[Rhs = Subject]: type Output = Subject; fn checked_intdiv(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedRem[Rhs = Subject]:    type Output = Subject; fn checked_rem(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedNeg:                fn checked_neg(value: Subject) -> Option[Subject]
 
-trait WrappingAs[T]:   fn wrapping_as(value: Self) -> T
-trait SaturatingAs[T]: fn saturating_as(value: Self) -> T
-trait CheckedAs[T]:    fn checked_as(value: Self) -> Option[T]
+trait WrappingAs[T]:   fn wrapping_as(value: Subject) -> T
+trait SaturatingAs[T]: fn saturating_as(value: Subject) -> T
+trait CheckedAs[T]:    fn checked_as(value: Subject) -> Option[T]
 
-trait Zero: fn zero() -> Self
-trait One:  fn one() -> Self
+trait Zero: fn zero() -> Subject
+trait One:  fn one() -> Subject
 
-trait Abs:  fn abs(value: Self) -> Self
-trait Min:  fn min(a: Self, b: Self) -> Self
-trait Max:  fn max(a: Self, b: Self) -> Self
+trait Abs:  fn abs(value: Subject) -> Subject
+trait Min:  fn min(a: Subject, b: Subject) -> Subject
+trait Max:  fn max(a: Subject, b: Subject) -> Subject
 
-trait Sqrt: fn sqrt(value: Self) -> Self
-trait Sin:  fn sin(value: Self) -> Self
-trait Cos:  fn cos(value: Self) -> Self
+trait Sqrt: fn sqrt(value: Subject) -> Subject
+trait Sin:  fn sin(value: Subject) -> Subject
+trait Cos:  fn cos(value: Subject) -> Subject
 // ... and so on for the float-only operations from §4.8.2
 
-trait IntPow:   fn pow(base: Self, exp: Self) -> Self
-trait FloatPow: fn pow(base: Self, exp: Self) -> Self
+trait IntPow:   fn pow(base: Subject, exp: Subject) -> Subject
+trait FloatPow: fn pow(base: Subject, exp: Subject) -> Subject
 
-trait Eq: fn eq(a: Self, b: Self) -> bool
+trait Eq: fn eq(a: Subject, b: Subject) -> bool
 
 trait Ord: requires Lt, Le, Gt, Ge
-trait Lt: fn lt(a: Self, b: Self) -> bool
+trait Lt: fn lt(a: Subject, b: Subject) -> bool
 trait Le: requires Lt, Eq
-          fn le(a: Self, b: Self) -> bool:
+          fn le(a: Subject, b: Subject) -> bool:
             lt(a, b) or eq(a, b)
 trait Gt: requires Lt, Eq
-          fn gt(a: Self, b: Self) -> bool:
+          fn gt(a: Subject, b: Subject) -> bool:
             not (lt(a, b) or eq(a, b))
 trait Ge: requires Lt
-          fn ge(a: Self, b: Self) -> bool:
+          fn ge(a: Subject, b: Subject) -> bool:
             not lt(a, b)
 ```
 
@@ -3436,7 +3442,7 @@ they are simply not zero, which is the property `dyn` makes visible.
 #### 5.2.4 Object safety
 
 Not every trait can be used in a `dyn` position. Traits with methods whose
-signatures depend on `Self` in non-receiver positions, traits with
+signatures depend on `Subject` in non-receiver positions, traits with
 associated types not bound at the use site, or traits with generic methods
 cannot be made into trait objects under the standard vtable mechanism.
 Object-safety rules are specified in detail in [Object Safety: deferred
@@ -4433,22 +4439,22 @@ system (§3) and complements the built-in numeric implicit-widening rules
 
 ```
 trait From[T]:
-  fn from(value: T) -> Self
+  fn from(value: T) -> Subject
 
 trait Into[T]:
-  fn into(value: Self) -> T
+  fn into(value: Subject) -> T
 
 trait TryFrom[T]:
   type Error
-  fn try_from(value: T) -> Result[Self, Error]
+  fn try_from(value: T) -> Result[Subject, Error]
 
 trait TryInto[T]:
   type Error
-  fn try_into(value: Self) -> Result[T, Error]
+  fn try_into(value: Subject) -> Result[T, Error]
 ```
 
 `From` and `Into` describe the same conversion from two perspectives —
-"construct `Self` from a `T`" vs "convert `Self` into a `T`." Likewise
+"construct `Subject` from a `T`" vs "convert `Subject` into a `T`." Likewise
 `TryFrom` and `TryInto` describe the same fallible conversion.
 
 The fallibility split is semantic. `From`/`Into` is for conversions that
@@ -4900,7 +4906,7 @@ success value" or "break with this failure value":
 trait Try:
   type Success
   type Failure
-  fn branch(value: Self) -> TryBranch[Success, Failure]
+  fn branch(value: Subject) -> TryBranch[Success, Failure]
 
 enum TryBranch[S, F]:
   Continue(S)
@@ -5003,42 +5009,42 @@ The non-exhaustive list:
 
 #### 8.7.1 `Option[T]`
 
-- `unwrap(value: Self) -> T` — returns the value or traps if `None`.
-- `expect(value: Self, msg: string) -> T` — like `unwrap` with custom
+- `unwrap(value: Subject) -> T` — returns the value or traps if `None`.
+- `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Self, default: T) -> T` — returns the value or the
+- `unwrap_or(value: Subject, default: T) -> T` — returns the value or the
   default.
-- `unwrap_or_else(value: Self, f: fn() -> T) -> T` — returns the value
+- `unwrap_or_else(value: Subject, f: fn() -> T) -> T` — returns the value
   or a computed default.
-- `map[U](value: Self, f: fn(T) -> U) -> Option[U]` — applies a
+- `map[U](value: Subject, f: fn(T) -> U) -> Option[U]` — applies a
   function to the success value.
-- `and_then[U](value: Self, f: fn(T) -> Option[U]) -> Option[U]` —
+- `and_then[U](value: Subject, f: fn(T) -> Option[U]) -> Option[U]` —
   chains optional computations.
-- `or_else(value: Self, f: fn() -> Option[T]) -> Option[T]` — fallback
+- `or_else(value: Subject, f: fn() -> Option[T]) -> Option[T]` — fallback
   computation.
-- `ok_or[E](value: Self, err: E) -> Result[T, E]` — converts to
+- `ok_or[E](value: Subject, err: E) -> Result[T, E]` — converts to
   `Result` with the given error on `None`.
-- `is_some(value: &Self) -> bool`, `is_none(value: &Self) -> bool` —
+- `is_some(value: &Subject) -> bool`, `is_none(value: &Subject) -> bool` —
   discriminator predicates.
 
 #### 8.7.2 `Result[T, E]`
 
-- `unwrap(value: Self) -> T` — returns success or traps on `Err`.
-- `expect(value: Self, msg: string) -> T` — like `unwrap` with custom
+- `unwrap(value: Subject) -> T` — returns success or traps on `Err`.
+- `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Self, default: T) -> T`,
-  `unwrap_or_else(value: Self, f: fn(E) -> T) -> T`.
-- `map[U](value: Self, f: fn(T) -> U) -> Result[U, E]` — transforms the
+- `unwrap_or(value: Subject, default: T) -> T`,
+  `unwrap_or_else(value: Subject, f: fn(E) -> T) -> T`.
+- `map[U](value: Subject, f: fn(T) -> U) -> Result[U, E]` — transforms the
   success value.
-- `map_err[F](value: Self, f: fn(E) -> F) -> Result[T, F]` — converts
+- `map_err[F](value: Subject, f: fn(E) -> F) -> Result[T, F]` — converts
   the error type.
-- `and_then[U](value: Self, f: fn(T) -> Result[U, E]) -> Result[U, E]`
+- `and_then[U](value: Subject, f: fn(T) -> Result[U, E]) -> Result[U, E]`
   — chains fallible computations.
-- `or_else[F](value: Self, f: fn(E) -> Result[T, F]) -> Result[T, F]`
+- `or_else[F](value: Subject, f: fn(E) -> Result[T, F]) -> Result[T, F]`
   — error-recovery chain.
-- `ok(value: Self) -> Option[T]`, `err(value: Self) -> Option[E]` —
+- `ok(value: Subject) -> Option[T]`, `err(value: Subject) -> Option[E]` —
   convert to `Option`, discarding the other arm.
-- `is_ok(value: &Self) -> bool`, `is_err(value: &Self) -> bool` —
+- `is_ok(value: &Subject) -> bool`, `is_err(value: &Subject) -> bool` —
   discriminator predicates.
 
 All methods listed above are *free functions* defined in stdlib, callable
@@ -6642,7 +6648,7 @@ copy-semantic languages.
 
 ```
 trait Clone:
-  fn clone(value: &Self) -> Self
+  fn clone(value: &Subject) -> Subject
 ```
 
 The method takes a borrow (§11.9) of the source value and returns an
@@ -7057,7 +7063,7 @@ lifetime:
   construction. This carve-out is bounded to fields of types satisfying
   `Iterator` — it does not generalize to arbitrary record fields.
 - **`Iterator::next` return values** (§12.7.4). The `Iterator` trait's
-  `next` method may return `(Option[&T], Self)` when the iterator's
+  `next` method may return `(Option[&T], Subject)` when the iterator's
   `Item` type is a borrow. This is the value-side counterpart to the
   iterator-type-field carve-out above: the iterator stores the borrow in
   its source field, and `next` exposes that borrow as the yielded item.
@@ -7318,15 +7324,15 @@ functions:
 
 ```
 trait Length:
-  fn length(value: &Self) -> isize
+  fn length(value: &Subject) -> isize
 
 fulfill Length for Vec[i32]:
   fn length(value: &Vec[i32]) -> isize:
     ...
 ```
 
-The `&Self` in the trait declaration becomes `&Vec[i32]` (or whatever the
-implementing type is) in each `fulfill` block, by the standard `Self`
+The `&Subject` in the trait declaration becomes `&Vec[i32]` (or whatever the
+implementing type is) in each `fulfill` block, by the standard `Subject`
 substitution rule of §3.1.1.
 
 Trait dispatch (§3.4) is unaffected by ownership semantics. Whether a
@@ -8024,7 +8030,7 @@ on demand:
 ```
 trait Iterator:
   type Item
-  fn next(iter: Self) -> (Option[Item], Self)
+  fn next(iter: Subject) -> (Option[Item], Subject)
 ```
 
 The `next` method takes the iterator by value, advances its internal
@@ -8034,7 +8040,7 @@ iterator for the next call.
 
 #### 12.7.1 Why the tuple return
 
-The trait method returns `(Option[Item], Self)` because the iterator's
+The trait method returns `(Option[Item], Subject)` because the iterator's
 internal cursor state must be mutated across calls, but the language has
 no `&mut` parameter form (§11.9) and forbids `mut` on parameters
 (§11.7.2). Under these constraints, the only way to advance an
@@ -8116,7 +8122,7 @@ narrow positions where `&T` is grammatically valid as a type expression
 iteration variable position (§11.9.5, §12.3.3).
 
 When `Item = &T`, the `next` method's return type becomes
-`(Option[&T], Self)`. The `&T` appears inside `Option` and inside the
+`(Option[&T], Subject)`. The `&T` appears inside `Option` and inside the
 tuple, both of which are normally borrow-forbidden positions; the
 exception applies specifically to this trait's `next` return.
 
@@ -8154,7 +8160,7 @@ The trait declaration itself is unchanged:
 ```
 trait Iterator:
   type Item
-  fn next(iter: Self) -> (Option[Item], Self)
+  fn next(iter: Subject) -> (Option[Item], Subject)
 ```
 
 `Item` is unconstrained in the trait declaration. Implementations may
@@ -8182,7 +8188,7 @@ function-parameter borrows, applied per iteration.
 ```
 trait Iterable:
   type Iter: Iterator
-  fn iterator(value: &Self) -> Iter
+  fn iterator(value: &Subject) -> Iter
 ```
 
 The associated type `Iter` is the iterator type produced; it must itself
@@ -8197,7 +8203,7 @@ user code use the full name throughout.
 
 #### 12.8.2 Borrow lifetime
 
-The `iterator` method's parameter is `&Self`. The iterator's lifetime is
+The `iterator` method's parameter is `&Subject`. The iterator's lifetime is
 bounded by the borrow's scope — meaning, for a for-loop, the lifetime of
 the loop expression itself. This is enforced by the same call-scoped
 borrow rules of §11.9: while the for-loop is running, the source value
@@ -8235,7 +8241,7 @@ elements are yielded as owned values.
 ```
 trait IntoIterable:
   type Iter: Iterator
-  fn consuming_iterator(value: Self) -> Iter
+  fn consuming_iterator(value: Subject) -> Iter
 ```
 
 The associated type `Iter` is the iterator produced; it must itself
@@ -8486,9 +8492,9 @@ may use loops:
 
 ```
 trait Statistics:
-  fn samples(value: &Self) -> Vec[f32]
+  fn samples(value: &Subject) -> Vec[f32]
 
-  fn count_above(value: &Self, threshold: f32) -> isize:
+  fn count_above(value: &Subject, threshold: f32) -> isize:
     mut count: isize = 0
     let elements = samples(value)
     for s in elements:                   // consumes the returned Vec; s: f32 (Copy)
@@ -8740,7 +8746,7 @@ node Display:
 connection ShowsCount:
   from: Counter
   to: Display
-  derived count: i32 = self.from.count
+  derived count: i32 = here::from.count
 
 -- Placements (instances).
 Counter c1:
@@ -8922,7 +8928,7 @@ scope, or any compile-time-evaluable expression.
 ```
 node Filter:
   attr cutoff_hz: f32 = 1000.0
-  attr resonance: f32 = self.cutoff_hz / 1000.0      // references earlier attr
+  attr resonance: f32 = here::cutoff_hz / 1000.0      // references earlier attr
   attr enabled: bool = true
 ```
 
@@ -9002,8 +9008,8 @@ the lazy-batched rules of §13.10).
 node Driver:
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived skill_factor: f32 = self.expertise_level as f32 / 10.0
-  derived is_aggressive: bool = self.risk_tolerance > 0.7
+  derived skill_factor: f32 = here::expertise_level as f32 / 10.0
+  derived is_aggressive: bool = here::risk_tolerance > 0.7
 ```
 
 A derived's expression is a *pure expression* — no `mut`, no loops,
@@ -9031,7 +9037,7 @@ A `derived` may be declared at three scopes, paralleling `signal`:
 
 - **Module-level** — declared at module top level (outside any node
   or connection body). One cell shared across the program. References
-  to module-level deriveds use the bare name (no `self.` prefix).
+  to module-level deriveds use the bare name (no `here::` prefix).
 - **Node-level** — declared inside a node body. Per-instance: each
   placement of the node creates its own cell.
 - **Connection-level** — declared inside a connection body.
@@ -9168,7 +9174,7 @@ Use `attr` for parameters, configuration, and host-controlled
 inputs. Use `recurrent` for cells that carry computed values that
 depend on their own past.
 
-##### 13.2.4.3 Self-history and input-history access
+##### 13.2.4.3 Subject-history and input-history access
 
 Inside a recurrent's expression, past values are accessed via two
 methods on a cell's name:
@@ -9180,7 +9186,7 @@ cell_name.past(k, fallback)          // k steps back
 
 These accessors work on two distinct subjects:
 
-- **Self-history** — the recurrent's own past values. `name.past(k,
+- **Subject-history** — the recurrent's own past values. `name.past(k,
   fallback)` reads the recurrent's value k publishes ago. `k` is
   bounded by the declared `[N]` depth (defaulting to 1): `k > N` is a
   compile error.
@@ -9196,7 +9202,7 @@ mechanism applies; the difference is signals contribute commits and
 streams contribute events.
 
 ```
-// Self-history only
+// Subject-history only
 recurrent counter: i32 = counter.previous(0) + 1
 
 // Input history — moving average over last 3 commits of `input`
@@ -9221,7 +9227,7 @@ Common rules:
   exists.
 
 Bare references to the recurrent's own name in its expression are
-not permitted (compile error). Self-past access must go through the
+not permitted (compile error). Subject-past access must go through the
 explicit `.previous`/`.past` accessors. References to OTHER cells
 (non-self) use bare names normally for their current values;
 `.previous(fallback)` / `.past(k, fallback)` on those names access
@@ -9250,7 +9256,7 @@ A `recurrent` may be declared at three scopes, paralleling `signal`
 and `derived`:
 
 - **Module-level** — declared at module top level. One cell shared
-  across the program. References use the bare name (no `self.`
+  across the program. References use the bare name (no `here::`
   prefix). Useful for global stateful counters, accumulators, or
   state machines whose inputs are module-scope reactive cells.
 - **Node-level** — declared inside a node body. Per-instance.
@@ -9301,7 +9307,7 @@ re-evaluates whenever `source` or `noise` changes (implicit
 triggers).
 
 Reads of any cell within the tuple use its individual name
-(`self.mean`, `self.variance`, or bare `mean`/`variance` at
+(`here::mean`, `here::variance`, or bare `mean`/`variance` at
 module scope) — but inside the tuple's own expression, self-history
 access for each individual cell uses its own `.previous`/`.past`.
 
@@ -9412,7 +9418,7 @@ node Delay:
 
 A const is accessible through three syntactic forms:
 
-- **Instance-level (`self.<const>`)** — inside the declaring node
+- **Instance-level (`here::<const>`)** — inside the declaring node
   or connection's reactive expressions. Resolves to the same value
   as the type-level access.
 - **Through an instance (`<instance>.<const>`)** — from function
@@ -9478,7 +9484,7 @@ For each cell:
       placement omitted a value — a compile error caught before
       startup (see §13.2.2).
 - **Recurrents** evaluate their expression for the first time on
-  the startup pass. Self-history and input-history accessors
+  the startup pass. Subject-history and input-history accessors
   (`.previous(fallback)` / `.past(k, fallback)`, §13.2.4.3) return
   their fallback values, since no committed history exists yet.
   When the expression reads a `Signal[T]` cell (per §13.2.8), the
@@ -9513,7 +9519,7 @@ For each cell:
   otherwise be ambiguous; the compiler may permit them when the
   dependency graph is well-defined.
 - At type-declaration time, attr defaults and recurrent expressions
-  may reference same-instance cells (via `self.X`), same-type
+  may reference same-instance cells (via `here::X`), same-type
   consts, module-level cells (signals, deriveds, recurrents,
   consts), and compile-time-evaluable expressions. Cross-instance
   references are resolved only at placement time, not at type
@@ -10222,7 +10228,7 @@ node Driver:
   outgoing: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived is_aggressive: bool = self.risk_tolerance > 0.7
+  derived is_aggressive: bool = here::risk_tolerance > 0.7
 ```
 
 #### 13.3.2 `satisfies` clause
@@ -10235,7 +10241,7 @@ callable via uniform call syntax (§3.4).
 
 ```
 trait Displayable:
-  fn display(value: Self) -> string
+  fn display(value: Subject) -> string
 
 node Driver:
   satisfies Displayable
@@ -10259,14 +10265,14 @@ this node at placement time:
 
 - **No `parts:` clause** — the node accepts child instances of *any
   node type*. Inside the node body, only the heterogeneous
-  `self.parts` form is available, and it requires an explicit trait
-  bound on the iteration variable (`for p: SomeTrait in self.parts`)
-  per §13.4.1. Type-bulk (`self.parts.<NodeType>[i]`) and
+  `here::parts` form is available, and it requires an explicit trait
+  bound on the iteration variable (`for p: SomeTrait in here::parts`)
+  per §13.4.1. Type-bulk (`here::parts.<NodeType>[i]`) and
   cardinality-bounded forms are not available.
 - **With a `parts:` clause** — the node accepts only children whose
   types appear in the listed set, with the declared cardinality
-  constraints. Both heterogeneous (`self.parts`) and type-bulk
-  (`self.parts.<NodeType>[i]`) access are available; cardinality
+  constraints. Both heterogeneous (`here::parts`) and type-bulk
+  (`here::parts.<NodeType>[i]`) access are available; cardinality
   is enforced at placement.
 
 The clause does not place specific instances — it only constrains
@@ -10291,13 +10297,13 @@ node Processor:
 ```
 
 `Processor` accepts any node type as a part. Inside its body, only
-`self.parts` (heterogeneous iteration) is available; the host walks
+`here::parts` (heterogeneous iteration) is available; the host walks
 the parts externally based on its own conventions (e.g., per-type
 dispatch via const discriminators — §13.2.5).
 
 A node may have parts of its own type (self-recursion) when `parts:`
 is omitted or when the node's own type appears in the `parts:`
-clause. Self-recursive placements terminate because each placement
+clause. Subject-recursive placements terminate because each placement
 is an explicit user act — the compiler walks finite placement trees,
 not infinite type recursions.
 
@@ -10328,22 +10334,22 @@ valid.
 
 ##### 13.3.3.2 Access from inside the node body
 
-Parts of a given type are accessible as `self.parts.<NodeType>`,
+Parts of a given type are accessible as `here::parts.<NodeType>`,
 which is a structural iterable of compile-time-known length range:
 
-- Indexed access: `self.parts.<NodeType>[i]` — legal at type-level
+- Indexed access: `here::parts.<NodeType>[i]` — legal at type-level
   expressions iff `i < min_cardinality` of that part type.
-  Example: under `parts: Oscillator+`, `self.parts.Oscillator[0]`
+  Example: under `parts: Oscillator+`, `here::parts.Oscillator[0]`
   is legal (at least one is guaranteed) but `[1]` is not.
-- Type-bulk iteration: `for o in self.parts.<NodeType>: ...`
+- Type-bulk iteration: `for o in here::parts.<NodeType>: ...`
   always works.
-- Heterogeneous iteration: `for p in self.parts: ...` iterates
+- Heterogeneous iteration: `for p in here::parts: ...` iterates
   all parts of all declared types (§13.4.2).
 
 A node without a `parts` clause may still contain children of any
 node type (per §13.3.3); inside its body, only the heterogeneous
-`self.parts` form is available, and it requires an explicit trait
-bound on the iteration variable (`for p: SomeTrait in self.parts`)
+`here::parts` form is available, and it requires an explicit trait
+bound on the iteration variable (`for p: SomeTrait in here::parts`)
 per §13.4.1 — type-bulk and cardinality-bounded forms are not
 available. A node with a `parts` clause may contain children at
 runtime according to the declared cardinality.
@@ -10376,7 +10382,7 @@ node Driver:
 
 Connections of a given type are accessible as `incoming.<ConnType>`
 and `outgoing.<ConnType>` (bare, per §13.7.5) or with the explicit
-`self.` anchor (`self.incoming.<ConnType>`), both structural
+`here::` anchor (`here::incoming.<ConnType>`), both structural
 iterables of compile-time-known length range:
 
 - Indexed: `incoming.<ConnType>[i]` and `outgoing.<ConnType>[i]` are
@@ -10403,7 +10409,7 @@ node Buffer[T: Numeric]:
   attr capacity: usize = 16
   attr fill_level: usize = 0
   derived utilization: f32 =
-    self.fill_level as f32 / self.capacity as f32
+    here::fill_level as f32 / here::capacity as f32
 
   parts: BufferSlot[T]
 ```
@@ -10442,7 +10448,7 @@ node TypeName:
     SomeB
   attr foo: i32
   signal user_name: string = "world"
-  derived greeting: string = "hello " ++ self.user_name
+  derived greeting: string = "hello " ++ here::user_name
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
@@ -10454,9 +10460,9 @@ The body of `expose:` is a list of placements — each entry is a
 `Node[T]` value, with the same syntax as inline child placements
 elsewhere (§13.8). Entries reference:
 
-- A part of self by type-bulk access (`self.parts.SomeA` — the full
+- A part of the instance by type-bulk access (`here::parts.SomeA` — the full
   list of supplied parts of that type, in placement order).
-- A named part instance (`self.osc1` — see §13.4.1) — when the
+- A named part instance (`here::osc1` — see §13.4.1) — when the
   exposition needs a specific named child rather than all parts of
   a type.
 - A wrapper placement that contains parts as its own children. The
@@ -10468,7 +10474,7 @@ elsewhere (§13.8). Entries reference:
     parts: Item
     expose:
       SomeInternalWrapper:
-        self.parts.Item
+        here::parts.Item
   ```
 
   Here `SomeInternalWrapper` is a wrapper node whose body contains
@@ -10484,7 +10490,7 @@ elsewhere — no new control-flow syntax is introduced.
 ##### 13.3.7.2 Default
 
 When `expose:` is omitted, the node's exposition defaults to
-`expose: self.parts` — the kernel traverses all supplied parts in
+`expose: here::parts` — the kernel traverses all supplied parts in
 declaration order. When the node has no `parts:` clause and no
 `expose:` clause, the exposition is empty (the node has no
 structural output and exists only for its state and connections).
@@ -10497,7 +10503,7 @@ The exposed list is readable from outside the node via the reserved
 content the kernel traverses; external readers and the kernel see
 identical output.
 
-Inside the node body, `self.exposition` is the same list. The
+Inside the node body, `here::exposition` is the same list. The
 field is read-only; the exposition is fixed by the type's `expose:`
 clause (and the placer's supplied parts), not mutable at runtime.
 
@@ -10516,7 +10522,7 @@ clause directly. This is the load-bearing distinction:
 A node may receive parts that its exposition does not include — for
 example, a node may accept administrative or diagnostic parts that
 are queried only via the host API, not traversed by the kernel. In
-practice the default `expose: self.parts` covers the common case
+practice the default `expose: here::parts` covers the common case
 where every supplied part is exposed.
 
 ##### 13.3.7.5 Connections and exposition
@@ -10550,7 +10556,7 @@ addressable only through that parent (e.g., `parent.osc1` or
 for ownership, hot-reload diffing, and addressing — both kinds of
 instances have reactive cells that participate in dependency
 graphs, but a part's cells are reachable through the parent's
-`self.parts.<Type>` mechanism, whereas a top-level instance is
+`here::parts.<Type>` mechanism, whereas a top-level instance is
 reachable only by its module-scope name or through connections.
 
 Use parts when:
@@ -10574,7 +10580,7 @@ instances appear via placement (§13.8.3).
 directly.** The `parts:` clause is the constraint and supply
 mechanism — declared types, cardinality, and placement-time
 filling. The `expose:` clause (§13.3.7) is the structural output
-the kernel walks; it references parts (via `self.parts.<Type>` or
+the kernel walks; it references parts (via `here::parts.<Type>` or
 by named instance), possibly wrapping them in internal nodes.
 Parts that the exposition does not include are not traversed by
 the kernel — they remain queryable via the host API and addressable
@@ -10587,7 +10593,7 @@ Parts of a parent instance are accessible in three ways. The
 available access forms depend on whether the parent's `parts:`
 clause is declared:
 
-- **Heterogeneous:** `self.parts` — a structural iterable over all
+- **Heterogeneous:** `here::parts` — a structural iterable over all
   parts of the parent, regardless of their types.
     - When `parts:` is declared, the iteration variable is typed as
       the sum of the listed types. The body must compile for every
@@ -10596,13 +10602,13 @@ clause is declared:
       cannot be inferred from the declaration alone (any node type
       may have been placed). The body must declare an explicit trait
       bound on the iteration variable (`for p: SomeTrait in
-    self.parts: ...`); the compiler verifies at each placement
+    here::parts: ...`); the compiler verifies at each placement
       that every placed part type satisfies the bound.
-- **Type-bulk (`parts:` declared only):** `self.parts.<NodeType>` —
+- **Type-bulk (`parts:` declared only):** `here::parts.<NodeType>` —
   a structural iterable over all parts of the given type. Length
   range is determined by the declared cardinality. Available only
   when `<NodeType>` appears in the `parts:` clause.
-- **Named individual:** `self.<name>` (or `paramName.<name>` from
+- **Named individual:** `here::<name>` (or `paramName.<name>` from
   outside the node body) — accesses a specific part by its
   placement-time name. Names are assigned in the placement body
   (§13.8.3) and visible wherever the placement scope is known.
@@ -10612,10 +10618,10 @@ Summary table:
 
 | Form                         | `parts:` declared | `parts:` omitted                 |
 |------------------------------|-------------------|----------------------------------|
-| `self.parts.<Type>`          | available         | not available                    |
-| `self.parts` (unbounded)     | available         | not available (need bound)       |
-| `self.parts` (trait-bounded) | available         | available (trait bound required) |
-| named (`self.<name>`)        | available         | available                        |
+| `here::parts.<Type>`          | available         | not available                    |
+| `here::parts` (unbounded)     | available         | not available (need bound)       |
+| `here::parts` (trait-bounded) | available         | available (trait bound required) |
+| named (`here::<name>`)        | available         | available                        |
 
 Inside the parent's own type body (its `derived` and `recurrent`
 expressions), only type-bulk and heterogeneous forms are available;
@@ -10638,7 +10644,7 @@ and placement-name.
 
 A function body that receives the parent node as a parameter may
 iterate its parts using a `for` loop, accessed via the parameter
-name (developer-chosen, not `self`).
+name (developer-chosen, not an implicit receiver).
 
 **Type-bulk iteration:**
 
@@ -10651,7 +10657,7 @@ fn total_output(s: Synthesizer) -> f32:
 
 node Synthesizer:
   parts: Oscillator+
-  derived total: f32 = total_output(self)
+  derived total: f32 = total_output(subject)
 ```
 
 `o` has the concrete type `Oscillator` in each iteration. The
@@ -10713,7 +10719,7 @@ When a function called from a reactive expression iterates parts,
 each part's reactive cells contribute to the calling expression's
 dependency set. In the example above:
 
-- `total_output(self)` reads `p.output` for each part.
+- `total_output(subject)` reads `p.output` for each part.
 - Each `p.output` is a derived on the part.
 - The `Synthesizer.total` derived's dependency set includes every
   part's `output` derived.
@@ -10730,9 +10736,9 @@ transitively through function calls.
   different names are permitted (subject to the cardinality
   declared in the `parts:` clause).
 - Parts are not added or removed at runtime (except via hot reload).
-- For heterogeneous iteration (`for p in self.parts`), the body
+- For heterogeneous iteration (`for p in here::parts`), the body
   must compile for every declared part type (§13.4.2). The optional
-  explicit trait bound form (`for p: Trait in self.parts`) gives
+  explicit trait bound form (`for p: Trait in here::parts`) gives
   clearer error messages and enforces the constraint at the
   iteration site.
 
@@ -10744,8 +10750,8 @@ together:
 ```
 node Composite:
   parts: Oscillator+, Filter [=1], Amplifier [=1]
-  derived total_oscillation: f32 = sum_oscillators(self)
-  derived processed: f32 = process(self)
+  derived total_oscillation: f32 = sum_oscillators(subject)
+  derived processed: f32 = process(subject)
 
 fn sum_oscillators(c: Composite) -> f32:
   mut sum: f32 = 0.0
@@ -10808,7 +10814,7 @@ operations therefore parameterize only the **key**.
   slot.
 - **`scope_evaluate(key)`** — evaluate the template's deriveds and
   any recurrent expressions eligible to fire within scope `key`'s
-  state context. References to `self` inside the template body
+  state context. Bare references (and `here::`) inside the template body
   resolve to scope `key`'s cells; references to the host's own
   attrs (e.g., via the host's placement name per §13.4.1) resolve
   to the host instance's cells.
@@ -10898,7 +10904,7 @@ node Repeat[T]:
   attr last: bool                        // kernel-updated per iteration
   attr count: usize                      // kernel-updated per iteration
 
-  expose: self.parts.Item
+  expose: here::parts.Item
 ```
 
 `K` is the key function's return type, inferred at placement. `K`
@@ -10921,7 +10927,7 @@ admitting `i8`–`i64`, `u8`–`u64`, `bool`, `char`, `string`. When
   template references via Repeat's placement name (§13.4.1). The
   kernel updates these as part of Repeat's iteration semantics
   (§13.5.4.2); they are not host-writable.
-- `expose: self.parts.Item` declares the exposition (§13.3.7):
+- `expose: here::parts.Item` declares the exposition (§13.3.7):
   the kernel traverses the supplied Item template. Repeat's
   kernel-aware iteration semantics drive that traversal per
   source element with §13.5.1's scope operations.
@@ -10949,7 +10955,7 @@ performs no scope allocations or drops — only the exposed attrs
 node PostItem:
   default attr post: Post
   attr expanded: bool = false
-  derived title: string = self.post.title
+  derived title: string = here::post.title
 
 UI app:
   signal posts_data: Post[] = []
@@ -11101,7 +11107,7 @@ connection Drives:
   attr enhanced_handling: bool = false
   attr aggressiveness: f32 = 0.5
   derived effective_speed: f32 =
-    self.to.top_speed * (self.from.expertise_level as f32 / 10.0)
+    here::to.top_speed * (here::from.expertise_level as f32 / 10.0)
 ```
 
 `from` and `to` are not attributes — they are endpoint slots,
@@ -11109,7 +11115,7 @@ first-class structural elements of every connection. Attribute
 syntax (placement-time `name=value` settings via the attribute
 clause, flags) does not target them.
 
-Inside the body, `self.from` and `self.to` resolve to the endpoint
+Inside the body, `here::from` and `here::to` resolve to the endpoint
 instances directly (their concrete types).
 
 ##### 13.6.1.2 Cartesian form (multiple from-types and/or to-types)
@@ -11122,8 +11128,8 @@ connection TypeName:
 ```
 
 All cartesian combinations of from-types × to-types are valid
-placements. Inside the body, `self.from` is the sum type of all
-listed from-types, and `self.to` is the sum type of all listed
+placements. Inside the body, `here::from` is the sum type of all
+listed from-types, and `here::to` is the sum type of all listed
 to-types. Pattern matching is required to extract the concrete
 endpoint types.
 
@@ -11134,7 +11140,7 @@ connection Owns:
   from: Person, Company
   to: Vehicle, Property
   attr acquired_at: i64
-  derived display: string = match (self.from, self.to):
+  derived display: string = match (here::from, here::to):
     (Person(p), Vehicle(v)): "{p.name} owns car {v.id}"
     (Person(p), Property(pr)): "{p.name} owns property {pr.id}"
     (Company(c), Vehicle(v)): "company {c.name} owns car {v.id}"
@@ -11156,7 +11162,7 @@ connection TypeName:
 ```
 
 Only the listed pair combinations are valid placements. Inside the
-body, the endpoints are accessed via `self.pair`, a sum type whose
+body, the endpoints are accessed via `here::pair`, a sum type whose
 variants correspond to the declared pairs.
 
 Example:
@@ -11167,13 +11173,13 @@ connection Drives:
     Driver -> Vehicle
     Racer -> Boat
   attr aggressiveness: f32 = 0.5
-  derived speed: f32 = match self.pair:
+  derived speed: f32 = match here::pair:
     (Driver(d), Vehicle(v)): v.top_speed * (d.expertise as f32 / 10.0)
     (Racer(r), Boat(b)): b.knots * r.aggression
 ```
 
-In pairs form, `self.from` and `self.to` are not independently
-accessible — endpoints must be extracted via `self.pair` and
+In pairs form, `here::from` and `here::to` are not independently
+accessible — endpoints must be extracted via `here::pair` and
 pattern matching. This reflects the semantic coupling: pair-form
 connections enforce that specific from-types pair with specific
 to-types.
@@ -11198,20 +11204,20 @@ node bodies (§13.3.6).
 The endpoint access inside a connection body depends on the form
 of its declaration (§13.6.1):
 
-- **Single form** (`from: X / to: Y`): `self.from` is typed as `X`
-  directly; `self.to` is typed as `Y` directly. Attrs and deriveds
-  of the endpoints are accessible via `self.from.attr_name`,
-  `self.to.attr_name`, etc.
-- **Cartesian form** (`from: X, Y / to: A, B`): `self.from` is the
-  sum `X | Y`; `self.to` is the sum `A | B`. Pattern matching
-  against the sums (typically as a tuple `(self.from, self.to)`)
+- **Single form** (`from: X / to: Y`): `here::from` is typed as `X`
+  directly; `here::to` is typed as `Y` directly. Attrs and deriveds
+  of the endpoints are accessible via `here::from.attr_name`,
+  `here::to.attr_name`, etc.
+- **Cartesian form** (`from: X, Y / to: A, B`): `here::from` is the
+  sum `X | Y`; `here::to` is the sum `A | B`. Pattern matching
+  against the sums (typically as a tuple `(here::from, here::to)`)
   is required to extract concrete endpoint types.
-- **Pairs form** (`pairs:`): `self.pair` is the sum of declared
-  (FromType, ToType) tuples. Pattern matching against `self.pair`
-  extracts the concrete pair. `self.from` and `self.to` are not
+- **Pairs form** (`pairs:`): `here::pair` is the sum of declared
+  (FromType, ToType) tuples. Pattern matching against `here::pair`
+  extracts the concrete pair. `here::from` and `here::to` are not
   independently available in pairs form.
 
-`self.from`, `self.to`, and `self.pair` are bound at the
+`here::from`, `here::to`, and `here::pair` are bound at the
 connection's *placement* time. Each placement specifies its source
 (the enclosing instance) and destination (a bare-identifier reference
 in the placement's body, §13.8.5.1). Inside the connection type's
@@ -11281,17 +11287,24 @@ body is a scope like any other; its members are in scope within the
 body's reactive expressions. There is no special "receiver" concept:
 a bare name binds to the nearest enclosing scope that declares it.
 
-Two explicit anchors disambiguate when a name is declared in more
-than one reachable scope:
+Two explicit *scope anchors* disambiguate when a name is declared in
+more than one reachable scope:
 
-- **`self.x`** anchors at the node/connection-instance scope. `self`
-  is the instance *value*; `.x` is member access on it.
-- **`module::x`** anchors at the module top-level scope. `module` is
-  a *namespace*, not a value; `::x` resolves a name within it.
+- **`here::x`** resolves `x` in the current (innermost) scope —
+  inside a node/connection body, the instance body scope.
+- **`module::x`** resolves `x` in the module top-level scope.
 
-The differing syntax reflects different operations: `self.x` is
-value-field access (dot), `module::x` is scope resolution (the `::`
-path separator, as in `Type::CONST` and turbofish `::[T]`).
+Both are scope resolution: `here` and `module` are *namespaces*, not
+values, so they use the `::` path separator (as in `Type::CONST` and
+turbofish `::[T]`). They are parallel — each names *which scope* to
+look `x` up in.
+
+Distinct from these is **`subject`**, the instance *value* — the
+entity whose body is being declared. `subject` is used only when the
+instance must be handled as a value (passed to a function, or used
+as the receiver of uniform-call-syntax dispatch), not for routine
+member access. Routine member access uses a bare name or `here::`
+(§13.7.2); `subject` is reserved for the value role (§13.7.7).
 
 #### 13.7.1 The scope chain
 
@@ -11309,7 +11322,7 @@ to outer-most is:
 
 A bare name resolves to the nearest scope in this chain that
 declares it. Inside a node body, a bare reference to a member
-resolves to that member (scope 2) without needing `self.`; a bare
+resolves to that member (scope 2) without needing `here::`; a bare
 reference to a module-level name not shadowed by a member resolves
 to the module-level declaration (scope 3).
 
@@ -11324,36 +11337,37 @@ node Channel:
   //                       (scope 2)    (scope 3, not shadowed)
 ```
 
-Neither reference needs `self.` or `module::`: `local_gain` is found
+Neither reference needs `here::` or `module::`: `local_gain` is found
 in the body scope, `master_gain` in the module scope, and there is
 no collision.
 
-#### 13.7.2 The `self.` anchor
+#### 13.7.2 The `here::` anchor
 
-`self.x` explicitly resolves `x` in the instance body scope (scope
-2), bypassing inner local bindings and ignoring any module-level
-declaration of the same name. `self` is the instance value; for each
-*instance* of the type, `self` resolves to that specific instance.
+`here::x` explicitly resolves `x` in the current scope — inside a
+node or connection body, the instance body scope (scope 2) —
+bypassing inner local bindings and ignoring any module-level
+declaration of the same name. `here` is a namespace anchor, not a
+value; it names *which scope* to resolve in.
 
-`self` is available only inside the body of a node or connection
-declaration — in attr default expressions, recurrent expressions,
-`observe` arms, derived expressions, and `for`-iterations over parts.
-It is *not* available in record/enum bodies, trait declarations
-(use capitalized `Self`, §13.7.7), free function bodies, or module
-top-level scope.
+`here::` is meaningful in any scope (function body, operator body,
+trait body, node/connection body): it always means "the binding
+named `x` in this very scope, not an outer one." Inside a
+node/connection body it reaches the instance members. Type-level
+positions (trait declarations, `fulfill` blocks) use the `Subject`
+alias (§13.7.7) for the subject type.
 
 ```
 node Driver:
   attr expertise_level: i32 = 5
-  derived skill_factor: f32 = self.expertise_level as f32 / 10.0   // explicit anchor
+  derived skill_factor: f32 = here::expertise_level as f32 / 10.0   // explicit anchor
   derived also_skill: f32 = expertise_level as f32 / 10.0          // bare — same cell
 
 fn aggressive(d: Driver) -> bool:
-  d.risk_tolerance > 0.7        // free function uses the parameter name, not self
+  d.risk_tolerance > 0.7        // free function uses the parameter name
 ```
 
-The bare and `self.`-anchored forms resolve to the same cell when
-there is no collision; `self.` is the explicit form, useful for
+The bare and `here::`-anchored forms resolve to the same cell when
+there is no collision; `here::` is the explicit form, useful for
 clarity or required when disambiguating a collision (§13.7.4).
 
 #### 13.7.3 The `module::` anchor
@@ -11380,7 +11394,7 @@ in-body counterpart to that mechanism — see §10.2.3.)
 
 When a bare name is declared in *both* the instance body scope and
 the module top-level scope, a bare reference is **ambiguous and is a
-compile error**. The programmer must disambiguate with `self.x` (the
+compile error**. The programmer must disambiguate with `here::x` (the
 member) or `module::x` (the module-level declaration):
 
 ```
@@ -11390,7 +11404,7 @@ node Channel:
   attr gain: f32 = 0.5           // member with the same name
 
   derived a: f32 = gain          // ✗ compile error: ambiguous `gain`
-  derived b: f32 = self.gain     // ✓ the member (0.5)
+  derived b: f32 = here::gain     // ✓ the member (0.5)
   derived c: f32 = module::gain  // ✓ the module-level signal (1.0)
 ```
 
@@ -11407,7 +11421,7 @@ Diagnostic class:
 error: ambiguous name `gain` — declared as both an instance member and a module-level cell
   --> derived a: f32 = gain
                        ^^^^
-  hint: anchor explicitly: `self.gain` for the member, or
+  hint: anchor explicitly: `here::gain` for the member, or
         `module::gain` for the module-level declaration
 ```
 
@@ -11426,7 +11440,7 @@ connection Drives:
   to: Drivable
   derived speed: f32 = from.expertise_level as f32 * to.top_speed
   //                   ^^^^                          ^^
-  //                   self.from                     self.to
+  //                   here::from                     here::to
 
 node Display:
   incoming: ShowsCount [=1]
@@ -11437,8 +11451,8 @@ These keywords retain their clause-header meaning only in
 declaration position (statement level, trailing colon: `from:`,
 `incoming:`, `parts:`). In expression-operand position they are the
 corresponding instance field. No collision with user names is
-possible — reserved words cannot be declared as cell names. `self.`
-remains available as the explicit form (`self.from`, `self.incoming`).
+possible — reserved words cannot be declared as cell names. `here::`
+remains available as the explicit form (`here::from`, `here::incoming`).
 
 Note that `in` is *not* among these: incoming connections are named
 `incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
@@ -11447,7 +11461,7 @@ collision.
 
 #### 13.7.6 Resolution and reactive dependencies
 
-A reference to a cell — bare, `self.`-anchored, or `module::`-
+A reference to a cell — bare, `here::`-anchored, or `module::`-
 anchored — participates in the reactive dependency graph in the
 usual way. `derived x: f32 = y + 1` depends on whichever cell `y`
 resolves to; when that cell changes, `x` becomes dirty.
@@ -11459,28 +11473,36 @@ whose dependency set includes instance `A`'s `expertise_level` cell,
 not the cell of some other Driver instance. `module::` references
 resolve to the single shared module-level cell.
 
-#### 13.7.7 `self`, `Self`, and `module`
+#### 13.7.7 `subject`, `Subject`, `here`, and `module`
 
-Three distinct identifiers, three syntaxes, reflecting three kinds
-of thing:
+Four reserved identifiers, reflecting two distinct kinds of thing —
+*values* (used in expression positions) and *namespaces* (used as the
+left side of `::`):
 
-- **`self`** — the instance *value*, available only in
-  node/connection bodies. Member access uses the dot: `self.x`. It
-  is not an OOP receiver: the "methods" of a type are ordinary free
-  functions that take the instance as a developer-named first
-  parameter (`fn display(value: Self)`, §3.3.1), with `Self` the
-  subject-type alias. There is no implicit receiver anywhere — the
-  instance is always explicit, as `self` inside a node/connection
-  body or as a named parameter in a `fulfill`-block function.
-- **`Self`** — the *type-level* alias for the implementing/subject
+- **`subject`** — the instance *value*, available in node/connection
+  bodies. It is the whole instance, suitable for passing to a function
+  that operates on the type: `total_output(subject)`. It is not an OOP
+  receiver — the "methods" of a type are ordinary scoped functions
+  that take the instance as a developer-named first parameter
+  (`fn display(value: Subject)`, §3.3.1). Because dispatch is by
+  first argument, `subject.some_method()` and `some_method(subject)`
+  are the same call written two ways; the dot is sugar, not a receiver
+  binding. There is no implicit receiver anywhere — the instance is
+  always explicit, as `subject` inside a node/connection body or as a
+  named parameter in a `fulfill`-block function.
+- **`Subject`** — the *type-level* alias for the implementing/subject
   type, usable only in type positions in trait declarations and
-  `fulfill` blocks (§3.1.1).
+  `fulfill` blocks (§3.1.1). It replaces the older `Self` alias.
+- **`here`** — the current (innermost) scope as a *namespace*. Scope
+  resolution uses `::`: `here::x` resolves `x` in the current scope,
+  bypassing any shadowing from inner blocks. `here` is not a value and
+  has no `.` form (§13.7.2).
 - **`module`** — the enclosing module *namespace*. Scope resolution
   uses `::`: `module::x`. It is not a value and has no `.` form.
 
-`self` is a value usable in expression positions; `Self` is a type
-usable in type positions; `module` is a namespace usable only as the
-left side of `::`. They never overlap.
+`subject` is a value usable in expression positions; `Subject` is a
+type usable in type positions; `here` and `module` are namespaces
+usable only as the left side of `::`. They never overlap.
 
 
 ### 13.8 Placement
@@ -11693,7 +11715,7 @@ Named individual access is the placement-time companion to the
 type-bulk and heterogeneous access forms described in §13.4.1.
 Names are not available inside the parent's own type body (the
 type declaration doesn't know what placements will exist) — within
-the parent type, use `self.parts.<NodeType>[i]` or `self.parts`
+the parent type, use `here::parts.<NodeType>[i]` or `here::parts`
 instead.
 
 Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
@@ -11747,24 +11769,24 @@ the body's `:`:
 // (presumes Filter declares signal_active and App declares debug_enabled)
 App my_app:
   Filter filter / "low-pass":
-    Cascade when self.signal_active: next_filter      // gated on filter's own attr
+    Cascade when here::signal_active: next_filter      // gated on filter's own attr
   Filter next_filter / "high-pass"
   Monitor monitor
-  WiresTo when self.debug_enabled: monitor            // gated on my_app's attr
+  WiresTo when here::debug_enabled: monitor            // gated on my_app's attr
 ```
 
 **Scope of placement-level `when`.** The `when` predicate evaluates
 in the scope of the enclosing source instance, not the
 connection-being-placed. The connection has not yet been constructed;
-its `self` is unavailable. To reference the connection's own attrs in
+its own scope is unavailable. To reference the connection's own attrs in
 a gate, use a type-level `when:` clause inside the connection type's
 body (§13.6.1.1) instead.
 
-`self` in the predicate resolves to the enclosing source instance.
-In `Cascade when self.signal_active: next_filter` (inside `filter`'s
-body), `self.signal_active` is `filter.signal_active`. In
-`WiresTo when self.debug_enabled: monitor` (inside `my_app`'s body),
-`self.debug_enabled` is `my_app.debug_enabled`.
+`here::` in the predicate resolves to the enclosing source instance.
+In `Cascade when here::signal_active: next_filter` (inside `filter`'s
+body), `here::signal_active` is `filter.signal_active`. In
+`WiresTo when here::debug_enabled: monitor` (inside `my_app`'s body),
+`here::debug_enabled` is `my_app.debug_enabled`.
 
 ##### 13.8.4.1 Terminology
 
@@ -12104,7 +12126,7 @@ Log / "Hello World" | level="info"
 Example (gated connection placement with `when` + body):
 
 ```
-Debugger d1 / "trace" when self.verbose | level=2: target
+Debugger d1 / "trace" when here::verbose | level=2: target
 ^^^^^^^^                                                     -- TypeRef
          ^^                                                  -- instance name
             ^^^^^^^^^                                        -- /Expr (default attr)
@@ -12116,7 +12138,7 @@ Debugger d1 / "trace" when self.verbose | level=2: target
 Example (gated placement, no `/Expr`):
 
 ```
-Logger when self.debug_enabled
+Logger when here::debug_enabled
 ^^^^^^                              -- TypeRef
        ^^^^^^^^^^^^^^^^^^^^^^^^^    -- when clause (no /Expr present)
 ```
@@ -12196,7 +12218,7 @@ kernel to gate propagation through the construct it modifies, not
 exposed through a named cell readable by other expressions.
 
 It evaluates in the scope of the construct it modifies: inside a
-type body it sees `self.*` and items visible at the type's
+type body it sees `here::*` and items visible at the type's
 declaration scope; inside a placement it sees the full placement
 scope.
 
@@ -12204,12 +12226,12 @@ scope.
 connection Pulse:
   from: Driver
   to: Listener
-  when: self.from.is_emitting                 // type-level gate
+  when: here::from.is_emitting                 // type-level gate
 ```
 
 ```
 App my_app:
-  Logger l1 when self.debug_enabled           // placement-level gate
+  Logger l1 when here::debug_enabled           // placement-level gate
 ```
 
 Two design moves justify the clause:
@@ -12237,13 +12259,13 @@ node OneShot:
   recurrent fired: bool = observe:
     on trigger: true
     default: false
-  when: not self.fired                        // intrinsic refractory gate
+  when: not here::fired                        // intrinsic refractory gate
 
 connection ActiveEdge:
   from: Source
   to: Sink
   attr weight: f32 = 1.0
-  when: self.weight > 0.0                     // self-conditional gate
+  when: here::weight > 0.0                     // self-conditional gate
 ```
 
 Type-level gates encode constraints intrinsic to the type — a
@@ -12265,9 +12287,9 @@ gate for that specific instance. It uses no colon, consistent with
 modifier-style clauses:
 
 ```
-Logger l1 when self.debug_enabled
-Filter f1 / "low-pass" when self.dsp_mode == DspMode::Realtime | gain=0.5
-ShowsCount when self.from.count > 0: d1
+Logger l1 when here::debug_enabled
+Filter f1 / "low-pass" when here::dsp_mode == DspMode::Realtime | gain=0.5
+ShowsCount when here::from.count > 0: d1
 ```
 
 Parts placed inside a parent's body may carry `when` clauses
@@ -12282,13 +12304,13 @@ node App:
 
 App my_app:
   Logger l1                                         // always active
-  Logger l2 when self.verbose                       // gated on parent attr
-  Monitor m1 when self.health_checks_enabled        // feature flag
+  Logger l2 when here::verbose                       // gated on parent attr
+  Monitor m1 when here::health_checks_enabled        // feature flag
 ```
 
 `l2` and `m1` are constructed unconditionally (the static graph
 rule of §13.1 holds — the graph's shape is fixed at compile time).
-What `when` controls is propagation: when `self.verbose` is false,
+What `when` controls is propagation: when `here::verbose` is false,
 `l2`'s recurrents do not advance, its deriveds do not recompute,
 and its outputs do not propagate. Its cells hold their initial
 values per Model B (§13.9.7).
@@ -12311,8 +12333,8 @@ compile error.
 Otherwise, a `when` predicate follows normal expression scope
 rules — no special restrictions.
 
-- **Type level:** the predicate may reference `self.*` (own cells
-  and, for connections, `self.from` / `self.to` / `self.pair`),
+- **Type level:** the predicate may reference `here::*` (own cells
+  and, for connections, `here::from` / `here::to` / `here::pair`),
   plus anything visible at the type's declaration scope under
   normal visibility rules (module-level signals, consts, imports).
 - **Placement level:** the predicate may reference the full
@@ -12334,20 +12356,20 @@ stacked — replacement is total:
 connection Pulse:
   from: Driver
   to: Listener
-  when: self.from.is_emitting
+  when: here::from.is_emitting
 
 App my_app:
   Driver d1
   Listener l1
-  Pulse: l1                                           // gate: self.from.is_emitting
-  Pulse when self.debug_audio: l1                     // gate: self.debug_audio (overrides type-level)
+  Pulse: l1                                           // gate: here::from.is_emitting
+  Pulse when here::debug_audio: l1                     // gate: here::debug_audio (overrides type-level)
 ```
 
 If a placement needs both predicates, the placement-level form must
 combine them explicitly:
 
 ```
-Pulse when self.from.is_emitting and self.debug_audio: l1
+Pulse when here::from.is_emitting and here::debug_audio: l1
 ```
 
 Override is not implicit conjunction because conjunction would make
@@ -12358,7 +12380,7 @@ A placement with no `when` modifier inherits the type-level `when`,
 if any. A placement on a type with no type-level `when` and no
 placement-level `when` is unconditional — always active.
 
-#### 13.9.6 Self-conditional gates
+#### 13.9.6 Subject-conditional gates
 
 A gate predicate may reference cells of the gated instance itself.
 The kernel evaluates the predicate against the cells' current
@@ -12373,7 +12395,7 @@ connection WeightedEdge:
   from: Node
   to: Node
   attr weight: f32 = 1.0
-  when: self.weight > 0.0                            // self-conditional
+  when: here::weight > 0.0                            // self-conditional
 ```
 
 Type-level self-conditional gates on nodes are likewise allowed
@@ -12451,7 +12473,7 @@ defined value of type T (no `Option[T]`), because:
   §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
-- All connection-level deriveds compute against `self.from` which
+- All connection-level deriveds compute against `here::from` which
   always has defined cells.
 
 On a gated node or connection, reads return frozen values: the
@@ -12513,9 +12535,9 @@ listed here are normative.
 
 ```
 error: `when` predicate must be of type `bool`
-  --> connection Foo: when: self.weight
+  --> connection Foo: when: here::weight
                             ^^^^^^^^^^^ expression has type `f32`
-  hint: introduce a comparison (e.g., `self.weight > 0.0`)
+  hint: introduce a comparison (e.g., `here::weight > 0.0`)
 ```
 
 **Multiple `when:` clauses in a single type body.** Per §13.9.2.
@@ -12540,9 +12562,9 @@ error: `when:` is not permitted in a trait declaration
 failure, surfaced in `when`-clause context.
 
 ```
-error: unknown identifier `self.frobnicate` in `when` predicate
-  --> node Foo: when: self.frobnicate
-  hint: did you mean `self.activate`?
+error: unknown identifier `here::frobnicate` in `when` predicate
+  --> node Foo: when: here::frobnicate
+  hint: did you mean `here::activate`?
 ```
 
 **Cycle through `when` provenance.** Per §13.11.2; gate predicates
@@ -12568,13 +12590,13 @@ node When:
   default attr cond: Signal[bool]
   parts: Then!, Else?
   expose:
-    self.parts.Then when self.cond
-    self.parts.Else when !self.cond
+    here::parts.Then when here::cond
+    here::parts.Else when !here::cond
 ```
 
 `Then` and `Else` are simple stdlib wrapper nodes; each accepts a
 single child via its `parts:` slot and re-exposes it (the same
-pattern Repeat uses with `parts: Item!` + `expose: self.parts.Item`,
+pattern Repeat uses with `parts: Item!` + `expose: here::parts.Item`,
 §13.5.4.1).
 
 Placement:
@@ -12808,8 +12830,8 @@ error: instantaneous cycle in reactive expressions
 
 **Recurrent self-reference and cross-reference are allowed.** A
 recurrent cell's expression may read the recurrent's own
-previous value (`on t: self.x + 1`) or another recurrent cell's
-previous value (`on t: self.other.value`). These do not form
+previous value (`on t: here::x + 1`) or another recurrent cell's
+previous value (`on t: here::other.value`). These do not form
 instantaneous cycles because recurrent reads always return the
 previous-committed value (lockstep — §13.2.4.1). The per-publish
 DAG treats every recurrent read as an input, breaking the static
@@ -12821,10 +12843,10 @@ Example (allowed):
 node Filter:
   attr input: f32 = 0.0
   recurrent previous_value: f32 = observe:
-    on sample_clock: self.current
+    on sample_clock: here::current
     default: 0.0
   derived current: f32 =
-    0.5 * self.input + 0.5 * self.previous_value
+    0.5 * here::input + 0.5 * here::previous_value
 ```
 
 `current` reads `previous_value`; `previous_value`'s observe arm
@@ -12992,8 +13014,8 @@ signal global_offset: f32 = 0.0
 fn shifted(x: f32) -> f32:
   x + global_offset                    // reads signal `global_offset`
 
-derived adjusted: f32 = shifted(self.base_value)
-                       // provenance = { self.base_value, global_offset }
+derived adjusted: f32 = shifted(here::base_value)
+                       // provenance = { here::base_value, global_offset }
 ```
 
 The compiler's provenance analysis is transitive — it follows
@@ -13225,15 +13247,15 @@ node Divider:
   attr numerator: f32
   attr denominator: f32
   derived quotient: Result[f32, DivideError] =
-    if self.denominator is 0.0:
+    if here::denominator is 0.0:
       Err(DivideError::ByZero)
     else:
-      Ok(self.numerator / self.denominator)
+      Ok(here::numerator / here::denominator)
 
 node Consumer:
   parts: Divider
   derived report: string =
-    match self.divider.quotient:
+    match here::divider.quotient:
       Ok(value): "result: {value}"
       Err(DivideError::ByZero): "result: undefined"
 
@@ -13289,7 +13311,7 @@ The kernel's lifecycle proceeds in phases:
    alongside type-level `when:` predicates in the same topological
    pass; placement-level overrides type-level per §13.9.5 with the
    placement's predicate evaluating in its placement scope rather
-   than the type's `self` scope. The kernel does not separate this
+   than the type's own scope. The kernel does not separate this
    work into per-declaration-kind phases; the topological sort
    determines the order.
 4. Perform the first publish (atomic current-pointer swap per
@@ -17356,7 +17378,7 @@ specified here.
 
 ```
 trait Drop:
-  fn drop(value: mut Self)
+  fn drop(value: mut Subject)
 ```
 
 A type implementing `Drop` provides cleanup logic that runs when a
@@ -18073,8 +18095,8 @@ code that passed Ductus's checks passes Rust's.
 
 #### 15.5.4 Iterator lowering
 
-Ductus's `Iterator` trait (§12.7) has signature `fn next(iter: Self)
--> (Option[Item], Self)`. Rust's standard `Iterator` trait has
+Ductus's `Iterator` trait (§12.7) has signature `fn next(iter: Subject)
+-> (Option[Item], Subject)`. Rust's standard `Iterator` trait has
 signature `fn next(&mut self) -> Option<Item>`.
 
 The Ductus emitter generates Rust code using Rust's `Iterator`
