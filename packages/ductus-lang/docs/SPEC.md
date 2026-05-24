@@ -12414,15 +12414,15 @@ predicate.
 
 - A *gate-true* edge propagates normally.
 - A *gate-false* edge on a gated *node* does not propagate to the
-  destination's output-affecting state, but inbound connections
+  destination's output-affecting state, but incoming connections
   still deliver to the gated node's input cells, so the node's own
   `when` predicate can re-evaluate.
 
 **Behavior on a gated node** (its `when` predicate is currently
 false):
 
-- **Input cells (`in`):** stay live. Connections delivering into the
-  gated node still write their values into the destination's `in`
+- **Input cells:** stay live. Connections delivering into the
+  gated node still write their values into the destination's input
   cells. This is necessary so a node whose `when` references its
   inputs can wake up.
 - **`when` predicate:** re-evaluates whenever any cell in its
@@ -12440,14 +12440,14 @@ false):
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
   level.)
-- **Outputs:** do not propagate. Outbound connections from the
+- **Outputs:** do not propagate. Outgoing connections from the
   gated node do not deliver to their destinations.
 
 **Behavior on a gated connection** (the connection's own `when` is
 false): a gated connection edge does not propagate at all — its
 destination receives nothing through this connection. Note this
-differs from a gated *node*, whose inbound connections still deliver
-to its `in` cells (the node's own `when` re-evaluates against those
+differs from a gated *node*, whose incoming connections still deliver
+to its input cells (the node's own `when` re-evaluates against those
 inputs).
 
 **Snap on gate-open.** When a `when` predicate transitions from
