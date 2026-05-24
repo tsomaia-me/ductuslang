@@ -109,13 +109,14 @@ Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`), all clause
-keywords (`parts`, `in`, `out`, `expose`, `when`, `satisfies`,
-`fulfill`, `default`, `from`, `to`, `pairs`, `on`, `where`,
-`desired`, `observed`, `ring`, `gate`), all control-flow keywords
-(`if`, `else`, `match`, `for`, `while`, `break`, `continue`,
-`return`), and all operator-context keywords (`as`, `is`, `and`,
-`or`, `not`). The rule is normative and takes precedence over any
-conflicting grammar.
+keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
+`satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
+`where`, `desired`, `observed`, `ring`, `gate`), all control-flow
+keywords (`if`, `else`, `match`, `for`, `in`, `while`, `break`,
+`continue`, `return`), the scope-anchor keywords (`self`, `module`),
+and all operator-context keywords (`as`, `is`, `and`, `or`, `not`).
+The rule is normative and takes precedence over any conflicting
+grammar.
 
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
@@ -5934,9 +5935,16 @@ through the current package; `tone_lib::Oscillator` resolves into the
 the standard library.
 
 All `use` statements use absolute paths starting from one of these
-bases. There is no relative-path or "current module" reference;
-references between modules always go through `root` or an external
-dependency name.
+bases. There is no relative-path "current module" reference *for
+imports*; `use` statements between modules always go through `root`
+or an external dependency name.
+
+Within a node or connection body, the `module::` qualifier (§13.7.3)
+does reach the *current* module's top-level scope — but it is a
+name-resolution anchor for disambiguating a member-vs-module
+collision, not an import mechanism. It resolves only the enclosing
+module's own top-level declarations; it cannot reach into other
+modules (those still require an absolute `use` path).
 
 ### 10.3 Visibility Specifiers on Declarations
 
@@ -6107,7 +6115,7 @@ identifies the cycle's members.
 - **Type-reference cycles between sibling files are permitted.**
   Files inside the same module share scope and are compiled as a
   single unit, so mutually-referencing type declarations (e.g.,
-  one file's `node` declares an `out:` connection type defined in
+  one file's `node` declares an `outgoing:` connection type defined in
   a sibling file, and the sibling's `connection` declares `from:`
   the first file's node) are resolved in one pass. This is the
   normal case for any non-trivial module split across files.
@@ -8717,14 +8725,16 @@ signal tick: i64 = 0
 -- Counter advances its count whenever the host changes `tick`.
 node Counter:
   recurrent count: i32 = observe:
-    on tick: self.count.previous(0) + 1
-  out: ShowsCount [=1]
+    on tick: count.previous(0) + 1      -- `tick`: module-level (scope 3);
+                                        -- `count.previous`: self-history (scope 2)
+  outgoing: ShowsCount [=1]
 
 -- Display reads the count through its incoming connection.
 node Display:
   attr label: string = "Unnamed"
-  in: ShowsCount [=1]
-  derived shown: string = "{self.label}: {self.in.ShowsCount[0].count}"
+  incoming: ShowsCount [=1]
+  derived shown: string = "{label}: {incoming.ShowsCount[0].count}"
+                          -- `label`, `incoming`: body-scope members (bare; §13.7)
 
 -- Connection from Counter to Display carries a derived count.
 connection ShowsCount:
@@ -8762,8 +8772,9 @@ Each `publish()`:
 This example demonstrates every reactive declaration kind (signal,
 attr, recurrent, derived), composition through nodes and connections,
 cardinality (`[=1]`), placement with overrides, indexed access
-through the connection (`self.in.ShowsCount[0].count`), and the
-publish-driven evaluation cycle.
+through the connection (`incoming.ShowsCount[0].count`), bare
+body-scope member access (§13.7), and the publish-driven evaluation
+cycle.
 
 ### 13.2 Reactive Declarations
 
@@ -10190,8 +10201,8 @@ reactive cells managed by the kernel.
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
   parts: Type1, Type2                                 // optional permitted part types
-  in: Conn1, Conn2                                    // optional incoming connection types
-  out: Conn3, Conn4                                   // optional outgoing connection types
+  incoming: Conn1, Conn2                              // optional incoming connection types
+  outgoing: Conn3, Conn4                              // optional outgoing connection types
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
   signal name: Type = initial                         // per-instance runtime-fed entry points
@@ -10208,7 +10219,7 @@ parts, and no connections is legal but typically unused.
 ```
 node Driver:
   satisfies Drivable
-  out: Drives
+  outgoing: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
   derived is_aggressive: bool = self.risk_tolerance > 0.7
@@ -10276,7 +10287,7 @@ In this example: at least one Oscillator (`+`), exactly one Filter
 -- Open parts (any node type accepted):
 node Processor:
   -- no `parts:` clause; accepts any node as a child
-  out: WiresTo
+  outgoing: WiresTo
 ```
 
 `Processor` accepts any node type as a part. Inside its body, only
@@ -10337,19 +10348,19 @@ per §13.4.1 — type-bulk and cardinality-bounded forms are not
 available. A node with a `parts` clause may contain children at
 runtime according to the declared cardinality.
 
-#### 13.3.4 `in` and `out` clauses
+#### 13.3.4 `incoming` and `outgoing` clauses
 
 ```
-in: ConnType1 [cardinality]?, ConnType2 [cardinality]?, ...
-out: ConnType3 [cardinality]?, ConnType4 [cardinality]?, ...
+incoming: ConnType1 [cardinality]?, ConnType2 [cardinality]?, ...
+outgoing: ConnType3 [cardinality]?, ConnType4 [cardinality]?, ...
 ```
 
-The `in` and `out` clauses list the *types* of connections in which
-instances of this node may participate as endpoints, with optional
-cardinality constraints. `in` connections target this node (the
-node is the `to` endpoint); `out` connections originate from this
-node (the node is the `from` endpoint). See §13.6 for connection
-declarations and §13.8.4 for connection placement.
+The `incoming` and `outgoing` clauses list the *types* of connections
+in which instances of this node may participate as endpoints, with
+optional cardinality constraints. `incoming` connections target this
+node (the node is the `to` endpoint); `outgoing` connections
+originate from this node (the node is the `from` endpoint). See §13.6
+for connection declarations and §13.8.4 for connection placement.
 
 Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
 sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
@@ -10357,25 +10368,29 @@ sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
 
 ```
 node Driver:
-  out: Drives [=1], MaintainedBy?
-  in: SponsoredBy [..=3]
+  outgoing: Drives [=1], MaintainedBy?
+  incoming: SponsoredBy [..=3]
 ```
 
 ##### 13.3.4.1 Access from inside the node body
 
-Connections of a given type are accessible as `self.in.<ConnType>`
-and `self.out.<ConnType>`, both structural iterables of compile-
-time-known length range:
+Connections of a given type are accessible as `incoming.<ConnType>`
+and `outgoing.<ConnType>` (bare, per §13.7.5) or with the explicit
+`self.` anchor (`self.incoming.<ConnType>`), both structural
+iterables of compile-time-known length range:
 
-- Indexed: `self.in.<ConnType>[i]` and `self.out.<ConnType>[i]` are
+- Indexed: `incoming.<ConnType>[i]` and `outgoing.<ConnType>[i]` are
   legal iff `i < min_cardinality` of that connection type.
-  Example: under `out: Drives [=1]`, `self.out.Drives[0]` is legal.
-- Type-bulk iteration: `for c in self.out.<ConnType>: ...` always
-  works.
+  Example: under `outgoing: Drives [=1]`, `outgoing.Drives[0]` is
+  legal.
+- Type-bulk iteration: `for c in outgoing.<ConnType>: ...` always
+  works. Because incoming connections are named `incoming` (not
+  `in`), `for c in incoming.<ConnType>` reads without colliding with
+  the `for ... in` separator.
 
 The access syntax is symmetric with parts (§13.3.3.2): three
-namespaces (`parts`, `in`, `out`), each grouping cells by declared
-type.
+member namespaces (`parts`, `incoming`, `outgoing`), each grouping
+cells by declared type.
 
 #### 13.3.5 Generic parameters
 
@@ -10420,8 +10435,8 @@ external reader (and the kernel) sees as the node's content.
 node TypeName:
   satisfies SomeTrait
   parts: SomeA, SomeB
-  in: ConnIn1
-  out: ConnOut1
+  incoming: ConnIn1
+  outgoing: ConnOut1
   expose:
     SomeA
     SomeB
@@ -10430,8 +10445,8 @@ node TypeName:
   derived greeting: string = "hello " ++ self.user_name
 ```
 
-The canonical clause order is: `satisfies` → `parts:` → `in:` →
-`out:` → `expose:` → cell declarations.
+The canonical clause order is: `satisfies` → `parts:` → `incoming:`
+→ `outgoing:` → `expose:` → cell declarations.
 
 ##### 13.3.7.1 Content
 
@@ -11023,11 +11038,11 @@ the act of driving. Connections also satisfy traits (like
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
 connection participates in the source node's outgoing surface
-(declared via `out:`) and the destination node's incoming surface
-(declared via `in:`).
+(declared via `outgoing:`) and the destination node's incoming
+surface (declared via `incoming:`).
 
 A node declares which connection types it can participate in via
-its `in:` and `out:` clauses (§13.3.4), with optional cardinality
+its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
 constraints. The actual connection instances appear at placement
 (§13.8.4).
 
@@ -11258,72 +11273,215 @@ simultaneity (e.g., "destination plays alongside source") should
 *not* satisfy `Circularity`, since cycles through such connections
 would imply infinite simultaneous activation.
 
-### 13.7 The `self` Keyword
+### 13.7 Name Resolution in Node and Connection Scopes
 
-`self` is a context-restricted keyword that resolves to the instance
-currently being declared or constructed.
+Name resolution in Ductus proceeds outward through enclosing scopes,
+inner-most first — standard lexical scoping. A node or connection
+body is a scope like any other; its members are in scope within the
+body's reactive expressions. There is no special "receiver" concept:
+a bare name binds to the nearest enclosing scope that declares it.
 
-#### 13.7.1 Scope
+Two explicit anchors disambiguate when a name is declared in more
+than one reachable scope:
+
+- **`self.x`** anchors at the node/connection-instance scope. `self`
+  is the instance *value*; `.x` is member access on it.
+- **`module::x`** anchors at the module top-level scope. `module` is
+  a *namespace*, not a value; `::x` resolves a name within it.
+
+The differing syntax reflects different operations: `self.x` is
+value-field access (dot), `module::x` is scope resolution (the `::`
+path separator, as in `Type::CONST` and turbofish `::[T]`).
+
+#### 13.7.1 The scope chain
+
+Within a node or connection body, the scope chain from inner-most
+to outer-most is:
+
+1. **Local bindings** — `let` bindings and `for`-loop variables
+   inside a reactive expression.
+2. **The instance body scope** — the node's or connection's members:
+   `attr`, `signal`, `recurrent`, `derived`, `stream` cells; `parts`;
+   and the reserved endpoint/structure fields (`from`, `to`,
+   `incoming`, `outgoing`, `pair`, `exposition` — §13.7.5).
+3. **The module top-level scope** — module-level `signal`, `derived`,
+   `recurrent`, `stream`, `const`, and `let` declarations.
+
+A bare name resolves to the nearest scope in this chain that
+declares it. Inside a node body, a bare reference to a member
+resolves to that member (scope 2) without needing `self.`; a bare
+reference to a module-level name not shadowed by a member resolves
+to the module-level declaration (scope 3).
+
+```
+signal master_gain: f32 = 1.0          // module-level
+
+node Channel:
+  attr local_gain: f32 = 0.5
+  derived effective: f32 = local_gain * master_gain
+  //                       ^^^^^^^^^^   ^^^^^^^^^^^
+  //                       member       module-level
+  //                       (scope 2)    (scope 3, not shadowed)
+```
+
+Neither reference needs `self.` or `module::`: `local_gain` is found
+in the body scope, `master_gain` in the module scope, and there is
+no collision.
+
+#### 13.7.2 The `self.` anchor
+
+`self.x` explicitly resolves `x` in the instance body scope (scope
+2), bypassing inner local bindings and ignoring any module-level
+declaration of the same name. `self` is the instance value; for each
+*instance* of the type, `self` resolves to that specific instance.
 
 `self` is available only inside the body of a node or connection
-declaration. Specifically, in:
-
-- Attr default expressions: `attr x: i32 = self.other_attr + 1`.
-- Recurrent expressions: `recurrent x: i32 = self.x.previous(0) + self.other_attr`.
-- `observe` arm expressions: `recurrent x: i32 = observe: on tick: self.x.previous(0) + 1`.
-- Derived expressions: `derived y: bool = self.x > 0`.
-- Iteration over parts in reactive expressions inside a node body:
-  `for p in self.parts: ...`. Inside free functions that receive
-  the node as a parameter, the parameter name (developer-chosen)
-  is used to refer to the instance, not `self`.
-
-`self` is *not* available in:
-
-- Record or enum body declarations.
-- Trait declarations (use the capitalized `Self` for the type-level
-  identifier per §3.1.1).
-- Free function bodies, including functions whose first parameter
-  is a node or connection type. Such functions use the parameter's
-  name to refer to the instance.
-- Module top-level scope.
+declaration — in attr default expressions, recurrent expressions,
+`observe` arms, derived expressions, and `for`-iterations over parts.
+It is *not* available in record/enum bodies, trait declarations
+(use capitalized `Self`, §13.7.7), free function bodies, or module
+top-level scope.
 
 ```
 node Driver:
   attr expertise_level: i32 = 5
-  attr risk_tolerance: f32 = 0.5
-  derived skill_factor: f32 = self.expertise_level as f32 / 10.0
-                                   //  ^^^^ self inside node body — valid
+  derived skill_factor: f32 = self.expertise_level as f32 / 10.0   // explicit anchor
+  derived also_skill: f32 = expertise_level as f32 / 10.0          // bare — same cell
 
 fn aggressive(d: Driver) -> bool:
-  d.risk_tolerance > 0.7        // function uses parameter name, not self
+  d.risk_tolerance > 0.7        // free function uses the parameter name, not self
 ```
 
-#### 13.7.2 Resolution and reactive dependencies
+The bare and `self.`-anchored forms resolve to the same cell when
+there is no collision; `self.` is the explicit form, useful for
+clarity or required when disambiguating a collision (§13.7.4).
 
-A reference through `self` to an attr, recurrent, or derived
-participates in the reactive dependency graph in the usual way.
-`derived x: f32 = self.y + 1` depends on `self.y`; when `self.y`
-changes, `x` becomes dirty.
+#### 13.7.3 The `module::` anchor
 
-For each *instance* of the type, `self` resolves to that specific
-instance. The compiler emits dependency edges per-instance: instance
-`A` of `Driver` has a `skill_factor` cell whose dependency set
-includes instance `A`'s `expertise_level` cell, not the cell of
-some other Driver instance.
+`module::x` explicitly resolves `x` in the enclosing module's
+top-level scope (scope 3), bypassing the body and local scopes.
+`module` denotes the current module's namespace; it is not a value,
+so resolution uses `::`, not `.`.
 
-#### 13.7.3 Self vs Self (lowercase vs capitalized)
+```
+signal tick: i64 = 0
 
-The capitalized `Self` is the type-level identifier used in trait
-declarations and `fulfill` blocks (§3.1.1). It refers to the
-implementing type, not an instance.
+node Counter:
+  recurrent tick: i64 = observe:            // a member also named `tick`
+    on module::tick: tick.previous(0) + 1   // trigger on the module-level tick;
+                                            // tick.previous refers to the member
+```
 
-The lowercase `self` is the instance-level identifier used in node
-and connection bodies. It refers to a specific instance at
-runtime.
+`module::` reaches only the current module's top level. Cross-module
+access uses the module-path mechanism of §10. (`module::` is the
+in-body counterpart to that mechanism — see §10.2.3.)
 
-The two are distinct: `Self` is a type-system concept usable only
-in type positions; `self` is a value usable only in expression
-positions inside node/connection bodies. They never overlap.
+#### 13.7.4 Ambiguity is a compile error
+
+When a bare name is declared in *both* the instance body scope and
+the module top-level scope, a bare reference is **ambiguous and is a
+compile error**. The programmer must disambiguate with `self.x` (the
+member) or `module::x` (the module-level declaration):
+
+```
+signal gain: f32 = 1.0           // module-level
+
+node Channel:
+  attr gain: f32 = 0.5           // member with the same name
+
+  derived a: f32 = gain          // ✗ compile error: ambiguous `gain`
+  derived b: f32 = self.gain     // ✓ the member (0.5)
+  derived c: f32 = module::gain  // ✓ the module-level signal (1.0)
+```
+
+This is deliberate: bare names never silently shadow across the
+body/module boundary. The error directs the programmer to anchor
+explicitly. (Inner-most local bindings — `let`, `for`-vars — do
+shadow outer scopes normally, per ordinary lexical scoping; the
+compile-error rule applies specifically to the body-vs-module
+collision, where silent shadowing would be a refactoring hazard.)
+
+Diagnostic class:
+
+```
+error: ambiguous name `gain` — declared as both an instance member and a module-level cell
+  --> derived a: f32 = gain
+                       ^^^^
+  hint: anchor explicitly: `self.gain` for the member, or
+        `module::gain` for the module-level declaration
+```
+
+#### 13.7.5 Reserved-field access
+
+The reserved fields of a node or connection instance — `from`, `to`
+(connection endpoints, §13.6), `incoming`, `outgoing` (connection
+sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
+`exposition` (§13.3.7) — are members of the instance body scope.
+They resolve by bare name in expression-operand position, exactly
+like user-defined members:
+
+```
+connection Drives:
+  from: Driver
+  to: Drivable
+  derived speed: f32 = from.expertise_level as f32 * to.top_speed
+  //                   ^^^^                          ^^
+  //                   self.from                     self.to
+
+node Display:
+  incoming: ShowsCount [=1]
+  derived shown: string = "{incoming.ShowsCount[0].count}"
+```
+
+These keywords retain their clause-header meaning only in
+declaration position (statement level, trailing colon: `from:`,
+`incoming:`, `parts:`). In expression-operand position they are the
+corresponding instance field. No collision with user names is
+possible — reserved words cannot be declared as cell names. `self.`
+remains available as the explicit form (`self.from`, `self.incoming`).
+
+Note that `in` is *not* among these: incoming connections are named
+`incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
+separator (§12.3). `for x in incoming.ShowsCount` reads without
+collision.
+
+#### 13.7.6 Resolution and reactive dependencies
+
+A reference to a cell — bare, `self.`-anchored, or `module::`-
+anchored — participates in the reactive dependency graph in the
+usual way. `derived x: f32 = y + 1` depends on whichever cell `y`
+resolves to; when that cell changes, `x` becomes dirty.
+
+For each *instance* of a type, body-scope references resolve to that
+specific instance's cells. The compiler emits dependency edges
+per-instance: instance `A` of `Driver` has a `skill_factor` cell
+whose dependency set includes instance `A`'s `expertise_level` cell,
+not the cell of some other Driver instance. `module::` references
+resolve to the single shared module-level cell.
+
+#### 13.7.7 `self`, `Self`, and `module`
+
+Three distinct identifiers, three syntaxes, reflecting three kinds
+of thing:
+
+- **`self`** — the instance *value*, available only in
+  node/connection bodies. Member access uses the dot: `self.x`. It
+  is not an OOP receiver: the "methods" of a type are ordinary free
+  functions that take the instance as a developer-named first
+  parameter (`fn display(value: Self)`, §3.3.1), with `Self` the
+  subject-type alias. There is no implicit receiver anywhere — the
+  instance is always explicit, as `self` inside a node/connection
+  body or as a named parameter in a `fulfill`-block function.
+- **`Self`** — the *type-level* alias for the implementing/subject
+  type, usable only in type positions in trait declarations and
+  `fulfill` blocks (§3.1.1).
+- **`module`** — the enclosing module *namespace*. Scope resolution
+  uses `::`: `module::x`. It is not a value and has no `.` form.
+
+`self` is a value usable in expression positions; `Self` is a type
+usable in type positions; `module` is a namespace usable only as the
+left side of `::`. They never overlap.
+
 
 ### 13.8 Placement
 
@@ -11572,7 +11730,7 @@ the depth at which the connection appears does not change how the
 source is determined.
 
 The connection type must match a type listed in the source instance's
-`out:` clause (or in the type's traits' contributions).
+`outgoing:` clause (or in the type's traits' contributions).
 
 The destination is supplied in the connection placement's body as a
 single bare-identifier reference (§13.8.5.1). The `/expr` slot, when
@@ -12075,7 +12233,7 @@ fields (`from:`, `to:`, `attr name:`, `recurrent name:`, etc.):
 signal trigger: u64 = 0
 
 node OneShot:
-  out: Pulse
+  outgoing: Pulse
   recurrent fired: bool = observe:
     on trigger: true
     default: false
