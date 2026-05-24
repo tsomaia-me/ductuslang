@@ -470,7 +470,7 @@ let m1 = merge(stream_a, stream_b)
 
 // Override: N = 1024 (must be type-correct; the override is
 // the caller's assertion that 1024 suffices)
-let m2 = merge::<Event, 1024>(stream_a, stream_b)
+let m2 = merge::[Event, 1024](stream_a, stream_b)
 ```
 
 **Type-parameter defaults** (§3.1.6.1) and const-generic defaults
@@ -989,7 +989,7 @@ type-system level. Two terms are useful when discussing generic traits:
 A type may implement multiple trait instances of the same parent trait
 (`fulfill From[i32] for MyNumber` and `fulfill From[i64] for MyNumber`
 coexist; both share the parent `From`). Default type parameters (`Rhs =
-Self`) follow the rules for generic parameters in §3.1.6 and §2.2.
+Self`) follow the rules for generic parameters in §3.1.6.1 and §2.2.
 
 ##### 3.1.6.1 Default-type-parameter resolution
 
@@ -2438,7 +2438,7 @@ from direct trait dispatch:
 2. If either operand is `Integer`-kinded (or both are), the compiler
    inserts implicit widening conversions to lift them to the appropriate
    `Float` type per §4.5's lossless-widening rules. The pragmatic
-   exception for `i64`/`u64` → `f64` (§4.5.2) applies here too.
+   exception for `i64`/`u64` → `f64` (§4.5.4) applies here too.
 3. The promoted operands then satisfy `Div` (which is declared only on
    `Float`); the compiler dispatches `Div::div` on the float type.
 4. The result is a `Float` value of the type the operands were widened to.
@@ -3324,9 +3324,13 @@ Specifically:
   `Min`, `Max`, `Ord`, `Eq`, `FloatPow`. Floats do not implement
   `WrappingAdd` / `SaturatingAdd` etc. — IEEE 754's infinity-and-NaN
   semantics already define overflow behavior, and modular or clamping
-  interpretations would conflict (§4.6.6). They satisfy `Float`,
-  `Numeric`, and `Signed` (floats are signed by convention — they
-  support `Neg`).
+  interpretations would conflict (§4.6.6). They satisfy `Float` and
+  `Numeric`. Floats support negation via `Neg` (provided by the
+  `Float` umbrella) and absolute value via `Abs` (provided by
+  `Numeric`), but they do NOT satisfy the `Signed` umbrella —
+  `Signed` requires `Integer` (§4.9.2), and floats are not integers.
+  The signed/unsigned umbrellas classify integer types; a float's
+  signedness is expressed through `Neg`, not `Signed`.
 
 Built-in numeric types implement the same-type instantiations only — e.g.,
 `fulfill Add[i32] for i32`, not `Add[i64] for i32`. Cross-type arithmetic
@@ -5634,7 +5638,7 @@ The following operators are defined for `duration`:
 | `duration / duration`      | `f64`      | ratio (canonical float result) |
 | `duration % duration`      | `duration` | modulo (remainder)             |
 | `-duration`                | `duration` | negation                       |
-| `duration <,<=,==,!=,>=,>` | `bool`     | comparison                     |
+| `duration <,<=,>=,>` ; `is`,`is not` | `bool` | comparison / equality (§4.4.4) |
 
 The `Numeric` operand may be any integer or float type per §4.1. Integer
 scaling is exact; float scaling rounds to nearest at the nanosecond level
@@ -5713,7 +5717,7 @@ The following operators are defined for `instant`:
 | `instant - instant`       | `duration` | elapsed time between two points |
 | `instant + duration`      | `instant`  | future point                    |
 | `instant - duration`      | `instant`  | past point                      |
-| `instant <,<=,==,!=,>=,>` | `bool`     | comparison                      |
+| `instant <,<=,>=,>` ; `is`,`is not` | `bool` | comparison / equality (§4.4.4) |
 
 Operations **not defined** for `instant`:
 
@@ -8573,10 +8577,12 @@ externally-driven sequences; iterators are for collection traversal.
 ## 13. Reactive System
 
 This section specifies the language's reactive composition layer: the
-declaration kinds (`signal`, `attr`, `recurrent`, `derived`), the
-composition constructs (`node`, `connection`, parts), the rules
-governing reactive expression evaluation, and the host API through
-which external code drives and observes the reactive graph.
+declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
+`stream`), the reactive expression forms (`observe`, `where`), the
+composition constructs (`node`, `connection`, parts, `operator`,
+`effect`), the rules governing reactive expression evaluation, and
+the host API through which external code drives and observes the
+reactive graph.
 
 The reactive system is the language's mechanism for expressing values
 that change over time. Ordinary computation in Ductus is pure and
@@ -9460,15 +9466,16 @@ For each cell:
     - Otherwise, the attr was declared without a default and the
       placement omitted a value — a compile error caught before
       startup (see §13.2.2).
-- **Recurrents** evaluate their `= initial` expression. The arm
-  expressions are *not* evaluated at startup; recurrent cells hold
-  their initial values until a trigger fires. When an initial-value
-  expression reads a `Signal[T]` cell (per §13.2.8), the read
-  returns the cell's value at the topological-init evaluation
-  point — equivalent to a snapshot of the cell at startup. The
-  recurrent does not subscribe to subsequent changes of that cell;
-  for tracking semantics use a `derived` declaration instead. The
-  same snapshot semantic applies to attrs and signals whose initial
+- **Recurrents** evaluate their expression for the first time on
+  the startup pass. Self-history and input-history accessors
+  (`.previous(fallback)` / `.past(k, fallback)`, §13.2.4.3) return
+  their fallback values, since no committed history exists yet.
+  When the expression reads a `Signal[T]` cell (per §13.2.8), the
+  read returns the cell's value at the topological-init evaluation
+  point — a snapshot of the cell at startup. After startup, the
+  recurrent re-evaluates when any non-self reference in its
+  expression commits a new value (§13.2.4). The
+  snapshot-at-startup semantic applies to attrs and signals whose
   expressions read other reactive cells.
 - **Deriveds** evaluate their expression body.
 - **`when` predicates** (§13.9) are evaluated alongside deriveds
@@ -9532,13 +9539,13 @@ Writes occur only through:
   (per §13.8.2). Consts are *not* settable at placement.
 - The kernel's own evaluation of `derived` expressions, which
   writes the derived's output cell with the newly computed value.
-- The kernel's own evaluation of arm expressions on `recurrent`
-  cells, which commits the computed value at the end of the
-  publish cycle (per §13.2.4.1 and §13.10.2).
+- The kernel's own evaluation of `recurrent` expressions, which
+  commits the computed value at the end of the publish cycle (per
+  §13.2.4.1 and §13.10.2).
 
 Consts are immutable for the kernel's lifetime: their values are
 fixed at compile time and never change. The "no source-level
-write" rule applies to all five declaration kinds uniformly.
+write" rule applies to all six declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
 imperatively modify it from within.
 
@@ -9665,7 +9672,7 @@ derived arr: f32[4] = [signal_a, signal_b, 0.0, signal_c]
 
 The same forms apply in `attr` declarations on node and connection
 instances. Use in `signal` and `recurrent` declarations is
-constrained by their host-write and arm-update semantics
+constrained by their host-write and expression-evaluation semantics
 respectively; see §13.2.1, §13.2.4 for the underlying constraints.
 The most natural fit is `derived`.
 
@@ -11387,11 +11394,14 @@ Driver john_doe | expertise_level=10 risk_tolerance=0.8:
   Drives | enhanced_handling=true: some_car
 ```
 
-The named cell must be declared on the placed type as either an
-`attr` or a `recurrent`. Setting any other identifier — including
-`signal`, `derived`, or `const` declarations — is a compile error.
-The value's type must match the cell's declared type (subject to
-the standard widening rules).
+The named cell must be declared on the placed type as an `attr`.
+Setting any other identifier — including `signal`, `recurrent`,
+`derived`, or `const` declarations — is a compile error.
+Recurrents in particular are not settable at placement: a
+recurrent's value is fully defined by its expression and
+self-history fallbacks (§13.2.4, §13.8.2.2). The value's type must
+match the cell's declared type (subject to the standard widening
+rules).
 
 ##### 13.8.2.1 Reactive vs. compile-time placement values
 
@@ -12237,12 +12247,12 @@ false):
 - **`when` predicate:** re-evaluates whenever any cell in its
   provenance set changes. A flip from false to true is itself a
   propagation event (see below).
-- **Recurrents:** do not advance. Their arms do not fire; the
-  cells hold their last committed value. Any arm trigger that
-  would have fired during a gated period is lost — the kernel
-  does not queue triggers, and gate-open does not replay them.
-  The recurrent remains at its last committed value until a future
-  arm trigger fires during an active period.
+- **Recurrents:** do not advance. They do not re-evaluate; the
+  cells hold their last committed value. Any input change that
+  would have triggered re-evaluation during a gated period is lost
+  — the kernel does not queue triggers, and gate-open does not
+  replay them. The recurrent remains at its last committed value
+  until a future input change occurs during an active period.
 - **Deriveds:** do not recompute. They hold their last committed
   value. (An exception: deriveds whose values are read by the
   `when` predicate must remain current; the kernel keeps the
@@ -12479,11 +12489,12 @@ operation on the producer thread:
    attr), compare its back-buffer value to its previously-published
    value. Cells whose values differ are *dirty*; cells whose values
    are identical (including those that were written intermediate
-   values but reverted before publish) are *not* dirty. Triggers
-   listed in arm trigger lists fire when their referenced cell is
-   dirty — value-change semantics (§13.2.4.4) operationalized as
-   "current-publish value ≠ previous-publish value." Dirty
-   propagation extends to all derived cells transitively dependent
+   values but reverted before publish) are *not* dirty. A reactive
+   expression (derived, recurrent, or `observe` arm trigger set)
+   re-evaluates when a referenced cell is dirty — value-change
+   semantics (§13.2.4.4) operationalized as "current-publish value
+   ≠ previous-publish value." Dirty propagation extends to all
+   derived cells transitively dependent
    on dirty roots, and to all recurrents whose triggers fired this
    publish. No new dirty bits are added during the rest of the
    publish cycle.
@@ -12544,8 +12555,8 @@ the same thread between publish calls accumulate as usual.
 
 #### 13.10.3 Topological order and tiebreaker
 
-Within a publish cycle, dirty deriveds and recurrent expression
-expressions evaluate in topological order over the per-publish DAG.
+Within a publish cycle, dirty deriveds and recurrent expressions
+evaluate in topological order over the per-publish DAG.
 Topological order ensures that each node's dependencies have stable
 values when the node itself is evaluated.
 
@@ -12559,7 +12570,7 @@ reproducibility (same program, same inputs, same output trace).
 For cells across different node instances at the same level, the
 placement order at construction time is the tiebreaker.
 
-Arm expressions across multiple recurrent cells evaluate in
+Recurrent expressions across multiple recurrent cells evaluate in
 lockstep (§13.2.4.1); no internal ordering between them is
 observable, because none of them sees another's just-advanced
 value.
@@ -12611,8 +12622,8 @@ instances via connection placements. Each has its own rules.
 #### 13.11.1 The reactive dependency graph
 
 The compiler constructs the reactive dependency graph by walking
-every `derived` expression's body and every recurrent expression
-expression's body, recording for each the set of reactive cells it
+every `derived` expression's body and every recurrent expression's
+body, recording for each the set of reactive cells it
 reads. Edges go from each read cell to the reading expression's
 output cell. Signal, attr, derived, and recurrent reads all
 contribute edges.
@@ -13032,7 +13043,7 @@ reactive contexts.
 #### 13.13.1 Traps abort the process
 
 A reactive expression — derived expression or recurrent expression
-expression — that traps during evaluation, from arithmetic
+— that traps during evaluation, from arithmetic
 overflow under default operators (§4.6.1), division by zero, an
 out-of-range array index, or explicit `panic`, follows the
 trap-track semantics of §4.6.1: the process aborts.
@@ -14210,12 +14221,12 @@ expresses domain patterns like debounced fetches (`url |> debounce
 
 Normative diagnostic classes for operator usage:
 
-**`|>` applied to a non-operator:**
+**`|>` applied to a non-operator/non-effect:**
 
 ```
-error: `|>` requires an operator on the right-hand side
+error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -14605,7 +14616,9 @@ A reactive input to an expression participates uniformly:
   input event.
 - **A signal** contributes its commits (via the same semantics as
   `to_stream` per §13.18.9: initial value as first contribution,
-  every subsequent committed value as a new contribution).
+  every subsequent *changed* committed value as a new contribution).
+  Same-value commits do not contribute, per the value-change rule
+  (§13.2.4.4).
 
 The expression is recomputed whenever *any* of its reactive inputs
 emit. The output stream emits the freshly-computed value as its
@@ -14642,20 +14655,25 @@ arithmetic (`*`, `+`, etc.), function calls, `map`, conditional
 expressions, and similar. For these, any input change can change
 the output value, so emitting on any input change is natural.
 
-**Subset operations are per-LHS-event, not combine_latest.**
-Operators that produce a subset of an LHS stream's events
-(`where` §13.18.10, `filter` §13.18.9, `skip`, `take`,
-`pairwise`, and similar) are per-LHS-event: only the LHS stream
-drives emission. Any reactive cells referenced inside the
-operation's predicate or transformation contribute their current
-values at LHS-emission time, but their commits between LHS events
-do not cause re-emission. See §13.18.10.2 for the canonical
-formulation in the `where` context.
+**LHS-driven operations are per-LHS-event, not combine_latest.**
+This is the normative rule. Operators driven by a single LHS
+stream — both *subset* operations that may drop events (`where`
+§13.18.10, `filter` §13.18.9, `skip`, `take`) and *1:1*
+operations that emit one output per input event (`pairwise`) — are
+per-LHS-event: only the LHS stream drives emission. Any reactive
+cells referenced inside the operation's predicate or transformation
+contribute their current values at LHS-emission time, but their
+commits between LHS events do not cause re-emission. §13.18.10.2
+applies this rule to the `where` filter specifically; all
+LHS-driven operators follow it.
 
 The distinction is semantic: value-producing operations have a
 value that depends on all inputs (combine_latest is natural);
-subset operations select from an LHS stream (per-LHS-event is
-natural).
+LHS-driven operations are paced by a single source stream
+(per-LHS-event is natural). `pairwise` is LHS-driven and 1:1 (it
+never drops events but emits one output per input); the subset
+operators are LHS-driven and may drop events. Both categories are
+per-LHS-event.
 
 **First-emission timing.** A reactive expression emits its first
 output event during the startup pass (§13.2.6) iff every reactive
@@ -14922,7 +14940,7 @@ The output is a `RingStream[T, N]`. The capacity `N` defaults to
 
 ```
 let s = some_signal |> to_stream                       // RingStream[T, 1024]
-let s = some_signal |> to_stream::<Url, 2048>          // RingStream[Url, 2048]
+let s = some_signal |> to_stream::[Url, 2048]          // RingStream[Url, 2048]
 ```
 
 The `to_stream` operator always produces `ring` policy. To convert
@@ -14948,7 +14966,7 @@ The default is required because signals must always have a defined
 value (§13.2.6 initial value rules; §13.9.7 cell-value reads). The
 returned signal updates on each new event.
 
-**Skip family:**
+**Skip / take family:**
 
 ```
 operator skip[T](source: Stream[T], n: i32) -> Stream[T]:
@@ -14956,7 +14974,18 @@ operator skip[T](source: Stream[T], n: i32) -> Stream[T]:
 
 operator skip_first[T](source: Stream[T]) -> Stream[T]:
   // equivalent to skip(1)
+
+operator take[T](source: Stream[T], n: i32) -> Stream[T]:
+  // emits the first `n` events observed from source, then emits no
+  // more (the output stream is complete after n events)
+
+operator take_first[T](source: Stream[T]) -> Stream[T]:
+  // equivalent to take(1)
 ```
+
+`skip` and `take` are duals: `skip(n)` discards the first n events
+and passes the rest; `take(n)` passes the first n events and
+discards the rest. Both preserve the source's policy and capacity.
 
 The most common use of `skip_first` is to drop the initial-value
 event emitted by `to_stream`, leaving only true changes:
@@ -15020,7 +15049,7 @@ default expression referencing the input streams' capacities (per
 capacity at the call site via turbofish if they have tighter bounds:
 
 ```
-let merged: RingStream[Event, 1024] = merge::<Event, 1024>(a, b)
+let merged: RingStream[Event, 1024] = merge::[Event, 1024](a, b)
 ```
 
 A separate `merge_gate` variant is provided for gate streams with
@@ -15143,12 +15172,12 @@ stream ring x_clicks_in_zone = clicks where clicks.x > zone_threshold
 
 **Distinction from value-producing expressions.** Filters are a
 *subset operation*: the output is a subset of LHS events, governed
-by the predicate. This differs from value-producing expressions
-(arithmetic, function calls, `map`) where the expression value
-depends on all reactive inputs and combine_latest is the natural
-emission rule (§13.18.7.2). For filters, the LHS stream alone
-drives emission; predicate cells contribute values but not
-emissions. See §13.18.7.2 for the broader contrast.
+by the predicate. This is an instance of the per-LHS-event rule
+that governs all LHS-driven operations; §13.18.7.2 states that rule
+normatively and contrasts it with value-producing expressions
+(arithmetic, function calls, `map`) where combine_latest applies.
+For filters, the LHS stream alone drives emission; predicate cells
+contribute values but not emissions.
 
 ##### 13.18.10.3 Output type, policy, and capacity
 
@@ -15209,9 +15238,9 @@ true, the arm activates. If `active_mode` flips false then true
 between ticks, no arm activation occurs — the filtered trigger
 requires `tick` to actually emit.
 
-Within a recurrent body, the arm expression may reference the
-recurrent's self-history via `.previous(fallback)` and
-`.past(k, fallback)` (§13.2.4.3).
+When the `observe` block is the body of a recurrent, the arm
+expressions may reference the recurrent's self-history via
+`.previous(fallback)` and `.past(k, fallback)` (§13.2.4.3).
 
 The arm-selection rules of §13.2.11 apply uniformly: the first arm
 whose filtered trigger emits in the current publish wins.
@@ -16981,7 +17010,7 @@ The mechanism (§14.3.3, §14.7) does not depend on the mapping choice.
 ### 14.6 The Behavior ABI
 
 Each reactive behavior — a `derived` expression body or a `recurrent`
-arm body — is exposed to the kernel via a uniform **behavior ABI**.
+expression body — is exposed to the kernel via a uniform **behavior ABI**.
 Functions called from reactive bodies are reactive-transparent per
 §13.12.2: they compile to ordinary Rust functions (per §15.5) reached
 transitively from the registered behaviors, not as separately-registered
@@ -17131,8 +17160,8 @@ depend on the mapping choice.
 
 #### 14.7.2 Behaviors invoked by the mechanism
 
-Reactive behaviors (derived expression bodies and recurrent expression
-expressions) are invoked by the producer. Functions called from
+Reactive behaviors (derived expression bodies and recurrent
+expression bodies) are invoked by the producer. Functions called from
 reactive contexts are reactive-transparent per §13.12.2 and reached
 transitively from registered behaviors; they are not themselves
 separately invoked by the producer. The trigger, the selection of
@@ -17551,9 +17580,16 @@ The specification is a structured record with the following fields.
 [input_cell_ids])` pairs. Used by the kernel for dirty-set
 propagation and topological evaluation ordering.
 
-**Recurrent trigger sets.** A list of `(recurrent_cell_id,
-[trigger_cell_or_event_ids], where_guard?)` tuples, encoding the
-arm semantics of §13.2.4.
+**Recurrent dependency edges.** A list of `(recurrent_cell_id,
+[input_cell_ids], output_history_N, input_lookback_map)` tuples,
+encoding each recurrent's reactive inputs and its self-/input-
+history allocation per §13.2.4. `input_cell_ids` are the non-self
+references that drive re-evaluation (implicit triggers).
+`output_history_N` is the recurrent's declared `[N]` self-history
+depth (defaulting to 1). `input_lookback_map` maps input cell IDs
+referenced via `.past(k, ...)` to their maximum `k`, mirroring the
+stream-cell encoding. Recurrents whose expression is an `observe`
+block additionally carry the observe's per-arm trigger sets.
 
 **`when`-gates.** Per gated instance, the predicate expression in
 compiled form (behavior ID per §14.6.4, plus input cell IDs the
@@ -17964,7 +18000,7 @@ the graph specification:
   §14.6.4. Same ID → carried over (no rebinding needed). Different
   ID → removed + added (kernel rebinds function-pointer table).
 
-- **Derived dependency edges, recurrent trigger sets, when-gates.**
+- **Derived dependency edges, recurrent dependency edges, when-gates.**
   Set diff by their respective keys (derived cell ID, recurrent cell
   ID, gated instance ID).
 
