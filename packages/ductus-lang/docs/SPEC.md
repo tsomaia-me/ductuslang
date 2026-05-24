@@ -111,12 +111,15 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`), all control-flow
-keywords (`if`, `else`, `match`, `for`, `in`, `while`, `break`,
-`continue`, `return`), the scope-anchor namespaces (`here`, `module`),
-the instance value (`subject`), and all operator-context keywords
-(`as`, `is`, `and`, `or`, `not`). The rule is normative and takes
-precedence over any conflicting grammar.
+`where`, `desired`, `observed`, `ring`, `gate`), the reserved
+instance-field names (`pair`, `exposition` — §13.7.5; the remaining
+fields `from`, `to`, `incoming`, `outgoing`, `parts` double as the
+clause keywords above), all control-flow keywords (`if`, `else`,
+`match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
+scope-anchor namespaces (`here`, `module`), the instance value
+(`subject`), and all operator-context keywords (`as`, `is`, `and`,
+`or`, `not`). The rule is normative and takes precedence over any
+conflicting grammar.
 
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
