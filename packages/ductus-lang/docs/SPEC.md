@@ -8746,7 +8746,7 @@ node Display:
 connection ShowsCount:
   from: Counter
   to: Display
-  derived count: i32 = here::from.count
+  derived count: i32 = from.count
 
 -- Placements (instances).
 Counter c1:
@@ -8928,7 +8928,7 @@ scope, or any compile-time-evaluable expression.
 ```
 node Filter:
   attr cutoff_hz: f32 = 1000.0
-  attr resonance: f32 = here::cutoff_hz / 1000.0      // references earlier attr
+  attr resonance: f32 = cutoff_hz / 1000.0            // references earlier attr
   attr enabled: bool = true
 ```
 
@@ -9008,8 +9008,8 @@ the lazy-batched rules of §13.10).
 node Driver:
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived skill_factor: f32 = here::expertise_level as f32 / 10.0
-  derived is_aggressive: bool = here::risk_tolerance > 0.7
+  derived skill_factor: f32 = expertise_level as f32 / 10.0
+  derived is_aggressive: bool = risk_tolerance > 0.7
 ```
 
 A derived's expression is a *pure expression* — no `mut`, no loops,
@@ -9174,7 +9174,7 @@ Use `attr` for parameters, configuration, and host-controlled
 inputs. Use `recurrent` for cells that carry computed values that
 depend on their own past.
 
-##### 13.2.4.3 Subject-history and input-history access
+##### 13.2.4.3 Self-history and input-history access
 
 Inside a recurrent's expression, past values are accessed via two
 methods on a cell's name:
@@ -9186,7 +9186,7 @@ cell_name.past(k, fallback)          // k steps back
 
 These accessors work on two distinct subjects:
 
-- **Subject-history** — the recurrent's own past values. `name.past(k,
+- **Self-history** — the recurrent's own past values. `name.past(k,
   fallback)` reads the recurrent's value k publishes ago. `k` is
   bounded by the declared `[N]` depth (defaulting to 1): `k > N` is a
   compile error.
@@ -9202,7 +9202,7 @@ mechanism applies; the difference is signals contribute commits and
 streams contribute events.
 
 ```
-// Subject-history only
+// Self-history only
 recurrent counter: i32 = counter.previous(0) + 1
 
 // Input history — moving average over last 3 commits of `input`
@@ -9227,7 +9227,7 @@ Common rules:
   exists.
 
 Bare references to the recurrent's own name in its expression are
-not permitted (compile error). Subject-past access must go through the
+not permitted (compile error). Self-past access must go through the
 explicit `.previous`/`.past` accessors. References to OTHER cells
 (non-self) use bare names normally for their current values;
 `.previous(fallback)` / `.past(k, fallback)` on those names access
@@ -9307,8 +9307,8 @@ re-evaluates whenever `source` or `noise` changes (implicit
 triggers).
 
 Reads of any cell within the tuple use its individual name
-(`here::mean`, `here::variance`, or bare `mean`/`variance` at
-module scope) — but inside the tuple's own expression, self-history
+(bare `mean`/`variance`, or `here::mean`/`here::variance` to anchor
+explicitly per §13.7.2) — but inside the tuple's own expression, self-history
 access for each individual cell uses its own `.previous`/`.past`.
 
 Lockstep semantics (§13.2.4.1) are preserved across the tuple:
@@ -9418,9 +9418,9 @@ node Delay:
 
 A const is accessible through three syntactic forms:
 
-- **Instance-level (`here::<const>`)** — inside the declaring node
-  or connection's reactive expressions. Resolves to the same value
-  as the type-level access.
+- **Instance-level (bare `<const>`, or `here::<const>` to anchor)** —
+  inside the declaring node or connection's reactive expressions.
+  Resolves to the same value as the type-level access.
 - **Through an instance (`<instance>.<const>`)** — from function
   bodies or other instances' bodies that hold a reference to an
   instance of the type.
@@ -9484,7 +9484,7 @@ For each cell:
       placement omitted a value — a compile error caught before
       startup (see §13.2.2).
 - **Recurrents** evaluate their expression for the first time on
-  the startup pass. Subject-history and input-history accessors
+  the startup pass. Self-history and input-history accessors
   (`.previous(fallback)` / `.past(k, fallback)`, §13.2.4.3) return
   their fallback values, since no committed history exists yet.
   When the expression reads a `Signal[T]` cell (per §13.2.8), the
@@ -9519,7 +9519,8 @@ For each cell:
   otherwise be ambiguous; the compiler may permit them when the
   dependency graph is well-defined.
 - At type-declaration time, attr defaults and recurrent expressions
-  may reference same-instance cells (via `here::X`), same-type
+  may reference same-instance cells (by bare name, or `here::X` to
+  anchor), same-type
   consts, module-level cells (signals, deriveds, recurrents,
   consts), and compile-time-evaluable expressions. Cross-instance
   references are resolved only at placement time, not at type
@@ -10228,7 +10229,7 @@ node Driver:
   outgoing: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived is_aggressive: bool = here::risk_tolerance > 0.7
+  derived is_aggressive: bool = risk_tolerance > 0.7
 ```
 
 #### 13.3.2 `satisfies` clause
@@ -10265,14 +10266,14 @@ this node at placement time:
 
 - **No `parts:` clause** — the node accepts child instances of *any
   node type*. Inside the node body, only the heterogeneous
-  `here::parts` form is available, and it requires an explicit trait
-  bound on the iteration variable (`for p: SomeTrait in here::parts`)
-  per §13.4.1. Type-bulk (`here::parts.<NodeType>[i]`) and
+  `parts` form is available, and it requires an explicit trait
+  bound on the iteration variable (`for p: SomeTrait in parts`)
+  per §13.4.1. Type-bulk (`parts.<NodeType>[i]`) and
   cardinality-bounded forms are not available.
 - **With a `parts:` clause** — the node accepts only children whose
   types appear in the listed set, with the declared cardinality
-  constraints. Both heterogeneous (`here::parts`) and type-bulk
-  (`here::parts.<NodeType>[i]`) access are available; cardinality
+  constraints. Both heterogeneous (`parts`) and type-bulk
+  (`parts.<NodeType>[i]`) access are available; cardinality
   is enforced at placement.
 
 The clause does not place specific instances — it only constrains
@@ -10297,13 +10298,13 @@ node Processor:
 ```
 
 `Processor` accepts any node type as a part. Inside its body, only
-`here::parts` (heterogeneous iteration) is available; the host walks
+`parts` (heterogeneous iteration) is available; the host walks
 the parts externally based on its own conventions (e.g., per-type
 dispatch via const discriminators — §13.2.5).
 
 A node may have parts of its own type (self-recursion) when `parts:`
 is omitted or when the node's own type appears in the `parts:`
-clause. Subject-recursive placements terminate because each placement
+clause. Self-recursive placements terminate because each placement
 is an explicit user act — the compiler walks finite placement trees,
 not infinite type recursions.
 
@@ -10334,22 +10335,22 @@ valid.
 
 ##### 13.3.3.2 Access from inside the node body
 
-Parts of a given type are accessible as `here::parts.<NodeType>`,
+Parts of a given type are accessible as `parts.<NodeType>`,
 which is a structural iterable of compile-time-known length range:
 
-- Indexed access: `here::parts.<NodeType>[i]` — legal at type-level
+- Indexed access: `parts.<NodeType>[i]` — legal at type-level
   expressions iff `i < min_cardinality` of that part type.
-  Example: under `parts: Oscillator+`, `here::parts.Oscillator[0]`
+  Example: under `parts: Oscillator+`, `parts.Oscillator[0]`
   is legal (at least one is guaranteed) but `[1]` is not.
-- Type-bulk iteration: `for o in here::parts.<NodeType>: ...`
+- Type-bulk iteration: `for o in parts.<NodeType>: ...`
   always works.
-- Heterogeneous iteration: `for p in here::parts: ...` iterates
+- Heterogeneous iteration: `for p in parts: ...` iterates
   all parts of all declared types (§13.4.2).
 
 A node without a `parts` clause may still contain children of any
 node type (per §13.3.3); inside its body, only the heterogeneous
-`here::parts` form is available, and it requires an explicit trait
-bound on the iteration variable (`for p: SomeTrait in here::parts`)
+`parts` form is available, and it requires an explicit trait
+bound on the iteration variable (`for p: SomeTrait in parts`)
 per §13.4.1 — type-bulk and cardinality-bounded forms are not
 available. A node with a `parts` clause may contain children at
 runtime according to the declared cardinality.
@@ -10409,7 +10410,7 @@ node Buffer[T: Numeric]:
   attr capacity: usize = 16
   attr fill_level: usize = 0
   derived utilization: f32 =
-    here::fill_level as f32 / here::capacity as f32
+    fill_level as f32 / capacity as f32
 
   parts: BufferSlot[T]
 ```
@@ -10448,7 +10449,7 @@ node TypeName:
     SomeB
   attr foo: i32
   signal user_name: string = "world"
-  derived greeting: string = "hello " ++ here::user_name
+  derived greeting: string = "hello " ++ user_name
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
@@ -10460,9 +10461,9 @@ The body of `expose:` is a list of placements — each entry is a
 `Node[T]` value, with the same syntax as inline child placements
 elsewhere (§13.8). Entries reference:
 
-- A part of the instance by type-bulk access (`here::parts.SomeA` — the full
+- A part of the instance by type-bulk access (`parts.SomeA` — the full
   list of supplied parts of that type, in placement order).
-- A named part instance (`here::osc1` — see §13.4.1) — when the
+- A named part instance (`osc1` — see §13.4.1) — when the
   exposition needs a specific named child rather than all parts of
   a type.
 - A wrapper placement that contains parts as its own children. The
@@ -10474,7 +10475,7 @@ elsewhere (§13.8). Entries reference:
     parts: Item
     expose:
       SomeInternalWrapper:
-        here::parts.Item
+        parts.Item
   ```
 
   Here `SomeInternalWrapper` is a wrapper node whose body contains
@@ -10490,7 +10491,7 @@ elsewhere — no new control-flow syntax is introduced.
 ##### 13.3.7.2 Default
 
 When `expose:` is omitted, the node's exposition defaults to
-`expose: here::parts` — the kernel traverses all supplied parts in
+`expose: parts` — the kernel traverses all supplied parts in
 declaration order. When the node has no `parts:` clause and no
 `expose:` clause, the exposition is empty (the node has no
 structural output and exists only for its state and connections).
@@ -10503,7 +10504,7 @@ The exposed list is readable from outside the node via the reserved
 content the kernel traverses; external readers and the kernel see
 identical output.
 
-Inside the node body, `here::exposition` is the same list. The
+Inside the node body, the bare `exposition` field is the same list. The
 field is read-only; the exposition is fixed by the type's `expose:`
 clause (and the placer's supplied parts), not mutable at runtime.
 
@@ -10522,7 +10523,7 @@ clause directly. This is the load-bearing distinction:
 A node may receive parts that its exposition does not include — for
 example, a node may accept administrative or diagnostic parts that
 are queried only via the host API, not traversed by the kernel. In
-practice the default `expose: here::parts` covers the common case
+practice the default `expose: parts` covers the common case
 where every supplied part is exposed.
 
 ##### 13.3.7.5 Connections and exposition
@@ -10556,7 +10557,7 @@ addressable only through that parent (e.g., `parent.osc1` or
 for ownership, hot-reload diffing, and addressing — both kinds of
 instances have reactive cells that participate in dependency
 graphs, but a part's cells are reachable through the parent's
-`here::parts.<Type>` mechanism, whereas a top-level instance is
+`parts.<Type>` mechanism, whereas a top-level instance is
 reachable only by its module-scope name or through connections.
 
 Use parts when:
@@ -10580,7 +10581,7 @@ instances appear via placement (§13.8.3).
 directly.** The `parts:` clause is the constraint and supply
 mechanism — declared types, cardinality, and placement-time
 filling. The `expose:` clause (§13.3.7) is the structural output
-the kernel walks; it references parts (via `here::parts.<Type>` or
+the kernel walks; it references parts (via `parts.<Type>` or
 by named instance), possibly wrapping them in internal nodes.
 Parts that the exposition does not include are not traversed by
 the kernel — they remain queryable via the host API and addressable
@@ -10593,7 +10594,7 @@ Parts of a parent instance are accessible in three ways. The
 available access forms depend on whether the parent's `parts:`
 clause is declared:
 
-- **Heterogeneous:** `here::parts` — a structural iterable over all
+- **Heterogeneous:** `parts` — a structural iterable over all
   parts of the parent, regardless of their types.
     - When `parts:` is declared, the iteration variable is typed as
       the sum of the listed types. The body must compile for every
@@ -10602,13 +10603,13 @@ clause is declared:
       cannot be inferred from the declaration alone (any node type
       may have been placed). The body must declare an explicit trait
       bound on the iteration variable (`for p: SomeTrait in
-    here::parts: ...`); the compiler verifies at each placement
+    parts: ...`); the compiler verifies at each placement
       that every placed part type satisfies the bound.
-- **Type-bulk (`parts:` declared only):** `here::parts.<NodeType>` —
+- **Type-bulk (`parts:` declared only):** `parts.<NodeType>` —
   a structural iterable over all parts of the given type. Length
   range is determined by the declared cardinality. Available only
   when `<NodeType>` appears in the `parts:` clause.
-- **Named individual:** `here::<name>` (or `paramName.<name>` from
+- **Named individual:** bare `<name>` (or `paramName.<name>` from
   outside the node body) — accesses a specific part by its
   placement-time name. Names are assigned in the placement body
   (§13.8.3) and visible wherever the placement scope is known.
@@ -10618,10 +10619,10 @@ Summary table:
 
 | Form                         | `parts:` declared | `parts:` omitted                 |
 |------------------------------|-------------------|----------------------------------|
-| `here::parts.<Type>`          | available         | not available                    |
-| `here::parts` (unbounded)     | available         | not available (need bound)       |
-| `here::parts` (trait-bounded) | available         | available (trait bound required) |
-| named (`here::<name>`)        | available         | available                        |
+| `parts.<Type>`          | available         | not available                    |
+| `parts` (unbounded)     | available         | not available (need bound)       |
+| `parts` (trait-bounded) | available         | available (trait bound required) |
+| named (bare `<name>`)        | available         | available                        |
 
 Inside the parent's own type body (its `derived` and `recurrent`
 expressions), only type-bulk and heterogeneous forms are available;
@@ -10736,9 +10737,9 @@ transitively through function calls.
   different names are permitted (subject to the cardinality
   declared in the `parts:` clause).
 - Parts are not added or removed at runtime (except via hot reload).
-- For heterogeneous iteration (`for p in here::parts`), the body
+- For heterogeneous iteration (`for p in parts`), the body
   must compile for every declared part type (§13.4.2). The optional
-  explicit trait bound form (`for p: Trait in here::parts`) gives
+  explicit trait bound form (`for p: Trait in parts`) gives
   clearer error messages and enforces the constraint at the
   iteration site.
 
@@ -10904,7 +10905,7 @@ node Repeat[T]:
   attr last: bool                        // kernel-updated per iteration
   attr count: usize                      // kernel-updated per iteration
 
-  expose: here::parts.Item
+  expose: parts.Item
 ```
 
 `K` is the key function's return type, inferred at placement. `K`
@@ -10927,7 +10928,7 @@ admitting `i8`–`i64`, `u8`–`u64`, `bool`, `char`, `string`. When
   template references via Repeat's placement name (§13.4.1). The
   kernel updates these as part of Repeat's iteration semantics
   (§13.5.4.2); they are not host-writable.
-- `expose: here::parts.Item` declares the exposition (§13.3.7):
+- `expose: parts.Item` declares the exposition (§13.3.7):
   the kernel traverses the supplied Item template. Repeat's
   kernel-aware iteration semantics drive that traversal per
   source element with §13.5.1's scope operations.
@@ -10955,7 +10956,7 @@ performs no scope allocations or drops — only the exposed attrs
 node PostItem:
   default attr post: Post
   attr expanded: bool = false
-  derived title: string = here::post.title
+  derived title: string = post.title
 
 UI app:
   signal posts_data: Post[] = []
@@ -11107,7 +11108,7 @@ connection Drives:
   attr enhanced_handling: bool = false
   attr aggressiveness: f32 = 0.5
   derived effective_speed: f32 =
-    here::to.top_speed * (here::from.expertise_level as f32 / 10.0)
+    to.top_speed * (from.expertise_level as f32 / 10.0)
 ```
 
 `from` and `to` are not attributes — they are endpoint slots,
@@ -11115,7 +11116,7 @@ first-class structural elements of every connection. Attribute
 syntax (placement-time `name=value` settings via the attribute
 clause, flags) does not target them.
 
-Inside the body, `here::from` and `here::to` resolve to the endpoint
+Inside the body, `from` and `to` resolve to the endpoint
 instances directly (their concrete types).
 
 ##### 13.6.1.2 Cartesian form (multiple from-types and/or to-types)
@@ -11128,8 +11129,8 @@ connection TypeName:
 ```
 
 All cartesian combinations of from-types × to-types are valid
-placements. Inside the body, `here::from` is the sum type of all
-listed from-types, and `here::to` is the sum type of all listed
+placements. Inside the body, `from` is the sum type of all
+listed from-types, and `to` is the sum type of all listed
 to-types. Pattern matching is required to extract the concrete
 endpoint types.
 
@@ -11140,7 +11141,7 @@ connection Owns:
   from: Person, Company
   to: Vehicle, Property
   attr acquired_at: i64
-  derived display: string = match (here::from, here::to):
+  derived display: string = match (from, to):
     (Person(p), Vehicle(v)): "{p.name} owns car {v.id}"
     (Person(p), Property(pr)): "{p.name} owns property {pr.id}"
     (Company(c), Vehicle(v)): "company {c.name} owns car {v.id}"
@@ -11162,7 +11163,7 @@ connection TypeName:
 ```
 
 Only the listed pair combinations are valid placements. Inside the
-body, the endpoints are accessed via `here::pair`, a sum type whose
+body, the endpoints are accessed via `pair`, a sum type whose
 variants correspond to the declared pairs.
 
 Example:
@@ -11173,13 +11174,13 @@ connection Drives:
     Driver -> Vehicle
     Racer -> Boat
   attr aggressiveness: f32 = 0.5
-  derived speed: f32 = match here::pair:
+  derived speed: f32 = match pair:
     (Driver(d), Vehicle(v)): v.top_speed * (d.expertise as f32 / 10.0)
     (Racer(r), Boat(b)): b.knots * r.aggression
 ```
 
-In pairs form, `here::from` and `here::to` are not independently
-accessible — endpoints must be extracted via `here::pair` and
+In pairs form, `from` and `to` are not independently
+accessible — endpoints must be extracted via `pair` and
 pattern matching. This reflects the semantic coupling: pair-form
 connections enforce that specific from-types pair with specific
 to-types.
@@ -11204,20 +11205,20 @@ node bodies (§13.3.6).
 The endpoint access inside a connection body depends on the form
 of its declaration (§13.6.1):
 
-- **Single form** (`from: X / to: Y`): `here::from` is typed as `X`
-  directly; `here::to` is typed as `Y` directly. Attrs and deriveds
-  of the endpoints are accessible via `here::from.attr_name`,
-  `here::to.attr_name`, etc.
-- **Cartesian form** (`from: X, Y / to: A, B`): `here::from` is the
-  sum `X | Y`; `here::to` is the sum `A | B`. Pattern matching
-  against the sums (typically as a tuple `(here::from, here::to)`)
+- **Single form** (`from: X / to: Y`): `from` is typed as `X`
+  directly; `to` is typed as `Y` directly. Attrs and deriveds
+  of the endpoints are accessible via `from.attr_name`,
+  `to.attr_name`, etc.
+- **Cartesian form** (`from: X, Y / to: A, B`): `from` is the
+  sum `X | Y`; `to` is the sum `A | B`. Pattern matching
+  against the sums (typically as a tuple `(from, to)`)
   is required to extract concrete endpoint types.
-- **Pairs form** (`pairs:`): `here::pair` is the sum of declared
-  (FromType, ToType) tuples. Pattern matching against `here::pair`
-  extracts the concrete pair. `here::from` and `here::to` are not
+- **Pairs form** (`pairs:`): `pair` is the sum of declared
+  (FromType, ToType) tuples. Pattern matching against `pair`
+  extracts the concrete pair. `from` and `to` are not
   independently available in pairs form.
 
-`here::from`, `here::to`, and `here::pair` are bound at the
+`from`, `to`, and `pair` are bound at the
 connection's *placement* time. Each placement specifies its source
 (the enclosing instance) and destination (a bare-identifier reference
 in the placement's body, §13.8.5.1). Inside the connection type's
@@ -11715,7 +11716,7 @@ Named individual access is the placement-time companion to the
 type-bulk and heterogeneous access forms described in §13.4.1.
 Names are not available inside the parent's own type body (the
 type declaration doesn't know what placements will exist) — within
-the parent type, use `here::parts.<NodeType>[i]` or `here::parts`
+the parent type, use `parts.<NodeType>[i]` or `parts`
 instead.
 
 Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
@@ -11769,10 +11770,10 @@ the body's `:`:
 // (presumes Filter declares signal_active and App declares debug_enabled)
 App my_app:
   Filter filter / "low-pass":
-    Cascade when here::signal_active: next_filter      // gated on filter's own attr
+    Cascade when filter.signal_active: next_filter     // gated on filter's own attr
   Filter next_filter / "high-pass"
   Monitor monitor
-  WiresTo when here::debug_enabled: monitor            // gated on my_app's attr
+  WiresTo when my_app.debug_enabled: monitor           // gated on my_app's attr
 ```
 
 **Scope of placement-level `when`.** The `when` predicate evaluates
@@ -11782,11 +11783,11 @@ its own scope is unavailable. To reference the connection's own attrs in
 a gate, use a type-level `when:` clause inside the connection type's
 body (§13.6.1.1) instead.
 
-`here::` in the predicate resolves to the enclosing source instance.
-In `Cascade when here::signal_active: next_filter` (inside `filter`'s
-body), `here::signal_active` is `filter.signal_active`. In
-`WiresTo when here::debug_enabled: monitor` (inside `my_app`'s body),
-`here::debug_enabled` is `my_app.debug_enabled`.
+The predicate names the enclosing source instance directly. In
+`Cascade when filter.signal_active: next_filter` (inside `filter`'s
+body), `filter.signal_active` is the source filter's attr. In
+`WiresTo when my_app.debug_enabled: monitor` (inside `my_app`'s body),
+`my_app.debug_enabled` is the source app's attr.
 
 ##### 13.8.4.1 Terminology
 
@@ -12126,21 +12127,21 @@ Log / "Hello World" | level="info"
 Example (gated connection placement with `when` + body):
 
 ```
-Debugger d1 / "trace" when here::verbose | level=2: target
+Debugger d1 / "trace" when verbose | level=2: target
 ^^^^^^^^                                                     -- TypeRef
          ^^                                                  -- instance name
             ^^^^^^^^^                                        -- /Expr (default attr)
-                      ^^^^^^^^^^^^^^^^^                      -- when clause (predicate)
-                                          ^^^^^^^^^          -- attribute clause
-                                                    ^^^^^^^  -- destination in body
+                      ^^^^^^^^^^^^                           -- when clause (predicate)
+                                   ^^^^^^^^^                 -- attribute clause
+                                              ^^^^^^         -- destination in body
 ```
 
 Example (gated placement, no `/Expr`):
 
 ```
-Logger when here::debug_enabled
-^^^^^^                              -- TypeRef
-       ^^^^^^^^^^^^^^^^^^^^^^^^^    -- when clause (no /Expr present)
+Logger when debug_enabled
+^^^^^^                               -- TypeRef
+       ^^^^^^^^^^^^^^^^^^            -- when clause (no /Expr present)
 ```
 
 The `/Expr` form requires the placed type to have a declared
@@ -12218,20 +12219,20 @@ kernel to gate propagation through the construct it modifies, not
 exposed through a named cell readable by other expressions.
 
 It evaluates in the scope of the construct it modifies: inside a
-type body it sees `here::*` and items visible at the type's
-declaration scope; inside a placement it sees the full placement
-scope.
+type body it sees the body's own cells (by bare name) and items
+visible at the type's declaration scope; inside a placement it sees
+the full placement scope.
 
 ```
 connection Pulse:
   from: Driver
   to: Listener
-  when: here::from.is_emitting                 // type-level gate
+  when: from.is_emitting                       // type-level gate
 ```
 
 ```
 App my_app:
-  Logger l1 when here::debug_enabled           // placement-level gate
+  Logger l1 when my_app.debug_enabled          // placement-level gate
 ```
 
 Two design moves justify the clause:
@@ -12259,13 +12260,13 @@ node OneShot:
   recurrent fired: bool = observe:
     on trigger: true
     default: false
-  when: not here::fired                        // intrinsic refractory gate
+  when: not fired                              // intrinsic refractory gate
 
 connection ActiveEdge:
   from: Source
   to: Sink
   attr weight: f32 = 1.0
-  when: here::weight > 0.0                     // self-conditional gate
+  when: weight > 0.0                           // self-conditional gate
 ```
 
 Type-level gates encode constraints intrinsic to the type — a
@@ -12287,9 +12288,9 @@ gate for that specific instance. It uses no colon, consistent with
 modifier-style clauses:
 
 ```
-Logger l1 when here::debug_enabled
-Filter f1 / "low-pass" when here::dsp_mode == DspMode::Realtime | gain=0.5
-ShowsCount when here::from.count > 0: d1
+Logger l1 when debug_enabled
+Filter f1 / "low-pass" when dsp_mode == DspMode::Realtime | gain=0.5
+ShowsCount when from.count > 0: d1
 ```
 
 Parts placed inside a parent's body may carry `when` clauses
@@ -12304,13 +12305,13 @@ node App:
 
 App my_app:
   Logger l1                                         // always active
-  Logger l2 when here::verbose                       // gated on parent attr
-  Monitor m1 when here::health_checks_enabled        // feature flag
+  Logger l2 when my_app.verbose                      // gated on parent attr
+  Monitor m1 when my_app.health_checks_enabled       // feature flag
 ```
 
 `l2` and `m1` are constructed unconditionally (the static graph
 rule of §13.1 holds — the graph's shape is fixed at compile time).
-What `when` controls is propagation: when `here::verbose` is false,
+What `when` controls is propagation: when `my_app.verbose` is false,
 `l2`'s recurrents do not advance, its deriveds do not recompute,
 and its outputs do not propagate. Its cells hold their initial
 values per Model B (§13.9.7).
@@ -12333,8 +12334,8 @@ compile error.
 Otherwise, a `when` predicate follows normal expression scope
 rules — no special restrictions.
 
-- **Type level:** the predicate may reference `here::*` (own cells
-  and, for connections, `here::from` / `here::to` / `here::pair`),
+- **Type level:** the predicate may reference the type's own cells
+  by bare name (and, for connections, `from` / `to` / `pair`),
   plus anything visible at the type's declaration scope under
   normal visibility rules (module-level signals, consts, imports).
 - **Placement level:** the predicate may reference the full
@@ -12356,20 +12357,20 @@ stacked — replacement is total:
 connection Pulse:
   from: Driver
   to: Listener
-  when: here::from.is_emitting
+  when: from.is_emitting
 
 App my_app:
   Driver d1
   Listener l1
-  Pulse: l1                                           // gate: here::from.is_emitting
-  Pulse when here::debug_audio: l1                     // gate: here::debug_audio (overrides type-level)
+  Pulse: l1                                           // gate: from.is_emitting
+  Pulse when my_app.debug_audio: l1                    // gate: my_app.debug_audio (overrides type-level)
 ```
 
 If a placement needs both predicates, the placement-level form must
 combine them explicitly:
 
 ```
-Pulse when here::from.is_emitting and here::debug_audio: l1
+Pulse when my_app.is_emitting and my_app.debug_audio: l1
 ```
 
 Override is not implicit conjunction because conjunction would make
@@ -12380,7 +12381,7 @@ A placement with no `when` modifier inherits the type-level `when`,
 if any. A placement on a type with no type-level `when` and no
 placement-level `when` is unconditional — always active.
 
-#### 13.9.6 Subject-conditional gates
+#### 13.9.6 Self-conditional gates
 
 A gate predicate may reference cells of the gated instance itself.
 The kernel evaluates the predicate against the cells' current
@@ -12395,7 +12396,7 @@ connection WeightedEdge:
   from: Node
   to: Node
   attr weight: f32 = 1.0
-  when: here::weight > 0.0                            // self-conditional
+  when: weight > 0.0                                  // self-conditional
 ```
 
 Type-level self-conditional gates on nodes are likewise allowed
@@ -12473,7 +12474,7 @@ defined value of type T (no `Option[T]`), because:
   §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
-- All connection-level deriveds compute against `here::from` which
+- All connection-level deriveds compute against `from` which
   always has defined cells.
 
 On a gated node or connection, reads return frozen values: the
@@ -12535,9 +12536,9 @@ listed here are normative.
 
 ```
 error: `when` predicate must be of type `bool`
-  --> connection Foo: when: here::weight
-                            ^^^^^^^^^^^ expression has type `f32`
-  hint: introduce a comparison (e.g., `here::weight > 0.0`)
+  --> connection Foo: when: weight
+                            ^^^^^^ expression has type `f32`
+  hint: introduce a comparison (e.g., `weight > 0.0`)
 ```
 
 **Multiple `when:` clauses in a single type body.** Per §13.9.2.
@@ -12562,9 +12563,9 @@ error: `when:` is not permitted in a trait declaration
 failure, surfaced in `when`-clause context.
 
 ```
-error: unknown identifier `here::frobnicate` in `when` predicate
-  --> node Foo: when: here::frobnicate
-  hint: did you mean `here::activate`?
+error: unknown identifier `frobnicate` in `when` predicate
+  --> node Foo: when: frobnicate
+  hint: did you mean `activate`?
 ```
 
 **Cycle through `when` provenance.** Per §13.11.2; gate predicates
@@ -12590,13 +12591,13 @@ node When:
   default attr cond: Signal[bool]
   parts: Then!, Else?
   expose:
-    here::parts.Then when here::cond
-    here::parts.Else when !here::cond
+    parts.Then when cond
+    parts.Else when !cond
 ```
 
 `Then` and `Else` are simple stdlib wrapper nodes; each accepts a
 single child via its `parts:` slot and re-exposes it (the same
-pattern Repeat uses with `parts: Item!` + `expose: here::parts.Item`,
+pattern Repeat uses with `parts: Item!` + `expose: parts.Item`,
 §13.5.4.1).
 
 Placement:
@@ -12830,8 +12831,8 @@ error: instantaneous cycle in reactive expressions
 
 **Recurrent self-reference and cross-reference are allowed.** A
 recurrent cell's expression may read the recurrent's own
-previous value (`on t: here::x + 1`) or another recurrent cell's
-previous value (`on t: here::other.value`). These do not form
+previous value (`on t: x + 1`) or another recurrent cell's
+previous value (`on t: other.value`). These do not form
 instantaneous cycles because recurrent reads always return the
 previous-committed value (lockstep — §13.2.4.1). The per-publish
 DAG treats every recurrent read as an input, breaking the static
@@ -12843,10 +12844,10 @@ Example (allowed):
 node Filter:
   attr input: f32 = 0.0
   recurrent previous_value: f32 = observe:
-    on sample_clock: here::current
+    on sample_clock: current
     default: 0.0
   derived current: f32 =
-    0.5 * here::input + 0.5 * here::previous_value
+    0.5 * input + 0.5 * previous_value
 ```
 
 `current` reads `previous_value`; `previous_value`'s observe arm
@@ -13014,8 +13015,8 @@ signal global_offset: f32 = 0.0
 fn shifted(x: f32) -> f32:
   x + global_offset                    // reads signal `global_offset`
 
-derived adjusted: f32 = shifted(here::base_value)
-                       // provenance = { here::base_value, global_offset }
+derived adjusted: f32 = shifted(base_value)
+                       // provenance = { base_value, global_offset }
 ```
 
 The compiler's provenance analysis is transitive — it follows
@@ -13247,15 +13248,15 @@ node Divider:
   attr numerator: f32
   attr denominator: f32
   derived quotient: Result[f32, DivideError] =
-    if here::denominator is 0.0:
+    if denominator is 0.0:
       Err(DivideError::ByZero)
     else:
-      Ok(here::numerator / here::denominator)
+      Ok(numerator / denominator)
 
 node Consumer:
   parts: Divider
   derived report: string =
-    match here::divider.quotient:
+    match divider.quotient:
       Ok(value): "result: {value}"
       Err(DivideError::ByZero): "result: undefined"
 
