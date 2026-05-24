@@ -12251,7 +12251,7 @@ content differs by placement kind:
 - **Node placement body** — the indented block after `:` on a node
   placement line — contains child placements: parts and connections
   (§13.8.3, §13.8.4). Multiple children allowed; same-line
-  multi-placement uses commas per §13.8.10.
+  multi-placement is whitespace-separated per §13.8.10.
 - **Connection placement body** — the indented block (or inline
   single-line form) after `:` on a connection placement line —
   contains exactly *one* bare-identifier reference: the destination
@@ -12269,7 +12269,7 @@ names on connections, and they do not appear in connection
 *placement* bodies.
 
 A single line of a node placement body may contain multiple child
-placements separated by commas (§13.8.10). A placement that
+placements separated by whitespace (§13.8.10). A placement that
 introduces its own children body via `:` cannot share its line with
 sibling placements; multi-line layout is required when both same-line
 siblings and `:`-introduced children are needed.
