@@ -133,6 +133,18 @@ identifier purposes; it is a valid identifier character in every
 position. Precise lexical rules are in `GRAMMAR.md`; this rule is
 normative and takes precedence over any conflicting grammar.
 
+**No statement separator; no semicolon.** Ductus delimits with
+newlines and indentation. The semicolon `;` is **not a token** in the
+grammar and never appears in Ductus source — not as a statement
+terminator, not as a list separator, not in generic parameter lists.
+Every separated list (call arguments, generic parameters, tuple
+components, `parts:`/`incoming:`/`outgoing:` entries, etc.) uses the
+comma, the newline, or both. A `;` in Ductus source is a lex error.
+(This governs Ductus source only. Non-Ductus code shown for
+illustration — host-driver pseudocode that embeds the kernel, and the
+Rust comparison snippets in §15 and §18 — follows its own language's
+rules and may use semicolons.)
+
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
 be concrete.
@@ -330,11 +342,62 @@ umbrella traits (§3.6) let the compiler simplify inferred constraint sets for
 readability: `Add + Sub + Mul + Neg + Zero + One` may collapse to `Numeric`
 when unambiguous.
 
-#### 2.2.5 Type-argument inference at call sites
+#### 2.2.5 Supplying and inferring generic arguments at call sites
 
-When a generic function is called, the compiler infers the type arguments from
-the call's argument types where possible. Explicit type arguments are an
-opt-in fallback using turbofish syntax `::[T]`:
+Generic arguments — type arguments and const-generic arguments alike —
+are supplied at a use site with turbofish syntax `::[…]`, or omitted and
+resolved by the compiler. The supply model mirrors that of ordinary
+value arguments (§3.5).
+
+**Three forms.**
+
+- **Positional** — arguments in declaration order. A *prefix* may be
+  given and the trailing arguments omitted:
+
+  ```
+  lerp::[f64](0.0, 1.0, 0.5)        // all positional
+  resize::[2](stream)               // prefix: supply the first, omit the rest
+  ```
+
+- **Wildcard `_`** — a positional hole, resolved exactly like an omitted
+  argument; used to skip an *interior* parameter (§2.2.6):
+
+  ```
+  resize::[2, _, _](stream)         // supply the first, infer the rest
+  ```
+
+- **Named** — `Name = value`, in any order, naming the parameters to
+  supply and omitting the rest:
+
+  ```
+  resize::[K = 2](stream)           // supply K by name; order-independent
+  ```
+
+  Named generic arguments use `=`, not the `:` of named *value*
+  arguments (§3.5.4), because inside a bracketed generic list `:`
+  already separates a parameter from its type (`const N: usize`).
+
+**No mixing.** A single turbofish list is either all-positional (with
+optional wildcards and trailing omission) or all-named — never both,
+consistent with the value-argument rule of §3.5.2.
+
+**Resolution of an omitted, wildcarded, or unnamed argument.** Each is
+resolved in order:
+
+1. **Inferred** from the call's value arguments — and, for a parameter
+   appearing *bare* in the return type, from the expected type — where
+   possible (§2.2.1; const-generic inference is restricted per §2.5.5);
+   else
+2. its **declared default** (§3.1.6.1 for type parameters, §2.5.6 for
+   const-generic parameters); else
+3. a **compile error**: the argument cannot be determined and must be
+   supplied explicitly.
+
+Because positional supply fills a *prefix*, a parameter that must be
+supplied (one that is neither inferable nor defaulted) is most usable
+when declared early in the parameter list; otherwise callers use the
+named form. This is the same consideration as ordering
+required-before-optional value parameters.
 
 ```
 let r = lerp(0.0_f64, 1.0_f64, 0.5_f64)        // T inferred from arguments
@@ -434,7 +497,11 @@ indirection.
 Const-generic parameters may declare default values, including
 *expressions* that reference other generic parameters of the same
 declaration. The defaults are resolved at instantiation time
-alongside type-parameter defaults.
+alongside type-parameter defaults. A default expression is a
+const-generic expression and obeys §2.5 (which forms are admitted,
+how the resulting types are compared, and the symbolic/concrete
+distinction); this subsection adds only the resolution-order rules
+specific to defaults.
 
 ```
 operator merge[
@@ -688,24 +755,22 @@ conversion rules (§4.5).
 
 #### 2.4.4 Compile-time evaluation as type-level mechanism
 
-Compile-time-known integer values can serve as type-level arguments.
-Const-generic arguments (where a type parameter accepts a compile-time-known
-value rather than a type) use this directly: `type Buffer[T, N: usize =
-1024]: data: T[N]`. The full const-generic specification — value-kind
-parameters, bounds, inference — is deferred to a future spec revision;
-v1 supports the syntactic form shown above for fixed-size array sizing
-and similar uses.
+Compile-time-known values can serve as type-level arguments. A
+*const-generic* parameter accepts a compile-time-known value rather than
+a type:
 
 ```
-let arr: i32[fib(10) + 1]                  // valid; fib(10) + 1 is compile-time evaluable
-type Buffer[T, N: usize = 1024]:
+let arr: i32[fib(10) + 1]                  // array size: fib(10) + 1 is compile-time evaluable
+type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
 
 This is dependent-typing-lite: types can depend on compile-time-known values
 without requiring full dependent type theory. The mechanism is uniform —
 anything compile-time evaluable can appear in a type position requiring a
-value.
+value. §2.5 specifies const-generic parameters and expressions in full:
+which expressions are admitted, how const-generic types are compared for
+identity, and how parameters are inferred, bounded, and supplied.
 
 #### 2.4.5 Negative literal parsing
 
@@ -761,6 +826,194 @@ Floating-point compile-time evaluation uses the target's IEEE 754 format
 exactly. Compile-time and runtime float computations on the same expression
 must produce bit-identical results. This is a correctness requirement, not a
 performance optimization.
+
+### 2.5 Const-Generic Parameters and Expressions
+
+A *const-generic parameter* carries a compile-time-known **value** rather
+than a type. It is declared with the `const` keyword in a generic
+parameter list; that keyword is what distinguishes it from a type
+parameter (the list separator is always a comma — §1.4 — never a
+semicolon):
+
+```
+type Buffer[T, const N: usize = 1024]:
+  data: T[N]
+```
+
+A *const-generic argument* is the value that fills such a parameter at a
+use site — supplied, inferred, or defaulted (§2.2.5). A const-generic
+argument may be written as an **expression**. The rules below define
+which expressions are admitted and how the resulting types are compared.
+
+#### 2.5.1 Parameter kinds
+
+A const-generic parameter's declared type must be either:
+
+- an integer type (`usize`, `u32`, `i64`, …), or
+- `bool`.
+
+Floating-point types are **not** permitted as const-generic parameters;
+`type Spinner[const ANGLE: f64]` is a compile error. The reason is in
+§2.5.4: float-valued type arguments have no sound identity test. This
+restriction is on type-level *parameters* only — a regular `const` of
+float type (§2.4.1) is an ordinary value and is unaffected.
+
+#### 2.5.2 The concrete case: any compile-time expression
+
+When every value a const-generic argument depends on is known, the
+argument may be **any compile-time-known expression** of the parameter's
+type (§2.4.1), evaluated to a concrete value before type-checking
+proceeds. Every compile-time operation is available — arithmetic
+including `/` and `%`, comparisons, conditionals, and calls to pure
+functions:
+
+```
+const BUF: usize = 1024
+
+stream ring[BUF * 2] events: Event     // capacity 2048
+let history: i32[fib(10) + 1]          // pure call in an array size
+recurrent[BUF / 8] stream avg = ...    // division is fine: operands are known
+let m = merge::[Event, BUF_A + BUF_B](a, b)
+```
+
+Regular `const`s (§2.4.1) are admitted here on the same footing as
+literals — they are compile-time-known by construction.
+
+A **reactive** value (§13) may never flow into a const-generic argument;
+doing so is a compile error (§13.12.5). The concrete value is then
+checked against the parameter's type and bounds by value-fits-type
+checking (§2.4.3, §2.5.5).
+
+#### 2.5.3 The symbolic case: const-generic expressions
+
+Inside a generic declaration, a const-generic argument may be an
+expression over the **in-scope const-generic parameters** — for example
+an operator returning `RingStream[T, N + 1]`. An expression that still
+mentions an unbound parameter is *symbolic*. Because the compiler must
+compare symbolic expressions for type identity (§2.5.4) *without knowing
+the parameter values*, only a restricted, decidable set of operations is
+admitted in symbolic position.
+
+A symbolic const-generic expression must be one of:
+
+- **An integer polynomial** over in-scope const-generic parameters and
+  compile-time-known integers, built from `+`, `-`, and `*` only. A
+  parameter may multiply another parameter (`N * K`). Integer literals
+  and integer `const`s serve as coefficients and terms.
+- **A boolean expression** over in-scope `bool` const-generic parameters
+  and compile-time-known booleans, built from `and`, `or`, `not`, and
+  `is` / `is not` between booleans.
+
+The following are **rejected while any referenced parameter is still
+unbound**, and permitted the instant every operand is concrete (§2.5.2):
+
+| Operation | Why it is rejected symbolically |
+|---|---|
+| Integer `/`, `%` | Truncate; the result is not a polynomial and has no canonical form to compare. |
+| Integer comparison (`<`, `>`, `<=`, `>=`, `is`, `is not` on integers) | Bridges integer→bool; deciding equality of the result would require arithmetic reasoning the checker does not perform. |
+| `if` / `match`, calls to user-defined functions | No finite canonical form over symbolic operands. |
+| Any floating-point operation | Per §2.5.1; floats have no canonical form (§2.5.4). |
+
+```
+type Mode[const VERBOSE: bool, const TIMED: bool]
+
+// ✓ integer arithmetic on a symbolic parameter
+operator widen[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
+operator pair_up[const N: usize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
+
+// ✓ boolean algebra on symbolic bool parameters
+operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or B]
+
+// ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
+operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
+operator gate[const N: usize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
+```
+
+#### 2.5.4 Canonical form and type identity
+
+Two const-generic types are the **same type** iff their type arguments
+are pairwise identical and each pair of const-generic arguments has the
+**same canonical form**:
+
+- An **integer-polynomial** argument canonicalizes to a sum of monomials
+  with integer coefficients — the monomials in a fixed total order, like
+  terms combined. `N + 1` and `1 + N` share the canonical form `N + 1`;
+  `2 * N` and `N + N` share `2·N`. Hence `RingStream[T, N + 1]` and
+  `RingStream[T, 1 + N]` are the same type.
+- A **boolean** argument canonicalizes to a normal form over its
+  parameters (equivalently: identical truth tables). `Mode[A and B, …]`
+  and `Mode[B and A, …]` are the same type.
+- A **concrete** argument canonicalizes to its value.
+
+Const-generic positions are **invariant**. There is no subtyping or
+coercion between `C[…, e₁]` and `C[…, e₂]` when their canonical forms
+differ, even when one value is provably larger: `RingStream[T, N]` is
+never assignable to `RingStream[T, N + 1]`. Invariance is what keeps
+identity decidable — the checker compares canonical forms and never
+proves inequalities.
+
+Float-valued type arguments are excluded (§2.5.1) for exactly this
+reason: float arithmetic has no canonical form. Even concretely,
+`Foo[0.1 + 0.2]` and `Foo[0.3]` would compare unequal (the sums differ
+bit-for-bit), and symbolic float expressions cannot be normalized at all.
+
+#### 2.5.5 Inference and bounds
+
+**Inference.** A const-generic parameter is inferred only from a position
+where it appears as a **bare parameter** — `RingStream[T, N]`, not
+`RingStream[T, N + 1]`. A bare occurrence in the *return* type counts
+when the expected type is known from context (e.g. a `let` annotation).
+The compiler **evaluates** const-generic expressions once their
+parameters are known; it never **solves** them. Consequently:
+
+- A parameter that appears only inside an expression (never bare) cannot
+  be inferred; it must be supplied or carry a default (§2.5.6).
+- The compiler does not back-solve a parameter from a result type: given
+  `-> RingStream[T, N * K]` and an expected `RingStream[T, 16]`, it will
+  not deduce `K`.
+- When a parameter appears both bare and inside an expression, it is
+  inferred from the bare occurrence; the expression occurrence is then
+  **checked** for consistency against that value.
+
+```
+operator resize[const K: usize, T, const N: usize](s: RingStream[T, N]) -> RingStream[T, N * K]
+
+let bigger: RingStream[Event, 16] = resize::[2](small)   // K = 2 supplied; T, N inferred from `small`
+```
+
+`T` and `N` are inferred from the argument (they appear bare in
+`RingStream[T, N]`); `K` appears only inside `N * K`, so it is supplied.
+The result `RingStream[T, N * K]` is then *evaluated* — not solved — to
+`RingStream[Event, 16]` and checked against the annotation. (`K` is
+declared first so the positional prefix `::[2]` reaches it — §2.2.5.)
+
+**Bounds.** A const-generic parameter may carry a `where` constraint
+(`where N >= 1`, `where K <= N`, …). Bounds are checked at
+**instantiation**, against the concrete parameter values, using the
+compile-time overflow and value-fits rules (§4.6.5, §2.4.3). The compiler
+does **not** prove bounds symbolically at the declaration site. A
+declaration whose body relies on a bound — for instance a
+`recurrent[N] stream` whose body calls `.past(k, …)`, which requires
+`k ≤ N` (§13.18.8) — type-checks structurally; the `k ≤ N` obligation is
+discharged at each concrete instantiation. A violated bound is an
+instantiation-site error naming the parameter, its value, and the bound.
+
+#### 2.5.6 Default expressions
+
+A const-generic parameter may declare a default — used when the argument
+is neither supplied nor inferred (§2.2.5). The default may itself be an
+expression referencing earlier parameters of the same declaration; its
+full evaluation rules (left-to-right resolution, no forward references,
+DAG requirement) are given in §2.3.6. A default expression is a
+const-generic expression and obeys §2.5.2–§2.5.4: symbolic where it
+references unbound parameters, concrete once they are known.
+
+```
+operator merge[T, const N: usize = A.capacity + B.capacity](
+  a: RingStream[T, A],
+  b: RingStream[T, B],
+) -> RingStream[T, N]
+```
 
 ---
 
@@ -9220,8 +9473,9 @@ recurrent[2] smoothed: f32 =
 
 Common rules:
 
-- `k` must be a positive integer literal. Non-literal expressions
-  are rejected at parse time.
+- `k` must be a compile-time-known positive `usize` — a literal, a
+  `const`, or a const-generic parameter (§2.5). Runtime or reactive
+  values are rejected.
 - `fallback` is an expression of the accessed cell's value type,
   returned when fewer than `k` commits have happened.
 - Each `.previous` / `.past` call is an ordinary function call.
@@ -9355,8 +9609,8 @@ Recurrent cells may hold dynamic-size types in addition to
 fixed-size types. Dynamic-size types include:
 
 - `Vec[T]` — persistent vector with structural sharing
-- `SmallVec[T; N]` — inline up to N elements, then heap
-- `RingBuf[T; N]` — fixed-capacity ring buffer
+- `SmallVec[T, N]` — inline up to N elements, then heap
+- `RingBuf[T, N]` — fixed-capacity ring buffer
 
 Storage and cost details are specified in §13.12.4 (cell types and
 storage). The expression returns a new value of the declared type;
@@ -11193,8 +11447,8 @@ Rules for pairs form:
 - Duplicate pairs (same `From -> To` listed twice) are a compile
   error.
 - Asymmetric pair counts are allowed; pair uniqueness, not type
-  count, is what matters. `pairs: A -> X; A -> Y; B -> Y` is legal
-  (A can go to X or Y; B only to Y).
+  count, is what matters. A `pairs:` block listing `A -> X`,
+  `A -> Y`, and `B -> Y` is legal (A can go to X or Y; B only to Y).
 - All attrs/deriveds in the body are uniform across pairs. If
   pair-conditional content is needed, declare a separate connection
   type. (Pair-conditional content would require trait-like
@@ -13151,19 +13405,21 @@ documented complexity bounds.
 | Type             | Append/push  | Read by index | Memory pattern              |
 |------------------|--------------|---------------|-----------------------------|
 | `Vec[T]`         | O(log32 n)   | O(log32 n)    | Persistent trie, structural sharing across versions |
-| `SmallVec[T; N]` | O(n) bounded | O(1)          | Inline storage up to N elements, heap beyond        |
-| `RingBuf[T; N]`  | O(1)         | O(1)          | Fixed-capacity ring; oldest dropped when full       |
+| `SmallVec[T, N]` | O(n) bounded | O(1)          | Inline storage up to N elements, heap beyond        |
+| `RingBuf[T, N]`  | O(1)         | O(1)          | Fixed-capacity ring; oldest dropped when full       |
 
-The `T; N` form distinguishes the type parameter T from the
-const-generic parameter N. Generic syntax in Ductus uses commas
-between type parameters and semicolons before const-generics.
+In `[T, N]`, `N` is a const-generic parameter (the slot count), not a
+second type parameter. Generic parameter lists use commas throughout
+(§1.4 — never semicolons); a const-generic parameter is marked by the
+`const` keyword in the declaration (`type SmallVec[T, const N: usize]`,
+§2.5) and supplied as a value at use sites (`SmallVec[i32, 8]`).
 
 `Vec[T]` is the default for unbounded growth; the persistent
 vector trie (Clojure/Scala/Rust `im::Vector` family) provides
 sublinear append and read with structural sharing across
-triple-buffer versions. `SmallVec[T; N]` optimizes the common
+triple-buffer versions. `SmallVec[T, N]` optimizes the common
 case of small bounded collections with cache-friendly inline
-storage. `RingBuf[T; N]` provides constant-time bounded history
+storage. `RingBuf[T, N]` provides constant-time bounded history
 with automatic eviction.
 
 The functional builder API preserves the no-mutation rule
@@ -13183,8 +13439,8 @@ mechanism, §14.8 for triple-buffer eviction ordering.
 
 **Cost model for users not using dynamic types:**
 
-If user code never references `Vec[T]`, `SmallVec[T; N]`, or
-`RingBuf[T; N]`, the runtime cost is zero. The reactive state
+If user code never references `Vec[T]`, `SmallVec[T, N]`, or
+`RingBuf[T, N]`, the runtime cost is zero. The reactive state
 buffer remains a flat fixed-size table; the extensible pool
 machinery is not exercised. Binary size grows slightly only when
 these types are used. This preserves "pay for what you use" for
@@ -14508,8 +14764,9 @@ stream policy[capacity]? name: Type? = source
 
 - **`policy`** is one of the policy keywords `ring` or `gate`
   (§13.18.3). Mandatory; the declaration has no default policy.
-- **`[capacity]`** is an optional positive integer literal specifying
-  the ring buffer's slot count. When omitted:
+- **`[capacity]`** is an optional compile-time-known positive `usize`
+  (a literal, a `const`, or a const-generic parameter — §2.5)
+  specifying the ring buffer's slot count. When omitted:
   - For declarations whose source is a single stream or a stream-
     producing operator chain whose output capacity is known,
     capacity defaults to that output's capacity.
@@ -15012,7 +15269,8 @@ Explicit capacity overrides the default: `recurrent[3] stream ring[2048] avg: f3
 stream_name.past(n, fallback)
 ```
 
-- `n` is a positive integer literal specifying the lookback
+- `n` is a compile-time-known positive `usize` — a literal, a `const`,
+  or a const-generic parameter (§2.5) — specifying the lookback
   distance. `n=1` is the immediately-previous event; `n=2` is
   two events back; etc.
 - `fallback` is an expression of type `T` (the stream's element
@@ -15846,17 +16104,17 @@ error: lookback k=5 exceeds declared output history capacity [N=3]
         must satisfy `k ≤ N`.
 ```
 
-**Non-literal `n` in `.past(n, fallback)`:**
+**Non-compile-time `n` in `.past(n, fallback)`:**
 
 ```
-error: lookback index in `.past(n, fallback)` must be a positive integer literal
+error: lookback index in `.past(n, fallback)` must be compile-time-known
   --> recurrent stream x = source.past(some_variable, 0)
                                        ^^^^^^^^^^^^^
-  hint: the lookback distance must be a compile-time integer literal,
-        so the compiler can statically determine per-stream memory
-        allocation. For runtime-variable lookback, use the `scan` or
-        `pairwise` operators (§13.18.9) with appropriate accumulator
-        state.
+  hint: the lookback distance must be a compile-time-known `usize` — a
+        literal, a `const`, or a const-generic parameter (§2.5) — so the
+        compiler can statically determine per-stream memory allocation.
+        For runtime-variable lookback, use the `scan` or `pairwise`
+        operators (§13.18.9) with appropriate accumulator state.
 ```
 
 ### 13.19 Effects
@@ -17014,7 +17272,7 @@ the full per-publish cost for those cells.
 
 #### 14.3.5 Extensible pools for dynamic-size types
 
-Dynamic-size cell types (`Vec[T]`, `SmallVec[T; N]`, `RingBuf[T; N]`,
+Dynamic-size cell types (`Vec[T]`, `SmallVec[T, N]`, `RingBuf[T, N]`,
 `string`, etc., per §13.12.4) cannot live directly in the fixed-size
 cell slots. Their storage uses **extensible pools** alongside the
 reactive state buffer.
@@ -17048,7 +17306,7 @@ trie), pool slots may share internal nodes across versions. The pool
 tracks the trie's node-level refcounts; old nodes are reclaimed when
 no buffer references them.
 
-For value types (`SmallVec[T; N]`, `RingBuf[T; N]`), each buffer's
+For value types (`SmallVec[T, N]`, `RingBuf[T, N]`), each buffer's
 slot holds a complete copy of the value. Rotation of the
 triple-buffer ensures consumers never see partial writes; producer
 work is bounded by the value's size.
