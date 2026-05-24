@@ -388,7 +388,7 @@ resolved in order:
    appearing *bare* in the return type, from the expected type — where
    possible (§2.2.1; const-generic inference is restricted per §2.5.5);
    else
-2. its **declared default** (§3.1.6.1 for type parameters, §2.5.6 for
+2. its **declared default** (§3.1.6.1 for type parameters, §2.5.7 for
    const-generic parameters); else
 3. a **compile error**: the argument cannot be determined and must be
    supplied explicitly.
@@ -957,9 +957,9 @@ reason: float arithmetic has no canonical form. Even concretely,
 `Foo[0.1 + 0.2]` and `Foo[0.3]` would compare unequal (the sums differ
 bit-for-bit), and symbolic float expressions cannot be normalized at all.
 
-#### 2.5.5 Inference and bounds
+#### 2.5.5 Inference
 
-**Inference.** A const-generic parameter is inferred only from a position
+A const-generic parameter is inferred only from a position
 where it appears as a **bare parameter** — `RingStream[T, N]`, not
 `RingStream[T, N + 1]`. A bare occurrence in the *return* type counts
 when the expected type is known from context (e.g. a `let` annotation).
@@ -967,7 +967,7 @@ The compiler **evaluates** const-generic expressions once their
 parameters are known; it never **solves** them. Consequently:
 
 - A parameter that appears only inside an expression (never bare) cannot
-  be inferred; it must be supplied or carry a default (§2.5.6).
+  be inferred; it must be supplied or carry a default (§2.5.7).
 - The compiler does not back-solve a parameter from a result type: given
   `-> RingStream[T, N * K]` and an expected `RingStream[T, 16]`, it will
   not deduce `K`.
@@ -987,18 +987,78 @@ The result `RingStream[T, N * K]` is then *evaluated* — not solved — to
 `RingStream[Event, 16]` and checked against the annotation. (`K` is
 declared first so the positional prefix `::[2]` reaches it — §2.2.5.)
 
-**Bounds.** A const-generic parameter may carry a `where` constraint
-(`where N >= 1`, `where K <= N`, …). Bounds are checked at
-**instantiation**, against the concrete parameter values, using the
-compile-time overflow and value-fits rules (§4.6.5, §2.4.3). The compiler
-does **not** prove bounds symbolically at the declaration site. A
-declaration whose body relies on a bound — for instance a
-`recurrent[N] stream` whose body calls `.past(k, …)`, which requires
-`k ≤ N` (§13.18.8) — type-checks structurally; the `k ≤ N` obligation is
-discharged at each concrete instantiation. A violated bound is an
-instantiation-site error naming the parameter, its value, and the bound.
+The result of inference is then checked against the parameter's
+bounds, if any (§2.5.6).
 
-#### 2.5.6 Default expressions
+#### 2.5.6 Const-generic bounds
+
+A const-generic parameter may be constrained by a **`where` clause** on
+the declaration — the same clause that carries trait bounds on type
+parameters (§3.3.4). The clause holds a comma-separated list of
+predicates; a const-generic bound is a boolean predicate over the
+declaration's const-generic parameters and compile-time-known values.
+The `where` clause attaches to the signature, before the body's `:`:
+
+```
+operator window[T, const N: usize, const K: usize](s: RingStream[T, N]) -> RingStream[T, K]
+  where K <= N, N >= 1:
+  ...                                  // body
+
+type EvenBuffer[T, const N: usize] where N % 2 is 0:
+  data: T[N]
+```
+
+A single `where` clause may mix trait bounds and value bounds:
+`where T: Numeric, N >= 1`.
+
+**Predicate forms.** A bound predicate is any boolean expression over the
+const-generic parameters and compile-time-known values, using:
+
+- the comparisons `<`, `<=`, `>`, `>=`, `is`, `is not`, and
+- the boolean connectives `and`, `or`, `not`.
+
+Crucially, the operands of those comparisons may use the **full**
+compile-time vocabulary — including `/`, `%`, and function calls, even on
+parameters. This is the deliberate difference from const-generic
+expressions in *type* positions (§2.5.3), which are restricted to
+polynomials: a bound predicate is never compared for type identity, only
+**evaluated to true or false**, so it needs no canonical form.
+`where N % 2 is 0` and `where K <= N / 2` are both well-formed.
+
+**When bounds are checked.** Bounds are checked at **instantiation** —
+once every parameter is concrete (supplied, inferred, or defaulted,
+§2.2.5) — using the compile-time evaluation rules of §2.4 (including the
+overflow rules of §4.6.5). Each predicate is evaluated; if any is false,
+it is a compile error at the *instantiation site*, naming the parameter
+values and the violated predicate. When a generic is instantiated with
+arguments that are themselves still symbolic (a generic calling another
+generic), the check is deferred until those become concrete during
+monomorphization (§2.3).
+
+The declaration site checks only that each predicate is a well-formed
+boolean over in-scope parameters — never that it holds. The compiler does
+**not** prove bounds symbolically, and does **not** use one declaration's
+bound to discharge another's obligation. A body that relies on a value
+relationship — for instance a `recurrent[N] stream` calling `.past(k, …)`,
+which requires `k ≤ N` (§13.18.8) — type-checks structurally regardless of
+any `where` clause; that obligation is discharged at instantiation
+alongside the declared bounds. A matching `where k <= N` does not change
+*whether* the definition compiles; it documents the contract and yields a
+clearer, earlier instantiation error when violated.
+
+```
+let w = window::[K = 4](buf16)     // buf16: RingStream[Event, 16] → N=16, K=4 → 4 <= 16 ✓
+let w = window::[K = 32](buf16)    // ✗
+
+error: const-generic bound violated instantiating `window`
+  --> window::[K = 32](buf16)
+  bound:  K <= N
+  values: K = 32, N = 16
+  hint: the bound `K <= N` requires K ≤ 16 here; supply a smaller K or a
+        larger-capacity input.
+```
+
+#### 2.5.7 Default expressions
 
 A const-generic parameter may declare a default — used when the argument
 is neither supplied nor inferred (§2.2.5). The default may itself be an
@@ -1670,6 +1730,13 @@ required traits. A `Result[i32, string]` implements `Display` because both
 `i32` and `string` do; a `Result[ClosureType, string]` does not, because
 closure types typically do not implement `Display`. The compiler verifies
 the conditions at every call site that requires the implementation.
+
+The same `where` clause carries **const-generic value bounds** (§2.5.6)
+in addition to trait bounds, and the two may be mixed in one
+comma-separated list: `where T: Numeric, N >= 1`. Trait bounds are
+checked where the implementation or call is resolved; const-generic
+value bounds are checked at instantiation against concrete values
+(§2.5.6).
 
 #### 3.3.5 Pure-requirement traits and automatic satisfaction
 
