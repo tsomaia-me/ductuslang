@@ -11109,10 +11109,10 @@ fn process(c: Composite) -> f32:
 
 -- Placement with optional names:
 Composite c1:
-  Oscillator osc_a
-  Oscillator osc_b
-  Filter flt1
-  Amplifier amp1
+  Oscillator as osc_a
+  Oscillator as osc_b
+  Filter as flt1
+  Amplifier as amp1
 
 -- Named individual access from outside the type body:
 fn debug(c: Composite) -> string:
@@ -11865,12 +11865,28 @@ Driver john_doe | expertise_level=10 risk_tolerance=0.8:
   Drives | enhanced_handling=true aggressiveness=0.8: some_car
 ```
 
-The first line is `TypeName instance_name` followed (optionally) by
-attribute settings (§13.8.7) and (optionally) by `:` introducing a
-body of child placements (§13.8.3, §13.8.4). The syntax is identical
-to internal part placements (§13.8.3); the only distinction is that
-top-level placements *must* declare a name (internal parts may
-omit the name when not referenced from outside the placement).
+The first line is the type name followed by the instance name
+(`TypeName instance_name`), then (optionally) attribute settings
+(§13.8.7) and (optionally) `:` introducing a body of child placements
+(§13.8.3, §13.8.4).
+
+**A top-level placement is a declaration.** Like every other top-level
+declaration — `signal master_gain`, `node Channel`, `attr gain` — it
+names its subject positionally: the type, then the name, with no marker
+between them. A top-level placement is *mandatorily* named (unlike nested
+parts, which may be anonymous, §13.8.3), so the bare `TypeName
+instance_name` form is unambiguous and the `as` name marker is **optional**
+here:
+
+```
+Driver john_doe              // canonical: declaration form, no `as`
+Driver as john_doe           // also allowed — identical meaning
+```
+
+By convention top-level placements omit `as`. The marker is *required*
+only where placements may be anonymous (nested parts and children,
+§13.8.3), since there bare `Type name` is ambiguous between one named
+placement and two anonymous ones.
 
 Instance names are unique within their declaring scope. Two
 top-level placements with the same name in the same module is a
@@ -11942,13 +11958,13 @@ The right-hand side of an attribute setting at placement may be:
 
 ```
 App my_app:
-  Fetch fetcher / "url"
+  Fetch as fetcher / "url"
   Log / fetcher.response                  // reactive binding: Log's default attr
                                            // tracks fetcher.response
 
 App other_app:
-  Counter c1
-  Display d1 | label=format(c1.count)     // reactive: d1.label tracks c1.count,
+  Counter as c1
+  Display as d1 | label=format(c1.count)  // reactive: d1.label tracks c1.count,
                                            // formatted as a string
 ```
 
@@ -12031,13 +12047,19 @@ syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
 
 ```
 Component chip_b | label="B":
-  Pin out1                                // child part (Pin instance named out1)
-  Pin in1                                 // another child part
+  Pin as out1                             // child part (Pin instance named out1)
+  Pin as in1                              // another child part
 ```
 
 A child placement that names a node type listed in the parent's
 `parts:` clause is a part. The placement creates an instance of
 that node type as a child of the parent.
+
+A nested placement is named with the **`as` marker**: `Pin as out1`.
+The marker is required for nested placements because they may be
+anonymous (`Pin` alone is a valid unnamed part), so bare `Pin out1`
+would be ambiguous between one named part and two anonymous ones. (At
+top level, where names are mandatory, `as` is optional — §13.8.1.)
 
 The optional instance name (`out1`, `in1` in the example) is the
 *placement-time name* of the part. Once named, the part is
@@ -12077,14 +12099,14 @@ determined positionally.
 
 ```
 App my_app:
-  Fetcher fetcher / "url"                       // part placement
+  Fetcher as fetcher / "url"                    // part placement
   WiresToExternal: external_target              // source = my_app
 
-  Filter filter / "low-pass":
+  Filter as filter / "low-pass":
     Cascade: next_filter                        // source = filter
     WiresTo | gain=0.5: monitor                 // source = filter
-  Filter next_filter / "high-pass"
-  Monitor monitor
+  Filter as next_filter / "high-pass"
+  Monitor as monitor
 ```
 
 `WiresToExternal: external_target` is placed in `my_app`'s body, so
@@ -12111,10 +12133,10 @@ the body's `:`:
 ```
 // (presumes Filter declares signal_active and App declares debug_enabled)
 App my_app:
-  Filter filter / "low-pass":
+  Filter as filter / "low-pass":
     Cascade when filter.signal_active: next_filter     // gated on filter's own attr
-  Filter next_filter / "high-pass"
-  Monitor monitor
+  Filter as next_filter / "high-pass"
+  Monitor as monitor
   WiresTo when my_app.debug_enabled: monitor           // gated on my_app's attr
 ```
 
@@ -12142,13 +12164,21 @@ terms; "owner" is not.
 
 #### 13.8.5 The `/expr` form
 
-The `/expr` form appears immediately after the placed type name
-(and any flags), before any optional instance name and before the
-attribute clause (§13.8.7). The expression after `/` is the
-*positional argument* of the placement: it targets the placed type's
-`default attr` (§13.2.2.1), whether the placed type is a node or a
-connection. Using `/expr` on a type without a declared `default attr`
+The `/expr` form appears immediately after the placed type name, any
+flags, and the optional `as` name, and before the attribute clause
+(§13.8.7) — per the clause order of §13.8.9. The expression after `/`
+is the *positional argument* of the placement: it targets the placed
+type's `default attr` (§13.2.2.1), whether the placed type is a node or
+a connection. Using `/expr` on a type without a declared `default attr`
 is a compile error.
+
+**An unparenthesized `/expr` is restricted to a single atom** — a
+literal, identifier, or path (`C/4`, `Filter/cutoff_default`). A
+compound expression must be parenthesized: `C/(base * 2)`. This keeps a
+space-separated placement self-delimiting (§13.8.10); without the
+restriction an open expression could greedily swallow the next
+placement (`C/x - G` would be ambiguous between two placements and one
+subtraction).
 
 ##### 13.8.5.1 For connection placements
 
@@ -12420,11 +12450,13 @@ attributes (§13.8.7).
 A placement's inline parts have a fixed order:
 
 ```
-TypeRef [FlagsRun]? [InstanceName]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
+TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
 ```
 
 - Flags immediately adjacent to TypeRef (no whitespace).
-- Optional instance name follows the type/flags.
+- The optional `as` name (`as my_drive`) follows the type/flags. At
+  top level the `as` may be omitted (the bare declaration form,
+  §13.8.1); in nested placements it is required (§13.8.3).
 - The `/Expr` default-arg slot follows the name. For both node and
   connection placements, `/Expr` sets the type's `default attr`
   (§13.2.2.1). Permitted only when the placed type declares a
@@ -12449,12 +12481,12 @@ TypeRef [FlagsRun]? [InstanceName]? [DefaultArgPart (`/Expr`)]? [WhenClause (`wh
 Example (connection placement, default attr + flags + destination):
 
 ```
-Drives'! my_drive / 0.8 | enhanced_handling: some_car
-^^^^^^^                                                  -- TypeRef + 2 flags
-         ^^^^^^^^                                        -- instance name
-                   ^^^                                   -- /Expr (sets default attr)
-                        ^^^^^^^^^^^^^^^^^^^^^            -- attribute clause
-                                              ^^^^^^^^^  -- destination in body
+Drives'! as my_drive / 0.8 | enhanced_handling: some_car
+^^^^^^^^                                                  -- TypeRef + 2 flags
+         ^^^^^^^^^^^                                      -- instance name (`as` + name)
+                     ^^^^^                                -- /Expr (sets default attr)
+                           ^^^^^^^^^^^^^^^^^^^            -- attribute clause
+                                                ^^^^^^^^  -- destination in body
 ```
 
 Example (node placement with `default attr`):
@@ -12469,13 +12501,13 @@ Log / "Hello World" | level="info"
 Example (gated connection placement with `when` + body):
 
 ```
-Debugger d1 / "trace" when verbose | level=2: target
-^^^^^^^^                                                     -- TypeRef
-         ^^                                                  -- instance name
-            ^^^^^^^^^                                        -- /Expr (default attr)
-                      ^^^^^^^^^^^^                           -- when clause (predicate)
-                                   ^^^^^^^^^                 -- attribute clause
-                                              ^^^^^^         -- destination in body
+Debugger as d1 / "trace" when verbose | level=2: target
+^^^^^^^^                                                    -- TypeRef
+         ^^^^^                                              -- instance name (`as` + name)
+               ^^^^^^^^^                                    -- /Expr (default attr)
+                         ^^^^^^^^^^^^                       -- when clause (predicate)
+                                      ^^^^^^^^^             -- attribute clause
+                                                 ^^^^^^     -- destination in body
 ```
 
 Example (gated placement, no `/Expr`):
@@ -12494,36 +12526,59 @@ attr` is a compile error.
 #### 13.8.10 Same-line multi-placement
 
 Multiple placements may appear on a single line, separated by
-commas. The comma always terminates a placement at the current
-scope level — there is no context-sensitive disambiguation:
+**whitespace** — there is no comma separator (and no semicolon, §1.4).
+Dense sequences read cleanly:
 
 ```
-A3, rest, A4                              // three bare placements
-G4/4, G5/4                                // two /expr placements
-Sensor s1 | gain=0.5, Sensor s2 | gain=0.7  // two attributed placements
+C/4 G'/4 A                               // three /expr placements
+A3 rest A4                               // three bare placements
 ```
 
-The comma rule is universal: same-line placements are *always*
-comma-separated, regardless of whether the placements have names,
-`/expr`, attribute clauses, or any combination. This removes
-parser context-sensitivity — the comma is the unambiguous
-delimiter.
+The whitespace form is unambiguous only when each placement is
+**self-delimiting** — its end is determined without lookahead into the
+next placement. A placement is self-delimiting when every clause it
+carries is bounded:
 
-**A placement that introduces its own children body via `:`
-cannot share its line with sibling placements.** Such a placement
-owns the rest of its line (and the indented block that follows).
-To combine `:`-bearing children with same-line siblings, use
-multi-line layout:
+- a bare type, with flags and octave/duration sigils: `C`, `G'`, `Pin'!`;
+- a single-atom `/expr` — literal, identifier, or path (§13.8.5):
+  `C/4`, `Filter/cutoff_default`;
+- an `as` name, which consumes exactly one identifier: `G as a`.
+
+Anything carrying an **open expression** — a `when` predicate, an
+attribute clause (`|`), or a compound (non-atomic) `/expr` — is **not**
+self-delimiting: its expression could greedily consume the following
+placement. Such a placement **must be parenthesized or placed on its own
+line.** This is enforced, not advised: an unparenthesized open expression
+silently mis-parses — `C/x - G` is ambiguous between two placements and
+one subtraction.
 
 ```
-// ✗ ambiguous and disallowed:
-//   SomePart: Child1, Child2, AnotherPart
+C/4 G'/4 A                                            // ✓ self-delimiting atoms
+G as a  rest  C                                       // ✓ `as` name is bounded
+(Sensor as s1 | gain=0.5) (Sensor as s2 | gain=0.7)   // ✓ attrs ⇒ parenthesized
+Sensor as s1 | gain=0.5                               // ✓ or alone on its line
+```
+
+The `as` name is parser-safe unparenthesized (it binds exactly one
+identifier), so naming never *requires* parentheses. Parenthesizing a
+named placement is a **readability convention** for cases that scan as a
+phrase — `(G as a) rest C` reads more clearly than `G as a rest C` — not
+a rule.
+
+**A placement that introduces its own children body via `:` cannot share
+its line with sibling placements.** Such a placement owns the rest of its
+line and the indented block that follows. To combine `:`-bearing
+placements with same-line siblings, use multi-line layout:
+
+```
+// ✗ disallowed (the body owns the line):
+//   SomePart: Child1 Child2  AnotherPart
 
 // ✓ SomePart with three inline children (no siblings on this line):
-SomePart: Child1, Child2, Child3
+SomePart: Child1 Child2 Child3
 
-// ✓ Same-line siblings, no `:` children:
-SomePartA, SomePartB | attr=1, SomePartC
+// ✓ Same-line siblings, none with a `:` body:
+SomePartA (SomePartB | attr=1) SomePartC
 
 // ✓ Multi-line — `:`-bearing placement on its own line:
 SomePart:
@@ -12574,7 +12629,7 @@ connection Pulse:
 
 ```
 App my_app:
-  Logger l1 when my_app.debug_enabled          // placement-level gate
+  Logger as l1 when my_app.debug_enabled       // placement-level gate
 ```
 
 Two design moves justify the clause:
@@ -12646,9 +12701,9 @@ node App:
   attr health_checks_enabled: bool = true
 
 App my_app:
-  Logger l1                                         // always active
-  Logger l2 when my_app.verbose                      // gated on parent attr
-  Monitor m1 when my_app.health_checks_enabled       // feature flag
+  Logger as l1                                      // always active
+  Logger as l2 when my_app.verbose                  // gated on parent attr
+  Monitor as m1 when my_app.health_checks_enabled   // feature flag
 ```
 
 `l2` and `m1` are constructed unconditionally (the static graph
@@ -12702,8 +12757,8 @@ connection Pulse:
   when: from.is_emitting
 
 App my_app:
-  Driver d1
-  Listener l1
+  Driver as d1
+  Listener as l1
   Pulse: l1                                           // gate: from.is_emitting
   Pulse when my_app.debug_audio: l1                    // gate: my_app.debug_audio (overrides type-level)
 ```
@@ -13605,7 +13660,7 @@ node Consumer:
       Err(DivideError::ByZero): "result: undefined"
 
 Consumer my_consumer:
-  Divider divider               // names the contained Divider part
+  Divider as divider            // names the contained Divider part
 ```
 
 The divide-by-zero case never traps; it produces `Err(...)`. The
