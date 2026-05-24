@@ -117,8 +117,10 @@ fields `from`, `to`, `incoming`, `outgoing`, `parts` double as the
 clause keywords above), all control-flow keywords (`if`, `else`,
 `match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
 scope-anchor namespaces (`here`, `module`), the instance value
-(`subject`), and all operator-context keywords (`as`, `is`, `and`,
-`or`, `not`). The rule is normative and takes precedence over any
+(`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
+import aliases §10.2), and all operator-context keywords (`is`, `and`,
+`or`, `not`). `as` is **not** a cast operator; explicit conversion uses
+`T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
@@ -2429,9 +2431,9 @@ type Frequency:
   wraps i64
 
 fn from_hz[N: Numeric](n: N) -> Frequency:
-  Frequency(n as i64)
+  Frequency(i64(n))
 fn from_khz[N: Numeric](n: N) -> Frequency:
-  Frequency((n as f64 * 1000.0) as i64)
+  Frequency(i64(f64(n) * 1000.0))
 fn from_cents[N: Numeric](n: N) -> Frequency:
   ...
 
@@ -2959,10 +2961,10 @@ This table specifies the mapping:
 | `+?`, `-?` (binary), `*?`, `//?`, `%?`      | corresponding `Checked...`              | `Option[T]`                                          |
 | `/?`                                        | `CheckedDiv` (on `Float`)               | `Option[Float]`; integer operands widen per §4.4.1.1 |
 | unary `-?`                                  | `CheckedNeg`                            | `Option[T]`                                          |
-| `as`                                        | (language-level)                        | the target type, traps on out-of-range               |
-| `as%`                                       | `WrappingAs[T]` (operand)               | the target type T                                    |
-| `as\|`                                      | `SaturatingAs[T]` (operand)             | the target type T                                    |
-| `as?`                                       | `CheckedAs[T]` (operand)                | `Option[T]`                                          |
+| `T(x)`                                      | (language-level)                        | the target type T, traps on out-of-range             |
+| `T%(x)`                                     | `WrappingAs[T]` (operand)               | the target type T                                    |
+| `T\|(x)`                                    | `SaturatingAs[T]` (operand)             | the target type T                                    |
+| `T?(x)`                                     | `CheckedAs[T]` (operand)                | `Option[T]`                                          |
 
 ¹ The right operand may be any unsigned integer type narrower than or
 equal to u32 (implicit widening per §4.5.1); other types require an
@@ -3058,9 +3060,10 @@ precision-losing conversions require explicit casts.
 
 #### 4.5.5 What requires explicit cast
 
-Conversions not in §4.5.1–§4.5.3's implicit-widening tables require explicit
-`as` (§4.7) or, for fallible conversions where the destination range might
-not contain the source value, `TryFrom`/`TryInto` (§7) returning `Result`.
+Conversions not in §4.5.1–§4.5.3's implicit-widening tables require an
+explicit conversion `T(value)` (§4.7) or, for fallible conversions where
+the destination range might not contain the source value, `TryFrom`/`TryInto`
+(§7) returning `Result`.
 
 This includes: narrowing in either kind (wider-to-narrower integer,
 wider-to-narrower float); signed/unsigned crossings of any width;
@@ -3232,83 +3235,99 @@ for division by zero — no modular or clamping value is meaningful.
 
 ### 4.7 Explicit Casts
 
-The `as` operator performs explicit numeric conversion. Like arithmetic
-operators (§4.6), `as` has four variants expressing four different
-out-of-range policies. The unsuffixed form is the default; suffixed forms
-mirror the arithmetic operator suffixes.
+Explicit numeric conversion uses **call syntax on the target type**:
+`T(value)`. Like arithmetic operators (§4.6), it has four variants
+expressing four out-of-range policies. The unsuffixed form is the
+default; the suffixes (`%`, `|`, `?`) attach to the target type and
+mirror the arithmetic operator suffixes. (The `as` keyword is **not** a
+cast — it is reserved for naming and aliasing: placement names
+(§13.8.1) and import aliases (§10.2).)
 
-#### 4.7.1 The four cast variants
+#### 4.7.1 The four conversion variants
 
-| Operator | Trait             | Behavior on out-of-range                    |
+| Form     | Trait             | Behavior on out-of-range                    |
 |----------|-------------------|---------------------------------------------|
-| `as`     | (language-level)  | trap at runtime                             |
-| `as%`    | `WrappingAs[T]`   | modular two's-complement wrap               |
-| `as\|`   | `SaturatingAs[T]` | clamp to destination type's range bounds    |
-| `as?`    | `CheckedAs[T]`    | return `Option[T]` — `None` on out-of-range |
+| `T(x)`   | (language-level)  | trap at runtime                             |
+| `T%(x)`  | `WrappingAs[T]`   | modular two's-complement wrap               |
+| `T\|(x)` | `SaturatingAs[T]` | clamp to `T`'s range bounds                 |
+| `T?(x)`  | `CheckedAs[T]`    | return `Option[T]` — `None` on out-of-range |
+
+The policy suffix attaches to the target type, immediately before the
+argument list: `u8%(x)` — not `u8(%x)` and not `u8(x)%`. The suffixed
+forms parse unambiguously because a type name is never a value operand,
+so `u8%(`, `u8|(`, `u8?(` cannot be read as modulo, union/pipe, or
+error-propagation.
 
 Examples:
 
 ```
 let x: i32 = 300
-let y: u8 = x as u8                  // ✗ traps at runtime — 300 doesn't fit u8
-let y: u8 = x as% u8                 // ✓ wraps: 300 mod 256 == 44
-let y: u8 = x as| u8                 // ✓ saturates to u8::MAX == 255
-let y: Option[u8] = x as? u8         // ✓ None — out of range
-let z: i32 = some_float as i32       // truncating float-to-int (may trap)
+let y: u8 = u8(x)                    // ✗ traps at runtime — 300 doesn't fit u8
+let y: u8 = u8%(x)                   // ✓ wraps: 300 mod 256 == 44
+let y: u8 = u8|(x)                   // ✓ saturates to u8::MAX == 255
+let y: Option[u8] = u8?(x)           // ✓ None — out of range
+let z: i32 = i32(some_float)         // truncating float-to-int (may trap)
 ```
 
 The trapping default matches §4.6.1's philosophy: in production code,
-out-of-range cast is a bug to be surfaced, not silently transformed. Users
-who want non-trapping behavior choose the appropriate variant explicitly.
+out-of-range conversion is a bug to be surfaced, not silently transformed.
+Users who want non-trapping behavior choose the appropriate variant
+explicitly.
 
 #### 4.7.2 Lossless casts
 
-For widening casts that are lossless per §4.5, `as` is the explicit-syntax
-equivalent of implicit widening — the same result, no runtime cost beyond
-the conversion itself. The variants (`as%`, `as|`, `as?`) on lossless
-casts are equivalent to `as` (no out-of-range case can arise); they remain
-syntactically valid for use in generic code where the cast's losslessness
-isn't statically known.
+For widening conversions that are lossless per §4.5, `T(x)` is the
+explicit-syntax equivalent of implicit widening — the same result, no
+runtime cost beyond the conversion itself. The variants (`T%(x)`,
+`T|(x)`, `T?(x)`) on lossless conversions are equivalent to `T(x)` (no
+out-of-range case can arise); they remain syntactically valid for use in
+generic code where the conversion's losslessness isn't statically known.
 
 #### 4.7.3 Float-to-integer casts
 
-Float-to-integer casts via `as` truncate toward zero (matching most
+Float-to-integer conversions truncate toward zero (matching most
 language conventions). Out-of-range float values (NaN, infinity, values
-larger than the integer's range) follow the variant's policy: `as` traps,
-`as%` is implementation-defined (truncation modulo the destination range
-is the typical choice), `as|` saturates to the destination's range bounds
-(NaN treated as 0, parallel to §4.6.6's checked-arithmetic NaN handling),
-`as?` returns `None`.
+larger than the integer's range) follow the variant's policy: `T(x)`
+traps, `T%(x)` is implementation-defined (truncation modulo the
+destination range is the typical choice), `T|(x)` saturates to the
+destination's range bounds (NaN treated as 0, parallel to §4.6.6's
+checked-arithmetic NaN handling), `T?(x)` returns `None`.
 
 #### 4.7.4 Trait-based forms
 
-Each operator variant has a corresponding trait method per §4.9.1:
+Each variant has a corresponding trait method per §4.9.1:
 `WrappingAs::wrapping_as`, `SaturatingAs::saturating_as`, `CheckedAs::checked_as`.
 The methods are callable via uniform call syntax (§3.4) and produce the
-same results as the operators:
+same results as the conversion forms:
 
 ```
-let y: u8 = x.wrapping_as::[u8]()        // equivalent to `x as% u8`
-let y: u8 = x.saturating_as::[u8]()       // equivalent to `x as| u8`
-let y: Option[u8] = x.checked_as::[u8]()  // equivalent to `x as? u8`
+let y: u8 = x.wrapping_as::[u8]()         // equivalent to `u8%(x)`
+let y: u8 = x.saturating_as::[u8]()       // equivalent to `u8|(x)`
+let y: Option[u8] = x.checked_as::[u8]()  // equivalent to `u8?(x)`
 ```
 
-The operators are the canonical user-facing form; the trait methods exist
-for generic code that constrains on the trait, and as the underlying
-dispatch targets the operators desugar to.
+The `T(x)` forms are the canonical user-facing syntax; the trait methods
+exist for generic code that constrains on the trait, and as the
+underlying dispatch targets the conversion forms desugar to. (The method
+names retain the `_as` suffix as ordinary identifiers; they are unrelated
+to the now naming-only `as` keyword.)
 
-#### 4.7.5 `as` reserved for built-in numeric and newtype operations
+#### 4.7.5 `T(value)` conversion vs. construction
 
-`as` is reserved for two purposes:
+`T(value)` — type name applied to a single value — covers two disjoint
+roles, selected by what `T` is:
 
-- Built-in numeric conversion (§4.7.1–§4.7.4).
-- Newtype extraction (§6.3.2).
+- **Conversion**, when `T` is a built-in scalar (`u8(x)`, `f64(x)`): the
+  numeric-conversion machinery of §4.7.1–§4.7.4, including **newtype
+  extraction** (§6.3.2) when the source is a newtype — e.g. `f64(meters)`
+  pulls the `f64` out of a `Meters` newtype. The target is always a scalar.
+- **Construction**, when `T` is a user type (`Meters(5.0)`, `Point(x:1, y:2)`):
+  ordinary value construction (§6.1.3).
 
-These are dispatched by operand kind: a numeric primitive on the left side
-uses the numeric-cast machinery; a newtype on the left side uses extraction.
-User-defined conversions on non-newtype types go through the
-`From`/`Into`/`TryFrom`/`TryInto` traits per §7. The `as` operator does
-not extend to arbitrary user-defined conversions.
+The two never overlap: a given `T` is either a built-in scalar (no
+constructor) or a user type, so `T(value)` has exactly one meaning per
+`T`. User-defined conversions *between user types* go through
+`From`/`Into`/`TryFrom`/`TryInto` (§7), not `T(value)`.
 
 ### 4.8 Special Numeric Operations
 
@@ -3396,7 +3415,7 @@ result must explicitly convert to float first:
 ```
 let x = 2.pow(-1)              // ✗ compile error or trap: negative exponent on IntPow
 let x = (2.0_f64).pow(-1)      // ✓ 0.5
-let x = (2 as f64).pow(-1)     // ✓ 0.5
+let x = f64(2).pow(-1)         // ✓ 0.5
 ```
 
 #### 4.8.4 Numeric constants
@@ -4620,42 +4639,40 @@ Construction is always positional with one argument — the underlying
 value. No named-argument form, no multi-argument form. The newtype wraps
 exactly one value; the constructor reflects that shape.
 
-Extraction of the underlying value uses the `as` operator:
+Extraction of the underlying value uses the conversion form `T(value)`
+(§4.7.5), naming the wrapped type as `T`:
 
 ```
-let s: string = email as string      // unwraps Email to string
-let n: i64 = id as i64               // unwraps UserId to i64
-let d: f64 = distance as f64         // unwraps Distance to f64
+let s: string = string(email)        // unwraps Email to string
+let n: i64 = i64(id)                 // unwraps UserId to i64
+let d: f64 = f64(distance)           // unwraps Distance to f64
 ```
 
-##### Note on `as` overloading
+##### Construction vs. extraction
 
-The `as` operator has two distinct uses in the language, dispatched by
-operand kind:
+Construction and extraction share the `T(value)` form but never collide,
+because they name **opposite** types (§4.7.5):
 
-- **Numeric cast** (§4.7) — converts between numeric primitive types,
-  potentially with trap-on-range-violation. Both operand and target are
-  numeric primitives.
-- **Newtype extraction** (here) — unwraps a newtype to its underlying
-  type. The operand is a newtype; the target is its `wraps` type.
+- **Construction** names the *newtype* — `Email(x)`, `UserId(42)` — the
+  construction role of `T(value)` (the target is a user type).
+- **Extraction** names the *wrapped type* — `string(email)`, `i64(id)` —
+  the conversion role (the target is a built-in scalar).
 
-The two uses are unambiguous because the operand types determine the
-applicable mode: `5_i32 as f64` is a numeric cast (both are numeric
-primitives); `email as string` is a newtype extraction (`Email` is a
-newtype, `string` is its wrapped type). Mixing — e.g., extracting and
-re-casting in one operation — requires two `as` applications:
+The argument's type completes the picture: `string(email)` with
+`email: Email` extracts; there is no numeric→`string` conversion, so a
+value must be extracted before any further conversion:
 
 ```
-let n_str: string = some_userid as i64 as string  // ERROR: i64 -> string isn't a numeric cast
-let n: i64 = some_userid as i64
-let s = n.to_string()                              // use stdlib conversion
+let n_str: string = string(i64(some_userid))  // ERROR: i64 -> string isn't a numeric conversion
+let n: i64 = i64(some_userid)                  // extract to i64
+let s = n.to_string()                          // then use stdlib conversion
 ```
 
-The asymmetric construction/extraction interfaces are deliberate.
-Construction is a *creation* of new identity (typed call). Extraction is
-a *discarding* of identity (explicit cast). The two operations are kept
-syntactically distinct so that a reader sees clearly when domain identity
-is being introduced versus removed.
+The construction/extraction asymmetry is deliberate at the *type* level,
+even though both use call syntax: construction *creates* domain identity
+(it names the newtype), extraction *discards* it (it names the wrapped
+type). A reader sees which type is named and knows whether identity is
+being introduced or removed.
 
 #### 6.3.3 Trait inheritance via `@derive`
 
@@ -4756,7 +4773,7 @@ User-defined conversions between types use a pair of trait pairs:
 `From`/`Into` for infallible conversions and `TryFrom`/`TryInto` for
 fallible conversions. The conversion system is layered on top of the trait
 system (§3) and complements the built-in numeric implicit-widening rules
-(§4.5) and the `as` operator (§4.7).
+(§4.5) and the `T(value)` conversion form (§4.7).
 
 ### 7.1 The Four Traits
 
@@ -4892,32 +4909,33 @@ and lossy integer-to-float conversions. Each carries an appropriate
 These built-in impls are language-privileged (§3.7.3) — they exist outside
 user-writable `fulfill`-block space and cannot conflict with user code.
 
-### 7.6 Relationship to `as`
+### 7.6 Relationship to `T(value)` conversion
 
-The `as` operator (§4.7 for numeric, §6.3.2 for newtypes) is distinct
-from the conversion-trait system but interacts with it for numeric cases:
+The `T(value)` conversion form (§4.7 for numeric, §6.3.2 for newtype
+extraction) is distinct from the conversion-trait system but interacts
+with it for numeric cases:
 
-- For **lossless numeric conversions**, `x as U` and `x.into::[U]()` (or
+- For **lossless numeric conversions**, `U(x)` and `x.into::[U]()` (or
   equivalently `Into::into(x)` typed to `U`) produce the same result.
-  Both are valid; users pick based on style. `as` is more concise; `.into()`
-  is more uniform with user-defined conversions.
-- For **lossy numeric conversions** that would overflow, `as` traps at
-  runtime per §4.6.1; `as%` wraps; `as|` saturates; `as?` returns
-  `Option[T]`. The fallible variant `try_into` returns
+  Both are valid; users pick based on style. `U(x)` is more concise;
+  `.into()` is more uniform with user-defined conversions.
+- For **lossy numeric conversions** that would overflow, `T(x)` traps at
+  runtime per §4.6.1; `T%(x)` wraps; `T|(x)` saturates; `T?(x)` returns
+  `Option[T]`. The fallible trait method `try_into` returns
   `Result[T, Error]` for explicit handling with a typed error. The
-  variants of `as` and `try_into` differ in what they signal: `as` and
+  conversion forms and `try_into` differ in what they signal: `T(x)` and
   its variants express *value-level* range mismatches via the chosen
   policy (trap, wrap, clamp, optional); `try_into` expresses
   *trait-level* fallibility with a named `Error` type.
-- For **newtype extraction**, `as` is the dedicated unwrap operation
-  (§6.3.2). The conversion-trait system does not participate; the
-  underlying value is exposed via the operator directly.
-- For **user-defined conversions on non-newtype types**, `as` is not
-  available. Users use `.into()`, `From::from()`, or `.try_into()` per
+- For **newtype extraction**, `T(value)` naming the wrapped type is the
+  dedicated unwrap form (§6.3.2). The conversion-trait system does not
+  participate; the underlying value is exposed directly.
+- For **user-defined conversions on non-newtype types**, `T(value)` does
+  not apply. Users use `.into()`, `From::from()`, or `.try_into()` per
   §7.8.
 
-The summary: `as` (with its variants) is the operator for built-in
-numeric casts and newtype unwraps; the conversion traits are the
+The summary: `T(value)` (with its variants) is the form for built-in
+numeric conversions and newtype unwraps; the conversion traits are the
 mechanism for everything else.
 
 ### 7.7 No Implicit User-Defined Conversions
@@ -5046,7 +5064,7 @@ one kind, it cannot be silently converted to the other.
 
 **Trap-track failures** represent bugs and invariant violations:
 arithmetic overflow on default operators per §4.6.1, integer division by
-zero, out-of-range `as` casts, out-of-range array indices, `abs` on
+zero, out-of-range `T(x)` conversions, out-of-range array indices, `abs` on
 signed minimum (§4.8), negative integer exponent on integer base
 (§4.8.3), `unwrap`/`expect` on `Option::None` or `Result::Err`, runtime
 stack overflow, allocation failure, and explicit `panic` calls. Traps
@@ -5145,7 +5163,7 @@ behavior. Process abort is the safe response.
 
 Once a trap fires, the program exits. The only way to handle a failure
 recoverably is to use `Result`/`Option` from the start — and the
-operator/method variants in §4.6 and §4.7 (e.g., `+?`, `as?`,
+operator/conversion variants in §4.6 and §4.7 (e.g., `+?`, `T?(x)`,
 `checked_div`) make this choice available where overflow or range
 violation is a possibility. The user decides at the operation site
 whether a failure is a bug to be trapped or a condition to be handled.
@@ -5878,7 +5896,7 @@ let w = arr[n]                  // usize widens to isize for indexing
 let big: u64 = some_huge()
 let x = arr[big]                // ✗ compile error on 64-bit (u64 doesn't fit isize);
                                 //   may also fail on 32-bit
-let x = arr[big as isize]       // ✓ explicit cast
+let x = arr[isize(big)]         // ✓ explicit conversion
 ```
 
 #### 9.3.5 Bounds checking
@@ -9331,7 +9349,7 @@ the lazy-batched rules of §13.10).
 node Driver:
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived skill_factor: f32 = expertise_level as f32 / 10.0
+  derived skill_factor: f32 = f32(expertise_level) / 10.0
   derived is_aggressive: bool = risk_tolerance > 0.7
 ```
 
@@ -10734,7 +10752,7 @@ node Buffer[T: Numeric]:
   attr capacity: usize = 16
   attr fill_level: usize = 0
   derived utilization: f32 =
-    fill_level as f32 / capacity as f32
+    f32(fill_level) / f32(capacity)
 
   parts: BufferSlot[T]
 ```
@@ -11432,7 +11450,7 @@ connection Drives:
   attr enhanced_handling: bool = false
   attr aggressiveness: f32 = 0.5
   derived effective_speed: f32 =
-    to.top_speed * (from.expertise_level as f32 / 10.0)
+    to.top_speed * (f32(from.expertise_level) / 10.0)
 ```
 
 `from` and `to` are not attributes — they are endpoint slots,
@@ -11499,7 +11517,7 @@ connection Drives:
     Racer -> Boat
   attr aggressiveness: f32 = 0.5
   derived speed: f32 = match pair:
-    (Driver(d), Vehicle(v)): v.top_speed * (d.expertise as f32 / 10.0)
+    (Driver(d), Vehicle(v)): v.top_speed * (f32(d.expertise) / 10.0)
     (Racer(r), Boat(b)): b.knots * r.aggression
 ```
 
@@ -11684,8 +11702,8 @@ alias (§13.7.7) for the subject type.
 ```
 node Driver:
   attr expertise_level: i32 = 5
-  derived skill_factor: f32 = here::expertise_level as f32 / 10.0   // explicit anchor
-  derived also_skill: f32 = expertise_level as f32 / 10.0          // bare — same cell
+  derived skill_factor: f32 = f32(here::expertise_level) / 10.0   // explicit anchor
+  derived also_skill: f32 = f32(expertise_level) / 10.0           // bare — same cell
 
 fn aggressive(d: Driver) -> bool:
   d.risk_tolerance > 0.7        // free function uses the parameter name
@@ -11763,7 +11781,7 @@ like user-defined members:
 connection Drives:
   from: Driver
   to: Drivable
-  derived speed: f32 = from.expertise_level as f32 * to.top_speed
+  derived speed: f32 = f32(from.expertise_level) * to.top_speed
   //                   ^^^^                          ^^
   //                   here::from                     here::to
 
