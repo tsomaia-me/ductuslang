@@ -9468,13 +9468,15 @@ current inputs instead of blending in stale pre-gap state. It fires
 *only* on the gate false→true transition; a recurrent that merely
 receives no triggers for a while is correctly holding its value.
 
-This is the reactivation counterpart to `@reset_on_reload` (§13.15.5),
-which resets accumulated state across a hot reload. Both decorators
-apply to any cell that carries accumulated state — a recurrent's history
-or a stream's ring buffer (§13.18) — and reset it on their respective
-lifecycle event. `@reset_on_reopen` is meaningful only on a gated cell;
-on an ungated declaration it is inert (the gate never reopens) and the
-compiler emits a warning.
+It is the reactivation counterpart to `@reset_on_reload` (§13.15.5):
+both reset a cell's accumulated state on a lifecycle event —
+`@reset_on_reload` across a hot reload, `@reset_on_reopen` across a gate
+gap. `@reset_on_reopen` is specified for recurrent cells, where it clears
+the self- and input-history (§13.2.4.3); it has effect only on a *gated*
+instance. Because gating may be introduced at the type level or at a
+placement (§13.9.3), whether a given instance is ever gated is not in
+general known at the declaration site; on an instance that is never
+gated the decorator simply never fires — it is harmless, not an error.
 
 Use it for cells whose history is *invalidated by a temporal gap* —
 smoothers, rate estimators, edge detectors — where resuming with pre-gap
@@ -14229,9 +14231,10 @@ stream ring[1024] events: LogEntry = source
 This is appropriate when buffered events from the prior program
 version would be misinterpreted by the new version's consumers. Its
 reactivation sibling, `@reset_on_reopen` (§13.2.4), resets a gated
-cell's accumulated state when its gate reopens rather than on reload;
-the two form a decorator family — *reset accumulated state on a
-lifecycle event* — differing only in the triggering event.
+*recurrent's* history when its gate reopens rather than on reload; the
+two form a decorator family — *reset accumulated state on a lifecycle
+event* — differing in the triggering event (and, for now, in which cell
+kind each is specified for).
 
 **Cursor identity across reload.** A consumer's cursor is preserved
 when the consuming operator (or derived) instance is preserved per
