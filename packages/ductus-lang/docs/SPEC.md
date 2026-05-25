@@ -111,7 +111,7 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`, `snap`), the reserved
+`where`, `desired`, `observed`, `ring`, `gate`), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the remaining
 fields `from`, `to`, `incoming`, `outgoing`, `parts` double as the
 clause keywords above), all control-flow keywords (`if`, `else`,
@@ -9394,7 +9394,7 @@ only cells visible at module scope per the topological-init rule
 #### 13.2.4 `recurrent`
 
 ```
-recurrent[N]? snap? name: Type? = expression
+recurrent[N]? name: Type? = expression
 ```
 
 A `recurrent` declares a *per-instance* reactive cell whose
@@ -9411,22 +9411,6 @@ A recurrent declaration has:
   positive `usize` (a literal, a `const`, or a const-generic parameter
   — §2.5). When omitted, defaults to `[1]` (only `.previous`
   accessible).
-- **`snap`** (optional) — a *reactivation* modifier (§13.9.7). By
-  default, a recurrent that has been gated off (§13.9) holds its last
-  committed value and, on reactivation, resumes from its *pre-gap*
-  history — its `.previous`/`.past` still reflect values from before
-  the gap. A `recurrent snap` instead **discards its history on
-  reactivation**: when the gating predicate transitions false→true,
-  the kernel clears the cell's self-history (and any input-history,
-  §13.2.4.3), so the next trigger evaluates with `.previous`/`.past`
-  returning their fallbacks — exactly as at initialization — and the
-  cell restarts cleanly from current inputs instead of blending in
-  stale pre-gap state. `snap` fires *only* on the gate false→true
-  transition; a recurrent that merely receives no triggers for a while
-  is correctly holding its value and does not snap. (`snap` is defined
-  for recurrent *value* cells; the recurrent-`stream` analog — clearing
-  buffered ring history on reactivation — is a parallel concern not
-  covered here.)
 - **`name`** — a snake_case identifier naming the cell.
 - **`Type`** — the value type. Optional when inferable from the
   expression's result type and from fallback values supplied to
@@ -9464,11 +9448,39 @@ recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
 //   since the expression doesn't use `avg.past(...)`. See §13.2.4.3.
 
 // One-pole smoother that restarts cleanly after a gated gap
-recurrent snap smoothed: f32 = (input + smoothed.previous(0.0)) / 2.0
+@reset_on_reopen
+recurrent smoothed: f32 = (input + smoothed.previous(0.0)) / 2.0
 //   while gated, `smoothed` freezes; on reactivation its history is
 //   cleared, so the first post-gap value is (input + 0.0) / 2.0 rather
 //   than a blend with the stale pre-gap value (§13.9.7).
 ```
+
+**`@reset_on_reopen`.** By default, a recurrent that has been gated off
+(§13.9) holds its last committed value and, on reactivation, resumes
+from its *pre-gap* history — its `.previous`/`.past` still reflect
+values from before the gap. A recurrent carrying the `@reset_on_reopen`
+decorator instead **discards its history on reactivation**: when the
+gating predicate transitions false→true (§13.9.7), the kernel clears the
+cell's self-history (and any input-history, §13.2.4.3), so the next
+trigger evaluates with `.previous`/`.past` returning their fallbacks —
+exactly as at initialization — and the cell restarts cleanly from
+current inputs instead of blending in stale pre-gap state. It fires
+*only* on the gate false→true transition; a recurrent that merely
+receives no triggers for a while is correctly holding its value.
+
+This is the reactivation counterpart to `@reset_on_reload` (§13.15.5),
+which resets accumulated state across a hot reload. Both decorators
+apply to any cell that carries accumulated state — a recurrent's history
+or a stream's ring buffer (§13.18) — and reset it on their respective
+lifecycle event. `@reset_on_reopen` is meaningful only on a gated cell;
+on an ungated declaration it is inert (the gate never reopens) and the
+compiler emits a warning.
+
+Use it for cells whose history is *invalidated by a temporal gap* —
+smoothers, rate estimators, edge detectors — where resuming with pre-gap
+samples is not merely unsmooth but semantically wrong. Accumulators and
+counters, whose history remains meaningful across a gap, use the default
+(no decorator).
 
 **Triggers are implicit from non-self references.** A recurrent
 re-evaluates whenever any cell it references (other than via
@@ -9634,7 +9646,7 @@ Multiple recurrents may share a single expression evaluation by
 declaring them as a tuple:
 
 ```
-recurrent[N]? snap? (name1, name2, ...): (Type1, Type2, ...) = tuple_expression
+recurrent[N]? (name1, name2, ...): (Type1, Type2, ...) = tuple_expression
 ```
 
 The declaration creates N independent cells, each named and typed
@@ -9945,7 +9957,7 @@ positions, return types, and generic arguments.
   values via `kernel.write_signal` (§13.14.2).
 - `derived X = expr` — projected `Signal[T]`. Kernel maintains
   the value consistent with its inputs.
-- `recurrent[N]? snap? X: T = expression` — memoryful `Signal[T]` with
+- `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
   self-history accessible via `.previous(fallback)` and
   `.past(k, fallback)`. Kernel re-evaluates the expression when any
   non-self reference commits (§13.2.4).
@@ -10580,7 +10592,7 @@ node TypeName[GenericParams]?:
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent[N]? snap? name: Type = expression          // per-instance memory cells (§13.2.4)
+  recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
@@ -11454,7 +11466,7 @@ connection TypeName[GenericParams]?:
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance writable cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent[N]? snap? name: Type = expression          // per-instance memory cells (§13.2.4)
+  recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
@@ -12856,7 +12868,7 @@ false):
   until a future input change occurs during an active period. Its
   self-history is preserved across the gap, so the first post-gap
   evaluation reads pre-gap `.previous`/`.past` values — **unless** the
-  recurrent is declared `snap` (§13.2.4), in which case the kernel
+  recurrent carries `@reset_on_reopen` (§13.2.4), in which case the kernel
   clears its history at gate-reopen and the first post-gap evaluation
   reads fallbacks instead (a clean restart, not a blend with stale
   state).
@@ -12884,13 +12896,12 @@ propagated during the gated period is re-computed *as of now* (not
 replayed); downstream sees the activation as a single jump from
 the frozen value to the current value.
 
-(This automatic snap recomputes *deriveds* — pure functions of current
-inputs — at the gate-open publish. A *recurrent* cannot recompute
-without a trigger, so it advances on its next trigger as described
-above; the optional `recurrent snap` modifier (§13.2.4) additionally
-clears its history at gate-open so that next advance is a clean restart.
-The two uses of "snap" are related — both re-synchronize to current
-state on reactivation — but apply to different cell kinds.)
+(This automatic recompute applies to *deriveds* — pure functions of
+current inputs — at the gate-open publish. A *recurrent* cannot
+recompute without a trigger, so it advances on its next trigger as
+described above; the optional `@reset_on_reopen` decorator (§13.2.4)
+additionally clears its history at gate-open so that next advance is a
+clean restart rather than a blend with pre-gap state.)
 
 This snap may cause discontinuities in domains where smooth value
 transitions matter (audio velocity, control voltages). Smoothing
@@ -14091,9 +14102,9 @@ declared initial value or default.
 When a cell exists in both but with different type, it is treated
 as removal of the old + addition of the new.
 
-The `recurrent snap` modifier (§13.2.4) is *not* part of a cell's
+The `@reset_on_reopen` decorator (§13.2.4) is *not* part of a cell's
 identity — it is a behavioral flag, not part of the type. Adding or
-removing `snap` across a reload preserves the cell's value and history;
+removing it across a reload preserves the cell's value and history;
 the changed reactivation behavior simply takes effect at the next
 gate-open.
 
@@ -14216,7 +14227,11 @@ stream ring[1024] events: LogEntry = source
 ```
 
 This is appropriate when buffered events from the prior program
-version would be misinterpreted by the new version's consumers.
+version would be misinterpreted by the new version's consumers. Its
+reactivation sibling, `@reset_on_reopen` (§13.2.4), resets a gated
+cell's accumulated state when its gate reopens rather than on reload;
+the two form a decorator family — *reset accumulated state on a
+lifecycle event* — differing only in the triggering event.
 
 **Cursor identity across reload.** A consumer's cursor is preserved
 when the consuming operator (or derived) instance is preserved per
