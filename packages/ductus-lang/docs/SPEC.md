@@ -8162,10 +8162,12 @@ iterable is runtime. This is **visible at the source** by what is
 iterated, and follows back to the iterable's declaration. There is no
 silent flip between compile-time and runtime based on context.
 
-**Placement bodies.** A `for` in a node or connection placement body is
-auto-enforced to be compile-time per §13.1's static-graph rule; a
-runtime iterable there is a compile error. See §13.8.3.1 for parametric
-topology via placement-body `for`.
+**Placement-bearing contexts.** A `for` in a node-type body (§13.3.3.3)
+or a placement body (§13.8.3.1) is auto-enforced to be compile-time per
+§13.1's static-graph rule; a runtime iterable there is a compile error.
+See §13.3.3.3 for a `for` declaring parametric parts on the *type*
+(applied to every instance) and §13.8.3.1 for a `for` in a specific
+placement body (applied to that placement only).
 
 **Dynamic placement multiplicity.** For runtime-varying child cardinality
 in a placement, use `Repeat` (§13.5.4), not `for`. The compile-time `for`
@@ -10761,9 +10763,11 @@ this node at placement time:
   (`parts.<NodeType>[i]`) access are available; cardinality
   is enforced at placement.
 
-The clause does not place specific instances — it only constrains
-what types and how many of each are permitted. The actual children
-appear at placement (§13.8.3).
+The clause does not by itself place specific instances — it only
+constrains what types and how many of each are permitted. Actual
+children appear either at placement (§13.8.3) or, when the multiplicity
+is a property of the type itself, via a compile-time `for` in the node
+body (§13.3.3.3); both sources contribute to the cardinality count.
 
 ```
 -- Restricted parts with cardinality:
@@ -10839,6 +10843,69 @@ bound on the iteration variable (`for p: SomeTrait in parts`)
 per §13.4.1 — type-bulk and cardinality-bounded forms are not
 available. A node with a `parts` clause may contain children at
 runtime according to the declared cardinality.
+
+##### 13.3.3.3 Type-level part placements via compile-time `for`
+
+A node body may declare child-part instances *directly* via a
+compile-time `for` loop. The loop's body is a placement (with optional
+flags, `/expr`, attribute clause, and `when`); the iteration is
+compile-time-unrolled per §12.3.7. The unrolled placements become
+**children of the type itself**: every instance of the node materializes
+them at instantiation, with each iteration's loop variable substituted
+at compile time. The iterable must be compile-time-known (the same
+constraint as for any compile-time `for` — §12.3.7); a runtime iterable
+in a node body is a compile error pointing at the iterable, enforced by
+§13.1's static-graph rule (no new diagnostic class).
+
+```
+const VOICE_COUNT: usize = 8
+
+node Oscillator:
+  attr freq: f32 = 440.0
+  derived output: f32 = synthesize(freq)
+
+node OscBank:
+  parts: Oscillator [=VOICE_COUNT]
+  for i in 0..VOICE_COUNT:
+    Oscillator | freq=base_freq(i)
+
+OscBank bank                    // every instance materializes 8 Oscillators
+```
+
+Generic over a const-generic parameter — multiplicity becomes a
+property of each instantiation:
+
+```
+node OscBank[const N: usize]:
+  parts: Oscillator [=N]
+  for i in 0..N:
+    Oscillator | freq=base_freq(i)
+
+OscBank[16] sixteen_bank        // 16 Oscillators per instance
+OscBank[8]  eight_bank          // 8 Oscillators per instance
+```
+
+**Cardinality.** Parts placed by a type-body `for` are counted toward
+the type's `parts:` cardinality at compile time. A placement body
+(§13.8.3) may add further parts up to the declared cardinality bound;
+the cardinality check is enforced against the *sum* of type-body and
+placement-body contributions.
+
+**Contrast with placement-body `for`** (§13.8.3.1). A type-body `for`
+expands once at type elaboration and applies uniformly to every
+instance of the node; a placement-body `for` expands at each placement
+site and may differ across instances. Use the type-body form when
+multiplicity and per-part configuration are properties of the **type**;
+use the placement-body form when they may differ per instance. Both
+forms unroll by the same §12.3.7 rule and produce anonymous parts
+accessible via the same `parts.<NodeType>[i]` (§13.4.1) / iteration
+(§13.4.2) machinery.
+
+**Connections from a type-body for.** A type-body `for` may also place
+connections (§13.6) whose source is the enclosing node instance and
+whose destinations are determined by the unrolled iteration. The same
+clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
+to the loop body's placement.
 
 #### 13.3.4 `incoming` and `outgoing` clauses
 
@@ -12303,6 +12370,13 @@ use `Repeat` (§13.5.4) rather than `for`. The compile-time `for`
 described here is for *parametric* topology: multiplicity that is
 parameterized by a const-generic (or otherwise compile-time-known) value
 but fixed per instance.
+
+**Type-body counterpart.** When the multiplicity and per-part
+configuration are properties of the **type** rather than the placement
+site — i.e., every instance of the node materializes the same N
+children — declare them in the node body via §13.3.3.3 instead. The
+placement-body form covered here is for the case where the loop is
+intrinsic to a specific placement.
 
 #### 13.8.4 Connections
 
@@ -13829,6 +13903,27 @@ canonical reactive composition mechanism. Reactive cells of
 collection types (`Vec[T]`, etc.) work via pool storage but each
 write involves rebuilding/replacing the collection — fine for
 batch updates, less suited for fine-grained mutations.
+
+**Fixed-extent cells and compile-time loops.** A cell whose value
+type is *fixed-extent* (`T[N]`, tuples, records) has compile-time-known
+layout: every element's offset within the cell — or within the pool
+slot, in the handle-based variant for sizes exceeding the atomic
+word — is determined at compile time. Combined with §12.3.7's
+compile-time-unrolling rule, a `for` iterating such a cell's value
+produces element reads at compile-time-known offsets: no runtime loop
+counter, no bounds check, no per-iteration dispatch. Direct-storage
+cells (`T[N]` ≤ word width) are read with no indirection at all;
+handle-storage cells are read with one indirection (dereferencing the
+current pool handle) plus the compile-time-known offsets. Per-emission
+cost is unchanged from §14.3.3's general publish: the back-buffer slot
+is **pre-allocated at kernel construction** (directly, or as a fixed-size
+pool slot for sizes above word width), and the producer writes the
+value into it; publication is the §14.3.3 atomic pointer swap, not a
+copy. No per-emission allocation, no realloc, no resize. A reactive
+function whose body iterates a fixed-extent cell — e.g.
+`fn process(buf: Cell[f32[64]]):` with `for x in buf.value():` — thus
+compiles to a straight-line sequence of element accesses against the
+cell's pre-allocated storage, suitable for hot paths.
 
 #### 13.12.5 Reactivity vs compile-time evaluation
 
