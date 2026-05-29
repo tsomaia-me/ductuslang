@@ -108,10 +108,10 @@ Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `sink`, `const`, `let`, `mut`), all clause
+`derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`), the reserved
+`where`, `desired`, `observed`, `ring`, `gate`, `keyed`), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the remaining
 fields `from`, `to`, `incoming`, `outgoing`, `parts` double as the
 clause keywords above), all control-flow keywords (`if`, `else`,
@@ -8170,7 +8170,7 @@ See §13.3.3.3 for a `for` declaring parametric parts on the *type*
 placement body (applied to that placement only).
 
 **Dynamic placement multiplicity.** For runtime-varying child cardinality
-in a placement, use `Repeat` (§13.5.4), not `for`. The compile-time `for`
+in a placement, use `repeat` (§13.5.4), not `for`. The compile-time `for`
 described here is for *parametric* topology — multiplicity that is
 const-generic-parameterized but fixed per instance.
 
@@ -10461,7 +10461,7 @@ receiving node drops the template cells per §14.8.
 
 For *child-placement-style* external supply with cardinality, list
 semantics, and possible per-instance scoping (the pattern used by
-`Repeat`, §13.5.4), the `parts:` clause and §13.5 keyed-scope
+`repeat`, §13.5.4), the `parts:` clause and §13.5 keyed-scope
 primitive are the appropriate mechanism — not `Node[T]` attrs.
 `Node[T]` is for attr-shaped *singular* template slots; `parts:`
 is for child-placement slots with cardinality.
@@ -11000,6 +11000,36 @@ This separation enforces the "node bodies are declarative" rule:
 nodes describe structure and reactive content; functions and
 methods are imperative computation, distinct in kind.
 
+##### 13.3.6.1 Nodes are not values
+
+A node type may not appear as the return type of a function, may not be
+bound to a `let` or `const`, may not be passed as a function argument by
+value, and is not a first-class value. The only ways to bring a node
+into the reactive graph are via placement syntax (§13.8.1, §13.8.3) or
+via a `repeat` declaration (§13.5.4).
+
+The reason is structural: a node's identity is its **graph path**
+(§15.4.1.1). The kernel uses paths for per-publish DAG construction,
+monomorphization, and hot-reload cell identity (§13.15.2). A function
+call has no stable graph position to give a returned node — any
+identity scheme derivable from a call site (e.g., caller-name plus call
+index) is unstable across reloads and across program runs, breaking
+§13.15.2's identity rule. Admitting function-returned nodes would
+therefore either silently break hot reload or require an anonymous-node
+concept inconsistent with §13.1's static-graph property.
+
+**Factory pattern.** To produce a "configured node from parameters,"
+parameterize the *type* via const-generics or generics
+(`node Synth[const N: usize, …]:`) and write the placement at the call
+site (`Synth[8] my_synth`). The reusable parameterization lives in the
+type definition; the placement happens in a context that owns a graph
+path.
+
+The same rule applies to operators, effects, and connections — they
+are graph members, not values, and follow the same placement-only
+admission. The rule is normative; conformant compilers enforce it at
+type-check time.
+
 #### 13.3.7 Exposition (the `expose:` clause)
 
 The `expose:` clause declares the node type's **structural output**
@@ -11364,18 +11394,16 @@ caller to know placement names).
 
 ### 13.5 Template Scopes and Keyed Instantiation
 
-Some stdlib host nodes (like `Repeat`, §13.5.4) instantiate a child
-*template* — a part placed in their body — zero, one, or many
-times, each instantiation backed by its own state cells. This
-section specifies the **keyed-scope primitive** that standardizes
-how the kernel manages per-instantiation state and how such host
-nodes drive instantiation.
+§13.5.1 defines the **keyed-scope primitive** that underlies the
+language's dynamic-scope reactive constructs. Any conformant kernel
+exposes the three operations of §13.5.1 — `scope_obtain`, `scope_drop`,
+and `scope_evaluate` — by which a template can be instantiated zero, one,
+or many times per source element, with each instantiation backed by its
+own state cells.
 
-The primitive is **runtime-implementable**: any conformant kernel
-exposes the three operations of §13.5.1 to its stdlib host nodes;
-the stdlib's documented hosts (the canonical user `Repeat` in
-§13.5.4, and future siblings such as `Conditional` and `Switch`)
-are layered on top of these operations.
+The user-facing surface for this mechanism is the **`repeat` keyword**
+(§13.5.4), which materializes one scope per element of a reactive source
+array.
 
 #### 13.5.1 The primitive
 
@@ -11454,163 +11482,189 @@ follows §15.4.1.1:
 <host_placement_path>.<key>.<template_field>
 ```
 
-Keys are required to be stringifiable primitives (the exact bound
-is specified per host node; §13.5.4 specifies it for `Repeat`).
-The key value serves as the path component.
+Keys are required to be stringifiable primitives (§13.5.4 specifies
+the bound for the `repeat` construct, via the `StringifiableKey`
+trait). The key value serves as the path component.
 
 Hot-reload changes to the template's body follow the standard
 reload-safe / reload-unsafe rules of §13.15.4, applied uniformly
 across all live keys.
 
-#### 13.5.4 Repeat: data-driven multiplicity
+#### 13.5.4 Dynamic scope materialization via `repeat`
 
-The stdlib provides `Repeat`, the canonical template-hosting node
-for iterating over a `Signal[T[]]` source. `Repeat` declares a
-single template-typed part (`Item`); the placer supplies the
-template by placing it in `Repeat`'s body. `Repeat` uses the
-§13.5.1 primitive directly: it sequences `scope_obtain`,
-`scope_drop`, and `scope_evaluate` per its iteration semantics.
+The `repeat` keyword declares one reactive scope per element of a
+runtime reactive source. Each scope is a template of placements (parts
+and connections) that the kernel materializes per element via §13.5.1's
+operations: `scope_obtain` on key emergence, `scope_drop` on key
+disappearance, `scope_evaluate` per active key per publish.
 
-`Repeat` is the *runtime-varying* multiplicity primitive. When child
-cardinality is parametric but **compile-time known** — fixed per instance
-by a `const`, a const-generic parameter, or any other compile-time-known
-expression — use a placement-body `for` loop instead (§12.3.7,
-§13.8.3.1), which unrolls into anonymous child placements at compile
-time with no runtime template machinery.
+`repeat` is the language-level surface of the keyed-scope mechanism. It
+desugars to §13.5.1 directly; the kernel sees no machinery distinct from
+what is already specified there.
 
-##### 13.5.4.1 Signature
+##### 13.5.4.1 Syntax
 
 ```
-node Repeat[T]:
-  default attr source: Signal[T[]]
-  parts: Item!                           // exactly one template part
-  attr key: fn(T, usize) -> K            // K: StringifiableKey, inferred
+repeat <bind> in <source>:
+  <body>
 
-  attr current: T                        // kernel-updated per iteration
-  attr index: usize                      // kernel-updated per iteration
-  attr first: bool                       // kernel-updated per iteration
-  attr last: bool                        // kernel-updated per iteration
-  attr count: usize                      // kernel-updated per iteration
-
-  expose: parts.Item
+repeat <bind> in <source> keyed by <key-expr>:
+  <body>
 ```
 
-`K` is the key function's return type, inferred at placement. `K`
-must satisfy the `StringifiableKey` trait — the stdlib trait
-admitting `i8`–`i64`, `u8`–`u64`, `bool`, `char`, `string`. When
-`key` is omitted, the stdlib default returns `index` unchanged and
-`K` is `usize`.
+- **`<source>`** is a `Signal[T[]]` for some element type `T`. (Other
+  reactive collection shapes — `Stream[T]`, `Map[K, V]`, `Set[T]` — are
+  deferred to a future revision.)
+- **`<bind>`** is an identifier. Inside `<body>`, `<bind>` is in scope at
+  type `T`, bound to the current scope's element.
+- **`<body>`** is an indented **placement-body block** following
+  §13.8.3's grammar — any number of placements (parts and/or connections)
+  per iteration, with the ordinary clause ordering of §13.8.9 and the
+  whitespace-separation / self-delimiting rules of §13.8.10.
+- The optional **`keyed by <key-expr>`** clause derives a per-element
+  key. The expression has `<bind>` in scope and must evaluate to a
+  stringifiable primitive (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
+  `string` — see the `StringifiableKey` trait in the stdlib).
+- When `keyed by` is omitted, `T` must itself be stringifiable; the
+  element value then serves as the key. If `T` is not stringifiable, the
+  compiler errors with a hint to add `keyed by`.
 
-- `source` is the iterated signal (default attr; set via `/expr`
-  per §13.8.5.2).
-- `parts: Item!` declares that placements may supply exactly one
-  part of type `Item`. The Item type is what the placer provides
-  at the `Repeat` body — the template that `Repeat` invokes per
-  source element. The Item's underlying node type must declare a
-  `default attr` whose type is `T` (so `/ref.current` can bind it
-  at placement).
-- `key` is a function from `(element, index)` to a stringifiable
-  primitive.
-- `current`, `index`, `first`, `last`, `count` are attrs the
-  template references via Repeat's placement name (§13.4.1). The
-  kernel updates these as part of Repeat's iteration semantics
-  (§13.5.4.2); they are not host-writable.
-- `expose: parts.Item` declares the exposition (§13.3.7):
-  the kernel traverses the supplied Item template. Repeat's
-  kernel-aware iteration semantics drive that traversal per
-  source element with §13.5.1's scope operations.
+##### 13.5.4.2 Iteration semantics
 
-##### 13.5.4.2 Iteration
+Whenever `<source>` is dirty, the kernel:
 
-Whenever `source` is dirty, the kernel:
-
-1. Computes the key for each element via the `key` function.
+1. Evaluates the key for each element of `<source>` — via `<key-expr>`
+   if supplied, or via the element itself if not.
 2. Keys in `old ∩ new` carry over: their scopes are preserved per
-   §13.5.1; exposed attrs (`current`, `index`, etc.) are updated
-   for re-invocation.
-3. Keys in `old − new` are dropped: `scope_drop(key)` is invoked.
-4. Keys in `new − old` are added: `scope_obtain(key)` is invoked.
-5. For each key in `new` in element order, the kernel updates
-   exposed attrs and calls `scope_evaluate(key)`.
+   §13.5.1; the binding `<bind>` is updated to the new element value.
+3. Keys in `old − new` are dropped: `scope_drop(key)` is invoked,
+   releasing the per-key cells.
+4. Keys in `new − old` are added: `scope_obtain(key)` is invoked,
+   initializing the per-key cells per §13.5.2's state-shape.
+5. For each key in `new` in element order, the kernel updates `<bind>`
+   and calls `scope_evaluate(key)`.
 
-Reordering elements in `source` without changing the key set
-performs no scope allocations or drops — only the exposed attrs
-(`index`, `first`, `last`) update.
+Reordering elements in `<source>` without changing the key set
+performs no scope allocations or drops; only the iteration order
+changes.
 
-##### 13.5.4.3 Use
+##### 13.5.4.3 Worked examples
 
-```
-node PostItem:
-  default attr post: Post
-  attr expanded: bool = false
-  derived title: string = post.title
-
-UI app:
-  signal posts_data: Post[] = []
-  Repeat ref/posts_data:
-    PostItem/ref.current
-```
-
-`Repeat` iterates `posts_data`; for each post, the kernel
-`scope_obtain`s a scope keyed by index (since `key` is omitted),
-binds `ref.current` to that post, and `scope_evaluate`s the
-template. `PostItem`'s `expanded` cell is allocated per-key.
-
-For reordering-stable state, supply `key` on Repeat's placement:
+**io-driven topology** — render one row component per database row in an
+effect's `desired:` block:
 
 ```
-Repeat ref/posts_data | key=post_id_key:
-  PostItem/ref.current
+effect DBQuery:
+  observed:
+    signal current_rows: Vec[Row] = []
+
+  desired:
+    repeat row in current_rows keyed by row.id:
+      RowComponent | data=row
 ```
 
-where `post_id_key` is `fn(p: Post, _: usize) -> i64` returning
-`p.id` (defined as a free function or stdlib utility).
+The host pushes new query results into `current_rows`; the kernel's
+reconciler diffs the key set and materializes / drops `RowComponent`
+scopes per row. Each scope's `RowComponent` cells live at path
+`<effect-instance>.<row.id>.<cell>` per §13.5.3.
 
-##### 13.5.4.4 Cell identity
+**Reactive-signal-driven children in a node body:**
 
-Per the §13.5.3 path rule, the per-key cell for `PostItem`'s
-`expanded` attr in the example above (with `posts_data` containing
-a post whose key evaluates to `42`) is at path
-`app.ref.42.expanded`.
+```
+node VoiceMixer:
+  attr active_voices: Signal[Vec[VoiceConfig]] = []
+  repeat cfg in active_voices keyed by cfg.voice_id:
+    Voice | params=cfg
+```
 
-When the template is **stateless** (its state-shape is empty per
-§13.5.2), no per-key cells are allocated.
+Each `Voice` scope's state (recurrents inside `Voice`) persists across
+publishes for the same `voice_id`.
+
+**Implicit keying** — when the element type is itself stringifiable, the
+element value serves as the key:
+
+```
+node UserPanel:
+  attr active_user_ids: Signal[Vec[u64]] = []
+  repeat user_id in active_user_ids:
+    UserCard | id=user_id
+```
+
+##### 13.5.4.4 Cell identity across reload
+
+Per §13.5.3's path rule, each scope's cells are identified by the path
+`<enclosing>.<key>.<cell>`. A key reappearing across a hot reload —
+whether the reload is a source edit or a program rerun — preserves its
+scope's state, identified by the same path. When the template is
+**stateless** (its state-shape is empty per §13.5.2), no per-key cells
+are allocated and the path machinery is bypassed.
 
 ##### 13.5.4.5 Hot reload
 
-`Repeat`'s per-key cells follow §13.5.3 / §13.15.2. A change to
-the `key` function is reload-unsafe at the per-instance level
-(§13.15.4): old keys may not match new ones, so per-instance
-restart of the `Repeat` is required. The kernel diagnoses this
-and performs the restart cleanly.
+A `repeat` declaration follows §13.15.2's path-based cell identity.
+Source mutations across a reload drive the same diff as a runtime
+mutation: scopes whose keys disappear are dropped; scopes whose keys
+appear are allocated fresh. Body changes (the template's placements and
+their attrs) apply uniformly to all existing scopes. A change to the
+`keyed by` expression is **reload-unsafe** at the per-instance level
+(§13.15.4) — old keys may not match new ones; the kernel performs a
+clean restart of the affected `repeat` instances.
 
 ##### 13.5.4.6 Performance
 
-- Stateless template (state-shape empty per §13.5.2): O(1) per
-  data change beyond per-element derived evaluation. No
-  allocation.
-- Stateful template, element add/remove: O(K) per data change
-  where K is the number of added/removed keys (key-set diff plus
-  per-key cell init/drop).
-- Stateful template, reorder: O(1) per moved element. State
-  follows key; no allocation or drop.
+- Stateless template (state-shape empty per §13.5.2): O(1) per source
+  change beyond per-element derived evaluation. No allocation.
+- Stateful template, element add/remove: O(K) per source change where
+  K is the number of added/removed keys (key-set diff plus per-key cell
+  init/drop).
+- Stateful template, reorder: O(1) per moved element. State follows
+  key; no allocation or drop.
 
-Programs that do not use `Repeat` incur no runtime cost from its
-machinery; the cost model is "pay for what you iterate."
+Programs that do not use `repeat` incur no runtime cost from the
+template-scope machinery; the cost model is "pay for what you iterate."
 
-##### 13.5.4.7 Restrictions
+##### 13.5.4.7 Admitted and rejected contexts
 
-- The template's underlying node type must declare `default attr
-  d: T` so that `/expr` at the template's placement (e.g.,
-  `PostItem/ref.current`) binds correctly.
-- The template references Repeat's exposed attrs via the
-  placement name; closure-over-outer-state beyond §13.12's
-  reactive transparency is not supported.
-- Nested `Repeat` instances are permitted but each requires a
-  distinct placement name to avoid path collisions (§13.5.4.4).
-- The `key` function must be reactive-pure: no dependencies
-  beyond `(item, index)` per §13.12. This guarantees key
-  stability across evaluations.
+`repeat` is admitted in:
+
+- **Node bodies** (§13.3) — scopes become children of every instance of
+  the enclosing node, materialized at instantiation and tracking the
+  source.
+- **Placement bodies** (§13.8.3) — scopes become children of this
+  specific placement.
+- **Effect `desired:` blocks** (§13.19.4) — scopes become part of the
+  effect's declared desired state, reconciled by the host.
+
+`repeat` is **not** admitted in:
+
+- **Function bodies** — functions produce values, not reactive
+  structure. Same rule as `derived` / `recurrent` / `stream`.
+- **Effect `observed:` blocks** (§13.19.5) — observed blocks declare
+  cells receiving host-pushed data; they do not host reactive-structure
+  declarations. To materialize per-element scopes from an observed
+  cell, place the `repeat` in a node body or `desired:` block that
+  consumes the observed cell.
+- **Operator bodies** (§13.17.4) — operators are reactive-transparent
+  transforms with fixed-shape state; dynamic-scope materialization is
+  not in scope for v1.
+- **Connection bodies** (§13.6) — connections are minimal glue between
+  source and destination; dynamic-scope structure belongs in node
+  bodies, placement bodies, or `desired:` blocks.
+- **Trait and `fulfill` blocks** — these declare behavior, not graph
+  structure.
+
+In each rejected context, the diagnostic identifies the misplaced
+`repeat` and points at the appropriate target context.
+
+##### 13.5.4.8 Restrictions
+
+- The `<key-expr>` must be reactive-pure: no dependencies beyond
+  `<bind>` per §13.12. This guarantees key stability across evaluations.
+- The body may not close over the enclosing scope's mutable state
+  beyond §13.12.3's closure-snapshot semantics.
+- Nested `repeat` constructs are permitted; each nested level's scopes
+  hang off the outer scope's path per §13.5.3.
+- The `<source>` must have type `Signal[T[]]` in v1.
 
 ### 13.6 Connections
 
@@ -11832,6 +11886,11 @@ A connection body does not contain `fn` declarations. Functions on
 connections are free functions taking the connection type, dispatched
 via uniform call syntax. Trait methods are implemented in `fulfill`
 blocks. Same rule as nodes (§13.3.6).
+
+A connection body also does not contain `repeat` declarations (§13.5.4).
+Connections are minimal glue between source and destination instances;
+dynamic-scope structure belongs in node bodies, placement bodies, or
+effect `desired:` blocks.
 
 #### 13.6.5 The `Circularity` trait
 
@@ -12384,7 +12443,7 @@ parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a `Signal[T[]]` or other reactive source —
-use `Repeat` (§13.5.4) rather than `for`. The compile-time `for`
+use `repeat` (§13.5.4) rather than `for`. The compile-time `for`
 described here is for *parametric* topology: multiplicity that is
 parameterized by a const-generic (or otherwise compile-time-known) value
 but fixed per instance.
@@ -13314,9 +13373,8 @@ node When:
 ```
 
 `Then` and `Else` are simple stdlib wrapper nodes; each accepts a
-single child via its `parts:` slot and re-exposes it (the same
-pattern Repeat uses with `parts: Item!` + `expose: parts.Item`,
-§13.5.4.1).
+single child via its `parts:` slot and re-exposes it (a template-
+wrapper pattern with `parts: Item!` + `expose: parts.Item`).
 
 Placement:
 
@@ -14802,6 +14860,11 @@ Not permitted in operator bodies:
   parameters, not internal attrs.
 - Side-effecting statements. The body is reactive — declarative,
   not imperative.
+- `repeat` declarations (§13.5.4). Operator bodies are
+  reactive-transparent transforms with fixed-shape state;
+  dynamic-scope materialization is not in scope for v1. A future
+  revision may lift this restriction if a concrete use case
+  justifies the extension.
 
 The final expression's type must be either `T` or `Signal[T]`
 (matching the operator's return type `Signal[T]`). If the type is
@@ -16855,6 +16918,16 @@ reconciler consumes the buffered events in order. The reconciler is
 responsible for maintaining the alignment between the desired state
 and the external environment.
 
+**`repeat` declarations.** A `desired:` block may also contain
+`repeat` declarations (§13.5.4) for dynamic-scope materialization
+driven by reactive sources. This is the canonical pattern for
+io-driven topology — rendering one component per database row,
+opening one connection per active session, spawning one worker per
+pending job. Each scope's cells (`derived`, `sink`) are reconciled
+per scope, with the host applying additions and removals as the
+source's key set changes. Per-scope paths follow §13.5.3 with the
+effect instance as the enclosing context.
+
 #### 13.19.5 Observed block
 
 The `observed:` block declares cells that the host's reconciler
@@ -16904,6 +16977,13 @@ capacity work as in regular stream declarations.
 observed-block cells have no body (the host populates them
 directly via the kernel API). Effects that need history-aware
 behavior must compute it in the host's reconciler.
+
+`repeat` (§13.5.4) is likewise not valid in `observed:` blocks.
+Observed blocks declare cells that receive host-pushed data; they
+do not host reactive-structure declarations. To materialize
+per-element scopes from an observed cell, place the `repeat` in a
+node body or the same effect's `desired:` block, consuming the
+observed cell as the source.
 
 The stream begins empty. Consumers in program code project the stream
 to a signal via `to_signal`, or fold/count/filter/etc. via the
@@ -17056,7 +17136,7 @@ type name, and its argument bindings — the same scheme as operator
 instances (§13.17.6.1).
 
 Two `|>` chains in different scopes (different modules, different
-node bodies, different placements, different Repeat elements) that
+node bodies, different placements, different `repeat` scopes) that
 both instantiate the same effect type produce distinct instances
 with independent desired/observed cells and independent host-side
 reconciler state.
@@ -17192,7 +17272,7 @@ Effect instance lifetimes follow the scope hierarchy:
 
 - Module-level: lives for the program's lifetime.
 - Inside a node: lives as long as the node instance is mounted.
-- Inside a Repeat element: lives until the element key is removed
+- Inside a `repeat` scope: lives until the element key is removed
   from the iterated source (§13.5.4).
 - Inside an operator body: lives as long as the enclosing operator
   instance.
