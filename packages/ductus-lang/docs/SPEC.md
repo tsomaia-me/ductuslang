@@ -11386,6 +11386,13 @@ template by placing it in `Repeat`'s body. `Repeat` uses the
 §13.5.1 primitive directly: it sequences `scope_obtain`,
 `scope_drop`, and `scope_evaluate` per its iteration semantics.
 
+`Repeat` is the *runtime-varying* multiplicity primitive. When child
+cardinality is parametric but **compile-time known** — fixed per instance
+by a `const`, a const-generic parameter, or any other compile-time-known
+expression — use a placement-body `for` loop instead (§12.3.7,
+§13.8.3.1), which unrolls into anonymous child placements at compile
+time with no runtime template machinery.
+
 ##### 13.5.4.1 Signature
 
 ```
@@ -12261,28 +12268,34 @@ function bodies that receive the parent instance, and via the bare
 type-bulk form `parts.<NodeType>` from inside the parent's type body
 (§13.4.2).
 
-**Example.** A synthesizer parameterized over the number of oscillators:
+**Example.** A synthesizer whose voice count is fixed at module scope
+via a `const`, used both in the type's `parts:` cardinality and in the
+placement's body loop:
 
 ```
+const VOICE_COUNT: usize = 8
+
 node Oscillator:
   attr freq: f32 = 440.0
   derived output: f32 = synthesize(freq)
 
-node Synthesizer[const N: usize]:
-  parts: Oscillator [=N]
+node Synthesizer:
+  parts: Oscillator [=VOICE_COUNT]
   derived total: f32 = total_output(subject)
-  for i in 0..N:
-    Oscillator | freq=base_freq(i)
 
-Synthesizer[8] synth                // top-level declaration form (§13.8.1)
+Synthesizer synth:                 // top-level declaration form (§13.8.1)
+  for i in 0..VOICE_COUNT:
+    Oscillator | freq=base_freq(i)
 ```
 
-At the placement of `Synthesizer[8]`, `N = 8`; the body's `for` unrolls
-into eight anonymous `Oscillator` placements with statically-determined
-`freq` attrs supplied by `base_freq(i)` evaluated at each compile-time
-iteration. The parts are accessible to `total_output` via the
-`parts.Oscillator[i]` indexed form (§13.4.1) and to the parent type
-body's own iteration via `for o in parts.Oscillator:` (§13.4.2).
+`0..VOICE_COUNT` is a compile-time-known range (both bounds are
+compile-time known — `VOICE_COUNT` is a `const`), so the `for` in the
+placement body unrolls into eight anonymous `Oscillator` child
+placements with statically-determined `freq` attrs. The cardinality
+`Oscillator [=VOICE_COUNT]` declared by the type is satisfied at compile
+time by the unrolled placements. The parts are accessible via the
+indexed type-bulk form `synth.parts.Oscillator[i]` (§13.4.1), and the
+parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a `Signal[T[]]` or other reactive source —
