@@ -10847,15 +10847,18 @@ runtime according to the declared cardinality.
 ##### 13.3.3.3 Type-level part placements via compile-time `for`
 
 A node body may declare child-part instances *directly* via a
-compile-time `for` loop. The loop's body is a placement (with optional
-flags, `/expr`, attribute clause, and `when`); the iteration is
-compile-time-unrolled per §12.3.7. The unrolled placements become
-**children of the type itself**: every instance of the node materializes
-them at instantiation, with each iteration's loop variable substituted
-at compile time. The iterable must be compile-time-known (the same
-constraint as for any compile-time `for` — §12.3.7); a runtime iterable
-in a node body is a compile error pointing at the iterable, enforced by
-§13.1's static-graph rule (no new diagnostic class).
+compile-time `for` loop. The loop's body is an indented **placement-body
+block** following the same grammar as §13.8.3's child-parts body — any
+number of placements (parts and/or connections) per iteration, with the
+ordinary clause ordering of §13.8.9 and the whitespace-separation /
+self-delimiting rules of §13.8.10. The iteration is compile-time-unrolled
+per §12.3.7. The unrolled placements become **children of the type
+itself**: every instance of the node materializes them at instantiation,
+with each iteration's loop variable substituted at compile time. The
+iterable must be compile-time-known (the same constraint as for any
+compile-time `for` — §12.3.7); a runtime iterable in a node body is a
+compile error pointing at the iterable, enforced by §13.1's static-graph
+rule (no new diagnostic class).
 
 ```
 const VOICE_COUNT: usize = 8
@@ -10890,6 +10893,21 @@ the type's `parts:` cardinality at compile time. A placement body
 (§13.8.3) may add further parts up to the declared cardinality bound;
 the cardinality check is enforced against the *sum* of type-body and
 placement-body contributions.
+
+**Exposition.** Parts placed by a type-body `for` are children of the
+instance like any other parts; they are included in the default
+`expose: parts` exposition (§13.3.7) and in explicit `expose:` entries
+that select on their type via `parts.<NodeType>`.
+
+**Hot reload.** When the iterable's compile-time value changes across
+a reload (e.g., a `const N` rises from 8 to 16, or the const-generic
+argument at a placement site changes), §13.15.2's path-based
+cell-identity rules apply uniformly: existing parts whose
+fully-qualified path is unchanged are preserved with their state;
+newly-introduced parts (higher loop indices) are allocated fresh;
+parts dropped by a shrinking count are released per the standard
+removal rule. No special-case logic is required for type-body-for
+parts beyond what §13.15 already specifies.
 
 **Contrast with placement-body `for`** (§13.8.3.1). A type-body `for`
 expands once at type elaboration and applies uniformly to every
