@@ -11025,10 +11025,12 @@ site (`Synth[8] my_synth`). The reusable parameterization lives in the
 type definition; the placement happens in a context that owns a graph
 path.
 
-The same rule applies to operators, effects, and connections — they
-are graph members, not values, and follow the same placement-only
-admission. The rule is normative; conformant compilers enforce it at
-type-check time.
+The same principle applies to **connections**, **operators**, and
+**effects**: they are graph members, not first-class values. Functions
+cannot return them by value or accept them as arguments; the language's
+placement and instantiation syntax (§13.8, §13.17, §13.19) is the only
+way to bring them into the graph. The rule is normative; conformant
+compilers enforce it at type-check time.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -11407,15 +11409,14 @@ array.
 
 #### 13.5.1 The primitive
 
-For each template-typed parts entry on a host instance — a part
-declared in the host's `parts:` clause that the host's exposition
-(§13.3.7) treats as a per-instantiation template — the kernel
-exposes three operations. The bound template (the part supplied at
-the host's placement site) is fixed for the host's lifetime; the
-operations therefore parameterize only the **key**.
+For each scope-managing construct — a `repeat` declaration (§13.5.4) or
+any future construct invoking this primitive — the kernel exposes three
+operations. The bound template (the construct's body, fixed at compile
+time) does not vary; the operations therefore parameterize only the
+**key**.
 
 - **`scope_obtain(key)`** — return the scope for `key`, allocating
-  from the host's per-template pool if absent. Newly-allocated
+  from the construct's per-template pool if absent. Newly-allocated
   scopes initialize the template's state cells to their declared
   initial values (per §13.2.6).
 - **`scope_drop(key)`** — drop scope `key`: invoke `Drop` (§14.8)
@@ -11423,21 +11424,23 @@ operations therefore parameterize only the **key**.
   slot.
 - **`scope_evaluate(key)`** — evaluate the template's deriveds and
   any recurrent expressions eligible to fire within scope `key`'s
-  state context. Bare references (and `here::`) inside the template body
-  resolve to scope `key`'s cells; references to the host's own
-  attrs (e.g., via the host's placement name per §13.4.1) resolve
-  to the host instance's cells.
+  state context. Bare references (and `here::`) inside the template
+  body resolve to scope `key`'s cells; references to the enclosing
+  instance's cells (per the §13.7 scope chain) resolve to that
+  instance's cells.
 
-The host is responsible for sequencing these operations correctly:
-typically `scope_obtain` for new keys, `scope_evaluate` for active
-keys, and `scope_drop` for keys no longer active.
+The construct's elaboration is responsible for sequencing these
+operations correctly: typically `scope_obtain` for new keys,
+`scope_evaluate` for active keys, and `scope_drop` for keys no longer
+active.
 
 ##### 13.5.1.1 Per-template pool
 
-Each template-typed parts entry on a host instance has its own
-keyed pool. The pool's element shape is the template type's
-**state-shape** (§13.5.2). The pool's index space is the host's
-key domain. Scopes are independent — no cell sharing across keys.
+Each scope-managing construct (e.g., each `repeat` declaration —
+§13.5.4) has its own keyed pool. The pool's element shape is the
+template type's **state-shape** (§13.5.2). The pool's index space is
+the construct's key domain. Scopes are independent — no cell sharing
+across keys.
 
 Pool sizing follows the §14.3.5 extensible-pool model: pools grow
 as keys are added and shrink as keys are dropped, subject to the
@@ -11453,15 +11456,16 @@ declares:
 - `recurrent` declarations inside the template's body (§13.2.4).
 
 `derived` declarations are *not* part of the state-shape; they are
-pure functions of state cells and the host's exposed attrs.
-`const` declarations are static and not state.
+pure functions of state cells, the loop binding (in a `repeat`
+context), and the enclosing scope's cells (per §13.7). `const`
+declarations are static and not state.
 
 **When the state-shape is empty** (the template declares only
 deriveds, or no body cells at all), the kernel allocates **no pool**
-for the host's template entry. `scope_obtain(key)` becomes a no-op,
+for the construct's template. `scope_obtain(key)` becomes a no-op,
 `scope_drop(key)` is a no-op, and `scope_evaluate(key)` evaluates
-the template's deriveds against the host's exposed attrs without
-any per-key state context.
+the template's deriveds against the loop binding and the enclosing
+scope's cells without any per-key state context.
 
 This is the **stateless-template fast path**: data-driven
 multiplicity with O(1) cost per data change beyond per-element
@@ -11470,7 +11474,7 @@ incur no per-key allocation overhead.
 
 The compiler determines a template's state-shape at compile time
 and statically selects between the pool and no-pool case per
-host-template instantiation.
+construct instantiation.
 
 #### 13.5.3 Hot reload and cell identity
 
@@ -11479,12 +11483,15 @@ hot reload per §13.15.2's cell-identity rules. The cell path
 follows §15.4.1.1:
 
 ```
-<host_placement_path>.<key>.<template_field>
+<enclosing_path>.<key>.<template_field>
 ```
 
-Keys are required to be stringifiable primitives (§13.5.4 specifies
-the bound for the `repeat` construct, via the `StringifiableKey`
-trait). The key value serves as the path component.
+`<enclosing_path>` is the fully-qualified path of the enclosing
+instance — the node, placement, or effect that contains the
+scope-managing construct. Keys are required to be stringifiable
+primitives (§13.5.4 specifies the bound for the `repeat` construct,
+via the `StringifiableKey` trait). The key value serves as the path
+component.
 
 Hot-reload changes to the template's body follow the standard
 reload-safe / reload-unsafe rules of §13.15.4, applied uniformly
@@ -11512,7 +11519,7 @@ repeat <bind> in <source> keyed by <key-expr>:
   <body>
 ```
 
-- **`<source>`** is a `Signal[T[]]` for some element type `T`. (Other
+- **`<source>`** is a `Signal[Vec[T]]` for some element type `T`. (Other
   reactive collection shapes — `Stream[T]`, `Map[K, V]`, `Set[T]` — are
   deferred to a future revision.)
 - **`<bind>`** is an identifier. Inside `<body>`, `<bind>` is in scope at
@@ -11572,20 +11579,22 @@ scopes per row. Each scope's `RowComponent` cells live at path
 
 ```
 node VoiceMixer:
-  attr active_voices: Signal[Vec[VoiceConfig]] = []
+  attr active_voices: Vec[VoiceConfig] = []
   repeat cfg in active_voices keyed by cfg.voice_id:
     Voice | params=cfg
 ```
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
-publishes for the same `voice_id`.
+publishes for the same `voice_id`. (The attr is a reactive cell — reads
+of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`, which
+satisfies `repeat`'s source type.)
 
 **Implicit keying** — when the element type is itself stringifiable, the
 element value serves as the key:
 
 ```
 node UserPanel:
-  attr active_user_ids: Signal[Vec[u64]] = []
+  attr active_user_ids: Vec[u64] = []
   repeat user_id in active_user_ids:
     UserCard | id=user_id
 ```
@@ -11664,7 +11673,7 @@ In each rejected context, the diagnostic identifies the misplaced
   beyond §13.12.3's closure-snapshot semantics.
 - Nested `repeat` constructs are permitted; each nested level's scopes
   hang off the outer scope's path per §13.5.3.
-- The `<source>` must have type `Signal[T[]]` in v1.
+- The `<source>` must have type `Signal[Vec[T]]` in v1.
 
 ### 13.6 Connections
 
@@ -12442,7 +12451,7 @@ indexed type-bulk form `synth.parts.Oscillator[i]` (§13.4.1), and the
 parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
-vary at runtime — driven by a `Signal[T[]]` or other reactive source —
+vary at runtime — driven by a `Signal[Vec[T]]` or other reactive source —
 use `repeat` (§13.5.4) rather than `for`. The compile-time `for`
 described here is for *parametric* topology: multiplicity that is
 parameterized by a const-generic (or otherwise compile-time-known) value
