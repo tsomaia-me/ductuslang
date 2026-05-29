@@ -595,6 +595,11 @@ evaluable. The propagation rule is mechanical:
 - Calls to pure functions with compile-time-known arguments are compile-time
   known.
 - Bindings of compile-time-known expressions are compile-time known.
+- Inside a `for x in iterable:` whose `iterable` is compile-time known, the
+  iteration variable `x` is compile-time known on each iteration, and the body
+  is reproduced once per element with `x` bound to that element's value. A
+  range `a..b` is compile-time known iff both bounds are; an array literal
+  `[e1, …, eK]` iff every element is. See §12.3.7 for the unrolling mechanics.
 
 Since all user-defined functions are pure (§1.3) and all bindings are
 immutable, compile-time-knowability propagates freely through the expression
@@ -8097,6 +8102,107 @@ Under the consume form (`for x in v:`), the question doesn't arise:
 loop body. Attempting to use `v` inside the body would be a
 use-after-move error, not a borrow conflict.
 
+#### 12.3.7 Compile-time unrolling
+
+A `for` loop is **compile-time-unrolled iff its iterable is compile-time
+known** (§2.4.1). Otherwise it runs at runtime per §12.3.1. There is no
+syntactic distinction — no `const for`, no `inline for`, no modifier of
+any kind. The iterable decides the kind.
+
+**Mechanics.** When the iterable is compile-time known, the compiler
+reproduces the body once per element, binding the iteration variable to
+the corresponding compile-time value. The unrolled body then participates
+in ordinary §2.4.1 propagation, so expressions inside it that depend
+only on the (now compile-time-known) iteration variable and other
+compile-time values are themselves compile-time known. Unrolled loops do
+**not** dispatch through `IntoIterable` or `Iterable` (§12.3.1); element
+binding happens at compile time, not by calling `next` on an iterator.
+
+**Admitted iterables (v1).** Two forms produce compile-time-known
+iteration:
+
+- A range `start..end` where both bounds are compile-time known (§12.2).
+- An array literal `[e1, …, eK]` where every element expression is
+  compile-time known.
+
+Iteration over a tuple of values is deferred. Type-list iteration is out
+of scope.
+
+**Fixed-extent vs. variable-extent types.** A loop over a value of a
+*fixed-extent* type unrolls; a loop over a *variable-extent* type runs at
+runtime. The extent (the count) is part of the type for fixed-extent
+types, so the compiler knows it:
+
+- **Fixed-extent (unroll):** `T[N]` (fixed-size arrays), tuples, records.
+- **Variable-extent (runtime):** `Vec[T]`, `SmallVec[T, N]` (capacity is
+  `N` but occupied count varies), `RingBuf[T, N]`, `String` /
+  `s.chars()`, `HashMap`, ranges with runtime bounds.
+
+The fixed-extent set parallels §2.4.1.3's const-eligible value types: if
+a type can carry a `const` value, a `for` over it unrolls.
+
+**Call-site propagation.** A pure function with a `for` in its body has
+**one** source. Whether that `for` unrolls or runs at runtime is decided
+**at each call site** by what flows into the iterable expression, by the
+same rule as every other §2.4.1 propagation. The same function called
+with a compile-time-known argument may unroll; called with a runtime
+argument, the same body runs at runtime.
+
+A function that *requires* its loop to be compile-time-unrolled expresses
+that requirement in its **signature**, via a const-generic parameter
+(§2.5) — e.g. `fn process[const N: usize](buf: T[N]):`. A const-generic
+parameter is compile-time known at every call site by virtue of the
+signature, so the function's internal `for i in 0..N` is guaranteed to
+unroll. This is the language's mechanism for "this function only makes
+sense with a compile-time iteration count"; there is no body-internal
+assertion form.
+
+**Runtime `for` is an explicit opt-in.** A loop is runtime iff its
+iterable is runtime. This is **visible at the source** by what is
+iterated, and follows back to the iterable's declaration. There is no
+silent flip between compile-time and runtime based on context.
+
+**Placement bodies.** A `for` in a node or connection placement body is
+auto-enforced to be compile-time per §13.1's static-graph rule; a
+runtime iterable there is a compile error. See §13.8.3.1 for parametric
+topology via placement-body `for`.
+
+**Dynamic placement multiplicity.** For runtime-varying child cardinality
+in a placement, use `Repeat` (§13.5.4), not `for`. The compile-time `for`
+described here is for *parametric* topology — multiplicity that is
+const-generic-parameterized but fixed per instance.
+
+**Examples.** Same source, two call sites, two kinds of loop:
+
+```
+fn sum_first[const N: usize](buf: f32[N]) -> f32:
+  mut total: f32 = 0.0
+  for i in 0..N:                   // N compile-time known → unrolled
+    total = total + buf[i]
+  total
+
+fn sum_runtime(samples: Vec[f32]) -> f32:
+  mut total: f32 = 0.0
+  for s in samples:                 // samples is variable-extent → runtime
+    total = total + s
+  total
+```
+
+Same body shape, the *signature* decides the kind:
+
+```
+fn process(n: usize):
+  for i in 0..n:                    // n is a value parameter → runtime
+    do_step(i)
+
+fn process_static[const N: usize]():
+  for i in 0..N:                    // N is a const-generic → unrolled
+    do_step(i)
+```
+
+To require compile-time iteration, lift the parameter to a const-generic
+(§2.5). There is no body-internal `const`-assertion form.
+
 ### 12.4 The `while` Loop
 
 The `while` loop repeatedly evaluates a condition and runs its body so
@@ -11093,6 +11199,16 @@ so only the matching branch survives in each copy.
 Match exhaustiveness rules apply: if the match omits a declared
 part type and has no wildcard arm, it is a compile error.
 
+**Relation to the general unrolling rule.** Part iteration is the
+part-specialization of the compile-time unrolling rule in §12.3.7.
+`c.parts.Oscillator` and `c.parts` are compile-time-known iterables
+because the parent's `parts:` declaration fixes part identities at
+compile time per §13.1's static-graph principle. The mechanics described
+above — one body copy per part, static dispatch, sum-type collapse via
+`match` — are this specialization in action; a `for` loop in a function
+body whose iterable is *not* part-iteration but is otherwise
+compile-time-known (a range, an array literal) unrolls by the same rule.
+
 #### 13.4.3 Reactive dependency tracking through parts
 
 When a function called from a reactive expression iterates parts,
@@ -12124,6 +12240,56 @@ Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
 enforced at placement: the number of placed parts of each type
 must satisfy the declared cardinality. Violations are compile
 errors at the placement site.
+
+##### 13.8.3.1 Parametric topology via compile-time `for`
+
+A placement body may contain a `for` loop whose iterable is
+compile-time-known (§12.3.7, §2.4.1). The loop unrolls at compile time,
+producing one child placement per iteration. The static-graph principle
+(§13.1) is preserved: every part is determined at compile time.
+
+A `for` in a placement body whose iterable is *not* compile-time-known
+is a compile error pointing at the iterable. No new diagnostic class is
+introduced — the static-graph rule itself enforces this; the diagnostic
+identifies the iterable and (via §2.4.6's reactivity-provenance
+machinery) cites the runtime source if the runtime-ness flows from a
+reactive value.
+
+Anonymous parts produced by an unrolled placement loop are addressable
+via the indexed type-bulk form `parts.<NodeType>[i]` (§13.4.1) from
+function bodies that receive the parent instance, and via the bare
+type-bulk form `parts.<NodeType>` from inside the parent's type body
+(§13.4.2).
+
+**Example.** A synthesizer parameterized over the number of oscillators:
+
+```
+node Oscillator:
+  attr freq: f32 = 440.0
+  derived output: f32 = synthesize(freq)
+
+node Synthesizer[const N: usize]:
+  parts: Oscillator [=N]
+  derived total: f32 = total_output(subject)
+  for i in 0..N:
+    Oscillator | freq=base_freq(i)
+
+Synthesizer[8] synth                // top-level declaration form (§13.8.1)
+```
+
+At the placement of `Synthesizer[8]`, `N = 8`; the body's `for` unrolls
+into eight anonymous `Oscillator` placements with statically-determined
+`freq` attrs supplied by `base_freq(i)` evaluated at each compile-time
+iteration. The parts are accessible to `total_output` via the
+`parts.Oscillator[i]` indexed form (§13.4.1) and to the parent type
+body's own iteration via `for o in parts.Oscillator:` (§13.4.2).
+
+**For runtime-varying multiplicity.** When the number of children must
+vary at runtime — driven by a `Signal[T[]]` or other reactive source —
+use `Repeat` (§13.5.4) rather than `for`. The compile-time `for`
+described here is for *parametric* topology: multiplicity that is
+parameterized by a const-generic (or otherwise compile-time-known) value
+but fixed per instance.
 
 #### 13.8.4 Connections
 
