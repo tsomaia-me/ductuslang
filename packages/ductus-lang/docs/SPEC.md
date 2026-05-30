@@ -11467,10 +11467,10 @@ for the construct's template. `scope_obtain(key)` becomes a no-op,
 the template's deriveds against the loop binding and the enclosing
 scope's cells without any per-key state context.
 
-This is the **stateless-template fast path**: data-driven
-multiplicity with O(1) cost per data change beyond per-element
-derived evaluation. Programs that use only stateless templates
-incur no per-key allocation overhead.
+This is the **stateless-template fast path**: data-driven multiplicity
+incurs no per-key cell allocation or drop. The per-publish iteration
+floor of §13.5.4.6 (iterate + key + diff) still applies; the fast path
+eliminates only the per-scope storage cost.
 
 The compiler determines a template's state-shape at compile time
 and statically selects between the pool and no-pool case per
@@ -11522,26 +11522,41 @@ repeat <bind> in <source> keyed by <key-expr>:
 - **`<source>`** is `Signal[I]` for some `I: Iterable` (§12.8). The
   iterator must terminate at each evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
-  N), `Set[T]`, and `Map[K, V]`; user types may fulfill `Iterable` to
-  participate. `Stream[T]` is not `Iterable` — its admission into
-  `repeat` is a separate future revision with distinct add/drop
-  semantics.
+  N), `HashSet[T]`, and `HashMap[K, V]`; user types may fulfill
+  `Iterable` to participate. `Stream[T]` is excluded by design — it's
+  an event source, not a collection-with-a-current-snapshot, and its
+  admission into `repeat` requires distinct add/drop semantics deferred
+  to a future revision.
 - **`<bind>`** is either a bare identifier or a tuple-destructuring
-  pattern. Inside `<body>`, the binding name(s) are in scope at the
-  iterator's `Item` type. Tuple destructure is the idiomatic form for
-  `Map[K, V]`, whose iterator yields `(K, V)` pairs.
+  pattern per §12.12.1 (the same destructuring grammar the for-loop's
+  iteration variable accepts; pattern rules in §6.2.4 and §9.2.2).
+  Tuple destructure is the idiomatic form for `HashMap[K, V]`, whose
+  iterator yields `(K, V)` pairs.
+- **Bind ownership.** `<bind>` is typed as the iterator's element type
+  after **move-promotion**: owned `T` rather than `&T`, even when
+  `Iterable::iterator` would return an iterator with `Item = &T` per
+  §12.7.4. Move-promotion is sound because the source value is
+  read-only during scope_evaluate — a publish's current buffer is not
+  mutated; writes go to the next buffer per §14.3.3 — so each element
+  has unique access for the duration of its scope's evaluation. The
+  mechanism is analogous to §12.7.2's linear-ownership optimization
+  applied to the iteration source: no copy is performed at the machine
+  level; the kernel hands each scope_evaluate a unique pointer to its
+  element. Attrs, connection arguments, and other placement targets in
+  the body therefore see owned types — `&T` does not leak into
+  attribute or argument positions through `repeat`.
 - **`<body>`** is an indented **placement-body block** following
   §13.8.3's grammar — any number of placements (parts and/or connections)
   per iteration, with the ordinary clause ordering of §13.8.9 and the
   whitespace-separation / self-delimiting rules of §13.8.10.
-- **Key derivation** proceeds by ordered selection. The compiler picks
+- **Key derivation** proceeds by ordered precedence. The compiler picks
   the first applicable path:
   1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
      is evaluated with the bind in scope. The result must be a
      `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
      `string`). Explicit always wins when present.
   2. **`Keyed` trait** — if the element type fulfills the stdlib
-     `Keyed` trait, the key is `element.key()`. Trait shape:
+     `Keyed` trait, the key is `Keyed::key(&element)`. Trait shape:
      ```
      trait Keyed:
        type Key: StringifiableKey
@@ -11549,24 +11564,27 @@ repeat <bind> in <source> keyed by <key-expr>:
      ```
      A record opts into implicit keying by fulfilling `Keyed` once.
      A type fulfills `Keyed` for at most one `Key` (standard trait
-     coherence per §3); ambiguity is therefore impossible.
+     coherence per §3.7); within that constraint, the `Key` associated
+     type is uniquely determined.
   3. **Stringifiable element** — if the element type is itself a
      `StringifiableKey`, the element value is the key.
   4. **Otherwise** — compile error: *"element type T doesn't fulfill
      `Keyed` and isn't a stringifiable primitive; either fulfill
      `Keyed` for T or add `keyed by <expr>`."*
 
-Paths 1–3 are mutually exclusive at the type level for any given
-construct: a primitive isn't `Keyed`; a record carrying a `Keyed`
-fulfill isn't a stringifiable primitive. Path 1 (when present) always
-overrides 2 and 3.
+The rule is strict precedence: path 2 always wins over path 3 when
+both apply (e.g., when a user has fulfilled both `Keyed` and
+`StringifiableKey` for the same newtype), and path 1 always wins over
+2 and 3. There is no ambiguity to resolve at the call site.
 
 ##### 13.5.4.2 Iteration semantics
 
 Whenever `<source>` is dirty, the kernel:
 
-1. Iterates `<source>` via the borrow form (`Iterable::iterator(&value)`,
-   §12.8), enumerating each element.
+1. Reads the current value of `<source>` from the signal's current
+   buffer (§14.3.3) and iterates it via the borrow form of `Iterable`
+   (§12.8), enumerating each element. The bind sees the owned element
+   type per the move-promotion rule of §13.5.4.1.
 2. Derives the key for each element per the ordered selection of
    §13.5.4.1 (explicit `keyed by`, then `Keyed` trait, then
    stringifiable element, else compile error).
@@ -11582,9 +11600,9 @@ Whenever `<source>` is dirty, the kernel:
 
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes.
-Unordered iterables (`Set[T]`, `Map[K, V]`) are diffed by key identity;
-iteration order is whatever the underlying type's iterator emits and
-does not affect scope identity.
+Unordered iterables (`HashSet[T]`, `HashMap[K, V]`) are diffed by key
+identity; iteration order is whatever the underlying type's iterator
+emits and does not affect scope identity.
 
 ##### 13.5.4.3 Worked examples
 
@@ -11616,9 +11634,10 @@ node VoiceMixer:
 ```
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
-publishes for the same `voice_id`. (The attr is a reactive cell — reads
-of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`, and
-`Vec[T]: Iterable` satisfies `repeat`'s source-type requirement.)
+publishes for the same `voice_id`. The attr is a reactive cell — reads
+of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`;
+`Vec[VoiceConfig]: Iterable` satisfies `repeat`'s source-type
+requirement, with `Vec` supplying the iterator inside the `Signal`.
 
 **Implicit keying via stringifiable element** — when the iterator's
 `Item` type is itself a `StringifiableKey`, no `keyed by` is needed:
@@ -11630,13 +11649,15 @@ node UserPanel:
     UserCard | id=user_id
 ```
 
-**Map source with destructuring bind** — `Map[K, V]` iterates as
-`Iterable` yielding `(K, V)` pairs. The bind destructures, and `keyed
-by` names the map key as the scope key:
+**`HashMap` source with destructuring bind** — `HashMap[K, V]`
+iterates as `Iterable` yielding `(K, V)` pairs. Move-promotion
+(§13.5.4.1) gives the bind an owned `(K, V)`, so ordinary tuple
+destructuring (§12.12.1) binds owned `sid` and `info`; `keyed by`
+names the map key as the scope key:
 
 ```
 node SessionPanel:
-  attr sessions: Map[SessionId, SessionInfo] = {}
+  attr sessions: HashMap[SessionId, SessionInfo] = HashMap::new()
   repeat (sid, info) in sessions keyed by sid:
     SessionRow | id=sid info=info
 ```
@@ -11664,9 +11685,9 @@ effect DBQueryAuto:
 ```
 
 No `keyed by` clause is needed at the call site — the `Keyed` fulfill
-on `DbRow` supplies `row.key()` automatically, and every `repeat` over
-`Vec[DbRow]` (or any other iterable of `DbRow`) reuses the same key
-derivation.
+on `DbRow` supplies `Keyed::key(&row)` automatically, and every
+`repeat` over `Vec[DbRow]` (or any other iterable of `DbRow`) reuses
+the same key derivation.
 
 ##### 13.5.4.4 Cell identity across reload
 
@@ -11682,12 +11703,23 @@ are allocated and the path machinery is bypassed.
 A `repeat` declaration follows §13.15.2's path-based cell identity.
 Source mutations across a reload drive the same diff as a runtime
 mutation: scopes whose keys disappear are dropped; scopes whose keys
-appear are allocated fresh. Body changes (the template's placements and
-their attrs) apply uniformly to all existing scopes. A change to the
-`keyed by` expression — or to the body of a `Keyed::key` implementation
-that the construct depends on — is **reload-unsafe** at the per-instance
-level (§13.15.4): old keys may not match new ones; the kernel performs
-a clean restart of the affected `repeat` instances.
+appear are allocated fresh. Body changes (the template's placements
+and their attrs) apply uniformly to all existing scopes.
+
+Changes to the key derivation — either the `keyed by` expression or
+the body of a `Keyed::key` implementation the construct depends on —
+are **reload-safe** per the general rule of §13.15.3 step 8: function
+and method bodies are recomputed against current inputs without a
+restart. The kernel runs the new key derivation on the next publish,
+diffs against the previously-known key set, and drops or obtains
+scopes per §13.5.4.2 in the ordinary way. The behavioral consequence
+the user should understand: when a key derivation change causes a
+given element to produce a different key, the *old key's scope state
+is dropped* and the *new key's scope is freshly allocated* — per-scope
+state is identified by key, not by element identity, so a key shift
+necessarily discards the prior scope's cells. This is identical to a
+runtime source mutation that swaps element identities; no special
+reload-time machinery is needed.
 
 ##### 13.5.4.6 Performance
 
@@ -11704,9 +11736,10 @@ new key set.
   `scope_obtain` per §13.5.1).
 - **Per-scope evaluate**: cost of the template body × number of live
   keys.
-- **Pure reorder**: no scope allocation or drop — keys carry across
-  reorderings, only iteration order changes. The O(N) iterate + key +
-  diff floor still applies.
+- **Pure reorder**: *scope-management* work is zero — keys carry
+  across reorderings; no `scope_obtain` or `scope_drop` is invoked.
+  The per-publish floor (iterate + key + diff) still applies; reorder
+  doesn't shortcut detecting that the key set is unchanged.
 - **Clean publish** (`<source>` not dirty): zero work. `repeat` does
   not re-iterate.
 - **Stateless template** (state-shape empty per §13.5.2): no per-key
@@ -11763,12 +11796,13 @@ In each rejected context, the diagnostic identifies the misplaced
   beyond §13.12.3's closure-snapshot semantics.
 - Nested `repeat` constructs are permitted; each nested level's scopes
   hang off the outer scope's path per §13.5.3.
-- **The iterator must terminate at each evaluation.** Vec[T], Set[T],
-  T[N], Map[K, V], and any user `Iterable` implementation over a
-  bounded-at-publish-time collection satisfy this. Iterables whose
-  iterator never returns `None` (e.g., a hypothetical lazy infinite
-  generator) are rejected where determinable; user-defined `Iterable`
-  implementations are otherwise trusted to terminate.
+- **The iterator must terminate at each evaluation.** Vec[T],
+  HashSet[T], T[N], HashMap[K, V], and any user `Iterable`
+  implementation over a bounded-at-publish-time collection satisfy
+  this. The spec does not mandate a compiler check for termination on
+  user `Iterable` implementations — they are trusted. An iterator
+  whose `next` never returns `None` will hang the iterate phase; this
+  is a programmer error against the trait's intended use.
 - The same element-key, when reachable through different element values
   across publishes, identifies the same scope. The element's *value* is
   carried in `<bind>` and may change publish to publish; the *key*
@@ -12551,8 +12585,8 @@ parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a reactive iterable source (`Signal[I]`
-where `I: Iterable`, such as `Vec[T]`, `Set[T]`, or `Map[K, V]`) — use
-`repeat` (§13.5.4) rather than `for`. The compile-time `for` described
+where `I: Iterable`, such as `Vec[T]`, `HashSet[T]`, or
+`HashMap[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
 here is for *parametric* topology: multiplicity that is parameterized
 by a const-generic (or otherwise compile-time-known) value but fixed
 per instance.
