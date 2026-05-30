@@ -11404,8 +11404,8 @@ or many times per source element, with each instantiation backed by its
 own state cells.
 
 The user-facing surface for this mechanism is the **`repeat` keyword**
-(§13.5.4), which materializes one scope per element of a reactive source
-array.
+(§13.5.4), which materializes one scope per element yielded by a
+reactive iterable source (`Signal[I]` where `I: Iterable`, §12.8).
 
 #### 13.5.1 The primitive
 
@@ -11519,41 +11519,72 @@ repeat <bind> in <source> keyed by <key-expr>:
   <body>
 ```
 
-- **`<source>`** is a `Signal[Vec[T]]` for some element type `T`. (Other
-  reactive collection shapes — `Stream[T]`, `Map[K, V]`, `Set[T]` — are
-  deferred to a future revision.)
-- **`<bind>`** is an identifier. Inside `<body>`, `<bind>` is in scope at
-  type `T`, bound to the current scope's element.
+- **`<source>`** is `Signal[I]` for some `I: Iterable` (§12.8). The
+  iterator must terminate at each evaluation (see §13.5.4.8). The
+  standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
+  N), `Set[T]`, and `Map[K, V]`; user types may fulfill `Iterable` to
+  participate. `Stream[T]` is not `Iterable` — its admission into
+  `repeat` is a separate future revision with distinct add/drop
+  semantics.
+- **`<bind>`** is either a bare identifier or a tuple-destructuring
+  pattern. Inside `<body>`, the binding name(s) are in scope at the
+  iterator's `Item` type. Tuple destructure is the idiomatic form for
+  `Map[K, V]`, whose iterator yields `(K, V)` pairs.
 - **`<body>`** is an indented **placement-body block** following
   §13.8.3's grammar — any number of placements (parts and/or connections)
   per iteration, with the ordinary clause ordering of §13.8.9 and the
   whitespace-separation / self-delimiting rules of §13.8.10.
-- The optional **`keyed by <key-expr>`** clause derives a per-element
-  key. The expression has `<bind>` in scope and must evaluate to a
-  stringifiable primitive (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
-  `string` — see the `StringifiableKey` trait in the stdlib).
-- When `keyed by` is omitted, `T` must itself be stringifiable; the
-  element value then serves as the key. If `T` is not stringifiable, the
-  compiler errors with a hint to add `keyed by`.
+- **Key derivation** proceeds by ordered selection. The compiler picks
+  the first applicable path:
+  1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
+     is evaluated with the bind in scope. The result must be a
+     `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
+     `string`). Explicit always wins when present.
+  2. **`Keyed` trait** — if the element type fulfills the stdlib
+     `Keyed` trait, the key is `element.key()`. Trait shape:
+     ```
+     trait Keyed:
+       type Key: StringifiableKey
+       fn key(value: &Subject) -> Key
+     ```
+     A record opts into implicit keying by fulfilling `Keyed` once.
+     A type fulfills `Keyed` for at most one `Key` (standard trait
+     coherence per §3); ambiguity is therefore impossible.
+  3. **Stringifiable element** — if the element type is itself a
+     `StringifiableKey`, the element value is the key.
+  4. **Otherwise** — compile error: *"element type T doesn't fulfill
+     `Keyed` and isn't a stringifiable primitive; either fulfill
+     `Keyed` for T or add `keyed by <expr>`."*
+
+Paths 1–3 are mutually exclusive at the type level for any given
+construct: a primitive isn't `Keyed`; a record carrying a `Keyed`
+fulfill isn't a stringifiable primitive. Path 1 (when present) always
+overrides 2 and 3.
 
 ##### 13.5.4.2 Iteration semantics
 
 Whenever `<source>` is dirty, the kernel:
 
-1. Evaluates the key for each element of `<source>` — via `<key-expr>`
-   if supplied, or via the element itself if not.
-2. Keys in `old ∩ new` carry over: their scopes are preserved per
-   §13.5.1; the binding `<bind>` is updated to the new element value.
-3. Keys in `old − new` are dropped: `scope_drop(key)` is invoked,
-   releasing the per-key cells.
-4. Keys in `new − old` are added: `scope_obtain(key)` is invoked,
-   initializing the per-key cells per §13.5.2's state-shape.
-5. For each key in `new` in element order, the kernel updates `<bind>`
-   and calls `scope_evaluate(key)`.
+1. Iterates `<source>` via the borrow form (`Iterable::iterator(&value)`,
+   §12.8), enumerating each element.
+2. Derives the key for each element per the ordered selection of
+   §13.5.4.1 (explicit `keyed by`, then `Keyed` trait, then
+   stringifiable element, else compile error).
+3. Diffs the new key set against the previous:
+   - Keys in `old ∩ new` carry over: their scopes are preserved per
+     §13.5.1; the binding `<bind>` is updated to the new element.
+   - Keys in `old − new` are dropped: `scope_drop(key)` releases the
+     per-key cells.
+   - Keys in `new − old` are added: `scope_obtain(key)` initializes
+     the per-key cells per §13.5.2's state-shape.
+4. For each key in iterator order, the kernel updates `<bind>` and
+   calls `scope_evaluate(key)`.
 
-Reordering elements in `<source>` without changing the key set
-performs no scope allocations or drops; only the iteration order
-changes.
+Reordering elements in `<source>` without changing the key set performs
+no scope allocations or drops; only the iteration order changes.
+Unordered iterables (`Set[T]`, `Map[K, V]`) are diffed by key identity;
+iteration order is whatever the underlying type's iterator emits and
+does not affect scope identity.
 
 ##### 13.5.4.3 Worked examples
 
@@ -11586,11 +11617,11 @@ node VoiceMixer:
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
 publishes for the same `voice_id`. (The attr is a reactive cell — reads
-of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`, which
-satisfies `repeat`'s source type.)
+of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`, and
+`Vec[T]: Iterable` satisfies `repeat`'s source-type requirement.)
 
-**Implicit keying** — when the element type is itself stringifiable, the
-element value serves as the key:
+**Implicit keying via stringifiable element** — when the iterator's
+`Item` type is itself a `StringifiableKey`, no `keyed by` is needed:
 
 ```
 node UserPanel:
@@ -11598,6 +11629,44 @@ node UserPanel:
   repeat user_id in active_user_ids:
     UserCard | id=user_id
 ```
+
+**Map source with destructuring bind** — `Map[K, V]` iterates as
+`Iterable` yielding `(K, V)` pairs. The bind destructures, and `keyed
+by` names the map key as the scope key:
+
+```
+node SessionPanel:
+  attr sessions: Map[SessionId, SessionInfo] = {}
+  repeat (sid, info) in sessions keyed by sid:
+    SessionRow | id=sid info=info
+```
+
+**Implicit keying via the `Keyed` trait** — records opt into implicit
+keying once, by fulfilling `Keyed`:
+
+```
+type DbRow:
+  id: u64
+  name: string
+  payload: Payload
+
+fulfill Keyed for DbRow:
+  type Key = u64
+  fn key(r: &DbRow) -> u64:
+    r.id
+
+effect DBQueryAuto:
+  observed:
+    signal rows: Vec[DbRow] = []
+  desired:
+    repeat row in rows:                  // implicit via DbRow's Keyed
+      RowComponent | data=row
+```
+
+No `keyed by` clause is needed at the call site — the `Keyed` fulfill
+on `DbRow` supplies `row.key()` automatically, and every `repeat` over
+`Vec[DbRow]` (or any other iterable of `DbRow`) reuses the same key
+derivation.
 
 ##### 13.5.4.4 Cell identity across reload
 
@@ -11615,19 +11684,38 @@ Source mutations across a reload drive the same diff as a runtime
 mutation: scopes whose keys disappear are dropped; scopes whose keys
 appear are allocated fresh. Body changes (the template's placements and
 their attrs) apply uniformly to all existing scopes. A change to the
-`keyed by` expression is **reload-unsafe** at the per-instance level
-(§13.15.4) — old keys may not match new ones; the kernel performs a
-clean restart of the affected `repeat` instances.
+`keyed by` expression — or to the body of a `Keyed::key` implementation
+that the construct depends on — is **reload-unsafe** at the per-instance
+level (§13.15.4): old keys may not match new ones; the kernel performs
+a clean restart of the affected `repeat` instances.
 
 ##### 13.5.4.6 Performance
 
-- Stateless template (state-shape empty per §13.5.2): O(1) per source
-  change beyond per-element derived evaluation. No allocation.
-- Stateful template, element add/remove: O(K) per source change where
-  K is the number of added/removed keys (key-set diff plus per-key cell
-  init/drop).
-- Stateful template, reorder: O(1) per moved element. State follows
-  key; no allocation or drop.
+`repeat` follows the publish-time-recompute model of the rest of the
+reactive system: signals carry current value, not deltas. When
+`<source>` is dirty, the kernel re-iterates and re-keys to compute the
+new key set.
+
+- **Per-publish floor**: O(N) iterate + O(N) key derivation + O(N)
+  hash-diff against the previous key set, where N is the current
+  element count.
+- **Scope add/remove**: O(K + K') on top of the floor, where K is keys
+  removed and K' is keys added (each invokes `scope_drop` or
+  `scope_obtain` per §13.5.1).
+- **Per-scope evaluate**: cost of the template body × number of live
+  keys.
+- **Pure reorder**: no scope allocation or drop — keys carry across
+  reorderings, only iteration order changes. The O(N) iterate + key +
+  diff floor still applies.
+- **Clean publish** (`<source>` not dirty): zero work. `repeat` does
+  not re-iterate.
+- **Stateless template** (state-shape empty per §13.5.2): no per-key
+  cells are allocated; the per-publish floor still applies to iterate
+  + key + diff.
+
+The O(N) floor is structural to "signal-carries-current-value." A
+delta-driven variant (`repeat` over a structural-delta reactive shape)
+is a future revision; v1 does not provide it.
 
 Programs that do not use `repeat` incur no runtime cost from the
 template-scope machinery; the cost model is "pay for what you iterate."
@@ -11667,13 +11755,24 @@ In each rejected context, the diagnostic identifies the misplaced
 
 ##### 13.5.4.8 Restrictions
 
-- The `<key-expr>` must be reactive-pure: no dependencies beyond
-  `<bind>` per §13.12. This guarantees key stability across evaluations.
+- The `<key-expr>` must be reactive-pure: no reactive dependencies
+  beyond `<bind>` per §13.12. This guarantees key stability across
+  evaluations. The same purity rule applies to the `Keyed::key` method
+  body when implicit keying goes through the `Keyed` trait.
 - The body may not close over the enclosing scope's mutable state
   beyond §13.12.3's closure-snapshot semantics.
 - Nested `repeat` constructs are permitted; each nested level's scopes
   hang off the outer scope's path per §13.5.3.
-- The `<source>` must have type `Signal[Vec[T]]` in v1.
+- **The iterator must terminate at each evaluation.** Vec[T], Set[T],
+  T[N], Map[K, V], and any user `Iterable` implementation over a
+  bounded-at-publish-time collection satisfy this. Iterables whose
+  iterator never returns `None` (e.g., a hypothetical lazy infinite
+  generator) are rejected where determinable; user-defined `Iterable`
+  implementations are otherwise trusted to terminate.
+- The same element-key, when reachable through different element values
+  across publishes, identifies the same scope. The element's *value* is
+  carried in `<bind>` and may change publish to publish; the *key*
+  identifies the scope.
 
 ### 13.6 Connections
 
@@ -12451,11 +12550,12 @@ indexed type-bulk form `synth.parts.Oscillator[i]` (§13.4.1), and the
 parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
-vary at runtime — driven by a `Signal[Vec[T]]` or other reactive source —
-use `repeat` (§13.5.4) rather than `for`. The compile-time `for`
-described here is for *parametric* topology: multiplicity that is
-parameterized by a const-generic (or otherwise compile-time-known) value
-but fixed per instance.
+vary at runtime — driven by a reactive iterable source (`Signal[I]`
+where `I: Iterable`, such as `Vec[T]`, `Set[T]`, or `Map[K, V]`) — use
+`repeat` (§13.5.4) rather than `for`. The compile-time `for` described
+here is for *parametric* topology: multiplicity that is parameterized
+by a const-generic (or otherwise compile-time-known) value but fixed
+per instance.
 
 **Type-body counterpart.** When the multiplicity and per-part
 configuration are properties of the **type** rather than the placement
