@@ -6995,33 +6995,43 @@ implementation difference is the immutability constraint.
 
 ### 11.7 Function Parameters
 
-A function parameter declares either *by-value* ownership transfer or
-*by-borrow* read-only access. The declaration uses the parameter's type
-position:
+A function parameter receives one of two ownership conventions, set by
+the parameter declaration:
+
+- **Default (borrow-equivalent).** `fn f(v: T)` — the function gets a
+  read-only alias of the caller's value for the duration of the call.
+  The caller retains ownership.
+- **Opt-in consumption.** `fn f(own v: T)` — the function consumes the
+  caller's value. The caller writes `move v` at the call site
+  (§11.8.5).
 
 ```
-fn consume_buffer(b: Vec[f32]) -> Vec[f32]: ...      // by-value: takes ownership
-fn inspect_buffer(b: &Vec[f32]) -> isize: ...        // by-borrow: read-only access
+fn inspect_buffer(b: Vec[f32]) -> isize: ...        // default: borrow-equivalent
+fn consume_buffer(own b: Vec[f32]) -> Vec[f32]: ... // opt-in: consumes
 ```
 
-The `&` prefix on the parameter's type denotes a borrow. Without the
-prefix, the parameter is by-value.
+The default convention is the read-heavy case (computation that
+inspects without taking ownership); the opt-in convention is reserved
+for cases where the function genuinely needs to take the value away
+from the caller — move it into structural storage, into another
+long-lived owner, or destroy it.
 
-#### 11.7.1 By-value parameters
+#### 11.7.1 Default parameters (borrow-equivalent)
 
-A by-value parameter receives ownership of its argument. For `Copy`
-argument types, this is equivalent to making an independent copy and
-binding it to the parameter — the caller's binding remains usable. For
-non-`Copy` types, the caller's binding is consumed; using it after the
-call is a compile error.
+A default parameter is a borrow-equivalent alias rooted in the caller's
+argument binding (§11.3.4). It is a member of the cluster headed by
+that source binding; its lifetime is the call expression. Inside the
+function body the parameter can be read, passed to other functions, and
+participate in let-rebindings (Rule P, §11.3.5) and for-loop iterations
+as a cluster-member binding.
 
-The function body owns the parameter for the duration of the call. It
-may read the parameter, pass it to other functions (transferring ownership
-further), return it, or let it drop at function exit.
+For `Copy` argument types, the parameter is a fresh independent value
+(implicit Copy at the call boundary); the caller's binding remains
+usable identically to non-`Copy`.
 
-A by-value parameter is itself an immutable binding inside the function
-body — like a `let` binding. To mutate it, the body must rebind it to a
-local `mut` binding (§11.7.3).
+A default parameter is immutable. To mutate locally, the function body
+must either declare the parameter as `own` (gaining a real owner) or
+rebind to a `mut` local with an explicit clone (§11.7.3).
 
 #### 11.7.2 No `mut` on parameters
 
@@ -7032,369 +7042,474 @@ fn process(mut buf: Vec[f32]) -> Vec[f32]: ...    // ✗ compile error
 ```
 
 The forbid is intentional. A function's signature is its contract with
-callers; that contract specifies type and ownership behavior. Mutation is
-the function's internal implementation choice — invisible to callers
-because the caller's binding has already been consumed (for non-`Copy`
-parameters) or never affected (for `Copy` parameters). Exposing mutation
-in the signature creates ambiguity about whether the function is pure
+callers; that contract specifies type and ownership behavior. Mutation
+is the function's internal implementation choice — invisible to
+callers because §11.1's globally-invisible-mutation invariant confines
+local mutation to storage the caller cannot observe (a real owner, a
+real-owner sub-binding via `.clone()`, or a cell). Exposing mutation in
+the signature creates ambiguity about whether the function is pure
 without changing what the function can actually do.
 
-A function that intends to mutate its parameter rebinds it to a local
-`mut`:
-
-```
-fn apply_gain(buf: Vec[f32], gain: f32) -> Vec[f32]:
-  mut local = buf
-  // mutate local in place
-  local
-```
-
-The rebind is one line per function and surfaces the moment where the
-received parameter transitions to mutable working state.
+A function that intends to mutate the value of an argument either
+takes ownership (`own`) and rebinds, or clones and rebinds (§11.7.3).
 
 #### 11.7.3 Local rebinding to `mut`
 
-The rebind pattern `mut local = parameter` moves the parameter's value
-into a fresh `mut` binding. After the rebind, `local` is mutable and
-`parameter` (now consumed) is no longer accessible.
+Rebinding a parameter to a `mut` local requires the parameter to be a
+real owner. There are two valid sources:
 
-For `Copy` parameter types, the rebind produces an independent mutable
-copy; mutations to `local` are invisible to the (also-still-usable)
-parameter binding. For non-`Copy`, the parameter binding is consumed by
-the move into `local`.
+- **`own` parameter.** `mut local = parameter` transfers ownership of
+  the parameter's value into `local`. After the rebind, `parameter`'s
+  name has been killed (single-name-per-cluster) and `local` is the
+  real owner.
+- **`.clone()` of a default parameter.** `mut local = parameter.clone()`
+  produces a fresh real owner that `local` then takes ownership of.
+  The default parameter's cluster is untouched.
+
+A bare `mut local = parameter` where the parameter is default
+(borrow-equivalent) is a compile error: cluster members cannot become
+new real-owner bindings (§11.3.5 Rule P). Diagnostic: *"cannot
+construct real owner `local` from borrow-equivalent parameter
+`parameter`. Either declare the parameter `own` to receive ownership
+from the caller, or rebind via `parameter.clone()` to produce an
+independent owned copy."*
 
 ```
-fn double_in_place(arr: i32[16]) -> i32[16]:
-  mut local = arr               // arr consumed; local owns the array
+fn build_owned_buffer(own arr: i32[16]) -> i32[16]:
+  mut local = arr               // ✓ arr is own (real-owner); transfers
   // mutate local[i] for each i
+  local
+
+fn double_in_place(arr: i32[16]) -> i32[16]:
+  mut local = arr.clone()       // ✓ explicit clone produces real owner
+  // mutate local[i] for each i
+  local
+
+fn bad(arr: i32[16]) -> i32[16]:
+  mut local = arr               // ✗ compile error: borrow-equivalent
+                                //   cannot become real owner
+                                //   (suggests `arr.clone()` or `own arr`)
   local
 ```
 
-#### 11.7.4 By-borrow parameters
+For `Copy` parameter types, both `mut local = parameter` and
+`mut local = parameter.clone()` produce independent mutable copies and
+are equivalent. The compiler reports `mut local = parameter.clone()` as
+redundant when `T: Copy`, with a style lint.
 
-A by-borrow parameter (`&T`) is a read-only handle to the caller's value
-for the duration of the call. The caller retains ownership; the function
-body may inspect the borrowed value but may not mutate it, consume it,
-return it, or store it anywhere persistent.
+#### 11.7.4 Opt-in consumption via `own`
 
-By-borrow parameters allow inspection of non-`Copy` values without
-forcing ownership transfer. The dominant use case is stdlib container
-inspection: `length`, `contains`, `is_empty`, comparison, hashing, and
-similar operations declare `&T` parameters and leave callers' bindings
-untouched.
+A parameter declared `own T` consumes its argument. The caller's
+binding becomes inaccessible after the call. Inside the function body,
+the parameter is a real owner: it can be mutated (via `mut`-rebind),
+moved (passed to another `own` parameter, returned, stored in
+structural slots — categories B/D), or dropped at function exit.
 
-Full borrow semantics are specified in §11.9.
+```
+fn into_sorted(own v: Vec[i32]) -> Vec[i32]:
+  mut buf = v                   // v is real-owner; ownership transfers
+  // sort buf in place
+  buf
+
+let v = make_vec()
+let s = into_sorted(move v)     // ✓ explicit move; v's name dies
+print(v)                        // ✗ compile error: v was consumed
+```
+
+The `own` keyword precedes the binding name in the parameter
+declaration:
+
+```
+fn f(own x: T) -> U: ...                  // single own parameter
+fn g(a: T, own b: U) -> V: ...            // mixed: a is default, b is own
+fn h(own a: T, own b: U) -> V: ...        // both own
+```
+
+`own` is grammatically a keyword in parameter-declaration position; the
+parser accepts it before any parameter binder. The corresponding call
+site requires `move` (§11.8.5) on the consumed argument; the compiler
+enforces this symmetry — `own` parameter without `move` at the call, or
+`move` at the call without `own` in the signature, are both compile
+errors.
+
+**`own` on `Copy` parameter types.** Declaring `own` on a parameter
+whose type is `Copy` is legal but redundant: `Copy` values are
+duplicated at the boundary regardless of convention, so the caller is
+unaffected by the `own`. The compiler reports such declarations with
+an optional style lint.
+
+**Trait coherence.** A trait method's `own` declaration is part of its
+signature contract. Implementations cannot strengthen or weaken the
+`own` declaration: an implementation must declare exactly the
+parameters the trait declares as `own`, no more and no fewer. See
+§3.1.1.
+
+#### 11.7.5 Elaborated form (compiler-internal, diagnostic-facing)
+
+The compiler maintains an **elaborated form** of every function
+signature in which parameter conventions, lifetime relationships among
+the parameter cluster and the return value, and implicit-Copy/Clone
+anchoring points (§11.3.6) are fully explicit. The user-facing source
+omits this information when it equals the defaults; the elaborated
+form is what the compiler reasons over and what IDE tooling and
+diagnostics display.
+
+For example, the user-facing source `fn f(v: T) -> T` corresponds to an
+elaborated form that names `v` as a borrow-equivalent alias for the
+call's duration, identifies the return value as anchored from `v`'s
+cluster (with implicit Copy or Clone per §11.3.6), and bounds the
+return's lifetime to the call site. The user does not write this; the
+compiler computes it; the IDE shows it on demand.
+
+The elaborated form is normative for diagnostic templates: every
+ownership-related error message references the elaborated form's
+named entities (parameter convention, cluster root, alias lifetime
+span) rather than the user-facing surface. This ensures errors are
+unambiguous even when the surface elides the underlying machinery.
+
+A user may opt into writing the elaborated form explicitly in signatures
+when surface visibility is desired (library API documentation, training
+examples). The default-form and the explicit elaborated form must be
+equivalent; the compiler verifies the mapping.
 
 ### 11.8 Call-Site Semantics
 
-The caller writes a uniform call syntax regardless of whether the function
-consumes or borrows its parameters:
+The call form depends on whether the function consumes any of its
+arguments:
 
 ```
 let v = make_buffer()
-let n = length(v)             // length declares &Vec; v survives the call
-let v = push(v, 42)           // push declares Vec; v consumed, return rebinds
-let m = length(v)             // length again; v still owned
+let n = length(v)             // length takes default parameter; v survives
+let w = into_sorted(move v)   // into_sorted declares `own`; v consumed via `move`
+let m = length(w)             // length again; w still owned
 ```
 
-The call-site syntax does not distinguish consume from borrow. The
-function's signature is the authoritative contract: callers consult the
-signature (directly or via tooling) to know what happens to their
-arguments.
+The default form `f(x)` always means "no consumption": the caller's
+binding survives the call regardless of what the callee does internally
+with its borrow-equivalent alias. To consume a binding, the caller
+writes `move x` and the callee's signature must declare the
+corresponding parameter `own`. The compiler enforces the symmetry:
+`own` ⇔ `move`.
 
 #### 11.8.1 Implicit borrow at call sites
 
-When a function declares an `&T` parameter, the caller passes the binding
-without any sigil — `length(v)` rather than `length(&v)`. The compiler
-inserts the borrow operation automatically. The borrow is active for the
+When a function declares a default parameter, the caller passes the
+binding without any sigil — `length(v)`, not `&length(v)` or
+`borrow(v)`. The compiler inserts the borrow-equivalent aliasing
+automatically. The alias is rooted in the caller's binding for the
 duration of the call expression.
 
-This is intentional. Borrowing is a safe operation (read-only, no aliasing
-hazards), so making it explicit at call sites would add visual noise
-without informational value. Adding a sigil for the *dangerous* operation
-— consumption — would similarly be noise: consumption is so common under
-move semantics that requiring a marker would clutter most call sites.
-Instead, the language treats both behaviors as signature-driven and lets
-the compiler enforce correctness through use-after-move errors.
+This is intentional. The borrow-equivalent default is the safe,
+non-destructive case (read-only, no observable mutation, caller's
+binding survives), so making it explicit at every call site would add
+visual noise without informational value. Marking the *dangerous*
+operation — consumption — does carry informational value because
+consumption is irreversible and the reader needs locality at the call
+site to reason about which bindings survive and which die. Hence the
+asymmetry: borrow is implicit at the call site; consume requires
+`move`.
 
 #### 11.8.2 Use-after-move
 
 Using a binding after its value has been consumed is a compile error,
-reported at the use site. The diagnostic identifies the call (or other
-operation) that consumed the binding:
+reported at the use site. The diagnostic identifies the `move`
+expression that consumed the binding:
 
 ```
 let v = make_vec()
-let n = consume_fn(v)         // v consumed here
+let n = consume_fn(move v)    // v consumed here
 print(v)                       // ✗ compile error:
-                               //   `v` was consumed by `consume_fn` at line 2
+                               //   `v` was consumed by `move v` at line 2
                                //   and is no longer accessible
 ```
 
-The error is local: the compiler does not need to analyze the function's
-implementation; the signature is sufficient.
+The error is local: the compiler does not need to analyze the
+function's implementation; the signature and the `move` keyword at the
+call site together identify the consumption.
 
 #### 11.8.3 Method-call form
 
 The method-call form `x.f(args)` is sugar for `f(x, args)` per §3.4's
-uniform call syntax. The same ownership rules apply: if `f` declares its
-first parameter as `&T`, the call borrows `x`; if as `T`, the call
-consumes `x`.
+uniform call syntax (and §3.5.5's clarification: the receiver is the
+first positional argument; the dot-call introduces no implicit
+ownership rule of its own). The same ownership rules apply: the
+receiver follows the method's first-parameter convention.
 
 ```
 let v = make_buffer()
-let n = v.length()           // sugar for length(v); borrows v per signature
-let m = v.length()           // borrows again; v still owned
-let v = v.push(42)           // sugar for push(v, 42); consumes; rebind
+let n = v.length()           // sugar for length(v); default; v survives
+let m = v.length()           // default again; v still owned
+
+let s = (move v).into_sorted()    // sugar for into_sorted(move v);
+                                   //   v consumed via parenthesized prefix
 ```
+
+The `move` keyword attaches to the consume target via prefix
+parenthesization, not as a prefix on a dotted expression. Writing
+`move v.into_sorted()` is forbidden as syntactically ambiguous in
+method chains (which segment is consumed?). The parenthesized form
+`(move v).into_sorted()` disambiguates: `move` consumes `v`; the
+result of `into_sorted` flows out as the call's return value.
 
 Field access `x.field` and indexed access `x[i]` are not function calls
 and do not consume regardless of any signature. They are language
-primitives that read without ownership transfer.
+primitives that read without ownership transfer (§11.3.1).
 
 #### 11.8.4 Refactoring impact
 
-Changing a function's parameter from `T` to `&T` (consume to borrow) is a
-*loosening* of the contract. Existing callers continue to compile:
-arguments that were being consumed are now merely borrowed; the caller
-retains access to the binding afterward (which is strictly more
-permissive than the previous behavior).
+Changing a function's parameter from default `T` to `own T` (borrow to
+consume) is a *tightening* of the contract. Existing callers that
+passed the argument without `move` see a compile error at the call
+site: *"argument requires `move` because `f`'s parameter is declared
+`own`."* The error is local; the caller adjusts by adding `move` and
+ensuring the binding is not used after the call.
 
-Changing a parameter from `&T` to `T` (borrow to consume) is a
-*tightening* of the contract. Callers that were using the argument after
-the call now see use-after-move errors at those use sites. The errors are
-local and clearly indicate which call consumed the value.
+Changing a parameter from `own T` to `T` (consume to default) is a
+*loosening* of the contract. Existing callers that wrote `move x` see
+a compile error at the call site: *"argument has `move` but `f`'s
+parameter is default; remove `move` to pass borrow-equivalent."*
+Removing `move` then makes the caller's binding survive the call,
+which is strictly more permissive.
 
-In neither direction is the refactor silent: tightening produces clear
-compile errors at the affected sites; loosening produces no errors at all.
+In both directions the refactor is non-silent: tightening produces
+errors at the affected call sites; loosening produces errors at the
+sites where the caller redundantly wrote `move`. The compiler steers
+the user toward the correct form.
 
-### 11.9 The Borrow Form (`&T`)
+#### 11.8.5 The `move` keyword grammar
 
-A borrow is a temporary, read-only handle to a value, scoped to a single
-function call expression. Borrows are declared in function-parameter type
-position with the `&` prefix:
+The `move` keyword applies at call-site argument positions to mark
+explicit consumption of an l-value identifier binding.
+
+**Grammar.** `move <l-value identifier>` is legal only as an immediate
+sub-expression of a function-call argument list:
 
 ```
-fn length(v: &Vec[i32]) -> isize: ...
-fn equals(a: &Vec[i32], b: &Vec[i32]) -> bool: ...
-fn copy_into(src: &Vec[i32], dest: Vec[i32]) -> Vec[i32]: ...
+f(move x)                          // ✓ argument to f
+g(a, move b, c)                    // ✓ middle argument
+(move v).method()                  // ✓ method-call receiver via prefix
+                                   //   parenthesization (§11.8.3)
 ```
 
-The `&` is a parameter-position-only syntactic form. It does not appear at
-call sites (per §11.8.1), in `let` or `mut` declarations, in record field
-declarations, in return types, in trait bounds, or in any other position.
-The borrow is created implicitly by the call dispatch when the function
-declares a borrow parameter; the borrow is released when the call
-expression finishes evaluating.
+`move` is **forbidden** outside call-site argument positions:
+
+```
+let y = move x                     // ✗ parse error: `move` in let-RHS
+return move x                      // ✗ parse error: `move` in return
+mut z = move x                     // ✗ parse error: `move` in mut-RHS
+move v.method()                    // ✗ parse error: `move` attached to a
+                                   //   dotted expression — ambiguous in
+                                   //   chains; use `(move v).method()`
+```
+
+The restriction is by design. `move` in let-RHS, return, or mut-RHS
+would be redundant: single-name-per-cluster already kills the source
+name when the new binding takes its role (§11.3 and §11.3.5).
+Move-on-return without anchoring would conflict with §11.3.6's
+auto-anchoring rule. The keyword's role is to mark the irreversible
+call-site consumption — the one place where locality matters and the
+signature alone does not make the call's effect visible.
+
+**Symmetry with `own`.** Each occurrence of `move` at a call site must
+correspond to a parameter declared `own` in the callee's signature, and
+each `own` parameter must receive a `move` at the call site. Mismatches
+are compile errors:
+
+- `own` in signature, no `move` at call: *"argument requires `move`
+  because `f`'s parameter is declared `own`."*
+- `move` at call, no `own` in signature: *"argument has `move` but
+  `f`'s parameter is default; remove `move`."*
+
+The symmetry makes consumption locally readable: every `move` at a
+call site visibly marks where a binding becomes inaccessible.
+
+### 11.9 Borrow Semantics and Lifetime Tracking
+
+This section specifies how the compiler tracks the borrow-equivalent
+aliases that arise from default function parameters (§11.7),
+let-rebindings of cluster members (Rule P, §11.3.5), and for-loop
+iteration variables (§12.3). The user-facing surface has **no `&T`
+syntax**: aliases are introduced implicitly by the language
+constructs cited above, and the compiler's elaborated form (§11.7.5)
+exposes them for diagnostics and tooling. Trait machinery and
+stdlib-privileged helpers retain compiler-internal borrow references;
+these are not user-writable.
 
 #### 11.9.1 Restrictions
 
-A borrow may not be:
+A borrow-equivalent alias may not be:
 
-- **Stored in a binding.** `let r = ...` cannot bind a borrow. The
-  language has no way to write down a "binding that holds a borrow"; the
-  `&` form is not valid in `let`/`mut` declarations.
-- **Returned from a function.** A function's return type is always an
-  owned value or a `Copy` value. The `&` form does not appear in
-  return-type position, except for the narrow carve-outs in §11.9.5
-  (`Iterator::next` and stdlib-privileged borrow-returning functions).
-- **Stored in a record field, enum variant payload, or tuple component.**
-  Compound types contain owned values, never borrows.
-- **Captured by a closure.** Closures capture by value (§11.10); borrows
-  are not values that can be captured.
+- **Returned from a function** as the function's declared return value,
+  except via the auto-anchoring of §11.3.6 (which produces a real owner
+  via implicit Copy or Clone). The narrow carve-outs of §11.9.5
+  (`Iterator::next` and stdlib-privileged helpers) are
+  compiler-internal.
+- **Stored in a record field, enum variant payload, or tuple component
+  (category B).** Compound types contain owned values, never aliases.
+  Exceptions per §11.9.5 are compiler-internal.
+- **Stored in a reactive cell (category D).** `signal.write`,
+  `stream.emit`, attr reassignment, and recurrent advance require a real
+  owner for the value flowing into the cell (§11.3.4).
+- **Captured by an escaping closure** (§11.10). Non-escaping closures
+  may treat captures as cluster-member borrows; values that escape the
+  cluster cannot be captured by alias.
 
-These restrictions collectively ensure that a borrow never outlives the
-function call expression that created it. The compiler does not need to
-track lifetimes across statements, across function boundaries, or across
-data structures — the borrow exists only within one call expression and
-is gone by the next statement.
+Aliases **may** appear in:
 
-These prohibitions admit a small set of narrow carve-outs documented in
-§11.9.5 for specific structural positions (iterator-type fields,
-Iterator::next returns, stdlib-privileged borrow-returning functions).
-Outside those positions the prohibitions are absolute.
+- Function parameters (default convention) — §11.7.
+- `let` and `mut` rebindings of an existing alias source — §11.3.5
+  Rule (P).
+- For-loop iteration variables under the default `for x in v:` form —
+  §12.3.
 
-#### 11.9.2 Constraints during an active borrow
+The first form is bounded by the call expression. The latter two extend
+the alias's lifetime to the binding's scope (let-rebind) or the loop
+body (for-loop var). The compiler's cluster analysis (§11.3.4) handles
+both cases.
 
-While a borrow of value `v` is active (i.e., during the call expression
-where `&v` was passed), the owner of `v` may not:
+#### 11.9.2 Constraints during alias lifetime
 
-- Move `v` (pass it by value to another function, return it, assign it to
-  another binding).
-- Mutate `v` (reassign through a `mut` binding, perform indexed or field
-  assignment).
+While a cluster has any borrow-equivalent alias member (i.e., the
+cluster has more than just its root), the root may not be:
 
-These constraints apply within the call expression. Once the call returns,
-the borrow is released and the owner may move or mutate `v` freely.
+- **Moved** — passed to an `own` parameter, returned, or reassigned
+  into a different slot.
+- **Mutated** — reassigned through `mut`, or subject to indexed or
+  field assignment.
 
-In practice, this restriction is invisible because expressions are
-evaluated sequentially. The case it forbids is multi-argument calls where
-one argument borrows and another consumes:
+These constraints apply for the entirety of the alias's lifetime, which
+ranges from the call expression (default parameters) to the body of the
+binding's scope (let-rebinds) or the iteration body (for-loop vars).
+Once every alias goes out of scope, the cluster collapses back to its
+root and the root may again be moved or mutated.
+
+The case forbidden by these constraints is when one sub-expression
+borrows a binding while another sub-expression in the same expression
+attempts to consume the same binding:
 
 ```
-fn combine(a: &Vec[i32], b: Vec[i32]) -> ...  // a borrows; b consumes
-fn consume_fn(v: Vec[i32]) -> ...
+fn combine(a: Vec[i32], b: own Vec[i32]) -> ...   // a default, b own
+fn extract(own v: Vec[i32]) -> Vec[i32]: ...
 
 let v = make_vec()
-let result = combine(v, consume_fn(v))   // ✗ compile error:
-                                          //   v borrowed (per combine's first parameter)
-                                          //   and moved (into consume_fn) in the same expression
+let r = combine(v, extract(move v))               // ✗ compile error:
+                                                  //   v has live alias
+                                                  //   (combine's a); cannot
+                                                  //   move v into extract in
+                                                  //   the same expression
 ```
 
-The compiler tracks within-expression borrow activity and reports
-conflicts at the offending sub-expression.
+The compiler reports the conflict at the offending sub-expression.
 
-#### 11.9.3 Multiple simultaneous borrows
+#### 11.9.3 Multiple simultaneous aliases
 
-Multiple borrows of the same value in the same expression are permitted,
-because all borrows are read-only:
+Multiple borrow-equivalent aliases of the same source may coexist; all
+are read-only, so no aliasing-with-mutation hazard arises (per §11.9.2
+the source cannot be mutated while any alias is live):
 
 ```
-fn compare(a: &Vec[i32], b: &Vec[i32]) -> bool
-fn max3(a: &Vec[i32], b: &Vec[i32], c: &Vec[i32]) -> &Vec[i32]  // illustrative; see §11.9.5 stdlib carve-out
+fn compare(a: Vec[i32], b: Vec[i32]) -> bool      // both default
 
 let v = make_vec()
-let r = compare(v, v)                // ✓ two borrows of v per compare's signature, both read-only
-let s = max3(a, a, b)                // ✓ three borrows total per max3's signature
+let r = compare(v, v)                              // ✓ two aliases of v;
+                                                   //   compare reads both
 ```
 
-No aliasing-with-mutation hazard arises: nothing in the call expression
-can mutate any of the borrowed values, by §11.9.2.
-
-#### 11.9.4 Implicit reborrow inside function bodies
-
-A function whose parameter is `&T` may pass that parameter to another
-function expecting `&T` without any additional syntax:
+Let-rebindings within a cluster proceed step by step: each rebind kills
+the prior name (single-name-per-cluster) and produces a new alias name
+rooted in the same source. Several distinct aliases of one source may
+remain live across a function-call expression — typically when one is
+the original binding and another is being passed through:
 
 ```
-fn length(v: &Vec[i32]) -> isize:
-  count_elements(v)           // count_elements declares &Vec; reborrow is automatic
-
-fn count_elements(v: &Vec[i32]) -> isize: ...
+fn process(items: Vec[i32]) -> i32:
+  for x in items:                                  // x is an alias of items[i]
+    let y = x                                      // Rule (P): y replaces x;
+                                                   //   x's name dies
+    read_two(y, items)                             // ✓ two aliases (y, items)
+                                                   //   both live during call
 ```
 
-The body of `length` treats `v` as a value of type `Vec[i32]` for purposes
-of reading; passing it to `count_elements` extends the borrow chain. The
-compiler tracks that `v` inside `length` is a borrow (not an owned value)
-and forbids operations that would consume or store it:
+#### 11.9.4 Implicit alias propagation in function bodies
+
+A function whose parameter is default (borrow-equivalent) may pass that
+parameter to another default-parameter function without any additional
+syntax:
 
 ```
-fn length(v: &Vec[i32]) -> isize:
-  count_elements(v)           // ✓ reborrow
-  consume_vec(v)              // ✗ consume_vec declares Vec by value;
-                              //   cannot move out of borrowed v
-  return v                    // ✗ cannot return a borrow as owned
-  let saved = v               // ✗ cannot bind a borrow
+fn length(v: Vec[i32]) -> isize:
+  count_elements(v)             // count_elements is default; alias propagates
+
+fn count_elements(v: Vec[i32]) -> isize: ...
 ```
 
-#### 11.9.5 Where borrows may appear
+Inside the body of `length`, `v` is a borrow-equivalent alias rooted in
+the caller's binding. Passing it to `count_elements` extends the alias
+chain. The compiler tracks that `v` is an alias (not a real owner) and
+forbids operations that would require real ownership:
 
-The borrow-position list below covers both permitted and forbidden
-cases; readers may treat the bullets as a complete enumeration.
+```
+fn length(v: Vec[i32]) -> isize:
+  count_elements(v)             // ✓ alias propagates
+  consume_vec(move v)           // ✗ v is borrow-equivalent;
+                                //   cannot consume cluster member (Rule P)
+  return v                      // ✓ if Vec[i32] is Clone:
+                                //   §11.3.6 auto-anchoring applies
+  let saved = v                 // alias-rebind (Rule P); saved aliases
+                                //   the same source as v; v's name dies
+```
 
-`&T` is grammatically valid only in *parameter positions*. The language
-recognizes six positions, each with a clear, lexically-bounded borrow
-lifetime:
+The Rule (P) machinery in §11.3.5 governs every `let` or `mut`
+rebinding of an alias inside a function body. Default-parameter passes
+between functions are governed by §11.7 (parameters) and §11.8
+(call sites).
 
-- **Function parameter type signatures** (this section, §11.7.4 and
-  §11.9). A `&T` in a parameter signature declares that the function
-  borrows that argument for the duration of the call expression.
-- **For-loop iteration variables** (§12.3.3). The iteration variable is
-  bound by the loop construct, fresh each iteration, immutable, and
-  cannot be declared `mut`. When the iterator's `Item` type is a borrow
-  type, the iteration variable is borrow-shaped for the duration of one
-  iteration body.
-- **For-loop iteration source expression** (§12.3.1). The expression
-  between `for x in` and `:` may be a borrow expression `&v`, which
-  invokes borrowing iteration via the `Iterable` trait (§12.8). The
-  borrow lives for the duration of the entire for-loop expression. This
-  is the only position where `&v` is an *expression* rather than a
-  signature element; everywhere else, `&v` as an expression is a parse
-  error.
-- **Iterator type fields holding a borrow into the iteration source**
-  (§12.7.4). When a user-defined iterator type satisfies the `Iterator`
-  trait with `Item = &T`, the iterator's record may carry a `source: &T`
-  field referencing the iteration source. The borrow's lifetime is
-  bounded by the enclosing for-loop expression that holds the iterator;
-  the compiler verifies that the source outlives the iterator at
-  construction. This carve-out is bounded to fields of types satisfying
-  `Iterator` — it does not generalize to arbitrary record fields.
+#### 11.9.5 Compiler-internal borrow-returning positions
+
+A small set of compiler-internal positions retain `&T`-style references
+internally; these are not user-writable but exist in the spec's
+internal trait machinery and language-privileged stdlib helpers.
+
 - **`Iterator::next` return values** (§12.7.4). The `Iterator` trait's
-  `next` method may return `(Option[&T], Self)` when the iterator's
-  `Item` type is a borrow. This is the value-side counterpart to the
-  iterator-type-field carve-out above: the iterator stores the borrow in
-  its source field, and `next` exposes that borrow as the yielded item.
-  The borrow's lifetime is bounded by the enclosing for-loop expression.
+  `next` method may yield a borrow-shaped item when the iterator's
+  `Item` is internally a borrow type. The borrow's lifetime is bounded
+  by the enclosing for-loop expression. This is compiler-internal
+  machinery; user-defined iterators declare `type Item = T`, and the
+  compiler decides internally whether the item is borrow-shaped under
+  default-form iteration.
+- **Iterator type fields holding a borrow into the iteration source**
+  (§12.7.4). When the compiler's iterator desugaring requires the
+  iterator record to carry a borrow into the source, the borrow's
+  lifetime is bounded by the enclosing for-loop expression. This is
+  compiler-internal machinery; user code does not declare such fields.
 - **Stdlib-privileged borrow-returning function signatures** (§3.7.3).
   The language reserves the right to provide functions in the standard
-  library whose return type is a borrow into one of their arguments — for
-  example, indexed-collection accessors like `element_at(v: &Vec[T], i:
-  isize) -> &T`. The returned borrow's lifetime is bounded by the
-  argument-borrow's lifetime (the borrow-scope of the call expression
-  that constructed the argument borrow). This carve-out applies only to
-  language-privileged stdlib functions enumerated in §3.7.3; user-defined
-  functions cannot declare borrow return types.
+  library whose return value is a borrow-equivalent alias rooted in one
+  of their arguments — for example, indexed-collection accessors like
+  `element_at(v: Vec[T], i: isize) -> T`. The returned alias's
+  lifetime is bounded by the call's enclosing cluster lifetime. This
+  carve-out applies only to language-privileged stdlib functions
+  enumerated in §3.7.3; user-defined functions cannot declare
+  borrow-returning signatures.
 
-All six positions share the same lifetime discipline: the borrow lives
-for the scope of one parameter-binding occurrence (one call expression,
-one iteration body, or one for-loop expression respectively). The
-compiler does not need lifetime parameters or cross-statement tracking;
-the lifetime is determined syntactically by the enclosing position.
+These positions share a single property: the returned alias's lifetime
+is determined by the structural relationship between the caller's
+source binding and the call site, with no user-written annotation. The
+compiler's elaborated form (§11.7.5) makes the inferred lifetime
+visible in diagnostics and tooling.
 
-Outside these positions, `&T` is a parse error.
+#### 11.9.6 Aliases of `Copy` values
 
-**As a type expression** (`&T` in a type-annotation position), it is
-forbidden in:
+A `Copy` value passed by default (borrow-equivalent) is functionally
+identical to a fresh independent copy: the caller's binding remains
+usable, and the parameter's value cannot be observed by the caller in
+any case. The default convention is the user-facing form; the compiler
+internally elides the alias machinery for `Copy` types where useful.
 
-- `let` and `mut` declarations: `let r: &Vec = ...` is a parse error.
-- Record fields: `type Holder: data: &Vec` is a parse error. Exception:
-  iterator-type fields per the position list above.
-- Enum payloads: `Variant(&T)` is a parse error.
-- Tuple components, *except* the tuple appearing as the return type of
-  `Iterator::next` per §12.7.4: `(&i32, i32)` is generally a parse error.
-- Function return types, *except* `Iterator::next` per §12.7.4 and
-  stdlib-privileged borrow-returning functions per the carve-out above
-  (`element_at`, etc.): `fn f(...) -> &T` is generally a parse error.
-- Closure parameter types in stored closure types (deferred).
-- Trait associated types, *except* `Iterator::Item` per §12.7.4:
-  `type Item = &T` is generally a parse error.
-- Generic-type arguments, *except* in `Option[&T]` as it appears in
-  `Iterator::next`'s return per §12.7.4: `Vec[&i32]` is a parse error.
-
-**As a value expression** (`&v` evaluating to a borrow of `v`), it is
-forbidden everywhere *except* in the for-loop iteration source position
-(§12.3.1):
-
-- Function argument expressions: `f(&v)` is a parse error. Function-call
-  argument syntax does not include `&`; the function's signature
-  determines whether the argument is consumed or borrowed (§11.8.1).
-- Binding right-hand sides: `let r = &v` is a parse error.
-- Return expressions: `return &v` is a parse error.
-- Record/tuple/enum construction: `Holder(field: &v)` is a parse error.
-- Closure capture expressions: borrows cannot be captured.
-
-The narrow exceptions for the `Iterator` trait (above) and for the
-iteration source expression position (§12.3.1) exist because both flow
-directly into the for-loop iteration variable position; the borrow's
-lifetime is bounded by the iteration body or the for-loop expression in
-exactly the same way function-parameter borrows are bounded by the call
-expression. The exceptions are bounded; they do not generalize to
-arbitrary user code.
-
-This restriction keeps the borrow model trivially sound without lifetime
-parameters or cross-statement tracking.
-
-#### 11.9.6 Borrows of `Copy` values
-
-A `Copy` value may also be passed by borrow rather than by value if the
-function declares `&T`. The behavior is identical in effect — neither
-form consumes the caller's binding — and the choice is the function
-author's. Borrow declarations on `Copy` types are unusual but legal; the
-caller cannot tell the difference at the call site.
-
-The motivation for declaring `&T` even when `T` is `Copy` is uniform API
-shape: a function generic over `T: SomeTrait` may want to take `&T` so
-the behavior is consistent across `Copy` and non-`Copy` instantiations.
+A function generic over `T: SomeTrait` declares its parameter `T`
+(default) regardless of whether the instantiating type is `Copy` or
+non-`Copy`. The same source form works in both cases; the compiler
+specializes per instantiation.
 
 ### 11.10 Closures and Capture
 
