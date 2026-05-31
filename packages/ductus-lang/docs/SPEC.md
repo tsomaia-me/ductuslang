@@ -52,14 +52,15 @@ except through its declared return value. Time-varying *external*
 behavior is expressed through the reactive system, not through
 assignment.
 
-**Single ownership.** Every value has exactly one owner at any moment.
-Passing a non-`Copy` value to a function transfers ownership; the
-caller's binding is consumed. Returning a value transfers ownership back
-to the caller. Read-only access to a non-`Copy` value without ownership
-transfer is provided through call-scoped borrows (`&T` parameters) per
-§11.9. There is no garbage collector, no reference counting at the
-language level (the runtime may use refcounting internally for specific
-types like `string` per §11.6), and no shared mutable state.
+**Single ownership.** Every value has exactly one real owner at any
+moment. Function parameters default to borrow-equivalent access: the
+function gets a read-only alias of the caller's value for the duration
+of the call, and the caller's binding survives. Consumption is opt-in
+via `own` in the signature and `move` at the call site (§11.7, §11.8).
+Returning a value transfers ownership to the caller. There is no
+garbage collector, no reference counting at the language level (the
+runtime may use refcounting internally for specific types like
+`string` per §11.6), and no shared mutable state.
 
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
@@ -5029,8 +5030,8 @@ The non-exhaustive list:
   computation.
 - `ok_or[E](value: Self, err: E) -> Result[T, E]` — converts to
   `Result` with the given error on `None`.
-- `is_some(value: &Self) -> bool`, `is_none(value: &Self) -> bool` —
-  discriminator predicates.
+- `is_some(value: Self) -> bool`, `is_none(value: Self) -> bool` —
+  discriminator predicates (default convention; non-consuming).
 
 #### 8.7.2 `Result[T, E]`
 
@@ -5049,8 +5050,8 @@ The non-exhaustive list:
   — error-recovery chain.
 - `ok(value: Self) -> Option[T]`, `err(value: Self) -> Option[E]` —
   convert to `Option`, discarding the other arm.
-- `is_ok(value: &Self) -> bool`, `is_err(value: &Self) -> bool` —
-  discriminator predicates.
+- `is_ok(value: Self) -> bool`, `is_err(value: Self) -> bool` —
+  discriminator predicates (default convention; non-consuming).
 
 All methods listed above are *free functions* defined in stdlib, callable
 through uniform call syntax per §3.4 (records and enums carry no methods
@@ -6490,6 +6491,25 @@ compile-time-only form. `const` and `mut` are mutually exclusive — `const`
 asserts compile-time-only and immutable; `mut` is necessarily runtime and
 mutable.
 
+**Module scope.** `let` is a function-body construct only. Module
+scope contains `const`, `signal`, `attr`, `derived`, and `recurrent`
+declarations (per their respective sections in §13); it does **not**
+contain `let` bindings. The ownership rules of §11.3–§11.9 apply to
+function bodies (and to function parameter / return wiring at the
+boundaries), not to module-scope declarations. Reactive cells declared
+at module scope are governed by §13's reactive contract.
+
+**Top-level consts and the ownership system.** A top-level `const`
+(per §2.4.1.1) is compile-time-only: each use site reifies a fresh
+compile-time value. Consts do not enter the §11 ownership system —
+there is no runtime "owner" of a const to consume or transfer. Per
+§2.4.1.1, const types must be compile-time-constructible, which in
+practice means `Copy` primitive and small composite types; non-`Copy`
+const types (heap-backed containers, etc.) are not supported.
+Attempts to apply `move` or to pass a const to an `own` parameter
+position are diagnosed as: *"const `X` is compile-time-only and has
+no runtime identity; consumption does not apply."*
+
 #### 11.2.1 Shadowing
 
 Either form may shadow a previously declared binding in the same scope:
@@ -7675,16 +7695,49 @@ The root binding (`r`, `arr`) must be declared `mut`. The field or
 element being assigned must itself be of a type compatible with the
 assigned value, per the standard type-check rules.
 
-Field and indexed assignment desugar to operator-trait method calls (the
-exact traits — `FieldAssign`, `IndexAssign`, or analogous — are stdlib
-concerns specified outside this document). The desugaring preserves the
-single-writer invariant: the assignment is a mutation through the `mut`
-binding only; no other binding to the same underlying value can exist
-while the mutation occurs (borrows would block it per §11.9.2; aliased
-ownership is impossible by construction).
+Field and indexed assignment desugar to operator-trait method calls
+(the exact traits — `FieldAssign`, `IndexAssign`, or analogous — are
+stdlib concerns specified outside this document). The desugaring
+preserves the single-writer invariant: the assignment is a mutation
+through the `mut` binding only; no other binding to the same
+underlying value can exist while the mutation occurs (borrow-equivalent
+aliases would block the mutation per §11.9.2; aliased real-ownership
+is impossible by construction).
 
-Reading a field or element from any binding (whether `let` or `mut`) is
-unrestricted (§11.3.1).
+**Implicit move at storage sites (category B).** The right-hand side
+of an indexed assignment, field assignment, or whole-value
+reassignment is consumed into the storage slot. This consumption is
+**implicit** — the user does not write `move` for the RHS. The
+operation itself is structurally a transfer of ownership into a slot;
+the `move` keyword would add no information.
+
+```
+mut r = make_record()
+r.field = produce_value()    // produce_value()'s return is consumed
+                             //   into r.field — no `move` keyword
+let v = build_vec()
+mut arr = make_array_of_vecs()
+arr[5] = v                   // v is consumed into arr[5]; v's name dies
+                             //   (single-name-per-cluster); no `move` needed
+```
+
+The same rule applies to record construction (§6.1) and to reactive
+cell writes (`signal.write`, `stream.emit`, attr reassignment from a
+recurrent advance — category D in §11.1): consumption into a slot is
+implicit; the slot's identity at the LHS communicates which value is
+being consumed. Function-call argument positions (category A) are the
+**only** places where consumption requires the explicit `move`
+keyword, per §11.8.5.
+
+The RHS in a storage assignment must be a real owner (or a Copy
+value, in which case the storage slot receives the Copy). Passing a
+borrow-equivalent alias as the RHS is a compile error per §11.3.4:
+cluster members cannot be stored in structural slots. The diagnostic
+suggests `.clone()` or restructuring to source the value from a real
+owner.
+
+Reading a field or element from any binding (whether `let` or `mut`)
+is unrestricted (§11.3.1).
 
 #### 11.11.1 Whole-value reassignment
 
@@ -7775,22 +7828,39 @@ remains call-scoped as for direct calls.
 ### 11.14 Interaction with Reactivity
 
 The reactive system is specified in §13. The interaction with local
-mutability follows two principles, recorded here for
-forward-compatibility:
+mutability and §11's four ownership categories follows three
+principles, recorded here for forward-compatibility:
 
 - **Reactive expressions (`derived` and analogous) are pure-evaluated.**
   A `derived` expression's body runs as a pure function of its inputs
   each time inputs change. The body may invoke ordinary functions that
-  use `mut` internally; the body itself produces a value that enters the
-  reactive graph.
+  use `mut` internally; the body itself produces a value that enters
+  the reactive graph.
 
-- **Values entering the reactive graph become external state.** Once a
-  value is bound into the reactive system as a signal, derived, or
-  reactive store, it is no longer the property of any single function's
-  scope. External state is immutable per §11.1's "nothing outside a
-  function body is mutable" principle; reactive values are updated only
-  through the reactive system's defined update mechanisms, never through
-  `mut` assignment.
+- **Values entering the reactive graph become external state.** Once
+  a value is bound into the reactive system as a signal, derived, or
+  reactive store, it is no longer the property of any single
+  function's scope. External state is immutable per §11.1's "nothing
+  outside a function body is mutable" principle; reactive values are
+  updated only through the reactive system's defined update
+  mechanisms, never through `mut` assignment.
+
+- **Reactive cell writes are category D (implicit move).** Writes to
+  reactive cells — `signal.write(v)`, `stream.emit(v)`, attr
+  reassignment from a recurrent advance — consume their RHS value
+  into the cell's storage. Like category B (§11.11), this consumption
+  is implicit; the user does not write `move`. The cell's identity at
+  the LHS communicates the destination. Reactive **wiring** (category
+  C) — placement attribute assignment from a reactive RHS, connection
+  arguments referencing attrs or signals — is governed by §11.1's
+  reactive-binding exception and does **not** consume; it produces
+  multiple aliases to the same cell. The category-B/C/D distinction at
+  placement attribute assignment is type-directed: a reactive-typed
+  RHS produces wiring; a value-typed RHS produces a category-B/D
+  consume into the attr's slot.
+
+Function parameters flowing into reactive declarations follow `own`/
+`move` like any other category A consumption (§11.7, §11.8).
 
 The reactive boundary is one of the "global" scopes referenced in
 §11.1's principles. The full specification of how values cross this
@@ -11634,38 +11704,51 @@ the standard widening rules).
 
 The right-hand side of an attribute setting at placement may be:
 
-- A **compile-time expression** — a literal, a `const` reference, a
-  compile-time-evaluable computation. The value is fixed at
-  placement and stored directly in the attr's cell.
+- A **compile-time / value expression** — a literal, a `const`
+  reference, a compile-time-evaluable computation, or any other
+  expression whose provenance contains no reactive cell. The value
+  is consumed into the attr's storage slot at instantiation
+  (§11.1 category B / D, implicit move; no `move` keyword required).
 - A **reactive expression** — references reactive cells (signals,
   attrs, recurrents, deriveds) visible at the placement scope:
   sibling part instances by name, top-level signals or consts, or
   any cell reachable through visible names. The placement creates
   an implicit `derived` bridging the source cells to the target
-  attr, so the attr reactively tracks changes to the source.
+  attr, so the attr reactively tracks changes to the source. This
+  is **reactive wiring** — §11.1 category C — and is governed by
+  §11.1's reactive-binding exception; the placement is not a §11
+  ownership operation, and the source cell is not consumed.
 
 ```
 App my_app:
   Fetch fetcher / "url"
-  Log / fetcher.response                  // reactive binding: Log's default attr
-                                           // tracks fetcher.response
+  Log / fetcher.response                  // reactive binding (category C):
+                                           // Log's default attr tracks
+                                           // fetcher.response; no consumption
 
 App other_app:
   Counter c1
-  Display d1 | label=format(c1.count)     // reactive: d1.label tracks c1.count,
-                                           // formatted as a string
+  Display d1 | label=format(c1.count)     // reactive (category C): d1.label
+                                           // tracks c1.count formatted
+
+App config_app:
+  Server srv | port=8080                  // value RHS (category B/D): 8080 is
+                                           // consumed into srv.port's slot
 ```
 
 Mechanically, a reactive placement value introduces a synthesized
 derived in the parent's scope; the target attr is bound to that
 derived. When any cell in the expression's provenance changes
 (§13.12.1), the synthesized derived re-evaluates and the target
-attr updates.
+attr updates. A value placement, by contrast, evaluates the RHS once
+and stores the result into the attr's slot.
 
-The compiler determines reactivity from the expression's provenance
-set: any reference to a reactive cell makes the expression
-reactive; otherwise the expression is compile-time and the value is
-fixed at placement.
+The compiler determines the category from the expression's
+provenance set: any reference to a reactive cell makes the expression
+reactive (category C wiring); otherwise the expression is a value
+expression and the RHS is consumed into the attr's slot at
+instantiation (category B / D). The distinction is type-directed and
+requires no syntactic marker.
 
 ##### 13.8.2.2 Restrictions
 
@@ -13981,7 +14064,10 @@ type:
 
 **Value parameters** (`name: T`):
 - Snapshot at instantiation. The value is fixed for the lifetime of
-  this operator instance.
+  this operator instance. Snapshotting is structurally a category-B
+  storage operation (§11.11; §11.1): the value flows from the
+  instantiation expression into the operator instance's value slot
+  with implicit-move semantics. No `move` keyword is required.
 - Inside the body, the parameter is a compile-time-fixed value.
 - Useful for configuration that does not change: smoothing rates,
   thresholds, modes, etc.
@@ -15328,7 +15414,10 @@ as operator parameters (§13.17.3):
 
 **Value parameters** (`name: T`):
 - Snapshotted at instantiation. Fixed for the effect instance's
-  lifetime.
+  lifetime. Snapshotting is a category-B storage operation (§11.11;
+  §11.1): the value flows from the instantiation expression into the
+  effect instance's value slot with implicit-move semantics. No `move`
+  keyword is required.
 - Used for configuration values that do not vary at runtime (HTTP
   method, content type, retry budget).
 
@@ -17371,21 +17460,25 @@ emission, not a full trait export.
 
 Ductus's ownership rules map directly to Rust's:
 
-| Ductus                  | Rust                     |
-|-------------------------|--------------------------|
-| `let x = e`             | `let x = e;`             |
-| `mut x = e`             | `let mut x = e;`         |
-| Pass by value (move)    | Pass by value (move).    |
-| `&T` parameter (borrow) | `&T` parameter.          |
-| `for x in v:` (consume) | `for x in v` (consumes). |
-| `for x in &v:` (borrow) | `for x in &v` (borrows). |
-| `Copy` types            | `Copy` trait derived.    |
-| `Clone`                 | `Clone` trait derived.   |
+| Ductus                            | Rust                      |
+|-----------------------------------|---------------------------|
+| `let x = e`                       | `let x = e;`              |
+| `mut x = e`                       | `let mut x = e;`          |
+| Default parameter (`v: T`)        | `v: &T` parameter.        |
+| `own` parameter (`own v: T`)      | `v: T` parameter (move).  |
+| `move v` at call site             | Pass by value (move).     |
+| `for x in v:` (default)           | `for x in &v` (borrows).  |
+| `for own x in v:` (`for own`)     | `for x in v` (consumes).  |
+| Implicit Copy/Clone on rooted return (§11.3.6) | `.clone()` or copy at the return site, emitted by the lowerer. |
+| `Copy` types                      | `Copy` trait derived.     |
+| `Clone`                           | `Clone` trait derived.    |
 
-Ductus's `&v` form in for-loops compiles to Rust's `&v`. Ductus's
-parameter borrow `&T` compiles to Rust's `&T`. Rust's borrow checker
-enforces the same rules that Ductus's frontend already verified; any
-code that passed Ductus's checks passes Rust's.
+Ductus's user-facing surface omits the `&T` machinery; the lowerer
+inserts the corresponding Rust borrow form when emitting code for
+default-convention parameters and default-form for-loop iteration.
+Rust's borrow checker enforces the same rules that Ductus's frontend
+already verified through the cluster analysis (§11.3.4) and Rule (P)
+(§11.3.5); any code that passed Ductus's checks passes Rust's.
 
 #### 15.5.4 Iterator lowering
 
