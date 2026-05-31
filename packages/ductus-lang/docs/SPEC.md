@@ -819,6 +819,15 @@ methods that operate on instances, but trait methods may have any parameter
 list — including no `Self` parameter at all (for "associated functions" like
 constructors).
 
+**Ownership conventions in trait method signatures.** Trait method
+signatures may declare any parameter with the `own` keyword (§11.7.4)
+to opt into consumption. The `own` declaration is part of the trait's
+contract: implementations cannot strengthen or weaken it. An
+implementation must declare exactly the parameters the trait declares
+as `own`, no more and no fewer. The compiler enforces this at the
+`fulfill` block. Callers invoking a trait method follow the same
+`own`/`move` symmetry as for free-function calls (§11.8.5).
+
 #### 3.1.2 Associated types
 
 A trait may declare associated types using the `type` keyword inside the body:
@@ -1740,6 +1749,15 @@ shape.set_dimensions(10.0, height: 20.0)          // ✗ mixed
 The receiver `x` is conceptually the first positional argument of the
 underlying free function; the dot-syntax just brings it forward
 syntactically.
+
+Ownership semantics for the receiver follow the method's signature
+identically to any other parameter (§11.7, §11.8): the receiver is
+borrow-equivalent by default, or consumed when the method declares its
+first parameter `own` and the caller writes `(move x).method(args)`
+per §11.8.3. The dot-call form introduces no implicit consume rule of
+its own — consecutive method calls like `x.foo(); x.bar()` work
+identically to `foo(x); bar(x)` and follow the same default
+(borrow-equivalent) convention.
 
 #### 3.5.6 The `with` expression uses named form
 
@@ -7539,9 +7557,17 @@ let closure = || sum(buf)                     // ✗ compile error:
 Non-`Copy` values flow through closures as arguments rather than captures:
 
 ```
-let closure = |b: &Vec[f32]| sum(b)          // closure takes a borrow argument
-let total = closure(buf)                      // caller passes buf; borrow inserted per signature
+let closure = |b: Vec[f32]| sum(b)           // closure parameter is default
+                                              //   (borrow-equivalent)
+let total = closure(buf)                      // caller passes buf;
+                                              //   buf survives the call
 ```
+
+The closure's parameter follows the default convention from §11.7:
+`b` is a borrow-equivalent alias of the caller's argument for the
+duration of the closure invocation. Closures that need to consume a
+non-`Copy` argument declare it `own`: `let closure = |own b: Vec[f32]|
+into_sorted(move b)`.
 
 #### 11.10.2 Capture granularity
 
@@ -7608,15 +7634,29 @@ let process = |raw: Vec[f32]| -> Vec[f32]:
   local
 ```
 
-#### 11.10.5 Borrows cannot be captured
+#### 11.10.5 Borrow-equivalent aliases cannot be captured
 
-A borrow is not a value (per §11.9). Closures capture values; therefore
-closures cannot capture borrows. There is no `&T` form usable in a
-capture context.
+A closure that escapes its defining scope cannot capture
+borrow-equivalent aliases — cluster members from the enclosing function
+(parameters under default convention, let-rebindings of cluster
+members, for-loop iteration variables) are not `Copy` and cannot be
+snapshotted into the closure's environment per §11.10.1. This is the
+cluster-escape rule of §11.3.4 applied to closure capture: an alias's
+lifetime is bounded by its cluster root, and an escaping closure may
+outlive that root.
 
-A closure body may receive borrows as *arguments* (its parameter list may
-include `&T` parameters), but it cannot retain borrows from outside its
-parameter list.
+Non-escaping closures invoked synchronously within the cluster's
+lifetime may treat their environment access as alias access; the
+compiler distinguishes the two cases by closure-flow analysis (whether
+the closure is stored, returned, or captured by another escaping
+closure). Most closure uses in Ductus are non-escaping (passed as
+arguments to higher-order functions that invoke them and discard the
+reference).
+
+A closure body may always receive non-`Copy` values as *arguments* (its
+parameter list follows §11.7 conventions: default borrow-equivalent or
+`own` consume). The capture-must-be-`Copy` restriction applies to the
+closure's captured environment, not to its parameters.
 
 ### 11.11 Indexed and Field Assignment
 
@@ -7691,28 +7731,46 @@ expression.
 
 ### 11.13 Interaction with the Trait System
 
-Trait method signatures may declare borrow parameters identically to free
-functions:
+Trait method signatures follow the same ownership conventions as free
+functions: parameters are borrow-equivalent by default, `own`
+opts in to consumption (§11.7.4).
 
 ```
 trait Length:
-  fn length(value: &Self) -> isize
+  fn length(value: Self) -> isize                  // default: borrow-equivalent
 
 fulfill Length for Vec[i32]:
-  fn length(value: &Vec[i32]) -> isize:
+  fn length(value: Vec[i32]) -> isize:
+    ...
+
+trait IntoSorted:
+  fn into_sorted(own value: Self) -> Self          // opt-in: consumes
+
+fulfill IntoSorted for Vec[i32]:
+  fn into_sorted(own value: Vec[i32]) -> Vec[i32]:
     ...
 ```
 
-The `&Self` in the trait declaration becomes `&Vec[i32]` (or whatever the
+The `Self` in the trait declaration becomes `Vec[i32]` (or whatever the
 implementing type is) in each `fulfill` block, by the standard `Self`
 substitution rule of §3.1.1.
 
 Trait dispatch (§3.4) is unaffected by ownership semantics. Whether a
 trait method consumes or borrows its receiver depends on the trait
-method's signature; callers write the same uniform-call syntax regardless.
+method's signature; callers write the call form the signature
+requires — bare for default-convention parameters, `move` for `own`
+parameters.
 
-Trait objects (§5.2, `dyn T`) may invoke methods that declare `&T`
-parameters. The borrow lifetime remains call-scoped as for direct calls.
+Trait coherence with `own`: implementations cannot strengthen or
+weaken `own` declarations. If the trait declares a parameter `own`,
+every implementation must declare it `own`; if the trait declares it
+default, every implementation must declare it default. The `fulfill`
+block's signature is checked structurally against the trait's
+signature (§3.1.1).
+
+Trait objects (§5.2, `dyn T`) may invoke methods declared with any
+convention. The alias lifetime for default-convention receivers
+remains call-scoped as for direct calls.
 
 ### 11.14 Interaction with Reactivity
 
