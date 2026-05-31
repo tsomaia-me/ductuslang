@@ -6386,7 +6386,8 @@ signature (§11.7.4) and `move` at the call site (§11.8.5). Function
 return always transfers ownership of the returned value.
 
 **B. Structural storage** (record construction, indexed assignment,
-field assignment via `mut`, whole-value reassignment of `mut`). The RHS
+field assignment via `mut`, whole-value reassignment of `mut`, attr
+initialization with a value RHS at placement per §13.8.2.1). The RHS
 value is consumed into the storage slot. This consumption is *implicit*
 — no `move` keyword is required — because the operation is structurally
 a transfer into the slot and the marker would add no information.
@@ -6739,7 +6740,7 @@ The corollary: passing an alias binding to a parameter declared
 be conjured from a cluster member; doing so would require digging the
 value out of the cluster's root, breaking the cluster's invariants.
 
-Diagnostic shape: *"cannot consume borrow-equivalent alias `x` into
+Diagnostic: *"cannot consume borrow-equivalent alias `x` into
 ownership of `T`. `x` is rooted in `<root>` (the cluster's real owner);
 consumption would dig into `<root>`. Either change the parameter
 convention to default (borrow-equivalent), or restructure to consume
@@ -7875,7 +7876,7 @@ boundary is given in §13.12 (the reactivity boundary).
 ## 12. Iteration and Loops
 
 This section specifies the language's iteration constructs: integer ranges,
-the `for`-loop (in both consuming and borrowing forms), the `while`-loop,
+the `for`-loop (in default and `for own` forms), the `while`-loop,
 the `break` and `continue` statements, loop expression semantics with the
 `else:` clause, and the `Iterator`, `Iterable`, and `IntoIterable` traits
 that underlie all iteration.
@@ -8174,9 +8175,11 @@ bindings, passed to consuming functions, stored elsewhere.
 ```
 mut destinations = make_collection()
 let records: Vec[Record] = make_records()
-for own r in records:                // r: Record (real owner)
-  destinations = destinations.push(r)   // ✓ move r into destinations
-                                        //   (category B: implicit move)
+for own r in records:                            // r: Record (real owner)
+  destinations = (move destinations).push(move r)
+                                                  // ✓ push takes (own self, own elem);
+                                                  //   both arguments require explicit
+                                                  //   `move` (category A; §11.8.5)
 // records is consumed; destinations contains the records' owned values
 ```
 
@@ -8448,9 +8451,9 @@ natural completion produces `None`. The user writes the bare value (not
 `Some(...)`).
 
 ```
-let found = for item in &items:
+let found = for item in items:
   if matches(item):
-    break item.id              // borrow form: items survives the loop
+    break item.id              // default form: items survives the loop
                                // auto-wrapped to Some(item.id)
                                // expression type: Option[ItemId]
 ```
@@ -8466,7 +8469,7 @@ The loop produces `T`. The `break value` sites and the `else:` clause
 all produce values of the same type:
 
 ```
-let answer = for n in &numbers:
+let answer = for n in numbers:
   if is_special(n):
     break n
 else:
@@ -8775,12 +8778,12 @@ value supports.
 ```
 mut destinations = Vec::new()
 let records: Vec[Record] = make_records()
-for own r in records:                   // `for own` form; r: Record (owned)
-  if r.is_valid():
-    destinations = destinations.push(r) // ✓ move r into destinations
-                                         // (category B: implicit move;
-                                         //  the predicate r.is_valid() borrows
-                                         //  via the method's default convention)
+for own r in records:                            // `for own`; r: Record (real owner)
+  if r.is_valid():                                // predicate borrows r (default
+                                                  //   convention; r still owned)
+    destinations = (move destinations).push(move r)
+                                                  // ✓ push takes (own self, own elem);
+                                                  //   explicit `move` on both (§11.8.5)
 // records consumed; destinations holds the valid records
 ```
 
@@ -8892,7 +8895,7 @@ array is no longer usable.
 mut destinations = Vec::new()
 let records: Record[16] = make_records()
 for own r in records:              // r: Record (real owner); records consumed
-  destinations = destinations.push(r)
+  destinations = (move destinations).push(move r)
 // records cannot be used; destinations holds all the records
 ```
 
@@ -11708,7 +11711,9 @@ The right-hand side of an attribute setting at placement may be:
   reference, a compile-time-evaluable computation, or any other
   expression whose provenance contains no reactive cell. The value
   is consumed into the attr's storage slot at instantiation
-  (§11.1 category B / D, implicit move; no `move` keyword required).
+  (§11.1 category B; implicit move; no `move` keyword required).
+  This is structurally parallel to record construction: the attr
+  slot on the node instance is filled at construction time.
 - A **reactive expression** — references reactive cells (signals,
   attrs, recurrents, deriveds) visible at the placement scope:
   sibling part instances by name, top-level signals or consts, or
@@ -11732,8 +11737,9 @@ App other_app:
                                            // tracks c1.count formatted
 
 App config_app:
-  Server srv | port=8080                  // value RHS (category B/D): 8080 is
+  Server srv | port=8080                  // value RHS (category B): 8080 is
                                            // consumed into srv.port's slot
+                                           // at instantiation
 ```
 
 Mechanically, a reactive placement value introduces a synthesized
@@ -11747,7 +11753,7 @@ The compiler determines the category from the expression's
 provenance set: any reference to a reactive cell makes the expression
 reactive (category C wiring); otherwise the expression is a value
 expression and the RHS is consumed into the attr's slot at
-instantiation (category B / D). The distinction is type-directed and
+instantiation (category B). The distinction is type-directed and
 requires no syntactic marker.
 
 ##### 13.8.2.2 Restrictions
