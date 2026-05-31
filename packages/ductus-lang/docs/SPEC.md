@@ -7822,12 +7822,13 @@ sensitive code while keeping the rest of the language pure and functional.
 Loops in Ductus follow three guiding rules:
 
 **Iteration is trait-driven.** A `for` loop dispatches through the
-`IntoIterable` trait (consume form, default) or the `Iterable` trait
-(borrow form, explicit `&v`) to obtain an `Iterator`, then dispatches
-through the `Iterator` trait to produce successive values. There is no
-built-in iteration logic specific to particular types; all iteration
-goes through the trait protocol. Users may extend iteration to their
-own types by implementing either or both traits.
+`Iterable` trait (default form, borrow-equivalent iteration) or the
+`IntoIterable` trait (`for own` form, consuming iteration) to obtain
+an `Iterator`, then dispatches through the `Iterator` trait to produce
+successive values. There is no built-in iteration logic specific to
+particular types; all iteration goes through the trait protocol.
+Users may extend iteration to their own types by implementing either
+or both traits.
 
 **Loops are expressions.** Both `for` and `while` produce values. The
 value is determined by the body's `break` statements and an optional
@@ -7836,13 +7837,14 @@ produce unit; loops that are used in an expression context obey the
 value-shaping rules of §12.6.
 
 **Mutation discipline is preserved.** Loop bodies are ordinary function
-body fragments. They can mutate `mut` bindings declared inside or outside
-the loop, perform indexed and field assignment through `mut` bindings,
-and call functions per the ownership rules of §11. Under the borrow
-form, the borrow checking rules of §11.9 apply: while a collection is
-being iterated, the collection is borrowed and may not be moved or
-mutated through its owner. Under the consume form, the collection is
-consumed at loop entry and no longer accessible to the surrounding scope.
+body fragments. They can mutate `mut` bindings declared inside or
+outside the loop, perform indexed and field assignment through `mut`
+bindings, and call functions per the ownership rules of §11. Under the
+default form, the cluster invariants of §11.9.2 apply for the duration
+of the loop body: while the iteration is active, the source value is
+borrowed and may not be moved or mutated through its owner. Under the
+`for own` form, the source is consumed at loop entry and is no longer
+accessible to the surrounding scope.
 
 ### 12.2 Ranges
 
@@ -7871,14 +7873,14 @@ let r = 0..1024              // r: Range[i32], by default integer placeholder
 fn process_range(r: Range[i32]) -> isize: ...
 ```
 
-`Range[T]` implements both `IntoIterable` (§12.9) and `Iterable`
-(§12.8). The consume form `for i in 0..N` dispatches through
-`IntoIterable`; the borrow form `for i in &(0..N)` dispatches through
-`Iterable`. Since `Range[T]` is `Copy`, the two forms are functionally
-indistinguishable from the user's perspective — there is nothing to
-preserve on the source side either way. The implementations yield
-successive integers starting from `start` and stopping before `end`.
-If `start >= end`, the range is empty and yields no values.
+`Range[T]` implements both `Iterable` (§12.8) and `IntoIterable`
+(§12.9). The default form `for i in 0..N:` dispatches through
+`Iterable`; the `for own` form `for own i in 0..N:` dispatches through
+`IntoIterable`. Since `Range[T]` is `Copy`, the two forms are
+functionally indistinguishable from the user's perspective — there is
+nothing to preserve on the source side either way. The implementations
+yield successive integers starting from `start` and stopping before
+`end`. If `start >= end`, the range is empty and yields no values.
 
 #### 12.2.1 Step
 
@@ -7931,101 +7933,79 @@ per §2.4.3.
 
 ### 12.3 The `for` Loop
 
-The `for` loop iterates over the values produced by an iteration source.
-The source can be passed in two forms, which select between consuming
-and borrowing iteration:
+The `for` loop iterates over the values produced by an iteration
+source. The source can be passed in two forms, which select between
+borrow-equivalent (default) and consuming iteration:
 
 ```
-for x in iterable:           // consumes iterable (default)
-  body
+for x in iterable:           // default: borrow-equivalent iteration
+  body                        //   source survives the loop
 
-for x in &iterable:          // borrows iterable
-  body
+for own x in iterable:       // opt-in: consuming iteration
+  body                        //   source consumed at loop entry
 ```
 
-Consume-form `for x in v` is the default because ownership transfer is
-the language's default for any value passed into a sub-scope (parallel
-to function calls per §11.7). Borrow-form `for x in &v` explicitly opts
-out of ownership transfer when the source must remain usable after the
-loop. This matches the parameter rule (`fn f(x: T)` consumes, `fn f(x:
-&T)` borrows) but operates on the loop expression rather than a function
-signature.
+The default form `for x in v:` is borrow-equivalent because that is
+the read-heavy common case — the loop inspects each element; the
+collection remains usable after the loop — and because it parallels
+the borrow-equivalent default for function parameters (§11.7). The
+`for own` form opts into consumption when the loop intends to take
+ownership of each element (move them into other storage, destroy
+them, or otherwise prevent the source from surviving). The keyword
+mirrors `own` on function parameters (§11.7.4); under the `for own`
+form, the source is consumed at loop entry.
 
 #### 12.3.1 Evaluation
 
 The iteration source expression is evaluated once at loop entry.
 
-**Consume form** (`for x in v:`):
+**Default form** (`for x in v:`):
 
-1. The compiler invokes `IntoIterable::consuming_iterator(v)` (§12.9).
-   This consumes the binding `v`; the underlying value is moved into
-   the iterator.
+1. The compiler invokes `Iterable::iterator(v)` (§12.8). The parameter
+   is borrow-equivalent: `v` becomes a cluster source, and the
+   iterator carries a compiler-internal borrow-equivalent alias
+   rooted in `v` for the duration of the for-loop expression.
 2. The iterator is held in an internal `mut` binding for the loop's
    duration.
 3. Each iteration step calls `Iterator::next` (§12.7), receiving
-   `(Option[Item], NewIter)`. Under consuming iteration, `Item` is
-   always an owned type per §12.9.2.
+   `(Option[Item], NewIter)`. The yielded `Item` is borrow-equivalent
+   for non-`Copy` element types and an implicit Copy for `Copy`
+   element types (§12.7.4 specifies the compiler-internal mechanism).
 4. The internal binding is reassigned to `NewIter`.
 5. If the option is `Some(value)`, binds `value` to the iteration
-   variable `x` and runs the body.
+   variable `x` (a cluster member rooted in the source's current
+   element) and runs the body.
 6. If `None`, the loop exits.
 7. When the loop exits (natural completion, `break`, or enclosing
-   function return), the iterator is dropped. Any elements not yet
-   yielded are dropped per their `Drop` semantics. The original source
-   binding `v` is consumed; it cannot be referenced after the loop.
+   function return), the iterator is dropped and the cluster's
+   iteration alias collapses. `v` is unchanged and remains owned by
+   the original binding.
 
-**Borrow form** (`for x in &v:`):
+**`for own` form** (`for own x in v:`):
 
-1. The compiler evaluates `&v` as a borrow expression and invokes
-   `Iterable::iterator(&v)` (§12.8). The borrow lives for the duration
-   of the for-loop expression.
+1. The compiler invokes `IntoIterable::consuming_iterator(move v)`
+   (§12.9). This consumes the binding `v`; the underlying value is
+   moved into the iterator.
 2. The iterator is held in an internal `mut` binding for the loop's
    duration.
 3. Each iteration step calls `Iterator::next`, receiving
-   `(Option[Item], NewIter)`. Under borrowing iteration, `Item` may be
-   a borrow type (`&T`) per §12.7.4; the iteration variable's type
-   follows from `Item`.
+   `(Option[Item], NewIter)`. The yielded `Item` is an owned value
+   moved out of the iterator's storage (§12.9.2).
 4. The internal binding is reassigned to `NewIter`.
 5. If the option is `Some(value)`, binds `value` to the iteration
-   variable `x` and runs the body.
+   variable `x` (a real owner) and runs the body.
 6. If `None`, the loop exits.
-7. When the loop exits, the iterator and the borrow of `v` are
-   released. `v` is unchanged and remains owned by the original
-   binding.
+7. When the loop exits, the iterator is dropped. Any elements not yet
+   yielded are dropped per their `Drop` semantics. The original
+   source binding `v` is consumed; it cannot be referenced after the
+   loop.
 
-The `&v` form is the only place in the language where `&` appears as
-a value expression rather than a type annotation. Its lifetime is
-bounded by the for-loop expression, requiring no annotations or
-cross-statement tracking (§11.9.5).
-
-**Iteration source that is already a borrow:** when the iteration
-source expression is of a borrow type (because the binding being
-referenced is itself a borrow — e.g., a function parameter typed `&T`,
-or an iteration variable from an outer loop typed `&T`), the for-loop
-dispatches to `Iterable` directly. No explicit `&` is needed because
-the value is already a borrow:
-
-```
-fn sum(samples: &Vec[f32]) -> f32:
-  mut total: f32 = 0.0
-  for s in samples:            // samples is already &Vec; Iterable dispatch
-    total = total + s
-  total
-```
-
-Writing `&samples` in this position is a compile error — `&` may only
-be applied to owned values, not to expressions that already evaluate
-to a borrow. (The grammar accepts `&samples` syntactically; the type
-checker rejects it once it determines `samples` is of borrow type.)
-The compiler dispatches based on the type of the iteration source:
-owned types use `IntoIterable` (consume); borrow types use `Iterable`
-(no consume possible, since borrows can't be consumed).
-
-This means the rule "consume by default" applies to owned bindings.
-For borrowed bindings, iteration is necessarily through `Iterable`
-because the language cannot move out of a borrow (§11.9). Borrowed
-sources iterate as if `&` were written, without requiring the user to
-add it.
+The cluster machinery of §11.3.4 governs the default form: the
+iteration variable's lifetime spans one iteration body, and the
+source's invariants (no move, no mutation) hold across the entire
+loop expression while iteration is in progress. The `for own` form
+moves the source out at loop entry and operates entirely on owned
+material thereafter.
 
 #### 12.3.2 The iteration variable
 
@@ -8050,79 +8030,88 @@ for x in 0..N:
 #### 12.3.3 Iteration variable type
 
 The iteration variable's type is `Iter::Item`, where `Iter` is the
-iterator type produced by the dispatch (either `IntoIterable::Iter`
-under consume form, or `Iterable::Iter` under borrow form). The Item
-type depends on both the iterable's element type and which form the
-loop uses.
+iterator type produced by the dispatch (`Iterable::Iter` under the
+default form, or `IntoIterable::Iter` under the `for own` form). The
+Item type depends on the iterable's element type and the form chosen.
 
-The iteration variable is one of the six valid borrow-bearing
-positions per §11.9.5: bound by the loop construct, fresh each
-iteration, immutable, cannot be declared `mut`. Its borrow lifetime
-(when borrow-typed) is the duration of one iteration body. The compiler
-tracks this without requiring lifetime annotations.
+The iteration variable is bound by the loop construct, fresh each
+iteration, immutable. It cannot be declared `mut` (§11.7.2 and
+§12.3.2). Under the default form, the iteration variable is a
+cluster member rooted in the source's current element for the
+duration of one iteration body; its lifetime is governed by §11.3.4.
+Under the `for own` form, the iteration variable is a real owner for
+each yielded element.
 
-**Consume form, Copy element type** (`for sample in buf:` where `buf:
-f32[1024]`): the iteration variable is an owned Copy value. The body
-uses it freely.
-
-```
-let buf: f32[1024] = make_block()
-mut sum: f32 = 0.0
-for sample in buf:                  // sample: f32, owned (Copy)
-  sum = sum + sample
-// buf is consumed; cannot be used after the loop
-```
-
-**Consume form, non-Copy element type** (`for r in records:` where
-`records: Vec[Record]`): the iteration variable is an owned `Record`.
-Each iteration moves one record out of the consumed Vec's storage. The
-body has full ownership of `r` — it can be moved into bindings, passed
-to consuming functions, stored elsewhere.
-
-```
-mut destinations = make_collection()
-let records: Vec[Record] = make_records()
-for r in records:                   // r: Record, owned
-  destinations = destinations.push(r)   // ✓ move r into destinations
-// records is consumed; destinations contains the records' owned values
-```
-
-**Borrow form, Copy element type** (`for sample in &buf:` where `buf:
-f32[1024]`): the iteration variable is a Copy value, identical in
-behavior to the consume-form Copy case. The borrow form's only
-observable difference for Copy elements is that `buf` survives the loop.
+**Default form, `Copy` element type** (`for sample in buf:` where
+`buf: f32[1024]`): the iteration variable is an implicit Copy of the
+current element. `buf` survives the loop.
 
 ```
 let buf: f32[1024] = make_block()
 mut sum: f32 = 0.0
-for sample in &buf:                 // sample: f32, Copy
+for sample in buf:                  // sample: f32 (Copy)
   sum = sum + sample
 process_further(buf)                // ✓ buf still owned
 ```
 
-**Borrow form, non-Copy element type** (`for r in &records:` where
-`records: Vec[Record]`): the iteration variable is `&Record` — a
-borrow into the source's storage. The body can read fields, call
-methods that take `&T`, compare, inspect, but cannot move `r` into a
-binding, pass it to a consuming function, or store it past the
-iteration body.
+**Default form, non-`Copy` element type** (`for r in records:` where
+`records: Vec[Record]`): the iteration variable is a
+borrow-equivalent alias rooted in `records`'s current element. The
+body may read fields, call methods that take default parameters,
+compare, and inspect, but cannot consume `r` into ownership of
+`Record` (Rule P, §11.3.5). `records` survives the loop.
 
 ```
 let records: Vec[Record] = make_records()
-for r in &records:                  // r: &Record (Record is non-Copy)
+for r in records:                   // r: borrow-equivalent alias of records[i]
   print(r.first_name)                // ✓ read access
-  process_borrow(r)                  // ✓ if process_borrow takes &Record
-  consume(r)                          // ✗ compile error: cannot move out of borrow
-  let saved = r                       // ✗ compile error: cannot bind a borrow
-// records still alive
-process_further(records)
+  process_borrow(r)                  // ✓ process_borrow's parameter is default
+  // consume(move r)                 // ✗ compile error: cannot consume
+                                     //   borrow-equivalent alias r into
+                                     //   ownership of Record (Rule P)
+  let saved = r                      // ✓ Rule P: saved is a new alias
+                                     //   in the same cluster; r's name dies
+process_further(records)             // ✓ records still owned
 ```
 
-The borrow form's non-Copy case is what makes "iterate to inspect a
-non-Copy collection" possible without paying clone cost. The iterator's
-`Item` is `&Record`; the iteration variable inherits this; the borrow
-is bounded by the iteration body. See §12.7.4 for how the Iterator
-trait handles borrow-typed Items.
+The default form's non-`Copy` case is what makes "iterate to inspect
+a non-Copy collection" syntactically free, without paying clone cost
+and without surfacing borrow syntax. The cluster machinery (§11.3.4)
+bounds the alias's lifetime to the iteration body; the compiler
+ensures the source is not moved or mutated for the loop's duration
+(§11.9.2).
+
+**`for own` form, `Copy` element type** (`for own sample in buf:`
+where `buf: f32[1024]`): the iteration variable is an owned Copy
+value. `buf` is consumed at loop entry (functionally
+indistinguishable from the default form for Copy element types,
+because Copy values don't impose constraints on the source).
+
+```
+let buf: f32[1024] = make_block()
+mut sum: f32 = 0.0
+for own sample in buf:              // sample: f32 (Copy)
+  sum = sum + sample
+// buf is consumed by `for own`; cannot be used after the loop
+```
+
+**`for own` form, non-`Copy` element type** (`for own r in records:`
+where `records: Vec[Record]`): the iteration variable is an owned
+`Record`. Each iteration moves one record out of the consumed Vec's
+storage. The body has full ownership of `r` — it can be moved into
+bindings, passed to consuming functions, stored elsewhere.
+
+```
+mut destinations = make_collection()
+let records: Vec[Record] = make_records()
+for own r in records:                // r: Record (real owner)
+  destinations = destinations.push(r)   // ✓ move r into destinations
+                                        //   (category B: implicit move)
+// records is consumed; destinations contains the records' owned values
+```
+
+For how the Iterator trait handles the underlying machinery, see
+§12.7.4.
 
 #### 12.3.4 Body scope
 
@@ -8144,21 +8133,23 @@ This is the accumulator pattern.
 
 #### 12.3.5 Move restrictions inside the body
 
-Per §11, moving a value out of an outer binding inside the loop body
-causes the binding to be consumed. If the loop runs more than once and
-the body references that binding again, the second iteration produces a
-use-after-move compile error.
+Per §11, consuming a value from an outer binding inside the loop body
+causes the binding's name to be killed. If the loop runs more than once
+and the body references that binding again, the second iteration
+produces a use-after-move compile error.
 
 ```
 let v = make_vec()
 for i in 0..10:
-  consume(v)                 // ✗ compile error: v consumed; subsequent iterations
-                             //   would attempt to use already-moved v
+  consume(move v)            // ✗ compile error: v consumed; subsequent
+                             //   iterations would attempt to use the
+                             //   already-moved v
 ```
 
-The compiler detects this conservatively: any move of an outer binding
-inside a loop body is reported as a potential use-after-move at the move
-site, with a note explaining that the loop may execute multiple times.
+The compiler detects this conservatively: any `move` of an outer
+binding inside a loop body is reported as a potential use-after-move at
+the move site, with a note explaining that the loop may execute
+multiple times.
 
 To consume a value inside a loop body, the user can:
 
@@ -8168,23 +8159,27 @@ To consume a value inside a loop body, the user can:
 
 #### 12.3.6 Mutation of the iterated source
 
-Under the borrow form (`for x in &v:`), the iteration source is
-borrowed for the duration of the loop. Per §11.9.2, the owner may not
-mutate the value through its binding while a borrow is active:
+Under the default form (`for x in v:`), the iteration source has a
+live cluster member (the iterator's internal alias plus, for non-Copy
+element types, the iteration variable's per-element alias) for the
+duration of the loop. Per §11.9.2, the owner may not move or mutate
+the source while the cluster has live aliases:
 
 ```
 mut v = make_vec()
-for x in &v:
-  v[0] = 5                   // ✗ compile error: v is borrowed for iteration
+for x in v:
+  v[0] = 5                   // ✗ compile error: v has live cluster member
+                             //   (iteration alias); cannot mutate during loop
 ```
 
-This prevents iterator invalidation. The borrow ends when the loop
-exits, after which the owner may freely mutate or move the value.
+This prevents iterator invalidation. The cluster's iteration aliases
+collapse when the loop exits, after which the owner may freely move or
+mutate the value.
 
-Under the consume form (`for x in v:`), the question doesn't arise:
-`v` is consumed at loop entry; the binding doesn't exist inside the
-loop body. Attempting to use `v` inside the body would be a
-use-after-move error, not a borrow conflict.
+Under the `for own` form (`for own x in v:`), the question does not
+arise: `v` is consumed at loop entry; the binding does not exist
+inside the loop body. Attempting to use `v` inside the body would be
+a use-after-move error, not a cluster conflict.
 
 ### 12.4 The `while` Loop
 
@@ -8281,7 +8276,7 @@ loop construct, the user refactors to use a flag variable or extracts the
 inner loop into a function that returns early.
 
 ```
-fn find_in_grid(g: &Grid, target: &Cell) -> Option[(isize, isize)]:
+fn find_in_grid(g: Grid, target: Cell) -> Option[(isize, isize)]:
   for row in 0..g.rows:
     for col in 0..g.cols:
       if g.get(row, col) is target:
@@ -8542,28 +8537,38 @@ This implementation receives the iterator by value, rebinds to a local
 `mut` binding (per §11.7.3), mutates the cursor, and returns the result
 alongside the (updated) iterator.
 
-#### 12.7.4 Borrow-typed `Item`
+#### 12.7.4 Borrow-yielding iterators (compiler-internal)
 
-The `Item` associated type may be a borrow type (`&T`) when the iterator
-yields non-Copy elements from a source it borrows. This is one of the
-narrow positions where `&T` is grammatically valid as a type expression
-(see §11.9.5 for the complete list); the exception is bounded to the
-`Iterator` trait and is justified by `Item` flowing into the for-loop
-iteration variable position (§11.9.5, §12.3.3).
+User-defined iterators declare `type Item = T` (the element type). The
+compiler internally decides whether the iterator's `next` yields a
+borrow-equivalent alias or an owned value, based on which trait
+(`Iterable` or `IntoIterable`) provides the iterator and on whether
+`T` is `Copy`:
 
-When `Item = &T`, the `next` method's return type becomes
-`(Option[&T], Self)`. The `&T` appears inside `Option` and inside the
-tuple, both of which are normally borrow-forbidden positions; the
-exception applies specifically to this trait's `next` return.
+- Iterators from `Iterable::iterator` (default-form dispatch, §12.8)
+  yield Copy elements directly (`Item` materializes as `T` in the
+  body) and non-Copy elements as borrow-equivalent aliases
+  (compiler-internal `&T` machinery; the body sees `T` aliased into
+  the source's element storage). The alias's lifetime is bounded by
+  one iteration body.
+- Iterators from `IntoIterable::consuming_iterator` (`for own`-form
+  dispatch, §12.9) yield owned `Item` values for every element type.
+  Each `next` call moves one element out of the iterator's internal
+  storage (which holds the consumed source's buffer).
 
-User-defined borrow-yielding iterators store a borrow into the iteration
-source as a field of the iterator type. This is one of the narrow `&T`
-positions permitted per §11.9.5; the lifetime is bounded by the for-loop
-expression.
+The compiler-internal `&T` machinery is exposed in the spec at this
+section to specify the iterator's runtime behavior; users never write
+`&T` in iterator definitions. A user-defined `Iterable`
+implementation provides an iterator type whose `next` returns the
+shape the compiler expects for that combination of trait and element
+type.
 
-A borrow-yielding iterator implementation:
+A borrow-yielding iterator implementation (compiler-internal form
+shown for specification purposes; the equivalent user-facing source
+omits the `&` machinery):
 
 ```
+-- compiler-internal form (illustrative; not user-writable)
 type VecIter[T]:
   source: &Vec[T]                   -- borrow into the iteration source
   cursor: isize
@@ -8575,15 +8580,15 @@ fulfill Iterator for VecIter[Record]:
     if local.cursor >= local.source.length():
       (None, local)
     else:
-      let element_ref = local.source.element_at(local.cursor)   // returns &Record
+      let element_ref = local.source.element_at(local.cursor)
       local.cursor = local.cursor + 1
       (Some(element_ref), local)
 ```
 
 `local.source.element_at(local.cursor)` calls a stdlib-privileged
-borrow-returning function per §11.9.5 (the §3.7.3 carve-out for
-borrow-return signatures). The returned `&Record` is bounded by the
-source borrow's lifetime.
+borrow-returning helper per §11.9.5 (the §3.7.3 carve-out for
+borrow-returning signatures). The returned alias is bounded by the
+iterator's source-borrow lifetime.
 
 The trait declaration itself is unchanged:
 
@@ -8593,23 +8598,12 @@ trait Iterator:
   fn next(iter: Self) -> (Option[Item], Self)
 ```
 
-`Item` is unconstrained in the trait declaration. Implementations may
-declare `Item` as `T` (owned) or `&T` (borrow). The choice depends on
-which trait (`Iterable` or `IntoIterable`) provides the iterator and
-on the source's element type:
-
-- Iterators from `IntoIterable::consuming_iterator` always yield owned
-  Item types. Each `next` call moves one element out of the iterator's
-  internal storage (which holds the consumed source's buffer). Item is
-  `T` regardless of whether T is Copy.
-- Iterators from `Iterable::iterator` choose based on element type:
-  Copy elements yield owned values (`Item = T`); non-Copy elements
-  yield borrows (`Item = &T`).
-
-The borrow's lifetime is bounded by the iteration body. The compiler
-checks that the source value (the Vec, the Record array, etc.) is not
-moved or mutated while iteration is active — same rule as §11.9.2 for
-function-parameter borrows, applied per iteration.
+`Item` is unconstrained in the trait declaration. The compiler maps
+the user-facing `type Item = T` declaration to its internal
+representation per the trait that provides the iterator. The cluster
+machinery of §11.3.4 governs the alias's lifetime in the iteration
+body: the source value is not moved or mutated while iteration is
+active.
 
 ### 12.8 The `Iterable` Trait
 
@@ -8618,12 +8612,14 @@ function-parameter borrows, applied per iteration.
 ```
 trait Iterable:
   type Iter: Iterator
-  fn iterator(value: &Self) -> Iter
+  fn iterator(value: Self) -> Iter
 ```
 
-The associated type `Iter` is the iterator type produced; it must itself
-implement `Iterator`. The method `iterator` takes a borrow of the source
-and returns an iterator that will yield the source's elements.
+The associated type `Iter` is the iterator type produced; it must
+itself implement `Iterator`. The method `iterator` is declared with
+the default convention: `value` is a borrow-equivalent alias of the
+source. The returned iterator carries a compiler-internal alias into
+the source for the duration of the for-loop expression.
 
 #### 12.8.1 Method name
 
@@ -8631,22 +8627,24 @@ The method is named `iterator`, not `iter`. The language convention is
 to prefer full names over abbreviations (§1.4 and following). Stdlib and
 user code use the full name throughout.
 
-#### 12.8.2 Borrow lifetime
+#### 12.8.2 Iterator lifetime
 
-The `iterator` method's parameter is `&Self`. The iterator's lifetime is
-bounded by the borrow's scope — meaning, for a for-loop, the lifetime of
-the loop expression itself. This is enforced by the same call-scoped
-borrow rules of §11.9: while the for-loop is running, the source value
-is borrowed and may not be mutated through its owner.
+The `iterator` method takes its parameter by default convention. The
+returned iterator's lifetime is bounded by the for-loop expression:
+the cluster's iteration alias rooted in the source is live for the
+loop's duration. The source-mutation invariants of §11.9.2 apply for
+that same span (no move, no mutation of the source while the iterator
+is live).
 
-The `Iterable` trait is invoked by the *borrow form* of the for-loop:
-`for x in &v:` dispatches through `Iterable::iterator(&v)`. The consume
-form `for x in v:` dispatches through `IntoIterable` (§12.9) instead.
+The `Iterable` trait is invoked by the *default form* of the for-loop:
+`for x in v:` dispatches through `Iterable::iterator(v)`, leaving `v`
+owned by the original binding after the loop. The `for own` form
+dispatches through `IntoIterable` (§12.9) instead.
 
 #### 12.8.3 Implementing `Iterable`
 
-A user-defined container implements `Iterable` by declaring the iterator
-type and the construction method:
+A user-defined container implements `Iterable` by declaring the
+iterator type and the construction method:
 
 ```
 type DataPoints:
@@ -8655,11 +8653,11 @@ type DataPoints:
 
 fulfill Iterable for DataPoints:
   type Iter = DataPointsIter
-  fn iterator(d: &DataPoints) -> DataPointsIter:
+  fn iterator(d: DataPoints) -> DataPointsIter:
     DataPointsIter(...)        // construct iterator over d's data
 ```
 
-The `for x in &d` syntax then dispatches to this implementation
+The `for x in d:` syntax then dispatches to this implementation
 automatically.
 
 ### 12.9 The `IntoIterable` Trait
@@ -8671,25 +8669,25 @@ elements are yielded as owned values.
 ```
 trait IntoIterable:
   type Iter: Iterator
-  fn consuming_iterator(value: Self) -> Iter
+  fn consuming_iterator(own value: Self) -> Iter
 ```
 
 The associated type `Iter` is the iterator produced; it must itself
-implement `Iterator`. The method `consuming_iterator` takes the source
-by value (consumes it) and returns an iterator that owns the source's
-storage.
+implement `Iterator`. The method `consuming_iterator` declares its
+parameter `own`: the source is consumed at the call. The returned
+iterator owns the source's storage.
 
 #### 12.9.1 Method name and dispatch
 
 The method is named `consuming_iterator`. The full name signals that
-ownership transfers — the source is gone after the call. The convention
-follows §12.8.1 (full names over abbreviations).
+ownership transfers — the source is gone after the call. The
+convention follows §12.8.1 (full names over abbreviations).
 
-The `IntoIterable` trait is invoked by the *consume form* of the
-for-loop: `for x in v:` dispatches through
-`IntoIterable::consuming_iterator(v)`. The source `v` is consumed at
-loop entry; after the loop, the binding `v` is no longer usable per the
-ownership rules of §11.
+The `IntoIterable` trait is invoked by the *`for own` form* of the
+for-loop: `for own x in v:` dispatches through
+`IntoIterable::consuming_iterator(move v)`. The source `v` is consumed
+at loop entry; after the loop, the binding `v` is no longer usable per
+the ownership rules of §11.
 
 #### 12.9.2 Item type and ownership flow
 
@@ -8707,11 +8705,12 @@ value supports.
 ```
 mut destinations = Vec::new()
 let records: Vec[Record] = make_records()
-for r in records:                       // consume form; r: Record (owned)
+for own r in records:                   // `for own` form; r: Record (owned)
   if r.is_valid():
     destinations = destinations.push(r) // ✓ move r into destinations
-                                         // (the predicate r.is_valid() reads via &Record
-                                         //  borrow, available because methods can declare &T)
+                                         // (category B: implicit move;
+                                         //  the predicate r.is_valid() borrows
+                                         //  via the method's default convention)
 // records consumed; destinations holds the valid records
 ```
 
@@ -8738,35 +8737,35 @@ type DataStream:
 
 fulfill IntoIterable for DataStream:
   type Iter = DataStreamIntoIter
-  fn consuming_iterator(s: DataStream) -> DataStreamIntoIter:
+  fn consuming_iterator(own s: DataStream) -> DataStreamIntoIter:
     DataStreamIntoIter(...)    // takes ownership of s's pending events
 ```
 
-The `for x in d` syntax (with `d: DataStream`) dispatches to this
+The `for own x in d:` syntax (with `d: DataStream`) dispatches to this
 implementation automatically, consuming `d`.
 
 #### 12.9.5 Both `Iterable` and `IntoIterable` for the same type
 
-Stdlib types typically implement both `Iterable` (borrowing iteration)
-and `IntoIterable` (consuming iteration). The user picks at the call
-site:
+Stdlib types typically implement both `Iterable` (default-form,
+borrow-equivalent iteration) and `IntoIterable` (`for own` form,
+consuming iteration). The user picks at the call site:
 
-- `for x in v:` — `IntoIterable` dispatch; consumes v.
-- `for x in &v:` — `Iterable` dispatch; borrows v.
+- `for x in v:` — `Iterable` dispatch; v survives.
+- `for own x in v:` — `IntoIterable` dispatch; v consumed.
 
 A user-defined type may implement one, both, or neither. If a type
-implements only `Iterable`, the consume form `for x in v` is a compile
-error (no `IntoIterable` impl); the user must use `&v`. If it
-implements only `IntoIterable`, the borrow form `for x in &v` is a
-compile error.
+implements only `Iterable`, the `for own` form is a compile error (no
+`IntoIterable` impl); the user must use the default form. If it
+implements only `IntoIterable`, the default form is a compile error.
 
-There is no "reclaim after consumption." Once `consuming_iterator(v)`
-is called, `v`'s binding is consumed and the source's elements are
-either yielded (now owned by the body's bindings) or remaining in the
-iterator (to be dropped when the iterator is dropped). If the user
-needs the source after iteration, they choose the borrow form, or they
-restructure to consume-and-rebuild (pass the source through a
-transformation function that consumes and returns a new collection).
+There is no "reclaim after consumption." Once
+`consuming_iterator(move v)` is called, `v`'s binding is consumed and
+the source's elements are either yielded (now owned by the body's
+bindings) or remaining in the iterator (to be dropped when the
+iterator is dropped). If the user needs the source after iteration,
+they choose the default form, or they restructure to consume-and-
+rebuild (pass the source through a transformation function that
+consumes and returns a new collection).
 
 ### 12.10 Built-in Iteration Sources
 
@@ -8774,10 +8773,10 @@ Stdlib provides both `Iterable` and `IntoIterable` implementations for
 the language's built-in iterable types:
 
 - **Ranges (`Range[T]`)** — `Range[T]` is `Copy`. Both forms work; from
-  the user's perspective, `for i in 0..N:` and `for i in &(0..N):` are
-  indistinguishable. The conventional form is the consume form.
-- **Arrays (`T[N]`)** — implement both `Iterable` (borrow) and
-  `IntoIterable` (consume). See §12.10.1 for details.
+  the user's perspective, `for i in 0..N:` and `for own i in 0..N:`
+  are indistinguishable. The conventional form is the default.
+- **Arrays (`T[N]`)** — implement both `Iterable` (default) and
+  `IntoIterable` (`for own`). See §12.10.1 for details.
 - **Stdlib collections** (`Vec[T]`, `HashMap[K, V]`, etc.) — implement
   both, with iterator types specific to each container. The specific
   Item types and yielding semantics are stdlib design decisions.
@@ -8789,54 +8788,47 @@ user-overridable.
 
 Arrays implement both forms. The user picks at the call site:
 
-**Consume form** (`for x in arr:`): the array is consumed. Each
-iteration variable is owned `T`. After the loop, `arr` is no longer
-usable.
+**Default form** (`for x in arr:`): the array is iterated
+borrow-equivalently. The array survives the loop.
 
-For `T: Copy` (e.g., `f32[1024]`), the Copy element behavior is
-identical to borrow form — `sample` is a Copy value either way:
+For `T: Copy` (e.g., `f32[1024]`), the iteration variable is a Copy
+of each element:
 
 ```
 let buf: f32[64] = make_block()
 mut sum: f32 = 0.0
-for sample in buf:                // sample: f32; buf consumed
+for sample in buf:                // sample: f32 (Copy); buf survives
   sum = sum + sample
-// buf cannot be used after this loop
+process(buf)                       // ✓ buf still owned
 ```
 
-For non-`Copy` `T`, each iteration moves one element out of the array's
-storage. The body has full ownership:
+For non-`Copy` `T`, the iteration variable is a borrow-equivalent
+alias rooted in the array's current element. The body reads via the
+alias; the array survives:
+
+```
+let records: Record[16] = make_records()
+for r in records:                  // r: borrow-equivalent alias of records[i]
+  print(r.first_name)              // ✓ read access
+  // consume(move r)               // ✗ cannot consume alias (Rule P)
+process(records)                   // ✓ records still owned
+```
+
+**`for own` form** (`for own x in arr:`): the array is consumed at
+loop entry. Each iteration variable is owned `T`. After the loop, the
+array is no longer usable.
 
 ```
 mut destinations = Vec::new()
 let records: Record[16] = make_records()
-for r in records:                  // r: Record (owned); records consumed
+for own r in records:              // r: Record (real owner); records consumed
   destinations = destinations.push(r)
 // records cannot be used; destinations holds all the records
 ```
 
-**Borrow form** (`for x in &arr:`): the array is borrowed for the
-duration of the loop. Each iteration variable is either `T` (for Copy
-elements) or `&T` (for non-Copy elements). After the loop, the array
-remains owned.
-
-```
-let buf: f32[64] = make_block()
-mut sum: f32 = 0.0
-for sample in &buf:               // sample: f32; buf borrowed
-  sum = sum + sample
-process(buf)                       // ✓ buf still owned
-
-let records: Record[16] = make_records()
-for r in &records:                 // r: &Record
-  print(r.first_name)              // ✓ read access only
-  consume(r)                       // ✗ cannot move out of borrow
-process(records)                   // ✓ records still owned
-```
-
-While the array is borrowed (during the for-loop expression), indexed
-writes (`arr[i] = v`) are forbidden per §11.9.2. Indexed reads
-(`arr[i]`) are allowed (reading is non-disruptive).
+While the array is being iterated under the default form, indexed
+writes (`arr[i] = v`) on the array are forbidden per §11.9.2. Indexed
+reads (`arr[i]`) are allowed (reading is non-disruptive).
 
 #### 12.10.2 Iterating over ranges
 
@@ -8848,11 +8840,11 @@ for i in 0..N:
 ```
 
 `Range[T]` is `Copy` (for `T: Copy`, which all built-in integer types
-satisfy). The consume form `for i in 0..N:` consumes a Copy value,
-which is functionally indistinguishable from borrowing — the source
+satisfy). The default form `for i in 0..N:` and the `for own` form
+`for own i in 0..N:` are functionally indistinguishable — the source
 expression is a literal anyway, not a binding the user would want to
-reuse. The borrow form `for i in &(0..N):` is also legal but rarely
-used.
+reuse, and `Range[T]: Copy` means either form leaves the source's
+storage intact.
 
 Ranges and their iterators are stack-allocated; iteration has no heap
 overhead.
@@ -8870,7 +8862,7 @@ buffer is needed after the loop):
 
 ```
 mut sum: f32 = 0.0
-for sample in &audio_block:
+for sample in audio_block:
   sum = sum + sample * sample
 // audio_block still owned; available for further processing
 ```
@@ -8922,32 +8914,33 @@ may use loops:
 
 ```
 trait Statistics:
-  fn samples(value: &Self) -> Vec[f32]
+  fn samples(value: Self) -> Vec[f32]
 
-  fn count_above(value: &Self, threshold: f32) -> isize:
+  fn count_above(value: Self, threshold: f32) -> isize:
     mut count: isize = 0
     let elements = samples(value)
-    for s in elements:                   // consumes the returned Vec; s: f32 (Copy)
+    for s in elements:                   // default form; s: f32 (Copy)
       if s > threshold:
         count = count + 1
     count
 ```
 
-The default body's loop is part of the trait declaration; implementations
-may override it as usual. The `samples` method here is abstract (no
-default body); each implementation provides its own. The `count_above`
-default body iterates the returned `Vec[f32]` to compute the result.
+The default body's loop is part of the trait declaration;
+implementations may override it as usual. The `samples` method here is
+abstract (no default body); each implementation provides its own. The
+`count_above` default body iterates the returned `Vec[f32]` to compute
+the result.
 
 #### 12.12.3 Loops in generic function bodies
 
 A generic function body containing a loop is type-checked at definition
 per §2.2.2. The loop's iterable expression's type must satisfy
-`Iterable` (for borrow form) or `IntoIterable` (for consume form) at
-the call site for each monomorphization. Associated-type constraints
-use `.` member-access notation per §3.1.2:
+`Iterable` (for the default form) or `IntoIterable` (for the `for own`
+form) at the call site for each monomorphization. Associated-type
+constraints use `.` member-access notation per §3.1.2:
 
 ```
-fn total[T: Iterable](source: &T) -> T.Iter.Item where T.Iter.Item: Numeric:
+fn total[T: Iterable](source: T) -> T.Iter.Item where T.Iter.Item: Numeric:
   mut sum = T.Iter.Item::zero()
   for sample in source:
     sum = sum + sample
