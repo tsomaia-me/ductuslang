@@ -6331,12 +6331,12 @@ the minimum of the trait's and type's visibility.
 
 ## 11. Local Mutability and Ownership
 
-This section specifies the language's local mutability model. Mutation is
-permitted only inside function bodies, scoped to bindings declared with
-`mut`. Ownership of values is tracked through move semantics: every value
-has exactly one owner at any moment. Read-only access to non-`Copy` values
-without ownership transfer is provided through call-scoped borrows declared
-in function signatures.
+This section specifies the language's local mutability and ownership
+model. Mutation is permitted only inside function bodies, scoped to
+bindings declared with `mut`. Every value has a single real owner at
+any moment; function parameters and let-rebindings produce borrow-
+equivalent aliases in the same cluster as the source. Consumption is
+opt-in via `own` in the signature and `move` at the call site.
 
 This section supersedes the absolute-immutability language in §1.3. The
 broader principle stands — immutability is the default and external state
@@ -6352,19 +6352,63 @@ algorithm internals) cannot be expressed efficiently in a pure-functional
 style. The model is designed to *isolate* mutation rather than eliminate
 it.
 
-Three load-bearing rules constrain where and how mutation can occur:
+#### Four categories of ownership-affecting operations
+
+Operations that affect ownership fall into four structurally distinct
+categories. Each is governed by its own rules; collapsing them into a
+single "consume" rubric obscures load-bearing distinctions.
+
+**A. Value ownership** (function call, function return, let-rebinding,
+for-loop iteration variable). The caller hands a value to a callee, or
+names a value with a new binding. The default in this category is
+*borrow-equivalent*: the callee/new binding gets read-only access; the
+caller's binding survives. Opt in to consumption with `own` in the
+signature (§11.7.4) and `move` at the call site (§11.8.5). Function
+return always transfers ownership of the returned value.
+
+**B. Structural storage** (record construction, indexed assignment,
+field assignment via `mut`, whole-value reassignment of `mut`). The RHS
+value is consumed into the storage slot. This consumption is *implicit*
+— no `move` keyword is required — because the operation is structurally
+a transfer into the slot and the marker would add no information.
+
+**C. Reactive wiring** (placement attribute assignment with a reactive
+RHS, connection arguments, references to attrs/derived in reactive
+expressions). The binding names a *cell* rather than a stack-owned
+value. Multiple aliases to the same cell may coexist. This category is
+governed by the reactive-binding exception below; it is not a §11
+ownership operation. Values flow through the reactive system specified
+by §13 and §14, not through call-and-return ownership.
+
+**D. Reactive cell writes** (`signal.write(v)`, `stream.emit(v)`, attr
+reassignment from a recurrent advance). The value is consumed into the
+cell's storage. Like category B, consumption is implicit — no `move`
+keyword is required.
+
+Categories B, C, and D arise in storage- or wiring-shaped syntax; the
+operation itself communicates whether (and which) value moves. Category
+A is the only category where consumption depends on a user-authored
+signature, so it is the only one where the call site needs an explicit
+marker.
+
+#### Load-bearing invariants
+
+Four invariants constrain where and how mutation can occur:
 
 **Nothing outside a function body is mutable.** Module-level bindings,
 record fields as a property of the type, function parameters, enum
 variants — none of these can be declared `mut`. The `mut` keyword is
 legal only on bindings introduced inside a function body.
 
-**Single ownership.** At every moment, every value has exactly one owner.
-Passing a non-`Copy` value into a function transfers ownership. Returning
-it transfers ownership back to (a new binding in) the caller. Assigning a
-non-`Copy` value to a new binding transfers ownership. The compiler tracks
-ownership at every binding site; using a value after ownership has been
-transferred is a compile error.
+**Single ownership.** At every moment, every value has exactly one real
+owner. Default function arguments and let-rebindings produce
+*borrow-equivalent aliases* (§11.3.4) in the same cluster as the
+source; the source remains the real owner. Opt-in consumption via
+`own`/`move` transfers ownership to a new owner; the source binding
+becomes inaccessible. Function return transfers ownership of the
+returned value. The compiler tracks ownership and cluster membership at
+every binding site; using a binding after its name has been killed is a
+compile error.
 
 *Exception — reference-typed reactive bindings.* `Signal[T]` parameters
 (§13.2.8) and reactive composite bindings (§13.2.9.6) name reactive
@@ -6372,19 +6416,30 @@ cells (specified by §13, §14) rather than stack-owned values;
 multiple live aliases to the same cell may coexist without violating
 single ownership. For reactive composites, materialization at the
 boundaries of §13.2.9.7 produces a concrete instance subject to
-standard single-ownership rules from that point on.
+standard single-ownership rules from that point on. This is category C
+in the enumeration above.
 
 **Single writer.** A `mut` binding is the only path through which its
-underlying value may be mutated. While a borrow of the value is active,
-even the owner cannot mutate it. The compiler enforces this without any
-runtime check.
+underlying value may be mutated. While any borrow-equivalent alias of the
+value is active (parameters, for-loop iteration variables, let-rebinds
+within a cluster — see §11.3.4), even the owner cannot mutate it. The
+compiler enforces this without any runtime check.
 
-The result is a model where mutation is locally efficient (no copying for
-in-place updates) but globally invisible (no caller can observe a callee's
-mutations except through the callee's declared return value). This
-combination preserves the language's pure-functional surface (functions
-remain referentially transparent observably) while permitting imperative
-implementation underneath.
+**Globally invisible mutation.** Mutation is locally efficient (no
+copying for in-place updates) but globally invisible: no caller can
+observe a callee's mutations except through the callee's declared
+return value. The invariant flows from four mechanisms together:
+borrow-equivalent parameters (category A default) are read-only;
+mutating locally requires a real owner via `own`/`move` or `.clone()`
+(§11.7.3), so mutation happens on storage the caller cannot reach;
+categories B and D consume RHS values into structural storage the
+caller cannot observe except through return values; category C operates
+on reactive cells governed by §13, where mutation visibility is itself
+part of the reactive contract.
+
+The combination preserves the language's pure-functional surface
+(functions remain referentially transparent observably) while permitting
+imperative implementation underneath.
 
 ### 11.2 Binding Forms: `let` and `mut`
 
@@ -6438,67 +6493,111 @@ governed solely by its own declaration form, not by what it shadowed.
 
 ### 11.3 Ownership and Move Semantics
 
-Every value has exactly one owner. The owner is the binding (or temporary
-expression slot) that currently holds the value. Ownership transfers in
-three situations:
+Every value has exactly one real owner. The real owner is the binding
+that holds the value's storage and is responsible for dropping it when
+its scope ends. Bindings other than the real owner may name the value
+as *borrow-equivalent aliases* (§11.3.4); these aliases provide
+read-only access and are bounded by the cluster root's lifetime.
 
-- **Assignment.** `let y = x` or `mut y = x` transfers ownership of `x`'s
-  value to `y`. After this point, `x` is no longer accessible by that name.
-- **Function argument passing.** `f(x)` transfers ownership of `x` into the
-  function's parameter binding for the duration of the call. After the
-  call, `x` is consumed; the caller's binding is no longer usable.
-- **Function return.** `return e` transfers ownership of `e`'s value out
-  of the function and into whatever binding (or expression) receives the
-  return value at the call site.
+Ownership and cluster membership flow through five language operations:
 
-Ownership transfer is what "move" means. The compiler tracks ownership
-statically; using a binding after its value has been moved is a compile
-error reported at the use site, with the location of the move identified.
+- **Default function argument passing.** `f(x)` where `f`'s parameter is
+  declared without `own` gives the function a borrow-equivalent alias of
+  `x`'s value for the duration of the call. After the call, `x` remains
+  owned by the caller (§11.7).
+- **Opt-in consumption via `own`/`move`.** A function parameter declared
+  `own T` (§11.7.4) consumes its caller's value; the caller writes
+  `move v` at the call site (§11.8.5) to mark the transfer. After the
+  call, `v` is no longer accessible by that name.
+- **`let y = x` or `mut y = x`.** Single-name-per-cluster: `x`'s name
+  dies; the role transfers to `y`. If `x` was a real owner, `y` becomes
+  the new real owner (ownership transfer). If `x` was a borrow-equivalent
+  alias, Rule (P) (§11.3.5) governs: `y` is a new borrow-equivalent
+  alias in the same cluster; the cluster root and its value are
+  untouched.
+- **For-loop iteration.** `for x in v:` binds `x` as a borrow-equivalent
+  alias rooted in each successive element of `v` for the body of one
+  iteration. `for own x in v:` consumes `v` and binds `x` as a real
+  owner for each element (§12.3).
+- **Function return.** `return e` transfers ownership of `e`'s value
+  out of the function. If `e` is a real-owner local, the value moves
+  directly to the call site's receiving binding. If `e` is rooted in a
+  cluster member, anchoring per §11.3.6 produces an owned value at the
+  return site (implicit Copy or Clone where applicable; compile error
+  otherwise).
+
+"Move" means ownership transfer. The compiler tracks ownership and
+cluster membership statically; using a binding after its name has been
+killed is a compile error reported at the use site.
 
 ```
-let v = make_buffer()       // v owns the buffer
-let w = v                   // ownership moved from v to w; v no longer usable
-print(v)                    // ✗ compile error: v consumed at line 2
+let v = make_buffer()       // v is the real owner
+let w = v                   // ownership transfers from v to w;
+                            //   v's name dies (single-name-per-cluster);
+                            //   the buffer is not copied or moved
+print(w)                    // ✓ w is the live name; w is the real owner
+print(v)                    // ✗ compile error: v's name was rebound at line 2
 ```
+
+The buffer's storage is not moved by `let w = v` — only the *name* that
+identifies it changes. Renames are bookkeeping in the compiler, not
+runtime operations.
 
 #### 11.3.1 Reading versus consuming
 
-The owner of a value may *read* through it without consuming it. Reading
-includes:
+Any binding — real owner or borrow-equivalent alias — may *read* the
+value without consuming it. Reading includes:
 
 - Field access: `r.field`
 - Indexed access: `arr[i]`
 - Pattern matching with read-only patterns
 - Built-in operator inspection (`is`, `<`, etc.)
+- Method calls whose receiver convention is borrow-default (§11.13)
+- Passing to a function whose parameter is borrow-default
 
-Reading does not transfer ownership. The owner retains the value after
-the read.
+Reading requires no keyword and does not affect ownership or cluster
+membership.
 
 ```
-let r = make_record()
-print(r.first_name)         // reads r.first_name; r still owned
-print(r.last_name)          // reads again; r still owned
-consume(r)                  // consumes r; ownership moved
-print(r.age)                // ✗ compile error: r consumed at line 4
+let r = make_record()        // r is the real owner
+print(r.first_name)          // reads r.first_name; r still owned
+print(r.last_name)           // reads again; r still owned
+consume(move r)              // ✓ consume declares `own r`; explicit move
+print(r.age)                 // ✗ compile error: r was consumed at line 4
 ```
 
 Consuming includes:
 
-- Function argument passing (by-value parameters): `f(r)`
-- Return statements: `return r`
-- Assignment to a new binding: `let x = r`
-- Storing in a record field, tuple component, or enum payload
+- Function argument passing to an `own` parameter, with explicit `move`
+  at the call site: `f(move r)` (category A).
+- Return statements: `return r` for a real-owner local (category A;
+  cluster-member returns are anchored per §11.3.6).
+- Storing in a record field, tuple component, or enum payload —
+  category B; implicit move per §11.11.
+- Writing into a reactive cell: `signal.write(r)`, `stream.emit(r)`,
+  attr reassignment from a recurrent advance — category D; implicit
+  move per §13.
 
-These operations transfer ownership.
+Function-call consumption (category A) is the only form that requires
+the `move` keyword; the others are structurally consume-shaped and the
+marker would add no information. The `move` keyword is exclusive to
+call-site argument positions (§11.8.5).
+
+For consumption applied to a borrow-equivalent alias, see Rule (P)
+(§11.3.5): the consumption is name-only; no ownership transfer occurs
+at the value level.
 
 #### 11.3.2 Reassignment of `mut` bindings
 
-A `mut` binding may be reassigned. Reassignment consumes the new value
-and drops the old value:
+A `mut` binding may be reassigned. Reassignment is whole-value
+assignment: the new value is consumed (category B; implicit move) into
+the binding's storage slot, and the old value is dropped:
 
 ```
 mut buf = make_buffer()
-buf = make_other_buffer()    // old buffer dropped, new one bound
+buf = make_other_buffer()    // old buffer dropped, new one bound;
+                             //   no `move` keyword required —
+                             //   whole-value reassignment is category B
 ```
 
 Reassignment is *not* shadowing — it modifies the existing binding rather
@@ -6507,13 +6606,176 @@ it holds changes.
 
 #### 11.3.3 Dropping
 
-When a binding goes out of scope, its value is dropped. For `Copy` types,
-dropping is a no-op. For non-`Copy` types whose constituent resources
-require cleanup (heap allocations, file handles via stdlib, etc.), the
-type's drop behavior is invoked.
+When a binding goes out of scope, its value is dropped *if the binding
+is the cluster's current real owner* (the latest rebound real-owner
+name in the cluster). Borrow-equivalent aliases do not drop the
+underlying value; only the real-owner root bears drop responsibility.
+
+For `Copy` types, dropping is a no-op. For non-`Copy` types whose
+constituent resources require cleanup (heap allocations, file handles
+via stdlib, etc.), the type's drop behavior is invoked.
 
 Drop semantics for user-defined types are specified through the trait
 system; the precise mechanism is specified in §14.8.
+
+#### 11.3.4 Cluster and borrow lifetime
+
+A **cluster** is the transitive closure of borrow-equivalent aliases
+rooted in a single real-owner binding. Cluster membership is
+compile-time-tracked; the compiler computes it from the program's
+binding structure.
+
+Borrow-equivalent aliases arise from:
+
+- A function parameter declared without `own` — the parameter is rooted
+  in the caller's argument binding for the duration of the call
+  (§11.7).
+- A `let` or `mut` rebinding of a borrow-equivalent source — the new
+  name is rooted in the same source as the rebound name (§11.3.5 Rule
+  P).
+- A for-loop iteration variable when the source is iterated by default
+  — the variable is rooted in the source's current element for the
+  duration of one iteration body (§12.3).
+
+A cluster's **lifetime** is the union of its members' scopes. The
+real-owner root is the cluster's longest-lived member; the cluster
+ceases to exist when the root's scope ends (or when the root is
+consumed by `move` or returned).
+
+**Cluster-member restrictions.** A binding that is a borrow-equivalent
+alias (not a real owner) cannot:
+
+- Be returned from a function (return is real-owner-only; see §11.3.6
+  for the auto-anchoring rule applied to cluster-member returns).
+- Be stored in a record field, tuple component, enum payload, or
+  indexed slot (category B requires real ownership of the RHS).
+- Be written into a reactive cell — `signal.write`, `stream.emit`,
+  recurrent advance, attr reassignment (category D requires real
+  ownership of the RHS).
+- Be captured by an escaping closure (§11.10).
+
+These restrictions preserve the cluster's structural property: an
+alias's lifetime is bounded by the root's lifetime, so it cannot
+outlive the root.
+
+**Source invariants during cluster lifetime.** While a cluster has any
+borrow-equivalent alias member (i.e., the cluster has more than just
+its root), the root's value cannot be:
+
+- Moved (passed to an `own` parameter, returned, or reassigned into a
+  different slot).
+- Mutated (reassigned through `mut`, indexed-assigned, field-assigned).
+
+These are the single-writer constraints of §11.1, extended to the
+cluster's lifetime. Once every alias goes out of scope, the cluster
+collapses back to its root, and the root may again be moved or
+mutated.
+
+This is the only construct in §11 that requires the compiler to track
+lifetime across statements within a scope. Function-parameter borrows
+that do not escape into a let or for-loop binding are
+call-expression-bounded (§11.7); category B and D storage operations
+are atomic at the assignment site. The cluster machinery handles
+let-rebindings and for-loop iteration variables specifically.
+
+#### 11.3.5 Rule (P): consume of a borrow-equivalent alias
+
+When a binding `x` is a borrow-equivalent alias in some cluster, and a
+language construct attempts to "consume" `x` (`let y = x`, `mut y = x`,
+`move x` at a call site), the result follows **Rule (P)**:
+
+- The name `x` dies; it is no longer accessible.
+- The borrow-equivalent role transfers to the new binding (the
+  consuming context's binding).
+- The source value is untouched. No data is moved out of the cluster's
+  root.
+
+Rule (P) makes consume operations on alias bindings *name-only*:
+syntactically the operation looks like consumption, but semantically no
+ownership transfer occurs at the value level. The cluster's structure
+updates (which name names which slot); the root and its value are
+unchanged.
+
+The corollary: passing an alias binding to a parameter declared
+`own T` is a **compile error**. Ownership of the underlying `T` cannot
+be conjured from a cluster member; doing so would require digging the
+value out of the cluster's root, breaking the cluster's invariants.
+
+Diagnostic shape: *"cannot consume borrow-equivalent alias `x` into
+ownership of `T`. `x` is rooted in `<root>` (the cluster's real owner);
+consumption would dig into `<root>`. Either change the parameter
+convention to default (borrow-equivalent), or restructure to consume
+from a real owner — e.g., iterate with `for own x in v` (§12.3) to
+obtain owned elements, or `.clone()` the value to produce an owned
+copy."*
+
+Worked examples:
+
+```
+fn read(v: Vec[i32]) -> i32: ...               // default: borrow-equivalent
+fn consume(own v: Vec[i32]) -> i32: ...        // opt-in: consumes
+
+fn process(items: Vec[i32]) -> i32:            // items is borrow-equivalent
+  for x in items:                              // x is borrow-equivalent (cluster member)
+    let y = x                                  // ✓ Rule (P): y borrows in same cluster
+    read(y)                                    // ✓ y passed to borrow-default param
+    // consume(move y)                         // ✗ would dig into items[i]
+                                               //   "cannot consume borrow-equivalent
+                                               //    alias y into ownership of Vec[i32]"
+  read(items)                                  // ✓ items unchanged
+
+fn destroy(items: Vec[i32]) -> i32:
+  for own x in items:                          // x is a real owner each iteration
+    consume(move x)                            // ✓ x is real-owner; can be consumed
+  // items is no longer accessible (consumed by `for own`)
+```
+
+#### 11.3.6 Rooted returns and implicit Copy/Clone
+
+A return expression whose value is rooted in a cluster member (rather
+than in a real-owner local) requires *anchoring* before it can leave
+the function: the returned value must become an independent real owner
+in the caller's scope, because §11.3.4 forbids cluster members from
+escaping the function.
+
+The compiler anchors automatically:
+
+- For **`Copy` types**: a free, implicit copy. The value is duplicated;
+  the caller receives an independent owned copy. The cluster member is
+  unaffected.
+- For **`Clone` but not `Copy` types**: an implicit `.clone()` call
+  (§11.5.4). The cost is visible in the function's elaborated form
+  (§11.7) and in diagnostics; the user does not write `.clone()` in the
+  source.
+- For **neither `Copy` nor `Clone` types**: a compile error.
+  Diagnostic: *"cannot return cluster-member value of type `T`; `T` is
+  not `Copy` or `Clone`. To return a value of this type, accept the
+  source as `own` (§11.7.4) so that the function holds a real owner,
+  construct a new owned value locally, or implement `Clone` for `T`."*
+
+This rule preserves cluster integrity while keeping the common cases
+(returning a `Copy` primitive from a borrow-default parameter,
+returning a `Clone` composite when the cost of clone is acceptable)
+ergonomic.
+
+```
+fn first(v: Vec[i32]) -> i32:                  // i32 is Copy
+  v[0]                                          // ✓ implicit copy of v[0]
+
+fn snapshot(state: AppState) -> AppState:      // AppState is Clone
+  state                                         // ✓ implicit Clone of state
+
+fn extract(buf: AudioBuffer) -> AudioBuffer:   // AudioBuffer is neither
+  buf                                           // ✗ compile error: "cannot
+                                                //    return cluster-member
+                                                //    value of type
+                                                //    `AudioBuffer`; …"
+```
+
+The diagnostic for the third case suggests either `fn extract(own buf:
+AudioBuffer) -> AudioBuffer` (consume the buffer, gaining real
+ownership inside the function) or implementing `Clone` for
+`AudioBuffer`.
 
 ### 11.4 The `Copy` Trait
 
@@ -6628,11 +6890,12 @@ copy-semantic languages.
 
 ```
 trait Clone:
-  fn clone(value: &Self) -> Self
+  fn clone(value: Self) -> Self
 ```
 
-The method takes a borrow (§11.9) of the source value and returns an
-independent owned copy.
+The method takes its parameter under the default borrow-equivalent
+convention (§11.7) and returns an independent owned copy. The source
+value is not consumed; the caller's binding survives the call.
 
 Where `Copy` produces implicit duplications with no syntactic marker,
 `Clone` requires an explicit `.clone()` call at every duplication site.
@@ -6678,6 +6941,20 @@ restore(backup)                    // backup still owned
 
 The clone allocates as the type requires. Users who write `.clone()` are
 making the cost visible.
+
+#### 11.5.4 Clone as the anchor for rooted returns
+
+`Clone` is the trait the compiler invokes to anchor rooted returns per
+§11.3.6. When a function returns a value rooted in a cluster member,
+and the value's type implements `Clone` but not `Copy`, the compiler
+inserts an implicit `.clone()` call at the return site. The user does
+not write `.clone()` in the source; the elaborated form of the
+function's body (§11.7) makes the implicit clone visible to
+diagnostics and tooling.
+
+Library authors implementing `Clone` for a new type should expect the
+trait to be invoked implicitly at return sites in addition to explicit
+`.clone()` call sites.
 
 ### 11.6 Strings and the `Copy` Implementation
 
