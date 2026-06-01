@@ -108,13 +108,26 @@ Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
 
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
-`type`, `fn`, `operator`, `signal`, `attr`, `recurrent`, `derived`,
-`const`, `let`, `mut`), all clause keywords (`parts`, `in`, `out`,
-`expose`, `when`, `satisfies`, `fulfill`, `default`, `from`, `to`,
-`pairs`, `on`, `where`), all control-flow keywords (`if`, `else`,
-`match`, `for`, `while`, `break`, `continue`, `return`), and all
-operator-context keywords (`as`, `is`, `and`, `or`, `not`). The rule
-is normative and takes precedence over any conflicting grammar.
+`type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
+`derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
+keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
+`satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
+`where`, `desired`, `observed`, `ring`, `gate`, `keyed`), the reserved
+instance-field names (`pair`, `exposition` — §13.7.5; the remaining
+fields `from`, `to`, `incoming`, `outgoing`, `parts` double as the
+clause keywords above), all control-flow keywords (`if`, `else`,
+`match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
+scope-anchor namespaces (`here`, `module`), the instance value
+(`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
+import aliases §10.2), and all operator-context keywords (`is`, `and`,
+`or`, `not`). `as` is **not** a cast operator; explicit conversion uses
+`T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
+conflicting grammar.
+
+The sole reserved *type* identifier is `Subject` (§13.7.7), the
+subject-type alias used in trait and `fulfill` type positions. Being a
+type alias rather than a keyword, it is capitalized by the type-naming
+convention; it does not fall under the lowercase-keyword rule above.
 
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
@@ -122,6 +135,18 @@ infix, or terminating character — for example `#default`,
 identifier purposes; it is a valid identifier character in every
 position. Precise lexical rules are in `GRAMMAR.md`; this rule is
 normative and takes precedence over any conflicting grammar.
+
+**No statement separator; no semicolon.** Ductus delimits with
+newlines and indentation. The semicolon `;` is **not a token** in the
+grammar and never appears in Ductus source — not as a statement
+terminator, not as a list separator, not in generic parameter lists.
+Every separated list (call arguments, generic parameters, tuple
+components, `parts:`/`incoming:`/`outgoing:` entries, etc.) uses the
+comma, the newline, or both. A `;` in Ductus source is a lex error.
+(This governs Ductus source only. Non-Ductus code shown for
+illustration — host-driver pseudocode that embeds the kernel, and the
+Rust comparison snippets in §15 and §18 — follows its own language's
+rules and may use semicolons.)
 
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
@@ -313,18 +338,69 @@ fresh parameters per the same rule.
 #### 2.2.4 Trait-based constraints
 
 Inferred constraints reference traits (§3). Operations in the body resolve to
-trait methods (`+` resolves to `Add::add`, where `Add` denotes `Add[Self]`
+trait methods (`+` resolves to `Add::add`, where `Add` denotes `Add[Subject]`
 per §3.1.6's default-type-parameter resolution), and the relevant trait
 becomes the constraint on the corresponding parameter. The trait system's
 umbrella traits (§3.6) let the compiler simplify inferred constraint sets for
 readability: `Add + Sub + Mul + Neg + Zero + One` may collapse to `Numeric`
 when unambiguous.
 
-#### 2.2.5 Type-argument inference at call sites
+#### 2.2.5 Supplying and inferring generic arguments at call sites
 
-When a generic function is called, the compiler infers the type arguments from
-the call's argument types where possible. Explicit type arguments are an
-opt-in fallback using turbofish syntax `::[T]`:
+Generic arguments — type arguments and const-generic arguments alike —
+are supplied at a use site with turbofish syntax `::[…]`, or omitted and
+resolved by the compiler. The supply model mirrors that of ordinary
+value arguments (§3.5).
+
+**Three forms.**
+
+- **Positional** — arguments in declaration order. A *prefix* may be
+  given and the trailing arguments omitted:
+
+  ```
+  lerp::[f64](0.0, 1.0, 0.5)        // all positional
+  resize::[2](stream)               // prefix: supply the first, omit the rest
+  ```
+
+- **Wildcard `_`** — a positional hole, resolved exactly like an omitted
+  argument; used to skip an *interior* parameter (§2.2.6):
+
+  ```
+  resize::[2, _, _](stream)         // supply the first, infer the rest
+  ```
+
+- **Named** — `Name = value`, in any order, naming the parameters to
+  supply and omitting the rest:
+
+  ```
+  resize::[K = 2](stream)           // supply K by name; order-independent
+  ```
+
+  Named generic arguments use `=`, not the `:` of named *value*
+  arguments (§3.5.4), because inside a bracketed generic list `:`
+  already separates a parameter from its type (`const N: usize`).
+
+**No mixing.** A single turbofish list is either all-positional (with
+optional wildcards and trailing omission) or all-named — never both,
+consistent with the value-argument rule of §3.5.2.
+
+**Resolution of an omitted, wildcarded, or unnamed argument.** Each is
+resolved in order:
+
+1. **Inferred** from the call's value arguments — and, for a parameter
+   appearing *bare* in the return type, from the expected type — where
+   possible (§2.2.1; const-generic inference is restricted per §2.5.5);
+   else
+2. its **declared default** (§3.1.6.1 for type parameters, §2.5.7 for
+   const-generic parameters); else
+3. a **compile error**: the argument cannot be determined and must be
+   supplied explicitly.
+
+Because positional supply fills a *prefix*, a parameter that must be
+supplied (one that is neither inferable nor defaulted) is most usable
+when declared early in the parameter list; otherwise callers use the
+named form. This is the same consideration as ordering
+required-before-optional value parameters.
 
 ```
 let r = lerp(0.0_f64, 1.0_f64, 0.5_f64)        // T inferred from arguments
@@ -424,7 +500,11 @@ indirection.
 Const-generic parameters may declare default values, including
 *expressions* that reference other generic parameters of the same
 declaration. The defaults are resolved at instantiation time
-alongside type-parameter defaults.
+alongside type-parameter defaults. A default expression is a
+const-generic expression and obeys §2.5 (which forms are admitted,
+how the resulting types are compared, and the symbolic/concrete
+distinction); this subsection adds only the resolution-order rules
+specific to defaults.
 
 ```
 operator merge[
@@ -469,7 +549,7 @@ let m1 = merge(stream_a, stream_b)
 
 // Override: N = 1024 (must be type-correct; the override is
 // the caller's assertion that 1024 suffices)
-let m2 = merge::<Event, 1024>(stream_a, stream_b)
+let m2 = merge::[Event, 1024](stream_a, stream_b)
 ```
 
 **Type-parameter defaults** (§3.1.6.1) and const-generic defaults
@@ -516,6 +596,11 @@ evaluable. The propagation rule is mechanical:
 - Calls to pure functions with compile-time-known arguments are compile-time
   known.
 - Bindings of compile-time-known expressions are compile-time known.
+- Inside a `for x in iterable:` whose `iterable` is compile-time known, the
+  iteration variable `x` is compile-time known on each iteration, and the body
+  is reproduced once per element with `x` bound to that element's value. A
+  range `a..b` is compile-time known iff both bounds are; an array literal
+  `[e1, …, eK]` iff every element is. See §12.3.7 for the unrolling mechanics.
 
 Since all user-defined functions are pure (§1.3) and all bindings are
 immutable, compile-time-knowability propagates freely through the expression
@@ -678,24 +763,22 @@ conversion rules (§4.5).
 
 #### 2.4.4 Compile-time evaluation as type-level mechanism
 
-Compile-time-known integer values can serve as type-level arguments.
-Const-generic arguments (where a type parameter accepts a compile-time-known
-value rather than a type) use this directly: `type Buffer[T, N: usize =
-1024]: data: T[N]`. The full const-generic specification — value-kind
-parameters, bounds, inference — is deferred to a future spec revision;
-v1 supports the syntactic form shown above for fixed-size array sizing
-and similar uses.
+Compile-time-known values can serve as type-level arguments. A
+*const-generic* parameter accepts a compile-time-known value rather than
+a type:
 
 ```
-let arr: i32[fib(10) + 1]                  // valid; fib(10) + 1 is compile-time evaluable
-type Buffer[T, N: usize = 1024]:
+let arr: i32[fib(10) + 1]                  // array size: fib(10) + 1 is compile-time evaluable
+type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
 
 This is dependent-typing-lite: types can depend on compile-time-known values
 without requiring full dependent type theory. The mechanism is uniform —
 anything compile-time evaluable can appear in a type position requiring a
-value.
+value. §2.5 specifies const-generic parameters and expressions in full:
+which expressions are admitted, how const-generic types are compared for
+identity, and how parameters are inferred, bounded, and supplied.
 
 #### 2.4.5 Negative literal parsing
 
@@ -752,6 +835,254 @@ exactly. Compile-time and runtime float computations on the same expression
 must produce bit-identical results. This is a correctness requirement, not a
 performance optimization.
 
+### 2.5 Const-Generic Parameters and Expressions
+
+A *const-generic parameter* carries a compile-time-known **value** rather
+than a type. It is declared with the `const` keyword in a generic
+parameter list; that keyword is what distinguishes it from a type
+parameter (the list separator is always a comma — §1.4 — never a
+semicolon):
+
+```
+type Buffer[T, const N: usize = 1024]:
+  data: T[N]
+```
+
+A *const-generic argument* is the value that fills such a parameter at a
+use site — supplied, inferred, or defaulted (§2.2.5). A const-generic
+argument may be written as an **expression**. The rules below define
+which expressions are admitted and how the resulting types are compared.
+
+#### 2.5.1 Parameter kinds
+
+A const-generic parameter's declared type must be either:
+
+- an integer type (`usize`, `u32`, `i64`, …), or
+- `bool`.
+
+Floating-point types are **not** permitted as const-generic parameters;
+`type Spinner[const ANGLE: f64]` is a compile error. The reason is in
+§2.5.4: float-valued type arguments have no sound identity test. This
+restriction is on type-level *parameters* only — a regular `const` of
+float type (§2.4.1) is an ordinary value and is unaffected.
+
+#### 2.5.2 The concrete case: any compile-time expression
+
+When every value a const-generic argument depends on is known, the
+argument may be **any compile-time-known expression** of the parameter's
+type (§2.4.1), evaluated to a concrete value before type-checking
+proceeds. Every compile-time operation is available — arithmetic
+including `/` and `%`, comparisons, conditionals, and calls to pure
+functions:
+
+```
+const BUF: usize = 1024
+
+stream ring[BUF * 2] events: Event     // capacity 2048
+let history: i32[fib(10) + 1]          // pure call in an array size
+recurrent[BUF / 8] stream avg = ...    // division is fine: operands are known
+let m = merge::[Event, BUF_A + BUF_B](a, b)
+```
+
+Regular `const`s (§2.4.1) are admitted here on the same footing as
+literals — they are compile-time-known by construction.
+
+A **reactive** value (§13) may never flow into a const-generic argument;
+doing so is a compile error (§13.12.5). The concrete value is then
+checked against the parameter's type and bounds by value-fits-type
+checking (§2.4.3, §2.5.5).
+
+#### 2.5.3 The symbolic case: const-generic expressions
+
+Inside a generic declaration, a const-generic argument may be an
+expression over the **in-scope const-generic parameters** — for example
+an operator returning `RingStream[T, N + 1]`. An expression that still
+mentions an unbound parameter is *symbolic*. Because the compiler must
+compare symbolic expressions for type identity (§2.5.4) *without knowing
+the parameter values*, only a restricted, decidable set of operations is
+admitted in symbolic position.
+
+A symbolic const-generic expression must be one of:
+
+- **An integer polynomial** over in-scope const-generic parameters and
+  compile-time-known integers, built from `+`, `-`, and `*` only. A
+  parameter may multiply another parameter (`N * K`). Integer literals
+  and integer `const`s serve as coefficients and terms.
+- **A boolean expression** over in-scope `bool` const-generic parameters
+  and compile-time-known booleans, built from `and`, `or`, `not`, and
+  `is` / `is not` between booleans.
+
+The following are **rejected while any referenced parameter is still
+unbound**, and permitted the instant every operand is concrete (§2.5.2):
+
+| Operation | Why it is rejected symbolically |
+|---|---|
+| Integer `/`, `%` | Truncate; the result is not a polynomial and has no canonical form to compare. |
+| Integer comparison (`<`, `>`, `<=`, `>=`, `is`, `is not` on integers) | Bridges integer→bool; deciding equality of the result would require arithmetic reasoning the checker does not perform. |
+| `if` / `match`, calls to user-defined functions | No finite canonical form over symbolic operands. |
+| Any floating-point operation | Per §2.5.1; floats have no canonical form (§2.5.4). |
+
+```
+type Mode[const VERBOSE: bool, const TIMED: bool]
+
+// ✓ integer arithmetic on a symbolic parameter
+operator widen[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
+operator pair_up[const N: usize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
+
+// ✓ boolean algebra on symbolic bool parameters
+operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or B]
+
+// ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
+operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
+operator gate[const N: usize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
+```
+
+#### 2.5.4 Canonical form and type identity
+
+Two const-generic types are the **same type** iff their type arguments
+are pairwise identical and each pair of const-generic arguments has the
+**same canonical form**:
+
+- An **integer-polynomial** argument canonicalizes to a sum of monomials
+  with integer coefficients — the monomials in a fixed total order, like
+  terms combined. `N + 1` and `1 + N` share the canonical form `N + 1`;
+  `2 * N` and `N + N` share `2·N`. Hence `RingStream[T, N + 1]` and
+  `RingStream[T, 1 + N]` are the same type.
+- A **boolean** argument canonicalizes to a normal form over its
+  parameters (equivalently: identical truth tables). `Mode[A and B, …]`
+  and `Mode[B and A, …]` are the same type.
+- A **concrete** argument canonicalizes to its value.
+
+Const-generic positions are **invariant**. There is no subtyping or
+coercion between `C[…, e₁]` and `C[…, e₂]` when their canonical forms
+differ, even when one value is provably larger: `RingStream[T, N]` is
+never assignable to `RingStream[T, N + 1]`. Invariance is what keeps
+identity decidable — the checker compares canonical forms and never
+proves inequalities.
+
+Float-valued type arguments are excluded (§2.5.1) for exactly this
+reason: float arithmetic has no canonical form. Even concretely,
+`Foo[0.1 + 0.2]` and `Foo[0.3]` would compare unequal (the sums differ
+bit-for-bit), and symbolic float expressions cannot be normalized at all.
+
+#### 2.5.5 Inference
+
+A const-generic parameter is inferred only from a position
+where it appears as a **bare parameter** — `RingStream[T, N]`, not
+`RingStream[T, N + 1]`. A bare occurrence in the *return* type counts
+when the expected type is known from context (e.g. a `let` annotation).
+The compiler **evaluates** const-generic expressions once their
+parameters are known; it never **solves** them. Consequently:
+
+- A parameter that appears only inside an expression (never bare) cannot
+  be inferred; it must be supplied or carry a default (§2.5.7).
+- The compiler does not back-solve a parameter from a result type: given
+  `-> RingStream[T, N * K]` and an expected `RingStream[T, 16]`, it will
+  not deduce `K`.
+- When a parameter appears both bare and inside an expression, it is
+  inferred from the bare occurrence; the expression occurrence is then
+  **checked** for consistency against that value.
+
+```
+operator resize[const K: usize, T, const N: usize](s: RingStream[T, N]) -> RingStream[T, N * K]
+
+let bigger: RingStream[Event, 16] = resize::[2](small)   // K = 2 supplied; T, N inferred from `small`
+```
+
+`T` and `N` are inferred from the argument (they appear bare in
+`RingStream[T, N]`); `K` appears only inside `N * K`, so it is supplied.
+The result `RingStream[T, N * K]` is then *evaluated* — not solved — to
+`RingStream[Event, 16]` and checked against the annotation. (`K` is
+declared first so the positional prefix `::[2]` reaches it — §2.2.5.)
+
+The result of inference is then checked against the parameter's
+bounds, if any (§2.5.6).
+
+#### 2.5.6 Const-generic bounds
+
+A const-generic parameter may be constrained by a **`where` clause** on
+the declaration — the same clause that carries trait bounds on type
+parameters (§3.3.4). The clause holds a comma-separated list of
+predicates; a const-generic bound is a boolean predicate over the
+declaration's const-generic parameters and compile-time-known values.
+The `where` clause attaches to the signature, before the body's `:`:
+
+```
+operator window[T, const N: usize, const K: usize](s: RingStream[T, N]) -> RingStream[T, K]
+  where K <= N, N >= 1:
+  ...                                  // body
+
+type EvenBuffer[T, const N: usize] where N % 2 is 0:
+  data: T[N]
+```
+
+A single `where` clause may mix trait bounds and value bounds:
+`where T: Numeric, N >= 1`.
+
+**Predicate forms.** A bound predicate is any boolean expression over the
+const-generic parameters and compile-time-known values, using:
+
+- the comparisons `<`, `<=`, `>`, `>=`, `is`, `is not`, and
+- the boolean connectives `and`, `or`, `not`.
+
+Crucially, the operands of those comparisons may use the **full**
+compile-time vocabulary — including `/`, `%`, and function calls, even on
+parameters. This is the deliberate difference from const-generic
+expressions in *type* positions (§2.5.3), which are restricted to
+polynomials: a bound predicate is never compared for type identity, only
+**evaluated to true or false**, so it needs no canonical form.
+`where N % 2 is 0` and `where K <= N / 2` are both well-formed.
+
+**When bounds are checked.** Bounds are checked at **instantiation** —
+once every parameter is concrete (supplied, inferred, or defaulted,
+§2.2.5) — using the compile-time evaluation rules of §2.4 (including the
+overflow rules of §4.6.5). Each predicate is evaluated; if any is false,
+it is a compile error at the *instantiation site*, naming the parameter
+values and the violated predicate. When a generic is instantiated with
+arguments that are themselves still symbolic (a generic calling another
+generic), the check is deferred until those become concrete during
+monomorphization (§2.3).
+
+The declaration site checks only that each predicate is a well-formed
+boolean over in-scope parameters — never that it holds. The compiler does
+**not** prove bounds symbolically, and does **not** use one declaration's
+bound to discharge another's obligation. A body that relies on a value
+relationship — for instance a `recurrent[N] stream` calling `.past(k, …)`,
+which requires `k ≤ N` (§13.18.8) — type-checks structurally regardless of
+any `where` clause; that obligation is discharged at instantiation
+alongside the declared bounds. A matching `where k <= N` does not change
+*whether* the definition compiles; it documents the contract and yields a
+clearer, earlier instantiation error when violated.
+
+```
+let w = window::[K = 4](buf16)     // buf16: RingStream[Event, 16] → N=16, K=4 → 4 <= 16 ✓
+let w = window::[K = 32](buf16)    // ✗
+
+error: const-generic bound violated instantiating `window`
+  --> window::[K = 32](buf16)
+  bound:  K <= N
+  values: K = 32, N = 16
+  hint: the bound `K <= N` requires K ≤ 16 here; supply a smaller K or a
+        larger-capacity input.
+```
+
+#### 2.5.7 Default expressions
+
+A const-generic parameter may declare a default — used when the argument
+is neither supplied nor inferred (§2.2.5). The default may itself be an
+expression referencing earlier parameters of the same declaration; its
+full evaluation rules (left-to-right resolution, no forward references,
+DAG requirement) are given in §2.3.6. A default expression is a
+const-generic expression and obeys §2.5.2–§2.5.4: symbolic where it
+references unbound parameters, concrete once they are known.
+
+```
+operator merge[T, const N: usize = A.capacity + B.capacity](
+  a: RingStream[T, A],
+  b: RingStream[T, B],
+) -> RingStream[T, N]
+```
+
 ---
 
 ## 3. Trait System
@@ -775,15 +1106,15 @@ traits, and optionally default values for the trait's defaulting behavior.
 
 ```
 trait Display:
-  fn display(value: Self) -> string
+  fn display(value: Subject) -> string
 
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 
 trait Producer:
   type Item
-  fn produce(value: Self) -> Option[Item]
+  fn produce(value: Subject) -> Option[Item]
 ```
 
 A trait declaration may be empty:
@@ -800,24 +1131,25 @@ existence by the compiler.
 #### 3.1.1 Method signatures
 
 Trait methods are declared with the `fn` keyword inside the trait body. The
-signatures use `Self` (capitalized, the type-level identifier) to refer to the
+signatures use `Subject` (capitalized, the type-level identifier) to refer to the
 implementing type:
 
 ```
 trait Eq:
-  fn eq(a: Self, b: Self) -> bool
+  fn eq(a: Subject, b: Subject) -> bool
 ```
 
-`Self` is a type-level placeholder bound during implementation: in a `fulfill
-Eq for i32` block, `Self` resolves to `i32`, so the method's signature becomes
+`Subject` is a type-level placeholder bound during implementation: in a `fulfill
+Eq for i32` block, `Subject` resolves to `i32`, so the method's signature becomes
 `fn eq(a: i32, b: i32) -> bool`.
 
-Trait methods do not use a `self` parameter. The lowercase `self` keyword is
-reserved exclusively for reactive context inside node and connection bodies
-(§13). Trait method signatures name their receiver
-parameter explicitly. The first parameter's type is conventionally `Self` for
+Trait methods do not use a `self` parameter. The instance value `subject`
+(§13.7.7) is reserved for reactive context inside node and connection bodies
+(§13); trait methods have no implicit receiver. Trait method signatures name
+their receiver parameter explicitly. The first parameter's type is
+conventionally `Subject` for
 methods that operate on instances, but trait methods may have any parameter
-list — including no `Self` parameter at all (for "associated functions" like
+list — including no `Subject` parameter at all (for "associated functions" like
 constructors).
 
 **Ownership conventions in trait method signatures.** Trait method
@@ -836,7 +1168,7 @@ A trait may declare associated types using the `type` keyword inside the body:
 ```
 trait Producer:
   type Item
-  fn produce(p: Self) -> Option[Item]
+  fn produce(p: Subject) -> Option[Item]
 ```
 
 `Item` is an associated type — a type-level name whose concrete value is bound
@@ -846,9 +1178,9 @@ method signatures and in other associated-type expressions.
 An associated type may declare a default value:
 
 ```
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 ```
 
 When an implementation does not bind `Output` explicitly, the default applies.
@@ -865,6 +1197,22 @@ fn sum[P: Producer](p: P) -> P.Item where P.Item: Numeric:
   ...
 ```
 
+**Borrow-default convention on associated-type slots.** Associated
+types follow the same borrow-default convention as function parameter
+slots (§11.7). When an implementation declares `type Name = T`, the
+type `T` is treated under the default convention: appearances of
+`Name` in the trait's method signatures (parameters and returns) are
+borrow-equivalent. To opt in to owned semantics, the implementation
+writes `type Name = own T`; appearances of `Name` then carry owned
+semantics. The same mechanism applies uniformly to user-defined traits
+and stdlib traits — there is no language-privileged path that bypasses
+this convention.
+
+Example: `Iterator::Item` (§12.7) defaults to borrow-equivalent.
+Writing `type Item = Record` yields borrow-equivalent records (rooted
+in the iterator's `Source` cluster); writing `type Item = own Record`
+yields owned records (consumed out of the source).
+
 #### 3.1.3 Default method bodies
 
 A trait may provide a default implementation for any of its methods by
@@ -872,9 +1220,9 @@ including a function body in the trait declaration:
 
 ```
 trait Greet:
-  fn greet(value: Self) -> string
+  fn greet(value: Subject) -> string
 
-  fn shout(value: Self) -> string:
+  fn shout(value: Subject) -> string:
     greet(value).to_upper() + "!"
 ```
 
@@ -891,7 +1239,7 @@ Requirements are declared with the `requires` keyword (grammar §3.7):
 ```
 trait Student:
   requires Person
-  fn enrollment_id(value: Self) -> string
+  fn enrollment_id(value: Subject) -> string
 ```
 
 A type `T` satisfies `Student` only if `T` also satisfies `Person`. The
@@ -901,8 +1249,8 @@ transitively), the declaration is rejected.
 
 A child trait may not redeclare a method already declared by any of its
 required traits (directly or transitively). If `Person` declares `fn display(
-value: Self) -> string`, then `Student` declaring its own `fn display(value:
-Self) -> string` is a compile error at the trait declaration site. The
+value: Subject) -> string`, then `Student` declaring its own `fn display(value:
+Subject) -> string` is a compile error at the trait declaration site. The
 reasoning: any type satisfying `Student` would also satisfy `Person` via
 `requires`, so the type's effective method set would contain two `display`
 methods — exactly the conflict §3.2.1 forbids. Rejecting redeclaration at the
@@ -975,11 +1323,11 @@ Traits may declare type parameters (grammar §3.7's `GenericParams`):
 
 ```
 trait From[T]:
-  fn from(value: T) -> Self
+  fn from(value: T) -> Subject
 
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 ```
 
 Type parameters on a trait are part of the trait's identity at the
@@ -997,19 +1345,19 @@ type-system level. Two terms are useful when discussing generic traits:
 A type may implement multiple trait instances of the same parent trait
 (`fulfill From[i32] for MyNumber` and `fulfill From[i64] for MyNumber`
 coexist; both share the parent `From`). Default type parameters (`Rhs =
-Self`) follow the rules for generic parameters in §3.1.6 and §2.2.
+Subject`) follow the rules for generic parameters in §3.1.6.1 and §2.2.
 
 ##### 3.1.6.1 Default-type-parameter resolution
 
 When a generic trait has defaulted type parameters (e.g., `trait
-Add[Rhs = Self]`), references to the bare trait name resolve to the
+Add[Rhs = Subject]`), references to the bare trait name resolve to the
 trait instance with all defaults applied:
 
-- In `requires` clauses: `requires Add` is sugar for `requires Add[Self]`.
-- In trait bounds: `T: Add` is sugar for `T: Add[Self]`.
-- In `satisfies` clauses: `satisfies Add` is sugar for `satisfies Add[Self]`.
-- In `fulfill` blocks: `fulfill Add for T` is sugar for `fulfill Add[Self] for T`.
-- In inferred constraints: the compiler infers `T: Add[Self]` unless the
+- In `requires` clauses: `requires Add` is sugar for `requires Add[Subject]`.
+- In trait bounds: `T: Add` is sugar for `T: Add[Subject]`.
+- In `satisfies` clauses: `satisfies Add` is sugar for `satisfies Add[Subject]`.
+- In `fulfill` blocks: `fulfill Add for T` is sugar for `fulfill Add[Subject] for T`.
+- In inferred constraints: the compiler infers `T: Add[Subject]` unless the
   operation's operand types force a cross-type form.
 
 This rule is universal across all generic traits with default type
@@ -1139,7 +1487,7 @@ type maps to exactly one trait-method origin.
 ##### Generic trait instantiations do not conflict
 
 Different generic instantiations of the *same parent trait* — e.g.,
-`From[i32]` and `From[i64]`, or `Add[Self]` and `Add[Other]` — are
+`From[i32]` and `From[i64]`, or `Add[Subject]` and `Add[Other]` — are
 distinct trait instances per §3.1.6, but they share a parent trait
 identity. Their method names refer to the same underlying trait method
 parameterized over the trait's generic arguments. They do not conflict
@@ -1287,19 +1635,19 @@ AssocTypeBinding := 'type' Ident '=' TypeExpr NEWLINE
 
 `fulfill` is a reserved keyword.
 
-#### 3.3.1 Method signatures and `Self` usage
+#### 3.3.1 Method signatures and `Subject` usage
 
-`Self` is a type-level identifier that appears in trait declarations to refer
+`Subject` is a type-level identifier that appears in trait declarations to refer
 to the implementing type. Its use is asymmetric across declaration contexts:
 
-- **In trait declarations**, `Self` is the standard way to refer to the
+- **In trait declarations**, `Subject` is the standard way to refer to the
   implementing type, because the implementing type is not yet known. Trait
-  authors write `fn display(value: Self) -> string`; there is no concrete
-  name available to substitute, so `Self` is necessary.
+  authors write `fn display(value: Subject) -> string`; there is no concrete
+  name available to substitute, so `Subject` is necessary.
 
 - **In `fulfill` blocks**, the implementing type *is* known — it appears in
   the `for Type` portion of the `fulfill` declaration. The recommended form
-  is to write the explicit type name in method signatures, not `Self`:
+  is to write the explicit type name in method signatures, not `Subject`:
 
 ```
 fulfill Eq for Person:
@@ -1307,14 +1655,14 @@ fulfill Eq for Person:
     a.first_name is b.first_name and a.last_name is b.last_name
 ```
 
-`Self` remains *permitted* inside `fulfill` blocks and is treated as a
-synonym for the implementing type (the compiler substitutes `Self` →
+`Subject` remains *permitted* inside `fulfill` blocks and is treated as a
+synonym for the implementing type (the compiler substitutes `Subject` →
 `Person` during type checking). The two forms produce identical signatures
 and identical compiled code. The explicit-type-name form is preferred for
 readability: a reader sees concrete types at every position, without an extra
-indirection through `Self`.
+indirection through `Subject`.
 
-Generic implementing types may make `Self` more convenient by keeping the
+Generic implementing types may make `Subject` more convenient by keeping the
 signature shorter:
 
 ```
@@ -1330,14 +1678,14 @@ fulfill Display for Result[T, E] where T: Display, E: Display:
       Err(error): "Err({error.display()})"
 ```
 
-For generic types specifically, users may prefer `Self` to avoid repeating
-the parameterization (`fn display(result: Self) -> string`). Both forms are
+For generic types specifically, users may prefer `Subject` to avoid repeating
+the parameterization (`fn display(result: Subject) -> string`). Both forms are
 valid; the choice is stylistic.
 
 The receiver parameter name (`a`, `value`, `result`, `left`, etc.) is always
-the implementer's choice. There is no `self` keyword for trait method
-receivers — that lowercase form is reserved exclusively for reactive context
-inside node and connection bodies (§13). Explicit parameter naming is the
+the implementer's choice. There is no implicit receiver for trait methods —
+the instance value `subject` is reserved for reactive context inside node and
+connection bodies (§13, §13.7.7). Explicit parameter naming is the
 language's general principle under uniform function call syntax: every
 parameter has a chosen name, not an implicit one.
 
@@ -1358,7 +1706,7 @@ fulfill Add for i32:
     // built-in integer addition
 ```
 
-Note: with the §4.9.1 default `type Output = Self`, the `type Output =
+Note: with the §4.9.1 default `type Output = Subject`, the `type Output =
 i32` binding shown here is explicit but optional. It could be omitted;
 the default applies. Explicit binding is shown for clarity in examples
 and remains valid where the implementer wants to make the choice
@@ -1376,8 +1724,8 @@ override it by providing its own body:
 
 ```
 trait Greet:
-  fn greet(value: Self) -> string
-  fn shout(value: Self) -> string:
+  fn greet(value: Subject) -> string
+  fn shout(value: Subject) -> string:
     greet(value).to_upper() + "!"
 
 fulfill Greet for Loud:
@@ -1415,6 +1763,13 @@ required traits. A `Result[i32, string]` implements `Display` because both
 `i32` and `string` do; a `Result[ClosureType, string]` does not, because
 closure types typically do not implement `Display`. The compiler verifies
 the conditions at every call site that requires the implementation.
+
+The same `where` clause carries **const-generic value bounds** (§2.5.6)
+in addition to trait bounds, and the two may be mixed in one
+comma-separated list: `where T: Numeric, N >= 1`. Trait bounds are
+checked where the implementation or call is resolved; const-generic
+value bounds are checked at instantiation against concrete values
+(§2.5.6).
 
 #### 3.3.5 Pure-requirement traits and automatic satisfaction
 
@@ -1797,20 +2152,20 @@ Fine-grained traits each declare exactly one method or one closely related
 group of methods, defining a single capability:
 
 ```
-trait Add[Rhs = Self]:
-  type Output = Self
-  fn add(a: Self, b: Rhs) -> Output
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
 
-trait Sub[Rhs = Self]:
-  type Output = Self
-  fn sub(a: Self, b: Rhs) -> Output
+trait Sub[Rhs = Subject]:
+  type Output = Subject
+  fn sub(a: Subject, b: Rhs) -> Output
 
-trait Mul[Rhs = Self]:
-  type Output = Self
-  fn mul(a: Self, b: Rhs) -> Output
+trait Mul[Rhs = Subject]:
+  type Output = Subject
+  fn mul(a: Subject, b: Rhs) -> Output
 
 trait Neg:
-  fn neg(value: Self) -> Self
+  fn neg(value: Subject) -> Subject
 ```
 
 Umbrella traits combine fine-grained traits via `requires` clauses,
@@ -1953,14 +2308,11 @@ user modules, and are not subject to the orphan rule:
 - *Stdlib auto-impl `From[()] for Option[T]`* — provides the `None` value
   for use in the `?` desugaring per §8.4.1. The impl is universally
   available for any T; user code cannot override or shadow it.
-- *Stdlib-privileged borrow-returning functions* (§11.9.5 carve-out).
-  Specific stdlib functions (e.g., indexed-collection accessors like
-  `element_at`) declare return types of the form `&T`. The carve-out is
-  enumerated in stdlib documentation; user-defined functions cannot
-  declare borrow return types.
 
 These privileged implementations exist outside the user-writable
-`fulfill`-block space and cannot conflict with user code.
+`fulfill`-block space and cannot conflict with user code. They use the
+same trait/fulfill mechanism as user-written impls; the only privilege
+is that the language reserves the right to provide them.
 
 #### 3.7.4 Language-defined marker traits
 
@@ -2116,9 +2468,9 @@ type Frequency:
   wraps i64
 
 fn from_hz[N: Numeric](n: N) -> Frequency:
-  Frequency(n as i64)
+  Frequency(i64(n))
 fn from_khz[N: Numeric](n: N) -> Frequency:
-  Frequency((n as f64 * 1000.0) as i64)
+  Frequency(i64(f64(n) * 1000.0))
 fn from_cents[N: Numeric](n: N) -> Frequency:
   ...
 
@@ -2434,7 +2786,7 @@ corresponds to one or more trait methods in §4.9's trait hierarchy.
 | `+`          | `Add`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
 | `-` (binary) | `Sub`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
 | `*`          | `Mul`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
-| `/`          | `Numeric`          | Self (on Float umbrella; mixed-kind operands widen per §4.4.1.1)  | mathematical division; see §4.4.1.1 |
+| `/`          | `Numeric`          | Subject (on Float umbrella; mixed-kind operands widen per §4.4.1.1)  | mathematical division; see §4.4.1.1 |
 | `//`         | `IntDiv`           | Output (associated type)                                          | truncating integer division         |
 | `%`          | `Rem`              | Output (associated type)                                          | mixed-kind promotes per §4.5        |
 | `-` (unary)  | `Neg`              | same as operand                                                   | type error on unsigned              |
@@ -2455,7 +2807,7 @@ from direct trait dispatch:
 2. If either operand is `Integer`-kinded (or both are), the compiler
    inserts implicit widening conversions to lift them to the appropriate
    `Float` type per §4.5's lossless-widening rules. The pragmatic
-   exception for `i64`/`u64` → `f64` (§4.5.2) applies here too.
+   exception for `i64`/`u64` → `f64` (§4.5.4) applies here too.
 3. The promoted operands then satisfy `Div` (which is declared only on
    `Float`); the compiler dispatches `Div::div` on the float type.
 4. The result is a `Float` value of the type the operands were widened to.
@@ -2627,7 +2979,7 @@ This table specifies the mapping:
 | `+`                                         | `Add`                                   | `Output` (associated type)                           |
 | `-` (binary)                                | `Sub`                                   | `Output` (associated type)                           |
 | `*`                                         | `Mul`                                   | `Output` (associated type)                           |
-| `/`                                         | `Numeric`                               | `Self` on `Float` umbrella (per §4.4.1.1)            |
+| `/`                                         | `Numeric`                               | `Subject` on `Float` umbrella (per §4.4.1.1)            |
 | `//`                                        | `IntDiv`                                | `Output` (associated type)                           |
 | `%`                                         | `Rem`                                   | `Output` (associated type)                           |
 | `-` (unary)                                 | `Neg`                                   | same type as operand                                 |
@@ -2646,10 +2998,10 @@ This table specifies the mapping:
 | `+?`, `-?` (binary), `*?`, `//?`, `%?`      | corresponding `Checked...`              | `Option[T]`                                          |
 | `/?`                                        | `CheckedDiv` (on `Float`)               | `Option[Float]`; integer operands widen per §4.4.1.1 |
 | unary `-?`                                  | `CheckedNeg`                            | `Option[T]`                                          |
-| `as`                                        | (language-level)                        | the target type, traps on out-of-range               |
-| `as%`                                       | `WrappingAs[T]` (operand)               | the target type T                                    |
-| `as\|`                                      | `SaturatingAs[T]` (operand)             | the target type T                                    |
-| `as?`                                       | `CheckedAs[T]` (operand)                | `Option[T]`                                          |
+| `T(x)`                                      | (language-level)                        | the target type T, traps on out-of-range             |
+| `T%(x)`                                     | `WrappingAs[T]` (operand)               | the target type T                                    |
+| `T\|(x)`                                    | `SaturatingAs[T]` (operand)             | the target type T                                    |
+| `T?(x)`                                     | `CheckedAs[T]` (operand)                | `Option[T]`                                          |
 
 ¹ The right operand may be any unsigned integer type narrower than or
 equal to u32 (implicit widening per §4.5.1); other types require an
@@ -2657,7 +3009,7 @@ explicit cast.
 
 Per §3.1.6's default-type-parameter resolution, each table entry that
 names a bare trait (e.g., `Add`) refers to the trait instance with
-default type parameters applied — `Add` is `Add[Self]`. For operands
+default type parameters applied — `Add` is `Add[Subject]`. For operands
 of different types, the compiler may infer cross-type instances
 (`Add[T2] for T1`) if such an instance is in scope; otherwise the
 operand types must be unified per the implicit-widening rules of §4.5.
@@ -2745,9 +3097,10 @@ precision-losing conversions require explicit casts.
 
 #### 4.5.5 What requires explicit cast
 
-Conversions not in §4.5.1–§4.5.3's implicit-widening tables require explicit
-`as` (§4.7) or, for fallible conversions where the destination range might
-not contain the source value, `TryFrom`/`TryInto` (§7) returning `Result`.
+Conversions not in §4.5.1–§4.5.3's implicit-widening tables require an
+explicit conversion `T(value)` (§4.7) or, for fallible conversions where
+the destination range might not contain the source value, `TryFrom`/`TryInto`
+(§7) returning `Result`.
 
 This includes: narrowing in either kind (wider-to-narrower integer,
 wider-to-narrower float); signed/unsigned crossings of any width;
@@ -2919,83 +3272,99 @@ for division by zero — no modular or clamping value is meaningful.
 
 ### 4.7 Explicit Casts
 
-The `as` operator performs explicit numeric conversion. Like arithmetic
-operators (§4.6), `as` has four variants expressing four different
-out-of-range policies. The unsuffixed form is the default; suffixed forms
-mirror the arithmetic operator suffixes.
+Explicit numeric conversion uses **call syntax on the target type**:
+`T(value)`. Like arithmetic operators (§4.6), it has four variants
+expressing four out-of-range policies. The unsuffixed form is the
+default; the suffixes (`%`, `|`, `?`) attach to the target type and
+mirror the arithmetic operator suffixes. (The `as` keyword is **not** a
+cast — it is reserved for naming and aliasing: placement names
+(§13.8.1) and import aliases (§10.2).)
 
-#### 4.7.1 The four cast variants
+#### 4.7.1 The four conversion variants
 
-| Operator | Trait             | Behavior on out-of-range                    |
+| Form     | Trait             | Behavior on out-of-range                    |
 |----------|-------------------|---------------------------------------------|
-| `as`     | (language-level)  | trap at runtime                             |
-| `as%`    | `WrappingAs[T]`   | modular two's-complement wrap               |
-| `as\|`   | `SaturatingAs[T]` | clamp to destination type's range bounds    |
-| `as?`    | `CheckedAs[T]`    | return `Option[T]` — `None` on out-of-range |
+| `T(x)`   | (language-level)  | trap at runtime                             |
+| `T%(x)`  | `WrappingAs[T]`   | modular two's-complement wrap               |
+| `T\|(x)` | `SaturatingAs[T]` | clamp to `T`'s range bounds                 |
+| `T?(x)`  | `CheckedAs[T]`    | return `Option[T]` — `None` on out-of-range |
+
+The policy suffix attaches to the target type, immediately before the
+argument list: `u8%(x)` — not `u8(%x)` and not `u8(x)%`. The suffixed
+forms parse unambiguously because a type name is never a value operand,
+so `u8%(`, `u8|(`, `u8?(` cannot be read as modulo, union/pipe, or
+error-propagation.
 
 Examples:
 
 ```
 let x: i32 = 300
-let y: u8 = x as u8                  // ✗ traps at runtime — 300 doesn't fit u8
-let y: u8 = x as% u8                 // ✓ wraps: 300 mod 256 == 44
-let y: u8 = x as| u8                 // ✓ saturates to u8::MAX == 255
-let y: Option[u8] = x as? u8         // ✓ None — out of range
-let z: i32 = some_float as i32       // truncating float-to-int (may trap)
+let y: u8 = u8(x)                    // ✗ traps at runtime — 300 doesn't fit u8
+let y: u8 = u8%(x)                   // ✓ wraps: 300 mod 256 == 44
+let y: u8 = u8|(x)                   // ✓ saturates to u8::MAX == 255
+let y: Option[u8] = u8?(x)           // ✓ None — out of range
+let z: i32 = i32(some_float)         // truncating float-to-int (may trap)
 ```
 
 The trapping default matches §4.6.1's philosophy: in production code,
-out-of-range cast is a bug to be surfaced, not silently transformed. Users
-who want non-trapping behavior choose the appropriate variant explicitly.
+out-of-range conversion is a bug to be surfaced, not silently transformed.
+Users who want non-trapping behavior choose the appropriate variant
+explicitly.
 
 #### 4.7.2 Lossless casts
 
-For widening casts that are lossless per §4.5, `as` is the explicit-syntax
-equivalent of implicit widening — the same result, no runtime cost beyond
-the conversion itself. The variants (`as%`, `as|`, `as?`) on lossless
-casts are equivalent to `as` (no out-of-range case can arise); they remain
-syntactically valid for use in generic code where the cast's losslessness
-isn't statically known.
+For widening conversions that are lossless per §4.5, `T(x)` is the
+explicit-syntax equivalent of implicit widening — the same result, no
+runtime cost beyond the conversion itself. The variants (`T%(x)`,
+`T|(x)`, `T?(x)`) on lossless conversions are equivalent to `T(x)` (no
+out-of-range case can arise); they remain syntactically valid for use in
+generic code where the conversion's losslessness isn't statically known.
 
 #### 4.7.3 Float-to-integer casts
 
-Float-to-integer casts via `as` truncate toward zero (matching most
+Float-to-integer conversions truncate toward zero (matching most
 language conventions). Out-of-range float values (NaN, infinity, values
-larger than the integer's range) follow the variant's policy: `as` traps,
-`as%` is implementation-defined (truncation modulo the destination range
-is the typical choice), `as|` saturates to the destination's range bounds
-(NaN treated as 0, parallel to §4.6.6's checked-arithmetic NaN handling),
-`as?` returns `None`.
+larger than the integer's range) follow the variant's policy: `T(x)`
+traps, `T%(x)` is implementation-defined (truncation modulo the
+destination range is the typical choice), `T|(x)` saturates to the
+destination's range bounds (NaN treated as 0, parallel to §4.6.6's
+checked-arithmetic NaN handling), `T?(x)` returns `None`.
 
 #### 4.7.4 Trait-based forms
 
-Each operator variant has a corresponding trait method per §4.9.1:
+Each variant has a corresponding trait method per §4.9.1:
 `WrappingAs::wrapping_as`, `SaturatingAs::saturating_as`, `CheckedAs::checked_as`.
 The methods are callable via uniform call syntax (§3.4) and produce the
-same results as the operators:
+same results as the conversion forms:
 
 ```
-let y: u8 = x.wrapping_as::[u8]()        // equivalent to `x as% u8`
-let y: u8 = x.saturating_as::[u8]()       // equivalent to `x as| u8`
-let y: Option[u8] = x.checked_as::[u8]()  // equivalent to `x as? u8`
+let y: u8 = x.wrapping_as::[u8]()         // equivalent to `u8%(x)`
+let y: u8 = x.saturating_as::[u8]()       // equivalent to `u8|(x)`
+let y: Option[u8] = x.checked_as::[u8]()  // equivalent to `u8?(x)`
 ```
 
-The operators are the canonical user-facing form; the trait methods exist
-for generic code that constrains on the trait, and as the underlying
-dispatch targets the operators desugar to.
+The `T(x)` forms are the canonical user-facing syntax; the trait methods
+exist for generic code that constrains on the trait, and as the
+underlying dispatch targets the conversion forms desugar to. (The method
+names retain the `_as` suffix as ordinary identifiers; they are unrelated
+to the now naming-only `as` keyword.)
 
-#### 4.7.5 `as` reserved for built-in numeric and newtype operations
+#### 4.7.5 `T(value)` conversion vs. construction
 
-`as` is reserved for two purposes:
+`T(value)` — type name applied to a single value — covers two disjoint
+roles, selected by what `T` is:
 
-- Built-in numeric conversion (§4.7.1–§4.7.4).
-- Newtype extraction (§6.3.2).
+- **Conversion**, when `T` is a built-in scalar (`u8(x)`, `f64(x)`): the
+  numeric-conversion machinery of §4.7.1–§4.7.4, including **newtype
+  extraction** (§6.3.2) when the source is a newtype — e.g. `f64(meters)`
+  pulls the `f64` out of a `Meters` newtype. The target is always a scalar.
+- **Construction**, when `T` is a user type (`Meters(5.0)`, `Point(x:1, y:2)`):
+  ordinary value construction (§6.1.3).
 
-These are dispatched by operand kind: a numeric primitive on the left side
-uses the numeric-cast machinery; a newtype on the left side uses extraction.
-User-defined conversions on non-newtype types go through the
-`From`/`Into`/`TryFrom`/`TryInto` traits per §7. The `as` operator does
-not extend to arbitrary user-defined conversions.
+The two never overlap: a given `T` is either a built-in scalar (no
+constructor) or a user type, so `T(value)` has exactly one meaning per
+`T`. User-defined conversions *between user types* go through
+`From`/`Into`/`TryFrom`/`TryInto` (§7), not `T(value)`.
 
 ### 4.8 Special Numeric Operations
 
@@ -3010,9 +3379,9 @@ Available on all `Numeric` types (both integer and float):
 
 | Operation | Trait | Signature                          |
 |-----------|-------|------------------------------------|
-| `abs`     | `Abs` | `fn abs(value: Self) -> Self`      |
-| `min`     | `Min` | `fn min(a: Self, b: Self) -> Self` |
-| `max`     | `Max` | `fn max(a: Self, b: Self) -> Self` |
+| `abs`     | `Abs` | `fn abs(value: Subject) -> Subject`      |
+| `min`     | `Min` | `fn min(a: Subject, b: Subject) -> Subject` |
+| `max`     | `Max` | `fn max(a: Subject, b: Subject) -> Subject` |
 
 Note on `abs`: applying `abs` to the minimum value of a signed integer type
 (e.g., `i32::MIN.abs()`) traps on overflow per §4.6.1, because the
@@ -3083,7 +3452,7 @@ result must explicitly convert to float first:
 ```
 let x = 2.pow(-1)              // ✗ compile error or trap: negative exponent on IntPow
 let x = (2.0_f64).pow(-1)      // ✓ 0.5
-let x = (2 as f64).pow(-1)     // ✓ 0.5
+let x = f64(2).pow(-1)         // ✓ 0.5
 ```
 
 #### 4.8.4 Numeric constants
@@ -3128,74 +3497,74 @@ Each operator from §4.4 has its own trait, with the method name matching
 the conventional operator name:
 
 ```
-trait Add[Rhs = Self]:    type Output = Self; fn add(a: Self, b: Rhs) -> Output
-trait Sub[Rhs = Self]:    type Output = Self; fn sub(a: Self, b: Rhs) -> Output
-trait Mul[Rhs = Self]:    type Output = Self; fn mul(a: Self, b: Rhs) -> Output
-trait Div:                fn div(a: Self, b: Self) -> Self      -- on Float umbrella only; see §4.4.1.1 for widening
-trait IntDiv[Rhs = Self]: type Output = Self; fn intdiv(a: Self, b: Rhs) -> Output
-trait Rem[Rhs = Self]:    type Output = Self; fn rem(a: Self, b: Rhs) -> Output
-trait Neg:                fn neg(value: Self) -> Self
+trait Add[Rhs = Subject]:    type Output = Subject; fn add(a: Subject, b: Rhs) -> Output
+trait Sub[Rhs = Subject]:    type Output = Subject; fn sub(a: Subject, b: Rhs) -> Output
+trait Mul[Rhs = Subject]:    type Output = Subject; fn mul(a: Subject, b: Rhs) -> Output
+trait Div:                fn div(a: Subject, b: Subject) -> Subject      -- on Float umbrella only; see §4.4.1.1 for widening
+trait IntDiv[Rhs = Subject]: type Output = Subject; fn intdiv(a: Subject, b: Rhs) -> Output
+trait Rem[Rhs = Subject]:    type Output = Subject; fn rem(a: Subject, b: Rhs) -> Output
+trait Neg:                fn neg(value: Subject) -> Subject
 
-trait BitAnd: fn bitand(a: Self, b: Self) -> Self
-trait BitOr:  fn bitor(a: Self, b: Self) -> Self
-trait BitXor: fn bitxor(a: Self, b: Self) -> Self
-trait BitNot: fn bitnot(value: Self) -> Self
-trait Shl:    fn shl(value: Self, n: u32) -> Self
-trait Shr:    fn shr(value: Self, n: u32) -> Self
+trait BitAnd: fn bitand(a: Subject, b: Subject) -> Subject
+trait BitOr:  fn bitor(a: Subject, b: Subject) -> Subject
+trait BitXor: fn bitxor(a: Subject, b: Subject) -> Subject
+trait BitNot: fn bitnot(value: Subject) -> Subject
+trait Shl:    fn shl(value: Subject, n: u32) -> Subject
+trait Shr:    fn shr(value: Subject, n: u32) -> Subject
 
-trait WrappingAdd[Rhs = Self]:    type Output = Self; fn wrapping_add(a: Self, b: Rhs) -> Output
-trait WrappingSub[Rhs = Self]:    type Output = Self; fn wrapping_sub(a: Self, b: Rhs) -> Output
-trait WrappingMul[Rhs = Self]:    type Output = Self; fn wrapping_mul(a: Self, b: Rhs) -> Output
-trait WrappingIntDiv[Rhs = Self]: type Output = Self; fn wrapping_intdiv(a: Self, b: Rhs) -> Output
-trait WrappingRem[Rhs = Self]:    type Output = Self; fn wrapping_rem(a: Self, b: Rhs) -> Output
-trait WrappingNeg:                fn wrapping_neg(value: Self) -> Self
+trait WrappingAdd[Rhs = Subject]:    type Output = Subject; fn wrapping_add(a: Subject, b: Rhs) -> Output
+trait WrappingSub[Rhs = Subject]:    type Output = Subject; fn wrapping_sub(a: Subject, b: Rhs) -> Output
+trait WrappingMul[Rhs = Subject]:    type Output = Subject; fn wrapping_mul(a: Subject, b: Rhs) -> Output
+trait WrappingIntDiv[Rhs = Subject]: type Output = Subject; fn wrapping_intdiv(a: Subject, b: Rhs) -> Output
+trait WrappingRem[Rhs = Subject]:    type Output = Subject; fn wrapping_rem(a: Subject, b: Rhs) -> Output
+trait WrappingNeg:                fn wrapping_neg(value: Subject) -> Subject
 
-trait SaturatingAdd[Rhs = Self]:    type Output = Self; fn saturating_add(a: Self, b: Rhs) -> Output
-trait SaturatingSub[Rhs = Self]:    type Output = Self; fn saturating_sub(a: Self, b: Rhs) -> Output
-trait SaturatingMul[Rhs = Self]:    type Output = Self; fn saturating_mul(a: Self, b: Rhs) -> Output
-trait SaturatingIntDiv[Rhs = Self]: type Output = Self; fn saturating_intdiv(a: Self, b: Rhs) -> Output
-trait SaturatingRem[Rhs = Self]:    type Output = Self; fn saturating_rem(a: Self, b: Rhs) -> Output
-trait SaturatingNeg:                fn saturating_neg(value: Self) -> Self
+trait SaturatingAdd[Rhs = Subject]:    type Output = Subject; fn saturating_add(a: Subject, b: Rhs) -> Output
+trait SaturatingSub[Rhs = Subject]:    type Output = Subject; fn saturating_sub(a: Subject, b: Rhs) -> Output
+trait SaturatingMul[Rhs = Subject]:    type Output = Subject; fn saturating_mul(a: Subject, b: Rhs) -> Output
+trait SaturatingIntDiv[Rhs = Subject]: type Output = Subject; fn saturating_intdiv(a: Subject, b: Rhs) -> Output
+trait SaturatingRem[Rhs = Subject]:    type Output = Subject; fn saturating_rem(a: Subject, b: Rhs) -> Output
+trait SaturatingNeg:                fn saturating_neg(value: Subject) -> Subject
 
-trait CheckedAdd[Rhs = Self]:    type Output = Self; fn checked_add(a: Self, b: Rhs) -> Option[Output]
-trait CheckedSub[Rhs = Self]:    type Output = Self; fn checked_sub(a: Self, b: Rhs) -> Option[Output]
-trait CheckedMul[Rhs = Self]:    type Output = Self; fn checked_mul(a: Self, b: Rhs) -> Option[Output]
-trait CheckedDiv[Rhs = Self]:    type Output = Self; fn checked_div(a: Self, b: Rhs) -> Option[Output]
-trait CheckedIntDiv[Rhs = Self]: type Output = Self; fn checked_intdiv(a: Self, b: Rhs) -> Option[Output]
-trait CheckedRem[Rhs = Self]:    type Output = Self; fn checked_rem(a: Self, b: Rhs) -> Option[Output]
-trait CheckedNeg:                fn checked_neg(value: Self) -> Option[Self]
+trait CheckedAdd[Rhs = Subject]:    type Output = Subject; fn checked_add(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedSub[Rhs = Subject]:    type Output = Subject; fn checked_sub(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedMul[Rhs = Subject]:    type Output = Subject; fn checked_mul(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedDiv[Rhs = Subject]:    type Output = Subject; fn checked_div(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedIntDiv[Rhs = Subject]: type Output = Subject; fn checked_intdiv(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedRem[Rhs = Subject]:    type Output = Subject; fn checked_rem(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedNeg:                fn checked_neg(value: Subject) -> Option[Subject]
 
-trait WrappingAs[T]:   fn wrapping_as(value: Self) -> T
-trait SaturatingAs[T]: fn saturating_as(value: Self) -> T
-trait CheckedAs[T]:    fn checked_as(value: Self) -> Option[T]
+trait WrappingAs[T]:   fn wrapping_as(value: Subject) -> T
+trait SaturatingAs[T]: fn saturating_as(value: Subject) -> T
+trait CheckedAs[T]:    fn checked_as(value: Subject) -> Option[T]
 
-trait Zero: fn zero() -> Self
-trait One:  fn one() -> Self
+trait Zero: fn zero() -> Subject
+trait One:  fn one() -> Subject
 
-trait Abs:  fn abs(value: Self) -> Self
-trait Min:  fn min(a: Self, b: Self) -> Self
-trait Max:  fn max(a: Self, b: Self) -> Self
+trait Abs:  fn abs(value: Subject) -> Subject
+trait Min:  fn min(a: Subject, b: Subject) -> Subject
+trait Max:  fn max(a: Subject, b: Subject) -> Subject
 
-trait Sqrt: fn sqrt(value: Self) -> Self
-trait Sin:  fn sin(value: Self) -> Self
-trait Cos:  fn cos(value: Self) -> Self
+trait Sqrt: fn sqrt(value: Subject) -> Subject
+trait Sin:  fn sin(value: Subject) -> Subject
+trait Cos:  fn cos(value: Subject) -> Subject
 // ... and so on for the float-only operations from §4.8.2
 
-trait IntPow:   fn pow(base: Self, exp: Self) -> Self
-trait FloatPow: fn pow(base: Self, exp: Self) -> Self
+trait IntPow:   fn pow(base: Subject, exp: Subject) -> Subject
+trait FloatPow: fn pow(base: Subject, exp: Subject) -> Subject
 
-trait Eq: fn eq(a: Self, b: Self) -> bool
+trait Eq: fn eq(a: Subject, b: Subject) -> bool
 
 trait Ord: requires Lt, Le, Gt, Ge
-trait Lt: fn lt(a: Self, b: Self) -> bool
+trait Lt: fn lt(a: Subject, b: Subject) -> bool
 trait Le: requires Lt, Eq
-          fn le(a: Self, b: Self) -> bool:
+          fn le(a: Subject, b: Subject) -> bool:
             lt(a, b) or eq(a, b)
 trait Gt: requires Lt, Eq
-          fn gt(a: Self, b: Self) -> bool:
+          fn gt(a: Subject, b: Subject) -> bool:
             not (lt(a, b) or eq(a, b))
 trait Ge: requires Lt
-          fn ge(a: Self, b: Self) -> bool:
+          fn ge(a: Subject, b: Subject) -> bool:
             not lt(a, b)
 ```
 
@@ -3341,9 +3710,13 @@ Specifically:
   `Min`, `Max`, `Ord`, `Eq`, `FloatPow`. Floats do not implement
   `WrappingAdd` / `SaturatingAdd` etc. — IEEE 754's infinity-and-NaN
   semantics already define overflow behavior, and modular or clamping
-  interpretations would conflict (§4.6.6). They satisfy `Float`,
-  `Numeric`, and `Signed` (floats are signed by convention — they
-  support `Neg`).
+  interpretations would conflict (§4.6.6). They satisfy `Float` and
+  `Numeric`. Floats support negation via `Neg` (provided by the
+  `Float` umbrella) and absolute value via `Abs` (provided by
+  `Numeric`), but they do NOT satisfy the `Signed` umbrella —
+  `Signed` requires `Integer` (§4.9.2), and floats are not integers.
+  The signed/unsigned umbrellas classify integer types; a float's
+  signedness is expressed through `Neg`, not `Signed`.
 
 Built-in numeric types implement the same-type instantiations only — e.g.,
 `fulfill Add[i32] for i32`, not `Add[i64] for i32`. Cross-type arithmetic
@@ -3448,7 +3821,7 @@ they are simply not zero, which is the property `dyn` makes visible.
 #### 5.2.4 Object safety
 
 Not every trait can be used in a `dyn` position. Traits with methods whose
-signatures depend on `Self` in non-receiver positions, traits with
+signatures depend on `Subject` in non-receiver positions, traits with
 associated types not bound at the use site, or traits with generic methods
 cannot be made into trait objects under the standard vtable mechanism.
 Object-safety rules are specified in detail in [Object Safety: deferred
@@ -4303,42 +4676,40 @@ Construction is always positional with one argument — the underlying
 value. No named-argument form, no multi-argument form. The newtype wraps
 exactly one value; the constructor reflects that shape.
 
-Extraction of the underlying value uses the `as` operator:
+Extraction of the underlying value uses the conversion form `T(value)`
+(§4.7.5), naming the wrapped type as `T`:
 
 ```
-let s: string = email as string      // unwraps Email to string
-let n: i64 = id as i64               // unwraps UserId to i64
-let d: f64 = distance as f64         // unwraps Distance to f64
+let s: string = string(email)        // unwraps Email to string
+let n: i64 = i64(id)                 // unwraps UserId to i64
+let d: f64 = f64(distance)           // unwraps Distance to f64
 ```
 
-##### Note on `as` overloading
+##### Construction vs. extraction
 
-The `as` operator has two distinct uses in the language, dispatched by
-operand kind:
+Construction and extraction share the `T(value)` form but never collide,
+because they name **opposite** types (§4.7.5):
 
-- **Numeric cast** (§4.7) — converts between numeric primitive types,
-  potentially with trap-on-range-violation. Both operand and target are
-  numeric primitives.
-- **Newtype extraction** (here) — unwraps a newtype to its underlying
-  type. The operand is a newtype; the target is its `wraps` type.
+- **Construction** names the *newtype* — `Email(x)`, `UserId(42)` — the
+  construction role of `T(value)` (the target is a user type).
+- **Extraction** names the *wrapped type* — `string(email)`, `i64(id)` —
+  the conversion role (the target is a built-in scalar).
 
-The two uses are unambiguous because the operand types determine the
-applicable mode: `5_i32 as f64` is a numeric cast (both are numeric
-primitives); `email as string` is a newtype extraction (`Email` is a
-newtype, `string` is its wrapped type). Mixing — e.g., extracting and
-re-casting in one operation — requires two `as` applications:
+The argument's type completes the picture: `string(email)` with
+`email: Email` extracts; there is no numeric→`string` conversion, so a
+value must be extracted before any further conversion:
 
 ```
-let n_str: string = some_userid as i64 as string  // ERROR: i64 -> string isn't a numeric cast
-let n: i64 = some_userid as i64
-let s = n.to_string()                              // use stdlib conversion
+let n_str: string = string(i64(some_userid))  // ERROR: i64 -> string isn't a numeric conversion
+let n: i64 = i64(some_userid)                  // extract to i64
+let s = n.to_string()                          // then use stdlib conversion
 ```
 
-The asymmetric construction/extraction interfaces are deliberate.
-Construction is a *creation* of new identity (typed call). Extraction is
-a *discarding* of identity (explicit cast). The two operations are kept
-syntactically distinct so that a reader sees clearly when domain identity
-is being introduced versus removed.
+The construction/extraction asymmetry is deliberate at the *type* level,
+even though both use call syntax: construction *creates* domain identity
+(it names the newtype), extraction *discards* it (it names the wrapped
+type). A reader sees which type is named and knows whether identity is
+being introduced or removed.
 
 #### 6.3.3 Trait inheritance via `@derive`
 
@@ -4439,28 +4810,28 @@ User-defined conversions between types use a pair of trait pairs:
 `From`/`Into` for infallible conversions and `TryFrom`/`TryInto` for
 fallible conversions. The conversion system is layered on top of the trait
 system (§3) and complements the built-in numeric implicit-widening rules
-(§4.5) and the `as` operator (§4.7).
+(§4.5) and the `T(value)` conversion form (§4.7).
 
 ### 7.1 The Four Traits
 
 ```
 trait From[T]:
-  fn from(value: T) -> Self
+  fn from(value: T) -> Subject
 
 trait Into[T]:
-  fn into(value: Self) -> T
+  fn into(value: Subject) -> T
 
 trait TryFrom[T]:
   type Error
-  fn try_from(value: T) -> Result[Self, Error]
+  fn try_from(value: T) -> Result[Subject, Error]
 
 trait TryInto[T]:
   type Error
-  fn try_into(value: Self) -> Result[T, Error]
+  fn try_into(value: Subject) -> Result[T, Error]
 ```
 
 `From` and `Into` describe the same conversion from two perspectives —
-"construct `Self` from a `T`" vs "convert `Self` into a `T`." Likewise
+"construct `Subject` from a `T`" vs "convert `Subject` into a `T`." Likewise
 `TryFrom` and `TryInto` describe the same fallible conversion.
 
 The fallibility split is semantic. `From`/`Into` is for conversions that
@@ -4575,32 +4946,33 @@ and lossy integer-to-float conversions. Each carries an appropriate
 These built-in impls are language-privileged (§3.7.3) — they exist outside
 user-writable `fulfill`-block space and cannot conflict with user code.
 
-### 7.6 Relationship to `as`
+### 7.6 Relationship to `T(value)` conversion
 
-The `as` operator (§4.7 for numeric, §6.3.2 for newtypes) is distinct
-from the conversion-trait system but interacts with it for numeric cases:
+The `T(value)` conversion form (§4.7 for numeric, §6.3.2 for newtype
+extraction) is distinct from the conversion-trait system but interacts
+with it for numeric cases:
 
-- For **lossless numeric conversions**, `x as U` and `x.into::[U]()` (or
+- For **lossless numeric conversions**, `U(x)` and `x.into::[U]()` (or
   equivalently `Into::into(x)` typed to `U`) produce the same result.
-  Both are valid; users pick based on style. `as` is more concise; `.into()`
-  is more uniform with user-defined conversions.
-- For **lossy numeric conversions** that would overflow, `as` traps at
-  runtime per §4.6.1; `as%` wraps; `as|` saturates; `as?` returns
-  `Option[T]`. The fallible variant `try_into` returns
+  Both are valid; users pick based on style. `U(x)` is more concise;
+  `.into()` is more uniform with user-defined conversions.
+- For **lossy numeric conversions** that would overflow, `T(x)` traps at
+  runtime per §4.6.1; `T%(x)` wraps; `T|(x)` saturates; `T?(x)` returns
+  `Option[T]`. The fallible trait method `try_into` returns
   `Result[T, Error]` for explicit handling with a typed error. The
-  variants of `as` and `try_into` differ in what they signal: `as` and
+  conversion forms and `try_into` differ in what they signal: `T(x)` and
   its variants express *value-level* range mismatches via the chosen
   policy (trap, wrap, clamp, optional); `try_into` expresses
   *trait-level* fallibility with a named `Error` type.
-- For **newtype extraction**, `as` is the dedicated unwrap operation
-  (§6.3.2). The conversion-trait system does not participate; the
-  underlying value is exposed via the operator directly.
-- For **user-defined conversions on non-newtype types**, `as` is not
-  available. Users use `.into()`, `From::from()`, or `.try_into()` per
+- For **newtype extraction**, `T(value)` naming the wrapped type is the
+  dedicated unwrap form (§6.3.2). The conversion-trait system does not
+  participate; the underlying value is exposed directly.
+- For **user-defined conversions on non-newtype types**, `T(value)` does
+  not apply. Users use `.into()`, `From::from()`, or `.try_into()` per
   §7.8.
 
-The summary: `as` (with its variants) is the operator for built-in
-numeric casts and newtype unwraps; the conversion traits are the
+The summary: `T(value)` (with its variants) is the form for built-in
+numeric conversions and newtype unwraps; the conversion traits are the
 mechanism for everything else.
 
 ### 7.7 No Implicit User-Defined Conversions
@@ -4729,7 +5101,7 @@ one kind, it cannot be silently converted to the other.
 
 **Trap-track failures** represent bugs and invariant violations:
 arithmetic overflow on default operators per §4.6.1, integer division by
-zero, out-of-range `as` casts, out-of-range array indices, `abs` on
+zero, out-of-range `T(x)` conversions, out-of-range array indices, `abs` on
 signed minimum (§4.8), negative integer exponent on integer base
 (§4.8.3), `unwrap`/`expect` on `Option::None` or `Result::Err`, runtime
 stack overflow, allocation failure, and explicit `panic` calls. Traps
@@ -4828,7 +5200,7 @@ behavior. Process abort is the safe response.
 
 Once a trap fires, the program exits. The only way to handle a failure
 recoverably is to use `Result`/`Option` from the start — and the
-operator/method variants in §4.6 and §4.7 (e.g., `+?`, `as?`,
+operator/conversion variants in §4.6 and §4.7 (e.g., `+?`, `T?(x)`,
 `checked_div`) make this choice available where overflow or range
 violation is a possibility. The user decides at the operation site
 whether a failure is a bug to be trapped or a condition to be handled.
@@ -4912,7 +5284,7 @@ success value" or "break with this failure value":
 trait Try:
   type Success
   type Failure
-  fn branch(value: Self) -> TryBranch[Success, Failure]
+  fn branch(value: Subject) -> TryBranch[Success, Failure]
 
 enum TryBranch[S, F]:
   Continue(S)
@@ -5015,42 +5387,42 @@ The non-exhaustive list:
 
 #### 8.7.1 `Option[T]`
 
-- `unwrap(value: Self) -> T` — returns the value or traps if `None`.
-- `expect(value: Self, msg: string) -> T` — like `unwrap` with custom
+- `unwrap(value: Subject) -> T` — returns the value or traps if `None`.
+- `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Self, default: T) -> T` — returns the value or the
+- `unwrap_or(value: Subject, default: T) -> T` — returns the value or the
   default.
-- `unwrap_or_else(value: Self, f: fn() -> T) -> T` — returns the value
+- `unwrap_or_else(value: Subject, f: fn() -> T) -> T` — returns the value
   or a computed default.
-- `map[U](value: Self, f: fn(T) -> U) -> Option[U]` — applies a
+- `map[U](value: Subject, f: fn(T) -> U) -> Option[U]` — applies a
   function to the success value.
-- `and_then[U](value: Self, f: fn(T) -> Option[U]) -> Option[U]` —
+- `and_then[U](value: Subject, f: fn(T) -> Option[U]) -> Option[U]` —
   chains optional computations.
-- `or_else(value: Self, f: fn() -> Option[T]) -> Option[T]` — fallback
+- `or_else(value: Subject, f: fn() -> Option[T]) -> Option[T]` — fallback
   computation.
-- `ok_or[E](value: Self, err: E) -> Result[T, E]` — converts to
+- `ok_or[E](value: Subject, err: E) -> Result[T, E]` — converts to
   `Result` with the given error on `None`.
-- `is_some(value: Self) -> bool`, `is_none(value: Self) -> bool` —
+- `is_some(value: Subject) -> bool`, `is_none(value: Subject) -> bool` —
   discriminator predicates (default convention; non-consuming).
 
 #### 8.7.2 `Result[T, E]`
 
-- `unwrap(value: Self) -> T` — returns success or traps on `Err`.
-- `expect(value: Self, msg: string) -> T` — like `unwrap` with custom
+- `unwrap(value: Subject) -> T` — returns success or traps on `Err`.
+- `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Self, default: T) -> T`,
-  `unwrap_or_else(value: Self, f: fn(E) -> T) -> T`.
-- `map[U](value: Self, f: fn(T) -> U) -> Result[U, E]` — transforms the
+- `unwrap_or(value: Subject, default: T) -> T`,
+  `unwrap_or_else(value: Subject, f: fn(E) -> T) -> T`.
+- `map[U](value: Subject, f: fn(T) -> U) -> Result[U, E]` — transforms the
   success value.
-- `map_err[F](value: Self, f: fn(E) -> F) -> Result[T, F]` — converts
+- `map_err[F](value: Subject, f: fn(E) -> F) -> Result[T, F]` — converts
   the error type.
-- `and_then[U](value: Self, f: fn(T) -> Result[U, E]) -> Result[U, E]`
+- `and_then[U](value: Subject, f: fn(T) -> Result[U, E]) -> Result[U, E]`
   — chains fallible computations.
-- `or_else[F](value: Self, f: fn(E) -> Result[T, F]) -> Result[T, F]`
+- `or_else[F](value: Subject, f: fn(E) -> Result[T, F]) -> Result[T, F]`
   — error-recovery chain.
-- `ok(value: Self) -> Option[T]`, `err(value: Self) -> Option[E]` —
+- `ok(value: Subject) -> Option[T]`, `err(value: Subject) -> Option[E]` —
   convert to `Option`, discarding the other arm.
-- `is_ok(value: Self) -> bool`, `is_err(value: Self) -> bool` —
+- `is_ok(value: Subject) -> bool`, `is_err(value: Subject) -> bool` —
   discriminator predicates (default convention; non-consuming).
 
 All methods listed above are *free functions* defined in stdlib, callable
@@ -5561,7 +5933,7 @@ let w = arr[n]                  // usize widens to isize for indexing
 let big: u64 = some_huge()
 let x = arr[big]                // ✗ compile error on 64-bit (u64 doesn't fit isize);
                                 //   may also fail on 32-bit
-let x = arr[big as isize]       // ✓ explicit cast
+let x = arr[isize(big)]         // ✓ explicit conversion
 ```
 
 #### 9.3.5 Bounds checking
@@ -5651,7 +6023,7 @@ The following operators are defined for `duration`:
 | `duration / duration`      | `f64`      | ratio (canonical float result) |
 | `duration % duration`      | `duration` | modulo (remainder)             |
 | `-duration`                | `duration` | negation                       |
-| `duration <,<=,==,!=,>=,>` | `bool`     | comparison                     |
+| `duration <,<=,>=,>` ; `is`,`is not` | `bool` | comparison / equality (§4.4.4) |
 
 The `Numeric` operand may be any integer or float type per §4.1. Integer
 scaling is exact; float scaling rounds to nearest at the nanosecond level
@@ -5730,7 +6102,7 @@ The following operators are defined for `instant`:
 | `instant - instant`       | `duration` | elapsed time between two points |
 | `instant + duration`      | `instant`  | future point                    |
 | `instant - duration`      | `instant`  | past point                      |
-| `instant <,<=,==,!=,>=,>` | `bool`     | comparison                      |
+| `instant <,<=,>=,>` ; `is`,`is not` | `bool` | comparison / equality (§4.4.4) |
 
 Operations **not defined** for `instant`:
 
@@ -5947,9 +6319,16 @@ through the current package; `tone_lib::Oscillator` resolves into the
 the standard library.
 
 All `use` statements use absolute paths starting from one of these
-bases. There is no relative-path or "current module" reference;
-references between modules always go through `root` or an external
-dependency name.
+bases. There is no relative-path "current module" reference *for
+imports*; `use` statements between modules always go through `root`
+or an external dependency name.
+
+Within a node or connection body, the `module::` qualifier (§13.7.3)
+does reach the *current* module's top-level scope — but it is a
+name-resolution anchor for disambiguating a member-vs-module
+collision, not an import mechanism. It resolves only the enclosing
+module's own top-level declarations; it cannot reach into other
+modules (those still require an absolute `use` path).
 
 ### 10.3 Visibility Specifiers on Declarations
 
@@ -6120,7 +6499,7 @@ identifies the cycle's members.
 - **Type-reference cycles between sibling files are permitted.**
   Files inside the same module share scope and are compiled as a
   single unit, so mutually-referencing type declarations (e.g.,
-  one file's `node` declares an `out:` connection type defined in
+  one file's `node` declares an `outgoing:` connection type defined in
   a sibling file, and the sibling's `connection` declares `from:`
   the first file's node) are resolved in one pass. This is the
   normal case for any non-trivial module split across files.
@@ -6929,7 +7308,7 @@ copy-semantic languages.
 
 ```
 trait Clone:
-  fn clone(value: Self) -> Self
+  fn clone(value: Subject) -> Subject
 ```
 
 The method takes its parameter under the default borrow-equivalent
@@ -7368,24 +7747,24 @@ This section specifies how the compiler tracks the borrow-equivalent
 aliases that arise from default function parameters (§11.7),
 let-rebindings of cluster members (Rule P, §11.3.5), and for-loop
 iteration variables (§12.3). The user-facing surface has **no `&T`
-syntax**: aliases are introduced implicitly by the language
-constructs cited above, and the compiler's elaborated form (§11.7.5)
-exposes them for diagnostics and tooling. Trait machinery and
-stdlib-privileged helpers retain compiler-internal borrow references;
-these are not user-writable.
+syntax**: aliases are introduced implicitly by the language constructs
+cited above, by trait associated-type slots under the borrow-default
+convention (§3.1.2), and by function parameter slots under the
+default convention (§11.7). The compiler's elaborated form (§11.7.5)
+exposes the inferred lifetimes for diagnostics and tooling. Stdlib
+types use the same mechanism as user-defined types — there is no
+language-privileged carve-out for the standard library.
 
 #### 11.9.1 Restrictions
 
 A borrow-equivalent alias may not be:
 
 - **Returned from a function** as the function's declared return value,
-  except via the auto-anchoring of §11.3.6 (which produces a real owner
-  via implicit Copy or Clone). The narrow carve-outs of §11.9.5
-  (`Iterator::next` and stdlib-privileged helpers) are
-  compiler-internal.
+  except via the auto-anchoring of §11.3.6 (which produces a real
+  owner via implicit Copy or Clone).
 - **Stored in a record field, enum variant payload, or tuple component
-  (category B).** Compound types contain owned values, never aliases.
-  Exceptions per §11.9.5 are compiler-internal.
+  (category B).** Compound types contain owned values, never aliases
+  (§11.11).
 - **Stored in a reactive cell (category D).** `signal.write`,
   `stream.emit`, attr reassignment, and recurrent advance require a real
   owner for the value flowing into the cell (§11.3.4).
@@ -7503,41 +7882,7 @@ rebinding of an alias inside a function body. Default-parameter passes
 between functions are governed by §11.7 (parameters) and §11.8
 (call sites).
 
-#### 11.9.5 Compiler-internal borrow-returning positions
-
-A small set of compiler-internal positions retain `&T`-style references
-internally; these are not user-writable but exist in the spec's
-internal trait machinery and language-privileged stdlib helpers.
-
-- **`Iterator::next` return values** (§12.7.4). The `Iterator` trait's
-  `next` method may yield a borrow-shaped item when the iterator's
-  `Item` is internally a borrow type. The borrow's lifetime is bounded
-  by the enclosing for-loop expression. This is compiler-internal
-  machinery; user-defined iterators declare `type Item = T`, and the
-  compiler decides internally whether the item is borrow-shaped under
-  default-form iteration.
-- **Iterator type fields holding a borrow into the iteration source**
-  (§12.7.4). When the compiler's iterator desugaring requires the
-  iterator record to carry a borrow into the source, the borrow's
-  lifetime is bounded by the enclosing for-loop expression. This is
-  compiler-internal machinery; user code does not declare such fields.
-- **Stdlib-privileged borrow-returning function signatures** (§3.7.3).
-  The language reserves the right to provide functions in the standard
-  library whose return value is a borrow-equivalent alias rooted in one
-  of their arguments — for example, indexed-collection accessors like
-  `element_at(v: Vec[T], i: isize) -> T`. The returned alias's
-  lifetime is bounded by the call's enclosing cluster lifetime. This
-  carve-out applies only to language-privileged stdlib functions
-  enumerated in §3.7.3; user-defined functions cannot declare
-  borrow-returning signatures.
-
-These positions share a single property: the returned alias's lifetime
-is determined by the structural relationship between the caller's
-source binding and the call site, with no user-written annotation. The
-compiler's elaborated form (§11.7.5) makes the inferred lifetime
-visible in diagnostics and tooling.
-
-#### 11.9.6 Aliases of `Copy` values
+#### 11.9.5 Aliases of `Copy` values
 
 A `Copy` value passed by default (borrow-equivalent) is functionally
 identical to a fresh independent copy: the caller's binding remains
@@ -7791,22 +8136,23 @@ opts in to consumption (§11.7.4).
 
 ```
 trait Length:
-  fn length(value: Self) -> isize                  // default: borrow-equivalent
+  fn length(value: Subject) -> isize               // default: borrow-equivalent
 
 fulfill Length for Vec[i32]:
   fn length(value: Vec[i32]) -> isize:
     ...
 
 trait IntoSorted:
-  fn into_sorted(own value: Self) -> Self          // opt-in: consumes
+  fn into_sorted(own value: Subject) -> Subject    // opt-in: consumes
 
 fulfill IntoSorted for Vec[i32]:
   fn into_sorted(own value: Vec[i32]) -> Vec[i32]:
     ...
 ```
 
-The `Self` in the trait declaration becomes `Vec[i32]` (or whatever the
-implementing type is) in each `fulfill` block, by the standard `Self`
+The `Subject` in the trait declaration becomes `Vec[i32]` (or whatever
+the implementing type is) in each `fulfill` block, by the standard
+`Subject`
 substitution rule of §3.1.1.
 
 Trait dispatch (§3.4) is unaffected by ownership semantics. Whether a
@@ -8032,20 +8378,23 @@ The iteration source expression is evaluated once at loop entry.
 
 **Default form** (`for x in v:`):
 
-1. The compiler invokes `Iterable::iterator(v)` (§12.8). The parameter
-   is borrow-equivalent: `v` becomes a cluster source, and the
-   iterator carries a compiler-internal borrow-equivalent alias
-   rooted in `v` for the duration of the for-loop expression.
+1. The compiler invokes `Iterable::iterator(v)` (§12.8) to construct
+   the iterator. The parameter `v` is borrow-equivalent: `v` becomes
+   a cluster source, and the iterator's lifetime is bounded by the
+   for-loop expression.
 2. The iterator is held in an internal `mut` binding for the loop's
-   duration.
-3. Each iteration step calls `Iterator::next` (§12.7), receiving
+   duration. `v` is held in scope as well — both the iterator and
+   the source are live throughout the loop.
+3. Each iteration step calls `Iterator::next(iter, v)` (§12.7),
+   threading the source `v` through every call. The call returns
    `(Option[Item], NewIter)`. The yielded `Item` is borrow-equivalent
-   for non-`Copy` element types and an implicit Copy for `Copy`
-   element types (§12.7.4 specifies the compiler-internal mechanism).
+   rooted in `v`'s cluster (the iterator's `Item` slot follows the
+   borrow-default convention of §3.1.2 unless the implementation opts
+   in to `own Item`).
 4. The internal binding is reassigned to `NewIter`.
 5. If the option is `Some(value)`, binds `value` to the iteration
-   variable `x` (a cluster member rooted in the source's current
-   element) and runs the body.
+   variable `x` (a cluster member rooted in `v`'s current element)
+   and runs the body.
 6. If `None`, the loop exits.
 7. When the loop exits (natural completion, `break`, or enclosing
    function return), the iterator is dropped and the cluster's
@@ -8058,10 +8407,12 @@ The iteration source expression is evaluated once at loop entry.
    (§12.9). This consumes the binding `v`; the underlying value is
    moved into the iterator.
 2. The iterator is held in an internal `mut` binding for the loop's
-   duration.
-3. Each iteration step calls `Iterator::next`, receiving
-   `(Option[Item], NewIter)`. The yielded `Item` is an owned value
-   moved out of the iterator's storage (§12.9.2).
+   duration. There is no source to hold separately — the iterator
+   owns the consumed data.
+3. Each iteration step calls `Iterator::next(iter, ())`, supplying
+   unit as the source (per IntoIterable's constraint `Iter.Source =
+   ()`). The yielded `Item` is an owned value moved out of the
+   iterator's storage (§12.9.2).
 4. The internal binding is reassigned to `NewIter`.
 5. If the option is `Some(value)`, binds `value` to the iteration
    variable `x` (a real owner) and runs the body.
@@ -8183,8 +8534,8 @@ for own r in records:                            // r: Record (real owner)
 // records is consumed; destinations contains the records' owned values
 ```
 
-For how the Iterator trait handles the underlying machinery, see
-§12.7.4.
+For how the Iterator trait handles source-bearing iteration (where
+`Item` is borrow-equivalent into a `Source` collection), see §12.7.4.
 
 #### 12.3.4 Body scope
 
@@ -8253,6 +8604,109 @@ Under the `for own` form (`for own x in v:`), the question does not
 arise: `v` is consumed at loop entry; the binding does not exist
 inside the loop body. Attempting to use `v` inside the body would be
 a use-after-move error, not a cluster conflict.
+
+#### 12.3.7 Compile-time unrolling
+
+A `for` loop is **compile-time-unrolled iff its iterable is compile-time
+known** (§2.4.1). Otherwise it runs at runtime per §12.3.1. There is no
+syntactic distinction — no `const for`, no `inline for`, no modifier of
+any kind. The iterable decides the kind.
+
+**Mechanics.** When the iterable is compile-time known, the compiler
+reproduces the body once per element, binding the iteration variable to
+the corresponding compile-time value. The unrolled body then participates
+in ordinary §2.4.1 propagation, so expressions inside it that depend
+only on the (now compile-time-known) iteration variable and other
+compile-time values are themselves compile-time known. Unrolled loops do
+**not** dispatch through `IntoIterable` or `Iterable` (§12.3.1); element
+binding happens at compile time, not by calling `next` on an iterator.
+
+**Admitted iterables (v1).** Two forms produce compile-time-known
+iteration:
+
+- A range `start..end` where both bounds are compile-time known (§12.2).
+- An array literal `[e1, …, eK]` where every element expression is
+  compile-time known.
+
+Iteration over a tuple of values is deferred. Type-list iteration is out
+of scope.
+
+**Fixed-extent vs. variable-extent types.** A loop over a value of a
+*fixed-extent* type unrolls; a loop over a *variable-extent* type runs at
+runtime. The extent (the count) is part of the type for fixed-extent
+types, so the compiler knows it:
+
+- **Fixed-extent (unroll):** `T[N]` (fixed-size arrays), tuples, records.
+- **Variable-extent (runtime):** `Vec[T]`, `SmallVec[T, N]` (capacity is
+  `N` but occupied count varies), `RingBuf[T, N]`, `String` /
+  `s.chars()`, `HashMap`, ranges with runtime bounds.
+
+The fixed-extent set parallels §2.4.1.3's const-eligible value types: if
+a type can carry a `const` value, a `for` over it unrolls.
+
+**Call-site propagation.** A pure function with a `for` in its body has
+**one** source. Whether that `for` unrolls or runs at runtime is decided
+**at each call site** by what flows into the iterable expression, by the
+same rule as every other §2.4.1 propagation. The same function called
+with a compile-time-known argument may unroll; called with a runtime
+argument, the same body runs at runtime.
+
+A function that *requires* its loop to be compile-time-unrolled expresses
+that requirement in its **signature**, via a const-generic parameter
+(§2.5) — e.g. `fn process[const N: usize](buf: T[N]):`. A const-generic
+parameter is compile-time known at every call site by virtue of the
+signature, so the function's internal `for i in 0..N` is guaranteed to
+unroll. This is the language's mechanism for "this function only makes
+sense with a compile-time iteration count"; there is no body-internal
+assertion form.
+
+**Runtime `for` is an explicit opt-in.** A loop is runtime iff its
+iterable is runtime. This is **visible at the source** by what is
+iterated, and follows back to the iterable's declaration. There is no
+silent flip between compile-time and runtime based on context.
+
+**Placement-bearing contexts.** A `for` in a node-type body (§13.3.3.3)
+or a placement body (§13.8.3.1) is auto-enforced to be compile-time per
+§13.1's static-graph rule; a runtime iterable there is a compile error.
+See §13.3.3.3 for a `for` declaring parametric parts on the *type*
+(applied to every instance) and §13.8.3.1 for a `for` in a specific
+placement body (applied to that placement only).
+
+**Dynamic placement multiplicity.** For runtime-varying child cardinality
+in a placement, use `repeat` (§13.5.4), not `for`. The compile-time `for`
+described here is for *parametric* topology — multiplicity that is
+const-generic-parameterized but fixed per instance.
+
+**Examples.** Same source, two call sites, two kinds of loop:
+
+```
+fn sum_first[const N: usize](buf: f32[N]) -> f32:
+  mut total: f32 = 0.0
+  for i in 0..N:                   // N compile-time known → unrolled
+    total = total + buf[i]
+  total
+
+fn sum_runtime(samples: Vec[f32]) -> f32:
+  mut total: f32 = 0.0
+  for s in samples:                 // samples is variable-extent → runtime
+    total = total + s
+  total
+```
+
+Same body shape, the *signature* decides the kind:
+
+```
+fn process(n: usize):
+  for i in 0..n:                    // n is a value parameter → runtime
+    do_step(i)
+
+fn process_static[const N: usize]():
+  for i in 0..N:                    // N is a const-generic → unrolled
+    do_step(i)
+```
+
+To require compile-time iteration, lift the parameter to a const-generic
+(§2.5). There is no body-internal `const`-assertion form.
 
 ### 12.4 The `while` Loop
 
@@ -8522,23 +8976,51 @@ determined by `break value` and `else:` only.
 
 ### 12.7 The `Iterator` Trait
 
-`Iterator` is the stdlib trait for types that produce a sequence of values
-on demand:
+`Iterator` is the stdlib trait for types that produce a sequence of
+values on demand:
 
 ```
 trait Iterator:
   type Item
-  fn next(iter: Self) -> (Option[Item], Self)
+  type Source = ()
+  fn next(iter: Subject, source: Source) -> (Option[Item], Subject)
 ```
 
-The `next` method takes the iterator by value, advances its internal
-state, and returns both the next item (or `None` if the iteration is
-complete) and the advanced iterator. The caller binds the returned
-iterator for the next call.
+The `next` method takes the iterator by value, an external `source` of
+type `Source` under the default borrow-equivalent convention, advances
+the iterator's internal state, and returns both the next item (or
+`None` if the iteration is complete) and the advanced iterator. The
+caller binds the returned iterator for the next call.
+
+**Item and Source as associated-type slots.** Both `Item` and `Source`
+default to borrow-equivalent under §3.1.2's associated-type slot
+convention: when an implementation declares `type Item = T` or `type
+Source = T`, `T` is treated as borrow-equivalent unless the
+implementation opts in to consuming semantics via `type Item = own T`
+or `type Source = own T`. This is uniform: any trait declaring
+associated types follows the same convention; stdlib types get no
+special treatment.
+
+**Source's role.** `Source` is the external value the iterator reads
+from on each `next` call. Two patterns arise:
+
+- **Self-contained iterators** (Range, Counter, infinite generators) —
+  the iterator holds all state internally. `type Source = ()` (the
+  default); each `next` call receives a unit value that the
+  implementation ignores. No external value is needed across calls.
+- **Source-bearing iterators** (Vec, HashMap, user-defined
+  collections) — the iterator holds only a cursor / position; the
+  collection is the source, supplied on each `next` call. `type Source
+  = TheCollection`; each `next` call receives the collection under
+  borrow-equivalent convention and reads through it.
+
+The choice of pattern is the iterator author's, expressed by declaring
+`Source` appropriately. The for-loop machinery (§12.3.1) threads
+`Source` through each `next` call automatically.
 
 #### 12.7.1 Why the tuple return
 
-The trait method returns `(Option[Item], Self)` because the iterator's
+The trait method returns `(Option[Item], Subject)` because the iterator's
 internal cursor state must be mutated across calls, but the language has
 no `&mut` parameter form (§11.9) and forbids `mut` on parameters
 (§11.7.2). Under these constraints, the only way to advance an
@@ -8584,10 +9066,12 @@ not an optional optimization. The tuple-return trait shape is the
 source-level pattern; the linear-ownership compilation is the performance
 guarantee.
 
-#### 12.7.3 Implementing `Iterator`
+#### 12.7.3 Implementing `Iterator` (self-contained)
 
-A user-defined iterator implements `Iterator` by declaring the `Item`
-associated type and the `next` method:
+A self-contained iterator holds its full state internally; no external
+source is needed. The implementation declares `type Source = ()` (or
+omits it to use the default) and the `next` method ignores its source
+parameter:
 
 ```
 type SquareIter:
@@ -8596,7 +9080,8 @@ type SquareIter:
 
 fulfill Iterator for SquareIter:
   type Item = i32
-  fn next(iter: SquareIter) -> (Option[i32], SquareIter):
+  -- type Source = () inherited from default
+  fn next(iter: SquareIter, source: ()) -> (Option[i32], SquareIter):
     mut local = iter
     if local.next_value >= local.limit:
       (None, local)
@@ -8607,98 +9092,92 @@ fulfill Iterator for SquareIter:
 ```
 
 This implementation receives the iterator by value, rebinds to a local
-`mut` binding (per §11.7.3), mutates the cursor, and returns the result
-alongside the (updated) iterator.
+`mut` binding (per §11.7.3), mutates the cursor, and returns the
+result alongside the (updated) iterator. The source parameter is
+unused.
 
-#### 12.7.4 Borrow-yielding iterators (compiler-internal)
+#### 12.7.4 Implementing `Iterator` (source-bearing)
 
-User-defined iterators declare `type Item = T` (the element type). The
-compiler internally decides whether the iterator's `next` yields a
-borrow-equivalent alias or an owned value, based on which trait
-(`Iterable` or `IntoIterable`) provides the iterator and on whether
-`T` is `Copy`:
-
-- Iterators from `Iterable::iterator` (default-form dispatch, §12.8)
-  yield Copy elements directly (`Item` materializes as `T` in the
-  body) and non-Copy elements as borrow-equivalent aliases
-  (compiler-internal `&T` machinery; the body sees `T` aliased into
-  the source's element storage). The alias's lifetime is bounded by
-  one iteration body.
-- Iterators from `IntoIterable::consuming_iterator` (`for own`-form
-  dispatch, §12.9) yield owned `Item` values for every element type.
-  Each `next` call moves one element out of the iterator's internal
-  storage (which holds the consumed source's buffer).
-
-The compiler-internal `&T` machinery is exposed in the spec at this
-section to specify the iterator's runtime behavior; users never write
-`&T` in iterator definitions. A user-defined `Iterable`
-implementation provides an iterator type whose `next` returns the
-shape the compiler expects for that combination of trait and element
-type.
-
-A borrow-yielding iterator implementation (compiler-internal form
-shown for specification purposes; the equivalent user-facing source
-omits the `&` machinery):
+A source-bearing iterator holds only cursor/position state and reads
+from the external source supplied on each `next` call. The
+implementation declares `type Source = TheCollection` and reads
+through the `source` parameter:
 
 ```
--- compiler-internal form (illustrative; not user-writable)
-type VecIter[T]:
-  source: &Vec[T]                   -- borrow into the iteration source
+type MyVec[T]:
+  data: T[64]
+  length: isize
+
+type MyVecIter[T]:
   cursor: isize
 
-fulfill Iterator for VecIter[Record]:
-  type Item = &Record               // yields borrows of Record elements
-  fn next(iter: VecIter[Record]) -> (Option[&Record], VecIter[Record]):
+fulfill Iterator for MyVecIter[Record]:
+  type Item = Record               -- borrow-default rooted in source
+  type Source = MyVec[Record]      -- collection passed each call
+  fn next(iter: MyVecIter[Record], source: MyVec[Record])
+    -> (Option[Record], MyVecIter[Record]):
     mut local = iter
-    if local.cursor >= local.source.length():
+    if local.cursor >= source.length:
       (None, local)
     else:
-      let element_ref = local.source.element_at(local.cursor)
+      let elem = source.data[local.cursor]
       local.cursor = local.cursor + 1
-      (Some(element_ref), local)
+      (Some(elem), local)
 ```
 
-`local.source.element_at(local.cursor)` calls a stdlib-privileged
-borrow-returning helper per §11.9.5 (the §3.7.3 carve-out for
-borrow-returning signatures). The returned alias is bounded by the
-iterator's source-borrow lifetime.
+Several properties of this pattern:
 
-The trait declaration itself is unchanged:
+- **`MyVecIter[Record]` has no `source` field.** Per §11.11, record
+  fields are owned; an iterator cannot hold a borrow-equivalent
+  reference to the collection. The iterator carries only a cursor.
+- **The `source` parameter is borrow-equivalent.** Under the default
+  parameter convention (§11.7) and the borrow-default associated-type
+  slot convention (§3.1.2), `source: MyVec[Record]` aliases the
+  caller's binding for the duration of one `next` call.
+- **`Item = Record` is borrow-equivalent.** The yielded `Record` is
+  rooted in `source`'s cluster; the for-loop body's binding to the
+  item is a cluster member rooted in the collection.
+- **No stdlib privilege required.** Vec's iterator is implemented the
+  same way; nothing about this pattern is restricted to
+  language-privileged types.
 
-```
-trait Iterator:
-  type Item
-  fn next(iter: Self) -> (Option[Item], Self)
-```
+The for-loop machinery (§12.3.1) holds the collection in scope for the
+duration of the loop and threads it through each `next` call as the
+source argument.
 
-`Item` is unconstrained in the trait declaration. The compiler maps
-the user-facing `type Item = T` declaration to its internal
-representation per the trait that provides the iterator. The cluster
-machinery of §11.3.4 governs the alias's lifetime in the iteration
-body: the source value is not moved or mutated while iteration is
-active.
+To opt into owned items (consuming each element out of the
+collection), the implementation declares `type Item = own Record`. The
+`Iterable` versus `IntoIterable` choice (§12.8, §12.9) determines
+whether the collection survives the loop.
 
 ### 12.8 The `Iterable` Trait
 
-`Iterable` is the stdlib trait for types that can produce an iterator:
+`Iterable` is the stdlib trait for types that can produce an iterator
+without consuming the source:
 
 ```
 trait Iterable:
   type Iter: Iterator
-  fn iterator(value: Self) -> Iter
+  fn iterator(value: Subject) -> Iter
+  where Iter.Source = Subject
 ```
 
 The associated type `Iter` is the iterator type produced; it must
-itself implement `Iterator`. The method `iterator` is declared with
-the default convention: `value` is a borrow-equivalent alias of the
-source. The returned iterator carries a compiler-internal alias into
-the source for the duration of the for-loop expression.
+itself implement `Iterator`. The `where Iter.Source = Subject`
+constraint binds the iterator's `Source` to the iterable's own type,
+so the for-loop machinery (§12.3.1) supplies the original value as
+the source on each `next` call.
+
+The method `iterator` is declared with the default convention: `value`
+is a borrow-equivalent alias of the source. The returned iterator is
+rooted in `value`'s cluster for the duration of the for-loop
+expression.
 
 #### 12.8.1 Method name
 
 The method is named `iterator`, not `iter`. The language convention is
-to prefer full names over abbreviations (§1.4 and following). Stdlib and
-user code use the full name throughout.
+to prefer full names over abbreviations (§1.4 and following). Stdlib
+and user code use the full name throughout.
 
 #### 12.8.2 Iterator lifetime
 
@@ -8710,9 +9189,11 @@ that same span (no move, no mutation of the source while the iterator
 is live).
 
 The `Iterable` trait is invoked by the *default form* of the for-loop:
-`for x in v:` dispatches through `Iterable::iterator(v)`, leaving `v`
-owned by the original binding after the loop. The `for own` form
-dispatches through `IntoIterable` (§12.9) instead.
+`for x in v:` dispatches through `Iterable::iterator(v)`, holds `v`
+in scope for the loop's duration, and supplies `v` as the source to
+each `next` call. After the loop, `v` remains owned by the original
+binding. The `for own` form dispatches through `IntoIterable` (§12.9)
+instead.
 
 #### 12.8.3 Implementing `Iterable`
 
@@ -8724,14 +9205,32 @@ type DataPoints:
   values: f32[256]
   count: isize
 
+type DataPointsIter:
+  cursor: isize
+
+fulfill Iterator for DataPointsIter:
+  type Item = f32                  -- f32 is Copy; borrow vs own indistinguishable
+  type Source = DataPoints         -- supplied each next() call
+  fn next(iter: DataPointsIter, source: DataPoints)
+    -> (Option[f32], DataPointsIter):
+    mut local = iter
+    if local.cursor >= source.count:
+      (None, local)
+    else:
+      let v = source.values[local.cursor]
+      local.cursor = local.cursor + 1
+      (Some(v), local)
+
 fulfill Iterable for DataPoints:
   type Iter = DataPointsIter
+  -- Iter.Source = DataPoints satisfied by the where-clause
   fn iterator(d: DataPoints) -> DataPointsIter:
-    DataPointsIter(...)        // construct iterator over d's data
+    DataPointsIter(cursor: 0)
 ```
 
 The `for x in d:` syntax then dispatches to this implementation
-automatically.
+automatically; the for-loop holds `d` in scope and supplies it as the
+source to each `next` call.
 
 ### 12.9 The `IntoIterable` Trait
 
@@ -8742,13 +9241,20 @@ elements are yielded as owned values.
 ```
 trait IntoIterable:
   type Iter: Iterator
-  fn consuming_iterator(own value: Self) -> Iter
+  fn consuming_iterator(own value: Subject) -> Iter
+  where Iter.Source = ()
 ```
 
 The associated type `Iter` is the iterator produced; it must itself
 implement `Iterator`. The method `consuming_iterator` declares its
 parameter `own`: the source is consumed at the call. The returned
 iterator owns the source's storage.
+
+The `where Iter.Source = ()` constraint binds the iterator's `Source`
+to unit: the source value has been consumed into the iterator at
+construction, so the for-loop machinery (§12.3.1) supplies `()` as the
+source on each `next` call. The iterator reads from its own internal
+state, not from an external parameter.
 
 #### 12.9.1 Method name and dispatch
 
@@ -8808,10 +9314,24 @@ type DataStream:
   pending: Vec[Event]
   cursor: isize
 
+type DataStreamIntoIter:
+  pending: Vec[Event]              -- moved from the source at construction
+  cursor: isize
+
+fulfill Iterator for DataStreamIntoIter:
+  type Item = own Event            -- owned items (consumed out of pending)
+  type Source = ()                 -- no external source needed
+  fn next(iter: DataStreamIntoIter, source: ())
+    -> (Option[Event], DataStreamIntoIter):
+    -- read/move from iter.pending; source is unused
+    ...
+
 fulfill IntoIterable for DataStream:
   type Iter = DataStreamIntoIter
+  -- Iter.Source = () satisfied by the where-clause
   fn consuming_iterator(own s: DataStream) -> DataStreamIntoIter:
-    DataStreamIntoIter(...)    // takes ownership of s's pending events
+    DataStreamIntoIter(pending: s.pending, cursor: 0)
+                                   // takes ownership of s's pending events
 ```
 
 The `for own x in d:` syntax (with `d: DataStream`) dispatches to this
@@ -8843,19 +9363,24 @@ consumes and returns a new collection).
 ### 12.10 Built-in Iteration Sources
 
 Stdlib provides both `Iterable` and `IntoIterable` implementations for
-the language's built-in iterable types:
+the language's built-in iterable types using the same mechanism
+user-defined types use (§12.7, §12.8, §12.9):
 
-- **Ranges (`Range[T]`)** — `Range[T]` is `Copy`. Both forms work; from
-  the user's perspective, `for i in 0..N:` and `for own i in 0..N:`
-  are indistinguishable. The conventional form is the default.
+- **Ranges (`Range[T]`)** — `Range[T]` is `Copy`. Both forms work;
+  from the user's perspective, `for i in 0..N:` and `for own i in
+  0..N:` are indistinguishable. The conventional form is the default.
 - **Arrays (`T[N]`)** — implement both `Iterable` (default) and
   `IntoIterable` (`for own`). See §12.10.1 for details.
 - **Stdlib collections** (`Vec[T]`, `HashMap[K, V]`, etc.) — implement
   both, with iterator types specific to each container. The specific
-  Item types and yielding semantics are stdlib design decisions.
+  Item types follow §12.7's slot conventions; the iterator types
+  follow the source-bearing pattern of §12.7.4.
 
-These implementations are language-privileged per §3.7.3 and are not
-user-overridable.
+Stdlib's `Iterable`/`IntoIterable` implementations for built-in types
+follow the orphan rule (§3.7) like any other implementation. User code
+cannot redefine `Iterable` for `Vec` (orphan rule), but can write its
+own iterables for user-defined collections using the same mechanism.
+There is no special "language privilege" applied to stdlib iterators.
 
 #### 12.10.1 Iterating over arrays
 
@@ -8987,9 +9512,9 @@ may use loops:
 
 ```
 trait Statistics:
-  fn samples(value: Self) -> Vec[f32]
+  fn samples(value: Subject) -> Vec[f32]
 
-  fn count_above(value: Self, threshold: f32) -> isize:
+  fn count_above(value: Subject, threshold: f32) -> isize:
     mut count: isize = 0
     let elements = samples(value)
     for s in elements:                   // default form; s: f32 (Copy)
@@ -9087,10 +9612,12 @@ externally-driven sequences; iterators are for collection traversal.
 ## 13. Reactive System
 
 This section specifies the language's reactive composition layer: the
-declaration kinds (`signal`, `attr`, `recurrent`, `derived`), the
-composition constructs (`node`, `connection`, parts), the rules
-governing reactive expression evaluation, and the host API through
-which external code drives and observes the reactive graph.
+declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
+`stream`), the reactive expression forms (`observe`, `where`), the
+composition constructs (`node`, `connection`, parts, `operator`,
+`effect`), the rules governing reactive expression evaluation, and
+the host API through which external code drives and observes the
+reactive graph.
 
 The reactive system is the language's mechanism for expressing values
 that change over time. Ordinary computation in Ductus is pure and
@@ -9117,7 +9644,7 @@ added or removed at runtime — except by hot reload (§13.15), which
 replaces the program source and applies a diff atomically.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
-declarations, attr default expressions, recurrent arm expressions)
+declarations, attr default expressions, recurrent expressions)
 are pure expressions over signal, attr, recurrent, and derived
 values. They contain no `mut` bindings, no loops, no
 statement-level imperative constructs. When imperative work is
@@ -9127,7 +9654,7 @@ which may use `mut` internally.
 **Lazy, batched evaluation.** Writes (signal, attr) mark dependent
 cells dirty without immediate recomputation. The kernel evaluates
 the dirty set in topological order, advances recurrent cells per
-their firing arm expressions in lockstep, and swaps the back
+their expressions in lockstep, and swaps the back
 buffer atomically — all in a single `kernel.publish()` operation
 (§13.14.4). Writes accumulate between publishes; one publish
 processes the union.
@@ -9224,21 +9751,23 @@ signal tick: i64 = 0
 
 -- Counter advances its count whenever the host changes `tick`.
 node Counter:
-  recurrent count: i32 = 0
-    | on tick: self.count + 1
-  out: ShowsCount [=1]
+  recurrent count: i32 = observe:
+    on tick: count.previous(0) + 1      -- `tick`: module-level (scope 3);
+                                        -- `count.previous`: self-history (scope 2)
+  outgoing: ShowsCount [=1]
 
 -- Display reads the count through its incoming connection.
 node Display:
   attr label: string = "Unnamed"
-  in: ShowsCount [=1]
-  derived shown: string = "{self.label}: {self.in.ShowsCount[0].count}"
+  incoming: ShowsCount [=1]
+  derived shown: string = "{label}: {incoming.ShowsCount[0].count}"
+                          -- `label`, `incoming`: body-scope members (bare; §13.7)
 
 -- Connection from Counter to Display carries a derived count.
 connection ShowsCount:
   from: Counter
   to: Display
-  derived count: i32 = self.from.count
+  derived count: i32 = from.count
 
 -- Placements (instances).
 Counter c1:
@@ -9270,8 +9799,9 @@ Each `publish()`:
 This example demonstrates every reactive declaration kind (signal,
 attr, recurrent, derived), composition through nodes and connections,
 cardinality (`[=1]`), placement with overrides, indexed access
-through the connection (`self.in.ShowsCount[0].count`), and the
-publish-driven evaluation cycle.
+through the connection (`incoming.ShowsCount[0].count`), bare
+body-scope member access (§13.7), and the publish-driven evaluation
+cycle.
 
 ### 13.2 Reactive Declarations
 
@@ -9279,8 +9809,9 @@ The reactive system has six declaration kinds, distinguished by
 who controls the value and how (or whether) it changes over time.
 Four declare value-shaped reactive cells (signal, attr, recurrent,
 derived); one declares an event-sequence-shaped reactive cell
-(stream, full treatment in §13.18); one is a compile-time constant
-(const).
+(stream, full treatment in §13.18, with the history-aware
+`recurrent[N] stream` variant in §13.18.8); one is a compile-time
+constant (const).
 
 #### 13.2.1 `signal`
 
@@ -9418,7 +9949,7 @@ scope, or any compile-time-evaluable expression.
 ```
 node Filter:
   attr cutoff_hz: f32 = 1000.0
-  attr resonance: f32 = self.cutoff_hz / 1000.0      // references earlier attr
+  attr resonance: f32 = cutoff_hz / 1000.0            // references earlier attr
   attr enabled: bool = true
 ```
 
@@ -9498,8 +10029,8 @@ the lazy-batched rules of §13.10).
 node Driver:
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived skill_factor: f32 = self.expertise_level as f32 / 10.0
-  derived is_aggressive: bool = self.risk_tolerance > 0.7
+  derived skill_factor: f32 = f32(expertise_level) / 10.0
+  derived is_aggressive: bool = risk_tolerance > 0.7
 ```
 
 A derived's expression is a *pure expression* — no `mut`, no loops,
@@ -9527,7 +10058,7 @@ A `derived` may be declared at three scopes, paralleling `signal`:
 
 - **Module-level** — declared at module top level (outside any node
   or connection body). One cell shared across the program. References
-  to module-level deriveds use the bare name (no `self.` prefix).
+  to module-level deriveds use the bare name (no `here::` prefix).
 - **Node-level** — declared inside a node body. Per-instance: each
   placement of the node creates its own cell.
 - **Connection-level** — declared inside a connection body.
@@ -9543,150 +10074,240 @@ only cells visible at module scope per the topological-init rule
 #### 13.2.4 `recurrent`
 
 ```
-recurrent name: Type = initial
-  | on triggers: next_expr
-  | on triggers where guard: next_expr
-  ...
+recurrent[N]? name: Type? = expression
 ```
 
-A `recurrent` declares a *per-instance* writable cell with memory
-across triggering events. It is the mechanism for values that
-depend on their own past — counters, accumulators, smoothing
-curves, running statistics, sequencer step indices, and other
-patterns where the new value depends on the previous value.
+A `recurrent` declares a *per-instance* reactive cell whose
+expression may reference its own past values via `.previous(fallback)`
+and `.past(k, fallback)`. It is the mechanism for values that depend
+on their own past — counters, accumulators, smoothing curves,
+running statistics, sequencer step indices, and other patterns where
+the new value depends on the previous value.
 
-A recurrent declaration consists of:
+A recurrent declaration has:
 
-- **`= initial`** — the value the cell holds before any arm fires.
-  Mandatory.
-- **One or more arms** — each beginning with `| on`, specifying the
-  trigger cells whose value changes cause the arm to fire, an
-  optional `where guard` clause, and the `next_expr` to apply when
-  the arm fires. At least one arm is required; a recurrent with no
-  arms is a compile error.
+- **`[N]`** (optional) — the cell's self-history depth, used to bound
+  `name.past(k, fallback)` accesses. Must be a compile-time-known
+  positive `usize` (a literal, a `const`, or a const-generic parameter
+  — §2.5). When omitted, defaults to `[1]` (only `.previous`
+  accessible).
+- **`name`** — a snake_case identifier naming the cell.
+- **`Type`** — the value type. Optional when inferable from the
+  expression's result type and from fallback values supplied to
+  `.previous` / `.past`.
+- **`expression`** — a pure reactive expression defining the cell's
+  value at every moment.
 
-An arm has the shape:
+The expression must use `.previous(fallback)` or `.past(k, fallback)`
+to read prior self-values. Bare self-references (writing the cell's
+own name in its own expression) are forbidden — there is no
+"current value being defined" for the bare name to refer to. The
+expression IS the cell's value at every moment; past values require
+the explicit accessor.
 
-```
-| on triggers: next_expr
-| on triggers where guard: next_expr
-```
-
-where:
-
-- **`triggers`** is one or more reactive cells (signals, attrs,
-  recurrents, deriveds) whose value changes cause the arm to fire.
-  A single trigger is written as a bare name (`on tick`); a group
-  of two or more triggers is written parenthesized
-  (`on (tick1, tick2)`). Parens are optional for a single trigger
-  and required for groups. Trigger semantics is value-change
-  (§13.2.4.4).
-- **`where guard`** is an optional reactive boolean expression
-  evaluated in the recurrent's scope (§13.2.4.7), with the same
-  purity rules as derived expressions (§13.2.3). When present, the
-  arm fires only if at least one trigger changed value AND the
-  guard is currently true.
-- **`next_expr`** is a pure reactive expression. When the arm
-  fires, the expression evaluates against current inputs and the
-  cell's *previous-committed* value; the result becomes the cell's
-  new value after the evaluation pass commits.
+The fallback in `.previous(fallback)` / `.past(k, fallback)` is the
+value returned when there is no committed value at that depth yet —
+i.e., before the cell has received its k-th publish commit. The
+fallback type must match the cell's element type.
 
 ```
-signal increment: i32 = 0
+// Counter that depends on an external input
+recurrent counter: i32 = counter.previous(0) + step_value
+//   counter has 1 step of self-memory (default [1]);
+//   re-evaluates when step_value changes (implicit trigger);
+//   on first publish, counter.previous(0) = 0, so counter = 0 + step_value.
 
-node Counter:
-  attr step_size: i32 = 1
-  recurrent count: i32 = 0
-    | on increment: self.count + self.step_size
+// Fibonacci-style sum of last two
+recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)
+//   [2] permits up to 2-step lookback.
+
+// Moving average over last 3 commits of `input`
+recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
+//   `input` is an input signal; .past on it allocates per-input
+//   history (2 slots for k up to 2). Output [N] default to 1 here
+//   since the expression doesn't use `avg.past(...)`. See §13.2.4.3.
+
+// One-pole smoother that restarts cleanly after a gated gap
+@reset_on_reopen
+recurrent smoothed: f32 = (input + smoothed.previous(0.0)) / 2.0
+//   while gated, `smoothed` freezes; on reactivation its history is
+//   cleared, so the first post-gap value is (input + 0.0) / 2.0 rather
+//   than a blend with the stale pre-gap value (§13.9.7).
 ```
 
-The cell starts at 0. When `increment`'s value changes (host
-writes a new value via `write_signal`), the arm fires: the
-`next_expr` reads `self.count` (previous-committed value) and
-`self.step_size`, computes the new value, and commits at the end
-of the evaluation pass.
+**`@reset_on_reopen`.** By default, a recurrent that has been gated off
+(§13.9) holds its last committed value and, on reactivation, resumes
+from its *pre-gap* history — its `.previous`/`.past` still reflect
+values from before the gap. A recurrent carrying the `@reset_on_reopen`
+decorator instead **discards its history on reactivation**: when the
+gating predicate transitions false→true (§13.9.7), the kernel clears the
+cell's self-history (and any input-history, §13.2.4.3), so the next
+trigger evaluates with `.previous`/`.past` returning their fallbacks —
+exactly as at initialization — and the cell restarts cleanly from
+current inputs instead of blending in stale pre-gap state. It fires
+*only* on the gate false→true transition; a recurrent that merely
+receives no triggers for a while is correctly holding its value.
 
-**Priority on overlapping fires.** When multiple arms' triggers
-fire in the same publish, arms are evaluated in declaration order;
-the first arm whose trigger fired AND whose `where` guard (if
-present) is true wins. The remaining arms are not evaluated.
-Earlier-declared arms have higher priority. If no arm fires (no
-triggers changed, or all guards are false), the recurrent holds
-its previous value.
+It is the reactivation counterpart to `@reset_on_reload` (§13.15.5):
+both reset a cell's accumulated state on a lifecycle event —
+`@reset_on_reload` across a hot reload, `@reset_on_reopen` across a gate
+gap. `@reset_on_reopen` is specified for recurrent cells, where it clears
+the self- and input-history (§13.2.4.3); it has effect only on a *gated*
+instance. Because gating may be introduced at the type level or at a
+placement (§13.9.3), whether a given instance is ever gated is not in
+general known at the declaration site; on an instance that is never
+gated the decorator simply never fires — it is harmless, not an error.
+
+Use it for cells whose history is *invalidated by a temporal gap* —
+smoothers, rate estimators, edge detectors — where resuming with pre-gap
+samples is not merely unsmooth but semantically wrong. Accumulators and
+counters, whose history remains meaningful across a gap, use the default
+(no decorator).
+
+**Triggers are implicit from non-self references.** A recurrent
+re-evaluates whenever any cell it references (other than via
+`.previous`/`.past` on itself) commits a new value. This is the
+same spreadsheet-style reactive default as `derived` (§13.2.3): the
+expression's value is its definition at all times, and the kernel
+maintains that invariant.
+
+A recurrent whose expression contains only self-references
+(`recurrent count = count.previous(0) + 1` with no other inputs)
+evaluates once and freezes — there is nothing to trigger
+re-evaluation. This is valid behavior, not a bug: the expression
+correctly describes the cell's value, which happens to be constant
+after the first evaluation.
+
+**Explicit triggers** require wrapping the expression in an
+`observe` block (§13.2.11):
+
+```
+recurrent counter: i32 = observe:
+  on tick: counter.previous(0) + 1
+  on reset: 0
+```
+
+`observe` provides per-trigger arms with arm-selection semantics —
+necessary when the trigger is not a value-contributing reference
+(e.g., a pure clock signal) or when different triggers should
+produce different update expressions.
 
 ##### 13.2.4.1 Lockstep advancement
 
-When multiple recurrent cells' triggers fire in the same
-evaluation pass (a single `kernel.publish()` cycle), they advance
-in **lockstep**: every triggered recurrent's firing arm expression
-reads the *previous-committed* values of all recurrent cells in
-the system (including other triggered ones), computes a new value,
-and commits together at the end of the pass. No recurrent cell
-sees another recurrent cell's just-advanced value within the same
-pass.
+When multiple recurrent cells re-evaluate in the same publish cycle,
+they advance in **lockstep**: every triggered recurrent's expression
+reads the *previous-committed* values of all recurrent cells in the
+system (including other triggered ones), computes a new value, and
+commits together at the end of the pass. No recurrent cell sees
+another recurrent cell's just-advanced value within the same pass.
 
-Recurrents whose triggers did not fire in this pass do not
-re-evaluate; they retain their existing values.
+In particular, a recurrent's own `.previous(fallback)` and
+`.past(k, fallback)` accesses always return previously-committed
+values; the value being computed in the current publish is not
+visible through these accessors during that same publish.
+
+Recurrents whose expressions did not re-evaluate in this pass do not
+advance; they retain their existing values.
 
 This is the standard synchronous-dataflow semantics (Lustre,
 Esterel, Verilog `<=` non-blocking assignment). The new value of
-any triggered recurrent is a pure function of the previous-
+any re-evaluated recurrent is a pure function of the previous-
 committed values and the inputs received during this pass.
 
 ##### 13.2.4.2 Recurrent vs attr
 
-`attr` and `recurrent` are both per-instance writable cells. The
-distinction is who advances the value:
+`attr` and `recurrent` are both per-instance cells. The distinction
+is who advances the value:
 
 - `attr` cells change only when the host writes via
   `kernel.write_attr`. The kernel does not advance them
   automatically.
-- `recurrent` cells advance automatically per their firing arm's
-  expression whenever a trigger in an arm fires. The host cannot
-  directly write a recurrent cell at runtime; control is indirect
-  — the host triggers signals (or writes attrs) that an arm's
-  expression reads or that appear in an arm's trigger list.
+- `recurrent` cells re-evaluate automatically when any non-self
+  reference in the expression commits a new value. The host cannot
+  directly write a recurrent cell at runtime; control is indirect —
+  the host writes signals/attrs that the recurrent's expression
+  reads.
 
 Use `attr` for parameters, configuration, and host-controlled
-inputs. Use `recurrent` for cells that carry computed values
-across triggers.
+inputs. Use `recurrent` for cells that carry computed values that
+depend on their own past.
 
-##### 13.2.4.3 Override at placement
+##### 13.2.4.3 Self-history and input-history access
 
-The `= initial` value may be overridden at placement, similar to
-attrs:
-
-```
-Counter c1 | count=100      // override initial value
-```
-
-The arm structure (triggers, guards, and `next_expr` expressions)
-is a structural type property and *cannot* be overridden at
-placement. If per-instance variation is needed, parametrize via
-attrs read inside `next_expr`:
+Inside a recurrent's expression, past values are accessed via two
+methods on a cell's name:
 
 ```
-signal tick_signal: u64 = 0
-
-node Counter:
-  attr step_size: i32 = 1
-  recurrent count: i32 = 0
-    | on tick_signal: self.count + self.step_size
-
-Counter c1 | step_size=5    // per-instance step via attr override
+cell_name.previous(fallback)         // one step back; sugar for .past(1, fallback)
+cell_name.past(k, fallback)          // k steps back
 ```
 
-##### 13.2.4.4 Value-change semantics for triggers
+These accessors work on two distinct subjects:
 
-A trigger in an arm's trigger list fires when the listed cell's
-value changes from the perspective of the evaluation pass. Writing
-the same value to a signal does not fire its triggers. This is
+- **Self-history** — the recurrent's own past values. `name.past(k,
+  fallback)` reads the recurrent's value k publishes ago. `k` is
+  bounded by the declared `[N]` depth (defaulting to 1): `k > N` is a
+  compile error.
+- **Input history** — past values of any reactive cell referenced in
+  the expression. `input_cell.past(k, fallback)` reads that input's
+  value k commits ago. The compiler scans the expression for
+  `.past(k, ...)` calls per input cell and allocates the maximum
+  observed `k` of history per input. Inputs not accessed via `.past`
+  add no history overhead.
+
+This is symmetric with stream recurrents (§13.18.8.4) — the same
+mechanism applies; the difference is signals contribute commits and
+streams contribute events.
+
+```
+// Self-history only
+recurrent counter: i32 = counter.previous(0) + 1
+
+// Input history — moving average over last 3 commits of `input`
+recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
+// `input` is an input signal; the compiler allocates 2 slots of history
+// for it (max k referenced = 2). Output history defaults to [1].
+
+// Both — self-feedback with input lookback
+recurrent[2] smoothed: f32 =
+  0.5 * smoothed.past(1, 0.0) + 0.3 * input + 0.2 * input.past(1, 0.0)
+```
+
+Common rules:
+
+- `k` must be a compile-time-known positive `usize` — a literal, a
+  `const`, or a const-generic parameter (§2.5). Runtime or reactive
+  values are rejected.
+- `fallback` is an expression of the accessed cell's value type,
+  returned when fewer than `k` commits have happened.
+- Each `.previous` / `.past` call is an ordinary function call.
+  Multiple calls on the same cell with different fallbacks are
+  independent — each returns its own fallback when no history
+  exists.
+
+Bare references to the recurrent's own name in its expression are
+not permitted (compile error). Self-past access must go through the
+explicit `.previous`/`.past` accessors. References to OTHER cells
+(non-self) use bare names normally for their current values;
+`.previous(fallback)` / `.past(k, fallback)` on those names access
+their history.
+
+##### 13.2.4.4 Value-change semantics
+
+A reactive cell's commit fires downstream re-evaluation only when
+its value changes from its previously-committed value. Writing the
+same value to a signal does not fire its dependents. This is
 standard reactive semantics — only meaningful changes propagate.
 
-To express "fire on every event regardless of value," use a
-counter pattern: the signal is a monotonically increasing count;
-each "event" increments the count; downstream cells trigger on
-every increment because the value changes each time.
+The rule applies uniformly across signal commits, attr writes,
+recurrent advancements, and derived re-evaluations. A recurrent
+whose expression re-evaluates and produces the same value as the
+previous-committed value does not propagate a change downstream.
+
+To express "fire on every event regardless of value," use a counter
+pattern: the signal is a monotonically increasing count; each
+"event" increments the count; downstream cells trigger on every
+increment because the value changes each time.
 
 ##### 13.2.4.5 Scope
 
@@ -9694,142 +10315,95 @@ A `recurrent` may be declared at three scopes, paralleling `signal`
 and `derived`:
 
 - **Module-level** — declared at module top level. One cell shared
-  across the program. References use the bare name (no `self.`
+  across the program. References use the bare name (no `here::`
   prefix). Useful for global stateful counters, accumulators, or
-  state machines driven by module-level signals.
+  state machines whose inputs are module-scope reactive cells.
 - **Node-level** — declared inside a node body. Per-instance.
 - **Connection-level** — declared inside a connection body.
   Per-instance per-connection.
 
 ##### 13.2.4.6 Tuple-coupled recurrents
 
-Multiple recurrents may share a single arm evaluation by declaring
-them as a tuple:
+Multiple recurrents may share a single expression evaluation by
+declaring them as a tuple:
 
 ```
-recurrent (name1, name2, ...): (Type1, Type2, ...) = (init1, init2, ...)
-  | on triggers: tuple_expression_returning_same_shape
+recurrent[N]? (name1, name2, ...): (Type1, Type2, ...) = tuple_expression
 ```
 
-The declaration creates N independent cells, each named and
-typed individually. The arm's `next_expr` returns a tuple of the
-same shape and types; all N cells advance atomically from a single
-evaluation. Shared computation in the arm body is performed once,
-not N times.
+The declaration creates N independent cells, each named and typed
+individually. The expression returns a tuple of the same shape and
+types; all cells advance atomically from a single evaluation.
+Shared computation in the expression is performed once, not N times.
 
-Example — a Kalman filter sharing the gain computation across
-mean and variance updates. The arm body is a single pure
-expression and cannot directly contain `let` bindings; the shared
-work is factored into a helper function whose body computes the
-gain once and returns the pair of updated values:
+Each cell in the tuple has its own self-history accessor
+(`name1.previous(fb1)`, `name2.previous(fb2)`), and the optional
+`[N]` applies to all cells (they all have the same depth).
+
+Example — a Kalman filter sharing the gain computation across mean
+and variance updates. Shared work is factored into a helper function
+whose body computes the gain once and returns the pair of updated
+values:
 
 ```
 signal source: f32 = 0.0
 signal noise: f32 = 0.01
 
-fn kalman_step(mean: f32, variance: f32, source: f32, noise: f32) -> (f32, f32):
-  let gain = variance / (variance + noise)        // computed once per call
+fn kalman_step(prev_mean: f32, prev_variance: f32, source: f32, noise: f32) -> (f32, f32):
+  let gain = prev_variance / (prev_variance + noise)   // computed once per call
   (
-    mean + gain * (source - mean),                // updated mean
-    (1.0 - gain) * variance,                      // updated variance
+    prev_mean + gain * (source - prev_mean),           // updated mean
+    (1.0 - gain) * prev_variance,                      // updated variance
   )
 
-recurrent (mean, variance): (f32, f32) = (source, 1.0)
-  | on source: kalman_step(mean, variance, source, noise)
+recurrent (mean, variance): (f32, f32) =
+  kalman_step(mean.previous(0.0), variance.previous(1.0), source, noise)
 ```
 
 The single function call evaluates the shared `gain` once per
-publish and returns both updated values atomically. Without
-tuple-coupled recurrents, the same logic would require two
-independent recurrents each calling the helper separately, doing
-the gain computation twice per publish.
+publish and returns both updated values atomically. The recurrent
+re-evaluates whenever `source` or `noise` changes (implicit
+triggers).
 
 Reads of any cell within the tuple use its individual name
-(`self.mean`, `self.variance`, or bare `mean`/`variance` at
-module scope).
+(bare `mean`/`variance`, or `here::mean`/`here::variance` to anchor
+explicitly per §13.7.2) — but inside the tuple's own expression, self-history
+access for each individual cell uses its own `.previous`/`.past`.
 
 Lockstep semantics (§13.2.4.1) are preserved across the tuple:
-during arm evaluation, reads of any cell in the group return
-its previous-committed value. Cross-references within the tuple
-read previous-committed values, the same way independent
+during expression evaluation, each cell's `.previous`/`.past`
+returns its previous-committed value, the same way independent
 recurrents do.
 
 In the per-publish DAG (§13.11.3), tuple-coupled recurrents
 contribute one evaluation node with N output edges, not N
 independent evaluation nodes.
 
-Initial values follow the topological-init rule (§13.2.6) — each
-cell's initial may reference any reactive cell in scope, provided
-no init-time cycle exists. If any one cell's initial creates a
-cycle, the entire group is rejected.
+##### 13.2.4.7 Explicit triggers (via `observe`)
 
-##### 13.2.4.7 Conditional triggers (`where` clauses)
-
-An arm may carry a `where guard` clause placed after its trigger
-list and before the colon:
+A recurrent's expression may be an `observe` expression (§13.2.11)
+when explicit per-trigger arms are needed:
 
 ```
-recurrent name: Type = init
-  | on trigger_cell where guard: expr
+recurrent counter: i32 = observe:
+  on tick: counter.previous(0) + 1
+  on reset: 0
 ```
 
-The arm fires when `trigger_cell` changes value AND `guard` is
-currently true. A change in `guard` alone (without `trigger_cell`
-changing) does not fire the arm.
+In this form, `observe`'s arms supply the trigger sets and the
+per-arm expressions. The active arm's expression may use
+`.previous`/`.past` to access the recurrent's history just like
+any other recurrent expression body.
 
-Each arm carries its own optional `where` clause; different arms
-may apply different guards:
+Use `observe` when:
+- Triggers do not appear naturally in the expression (e.g., a
+  clock signal whose value is irrelevant to the computation).
+- Different triggers should produce different update expressions
+  (multi-arm logic).
+- Trigger sets need explicit filtering via `where` (§13.18.10).
 
-```
-recurrent name: Type = init
-  | on A where p1: next_A_expr
-  | on B where p2: next_B_expr
-  | on C: next_C_expr
-```
-
-Reads as: "fire on A-change if p1; or on B-change if p2; or on
-any C-change," evaluated in declaration order per the priority
-rule in §13.2.4.
-
-The guard is a reactive boolean expression evaluated in the
-recurrent's scope, with the same purity rules as derived
-expressions (§13.2.3).
-
-Pedagogically, an arm guard is equivalent to inlining the
-guard into the arm's `next_expr`:
-
-```
-// guard form
-recurrent x: T = init
-  | on trigger_cell where guard: expr
-
-// inline-conditional form, observationally identical
-recurrent x: T = init
-  | on trigger_cell: if guard then expr else x
-```
-
-The two produce identical observable behavior, but the `where`
-form allows the kernel to skip the arm's evaluation entirely when
-the guard is false. This is a perf benefit when the `next_expr`
-is expensive and the guard is cheap, and it allows the priority
-rule to fall through to subsequent arms when the guard fails.
-
-Example shown at module scope (cell references are bare; inside a
-node body, references would use `self.counter` etc.):
-
-```
-signal reset_signal: bool = false
-signal tick: u64 = 0
-signal running: bool = true
-
-recurrent counter: i32 = 0
-  | on reset_signal: 0                         // arm 1: reset to zero
-  | on tick where running: counter + 1         // arm 2: increment if running
-```
-
-If both `reset_signal` and `tick` change in the same publish, arm
-1 wins per the priority rule (§13.2.4) and `counter` becomes 0
-(not `counter + 1`).
+When all references in the expression naturally drive re-evaluation
+(spreadsheet-style implicit triggers), `observe` is not needed.
 
 ##### 13.2.4.8 Dynamic-size cell types
 
@@ -9837,15 +10411,21 @@ Recurrent cells may hold dynamic-size types in addition to
 fixed-size types. Dynamic-size types include:
 
 - `Vec[T]` — persistent vector with structural sharing
-- `SmallVec[T; N]` — inline up to N elements, then heap
-- `RingBuf[T; N]` — fixed-capacity ring buffer
+- `SmallVec[T, N]` — inline up to N elements, then heap
+- `RingBuf[T, N]` — fixed-capacity ring buffer
 
-Storage and cost details are specified in §13.12.4 (cell types
-and storage). An arm's `next_expr` returns a new value of the
-declared type; the kernel handles allocation and triple-buffer
-rotation transparently. Source code never mutates a cell in
-place — the functional builder API (`.with(value)`, `+`
-operator) returns new collection values.
+Storage and cost details are specified in §13.12.4 (cell types and
+storage). The expression returns a new value of the declared type;
+the kernel handles allocation and triple-buffer rotation
+transparently. Source code never mutates a cell in place — the
+functional builder API (`.with(value)`, `+` operator) returns new
+collection values.
+
+The `[N]` self-history depth allocates `N` slots per cell. For
+recurrents holding dynamic-size types, total memory cost is
+proportional to `N * average_value_size`; deep history of large
+collections can be expensive. The compiler may emit a warning when
+the static product exceeds a configurable threshold.
 
 #### 13.2.5 `const`
 
@@ -9897,9 +10477,9 @@ node Delay:
 
 A const is accessible through three syntactic forms:
 
-- **Instance-level (`self.<const>`)** — inside the declaring node
-  or connection's reactive expressions. Resolves to the same value
-  as the type-level access.
+- **Instance-level (bare `<const>`, or `here::<const>` to anchor)** —
+  inside the declaring node or connection's reactive expressions.
+  Resolves to the same value as the type-level access.
 - **Through an instance (`<instance>.<const>`)** — from function
   bodies or other instances' bodies that hold a reference to an
   instance of the type.
@@ -9962,15 +10542,16 @@ For each cell:
     - Otherwise, the attr was declared without a default and the
       placement omitted a value — a compile error caught before
       startup (see §13.2.2).
-- **Recurrents** evaluate their `= initial` expression. The arm
-  expressions are *not* evaluated at startup; recurrent cells hold
-  their initial values until a trigger fires. When an initial-value
-  expression reads a `Signal[T]` cell (per §13.2.8), the read
-  returns the cell's value at the topological-init evaluation
-  point — equivalent to a snapshot of the cell at startup. The
-  recurrent does not subscribe to subsequent changes of that cell;
-  for tracking semantics use a `derived` declaration instead. The
-  same snapshot semantic applies to attrs and signals whose initial
+- **Recurrents** evaluate their expression for the first time on
+  the startup pass. Self-history and input-history accessors
+  (`.previous(fallback)` / `.past(k, fallback)`, §13.2.4.3) return
+  their fallback values, since no committed history exists yet.
+  When the expression reads a `Signal[T]` cell (per §13.2.8), the
+  read returns the cell's value at the topological-init evaluation
+  point — a snapshot of the cell at startup. After startup, the
+  recurrent re-evaluates when any non-self reference in its
+  expression commits a new value (§13.2.4). The
+  snapshot-at-startup semantic applies to attrs and signals whose
   expressions read other reactive cells.
 - **Deriveds** evaluate their expression body.
 - **`when` predicates** (§13.9) are evaluated alongside deriveds
@@ -9991,20 +10572,24 @@ For each cell:
   This is distinct from runtime cycles (§13.11), which the
   per-publish DAG handles via recurrents-as-delays. Init time
   has no notion of "previous publish," so cycles flat-out fail.
-- Within a node body, an attr or recurrent's initial may
-  reference previously-declared cells of the same body. The
-  topological sort catches forward references that would
+- Within a node body, an attr's default or a recurrent's
+  expression may reference previously-declared cells of the same
+  body. The topological sort catches forward references that would
   otherwise be ambiguous; the compiler may permit them when the
   dependency graph is well-defined.
-- At type-declaration time, attr defaults and recurrent initial
-  values may reference same-instance cells (via `self.X`),
-  same-type consts, module-level cells (signals, deriveds,
-  recurrents, consts), and compile-time-evaluable expressions.
-  Cross-instance references are resolved only at placement time,
-  not at type declaration.
+- At type-declaration time, attr defaults and recurrent expressions
+  may reference same-instance cells (by bare name, or `here::X` to
+  anchor), same-type
+  consts, module-level cells (signals, deriveds, recurrents,
+  consts), and compile-time-evaluable expressions. Cross-instance
+  references are resolved only at placement time, not at type
+  declaration. A recurrent's self-history fallbacks
+  (`.previous(fallback)`, `.past(k, fallback)`) follow the same
+  rules — fallback expressions are evaluated in the same context.
 
 Traps during initial evaluation (signal initializers, attr defaults,
-recurrent initial values, or initial derived evaluation) follow
+recurrent expressions on first publish, or initial derived
+evaluation) follow
 §13.13.1 — the process aborts. There is no recovery path for traps
 encountered during startup.
 
@@ -10031,13 +10616,13 @@ Writes occur only through:
   (per §13.8.2). Consts are *not* settable at placement.
 - The kernel's own evaluation of `derived` expressions, which
   writes the derived's output cell with the newly computed value.
-- The kernel's own evaluation of arm expressions on `recurrent`
-  cells, which commits the computed value at the end of the
-  publish cycle (per §13.2.4.1 and §13.10.2).
+- The kernel's own evaluation of `recurrent` expressions, which
+  commits the computed value at the end of the publish cycle (per
+  §13.2.4.1 and §13.10.2).
 
 Consts are immutable for the kernel's lifetime: their values are
 fixed at compile time and never change. The "no source-level
-write" rule applies to all five declaration kinds uniformly.
+write" rule applies to all six declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
 imperatively modify it from within.
 
@@ -10054,9 +10639,10 @@ positions, return types, and generic arguments.
   values via `kernel.write_signal` (§13.14.2).
 - `derived X = expr` — projected `Signal[T]`. Kernel maintains
   the value consistent with its inputs.
-- `recurrent X: T = init | on triggers: expr` — memoryful
-  `Signal[T]`. Kernel advances per the arm's expression when an
-  arm fires.
+- `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
+  self-history accessible via `.previous(fallback)` and
+  `.past(k, fallback)`. Kernel re-evaluates the expression when any
+  non-self reference commits (§13.2.4).
 
 The keyword `signal` is overloaded with the type `Signal[T]`:
 the keyword declares one specific subkind (the writable cell);
@@ -10163,7 +10749,7 @@ derived arr: f32[4] = [signal_a, signal_b, 0.0, signal_c]
 
 The same forms apply in `attr` declarations on node and connection
 instances. Use in `signal` and `recurrent` declarations is
-constrained by their host-write and arm-update semantics
+constrained by their host-write and expression-evaluation semantics
 respectively; see §13.2.1, §13.2.4 for the underlying constraints.
 The most natural fit is `derived`.
 
@@ -10447,7 +11033,7 @@ receiving node drops the template cells per §14.8.
 
 For *child-placement-style* external supply with cardinality, list
 semantics, and possible per-instance scoping (the pattern used by
-`Repeat`, §13.5.4), the `parts:` clause and §13.5 keyed-scope
+`repeat`, §13.5.4), the `parts:` clause and §13.5 keyed-scope
 primitive are the appropriate mechanism — not `Node[T]` attrs.
 `Node[T]` is for attr-shaped *singular* template slots; `parts:`
 is for child-placement slots with cardinality.
@@ -10465,6 +11051,186 @@ is for child-placement slots with cardinality.
   references and re-invokes the specification.
 - Generic constraints on `T` behave as standard generic bounds
   (§3.1, §5.1).
+
+#### 13.2.11 The `observe` expression
+
+`observe` is a reactive expression form that selects an active arm
+based on which trigger has most recently fired and evaluates that
+arm's expression reactively. It is the mechanism for explicit
+per-trigger logic, used inside `recurrent` (§13.2.4.7), inside
+`derived` declarations, as the source of `stream` declarations
+(§13.18), or anywhere else a reactive expression appears.
+
+##### 13.2.11.1 Form
+
+```
+observe:
+  on T1: expr1
+  on (T1, T2): expr_paired
+  on T3 where C: expr_filtered
+  default: expr_default
+```
+
+- Each arm consists of an **`on` clause** listing one or more
+  trigger cells, an optional **`where` filter** (§13.18.10), and a
+  colon followed by the **arm expression**.
+- A `default:` arm has no `on` clause — its expression is the
+  observe's value when no `on` arm has yet activated.
+- All arm expressions must produce the same type T (like `match`
+  expressions, §6.2.4).
+- The observe expression's value is a `Cell[T]`; its concrete
+  reactive type (`Signal[T]` or `Stream[T]`) is determined by the
+  context where the observe is used.
+
+##### 13.2.11.2 Trigger sets and arm selection
+
+An arm's trigger set is the cells listed in its `on` clause. When
+any cell in the trigger set commits a new value (signal) or emits
+an event (stream), the arm becomes a candidate for selection. The
+candidate set is filtered by the arm's `where` clause if present
+(§13.18.10).
+
+When multiple arms become candidates in the same publish, **arm
+selection follows declaration order**: the first arm in declaration
+order whose trigger set fired and whose `where` filter (if any)
+passes wins. This mirrors `match` semantics (§6.2.4).
+
+The selected arm becomes the **active arm** of the observe expression.
+A subsequent publish in which a different arm fires changes the
+active arm.
+
+##### 13.2.11.3 Reactive-arm semantics
+
+While an arm is active, the arm's expression is fully reactive: any
+cell referenced in that expression (signal, stream, recurrent self-
+history, etc.) participates in dependency tracking, and a change to
+any of those cells re-evaluates the arm's expression. The observe's
+value updates accordingly — without requiring the arm's `on`
+trigger to re-fire.
+
+The `on` clause's role is **arm selection**, not exclusive re-
+evaluation triggering: it determines which arm is in scope and
+also acts as one of that arm's reactive references (so re-firing
+the `on` trigger also re-evaluates the active arm).
+
+When a different arm activates, the previous arm's references are
+no longer tracked; the new arm's references become active.
+
+This means an observe expression's value can change without any
+`on` clause trigger firing — the active arm's other references
+continue to drive re-evaluation while the arm is in scope. This is
+intentional: arm-selection and intra-arm reactivity are independent
+concerns.
+
+##### 13.2.11.4 Multi-cell trigger sets
+
+An arm may list multiple trigger cells, parenthesized:
+
+```
+on (T1, T2, T3): expr
+```
+
+The arm activates when ANY listed cell fires (logical OR over the
+trigger set). All listed cells are also reactive references of the
+arm while it is active.
+
+##### 13.2.11.5 The `default:` arm
+
+A `default:` arm has no trigger clause. Its expression supplies the
+observe's value when no `on` arm has yet been selected — i.e.,
+before the first activating trigger fires.
+
+**Placement.** The `default:` arm, when present, must be the **last
+arm in declaration order**. A `default:` arm appearing before any
+`on` arm is a compile error. This matches the convention of
+catch-all arms in `match` expressions (§6.2.4) and reinforces that
+`default:` is a fallback for the no-prior-activation state, not a
+candidate competing with `on` arms.
+
+**When required.** The `default:` arm is required when, in a signal
+context, every `on` arm's trigger set consists entirely of stream
+cells. Stream cells begin empty (no first emission until events
+arrive), so without a `default:` arm the observe would have no value
+at startup, violating the signal invariant (§13.9.7 cell-value
+reads).
+
+**When optional.** The `default:` arm is optional when at least one
+`on` arm has a signal in its trigger set. Signal initial values
+count as their first emission (per §13.2.6 startup pass and
+§13.18.7.2), so at least one signal-triggered arm is selectable from
+publish zero. The first signal-triggered arm in declaration order
+activates at startup and supplies the observe's value.
+
+In a stream context, the `default:` arm is optional — streams
+may begin empty and emit their first event when the first arm
+activates.
+
+##### 13.2.11.6 Output type
+
+An observe expression produces a `Cell[T]` (§13.18.5) whose concrete
+type is determined by the surrounding context:
+
+- Assigned to a `Signal`/`derived`/`recurrent` binding, or used in a
+  context expecting `Signal[T]`: produces `Signal[T]`.
+- Assigned to a `stream` declaration, or used in a context expecting
+  `Stream[T]`: produces `Stream[T, P, N]` per the stream context's
+  policy/capacity.
+
+All arms' expressions must produce values of the same type T,
+matched against the surrounding context. Type mismatch across arms
+is a compile error.
+
+##### 13.2.11.7 Use sites
+
+`observe` is an expression form. It can appear anywhere a reactive
+expression of compatible type is expected:
+
+- As the RHS of a `derived`, `signal`, `recurrent`, `recurrent[N]
+  stream`, or `stream` declaration.
+- As a sub-expression inside a larger reactive expression.
+- As an argument to a function call (functions are reactive-
+  transparent per §13.12.2; the observe's reactive dependencies
+  propagate through the call site).
+- Anywhere a `Cell[T]` value is valid.
+
+Inside a recurrent declaration, the observe's arm expressions may
+use `.previous(fallback)` / `.past(k, fallback)` on the enclosing
+recurrent's name to access its self-history (§13.2.4.3).
+
+##### 13.2.11.8 Composition with `where`
+
+Each arm's `on` clause may carry a trailing `where` filter that
+restricts arm activation:
+
+```
+recurrent counter: i32 = observe:
+  on tick where counter.previous(0) < 100: counter.previous(0) + 1
+  on tick where counter.previous(0) >= 100: 100
+  on reset: 0
+```
+
+The `where` clause uses the general `where` stream filter
+(§13.18.10), producing a filtered trigger `T where C`. From the
+arm's perspective, this is just an ordinary trigger cell — the arm
+does not distinguish between a bare `T` and a filtered `T where C`;
+both are reactive cells whose emissions cause the arm to be a
+candidate for selection.
+
+**Per-LHS-event filter semantics** (§13.18.10.2): the filtered
+trigger `T where C` emits only when `T` itself fires AND `C`
+evaluates to true at that moment, sampling any cells `C`
+references at their current values. A `C`-cell change between `T`
+emissions does NOT cause the filtered trigger to emit; the arm
+becomes a candidate only when `T` actually emits with `C` passing.
+
+**Active arm + falsy `where` does not deactivate.** When arm A is
+the currently-active arm and A's `where` later evaluates to false
+(without any other arm activating), A stays active. The `where`
+clause gates arm SELECTION at moments of `T` emission, not the
+continued activeness of an already-selected arm. A's body remains
+reactive to its references. A is supplanted only when a different
+arm's filtered trigger emits and that arm becomes the new active
+arm per declaration-order selection.
 
 ### 13.3 Nodes
 
@@ -10501,15 +11267,16 @@ reactive cells managed by the kernel.
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
   parts: Type1, Type2                                 // optional permitted part types
-  in: Conn1, Conn2                                    // optional incoming connection types
-  out: Conn3, Conn4                                   // optional outgoing connection types
+  incoming: Conn1, Conn2                              // optional incoming connection types
+  outgoing: Conn3, Conn4                              // optional outgoing connection types
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent name: Type = init | on t1: expr           // per-instance memory cells
+  recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
+  stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
@@ -10518,10 +11285,10 @@ parts, and no connections is legal but typically unused.
 ```
 node Driver:
   satisfies Drivable
-  out: Drives
+  outgoing: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  derived is_aggressive: bool = self.risk_tolerance > 0.7
+  derived is_aggressive: bool = risk_tolerance > 0.7
 ```
 
 #### 13.3.2 `satisfies` clause
@@ -10534,7 +11301,7 @@ callable via uniform call syntax (§3.4).
 
 ```
 trait Displayable:
-  fn display(value: Self) -> string
+  fn display(value: Subject) -> string
 
 node Driver:
   satisfies Displayable
@@ -10558,19 +11325,21 @@ this node at placement time:
 
 - **No `parts:` clause** — the node accepts child instances of *any
   node type*. Inside the node body, only the heterogeneous
-  `self.parts` form is available, and it requires an explicit trait
-  bound on the iteration variable (`for p: SomeTrait in self.parts`)
-  per §13.4.1. Type-bulk (`self.parts.<NodeType>[i]`) and
+  `parts` form is available, and it requires an explicit trait
+  bound on the iteration variable (`for p: SomeTrait in parts`)
+  per §13.4.1. Type-bulk (`parts.<NodeType>[i]`) and
   cardinality-bounded forms are not available.
 - **With a `parts:` clause** — the node accepts only children whose
   types appear in the listed set, with the declared cardinality
-  constraints. Both heterogeneous (`self.parts`) and type-bulk
-  (`self.parts.<NodeType>[i]`) access are available; cardinality
+  constraints. Both heterogeneous (`parts`) and type-bulk
+  (`parts.<NodeType>[i]`) access are available; cardinality
   is enforced at placement.
 
-The clause does not place specific instances — it only constrains
-what types and how many of each are permitted. The actual children
-appear at placement (§13.8.3).
+The clause does not by itself place specific instances — it only
+constrains what types and how many of each are permitted. Actual
+children appear either at placement (§13.8.3) or, when the multiplicity
+is a property of the type itself, via a compile-time `for` in the node
+body (§13.3.3.3); both sources contribute to the cardinality count.
 
 ```
 -- Restricted parts with cardinality:
@@ -10586,11 +11355,11 @@ In this example: at least one Oscillator (`+`), exactly one Filter
 -- Open parts (any node type accepted):
 node Processor:
   -- no `parts:` clause; accepts any node as a child
-  out: WiresTo
+  outgoing: WiresTo
 ```
 
 `Processor` accepts any node type as a part. Inside its body, only
-`self.parts` (heterogeneous iteration) is available; the host walks
+`parts` (heterogeneous iteration) is available; the host walks
 the parts externally based on its own conventions (e.g., per-type
 dispatch via const discriminators — §13.2.5).
 
@@ -10627,39 +11396,120 @@ valid.
 
 ##### 13.3.3.2 Access from inside the node body
 
-Parts of a given type are accessible as `self.parts.<NodeType>`,
+Parts of a given type are accessible as `parts.<NodeType>`,
 which is a structural iterable of compile-time-known length range:
 
-- Indexed access: `self.parts.<NodeType>[i]` — legal at type-level
+- Indexed access: `parts.<NodeType>[i]` — legal at type-level
   expressions iff `i < min_cardinality` of that part type.
-  Example: under `parts: Oscillator+`, `self.parts.Oscillator[0]`
+  Example: under `parts: Oscillator+`, `parts.Oscillator[0]`
   is legal (at least one is guaranteed) but `[1]` is not.
-- Type-bulk iteration: `for o in self.parts.<NodeType>: ...`
+- Type-bulk iteration: `for o in parts.<NodeType>: ...`
   always works.
-- Heterogeneous iteration: `for p in self.parts: ...` iterates
+- Heterogeneous iteration: `for p in parts: ...` iterates
   all parts of all declared types (§13.4.2).
 
 A node without a `parts` clause may still contain children of any
 node type (per §13.3.3); inside its body, only the heterogeneous
-`self.parts` form is available, and it requires an explicit trait
-bound on the iteration variable (`for p: SomeTrait in self.parts`)
+`parts` form is available, and it requires an explicit trait
+bound on the iteration variable (`for p: SomeTrait in parts`)
 per §13.4.1 — type-bulk and cardinality-bounded forms are not
 available. A node with a `parts` clause may contain children at
 runtime according to the declared cardinality.
 
-#### 13.3.4 `in` and `out` clauses
+##### 13.3.3.3 Type-level part placements via compile-time `for`
+
+A node body may declare child-part instances *directly* via a
+compile-time `for` loop. The loop's body is an indented **placement-body
+block** following the same grammar as §13.8.3's child-parts body — any
+number of placements (parts and/or connections) per iteration, with the
+ordinary clause ordering of §13.8.9 and the whitespace-separation /
+self-delimiting rules of §13.8.10. The iteration is compile-time-unrolled
+per §12.3.7. The unrolled placements become **children of the type
+itself**: every instance of the node materializes them at instantiation,
+with each iteration's loop variable substituted at compile time. The
+iterable must be compile-time-known (the same constraint as for any
+compile-time `for` — §12.3.7); a runtime iterable in a node body is a
+compile error pointing at the iterable, enforced by §13.1's static-graph
+rule (no new diagnostic class).
 
 ```
-in: ConnType1 [cardinality]?, ConnType2 [cardinality]?, ...
-out: ConnType3 [cardinality]?, ConnType4 [cardinality]?, ...
+const VOICE_COUNT: usize = 8
+
+node Oscillator:
+  attr freq: f32 = 440.0
+  derived output: f32 = synthesize(freq)
+
+node OscBank:
+  parts: Oscillator [=VOICE_COUNT]
+  for i in 0..VOICE_COUNT:
+    Oscillator | freq=base_freq(i)
+
+OscBank bank                    // every instance materializes 8 Oscillators
 ```
 
-The `in` and `out` clauses list the *types* of connections in which
-instances of this node may participate as endpoints, with optional
-cardinality constraints. `in` connections target this node (the
-node is the `to` endpoint); `out` connections originate from this
-node (the node is the `from` endpoint). See §13.6 for connection
-declarations and §13.8.4 for connection placement.
+Generic over a const-generic parameter — multiplicity becomes a
+property of each instantiation:
+
+```
+node OscBank[const N: usize]:
+  parts: Oscillator [=N]
+  for i in 0..N:
+    Oscillator | freq=base_freq(i)
+
+OscBank[16] sixteen_bank        // 16 Oscillators per instance
+OscBank[8]  eight_bank          // 8 Oscillators per instance
+```
+
+**Cardinality.** Parts placed by a type-body `for` are counted toward
+the type's `parts:` cardinality at compile time. A placement body
+(§13.8.3) may add further parts up to the declared cardinality bound;
+the cardinality check is enforced against the *sum* of type-body and
+placement-body contributions.
+
+**Exposition.** Parts placed by a type-body `for` are children of the
+instance like any other parts; they are included in the default
+`expose: parts` exposition (§13.3.7) and in explicit `expose:` entries
+that select on their type via `parts.<NodeType>`.
+
+**Hot reload.** When the iterable's compile-time value changes across
+a reload (e.g., a `const N` rises from 8 to 16, or the const-generic
+argument at a placement site changes), §13.15.2's path-based
+cell-identity rules apply uniformly: existing parts whose
+fully-qualified path is unchanged are preserved with their state;
+newly-introduced parts (higher loop indices) are allocated fresh;
+parts dropped by a shrinking count are released per the standard
+removal rule. No special-case logic is required for type-body-for
+parts beyond what §13.15 already specifies.
+
+**Contrast with placement-body `for`** (§13.8.3.1). A type-body `for`
+expands once at type elaboration and applies uniformly to every
+instance of the node; a placement-body `for` expands at each placement
+site and may differ across instances. Use the type-body form when
+multiplicity and per-part configuration are properties of the **type**;
+use the placement-body form when they may differ per instance. Both
+forms unroll by the same §12.3.7 rule and produce anonymous parts
+accessible via the same `parts.<NodeType>[i]` (§13.4.1) / iteration
+(§13.4.2) machinery.
+
+**Connections from a type-body for.** A type-body `for` may also place
+connections (§13.6) whose source is the enclosing node instance and
+whose destinations are determined by the unrolled iteration. The same
+clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
+to the loop body's placement.
+
+#### 13.3.4 `incoming` and `outgoing` clauses
+
+```
+incoming: ConnType1 [cardinality]?, ConnType2 [cardinality]?, ...
+outgoing: ConnType3 [cardinality]?, ConnType4 [cardinality]?, ...
+```
+
+The `incoming` and `outgoing` clauses list the *types* of connections
+in which instances of this node may participate as endpoints, with
+optional cardinality constraints. `incoming` connections target this
+node (the node is the `to` endpoint); `outgoing` connections
+originate from this node (the node is the `from` endpoint). See §13.6
+for connection declarations and §13.8.4 for connection placement.
 
 Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
 sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
@@ -10667,25 +11517,29 @@ sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
 
 ```
 node Driver:
-  out: Drives [=1], MaintainedBy?
-  in: SponsoredBy [..=3]
+  outgoing: Drives [=1], MaintainedBy?
+  incoming: SponsoredBy [..=3]
 ```
 
 ##### 13.3.4.1 Access from inside the node body
 
-Connections of a given type are accessible as `self.in.<ConnType>`
-and `self.out.<ConnType>`, both structural iterables of compile-
-time-known length range:
+Connections of a given type are accessible as `incoming.<ConnType>`
+and `outgoing.<ConnType>` (bare, per §13.7.5) or with the explicit
+`here::` anchor (`here::incoming.<ConnType>`), both structural
+iterables of compile-time-known length range:
 
-- Indexed: `self.in.<ConnType>[i]` and `self.out.<ConnType>[i]` are
+- Indexed: `incoming.<ConnType>[i]` and `outgoing.<ConnType>[i]` are
   legal iff `i < min_cardinality` of that connection type.
-  Example: under `out: Drives [=1]`, `self.out.Drives[0]` is legal.
-- Type-bulk iteration: `for c in self.out.<ConnType>: ...` always
-  works.
+  Example: under `outgoing: Drives [=1]`, `outgoing.Drives[0]` is
+  legal.
+- Type-bulk iteration: `for c in outgoing.<ConnType>: ...` always
+  works. Because incoming connections are named `incoming` (not
+  `in`), `for c in incoming.<ConnType>` reads without colliding with
+  the `for ... in` separator.
 
 The access syntax is symmetric with parts (§13.3.3.2): three
-namespaces (`parts`, `in`, `out`), each grouping cells by declared
-type.
+member namespaces (`parts`, `incoming`, `outgoing`), each grouping
+cells by declared type.
 
 #### 13.3.5 Generic parameters
 
@@ -10698,7 +11552,7 @@ node Buffer[T: Numeric]:
   attr capacity: usize = 16
   attr fill_level: usize = 0
   derived utilization: f32 =
-    self.fill_level as f32 / self.capacity as f32
+    f32(fill_level) / f32(capacity)
 
   parts: BufferSlot[T]
 ```
@@ -10718,6 +11572,38 @@ This separation enforces the "node bodies are declarative" rule:
 nodes describe structure and reactive content; functions and
 methods are imperative computation, distinct in kind.
 
+##### 13.3.6.1 Nodes are not values
+
+A node type may not appear as the return type of a function, may not be
+bound to a `let` or `const`, may not be passed as a function argument by
+value, and is not a first-class value. The only ways to bring a node
+into the reactive graph are via placement syntax (§13.8.1, §13.8.3) or
+via a `repeat` declaration (§13.5.4).
+
+The reason is structural: a node's identity is its **graph path**
+(§15.4.1.1). The kernel uses paths for per-publish DAG construction,
+monomorphization, and hot-reload cell identity (§13.15.2). A function
+call has no stable graph position to give a returned node — any
+identity scheme derivable from a call site (e.g., caller-name plus call
+index) is unstable across reloads and across program runs, breaking
+§13.15.2's identity rule. Admitting function-returned nodes would
+therefore either silently break hot reload or require an anonymous-node
+concept inconsistent with §13.1's static-graph property.
+
+**Factory pattern.** To produce a "configured node from parameters,"
+parameterize the *type* via const-generics or generics
+(`node Synth[const N: usize, …]:`) and write the placement at the call
+site (`Synth[8] my_synth`). The reusable parameterization lives in the
+type definition; the placement happens in a context that owns a graph
+path.
+
+The same principle applies to **connections**, **operators**, and
+**effects**: they are graph members, not first-class values. Functions
+cannot return them by value or accept them as arguments; the language's
+placement and instantiation syntax (§13.8, §13.17, §13.19) is the only
+way to bring them into the graph. The rule is normative; conformant
+compilers enforce it at type-check time.
+
 #### 13.3.7 Exposition (the `expose:` clause)
 
 The `expose:` clause declares the node type's **structural output**
@@ -10730,18 +11616,18 @@ external reader (and the kernel) sees as the node's content.
 node TypeName:
   satisfies SomeTrait
   parts: SomeA, SomeB
-  in: ConnIn1
-  out: ConnOut1
+  incoming: ConnIn1
+  outgoing: ConnOut1
   expose:
     SomeA
     SomeB
   attr foo: i32
   signal user_name: string = "world"
-  derived greeting: string = "hello " ++ self.user_name
+  derived greeting: string = "hello " ++ user_name
 ```
 
-The canonical clause order is: `satisfies` → `parts:` → `in:` →
-`out:` → `expose:` → cell declarations.
+The canonical clause order is: `satisfies` → `parts:` → `incoming:`
+→ `outgoing:` → `expose:` → cell declarations.
 
 ##### 13.3.7.1 Content
 
@@ -10749,9 +11635,9 @@ The body of `expose:` is a list of placements — each entry is a
 `Node[T]` value, with the same syntax as inline child placements
 elsewhere (§13.8). Entries reference:
 
-- A part of self by type-bulk access (`self.parts.SomeA` — the full
+- A part of the instance by type-bulk access (`parts.SomeA` — the full
   list of supplied parts of that type, in placement order).
-- A named part instance (`self.osc1` — see §13.4.1) — when the
+- A named part instance (`osc1` — see §13.4.1) — when the
   exposition needs a specific named child rather than all parts of
   a type.
 - A wrapper placement that contains parts as its own children. The
@@ -10763,7 +11649,7 @@ elsewhere (§13.8). Entries reference:
     parts: Item
     expose:
       SomeInternalWrapper:
-        self.parts.Item
+        parts.Item
   ```
 
   Here `SomeInternalWrapper` is a wrapper node whose body contains
@@ -10779,7 +11665,7 @@ elsewhere — no new control-flow syntax is introduced.
 ##### 13.3.7.2 Default
 
 When `expose:` is omitted, the node's exposition defaults to
-`expose: self.parts` — the kernel traverses all supplied parts in
+`expose: parts` — the kernel traverses all supplied parts in
 declaration order. When the node has no `parts:` clause and no
 `expose:` clause, the exposition is empty (the node has no
 structural output and exists only for its state and connections).
@@ -10792,7 +11678,7 @@ The exposed list is readable from outside the node via the reserved
 content the kernel traverses; external readers and the kernel see
 identical output.
 
-Inside the node body, `self.exposition` is the same list. The
+Inside the node body, the bare `exposition` field is the same list. The
 field is read-only; the exposition is fixed by the type's `expose:`
 clause (and the placer's supplied parts), not mutable at runtime.
 
@@ -10811,7 +11697,7 @@ clause directly. This is the load-bearing distinction:
 A node may receive parts that its exposition does not include — for
 example, a node may accept administrative or diagnostic parts that
 are queried only via the host API, not traversed by the kernel. In
-practice the default `expose: self.parts` covers the common case
+practice the default `expose: parts` covers the common case
 where every supplied part is exposed.
 
 ##### 13.3.7.5 Connections and exposition
@@ -10845,7 +11731,7 @@ addressable only through that parent (e.g., `parent.osc1` or
 for ownership, hot-reload diffing, and addressing — both kinds of
 instances have reactive cells that participate in dependency
 graphs, but a part's cells are reachable through the parent's
-`self.parts.<Type>` mechanism, whereas a top-level instance is
+`parts.<Type>` mechanism, whereas a top-level instance is
 reachable only by its module-scope name or through connections.
 
 Use parts when:
@@ -10869,7 +11755,7 @@ instances appear via placement (§13.8.3).
 directly.** The `parts:` clause is the constraint and supply
 mechanism — declared types, cardinality, and placement-time
 filling. The `expose:` clause (§13.3.7) is the structural output
-the kernel walks; it references parts (via `self.parts.<Type>` or
+the kernel walks; it references parts (via `parts.<Type>` or
 by named instance), possibly wrapping them in internal nodes.
 Parts that the exposition does not include are not traversed by
 the kernel — they remain queryable via the host API and addressable
@@ -10882,7 +11768,7 @@ Parts of a parent instance are accessible in three ways. The
 available access forms depend on whether the parent's `parts:`
 clause is declared:
 
-- **Heterogeneous:** `self.parts` — a structural iterable over all
+- **Heterogeneous:** `parts` — a structural iterable over all
   parts of the parent, regardless of their types.
     - When `parts:` is declared, the iteration variable is typed as
       the sum of the listed types. The body must compile for every
@@ -10891,13 +11777,13 @@ clause is declared:
       cannot be inferred from the declaration alone (any node type
       may have been placed). The body must declare an explicit trait
       bound on the iteration variable (`for p: SomeTrait in
-    self.parts: ...`); the compiler verifies at each placement
+    parts: ...`); the compiler verifies at each placement
       that every placed part type satisfies the bound.
-- **Type-bulk (`parts:` declared only):** `self.parts.<NodeType>` —
+- **Type-bulk (`parts:` declared only):** `parts.<NodeType>` —
   a structural iterable over all parts of the given type. Length
   range is determined by the declared cardinality. Available only
   when `<NodeType>` appears in the `parts:` clause.
-- **Named individual:** `self.<name>` (or `paramName.<name>` from
+- **Named individual:** bare `<name>` (or `paramName.<name>` from
   outside the node body) — accesses a specific part by its
   placement-time name. Names are assigned in the placement body
   (§13.8.3) and visible wherever the placement scope is known.
@@ -10907,10 +11793,10 @@ Summary table:
 
 | Form                         | `parts:` declared | `parts:` omitted                 |
 |------------------------------|-------------------|----------------------------------|
-| `self.parts.<Type>`          | available         | not available                    |
-| `self.parts` (unbounded)     | available         | not available (need bound)       |
-| `self.parts` (trait-bounded) | available         | available (trait bound required) |
-| named (`self.<name>`)        | available         | available                        |
+| `parts.<Type>`          | available         | not available                    |
+| `parts` (unbounded)     | available         | not available (need bound)       |
+| `parts` (trait-bounded) | available         | available (trait bound required) |
+| named (bare `<name>`)        | available         | available                        |
 
 Inside the parent's own type body (its `derived` and `recurrent`
 expressions), only type-bulk and heterogeneous forms are available;
@@ -10933,7 +11819,7 @@ and placement-name.
 
 A function body that receives the parent node as a parameter may
 iterate its parts using a `for` loop, accessed via the parameter
-name (developer-chosen, not `self`).
+name (developer-chosen, not an implicit receiver).
 
 **Type-bulk iteration:**
 
@@ -10946,7 +11832,7 @@ fn total_output(s: Synthesizer) -> f32:
 
 node Synthesizer:
   parts: Oscillator+
-  derived total: f32 = total_output(self)
+  derived total: f32 = total_output(subject)
 ```
 
 `o` has the concrete type `Oscillator` in each iteration. The
@@ -11002,13 +11888,23 @@ so only the matching branch survives in each copy.
 Match exhaustiveness rules apply: if the match omits a declared
 part type and has no wildcard arm, it is a compile error.
 
+**Relation to the general unrolling rule.** Part iteration is the
+part-specialization of the compile-time unrolling rule in §12.3.7.
+`c.parts.Oscillator` and `c.parts` are compile-time-known iterables
+because the parent's `parts:` declaration fixes part identities at
+compile time per §13.1's static-graph principle. The mechanics described
+above — one body copy per part, static dispatch, sum-type collapse via
+`match` — are this specialization in action; a `for` loop in a function
+body whose iterable is *not* part-iteration but is otherwise
+compile-time-known (a range, an array literal) unrolls by the same rule.
+
 #### 13.4.3 Reactive dependency tracking through parts
 
 When a function called from a reactive expression iterates parts,
 each part's reactive cells contribute to the calling expression's
 dependency set. In the example above:
 
-- `total_output(self)` reads `p.output` for each part.
+- `total_output(subject)` reads `p.output` for each part.
 - Each `p.output` is a derived on the part.
 - The `Synthesizer.total` derived's dependency set includes every
   part's `output` derived.
@@ -11025,9 +11921,9 @@ transitively through function calls.
   different names are permitted (subject to the cardinality
   declared in the `parts:` clause).
 - Parts are not added or removed at runtime (except via hot reload).
-- For heterogeneous iteration (`for p in self.parts`), the body
+- For heterogeneous iteration (`for p in parts`), the body
   must compile for every declared part type (§13.4.2). The optional
-  explicit trait bound form (`for p: Trait in self.parts`) gives
+  explicit trait bound form (`for p: Trait in parts`) gives
   clearer error messages and enforces the constraint at the
   iteration site.
 
@@ -11039,8 +11935,8 @@ together:
 ```
 node Composite:
   parts: Oscillator+, Filter [=1], Amplifier [=1]
-  derived total_oscillation: f32 = sum_oscillators(self)
-  derived processed: f32 = process(self)
+  derived total_oscillation: f32 = sum_oscillators(subject)
+  derived processed: f32 = process(subject)
 
 fn sum_oscillators(c: Composite) -> f32:
   mut sum: f32 = 0.0
@@ -11055,10 +11951,10 @@ fn process(c: Composite) -> f32:
 
 -- Placement with optional names:
 Composite c1:
-  Oscillator osc_a
-  Oscillator osc_b
-  Filter flt1
-  Amplifier amp1
+  Oscillator as osc_a
+  Oscillator as osc_b
+  Filter as flt1
+  Amplifier as amp1
 
 -- Named individual access from outside the type body:
 fn debug(c: Composite) -> string:
@@ -11072,52 +11968,51 @@ caller to know placement names).
 
 ### 13.5 Template Scopes and Keyed Instantiation
 
-Some stdlib host nodes (like `Repeat`, §13.5.4) instantiate a child
-*template* — a part placed in their body — zero, one, or many
-times, each instantiation backed by its own state cells. This
-section specifies the **keyed-scope primitive** that standardizes
-how the kernel manages per-instantiation state and how such host
-nodes drive instantiation.
+§13.5.1 defines the **keyed-scope primitive** that underlies the
+language's dynamic-scope reactive constructs. Any conformant kernel
+exposes the three operations of §13.5.1 — `scope_obtain`, `scope_drop`,
+and `scope_evaluate` — by which a template can be instantiated zero, one,
+or many times per source element, with each instantiation backed by its
+own state cells.
 
-The primitive is **runtime-implementable**: any conformant kernel
-exposes the three operations of §13.5.1 to its stdlib host nodes;
-the stdlib's documented hosts (the canonical user `Repeat` in
-§13.5.4, and future siblings such as `Conditional` and `Switch`)
-are layered on top of these operations.
+The user-facing surface for this mechanism is the **`repeat` keyword**
+(§13.5.4), which materializes one scope per element yielded by a
+reactive iterable source (`Signal[I]` where `I: Iterable`, §12.8).
 
 #### 13.5.1 The primitive
 
-For each template-typed parts entry on a host instance — a part
-declared in the host's `parts:` clause that the host's exposition
-(§13.3.7) treats as a per-instantiation template — the kernel
-exposes three operations. The bound template (the part supplied at
-the host's placement site) is fixed for the host's lifetime; the
-operations therefore parameterize only the **key**.
+For each scope-managing construct — a `repeat` declaration (§13.5.4) or
+any future construct invoking this primitive — the kernel exposes three
+operations. The bound template (the construct's body, fixed at compile
+time) does not vary; the operations therefore parameterize only the
+**key**.
 
 - **`scope_obtain(key)`** — return the scope for `key`, allocating
-  from the host's per-template pool if absent. Newly-allocated
+  from the construct's per-template pool if absent. Newly-allocated
   scopes initialize the template's state cells to their declared
   initial values (per §13.2.6).
 - **`scope_drop(key)`** — drop scope `key`: invoke `Drop` (§14.8)
   on its state cells in reverse declaration order; return the pool
   slot.
 - **`scope_evaluate(key)`** — evaluate the template's deriveds and
-  any recurrent arm bodies eligible to fire within scope `key`'s
-  state context. References to `self` inside the template body
-  resolve to scope `key`'s cells; references to the host's own
-  attrs (e.g., via the host's placement name per §13.4.1) resolve
-  to the host instance's cells.
+  any recurrent expressions eligible to fire within scope `key`'s
+  state context. Bare references (and `here::`) inside the template
+  body resolve to scope `key`'s cells; references to the enclosing
+  instance's cells (per the §13.7 scope chain) resolve to that
+  instance's cells.
 
-The host is responsible for sequencing these operations correctly:
-typically `scope_obtain` for new keys, `scope_evaluate` for active
-keys, and `scope_drop` for keys no longer active.
+The construct's elaboration is responsible for sequencing these
+operations correctly: typically `scope_obtain` for new keys,
+`scope_evaluate` for active keys, and `scope_drop` for keys no longer
+active.
 
 ##### 13.5.1.1 Per-template pool
 
-Each template-typed parts entry on a host instance has its own
-keyed pool. The pool's element shape is the template type's
-**state-shape** (§13.5.2). The pool's index space is the host's
-key domain. Scopes are independent — no cell sharing across keys.
+Each scope-managing construct (e.g., each `repeat` declaration —
+§13.5.4) has its own keyed pool. The pool's element shape is the
+template type's **state-shape** (§13.5.2). The pool's index space is
+the construct's key domain. Scopes are independent — no cell sharing
+across keys.
 
 Pool sizing follows the §14.3.5 extensible-pool model: pools grow
 as keys are added and shrink as keys are dropped, subject to the
@@ -11133,24 +12028,25 @@ declares:
 - `recurrent` declarations inside the template's body (§13.2.4).
 
 `derived` declarations are *not* part of the state-shape; they are
-pure functions of state cells and the host's exposed attrs.
-`const` declarations are static and not state.
+pure functions of state cells, the loop binding (in a `repeat`
+context), and the enclosing scope's cells (per §13.7). `const`
+declarations are static and not state.
 
 **When the state-shape is empty** (the template declares only
 deriveds, or no body cells at all), the kernel allocates **no pool**
-for the host's template entry. `scope_obtain(key)` becomes a no-op,
+for the construct's template. `scope_obtain(key)` becomes a no-op,
 `scope_drop(key)` is a no-op, and `scope_evaluate(key)` evaluates
-the template's deriveds against the host's exposed attrs without
-any per-key state context.
+the template's deriveds against the loop binding and the enclosing
+scope's cells without any per-key state context.
 
-This is the **stateless-template fast path**: data-driven
-multiplicity with O(1) cost per data change beyond per-element
-derived evaluation. Programs that use only stateless templates
-incur no per-key allocation overhead.
+This is the **stateless-template fast path**: data-driven multiplicity
+incurs no per-key cell allocation or drop. The per-publish iteration
+floor of §13.5.4.6 (iterate + key + diff) still applies; the fast path
+eliminates only the per-scope storage cost.
 
 The compiler determines a template's state-shape at compile time
 and statically selects between the pool and no-pool case per
-host-template instantiation.
+construct instantiation.
 
 #### 13.5.3 Hot reload and cell identity
 
@@ -11159,159 +12055,331 @@ hot reload per §13.15.2's cell-identity rules. The cell path
 follows §15.4.1.1:
 
 ```
-<host_placement_path>.<key>.<template_field>
+<enclosing_path>.<key>.<template_field>
 ```
 
-Keys are required to be stringifiable primitives (the exact bound
-is specified per host node; §13.5.4 specifies it for `Repeat`).
-The key value serves as the path component.
+`<enclosing_path>` is the fully-qualified path of the enclosing
+instance — the node, placement, or effect that contains the
+scope-managing construct. Keys are required to be stringifiable
+primitives (§13.5.4 specifies the bound for the `repeat` construct,
+via the `StringifiableKey` trait). The key value serves as the path
+component.
 
 Hot-reload changes to the template's body follow the standard
 reload-safe / reload-unsafe rules of §13.15.4, applied uniformly
 across all live keys.
 
-#### 13.5.4 Repeat: data-driven multiplicity
+#### 13.5.4 Dynamic scope materialization via `repeat`
 
-The stdlib provides `Repeat`, the canonical template-hosting node
-for iterating over a `Signal[T[]]` source. `Repeat` declares a
-single template-typed part (`Item`); the placer supplies the
-template by placing it in `Repeat`'s body. `Repeat` uses the
-§13.5.1 primitive directly: it sequences `scope_obtain`,
-`scope_drop`, and `scope_evaluate` per its iteration semantics.
+The `repeat` keyword declares one reactive scope per element of a
+runtime reactive source. Each scope is a template of placements (parts
+and connections) that the kernel materializes per element via §13.5.1's
+operations: `scope_obtain` on key emergence, `scope_drop` on key
+disappearance, `scope_evaluate` per active key per publish.
 
-##### 13.5.4.1 Signature
+`repeat` is the language-level surface of the keyed-scope mechanism. It
+desugars to §13.5.1 directly; the kernel sees no machinery distinct from
+what is already specified there.
 
-```
-node Repeat[T]:
-  default attr source: Signal[T[]]
-  parts: Item!                           // exactly one template part
-  attr key: fn(T, usize) -> K            // K: StringifiableKey, inferred
-
-  attr current: T                        // kernel-updated per iteration
-  attr index: usize                      // kernel-updated per iteration
-  attr first: bool                       // kernel-updated per iteration
-  attr last: bool                        // kernel-updated per iteration
-  attr count: usize                      // kernel-updated per iteration
-
-  expose: self.parts.Item
-```
-
-`K` is the key function's return type, inferred at placement. `K`
-must satisfy the `StringifiableKey` trait — the stdlib trait
-admitting `i8`–`i64`, `u8`–`u64`, `bool`, `char`, `string`. When
-`key` is omitted, the stdlib default returns `index` unchanged and
-`K` is `usize`.
-
-- `source` is the iterated signal (default attr; set via `/expr`
-  per §13.8.5.2).
-- `parts: Item!` declares that placements may supply exactly one
-  part of type `Item`. The Item type is what the placer provides
-  at the `Repeat` body — the template that `Repeat` invokes per
-  source element. The Item's underlying node type must declare a
-  `default attr` whose type is `T` (so `/ref.current` can bind it
-  at placement).
-- `key` is a function from `(element, index)` to a stringifiable
-  primitive.
-- `current`, `index`, `first`, `last`, `count` are attrs the
-  template references via Repeat's placement name (§13.4.1). The
-  kernel updates these as part of Repeat's iteration semantics
-  (§13.5.4.2); they are not host-writable.
-- `expose: self.parts.Item` declares the exposition (§13.3.7):
-  the kernel traverses the supplied Item template. Repeat's
-  kernel-aware iteration semantics drive that traversal per
-  source element with §13.5.1's scope operations.
-
-##### 13.5.4.2 Iteration
-
-Whenever `source` is dirty, the kernel:
-
-1. Computes the key for each element via the `key` function.
-2. Keys in `old ∩ new` carry over: their scopes are preserved per
-   §13.5.1; exposed attrs (`current`, `index`, etc.) are updated
-   for re-invocation.
-3. Keys in `old − new` are dropped: `scope_drop(key)` is invoked.
-4. Keys in `new − old` are added: `scope_obtain(key)` is invoked.
-5. For each key in `new` in element order, the kernel updates
-   exposed attrs and calls `scope_evaluate(key)`.
-
-Reordering elements in `source` without changing the key set
-performs no scope allocations or drops — only the exposed attrs
-(`index`, `first`, `last`) update.
-
-##### 13.5.4.3 Use
+##### 13.5.4.1 Syntax
 
 ```
-node PostItem:
-  default attr post: Post
-  attr expanded: bool = false
-  derived title: string = self.post.title
+repeat <bind> in <source>:
+  <body>
 
-UI app:
-  signal posts_data: Post[] = []
-  Repeat ref/posts_data:
-    PostItem/ref.current
+repeat <bind> in <source> keyed by <key-expr>:
+  <body>
 ```
 
-`Repeat` iterates `posts_data`; for each post, the kernel
-`scope_obtain`s a scope keyed by index (since `key` is omitted),
-binds `ref.current` to that post, and `scope_evaluate`s the
-template. `PostItem`'s `expanded` cell is allocated per-key.
+- **`<source>`** is `Signal[I]` for some `I: Iterable` (§12.8). The
+  iterator must terminate at each evaluation (see §13.5.4.8). The
+  standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
+  N), `HashSet[T]`, and `HashMap[K, V]`; user types may fulfill
+  `Iterable` to participate. `Stream[T]` is excluded by design — it's
+  an event source, not a collection-with-a-current-snapshot, and its
+  admission into `repeat` requires distinct add/drop semantics deferred
+  to a future revision.
+- **`<bind>`** is either a bare identifier or a tuple-destructuring
+  pattern per §12.12.1 (the same destructuring grammar the for-loop's
+  iteration variable accepts; pattern rules in §6.2.4 and §9.2.2).
+  Tuple destructure is the idiomatic form for `HashMap[K, V]`, whose
+  iterator yields `(K, V)` pairs.
+- **Bind ownership.** `<bind>` is typed as the iterator's element type
+  after **move-promotion**: owned `T` rather than the borrow-equivalent
+  `T` that `Iterable::iterator` would naturally yield under the
+  default `type Item = T` slot convention (§3.1.2, §12.7).
+  Move-promotion is sound because the source value is read-only during
+  scope_evaluate — a publish's current buffer is not mutated; writes
+  go to the next buffer per §14.3.3 — so each element has unique
+  access for the duration of its scope's evaluation. The mechanism is
+  analogous to §12.7.2's linear-ownership optimization applied to the
+  iteration source: no copy is performed at the machine level; the
+  kernel hands each scope_evaluate a unique pointer to its element.
+  Attrs, connection arguments, and other placement targets in the body
+  therefore see owned types — borrow-equivalent aliases do not leak
+  into attribute or argument positions through `repeat`.
+- **`<body>`** is an indented **placement-body block** following
+  §13.8.3's grammar — any number of placements (parts and/or connections)
+  per iteration, with the ordinary clause ordering of §13.8.9 and the
+  whitespace-separation / self-delimiting rules of §13.8.10.
+- **Key derivation** proceeds by ordered precedence. The compiler picks
+  the first applicable path:
+  1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
+     is evaluated with the bind in scope. The result must be a
+     `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
+     `string`). Explicit always wins when present.
+  2. **`Keyed` trait** — if the element type fulfills the stdlib
+     `Keyed` trait, the key is `Keyed::key(element)`. Trait shape:
+     ```
+     trait Keyed:
+       type Key: StringifiableKey
+       fn key(value: Subject) -> Key
+     ```
+     A record opts into implicit keying by fulfilling `Keyed` once.
+     A type fulfills `Keyed` for at most one `Key` (standard trait
+     coherence per §3.7); within that constraint, the `Key` associated
+     type is uniquely determined.
+  3. **Stringifiable element** — if the element type is itself a
+     `StringifiableKey`, the element value is the key.
+  4. **Otherwise** — compile error: *"element type T doesn't fulfill
+     `Keyed` and isn't a stringifiable primitive; either fulfill
+     `Keyed` for T or add `keyed by <expr>`."*
 
-For reordering-stable state, supply `key` on Repeat's placement:
+The rule is strict precedence: path 2 always wins over path 3 when
+both apply (e.g., when a user has fulfilled both `Keyed` and
+`StringifiableKey` for the same newtype), and path 1 always wins over
+2 and 3. There is no ambiguity to resolve at the call site.
+
+##### 13.5.4.2 Iteration semantics
+
+Whenever `<source>` is dirty, the kernel:
+
+1. Reads the current value of `<source>` from the signal's current
+   buffer (§14.3.3) and iterates it via the borrow form of `Iterable`
+   (§12.8), enumerating each element. The bind sees the owned element
+   type per the move-promotion rule of §13.5.4.1.
+2. Derives the key for each element per the ordered selection of
+   §13.5.4.1 (explicit `keyed by`, then `Keyed` trait, then
+   stringifiable element, else compile error).
+3. Diffs the new key set against the previous:
+   - Keys in `old ∩ new` carry over: their scopes are preserved per
+     §13.5.1; the binding `<bind>` is updated to the new element.
+   - Keys in `old − new` are dropped: `scope_drop(key)` releases the
+     per-key cells.
+   - Keys in `new − old` are added: `scope_obtain(key)` initializes
+     the per-key cells per §13.5.2's state-shape.
+4. For each key in iterator order, the kernel updates `<bind>` and
+   calls `scope_evaluate(key)`.
+
+Reordering elements in `<source>` without changing the key set performs
+no scope allocations or drops; only the iteration order changes.
+Unordered iterables (`HashSet[T]`, `HashMap[K, V]`) are diffed by key
+identity; iteration order is whatever the underlying type's iterator
+emits and does not affect scope identity.
+
+##### 13.5.4.3 Worked examples
+
+**io-driven topology** — render one row component per database row in an
+effect's `desired:` block:
 
 ```
-Repeat ref/posts_data | key=post_id_key:
-  PostItem/ref.current
+effect DBQuery:
+  observed:
+    signal current_rows: Vec[Row] = []
+
+  desired:
+    repeat row in current_rows keyed by row.id:
+      RowComponent | data=row
 ```
 
-where `post_id_key` is `fn(p: Post, _: usize) -> i64` returning
-`p.id` (defined as a free function or stdlib utility).
+The host pushes new query results into `current_rows`; the kernel's
+reconciler diffs the key set and materializes / drops `RowComponent`
+scopes per row. Each scope's `RowComponent` cells live at path
+`<effect-instance>.<row.id>.<cell>` per §13.5.3.
 
-##### 13.5.4.4 Cell identity
+**Reactive-signal-driven children in a node body:**
 
-Per the §13.5.3 path rule, the per-key cell for `PostItem`'s
-`expanded` attr in the example above (with `posts_data` containing
-a post whose key evaluates to `42`) is at path
-`app.ref.42.expanded`.
+```
+node VoiceMixer:
+  attr active_voices: Vec[VoiceConfig] = []
+  repeat cfg in active_voices keyed by cfg.voice_id:
+    Voice | params=cfg
+```
 
-When the template is **stateless** (its state-shape is empty per
-§13.5.2), no per-key cells are allocated.
+Each `Voice` scope's state (recurrents inside `Voice`) persists across
+publishes for the same `voice_id`. The attr is a reactive cell — reads
+of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`;
+`Vec[VoiceConfig]: Iterable` satisfies `repeat`'s source-type
+requirement, with `Vec` supplying the iterator inside the `Signal`.
+
+**Implicit keying via stringifiable element** — when the iterator's
+`Item` type is itself a `StringifiableKey`, no `keyed by` is needed:
+
+```
+node UserPanel:
+  attr active_user_ids: Vec[u64] = []
+  repeat user_id in active_user_ids:
+    UserCard | id=user_id
+```
+
+**`HashMap` source with destructuring bind** — `HashMap[K, V]`
+iterates as `Iterable` yielding `(K, V)` pairs. Move-promotion
+(§13.5.4.1) gives the bind an owned `(K, V)`, so ordinary tuple
+destructuring (§12.12.1) binds owned `sid` and `info`; `keyed by`
+names the map key as the scope key:
+
+```
+node SessionPanel:
+  attr sessions: HashMap[SessionId, SessionInfo] = HashMap::new()
+  repeat (sid, info) in sessions keyed by sid:
+    SessionRow | id=sid info=info
+```
+
+**Implicit keying via the `Keyed` trait** — records opt into implicit
+keying once, by fulfilling `Keyed`:
+
+```
+type DbRow:
+  id: u64
+  name: string
+  payload: Payload
+
+fulfill Keyed for DbRow:
+  type Key = u64
+  fn key(r: &DbRow) -> u64:
+    r.id
+
+effect DBQueryAuto:
+  observed:
+    signal rows: Vec[DbRow] = []
+  desired:
+    repeat row in rows:                  // implicit via DbRow's Keyed
+      RowComponent | data=row
+```
+
+No `keyed by` clause is needed at the call site — the `Keyed` fulfill
+on `DbRow` supplies `Keyed::key(&row)` automatically, and every
+`repeat` over `Vec[DbRow]` (or any other iterable of `DbRow`) reuses
+the same key derivation.
+
+##### 13.5.4.4 Cell identity across reload
+
+Per §13.5.3's path rule, each scope's cells are identified by the path
+`<enclosing>.<key>.<cell>`. A key reappearing across a hot reload —
+whether the reload is a source edit or a program rerun — preserves its
+scope's state, identified by the same path. When the template is
+**stateless** (its state-shape is empty per §13.5.2), no per-key cells
+are allocated and the path machinery is bypassed.
 
 ##### 13.5.4.5 Hot reload
 
-`Repeat`'s per-key cells follow §13.5.3 / §13.15.2. A change to
-the `key` function is reload-unsafe at the per-instance level
-(§13.15.4): old keys may not match new ones, so per-instance
-restart of the `Repeat` is required. The kernel diagnoses this
-and performs the restart cleanly.
+A `repeat` declaration follows §13.15.2's path-based cell identity.
+Source mutations across a reload drive the same diff as a runtime
+mutation: scopes whose keys disappear are dropped; scopes whose keys
+appear are allocated fresh. Body changes (the template's placements
+and their attrs) apply uniformly to all existing scopes.
+
+Changes to the key derivation — either the `keyed by` expression or
+the body of a `Keyed::key` implementation the construct depends on —
+are **reload-safe** per the general rule of §13.15.3 step 8: function
+and method bodies are recomputed against current inputs without a
+restart. The kernel runs the new key derivation on the next publish,
+diffs against the previously-known key set, and drops or obtains
+scopes per §13.5.4.2 in the ordinary way. The behavioral consequence
+the user should understand: when a key derivation change causes a
+given element to produce a different key, the *old key's scope state
+is dropped* and the *new key's scope is freshly allocated* — per-scope
+state is identified by key, not by element identity, so a key shift
+necessarily discards the prior scope's cells. This is identical to a
+runtime source mutation that swaps element identities; no special
+reload-time machinery is needed.
 
 ##### 13.5.4.6 Performance
 
-- Stateless template (state-shape empty per §13.5.2): O(1) per
-  data change beyond per-element derived evaluation. No
-  allocation.
-- Stateful template, element add/remove: O(K) per data change
-  where K is the number of added/removed keys (key-set diff plus
-  per-key cell init/drop).
-- Stateful template, reorder: O(1) per moved element. State
-  follows key; no allocation or drop.
+`repeat` follows the publish-time-recompute model of the rest of the
+reactive system: signals carry current value, not deltas. When
+`<source>` is dirty, the kernel re-iterates and re-keys to compute the
+new key set.
 
-Programs that do not use `Repeat` incur no runtime cost from its
-machinery; the cost model is "pay for what you iterate."
+- **Per-publish floor**: O(N) iterate + O(N) key derivation + O(N)
+  hash-diff against the previous key set, where N is the current
+  element count.
+- **Scope add/remove**: O(K + K') on top of the floor, where K is keys
+  removed and K' is keys added (each invokes `scope_drop` or
+  `scope_obtain` per §13.5.1).
+- **Per-scope evaluate**: cost of the template body × number of live
+  keys.
+- **Pure reorder**: *scope-management* work is zero — keys carry
+  across reorderings; no `scope_obtain` or `scope_drop` is invoked.
+  The per-publish floor (iterate + key + diff) still applies; reorder
+  doesn't shortcut detecting that the key set is unchanged.
+- **Clean publish** (`<source>` not dirty): zero work. `repeat` does
+  not re-iterate.
+- **Stateless template** (state-shape empty per §13.5.2): no per-key
+  cells are allocated; the per-publish floor still applies to iterate
+  + key + diff.
 
-##### 13.5.4.7 Restrictions
+The O(N) floor is structural to "signal-carries-current-value." A
+delta-driven variant (`repeat` over a structural-delta reactive shape)
+is a future revision; v1 does not provide it.
 
-- The template's underlying node type must declare `default attr
-  d: T` so that `/expr` at the template's placement (e.g.,
-  `PostItem/ref.current`) binds correctly.
-- The template references Repeat's exposed attrs via the
-  placement name; closure-over-outer-state beyond §13.12's
-  reactive transparency is not supported.
-- Nested `Repeat` instances are permitted but each requires a
-  distinct placement name to avoid path collisions (§13.5.4.4).
-- The `key` function must be reactive-pure: no dependencies
-  beyond `(item, index)` per §13.12. This guarantees key
-  stability across evaluations.
+Programs that do not use `repeat` incur no runtime cost from the
+template-scope machinery; the cost model is "pay for what you iterate."
+
+##### 13.5.4.7 Admitted and rejected contexts
+
+`repeat` is admitted in:
+
+- **Node bodies** (§13.3) — scopes become children of every instance of
+  the enclosing node, materialized at instantiation and tracking the
+  source.
+- **Placement bodies** (§13.8.3) — scopes become children of this
+  specific placement.
+- **Effect `desired:` blocks** (§13.19.4) — scopes become part of the
+  effect's declared desired state, reconciled by the host.
+
+`repeat` is **not** admitted in:
+
+- **Function bodies** — functions produce values, not reactive
+  structure. Same rule as `derived` / `recurrent` / `stream`.
+- **Effect `observed:` blocks** (§13.19.5) — observed blocks declare
+  cells receiving host-pushed data; they do not host reactive-structure
+  declarations. To materialize per-element scopes from an observed
+  cell, place the `repeat` in a node body or `desired:` block that
+  consumes the observed cell.
+- **Operator bodies** (§13.17.4) — operators are reactive-transparent
+  transforms with fixed-shape state; dynamic-scope materialization is
+  not in scope for v1.
+- **Connection bodies** (§13.6) — connections are minimal glue between
+  source and destination; dynamic-scope structure belongs in node
+  bodies, placement bodies, or `desired:` blocks.
+- **Trait and `fulfill` blocks** — these declare behavior, not graph
+  structure.
+
+In each rejected context, the diagnostic identifies the misplaced
+`repeat` and points at the appropriate target context.
+
+##### 13.5.4.8 Restrictions
+
+- The `<key-expr>` must be reactive-pure: no reactive dependencies
+  beyond `<bind>` per §13.12. This guarantees key stability across
+  evaluations. The same purity rule applies to the `Keyed::key` method
+  body when implicit keying goes through the `Keyed` trait.
+- The body may not close over the enclosing scope's mutable state
+  beyond §13.12.3's closure-snapshot semantics.
+- Nested `repeat` constructs are permitted; each nested level's scopes
+  hang off the outer scope's path per §13.5.3.
+- **The iterator must terminate at each evaluation.** Vec[T],
+  HashSet[T], T[N], HashMap[K, V], and any user `Iterable`
+  implementation over a bounded-at-publish-time collection satisfy
+  this. The spec does not mandate a compiler check for termination on
+  user `Iterable` implementations — they are trusted. An iterator
+  whose `next` never returns `None` will hang the iterate phase; this
+  is a programmer error against the trait's intended use.
+- The same element-key, when reachable through different element values
+  across publishes, identifies the same scope. The element's *value* is
+  carried in `<bind>` and may change publish to publish; the *key*
+  identifies the scope.
 
 ### 13.6 Connections
 
@@ -11333,11 +12401,11 @@ the act of driving. Connections also satisfy traits (like
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
 connection participates in the source node's outgoing surface
-(declared via `out:`) and the destination node's incoming surface
-(declared via `in:`).
+(declared via `outgoing:`) and the destination node's incoming
+surface (declared via `incoming:`).
 
 A node declares which connection types it can participate in via
-its `in:` and `out:` clauses (§13.3.4), with optional cardinality
+its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
 constraints. The actual connection instances appear at placement
 (§13.8.4).
 
@@ -11377,8 +12445,9 @@ connection TypeName[GenericParams]?:
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance writable cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent name: Type = init | on t1: expr           // per-instance memory cells
+  recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
+  stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 ```
 
 A connection type may declare a `default attr` per §13.2.2.1. At
@@ -11395,7 +12464,7 @@ connection Drives:
   attr enhanced_handling: bool = false
   attr aggressiveness: f32 = 0.5
   derived effective_speed: f32 =
-    self.to.top_speed * (self.from.expertise_level as f32 / 10.0)
+    to.top_speed * (f32(from.expertise_level) / 10.0)
 ```
 
 `from` and `to` are not attributes — they are endpoint slots,
@@ -11403,7 +12472,7 @@ first-class structural elements of every connection. Attribute
 syntax (placement-time `name=value` settings via the attribute
 clause, flags) does not target them.
 
-Inside the body, `self.from` and `self.to` resolve to the endpoint
+Inside the body, `from` and `to` resolve to the endpoint
 instances directly (their concrete types).
 
 ##### 13.6.1.2 Cartesian form (multiple from-types and/or to-types)
@@ -11412,12 +12481,12 @@ instances directly (their concrete types).
 connection TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, signal, attr, recurrent, derived) per §13.6.1.1
+  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
-placements. Inside the body, `self.from` is the sum type of all
-listed from-types, and `self.to` is the sum type of all listed
+placements. Inside the body, `from` is the sum type of all
+listed from-types, and `to` is the sum type of all listed
 to-types. Pattern matching is required to extract the concrete
 endpoint types.
 
@@ -11428,7 +12497,7 @@ connection Owns:
   from: Person, Company
   to: Vehicle, Property
   attr acquired_at: i64
-  derived display: string = match (self.from, self.to):
+  derived display: string = match (from, to):
     (Person(p), Vehicle(v)): "{p.name} owns car {v.id}"
     (Person(p), Property(pr)): "{p.name} owns property {pr.id}"
     (Company(c), Vehicle(v)): "company {c.name} owns car {v.id}"
@@ -11446,11 +12515,11 @@ connection TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, signal, attr, recurrent, derived) per §13.6.1.1
+  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
-body, the endpoints are accessed via `self.pair`, a sum type whose
+body, the endpoints are accessed via `pair`, a sum type whose
 variants correspond to the declared pairs.
 
 Example:
@@ -11461,13 +12530,13 @@ connection Drives:
     Driver -> Vehicle
     Racer -> Boat
   attr aggressiveness: f32 = 0.5
-  derived speed: f32 = match self.pair:
-    (Driver(d), Vehicle(v)): v.top_speed * (d.expertise as f32 / 10.0)
+  derived speed: f32 = match pair:
+    (Driver(d), Vehicle(v)): v.top_speed * (f32(d.expertise) / 10.0)
     (Racer(r), Boat(b)): b.knots * r.aggression
 ```
 
-In pairs form, `self.from` and `self.to` are not independently
-accessible — endpoints must be extracted via `self.pair` and
+In pairs form, `from` and `to` are not independently
+accessible — endpoints must be extracted via `pair` and
 pattern matching. This reflects the semantic coupling: pair-form
 connections enforce that specific from-types pair with specific
 to-types.
@@ -11477,8 +12546,8 @@ Rules for pairs form:
 - Duplicate pairs (same `From -> To` listed twice) are a compile
   error.
 - Asymmetric pair counts are allowed; pair uniqueness, not type
-  count, is what matters. `pairs: A -> X; A -> Y; B -> Y` is legal
-  (A can go to X or Y; B only to Y).
+  count, is what matters. A `pairs:` block listing `A -> X`,
+  `A -> Y`, and `B -> Y` is legal (A can go to X or Y; B only to Y).
 - All attrs/deriveds in the body are uniform across pairs. If
   pair-conditional content is needed, declare a separate connection
   type. (Pair-conditional content would require trait-like
@@ -11492,20 +12561,20 @@ node bodies (§13.3.6).
 The endpoint access inside a connection body depends on the form
 of its declaration (§13.6.1):
 
-- **Single form** (`from: X / to: Y`): `self.from` is typed as `X`
-  directly; `self.to` is typed as `Y` directly. Attrs and deriveds
-  of the endpoints are accessible via `self.from.attr_name`,
-  `self.to.attr_name`, etc.
-- **Cartesian form** (`from: X, Y / to: A, B`): `self.from` is the
-  sum `X | Y`; `self.to` is the sum `A | B`. Pattern matching
-  against the sums (typically as a tuple `(self.from, self.to)`)
+- **Single form** (`from: X / to: Y`): `from` is typed as `X`
+  directly; `to` is typed as `Y` directly. Attrs and deriveds
+  of the endpoints are accessible via `from.attr_name`,
+  `to.attr_name`, etc.
+- **Cartesian form** (`from: X, Y / to: A, B`): `from` is the
+  sum `X | Y`; `to` is the sum `A | B`. Pattern matching
+  against the sums (typically as a tuple `(from, to)`)
   is required to extract concrete endpoint types.
-- **Pairs form** (`pairs:`): `self.pair` is the sum of declared
-  (FromType, ToType) tuples. Pattern matching against `self.pair`
-  extracts the concrete pair. `self.from` and `self.to` are not
+- **Pairs form** (`pairs:`): `pair` is the sum of declared
+  (FromType, ToType) tuples. Pattern matching against `pair`
+  extracts the concrete pair. `from` and `to` are not
   independently available in pairs form.
 
-`self.from`, `self.to`, and `self.pair` are bound at the
+`from`, `to`, and `pair` are bound at the
 connection's *placement* time. Each placement specifies its source
 (the enclosing instance) and destination (a bare-identifier reference
 in the placement's body, §13.8.5.1). Inside the connection type's
@@ -11532,6 +12601,11 @@ A connection body does not contain `fn` declarations. Functions on
 connections are free functions taking the connection type, dispatched
 via uniform call syntax. Trait methods are implemented in `fulfill`
 blocks. Same rule as nodes (§13.3.6).
+
+A connection body also does not contain `repeat` declarations (§13.5.4).
+Connections are minimal glue between source and destination instances;
+dynamic-scope structure belongs in node bodies, placement bodies, or
+effect `desired:` blocks.
 
 #### 13.6.5 The `Circularity` trait
 
@@ -11567,72 +12641,231 @@ simultaneity (e.g., "destination plays alongside source") should
 *not* satisfy `Circularity`, since cycles through such connections
 would imply infinite simultaneous activation.
 
-### 13.7 The `self` Keyword
+### 13.7 Name Resolution in Node and Connection Scopes
 
-`self` is a context-restricted keyword that resolves to the instance
-currently being declared or constructed.
+Name resolution in Ductus proceeds outward through enclosing scopes,
+inner-most first — standard lexical scoping. A node or connection
+body is a scope like any other; its members are in scope within the
+body's reactive expressions. There is no special "receiver" concept:
+a bare name binds to the nearest enclosing scope that declares it.
 
-#### 13.7.1 Scope
+Two explicit *scope anchors* disambiguate when a name is declared in
+more than one reachable scope:
 
-`self` is available only inside the body of a node or connection
-declaration. Specifically, in:
+- **`here::x`** resolves `x` in the current (innermost) scope —
+  inside a node/connection body, the instance body scope.
+- **`module::x`** resolves `x` in the module top-level scope.
 
-- Attr default expressions: `attr x: i32 = self.other_attr + 1`.
-- Recurrent initial-value expressions: `recurrent x: i32 = self.other_attr | ...`.
-- Recurrent arm expressions: `... | on tick: self.x + 1`.
-- Derived expressions: `derived y: bool = self.x > 0`.
-- Iteration over parts in reactive expressions inside a node body:
-  `for p in self.parts: ...`. Inside free functions that receive
-  the node as a parameter, the parameter name (developer-chosen)
-  is used to refer to the instance, not `self`.
+Both are scope resolution: `here` and `module` are *namespaces*, not
+values, so they use the `::` path separator (as in `Type::CONST` and
+turbofish `::[T]`). They are parallel — each names *which scope* to
+look `x` up in.
 
-`self` is *not* available in:
+Distinct from these is **`subject`**, the instance *value* — the
+entity whose body is being declared. `subject` is used only when the
+instance must be handled as a value (passed to a function, or used
+as the receiver of uniform-call-syntax dispatch), not for routine
+member access. Routine member access uses a bare name or `here::`
+(§13.7.2); `subject` is reserved for the value role (§13.7.7).
 
-- Record or enum body declarations.
-- Trait declarations (use the capitalized `Self` for the type-level
-  identifier per §3.1.1).
-- Free function bodies, including functions whose first parameter
-  is a node or connection type. Such functions use the parameter's
-  name to refer to the instance.
-- Module top-level scope.
+#### 13.7.1 The scope chain
+
+Within a node or connection body, the scope chain from inner-most
+to outer-most is:
+
+1. **Local bindings** — `let` bindings and `for`-loop variables
+   inside a reactive expression.
+2. **The instance body scope** — the node's or connection's members:
+   `attr`, `signal`, `recurrent`, `derived`, `stream` cells; `parts`;
+   and the reserved endpoint/structure fields (`from`, `to`,
+   `incoming`, `outgoing`, `pair`, `exposition` — §13.7.5).
+3. **The module top-level scope** — module-level `signal`, `derived`,
+   `recurrent`, `stream`, `const`, and `let` declarations.
+
+A bare name resolves to the nearest scope in this chain that
+declares it. Inside a node body, a bare reference to a member
+resolves to that member (scope 2) without needing `here::`; a bare
+reference to a module-level name not shadowed by a member resolves
+to the module-level declaration (scope 3).
+
+```
+signal master_gain: f32 = 1.0          // module-level
+
+node Channel:
+  attr local_gain: f32 = 0.5
+  derived effective: f32 = local_gain * master_gain
+  //                       ^^^^^^^^^^   ^^^^^^^^^^^
+  //                       member       module-level
+  //                       (scope 2)    (scope 3, not shadowed)
+```
+
+Neither reference needs `here::` or `module::`: `local_gain` is found
+in the body scope, `master_gain` in the module scope, and there is
+no collision.
+
+#### 13.7.2 The `here::` anchor
+
+`here::x` explicitly resolves `x` in the current scope — inside a
+node or connection body, the instance body scope (scope 2) —
+bypassing inner local bindings and ignoring any module-level
+declaration of the same name. `here` is a namespace anchor, not a
+value; it names *which scope* to resolve in.
+
+`here::` is meaningful in any scope (function body, operator body,
+trait body, node/connection body): it always means "the binding
+named `x` in this very scope, not an outer one." Inside a
+node/connection body it reaches the instance members. Type-level
+positions (trait declarations, `fulfill` blocks) use the `Subject`
+alias (§13.7.7) for the subject type.
 
 ```
 node Driver:
   attr expertise_level: i32 = 5
-  attr risk_tolerance: f32 = 0.5
-  derived skill_factor: f32 = self.expertise_level as f32 / 10.0
-                                   //  ^^^^ self inside node body — valid
+  derived skill_factor: f32 = f32(here::expertise_level) / 10.0   // explicit anchor
+  derived also_skill: f32 = f32(expertise_level) / 10.0           // bare — same cell
 
 fn aggressive(d: Driver) -> bool:
-  d.risk_tolerance > 0.7        // function uses parameter name, not self
+  d.risk_tolerance > 0.7        // free function uses the parameter name
 ```
 
-#### 13.7.2 Resolution and reactive dependencies
+The bare and `here::`-anchored forms resolve to the same cell when
+there is no collision; `here::` is the explicit form, useful for
+clarity or required when disambiguating a collision (§13.7.4).
 
-A reference through `self` to an attr, recurrent, or derived
-participates in the reactive dependency graph in the usual way.
-`derived x: f32 = self.y + 1` depends on `self.y`; when `self.y`
-changes, `x` becomes dirty.
+#### 13.7.3 The `module::` anchor
 
-For each *instance* of the type, `self` resolves to that specific
-instance. The compiler emits dependency edges per-instance: instance
-`A` of `Driver` has a `skill_factor` cell whose dependency set
-includes instance `A`'s `expertise_level` cell, not the cell of
-some other Driver instance.
+`module::x` explicitly resolves `x` in the enclosing module's
+top-level scope (scope 3), bypassing the body and local scopes.
+`module` denotes the current module's namespace; it is not a value,
+so resolution uses `::`, not `.`.
 
-#### 13.7.3 Self vs Self (lowercase vs capitalized)
+```
+signal tick: i64 = 0
 
-The capitalized `Self` is the type-level identifier used in trait
-declarations and `fulfill` blocks (§3.1.1). It refers to the
-implementing type, not an instance.
+node Counter:
+  recurrent tick: i64 = observe:            // a member also named `tick`
+    on module::tick: tick.previous(0) + 1   // trigger on the module-level tick;
+                                            // tick.previous refers to the member
+```
 
-The lowercase `self` is the instance-level identifier used in node
-and connection bodies. It refers to a specific instance at
-runtime.
+`module::` reaches only the current module's top level. Cross-module
+access uses the module-path mechanism of §10. (`module::` is the
+in-body counterpart to that mechanism — see §10.2.3.)
 
-The two are distinct: `Self` is a type-system concept usable only
-in type positions; `self` is a value usable only in expression
-positions inside node/connection bodies. They never overlap.
+#### 13.7.4 Ambiguity is a compile error
+
+When a bare name is declared in *both* the instance body scope and
+the module top-level scope, a bare reference is **ambiguous and is a
+compile error**. The programmer must disambiguate with `here::x` (the
+member) or `module::x` (the module-level declaration):
+
+```
+signal gain: f32 = 1.0           // module-level
+
+node Channel:
+  attr gain: f32 = 0.5           // member with the same name
+
+  derived a: f32 = gain          // ✗ compile error: ambiguous `gain`
+  derived b: f32 = here::gain     // ✓ the member (0.5)
+  derived c: f32 = module::gain  // ✓ the module-level signal (1.0)
+```
+
+This is deliberate: bare names never silently shadow across the
+body/module boundary. The error directs the programmer to anchor
+explicitly. (Inner-most local bindings — `let`, `for`-vars — do
+shadow outer scopes normally, per ordinary lexical scoping; the
+compile-error rule applies specifically to the body-vs-module
+collision, where silent shadowing would be a refactoring hazard.)
+
+Diagnostic class:
+
+```
+error: ambiguous name `gain` — declared as both an instance member and a module-level cell
+  --> derived a: f32 = gain
+                       ^^^^
+  hint: anchor explicitly: `here::gain` for the member, or
+        `module::gain` for the module-level declaration
+```
+
+#### 13.7.5 Reserved-field access
+
+The reserved fields of a node or connection instance — `from`, `to`
+(connection endpoints, §13.6), `incoming`, `outgoing` (connection
+sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
+`exposition` (§13.3.7) — are members of the instance body scope.
+They resolve by bare name in expression-operand position, exactly
+like user-defined members:
+
+```
+connection Drives:
+  from: Driver
+  to: Drivable
+  derived speed: f32 = f32(from.expertise_level) * to.top_speed
+  //                   ^^^^                          ^^
+  //                   here::from                     here::to
+
+node Display:
+  incoming: ShowsCount [=1]
+  derived shown: string = "{incoming.ShowsCount[0].count}"
+```
+
+These keywords retain their clause-header meaning only in
+declaration position (statement level, trailing colon: `from:`,
+`incoming:`, `parts:`). In expression-operand position they are the
+corresponding instance field. No collision with user names is
+possible — reserved words cannot be declared as cell names. `here::`
+remains available as the explicit form (`here::from`, `here::incoming`).
+
+Note that `in` is *not* among these: incoming connections are named
+`incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
+separator (§12.3). `for x in incoming.ShowsCount` reads without
+collision.
+
+#### 13.7.6 Resolution and reactive dependencies
+
+A reference to a cell — bare, `here::`-anchored, or `module::`-
+anchored — participates in the reactive dependency graph in the
+usual way. `derived x: f32 = y + 1` depends on whichever cell `y`
+resolves to; when that cell changes, `x` becomes dirty.
+
+For each *instance* of a type, body-scope references resolve to that
+specific instance's cells. The compiler emits dependency edges
+per-instance: instance `A` of `Driver` has a `skill_factor` cell
+whose dependency set includes instance `A`'s `expertise_level` cell,
+not the cell of some other Driver instance. `module::` references
+resolve to the single shared module-level cell.
+
+#### 13.7.7 `subject`, `Subject`, `here`, and `module`
+
+Four reserved identifiers, reflecting two distinct kinds of thing —
+*values* (used in expression positions) and *namespaces* (used as the
+left side of `::`):
+
+- **`subject`** — the instance *value*, available in node/connection
+  bodies. It is the whole instance, suitable for passing to a function
+  that operates on the type: `total_output(subject)`. It is not an OOP
+  receiver — the "methods" of a type are ordinary scoped functions
+  that take the instance as a developer-named first parameter
+  (`fn display(value: Subject)`, §3.3.1). Because dispatch is by
+  first argument, `subject.some_method()` and `some_method(subject)`
+  are the same call written two ways; the dot is sugar, not a receiver
+  binding. There is no implicit receiver anywhere — the instance is
+  always explicit, as `subject` inside a node/connection body or as a
+  named parameter in a `fulfill`-block function.
+- **`Subject`** — the *type-level* alias for the implementing/subject
+  type, usable only in type positions in trait declarations and
+  `fulfill` blocks (§3.1.1). It replaces the older `Self` alias.
+- **`here`** — the current (innermost) scope as a *namespace*. Scope
+  resolution uses `::`: `here::x` resolves `x` in the current scope,
+  bypassing any shadowing from inner blocks. `here` is not a value and
+  has no `.` form (§13.7.2).
+- **`module`** — the enclosing module *namespace*. Scope resolution
+  uses `::`: `module::x`. It is not a value and has no `.` form.
+
+`subject` is a value usable in expression positions; `Subject` is a
+type usable in type positions; `here` and `module` are namespaces
+usable only as the left side of `::`. They never overlap.
+
 
 ### 13.8 Placement
 
@@ -11651,23 +12884,45 @@ Driver john_doe | expertise_level=10 risk_tolerance=0.8:
   Drives | enhanced_handling=true aggressiveness=0.8: some_car
 ```
 
-The first line is `TypeName instance_name` followed (optionally) by
-attribute settings (§13.8.7) and (optionally) by `:` introducing a
-body of child placements (§13.8.3, §13.8.4). The syntax is identical
-to internal part placements (§13.8.3); the only distinction is that
-top-level placements *must* declare a name (internal parts may
-omit the name when not referenced from outside the placement).
+The first line is the type name followed by the instance name
+(`TypeName instance_name`), then (optionally) attribute settings
+(§13.8.7) and (optionally) `:` introducing a body of child placements
+(§13.8.3, §13.8.4).
+
+**A top-level placement is a declaration.** Like every other top-level
+declaration — `signal master_gain`, `node Channel`, `attr gain` — it
+names its subject positionally: the type, then the name, with no marker
+between them. A top-level placement is *mandatorily* named (unlike nested
+parts, which may be anonymous, §13.8.3), so the bare `TypeName
+instance_name` form is unambiguous and the `as` name marker is **optional**
+here:
+
+```
+Driver john_doe              // canonical: declaration form, no `as`
+Driver as john_doe           // also allowed — identical meaning
+```
+
+By convention top-level placements omit `as`. The marker is *required*
+only where placements may be anonymous (nested parts and children,
+§13.8.3), since there bare `Type name` is ambiguous between one named
+placement and two anonymous ones.
 
 Instance names are unique within their declaring scope. Two
 top-level placements with the same name in the same module is a
 compile error.
 
-#### 13.8.2 Setting attrs and recurrent initial values
+#### 13.8.2 Setting attrs at placement
 
-Attrs and recurrent initial values are set via inline attribute
-syntax on the placement line. The body of a placement is reserved
-exclusively for child placements (§13.8.3, §13.8.6); attribute
-settings do not appear in the body.
+Attrs are set via inline attribute syntax on the placement line.
+The body of a placement is reserved exclusively for child
+placements (§13.8.3, §13.8.6); attribute settings do not appear in
+the body.
+
+Recurrent cells are not set at placement; a recurrent's value is
+fully defined by its expression and its self-history fallbacks
+(§13.2.4). Per-instance variation of a recurrent's behavior is
+achieved by parameterizing its expression via attrs the recurrent
+reads.
 
 A single-line placement with attrs uses one leading `|` followed by
 one or more `name=value` settings separated by whitespace:
@@ -11697,11 +12952,14 @@ Driver john_doe | expertise_level=10 risk_tolerance=0.8:
   Drives | enhanced_handling=true: some_car
 ```
 
-The named cell must be declared on the placed type as either an
-`attr` or a `recurrent`. Setting any other identifier — including
-`signal`, `derived`, or `const` declarations — is a compile error.
-The value's type must match the cell's declared type (subject to
-the standard widening rules).
+The named cell must be declared on the placed type as an `attr`.
+Setting any other identifier — including `signal`, `recurrent`,
+`derived`, or `const` declarations — is a compile error.
+Recurrents in particular are not settable at placement: a
+recurrent's value is fully defined by its expression and
+self-history fallbacks (§13.2.4, §13.8.2.2). The value's type must
+match the cell's declared type (subject to the standard widening
+rules).
 
 ##### 13.8.2.1 Reactive vs. compile-time placement values
 
@@ -11726,18 +12984,18 @@ The right-hand side of an attribute setting at placement may be:
 
 ```
 App my_app:
-  Fetch fetcher / "url"
+  Fetch as fetcher / "url"
   Log / fetcher.response                  // reactive binding (category C):
                                            // Log's default attr tracks
                                            // fetcher.response; no consumption
 
 App other_app:
-  Counter c1
-  Display d1 | label=format(c1.count)     // reactive (category C): d1.label
+  Counter as c1
+  Display as d1 | label=format(c1.count)  // reactive (category C): d1.label
                                            // tracks c1.count formatted
 
 App config_app:
-  Server srv | port=8080                  // value RHS (category B): 8080 is
+  Server as srv | port=8080               // value RHS (category B): 8080 is
                                            // consumed into srv.port's slot
                                            // at instantiation
 ```
@@ -11766,12 +13024,12 @@ requires no syntactic marker.
   receive their values from the host/runtime, not from placement
   syntax. Their declared initial value applies at construction;
   subsequent values come through the host API (§13.14.2).
-- **Recurrent initial-value overrides accept only compile-time
-  values.** Unlike attrs, the placement form for recurrents
-  (`count=100`) does *not* accept reactive expressions. A
-  recurrent's initial value is a fixed compile-time constant at
-  construction; runtime advancement happens via the recurrent's
-  arms (§13.2.4).
+- **Recurrents are not settable at placement.** A recurrent's
+  value is fully defined by its expression and its self-history
+  fallbacks (§13.2.4); there is no separate initial value to
+  override. Per-instance variation of recurrent behavior is
+  expressed via attrs the recurrent reads, which are settable at
+  placement.
 
 For boolean attrs, the same value may also be set via flags
 (§13.8.8). The two mechanisms (`name=value` / `name` / `!name`
@@ -11791,19 +13049,28 @@ rule is uniform across nodes and connections: `/expr` targets the
 placement's body, not via `/expr` (§13.8.5.1).
 
 The attribute clause and flags do *not* target consts. Consts
-cannot be overridden at placement (§13.8.2.2). Recurrent initial
-values are overridable via the same `name=value` form in the
-attribute clause, but only with compile-time-evaluable expressions
-(no reactive bindings).
+cannot be overridden at placement (§13.8.2.2). Recurrent cells
+cannot be overridden at placement either — a recurrent's value is
+fully defined by its expression (§13.2.4), with fallbacks supplied
+inline via `.previous(fallback)` / `.past(k, fallback)`. There is
+no separate initial value to override.
 
-For recurrent cells, only the initial value is overridable at
-placement. The arm structure (triggers, guards, and `next_expr`
-expressions) is a structural type property and cannot be overridden
-per-instance (§13.2.4.3).
+Per-instance variation of recurrent behavior is achieved by
+parameterizing the recurrent's expression via attrs the recurrent
+reads. The attrs can be overridden at placement; the recurrent's
+evaluation uses those values:
+
+```
+node Counter:
+  attr start_value: i32 = 0
+  attr step: i32 = 1
+  recurrent count: i32 = count.previous(start_value) + step
+
+Counter c1 | start_value=100 step=5    // per-instance configuration via attrs
+```
 
 If a cell is not set at placement, its declared default (for attrs)
-or declared initial value (for recurrents) applies. Consts always
-have their type-declared value.
+applies. Consts always have their type-declared value.
 
 #### 13.8.3 Child parts
 
@@ -11815,13 +13082,19 @@ syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
 
 ```
 Component chip_b | label="B":
-  Pin out1                                // child part (Pin instance named out1)
-  Pin in1                                 // another child part
+  Pin as out1                             // child part (Pin instance named out1)
+  Pin as in1                              // another child part
 ```
 
 A child placement that names a node type listed in the parent's
 `parts:` clause is a part. The placement creates an instance of
 that node type as a child of the parent.
+
+A nested placement is named with the **`as` marker**: `Pin as out1`.
+The marker is required for nested placements because they may be
+anonymous (`Pin` alone is a valid unnamed part), so bare `Pin out1`
+would be ambiguous between one named part and two anonymous ones. (At
+top level, where names are mandatory, `as` is optional — §13.8.1.)
 
 The optional instance name (`out1`, `in1` in the example) is the
 *placement-time name* of the part. Once named, the part is
@@ -11842,13 +13115,77 @@ Named individual access is the placement-time companion to the
 type-bulk and heterogeneous access forms described in §13.4.1.
 Names are not available inside the parent's own type body (the
 type declaration doesn't know what placements will exist) — within
-the parent type, use `self.parts.<NodeType>[i]` or `self.parts`
+the parent type, use `parts.<NodeType>[i]` or `parts`
 instead.
 
 Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
 enforced at placement: the number of placed parts of each type
 must satisfy the declared cardinality. Violations are compile
 errors at the placement site.
+
+##### 13.8.3.1 Parametric topology via compile-time `for`
+
+A placement body may contain a `for` loop whose iterable is
+compile-time-known (§12.3.7, §2.4.1). The loop unrolls at compile time,
+producing one child placement per iteration. The static-graph principle
+(§13.1) is preserved: every part is determined at compile time.
+
+A `for` in a placement body whose iterable is *not* compile-time-known
+is a compile error pointing at the iterable. No new diagnostic class is
+introduced — the static-graph rule itself enforces this; the diagnostic
+identifies the iterable and (via §2.4.6's reactivity-provenance
+machinery) cites the runtime source if the runtime-ness flows from a
+reactive value.
+
+Anonymous parts produced by an unrolled placement loop are addressable
+via the indexed type-bulk form `parts.<NodeType>[i]` (§13.4.1) from
+function bodies that receive the parent instance, and via the bare
+type-bulk form `parts.<NodeType>` from inside the parent's type body
+(§13.4.2).
+
+**Example.** A synthesizer whose voice count is fixed at module scope
+via a `const`, used both in the type's `parts:` cardinality and in the
+placement's body loop:
+
+```
+const VOICE_COUNT: usize = 8
+
+node Oscillator:
+  attr freq: f32 = 440.0
+  derived output: f32 = synthesize(freq)
+
+node Synthesizer:
+  parts: Oscillator [=VOICE_COUNT]
+  derived total: f32 = total_output(subject)
+
+Synthesizer synth:                 // top-level declaration form (§13.8.1)
+  for i in 0..VOICE_COUNT:
+    Oscillator | freq=base_freq(i)
+```
+
+`0..VOICE_COUNT` is a compile-time-known range (both bounds are
+compile-time known — `VOICE_COUNT` is a `const`), so the `for` in the
+placement body unrolls into eight anonymous `Oscillator` child
+placements with statically-determined `freq` attrs. The cardinality
+`Oscillator [=VOICE_COUNT]` declared by the type is satisfied at compile
+time by the unrolled placements. The parts are accessible via the
+indexed type-bulk form `synth.parts.Oscillator[i]` (§13.4.1), and the
+parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
+
+**For runtime-varying multiplicity.** When the number of children must
+vary at runtime — driven by a reactive iterable source (`Signal[I]`
+where `I: Iterable`, such as `Vec[T]`, `HashSet[T]`, or
+`HashMap[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
+here is for *parametric* topology: multiplicity that is parameterized
+by a const-generic (or otherwise compile-time-known) value but fixed
+per instance.
+
+**Type-body counterpart.** When the multiplicity and per-part
+configuration are properties of the **type** rather than the placement
+site — i.e., every instance of the node materializes the same N
+children — declare them in the node body via §13.3.3.3 instead. The
+placement-body form covered here is for the case where the loop is
+intrinsic to a specific placement.
 
 #### 13.8.4 Connections
 
@@ -11861,14 +13198,14 @@ determined positionally.
 
 ```
 App my_app:
-  Fetcher fetcher / "url"                       // part placement
+  Fetcher as fetcher / "url"                    // part placement
   WiresToExternal: external_target              // source = my_app
 
-  Filter filter / "low-pass":
+  Filter as filter / "low-pass":
     Cascade: next_filter                        // source = filter
     WiresTo | gain=0.5: monitor                 // source = filter
-  Filter next_filter / "high-pass"
-  Monitor monitor
+  Filter as next_filter / "high-pass"
+  Monitor as monitor
 ```
 
 `WiresToExternal: external_target` is placed in `my_app`'s body, so
@@ -11879,7 +13216,7 @@ the depth at which the connection appears does not change how the
 source is determined.
 
 The connection type must match a type listed in the source instance's
-`out:` clause (or in the type's traits' contributions).
+`outgoing:` clause (or in the type's traits' contributions).
 
 The destination is supplied in the connection placement's body as a
 single bare-identifier reference (§13.8.5.1). The `/expr` slot, when
@@ -11895,25 +13232,25 @@ the body's `:`:
 ```
 // (presumes Filter declares signal_active and App declares debug_enabled)
 App my_app:
-  Filter filter / "low-pass":
-    Cascade when self.signal_active: next_filter      // gated on filter's own attr
-  Filter next_filter / "high-pass"
-  Monitor monitor
-  WiresTo when self.debug_enabled: monitor            // gated on my_app's attr
+  Filter as filter / "low-pass":
+    Cascade when filter.signal_active: next_filter     // gated on filter's own attr
+  Filter as next_filter / "high-pass"
+  Monitor as monitor
+  WiresTo when my_app.debug_enabled: monitor           // gated on my_app's attr
 ```
 
 **Scope of placement-level `when`.** The `when` predicate evaluates
 in the scope of the enclosing source instance, not the
 connection-being-placed. The connection has not yet been constructed;
-its `self` is unavailable. To reference the connection's own attrs in
+its own scope is unavailable. To reference the connection's own attrs in
 a gate, use a type-level `when:` clause inside the connection type's
 body (§13.6.1.1) instead.
 
-`self` in the predicate resolves to the enclosing source instance.
-In `Cascade when self.signal_active: next_filter` (inside `filter`'s
-body), `self.signal_active` is `filter.signal_active`. In
-`WiresTo when self.debug_enabled: monitor` (inside `my_app`'s body),
-`self.debug_enabled` is `my_app.debug_enabled`.
+The predicate names the enclosing source instance directly. In
+`Cascade when filter.signal_active: next_filter` (inside `filter`'s
+body), `filter.signal_active` is the source filter's attr. In
+`WiresTo when my_app.debug_enabled: monitor` (inside `my_app`'s body),
+`my_app.debug_enabled` is the source app's attr.
 
 ##### 13.8.4.1 Terminology
 
@@ -11926,13 +13263,21 @@ terms; "owner" is not.
 
 #### 13.8.5 The `/expr` form
 
-The `/expr` form appears immediately after the placed type name
-(and any flags), before any optional instance name and before the
-attribute clause (§13.8.7). The expression after `/` is the
-*positional argument* of the placement: it targets the placed type's
-`default attr` (§13.2.2.1), whether the placed type is a node or a
-connection. Using `/expr` on a type without a declared `default attr`
+The `/expr` form appears immediately after the placed type name, any
+flags, and the optional `as` name, and before the attribute clause
+(§13.8.7) — per the clause order of §13.8.9. The expression after `/`
+is the *positional argument* of the placement: it targets the placed
+type's `default attr` (§13.2.2.1), whether the placed type is a node or
+a connection. Using `/expr` on a type without a declared `default attr`
 is a compile error.
+
+**An unparenthesized `/expr` is restricted to a single atom** — a
+literal, identifier, or path (`C/4`, `Filter/cutoff_default`). A
+compound expression must be parenthesized: `C/(base * 2)`. This keeps a
+space-separated placement self-delimiting (§13.8.10); without the
+restriction an open expression could greedily swallow the next
+placement (`C/x - G` would be ambiguous between two placements and one
+subtraction).
 
 ##### 13.8.5.1 For connection placements
 
@@ -12005,7 +13350,7 @@ content differs by placement kind:
 - **Node placement body** — the indented block after `:` on a node
   placement line — contains child placements: parts and connections
   (§13.8.3, §13.8.4). Multiple children allowed; same-line
-  multi-placement uses commas per §13.8.10.
+  multi-placement is whitespace-separated per §13.8.10.
 - **Connection placement body** — the indented block (or inline
   single-line form) after `:` on a connection placement line —
   contains exactly *one* bare-identifier reference: the destination
@@ -12023,7 +13368,7 @@ names on connections, and they do not appear in connection
 *placement* bodies.
 
 A single line of a node placement body may contain multiple child
-placements separated by commas (§13.8.10). A placement that
+placements separated by whitespace (§13.8.10). A placement that
 introduces its own children body via `:` cannot share its line with
 sibling placements; multi-line layout is required when both same-line
 siblings and `:`-introduced children are needed.
@@ -12137,10 +13482,12 @@ compile error.
 The permitted flag characters are:
 
 ```
-' ! ? * + ^ ~ @ $ #
+' ! ? * + ^ ~ @ $
 ```
 
-Each is a non-letter character not part of identifier syntax.
+Each is a non-letter character not part of identifier syntax. (`#`
+is a valid identifier character per §1.4 and is therefore excluded
+from the flag set.)
 
 ##### 13.8.8.2 Flag-character uniqueness
 
@@ -12202,11 +13549,13 @@ attributes (§13.8.7).
 A placement's inline parts have a fixed order:
 
 ```
-TypeRef [FlagsRun]? [InstanceName]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
+TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
 ```
 
 - Flags immediately adjacent to TypeRef (no whitespace).
-- Optional instance name follows the type/flags.
+- The optional `as` name (`as my_drive`) follows the type/flags. At
+  top level the `as` may be omitted (the bare declaration form,
+  §13.8.1); in nested placements it is required (§13.8.3).
 - The `/Expr` default-arg slot follows the name. For both node and
   connection placements, `/Expr` sets the type's `default attr`
   (§13.2.2.1). Permitted only when the placed type declares a
@@ -12231,12 +13580,12 @@ TypeRef [FlagsRun]? [InstanceName]? [DefaultArgPart (`/Expr`)]? [WhenClause (`wh
 Example (connection placement, default attr + flags + destination):
 
 ```
-Drives'! my_drive / 0.8 | enhanced_handling: some_car
-^^^^^^^                                                  -- TypeRef + 2 flags
-         ^^^^^^^^                                        -- instance name
-                   ^^^                                   -- /Expr (sets default attr)
-                        ^^^^^^^^^^^^^^^^^^^^^            -- attribute clause
-                                              ^^^^^^^^^  -- destination in body
+Drives'! as my_drive / 0.8 | enhanced_handling: some_car
+^^^^^^^^                                                  -- TypeRef + 2 flags
+         ^^^^^^^^^^^                                      -- instance name (`as` + name)
+                     ^^^^^                                -- /Expr (sets default attr)
+                           ^^^^^^^^^^^^^^^^^^^            -- attribute clause
+                                                ^^^^^^^^  -- destination in body
 ```
 
 Example (node placement with `default attr`):
@@ -12251,21 +13600,21 @@ Log / "Hello World" | level="info"
 Example (gated connection placement with `when` + body):
 
 ```
-Debugger d1 / "trace" when self.verbose | level=2: target
-^^^^^^^^                                                     -- TypeRef
-         ^^                                                  -- instance name
-            ^^^^^^^^^                                        -- /Expr (default attr)
-                      ^^^^^^^^^^^^^^^^^                      -- when clause (predicate)
-                                          ^^^^^^^^^          -- attribute clause
-                                                    ^^^^^^^  -- destination in body
+Debugger as d1 / "trace" when verbose | level=2: target
+^^^^^^^^                                                    -- TypeRef
+         ^^^^^                                              -- instance name (`as` + name)
+               ^^^^^^^^^                                    -- /Expr (default attr)
+                         ^^^^^^^^^^^^                       -- when clause (predicate)
+                                      ^^^^^^^^^             -- attribute clause
+                                                 ^^^^^^     -- destination in body
 ```
 
 Example (gated placement, no `/Expr`):
 
 ```
-Logger when self.debug_enabled
-^^^^^^                              -- TypeRef
-       ^^^^^^^^^^^^^^^^^^^^^^^^^    -- when clause (no /Expr present)
+Logger when debug_enabled
+^^^^^^                               -- TypeRef
+       ^^^^^^^^^^^^^^^^^^            -- when clause (no /Expr present)
 ```
 
 The `/Expr` form requires the placed type to have a declared
@@ -12276,36 +13625,59 @@ attr` is a compile error.
 #### 13.8.10 Same-line multi-placement
 
 Multiple placements may appear on a single line, separated by
-commas. The comma always terminates a placement at the current
-scope level — there is no context-sensitive disambiguation:
+**whitespace** — there is no comma separator (and no semicolon, §1.4).
+Dense sequences read cleanly:
 
 ```
-A3, rest, A4                              // three bare placements
-G4/4, G5/4                                // two /expr placements
-Sensor s1 | gain=0.5, Sensor s2 | gain=0.7  // two attributed placements
+C/4 G'/4 A                               // three /expr placements
+A3 rest A4                               // three bare placements
 ```
 
-The comma rule is universal: same-line placements are *always*
-comma-separated, regardless of whether the placements have names,
-`/expr`, attribute clauses, or any combination. This removes
-parser context-sensitivity — the comma is the unambiguous
-delimiter.
+The whitespace form is unambiguous only when each placement is
+**self-delimiting** — its end is determined without lookahead into the
+next placement. A placement is self-delimiting when every clause it
+carries is bounded:
 
-**A placement that introduces its own children body via `:`
-cannot share its line with sibling placements.** Such a placement
-owns the rest of its line (and the indented block that follows).
-To combine `:`-bearing children with same-line siblings, use
-multi-line layout:
+- a bare type, with flags and octave/duration sigils: `C`, `G'`, `Pin'!`;
+- a single-atom `/expr` — literal, identifier, or path (§13.8.5):
+  `C/4`, `Filter/cutoff_default`;
+- an `as` name, which consumes exactly one identifier: `G as a`.
+
+Anything carrying an **open expression** — a `when` predicate, an
+attribute clause (`|`), or a compound (non-atomic) `/expr` — is **not**
+self-delimiting: its expression could greedily consume the following
+placement. Such a placement **must be parenthesized or placed on its own
+line.** This is enforced, not advised: an unparenthesized open expression
+silently mis-parses — `C/x - G` is ambiguous between two placements and
+one subtraction.
 
 ```
-// ✗ ambiguous and disallowed:
-//   SomePart: Child1, Child2, AnotherPart
+C/4 G'/4 A                                            // ✓ self-delimiting atoms
+G as a  rest  C                                       // ✓ `as` name is bounded
+(Sensor as s1 | gain=0.5) (Sensor as s2 | gain=0.7)   // ✓ attrs ⇒ parenthesized
+Sensor as s1 | gain=0.5                               // ✓ or alone on its line
+```
+
+The `as` name is parser-safe unparenthesized (it binds exactly one
+identifier), so naming never *requires* parentheses. Parenthesizing a
+named placement is a **readability convention** for cases that scan as a
+phrase — `(G as a) rest C` reads more clearly than `G as a rest C` — not
+a rule.
+
+**A placement that introduces its own children body via `:` cannot share
+its line with sibling placements.** Such a placement owns the rest of its
+line and the indented block that follows. To combine `:`-bearing
+placements with same-line siblings, use multi-line layout:
+
+```
+// ✗ disallowed (the body owns the line):
+//   SomePart: Child1 Child2  AnotherPart
 
 // ✓ SomePart with three inline children (no siblings on this line):
-SomePart: Child1, Child2, Child3
+SomePart: Child1 Child2 Child3
 
-// ✓ Same-line siblings, no `:` children:
-SomePartA, SomePartB | attr=1, SomePartC
+// ✓ Same-line siblings, none with a `:` body:
+SomePartA (SomePartB | attr=1) SomePartC
 
 // ✓ Multi-line — `:`-bearing placement on its own line:
 SomePart:
@@ -12343,20 +13715,20 @@ kernel to gate propagation through the construct it modifies, not
 exposed through a named cell readable by other expressions.
 
 It evaluates in the scope of the construct it modifies: inside a
-type body it sees `self.*` and items visible at the type's
-declaration scope; inside a placement it sees the full placement
-scope.
+type body it sees the body's own cells (by bare name) and items
+visible at the type's declaration scope; inside a placement it sees
+the full placement scope.
 
 ```
 connection Pulse:
   from: Driver
   to: Listener
-  when: self.from.is_emitting                 // type-level gate
+  when: from.is_emitting                       // type-level gate
 ```
 
 ```
 App my_app:
-  Logger l1 when self.debug_enabled           // placement-level gate
+  Logger as l1 when my_app.debug_enabled       // placement-level gate
 ```
 
 Two design moves justify the clause:
@@ -12380,16 +13752,17 @@ fields (`from:`, `to:`, `attr name:`, `recurrent name:`, etc.):
 signal trigger: u64 = 0
 
 node OneShot:
-  out: Pulse
-  recurrent fired: bool = false
-    | on trigger: true
-  when: not self.fired                        // intrinsic refractory gate
+  outgoing: Pulse
+  recurrent fired: bool = observe:
+    on trigger: true
+    default: false
+  when: not fired                              // intrinsic refractory gate
 
 connection ActiveEdge:
   from: Source
   to: Sink
   attr weight: f32 = 1.0
-  when: self.weight > 0.0                     // self-conditional gate
+  when: weight > 0.0                           // self-conditional gate
 ```
 
 Type-level gates encode constraints intrinsic to the type — a
@@ -12411,9 +13784,9 @@ gate for that specific instance. It uses no colon, consistent with
 modifier-style clauses:
 
 ```
-Logger l1 when self.debug_enabled
-Filter f1 / "low-pass" when self.dsp_mode == DspMode::Realtime | gain=0.5
-ShowsCount when self.from.count > 0: d1
+Logger l1 when debug_enabled
+Filter f1 / "low-pass" when dsp_mode == DspMode::Realtime | gain=0.5
+ShowsCount when from.count > 0: d1
 ```
 
 Parts placed inside a parent's body may carry `when` clauses
@@ -12427,14 +13800,14 @@ node App:
   attr health_checks_enabled: bool = true
 
 App my_app:
-  Logger l1                                         // always active
-  Logger l2 when self.verbose                       // gated on parent attr
-  Monitor m1 when self.health_checks_enabled        // feature flag
+  Logger as l1                                      // always active
+  Logger as l2 when my_app.verbose                  // gated on parent attr
+  Monitor as m1 when my_app.health_checks_enabled   // feature flag
 ```
 
 `l2` and `m1` are constructed unconditionally (the static graph
 rule of §13.1 holds — the graph's shape is fixed at compile time).
-What `when` controls is propagation: when `self.verbose` is false,
+What `when` controls is propagation: when `my_app.verbose` is false,
 `l2`'s recurrents do not advance, its deriveds do not recompute,
 and its outputs do not propagate. Its cells hold their initial
 values per Model B (§13.9.7).
@@ -12457,8 +13830,8 @@ compile error.
 Otherwise, a `when` predicate follows normal expression scope
 rules — no special restrictions.
 
-- **Type level:** the predicate may reference `self.*` (own cells
-  and, for connections, `self.from` / `self.to` / `self.pair`),
+- **Type level:** the predicate may reference the type's own cells
+  by bare name (and, for connections, `from` / `to` / `pair`),
   plus anything visible at the type's declaration scope under
   normal visibility rules (module-level signals, consts, imports).
 - **Placement level:** the predicate may reference the full
@@ -12480,20 +13853,20 @@ stacked — replacement is total:
 connection Pulse:
   from: Driver
   to: Listener
-  when: self.from.is_emitting
+  when: from.is_emitting
 
 App my_app:
-  Driver d1
-  Listener l1
-  Pulse: l1                                           // gate: self.from.is_emitting
-  Pulse when self.debug_audio: l1                     // gate: self.debug_audio (overrides type-level)
+  Driver as d1
+  Listener as l1
+  Pulse: l1                                           // gate: from.is_emitting
+  Pulse when my_app.debug_audio: l1                    // gate: my_app.debug_audio (overrides type-level)
 ```
 
 If a placement needs both predicates, the placement-level form must
 combine them explicitly:
 
 ```
-Pulse when self.from.is_emitting and self.debug_audio: l1
+Pulse when my_app.is_emitting and my_app.debug_audio: l1
 ```
 
 Override is not implicit conjunction because conjunction would make
@@ -12519,7 +13892,7 @@ connection WeightedEdge:
   from: Node
   to: Node
   attr weight: f32 = 1.0
-  when: self.weight > 0.0                            // self-conditional
+  when: weight > 0.0                                  // self-conditional
 ```
 
 Type-level self-conditional gates on nodes are likewise allowed
@@ -12537,40 +13910,46 @@ predicate.
 
 - A *gate-true* edge propagates normally.
 - A *gate-false* edge on a gated *node* does not propagate to the
-  destination's output-affecting state, but inbound connections
+  destination's output-affecting state, but incoming connections
   still deliver to the gated node's input cells, so the node's own
   `when` predicate can re-evaluate.
 
 **Behavior on a gated node** (its `when` predicate is currently
 false):
 
-- **Input cells (`in`):** stay live. Connections delivering into the
-  gated node still write their values into the destination's `in`
+- **Input cells:** stay live. Connections delivering into the
+  gated node still write their values into the destination's input
   cells. This is necessary so a node whose `when` references its
   inputs can wake up.
 - **`when` predicate:** re-evaluates whenever any cell in its
   provenance set changes. A flip from false to true is itself a
   propagation event (see below).
-- **Recurrents:** do not advance. Their arms do not fire; the
-  cells hold their last committed value. Any arm trigger that
-  would have fired during a gated period is lost — the kernel
-  does not queue triggers, and gate-open does not replay them.
-  The recurrent remains at its last committed value until a future
-  arm trigger fires during an active period.
+- **Recurrents:** do not advance. They do not re-evaluate; the
+  cells hold their last committed value. Any input change that
+  would have triggered re-evaluation during a gated period is lost
+  — the kernel does not queue triggers, and gate-open does not
+  replay them. The recurrent remains at its last committed value
+  until a future input change occurs during an active period. Its
+  self-history is preserved across the gap, so the first post-gap
+  evaluation reads pre-gap `.previous`/`.past` values — **unless** the
+  recurrent carries `@reset_on_reopen` (§13.2.4), in which case the kernel
+  clears its history at gate-reopen and the first post-gap evaluation
+  reads fallbacks instead (a clean restart, not a blend with stale
+  state).
 - **Deriveds:** do not recompute. They hold their last committed
   value. (An exception: deriveds whose values are read by the
   `when` predicate must remain current; the kernel keeps the
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
   level.)
-- **Outputs:** do not propagate. Outbound connections from the
+- **Outputs:** do not propagate. Outgoing connections from the
   gated node do not deliver to their destinations.
 
 **Behavior on a gated connection** (the connection's own `when` is
 false): a gated connection edge does not propagate at all — its
 destination receives nothing through this connection. Note this
-differs from a gated *node*, whose inbound connections still deliver
-to its `in` cells (the node's own `when` re-evaluates against those
+differs from a gated *node*, whose incoming connections still deliver
+to its input cells (the node's own `when` re-evaluates against those
 inputs).
 
 **Snap on gate-open.** When a `when` predicate transitions from
@@ -12580,6 +13959,13 @@ upstream state in topological order. Any value that would have
 propagated during the gated period is re-computed *as of now* (not
 replayed); downstream sees the activation as a single jump from
 the frozen value to the current value.
+
+(This automatic recompute applies to *deriveds* — pure functions of
+current inputs — at the gate-open publish. A *recurrent* cannot
+recompute without a trigger, so it advances on its next trigger as
+described above; the optional `@reset_on_reopen` decorator (§13.2.4)
+additionally clears its history at gate-open so that next advance is a
+clean restart rather than a blend with pre-gap state.)
 
 This snap may cause discontinuities in domains where smooth value
 transitions matter (audio velocity, control voltages). Smoothing
@@ -12591,10 +13977,13 @@ defined value of type T (no `Option[T]`), because:
 
 - All attrs have values (defaults or required-at-placement —
   §13.2.2).
-- All recurrents have initial values (mandatory — §13.2.6).
+- All recurrents have well-defined first-publish values
+  (fallbacks in `.previous(fallback)` / `.past(k, fallback)` ensure
+  the expression evaluates to a defined value on first publish —
+  §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
-- All connection-level deriveds compute against `self.from` which
+- All connection-level deriveds compute against `from` which
   always has defined cells.
 
 On a gated node or connection, reads return frozen values: the
@@ -12656,9 +14045,9 @@ listed here are normative.
 
 ```
 error: `when` predicate must be of type `bool`
-  --> connection Foo: when: self.weight
-                            ^^^^^^^^^^^ expression has type `f32`
-  hint: introduce a comparison (e.g., `self.weight > 0.0`)
+  --> connection Foo: when: weight
+                            ^^^^^^ expression has type `f32`
+  hint: introduce a comparison (e.g., `weight > 0.0`)
 ```
 
 **Multiple `when:` clauses in a single type body.** Per §13.9.2.
@@ -12683,9 +14072,9 @@ error: `when:` is not permitted in a trait declaration
 failure, surfaced in `when`-clause context.
 
 ```
-error: unknown identifier `self.frobnicate` in `when` predicate
-  --> node Foo: when: self.frobnicate
-  hint: did you mean `self.activate`?
+error: unknown identifier `frobnicate` in `when` predicate
+  --> node Foo: when: frobnicate
+  hint: did you mean `activate`?
 ```
 
 **Cycle through `when` provenance.** Per §13.11.2; gate predicates
@@ -12711,14 +14100,13 @@ node When:
   default attr cond: Signal[bool]
   parts: Then!, Else?
   expose:
-    self.parts.Then when self.cond
-    self.parts.Else when !self.cond
+    parts.Then when cond
+    parts.Else when !cond
 ```
 
 `Then` and `Else` are simple stdlib wrapper nodes; each accepts a
-single child via its `parts:` slot and re-exposes it (the same
-pattern Repeat uses with `parts: Item!` + `expose: self.parts.Item`,
-§13.5.4.1).
+single child via its `parts:` slot and re-exposes it (a template-
+wrapper pattern with `parts: Item!` + `expose: parts.Item`).
 
 Placement:
 
@@ -12752,7 +14140,7 @@ The same pattern generalizes:
 The kernel processes reactive state via two operations:
 **writes** (signal/attr) accumulate dirty bits without evaluation;
 **publish** evaluates dirty cells, advances recurrents per their
-firing arm expressions, and swaps the back buffer atomically so that
+expressions, and swaps the back buffer atomically so that
 consumers see the new state.
 
 #### 13.10.1 Lazy writes
@@ -12790,27 +14178,29 @@ operation on the producer thread:
    attr), compare its back-buffer value to its previously-published
    value. Cells whose values differ are *dirty*; cells whose values
    are identical (including those that were written intermediate
-   values but reverted before publish) are *not* dirty. Triggers
-   listed in arm trigger lists fire when their referenced cell is
-   dirty — value-change semantics (§13.2.4.4) operationalized as
-   "current-publish value ≠ previous-publish value." Dirty
-   propagation extends to all derived cells transitively dependent
+   values but reverted before publish) are *not* dirty. A reactive
+   expression (derived, recurrent, or `observe` arm trigger set)
+   re-evaluates when a referenced cell is dirty — value-change
+   semantics (§13.2.4.4) operationalized as "current-publish value
+   ≠ previous-publish value." Dirty propagation extends to all
+   derived cells transitively dependent
    on dirty roots, and to all recurrents whose triggers fired this
    publish. No new dirty bits are added during the rest of the
    publish cycle.
 2. **Compute evaluation order.** Topologically sort the per-publish
    DAG (§13.11.3). Nodes in the DAG are:
     - Dirty derived expressions.
-    - Each recurrent **arm** whose triggers fired this publish. A
-      multi-arm recurrent (§13.2.4) contributes one DAG node per
-      fired arm, not one node per recurrent. The arm's `where` guard
-      expression (if present) contributes its own dependency edges
-      into the DAG — guard reads are not deferred to evaluation;
-      they participate in the topological sort.
+    - Each recurrent whose expression became dirty this publish. A
+      recurrent contributes one DAG node per cell (or one node per
+      tuple group for tuple-coupled recurrents, §13.2.4.6). A
+      recurrent wrapped in `observe` (§13.2.11) contributes the
+      observe expression as the DAG node; arm-selection happens
+      during evaluation.
 
-   Edges are dependencies; recurrent reads are treated as inputs
-   (their previous-committed values), which breaks reactive cycles.
-   Reads of deriveds, signals, and attrs follow normal dependency
+   Edges are dependencies; recurrent self-history reads
+   (`.previous`/`.past`) are treated as inputs at their previous-
+   committed values, which breaks reactive cycles. Reads of
+   deriveds, signals, attrs, and streams follow normal dependency
    edges within this publish. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
@@ -12822,24 +14212,24 @@ operation on the producer thread:
     - Derived reads → this-publish computed values for deriveds
       evaluated earlier in this step; previous-publish committed
       values for deriveds not in the dirty set.
-    - Recurrent reads → previous-committed values, always
-      (lockstep — §13.2.4.1).
+    - Recurrent self-history reads (`.previous`/`.past`) →
+      previous-committed values, always (lockstep — §13.2.4.1).
 
    Derived behaviors write their results into the back buffer.
-   Recurrent arm expression results are held aside (not yet
-   visible to in-pass evaluation) until step 4.
+   Recurrent expression results are held aside (not yet visible to
+   in-pass evaluation) until step 4.
 
-   **Arm selection at evaluation.** Multi-arm recurrent evaluation
-   proceeds in two stages within the publish cycle:
-    1. **Guard evaluation order**: each arm's `where` guard expression
-       evaluates in topological order over the per-publish DAG
-       (alongside other dirty deriveds). This produces a fired/not-fired
-       bit per arm.
-    2. **Arm selection order**: among the arms with fired triggers AND
-       guards evaluated to true (or no guard), the first one in
-       declaration order (per §13.2.4) wins. Only the winning arm's
-       `next_expr` evaluates; remaining arms' `next_expr` expressions
-       are skipped this publish.
+   **`observe` arm selection.** When a recurrent's expression (or
+   any reactive expression) is an `observe` block (§13.2.11), arm
+   selection proceeds in two stages within the publish cycle:
+    1. **Activation evaluation**: each arm's trigger set (and
+       `where` filter, if present) is checked. The arms with
+       triggers that fired this publish AND filters that pass are
+       candidates.
+    2. **Declaration-order selection**: the first candidate arm in
+       declaration order wins; its expression evaluates and produces
+       the observe's value for this publish. Other candidate arms'
+       expressions are not evaluated.
 4. **Commit recurrent advancement.** Write the next values
    computed in step 3 into the recurrent cells. After this step,
    recurrent reads return their newly-advanced values.
@@ -12854,8 +14244,8 @@ the same thread between publish calls accumulate as usual.
 
 #### 13.10.3 Topological order and tiebreaker
 
-Within a publish cycle, dirty deriveds and recurrent arm
-expressions evaluate in topological order over the per-publish DAG.
+Within a publish cycle, dirty deriveds and recurrent expressions
+evaluate in topological order over the per-publish DAG.
 Topological order ensures that each node's dependencies have stable
 values when the node itself is evaluated.
 
@@ -12869,7 +14259,7 @@ reproducibility (same program, same inputs, same output trace).
 For cells across different node instances at the same level, the
 placement order at construction time is the tiebreaker.
 
-Arm expressions across multiple recurrent cells evaluate in
+Recurrent expressions across multiple recurrent cells evaluate in
 lockstep (§13.2.4.1); no internal ordering between them is
 observable, because none of them sees another's just-advanced
 value.
@@ -12921,8 +14311,8 @@ instances via connection placements. Each has its own rules.
 #### 13.11.1 The reactive dependency graph
 
 The compiler constructs the reactive dependency graph by walking
-every `derived` expression's body and every recurrent arm
-expression's body, recording for each the set of reactive cells it
+every `derived` expression's body and every recurrent expression's
+body, recording for each the set of reactive cells it
 reads. Edges go from each read cell to the reading expression's
 output cell. Signal, attr, derived, and recurrent reads all
 contribute edges.
@@ -12948,9 +14338,9 @@ error: instantaneous cycle in reactive expressions
 ```
 
 **Recurrent self-reference and cross-reference are allowed.** A
-recurrent cell's arm expression may read the recurrent's own
-previous value (`on t: self.x + 1`) or another recurrent cell's
-previous value (`on t: self.other.value`). These do not form
+recurrent cell's expression may read the recurrent's own
+previous value (`on t: x + 1`) or another recurrent cell's
+previous value (`on t: other.value`). These do not form
 instantaneous cycles because recurrent reads always return the
 previous-committed value (lockstep — §13.2.4.1). The per-publish
 DAG treats every recurrent read as an input, breaking the static
@@ -12961,17 +14351,18 @@ Example (allowed):
 ```
 node Filter:
   attr input: f32 = 0.0
-  recurrent previous: f32 = 0.0
-    | on sample_clock: self.current
+  recurrent previous_value: f32 = observe:
+    on sample_clock: current
+    default: 0.0
   derived current: f32 =
-    0.5 * self.input + 0.5 * self.previous
+    0.5 * input + 0.5 * previous_value
 ```
 
-`current` reads `previous`; `previous`'s arm reads `current`.
-The static graph has a cycle, but the lockstep semantics make this
-well-defined: each publish, `current` reads `previous`'s last-
-committed value, then `previous` advances to `current`'s new value
-at commit time.
+`current` reads `previous_value`; `previous_value`'s observe arm
+reads `current`. The static graph has a cycle, but the lockstep
+semantics make this well-defined: each publish, `current` reads
+`previous_value`'s last-committed value, then `previous_value`
+advances to `current`'s new value at commit time.
 
 #### 13.11.3 The per-publish DAG
 
@@ -12982,7 +14373,7 @@ what will be committed at the end of this publish. This breaks
 all valid reactive cycles, producing a DAG.
 
 Reads OF a recurrent cell — from any expression context (derived
-bodies, recurrent arm `next_expr` bodies, `where` guards) — always
+bodies, recurrent expressions, `where` guards) — always
 return the previous-committed value. This is the rule that breaks
 reactive cycles.
 
@@ -13000,7 +14391,7 @@ step 2.
 
 A recurrent cell on a cycle behaves as a one-publish delay
 element: it always reads the previous-committed value, regardless
-of what its firing arm computes this publish. The end-of-publish
+of what its expression computes this publish. The end-of-publish
 commit (§13.10.2 step 4) is what advances the cell for the next
 publish to observe.
 
@@ -13132,8 +14523,8 @@ signal global_offset: f32 = 0.0
 fn shifted(x: f32) -> f32:
   x + global_offset                    // reads signal `global_offset`
 
-derived adjusted: f32 = shifted(self.base_value)
-                       // provenance = { self.base_value, global_offset }
+derived adjusted: f32 = shifted(base_value)
+                       // provenance = { base_value, global_offset }
 ```
 
 The compiler's provenance analysis is transitive — it follows
@@ -13265,19 +14656,21 @@ documented complexity bounds.
 | Type             | Append/push  | Read by index | Memory pattern              |
 |------------------|--------------|---------------|-----------------------------|
 | `Vec[T]`         | O(log32 n)   | O(log32 n)    | Persistent trie, structural sharing across versions |
-| `SmallVec[T; N]` | O(n) bounded | O(1)          | Inline storage up to N elements, heap beyond        |
-| `RingBuf[T; N]`  | O(1)         | O(1)          | Fixed-capacity ring; oldest dropped when full       |
+| `SmallVec[T, N]` | O(n) bounded | O(1)          | Inline storage up to N elements, heap beyond        |
+| `RingBuf[T, N]`  | O(1)         | O(1)          | Fixed-capacity ring; oldest dropped when full       |
 
-The `T; N` form distinguishes the type parameter T from the
-const-generic parameter N. Generic syntax in Ductus uses commas
-between type parameters and semicolons before const-generics.
+In `[T, N]`, `N` is a const-generic parameter (the slot count), not a
+second type parameter. Generic parameter lists use commas throughout
+(§1.4 — never semicolons); a const-generic parameter is marked by the
+`const` keyword in the declaration (`type SmallVec[T, const N: usize]`,
+§2.5) and supplied as a value at use sites (`SmallVec[i32, 8]`).
 
 `Vec[T]` is the default for unbounded growth; the persistent
 vector trie (Clojure/Scala/Rust `im::Vector` family) provides
 sublinear append and read with structural sharing across
-triple-buffer versions. `SmallVec[T; N]` optimizes the common
+triple-buffer versions. `SmallVec[T, N]` optimizes the common
 case of small bounded collections with cache-friendly inline
-storage. `RingBuf[T; N]` provides constant-time bounded history
+storage. `RingBuf[T, N]` provides constant-time bounded history
 with automatic eviction.
 
 The functional builder API preserves the no-mutation rule
@@ -13285,7 +14678,7 @@ The functional builder API preserves the no-mutation rule
 
 - `vec.with(value)` returns a new `Vec[T]` with `value` appended.
 - `vec + value` is equivalent (operator form).
-- The `recurrent`'s arm expression returns the new value;
+- The `recurrent`'s expression returns the new value;
   the kernel commits it through triple-buffer rotation.
 
 Implementation strategies (Vec uses persistent trie; SmallVec
@@ -13297,8 +14690,8 @@ mechanism, §14.8 for triple-buffer eviction ordering.
 
 **Cost model for users not using dynamic types:**
 
-If user code never references `Vec[T]`, `SmallVec[T; N]`, or
-`RingBuf[T; N]`, the runtime cost is zero. The reactive state
+If user code never references `Vec[T]`, `SmallVec[T, N]`, or
+`RingBuf[T, N]`, the runtime cost is zero. The reactive state
 buffer remains a flat fixed-size table; the extensible pool
 machinery is not exercised. Binary size grows slightly only when
 these types are used. This preserves "pay for what you use" for
@@ -13318,6 +14711,27 @@ canonical reactive composition mechanism. Reactive cells of
 collection types (`Vec[T]`, etc.) work via pool storage but each
 write involves rebuilding/replacing the collection — fine for
 batch updates, less suited for fine-grained mutations.
+
+**Fixed-extent cells and compile-time loops.** A cell whose value
+type is *fixed-extent* (`T[N]`, tuples, records) has compile-time-known
+layout: every element's offset within the cell — or within the pool
+slot, in the handle-based variant for sizes exceeding the atomic
+word — is determined at compile time. Combined with §12.3.7's
+compile-time-unrolling rule, a `for` iterating such a cell's value
+produces element reads at compile-time-known offsets: no runtime loop
+counter, no bounds check, no per-iteration dispatch. Direct-storage
+cells (`T[N]` ≤ word width) are read with no indirection at all;
+handle-storage cells are read with one indirection (dereferencing the
+current pool handle) plus the compile-time-known offsets. Per-emission
+cost is unchanged from §14.3.3's general publish: the back-buffer slot
+is **pre-allocated at kernel construction** (directly, or as a fixed-size
+pool slot for sizes above word width), and the producer writes the
+value into it; publication is the §14.3.3 atomic pointer swap, not a
+copy. No per-emission allocation, no realloc, no resize. A reactive
+function whose body iterates a fixed-extent cell — e.g.
+`fn process(buf: Cell[f32[64]]):` with `for x in buf.value():` — thus
+compiles to a straight-line sequence of element accesses against the
+cell's pre-allocated storage, suitable for hot paths.
 
 #### 13.12.5 Reactivity vs compile-time evaluation
 
@@ -13340,8 +14754,8 @@ reactive contexts.
 
 #### 13.13.1 Traps abort the process
 
-A reactive expression — derived expression or recurrent arm
-expression — that traps during evaluation, from arithmetic
+A reactive expression — derived expression or recurrent expression
+— that traps during evaluation, from arithmetic
 overflow under default operators (§4.6.1), division by zero, an
 out-of-range array index, or explicit `panic`, follows the
 trap-track semantics of §4.6.1: the process aborts.
@@ -13365,20 +14779,20 @@ node Divider:
   attr numerator: f32
   attr denominator: f32
   derived quotient: Result[f32, DivideError] =
-    if self.denominator is 0.0:
+    if denominator is 0.0:
       Err(DivideError::ByZero)
     else:
-      Ok(self.numerator / self.denominator)
+      Ok(numerator / denominator)
 
 node Consumer:
   parts: Divider
   derived report: string =
-    match self.divider.quotient:
+    match divider.quotient:
       Ok(value): "result: {value}"
       Err(DivideError::ByZero): "result: undefined"
 
 Consumer my_consumer:
-  Divider divider               // names the contained Divider part
+  Divider as divider            // names the contained Divider part
 ```
 
 The divide-by-zero case never traps; it produces `Err(...)`. The
@@ -13415,19 +14829,21 @@ The kernel's lifecycle proceeds in phases:
 1. Load the graph specification (per §15.4).
 2. Allocate the reactive state buffer (per §14.3).
 3. Initialize all reactive cells (signals, attrs, recurrents,
-   deriveds) and evaluate all `when` predicates in topological order
-   over their init-time read dependencies, per §13.2.6's startup
-   pass rules. Signal cells receive declared initial values; attr
-   cells receive declared defaults (or placement-supplied values);
-   recurrent cells receive declared initial values (the arm
-   `next_expr` is NOT evaluated at startup); derived cells are
-   computed by evaluating their expression bodies; `when` predicates
-   are evaluated to determine each instance's initial gate state.
+   deriveds, streams) and evaluate all `when` predicates in
+   topological order over their init-time read dependencies, per
+   §13.2.6's startup pass rules. Signal cells receive declared
+   initial values; attr cells receive declared defaults (or
+   placement-supplied values); recurrent cells evaluate their
+   expressions for the first time (`.previous`/`.past` calls return
+   their fallback values since no history exists yet); derived
+   cells are computed by evaluating their expression bodies;
+   stream cells begin empty; `when` predicates are evaluated to
+   determine each instance's initial gate state.
    Placement-level `when` predicates (§13.9.3) are evaluated
    alongside type-level `when:` predicates in the same topological
    pass; placement-level overrides type-level per §13.9.5 with the
    placement's predicate evaluating in its placement scope rather
-   than the type's `self` scope. The kernel does not separate this
+   than the type's own scope. The kernel does not separate this
    work into per-declaration-kind phases; the topological sort
    determines the order.
 4. Perform the first publish (atomic current-pointer swap per
@@ -13443,7 +14859,7 @@ sentinel (or block, per implementation choice).
   or `kernel.transaction(...)` to update reactive state. Writes
   mark dirty bits; no evaluation runs.
 - Host calls `kernel.publish()` to evaluate dirty cells, advance
-  recurrent cells per their firing arm expressions, and atomically
+  recurrent cells per their expressions, and atomically
   swap the back buffer for consumer visibility.
 - Consumer threads call `kernel.swap(...)` to obtain the latest
   published state and read cell values.
@@ -13523,7 +14939,7 @@ kernel.publish()
 ```
 
 Performs the complete publish operation specified in §13.10.2:
-evaluates dirty deriveds and recurrent arm expressions in
+evaluates dirty deriveds and recurrent expressions in
 topological order, commits recurrent advancements, and atomically
 swaps the back buffer pointer (§14.3.3.1) so consumers see the new
 state.
@@ -13770,6 +15186,12 @@ declared initial value or default.
 When a cell exists in both but with different type, it is treated
 as removal of the old + addition of the new.
 
+The `@reset_on_reopen` decorator (§13.2.4) is *not* part of a cell's
+identity — it is a behavioral flag, not part of the type. Adding or
+removing it across a reload preserves the cell's value and history;
+the changed reactivation behavior simply takes effect at the next
+gate-open.
+
 #### 13.15.3 Reload sequence
 
 The kernel performs the reload atomically on the producer thread,
@@ -13836,7 +15258,7 @@ restart — either full-kernel or per-instance, depending on the change:
     - Policy changes (`ring` ↔ `gate`).
     - Capacity changes.
 
-  See §13.18.11 for full stream-reload rules. **Per-instance
+  See §13.18.14 for full stream-reload rules. **Per-instance
   restart** suffices.
 - Effect-specific changes that require restart for the affected
   effect instances:
@@ -13889,7 +15311,12 @@ stream ring[1024] events: LogEntry = source
 ```
 
 This is appropriate when buffered events from the prior program
-version would be misinterpreted by the new version's consumers.
+version would be misinterpreted by the new version's consumers. Its
+reactivation sibling, `@reset_on_reopen` (§13.2.4), resets a gated
+*recurrent's* history when its gate reopens rather than on reload; the
+two form a decorator family — *reset accumulated state on a lifecycle
+event* — differing in the triggering event (and, for now, in which cell
+kind each is specified for).
 
 **Cursor identity across reload.** A consumer's cursor is preserved
 when the consuming operator (or derived) instance is preserved per
@@ -13965,13 +15392,17 @@ specifies the implementation model. Cross-references:
 - Stream cells (§13.18) allocate ring buffers from per-`(T, N)`
   pools per §14.3.5; their metadata (head pointer, observation
   cells) lives in the standard triple-buffered area per §14.4.
+  Recurrent stream declarations (§13.18.8) add fixed-size
+  per-stream history allocations on top of the base ring buffer,
+  sized from the `[N]` and from compiler-inferred per-input
+  lookback (§13.18.13).
 - Effect instances (§13.19) are groupings of standard reactive
   cells (signal, stream, sink) plus host-side reconciler state.
   No new storage category per §14.4; per-instance state in the
   reconciler is managed by the host outside the kernel's buffer.
 - The producer role per §14.7 is the kernel's reactive evaluation
   thread. It applies host writes to the back buffer, runs publish
-  cycles (recurrent arm evaluation, derived behavior
+  cycles (recurrent expression evaluation, derived behavior
   invocations, atomic swap). In typical deployments, the host's
   main thread plays the producer role; in other deployments, a
   kernel-configured thread does.
@@ -13979,7 +15410,7 @@ specifies the implementation model. Cross-references:
   state via swap. Consumer threads do not invoke behaviors; they
   read the results of past publishes.
 - Behaviors invoked during reactive evaluation — both derived
-  expressions and recurrent arm expressions — conform to the
+  expressions and recurrent expressions — conform to the
   ABI of §14.6: a uniform `fn(kernel: &KernelHandle, instance:
   InstanceId) -> ()` signature, with stateless semantics and
   content-addressed identity (§14.6.4).
@@ -14030,8 +15461,9 @@ Stateful operators allocate recurrent state per instantiation:
 
 ```
 operator smooth(source: Signal[f32], rate: f32 = 0.1, clock: Signal[u64]) -> Signal[f32]:
-  recurrent state: f32 = source
-    | on clock: state + (source - state) * rate
+  recurrent state: f32 = observe:
+    on clock: state.previous(source) + (source - state.previous(source)) * rate
+    default: source
   state
 ```
 
@@ -14129,7 +15561,7 @@ operator example(s: Signal[f32]) -> Signal[f32]:
 The implicit deref applies wherever a `Signal[T]` flows into a
 position expecting `T`: arithmetic operands, function-call arguments
 typed `T`, attribute initial-value expressions, derived bodies,
-recurrent arm expressions. It does NOT apply when the context expects
+recurrent expressions. It does NOT apply when the context expects
 `Signal[T]` directly (operator parameters, function parameters typed
 `Signal[T]`, pipe-form `|>` LHS) — in those cases the cell reference
 is bound without dereferencing.
@@ -14163,6 +15595,11 @@ Not permitted in operator bodies:
   parameters, not internal attrs.
 - Side-effecting statements. The body is reactive — declarative,
   not imperative.
+- `repeat` declarations (§13.5.4). Operator bodies are
+  reactive-transparent transforms with fixed-shape state;
+  dynamic-scope materialization is not in scope for v1. A future
+  revision may lift this restriction if a concrete use case
+  justifies the extension.
 
 The final expression's type must be either `T` or `Signal[T]`
 (matching the operator's return type `Signal[T]`). If the type is
@@ -14186,11 +15623,10 @@ type PeakResult:
   count: u32
 
 operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
-  recurrent (peak, count): (f32, u32) = (source, 0)
-    | on source: (
-        max(peak, source),
-        if source > peak then count + 1 else count,
-      )
+  recurrent (peak, count): (f32, u32) = (
+    max(peak.previous(source), source),
+    if source > peak.previous(source) then count.previous(0) + 1 else count.previous(0),
+  )
 
   PeakResult(peak: peak, count: count)
 
@@ -14337,7 +15773,7 @@ LHS rules common to all cases:
   constant signal cells automatically.
 - For Case 3 specifically, the LHS's concrete type must be a
   `Stream[T]` of matching element type. Piping a `Signal[T]` into a
-  sink is a type error; use `to_stream` (§13.18.7) to convert first
+  sink is a type error; use `to_stream` (§13.18.9) to convert first
   if event semantics are desired.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
@@ -14388,9 +15824,8 @@ Operators may take type parameters with optional trait bounds:
 operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
-operator scan[T: Add + Copy](source: Signal[T]) -> Signal[T]:
-  recurrent acc: T = source
-    | on source: acc + source
+operator running_total[T: Add + Copy](source: Signal[T]) -> Signal[T]:
+  recurrent acc: T = acc.previous(source) + source
   acc
 ```
 
@@ -14422,7 +15857,7 @@ operator body.
 
 **Reload-safe changes:**
 
-- Changes to the body of recurrent arm expressions, `where`
+- Changes to the body of recurrent expressions, `where`
   guards, or final-expression bodies — same as plain
   recurrent/derived reload safety.
 - Adding a new internal cell — new cells are initialized fresh.
@@ -14505,7 +15940,7 @@ in graph specification.
 **With streams (§13.18) and effects (§13.19):** operators share
 the same composition surface (`|>` pipe form, instance identity,
 parameter rules, generics, visibility) as effects, and produce or
-consume streams via the standard stream operators (§13.18.7). The
+consume streams via the standard stream operators (§13.18.9). The
 distinction is semantic role: operators perform pure reactive
 transforms with no outside-world side effects, while effects align
 program state with external reality through the reconciliation
@@ -14517,12 +15952,12 @@ expresses domain patterns like debounced fetches (`url |> debounce
 
 Normative diagnostic classes for operator usage:
 
-**`|>` applied to a non-operator:**
+**`|>` applied to a non-operator/non-effect:**
 
 ```
-error: `|>` requires an operator on the right-hand side
+error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -14610,7 +16045,7 @@ Streams are distinct from `Signal[T]`:
 - `Signal[T]` has a single current value, always defined (§13.2.6).
 - `Stream[T]` has zero or more pending events, each consumed
   independently. There is no "current value" of a stream; consumers
-  project a stream to a signal explicitly (§13.18.7).
+  project a stream to a signal explicitly (§13.18.9).
 
 #### 13.18.2 Declaration
 
@@ -14620,27 +16055,56 @@ stream policy[capacity]? name: Type? = source
 
 - **`policy`** is one of the policy keywords `ring` or `gate`
   (§13.18.3). Mandatory; the declaration has no default policy.
-- **`[capacity]`** is an optional positive integer literal specifying
-  the ring buffer's slot count. When omitted, defaults to `1024`.
+- **`[capacity]`** is an optional compile-time-known positive `usize`
+  (a literal, a `const`, or a const-generic parameter — §2.5)
+  specifying the ring buffer's slot count. When omitted:
+  - For declarations whose source is a single stream or a stream-
+    producing operator chain whose output capacity is known,
+    capacity defaults to that output's capacity.
+  - For declarations whose source is a reactive expression
+    (§13.18.7) involving streams and/or signals, capacity defaults
+    to the **sum of input capacities** across all reactive inputs.
+    Each stream contributes its declared capacity; each signal
+    contributes its implicit `to_stream` default (1024).
+  - For `recurrent[N] stream` declarations (§13.18.8), the rule
+    is `sum_of_input_capacities + N` — the recurrent's history
+    depth adds to the base default.
+  - In all other cases (e.g., bare `to_stream` calls without
+    surrounding context), capacity defaults to `1024`.
 - **`name`** is a snake_case identifier naming the stream.
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
-- **`source`** is a stream-producing expression — typically an
-  operator chain ending in a stream-producing operator (§13.18.7),
-  another stream, or a merge of streams.
+- **`source`** is a reactive expression producing events. Valid
+  source forms:
+  - A stream-producing operator chain (e.g., `signal |> to_stream`).
+  - A reference to another stream (direct forwarding).
+  - A reactive expression involving one or more streams and/or
+    signals (§13.18.7). Streams contribute events; signals
+    contribute commits via implicit `to_stream` semantics.
+  - A single signal or signal-only expression — equivalent to
+    `signal_expr |> to_stream` (§13.18.7.4).
 
 Examples:
 
 ```
+// Operator chain source
 stream ring[2048] user_clicks: ClickEvent = button_press |> to_stream
 
-stream gate[256] db_writes = pending_writes        // type inferred
+// Type inferred from source
+stream gate[256] db_writes = pending_writes
 
+// Default capacity (1024) + inferred type + operator chain
 stream ring url_changes: Url = current_url |> to_stream |> skip_first
-```
 
-The third example uses the default capacity (1024) and an inferred
-element type.
+// Reactive expression source (one stream + one signal)
+stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
+
+// Multi-stream expression (combine_latest)
+stream ring sum: i32 = stream_a + stream_b
+
+// Single signal source (implicit to_stream)
+stream ring url_events: Url = current_url
+```
 
 **Where streams may be declared.** Streams are reactive declarations.
 They may appear in the same scopes as other reactive declarations
@@ -14858,7 +16322,7 @@ using a stream operator that consults the back-pressure signal.
 
 The exact throttling pattern depends on the producing chain's
 shape; the stdlib provides operators that combine well with the
-observation surface (e.g., `throttle` per §13.18.7 with a
+observation surface (e.g., `throttle` per §13.18.9 with a
 pressure-derived gating signal).
 
 **Gate-side back-pressure.** For `gate` streams, the `rejected_total`
@@ -14867,7 +16331,324 @@ corrective action (retry, log, surface error). The pattern is the
 same shape, reading `rejected_total` or `is_full` instead of
 `pressure`.
 
-#### 13.18.7 Stream operators
+#### 13.18.7 Reactive expressions involving streams
+
+Streams participate in reactive expressions on equal footing with
+signals. A reactive expression containing one or more streams
+evaluates per-event, producing a derived stream; a reactive
+expression containing only signals produces a derived signal as
+before (§13.2.3).
+
+##### 13.18.7.1 Expression evaluation model
+
+A reactive input to an expression participates uniformly:
+
+- **A stream** contributes its events. The surrounding expression
+  is re-evaluated once per event, producing one output event per
+  input event.
+- **A signal** contributes its commits (via the same semantics as
+  `to_stream` per §13.18.9: initial value as first contribution,
+  every subsequent *changed* committed value as a new contribution).
+  Same-value commits do not contribute, per the value-change rule
+  (§13.2.4.4).
+
+The expression is recomputed whenever *any* of its reactive inputs
+emit. The output stream emits the freshly-computed value as its
+next event.
+
+##### 13.18.7.2 Combine semantics
+
+When an expression has multiple reactive inputs, the default
+combining behavior is **combine_latest**: a new output event is
+emitted whenever any input emits, using the latest value of each
+other input. The first output event is emitted once every input
+has emitted at least once (signal initial values count as their
+first emission).
+
+```
+stream ring price_in_eur = price_in_usd * usd_to_eur_rate
+// price_in_usd is a stream; usd_to_eur_rate is a signal.
+// Emits whenever either changes — at the stream's events with
+// the rate's current value, and at the rate's commits with the
+// last price.
+
+stream ring sum = stream_a + stream_b
+// Two streams. Emits whenever either emits; combine_latest pairs
+// the latest of each.
+```
+
+Other combining behaviors (`zip`, `sample`, `merge`, etc.) require
+explicit stdlib operators (§13.18.9).
+
+**Combine_latest applies to value-producing operations only.**
+The combine_latest default of this subsection governs reactive
+expressions whose output's value depends on all inputs —
+arithmetic (`*`, `+`, etc.), function calls, `map`, conditional
+expressions, and similar. For these, any input change can change
+the output value, so emitting on any input change is natural.
+
+**LHS-driven operations are per-LHS-event, not combine_latest.**
+This is the normative rule. Operators driven by a single LHS
+stream — both *subset* operations that may drop events (`where`
+§13.18.10, `filter` §13.18.9, `skip`, `take`) and *1:1*
+operations that emit one output per input event (`pairwise`) — are
+per-LHS-event: only the LHS stream drives emission. Any reactive
+cells referenced inside the operation's predicate or transformation
+contribute their current values at LHS-emission time, but their
+commits between LHS events do not cause re-emission. §13.18.10.2
+applies this rule to the `where` filter specifically; all
+LHS-driven operators follow it.
+
+The distinction is semantic: value-producing operations have a
+value that depends on all inputs (combine_latest is natural);
+LHS-driven operations are paced by a single source stream
+(per-LHS-event is natural). `pairwise` is LHS-driven and 1:1 (it
+never drops events but emits one output per input); the subset
+operators are LHS-driven and may drop events. Both categories are
+per-LHS-event.
+
+**First-emission timing.** A reactive expression emits its first
+output event during the startup pass (§13.2.6) iff every reactive
+input has a value to contribute at that moment: signals
+contribute their initial values immediately, and streams
+contribute only after their first event has been produced. A
+stream expression whose inputs are all signals (no streams) emits
+one event during startup. A stream expression with one or more
+streams emits its first event when those streams have collectively
+produced at least one event each — possibly later than startup.
+
+##### 13.18.7.3 Stream-wins rule
+
+An expression's reactive-output type is determined by its inputs:
+
+- **Zero streams** in the expression → result is a signal. The
+  surrounding declaration must be a binding context that produces
+  a Signal-typed cell (`derived`, `attr` default expression,
+  `recurrent`'s expression).
+- **One or more streams** in the expression → result is a stream.
+  The surrounding declaration must be a `stream` declaration
+  (§13.18.2) or `recurrent[N] stream` (§13.18.8).
+
+The rule follows from input types alone; there is no type-directed
+dispatch on the binding's LHS context. An expression containing
+streams cannot be coerced into a signal silently — explicit
+projection via `to_signal(default)` (§13.18.9) is required.
+
+##### 13.18.7.4 Assignment rules
+
+| Binding form | RHS expression | Behavior |
+|---|---|---|
+| `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
+| `derived X = expr` | Has streams | Compile error — use `to_signal(default)`. |
+| `stream X = expr` | Has streams | Output stream; per-event evaluation. |
+| `stream X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
+| `stream X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
+
+The `stream X = signal_expr` form is the implicit-conversion case:
+each signal's commits become events in the output stream. To
+control the conversion mechanism (e.g., to skip the initial value),
+use `to_stream` explicitly with the desired operator chain.
+
+##### 13.18.7.5 Worked examples
+
+Examples below omit explicit `[capacity]` to demonstrate the
+defaulting rule of §13.18.2; an explicit capacity is always
+allowed and overrides the default.
+
+**Single signal as stream source:**
+
+```
+signal current_url: Url = "https://example.com"
+stream ring url_events: Url = current_url
+// Equivalent to: stream ring url_events = current_url |> to_stream
+// Default capacity: 1024 (signal contributes its implicit
+// to_stream default).
+// Emits "https://example.com" during startup, then each subsequent
+// commit of current_url.
+```
+
+**Signal-and-stream mixed:**
+
+```
+stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
+// Per-event of price_in_usd: sample rate, compute product.
+// Also emits on rate commits (combine_latest).
+// Default capacity: price_in_usd.capacity + 1024 (the signal).
+```
+
+**Multi-stream combine_latest:**
+
+```
+stream ring sum: i32 = stream_a + stream_b
+// Emits whenever a or b emits; output = latest_a + latest_b.
+// First output fires once both a and b have produced at least
+// one event each.
+// Default capacity: stream_a.capacity + stream_b.capacity.
+```
+
+**Conditional transformation:**
+
+```
+stream ring clamped: i32 = if raw > max_allowed then max_allowed else raw
+// Per-event of raw, output the clamped value.
+```
+
+**Composition with operators downstream:**
+
+```
+stream ring filtered: i32 = (count * 2) |> filter(is_positive)
+// Expression part produces a Stream[i32]; the operator chain continues.
+```
+
+##### 13.18.7.6 Compile-error examples
+
+```
+error: cannot assign stream-valued expression to derived `count_signal`
+  --> derived count_signal: i32 = some_stream * 2
+                                  ^^^^^^^^^^^^^^^
+  hint: a stream-valued expression cannot be coerced to a signal
+        silently. Project to a signal via `to_signal`:
+        `derived count_signal: i32 = (some_stream * 2) |> to_signal(0)`
+```
+
+#### 13.18.8 Recurrent streams
+
+A `recurrent[N] stream` is a stream declaration whose reactive
+expression body may reference past events of itself and of its
+input streams via the `.past(n, fallback)` access form.
+
+##### 13.18.8.1 Declaration form
+
+```
+recurrent[N]? stream policy[capacity]? NAME: Type? = EXPR
+```
+
+- `recurrent[N]?` is the recurrent prefix. `[N]` is the output
+  stream's self-history size — the maximum lookback `k` permitted
+  in `NAME.past(k, ...)` self-references. Must be a positive
+  integer literal. `recurrent stream` (with no brackets) is
+  shorthand for `recurrent[1] stream` (one step of self-memory).
+- `policy[capacity]?` follows the standard stream declaration form
+  (§13.18.2): policy is mandatory; capacity is optional. When
+  capacity is omitted, the default is `sum_of_input_capacities + N`
+  per §13.18.2 — the recurrent's self-history allocation adds to
+  the inferred consumer-buffer capacity.
+- `NAME` is the snake_case identifier naming the output stream.
+- `Type` is optional when inferable from `EXPR`.
+- `EXPR` is a reactive expression (§13.18.7) that may use
+  `.past(n, fallback)` and `.previous(init)` on any stream
+  referenced (including `NAME` itself).
+
+```
+recurrent stream ring filtered: i32 = if count % 2 == 0 then count else count.previous(0)
+recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
+recurrent stream ring smoothed: f32 = (count + smoothed.previous(0.0)) / 2
+recurrent[5] stream ring debounced: i32 = if count.past(5, 0) == count then count else debounced.previous(0)
+```
+
+Each example uses the default capacity. Assuming `count: ring[1024]`:
+- `filtered` has capacity `1024 + 1 = 1025` (N=1 default).
+- `avg` has capacity `1024 + 3 = 1027`.
+- `smoothed` has capacity `1024 + 1 = 1025`.
+- `debounced` has capacity `1024 + 5 = 1029`.
+
+Explicit capacity overrides the default: `recurrent[3] stream ring[2048] avg: f32 = ...`.
+
+##### 13.18.8.2 Access form
+
+```
+stream_name.past(n, fallback)
+```
+
+- `n` is a compile-time-known positive `usize` — a literal, a `const`,
+  or a const-generic parameter (§2.5) — specifying the lookback
+  distance. `n=1` is the immediately-previous event; `n=2` is
+  two events back; etc.
+- `fallback` is an expression of type `T` (the stream's element
+  type), returned when fewer than `n` events of `stream_name`
+  have been observed.
+- Returns `T` directly (not `Option[T]`); the fallback ensures the
+  read is always well-typed.
+
+```
+stream_name.previous(init)
+```
+
+is sugar for `stream_name.past(1, init)`.
+
+**Per-stream history semantics.** `count.past(1, 0)` refers to the
+*immediately-previous event of `count`*, regardless of the timing
+of other streams' events. Each stream's history is advanced
+independently per its own event count.
+
+##### 13.18.8.3 Per-call independence
+
+Each `.past(n, fallback)` invocation is an ordinary function call;
+its arguments are evaluated when read. Multiple calls to
+`.past(n, fallback)` on the same stream may use different
+fallback values within the same expression:
+
+```
+recurrent stream ring blend: i32 =
+  if condition then count.previous(0) else count.previous(99)
+// Two calls on count.previous, with different fallbacks. Both
+// are valid; each contributes independently to its branch.
+```
+
+##### 13.18.8.4 Memory allocation
+
+- **Output stream history**: declared explicitly via `[N]`. The
+  output's ring of past events allocates `N` slots of `sizeof(T)`.
+- **Input stream history**: the compiler statically scans the
+  expression for `.past(k, ...)` calls per input stream and
+  allocates the maximum `k` observed per input. An input
+  referenced only via `.past(1, ...)` and `.past(2, ...)` gets 2
+  slots. An input not accessed via `.past` gets 0 slots
+  (no history allocation).
+
+The total per-declaration memory cost is the sum of:
+`N * sizeof(T_output)` + Σ `max_k(input_i) * sizeof(T_i)` across
+all referenced inputs.
+
+##### 13.18.8.5 Compile-time checks
+
+- `NAME.past(k, ...)` with `k > N` on the declared output: compile
+  error.
+- `.past` or `.previous` access outside the body of a `recurrent[N]
+  stream` declaration: compile error.
+- `n` argument of `.past(n, fallback)` must be a positive integer
+  literal; non-literal expressions are rejected at parse time.
+
+##### 13.18.8.6 Composition with operators
+
+A `recurrent[N] stream` declaration produces an ordinary
+`Stream[T]` for downstream consumers. Operators apply normally
+(assuming `count` is a stream in scope):
+
+```
+recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
+stream ring scaled: f32 = avg |> map(fn(x): x * 2)
+stream ring filtered: f32 = avg |> filter(fn(x): x > 0.5)
+```
+
+The recurrent declaration's special semantics are contained within
+its own body; consumers see a regular stream.
+
+##### 13.18.8.7 Restrictions
+
+- **Effect `observed:` blocks** (§13.19.5) declare bare host-written
+  stream cells (no reactive expression body). `recurrent[N] stream`
+  is not valid in `observed:` blocks because there is no expression
+  for `.past` to reference. Effects needing history-aware behavior
+  must compute it in the host's reconciler.
+- **Signal recurrents share this design.** Signal-typed
+  `recurrent[N]` declarations (§13.2.4) use the same
+  `.previous(fallback)` / `.past(k, fallback)` accessors with the
+  same compile-time bounds. The two are symmetric: same syntax,
+  same memory model, same semantics — differing only in whether
+  the cell is a value-shaped Signal or an event-shaped Stream.
+
+#### 13.18.9 Stream operators
 
 Operators that produce, transform, or consume streams are stdlib
 primitives. All use the standard operator-application syntax
@@ -14876,7 +16657,7 @@ primitives. All use the standard operator-application syntax
 **Signal-to-stream bridge:**
 
 ```
-operator to_stream[T](source: Signal[T]) -> Stream[T]:
+operator to_stream[T, const N: usize = 1024](source: Signal[T]) -> RingStream[T, N]:
   // emits initial value as first event;
   // emits each subsequent committed value of source as a new event
   ...
@@ -14887,9 +16668,23 @@ current value is emitted as event 0; thereafter, each commit of a new
 value by the source (per the publish cycle) appends an event. Same-
 value commits do not emit (per the value-change semantics of §13.2.4.4).
 
-The output stream's policy defaults to `ring` and capacity to `1024`;
-overrides are supplied at the declaration site (`stream ring[N]
-name = sig |> to_stream`).
+The output is a `RingStream[T, N]`. The capacity `N` defaults to
+`1024`; callers may override via turbofish:
+
+```
+let s = some_signal |> to_stream                       // RingStream[T, 1024]
+let s = some_signal |> to_stream::[Url, 2048]          // RingStream[Url, 2048]
+```
+
+The `to_stream` operator always produces `ring` policy. To convert
+a signal to a stream with a different policy, apply additional
+operators after `to_stream` (e.g., to coerce to gate, the user
+declares a `gate`-policied output and threads through). Most cases
+need only the default ring semantics.
+
+The implicit signal-to-stream conversion in reactive expressions
+(§13.18.7.4) uses the default `N = 1024`, matching this operator's
+default.
 
 **Stream-to-signal bridge:**
 
@@ -14904,7 +16699,7 @@ The default is required because signals must always have a defined
 value (§13.2.6 initial value rules; §13.9.7 cell-value reads). The
 returned signal updates on each new event.
 
-**Skip family:**
+**Skip / take family:**
 
 ```
 operator skip[T](source: Stream[T], n: i32) -> Stream[T]:
@@ -14912,7 +16707,18 @@ operator skip[T](source: Stream[T], n: i32) -> Stream[T]:
 
 operator skip_first[T](source: Stream[T]) -> Stream[T]:
   // equivalent to skip(1)
+
+operator take[T](source: Stream[T], n: i32) -> Stream[T]:
+  // emits the first `n` events observed from source, then emits no
+  // more (the output stream is complete after n events)
+
+operator take_first[T](source: Stream[T]) -> Stream[T]:
+  // equivalent to take(1)
 ```
+
+`skip` and `take` are duals: `skip(n)` discards the first n events
+and passes the rest; `take(n)` passes the first n events and
+discards the rest. Both preserve the source's policy and capacity.
 
 The most common use of `skip_first` is to drop the initial-value
 event emitted by `to_stream`, leaving only true changes:
@@ -14976,7 +16782,7 @@ default expression referencing the input streams' capacities (per
 capacity at the call site via turbofish if they have tighter bounds:
 
 ```
-let merged: RingStream[Event, 1024] = merge::<Event, 1024>(a, b)
+let merged: RingStream[Event, 1024] = merge::[Event, 1024](a, b)
 ```
 
 A separate `merge_gate` variant is provided for gate streams with
@@ -14995,7 +16801,198 @@ The pipe establishes a forwarding subscription that lives for the
 enclosing scope. There is no dedicated operator wrapper; the pipe's
 type-directed dispatch handles the case when the RHS is a Sink.
 
-#### 13.18.8 Policy as type
+**History-aware operators** (Stream → Stream with state):
+
+```
+operator scan[T, A](source: Stream[T], init: A, f: (A, T) -> A) -> Stream[A]:
+  // emits f(state, event) on each event, threading state through.
+  // The output's first event is f(init, first_input_event).
+
+operator pairwise[T](source: Stream[T]) -> Stream[(T, Option[T])]:
+  // emits each event paired with the previous event;
+  // the first output is (first_input, none).
+```
+
+These are the operator-form equivalents of `recurrent[N] stream`'s
+self-feedback (`scan`) and one-step input pairing (`pairwise`). Use
+them when a closure-style accumulator is preferred — for complex
+state types, or for cases where the inline expression form of
+`recurrent[N] stream` becomes unwieldy.
+
+The native expression form (§13.18.8) is generally preferred for
+straightforward arithmetic and conditional history use; `scan` and
+`pairwise` shine for richer accumulator structures.
+
+#### 13.18.10 The `where` stream filter
+
+`where` is a stream-filter expression at the expression level. It
+takes a stream (or a signal — implicitly converted via `to_stream`
+per §13.18.9) and a boolean predicate; it produces a new stream
+emitting only those events of the input whose predicate evaluates
+to true.
+
+##### 13.18.10.1 Form
+
+```
+A where C
+```
+
+- **`A`** is a stream of element type `T`, or a signal whose value
+  type is `T` (with implicit `to_stream` per §13.18.7.4).
+- **`C`** is a boolean expression evaluated per event of `A`.
+- The output is a stream of `T` emitting events from `A` whose
+  evaluation of `C` is true; events whose `C` is false are not
+  emitted.
+
+```
+stream ring big_clicks = clicks where clicks.position.x > 1000
+stream ring positive = numbers where numbers > 0
+stream ring relevant = events where (events.priority == high and active_signal)
+```
+
+For signals on the LHS, the implicit `to_stream` semantics apply:
+
+```
+stream ring above_threshold = sensor_signal where sensor_signal > 100
+// equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
+```
+
+##### 13.18.10.2 References inside `C` and per-LHS-event semantics
+
+The predicate `C` may reference any reactive cells in scope. Inside
+`C`, references work per the rules of §13.18.7 in two ways:
+
+- The LHS stream's name (`A` above) refers to the **current event**
+  available at the filter: `A.field` accesses a field of that
+  event; a bare reference to a primitive-typed stream is its
+  current event value.
+- Other reactive cells referenced in `C` (signals, derived signals,
+  attrs, other stream projections) contribute their **current
+  committed values** at the moment the filter evaluates.
+
+**Per-LHS-event evaluation.** The filter evaluates exactly once
+per LHS event. When `A` emits an event:
+
+1. `C` is evaluated using A's current event and the current
+   committed values of any other cells referenced in `C`.
+2. If `C` is true, the filter emits the event. If false, no
+   emission.
+
+Cells referenced in `C` are *sampled* at LHS emission time — they
+contribute their current values to the per-event check. **Commits
+to those cells between LHS emissions do not trigger filter
+re-evaluation.** The filter is per-LHS-event; the LHS stream is the
+sole driver of emission.
+
+This matches the semantics of the `filter` operator (§13.18.9): both
+forms are per-LHS-event with the predicate sampled at emission. The
+distinction is syntactic: `where` is the keyword form (predicate is
+a reactive expression referencing in-scope cells directly); `filter`
+is the operator form (predicate is a closure).
+
+```
+stream ring active_events = events where active_signal == true
+// emits each event of `events` for which `active_signal` is true
+// at that moment. If `active_signal` flips false then true again
+// between events, no event is re-emitted — the filter only fires on
+// `events` emissions.
+
+stream ring x_clicks_in_zone = clicks where clicks.x > zone_threshold
+// each click event is checked against zone_threshold's current
+// value. If zone_threshold changes between clicks, the new value
+// applies to subsequent clicks. Past clicks are not re-evaluated.
+```
+
+**Distinction from value-producing expressions.** Filters are a
+*subset operation*: the output is a subset of LHS events, governed
+by the predicate. This is an instance of the per-LHS-event rule
+that governs all LHS-driven operations; §13.18.7.2 states that rule
+normatively and contrasts it with value-producing expressions
+(arithmetic, function calls, `map`) where combine_latest applies.
+For filters, the LHS stream alone drives emission; predicate cells
+contribute values but not emissions.
+
+##### 13.18.10.3 Output type, policy, and capacity
+
+The output stream's element type matches the input's. Policy and
+capacity follow:
+
+- **Policy** is inherited from the LHS. A `RingStream[T, ...]`
+  filter produces `RingStream[T, ...]`; a `GateStream[T, ...]`
+  produces `GateStream[T, ...]`. A signal input (implicit
+  `to_stream`) produces a ring stream.
+- **Capacity** defaults to the LHS stream's capacity. Predicate-
+  referenced cells do not contribute to the capacity sum because
+  they don't drive emission — they're sampled at LHS events.
+  This differs from §13.18.2's default for value-producing
+  expressions, which sums all input capacities. Filter outputs
+  only need to buffer what the LHS produces. Explicit `[capacity]`
+  at the surrounding stream declaration overrides.
+
+##### 13.18.10.4 Composition and chaining
+
+`where` is left-associative; multiple filters chain naturally:
+
+```
+stream ring active_big_clicks = clicks where clicks.area > 100 where clicks.priority == high
+// equivalent to: (clicks where clicks.area > 100) where clicks.priority == high
+```
+
+`where` composes with other stream operators (§13.18.9) at any
+position in a pipeline:
+
+```
+stream ring filtered_pairs = (events where events.value > 0) |> pairwise
+stream ring scaled_relevant = (numbers |> map(double)) where numbers > 100
+```
+
+##### 13.18.10.5 Use inside `observe` arm-triggers
+
+The `where` filter is the mechanism by which observe arms (§13.2.11)
+express conditional triggers. The trigger `T where C` is a filtered
+stream; from the arm's perspective, this is just an ordinary trigger
+cell — the arm doesn't distinguish between a bare `T` and a filtered
+`T where C`.
+
+Per the per-LHS-event semantics of §13.18.10.2, the filtered
+trigger emits when `T` emits AND `C` evaluates to true with the
+current values of any cells `C` references. Predicate-cell commits
+do not, by themselves, emit on the filtered trigger. The arm
+activates only when `T` actually emits with the predicate passing.
+
+```
+recurrent counter: i32 = observe:
+  on tick where active_mode: counter.previous(0) + 1
+  on reset: 0
+```
+
+When `tick` emits, `active_mode`'s current value is sampled; if
+true, the arm activates. If `active_mode` flips false then true
+between ticks, no arm activation occurs — the filtered trigger
+requires `tick` to actually emit.
+
+When the `observe` block is the body of a recurrent, the arm
+expressions may reference the recurrent's self-history via
+`.previous(fallback)` and `.past(k, fallback)` (§13.2.4.3).
+
+The arm-selection rules of §13.2.11 apply uniformly: the first arm
+whose filtered trigger emits in the current publish wins.
+
+##### 13.18.10.6 Restrictions
+
+- **Not for non-reactive collections.** `where` filters reactive
+  streams (and signals lifted to streams). For non-reactive
+  collections (arrays, vectors, etc.), use `Iterator` operations
+  (§12.7).
+- **Predicate must be boolean.** `C` must evaluate to `bool`. Other
+  types are a compile error.
+- **Output is always a stream.** A filter may emit zero events per
+  input, so signal semantics (always-defined value) don't fit.
+  Assigning a `where` expression to a `derived` binding is a
+  compile error; project explicitly via `to_signal(default)` if a
+  signal-typed result is needed.
+
+#### 13.18.11 Policy as type
 
 Stream policy is encoded in the type rather than as a runtime
 attribute. This means operators that care about policy can constrain
@@ -15046,7 +17043,28 @@ error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
 This catches a class of errors that would otherwise surface only at
 runtime as silent data loss.
 
-#### 13.18.9 Consumer cursors
+**Mixing policies in reactive expressions** (§13.18.7) is allowed
+without compiler intervention. When an expression contains streams
+of differing policies — `stream ring X = ring_a + gate_b` — the
+output's policy is the LHS-declared policy (`ring` in this example),
+regardless of input policies. There is no inference of output
+policy from inputs.
+
+The rationale: a stream's policy is an *output-buffer* property —
+it controls what happens when the OUTPUT's consumers can't keep up.
+It is independent of input semantics. Mixing a gate input into a
+ring output means the gate input still tracks its own `rejected_total`
+(its producer-facing guarantee remains), but the COMBINED output
+behaves per the LHS-declared ring policy: consumers of the output
+may miss events under load.
+
+Authors are responsible for understanding the implication: if an
+expression mixes lossless (gate) inputs into a lossy (ring) output,
+the gate's lossless guarantee does not propagate to downstream
+consumers of the combined output. To preserve the gate semantics
+end-to-end, declare the output as `gate` too.
+
+#### 13.18.12 Consumer cursors
 
 Each consumer of a stream maintains its own cursor — a position into
 the ring buffer marking the oldest event the consumer has not yet
@@ -15084,7 +17102,7 @@ to rewind a cursor to an earlier position; the buffer's events are
 not persistently stored beyond the ring buffer's lifetime, and
 events may have been overwritten.
 
-#### 13.18.10 Memory model
+#### 13.18.13 Memory model
 
 A stream's storage consists of:
 
@@ -15114,7 +17132,30 @@ slots; consumers read from pre-allocated slots; cursors advance
 through indices. The fixed buffer is the entire memory cost of the
 stream.
 
-#### 13.18.11 Hot reload
+**Recurrent stream history** (§13.18.8) adds additional fixed-size
+allocations on top of the base stream storage:
+
+4. **Output history**: a `recurrent[N] stream X` allocates `N`
+   slots of `sizeof(T_X)` for `X.past(k, ...)` reads. Without an
+   explicit `[N]`, the default is `[1]`.
+5. **Per-input history**: for each input stream referenced via
+   `.past(k, ...)` calls in the expression body, the compiler
+   statically determines the maximum `k` per input and allocates
+   that many slots of `sizeof(T_input)` per input.
+
+Total memory for a `recurrent[N] stream X = expr` declaration:
+
+```
+ring_buffer(X)                          // base stream storage
++ N * sizeof(T_X)                       // output history
++ Σ max_k(input_i) * sizeof(T_input_i)  // per-input history
+```
+
+Inputs not accessed via `.past` add no history overhead. All
+history allocations are made once at stream creation; nothing is
+allocated at runtime.
+
+#### 13.18.14 Hot reload
 
 Stream hot reload preserves the ring buffer iff the stream's
 *type signature* is byte-identical between old and new code. The
@@ -15149,6 +17190,17 @@ buffer is reset to empty. This is appropriate when buffered events
 from the prior program version would be misinterpreted by the new
 version's consumers.
 
+**Annotation changes between reloads apply prospectively.** Adding
+`@reset_on_reload` to a stream declaration that previously did not
+carry it does *not* retroactively reset the current buffer; the
+current reload preserves the buffer per the type-signature rule.
+The new annotation takes effect on the *next* reload affecting this
+stream's declaration site. Removing the annotation behaves
+symmetrically: the current reload still resets the buffer (the old
+annotation applied to the in-progress reload); subsequent reloads
+preserve. This matches the precedent for `when` predicate changes
+(§13.15.3): structural-metadata changes apply prospectively.
+
 **Cursor identity across reload.** A consumer's cursor is preserved
 when the consuming operator (or derived) instance is preserved per
 its own identity rule. When the consumer is added (a new
@@ -15167,16 +17219,46 @@ full-kernel restart per §13.15.4:
 
 Implementations detect these during the diff phase.
 
-#### 13.18.12 Restrictions
+**Recurrent stream history reload rules** (§13.18.8). In addition
+to the base stream reload rules above:
+
+- **Output history (`[N]`) preserved** iff `(element type, policy,
+  capacity, N)` is byte-identical between old and new code. Source
+  expression changes (rewriting the `.past`-using expression) do
+  not affect history preservation as long as the type signature
+  matches.
+- **Increasing `[N]`** (e.g., `recurrent[3]` → `recurrent[5]`):
+  reload-safe. Preserved history fills the lower-index slots; new
+  slots initialize empty (fallback values used until they fill).
+- **Decreasing `[N]`** (e.g., `recurrent[5]` → `recurrent[3]`):
+  reload-unsafe; per-instance restart of the affected
+  recurrent-stream declarations. The trailing history would have
+  no place to live.
+- **Per-input history**: preserved iff the input stream's type
+  signature is byte-identical AND the max `k` referenced for that
+  input does not decrease. Increasing max `k` for an input
+  reload-safely extends its history allocation (older positions
+  initialize from fallbacks). Decreasing max `k` reload-safely
+  truncates allocation. Removing all `.past` references to an
+  input reload-safely releases its history.
+- **`@reset_on_reload`** on a `recurrent[N] stream` resets both
+  the output history and all per-input history, in addition to
+  the base ring buffer.
+
+#### 13.18.15 Restrictions
 
 - **Streams may not appear inside function bodies.** Functions are
   reactive-transparent (§13.12.2); they have no place to host
   reactive declarations. A function that needs to produce events
   for downstream reactive consumption returns a value the caller
   feeds into an operator that emits a stream.
-- **A stream's `source` expression must produce a stream.** Passing
-  a signal directly is a type error — explicit conversion via
-  `to_stream` is required (§13.18.7).
+- **A stream's `source` must be reactive-valued.** The source
+  expression must include at least one reactive input (signal,
+  stream, or other Cell). Pure-value expressions with no reactive
+  references cannot produce a stream (there's nothing to emit on).
+  Signals participate via implicit `to_stream` semantics
+  (§13.18.7.4); explicit `to_stream` is still available when the
+  user wants different conversion mechanics.
 - **Cursors are not first-class values.** Programs cannot construct,
   store, or pass cursors. Cursors are implementation state of
   consuming operators; they are observable only through the
@@ -15190,8 +17272,20 @@ Implementations detect these during the diff phase.
   `kernel.write_attr`.** Streams are not signal-shaped or attr-
   shaped cells. Host-side writes into a stream go through the
   dedicated host API (§13.14.8 `kernel.push_stream`).
+- **`.past(n, fallback)` and `.previous(init)` are only valid
+  inside the expression body of a `recurrent[N] stream` declaration**
+  (§13.18.8). Use elsewhere — in plain `stream` declarations,
+  `derived` expressions, signal arms, etc. — is a compile error.
+- **Output stream `.past(k, ...)` must satisfy `k ≤ N`.** A
+  declaration `recurrent[N] stream X = ... X.past(k, ...) ...`
+  with `k > N` is a compile error: the output's history allocation
+  cannot hold that many past events.
+- **Stream-valued expressions cannot be assigned to signal-typed
+  bindings.** `derived X = stream_expr` and `signal X = stream_expr`
+  are compile errors; use `to_signal(default)` to project explicitly
+  (§13.18.7.3).
 
-#### 13.18.13 Diagnostics
+#### 13.18.16 Diagnostics
 
 Normative diagnostic classes for stream usage.
 
@@ -15207,17 +17301,33 @@ error: stream declaration requires a policy keyword (`ring` or `gate`)
         `stream ring[1024] my_events: Event = source`
 ```
 
-**Signal passed where Stream expected (missing `to_stream`):**
+**Signal passed where Stream specifically required:**
+
+A `stream X = signal_expr` binding is valid via implicit `to_stream`
+(§13.18.7.4). But operator or effect parameters typed as a specific
+`Stream[T]` (not via reactive-expression coercion) still require an
+actual stream:
 
 ```
 error: cannot pass `Signal[T]` to `Stream[T, _, _]` parameter
-  --> stream ring[1024] events: Event = current_signal
-                                        ^^^^^^^^^^^^^^ expected a stream
-  hint: signal-to-stream conversion is explicit. Apply `to_stream`:
-        `stream ring[1024] events: Event = current_signal |> to_stream`
+  --> persist(my_signal)
+              ^^^^^^^^^ expected a stream
+  hint: `persist`'s parameter requires a stream. Apply `to_stream`
+        explicitly: `persist(my_signal |> to_stream)`.
 ```
 
-**Stream read as a value (missing `to_signal`):**
+**Stream-valued expression assigned to a signal binding:**
+
+```
+error: cannot assign stream-valued expression to signal binding
+  --> derived latest: Event = some_stream * 2
+                              ^^^^^^^^^^^^^^^
+  hint: a stream-valued expression cannot be coerced to a signal
+        silently. Project explicitly via `to_signal(default)`:
+        `derived latest: Event = (some_stream * 2) |> to_signal(default_event)`
+```
+
+**Stream read as a value (no expression context):**
 
 ```
 error: cannot read `Stream[T, _, _]` as a value
@@ -15261,6 +17371,41 @@ error: `stream` declarations are not permitted inside function bodies
         reactive-transparent (§13.12.2) and cannot host reactive
         declarations. Move the stream to a module, node, operator,
         or effect scope.
+```
+
+**`.past` or `.previous` outside `recurrent[N] stream`:**
+
+```
+error: `.past` and `.previous` are only valid inside a `recurrent[N] stream` declaration
+  --> stream filtered = if count % 2 == 0 then count else count.previous(0)
+                                                                ^^^^^^^^^^^
+  hint: history access requires opting into a recurrent stream
+        declaration, which allocates the per-stream memory:
+        `recurrent stream filtered = if count % 2 == 0 then count else count.previous(0)`
+```
+
+**Output `.past(k, ...)` exceeds declared `[N]`:**
+
+```
+error: lookback k=5 exceeds declared output history capacity [N=3]
+  --> recurrent[3] stream x = x.past(5, 0)
+                                ^^^^^^^^^^
+  hint: increase the output history capacity (`recurrent[5]`) or
+        reduce the lookback depth. The output's `.past(k, ...)` calls
+        must satisfy `k ≤ N`.
+```
+
+**Non-compile-time `n` in `.past(n, fallback)`:**
+
+```
+error: lookback index in `.past(n, fallback)` must be compile-time-known
+  --> recurrent stream x = source.past(some_variable, 0)
+                                       ^^^^^^^^^^^^^
+  hint: the lookback distance must be a compile-time-known `usize` — a
+        literal, a `const`, or a const-generic parameter (§2.5) — so the
+        compiler can statically determine per-stream memory allocation.
+        For runtime-variable lookback, use the `scan` or `pairwise`
+        operators (§13.18.9) with appropriate accumulator state.
 ```
 
 ### 13.19 Effects
@@ -15511,6 +17656,16 @@ reconciler consumes the buffered events in order. The reconciler is
 responsible for maintaining the alignment between the desired state
 and the external environment.
 
+**`repeat` declarations.** A `desired:` block may also contain
+`repeat` declarations (§13.5.4) for dynamic-scope materialization
+driven by reactive sources. This is the canonical pattern for
+io-driven topology — rendering one component per database row,
+opening one connection per active session, spawning one worker per
+pending job. Each scope's cells (`derived`, `sink`) are reconciled
+per scope, with the host applying additions and removals as the
+source's key set changes. Per-scope paths follow §13.5.3 with the
+effect instance as the enclosing context.
+
 #### 13.19.5 Observed block
 
 The `observed:` block declares cells that the host's reconciler
@@ -15541,7 +17696,7 @@ protocol). Writes are dirty-tracked in the standard publish-cycle
 way.
 
 **`stream` cells** — host-written event sequences. The program
-observes events the host appends via stream operators (§13.18.7);
+observes events the host appends via stream operators (§13.18.9);
 the host pushes events via the host API (§13.14.8):
 
 ```
@@ -15554,6 +17709,19 @@ The declaration shape parallels the top-level `stream` declaration
 (§13.18.2), but with no `= source` clause — the source is the host's
 reconciler pushing events via `kernel.push_stream`. Policy and
 capacity work as in regular stream declarations.
+
+`recurrent[N] stream` (§13.18.8) is not valid in `observed:` blocks
+— a recurrent stream requires a reactive expression body, but
+observed-block cells have no body (the host populates them
+directly via the kernel API). Effects that need history-aware
+behavior must compute it in the host's reconciler.
+
+`repeat` (§13.5.4) is likewise not valid in `observed:` blocks.
+Observed blocks declare cells that receive host-pushed data; they
+do not host reactive-structure declarations. To materialize
+per-element scopes from an observed cell, place the `repeat` in a
+node body or the same effect's `desired:` block, consuming the
+observed cell as the source.
 
 The stream begins empty. Consumers in program code project the stream
 to a signal via `to_signal`, or fold/count/filter/etc. via the
@@ -15706,7 +17874,7 @@ type name, and its argument bindings — the same scheme as operator
 instances (§13.17.6.1).
 
 Two `|>` chains in different scopes (different modules, different
-node bodies, different placements, different Repeat elements) that
+node bodies, different placements, different `repeat` scopes) that
 both instantiate the same effect type produce distinct instances
 with independent desired/observed cells and independent host-side
 reconciler state.
@@ -15826,7 +17994,7 @@ preserve instance identity per the same rule as operators
 (§13.17.10).
 
 **Stream cells inside effects** follow the stream hot-reload rules
-(§13.18.11): the buffer is preserved iff `(element type, policy,
+(§13.18.14): the buffer is preserved iff `(element type, policy,
 capacity)` is byte-identical; `@reset_on_reload` on a stream cell
 forces clear.
 
@@ -15842,7 +18010,7 @@ Effect instance lifetimes follow the scope hierarchy:
 
 - Module-level: lives for the program's lifetime.
 - Inside a node: lives as long as the node instance is mounted.
-- Inside a Repeat element: lives until the element key is removed
+- Inside a `repeat` scope: lives until the element key is removed
   from the iterated source (§13.5.4).
 - Inside an operator body: lives as long as the enclosing operator
   instance.
@@ -15905,7 +18073,7 @@ This makes all cells accessible from a single binding via the flat
 namespace rule (§13.19.7).
 
 **Stream-typed observed cells** are accessed via the stream
-operators (§13.18.7):
+operators (§13.18.9):
 
 ```
 let ws = current_url |> websocket
@@ -16075,9 +18243,8 @@ error: effect instantiation inside another effect's body is not permitted
 error: only role-keyword declarations are permitted inside effect blocks
   --> effect example():
         desired:
-          recurrent count: i32 = 0
-          ^^^^^^^^^^^^^^^^^^^^^^^^^
-            | on input: self.count + 1
+          recurrent count: i32 = count.previous(0) + 1
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect blocks accept only `derived`, `sink` (in `desired:`)
         and `signal`, `stream` (in `observed:`). For stateful behavior
         wrapping an effect, use a wrapping operator (§13.17) that
@@ -16416,7 +18583,7 @@ the full per-publish cost for those cells.
 
 #### 14.3.5 Extensible pools for dynamic-size types
 
-Dynamic-size cell types (`Vec[T]`, `SmallVec[T; N]`, `RingBuf[T; N]`,
+Dynamic-size cell types (`Vec[T]`, `SmallVec[T, N]`, `RingBuf[T, N]`,
 `string`, etc., per §13.12.4) cannot live directly in the fixed-size
 cell slots. Their storage uses **extensible pools** alongside the
 reactive state buffer.
@@ -16450,7 +18617,7 @@ trie), pool slots may share internal nodes across versions. The pool
 tracks the trie's node-level refcounts; old nodes are reclaimed when
 no buffer references them.
 
-For value types (`SmallVec[T; N]`, `RingBuf[T; N]`), each buffer's
+For value types (`SmallVec[T, N]`, `RingBuf[T, N]`), each buffer's
 slot holds a complete copy of the value. Rotation of the
 triple-buffer ensures consumers never see partial writes; producer
 work is bounded by the value's size.
@@ -16490,7 +18657,7 @@ program draw from a per-`(T, N)` pool:
   per-`(T, N)` pool.
 - Hot reload can grow or shrink these pools as stream declarations
   are added or removed, per the same extensible-pool mechanism. A
-  preserved stream (per §13.18.11's preservation rule) retains its
+  preserved stream (per §13.18.14's preservation rule) retains its
   pool slot across reload; a new stream allocates a new slot.
 
 Unlike persistent data structures, ring buffer slot arrays are not
@@ -16503,7 +18670,7 @@ to slot positions that haven't reached the committed head are
 invisible to consumers until the next publish. Overwrites of
 previously-committed slots (under `ring` policy) happen only at
 positions past any cursor that's caught up; lagging cursors that
-were pointing at overwritten positions jump forward per §13.18.9.
+were pointing at overwritten positions jump forward per §13.18.12.
 
 **Drop and eviction:** see §14.8.
 
@@ -16596,7 +18763,7 @@ The mechanism (§14.3.3, §14.7) does not depend on the mapping choice.
 ### 14.6 The Behavior ABI
 
 Each reactive behavior — a `derived` expression body or a `recurrent`
-arm body — is exposed to the kernel via a uniform **behavior ABI**.
+expression body — is exposed to the kernel via a uniform **behavior ABI**.
 Functions called from reactive bodies are reactive-transparent per
 §13.12.2: they compile to ordinary Rust functions (per §15.5) reached
 transitively from the registered behaviors, not as separately-registered
@@ -16707,7 +18874,7 @@ The triple-buffer mechanism (§14.3.3) operates in terms of two roles:
   buffer it is writing; such reads are local to the producer and
   do not go through the triple-buffer pointer swap. What the
   producer writes (signal/attr updates from host API, derived and
-  recurrent arm expression results) and what triggers it to publish
+  recurrent expression results) and what triggers it to publish
   are specified in §13.10.
 - **Consumer**: the role that reads the current buffer via the swap
   operation. Loads the current pointer and reads cells from the
@@ -16746,8 +18913,8 @@ depend on the mapping choice.
 
 #### 14.7.2 Behaviors invoked by the mechanism
 
-Reactive behaviors (derived expression bodies and recurrent arm
-expressions) are invoked by the producer. Functions called from
+Reactive behaviors (derived expression bodies and recurrent
+expression bodies) are invoked by the producer. Functions called from
 reactive contexts are reactive-transparent per §13.12.2 and reached
 transitively from registered behaviors; they are not themselves
 separately invoked by the producer. The trigger, the selection of
@@ -16784,7 +18951,7 @@ specified here.
 
 ```
 trait Drop:
-  fn drop(value: mut Self)
+  fn drop(value: mut Subject)
 ```
 
 A type implementing `Drop` provides cleanup logic that runs when a
@@ -16951,7 +19118,7 @@ Changes safe to hot reload:
 
 - Body of an existing behavior (same signature, different
   implementation).
-- Adding new behaviors (new derived expressions, new recurrent arm
+- Adding new behaviors (new derived expressions, new recurrent expression
   bodies).
 - Adding new signals, attrs, derived declarations.
 
@@ -17166,9 +19333,16 @@ The specification is a structured record with the following fields.
 [input_cell_ids])` pairs. Used by the kernel for dirty-set
 propagation and topological evaluation ordering.
 
-**Recurrent trigger sets.** A list of `(recurrent_cell_id,
-[trigger_cell_or_event_ids], where_guard?)` tuples, encoding the
-arm semantics of §13.2.4.
+**Recurrent dependency edges.** A list of `(recurrent_cell_id,
+[input_cell_ids], output_history_N, input_lookback_map)` tuples,
+encoding each recurrent's reactive inputs and its self-/input-
+history allocation per §13.2.4. `input_cell_ids` are the non-self
+references that drive re-evaluation (implicit triggers).
+`output_history_N` is the recurrent's declared `[N]` self-history
+depth (defaulting to 1). `input_lookback_map` maps input cell IDs
+referenced via `.past(k, ...)` to their maximum `k`, mirroring the
+stream-cell encoding. Recurrents whose expression is an `observe`
+block additionally carry the observe's per-arm trigger sets.
 
 **`when`-gates.** Per gated instance, the predicate expression in
 compiled form (behavior ID per §14.6.4, plus input cell IDs the
@@ -17194,6 +19368,16 @@ pointers at program startup.
   `dropped_total`, `rejected_total`, `last_overflow_at`.
 - `reset_on_reload`: boolean, true if the stream carries the
   `@reset_on_reload` annotation.
+- `output_history_size`: integer N from `recurrent[N] stream`, or
+  0 if not a recurrent stream declaration. Determines the number
+  of past-event slots allocated for `NAME.past(k, ...)` access on
+  this stream's output (§13.18.8.4).
+- `input_lookback_map`: a map from input cell IDs (referenced via
+  `.past(k, ...)` in this stream's expression body, when this is
+  a recurrent stream) to integer max-`k` values. Empty for
+  non-recurrent streams or for recurrent streams whose body does
+  not call `.past` on any inputs. Determines per-input history
+  allocation (§13.18.8.4).
 
 A Sink declared in an effect's `desired:` block shares its cell ID
 with the corresponding Stream view; the spec records a single
@@ -17488,8 +19672,8 @@ already verified through the cluster analysis (§11.3.4) and Rule (P)
 
 #### 15.5.4 Iterator lowering
 
-Ductus's `Iterator` trait (§12.7) has signature `fn next(iter: Self)
--> (Option[Item], Self)`. Rust's standard `Iterator` trait has
+Ductus's `Iterator` trait (§12.7) has signature `fn next(iter: Subject)
+-> (Option[Item], Subject)`. Rust's standard `Iterator` trait has
 signature `fn next(&mut self) -> Option<Item>`.
 
 The Ductus emitter generates Rust code using Rust's `Iterator`
@@ -17517,7 +19701,7 @@ do not lower to Rust types directly. They lower to:
 - Cell allocations in the kernel state buffer, described in the
   graph specification (§15.4).
 - Behavior registrations (the body of a `derived` expression OR the
-  body of a `recurrent` arm becomes a Rust function matching the
+  body of a `recurrent`'s expression becomes a Rust function matching the
   behavior ABI, §14.6).
 - Dependency edges in the graph specification.
 
@@ -17573,7 +19757,7 @@ the graph specification:
   §14.6.4. Same ID → carried over (no rebinding needed). Different
   ID → removed + added (kernel rebinds function-pointer table).
 
-- **Derived dependency edges, recurrent trigger sets, when-gates.**
+- **Derived dependency edges, recurrent dependency edges, when-gates.**
   Set diff by their respective keys (derived cell ID, recurrent cell
   ID, gated instance ID).
 
