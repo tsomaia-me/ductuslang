@@ -2296,23 +2296,33 @@ user modules, and are not subject to the orphan rule:
   types.* The fine-grained operator traits (`Add`, `Sub`, `Mul`, etc.) are
   pre-implemented for the built-in numeric types. User code cannot redefine
   these.
-- *Auto-derivations from `From` to `Into` and `TryFrom` to `TryInto`* (§7).
-  When a user writes `fulfill From[T] for U`, the
-  language automatically provides `Into[U] for T`. The derivation is built
-  in, not user-writable.
-- *Identity conversion `From[T] for T` for every type.* Universally provided.
-- *Auto-implementations of `Copy` for built-in types per §11.4.1.* The
-  primitive numeric types, `bool`, `char`, `string`, `duration`, `instant`,
-  tuples of Copy components, and `Range[T]` when T: Copy all auto-implement
-  Copy. User code cannot redefine these impls.
-- *Stdlib auto-impl `From[()] for Option[T]`* — provides the `None` value
-  for use in the `?` desugaring per §8.4.1. The impl is universally
-  available for any T; user code cannot override or shadow it.
+- *Auto-derivations from `From` to `Into` and `TryFrom` to `TryInto`*
+  (§7). When a user writes `fulfill From[T] for U`, the language
+  automatically provides `Into[U] for T`. This is a coherence rule
+  (manual `Into` impls could disagree with the auto-derived inverse
+  of `From`); it applies uniformly to user-defined and stdlib
+  `From`/`TryFrom` pairs.
+- *Identity conversion `From[T] for T` for every type.* Structural
+  impl; every `T` converts to itself trivially. Exempt from the
+  orphan rule because neither argument originates in any particular
+  crate.
+- *Stdlib `Copy` impls for built-in types per §11.4.1.* The primitive
+  numeric types, `bool`, `char`, `string`, `duration`, `instant`,
+  tuples of Copy components, and `Range[T]` when T: Copy receive
+  Copy impls from stdlib. The orphan rule prevents user redefinition
+  (neither the trait nor the type comes from user code); users can
+  derive Copy for their own types via `@derive(Copy)`.
+- *Stdlib auto-impl `From[()] for Option[T]`* — provides the `None`
+  value for use in the `?` desugaring per §8.4.1. The impl is
+  universally available for any T; the orphan rule prevents user
+  override (neither `()` nor `Option[T]` comes from user code).
 
-These privileged implementations exist outside the user-writable
-`fulfill`-block space and cannot conflict with user code. They use the
-same trait/fulfill mechanism as user-written impls; the only privilege
-is that the language reserves the right to provide them.
+These impls exist outside the user-writable `fulfill`-block space
+under the orphan rule (§3.7) and structural-impl exemption: stdlib
+declares them for types stdlib defines or for structural cases. They
+use the same trait/fulfill mechanism as user-written impls; there is
+no language path that bypasses the trait system or grants stdlib
+special powers beyond defining its own types.
 
 #### 3.7.4 Language-defined marker traits
 
@@ -4854,8 +4864,13 @@ language automatically provides the reverse direction:
 - Whenever `TryFrom[T] for U` exists, `TryInto[U] for T` is auto-provided
   with the same `Error` associated type.
 
-The auto-derivation is language-built-in and not user-overridable. This
-forecloses the coherence problem of disagreeing manual `From`/`Into` pairs.
+The auto-derivation is performed by the language for coherence: a
+manually-written `Into[U] for T` impl could disagree with the
+auto-derived inverse of `From[T] for U`, producing two contradictory
+ways to convert. Forbidding manual `Into`/`TryInto` impls is the
+coherence rule, not a stdlib privilege — the rule applies uniformly to
+every user-defined `From`/`TryFrom` pair, just as it does to
+language-built-in ones.
 
 All `Into[U] for T` impls come from auto-derivation of a corresponding
 `From[T] for U` impl (plus the identity case per §7.3); all `TryInto[U]
@@ -4869,7 +4884,9 @@ follows automatically.
 The `From`/`TryFrom` impls are the user's written contract; the
 `Into`/`TryInto` impls are the language's mechanical counterparts.
 Neither auto-derived impl requires a `satisfies` declaration on its
-source type (per §3.7.3 — language-privileged implementations).
+source type: the impl is structural (mechanically derived from
+`From`/`TryFrom`), not a separate trait obligation the user must
+declare.
 
 ### 7.3 Identity Conversion
 
@@ -4881,8 +4898,11 @@ accepts both `U` (via identity) and any type explicitly convertible to
 `U`. The user can pass the destination type directly without an
 intermediate conversion call.
 
-Identity conversion is not subject to the orphan rule (§3.7.3); it is one
-of the language-privileged implementations.
+Identity conversion is structural — `T` converts to itself trivially
+for every type — and is exempt from the orphan rule (§3.7) because
+neither side of the conversion comes from any particular crate. The
+exemption is a structural necessity, not a stdlib privilege; the same
+applies to any future structural impl the language adds.
 
 ### 7.4 The Orphan Rule Applies to User Conversions
 
@@ -4943,8 +4963,12 @@ conversions per §4.5's lossless rules:
 and lossy integer-to-float conversions. Each carries an appropriate
 `Error` type (typically a numeric range error).
 
-These built-in impls are language-privileged (§3.7.3) — they exist outside
-user-writable `fulfill`-block space and cannot conflict with user code.
+These impls are provided by stdlib for the language's built-in
+numeric types. The orphan rule (§3.7) prevents users from declaring
+their own `From`/`TryFrom` impls between primitives (neither type
+comes from user code); users can declare such impls for their own
+types using the same trait machinery — there is no special path
+restricted to stdlib.
 
 ### 7.6 Relationship to `T(value)` conversion
 
@@ -5647,9 +5671,10 @@ The runtime is free to share immutable backing storage between values,
 but this is an implementation detail invisible to the user.
 
 The `+` operator concatenates strings per §4.4's operator framework.
-The language provides an `Add` implementation for `string` (per §3.7.3's
-language-privileged impls) with both operands and result typed as
-`string`:
+The stdlib provides an `Add` implementation for `string` with both
+operands and result typed as `string` (the orphan rule per §3.7
+prevents users from declaring their own `Add` for `string`; users may
+implement `Add` for their own types using the same trait machinery):
 
 ```
 let greeting = "hello" + " " + "world"
@@ -7288,8 +7313,9 @@ The following types automatically implement `Copy`:
 - `string` (see §11.6).
 - `duration`, `instant` (see §9.4; both are i64-sized scalars).
 - Tuples whose components are all `Copy`.
-- `Range[T]` when `T: Copy` (language-privileged implementation
-  per §3.7.3).
+- `Range[T]` when `T: Copy` (stdlib provides a conditional Copy impl
+  on this stdlib type; users may write the same conditional pattern
+  for their own generic types).
 
 #### 11.4.2 Opt-in via `@derive(Copy)`
 
@@ -12175,19 +12201,39 @@ repeat <bind> in <source> keyed by <key-expr>:
   Tuple destructure is the idiomatic form for `HashMap[K, V]`, whose
   iterator yields `(K, V)` pairs.
 - **Bind ownership.** `<bind>` is typed as the iterator's element type
-  after **move-promotion**: owned `T` rather than the borrow-equivalent
-  `T` that `Iterable::iterator` would naturally yield under the
+  after **move-promotion**: a real owner rather than the
+  borrow-equivalent alias that `Iterable::iterator` yields under the
   default `type Item = T` slot convention (§3.1.2, §12.7).
-  Move-promotion is sound because the source value is read-only during
-  scope_evaluate — a publish's current buffer is not mutated; writes
-  go to the next buffer per §14.3.3 — so each element has unique
-  access for the duration of its scope's evaluation. The mechanism is
-  analogous to §12.7.2's linear-ownership optimization applied to the
-  iteration source: no copy is performed at the machine level; the
-  kernel hands each scope_evaluate a unique pointer to its element.
-  Attrs, connection arguments, and other placement targets in the body
-  therefore see owned types — borrow-equivalent aliases do not leak
-  into attribute or argument positions through `repeat`.
+  Move-promotion converts the cluster-member alias into a real owner
+  scoped to one `scope_evaluate` invocation; it is the per-scope
+  counterpart of §12.7.2's linear-ownership optimization applied to
+  the iteration source.
+
+  *Why this is sound.* Each `scope_evaluate` runs in isolation
+  against the source signal's *current* buffer — a publish's current
+  buffer is read-only; writes go to the next buffer per §14.3.3.
+  The kernel hands each `scope_evaluate` a unique pointer to its
+  element, and no other code can read or write that element during
+  the scope's execution. Unique access for the scope's duration is
+  exactly the precondition for promoting a borrow-equivalent alias
+  to a real owner without copying or violating §11.1's single-writer
+  invariant.
+
+  *Why repeat needs this.* The body's placements (attrs, connection
+  arguments, child parts) consume their RHS values into structural
+  storage per categories B/D in §11.1. Storage sites require real
+  owners; cluster members cannot be stored (§11.3.4). Without
+  move-promotion, the bind couldn't flow into any placement RHS.
+  Move-promotion allows the body to treat `<bind>` as an owned value
+  that may freely participate in category B/D storage operations
+  within the scope's evaluation.
+
+  At the machine level, no copy is performed: the kernel's unique
+  pointer is the storage; promotion is a static reinterpretation by
+  the compiler, not a runtime operation. Attrs, connection arguments,
+  and other placement targets in the body see owned types —
+  borrow-equivalent aliases do not leak into attribute or argument
+  positions through `repeat`.
 - **`<body>`** is an indented **placement-body block** following
   §13.8.3's grammar — any number of placements (parts and/or connections)
   per iteration, with the ordinary clause ordering of §13.8.9 and the
@@ -12225,9 +12271,10 @@ both apply (e.g., when a user has fulfilled both `Keyed` and
 Whenever `<source>` is dirty, the kernel:
 
 1. Reads the current value of `<source>` from the signal's current
-   buffer (§14.3.3) and iterates it via the borrow form of `Iterable`
-   (§12.8), enumerating each element. The bind sees the owned element
-   type per the move-promotion rule of §13.5.4.1.
+   buffer (§14.3.3) and iterates it via `Iterable::iterator` (§12.8),
+   enumerating each element. The bind sees the owned element type per
+   the move-promotion rule of §13.5.4.1 (promoted from the
+   borrow-equivalent alias that `Iterable::iterator` yields).
 2. Derives the key for each element per the ordered selection of
    §13.5.4.1 (explicit `keyed by`, then `Keyed` trait, then
    stringifiable element, else compile error).
