@@ -19774,9 +19774,10 @@ Ductus's ownership rules map directly to Rust's:
 | Default parameter (`v: T`)        | `v: &T` parameter.        |
 | `own` parameter (`own v: T`)      | `v: T` parameter (move).  |
 | `move v` at call site             | Pass by value (move).     |
+| Default return (`fn f(v: T) -> T`) | `-> &T` rooted in input (lowerer infers from body's contributing inputs). |
+| `own` return (`fn f(v: T) -> own T`) | `-> T` owned (Copy/Clone anchoring emitted by the lowerer when sourced from a cluster member). |
 | `for x in v:` (default)           | `for x in &v` (borrows).  |
 | `for own x in v:` (`for own`)     | `for x in v` (consumes).  |
-| Implicit Copy/Clone on rooted return (§11.3.6) | `.clone()` or copy at the return site, emitted by the lowerer. |
 | `Copy` types                      | `Copy` trait derived.     |
 | `Clone`                           | `Clone` trait derived.    |
 
@@ -19789,26 +19790,76 @@ already verified through the cluster analysis (§11.3.4) and Rule (P)
 
 #### 15.5.4 Iterator lowering
 
-Ductus's `Iterator` trait (§12.7) has signature `fn next(iter: Subject)
--> (Option[Item], Subject)`. Rust's standard `Iterator` trait has
-signature `fn next(&mut self) -> Option<Item>`.
+Ductus's `Iterator` trait (§12.7) under the P3 design has signature:
 
-The Ductus emitter generates Rust code using Rust's `Iterator`
-pattern internally for performance, while Ductus source code
-continues to see the tuple-return form. The translation is
-mechanical: each Ductus iterator implementation lowers to a Rust
-struct with a `next(&mut self) -> Option<Item>` method, plus a
-wrapper that exposes the tuple-return form for Ductus-internal use
-during compilation.
+```
+fn next(iter: Subject, source: Source) -> (Option[Item], Subject)
+```
 
-The final emitted Rust module contains only the `&mut self` form.
-The tuple-return wrapper exists in Ductus's IR during lowering for
-type-system consistency with the source-level Iterator trait, and is
-eliminated before Rust code generation. No runtime overhead from the
-dual representation reaches the emitted binary.
+with two associated types (`Item`, `Source`). This shape does not
+correspond directly to Rust's standard `Iterator` trait
+(`fn next(&mut self) -> Option<Self::Item>`), because Ductus's
+`Source` parameter is part of the trait contract — there is no
+"hidden source field" inside the iterator.
+
+The emitter generates a custom Rust trait per monomorphization that
+mirrors Ductus's shape:
+
+```rust
+// emitted Rust (per Ductus iterator type)
+trait DuctusIteratorXYZ {
+    type Item;
+    type Source;
+    fn next(self, source: &Self::Source) -> (Option<Self::Item>, Self);
+}
+```
+
+The `source` parameter is emitted as `&Source` (Rust borrow) under
+Ductus's borrow-default convention. The `(Option<Item>, Self)`
+tuple return is preserved at the trait level; the linear-ownership
+optimization (§12.7.2) is applied by the lowerer when the for-loop
+desugaring satisfies its three conditions, producing machine code
+equivalent to in-place cursor mutation. The compiler MAY additionally
+generate a Rust `std::iter::Iterator` wrapper for interop with
+Rust-standard combinators, but the native form is the custom trait.
+
+For-loop emission threads the source through each call:
+
+```
+for x in v:                      -- Ductus
+  body
+```
+
+becomes:
+
+```rust
+// emitted Rust
+let _src = v;                    // owns the source binding
+let mut _iter = Iterable::iterator(&_src);
+loop {
+    let (opt, new_iter) = DuctusIteratorXYZ::next(_iter, &_src);
+    _iter = new_iter;
+    match opt {
+        Some(value) => {
+            let x = value;
+            { body }
+        },
+        None => break,
+    }
+}
+```
+
+For the `for own` form, `_src` is moved into the iterator via
+`IntoIterable::consuming_iterator(_src)`, and the `next` calls pass
+`()` as the source parameter (per `Iter.Source = ()` constraint in
+§12.9).
 
 This translation is invisible to Ductus source code. Ductus users
-never see `&mut` in their code or in error messages.
+never see `&` or `&mut` in their code or in error messages; the
+emitted Rust is an implementation detail of the lowerer. The custom
+trait approach is preferred over emitting against Rust's standard
+`Iterator` because the standard trait cannot express the
+`(Source, Item)` slot relationships natively without compiler tricks.
 
 #### 15.5.5 Reactive primitive lowering
 
