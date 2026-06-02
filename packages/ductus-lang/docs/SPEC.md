@@ -7054,23 +7054,35 @@ Borrow-equivalent aliases arise from:
 - A for-loop iteration variable when the source is iterated by default
   — the variable is rooted in the source's current element for the
   duration of one iteration body (§12.3).
+- A function return value under the default convention — the caller's
+  binding to the result is rooted in the function's contributing
+  input(s) (§11.3.6).
+- A trait associated-type slot under the borrow-default convention —
+  the slot's appearances in method signatures are rooted in the
+  enclosing method call's argument cluster (§3.1.2).
 
 A cluster's **lifetime** is the union of its members' scopes. The
 real-owner root is the cluster's longest-lived member; the cluster
 ceases to exist when the root's scope ends (or when the root is
-consumed by `move` or returned).
+consumed by `move`). Clusters may span function-call boundaries:
+when a function returns a value under the default convention, the
+caller's binding to the result joins the cluster headed by the
+input(s) the return is rooted in.
 
 **Cluster-member restrictions.** A binding that is a borrow-equivalent
 alias (not a real owner) cannot:
 
-- Be returned from a function (return is real-owner-only; see §11.3.6
-  for the auto-anchoring rule applied to cluster-member returns).
 - Be stored in a record field, tuple component, enum payload, or
   indexed slot (category B requires real ownership of the RHS).
 - Be written into a reactive cell — `signal.write`, `stream.emit`,
   recurrent advance, attr reassignment (category D requires real
   ownership of the RHS).
 - Be captured by an escaping closure (§11.10).
+
+Cluster members **may** be returned from a function under the default
+return convention (§11.3.6); the cluster extends into the caller's
+scope. To return an owned independent value instead, the function
+declares `-> own T` and anchoring applies.
 
 These restrictions preserve the cluster's structural property: an
 alias's lifetime is bounded by the root's lifetime, so it cannot
@@ -7148,52 +7160,101 @@ fn destroy(items: Vec[i32]) -> i32:
   // items is no longer accessible (consumed by `for own`)
 ```
 
-#### 11.3.6 Rooted returns and implicit Copy/Clone
+#### 11.3.6 Returns: borrow-default propagation, opt-in anchoring
 
-A return expression whose value is rooted in a cluster member (rather
-than in a real-owner local) requires *anchoring* before it can leave
-the function: the returned value must become an independent real owner
-in the caller's scope, because §11.3.4 forbids cluster members from
-escaping the function.
+Function return slots follow the same borrow-default convention as
+parameter slots (§11.7), let-rebinding slots (§11.3), and trait
+associated-type slots (§3.1.2). Returns are *transient binding sites*
+— the caller's binding to the result is a name, not storage — and the
+default convention is borrow-equivalent.
 
-The compiler anchors automatically:
+**Default behavior: cluster propagation.** When a function returns a
+value rooted in one of its inputs, the caller's binding to the result
+is a **borrow-equivalent alias rooted in the input's cluster**. The
+cluster extends across the function-call boundary: the input remains
+the cluster's root, the result is a new alias, and §11.9.2's
+source-mutation invariants apply for the result's lifetime.
 
-- For **`Copy` types**: a free, implicit copy. The value is duplicated;
-  the caller receives an independent owned copy. The cluster member is
-  unaffected.
+```
+fn first(v: Vec[Record]) -> Record:           // default convention
+  v[0]                                         // returns alias of v[0]
+
+fn caller():
+  let buf = make_records()                    // buf: real owner
+  let r = first(buf)                          // r: borrow-equivalent alias
+                                              //   rooted in buf's cluster
+  print(r.first_name)                         // ✓ reads through r
+  print(buf.length)                           // ✓ buf still owned and readable
+  // buf may not be moved or mutated while r is live (§11.9.2)
+```
+
+The compiler infers return rootedness from the function body's
+control flow: if the returned value is sourced from a particular
+input (or sub-expression of one), the result is rooted in that
+input. When multiple inputs may contribute (e.g., a conditional
+return), the result is rooted in the union of contributing clusters;
+the caller's binding to the result extends mutation/move locks across
+all rooted-in inputs.
+
+**Opt-in anchoring: `-> own T`.** To return a real owner — for cases
+where the caller needs ownership independent of the input — the
+function declares `-> own T`. Anchoring then applies:
+
+- For **`Copy` types**: a free, implicit copy. The value is
+  duplicated at the return site; the caller receives an independent
+  owned copy.
 - For **`Clone` but not `Copy` types**: an implicit `.clone()` call
   (§11.5.4). The cost is visible in the function's elaborated form
-  (§11.7) and in diagnostics; the user does not write `.clone()` in the
-  source.
+  (§11.7) and in diagnostics; the user does not write `.clone()` in
+  the source.
 - For **neither `Copy` nor `Clone` types**: a compile error.
-  Diagnostic: *"cannot return cluster-member value of type `T`; `T` is
-  not `Copy` or `Clone`. To return a value of this type, accept the
-  source as `own` (§11.7.4) so that the function holds a real owner,
-  construct a new owned value locally, or implement `Clone` for `T`."*
-
-This rule preserves cluster integrity while keeping the common cases
-(returning a `Copy` primitive from a borrow-default parameter,
-returning a `Clone` composite when the cost of clone is acceptable)
-ergonomic.
+  Diagnostic: *"function declares `-> own T`; cannot produce an owned
+  `T` from a borrow-equivalent expression because `T` is not `Copy`
+  or `Clone`. Either declare the parameter `own` to receive ownership
+  from the caller, construct a new owned `T` locally, or implement
+  `Clone` for `T`."*
 
 ```
-fn first(v: Vec[i32]) -> i32:                  // i32 is Copy
-  v[0]                                          // ✓ implicit copy of v[0]
+fn first_owned(v: Vec[Record]) -> own Record: // opt-in own return
+  v[0]                                         // requires Clone impl
+                                               //   on Record; implicit
+                                               //   .clone() at return
 
-fn snapshot(state: AppState) -> AppState:      // AppState is Clone
-  state                                         // ✓ implicit Clone of state
-
-fn extract(buf: AudioBuffer) -> AudioBuffer:   // AudioBuffer is neither
-  buf                                           // ✗ compile error: "cannot
-                                                //    return cluster-member
-                                                //    value of type
-                                                //    `AudioBuffer`; …"
+fn caller():
+  let buf = make_records()
+  let r = first_owned(buf)                    // r: real owner (independent)
+  print(r.first_name)
+  drop(move buf)                              // ✓ buf consumable; r is
+                                              //   independent of buf's cluster
 ```
 
-The diagnostic for the third case suggests either `fn extract(own buf:
-AudioBuffer) -> AudioBuffer` (consume the buffer, gaining real
-ownership inside the function) or implementing `Clone` for
-`AudioBuffer`.
+**Why this completes the borrow-default principle.** All transient
+binding sites — parameters, let-rebinds, for-loop variables, trait
+associated-type slots, and now function returns — default to
+borrow-equivalent. The only sites that default to owned are storage
+sites (record fields, indexed slots, enum payloads, reactive cells).
+This uniformity removes the need for any stdlib-privileged
+borrow-returning carve-out: a function like `element_at(v: Vec[T], i:
+isize) -> T` is naturally borrow-equivalent rooted in `v` — no
+language privilege required.
+
+**Lifetime tracking across function boundaries.** Default returns
+extend cluster lifetimes into the caller's scope. The caller's
+binding to the result participates in the cluster headed by the
+original real-owner input. The compiler tracks this through
+elaborated function signatures (§11.7.5): the signature `fn f(v: T)
+-> T` elaborates with explicit rootedness, e.g., `fn f(borrow v: T)
+-> borrow_rooted_in(v) T`. Users do not write this; diagnostics and
+tooling expose it on demand.
+
+**Bounded by structural restrictions.** Even with return-cluster
+propagation, §11.9.1's structural restrictions still apply:
+borrow-equivalent aliases (whether parameters, let-bindings, or
+function results) cannot be stored in record fields, enum payloads,
+indexed slots, or reactive cells. A return-value alias may be
+consumed at a category B/D storage site only if the function's
+signature declares `-> own T` (anchoring at the return boundary) or
+the caller's binding is explicitly `.clone()`d.
 
 ### 11.4 The `Copy` Trait
 
@@ -7574,10 +7635,13 @@ diagnostics display.
 
 For example, the user-facing source `fn f(v: T) -> T` corresponds to an
 elaborated form that names `v` as a borrow-equivalent alias for the
-call's duration, identifies the return value as anchored from `v`'s
-cluster (with implicit Copy or Clone per §11.3.6), and bounds the
-return's lifetime to the call site. The user does not write this; the
-compiler computes it; the IDE shows it on demand.
+call's duration and identifies the return value as a
+borrow-equivalent alias rooted in `v`'s cluster (per §11.3.6's
+default return convention) — extending the cluster into the caller's
+scope. Schematically: `fn f(borrow v: T) -> borrow_rooted_in(v) T`.
+Anchoring (`-> own T`) and consume parameters (`own v: T`) are
+written in the source by the user; the borrow-rootedness on returns
+is inferred from the function body and exposed by elaboration.
 
 The elaborated form is normative for diagnostic templates: every
 ownership-related error message references the elaborated form's
@@ -7745,12 +7809,12 @@ call site visibly marks where a binding becomes inaccessible.
 
 This section specifies how the compiler tracks the borrow-equivalent
 aliases that arise from default function parameters (§11.7),
-let-rebindings of cluster members (Rule P, §11.3.5), and for-loop
-iteration variables (§12.3). The user-facing surface has **no `&T`
-syntax**: aliases are introduced implicitly by the language constructs
-cited above, by trait associated-type slots under the borrow-default
-convention (§3.1.2), and by function parameter slots under the
-default convention (§11.7). The compiler's elaborated form (§11.7.5)
+let-rebindings of cluster members (Rule P, §11.3.5), for-loop
+iteration variables (§12.3), function returns under the default
+convention (§11.3.6), and trait associated-type slots under the
+borrow-default convention (§3.1.2). The user-facing surface has **no
+`&T` syntax**: aliases are introduced implicitly by the slot-default
+conventions cited above. The compiler's elaborated form (§11.7.5)
 exposes the inferred lifetimes for diagnostics and tooling. Stdlib
 types use the same mechanism as user-defined types — there is no
 language-privileged carve-out for the standard library.
@@ -7759,12 +7823,11 @@ language-privileged carve-out for the standard library.
 
 A borrow-equivalent alias may not be:
 
-- **Returned from a function** as the function's declared return value,
-  except via the auto-anchoring of §11.3.6 (which produces a real
-  owner via implicit Copy or Clone).
 - **Stored in a record field, enum variant payload, or tuple component
   (category B).** Compound types contain owned values, never aliases
-  (§11.11).
+  (§11.11). To store a value derived from an alias, declare the
+  function return as `-> own T` (anchoring per §11.3.6) or
+  explicitly `.clone()` to produce a real owner.
 - **Stored in a reactive cell (category D).** `signal.write`,
   `stream.emit`, attr reassignment, and recurrent advance require a real
   owner for the value flowing into the cell (§11.3.4).
@@ -7779,10 +7842,17 @@ Aliases **may** appear in:
   Rule (P).
 - For-loop iteration variables under the default `for x in v:` form —
   §12.3.
+- Function return values under the default convention (§11.3.6) —
+  the caller's binding to the result is a cluster member rooted in
+  the function's inputs.
+- Trait associated-type slots under the borrow-default convention
+  (§3.1.2) — e.g., `Iterator::Item`, `Iterator::Source`.
 
-The first form is bounded by the call expression. The latter two extend
-the alias's lifetime to the binding's scope (let-rebind) or the loop
-body (for-loop var). The compiler's cluster analysis (§11.3.4) handles
+The first form is bounded by the call expression. The latter four extend
+the alias's lifetime: let-rebind to the binding's scope, for-loop var
+to the body, function return to the caller's scope (rooted in inputs),
+associated-type slots to whatever scope the slot's use-site occupies.
+The compiler's cluster analysis (§11.3.4) handles
 both cases.
 
 #### 11.9.2 Constraints during alias lifetime
