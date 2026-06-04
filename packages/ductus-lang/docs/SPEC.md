@@ -12778,6 +12778,13 @@ Connections are minimal glue between source and destination instances;
 dynamic-scope structure belongs in node bodies, placement bodies, or
 effect `desired:` blocks.
 
+A connection body likewise hosts no effect instantiations. Effects are
+instantiated only at module level, in node bodies, in operator bodies,
+or in effect-cell expressions (§13.19.15); connection bodies are not
+among the admitted scopes. A connection therefore holds no outside-world
+resource of its own — which is why a gated connection simply stops
+delivering and needs no `suspend`/`resume` (§13.9.7).
+
 #### 13.6.5 The `Circularity` trait
 
 A connection type may declare conformance to the `Circularity` trait
@@ -14171,7 +14178,10 @@ false):
   `when` predicate must remain current; the kernel keeps the
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
-  level.)
+  level.) This describes the *steady gated state*; the one-shot
+  effect-desired recompute of the close transition (below) happens
+  *at* the false-flip publish, before the subtree settles into this
+  frozen state, and is not a recurring recomputation.
 - **Outputs:** do not propagate. Outgoing connections from the
   gated node do not deliver to their destinations.
 
@@ -14225,7 +14235,7 @@ operation to tear down. Effects (§13.19) are the sole construct holding
 outside-world state, so the close pass and the suspend/resume protocol
 (§13.14.9) concern effects exclusively. A gated *connection* therefore
 simply stops delivering (above); it has no suspend, because effects
-cannot be declared in connection bodies (§13.6.4).
+cannot be instantiated in connection bodies (§13.6.4).
 
 **Nested gating is effective and transitive.** An instance is
 *effectively active* iff its own gate AND every ancestor gate on the
@@ -14463,6 +14473,19 @@ deactivating arm and the open snap on the activating one (§13.9.7). The
 `default:` keyword reuses the reactive-fallback word of `observe`
 (§13.2.11), reinforcing that this is a standing selection, not a
 control-flow branch.
+
+**Placement and cardinality.** Because every arm is constructed and only
+propagation is gated, placements inside *all* arms of a `when` or `given`
+block used in a node or placement body count toward the enclosing type's
+`parts:` cardinality — the same rule as parts placed by a type-body `for`
+(§13.3.3.3). A two-arm block each placing one `Oscillator` constructs
+two, so `parts: Oscillator [=1]` would be violated; size the cardinality
+for the sum across arms. (At `expose:` level this does not arise:
+exposition references already-placed parts and constructs only wrapper
+placements, not cardinality-constrained parts — §13.3.7.1.) A block, like
+any `:`-introduced construct, owns an indented body and therefore
+occupies its own lines; it cannot share a line with sibling placements
+(§13.8.10).
 
 #### 13.9.14 The `given` block
 
@@ -19856,9 +19879,12 @@ each instance's own predicate with its `gate_parent` chain to obtain
 suspend/resume delivery of §13.14.9. Block selectors (`when`/`given`,
 §13.9.13–§13.9.14) lower to per-arm gates: each arm becomes a gated
 subtree whose predicate is the arm's guard (for a `when` block) or the
-arm's variant test against the scrutinee (for a `given` block), with the
-declaration-order / exhaustiveness selection resolved at compile time
-into mutually-exclusive arm predicates.
+arm's variant test against the scrutinee (for a `given` block). The
+compiler encodes declaration-order priority and exhaustiveness into the
+arm predicates so they are mutually exclusive by construction (e.g. arm
+*i*'s effective predicate conjoins the negations of all earlier arms'
+guards); the predicates themselves still evaluate against runtime cell
+values each publish.
 
 **Behavior table.** A list of `(behavior_id, debug_name,
 input_cell_ids, output_cell_id?)` entries. Behavior IDs are
