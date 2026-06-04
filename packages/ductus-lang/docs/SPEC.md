@@ -4559,6 +4559,16 @@ and makes the match trivially exhaustive. Users may opt into this when
 adding a new variant should be silently absorbed (rare and usually a
 mistake).
 
+`match` is a **value** selector: it evaluates its scrutinee, selects one
+arm, evaluates that arm to a value, and discards the rest. It is used
+everywhere a value is produced — function bodies and reactive `derived`/
+`recurrent` expressions alike. It is *not* used to gate reactive
+*structure*: selecting which node/connection subtree is exposed and kept
+live is the role of the `given` block (§13.9.14), the structure-level
+counterpart that builds all arms and freezes the unselected ones rather
+than discarding them. The two share arm shape and this exhaustiveness
+rule; they differ in operation (discard vs. freeze).
+
 #### 6.2.6 Enum visibility
 
 Visibility per §10 applies to the enum as a whole, not per-variant:
@@ -9737,7 +9747,13 @@ time.
 is fixed for the lifetime of the kernel instance. Signals, attrs,
 recurrents, nodes, and connections are created at startup and not
 added or removed at runtime — except by hot reload (§13.15), which
-replaces the program source and applies a diff atomically.
+replaces the program source and applies a diff atomically, and by
+`repeat` (§13.5.4), the explicit dynamic-lifecycle construct that
+materializes and drops keyed scopes per a runtime source. Conditional
+activation does *not* add or remove instances: a gated instance is
+constructed unconditionally and merely *frozen* while inactive (§13.9),
+never unmounted. Runtime-varying *existence* is `repeat`'s domain;
+gates govern only *activation*.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
 declarations, attr default expressions, recurrent expressions)
@@ -10247,12 +10263,20 @@ receives no triggers for a while is correctly holding its value.
 It is the reactivation counterpart to `@reset_on_reload` (§13.15.5):
 both reset a cell's accumulated state on a lifecycle event —
 `@reset_on_reload` across a hot reload, `@reset_on_reopen` across a gate
-gap. `@reset_on_reopen` is specified for recurrent cells, where it clears
-the self- and input-history (§13.2.4.3); it has effect only on a *gated*
-instance. Because gating may be introduced at the type level or at a
-placement (§13.9.3), whether a given instance is ever gated is not in
-general known at the declaration site; on an instance that is never
-gated the decorator simply never fires — it is harmless, not an error.
+gap. On a **recurrent** cell it clears the self- and input-history
+(§13.2.4.3), so the first post-gap evaluation reads fallbacks. On a
+**stream consumer** (an operator or derived reading a stream whose
+enclosing subtree is gated) it resets the consumer's cursor: on resume
+the cursor skips to the current head (discarding the gap's backlog) and,
+for a **gate**-policy source, the consumer additionally *releases its
+buffer hold during the freeze* so it does not pin the buffer or
+back-pressure producers while frozen (§13.18.12). In both forms the
+decorator means "do not carry accumulated state across the gap," and in
+both it has effect only on a *gated* instance. Because gating may be
+introduced at the type level or at a placement (§13.9.3), whether a
+given instance is ever gated is not in general known at the declaration
+site; on an instance that is never gated the decorator simply never
+fires — it is harmless, not an error.
 
 Use it for cells whose history is *invalidated by a temporal gap* —
 smoothers, rate estimators, edge detectors — where resuming with pre-gap
@@ -11148,6 +11172,15 @@ is for child-placement slots with cardinality.
 - Generic constraints on `T` behave as standard generic bounds
   (§3.1, §5.1).
 
+A `Node[T]` is a *value* (a deferred placement spec), so a value
+conditional may select among `Node[T]` values: `match scrutinee: …`
+yielding a `Node[T]` chooses *one* spec, which the receiving node then
+materializes once. This is distinct from the `given` block (§13.9.14),
+which gates *structure*: `given` builds every arm's subtree and switches
+which is live, freezing the others. Use `match`→`Node[T]` when exactly
+one of several specs should ever exist; use `given` when all alternatives
+should be built and kept warm, switching by discriminant.
+
 #### 13.2.11 The `observe` expression
 
 `observe` is a reactive expression form that selects an active arm
@@ -11753,10 +11786,22 @@ elsewhere (§13.8). Entries reference:
   declared (in stdlib or user code) and accept children via their
   own `parts:` clause.
 
-Each entry in `expose:` may carry a per-placement `when` gate
-(§13.9) for conditional activation. Conditionality inside
-exposition uses the same `when` clause mechanism that applies
-elsewhere — no new control-flow syntax is introduced.
+Conditional exposition uses the structural-gate constructs of §13.9.
+Two forms apply inside `expose:`:
+
+- An individual entry may carry the inline `when` modifier (§13.9.3) for
+  single-placement gating.
+- An entry may itself be a **`when` block** (§13.9.13, boolean selection,
+  simple or multi-way guard arms) or a **`given` block** (§13.9.14,
+  exhaustive discriminant selection over a sum scrutinee). Each arm body
+  is a list of exposition entries; the kernel exposes the active arm and
+  freezes the rest (Model B, §13.9.7).
+
+These reuse the gate constructs that apply elsewhere — no exposition-only
+control-flow syntax is introduced. Because exposition lists only `Node[T]`
+placements and never connections (§13.3.7.5), a `given` arm such as
+`Variant: SomeChain` is unambiguous here — there is no `Name: dest`
+connection placement to collide with.
 
 ##### 13.3.7.2 Default
 
@@ -12176,6 +12221,15 @@ disappearance, `scope_evaluate` per active key per publish.
 `repeat` is the language-level surface of the keyed-scope mechanism. It
 desugars to §13.5.1 directly; the kernel sees no machinery distinct from
 what is already specified there.
+
+`repeat` is the construct for runtime-varying *existence* — scopes are
+materialized and dropped (`scope_obtain` / `scope_drop`) as the source's
+key set changes. This is the explicit complement to conditional
+activation (§13.9): gates never add or remove instances, they only
+*freeze* an unconditionally-constructed instance while it is inactive.
+When a child's *presence* must vary at runtime (mount/unmount, with
+state reclaimed on drop), use `repeat`; when a statically-present child
+should merely switch between active and frozen, use a gate.
 
 ##### 13.5.4.1 Syntax
 
@@ -12933,6 +12987,21 @@ corresponding instance field. No collision with user names is
 possible — reserved words cannot be declared as cell names. `here::`
 remains available as the explicit form (`here::from`, `here::incoming`).
 
+**The `active` projection (effective activation).** An instance also
+exposes its *effective activation state* — whether it is currently live,
+i.e. its own gate conjoined with all ancestor gates (§13.9.7) — as a
+read-only `bool` projection on the instance value: `subject.active`
+inside the body, `instance.active` from outside, `here::active` for the
+explicit-scope form. Unlike the fields above, `active` is **not** a
+bare-name member: it is reached only through `subject` or an instance
+value, deliberately *not* reserving the common bare identifier `active`
+(per the rationale in §13.9.1). It reads `true` for an ungated,
+fully-active instance and `false` while the instance or any ancestor is
+gated off; the value flips on gate transitions as a propagation event
+(§13.9.7). Domain logic uses it to make an effect's desired a function
+of activation (`desired open = subject.active and …`, §13.19.12). The
+name `active` is a placeholder pending the syntax pass.
+
 Note that `in` is *not* among these: incoming connections are named
 `incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
 separator (§12.3). `for x in incoming.ShowsCount` reads without
@@ -13682,7 +13751,12 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
   Use `when` to make the placement conditional. When `/Expr` is
   absent (the type has no default attr, or the default value is not
   being overridden), `when` slots immediately after whichever
-  preceding element is present.
+  preceding element is present. This inline `when` is the
+  single-placement *modifier* (§13.9.3); the block selection forms —
+  `when` blocks (§13.9.13) and `given` blocks (§13.9.14) — are not
+  inline-parts modifiers: they appear as standalone entries at
+  `expose:`/body level, each owning an indented arm body, and so do not
+  participate in this ordering.
 - The attribute clause (§13.8.7) — a single leading `|` followed
   by attribute settings — follows next.
 - The optional body — introduced by `:` — comes last. For node
@@ -13809,11 +13883,42 @@ the dominant form. Same-line layout is intended for dense sequences
 
 ### 13.9 Conditional Activation
 
-A *gate* is a boolean predicate that conditions whether a node
-instance or a connection instance is *active*. Gates are declared
-with the `when` clause. While the predicate is true the instance
-participates in propagation; while it is false the instance is
-*inactive* and its propagation behavior is constrained per §13.9.7.
+A *gate* is a predicate or discriminant that conditions whether a node
+instance, a connection instance, or an exposed subtree is *active*.
+Gates are the **structural** conditional layer, distinct from the
+**value** conditionals `if`/`else`/`match` (§6.2.4). The distinction is
+operational, not stylistic: a value conditional evaluates its scrutinee,
+selects one arm, and *discards* the rest, yielding a value; a structural
+conditional builds *all* of its arms and **freezes** the unselected ones,
+determining which subtree is live. Because the frozen arms retain their
+cells and state, structural selection is a standing correspondence
+maintained as the predicate or discriminant varies — not a one-shot
+branch. `if`/`else`/`match` remain value selection everywhere they
+appear, including inside `derived` and `recurrent` expressions; they are
+never used to gate structure. Structure is gated by the constructs of
+this section.
+
+The structural conditional surfaces are:
+
+- **`when:`** — a type-level intrinsic self-gate (§13.9.2).
+- **`when`** — an inline placement modifier gating a single placement
+  (§13.9.3).
+- **`when` block** — a boolean-condition selector at `expose:`/body
+  level, in simple (then / `default`) and multi-way (guard-arm) forms
+  (§13.9.13).
+- **`given` block** — an exhaustive discriminant selector over a sum
+  scrutinee, with pattern arms (§13.9.14). (`given` is a placeholder
+  name pending a naming pass.)
+
+All of them gate *propagation*, never *existence*: a gated instance is
+constructed unconditionally (the static-graph rule of §13.1) and, while
+inactive, is **frozen** under Model B (§13.9.7) — its cells hold their
+values and resume when the gate reopens. Gates never unmount or
+reconstruct an instance; runtime-varying *existence* (true mount/unmount)
+is the domain of `repeat` (§13.5.4), the explicit dynamic-lifecycle
+construct. The freeze-not-unmount choice is load-bearing: it keeps the
+topology graph static for the cycle check (§13.9.9), the reactive buffer
+pre-allocated (§14.3), and gate-flip cost bounded.
 
 Gates are a language feature: the compiler reasons about the graph
 under the assumption that gates may open or close at any publish,
@@ -13829,7 +13934,11 @@ expression of type `bool`: it follows the same purity rules
 derived. The expression forms accepted are identical. What differs
 is the structural role — the predicate's value is consumed by the
 kernel to gate propagation through the construct it modifies, not
-exposed through a named cell readable by other expressions.
+exposed through a named cell readable by other expressions. The
+predicate *expression* is not itself a readable cell; an instance's
+*effective activation state* — its own gate conjoined with all ancestor
+gates (§13.9.7) — is separately readable as `subject.active` (§13.7.5),
+for domain logic that must react to being frozen.
 
 It evaluates in the scope of the construct it modifies: inside a
 type body it sees the body's own cells (by bare name) and items
@@ -13857,7 +13966,11 @@ Two design moves justify the clause:
 - **A marker trait was rejected.** Using a regular attr name like
   `active` to mean "this is the gate" would reserve a common
   identifier for what is fundamentally a structural concern. The
-  `when` keyword takes the role explicitly.
+  `when` keyword takes the role explicitly. (This concerns *defining*
+  the gate. *Reading* the resulting effective activation is a separate,
+  read-only projection — `subject.active` (§13.7.5) — which for the same
+  reason is reached only through `subject`, never as a bare reserved
+  identifier.)
 
 #### 13.9.2 Type-level `when:`
 
@@ -14089,6 +14202,44 @@ transitions matter (audio velocity, control voltages). Smoothing
 is a separate concern handled by the parameter system, not by the
 gate primitive. The gate guarantees correctness, not continuity.
 
+**Snap on gate-close (the teardown pass).** The close transition
+(true → false) is the mirror of the open snap: it too is a propagation
+event, scheduled within the publish that flips the predicate false. Its
+purpose is to let anything that must release on deactivation do so
+*before* the subtree freezes. Because a frozen subtree's outputs
+propagate to nobody, the close pass does **not** recompute the subtree's
+deriveds in general — that work would produce values no consumer reads.
+Only the **effect-desired slice** recomputes: the minimal subgraph
+feeding the desired cells of effects contained in the closing subtree
+(including the `subject.active` activation value, which flips false on
+this pass), so each such effect's desired state reflects "inactive" and
+its reconciler can release per §13.19.12. After this one pass the
+subtree freezes. Pure nodes and connections have nothing to release; for
+them the close pass is empty and freezing is the complete, correct
+behavior.
+
+**Only effects need close-time work.** Nodes and connections are pure
+reactive structure (§13.3.6, §13.6.4): freezing them holds their cells
+and suspends evaluation, which is already complete — there is no external
+operation to tear down. Effects (§13.19) are the sole construct holding
+outside-world state, so the close pass and the suspend/resume protocol
+(§13.14.9) concern effects exclusively. A gated *connection* therefore
+simply stops delivering (above); it has no suspend, because effects
+cannot be declared in connection bodies (§13.6.4).
+
+**Nested gating is effective and transitive.** An instance is
+*effectively active* iff its own gate AND every ancestor gate on the
+path from the root are open. Closing any ancestor gate transitively
+freezes every descendant — and runs the close pass over descendant
+effects (suspending them) regardless of those descendants' own gate
+states. Reopening an ancestor restores each descendant to *its own* gate
+state (a descendant whose own gate is false stays frozen). The
+`subject.active` projection (§13.7.5) reads this effective state, so a
+descendant effect's `desired = if active: …` correctly reflects ancestor
+gating without the descendant naming its placement context. The kernel
+computes effective activation when constructing the per-publish DAG
+(§13.9.8) and uses it to drive transitive suspend delivery.
+
 **Cell-value reads on gated subgraphs.** Reads always return a
 defined value of type T (no `Option[T]`), because:
 
@@ -14118,9 +14269,13 @@ destinations' output-affecting cells, but do contribute to input
 cells and `when` predicate provenance.
 
 A single delegating note in §13.10.2 records this: edges whose gate
-predicate evaluates false do not propagate to destination outputs;
-the gate-open transition itself is a propagation event scheduled
-within the same publish that flips the predicate.
+predicate evaluates false do not propagate to destination outputs; each
+gate transition — open *and* close — is itself a propagation event
+scheduled within the same publish that flips the predicate (the open
+snap and the close teardown pass of §13.9.7). The DAG construction uses
+*effective* activation (own gate conjoined with all ancestor gates,
+§13.9.7) so that closing an ancestor suspends descendant effects
+transitively.
 
 #### 13.9.9 Interaction with `Circularity`
 
@@ -14130,6 +14285,17 @@ satisfies `Circularity`, regardless of whether any edge in the
 cycle is gated. A gated edge is structurally still an edge; gate
 state can change at runtime, and the cycle constraint must hold
 across all reachable gate configurations.
+
+This soundness depends directly on the freeze-not-unmount model: because
+a gated instance is *suspended*, never removed (§13.9.7, §13.1), the
+topology graph the compiler analyzes is fixed and every reachable gate
+configuration is a subset of one static edge set. If gates instead
+unmounted instances, the topology graph would change at runtime and the
+compile-time cycle check would be unsound — one could reach a
+configuration whose only `Circularity`-bearing edge is unmounted,
+leaving an instantaneous cycle live. Runtime-varying topology is `repeat`
+territory (§13.5.4), which carries its own construction-time guarantees;
+gates do not.
 
 ```
 // Forbidden even if Edge has a `when` clause that will be false at runtime
@@ -14205,15 +14371,14 @@ error: instantaneous cycle in reactive expressions
         eliminate the cyclic dependency
 ```
 
-#### 13.9.12 Stdlib pattern: `When` / `Then` / `Else`
+#### 13.9.12 Superseded: the `When` / `Then` / `Else` stdlib pattern
 
-The combination of `parts:` declarations, the `expose:` clause
-(§13.3.7), and per-placement `when` gates supports a canonical
-stdlib pattern for conditional activation. The stdlib provides
-`When`, `Then`, and `Else` as cooperating node types:
+Earlier drafts expressed conditional exposition through a stdlib pattern
+— `When`/`Then`/`Else` wrapper nodes whose `expose:` clause gated each
+child with a per-entry `when cond` / `when !cond`:
 
 ```
-node When:
+node When:                                   -- superseded; see below
   default attr cond: Signal[bool]
   parts: Then!, Else?
   expose:
@@ -14221,36 +14386,135 @@ node When:
     parts.Else when !cond
 ```
 
-`Then` and `Else` are simple stdlib wrapper nodes; each accepts a
-single child via its `parts:` slot and re-exposes it (a template-
-wrapper pattern with `parts: Item!` + `expose: parts.Item`).
-
-Placement:
+This pattern is **superseded by the language-level `when` and `given`
+blocks** (§13.9.13, §13.9.14). The block forms express selection
+directly, without wrapper nodes, and — for the multi-way and discriminant
+cases — with compiler-checked exhaustiveness that the hand-written
+`cond`/`!cond` partition could not provide. The two-way example above is
+written directly as:
 
 ```
-When/some_cond:
-  Then: SomeDecision
-  Else: SomeFallback
+expose:
+  when cond:
+    SomeDecision
+  default:
+    SomeFallback
 ```
 
-The placer supplies a `Then` and (optionally) an `Else` as parts
-of the `When` instance. The exposition gates each by `cond`: when
-`cond` is true the Then's child is active and the Else's child is
-inactive; when `cond` is false the roles reverse. The wrapping
-types (`Then`, `Else`) carry no other state; they are pure
-structural markers that the exposition's `when` gates discriminate.
+and the multi-variant case the old draft deferred to a future `Match`
+node is now the `given` block (§13.9.14). `When`/`Then`/`Else` are
+retained, if at all, only as thin stdlib sugar over the block forms; they
+carry no kernel-aware special-casing and are not the recommended form.
 
-The same pattern generalizes:
+#### 13.9.13 The `when` block
 
-- A two-way `When` with no `Else` is just `When` with `Else?`
-  declared and not supplied at placement; the cond-false case has
-  no active child.
-- `Match` (sum-type-driven, multiple variants) is a future stdlib
-  node following the same pattern: `parts:` lists one wrapper per
-  variant; `expose:` gates each by the corresponding tag.
-- User-defined conditional nodes can follow the same idiom — there
-  is no kernel-aware special-casing of `When`/`Then`/`Else`. They
-  are documented stdlib types using the general mechanism.
+Beyond the type-level `when:` member (§13.9.2) and the inline placement
+modifier (§13.9.3), `when` has a **block form** that selects which
+placement(s) to expose — or, in a node/placement body, which children to
+keep active — by boolean condition. All arms are constructed; the kernel
+gates propagation to the live one and freezes the rest under Model B
+(§13.9.7). The block form appears wherever placements are listed: an
+`expose:` clause (§13.3.7), a node body, or a placement body — not as an
+inline modifier.
+
+**Simple form (then / `default`).** A `when cond:` block introduces a
+then-body of placements; an optional sibling `default:` block supplies
+the else-body:
+
+```
+expose:
+  when cond:
+    ThenChain
+  default:
+    ElseChain
+```
+
+When `cond` is true, `ThenChain` is active and `ElseChain` is frozen;
+when false, the roles reverse. A `when cond:` with no sibling `default:`
+is the multi-placement generalization of the inline modifier (§13.9.3):
+the then-body is active while `cond` holds, frozen otherwise, with no
+alternative.
+
+**Multi-way form (guard arms).** A `when:` block with no condition on the
+header takes a list of `guard: body` arms plus an optional `default:`
+arm. Arms are tried in declaration order; the first whose boolean guard
+holds is the active arm, the rest frozen:
+
+```
+expose:
+  when:
+    cond_a: ArmA
+    cond_b: ArmB
+    default: ArmC
+```
+
+Guards are arbitrary boolean expressions (the same predicate vocabulary
+as §13.9.4). Because boolean guards do not partition by construction, a
+`when:` block is an **open** selector: it cannot be exhaustiveness-
+checked, so `default:` is the catch-all and is required unless some guard
+is provably total. For *closed*, exhaustively-checked selection over a
+sum discriminant, use the `given` block (§13.9.14) — do **not** reach for
+`when x is Variant` guards, which forfeit exhaustiveness.
+
+**Semantics.** A `when` block is a gate, not a value selector: every arm
+is built, the active arm propagates, inactive arms freeze (Model B,
+§13.9.7), and switching the active arm runs the close pass on the
+deactivating arm and the open snap on the activating one (§13.9.7). The
+`default:` keyword reuses the reactive-fallback word of `observe`
+(§13.2.11), reinforcing that this is a standing selection, not a
+control-flow branch.
+
+#### 13.9.14 The `given` block
+
+`given` is the **structural discriminant selector**: it gates among arms
+by the current variant of a sum-typed scrutinee, exhaustively. It is the
+structure-level counterpart of value `match` (§6.2.4) — same arm shape,
+different operation: `match` returns a value and discards unselected
+arms; `given` builds all arms and freezes the inactive ones (Model B,
+§13.9.7). The keyword `given` is a placeholder pending a naming pass; the
+semantics below are settled.
+
+```
+expose:
+  given mode:
+    Realtime: RealtimeChain
+    Offline:  OfflineChain
+```
+
+**Header and arms.** `given <scrutinee>:` introduces variant-pattern
+arms, written exactly as value-`match` arms (§6.2.4) — bare
+`Pattern: body`, no per-arm keyword. The dedicated header is what
+disambiguates: inside a `given` block every line at the arm indent is an
+arm, so an arm such as `Realtime: RealtimeChain` is never confused with a
+connection placement `Name: dest` (and at `expose:` level there are no
+connection placements at all — §13.3.7.5). Each arm body is itself a list
+of placements, indented under the arm.
+
+**Live payload binding.** Arms bind variant payloads exactly as `match`
+patterns do (`Active(session):` binds `session`), but the binding is a
+**live reactive projection** of the scrutinee's current payload, not a
+snapshot taken at selection time. Because the exposed subtree is standing
+and reactive, a payload it reads tracks the scrutinee's current value;
+the active arm re-evaluates when the bound payload changes, consistent
+with everything else under `expose:`.
+
+**Exhaustiveness.** A `given` block is a **closed** selector: it must be
+exhaustive over the scrutinee's variants, checked per §6.2.5. Adding a
+variant to the sum breaks every non-exhaustive `given` until handled —
+the same evolution-safety guarantee `match` provides, and the reason
+`given` exists rather than emulating discriminant selection with
+`when`-guards. A `default:` arm is permitted only as an explicit catch-all
+that *suppresses* the exhaustiveness obligation (the author opts out
+knowingly), exactly as a catch-all does in value `match`.
+
+**Distinction from value-selecting a `Node[T]`.** Selecting a single
+`Node[T]` *value* with `match` (§13.2.10) and gating structure with
+`given` are different operations, both legal: `match` chooses one
+placement spec, which is then materialized once; `given` builds every
+arm's subtree and switches which is live, freezing the others. Use
+`match`→`Node[T]` when exactly one of several specs should ever exist;
+use `given` when all alternatives should be built and kept warm,
+switching by discriminant.
 
 ### 13.10 Reactive Evaluation
 
@@ -14321,7 +14585,8 @@ operation on the producer thread:
    edges within this publish. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
-   gate-open transition rule.
+   gate-open snap and gate-close teardown-pass rules, both scheduled
+   within the publish that flips the predicate.
 3. **Evaluate in topological order.** For each node in topo order,
    invoke its behavior (per §14.6's ABI). Reads resolve as follows:
     - Signal and attr reads → current values in the back buffer
@@ -15144,9 +15409,25 @@ implementing the reconciler interface:
 - A *teardown* hook invoked when an effect instance leaves scope.
   Receives the instance ID and the reconciler-side instance state.
   Releases external resources.
+- A *suspend* hook invoked when the effect instance's enclosing subtree
+  becomes gated off (its effective activation goes false — §13.9.7).
+  Receives the instance ID and the reconciler-side instance state. Its
+  contract is to **release the external resource while preserving the
+  reconciler-side instance state** — the "resource torn down but
+  instance alive" case of §13.19.12, distinct from *teardown* (which
+  drops the instance on scope death). What "release" means — close a
+  socket, cancel a request, flush a buffer, or keep it warm — is the
+  reconciler's (domain's) decision; the kernel only guarantees the
+  signal is delivered.
+- A *resume* hook invoked when the enclosing subtree is gated back on
+  (effective activation goes true). Receives the instance ID and the
+  preserved reconciler-side instance state. Re-acquires the external
+  resource from the preserved state. `suspend` then `resume` is a
+  round-trip that does not reinitialize instance state; only `teardown`
+  followed by a fresh `create` does.
 
 The host language's binding to this API is implementation-defined.
-The normative requirement is that the three hooks be invokable by
+The normative requirement is that the five hooks be invokable by
 the kernel at the publish-cycle boundary, with the per-instance
 state managed by the host between invocations.
 
@@ -15214,7 +15495,20 @@ The kernel maintains a one-to-one correspondence between live effect
 instances and reconciler-side instance states. The reconciler's
 `create` hook fires when an instance enters scope; `teardown` fires
 when it leaves scope; `update` fires when parameters or `desired:`
-cells become dirty during a publish.
+cells become dirty during a publish; `suspend` fires when the
+instance's enclosing subtree is gated off and `resume` when it is gated
+back on (§13.9.7).
+
+`suspend`/`resume` are distinct from `teardown`/`create`: suspend
+releases the external resource but preserves the reconciler-side
+instance state, so a later resume re-acquires from that preserved
+state without reinitializing. Only scope death triggers `teardown`,
+which drops the instance state. **Ordering when scope death overlaps a
+suspended state:** a suspended instance whose scope then dies receives
+`teardown` directly (not a `resume` first) — teardown subsumes the
+release suspend already performed, and the reconciler must tolerate
+`teardown` arriving while suspended. The kernel never delivers `resume`
+to an instance that is leaving scope.
 
 **Hook timing.**
 
@@ -15242,6 +15536,16 @@ unrelated reasons; reconcilers must not produce duplicate
 side effects in this case. The host-side state managed by the
 reconciler is the canonical source of "what we've already done";
 desired cells describe "what we want to be true."
+
+The same idempotence applies to `suspend` and `resume`: the kernel
+delivers `suspend` only on a gate-close transition and `resume` only on
+a gate-open transition (never repeated for the same transition), but a
+reconciler should still treat a redundant `suspend` on an
+already-released resource, or a redundant `resume` on an already-acquired
+one, as a no-op. A reconciler may also receive `suspend` for an instance
+whose `desired:` already implied no resource (the resource was already
+released via §13.19.12); the suspend is then a no-op on the resource and
+serves only to mark the instance frozen.
 
 **Error handling.**
 
@@ -15429,11 +15733,12 @@ stream ring[1024] events: LogEntry = source
 
 This is appropriate when buffered events from the prior program
 version would be misinterpreted by the new version's consumers. Its
-reactivation sibling, `@reset_on_reopen` (§13.2.4), resets a gated
-*recurrent's* history when its gate reopens rather than on reload; the
+reactivation sibling, `@reset_on_reopen` (§13.2.4), resets accumulated
+state when a gate reopens rather than on reload — a gated recurrent's
+self/input history, or a gated stream consumer's cursor (skip-to-head on
+resume, releasing the gate-stream buffer hold during the freeze). The
 two form a decorator family — *reset accumulated state on a lifecycle
-event* — differing in the triggering event (and, for now, in which cell
-kind each is specified for).
+event* — differing in the triggering event (hot reload vs. gate gap).
 
 **Cursor identity across reload.** A consumer's cursor is preserved
 when the consuming operator (or derived) instance is preserved per
@@ -15535,7 +15840,11 @@ specifies the implementation model. Cross-references:
   publish boundary via the host API (§13.14.7, §13.14.9). They
   run on the kernel's producer thread; long-running operations
   are dispatched to host-managed worker threads with results
-  written back via the host API on completion.
+  written back via the host API on completion. The `suspend` and
+  `resume` hooks (§13.14.7) are dispatched at the same boundary, driven
+  by gate-close / gate-open transitions of an effect's enclosing subtree
+  (§13.9.7); the kernel computes effective (ancestor-inclusive)
+  activation to decide which effects to suspend.
 - The graph specification (§15.4) carries the structural information
   the kernel needs to construct the reactive state buffer, build
   dependency edges, distinguish attr cells from recurrent cells,
@@ -17200,12 +17509,26 @@ different scopes that both consume the same stream get distinct
 cursors; one chain that is preserved across hot reload (via the
 operator hot-reload rule §13.17.10) preserves its cursor.
 
-**Buffer retention is policy-driven, not cursor-driven.** Cursors
-are advisory: the ring buffer overwrites or rejects per its declared
-policy regardless of cursor positions. A slow consumer (one whose
-cursor lags far behind the head) does not hold back the buffer; the
-buffer continues to fill, and under `ring` policy, slow consumers
-will miss events as the buffer overwrites past their cursor.
+**Buffer retention is policy-dependent.** How cursor positions affect
+retention differs by policy:
+
+- **Ring.** Cursors are *advisory*: the ring buffer overwrites per its
+  policy regardless of cursor positions. A slow consumer (cursor lagging
+  far behind the head) does not hold back the buffer; it keeps filling
+  and overwrites past lagging cursors, so slow consumers miss events.
+  This is ring's lossy-acceptable contract.
+- **Gate.** Retention is *slowest-cursor-driven*. A gate stream is
+  lossless **per consumer**, so the buffer cannot evict an event until
+  every consumer has observed it; the oldest retained slot is pinned by
+  the slowest cursor. When the buffer is full (capacity events
+  un-observed by the slowest cursor), further producer pushes are
+  *rejected* (`rejected_total` increments, `is_full` is true) — the
+  producer, not any consumer, absorbs the overflow. This is what makes a
+  gate stream genuinely lossless for every consumer, not merely
+  lossless-at-the-producer's-door.
+
+(The "cursors are advisory" rule is therefore a *ring* statement; gate
+cursors do hold the buffer.)
 
 When a cursor's position is overwritten by a `ring` policy advance,
 the cursor automatically jumps forward to the oldest still-present
@@ -17213,6 +17536,31 @@ event. The consumer observes this as a gap — the `dropped_total`
 signal increments by the number of skipped events. Consumers that
 care about completeness must monitor `dropped_total` or use `gate`
 streams.
+
+**Cursors under gate-freeze.** When a consumer's enclosing subtree is
+gated off (§13.9.7), its cursor stops advancing — a frozen consumer is
+the slowest-possible consumer. The default is *freeze-and-backlog*:
+
+- **Ring consumer.** The buffer keeps overwriting per ring policy; on
+  resume the frozen consumer's cursor jumps to the oldest still-present
+  event, observing the gap via `dropped_total` (exactly the
+  lagging-consumer behavior above).
+- **Gate consumer.** Its cursor pins the buffer (slowest-cursor
+  retention), so the buffer fills and the producer is rejected
+  (`rejected_total` / `is_full`) for the duration of the freeze; nothing
+  is lost to the frozen consumer — on resume it drains the full retained
+  backlog. A frozen gate consumer thus back-pressures live producers,
+  which is correct for a lossless stream: a stream whose consumers may
+  be frozen without throttling producers wants `ring`, not `gate`.
+
+The `@reset_on_reopen` decorator (§13.2.4) opts the consumer out of
+backlog: on resume its cursor skips to the current head (discarding gap
+events), and — for a **gate** consumer — it additionally *releases the
+buffer hold during the freeze*, so a reset-annotated gate consumer does
+not pin the buffer or back-pressure producers while frozen. Use it when
+gap events would be stale or misinterpreted on resume; the trade is the
+same as for recurrent history (§13.2.4): preserve by default, reset on
+opt-in.
 
 **No cursor rewind.** Cursors only advance. There is no operation
 to rewind a cursor to an earlier position; the buffer's events are
@@ -18100,6 +18448,17 @@ resources tied to those instances), and new instances are
 constructed under the new declaration. Other effect instances and
 the rest of the kernel continue without restart.
 
+**Reload of a suspended instance.** An effect that is currently
+suspended (its enclosing subtree gated off — §13.19.12) reloads by its
+ordinary identity rules. A reload-safe change preserves the suspended
+instance and its preserved reconciler-side state; the instance stays
+suspended (no spurious `resume`), and a later gate-open delivers
+`resume` against the reloaded declaration. A reload-unsafe change that
+forces per-instance restart delivers `teardown` to the suspended
+instance (subsuming the already-performed release per §13.14.9) and
+constructs a fresh instance, which begins in whatever activation state
+its gate evaluates to on the next publish.
+
 **Call-site changes.** If a call site changes which effect is
 invoked (`source |> fetch` becomes `source |> cached_fetch`), the
 old instance's reconciler is torn down and the new instance is
@@ -18143,6 +18502,33 @@ that evaluates to `none` because the program hasn't supplied a URL),
 the host tears down the resource but the effect instance is still
 alive. The host remains ready to re-establish the resource if the
 desired changes back. Only scope death causes instance teardown.
+
+**Gating maps onto the same distinction.** When an effect's enclosing
+subtree is gated off (§13.9.7), the kernel delivers the reconciler's
+`suspend` hook (§13.14.7, §13.14.9): the resource is released but the
+instance state is preserved, exactly the "resource down, instance alive"
+case above. Reopening the gate delivers `resume`, re-establishing the
+resource. Gating, like a `none` desired, never destroys the instance —
+only scope death does. Gating is transitive: closing any ancestor gate
+suspends every contained effect, regardless of the effects' own gates
+(§13.9.7).
+
+**Only effects need this.** Pure nodes and connections hold no
+outside-world state; freezing them (Model B) is complete and they have
+no `suspend`/`resume`. Effects are the sole construct the gate-close
+pass and the suspend/resume protocol concern.
+
+**The two paths to "inactive" compose; they do not conflict.** A
+reconciler can be driven toward releasing a resource in two ways: by the
+kernel's `suspend` signal (transport — always delivered on gate-close),
+and by an effect author writing the resource's desired as a function of
+the activation projection (`desired open = subject.active and …`,
+§13.7.5) so that gate-close flips the desired itself. These are
+different layers: `suspend` is signal delivery the author cannot forget;
+`subject.active` is one ordinary *input* to the reconciler-authored
+desired. They reach the same reconciler, which remains the single owner
+of what release *means*. The kernel guarantees the signal; the domain
+decides the response.
 
 #### 13.19.13 Effects in `|>` chains
 
@@ -19463,7 +19849,16 @@ block additionally carry the observe's per-arm trigger sets.
 
 **`when`-gates.** Per gated instance, the predicate expression in
 compiled form (behavior ID per §14.6.4, plus input cell IDs the
-predicate reads).
+predicate reads), and the instance's `gate_parent` — the path of the
+nearest enclosing gated instance, or `null` if none. The kernel composes
+each instance's own predicate with its `gate_parent` chain to obtain
+*effective* activation (§13.9.7), which drives transitive freeze and the
+suspend/resume delivery of §13.14.9. Block selectors (`when`/`given`,
+§13.9.13–§13.9.14) lower to per-arm gates: each arm becomes a gated
+subtree whose predicate is the arm's guard (for a `when` block) or the
+arm's variant test against the scrutinee (for a `given` block), with the
+declaration-order / exhaustiveness selection resolved at compile time
+into mutually-exclusive arm predicates.
 
 **Behavior table.** A list of `(behavior_id, debug_name,
 input_cell_ids, output_cell_id?)` entries. Behavior IDs are
@@ -19514,6 +19909,11 @@ both views.
   `desired:` block for this instance.
 - `observed_cell_ids`: IDs of the cells declared in the effect's
   `observed:` block for this instance.
+- `gate_parent`: the path of the nearest enclosing gated instance (the
+  same field carried by `when`-gates above), or `null` if the effect is
+  never gated. The kernel uses it to compute effective activation and to
+  decide when to deliver the `suspend` / `resume` reconciler hooks
+  (§13.14.9) on the effect's enclosing-subtree gate transitions.
 
 **Reconciler dependencies.** A list of `(effect_type_name,
 [concrete_type_parameters])` pairs naming reconciler-registration
