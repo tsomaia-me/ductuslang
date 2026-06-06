@@ -13923,8 +13923,7 @@ The structural conditional surfaces are:
   level, in simple (then / `default`) and multi-way (guard-arm) forms
   (§13.9.13).
 - **`given` block** — an exhaustive discriminant selector over a sum
-  scrutinee, with pattern arms (§13.9.14). (`given` is a placeholder
-  name pending a naming pass.)
+  scrutinee, with pattern arms (§13.9.14).
 
 All of them gate *propagation*, never *existence*: a gated instance is
 constructed unconditionally (the static-graph rule of §13.1) and, while
@@ -14518,8 +14517,7 @@ by the current variant of a sum-typed scrutinee, exhaustively. It is the
 structure-level counterpart of value `match` (§6.2.4) — same arm shape,
 different operation: `match` returns a value and discards unselected
 arms; `given` builds all arms and freezes the inactive ones (Model B,
-§13.9.7). The keyword `given` is a placeholder pending a naming pass; the
-semantics below are settled.
+§13.9.7).
 
 ```
 expose:
