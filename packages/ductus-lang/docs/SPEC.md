@@ -6119,6 +6119,14 @@ library concern, not a language-level type. Its name and syntax (`Vec[T]`,
 Only fixed-size arrays receive dedicated language syntax. Stdlib's
 dynamic collections are ordinary generic types per §2.
 
+Stdlib collections receive no special powers. Their mutating operations
+are ordinary `own self -> Subject` methods (§11.11.2): a call mutates in
+place or yields a fresh value entirely according to the caller's
+ownership, never a property of the type — there is no separate "mutable
+collection" type. The only primitive such a collection rests on is the
+allocator intrinsic, a capability available to any program; a user can
+implement an equivalent collection with no privileged access.
+
 ### 9.4 Time Types: `duration` and `instant`
 
 The language provides two built-in time types for representing temporal
@@ -8393,6 +8401,84 @@ buf = make_other_buffer()    // replaces the buffer; old one dropped
 This drops the previous value and binds the new value. The new value is
 moved into the binding (consumed from its source).
 
+#### 11.11.2 In-place mutation of owned values
+
+The index, field, and whole-value assignments above mutate a value the
+`mut` binding already owns; they are in place by construction. The same
+in-place guarantee extends to the **consume-and-produce** form — a
+function `fn f(own self, …) -> Subject` that takes its subject by value
+and returns the transformed subject. This is the canonical way a type
+exposes mutation under single ownership (the language has no `&mut`
+parameter, §11.9), used by stdlib collections (`push`, `insert`,
+`into_sorted`, …) and any user type alike.
+
+When such a function is called on a binding that
+
+1. uniquely owns its value (real ownership, no aliasing — §11.3), and
+2. does not survive the call — the value is `move`d in and the result is
+   bound back to the same location, with no other reference to the
+   consumed binding between the call and the rebind,
+
+the compiler reuses the input's storage for the result. No copy occurs;
+the transformation runs in place. This is a **guarantee** of the
+ownership model, not a heuristic optimization: both conditions are
+statically decidable (§11.3), so the in-place compilation is
+deterministic.
+
+```
+mut v = Vec::new()
+v = (move v).push(move x)     // reuses v's storage; in place
+```
+
+§12.7.2's iterator optimization is this rule applied to the for-loop's
+internal binding.
+
+A call that does not meet the conditions — because the value must
+outlive the call — produces a fresh value, leaving the original intact.
+To keep a value and obtain a transformed copy, clone first; the clone is
+explicit (`Clone`, §11.5) and there is no hidden allocation:
+
+```
+let a = make_vec()
+let b = a.clone().push(move x)   // a survives; b is the grown copy
+use(a)
+```
+
+#### 11.11.3 Method-receiver sugar for consume-and-produce
+
+A method call on a `mut` binding whose receiver parameter is `own` may
+omit the receiver `move` and the rebind. When `m` takes `own self` and
+returns `Subject`,
+
+```
+v.m(args)        // v is a mut binding
+```
+
+desugars to
+
+```
+v = (move v).m(args)
+```
+
+The compiler inserts the receiver consume (`move v`) and the
+reassignment to the same binding — the ergonomic form of the in-place
+mutation guaranteed by §11.11.2.
+
+The sugar covers the **receiver** only. Arguments follow the normal
+ownership rules: an `own` non-Copy argument still requires an explicit
+`move` (category A, §11.8.5); Copy arguments need nothing.
+
+```
+mut v = Vec::new()
+v.push(move item)    // item: non-Copy → explicit move on the argument
+v.push(3)            // 3: Copy → no move
+```
+
+The sugar applies only to `mut` bindings (a `let` binding cannot be
+reassigned, §11.2) and only when the receiver parameter is declared
+`own`. A borrow-equivalent receiver (the default) is an ordinary
+non-consuming call and is never rewritten.
+
 ### 11.12 Interaction with Records, Enums, and Newtypes
 
 The compound types of §6 interact with mutability as follows:
@@ -9366,7 +9452,8 @@ iterator are the same memory location; no copy occurs.
 This optimization is a *required* property of conforming implementations,
 not an optional optimization. The tuple-return trait shape is the
 source-level pattern; the linear-ownership compilation is the performance
-guarantee.
+guarantee. It is the for-loop instance of the general consume-and-produce
+storage-reuse guarantee (§11.11.2).
 
 #### 12.7.3 Implementing `Iterator` (self-contained)
 
