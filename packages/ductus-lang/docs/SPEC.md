@@ -113,9 +113,9 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`), the reserved
-instance-field names (`pair`, `exposition` — §13.7.5; the remaining
-fields `from`, `to`, `incoming`, `outgoing`, `parts` double as the
-clause keywords above), all control-flow keywords (`if`, `else`,
+instance-field names (`pair`, `exposition`, `is_active` — §13.7.5; the
+remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
+the clause keywords above), all control-flow keywords (`if`, `else`,
 `match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
@@ -10038,7 +10038,7 @@ preferable to picking an arbitrary default that masks misuse.
 node Driver:
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
-  attr is_active: bool = true
+  attr enabled: bool = true
 
 node Synthesizer:
   attr master_volume: f32 = 1.0
@@ -12856,7 +12856,7 @@ to outer-most is:
 2. **The instance body scope** — the node's or connection's members:
    `attr`, `signal`, `recurrent`, `derived`, `stream` cells; `parts`;
    and the reserved endpoint/structure fields (`from`, `to`,
-   `incoming`, `outgoing`, `pair`, `exposition` — §13.7.5).
+   `incoming`, `outgoing`, `pair`, `exposition`, `is_active` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
 
@@ -12969,8 +12969,9 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 
 The reserved fields of a node or connection instance — `from`, `to`
 (connection endpoints, §13.6), `incoming`, `outgoing` (connection
-sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
-`exposition` (§13.3.7) — are members of the instance body scope.
+sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4),
+`exposition` (§13.3.7), and `is_active` (effective activation, §13.9.7) —
+are members of the instance body scope.
 They resolve by bare name in expression-operand position, exactly
 like user-defined members:
 
@@ -12994,34 +12995,28 @@ corresponding instance field. No collision with user names is
 possible — reserved words cannot be declared as cell names. `here::`
 remains available as the explicit form (`here::from`, `here::incoming`).
 
-**The `active` projection (effective activation).** An instance also
-exposes its *effective activation state* — whether it is currently live,
-i.e. its own gate conjoined with all ancestor gates (§13.9.7) — as a
-read-only `bool` projection, written here as `subject.active` (and
-`instance.active` / `here::active`). It reads `true` for an ungated,
-fully-active instance and `false` while the instance or any ancestor is
-gated off; the value flips on gate transitions as a propagation event
-(§13.9.7). Domain logic uses it to make an effect's desired a function of
-activation (`desired open = subject.active and …`, §13.19.12).
+**The `is_active` reserved field (effective activation).** `is_active` is
+the instance's *effective activation state* — `true` when the instance is
+live (its own gate AND all ancestor gates open, §13.9.7), `false` while it
+or any ancestor is gated off. It is a read-only `bool`, accessed like the
+other reserved fields: bare `is_active` inside the body, `subject.is_active`,
+or `here::is_active`; from outside, `instance.is_active`. The `is_` prefix
+follows the boolean-accessor convention (`is_some`/`is_none` §8.7,
+`is_full`/`is_open` §13.18.6).
 
-**The projection's name and reservation are deferred to the naming
-pass**, because the obvious candidates are flawed and the right model is a
-real decision:
+Being **reserved**, `is_active` cannot be declared as a cell name — no attr
+may shadow it. This is what keeps the access unambiguous: a bare or
+`subject.`-qualified `X` would otherwise be ambiguous between the projection
+and an attr `X`, since attrs are reached the same way. Reservation is the
+deliberate trade — it removes `is_active` from the attr-name space (a common
+boolean name) for one canonical, collision-free answer to "is this instance
+live." It does not reintroduce the gate-*defining* `active` attr that §13.9.1
+rejects: `is_active` only *reads* the gate result, which `when`/`given` still
+define.
 
-- A `subject.X` access collides with an attr named `X` (attrs are reached
-  through `subject` too), so qualifying through `subject` does *not* by
-  itself avoid collision — a projection that must never be shadowed has
-  to be a **reserved** field (like `exposition`), which no attr may take
-  the name of.
-- Reserving `active` re-incurs exactly the cost §13.9.1 set out to avoid
-  (stealing a common identifier); reserving `is_active` is worse still —
-  it is a very common boolean attr name and is already used as one in the
-  §13.2.2 example. The `is_` boolean-accessor convention (§8.7, §13.18.6)
-  pulls toward `is_active`; collision-avoidance pulls away from it.
-
-So the working form is `subject.active`, with the final name — and whether
-it is a reserved field or a shadow-ruled projection — settled in the
-syntax pass alongside the `given` keyword.
+The value flips on gate transitions as a propagation event (§13.9.7). Domain
+logic uses it to make an effect's desired a function of activation
+(`desired open = is_active and …`, §13.19.12).
 
 Note that `in` is *not* among these: incoming connections are named
 `incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
@@ -13958,7 +13953,7 @@ kernel to gate propagation through the construct it modifies, not
 exposed through a named cell readable by other expressions. The
 predicate *expression* is not itself a readable cell; an instance's
 *effective activation state* — its own gate conjoined with all ancestor
-gates (§13.9.7) — is separately readable as `subject.active` (§13.7.5),
+gates (§13.9.7) — is separately readable as `subject.is_active` (§13.7.5),
 for domain logic that must react to being frozen.
 
 It evaluates in the scope of the construct it modifies: inside a
@@ -13989,9 +13984,9 @@ Two design moves justify the clause:
   identifier for what is fundamentally a structural concern. The
   `when` keyword takes the role explicitly. (This concerns *defining*
   the gate. *Reading* the resulting effective activation is a separate,
-  read-only projection — `subject.active` (§13.7.5) — whose final name
-  and reservation model are deferred to the naming pass, since reserving
-  a common identifier here trades against the same concern.)
+  read-only reserved field — `is_active` (§13.7.5) — which only reports
+  the gate result; it does not define a gate, so it does not reintroduce
+  the rejected gate-defining `active` attr.)
 
 #### 13.9.2 Type-level `when:`
 
@@ -14235,7 +14230,7 @@ propagate to nobody, the close pass does **not** recompute the subtree's
 deriveds in general — that work would produce values no consumer reads.
 Only the **effect-desired slice** recomputes: the minimal subgraph
 feeding the desired cells of effects contained in the closing subtree
-(including the `subject.active` activation value, which flips false on
+(including the `subject.is_active` activation value, which flips false on
 this pass), so each such effect's desired state reflects "inactive" and
 its reconciler can release per §13.19.12. After this one pass the
 subtree freezes. Pure nodes and connections have nothing to release; for
@@ -14258,8 +14253,8 @@ freezes every descendant — and runs the close pass over descendant
 effects (suspending them) regardless of those descendants' own gate
 states. Reopening an ancestor restores each descendant to *its own* gate
 state (a descendant whose own gate is false stays frozen). The
-`subject.active` projection (§13.7.5) reads this effective state, so a
-descendant effect's `desired = if active: …` correctly reflects ancestor
+`subject.is_active` projection (§13.7.5) reads this effective state, so a
+descendant effect's `desired = if is_active: …` correctly reflects ancestor
 gating without the descendant naming its placement context. The kernel
 computes effective activation when constructing the per-publish DAG
 (§13.9.8) and uses it to drive transitive suspend delivery.
@@ -18567,10 +18562,10 @@ pass and the suspend/resume protocol concern.
 reconciler can be driven toward releasing a resource in two ways: by the
 kernel's `suspend` signal (transport — always delivered on gate-close),
 and by an effect author writing the resource's desired as a function of
-the activation projection (`desired open = subject.active and …`,
+the activation projection (`desired open = subject.is_active and …`,
 §13.7.5) so that gate-close flips the desired itself. These are
 different layers: `suspend` is signal delivery the author cannot forget;
-`subject.active` is one ordinary *input* to the reconciler-authored
+`subject.is_active` is one ordinary *input* to the reconciler-authored
 desired. They reach the same reconciler, which remains the single owner
 of what release *means*. The kernel guarantees the signal; the domain
 decides the response.
