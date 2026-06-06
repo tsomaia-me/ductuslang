@@ -14440,9 +14440,16 @@ modifier (§13.9.3), `when` has a **block form** that selects which
 placement(s) to expose — or, in a node/placement body, which children to
 keep active — by boolean condition. All arms are constructed; the kernel
 gates propagation to the live one and freezes the rest under Model B
-(§13.9.7). The block form appears wherever placements are listed: an
-`expose:` clause (§13.3.7), a node body, or a placement body — not as an
-inline modifier.
+(§13.9.7). The block form appears wherever reactive structure is
+declared: an `expose:` clause (§13.3.7), a node body, a placement body,
+or an effect `desired:` block (§13.19.4) — not as an inline modifier. Its
+arms hold whatever entries that context admits: placements at `expose:`
+and in bodies, desired-cell declarations and `repeat`s in a `desired:`
+block. Each arm body is its own scope, so arm-local names nest under the
+arm and do not collide across arms (the same scoping as `match` arms,
+`for`/`if` bodies, and `repeat` scopes); a `desired:` arm's cells are
+nested and thus exempt from the flat-namespace uniqueness of §13.19.6,
+exactly as a `repeat`'s per-key cells are.
 
 **Simple form (then / `default`).** A `when cond:` block introduces a
 then-body of placements; an optional sibling `default:` block supplies
@@ -18171,6 +18178,22 @@ per scope, with the host applying additions and removals as the
 source's key set changes. Per-scope paths follow §13.5.3 with the
 effect instance as the enclosing context.
 
+**`when` / `given` blocks.** A `desired:` block may also contain `when`
+and `given` selection blocks (§13.9.13, §13.9.14), whose arms hold
+desired-cell declarations (and `repeat`s). They carry the same **freeze**
+semantics as everywhere else (Model B, §13.9.7): every arm is
+constructed, the active arm's desired cells are live, the inactive arms'
+are frozen at their last value. No new reconciler mechanism is involved —
+the reconciler reads desired cell values as always, and a frozen arm
+simply contributes static values (it neither goes dirty nor triggers an
+`update`); when the gate reopens, the arm's cells recompute (the snap,
+§13.9.7), go dirty, and the reconciler updates with the now-live values.
+Freezing a desired arm therefore means "pin this part of the desired
+state and stop tracking it while gated," *not* "release the resource" —
+release on inactivity is the reconciler's own choice driven by
+`subject.is_active` (§13.7.5) or `suspend` (§13.14.9), not an effect of
+the block.
+
 #### 13.19.5 Observed block
 
 The `observed:` block declares cells that the host's reconciler
@@ -18221,12 +18244,13 @@ observed-block cells have no body (the host populates them
 directly via the kernel API). Effects that need history-aware
 behavior must compute it in the host's reconciler.
 
-`repeat` (§13.5.4) is likewise not valid in `observed:` blocks.
-Observed blocks declare cells that receive host-pushed data; they
-do not host reactive-structure declarations. To materialize
-per-element scopes from an observed cell, place the `repeat` in a
-node body or the same effect's `desired:` block, consuming the
-observed cell as the source.
+`repeat` (§13.5.4) — and likewise the `when` / `given` selection blocks
+(§13.9.13, §13.9.14) — are not valid in `observed:` blocks. Observed
+blocks declare cells that receive host-pushed data; they do not host
+reactive-structure declarations. To materialize per-element scopes from
+an observed cell, place the `repeat` in a node body or the same effect's
+`desired:` block, consuming the observed cell as the source; to gate
+structure on an observed value, do the same with a `when`/`given` block.
 
 The stream begins empty. Consumers in program code project the stream
 to a signal via `to_signal`, or fold/count/filter/etc. via the
