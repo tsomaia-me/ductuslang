@@ -22,8 +22,8 @@ revised to match.
 ### 1.2 Status
 
 The specification is under active development. The type system (this section
-and §§2–10) is fully specified except for object safety (§5.2.4) and coercion
-semantics (§5.2.5), which are deferred to a future revision. The reactive
+and §§2–10) is fully specified, including object safety (§5.2.4) and coercion
+to `dyn` (§5.2.5). The reactive
 system, runtime semantics, and the node/connection composition model are
 partially specified or deferred. Sections labeled "deferred" indicate
 decisions consciously postponed for later refinement.
@@ -3789,14 +3789,14 @@ object* dispatches method calls dynamically through a vtable.
 Single-trait `dyn`:
 
 ```
-let x: dyn Drivable = some_value
+let x: dyn Drivable = dyn some_value        // explicit coercion, §5.2.5
 fn render(item: dyn Renderable) -> string: ...
 ```
 
 Multi-trait `dyn` (intersection at value position):
 
 ```
-let x: dyn (Drivable & Insurable) = some_value
+let x: dyn (Drivable & Insurable) = dyn some_value
 fn process(item: dyn (Drivable & Insurable)) -> dyn Renderable: ...
 ```
 
@@ -3830,23 +3830,101 @@ they are simply not zero, which is the property `dyn` makes visible.
 
 #### 5.2.4 Object safety
 
-Not every trait can be used in a `dyn` position. Traits with methods whose
-signatures depend on `Subject` in non-receiver positions, traits with
-associated types not bound at the use site, or traits with generic methods
-cannot be made into trait objects under the standard vtable mechanism.
-Object-safety rules are specified in detail in [Object Safety: deferred
-to a future spec revision]. A trait that is not object-safe used in a
-`dyn` position produces a compile error at the use site identifying the
-offending trait and the reason.
+A trait is **object-safe** — usable in a `dyn` position — iff every method
+in its effective method set (its own methods plus those inherited through
+`requires`, §3.1.4) is **vtable-dispatchable** and its associated types are
+bound at the `dyn` site. The rule is **strict**: a single non-dispatchable
+method makes the entire trait non-object-safe. There is no per-method
+carve-out.
+
+A method is vtable-dispatchable iff all of the following hold:
+
+1. **It has a `Subject` receiver.** Its first parameter is typed `Subject`
+   — the value the trait object stands in for. A method with no `Subject`
+   first parameter (an "associated function" such as a constructor) has no
+   value to dispatch on.
+2. **`Subject` appears nowhere else.** `Subject` must not appear in any
+   other parameter, nor in the return type. The receiver is erased behind
+   the trait object; a second `Subject` parameter would be a second,
+   independently-erased value of a possibly-different concrete type, and a
+   `Subject` return would be a type the caller of a `dyn` cannot name.
+3. **It is non-generic.** The method declares no type parameters of its
+   own. A vtable has one slot per method; a generic method has an
+   unbounded set of instantiations and no single slot.
+
+**Associated types.** A trait with associated types is object-safe only
+when those types are bound at the `dyn` site — `dyn Iterator[Item = i32]`,
+not bare `dyn Iterator`. An unbound associated type leaves the vtable's
+method signatures non-concrete and is a compile error.
+
+**Why strict, and the remedy.** The non-dispatchable methods are exactly
+those that concern the *type as a whole* — constructing a value, returning
+another of itself, comparing two of its kind — rather than acting on a
+single erased value. These are a distinct capability and, under the
+fine-grained-trait design (§3.6), belong in their own trait. To obtain a
+trait object from a trait that bundles dispatchable and non-dispatchable
+methods, factor the non-dispatchable methods into a sibling trait; the
+dispatchable remainder is then object-safe. This factoring is the right
+design, not a workaround.
+
+```
+trait Display:                                   // object-safe
+  fn display(value: Subject) -> string           //   receiver + plain return
+
+trait Clone:                                     // NOT object-safe
+  fn clone(value: Subject) -> Subject            //   returns Subject (rule 2)
+
+trait Ord:                                       // NOT object-safe
+  fn max(a: Subject, b: Subject) -> Subject      //   second Subject + Subject return
+
+trait Factory:                                   // NOT object-safe
+  fn make() -> Subject                           //   no receiver (rule 1), Subject return
+```
+
+A non-object-safe trait used in a `dyn` position is a compile error at the
+use site, naming the trait, the offending method, and the rule it
+violates. A trait whose `requires` closure includes a non-object-safe
+trait is itself non-object-safe (the inherited method is in its effective
+set).
+
+The escape hatch some languages provide — admitting the trait as `dyn`
+while marking individual methods unavailable on the object — is not in v1.
+Because it only ever *loosens* the rule, it can be added later without
+breaking existing programs; v1 starts strict.
 
 #### 5.2.5 Coercion to `dyn`
 
-A value of a concrete type `T` that fulfills traits `A` and `B` can be
-assigned to a `dyn (A & B)` binding via an explicit coercion. The exact
-syntax is specified in [Coercion: deferred to a future spec revision];
-the principle is that moving from a static type to a trait object is a
-deliberate operation at the assignment or argument-passing site, not an
-implicit conversion.
+Erasing a concrete value to a trait object is **explicit**, written with
+the `dyn` prefix on the value:
+
+```
+let shape: dyn Drawable = dyn circle      // annotation supplies the trait set
+shapes.push(dyn circle)                   // element type supplies it
+```
+
+`dyn value` erases `value`'s concrete type to a trait object, attaching
+the vtable (§5.2.3). The coercion is **never implicit**: a concrete value
+is never silently erased. The `dyn` prefix mirrors `move` (§11.8.5) — a
+short keyword that marks, at the site, an operation with a runtime cost
+(here, vtable indirection).
+
+**Target trait set.** The `dyn` set being erased to is taken from context:
+the binding's annotation, the parameter type at a call, or the collection's
+element type. When no context determines it, the coercion is a compile
+error asking for an annotation — the same resolution-needs-context rule as
+placeholders (§2.1.4). The value's concrete type must fulfill every trait
+in the target set, and each trait in the set must be object-safe (§5.2.4);
+both are checked at the coercion site.
+
+**Ownership.** `dyn value` consumes `value` into the trait object — a
+category-B storage operation (§11.11; implicit move, no `move` keyword).
+For a `Copy` concrete type the value is copied. The resulting `dyn` value
+owns its erased payload and is itself a real owner.
+
+**Position disambiguates.** `dyn` in type position (`dyn Drawable`,
+`dyn (A & B)`) is the trait-object *type*; `dyn` in value/expression
+position is the coercion. The parser distinguishes by position, as with
+the other dual-role tokens (§4.4.2).
 
 ### 5.3 Record Intersection at Type Definition
 
