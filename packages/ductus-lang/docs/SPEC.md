@@ -20267,22 +20267,63 @@ compiled binary, typically as data sections produced by Rust's
 kernel deserializes the graph specification and registers the
 behavior table.
 
-### 15.4 The Reactive Graph Specification
+### 15.4 The Ductus IR
 
-The reactive graph specification is the build-time artifact
-describing the program's reactive shape. It is the **interop
-boundary** between the compiler and the kernel, and between two
-builds of the same program for hot reload (§15.7).
+The **Ductus IR** is the build-time artifact the frontend emits and a
+runtime consumes — the backend-agnostic contract between them, and the
+unit a hot reload diffs (§15.7). Every backend (compiled, interpreted, or
+a future alternative) is implemented against it; the reference
+triple-buffered kernel is one such backend.
 
-The specification is defined as an abstract data model (§15.4.1).
-The **canonical serialization** is JSON (§15.4.2); implementations
-may additionally support binary or in-memory representations for
-performance, but the canonical JSON form is the cross-implementation
-reference.
+An IR **module** has three parts over a shared type table:
 
-#### 15.4.1 Abstract data model
+```
+module <name> {
+  types     { … }   // %TypeId -> layout (size, align, field/variant order)
+  graph     { … }   // the reactive wiring — six primitives (§15.4.1)
+  behaviors { … }   // the leaf compute — typed-SSA functions (§15.4.5)
+}
+```
 
-The specification is a structured record with the following fields.
+The **graph IR** (§15.4.1) is declarative data: cells and their dependency
+edges, gates, streams, effects, and scopes, referencing behaviors by id.
+The **behavior IR** (§15.4.5) is the pure compute each derived / gate /
+effect-`desired` runs. The two meet only through the behavior ABI
+(§15.4.5): the graph names a behavior by id; the runtime invokes it.
+
+**Shared type table.** Both parts speak one monomorphic type vocabulary
+(the frontend has specialized all generics): the primitives of §4.1, plus
+`str` (a pooled-string handle), tuples `(T,…)`, arrays `[T;N]`, records and
+enums as `%TypeId` (layout in the `types` table), `handle<%PoolId>` for
+dynamic-size values, and `closure<(T,…)->R>`. Behaviors are fully typed;
+the graph is **type-erased** to tag + size/align — the runtime moves bits
+and never needs nominal types (§15.4.4).
+
+**Serialization.** The IR's **text form is normative** — it is what this
+section defines and what tests assert against. Any wire encoding (a binary
+schema, in-memory structs, or none at all) is implementation-defined; no
+single serialization is mandated. One concrete encoding (JSON) is given in
+§15.4.2 as a convenience, not a requirement.
+
+#### 15.4.1 Graph IR
+
+The graph is built from **six primitives** — `cell`, `connection`, `gate`,
+`stream`, `effect`, and `scope` — each referencing behaviors by id and
+identified by a stable path (§15.4.1.1). All surface reactive constructs
+desugar into these six: signal/attr/derived/recurrent/const → `cell`;
+node/part → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
+connection/`|>` → `connection`; operator → a `scope` with ports; stream →
+`stream`; effect → `effect`.
+
+A **`scope`** is the structural container (a node/part/operator instance,
+or a `repeat`'s per-element instance). It carries an `exposes` list — the
+child placements the runtime traverses (topology) — and a separate
+`effects` set — the effects hosted there per §13.3.8, never in `exposes`.
+A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`
+(the only mount/unmount construct; gates merely freeze). Hierarchy is
+encoded in the fully-qualified paths of the entries below.
+
+The graph is a structured record with the following entries.
 
 **Cells.** A list of cell entries. Each cell entry contains:
 
@@ -20510,14 +20551,14 @@ graph context: cells declared inside placements that participate in
 the kernel's evaluation cycle (§13.10) get `realtime`; cells on
 non-realtime paths get `bounded`.
 
-#### 15.4.2 Canonical serialization
+#### 15.4.2 JSON encoding (one option, not mandated)
 
-The canonical serialization is JSON.
-
-A conformant compiler produces graph specifications in JSON form,
-conforming to a normative JSON Schema published alongside this
-specification (`graph-spec.schema.json`, schema version per
-§15.4.3).
+The IR's normative form is its text form (§15.4); no serialization is
+mandated. JSON is **one** convenient encoding, given here for tooling that
+wants it — a conformant compiler MAY emit it, conforming to the JSON
+Schema published alongside this specification (`graph-spec.schema.json`,
+schema version per §15.4.3). It is not *the* cross-implementation
+reference; the text form is.
 
 Layout requirements for canonical JSON:
 
@@ -20568,6 +20609,178 @@ The kernel's view of the program is: a graph of cells with primitive
 types, dependency edges, behavior references, and gate predicates.
 It does not need to understand records as records or traits as
 traits; it manages bits in cells and invokes functions by ID.
+
+#### 15.4.5 Behavior IR
+
+A *behavior* is a pure function the runtime invokes to compute a derived
+value, a gate predicate, or an effect's desired state — the leaf compute
+the graph (§15.4.1) names by content-addressed id (§14.6.4). The behavior
+IR is:
+
+- **typed** — every value has a concrete type (the §15.4 vocabulary);
+- **SSA with block arguments** — each value is assigned once (`%0`, `%1`,
+  …); control flow is basic blocks; a block needing a merged value declares
+  it as a parameter (there are no phi nodes);
+- **monomorphic** — generics already specialized (`push$Vec_i32`);
+- **ownership-explicit** — `move`, `clone`, `drop` are written out, not
+  inferred, so in-place reuse and release are deterministic (§11.11.2);
+- **pure** — a function of its declared inputs only; no ambient state, no
+  I/O (I/O is the domain of effects, which are graph-level); it may compute,
+  allocate, call other behaviors, and `trap`;
+- **total except `trap`** — the only non-`ret` exit is `trap` (§13.13.1).
+
+**Signature.** `behavior <id> (params) -> <type> { block+ }`. Each param is
+`p: T` (borrow-default — read, not consumed) or `own p: T` (consumed).
+
+```
+behavior B@aa10 (x: i32, flag: bool) -> i32 {
+bb0:
+  %0 = const.i32 2
+  cond_br flag, bb1(%0), bb2
+bb1(%k: i32):
+  %1 = mul.i32 x, %k
+  ret %1
+bb2:
+  ret x
+}
+```
+
+The entry block's parameters are the behavior's parameters; a branch
+supplies its successor block's arguments (this replaces phi).
+
+**Instruction set** (typed variants implied by the suffix):
+
+- *constants* — `const.i32 5`, `const.f64 3.14`, `const.bool true`,
+  `const.str "…"`.
+- *arithmetic / bitwise* — `add sub mul div rem neg and or xor shl shr not`
+  (`.iN` / `.fN`); overflow per §4.
+- *comparison* (→ `bool`) — `eq ne lt le gt ge`.
+- *conversion* (explicit, §7.5) — `cast.<from>.<to> %x`.
+- *aggregates* — `tuple.make` / `tuple.get`; `record.make %T {…}` /
+  `field.get`; `enum.make %T #V(p)` / `enum.tag` / `enum.payload`;
+  `array.make […]`. Field/index *assignment* (§11.11) is a trait `call`,
+  not a primitive — so in-place reuse follows the ordinary ownership rules.
+- *calls* — `call f(move %a, %b)` (direct, statically resolved);
+  `call.dyn %obj #m (…)` (vtable, for a `dyn` trait object);
+  `call.closure %c (…)`; `closure.make B@id captures {…}`. `dyn` and
+  closure are the *only* indirect forms — all other dispatch is resolved to
+  direct calls by the frontend.
+- *ownership* — `move` (an operand modifier at call args, stores, returns);
+  `%c = clone %x`; `drop %x` (explicit end-of-life).
+- *intrinsics* — the fixed primitive floor, the only operations not
+  expressible in Ductus and available to every program equally:
+  `raw_alloc<T>(%n)`, `raw_free(move %b)`, `raw_read<T>`, `raw_write<T>`,
+  `trap "msg"`. Stdlib collections (`Vec::push`, …) are ordinary behaviors
+  built on these — no privileged operations exist (§9.3.6).
+
+**Terminators.** Every block ends in exactly one: `br bbN(args)`;
+`cond_br %c, bbT(args), bbF(args)`;
+`switch %tag [0:bb0, 1:bb1, default:bbd]` (`match` lowers to `enum.tag` +
+`switch`); `ret %v`; `trap "msg"`.
+
+**Errors.** Recoverable failures (`Result`/`Option`, `?`) are ordinary
+values + `switch`. Unrecoverable failures (`panic`, overflow, failed index)
+are `trap` — process abort, not catchable (§13.13).
+
+**Lowerings (no new primitives needed).** A `for`/iterator loop is a block
+calling `next` (tuple-return) + `switch` on the `Option`, with the
+linear-ownership in-place optimization being the dead-`move`+rebind pattern
+(§11.11.2, §12.7.2); `?` and string interpolation desugar to `switch` /
+`call`s; an `observe` expression (§13.2.11) is a derived read; a closure
+captures an environment whose layout is a `%TypeId` in the `types` table; a
+newtype (§6.3) is a `%TypeId` wrapper, or transparent to its wrapped tag.
+
+**Behavior ABI.** The runtime invokes a behavior by id with input values
+and receives outputs; it never reaches inside. Inputs per role:
+
+| role | inputs | output |
+|------|--------|--------|
+| derived | the cell's input cells (current snapshot values) | new value |
+| recurrent | input cells, self-history slots (`name.past(k,d)` → a `pastK` param), and input-history slots (`input.past(k)` → an `<input>_pastK` param) | new value |
+| gate predicate | the gate's input cells | `bool` (or a tag, for a `given` selector) |
+| effect desired-builder | the `desired:` block's input cells | the desired record |
+
+Inputs are passed per the signature's ownership modes (borrow vs `own`).
+This call is the entire graph→behavior coupling: behaviors hold no wiring,
+the graph holds no logic.
+
+**Text grammar.**
+```
+behavior ::= 'behavior' BID '(' params ')' '->' type '{' block+ '}'
+params   ::= (('own')? NAME ':' type) (',' …)*
+block    ::= LABEL ('(' params ')')? ':' instr* terminator
+instr    ::= '%'NAME '=' op operand* (':' type)?  |  op operand*
+operand  ::= '%'NAME | 'move' '%'NAME | literal
+```
+
+#### 15.4.6 The IR module — a worked example
+
+Bringing the type table, graph IR, and behavior IR together. This source
+(post-`effects:`-clause, §13.3.8) —
+
+```
+effect print(message: Signal[string]):
+  desired:
+    derived text: string = message
+
+node App:
+  signal count: i32 = 0
+  signal show: bool = true
+  derived doubled: i32 = count * 2
+  recurrent total: i32 = total.past(1, 0) + count
+  derived label: string = "value is {doubled}"
+  effects:
+    when show:
+      label |> print
+```
+
+— lowers to:
+
+```
+module App {
+  types { %TextRec = record { text: str }  size 8 align 8 }
+
+  graph {
+    scope App  exposes []  effects [App.print:0] {
+      cell App.count   : i32  role=input     init 0
+      cell App.show    : bool role=input     init true
+      cell App.doubled : i32  role=derived   uses B@d1 inputs [App.count]
+      cell App.total   : i32  role=recurrent uses B@d2 inputs [App.count] depth 1 init 0
+      cell App.label   : str  role=derived   uses B@d3 inputs [App.doubled]
+
+      gate App.g0  pred B@d4  inputs [App.show]  guards [App.print:0]
+
+      cell App.print:0.text : str role=derived uses B@d5 inputs [App.label]
+      effect App.print:0  reconciler "print"  params [message: App.label]
+                          desired [App.print:0.text]  gate App.g0
+    }
+  }
+
+  behaviors {
+    behavior B@d1 (count: i32) -> i32 {
+    bb0: %0 = const.i32 2 ; %1 = mul.i32 count, %0 ; ret %1 }
+
+    behavior B@d2 (count: i32, past1: i32) -> i32 {
+    bb0: %0 = add.i32 past1, count ; ret %0 }
+
+    behavior B@d3 (doubled: i32) -> str {
+    bb0: %0 = const.str "value is " ; %1 = call int_to_str(doubled) : str
+         %2 = call str_concat(move %0, move %1) : str ; ret %2 }
+
+    behavior B@d4 (show: bool) -> bool { bb0: ret show }
+
+    behavior B@d5 (message: str) -> %TextRec {
+    bb0: %0 = record.make %TextRec { text: message } ; ret %0 }
+  }
+}
+```
+
+The effect sits in `App`'s `effects` set, not `exposes` (effects are not
+topology, §13.3.8); the gate `App.g0` guards it (gate-off ⇒ freeze +
+`suspend`, §13.9.7); `App.print:0` uses the ordinal path form for an
+anonymous instance (§15.4.1.1); and `desired.text` is a pure function of
+`message` (bound to `App.label`) — there is no activation input anywhere,
+consistent with the suspend/resume-only model (§13.19.12).
 
 ### 15.5 Lowering (Ductus → Rust)
 
