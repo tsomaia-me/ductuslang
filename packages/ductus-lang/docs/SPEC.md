@@ -15611,7 +15611,7 @@ are reconciled at the commit boundary.
 dependents glitch-free and publishes a consistent snapshot;
 `acquire_snapshot` + `read` observe it; `transaction` groups writes
 atomically; `register_reconciler` installs effect hooks; `teardown` shuts
-the graph down (§13.14.10). The runtime calls **behaviors** (§15.4.5) and
+the graph down (§13.14.10). The runtime calls **behaviors** (§15.4.4) and
 **reconciler hooks** back into host code.
 
 **Capabilities (negotiated, not assumed).** A backend advertises optional
@@ -15978,12 +15978,12 @@ instance's observed error cell if such a cell is declared).
 #### 13.14.10 Behavior ABI and `runtime.teardown`
 
 **Behavior ABI.** Beyond the host-facing verbs above, the runtime calls
-*behaviors* (§15.4.5) — the pure compute of each derived, gate predicate,
+*behaviors* (§15.4.4) — the pure compute of each derived, gate predicate,
 and effect `desired:` builder. It invokes a behavior by its
 content-addressed id with the current values of that behavior's input
 cells, and receives the output; it never reaches inside. Inputs are passed
 per the behavior's declared ownership modes, and the per-role input/output
-shapes are given in §15.4.5. This callback — together with the reconciler
+shapes are given in §15.4.4. This callback — together with the reconciler
 hooks (§13.14.7) — is the whole of what the runtime calls back into.
 
 **`runtime.teardown()`.** Shuts the graph down, running the §13.14.1
@@ -20138,15 +20138,15 @@ An IR **module** has three parts over a shared type table:
 module <name> {
   types     { … }   // %TypeId -> layout (size, align, field/variant order)
   graph     { … }   // the reactive wiring — six primitives (§15.4.1)
-  behaviors { … }   // the leaf compute — typed-SSA functions (§15.4.5)
+  behaviors { … }   // the leaf compute — typed-SSA functions (§15.4.4)
 }
 ```
 
 The **graph IR** (§15.4.1) is declarative data: cells and their dependency
 edges, gates, streams, effects, and scopes, referencing behaviors by id.
-The **behavior IR** (§15.4.5) is the pure compute each derived / gate /
+The **behavior IR** (§15.4.4) is the pure compute each derived / gate /
 effect-`desired` runs. The two meet only through the behavior ABI
-(§15.4.5): the graph names a behavior by id; the runtime invokes it.
+(§15.4.4): the graph names a behavior by id; the runtime invokes it.
 
 **Shared type table.** Both parts speak one monomorphic type vocabulary
 (the frontend has specialized all generics): the primitives of §4.1, plus
@@ -20154,13 +20154,12 @@ effect-`desired` runs. The two meet only through the behavior ABI
 enums as `%TypeId` (layout in the `types` table), `handle<%PoolId>` for
 dynamic-size values, and `closure<(T,…)->R>`. Behaviors are fully typed;
 the graph is **type-erased** to tag + size/align — the runtime moves bits
-and never needs nominal types (§15.4.4).
+and never needs nominal types (§15.4.3).
 
 **Serialization.** The IR's **text form is normative** — it is what this
 section defines and what tests assert against. Any wire encoding (a binary
 schema, in-memory structs, or none at all) is implementation-defined; no
-single serialization is mandated. One concrete encoding (JSON) is given in
-§15.4.2 as a convenience, not a requirement.
+serialization is mandated, and this specification defines none.
 
 #### 15.4.1 Graph IR
 
@@ -20408,54 +20407,19 @@ graph context: cells declared inside placements that participate in
 the runtime's evaluation cycle (§13.10) get `realtime`; cells on
 non-realtime paths get `bounded`.
 
-#### 15.4.2 JSON encoding (one option, not mandated)
-
-The IR's normative form is its text form (§15.4); no serialization is
-mandated. JSON is **one** convenient encoding, given here for tooling that
-wants it — a conformant compiler MAY emit it, conforming to the JSON
-Schema published alongside this specification (`graph-spec.schema.json`,
-schema version per §15.4.3). It is not *the* cross-implementation
-reference; the text form is.
-
-Layout requirements for the JSON encoding:
-
-- Two-space indent.
-- Object keys ordered as specified in §15.4.1 (field order is
-  normative).
-- Arrays in declaration order (cells in source order; behaviors in
-  lexicographic order of content-addressed ID; exact ordering rules
-  in the JSON Schema).
-- UTF-8 encoding, no BOM, Unix line endings.
-
-These layout rules make the JSON encoding diff-friendly: two builds of
-equivalent source produce byte-identical JSON.
-
-Implementations may additionally produce:
-
-- **Binary serializations** (e.g., FlatBuffers, Cap'n Proto, custom
-  bit-packed) for fast startup loading. The reference kernel
-  supports a binary form for native-mode embedding.
-- **In-memory representations** (e.g., direct Rust structs) for
-  interpreter mode.
-
-Cross-implementation interop is defined against the IR's text form
-(§15.4); where two implementations exchange the JSON encoding, it must be
-readable by both at the same format version (§15.4.3).
-
-#### 15.4.3 Versioning
+#### 15.4.2 Versioning
 
 The specification carries two version numbers:
 
 - **Schema version** — the Ductus toolchain version that produced
   the spec, per §14.10.
-- **Format version** — the version of the abstract data model and
-  JSON Schema themselves.
+- **Format version** — the version of the abstract data model itself.
 
 A conformant runtime accepts specifications whose format version it
 understands. Format-version mismatches are diagnosed at load time
 per §14.10.
 
-#### 15.4.4 What the specification does not contain
+#### 15.4.3 What the specification does not contain
 
 The specification is type-erased at the runtime boundary. It contains
 primitive type tags and cell layouts, but **not** Ductus's full type
@@ -20468,7 +20432,7 @@ types, dependency edges, behavior references, and gate predicates.
 It does not need to understand records as records or traits as
 traits; it manages bits in cells and invokes functions by ID.
 
-#### 15.4.5 Behavior IR
+#### 15.4.4 Behavior IR
 
 A *behavior* is a pure function the runtime invokes to compute a derived
 value, a gate predicate, or an effect's desired state — the leaf compute
@@ -20571,7 +20535,7 @@ instr    ::= '%'NAME '=' op operand* (':' type)?  |  op operand*
 operand  ::= '%'NAME | 'move' '%'NAME | literal
 ```
 
-#### 15.4.6 The IR module — a worked example
+#### 15.4.5 The IR module — a worked example
 
 Bringing the type table, graph IR, and behavior IR together. This source
 (post-`effects:`-clause, §13.3.8) —
@@ -20718,8 +20682,8 @@ A conformant compiler:
    ill-formed (with diagnostics; format is implementation-defined
    per §15.2.3).
 3. Produces an IR conforming to the abstract data model of §15.4.1.
-   Its text form is normative; any serialization (e.g. the JSON
-   encoding of §15.4.2) is implementation-defined.
+   Its text form is normative; any serialization is
+   implementation-defined.
 4. Produces executable code that, when run against a conformant
    kernel with the produced graph specification, exhibits the
    observable behavior defined by §§1–13.
@@ -20729,8 +20693,8 @@ A conformant compiler:
 A conformant kernel:
 
 1. Accepts any IR conforming to the abstract data model of §15.4.1,
-   in whatever serialization the implementations share (no encoding
-   is mandated, §15.4.2).
+   in whatever serialization the implementations share (none is
+   mandated).
 2. Allocates cells per the observability and cadence contracts of
    §15.4.1, using any mechanism satisfying those contracts.
 3. Implements the runtime semantics of §13 and §14: cell evaluation
@@ -20742,7 +20706,7 @@ Interop is defined against the IR's text form (§15.4); where two
 implementations exchange a serialization, it must load at the same
 format version. Cross-implementation mixing (compiler from
 implementation A, kernel from implementation B) is permitted at the
-same schema and format version per §15.4.3.
+same schema and format version per §15.4.2.
 
 #### 15.8.4 Conformance testing
 
