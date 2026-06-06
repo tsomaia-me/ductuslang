@@ -12997,17 +12997,31 @@ remains available as the explicit form (`here::from`, `here::incoming`).
 **The `active` projection (effective activation).** An instance also
 exposes its *effective activation state* — whether it is currently live,
 i.e. its own gate conjoined with all ancestor gates (§13.9.7) — as a
-read-only `bool` projection on the instance value: `subject.active`
-inside the body, `instance.active` from outside, `here::active` for the
-explicit-scope form. Unlike the fields above, `active` is **not** a
-bare-name member: it is reached only through `subject` or an instance
-value, deliberately *not* reserving the common bare identifier `active`
-(per the rationale in §13.9.1). It reads `true` for an ungated,
+read-only `bool` projection, written here as `subject.active` (and
+`instance.active` / `here::active`). It reads `true` for an ungated,
 fully-active instance and `false` while the instance or any ancestor is
 gated off; the value flips on gate transitions as a propagation event
-(§13.9.7). Domain logic uses it to make an effect's desired a function
-of activation (`desired open = subject.active and …`, §13.19.12). The
-name `active` is a placeholder pending the syntax pass.
+(§13.9.7). Domain logic uses it to make an effect's desired a function of
+activation (`desired open = subject.active and …`, §13.19.12).
+
+**The projection's name and reservation are deferred to the naming
+pass**, because the obvious candidates are flawed and the right model is a
+real decision:
+
+- A `subject.X` access collides with an attr named `X` (attrs are reached
+  through `subject` too), so qualifying through `subject` does *not* by
+  itself avoid collision — a projection that must never be shadowed has
+  to be a **reserved** field (like `exposition`), which no attr may take
+  the name of.
+- Reserving `active` re-incurs exactly the cost §13.9.1 set out to avoid
+  (stealing a common identifier); reserving `is_active` is worse still —
+  it is a very common boolean attr name and is already used as one in the
+  §13.2.2 example. The `is_` boolean-accessor convention (§8.7, §13.18.6)
+  pulls toward `is_active`; collision-avoidance pulls away from it.
+
+So the working form is `subject.active`, with the final name — and whether
+it is a reserved field or a shadow-ruled projection — settled in the
+syntax pass alongside the `given` keyword.
 
 Note that `in` is *not* among these: incoming connections are named
 `incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
@@ -13975,9 +13989,9 @@ Two design moves justify the clause:
   identifier for what is fundamentally a structural concern. The
   `when` keyword takes the role explicitly. (This concerns *defining*
   the gate. *Reading* the resulting effective activation is a separate,
-  read-only projection — `subject.active` (§13.7.5) — which for the same
-  reason is reached only through `subject`, never as a bare reserved
-  identifier.)
+  read-only projection — `subject.active` (§13.7.5) — whose final name
+  and reservation model are deferred to the naming pass, since reserving
+  a common identifier here trades against the same concern.)
 
 #### 13.9.2 Type-level `when:`
 
@@ -14276,7 +14290,15 @@ static graph, they suspend propagation through edges at runtime.
 The per-publish DAG (§13.11.3) is constructed each publish; during
 construction, gated edges contribute no dirty propagation to their
 destinations' output-affecting cells, but do contribute to input
-cells and `when` predicate provenance.
+cells and `when` predicate provenance. One **partial inclusion**
+applies: on the publish where a subtree transitions to gated-off, the
+DAG additionally includes the *effect-desired slice* within that subtree
+— the minimal subgraph feeding contained effects' desired cells —
+evaluated with the now-false gate, so those reconcilers receive the
+inactive desired (the close teardown pass, §13.9.7). The remainder of
+the closing subtree is excluded. Without this clause the naive reading
+(exclude the entire gated subtree) would silently drop the close pass,
+so it is normative, not an optimization.
 
 A single delegating note in §13.10.2 records this: edges whose gate
 predicate evaluates false do not propagate to destination outputs; each
