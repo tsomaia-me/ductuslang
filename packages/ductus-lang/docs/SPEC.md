@@ -78,8 +78,9 @@ input is compile-time evaluable. The language uses this aggressively for
 type-level computation, value-fits-type checking, and dependent-ish typing.
 
 **Nominal types.** Records, enums, traits, nodes, and connections are nominal —
-identity is by name, not structure. Tuples and trait-constraint intersections
-are explicit structural carve-outs with clear semantics.
+identity is by name, not structure. Tuples, closure types, and
+trait-constraint intersections are explicit structural carve-outs with
+clear semantics.
 
 **Traits as the abstraction mechanism.** Behavior abstraction uses nominal
 traits with explicit `satisfies`/`fulfill` declarations. Coherence is enforced
@@ -5562,12 +5563,11 @@ qualification follows the module-path rules in §10. There is no
 modules per §10, not associated with types, and the dispatch model in
 §3.4 does not include a type-qualified free-function namespace.
 
-Note on closure-type notation: the `fn(T) -> U` parameter types shown
-in the method signatures use a forward-referencing notation for closure
-types. The complete closure-type specification is deferred to a future
-spec revision. For v1, treat these signatures as taking any callable
-value (free function, closure, or operator-applied function) whose
-call-arity and parameter/return types match.
+Note on closure-type notation: the `fn(T) -> U` parameter types shown in
+these method signatures are closure types (§11.10.6). Such a parameter
+accepts any callable — a free function or a closure literal — whose
+signature (parameter types, return type, and ownership conventions)
+matches, monomorphized per call site.
 
 ### 8.8 Convention: `Option` vs `Result`
 
@@ -5796,9 +5796,10 @@ identifiers.
 
 ### 9.2 Tuples
 
-Tuples are *structurally typed* — the one structural-typing carve-out in
-an otherwise nominal type system. Two tuples with the same component
-types in the same order are the same type:
+Tuples are *structurally typed* — one of the two structural-typing
+carve-outs in an otherwise nominal type system (the other is closure
+types, §11.10.6). Two tuples with the same component types in the same
+order are the same type:
 
 ```
 (1, 2)         // (i32, i32)
@@ -8097,9 +8098,14 @@ specializes per instantiation.
 
 ### 11.10 Closures and Capture
 
-A closure is an anonymous function that may capture values from its
-enclosing scope. Ductus's closures capture *by value*: each captured
-value is stored inside the closure at the moment of definition.
+A closure is an anonymous function, written as a `fn` literal — a `fn`
+declaration with the name omitted: `fn(params) -> ret: body`. The return
+type and the parameter types may be omitted when inferable from the
+expected closure type at the use site; the body is a single expression or
+an indented block, exactly as for a named `fn`. A closure may capture
+values from its enclosing scope. Ductus's closures capture *by value*:
+each captured value is stored inside the closure at the moment of
+definition. A closure's type is the closure type `fn(P) -> R` (§11.10.6).
 
 #### 11.10.1 Captures must be `Copy`
 
@@ -8109,21 +8115,21 @@ holds an independent copy.
 
 ```
 let gain: f32 = 1.5
-let process = |sample: f32| sample * gain    // captures gain (f32, Copy) ✓
+let process = fn(sample: f32): sample * gain    // captures gain (f32, Copy) ✓
 ```
 
 For non-`Copy` source values, capture is a compile error:
 
 ```
 let buf = make_buffer()                       // Vec[f32], non-Copy
-let closure = || sum(buf)                     // ✗ compile error:
+let closure = fn(): sum(buf)                   // ✗ compile error:
                                               //   cannot capture non-Copy value `buf`
 ```
 
 Non-`Copy` values flow through closures as arguments rather than captures:
 
 ```
-let closure = |b: Vec[f32]| sum(b)           // closure parameter is default
+let closure = fn(b: Vec[f32]): sum(b)         // closure parameter is default
                                               //   (borrow-equivalent)
 let total = closure(buf)                      // caller passes buf;
                                               //   buf survives the call
@@ -8132,7 +8138,7 @@ let total = closure(buf)                      // caller passes buf;
 The closure's parameter follows the default convention from §11.7:
 `b` is a borrow-equivalent alias of the caller's argument for the
 duration of the closure invocation. Closures that need to consume a
-non-`Copy` argument declare it `own`: `let closure = |own b: Vec[f32]|
+non-`Copy` argument declare it `own`: `let closure = fn(own b: Vec[f32]):
 into_sorted(move b)`.
 
 #### 11.10.2 Capture granularity
@@ -8143,7 +8149,7 @@ that field is captured — provided the field's type is `Copy`:
 
 ```
 let contact = Contact(first_name: "Alice", age: 30, ...)
-let closure = || contact.age + 1              // captures contact.age (i32, Copy)
+let closure = fn(): contact.age + 1           // captures contact.age (i32, Copy)
                                               // contact stays in outer scope, fully usable
 ```
 
@@ -8158,10 +8164,10 @@ bindings:
 
 ```
 let stable = 5
-let closure_a = || stable + 1                 // ✓ capture from let
+let closure_a = fn(): stable + 1              // ✓ capture from let
 
 mut counter = 0
-let closure_b = || counter + 1                // ✗ compile error:
+let closure_b = fn(): counter + 1            // ✗ compile error:
                                               //   cannot capture from `mut` binding `counter`
 ```
 
@@ -8174,7 +8180,7 @@ user to make the snapshot explicit:
 mut counter = 0
 counter = compute_initial()
 let snapshot = counter                        // explicit snapshot via let
-let closure = || snapshot + 1                 // captures snapshot (Copy)
+let closure = fn(): snapshot + 1              // captures snapshot (Copy)
 counter = counter + 1                         // mut continues to evolve
                                               // closure still sees the snapshot value
 ```
@@ -8188,13 +8194,13 @@ system is the appropriate mechanism. The reactive system is specified in
 Within a closure body, all the usual function-body rules apply. The body
 may declare local `mut` bindings, call functions (consuming arguments as
 their signatures dictate), construct new values, perform iteration
-(once specified), and so on. The capture-must-be-`Copy` restriction
+(§12), and so on. The capture-must-be-`Copy` restriction
 applies only to the closure's captured environment, not to anything the
 body does internally.
 
 ```
 let scale: f32 = 2.0                          // Copy capture
-let process = |raw: Vec[f32]| -> Vec[f32]:
+let process = fn(raw: Vec[f32]) -> Vec[f32]:
   mut local = raw                              // mut local; allowed inside closure body
   apply_scale_in_place(local, scale)           // internal work; captures untouched
   local
@@ -8223,6 +8229,73 @@ A closure body may always receive non-`Copy` values as *arguments* (its
 parameter list follows §11.7 conventions: default borrow-equivalent or
 `own` consume). The capture-must-be-`Copy` restriction applies to the
 closure's captured environment, not to its parameters.
+
+#### 11.10.6 Closure types
+
+A closure's type is a **closure type**, written `fn(P1, P2, …) -> R` — a
+`fn` declaration's signature with the name removed. It is the type of both
+closure literals and plain free functions:
+
+```
+let inc: fn(i32) -> i32 = fn(x): x + 1
+fn double(x: i32) -> i32: x * 2
+let d: fn(i32) -> i32 = double          // a free function inhabits the type
+```
+
+**Structural.** A closure type is defined by its signature alone —
+parameter types (with their ownership conventions) and return type. Any
+callable whose signature matches inhabits it: closure literals and free
+functions alike (a free function is a closure that captures nothing).
+This is the second structural carve-out in the otherwise-nominal type
+system, after tuples (§9.2); a closure type is not declared and has no
+nominal identity. The `fn` prefix is what keeps `(P)` unambiguous: a bare
+`(T1, T2)` is a tuple type, while `fn(T1, T2) -> R` is a two-parameter
+function type, and `fn((T1, T2)) -> R` is a one-parameter function taking
+a tuple.
+
+**Ownership conventions are part of the type.** Parameters and the return
+carry the same conventions as any `fn` signature (§11.7, §11.3.6):
+`fn(T) -> R` borrows its parameter and returns borrow-rooted in it;
+`fn(own T) -> own R` consumes its parameter and returns an owned value. A
+callable inhabits a closure type only if its conventions match.
+
+**Closures are `Copy`.** A closure captures only `Copy` values (§11.10.1)
+and carries a compile-time-known code identity, so a closure value is
+itself `Copy`: read, passed, and duplicated freely, never consumed, like
+any other `Copy` value. There is no consumed-once or mutable-capture
+variant — captures can be neither mutable nor non-`Copy`, and per-call
+ownership is already carried by the parameters' `own`/borrow conventions.
+
+**Static by default; `dyn` to erase.** In **parameter and return
+positions**, a closure type is *monomorphized*: the callee specializes to
+the exact concrete closure passed (distinct captures are distinct
+concrete types), with no indirection — the zero-cost model of a generic
+parameter (§2.3), behaving as an implicit generic (§2.2.3).
+
+```
+fn apply(f: fn(i32) -> i32, x: i32) -> i32:   // monomorphized per closure passed
+  f(x)
+```
+
+To hold closures of the same signature but *different* concrete types in
+one place — a record field, a collection element, a binding reassigned
+different closures — they must share one representation, which requires
+erasure: `dyn fn(P) -> R`, the trait-object form (§5.2), paying the
+visible vtable indirection. A closure type is object-safe (§5.2.4), so
+`dyn fn(P) -> R` is always well-formed.
+
+```
+mut handlers: Vec[dyn fn(Event) -> ()] = Vec::new()   // heterogeneous, erased
+```
+
+So a closure type is used directly (`fn(P) -> R`) wherever it can stay
+static — arguments and returns — and in its erased form (`dyn fn(P) -> R`)
+wherever a uniform stored representation is required (§5.2.5 governs the
+coercion to the erased form).
+
+**Not a reactive cell type.** A closure cannot be the value type of a
+`signal`, `attr`, `recurrent`, or `derived` cell (§13.12.4): it carries
+code identity the reactive cell model does not store.
 
 ### 11.11 Indexed and Field Assignment
 
@@ -15072,7 +15145,7 @@ the value at construction time as a snapshot — not the live cell.
 
 ```
 let current_threshold: f32 = some_signal    // snapshot at this moment
-let predicate = |x: f32| x > current_threshold
+let predicate = fn(x: f32): x > current_threshold
                         // closure captures the snapshotted f32 value, not the signal
 ```
 
@@ -16697,7 +16770,7 @@ regardless of policy or capacity. It is used in operator and function
 signatures that accept any stream:
 
 ```
-operator map[T, U](source: Stream[T], f: T -> U) -> Stream[U]:
+operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
   ...
 ```
 
@@ -17296,13 +17369,13 @@ stream ring changes: Url = current_url |> to_stream |> skip_first
 operator count[T](source: Stream[T]) -> Signal[i64]:
   // running count of events observed
 
-operator fold[T, A](source: Stream[T], init: A, f: (A, T) -> A) -> Signal[A]:
+operator fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Signal[A]:
   // running accumulator
 
-operator any[T](source: Stream[T], pred: T -> bool) -> Signal[bool]:
+operator any[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]:
   // true once any event satisfies pred
 
-operator all[T](source: Stream[T], pred: T -> bool) -> Signal[bool]:
+operator all[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]:
   // true if every event so far satisfies pred (true initially)
 ```
 
@@ -17314,10 +17387,10 @@ value structurally (`0` for `count`, `init` for `fold`, `false` for
 **Transformation operators** (Stream → Stream):
 
 ```
-operator map[T, U](source: Stream[T], f: T -> U) -> Stream[U]:
+operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
   // policy and capacity preserved from source
 
-operator filter[T](source: Stream[T], pred: T -> bool) -> Stream[T]:
+operator filter[T](source: Stream[T], pred: fn(T) -> bool) -> Stream[T]:
   // policy and capacity preserved from source
 
 operator merge[
@@ -17367,7 +17440,7 @@ type-directed dispatch handles the case when the RHS is a Sink.
 **History-aware operators** (Stream → Stream with state):
 
 ```
-operator scan[T, A](source: Stream[T], init: A, f: (A, T) -> A) -> Stream[A]:
+operator scan[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Stream[A]:
   // emits f(state, event) on each event, threading state through.
   // The output's first event is f(init, first_input_event).
 
@@ -17567,7 +17640,7 @@ without changing its overflow semantics (`map`, `filter`, `skip`)
 preserve the policy type:
 
 ```
-operator map[T, U](source: Stream[T], f: T -> U) -> Stream[U]:
+operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
   ...
 
 // At a call site:
