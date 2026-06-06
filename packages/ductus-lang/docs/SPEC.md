@@ -120,7 +120,7 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`), the reserved
-instance-field names (`pair`, `exposition`, `is_active` — §13.7.5; the
+instance-field names (`pair`, `exposition` — §13.7.5; the
 remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
 `match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
@@ -13053,7 +13053,7 @@ to outer-most is:
 2. **The instance body scope** — the node's or connection's members:
    `attr`, `signal`, `recurrent`, `derived`, `stream` cells; `parts`;
    and the reserved endpoint/structure fields (`from`, `to`,
-   `incoming`, `outgoing`, `pair`, `exposition`, `is_active` — §13.7.5).
+   `incoming`, `outgoing`, `pair`, `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
 
@@ -13166,9 +13166,8 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 
 The reserved fields of a node or connection instance — `from`, `to`
 (connection endpoints, §13.6), `incoming`, `outgoing` (connection
-sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4),
-`exposition` (§13.3.7), and `is_active` (effective activation, §13.9.7) —
-are members of the instance body scope.
+sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
+`exposition` (§13.3.7) — are members of the instance body scope.
 They resolve by bare name in expression-operand position, exactly
 like user-defined members:
 
@@ -13191,29 +13190,6 @@ declaration position (statement level, trailing colon: `from:`,
 corresponding instance field. No collision with user names is
 possible — reserved words cannot be declared as cell names. `here::`
 remains available as the explicit form (`here::from`, `here::incoming`).
-
-**The `is_active` reserved field (effective activation).** `is_active` is
-the instance's *effective activation state* — `true` when the instance is
-live (its own gate AND all ancestor gates open, §13.9.7), `false` while it
-or any ancestor is gated off. It is a read-only `bool`, accessed like the
-other reserved fields: bare `is_active` inside the body, `subject.is_active`,
-or `here::is_active`; from outside, `instance.is_active`. The `is_` prefix
-follows the boolean-accessor convention (`is_some`/`is_none` §8.7,
-`is_full`/`is_open` §13.18.6).
-
-Being **reserved**, `is_active` cannot be declared as a cell name — no attr
-may shadow it. This is what keeps the access unambiguous: a bare or
-`subject.`-qualified `X` would otherwise be ambiguous between the projection
-and an attr `X`, since attrs are reached the same way. Reservation is the
-deliberate trade — it removes `is_active` from the attr-name space (a common
-boolean name) for one canonical, collision-free answer to "is this instance
-live." It does not reintroduce the gate-*defining* `active` attr that §13.9.1
-rejects: `is_active` only *reads* the gate result, which `when`/`given` still
-define.
-
-The value flips on gate transitions as a propagation event (§13.9.7). Domain
-logic uses it to make an effect's desired a function of activation
-(`desired open = is_active and …`, §13.19.12).
 
 Note that `in` is *not* among these: incoming connections are named
 `incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
@@ -14145,11 +14121,11 @@ expression of type `bool`: it follows the same purity rules
 derived. The expression forms accepted are identical. What differs
 is the structural role — the predicate's value is consumed by the
 kernel to gate propagation through the construct it modifies, not
-exposed through a named cell readable by other expressions. The
-predicate *expression* is not itself a readable cell; an instance's
-*effective activation state* — its own gate conjoined with all ancestor
-gates (§13.9.7) — is separately readable as `subject.is_active` (§13.7.5),
-for domain logic that must react to being frozen.
+exposed as a readable value. Activation is not surfaced as a cell or
+field for source code to read; a construct's reaction to being gated off
+is structural (it freezes, §13.9.7) and, for effects, is delivered to
+the host through the `suspend`/`resume` reconciler hooks (§13.14.9),
+not through a readable activation value.
 
 It evaluates in the scope of the construct it modifies: inside a
 type body it sees the body's own cells (by bare name) and items
@@ -14177,11 +14153,7 @@ Two design moves justify the clause:
 - **A marker trait was rejected.** Using a regular attr name like
   `active` to mean "this is the gate" would reserve a common
   identifier for what is fundamentally a structural concern. The
-  `when` keyword takes the role explicitly. (This concerns *defining*
-  the gate. *Reading* the resulting effective activation is a separate,
-  read-only reserved field — `is_active` (§13.7.5) — which only reports
-  the gate result; it does not define a gate, so it does not reintroduce
-  the rejected gate-defining `active` attr.)
+  `when` keyword takes the role explicitly.
 
 #### 13.9.2 Type-level `when:`
 
@@ -14416,43 +14388,35 @@ transitions matter (audio velocity, control voltages). Smoothing
 is a separate concern handled by the parameter system, not by the
 gate primitive. The gate guarantees correctness, not continuity.
 
-**Snap on gate-close (the teardown pass).** The close transition
-(true → false) is the mirror of the open snap: it too is a propagation
-event, scheduled within the publish that flips the predicate false. Its
-purpose is to let anything that must release on deactivation do so
-*before* the subtree freezes. Because a frozen subtree's outputs
-propagate to nobody, the close pass does **not** recompute the subtree's
-deriveds in general — that work would produce values no consumer reads.
-Only the **effect-desired slice** recomputes: the minimal subgraph
-feeding the desired cells of effects contained in the closing subtree
-(including the `subject.is_active` activation value, which flips false on
-this pass), so each such effect's desired state reflects "inactive" and
-its reconciler can release per §13.19.12. After this one pass the
-subtree freezes. Pure nodes and connections have nothing to release; for
-them the close pass is empty and freezing is the complete, correct
-behavior.
+**Gate-close suspends contained effects.** When a `when` predicate
+transitions true → false, the subtree freezes (above): its cells hold
+their last values and stop recomputing. There is no recompute pass —
+nothing in a frozen subtree produces a value any consumer reads. The one
+outward consequence of closing concerns **effects**: the kernel fires the
+`suspend` reconciler hook (§13.14.9) for every effect in the now-frozen
+subtree, at the publish boundary, so the host can release those effects'
+external resources while their instance state is preserved. Pure nodes
+and connections have nothing to release; for them freezing alone is the
+complete, correct behavior.
 
-**Only effects need close-time work.** Nodes and connections are pure
+**Only effects need close-time handling.** Nodes and connections are pure
 reactive structure (§13.3.6, §13.6.4): freezing them holds their cells
 and suspends evaluation, which is already complete — there is no external
 operation to tear down. Effects (§13.19) are the sole construct holding
-outside-world state, so the close pass and the suspend/resume protocol
-(§13.14.9) concern effects exclusively. A gated *connection* therefore
-simply stops delivering (above); it has no suspend, because effects
-cannot be instantiated in connection bodies (§13.6.4).
+outside-world state, so the `suspend`/`resume` protocol (§13.14.9)
+concerns effects exclusively. A gated *connection* therefore simply stops
+delivering (above) and has no suspend, because effects cannot be
+instantiated in connection bodies (§13.6.4).
 
 **Nested gating is effective and transitive.** An instance is
-*effectively active* iff its own gate AND every ancestor gate on the
-path from the root are open. Closing any ancestor gate transitively
-freezes every descendant — and runs the close pass over descendant
-effects (suspending them) regardless of those descendants' own gate
-states. Reopening an ancestor restores each descendant to *its own* gate
-state (a descendant whose own gate is false stays frozen). The
-`subject.is_active` projection (§13.7.5) reads this effective state, so a
-descendant effect's `desired = if is_active: …` correctly reflects ancestor
-gating without the descendant naming its placement context. The kernel
-computes effective activation when constructing the per-publish DAG
-(§13.9.8) and uses it to drive transitive suspend delivery.
+*effectively active* iff its own gate AND every ancestor gate on the path
+from the root are open. Closing any ancestor gate transitively freezes
+every descendant and suspends every effect within it, regardless of those
+descendants' own gate states. Reopening an ancestor restores each
+descendant to *its own* gate state (a descendant whose own gate is false
+stays frozen). The kernel computes effective activation (own gate
+conjoined with all ancestor gates) to drive transitive `suspend`/`resume`
+delivery to contained effects (§13.14.9).
 
 **Cell-value reads on gated subgraphs.** Reads always return a
 defined value of type T (no `Option[T]`), because:
@@ -14480,24 +14444,18 @@ static graph, they suspend propagation through edges at runtime.
 The per-publish DAG (§13.11.3) is constructed each publish; during
 construction, gated edges contribute no dirty propagation to their
 destinations' output-affecting cells, but do contribute to input
-cells and `when` predicate provenance. One **partial inclusion**
-applies: on the publish where a subtree transitions to gated-off, the
-DAG additionally includes the *effect-desired slice* within that subtree
-— the minimal subgraph feeding contained effects' desired cells —
-evaluated with the now-false gate, so those reconcilers receive the
-inactive desired (the close teardown pass, §13.9.7). The remainder of
-the closing subtree is excluded. Without this clause the naive reading
-(exclude the entire gated subtree) would silently drop the close pass,
-so it is normative, not an optimization.
+cells and `when` predicate provenance. A subtree that is gated off is
+excluded from the DAG; nothing in it recomputes.
 
 A single delegating note in §13.10.2 records this: edges whose gate
-predicate evaluates false do not propagate to destination outputs; each
-gate transition — open *and* close — is itself a propagation event
-scheduled within the same publish that flips the predicate (the open
-snap and the close teardown pass of §13.9.7). The DAG construction uses
-*effective* activation (own gate conjoined with all ancestor gates,
-§13.9.7) so that closing an ancestor suspends descendant effects
-transitively.
+predicate evaluates false do not propagate to destination outputs, and
+the gate-open transition is itself a propagation event scheduled within
+the publish that flips the predicate (the open snap, §13.9.7). Gate-close
+adds no DAG work; its only consequence is that the kernel fires `suspend`
+for effects in the newly-frozen subtree at the publish boundary (§13.9.7,
+§13.14.9). The kernel uses *effective* activation (own gate conjoined
+with all ancestor gates) so that closing an ancestor suspends descendant
+effects transitively.
 
 #### 13.9.9 Interaction with `Circularity`
 
@@ -14826,8 +14784,7 @@ operation on the producer thread:
    edges within this publish. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
-   gate-open snap and gate-close teardown-pass rules, both scheduled
-   within the publish that flips the predicate.
+   gate-open snap and the suspension of contained effects on gate-close.
 3. **Evaluate in topological order.** For each node in topo order,
    invoke its behavior (per §14.6's ABI). Reads resolve as follows:
     - Signal and attr reads → current values in the back buffer
@@ -18382,9 +18339,8 @@ simply contributes static values (it neither goes dirty nor triggers an
 §13.9.7), go dirty, and the reconciler updates with the now-live values.
 Freezing a desired arm therefore means "pin this part of the desired
 state and stop tracking it while gated," *not* "release the resource" —
-release on inactivity is the reconciler's own choice driven by
-`subject.is_active` (§13.7.5) or `suspend` (§13.14.9), not an effect of
-the block.
+release on inactivity is the reconciler's response to the `suspend` hook
+(§13.14.9), not an effect of the block.
 
 #### 13.19.5 Observed block
 
@@ -18771,20 +18727,12 @@ suspends every contained effect, regardless of the effects' own gates
 
 **Only effects need this.** Pure nodes and connections hold no
 outside-world state; freezing them (Model B) is complete and they have
-no `suspend`/`resume`. Effects are the sole construct the gate-close
-pass and the suspend/resume protocol concern.
-
-**The two paths to "inactive" compose; they do not conflict.** A
-reconciler can be driven toward releasing a resource in two ways: by the
-kernel's `suspend` signal (transport — always delivered on gate-close),
-and by an effect author writing the resource's desired as a function of
-the activation projection (`desired open = subject.is_active and …`,
-§13.7.5) so that gate-close flips the desired itself. These are
-different layers: `suspend` is signal delivery the author cannot forget;
-`subject.is_active` is one ordinary *input* to the reconciler-authored
-desired. They reach the same reconciler, which remains the single owner
-of what release *means*. The kernel guarantees the signal; the domain
-decides the response.
+no `suspend`/`resume`. Effects are the sole construct the suspend/resume
+protocol concerns. The kernel guarantees the `suspend` signal on
+gate-close and `resume` on gate-open; the reconciler — the domain —
+decides what releasing and re-acquiring actually mean. There is no
+source-level activation value the author must thread through `desired`:
+the hook is the mechanism.
 
 #### 13.19.13 Effects in `|>` chains
 
