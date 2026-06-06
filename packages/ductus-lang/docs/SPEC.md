@@ -469,11 +469,13 @@ would require a different type instantiation than the caller — is rejected at
 compile time. Direct same-type recursion (the recursive call has the same type
 arguments as the caller) is permitted and reuses the same instantiation.
 
-This restriction guarantees that monomorphization terminates and produces a
-finite set of instantiations. The use cases where polymorphic recursion is
-genuinely needed (certain advanced data structures, functional patterns) are
-out of scope for v1; explicit dynamic dispatch via `dyn` (§5) is available
-for cases that require it.
+This restriction is structural to the monomorphization model (§2.3): whole-
+program specialization with no type erasure requires a finite, statically
+known set of instantiations, and polymorphic recursion can demand an
+unbounded one. It is therefore a permanent rule, not a temporary limitation.
+The cases that genuinely need it (certain non-regular data structures,
+some functional patterns) use explicit dynamic dispatch via `dyn` (§5),
+which is precisely the erasure escape hatch those cases require.
 
 #### 2.3.4 Dead code elimination
 
@@ -2415,8 +2417,8 @@ The traits eligible for automatic derivation are:
 The set is fixed in the language: the six structural-derivation traits
 above (Eq, Ord, Hash, Clone, Display, Debug) plus every member of the
 language-defined marker traits category (§3.7.4). Users cannot register
-new traits for `@derive`. Other traits require manual `fulfill` blocks.
-(A future extension may add user-definable derivation; not in v1.)
+new traits for `@derive`: the derivable set is fixed by the language. Any
+other trait is implemented with a manual `fulfill` block.
 
 #### 3.8.2 Structural derivation rules
 
@@ -3887,10 +3889,10 @@ violates. A trait whose `requires` closure includes a non-object-safe
 trait is itself non-object-safe (the inherited method is in its effective
 set).
 
-The escape hatch some languages provide — admitting the trait as `dyn`
-while marking individual methods unavailable on the object — is not in v1.
-Because it only ever *loosens* the rule, it can be added later without
-breaking existing programs; v1 starts strict.
+Ductus provides no per-method escape hatch (the "admit the trait as `dyn`
+but mark individual methods unavailable on the object" mechanism some
+languages offer). The rule is whole-trait: factor non-dispatchable methods
+into a sibling trait, as above.
 
 #### 5.2.5 Coercion to `dyn`
 
@@ -5380,11 +5382,10 @@ match operation:
   Err(error): handle_error(error)
 ```
 
-No special `if let` or check-and-unwrap sugar is provided in v1. The
-combination of `match` (for full discrimination) and `?` (for
-short-circuit propagation) covers the common cases. The language
-surface is intentionally minimal; sugar may be added later if usage
-patterns reveal a sharp need.
+Ductus provides no `if let` or check-and-unwrap sugar. The combination of
+`match` (for full discrimination) and `?` (for short-circuit propagation)
+is the complete surface for consuming `Option` and `Result`; the language
+keeps that surface minimal deliberately.
 
 ### 8.4 The `?` Operator and the `Try` Trait
 
@@ -6203,7 +6204,7 @@ implementation-defined epoch, paralleling `duration`'s representation,
 but the value is exposed only via comparisons and difference operations.
 
 `instant` represents monotonic time. Wall-clock time (calendar dates,
-timezones, DST) is a separate concern, deferred to stdlib. The language
+timezones, DST) is a stdlib concern, not a language one. The language
 core defines only monotonic instants.
 
 ##### 9.4.2.1 Operators
@@ -8495,8 +8496,8 @@ for i in 0..(N / 2):
   process(actual_i)
 ```
 
-A step-aware range form may be added in a future version of the language;
-for v1, the explicit form is the supported pattern.
+Ranges have no step parameter; the explicit-arithmetic form above is the
+way to stride.
 
 #### 12.2.2 Range bounds and overflow
 
@@ -9685,8 +9686,9 @@ for x in items:
     Other(data): process(data)
 ```
 
-A future extension may add `for pattern if guard in iterable:` syntax for
-inline filtering; not in v1.
+There is no `for pattern if guard in iterable:` inline-filter form;
+filtering inside the body via `continue` (above) is the way to skip
+elements.
 
 #### 12.12.2 Loops in trait method bodies
 
@@ -11211,10 +11213,10 @@ when it chooses to instantiate.
 ##### 13.2.10.1 What can be placed as a `Node[T]`
 
 Any node type `N` declaring `default attr d: T` (per §13.2.2.1) is
-a valid `Node[T]` value via the placement form `N/expr`. Nodes
-without a `default attr` cannot be used as `Node[T]` values in v1;
-future spec revisions may add a form for binding non-default attrs
-via the same mechanism.
+a valid `Node[T]` value via the placement form `N/expr`. A node without a
+`default attr` cannot be used as a `Node[T]` value: the `Node[T]` form
+binds exactly the type's default attr, so a type that declares none has
+nothing for it to bind.
 
 `T` is the type accepted at the `default attr` position. A node
 `PostItem` with `default attr post: Post` produces a `Node[Post]`
@@ -12323,10 +12325,11 @@ repeat <bind> in <source> keyed by <key-expr>:
   iterator must terminate at each evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
   N), `HashSet[T]`, and `HashMap[K, V]`; user types may fulfill
-  `Iterable` to participate. `Stream[T]` is excluded by design — it's
-  an event source, not a collection-with-a-current-snapshot, and its
-  admission into `repeat` requires distinct add/drop semantics deferred
-  to a future revision.
+  `Iterable` to participate. `Stream[T]` is not a valid `repeat` source —
+  it's an event source, not a collection with a current snapshot, so it
+  has no key set to diff. To drive `repeat` from a stream, first project
+  the stream into a collection-valued cell (e.g. fold its events into a
+  `Vec`/`HashMap` via §13.18.9) and repeat over that.
 - **`<bind>`** is either a bare identifier or a tuple-destructuring
   pattern per §12.12.1 (the same destructuring grammar the for-loop's
   iteration variable accepts; pattern rules in §6.2.4 and §9.2.2).
@@ -12568,9 +12571,9 @@ new key set.
   cells are allocated; the per-publish floor still applies to iterate
   + key + diff.
 
-The O(N) floor is structural to "signal-carries-current-value." A
-delta-driven variant (`repeat` over a structural-delta reactive shape)
-is a future revision; v1 does not provide it.
+The O(N) floor is structural to "signal-carries-current-value." Ductus
+has no delta-driven variant (`repeat` over a structural-delta reactive
+shape); `repeat` always re-iterates and re-keys the current value.
 
 Programs that do not use `repeat` incur no runtime cost from the
 template-scope machinery; the cost model is "pay for what you iterate."
@@ -12797,10 +12800,9 @@ Rules for pairs form:
 - Asymmetric pair counts are allowed; pair uniqueness, not type
   count, is what matters. A `pairs:` block listing `A -> X`,
   `A -> Y`, and `B -> Y` is legal (A can go to X or Y; B only to Y).
-- All attrs/deriveds in the body are uniform across pairs. If
-  pair-conditional content is needed, declare a separate connection
-  type. (Pair-conditional content would require trait-like
-  machinery; deferred to potential v2+.)
+- All attrs/deriveds in the body are uniform across pairs; the body
+  cannot vary its content by pair. When different content per pair is
+  needed, declare a separate connection type per pair.
 
 A connection body does not contain `fn` declarations, paralleling
 node bodies (§13.3.6).
@@ -13578,10 +13580,9 @@ Drives/0.8 | enhanced_handling=true:      // /expr + attr clause + multi-line bo
 ```
 
 The destination is a bare identifier resolving to a named instance in
-scope. Inline placement specs as destinations are not supported in v1;
-a future revision may admit them in the same body slot. The
-syntactic shape (`:` followed by a single placement) leaves room for
-that extension without further syntax changes.
+scope. It must be a reference to an already-placed instance; an inline
+placement spec is not a valid destination. Place the target instance
+first, then name it as the destination.
 
 ##### 13.8.5.2 For node (part) placements
 
@@ -16144,11 +16145,9 @@ Not permitted in operator bodies:
   parameters, not internal attrs.
 - Side-effecting statements. The body is reactive — declarative,
   not imperative.
-- `repeat` declarations (§13.5.4). Operator bodies are
-  reactive-transparent transforms with fixed-shape state;
-  dynamic-scope materialization is not in scope for v1. A future
-  revision may lift this restriction if a concrete use case
-  justifies the extension.
+- `repeat` declarations (§13.5.4). Operators have fixed-shape state;
+  dynamic-scope materialization belongs to node bodies, placement
+  bodies, or effect `desired:` blocks, not to operators.
 
 The final expression's type must be either `T` or `Signal[T]`
 (matching the operator's return type `Signal[T]`). If the type is
@@ -18774,11 +18773,11 @@ value track (§8).
 
 #### 13.19.15 Restrictions
 
-- **Effects-from-effects composition is deferred.** An effect's
-  `desired:` block may not contain another effect's instantiation
-  via `|>` chain in v1. The semantic complexity — cascading
-  reconciler invocation order, partial-result lifecycles,
-  cancellation cascades — requires its own design pass.
+- **Effects do not compose from effects.** An effect's `desired:` block
+  may not contain another effect's instantiation via `|>` chain. Compose
+  effects at the consumer site instead — feed one effect's observed cells
+  into another's parameters (§13.19.16) — which keeps reconciler ordering
+  and lifecycles explicit rather than nesting them.
 - **Effects do not use node-style placement syntax.** Effects are
   not topological participants; they are not placed via
   `EffectName name /` syntax. They are instantiated by appearance
@@ -18873,9 +18872,9 @@ error: effect instantiation inside another effect's body is not permitted
         desired:
           derived chained = input |> inner_effect
                                      ^^^^^^^^^^^^ effect-in-effect not allowed
-  hint: effects-from-effects composition is deferred to a future
-        revision (§13.19.15). Compose effects at the consumer site by
-        feeding one effect's observed cells into another's parameters:
+  hint: effects do not compose from effects (§13.19.15). Compose them at
+        the consumer site by feeding one effect's observed cells into
+        another's parameters:
         `derived a = input |> first_effect`
         `derived b = a.result |> second_effect`
 ```
@@ -19813,10 +19812,10 @@ by version X.Y compiles with and runs against the same X.Y
 toolchain. Forward and backward compatibility across major version
 boundaries are explicit, not implicit.
 
-The exact syntactic form of the `@version` directive is reserved for
-a future spec revision; v1 implementations are not required to
-recognize it. Version metadata is recorded in the graph specification
-header (§15.4); cross-version compatibility checks happen there.
+Version metadata is recorded in the graph specification header (§15.4),
+and cross-version compatibility checks happen there. There is no
+source-level version directive; the matched-set versioning above is
+carried entirely by the toolchain and the graph-spec header.
 
 ---
 
