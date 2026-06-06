@@ -20409,7 +20409,7 @@ The graph is a structured record with the following entries.
   its input-cell list.
 
 **Derived dependency edges.** A list of `(derived_cell_id,
-[input_cell_ids])` pairs. Used by the kernel for dirty-set
+[input_cell_ids])` pairs. Used by the runtime for dirty-set
 propagation and topological evaluation ordering.
 
 **Recurrent dependency edges.** A list of `(recurrent_cell_id,
@@ -20426,7 +20426,7 @@ block additionally carry the observe's per-arm trigger sets.
 **`when`-gates.** Per gated instance, the predicate expression in
 compiled form (behavior ID per §14.6.4, plus input cell IDs the
 predicate reads), and the instance's `gate_parent` — the path of the
-nearest enclosing gated instance, or `null` if none. The kernel composes
+nearest enclosing gated instance, or `null` if none. The runtime composes
 each instance's own predicate with its `gate_parent` chain to obtain
 *effective* activation (§13.9.7), which drives transitive freeze and the
 suspend/resume delivery of §13.14.9. Block selectors (`when`/`given`,
@@ -20437,11 +20437,11 @@ compiler encodes declaration-order priority and exhaustiveness into the
 arm predicates so they are mutually exclusive by construction (e.g. arm
 *i*'s effective predicate conjoins the negations of all earlier arms'
 guards); the predicates themselves still evaluate against runtime cell
-values each publish.
+values each commit.
 
 **Behavior table.** A list of `(behavior_id, debug_name,
 input_cell_ids, output_cell_id?)` entries. Behavior IDs are
-content-addressed per §14.6.4. The kernel binds IDs to function
+content-addressed per §14.6.4. The runtime binds IDs to function
 pointers at program startup.
 
 **Stream cells.** A list of stream cell entries. Each:
@@ -20490,14 +20490,14 @@ both views.
   `observed:` block for this instance.
 - `gate_parent`: the path of the nearest enclosing gated instance (the
   same field carried by `when`-gates above), or `null` if the effect is
-  never gated. The kernel uses it to compute effective activation and to
+  never gated. The runtime uses it to compute effective activation and to
   decide when to deliver the `suspend` / `resume` reconciler hooks
   (§13.14.9) on the effect's enclosing-subtree gate transitions.
 
 **Reconciler dependencies.** A list of `(effect_type_name,
 [concrete_type_parameters])` pairs naming reconciler-registration
-keys the host must provide via `kernel.register_reconciler`
-(§13.14.7) before the kernel can enter the live state. For non-
+keys the host must provide via `runtime.register_reconciler`
+(§13.14.7) before the runtime can enter the live state. For non-
 generic effects, the parameter list is empty; for generic effects,
 each instantiation is a distinct key.
 
@@ -20539,18 +20539,18 @@ source version yields matching cell IDs by construction.
 ##### 15.4.1.2 Observability class
 
 The `observability` field declares what concurrency contract the
-cell must satisfy. The kernel selects a storage mechanism that
+cell must satisfy. The runtime selects a storage mechanism that
 honors the contract.
 
 | Value                    | Contract                                         |
 |--------------------------|--------------------------------------------------|
-| `cross_thread_snapshot`  | Multi-thread readers see a snapshot-consistent view; cross-cell consistency within one publish transaction; no torn reads. |
+| `cross_thread_snapshot`  | Multi-thread readers see a snapshot-consistent view; cross-cell consistency within one commit transaction; no torn reads. |
 | `cross_thread_atomic`    | Multi-thread readers see single-cell atomic reads; no cross-cell consistency guarantee. Cell value must fit in one 64-bit atomic slot. |
 | `confined`               | Cell accessed only from one thread; no atomic required. |
 
-The mapping from observability to kernel storage is a runtime
+The mapping from observability to storage is the runtime's
 concern, not a spec mandate. Typical mappings on a conformant
-kernel:
+runtime:
 
 | `observability`         | Typical mechanism      |
 |-------------------------|------------------------|
@@ -20558,14 +20558,14 @@ kernel:
 | `cross_thread_atomic`   | AtomicBuffer            |
 | `confined`              | Plain memory            |
 
-Alternative kernels may select different mechanisms as long as the
+Alternative runtimes may select different mechanisms as long as the
 observability contract is met.
 
 ##### 15.4.1.3 Cadence hint
 
-The `cadence_hint` field, when present, tells the kernel about the
+The `cadence_hint` field, when present, tells the runtime about the
 update-timing expectation for the cell. It is informational; the
-kernel uses it to bias storage-mechanism selection. Defined values:
+runtime uses it to bias storage-mechanism selection. Defined values:
 
 - `realtime` — updates are deadline-bound; readers (e.g., audio
   thread) cannot block. Typically pairs with `cross_thread_snapshot`
@@ -20607,7 +20607,7 @@ upgrade observability — a `confined` cell becoming
 
 The default `cadence_hint` follows from the declaration's enclosing
 graph context: cells declared inside placements that participate in
-the kernel's evaluation cycle (§13.10) get `realtime`; cells on
+the runtime's evaluation cycle (§13.10) get `realtime`; cells on
 non-realtime paths get `bounded`.
 
 #### 15.4.2 JSON encoding (one option, not mandated)
@@ -20619,7 +20619,7 @@ Schema published alongside this specification (`graph-spec.schema.json`,
 schema version per §15.4.3). It is not *the* cross-implementation
 reference; the text form is.
 
-Layout requirements for canonical JSON:
+Layout requirements for the JSON encoding:
 
 - Two-space indent.
 - Object keys ordered as specified in §15.4.1 (field order is
@@ -20629,8 +20629,8 @@ Layout requirements for canonical JSON:
   in the JSON Schema).
 - UTF-8 encoding, no BOM, Unix line endings.
 
-These layout rules make canonical JSON diff-friendly: two builds of
-equivalent source produce byte-identical canonical JSON.
+These layout rules make the JSON encoding diff-friendly: two builds of
+equivalent source produce byte-identical JSON.
 
 Implementations may additionally produce:
 
@@ -20640,8 +20640,9 @@ Implementations may additionally produce:
 - **In-memory representations** (e.g., direct Rust structs) for
   interpreter mode.
 
-Cross-implementation interop requires that the canonical JSON form
-be readable by all conformant kernels.
+Cross-implementation interop is defined against the IR's text form
+(§15.4); where two implementations exchange the JSON encoding, it must be
+readable by both at the same format version (§15.4.3).
 
 #### 15.4.3 Versioning
 
@@ -20652,19 +20653,19 @@ The specification carries two version numbers:
 - **Format version** — the version of the abstract data model and
   JSON Schema themselves.
 
-A conformant kernel accepts specifications whose format version it
+A conformant runtime accepts specifications whose format version it
 understands. Format-version mismatches are diagnosed at load time
 per §14.10.
 
 #### 15.4.4 What the specification does not contain
 
-The specification is type-erased at the kernel boundary. It contains
+The specification is type-erased at the runtime boundary. It contains
 primitive type tags and cell layouts, but **not** Ductus's full type
 system — no record definitions, trait conformances, or generic
 parameters. These are compile-time artifacts of the frontend, fully
 resolved before the specification is emitted.
 
-The kernel's view of the program is: a graph of cells with primitive
+The runtime's view of the program is: a graph of cells with primitive
 types, dependency edges, behavior references, and gate predicates.
 It does not need to understand records as records or traits as
 traits; it manages bits in cells and invokes functions by ID.
@@ -21120,9 +21121,9 @@ A conformant compiler:
 2. Rejects every program that the language semantics define as
    ill-formed (with diagnostics; format is implementation-defined
    per §15.2.3).
-3. Produces a reactive graph specification conforming to the
-   abstract data model of §15.4.1, serializable in the canonical
-   JSON form of §15.4.2.
+3. Produces an IR conforming to the abstract data model of §15.4.1.
+   Its text form is normative; any serialization (e.g. the JSON
+   encoding of §15.4.2) is implementation-defined.
 4. Produces executable code that, when run against a conformant
    kernel with the produced graph specification, exhibits the
    observable behavior defined by §§1–13.
@@ -21131,9 +21132,9 @@ A conformant compiler:
 
 A conformant kernel:
 
-1. Accepts any reactive graph specification conforming to the
-   abstract data model of §15.4.1 (in canonical JSON form or any
-   other format the kernel additionally supports).
+1. Accepts any IR conforming to the abstract data model of §15.4.1,
+   in whatever serialization the implementations share (no encoding
+   is mandated, §15.4.2).
 2. Allocates cells per the observability and cadence contracts of
    §15.4.1, using any mechanism satisfying those contracts.
 3. Implements the runtime semantics of §13 and §14: cell evaluation
@@ -21141,11 +21142,11 @@ A conformant kernel:
 
 #### 15.8.3 Interoperability
 
-A conformant compiler's canonical-JSON graph specification must be
-loadable by any conformant kernel at the same format version.
-Cross-implementation mixing (compiler from implementation A, kernel
-from implementation B) is permitted at the same schema and format
-version per §15.4.3.
+Interop is defined against the IR's text form (§15.4); where two
+implementations exchange a serialization, it must load at the same
+format version. Cross-implementation mixing (compiler from
+implementation A, kernel from implementation B) is permitted at the
+same schema and format version per §15.4.3.
 
 #### 15.8.4 Conformance testing
 
