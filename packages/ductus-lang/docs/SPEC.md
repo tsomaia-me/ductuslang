@@ -11690,6 +11690,8 @@ node TypeName[GenericParams]?:
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
+  effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
+    source |> effect
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
@@ -12040,7 +12042,7 @@ node TypeName:
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
-→ `outgoing:` → `expose:` → cell declarations.
+→ `outgoing:` → `expose:` → cell declarations → `effects:` (§13.3.8).
 
 ##### 13.3.7.1 Content
 
@@ -12132,12 +12134,111 @@ instance-to-instance edges, placed at the instantiation site of the
 nodes they connect. They are not declared in any node's `expose:`
 clause and do not appear in `instance.exposition`.
 
+Effects (§13.19) are likewise **not** exposition. `expose:` describes
+topology — what the node *is*; effects describe what the node *does to
+the outside world*. Effects are declared in the separate `effects:`
+clause (§13.3.8), never in `expose:`.
+
 The motherboard analogy: the parts a motherboard exposes (RAM
 slots, CPU socket, expansion slots) are the structural surface of
 the board. The wires connecting those parts to each other and to
 external components are connections — held by the parts, owned by
 no single one, traversed by signals rather than by structural
 descent.
+
+#### 13.3.8 Effects (the `effects:` clause)
+
+The `effects:` clause is the node's **side-effect zone**: the place
+where the node declares the effects (§13.19) it runs against the
+outside world. It is the **sole** site at which an effect may be
+instantiated — module level, operator bodies, connection bodies, and
+function bodies are all illegal hosts (§13.19.15). Reading a node's
+`effects:` clause therefore tells you exactly what that node does to
+the outside world; there is nowhere else to look.
+
+It is parallel to, but distinct from, `expose:` (§13.3.7): `expose:`
+declares **topology** (what the node *is*), `effects:` declares
+**side effects** (what the node *does*). The two never mix.
+
+**Entries.** Each entry instantiates an effect via a `|>` pipe chain
+(Case 2, §13.17.7). An entry may be **named** or **anonymous**:
+
+```
+node App:
+  signal url: Url = home_url
+  derived label: string = "loading {url}"
+
+  effects:
+    f = url |> fetch          // named: binds the instance value `f`
+    label |> log              // anonymous: run for its side effect only
+```
+
+A **named** entry binds the effect instance value; the name is in
+scope for the whole node body (regardless of clause order — reactive
+declarations are order-independent), and the instance's cells are read
+elsewhere by flat access `name.field` (§13.19.7):
+
+```
+  derived spinner: bool = f.in_flight     // reads the effect named below
+  effects:
+    f = url |> fetch
+```
+
+**Sink forwarding.** Piping a stream into an effect's sink (Case 3,
+§13.17.7 — `messages |> ws.outbound`) is effect I/O and likewise lives
+in `effects:`, alongside the effect it targets.
+
+**`when` / `given` / `repeat`.** The clause admits the same structural
+constructs as `expose:`, with effect entries in place of `Node[T]`
+placements:
+
+```
+  effects:
+    when online:
+      pending |> sync                     // gated effect
+    repeat job in jobs:
+      job.url |> fetch                     // one effect per element
+    given mode:
+      Live:   feed |> stream_to_disk
+      Replay: feed |> stream_to_buffer
+```
+
+A `when`/`given` arm body or a `repeat` loop body is a list of effect
+entries. Arm headers use `:` (`Variant:`) and named entries use `=`
+(`name = …`), so the two never collide (cf. §13.3.7.1). Gating freezes
+the inactive arm and suspends its effects (Model B, §13.9.7); see
+§13.19.12.
+
+**Local-only.** A node defines its own effects. Effects are never
+passed into a node from outside — there are no effect parts and no
+effect parameters. A caller influences a node's effects only through
+**data in** (signals/attrs/streams supplied as parameters) and
+**streams out** (the child exposes an outgoing stream that the parent
+consumes in the parent's *own* `effects:`).
+
+**Effect-to-effect data flow.** One named effect may take another's
+*observed* cell as its piped input — ordinary data flow:
+
+```
+  effects:
+    a = url |> fetch
+    b = a.response |> persist
+```
+
+This is distinct from the deferred ban on instantiating an effect
+*inside* another effect's `desired:` block (§13.19.15).
+
+**Operators are pure.** Effects compose *through* operators in a pipe
+chain (`url |> fetch |> render`), but the effect is hosted here in
+`effects:`; the operator only transforms its output (§13.17).
+
+**Program-global effects.** Because module level is not an effect host,
+an application-global effect (a root logger, a root subscription) lives
+in the `effects:` clause of a **top-level node instance** (§13.8.1).
+
+**Exclusivity.** A node may instantiate effects only here. A free
+`f = url |> fetch` or `derived x = url |> effect` elsewhere in the node
+body is a compile error directing the author to `effects:` (§13.19.16).
 
 ### 13.4 Parts
 
@@ -12791,6 +12892,10 @@ template-scope machinery; the cost model is "pay for what you iterate."
   source.
 - **Placement bodies** (§13.8.3) — scopes become children of this
   specific placement.
+- **`effects:` clauses** (§13.3.8) — each scope materializes one
+  effect-bearing instance per element (e.g., one connection per active
+  session); the per-element effects suspend/resume and tear down with
+  the element key.
 - **Effect `desired:` blocks** (§13.19.4) — scopes become part of the
   effect's declared desired state, reconciled by the host.
 
@@ -12808,7 +12913,7 @@ template-scope machinery; the cost model is "pay for what you iterate."
   not in scope for v1.
 - **Connection bodies** (§13.6) — connections are minimal glue between
   source and destination; dynamic-scope structure belongs in node
-  bodies, placement bodies, or `desired:` blocks.
+  bodies, placement bodies, `effects:` clauses, or `desired:` blocks.
 - **Trait and `fulfill` blocks** — these declare behavior, not graph
   structure.
 
@@ -13063,11 +13168,10 @@ dynamic-scope structure belongs in node bodies, placement bodies, or
 effect `desired:` blocks.
 
 A connection body likewise hosts no effect instantiations. Effects are
-instantiated only at module level, in node bodies, in operator bodies,
-or in effect-cell expressions (§13.19.15); connection bodies are not
-among the admitted scopes. A connection therefore holds no outside-world
-resource of its own — which is why a gated connection simply stops
-delivering and needs no `suspend`/`resume` (§13.9.7).
+instantiated only in a node's `effects:` clause (§13.3.8); connection
+bodies are not among the admitted scopes. A connection therefore holds
+no outside-world resource of its own — which is why a gated connection
+simply stops delivering and needs no `suspend`/`resume` (§13.9.7).
 
 #### 13.6.5 The `Circularity` trait
 
@@ -14493,7 +14597,10 @@ operation to tear down. Effects (§13.19) are the sole construct holding
 outside-world state, so the `suspend`/`resume` protocol (§13.14.9)
 concerns effects exclusively. A gated *connection* therefore simply stops
 delivering (above) and has no suspend, because effects cannot be
-instantiated in connection bodies (§13.6.4).
+instantiated in connection bodies (§13.6.4). An effect gated directly by
+a `when`/`given` block inside an `effects:` clause (§13.3.8) is just
+another instance on the gated path — it freezes and receives `suspend`
+(and `resume` on reopen) by this same protocol; no new mechanism.
 
 **Nested gating is effective and transitive.** An instance is
 *effectively active* iff its own gate AND every ancestor gate on the path
@@ -14682,10 +14789,11 @@ keep active — by boolean condition. All arms are constructed; the kernel
 gates propagation to the live one and freezes the rest under Model B
 (§13.9.7). The block form appears wherever reactive structure is
 declared: an `expose:` clause (§13.3.7), a node body, a placement body,
-or an effect `desired:` block (§13.19.4) — not as an inline modifier. Its
-arms hold whatever entries that context admits: placements at `expose:`
-and in bodies, desired-cell declarations and `repeat`s in a `desired:`
-block. Each arm body is its own scope, so arm-local names nest under the
+an `effects:` clause (§13.3.8), or an effect `desired:` block
+(§13.19.4) — not as an inline modifier. Its arms hold whatever entries
+that context admits: placements at `expose:` and in bodies, effect
+entries in an `effects:` clause, desired-cell declarations and `repeat`s
+in a `desired:` block. Each arm body is its own scope, so arm-local names nest under the
 arm and do not collide across arms (the same scoping as `match` arms,
 `for`/`if` bodies, and `repeat` scopes); a `desired:` arm's cells are
 nested and thus exempt from the flat-namespace uniqueness of §13.19.6,
@@ -14775,6 +14883,11 @@ arm, so an arm such as `Realtime: RealtimeChain` is never confused with a
 connection placement `Name: dest` (and at `expose:` level there are no
 connection placements at all — §13.3.7.5). Each arm body is itself a list
 of placements, indented under the arm.
+
+`given` applies in the same contexts as the `when` block (§13.9.13),
+including an `effects:` clause (§13.3.8) — there each arm body is a list
+of effect entries, and an arm header `Variant:` (using `:`) never
+collides with a named effect entry `name = …` (using `=`).
 
 **Live payload binding.** Arms bind variant payloads exactly as `match`
 patterns do (`Active(session):` binds `session`), but the binding is a
@@ -16309,6 +16422,11 @@ Not permitted in operator bodies:
 - `repeat` declarations (§13.5.4). Operators have fixed-shape state;
   dynamic-scope materialization belongs to node bodies, placement
   bodies, or effect `desired:` blocks, not to operators.
+- Effect instantiations. Operators are pure reactive transforms; they
+  may not host effects. An effect composes *through* an operator in a
+  pipe chain (`url |> fetch |> render`), but it is hosted in the
+  enclosing node's `effects:` clause (§13.3.8), never inside the
+  operator.
 
 The final expression's type must be either `T` or `Signal[T]`
 (matching the operator's return type `Signal[T]`). If the type is
@@ -16457,21 +16575,25 @@ let smoothed: Signal[f32] = source |> smooth(rate: 0.1, clock: tick)
 **Case 2: RHS is an effect call** (§13.19). The effect is
 instantiated; the LHS is bound to its first positional parameter.
 The result is the effect instance value (a composite accessed per
-§13.19.7).
+§13.19.7). Effect instantiation lives in a node's `effects:` clause
+(§13.3.8):
 
 ```
-let f = current_url |> fetch
+effects:
+  f = current_url |> fetch
 ```
 
 **Case 3: RHS is a `Sink[T]`** (§13.18.4). The LHS must be a
 `Stream[T]` of matching element type. A forwarding subscription is
 established: each event observed from the source stream is pushed
 into the sink. The expression's value is the unit type `()`; the
-forwarding subscription lives as long as the enclosing scope.
+forwarding subscription lives as long as the enclosing scope. Sink
+forwarding into an effect's sink also lives in `effects:`:
 
 ```
-let ws = current_url |> websocket
-messages_to_send |> ws.outbound       // forwards stream into the sink
+effects:
+  ws = current_url |> websocket
+  messages_to_send |> ws.outbound       // forwards stream into the sink
 ```
 
 LHS rules common to all cases:
@@ -18176,7 +18298,8 @@ Effects are distinct from `node`, `operator`, and `fn`:
   (§13.3), composed via parts and connections.
 - `effect` describes outside-world alignment — the host-interpreted
   bridge between program state and runtime environment. Composes
-  with operators via `|>`; not placed via node-style placement.
+  with operators via `|>`; instantiated only in a node's `effects:`
+  clause (§13.3.8), never via node-style placement.
 
 Effects are first-class typed values. An effect declaration named
 `fetch` introduces both a type `fetch` and a constructor `fetch`;
@@ -18332,8 +18455,9 @@ cell as the first parameter:
 effect fetch(url: Signal[Url], method: Method = Method::GET):
   ...
 
-// usage:
-let response = current_url |> fetch(method: Method::POST)
+// usage (in a node's effects: clause, §13.3.8):
+effects:
+  response = current_url |> fetch(method: Method::POST)
 ```
 
 **Stream parameters.** Parameters may be of stream type
@@ -18344,8 +18468,9 @@ reconciler observes events from the parameter stream:
 effect log(entries: GateStream[LogEntry, 4096]):
   // no desired, no observed — pure fire-and-forget consumer
 
-// usage:
-log_events |> log
+// usage (in a node's effects: clause, §13.3.8):
+effects:
+  log_events |> log
 ```
 
 **Reactive composite parameters.** Parameters may be reactive
@@ -18564,10 +18689,11 @@ Cells in `desired:` and `observed:` share a single namespace at the
 instance:
 
 ```
-let f = current_url |> fetch
-let req = f.request           // reads desired.request (a `derived` cell)
-let r = f.response            // reads observed.response (a `signal` cell)
-let loading = f.in_flight     // reads observed.in_flight
+effects:
+  f = current_url |> fetch
+derived req: Request = f.request               // desired.request (a `derived` cell)
+derived r: Option[Response] = f.response       // observed.response (a `signal` cell)
+derived loading: bool = f.in_flight            // observed.in_flight
 ```
 
 The cell-name collision rule (§13.19.6) ensures `f.<name>` is
@@ -18589,11 +18715,13 @@ error: cannot assign to cell `response` on effect instance
         sink(s) via `|>`.
 ```
 
-**Pushing into a sink:**
+**Pushing into a sink.** Both the instantiation and the sink-forward
+live in the `effects:` clause:
 
 ```
-let ws = current_url |> websocket
-my_outgoing_messages |> ws.outbound
+effects:
+  ws = current_url |> websocket
+  my_outgoing_messages |> ws.outbound      // forward a stream into the sink
 ```
 
 Piping a `Stream[T]` into a `Sink[T]` establishes a forwarding
@@ -18608,10 +18736,11 @@ Streams are consumed via stream operators, not via direct value
 reads:
 
 ```
-let ws = current_url |> websocket
-let latest = ws.inbound |> to_signal(empty_message)    // project to signal
-let total = ws.inbound |> count                         // running count
-let recent_text: stream ring[64] = ws.inbound |> filter(is_text)
+effects:
+  ws = current_url |> websocket
+derived latest: Message = ws.inbound |> to_signal(empty_message)  // project to signal
+derived total: u64 = ws.inbound |> count                          // running count
+stream ring[64] recent_text: Message = ws.inbound |> filter(is_text)
 ```
 
 The stream value is the program-readable cursor view; the program
@@ -18623,9 +18752,10 @@ Stream cells expose their observation surface (§13.18.6) via field
 access on the stream value:
 
 ```
-let ws = current_url |> websocket
-let pressure = ws.inbound.pressure
-let dropped = ws.inbound.dropped_total
+effects:
+  ws = current_url |> websocket
+derived pressure: f32 = ws.inbound.pressure
+derived dropped: u64 = ws.inbound.dropped_total
 ```
 
 These reads project the synthesized signals describing the stream's
@@ -18637,18 +18767,18 @@ An effect instance is identified by its enclosing scope, its effect
 type name, and its argument bindings — the same scheme as operator
 instances (§13.17.6.1).
 
-Two `|>` chains in different scopes (different modules, different
-node bodies, different placements, different `repeat` scopes) that
-both instantiate the same effect type produce distinct instances
-with independent desired/observed cells and independent host-side
-reconciler state.
+Two instantiations in different scopes (different nodes' `effects:`
+clauses, or different `repeat`/gate arms within one clause) that both
+instantiate the same effect type produce distinct instances with
+independent desired/observed cells and independent host-side reconciler
+state.
 
 Effect instances do not have user-assignable names in the language
-sense. Binding the instance to a `let` or `derived` names the
-*instance value* (the composite); for hot-reload-identity purposes
-(§13.19.11), the same identity scheme as operators applies, with
-tolerance for positional moves within the same scope. The binding
-name has no role in identity.
+sense. A **named entry** in `effects:` (`name = source |> effect`)
+names the *instance value* (the composite) for downstream reads; for
+hot-reload-identity purposes (§13.19.11), the same identity scheme as
+operators applies, with tolerance for positional moves within the same
+clause. The entry name has no role in identity.
 
 **Type and constructor unified.** The effect's declared name serves
 both as the type name (used in operator and function signatures,
@@ -18665,9 +18795,10 @@ effect fetch(url: Signal[Url]):
 operator render_fetch_card(f: fetch) -> Signal[VNode]:
   ...
 
-// Used as constructor:
-let f = current_url |> fetch
-let f2 = fetch(current_url)
+// Used as constructor — in a node's effects: clause:
+effects:
+  f = current_url |> fetch
+  f2 = fetch(current_url)
 ```
 
 #### 13.19.9 Generic effects
@@ -18781,18 +18912,17 @@ scope dies, the effect instance and all its cells are dropped per
 instance ID, allowing it to release any external resources (open
 sockets, audio sessions, file handles, pending requests).
 
-Effect instance lifetimes follow the scope hierarchy:
+Every effect is hosted in a node's `effects:` clause (§13.3.8); its
+lifetime follows that clause's scope:
 
-- Module-level: lives for the program's lifetime.
-- Inside a node: lives as long as the node instance is mounted.
-- Inside a `repeat` scope: lives until the element key is removed
-  from the iterated source (§13.5.4).
-- Inside an operator body: lives as long as the enclosing operator
-  instance.
-- Inside another effect's `desired:` initial-value expression: lives
-  as long as the outer effect instance (effects-inside-effects is
-  restricted per §13.19.15; cell-derivation expressions referencing
-  effects are subject to the same restriction).
+- In a node's `effects:` clause: lives as long as the node instance is
+  mounted. (An application-global effect is hosted in a top-level node
+  instance, §13.8.1, and so lasts the program's lifetime.)
+- Inside a `repeat` in `effects:`: lives until the element key is
+  removed from the iterated source (§13.5.4).
+- Inside a `when`/`given` block in `effects:`: suspended (frozen) while
+  the gate is closed, resumed when it reopens — never destroyed by
+  gating; only scope death drops it.
 
 **"Desired says no resource needed" is not the same as "effect
 dies."** When a `desired:` cell's value implies the host should not
@@ -18823,11 +18953,13 @@ the hook is the mechanism.
 
 #### 13.19.13 Effects in `|>` chains
 
-Effect instances participate in pipe chains identically to operators
-(per the extended `|>` rule in §13.17.7):
+Effect instances are created by piping into them, identically to
+operators (the extended `|>` rule, §13.17.7). The instantiation lives
+in the node's `effects:` clause (§13.3.8):
 
 ```
-let f = current_url |> fetch
+effects:
+  f = current_url |> fetch
 ```
 
 The LHS of `|>` binds to the effect's first positional parameter.
@@ -18845,34 +18977,36 @@ operator render_fetch_card(f: fetch) -> Signal[VNode]:
   // receives the whole composite
   ...
 
-// At call site:
-let card = (current_url |> fetch) |> render_fetch_card
-let display = (current_url |> fetch).response |> render_response
+// in a node body:
+effects:
+  f = current_url |> fetch
+derived card: VNode = f |> render_fetch_card          // whole composite
+derived display: VNode = f.response |> render_response // projected cell
 ```
 
 The first form passes the composite; the second projects a specific
 cell via field access before piping. The pipe operator carries
 whatever the LHS evaluates to; no implicit projection occurs.
 
-Naming the instance for downstream use is the common pattern:
+A named entry in `effects:` makes the instance's cells available to the
+node's deriveds via the flat namespace rule (§13.19.7):
 
 ```
-let f = current_url |> fetch
-let display = f.response |> render_response
-let loading = f.in_flight |> as_loading_class
-let err_msg = f.error |> as_error_message
+effects:
+  f = current_url |> fetch
+derived display: VNode = f.response |> render_response
+derived loading: bool = f.in_flight |> as_loading_class
+derived err_msg: string = f.error |> as_error_message
 ```
-
-This makes all cells accessible from a single binding via the flat
-namespace rule (§13.19.7).
 
 **Stream-typed observed cells** are accessed via the stream
 operators (§13.18.9):
 
 ```
-let ws = current_url |> websocket
-let latest = ws.inbound |> to_signal(empty_message)
-let messages_per_second = ws.inbound |> count |> rate_per_second
+effects:
+  ws = current_url |> websocket
+derived latest: Message = ws.inbound |> to_signal(empty_message)
+derived messages_per_second: f32 = ws.inbound |> count |> rate_per_second
 ```
 
 #### 13.19.14 Host integration
@@ -18925,6 +19059,12 @@ value track (§8).
 
 #### 13.19.15 Restrictions
 
+- **Effects are instantiated only in a node's `effects:` clause**
+  (§13.3.8) — the single, exclusive host. Effects may not be
+  instantiated at module level, in operator bodies (§13.17), in
+  connection bodies (§13.6.4), or in function bodies (below). Within a
+  node, a free `f = url |> fetch` or `derived x = url |> effect` outside
+  `effects:` is a compile error (§13.19.16).
 - **Effects do not compose from effects.** An effect's `desired:` block
   may not contain another effect's instantiation via `|>` chain. Compose
   effects at the consumer site instead — feed one effect's observed cells
@@ -19010,10 +19150,8 @@ error: effect instantiations are not permitted inside function bodies
         let f = some_url |> fetch
                             ^^^^^ effect instantiation
   hint: functions are reactive-transparent (§13.12.2) and cannot host
-        reactive declarations or instantiations. Promote `helper` to
-        an operator, or perform the effect instantiation in a
-        reactive scope (module level, node body, operator body, or
-        effect cell expression).
+        reactive declarations or instantiations. Instantiate the effect
+        in a node's `effects:` clause (§13.3.8) — the sole effect host.
 ```
 
 **Effect instantiation inside another effect's body:**
@@ -19051,9 +19189,56 @@ error: only role-keyword declarations are permitted inside effect blocks
 error: effects cannot be placed via node-style placement syntax
   --> Fetcher f1                       // ✗ effect type used as placement
       ^^^^^^^^^^
-  hint: effects are instantiated by appearance in expression position
-        (pipe chains or function-call form), not via topological
-        placement. Use `let f = some_url |> fetch` instead.
+  hint: effects are not topology. Instantiate the effect in the node's
+        `effects:` clause (§13.3.8):
+        `effects:` / `f = some_url |> fetch`
+```
+
+**Effect in `expose:`:**
+
+```
+error: effects are not exposition
+  --> expose:
+        url |> fetch
+        ^^^^^^^^^^^^ effect instantiation in expose:
+  hint: `expose:` declares topology (child nodes and connections).
+        Effects belong in the node's `effects:` clause (§13.3.8).
+```
+
+**Effect at module level:**
+
+```
+error: effects cannot be instantiated at module level
+  --> let f = some_url |> fetch        // ✗ top-level effect
+              ^^^^^^^^^^^^^^^^^
+  hint: effects are instantiated only in a node's `effects:` clause
+        (§13.3.8). For an application-global effect, host it in a
+        top-level node instance (§13.8.1).
+```
+
+**Effect in an operator body:**
+
+```
+error: effects cannot be instantiated in an operator body
+  --> operator cached_fetch(url: Signal[Url]) -> Signal[Response]:
+        f = url |> fetch
+            ^^^^^^^^^^^^ effect instantiation in operator
+  hint: operators are pure reactive transforms (§13.17). Host the
+        effect in a node's `effects:` clause (§13.3.8); an operator may
+        only transform an effect's output piped through it.
+```
+
+**Effect outside the `effects:` clause in a node body:**
+
+```
+error: effects must be instantiated in the `effects:` clause
+  --> node App:
+        derived f = url |> fetch        // ✗ effect outside effects:
+                    ^^^^^^^^^^^^
+  hint: within a node, effects are instantiated only in the `effects:`
+        clause (§13.3.8). Move the instantiation there and read its
+        cells by name: `effects:` / `f = url |> fetch`, then
+        `derived spinner: bool = f.in_flight`.
 ```
 
 ---
