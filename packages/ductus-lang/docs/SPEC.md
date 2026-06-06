@@ -16099,7 +16099,8 @@ in the following order:
    from old to new), recompute its initial value from current
    inputs. For deriveds whose body is unchanged, the value
    persists.
-9. Publish the reloaded state (atomic current-pointer swap).
+9. Commit the reloaded state (the reference kernel: an atomic
+   current-pointer swap).
 10. Release the reload lock. Resume signal/attr writes; apply any
     queued writes to the new state.
 
@@ -16260,58 +16261,43 @@ type (if any) are constructed fresh. The host must register a
 reconciler for the new effect type via `runtime.register_reconciler`
 before the reload reaches the live state.
 
-### 13.16 Interaction with the Implementation (§14)
+### 13.16 Interaction with the IR and the Runtime
 
-§13 specifies the reactive system's source-level semantics; §14
-specifies the implementation model. Cross-references:
+§13 specifies the reactive system's source-level semantics. Those semantics
+are realized through two backend-agnostic contracts — the **IR** (§15.4),
+which the compiler emits, and the **runtime interface** (§13.14), which a
+runtime implements. The reference triple-buffered kernel
+(`backends/triple-buffered-kernel.md`) is one such runtime; the map below
+names the abstract contract for each §13 construct, not a mechanism.
 
-- Reactive cells (signal, attr, recurrent, derived) live in the
-  triple-buffered reactive state buffer per §14.3. Single-cell
-  types (per §13.12.4) map to single AtomicI64 cells.
-- Stream cells (§13.18) allocate ring buffers from per-`(T, N)`
-  pools per §14.3.5; their metadata (head pointer, observation
-  cells) lives in the standard triple-buffered area per §14.4.
-  Recurrent stream declarations (§13.18.8) add fixed-size
-  per-stream history allocations on top of the base ring buffer,
-  sized from the `[N]` and from compiler-inferred per-input
-  lookback (§13.18.13).
-- Effect instances (§13.19) are groupings of standard reactive
-  cells (signal, stream, sink) plus host-side reconciler state.
-  No new storage category per §14.4; per-instance state in the
-  reconciler is managed by the host outside the runtime's buffer.
-- The producer role per §14.7 is the runtime's reactive evaluation
-  thread. It applies host writes to the back buffer, runs commit
-  cycles (recurrent expression evaluation, derived behavior
-  invocations, atomic swap). In typical deployments, the host's
-  main thread plays the producer role; in other deployments, a
-  runtime-configured thread does.
-- The consumer role per §14.7 is any thread reading published
-  state via swap. Consumer threads do not invoke behaviors; they
-  read the results of past commits.
-- Behaviors invoked during reactive evaluation — both derived
-  expressions and recurrent expressions — conform to the
-  ABI of §14.6: a uniform `fn(runtime: &KernelHandle, instance:
-  InstanceId) -> ()` signature, with stateless semantics and
-  content-addressed identity (§14.6.4).
-- Host-registered reconcilers (§13.19.14) are dispatched at the
-  commit boundary via the host API (§13.14.7, §13.14.9). They
-  run on the runtime's producer thread; long-running operations
-  are dispatched to host-managed worker threads with results
-  written back via the host API on completion. The `suspend` and
-  `resume` hooks (§13.14.7) are dispatched at the same boundary, driven
-  by gate-close / gate-open transitions of an effect's enclosing subtree
-  (§13.9.7); the runtime computes effective (ancestor-inclusive)
-  activation to decide which effects to suspend.
-- The graph specification (§15.4) carries the structural information
-  the runtime needs to construct the reactive state buffer, build
-  dependency edges, distinguish attr cells from recurrent cells,
-  enumerate stream cells and effect instances, and dispatch
-  behaviors.
-- Hot reload at the source level (§13.15, including stream and
-  effect reload in §13.15.5–§13.15.6) maps to the §14.9
-  mechanism: the runtime diffs behaviors and cells between old
-  and new compiled output, applies the diff atomically, and
-  publishes.
+- Reactive cells (signal, attr, recurrent, derived) are graph-IR cells
+  (§15.4.1); the runtime stores their values (§14.3) and keeps them current
+  across commits.
+- Stream cells (§13.18) are graph-IR `stream` primitives (§15.4.1) carrying
+  element type, policy, capacity, cursors, and observation cells; recurrent
+  streams (§13.18.8) add history depth and per-input lookback. How a runtime
+  buffers events is a backend concern.
+- Effect instances (§13.19) are graph-IR `effect` primitives (§15.4.1) —
+  groupings of standard cells plus a reconciler reference; per-instance
+  reconciler state is host-managed, outside reactive state.
+- Reactive evaluation is the **commit** (§13.10.2, §13.14.4): the runtime
+  applies staged writes, settles deriveds and recurrents glitch-free in
+  topological order, fires reconciler hooks, and publishes a consistent
+  snapshot that observers read (§13.14.6). Which thread(s) do this, and how
+  the snapshot is published, are backend concerns.
+- Behaviors invoked during commit — derived, recurrent, gate, and
+  effect-`desired` bodies — conform to the behavior ABI (§15.4.4): invoked
+  by content-addressed id with input-cell values; pure and stateless.
+- Host-registered reconcilers (§13.19.14) are dispatched at the commit
+  boundary (§13.14.7, §13.14.9); `suspend`/`resume` fire there on
+  gate-close / gate-open of an effect's enclosing subtree (§13.9.7), driven
+  by the runtime's internally-computed effective activation.
+- The IR (§15.4) carries the structural information the runtime needs: cells
+  and dependency edges, gates, streams, effects, and behavior references.
+- Source-level hot reload (§13.15) applies an IR diff to the live runtime
+  (the reload capability, §13.14.11): cells matched by path (state
+  preserved), changed behaviors swapped by content-hash, added/removed
+  nodes mounted/unmounted.
 
 ### 13.17 Operators
 
@@ -19461,21 +19447,22 @@ projects use a manifest file specifying the entry point and any
 external dependencies; the format of the manifest is
 implementation-specific.
 
-### 14.3 The Reactive State Buffer
+### 14.3 Reactive Cell Storage
 
-The runtime maintains a contiguous memory region holding all reactive
-cells of the running program. This region is the **reactive state
-buffer**.
+The runtime holds the value of every reactive cell and keeps it current.
+*How* cells are stored is a backend concern — the reference kernel uses a
+contiguous, triple-buffered region (the *reactive state buffer*; see
+`backends/triple-buffered-kernel.md`). What every backend must preserve is
+the per-cell value semantics below.
 
 #### 14.3.1 Cell representation
 
-Cells are 64-bit slots, each one `AtomicI64` in implementations
-targeting threaded platforms (native, modern browsers with COOP/COEP
-headers, etc.). The complete buffer has type `Arc<[AtomicI64]>` in the
-reference Rust implementation.
-
-A single cell directly stores any 8-byte-or-smaller primitive value
-via bit reinterpretation:
+Each reactive cell holds a value of its declared type, read and written
+losslessly (bit-exact); other backends may represent cells however they
+like as long as reads and writes are value-preserving. The reference kernel
+represents a cell as a 64-bit `AtomicI64` slot (the complete buffer is
+`Arc<[AtomicI64]>`), storing any 8-byte-or-smaller primitive by bit
+reinterpretation:
 
 | Type                   | Storage in cell                                                    |
 |------------------------|--------------------------------------------------------------------|
@@ -19623,10 +19610,11 @@ were pointing at overwritten positions jump forward per §13.18.12.
 
 **Drop and eviction:** see §14.8.
 
-### 14.4 What Lives in the Reactive State Buffer
+### 14.4 What Is Reactive State
 
-Only **reactive cells** live in the triple-buffered reactive state
-buffer. Specifically, the values held by:
+Only **reactive cells** are *reactive state* — values the runtime owns and
+keeps current across commits (the reference kernel stores them in its
+triple-buffered buffer, §14.3). Specifically, the values held by:
 
 - `signal` declarations.
 - `attr` declarations on node and connection instances.
@@ -19647,15 +19635,14 @@ separately.
 Regular Ductus values — local bindings (`let`/`mut`) inside function
 bodies, function parameters, function return values, iterator state,
 closure captures, ordinary record/array/tuple values used as
-non-reactive data — do **not** live in the reactive state buffer.
-They are normal Rust values in stack or heap memory, governed by the
-ownership and borrow rules of §11.
+non-reactive data — are **not** reactive state. They are ordinary values
+in stack or heap memory, governed by the ownership and borrow rules of §11.
 
 A record type may appear in both contexts in the same program. As the
-value of a signal/attr/recurrent/derived declaration, it occupies cells
-in the reactive buffer. As a local value, parameter, or non-reactive field,
-it lives in regular memory. The Ductus compiler determines storage
-location based on the declaration site, not the type.
+value of a signal/attr/recurrent/derived declaration, it is reactive state.
+As a local value, parameter, or non-reactive field, it is an ordinary
+value. The Ductus compiler determines which based on the declaration site,
+not the type.
 
 ### 14.5 Strings and the String Pool
 
@@ -19930,7 +19917,8 @@ file changes:
    its initial value from current inputs. Deriveds whose body is
    unchanged retain their values.
 
-7. **Publish the reloaded state** (atomic current-pointer swap).
+7. **Commit the reloaded state** (the reference kernel: an atomic
+   current-pointer swap).
 
 8. **Release the reload lock.** Resume signal/attr writes; apply any
    queued writes to the new state.
