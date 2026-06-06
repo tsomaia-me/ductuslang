@@ -10050,8 +10050,8 @@ which may use `mut` internally.
 **Lazy, batched evaluation.** Writes (signal, attr) mark dependent
 cells dirty without immediate recomputation. The runtime evaluates
 the dirty set in topological order, advances recurrent cells per
-their expressions in lockstep, and swaps the back
-buffer atomically — all in a single `runtime.commit()` operation
+their expressions in lockstep, and atomically publishes the new
+snapshot — all in a single `runtime.commit()` operation
 (§13.14.4). Writes accumulate between commits; one commit
 processes the union.
 
@@ -10177,8 +10177,8 @@ The host drives the program via:
 ```
 loop {
   runtime.write_signal(tick_id, next_tick_value);   // accumulate dirty bits
-  runtime.commit();                                 // evaluate + atomic swap
-  // consumers observe d1.shown via runtime.acquire_snapshot()
+  runtime.commit();                                 // evaluate + publish snapshot
+  // observers read d1.shown via runtime.acquire_snapshot()
 }
 ```
 
@@ -10189,8 +10189,8 @@ Each `commit()`:
 2. Re-evaluates `Counter.count`'s arm (its trigger `tick` fired).
 3. Re-evaluates `ShowsCount.count` and `Display.shown` (transitive
    derived dependencies).
-4. Commits recurrent advancement and atomically swaps the back
-   buffer for consumer visibility.
+4. Advances recurrents and atomically publishes the new snapshot for
+   observers.
 
 This example demonstrates every reactive declaration kind (signal,
 attr, recurrent, derived), composition through nodes and connections,
@@ -10820,7 +10820,7 @@ fixed-size types. Dynamic-size types include:
 
 Storage and cost details are specified in §13.12.4 (cell types and
 storage). The expression returns a new value of the declared type;
-the runtime handles allocation and triple-buffer rotation
+the runtime handles allocation and snapshot management
 transparently. Source code never mutates a cell in place — the
 functional builder API (`.with(value)`, `+` operator) returns new
 collection values.
@@ -14918,18 +14918,17 @@ switching by discriminant.
 ### 13.10 Reactive Evaluation
 
 The runtime processes reactive state via two operations:
-**writes** (signal/attr) accumulate dirty bits without evaluation;
-**commit** evaluates dirty cells, advances recurrents per their
-expressions, and swaps the back buffer atomically so that
-consumers see the new state.
+**writes** (signal/attr) stage new values without evaluation;
+**commit** evaluates dirty cells, advances recurrents, and atomically
+publishes a new consistent snapshot so observers see the new state.
 
 #### 13.10.1 Lazy writes
 
 A write call (`runtime.write_signal`, `runtime.write_attr`, or any
-write inside `runtime.transaction`) records the new value in the
-reactive state buffer's back-buffer cell. **No derived recomputation
-or recurrent advancement happens at write time.** Writes accumulate
-in the back buffer until the next `runtime.commit()`.
+write inside `runtime.transaction`) stages the new value; it is not
+yet visible to observers. **No derived recomputation or recurrent
+advancement happens at write time.** Staged writes accumulate until
+the next `runtime.commit()`.
 
 Dirty bits are determined at commit time, not per write
 (§13.10.2 step 1). This makes value-change semantics correct under
@@ -14940,8 +14939,8 @@ the accumulation.
 
 ```
 // Outside or inside a transaction, identical semantics:
-runtime.write_signal(x_id, 1);   // back-buffer cell now 1
-runtime.write_signal(x_id, 0);   // back-buffer cell back to 0
+runtime.write_signal(x_id, 1);   // staged value now 1
+runtime.write_signal(x_id, 0);   // staged value back to 0
 runtime.commit();                // x's value equals previous commit — no dirty bit
 ```
 
@@ -14952,10 +14951,10 @@ previous commit matters.
 #### 13.10.2 Commit
 
 `runtime.commit()` performs the full evaluation-and-visibility
-operation on the producer thread:
+operation:
 
 1. **Compute the dirty set.** For each writable cell (signal,
-   attr), compare its back-buffer value to its previously-committed
+   attr), compare its staged value to its previously-committed
    value. Cells whose values differ are *dirty*; cells whose values
    are identical (including those that were written intermediate
    values but reverted before commit) are *not* dirty. A reactive
@@ -14987,7 +14986,7 @@ operation on the producer thread:
    gate-open snap and the suspension of contained effects on gate-close.
 3. **Evaluate in topological order.** For each node in topo order,
    invoke its behavior (per §14.6's ABI). Reads resolve as follows:
-    - Signal and attr reads → current values in the back buffer
+    - Signal and attr reads → current staged values
       (most recent writes since the previous commit).
     - Derived reads → this-commit computed values for deriveds
       evaluated earlier in this step; previously-committed values
@@ -14995,7 +14994,7 @@ operation on the producer thread:
     - Recurrent self-history reads (`.previous`/`.past`) →
       previous-committed values, always (lockstep — §13.2.4.1).
 
-   Derived behaviors write their results into the back buffer.
+   Derived behaviors write their results into the pending snapshot.
    Recurrent expression results are held aside (not yet visible to
    in-pass evaluation) until step 4.
 
@@ -15010,17 +15009,17 @@ operation on the producer thread:
        declaration order wins; its expression evaluates and produces
        the observe's value for this commit. Other candidate arms'
        expressions are not evaluated.
-4. **Commit recurrent advancement.** Write the next values
-   computed in step 3 into the recurrent cells. After this step,
-   recurrent reads return their newly-advanced values.
-5. **Atomic swap.** The producer atomically swaps the current
-   pointer to the back buffer (§14.3.3.1). Consumers' subsequent
-   swaps observe the just-committed state.
+4. **Advance recurrents.** Write the next values computed in step 3
+   into the recurrent cells. After this step, recurrent reads return
+   their newly-advanced values.
+5. **Publish the snapshot.** The runtime atomically makes the
+   just-committed values the visible snapshot; observers' subsequent
+   reads return the new state. (The reference kernel: an atomic
+   current-pointer swap, §14.3.3.)
 6. **Clear dirty bits.** Ready for the next commit.
 
-Writes that occur during commit execution are forbidden (single
-producer; the producer is busy in the commit call). Writes from
-the same thread between commit calls accumulate as usual.
+Writes during a commit are forbidden (the driving context is busy in
+the commit call). Writes between commits accumulate as usual.
 
 #### 13.10.3 Topological order and tiebreaker
 
@@ -15056,11 +15055,11 @@ runtime.transaction(|tx| {
 });
 ```
 
-Writes within a transaction accumulate in the back buffer and
-commit atomically at transaction close. Properties:
+Writes within a transaction accumulate as staged values, applied
+atomically at transaction close. Properties:
 
 - **Panic during the closure:** trap-track semantics of §13.13.1
-  apply — the process aborts. There is no rollback; the back-buffer
+  apply — the process aborts. There is no rollback; the staged
   state at the moment of abort is irrelevant because the process
   is terminating. Atomicity of grouped writes is trivially
   preserved by process death.
@@ -15070,10 +15069,10 @@ commit atomically at transaction close. Properties:
   outer transaction's start are committed together at outer close.
 - **Cancellation:** an explicit `tx.abort()` method rolls back the
   transaction's accumulated writes. The closure returns normally;
-  the back buffer is restored to its pre-transaction state. This
+  the staged values are restored to their pre-transaction state. This
   is the only rollback path.
-- **Relationship to commit:** transaction close commits writes to
-  the back buffer. Dirty cells remain dirty until the next
+- **Relationship to commit:** transaction close applies the staged
+  writes. Dirty cells remain dirty until the next
   `runtime.commit()`, which performs evaluation and visibility.
   Transactions provide *atomicity of grouped writes*; commit
   provides *evaluation and visibility*.
@@ -15382,16 +15381,13 @@ from the type's size and shape:
 **Pool mechanics:**
 
 - Per-type pools. Each reactive cell type that requires handle-based
-  storage has its own pool, sized at runtime construction based on
-  graph specification.
-- The cell still occupies one i64 slot in the reactive state buffer
-  (the handle); the triple-buffer atomic swap publishes the handle
-  unchanged.
-- Producer cost: when writing a complex-typed cell, the producer
-  allocates a pool slot (or reuses one), copies the value in, and
-  writes the handle into the back buffer. This involves work
+  storage has its own pool, sized at runtime construction from the IR.
+- The cell still holds a one-word handle; committing the cell
+  publishes the handle unchanged (the value lives in the pool).
+- Write cost: writing a complex-typed cell allocates a pool slot (or
+  reuses one), copies the value in, and stages the handle — work
   proportional to the value's size, plus a pool acquire.
-- Consumer cost: dereferencing the handle to read the value.
+- Read cost: dereferencing the handle to read the value.
 
 **Performance implications:**
 
@@ -15448,7 +15444,7 @@ second type parameter. Generic parameter lists use commas throughout
 `Vec[T]` is the default for unbounded growth; the persistent
 vector trie (Clojure/Scala/Rust `im::Vector` family) provides
 sublinear append and read with structural sharing across
-triple-buffer versions. `SmallVec[T, N]` optimizes the common
+committed versions. `SmallVec[T, N]` optimizes the common
 case of small bounded collections with cache-friendly inline
 storage. `RingBuf[T, N]` provides constant-time bounded history
 with automatic eviction.
@@ -15458,15 +15454,15 @@ The functional builder API preserves the no-mutation rule
 
 - `vec.with(value)` returns a new `Vec[T]` with `value` appended.
 - `vec + value` is equivalent (operator form).
-- The `recurrent`'s expression returns the new value;
-  the runtime commits it through triple-buffer rotation.
+- The `recurrent`'s expression returns the new value; the runtime
+  publishes it as the cell's next committed value.
 
 Implementation strategies (Vec uses persistent trie; SmallVec
 uses inline+heap; RingBuf uses fixed ring) are observably
 indistinguishable from "always returns new" semantics. Sharing
 and in-place optimization are runtime concerns, transparent at
-the language level. See §14.3 (extensible pools) for the runtime
-mechanism, §14.8 for triple-buffer eviction ordering.
+the language level. See §14.3 (extensible pools) for the storage
+model and §14.8 for drop and eviction ordering.
 
 **Cost model for users not using dynamic types:**
 
@@ -15503,11 +15499,12 @@ counter, no bounds check, no per-iteration dispatch. Direct-storage
 cells (`T[N]` ≤ word width) are read with no indirection at all;
 handle-storage cells are read with one indirection (dereferencing the
 current pool handle) plus the compile-time-known offsets. Per-emission
-cost is unchanged from §14.3.3's general publish: the back-buffer slot
-is **pre-allocated at runtime construction** (directly, or as a fixed-size
-pool slot for sizes above word width), and the producer writes the
-value into it; publication is the §14.3.3 atomic pointer swap, not a
-copy. No per-emission allocation, no realloc, no resize. A reactive
+cost is unchanged from an ordinary commit: the cell's slot is
+**pre-allocated at runtime construction** (directly, or as a fixed-size
+pool slot for sizes above word width), and the runtime writes the value
+into it; making it visible is a constant-time publish, not a copy (the
+reference kernel: an atomic pointer swap, §14.3). No per-emission
+allocation, no realloc, no resize. A reactive
 function whose body iterates a fixed-extent cell — e.g.
 `fn process(buf: Cell[f32[64]]):` with `for x in buf.value():` — thus
 compiles to a straight-line sequence of element accesses against the
@@ -15883,9 +15880,8 @@ declared policy:
   the host decides how to handle rejection.
 
 The push is dirty-tracked: consumers of the stream become dirty and
-will re-observe on the next commit. Within a single push, the
-event is appended to the back-buffer's ring; the swap on the next
-commit makes it visible.
+will re-observe on the next commit. The pushed event becomes visible
+to consumers at that commit.
 
 **Per-instance form** —
 `runtime.push_stream(instance_id, stream_id, value)` writes to a
@@ -19532,31 +19528,30 @@ actual variable-size value lives in the pool.
 **Pool mechanics:**
 
 - Each pool is an arena of slots. Each slot holds one value of the
-  pool's type, plus refcount metadata sufficient for triple-buffer
-  rotation.
-- Producer writes: when the runtime commits a new dynamic-size value
-  for a cell, it allocates a fresh pool slot, writes the value, and
-  publishes the new handle into the back buffer.
-- Consumer reads: dereference the handle through the pool to obtain
-  the value's address, then read the value.
+  pool's type, plus refcount metadata sufficient for the runtime's
+  snapshot scheme.
+- Writes: on commit, the runtime allocates a fresh pool slot, writes
+  the value, and publishes the new handle in the new snapshot.
+- Reads: dereference the handle through the pool to obtain the value's
+  address, then read the value.
 
-**Triple-buffer interaction:**
+**Versioned handles:**
 
-Each of the three buffer copies independently references its own
-pool slot for any given dynamic-size cell. When the producer
-commits, the back buffer's handle is updated to a new slot; the
-previous "current" buffer's handle still points at the old slot
-until rotation reassigns its role.
+Each retained snapshot references its own pool slot for a given
+dynamic-size cell. On commit, the cell's handle is updated to a fresh
+slot; snapshots taken before the commit keep pointing at their old
+slots until released. (The reference kernel realizes this with its
+triple-buffer copies — see the backend doc.)
 
 For persistent data structures (e.g., `Vec[T]` as persistent vector
 trie), pool slots may share internal nodes across versions. The pool
 tracks the trie's node-level refcounts; old nodes are reclaimed when
-no buffer references them.
+no snapshot references them.
 
-For value types (`SmallVec[T, N]`, `RingBuf[T, N]`), each buffer's
-slot holds a complete copy of the value. Rotation of the
-triple-buffer ensures consumers never see partial writes; producer
-work is bounded by the value's size.
+For value types (`SmallVec[T, N]`, `RingBuf[T, N]`), each retained
+snapshot's slot holds a complete copy of the value. The snapshot
+scheme ensures observers never see partial writes; per-commit work is
+bounded by the value's size.
 
 **Initial allocation:**
 
@@ -19575,7 +19570,7 @@ headroom up front.
 - Read: one pointer dereference through the pool.
 - Memory: per-cell overhead is one handle slot (8 bytes); per-value
   overhead depends on the type. Persistent structures share storage
-  across versions; flat structures replicate per buffer.
+  across versions; flat structures replicate per retained snapshot.
 
 **Stream ring buffers** (§13.18) are a special case of pool-managed
 allocation. Each stream declaration with element type `T` and
@@ -19597,16 +19592,15 @@ program draw from a per-`(T, N)` pool:
   pool slot across reload; a new stream allocates a new slot.
 
 Unlike persistent data structures, ring buffer slot arrays are not
-shared across triple-buffer copies. The synchronization protocol
-relies on the head pointer (which IS triple-buffered): producers
-write to slot positions, then advance the head pointer at commit
-time; consumers reading via swap observe events only up to the
-head pointer committed by the most recent commit. Producer writes
-to slot positions that haven't reached the committed head are
-invisible to consumers until the next commit. Overwrites of
-previously-committed slots (under `ring` policy) happen only at
-positions past any cursor that's caught up; lagging cursors that
-were pointing at overwritten positions jump forward per §13.18.12.
+versioned per snapshot. Synchronization relies on the head pointer
+(which is part of reactive state): the runtime writes events into slot
+positions, then advances the committed head pointer at commit; an
+observer sees events only up to the head pointer of the snapshot it
+reads. Event writes beyond the committed head are invisible until the
+next commit. Overwrites of previously-committed slots (under `ring`
+policy) happen only at positions past any cursor that's caught up;
+lagging cursors that were pointing at overwritten positions jump
+forward per §13.18.12.
 
 **Drop and eviction:** see §14.8.
 
@@ -19661,47 +19655,46 @@ the pool resolves the handle to the actual `Arc<str>` data.
 
 #### 14.5.1 Cross-thread consistency
 
-The pool is shared across all three buffer copies. Buffer copies hold
-handles; the pool holds the data. This separation allows:
+The pool is shared across all snapshots: cells (and the snapshots that
+retain them) hold handles; the pool holds the data. This separation
+allows:
 
-- Buffer publish cost to remain O(N) in *cell count*, not in *string
-  content size*. Changing a 1-megabyte string updates a single 8-byte
-  handle in the buffer; the megabyte of data is allocated once in the
-  pool, not three times in three buffer copies.
+- Commit cost to remain O(N) in *cell count*, not in *string content
+  size*. Changing a 1-megabyte string updates a single 8-byte handle;
+  the megabyte of data is allocated once in the pool, not copied per
+  snapshot. (The reference kernel keeps one pool shared across its
+  triple-buffer copies — see the backend doc.)
 
 - Strings to be referenced by multiple cells (in the same or different
-  buffers) via shared handles. Refcounting ensures the data is
-  reclaimed when no buffer holds the handle.
+  snapshots) via shared handles. Refcounting ensures the data is
+  reclaimed when no live cell holds the handle.
 
 #### 14.5.2 Pool operations
 
-- **Allocation**: the producer (§14.7) allocates a new string in the pool;
+- **Allocation**: the runtime allocates a new string in the pool; the
   pool returns a handle. Refcount initialized to 1 for the cell that
   will hold it.
 - **Refcount increment**: when a handle is copied into another cell,
   the pool's refcount on that string increments.
-- **Refcount decrement**: when a cell is overwritten or buffer is
-  retired, the previous handle's refcount decrements. If refcount
-  reaches zero, the pool reclaims the string's storage.
-- **Lookup**: consumer thread reads a handle from the buffer, looks
-  up the corresponding `Arc<str>` in the pool (wait-free with proper
-  pool structure).
+- **Refcount decrement**: when a cell is overwritten or a snapshot
+  holding it is retired, the previous handle's refcount decrements. If
+  refcount reaches zero, the pool reclaims the string's storage.
+- **Lookup**: a reader resolves a handle to the corresponding string
+  value (wait-free with a proper pool structure).
 
-The pool's allocation and refcount operations are atomic but may
-block briefly under contention. These operations are performed by
-the producer role (§14.7); the consumer role only reads via handles,
-which is wait-free. The role-to-thread mapping is implementation-defined:
-in typical native deployments the host's main thread plays the producer
-role and one or more application threads play the consumer role; other
-deployments may assign a runtime-configured thread to the producer role.
-The mechanism (§14.3.3, §14.7) does not depend on the mapping choice.
+The pool's allocation and refcount operations are atomic but may block
+briefly under contention; reads via handles are wait-free. Which
+execution context performs writes versus reads is a backend concern
+(the reference kernel's producer/consumer roles — see the backend
+doc); the contract is only that handle reads stay wait-free.
 
-### 14.6 The Behavior ABI
+### 14.6 The Behavior ABI (reference realization)
 
-Each reactive behavior — a `derived` expression body or a `recurrent`
-expression body — is exposed to the runtime via a uniform **behavior ABI**.
-Functions called from reactive bodies are reactive-transparent per
-§13.12.2: they compile to ordinary Rust functions (per §15.5) reached
+The *abstract* behavior ABI — how a runtime invokes a behavior by id with
+input-cell values — is part of the IR (§15.4.4). This section gives the
+**reference kernel's** concrete realization of it. Functions called from
+reactive bodies are reactive-transparent per §13.12.2: they compile to
+ordinary functions (the native backend: Rust, per the backend doc) reached
 transitively from the registered behaviors, not as separately-registered
 behaviors of their own.
 
