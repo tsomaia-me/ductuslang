@@ -10028,7 +10028,7 @@ Composition is structural — the graph's shape is known at compile
 time.
 
 **Static graph.** Once constructed, the reactive graph's structure
-is fixed for the lifetime of the kernel instance. Signals, attrs,
+is fixed for the lifetime of the runtime instance. Signals, attrs,
 recurrents, nodes, and connections are created at startup and not
 added or removed at runtime — except by hot reload (§13.15), which
 replaces the program source and applies a diff atomically, and by
@@ -10048,11 +10048,11 @@ needed, the reactive expression calls a pure function (per §11),
 which may use `mut` internally.
 
 **Lazy, batched evaluation.** Writes (signal, attr) mark dependent
-cells dirty without immediate recomputation. The kernel evaluates
+cells dirty without immediate recomputation. The runtime evaluates
 the dirty set in topological order, advances recurrent cells per
 their expressions in lockstep, and swaps the back
-buffer atomically — all in a single `kernel.publish()` operation
-(§13.14.4). Writes accumulate between publishes; one publish
+buffer atomically — all in a single `runtime.commit()` operation
+(§13.14.4). Writes accumulate between commits; one commit
 processes the union.
 
 **Cycles handled at two layers.** Reactive expression cycles are
@@ -10066,7 +10066,7 @@ least one connection type satisfying `Circularity`.
 
 **Reactive composition uses nodes, parts, and connections.**
 Reactive cells (signal, attr, recurrent, derived) may hold values
-of any type; the kernel chooses a storage strategy from §13.12.4:
+of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
 word, or handle-based pool storage for larger or dynamically-sized
 values. Imperative data structures (`Vec`, `HashMap`, etc.) are
@@ -10084,7 +10084,7 @@ role:
 - `operator` (§13.17) — stateful reactive transform from cells to
   cells. Pure with respect to outside reality.
 - `node` and `connection` (§13.3, §13.6) — topology. Composable
-  graph structure traversed by the kernel via `expose:` (§13.3.7).
+  graph structure traversed by the runtime via `expose:` (§13.3.7).
 - `stream` (§13.18) — append-only reactive primitive for event-
   shaped flows.
 - `effect` (§13.19) — outside-world alignment via the
@@ -10099,7 +10099,7 @@ parsimony — one composition layer (nodes + parts + connections +
 reactive cells) covering both data flow and effects.
 
 That design conflated two distinct concerns. Topology — the node-
-and-connection graph the kernel traverses — has its own
+and-connection graph the runtime traverses — has its own
 discipline: structural identity, child placement, connection
 endpoints, exposition. Outside-world alignment — sending a request,
 opening a connection, playing audio — has a different shape:
@@ -10176,15 +10176,15 @@ The host drives the program via:
 
 ```
 loop {
-  kernel.write_signal(tick_id, next_tick_value);   // accumulate dirty bits
-  kernel.publish();                                 // evaluate + atomic swap
-  // consumers observe d1.shown via kernel.swap()
+  runtime.write_signal(tick_id, next_tick_value);   // accumulate dirty bits
+  runtime.commit();                                 // evaluate + atomic swap
+  // consumers observe d1.shown via runtime.acquire_snapshot()
 }
 ```
 
-Each `publish()`:
+Each `commit()`:
 
-1. Detects that `tick` differs from its previous-published value
+1. Detects that `tick` differs from its previous-committed value
    (dirty).
 2. Re-evaluates `Counter.count`'s arm (its trigger `tick` fired).
 3. Re-evaluates `ShowsCount.count` and `Display.shown` (transitive
@@ -10196,7 +10196,7 @@ This example demonstrates every reactive declaration kind (signal,
 attr, recurrent, derived), composition through nodes and connections,
 cardinality (`[=1]`), placement with overrides, indexed access
 through the connection (`incoming.ShowsCount[0].count`), bare
-body-scope member access (§13.7), and the publish-driven evaluation
+body-scope member access (§13.7), and the commit-driven evaluation
 cycle.
 
 ### 13.2 Reactive Declarations
@@ -10222,7 +10222,7 @@ syntactic form for assigning to a signal.
 
 Signals represent reactive *entry points* — values fed into the
 reactive graph by the host or runtime, not computed by Ductus
-source. The host pushes new values into the kernel; the reactive
+source. The host pushes new values into the runtime; the reactive
 graph propagates the changes.
 
 Signals may be declared at three scopes:
@@ -10416,7 +10416,7 @@ derived name: Type = expression
 ```
 
 A `derived` declares a *read-only* reactive value defined by an
-expression. The kernel maintains the value consistent with its
+expression. The runtime maintains the value consistent with its
 inputs: when any signal, attr, recurrent, or other derived that
 the expression reads changes, the expression re-evaluates (under
 the lazy-batched rules of §13.10).
@@ -10446,7 +10446,7 @@ no statements. It may include:
 The expression's *provenance* — the set of reactive cells it reads,
 including transitively through function calls — determines its
 dependency set. When any cell in the dependency set changes, the
-derived becomes dirty and is recomputed at the next publish.
+derived becomes dirty and is recomputed at the next commit.
 
 ##### 13.2.3.1 Scope
 
@@ -10503,7 +10503,7 @@ the explicit accessor.
 
 The fallback in `.previous(fallback)` / `.past(k, fallback)` is the
 value returned when there is no committed value at that depth yet —
-i.e., before the cell has received its k-th publish commit. The
+i.e., before the cell has received its k-th commit. The
 fallback type must match the cell's element type.
 
 ```
@@ -10511,7 +10511,7 @@ fallback type must match the cell's element type.
 recurrent counter: i32 = counter.previous(0) + step_value
 //   counter has 1 step of self-memory (default [1]);
 //   re-evaluates when step_value changes (implicit trigger);
-//   on first publish, counter.previous(0) = 0, so counter = 0 + step_value.
+//   on first commit, counter.previous(0) = 0, so counter = 0 + step_value.
 
 // Fibonacci-style sum of last two
 recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)
@@ -10536,7 +10536,7 @@ recurrent smoothed: f32 = (input + smoothed.previous(0.0)) / 2.0
 from its *pre-gap* history — its `.previous`/`.past` still reflect
 values from before the gap. A recurrent carrying the `@reset_on_reopen`
 decorator instead **discards its history on reactivation**: when the
-gating predicate transitions false→true (§13.9.7), the kernel clears the
+gating predicate transitions false→true (§13.9.7), the runtime clears the
 cell's self-history (and any input-history, §13.2.4.3), so the next
 trigger evaluates with `.previous`/`.past` returning their fallbacks —
 exactly as at initialization — and the cell restarts cleanly from
@@ -10572,7 +10572,7 @@ counters, whose history remains meaningful across a gap, use the default
 re-evaluates whenever any cell it references (other than via
 `.previous`/`.past` on itself) commits a new value. This is the
 same spreadsheet-style reactive default as `derived` (§13.2.3): the
-expression's value is its definition at all times, and the kernel
+expression's value is its definition at all times, and the runtime
 maintains that invariant.
 
 A recurrent whose expression contains only self-references
@@ -10598,7 +10598,7 @@ produce different update expressions.
 
 ##### 13.2.4.1 Lockstep advancement
 
-When multiple recurrent cells re-evaluate in the same publish cycle,
+When multiple recurrent cells re-evaluate in the same commit cycle,
 they advance in **lockstep**: every triggered recurrent's expression
 reads the *previous-committed* values of all recurrent cells in the
 system (including other triggered ones), computes a new value, and
@@ -10607,8 +10607,8 @@ another recurrent cell's just-advanced value within the same pass.
 
 In particular, a recurrent's own `.previous(fallback)` and
 `.past(k, fallback)` accesses always return previously-committed
-values; the value being computed in the current publish is not
-visible through these accessors during that same publish.
+values; the value being computed in the current commit is not
+visible through these accessors during that same commit.
 
 Recurrents whose expressions did not re-evaluate in this pass do not
 advance; they retain their existing values.
@@ -10624,7 +10624,7 @@ committed values and the inputs received during this pass.
 is who advances the value:
 
 - `attr` cells change only when the host writes via
-  `kernel.write_attr`. The kernel does not advance them
+  `runtime.write_attr`. The runtime does not advance them
   automatically.
 - `recurrent` cells re-evaluate automatically when any non-self
   reference in the expression commits a new value. The host cannot
@@ -10649,7 +10649,7 @@ cell_name.past(k, fallback)          // k steps back
 These accessors work on two distinct subjects:
 
 - **Self-history** — the recurrent's own past values. `name.past(k,
-  fallback)` reads the recurrent's value k publishes ago. `k` is
+  fallback)` reads the recurrent's value k commits ago. `k` is
   bounded by the declared `[N]` depth (defaulting to 1): `k > N` is a
   compile error.
 - **Input history** — past values of any reactive cell referenced in
@@ -10765,7 +10765,7 @@ recurrent (mean, variance): (f32, f32) =
 ```
 
 The single function call evaluates the shared `gain` once per
-publish and returns both updated values atomically. The recurrent
+commit and returns both updated values atomically. The recurrent
 re-evaluates whenever `source` or `noise` changes (implicit
 triggers).
 
@@ -10779,7 +10779,7 @@ during expression evaluation, each cell's `.previous`/`.past`
 returns its previous-committed value, the same way independent
 recurrents do.
 
-In the per-publish DAG (§13.11.3), tuple-coupled recurrents
+In the per-commit DAG (§13.11.3), tuple-coupled recurrents
 contribute one evaluation node with N output edges, not N
 independent evaluation nodes.
 
@@ -10820,7 +10820,7 @@ fixed-size types. Dynamic-size types include:
 
 Storage and cost details are specified in §13.12.4 (cell types and
 storage). The expression returns a new value of the declared type;
-the kernel handles allocation and triple-buffer rotation
+the runtime handles allocation and triple-buffer rotation
 transparently. Source code never mutates a cell in place — the
 functional builder API (`.with(value)`, `+` operator) returns new
 collection values.
@@ -10864,7 +10864,7 @@ node Delay:
   top-level), literal values, and any compile-time-evaluable
   expression. It may not reference reactive cells (signals, attrs,
   recurrents, deriveds), since those are runtime values.
-- **Not reactive.** A const value never changes during the kernel's
+- **Not reactive.** A const value never changes during the runtime's
   lifetime. It does not occupy a cell in the reactive state buffer
   and does not participate in dirty propagation.
 - **Allowed complex types.** Because consts are not stored in the
@@ -10875,7 +10875,7 @@ node Delay:
   declaration; placement bodies cannot override it. Attempting to
   set a const at placement is a compile error.
 - **Not host-writable.** The host API has no `write_const`. Consts
-  are immutable for the kernel's lifetime.
+  are immutable for the runtime's lifetime.
 
 ##### 13.2.5.2 Access forms
 
@@ -10925,12 +10925,12 @@ serialized steps for signals, attrs, recurrents, and deriveds.
    similarly resolved at compile time. They are not allocated
    cells in the reactive state buffer.
 
-**Startup pass (during kernel initialization):**
+**Startup pass (during runtime initialization):**
 
-The kernel constructs an *init-time dependency graph*: each
+The runtime constructs an *init-time dependency graph*: each
 reactive cell (signal, attr, recurrent, derived) is a node;
 edges run from each cell to the cells its initial-value
-expression reads. The kernel then evaluates initial values in
+expression reads. The runtime then evaluates initial values in
 topological order over this graph.
 
 For each cell:
@@ -10974,8 +10974,8 @@ For each cell:
   dependency graph (cell A's initial reads B; B's initial reads
   A; or longer cycles) cannot be resolved by topological sort.
   This is distinct from runtime cycles (§13.11), which the
-  per-publish DAG handles via recurrents-as-delays. Init time
-  has no notion of "previous publish," so cycles flat-out fail.
+  per-commit DAG handles via recurrents-as-delays. Init time
+  has no notion of "previous commit," so cycles flat-out fail.
 - Within a node body, an attr's default or a recurrent's
   expression may reference previously-declared cells of the same
   body. The topological sort catches forward references that would
@@ -10992,7 +10992,7 @@ For each cell:
   rules — fallback expressions are evaluated in the same context.
 
 Traps during initial evaluation (signal initializers, attr defaults,
-recurrent expressions on first publish, or initial derived
+recurrent expressions on first commit, or initial derived
 evaluation) follow
 §13.13.1 — the process aborts. There is no recovery path for traps
 encountered during startup.
@@ -11012,19 +11012,19 @@ them.
 
 Writes occur only through:
 
-- The host API (`kernel.write_signal`, `kernel.write_attr`,
-  `kernel.transaction`) per §13.14. The host cannot directly write
+- The host API (`runtime.write_signal`, `runtime.write_attr`,
+  `runtime.transaction`) per §13.14. The host cannot directly write
   to recurrents, deriveds, or consts at runtime; influence is
   indirect via signals and attrs.
 - Placement-time initial values for attrs and recurrents
   (per §13.8.2). Consts are *not* settable at placement.
-- The kernel's own evaluation of `derived` expressions, which
+- The runtime's own evaluation of `derived` expressions, which
   writes the derived's output cell with the newly computed value.
-- The kernel's own evaluation of `recurrent` expressions, which
-  commits the computed value at the end of the publish cycle (per
+- The runtime's own evaluation of `recurrent` expressions, which
+  commits the computed value at the end of the commit cycle (per
   §13.2.4.1 and §13.10.2).
 
-Consts are immutable for the kernel's lifetime: their values are
+Consts are immutable for the runtime's lifetime: their values are
 fixed at compile time and never change. The "no source-level
 write" rule applies to all six declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
@@ -11040,12 +11040,12 @@ positions, return types, and generic arguments.
 `Signal[T]`:
 
 - `signal X = init` — host-writable `Signal[T]`. Host pushes
-  values via `kernel.write_signal` (§13.14.2).
-- `derived X = expr` — projected `Signal[T]`. Kernel maintains
+  values via `runtime.write_signal` (§13.14.2).
+- `derived X = expr` — projected `Signal[T]`. Runtime maintains
   the value consistent with its inputs.
 - `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
   self-history accessible via `.previous(fallback)` and
-  `.past(k, fallback)`. Kernel re-evaluates the expression when any
+  `.past(k, fallback)`. Runtime re-evaluates the expression when any
   non-self reference commits (§13.2.4).
 
 The keyword `signal` is overloaded with the type `Signal[T]`:
@@ -11072,7 +11072,7 @@ here and elsewhere referenced as "the `Signal[T]` type" vs "a
 `Signal[T]` is read-only when received as a parameter. There is
 no source-level form for writing to a `Signal[T]` value (the
 no-mutation rule of §13.2.7 applies). The cell may still be
-written by the host (for `signal` subkind) or by the kernel (for
+written by the host (for `signal` subkind) or by the runtime (for
 `derived` and `recurrent` subkinds), but not through the
 `Signal[T]` reference itself.
 
@@ -11261,7 +11261,7 @@ of §13.2.9.7.
 A `let` binding whose declared (or inferred) type is the
 composite's type may name a reactive composite. The binding is an
 alias to the same underlying cells; reading through the let-bound
-name resolves to the kernel's current cell values, not to a
+name resolves to the runtime's current cell values, not to a
 snapshot taken at let-binding time:
 
 ```
@@ -11278,7 +11278,7 @@ apply to single-cell reads (`let v: f32 = A.some_property`
 auto-derefs per the existing rules).
 
 **Ownership.** A reactive composite binding names cells held by
-the kernel, not stack-owned data; multiple live aliases to the
+the runtime, not stack-owned data; multiple live aliases to the
 same composite may coexist without violating §11's single-
 ownership rule, just as multiple `Signal[T]` parameters may name
 the same cell. Materialization to a concrete value (§13.2.9.7)
@@ -11503,13 +11503,13 @@ an event (stream), the arm becomes a candidate for selection. The
 candidate set is filtered by the arm's `where` clause if present
 (§13.18.10).
 
-When multiple arms become candidates in the same publish, **arm
+When multiple arms become candidates in the same commit, **arm
 selection follows declaration order**: the first arm in declaration
 order whose trigger set fired and whose `where` filter (if any)
 passes wins. This mirrors `match` semantics (§6.2.4).
 
 The selected arm becomes the **active arm** of the observe expression.
-A subsequent publish in which a different arm fires changes the
+A subsequent commit in which a different arm fires changes the
 active arm.
 
 ##### 13.2.11.3 Reactive-arm semantics
@@ -11571,7 +11571,7 @@ reads).
 `on` arm has a signal in its trigger set. Signal initial values
 count as their first emission (per §13.2.6 startup pass and
 §13.18.7.2), so at least one signal-triggered arm is selectable from
-publish zero. The first signal-triggered arm in declaration order
+commit zero. The first signal-triggered arm in declaration order
 activates at startup and supplies the observe's value.
 
 In a stream context, the `default:` arm is optional — streams
@@ -11672,7 +11672,7 @@ shape is fixed (§13.1, "Static graph").
 Nodes are distinct from records (§6): records are pure data values
 that exist anywhere in a program; nodes are reactive entities that
 exist only as placed instances in the graph, with per-instance
-reactive cells managed by the kernel.
+reactive cells managed by the runtime.
 
 #### 13.3.1 Declaration
 
@@ -11996,7 +11996,7 @@ into the reactive graph are via placement syntax (§13.8.1, §13.8.3) or
 via a `repeat` declaration (§13.5.4).
 
 The reason is structural: a node's identity is its **graph path**
-(§15.4.1.1). The kernel uses paths for per-publish DAG construction,
+(§15.4.1.1). The runtime uses paths for per-commit DAG construction,
 monomorphization, and hot-reload cell identity (§13.15.2). A function
 call has no stable graph position to give a returned node — any
 identity scheme derivable from a call site (e.g., caller-name plus call
@@ -12022,10 +12022,10 @@ compilers enforce it at type-check time.
 #### 13.3.7 Exposition (the `expose:` clause)
 
 The `expose:` clause declares the node type's **structural output**
-— the list of `Node[T]` placements the kernel traverses when it
+— the list of `Node[T]` placements the runtime traverses when it
 encounters an instance of this type. The clause is the node's
 "return value" in the structural sense: it determines what an
-external reader (and the kernel) sees as the node's content.
+external reader (and the runtime) sees as the node's content.
 
 ```
 node TypeName:
@@ -12080,7 +12080,7 @@ Two forms apply inside `expose:`:
 - An entry may itself be a **`when` block** (§13.9.13, boolean selection,
   simple or multi-way guard arms) or a **`given` block** (§13.9.14,
   exhaustive discriminant selection over a sum scrutinee). Each arm body
-  is a list of exposition entries; the kernel exposes the active arm and
+  is a list of exposition entries; the runtime exposes the active arm and
   freezes the rest (Model B, §13.9.7).
 
 These reuse the gate constructs that apply elsewhere — no exposition-only
@@ -12092,7 +12092,7 @@ connection placement to collide with.
 ##### 13.3.7.2 Default
 
 When `expose:` is omitted, the node's exposition defaults to
-`expose: parts` — the kernel traverses all supplied parts in
+`expose: parts` — the runtime traverses all supplied parts in
 declaration order. When the node has no `parts:` clause and no
 `expose:` clause, the exposition is empty (the node has no
 structural output and exists only for its state and connections).
@@ -12102,16 +12102,16 @@ structural output and exists only for its state and connections).
 The exposed list is readable from outside the node via the reserved
 `.exposition` field: `instance.exposition` returns the list of
 `Node[T]` values the instance currently exposes. This is the same
-content the kernel traverses; external readers and the kernel see
+content the runtime traverses; external readers and the runtime see
 identical output.
 
 Inside the node body, the bare `exposition` field is the same list. The
 field is read-only; the exposition is fixed by the type's `expose:`
 clause (and the placer's supplied parts), not mutable at runtime.
 
-##### 13.3.7.4 Kernel traversal
+##### 13.3.7.4 Runtime traversal
 
-The kernel traverses what `expose:` produces, not the `parts:`
+The runtime traverses what `expose:` produces, not the `parts:`
 clause directly. This is the load-bearing distinction:
 
 - **`parts:`** is the constraint and supply mechanism — declares
@@ -12119,11 +12119,11 @@ clause directly. This is the load-bearing distinction:
   child placements fill the parts (§13.4, §13.8.3).
 - **`expose:`** is the structural-output mechanism — declares which
   parts (and/or wrapping internal nodes containing them) participate
-  in the kernel's traversal of this instance.
+  in the runtime's traversal of this instance.
 
 A node may receive parts that its exposition does not include — for
 example, a node may accept administrative or diagnostic parts that
-are queried only via the host API, not traversed by the kernel. In
+are queried only via the host API, not traversed by the runtime. In
 practice the default `expose: parts` covers the common case
 where every supplied part is exposed.
 
@@ -12277,14 +12277,14 @@ The parent declares the types of children it accepts via its
 `parts:` clause (§13.3.3) with optional cardinality; the specific
 instances appear via placement (§13.8.3).
 
-**Kernel traversal goes through `expose:`, not through `parts:`
+**Runtime traversal goes through `expose:`, not through `parts:`
 directly.** The `parts:` clause is the constraint and supply
 mechanism — declared types, cardinality, and placement-time
 filling. The `expose:` clause (§13.3.7) is the structural output
-the kernel walks; it references parts (via `parts.<Type>` or
+the runtime walks; it references parts (via `parts.<Type>` or
 by named instance), possibly wrapping them in internal nodes.
 Parts that the exposition does not include are not traversed by
-the kernel — they remain queryable via the host API and addressable
+the runtime — they remain queryable via the host API and addressable
 within the parent's own reactive expressions, but they do not
 contribute to the structural descent.
 
@@ -12495,7 +12495,7 @@ caller to know placement names).
 ### 13.5 Template Scopes and Keyed Instantiation
 
 §13.5.1 defines the **keyed-scope primitive** that underlies the
-language's dynamic-scope reactive constructs. Any conformant kernel
+language's dynamic-scope reactive constructs. Any conformant runtime
 exposes the three operations of §13.5.1 — `scope_obtain`, `scope_drop`,
 and `scope_evaluate` — by which a template can be instantiated zero, one,
 or many times per source element, with each instantiation backed by its
@@ -12508,7 +12508,7 @@ reactive iterable source (`Signal[I]` where `I: Iterable`, §12.8).
 #### 13.5.1 The primitive
 
 For each scope-managing construct — a `repeat` declaration (§13.5.4) or
-any future construct invoking this primitive — the kernel exposes three
+any future construct invoking this primitive — the runtime exposes three
 operations. The bound template (the construct's body, fixed at compile
 time) does not vary; the operations therefore parameterize only the
 **key**.
@@ -12542,7 +12542,7 @@ across keys.
 
 Pool sizing follows the §14.3.5 extensible-pool model: pools grow
 as keys are added and shrink as keys are dropped, subject to the
-kernel's pool-management policy.
+runtime's pool-management policy.
 
 #### 13.5.2 State-shape and the no-pool optimization
 
@@ -12559,14 +12559,14 @@ context), and the enclosing scope's cells (per §13.7). `const`
 declarations are static and not state.
 
 **When the state-shape is empty** (the template declares only
-deriveds, or no body cells at all), the kernel allocates **no pool**
+deriveds, or no body cells at all), the runtime allocates **no pool**
 for the construct's template. `scope_obtain(key)` becomes a no-op,
 `scope_drop(key)` is a no-op, and `scope_evaluate(key)` evaluates
 the template's deriveds against the loop binding and the enclosing
 scope's cells without any per-key state context.
 
 This is the **stateless-template fast path**: data-driven multiplicity
-incurs no per-key cell allocation or drop. The per-publish iteration
+incurs no per-key cell allocation or drop. The per-commit iteration
 floor of §13.5.4.6 (iterate + key + diff) still applies; the fast path
 eliminates only the per-scope storage cost.
 
@@ -12599,12 +12599,12 @@ across all live keys.
 
 The `repeat` keyword declares one reactive scope per element of a
 runtime reactive source. Each scope is a template of placements (parts
-and connections) that the kernel materializes per element via §13.5.1's
+and connections) that the runtime materializes per element via §13.5.1's
 operations: `scope_obtain` on key emergence, `scope_drop` on key
-disappearance, `scope_evaluate` per active key per publish.
+disappearance, `scope_evaluate` per active key per commit.
 
 `repeat` is the language-level surface of the keyed-scope mechanism. It
-desugars to §13.5.1 directly; the kernel sees no machinery distinct from
+desugars to §13.5.1 directly; the runtime sees no machinery distinct from
 what is already specified there.
 
 `repeat` is the construct for runtime-varying *existence* — scopes are
@@ -12650,9 +12650,9 @@ repeat <bind> in <source> keyed by <key-expr>:
   the iteration source.
 
   *Why this is sound.* Each `scope_evaluate` runs in isolation
-  against the source signal's *current* buffer — a publish's current
+  against the source signal's *current* buffer — a commit's current
   buffer is read-only; writes go to the next buffer per §14.3.3.
-  The kernel hands each `scope_evaluate` a unique pointer to its
+  The runtime hands each `scope_evaluate` a unique pointer to its
   element, and no other code can read or write that element during
   the scope's execution. Unique access for the scope's duration is
   exactly the precondition for promoting a borrow-equivalent alias
@@ -12668,7 +12668,7 @@ repeat <bind> in <source> keyed by <key-expr>:
   that may freely participate in category B/D storage operations
   within the scope's evaluation.
 
-  At the machine level, no copy is performed: the kernel's unique
+  At the machine level, no copy is performed: the runtime's unique
   pointer is the storage; promotion is a static reinterpretation by
   the compiler, not a runtime operation. Attrs, connection arguments,
   and other placement targets in the body see owned types —
@@ -12708,7 +12708,7 @@ both apply (e.g., when a user has fulfilled both `Keyed` and
 
 ##### 13.5.4.2 Iteration semantics
 
-Whenever `<source>` is dirty, the kernel:
+Whenever `<source>` is dirty, the runtime:
 
 1. Reads the current value of `<source>` from the signal's current
    buffer (§14.3.3) and iterates it via `Iterable::iterator` (§12.8),
@@ -12725,7 +12725,7 @@ Whenever `<source>` is dirty, the kernel:
      per-key cells.
    - Keys in `new − old` are added: `scope_obtain(key)` initializes
      the per-key cells per §13.5.2's state-shape.
-4. For each key in iterator order, the kernel updates `<bind>` and
+4. For each key in iterator order, the runtime updates `<bind>` and
    calls `scope_evaluate(key)`.
 
 Reordering elements in `<source>` without changing the key set performs
@@ -12749,7 +12749,7 @@ effect DBQuery:
       RowComponent | data=row
 ```
 
-The host pushes new query results into `current_rows`; the kernel's
+The host pushes new query results into `current_rows`; the runtime's
 reconciler diffs the key set and materializes / drops `RowComponent`
 scopes per row. Each scope's `RowComponent` cells live at path
 `<effect-instance>.<row.id>.<cell>` per §13.5.3.
@@ -12764,7 +12764,7 @@ node VoiceMixer:
 ```
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
-publishes for the same `voice_id`. The attr is a reactive cell — reads
+commits for the same `voice_id`. The attr is a reactive cell — reads
 of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`;
 `Vec[VoiceConfig]: Iterable` satisfies `repeat`'s source-type
 requirement, with `Vec` supplying the iterator inside the `Signal`.
@@ -12840,7 +12840,7 @@ Changes to the key derivation — either the `keyed by` expression or
 the body of a `Keyed::key` implementation the construct depends on —
 are **reload-safe** per the general rule of §13.15.3 step 8: function
 and method bodies are recomputed against current inputs without a
-restart. The kernel runs the new key derivation on the next publish,
+restart. The runtime runs the new key derivation on the next commit,
 diffs against the previously-known key set, and drops or obtains
 scopes per §13.5.4.2 in the ordinary way. The behavioral consequence
 the user should understand: when a key derivation change causes a
@@ -12853,12 +12853,12 @@ reload-time machinery is needed.
 
 ##### 13.5.4.6 Performance
 
-`repeat` follows the publish-time-recompute model of the rest of the
+`repeat` follows the commit-time-recompute model of the rest of the
 reactive system: signals carry current value, not deltas. When
-`<source>` is dirty, the kernel re-iterates and re-keys to compute the
+`<source>` is dirty, the runtime re-iterates and re-keys to compute the
 new key set.
 
-- **Per-publish floor**: O(N) iterate + O(N) key derivation + O(N)
+- **Per-commit floor**: O(N) iterate + O(N) key derivation + O(N)
   hash-diff against the previous key set, where N is the current
   element count.
 - **Scope add/remove**: O(K + K') on top of the floor, where K is keys
@@ -12868,12 +12868,12 @@ new key set.
   keys.
 - **Pure reorder**: *scope-management* work is zero — keys carry
   across reorderings; no `scope_obtain` or `scope_drop` is invoked.
-  The per-publish floor (iterate + key + diff) still applies; reorder
+  The per-commit floor (iterate + key + diff) still applies; reorder
   doesn't shortcut detecting that the key set is unchanged.
-- **Clean publish** (`<source>` not dirty): zero work. `repeat` does
+- **Clean commit** (`<source>` not dirty): zero work. `repeat` does
   not re-iterate.
 - **Stateless template** (state-shape empty per §13.5.2): no per-key
-  cells are allocated; the per-publish floor still applies to iterate
+  cells are allocated; the per-commit floor still applies to iterate
   + key + diff.
 
 The O(N) floor is structural to "signal-carries-current-value." Ductus
@@ -12932,14 +12932,14 @@ In each rejected context, the diagnostic identifies the misplaced
   hang off the outer scope's path per §13.5.3.
 - **The iterator must terminate at each evaluation.** Vec[T],
   HashSet[T], T[N], HashMap[K, V], and any user `Iterable`
-  implementation over a bounded-at-publish-time collection satisfy
+  implementation over a bounded-at-commit-time collection satisfy
   this. The spec does not mandate a compiler check for termination on
   user `Iterable` implementations — they are trusted. An iterator
   whose `next` never returns `None` will hang the iterate phase; this
   is a programmer error against the trait's intended use.
 - The same element-key, when reachable through different element values
-  across publishes, identifies the same scope. The element's *value* is
-  carried in `<bind>` and may change publish to publish; the *key*
+  across commits, identifies the same scope. The element's *value* is
+  carried in `<bind>` and may change commit to commit; the *key*
   identifies the scope.
 
 ### 13.6 Connections
@@ -12974,7 +12974,7 @@ constraints. The actual connection instances appear at placement
 node's `expose:` clause (§13.3.7); they are not structural output.
 A connection is held by its endpoint nodes but owned by no single
 one — it lives at the instance graph level, traversed by signals
-rather than by the kernel's structural descent. The motherboard
+rather than by the runtime's structural descent. The motherboard
 analogy: parts compose into the board (`expose:`); wires between
 parts are connections (instance-to-instance edges held by, but
 not contained within, the parts they connect).
@@ -14299,7 +14299,7 @@ topology graph static for the cycle check (§13.9.9), the reactive buffer
 pre-allocated (§14.3), and gate-flip cost bounded.
 
 Gates are a language feature: the compiler reasons about the graph
-under the assumption that gates may open or close at any publish,
+under the assumption that gates may open or close at any commit,
 and the runtime enforces gate state at edge level. Routing is not a
 host concern; it lives in the source.
 
@@ -14311,7 +14311,7 @@ expression of type `bool`: it follows the same purity rules
 (§13.11.2), and recurrent-read semantics (§13.11.4) as any other
 derived. The expression forms accepted are identical. What differs
 is the structural role — the predicate's value is consumed by the
-kernel to gate propagation through the construct it modifies, not
+runtime to gate propagation through the construct it modifies, not
 exposed as a readable value. Activation is not surfaced as a cell or
 field for source code to read; a construct's reaction to being gated off
 is structural (it freezes, §13.9.7) and, for effects, is delivered to
@@ -14339,8 +14339,8 @@ Two design moves justify the clause:
 
 - **Host-decided routing is rejected.** If the host chose which
   edges propagate, the compiler could not statically reason about
-  reachability, cycles, or the per-publish DAG. The graph would
-  become opaque between publishes.
+  reachability, cycles, or the per-commit DAG. The graph would
+  become opaque between commits.
 - **A marker trait was rejected.** Using a regular attr name like
   `active` to mean "this is the gate" would reserve a common
   identifier for what is fundamentally a structural concern. The
@@ -14484,11 +14484,11 @@ placement-level `when` is unconditional — always active.
 #### 13.9.6 Self-conditional gates
 
 A gate predicate may reference cells of the gated instance itself.
-The kernel evaluates the predicate against the cells' current
+The runtime evaluates the predicate against the cells' current
 committed values; cyclic self-reference is well-defined: the gate
 predicate evaluates against the gated cell's *previously-committed*
-values from the prior publish. The gate-open transition is itself a
-propagation event scheduled within the publish that flips the
+values from the prior commit. The gate-open transition is itself a
+propagation event scheduled within the commit that flips the
 predicate (per §13.9.7's snap-on-gate-open rule).
 
 ```
@@ -14505,7 +14505,7 @@ Type-level self-conditional gates on nodes are likewise allowed
 #### 13.9.7 Runtime semantics
 
 The runtime model is *Model B — frozen-when-gated, snap on
-activation*. The kernel evaluates gate state at edge level on each
+activation*. The runtime evaluates gate state at edge level on each
 propagation cycle. Gated subgraphs do no work; the cost of a
 permanently-gated node is the cost of evaluating its `when`
 predicate.
@@ -14531,23 +14531,23 @@ false):
 - **Recurrents:** do not advance. They do not re-evaluate; the
   cells hold their last committed value. Any input change that
   would have triggered re-evaluation during a gated period is lost
-  — the kernel does not queue triggers, and gate-open does not
+  — the runtime does not queue triggers, and gate-open does not
   replay them. The recurrent remains at its last committed value
   until a future input change occurs during an active period. Its
   self-history is preserved across the gap, so the first post-gap
   evaluation reads pre-gap `.previous`/`.past` values — **unless** the
-  recurrent carries `@reset_on_reopen` (§13.2.4), in which case the kernel
+  recurrent carries `@reset_on_reopen` (§13.2.4), in which case the runtime
   clears its history at gate-reopen and the first post-gap evaluation
   reads fallbacks instead (a clean restart, not a blend with stale
   state).
 - **Deriveds:** do not recompute. They hold their last committed
   value. (An exception: deriveds whose values are read by the
-  `when` predicate must remain current; the kernel keeps the
+  `when` predicate must remain current; the runtime keeps the
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
   level.) This describes the *steady gated state*; the one-shot
   effect-desired recompute of the close transition (below) happens
-  *at* the false-flip publish, before the subtree settles into this
+  *at* the false-flip commit, before the subtree settles into this
   frozen state, and is not a recurring recomputation.
 - **Outputs:** do not propagate. Outgoing connections from the
   gated node do not deliver to their destinations.
@@ -14560,7 +14560,7 @@ to its input cells (the node's own `when` re-evaluates against those
 inputs).
 
 **Snap on gate-open.** When a `when` predicate transitions from
-false to true between publishes, the kernel treats this as a
+false to true between commits, the runtime treats this as a
 propagation event. The frozen cells re-evaluate against current
 upstream state in topological order. Any value that would have
 propagated during the gated period is re-computed *as of now* (not
@@ -14568,7 +14568,7 @@ replayed); downstream sees the activation as a single jump from
 the frozen value to the current value.
 
 (This automatic recompute applies to *deriveds* — pure functions of
-current inputs — at the gate-open publish. A *recurrent* cannot
+current inputs — at the gate-open commit. A *recurrent* cannot
 recompute without a trigger, so it advances on its next trigger as
 described above; the optional `@reset_on_reopen` decorator (§13.2.4)
 additionally clears its history at gate-open so that next advance is a
@@ -14583,9 +14583,9 @@ gate primitive. The gate guarantees correctness, not continuity.
 transitions true → false, the subtree freezes (above): its cells hold
 their last values and stop recomputing. There is no recompute pass —
 nothing in a frozen subtree produces a value any consumer reads. The one
-outward consequence of closing concerns **effects**: the kernel fires the
+outward consequence of closing concerns **effects**: the runtime fires the
 `suspend` reconciler hook (§13.14.9) for every effect in the now-frozen
-subtree, at the publish boundary, so the host can release those effects'
+subtree, at the commit boundary, so the host can release those effects'
 external resources while their instance state is preserved. Pure nodes
 and connections have nothing to release; for them freezing alone is the
 complete, correct behavior.
@@ -14608,7 +14608,7 @@ from the root are open. Closing any ancestor gate transitively freezes
 every descendant and suspends every effect within it, regardless of those
 descendants' own gate states. Reopening an ancestor restores each
 descendant to *its own* gate state (a descendant whose own gate is false
-stays frozen). The kernel computes effective activation (own gate
+stays frozen). The runtime computes effective activation (own gate
 conjoined with all ancestor gates) to drive transitive `suspend`/`resume`
 delivery to contained effects (§13.14.9).
 
@@ -14617,9 +14617,9 @@ defined value of type T (no `Option[T]`), because:
 
 - All attrs have values (defaults or required-at-placement —
   §13.2.2).
-- All recurrents have well-defined first-publish values
+- All recurrents have well-defined first-commit values
   (fallbacks in `.previous(fallback)` / `.past(k, fallback)` ensure
-  the expression evaluates to a defined value on first publish —
+  the expression evaluates to a defined value on first commit —
   §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
@@ -14630,12 +14630,12 @@ On a gated node or connection, reads return frozen values: the
 last committed value during an active period, or the initial value
 if the instance has never been active.
 
-#### 13.9.8 Interaction with the per-publish DAG
+#### 13.9.8 Interaction with the per-commit DAG
 
 The compiler builds the reactive dependency graph (§13.11.1)
 independent of gate state — gates do not remove edges from the
 static graph, they suspend propagation through edges at runtime.
-The per-publish DAG (§13.11.3) is constructed each publish; during
+The per-commit DAG (§13.11.3) is constructed each commit; during
 construction, gated edges contribute no dirty propagation to their
 destinations' output-affecting cells, but do contribute to input
 cells and `when` predicate provenance. A subtree that is gated off is
@@ -14644,10 +14644,10 @@ excluded from the DAG; nothing in it recomputes.
 A single delegating note in §13.10.2 records this: edges whose gate
 predicate evaluates false do not propagate to destination outputs, and
 the gate-open transition is itself a propagation event scheduled within
-the publish that flips the predicate (the open snap, §13.9.7). Gate-close
-adds no DAG work; its only consequence is that the kernel fires `suspend`
-for effects in the newly-frozen subtree at the publish boundary (§13.9.7,
-§13.14.9). The kernel uses *effective* activation (own gate conjoined
+the commit that flips the predicate (the open snap, §13.9.7). Gate-close
+adds no DAG work; its only consequence is that the runtime fires `suspend`
+for effects in the newly-frozen subtree at the commit boundary (§13.9.7,
+§13.14.9). The runtime uses *effective* activation (own gate conjoined
 with all ancestor gates) so that closing an ancestor suspends descendant
 effects transitively.
 
@@ -14687,7 +14687,7 @@ connection Edge:
 Adding, removing, or modifying a `when` predicate is a
 reload-safe change (§13.15.3). The predicate is structural
 metadata, not cell identity. On reload, the new predicate
-participates in the next publish; cells retain their values.
+participates in the next commit; cells retain their values.
 Changes to the predicate that would have caused a state to differ
 historically are not retroactive — the new predicate takes effect
 prospectively only.
@@ -14778,14 +14778,14 @@ expose:
 and the multi-variant case is the `given` block (§13.9.14).
 `When`/`Then`/`Else` are
 retained, if at all, only as thin stdlib sugar over the block forms; they
-carry no kernel-aware special-casing and are not the recommended form.
+carry no runtime-aware special-casing and are not the recommended form.
 
 #### 13.9.13 The `when` block
 
 Beyond the type-level `when:` member (§13.9.2) and the inline placement
 modifier (§13.9.3), `when` has a **block form** that selects which
 placement(s) to expose — or, in a node/placement body, which children to
-keep active — by boolean condition. All arms are constructed; the kernel
+keep active — by boolean condition. All arms are constructed; the runtime
 gates propagation to the live one and freezes the rest under Model B
 (§13.9.7). The block form appears wherever reactive structure is
 declared: an `expose:` clause (§13.3.7), a node body, a placement body,
@@ -14917,60 +14917,60 @@ switching by discriminant.
 
 ### 13.10 Reactive Evaluation
 
-The kernel processes reactive state via two operations:
+The runtime processes reactive state via two operations:
 **writes** (signal/attr) accumulate dirty bits without evaluation;
-**publish** evaluates dirty cells, advances recurrents per their
+**commit** evaluates dirty cells, advances recurrents per their
 expressions, and swaps the back buffer atomically so that
 consumers see the new state.
 
 #### 13.10.1 Lazy writes
 
-A write call (`kernel.write_signal`, `kernel.write_attr`, or any
-write inside `kernel.transaction`) records the new value in the
+A write call (`runtime.write_signal`, `runtime.write_attr`, or any
+write inside `runtime.transaction`) records the new value in the
 reactive state buffer's back-buffer cell. **No derived recomputation
 or recurrent advancement happens at write time.** Writes accumulate
-in the back buffer until the next `kernel.publish()`.
+in the back buffer until the next `runtime.commit()`.
 
-Dirty bits are determined at publish time, not per write
+Dirty bits are determined at commit time, not per write
 (§13.10.2 step 1). This makes value-change semantics correct under
 net-revert patterns: a sequence of writes that ends with the cell's
-value equal to the previous-published value produces no dirty bit
+value equal to the previous-committed value produces no dirty bit
 and fires no triggers — regardless of intermediate values during
 the accumulation.
 
 ```
 // Outside or inside a transaction, identical semantics:
-kernel.write_signal(x_id, 1);   // back-buffer cell now 1
-kernel.write_signal(x_id, 0);   // back-buffer cell back to 0
-kernel.publish();                // x's value equals previous publish — no dirty bit
+runtime.write_signal(x_id, 1);   // back-buffer cell now 1
+runtime.write_signal(x_id, 0);   // back-buffer cell back to 0
+runtime.commit();                // x's value equals previous commit — no dirty bit
 ```
 
 This decouples writes from evaluation. Multiple writes between
-publishes batch automatically: only the net change from the
-previous publish matters.
+commits batch automatically: only the net change from the
+previous commit matters.
 
-#### 13.10.2 Publish
+#### 13.10.2 Commit
 
-`kernel.publish()` performs the full evaluation-and-visibility
+`runtime.commit()` performs the full evaluation-and-visibility
 operation on the producer thread:
 
 1. **Compute the dirty set.** For each writable cell (signal,
-   attr), compare its back-buffer value to its previously-published
+   attr), compare its back-buffer value to its previously-committed
    value. Cells whose values differ are *dirty*; cells whose values
    are identical (including those that were written intermediate
-   values but reverted before publish) are *not* dirty. A reactive
+   values but reverted before commit) are *not* dirty. A reactive
    expression (derived, recurrent, or `observe` arm trigger set)
    re-evaluates when a referenced cell is dirty — value-change
-   semantics (§13.2.4.4) operationalized as "current-publish value
-   ≠ previous-publish value." Dirty propagation extends to all
+   semantics (§13.2.4.4) operationalized as "current-commit value
+   ≠ previous-commit value." Dirty propagation extends to all
    derived cells transitively dependent
    on dirty roots, and to all recurrents whose triggers fired this
-   publish. No new dirty bits are added during the rest of the
-   publish cycle.
-2. **Compute evaluation order.** Topologically sort the per-publish
+   commit. No new dirty bits are added during the rest of the
+   commit cycle.
+2. **Compute evaluation order.** Topologically sort the per-commit
    DAG (§13.11.3). Nodes in the DAG are:
     - Dirty derived expressions.
-    - Each recurrent whose expression became dirty this publish. A
+    - Each recurrent whose expression became dirty this commit. A
       recurrent contributes one DAG node per cell (or one node per
       tuple group for tuple-coupled recurrents, §13.2.4.6). A
       recurrent wrapped in `observe` (§13.2.11) contributes the
@@ -14981,17 +14981,17 @@ operation on the producer thread:
    (`.previous`/`.past`) are treated as inputs at their previous-
    committed values, which breaks reactive cycles. Reads of
    deriveds, signals, attrs, and streams follow normal dependency
-   edges within this publish. Edges whose gate predicate evaluates
+   edges within this commit. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
    gate-open snap and the suspension of contained effects on gate-close.
 3. **Evaluate in topological order.** For each node in topo order,
    invoke its behavior (per §14.6's ABI). Reads resolve as follows:
     - Signal and attr reads → current values in the back buffer
-      (most recent writes since the previous publish).
-    - Derived reads → this-publish computed values for deriveds
-      evaluated earlier in this step; previous-publish committed
-      values for deriveds not in the dirty set.
+      (most recent writes since the previous commit).
+    - Derived reads → this-commit computed values for deriveds
+      evaluated earlier in this step; previously-committed values
+      for deriveds not in the dirty set.
     - Recurrent self-history reads (`.previous`/`.past`) →
       previous-committed values, always (lockstep — §13.2.4.1).
 
@@ -15001,31 +15001,31 @@ operation on the producer thread:
 
    **`observe` arm selection.** When a recurrent's expression (or
    any reactive expression) is an `observe` block (§13.2.11), arm
-   selection proceeds in two stages within the publish cycle:
+   selection proceeds in two stages within the commit cycle:
     1. **Activation evaluation**: each arm's trigger set (and
        `where` filter, if present) is checked. The arms with
-       triggers that fired this publish AND filters that pass are
+       triggers that fired this commit AND filters that pass are
        candidates.
     2. **Declaration-order selection**: the first candidate arm in
        declaration order wins; its expression evaluates and produces
-       the observe's value for this publish. Other candidate arms'
+       the observe's value for this commit. Other candidate arms'
        expressions are not evaluated.
 4. **Commit recurrent advancement.** Write the next values
    computed in step 3 into the recurrent cells. After this step,
    recurrent reads return their newly-advanced values.
 5. **Atomic swap.** The producer atomically swaps the current
    pointer to the back buffer (§14.3.3.1). Consumers' subsequent
-   swaps observe the just-published state.
-6. **Clear dirty bits.** Ready for the next publish.
+   swaps observe the just-committed state.
+6. **Clear dirty bits.** Ready for the next commit.
 
-Writes that occur during publish execution are forbidden (single
-producer; the producer is busy in the publish call). Writes from
-the same thread between publish calls accumulate as usual.
+Writes that occur during commit execution are forbidden (single
+producer; the producer is busy in the commit call). Writes from
+the same thread between commit calls accumulate as usual.
 
 #### 13.10.3 Topological order and tiebreaker
 
-Within a publish cycle, dirty deriveds and recurrent expressions
-evaluate in topological order over the per-publish DAG.
+Within a commit cycle, dirty deriveds and recurrent expressions
+evaluate in topological order over the per-commit DAG.
 Topological order ensures that each node's dependencies have stable
 values when the node itself is evaluated.
 
@@ -15050,7 +15050,7 @@ The host may opt into transactional batching of multiple writes
 that should commit as one logical change:
 
 ```
-kernel.transaction(|tx| {
+runtime.transaction(|tx| {
   tx.write_signal(a_id, new_a);
   tx.write_signal(b_id, new_b);
 });
@@ -15065,20 +15065,20 @@ commit atomically at transaction close. Properties:
   is terminating. Atomicity of grouped writes is trivially
   preserved by process death.
 - **Nesting:** nested transactions are flattened — only the
-  outermost `kernel.transaction` commits. Inner `kernel.transaction`
+  outermost `runtime.transaction` commits. Inner `runtime.transaction`
   calls are no-ops with respect to commit. All writes since the
   outer transaction's start are committed together at outer close.
 - **Cancellation:** an explicit `tx.abort()` method rolls back the
   transaction's accumulated writes. The closure returns normally;
   the back buffer is restored to its pre-transaction state. This
   is the only rollback path.
-- **Relationship to publish:** transaction close commits writes to
+- **Relationship to commit:** transaction close commits writes to
   the back buffer. Dirty cells remain dirty until the next
-  `kernel.publish()`, which performs evaluation and visibility.
-  Transactions provide *atomicity of grouped writes*; publish
+  `runtime.commit()`, which performs evaluation and visibility.
+  Transactions provide *atomicity of grouped writes*; commit
   provides *evaluation and visibility*.
 
-Outside transactions, individual `kernel.write_*` calls behave as
+Outside transactions, individual `runtime.write_*` calls behave as
 if each were its own one-write transaction.
 
 ### 13.11 Cycle Handling
@@ -15097,14 +15097,14 @@ reads. Edges go from each read cell to the reading expression's
 output cell. Signal, attr, derived, and recurrent reads all
 contribute edges.
 
-The reactive dependency graph is the basis for the per-publish DAG
-constructed each publish (§13.10.2 step 2).
+The reactive dependency graph is the basis for the per-commit DAG
+constructed each commit (§13.10.2 step 2).
 
 #### 13.11.2 Reactive expression cycle rules
 
 **Derived↔derived cycles are forbidden.** A cycle consisting only
 of derived-to-derived edges has no temporal delay element. Within
-a single publish, derived `a` reading derived `b` while derived
+a single commit, derived `a` reading derived `b` while derived
 `b` reads derived `a` has no resolution at any single moment.
 This is a mathematical impossibility, not a design choice. The
 compiler rejects such cycles:
@@ -15122,7 +15122,7 @@ recurrent cell's expression may read the recurrent's own
 previous value (`on t: x + 1`) or another recurrent cell's
 previous value (`on t: other.value`). These do not form
 instantaneous cycles because recurrent reads always return the
-previous-committed value (lockstep — §13.2.4.1). The per-publish
+previous-committed value (lockstep — §13.2.4.1). The per-commit
 DAG treats every recurrent read as an input, breaking the static
 cycle temporally.
 
@@ -15140,16 +15140,16 @@ node Filter:
 
 `current` reads `previous_value`; `previous_value`'s observe arm
 reads `current`. The static graph has a cycle, but the lockstep
-semantics make this well-defined: each publish, `current` reads
+semantics make this well-defined: each commit, `current` reads
 `previous_value`'s last-committed value, then `previous_value`
 advances to `current`'s new value at commit time.
 
-#### 13.11.3 The per-publish DAG
+#### 13.11.3 The per-commit DAG
 
-To evaluate a publish, the kernel constructs the *per-publish DAG*
+To evaluate a commit, the runtime constructs the *per-commit DAG*
 by treating every recurrent read as an *input* — its value is
-whatever was committed at the end of the previous publish, not
-what will be committed at the end of this publish. This breaks
+whatever was committed at the end of the previous commit, not
+what will be committed at the end of this commit. This breaks
 all valid reactive cycles, producing a DAG.
 
 Reads OF a recurrent cell — from any expression context (derived
@@ -15158,28 +15158,28 @@ return the previous-committed value. This is the rule that breaks
 reactive cycles.
 
 Reads FROM a `where` guard (its own input cells) are NOT treated as
-previous-publish inputs. The guard evaluates within the current
-publish to determine whether its arm fires (per §13.10.2 step 2). The
+previous-commit inputs. The guard evaluates within the current
+commit to determine whether its arm fires (per §13.10.2 step 2). The
 two rules are not in conflict: "reads OF recurrents" refers to what
 value a recurrent cell yields when read; "reads FROM a guard" refers
 to which cells the guard's expression itself reads.
 
-The per-publish DAG is what gets topologically sorted in §13.10.2
+The per-commit DAG is what gets topologically sorted in §13.10.2
 step 2.
 
 #### 13.11.4 Recurrents as delay elements
 
-A recurrent cell on a cycle behaves as a one-publish delay
+A recurrent cell on a cycle behaves as a one-commit delay
 element: it always reads the previous-committed value, regardless
-of what its expression computes this publish. The end-of-publish
+of what its expression computes this commit. The end-of-commit
 commit (§13.10.2 step 4) is what advances the cell for the next
-publish to observe.
+commit to observe.
 
 This is the same semantic primitive used by hardware registers
 (Verilog `<=` non-blocking assignment), synchronous-dataflow
 languages (Lustre `fby`), and signal-flow audio languages
 (Faust `~`). The behavior is fully specified at the language
-level; the kernel requires no per-implementation convention beyond
+level; the runtime requires no per-implementation convention beyond
 the `recurrent` declaration.
 
 #### 13.11.5 Topology cycles
@@ -15382,7 +15382,7 @@ from the type's size and shape:
 **Pool mechanics:**
 
 - Per-type pools. Each reactive cell type that requires handle-based
-  storage has its own pool, sized at kernel construction based on
+  storage has its own pool, sized at runtime construction based on
   graph specification.
 - The cell still occupies one i64 slot in the reactive state buffer
   (the handle); the triple-buffer atomic swap publishes the handle
@@ -15459,12 +15459,12 @@ The functional builder API preserves the no-mutation rule
 - `vec.with(value)` returns a new `Vec[T]` with `value` appended.
 - `vec + value` is equivalent (operator form).
 - The `recurrent`'s expression returns the new value;
-  the kernel commits it through triple-buffer rotation.
+  the runtime commits it through triple-buffer rotation.
 
 Implementation strategies (Vec uses persistent trie; SmallVec
 uses inline+heap; RingBuf uses fixed ring) are observably
 indistinguishable from "always returns new" semantics. Sharing
-and in-place optimization are kernel concerns, transparent at
+and in-place optimization are runtime concerns, transparent at
 the language level. See §14.3 (extensible pools) for the runtime
 mechanism, §14.8 for triple-buffer eviction ordering.
 
@@ -15504,7 +15504,7 @@ cells (`T[N]` ≤ word width) are read with no indirection at all;
 handle-storage cells are read with one indirection (dereferencing the
 current pool handle) plus the compile-time-known offsets. Per-emission
 cost is unchanged from §14.3.3's general publish: the back-buffer slot
-is **pre-allocated at kernel construction** (directly, or as a fixed-size
+is **pre-allocated at runtime construction** (directly, or as a fixed-size
 pool slot for sizes above word width), and the producer writes the
 value into it; publication is the §14.3.3 atomic pointer swap, not a
 copy. No per-emission allocation, no realloc, no resize. A reactive
@@ -15540,8 +15540,8 @@ overflow under default operators (§4.6.1), division by zero, an
 out-of-range array index, or explicit `panic`, follows the
 trap-track semantics of §4.6.1: the process aborts.
 
-The kernel does not isolate traps within behavior invocations. There
-is no "errored cell" sentinel state at the kernel level, no
+The runtime does not isolate traps within behavior invocations. There
+is no "errored cell" sentinel state at the runtime level, no
 `catch_unwind` boundary, no continuation past a trap. A trap is a
 bug, and bugs end the program.
 
@@ -15577,7 +15577,7 @@ Consumer my_consumer:
 
 The divide-by-zero case never traps; it produces `Err(...)`. The
 `Consumer.report` derived handles both branches explicitly. No
-kernel-level error machinery is involved.
+runtime-level error machinery is involved.
 
 For arithmetic operations that may overflow but should produce
 recoverable errors, use the checked variants (`+?`, `-?`, etc.)
@@ -15832,7 +15832,7 @@ implementing the reconciler interface:
   instance alive" case of §13.19.12, distinct from *teardown* (which
   drops the instance on scope death). What "release" means — close a
   socket, cancel a request, flush a buffer, or keep it warm — is the
-  reconciler's (domain's) decision; the kernel only guarantees the
+  reconciler's (domain's) decision; the runtime only guarantees the
   signal is delivered.
 - A *resume* hook invoked when the enclosing subtree is gated back on
   (effective activation goes true). Receives the instance ID and the
@@ -15883,9 +15883,9 @@ declared policy:
   the host decides how to handle rejection.
 
 The push is dirty-tracked: consumers of the stream become dirty and
-will re-observe on the next publish. Within a single push, the
+will re-observe on the next commit. Within a single push, the
 event is appended to the back-buffer's ring; the swap on the next
-publish makes it visible.
+commit makes it visible.
 
 **Per-instance form** —
 `runtime.push_stream(instance_id, stream_id, value)` writes to a
@@ -16020,20 +16020,20 @@ them (or rejects a graph it cannot serve).
 
 ### 13.15 Hot Reload of the Reactive Graph
 
-The kernel supports hot reload of the reactive graph when the host
+The runtime supports hot reload of the reactive graph when the host
 provides updated source code (per §14.9). The reactive system's
 specific hot reload semantics are as follows.
 
 #### 13.15.1 Compile-time validation gate
 
-Before any kernel-side action occurs, the new source must compile
+Before any runtime-side action occurs, the new source must compile
 under the full Ductus type system (§§1–12) and reactive system
 rules (§13). If compilation fails — for any reason, including
 dangling references to nodes removed in the new source — the hot
-reload is rejected. The kernel continues running the previously-
+reload is rejected. The runtime continues running the previously-
 loaded version, unaffected.
 
-This ensures the kernel never enters a state where compiled
+This ensures the runtime never enters a state where compiled
 behaviors reference cells that no longer exist or have changed
 type.
 
@@ -16072,15 +16072,15 @@ gate-open.
 
 #### 13.15.3 Reload sequence
 
-The kernel performs the reload atomically on the producer thread,
+The runtime performs the reload atomically on the producer thread,
 in the following order:
 
-1. Compile new source. On failure, reject reload; kernel state
+1. Compile new source. On failure, reject reload; runtime state
    unchanged.
 2. Acquire a reload lock. Pause acceptance of new signal/attr
    writes from host code (host requests queue).
-3. Let any in-flight publish complete; ensure the kernel is in a
-   between-publishes state.
+3. Let any in-flight commit complete; ensure the runtime is in a
+   between-commits state.
 4. Compute the diff between old and new graphs: which cells are
    surviving (same path, same type), which are added, which are
    removed.
@@ -16105,7 +16105,7 @@ in the following order:
 
 Changes to `when` predicates (added, removed, or modified — §13.9)
 are reload-safe. The predicate is structural metadata, not cell
-identity; the new predicate participates in the next publish, and
+identity; the new predicate participates in the next commit, and
 cells retain their values across the reload. The new predicate
 takes effect prospectively — historical gate state is not
 recomputed.
@@ -16113,12 +16113,12 @@ recomputed.
 #### 13.15.4 Constraints on reloadability
 
 Some changes are not safely hot-reloadable in place and require a
-restart — either full-kernel or per-instance, depending on the change:
+restart — either full-runtime or per-instance, depending on the change:
 
 - Changes to the layout of the reactive state buffer that would
   require relocating live cells. The reload's diff-and-apply
   approach handles incremental changes but not whole-buffer
-  reorganization. **Full-kernel restart required.**
+  reorganization. **Full-runtime restart required.**
 - Operator-specific changes that require restart for the affected
   operator instances:
     - Operator signature changes (parameters added, removed, or
@@ -16129,7 +16129,7 @@ restart — either full-kernel or per-instance, depending on the change:
 
   See §13.17.10 for full operator-reload rules. **Per-instance
   restart** suffices: the affected operator instances are
-  recreated; the rest of the kernel continues without restart.
+  recreated; the rest of the runtime continues without restart.
 - Stream-specific changes that require restart for the affected
   stream cells (and their consumers):
     - Element type changes (incompatible structural change to `T`).
@@ -16150,8 +16150,8 @@ restart — either full-kernel or per-instance, depending on the change:
   call for the affected instances.
 
 Implementations detect these cases during the diff phase and either
-reject the reload or schedule the appropriate restart (full-kernel
-or per-instance). The kernel diagnoses which class of change
+reject the reload or schedule the appropriate restart (full-runtime
+or per-instance). The runtime diagnoses which class of change
 occurred.
 
 #### 13.15.5 Hot reload of streams
@@ -16233,7 +16233,7 @@ instance is preserved across reload, the cells declared in its
   `observed:` Signal cell — existing committed values persist;
   the new initial-value expression applies only to fresh instances.
 - Changing a parameter-derived `desired:` cell's derivation
-  expression — the cell re-evaluates on the next publish with the
+  expression — the cell re-evaluates on the next commit with the
   new logic.
 - Changing the visibility of the effect, the generic-parameter
   bounds, or other declaration-level metadata that does not affect
@@ -16246,18 +16246,18 @@ instance is preserved across reload, the cells declared in its
 - Cell type changes in `desired:` or `observed:`.
 - Stream/Sink policy or capacity changes.
 
-When per-instance restart fires for an effect instance, the kernel
+When per-instance restart fires for an effect instance, the runtime
 invokes the host's reconciler teardown hook (§13.14.9), allowing the
 host to release external resources, and then constructs the new
 instance under the new declaration. The reconciler's create hook
 fires for the new instance.
 
 **Effect type identity.** When an effect's declared name changes
-(e.g., `effect fetch` becomes `effect cached_fetch`), the kernel
+(e.g., `effect fetch` becomes `effect cached_fetch`), the runtime
 treats this as removal of the old effect type and addition of a new
 one. Instances of the old type are torn down; instances of the new
 type (if any) are constructed fresh. The host must register a
-reconciler for the new effect type via `kernel.register_reconciler`
+reconciler for the new effect type via `runtime.register_reconciler`
 before the reload reaches the live state.
 
 ### 13.16 Interaction with the Implementation (§14)
@@ -16278,38 +16278,38 @@ specifies the implementation model. Cross-references:
 - Effect instances (§13.19) are groupings of standard reactive
   cells (signal, stream, sink) plus host-side reconciler state.
   No new storage category per §14.4; per-instance state in the
-  reconciler is managed by the host outside the kernel's buffer.
-- The producer role per §14.7 is the kernel's reactive evaluation
-  thread. It applies host writes to the back buffer, runs publish
+  reconciler is managed by the host outside the runtime's buffer.
+- The producer role per §14.7 is the runtime's reactive evaluation
+  thread. It applies host writes to the back buffer, runs commit
   cycles (recurrent expression evaluation, derived behavior
   invocations, atomic swap). In typical deployments, the host's
   main thread plays the producer role; in other deployments, a
-  kernel-configured thread does.
+  runtime-configured thread does.
 - The consumer role per §14.7 is any thread reading published
   state via swap. Consumer threads do not invoke behaviors; they
-  read the results of past publishes.
+  read the results of past commits.
 - Behaviors invoked during reactive evaluation — both derived
   expressions and recurrent expressions — conform to the
-  ABI of §14.6: a uniform `fn(kernel: &KernelHandle, instance:
+  ABI of §14.6: a uniform `fn(runtime: &KernelHandle, instance:
   InstanceId) -> ()` signature, with stateless semantics and
   content-addressed identity (§14.6.4).
 - Host-registered reconcilers (§13.19.14) are dispatched at the
-  publish boundary via the host API (§13.14.7, §13.14.9). They
-  run on the kernel's producer thread; long-running operations
+  commit boundary via the host API (§13.14.7, §13.14.9). They
+  run on the runtime's producer thread; long-running operations
   are dispatched to host-managed worker threads with results
   written back via the host API on completion. The `suspend` and
   `resume` hooks (§13.14.7) are dispatched at the same boundary, driven
   by gate-close / gate-open transitions of an effect's enclosing subtree
-  (§13.9.7); the kernel computes effective (ancestor-inclusive)
+  (§13.9.7); the runtime computes effective (ancestor-inclusive)
   activation to decide which effects to suspend.
 - The graph specification (§15.4) carries the structural information
-  the kernel needs to construct the reactive state buffer, build
+  the runtime needs to construct the reactive state buffer, build
   dependency edges, distinguish attr cells from recurrent cells,
   enumerate stream cells and effect instances, and dispatch
   behaviors.
 - Hot reload at the source level (§13.15, including stream and
   effect reload in §13.15.5–§13.15.6) maps to the §14.9
-  mechanism: the kernel diffs behaviors and cells between old
+  mechanism: the runtime diffs behaviors and cells between old
   and new compiled output, applies the diff atomically, and
   publishes.
 
@@ -16602,7 +16602,7 @@ the same scope; the binding name has no role.
 
 ##### 13.17.6.2 Graph specification
 
-Operator instances contribute to the kernel's graph specification
+Operator instances contribute to the runtime's graph specification
 (§15.4) the same way node placements and connection placements do.
 Each instance's internal cells (recurrents, deriveds, synthesized
 cells from the operator body and from `let` bindings) are counted
@@ -16755,8 +16755,8 @@ operator body.
 **Reload-unsafe changes** are handled per §13.15.4: operator-specific
 cases (signature changes, internal cell type changes) trigger
 per-instance restart — only the affected operator instances are
-recreated, not the whole kernel. Other reload-unsafe changes
-(buffer-layout relocation per §13.15.4) require full-kernel restart.
+recreated, not the whole runtime. Other reload-unsafe changes
+(buffer-layout relocation per §13.15.4) require full-runtime restart.
 
 The reload-unsafe operator changes are:
 
@@ -16778,7 +16778,7 @@ op_b's signature matches op_a's.
 
 If a call site moves within source (e.g., reformatting that shifts
 its line/column position) but the operator, its arguments, and its
-enclosing scope remain identical, the kernel attempts to preserve
+enclosing scope remain identical, the runtime attempts to preserve
 instance identity. The reload's diff phase identifies operator
 instances by *(enclosing scope, operator name, argument bindings)*
 rather than raw line/column. A pure positional move within the same
@@ -16809,10 +16809,10 @@ operator conditional_smooth(source: Signal[f32], gate: Signal[bool], clock: Sign
 the same cycle-detection rules. A recurrent inside an operator
 acts as a delay element identical to a top-level recurrent.
 
-**With the per-publish DAG (§13.11.3):** each operator instance's
-internal cells contribute their evaluation nodes to the per-publish
-DAG. Operators do not cross publish boundaries — all internal
-evaluation happens within a single publish.
+**With the per-commit DAG (§13.11.3):** each operator instance's
+internal cells contribute their evaluation nodes to the per-commit
+DAG. Operators do not cross commit boundaries — all internal
+evaluation happens within a single commit.
 
 **With reactive transparency (§13.12.2):** operator bodies are
 *not* reactive-transparent. Reading a cell-bound parameter reads
@@ -16904,7 +16904,7 @@ those primitives cannot represent cleanly: discrete sequences of values
 arriving over time, possibly faster than consumers can process them,
 where consumers care about each event rather than the latest value.
 
-Streams are first-class reactive cells. They participate in the publish
+Streams are first-class reactive cells. They participate in the commit
 cycle (§13.10), in cell identity for hot reload (§13.15), and in the
 graph specification (§15.4). They are not values that flow through
 ordinary expressions — they are cells with read and write surfaces
@@ -17106,7 +17106,7 @@ the unit type `()`; the subscription lives for the enclosing scope.
 A single sink may receive from multiple stream-sources via multiple
 pipe-into-sink expressions (multi-producer pattern). The receiving
 sink's ring buffer is shared; events from all producers arrive in
-their publish-commit order.
+their commit order.
 
 **No standalone sink declaration.** Sinks are not declared with a
 top-level `sink` keyword. A sink exists only as the write-side
@@ -17199,7 +17199,7 @@ The full observation surface, available on every stream:
 | `last_overflow_at` | `Signal[Option[instant]]` | Timestamp of the most recent overflow event, or `none` if never |
 
 These cells are ordinary `Signal[T]` cells for all purposes —
-participating in the publish cycle, in derived dependencies, in hot
+participating in the commit cycle, in derived dependencies, in hot
 reload identity. They are not separately declared in user code; the
 compiler synthesizes them as part of the stream's storage.
 
@@ -17555,7 +17555,7 @@ operator to_stream[T, const N: usize = 1024](source: Signal[T]) -> RingStream[T,
 
 The semantics: at the moment of stream creation, the source signal's
 current value is emitted as event 0; thereafter, each commit of a new
-value by the source (per the publish cycle) appends an event. Same-
+value by the source (per the commit cycle) appends an event. Same-
 value commits do not emit (per the value-change semantics of §13.2.4.4).
 
 The output is a `RingStream[T, N]`. The capacity `N` defaults to
@@ -17654,7 +17654,7 @@ operator merge[
   a: RingStream[T, A],
   b: RingStream[T, B],
 ) -> RingStream[T, N]:
-  // interleaves events from both sources in publish-commit order;
+  // interleaves events from both sources in commit order;
   // default capacity is the sum of input capacities, ensuring no
   // overflow if both inputs fill simultaneously
 
@@ -17866,7 +17866,7 @@ expressions may reference the recurrent's self-history via
 `.previous(fallback)` and `.past(k, fallback)` (§13.2.4.3).
 
 The arm-selection rules of §13.2.11 apply uniformly: the first arm
-whose filtered trigger emits in the current publish wins.
+whose filtered trigger emits in the current commit wins.
 
 ##### 13.18.10.6 Restrictions
 
@@ -18138,7 +18138,7 @@ current head — it observes only events arriving after the reload.
 When the consumer is removed, its cursor is dropped.
 
 **Reload-unsafe stream changes** require per-instance restart or
-full-kernel restart per §13.15.4:
+full-runtime restart per §13.15.4:
 
 - Element type changes (incompatible structural change): per-
   instance restart — the affected stream and its consumers are
@@ -18192,15 +18192,15 @@ to the base stream reload rules above:
   store, or pass cursors. Cursors are implementation state of
   consuming operators; they are observable only through the
   consumer's eventual signal outputs.
-- **No mid-publish stream observation.** Within a single publish
+- **No mid-commit stream observation.** Within a single commit
   cycle, a consumer observes the set of events committed by the
   end of producer evaluation; events emitted *during* the consumer's
-  own evaluation are deferred to the next publish. This preserves
+  own evaluation are deferred to the next commit. This preserves
   the synchronous-dataflow semantics (§13.2.4.1).
-- **Streams may not be passed to `kernel.write_signal` or
-  `kernel.write_attr`.** Streams are not signal-shaped or attr-
+- **Streams may not be passed to `runtime.write_signal` or
+  `runtime.write_attr`.** Streams are not signal-shaped or attr-
   shaped cells. Host-side writes into a stream go through the
-  dedicated host API (§13.14.8 `kernel.push_stream`).
+  dedicated host API (§13.14.8 `runtime.push_stream`).
 - **`.past(n, fallback)` and `.previous(init)` are only valid
   inside the expression body of a `recurrent[N] stream` declaration**
   (§13.18.8). Use elsewhere — in plain `stream` declarations,
@@ -18383,7 +18383,7 @@ declaration consists of two record-shaped blocks:
 - **`observed:`** — cells the host writes; the program reads them.
 
 The host registers a *reconciler* keyed by the effect's type name
-(§13.19.14). On each publish, the reconciler reads the effect
+(§13.19.14). On each commit, the reconciler reads the effect
 instance's parameters and desired cells, performs whatever real-
 world operations align reality with the desired state, and writes
 the actual outcome into the observed cells. The program reads the
@@ -18637,9 +18637,9 @@ The declaration shape matches a regular `signal` declaration
 is what the program reads before the host's first write — typically
 a sentinel like `none` for `Option[T]` or `false` for `bool`.
 
-The host writes signal cells via `kernel.write_signal` against the
+The host writes signal cells via `runtime.write_signal` against the
 effect instance ID (§13.14.2 per-instance form; §13.14.9 reconciler
-protocol). Writes are dirty-tracked in the standard publish-cycle
+protocol). Writes are dirty-tracked in the standard commit-cycle
 way.
 
 **`stream` cells** — host-written event sequences. The program
@@ -18654,13 +18654,13 @@ observed:
 
 The declaration shape parallels the top-level `stream` declaration
 (§13.18.2), but with no `= source` clause — the source is the host's
-reconciler pushing events via `kernel.push_stream`. Policy and
+reconciler pushing events via `runtime.push_stream`. Policy and
 capacity work as in regular stream declarations.
 
 `recurrent[N] stream` (§13.18.8) is not valid in `observed:` blocks
 — a recurrent stream requires a reactive expression body, but
 observed-block cells have no body (the host populates them
-directly via the kernel API). Effects that need history-aware
+directly via the runtime API). Effects that need history-aware
 behavior must compute it in the host's reconciler.
 
 `repeat` (§13.5.4) — and likewise the `when` / `given` selection blocks
@@ -18693,11 +18693,11 @@ error: cannot assign to cell `response` on effect instance
 ```
 
 **Host-side semantics.** The host writes observed signal cells via
-`kernel.write_signal` (§13.14.2) and pushes into observed stream
-cells via `kernel.push_stream` (§13.14.8), keyed by effect instance
+`runtime.write_signal` (§13.14.2) and pushes into observed stream
+cells via `runtime.push_stream` (§13.14.8), keyed by effect instance
 ID and cell name. Writes are dirty-tracked in the standard
-publish-cycle way; downstream deriveds in program code re-evaluate
-on the next publish.
+commit-cycle way; downstream deriveds in program code re-evaluate
+on the next commit.
 
 #### 13.19.6 Reserved keywords
 
@@ -18786,7 +18786,7 @@ effects:
 Piping a `Stream[T]` into a `Sink[T]` establishes a forwarding
 subscription. The sink is accessed on the effect instance by name
 (`ws.outbound`). Multiple pipes may target the same sink
-(multi-producer pattern); their events arrive in publish-commit
+(multi-producer pattern); their events arrive in commit
 order.
 
 **Reading a stream:**
@@ -18917,7 +18917,7 @@ declared name and type within the effect's body.
   initialized fresh per their declared initial value (signals) or
   empty (streams, sinks).
 - Changes to `desired:` `derived` cell expressions — the cell
-  re-evaluates on the next publish with new logic.
+  re-evaluates on the next commit with new logic.
 
 **Reload-unsafe changes** (per-instance restart per §13.15.4):
 
@@ -18935,7 +18935,7 @@ When per-instance restart fires, the host's reconciler receives a
 teardown call for the affected instances (releasing any host-side
 resources tied to those instances), and new instances are
 constructed under the new declaration. Other effect instances and
-the rest of the kernel continue without restart.
+the rest of the runtime continue without restart.
 
 **Reload of a suspended instance.** An effect that is currently
 suspended (its enclosing subtree gated off — §13.19.12) reloads by its
@@ -18946,7 +18946,7 @@ suspended (no spurious `resume`), and a later gate-open delivers
 forces per-instance restart delivers `teardown` to the suspended
 instance (subsuming the already-performed release per §13.14.9) and
 constructs a fresh instance, which begins in whatever activation state
-its gate evaluates to on the next publish.
+its gate evaluates to on the next commit.
 
 **Call-site changes.** If a call site changes which effect is
 invoked (`source |> fetch` becomes `source |> cached_fetch`), the
@@ -18992,7 +18992,7 @@ alive. The host remains ready to re-establish the resource if the
 desired changes back. Only scope death causes instance teardown.
 
 **Gating maps onto the same distinction.** When an effect's enclosing
-subtree is gated off (§13.9.7), the kernel delivers the reconciler's
+subtree is gated off (§13.9.7), the runtime delivers the reconciler's
 `suspend` hook (§13.14.7, §13.14.9): the resource is released but the
 instance state is preserved, exactly the "resource down, instance alive"
 case above. Reopening the gate delivers `resume`, re-establishing the
@@ -19004,7 +19004,7 @@ suspends every contained effect, regardless of the effects' own gates
 **Only effects need this.** Pure nodes and connections hold no
 outside-world state; freezing them (Model B) is complete and they have
 no `suspend`/`resume`. Effects are the sole construct the suspend/resume
-protocol concerns. The kernel guarantees the `suspend` signal on
+protocol concerns. The runtime guarantees the `suspend` signal on
 gate-close and `resume` on gate-open; the reconciler — the domain —
 decides what releasing and re-acquiring actually mean. There is no
 source-level activation value the author must thread through `desired`:
@@ -19079,40 +19079,40 @@ mirrors the effect's declaration:
 - **Read access** to the effect's parameter values and `desired:`
   cell values for a given instance.
 - **Write access** to the effect's `observed:` cells via the host
-  API (§13.14.2 `kernel.write_signal` for Signal cells, §13.14.8
-  `kernel.push_stream` for Stream cells).
+  API (§13.14.2 `runtime.write_signal` for Signal cells, §13.14.8
+  `runtime.push_stream` for Stream cells).
 - **Lifecycle hooks**: instance creation (when the effect appears
   in the live graph), update (when parameters or desired cells
   change), and teardown (when the instance leaves scope).
 
-The kernel invokes the reconciler at well-defined points in the
-publish cycle:
+The runtime invokes the reconciler at well-defined points in the
+commit cycle:
 
-1. After publish-and-swap, the kernel enumerates effect instances
-   whose parameters or desired cells became dirty during the publish.
-2. For each such instance, the kernel invokes the registered
+1. After commit, the runtime enumerates effect instances
+   whose parameters or desired cells became dirty during the commit.
+2. For each such instance, the runtime invokes the registered
    reconciler with the instance ID. The reconciler reads the new
    desired state and reconciles.
 3. Reconciler writes into observed cells via the host API are
    dirty-tracked in the standard way; they take effect on the next
-   publish.
+   commit.
 
 **Reconciler idempotence.** Reconciler implementations are expected
 to be idempotent in the reconciliation sense: re-applying the same
 desired state produces the same alignment (no double-charging
 side effects, no leaked resources, no duplicated requests). This
-property is what allows the kernel to invoke the reconciler freely
+property is what allows the runtime to invoke the reconciler freely
 without worrying about whether a previous invocation completed.
 
 **Unregistered effect types.** If an effect type appears in the
-graph specification with no registered reconciler, the kernel emits
+graph specification with no registered reconciler, the runtime emits
 a diagnostic at startup and refuses to enter the live state. Effects
-must be registered before the kernel becomes live.
+must be registered before the runtime becomes live.
 
 **Reconciler error reporting.** Reconciler errors (network failure,
 resource exhaustion, etc.) are reported to the program through the
 effect's `observed:` cells (typically a `signal error: Option[E] =
-none` cell). The reconciler does not panic the kernel;
+none` cell). The reconciler does not panic the runtime;
 reconciler-internal errors are domain errors expressed through the
 value track (§8).
 
@@ -19193,11 +19193,11 @@ error: cannot assign to cell `response` on effect instance
 
 ```
 error: effect type `fetch` has no registered reconciler
-  --> at kernel startup
+  --> at runtime startup
   hint: every effect type appearing in the graph specification must
         have a reconciler registered via
-        `kernel.register_reconciler("fetch", ...)` (§13.14.7) before
-        the kernel enters the live state. Generic effects require
+        `runtime.register_reconciler("fetch", ...)` (§13.14.7) before
+        the runtime enters the live state. Generic effects require
         one registration per concrete instantiation.
 ```
 
@@ -19310,7 +19310,7 @@ error: effects must be instantiated in the `effects:` clause
 
 This section specifies the contract between a Ductus program and its
 runtime environment: how Ductus source is compiled, how the resulting
-artifacts interact with the host kernel, and what guarantees the
+artifacts interact with the host runtime, and what guarantees the
 implementation provides.
 
 The contents of this section are *normative for implementations* of
@@ -19324,7 +19324,7 @@ that programs run correctly across implementations.
 A conforming Ductus implementation provides two compilation modes:
 
 **Interpreter mode** — Ductus source compiles to a compact bytecode
-representation, executed by an interpreter embedded in the kernel.
+representation, executed by an interpreter embedded in the runtime.
 Used for development workflows: fast iteration, hot reload, live
 coding.
 
@@ -19365,7 +19365,7 @@ backends.
 #### 14.1.2 Interpreter mode
 
 The bytecode emitter lowers the typed IR to a stack-based bytecode.
-The kernel includes a bytecode interpreter that executes this directly.
+The runtime includes a bytecode interpreter that executes this directly.
 No native compilation step occurs.
 
 Characteristics:
@@ -19374,7 +19374,7 @@ Characteristics:
 - Performance lower than native (a typical interpretation overhead is
   5–20× slower in tight loops; acceptable for development).
 - Supports hot reload (§14.9): individual behaviors can be replaced
-  in a running kernel without restarting.
+  in a running runtime without restarting.
 - The bytecode format is implementation-internal and not stable across
   Ductus versions. It is not a distribution format.
 
@@ -19413,11 +19413,11 @@ required.
 #### 14.2.1 Operations
 
 - **`ductus run <file>`** — invokes interpreter mode. Compiles to
-  bytecode and executes immediately. The kernel runs to program
+  bytecode and executes immediately. The runtime runs to program
   completion or until interrupted.
 
 - **`ductus watch <file>`** — interpreter mode with file watching
-  and hot reload. The kernel runs continuously; saved changes to the
+  and hot reload. The runtime runs continuously; saved changes to the
   source trigger recompilation and reload of affected behaviors per
   §14.9.
 
@@ -19442,9 +19442,9 @@ The CLI ships as a single binary that bundles or downloads on first
 use:
 
 - The Ductus frontend.
-- The bytecode interpreter (part of the kernel).
+- The bytecode interpreter (part of the runtime).
 - A `rustc` toolchain for native-mode builds.
-- The Ductus stdlib and reactive kernel.
+- The Ductus stdlib and reactive runtime.
 
 Users do not install `rustc` or `cargo` separately. The CLI does not
 expose `cargo` directly; all Rust-toolchain invocations are internal.
@@ -19463,7 +19463,7 @@ implementation-specific.
 
 ### 14.3 The Reactive State Buffer
 
-The kernel maintains a contiguous memory region holding all reactive
+The runtime maintains a contiguous memory region holding all reactive
 cells of the running program. This region is the **reactive state
 buffer**.
 
@@ -19508,7 +19508,7 @@ into a single cell as an optimization (e.g., three f32s into one
 8-byte slot with the fourth slot unused, or four `bool` fields into
 the low bits of one cell). Such packing is an implementation
 optimization and must not be observable from Ductus source — every
-cell read and write through the kernel API must produce results
+cell read and write through the runtime API must produce results
 identical to the canonical per-field layout.
 
 Records whose fields total more than 8 bytes each (e.g., fields of
@@ -19537,7 +19537,7 @@ Dynamic-size cell types (`Vec[T]`, `SmallVec[T, N]`, `RingBuf[T, N]`,
 cell slots. Their storage uses **extensible pools** alongside the
 reactive state buffer.
 
-For each dynamic-size type used in the program, the kernel allocates
+For each dynamic-size type used in the program, the runtime allocates
 a per-type pool. The reactive cell holds a fixed-size handle (one
 `AtomicI64` slot, encoding a pool index plus version metadata); the
 actual variable-size value lives in the pool.
@@ -19547,7 +19547,7 @@ actual variable-size value lives in the pool.
 - Each pool is an arena of slots. Each slot holds one value of the
   pool's type, plus refcount metadata sufficient for triple-buffer
   rotation.
-- Producer writes: when the kernel commits a new dynamic-size value
+- Producer writes: when the runtime commits a new dynamic-size value
   for a cell, it allocates a fresh pool slot, writes the value, and
   publishes the new handle into the back buffer.
 - Consumer reads: dereference the handle through the pool to obtain
@@ -19573,7 +19573,7 @@ work is bounded by the value's size.
 
 **Initial allocation:**
 
-Pool sizes are chosen at kernel construction based on graph specification
+Pool sizes are chosen at runtime construction based on graph specification
 (static count of cells per type) plus a configurable headroom for
 versioning. Pools may grow at runtime if the configured headroom is
 exceeded; growth is amortized but not guaranteed wait-free. Hosts
@@ -19596,7 +19596,7 @@ capacity `N` allocates a ring buffer of `N * sizeof(T)` bytes. All
 stream instances sharing the same `(T, N)` combination across the
 program draw from a per-`(T, N)` pool:
 
-- The kernel enumerates stream declarations at compile time, groups
+- The runtime enumerates stream declarations at compile time, groups
   them by `(T, N)`, and computes the per-pool size as the number of
   instances of that combination.
 - Each pool slot holds one complete ring buffer. The stream's
@@ -19612,11 +19612,11 @@ program draw from a per-`(T, N)` pool:
 Unlike persistent data structures, ring buffer slot arrays are not
 shared across triple-buffer copies. The synchronization protocol
 relies on the head pointer (which IS triple-buffered): producers
-write to slot positions, then advance the head pointer at publish
+write to slot positions, then advance the head pointer at commit
 time; consumers reading via swap observe events only up to the
-head pointer committed by the most recent publish. Producer writes
+head pointer committed by the most recent commit. Producer writes
 to slot positions that haven't reached the committed head are
-invisible to consumers until the next publish. Overwrites of
+invisible to consumers until the next commit. Overwrites of
 previously-committed slots (under `ring` policy) happen only at
 positions past any cursor that's caught up; lagging cursors that
 were pointing at overwritten positions jump forward per §13.18.12.
@@ -19663,7 +19663,7 @@ Strings are variable-length and refcount-shared per §11.6. Their
 storage requirements do not fit the fixed-size cell model of the
 reactive buffer.
 
-The kernel maintains a separate **string pool** that stores all string
+The runtime maintains a separate **string pool** that stores all string
 content. The pool is logically a refcounted-shared, append-mostly
 arena: each unique string is stored once and shared via reference
 counts.
@@ -19706,13 +19706,13 @@ the producer role (§14.7); the consumer role only reads via handles,
 which is wait-free. The role-to-thread mapping is implementation-defined:
 in typical native deployments the host's main thread plays the producer
 role and one or more application threads play the consumer role; other
-deployments may assign a kernel-configured thread to the producer role.
+deployments may assign a runtime-configured thread to the producer role.
 The mechanism (§14.3.3, §14.7) does not depend on the mapping choice.
 
 ### 14.6 The Behavior ABI
 
 Each reactive behavior — a `derived` expression body or a `recurrent`
-expression body — is exposed to the kernel via a uniform **behavior ABI**.
+expression body — is exposed to the runtime via a uniform **behavior ABI**.
 Functions called from reactive bodies are reactive-transparent per
 §13.12.2: they compile to ordinary Rust functions (per §15.5) reached
 transitively from the registered behaviors, not as separately-registered
@@ -19723,37 +19723,37 @@ behaviors of their own.
 Every behavior has the same calling convention:
 
 ```
-fn behavior(kernel: &KernelHandle, instance: InstanceId) -> ()
+fn behavior(runtime: &KernelHandle, instance: InstanceId) -> ()
 ```
 
-- `kernel`: a borrowed handle to the kernel, used for reading and
-  writing reactive cells, allocating strings, and other kernel
+- `runtime`: a borrowed handle to the runtime, used for reading and
+  writing reactive cells, allocating strings, and other runtime
   services.
 - `instance`: an opaque identifier for the specific node or connection
   instance the behavior is being invoked for (relevant for `attr` and
   `derived` declarations on a particular instance).
 
-The behavior reads its inputs from kernel cells via the handle,
+The behavior reads its inputs from runtime cells via the handle,
 performs its computation, and writes its outputs (if any) back to
-kernel cells. Return value is unit; all effects are side effects
-through the kernel handle.
+runtime cells. Return value is unit; all effects are side effects
+through the runtime handle.
 
-This uniform shape means the kernel maintains a single function
+This uniform shape means the runtime maintains a single function
 pointer table: `Vec<fn(&KernelHandle, u64) -> ()>` (in the
 reference Rust implementation; the function pointer type uses
 `&KernelHandle` and relies on Rust's higher-rank trait bound
-semantics for the lifetime parameter). The kernel invokes
+semantics for the lifetime parameter). The runtime invokes
 behaviors by index into this table; no per-behavior dispatch logic
 is needed.
 
 `InstanceId` is a transparent newtype over `u64` defined in the
-kernel; the function-pointer table uses `u64` directly since
+runtime; the function-pointer table uses `u64` directly since
 `fn`-pointer types in Rust do not preserve newtype identity at the
 ABI level. The two are interconvertible at zero cost.
 
 #### 14.6.2 Statelessness
 
-Behaviors are **stateless** at the kernel level. All state lives in
+Behaviors are **stateless** at the runtime level. All state lives in
 reactive cells (attrs, signals, derived results). Behaviors are pure
 transformations: read inputs from cells, compute, write outputs.
 
@@ -19773,7 +19773,7 @@ trap-track failures (arithmetic overflow under default operators,
 division by zero, out-of-range indices, explicit `panic`) abort the
 process; recoverable conditions are expressed as value-track
 `Option`/`Result` values flowing through the type system. The
-kernel does not isolate behavior traps — there is no `catch_unwind`
+runtime does not isolate behavior traps — there is no `catch_unwind`
 boundary, no errored-cell sentinel, no continuation past a trap.
 See §13.13.1 for full rules and worked examples; the same semantics
 apply uniformly to all behaviors invoked by the producer.
@@ -19798,25 +19798,25 @@ is not supported.
 
 Each behavior also carries a debug name: the qualified source path
 (`module::path::clip_name::derived_name`). Names appear in
-diagnostics, profiles, and error messages. The kernel resolves
+diagnostics, profiles, and error messages. The runtime resolves
 behaviors by ID; debug names appear only in diagnostic output.
 
 #### 14.6.5 Thread invocation
 
-Behaviors are invoked by the kernel; the specific thread that
-invokes each behavior is the producer-role thread, which the kernel
+Behaviors are invoked by the runtime; the specific thread that
+invokes each behavior is the producer-role thread, which the runtime
 maps to a specific OS thread at startup (implementation-defined per
 §14.7.1). Ductus source does not specify thread roles.
 
 Ductus source code does not encounter cross-thread concerns:
 behaviors are thread-safe by construction (no shared mutable state
-outside reactive cells, which are coordinated by the kernel per
+outside reactive cells, which are coordinated by the runtime per
 §14.3.3).
 
 ### 14.7 Producer and Consumer Roles
 
 The SPSC producer/consumer thread roles are a feature of the reference
-kernel, not a language requirement. They are specified in
+runtime, not a language requirement. They are specified in
 `backends/triple-buffered-kernel.md`. The abstract contract these roles
 realize is the runtime interface (§13.14) and its concurrency
 capabilities (§13.14.11).
@@ -19869,7 +19869,7 @@ inconsistent state.
 
 #### 14.8.5 Drop on reactive cells
 
-The kernel manages drop for reactive cells. When a node or connection
+The runtime manages drop for reactive cells. When a node or connection
 instance is removed (removal mechanics are specified in §13.15), its
 attr and derived cells are dropped per their type's `Drop` impl.
 Initial declarations (signals declared at program startup) live for the
@@ -19885,7 +19885,7 @@ semantics it realizes are §14.8.1–§14.8.5.
 ### 14.9 Hot Reload
 
 Interpreter mode (§14.1.2) supports hot reload of individual
-behaviors in a running kernel.
+behaviors in a running runtime.
 
 #### 14.9.1 Granularity
 
@@ -19899,7 +19899,7 @@ file changes:
    whose IDs are present only in the old program are *removed*;
    behaviors present only in the new program are *added*; behaviors
    present in both are *carried over* unchanged.
-   3b. **Cell identity (§13.15.2).** The kernel computes the cell-diff
+   3b. **Cell identity (§13.15.2).** The runtime computes the cell-diff
    by fully-qualified declaration path. Cells with matching path and
    type carry forward (preserving values); new cells are added;
    removed cells are dropped per §14.8.
@@ -19961,12 +19961,12 @@ Changes safe to hot reload:
 Changes unsafe for in-place hot reload fall into two classes per
 §13.15.4:
 
-- **Full-kernel restart** is required for changes to the reactive
+- **Full-runtime restart** is required for changes to the reactive
   state buffer layout that would require relocating live cells.
 - **Per-instance restart** is sufficient for operator-specific
   cases (operator signature changes, internal cell type changes
   per §13.17.10); only the affected operator instances are
-  recreated, not the whole kernel.
+  recreated, not the whole runtime.
 
 All other changes — including cell removal (which the new source's
 compile gate verifies is unreferenced), cell type changes (handled
@@ -19975,31 +19975,31 @@ via remove + add per §13.15.2), and connection topology changes
 no restart.
 
 The implementation diagnoses unsafe changes at reload time and
-either rejects them (kernel keeps running old version) or applies
-the appropriate restart — full-kernel or per-instance per §13.15.4
+either rejects them (runtime keeps running old version) or applies
+the appropriate restart — full-runtime or per-instance per §13.15.4
 — cleanly. The choice is implementation-defined.
 
 #### 14.9.4 Reload failure
 
 If the new source fails to compile (parse error, type error,
-ownership error), the reload is abandoned. The kernel keeps running
+ownership error), the reload is abandoned. The runtime keeps running
 the previous version. The CLI surfaces the compilation error to the
 user.
 
-Hot reload never produces a kernel in an inconsistent state. Either
+Hot reload never produces a runtime in an inconsistent state. Either
 the old version continues running, or the new version is fully
 applied, never a mix.
 
 ### 14.10 Versioning
 
 Ductus's source format, graph specification format, behavior ABI, and
-kernel build are versioned together. Each Ductus release is a
+runtime build are versioned together. Each Ductus release is a
 matched set:
 
 - Ductus source format version.
 - Graph specification schema version.
 - Behavior ABI version.
-- Kernel binary version.
+- Runtime binary version.
 
 Cross-version mixing is not supported. A Ductus program produced
 by version X.Y compiles with and runs against the same X.Y
@@ -20020,7 +20020,7 @@ carried entirely by the toolchain and the graph-spec header.
 ## 15. Compilation Model
 
 Ductus compilation transforms source files into executable form plus
-the build-time artifacts the kernel consumes at startup. This section
+the build-time artifacts the runtime consumes at startup. This section
 specifies the semantic obligations of the compiler (§15.2), the
 artifacts it produces (§15.3), the normative format of the reactive
 graph specification (§15.4), the Ductus-to-Rust lowering rules
@@ -20028,7 +20028,7 @@ graph specification (§15.4), the Ductus-to-Rust lowering rules
 reload depends on (§15.7), and what implementations must satisfy to
 be conformant (§15.8).
 
-Runtime concerns — cells, kernel mechanics, threading, drop, hot-
+Runtime concerns — cells, runtime mechanics, threading, drop, hot-
 reload application — are the subject of §14.
 
 ### 15.1 Overview
@@ -20039,7 +20039,7 @@ classes:
 - **Executable code** — bytecode (interpreter mode, §14.1.2) or Rust
   source compiled by `rustc` (native mode, §14.1.3).
 - **The reactive graph specification** — a build-time description of
-  the program's reactive shape that the kernel consumes at startup
+  the program's reactive shape that the runtime consumes at startup
   and that hot reload diffs against (§15.4, §15.7).
 
 Both artifacts share the same frontend (§14.1.1), which performs
@@ -20106,7 +20106,7 @@ A successful compilation produces two artifact classes:
   and §15.6.
 - **Reactive graph specification** — the normative build-time
   description of the program's reactive shape, specified in §15.4.
-  The specification carries all build-time metadata the kernel
+  The specification carries all build-time metadata the runtime
   needs (behavior table, string pool seed, schema and format
   versions); see §15.4.1 for the complete field list.
 
@@ -20116,12 +20116,12 @@ executable-code form differs.
 #### 15.3.1 Embedding and packaging
 
 In **interpreter mode** (§14.1.2), both artifacts are held in memory
-by the running kernel. Hot reload (§14.9) replaces them in place.
+by the running runtime. Hot reload (§14.9) replaces them in place.
 
 In **native mode** (§14.1.3), both artifacts are embedded in the
 compiled binary, typically as data sections produced by Rust's
 `include_bytes!` or analogous mechanism. At program startup the
-kernel deserializes the graph specification and registers the
+runtime deserializes the graph specification and registers the
 behavior table.
 
 ### 15.4 The Ductus IR
@@ -20627,10 +20627,10 @@ integration are implementation concerns documented in §14.2.
 Hot reload (§14.9) operates by comparing the graph specifications
 (§15.4) of two builds of the same program: the currently running
 build (`old_spec`) and the newly compiled build (`new_spec`). The
-diff algorithm computes the changes the kernel applies.
+diff algorithm computes the changes the runtime applies.
 
 This section specifies the diff algorithm and its result format. The
-kernel's mechanics for applying the diff are §14.9; the source-level
+runtime's mechanics for applying the diff are §14.9; the source-level
 identity rules the diff implements are §13.15.
 
 #### 15.7.1 Diff algorithm
@@ -20649,17 +20649,17 @@ three categories:
 - **Reload-safe** — applied in place per §14.9 (hot reload).
 - **Per-instance restart required** — operator-specific reinit per
   §13.17.10.
-- **Full-kernel restart required** — buffer-layout relocation per
+- **Full-runtime restart required** — buffer-layout relocation per
   §13.15.4.
 
-The classification is computed from the diff alone; the kernel does
+The classification is computed from the diff alone; the runtime does
 not need to re-parse source.
 
 #### 15.7.3 Diff result format
 
 The diff produces a **reload plan**: a sequenced list of (cell
 add/remove/change, connection add/remove/change, behavior
-add/remove) operations the kernel applies in topological order.
+add/remove) operations the runtime applies in topological order.
 
 The plan format is implementation-defined but must preserve the
 ordering constraints of §14.8 (drop reverse-declaration order;
@@ -20667,7 +20667,7 @@ connections before endpoint instances; etc.) and §14.9.
 
 ### 15.8 Conformance
 
-A Ductus implementation consists of a **compiler** and a **kernel**
+A Ductus implementation consists of a **compiler** and a **runtime**
 that operate on the same graph specification format. An
 implementation is conformant if both components meet their
 respective criteria.
@@ -20685,12 +20685,12 @@ A conformant compiler:
    Its text form is normative; any serialization is
    implementation-defined.
 4. Produces executable code that, when run against a conformant
-   kernel with the produced graph specification, exhibits the
+   runtime with the produced graph specification, exhibits the
    observable behavior defined by §§1–13.
 
-#### 15.8.2 Kernel conformance
+#### 15.8.2 Runtime conformance
 
-A conformant kernel:
+A conformant runtime:
 
 1. Accepts any IR conforming to the abstract data model of §15.4.1,
    in whatever serialization the implementations share (none is
@@ -20705,7 +20705,7 @@ A conformant kernel:
 Interop is defined against the IR's text form (§15.4); where two
 implementations exchange a serialization, it must load at the same
 format version. Cross-implementation mixing (compiler from
-implementation A, kernel from implementation B) is permitted at the
+implementation A, runtime from implementation B) is permitted at the
 same schema and format version per §15.4.2.
 
 #### 15.8.4 Conformance testing
