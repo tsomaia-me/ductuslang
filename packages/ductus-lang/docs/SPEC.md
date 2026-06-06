@@ -15592,22 +15592,49 @@ free function or function-body trap. Authors expecting graceful
 handling must use value-track errors; the language does not
 provide a hidden recovery mechanism.
 
-### 13.14 Host API
+### 13.14 The Runtime Interface
 
-The kernel exposes an API for host code (the application embedding
-the kernel) to drive and observe the reactive graph. The shape of
-the API is normative; the specific syntax in user-facing code
-depends on the host language (Rust, etc.) and is implementation-
-defined.
+A *runtime* exposes this interface for host code (the application embedding
+it) to drive and observe the reactive graph. It is the **contract every
+backend must satisfy** — the abstract counterpart to the IR (§15.4): the IR
+is what the compiler emits; this interface is how a runtime is driven. The
+reference triple-buffered kernel (§14.3) is one runtime that implements it;
+others may differ entirely in mechanism. The shape of the interface is
+normative; the host-language binding (Rust, etc.) is implementation-defined.
+
+**Conceptual model.** A runtime is a transactional store of reactive cells
+with snapshot isolation: deriveds are materialized views; a `commit`
+advances the version; observers read a consistent snapshot; side effects
+are reconciled at the commit boundary.
+
+**Core verbs.** `write` / `push` stage external input; `commit` settles all
+dependents glitch-free and publishes a consistent snapshot;
+`acquire_snapshot` + `read` observe it; `transaction` groups writes
+atomically; `register_reconciler` installs effect hooks; `teardown` shuts
+the graph down (§13.14.10). The runtime calls **behaviors** (§15.4.5) and
+**reconciler hooks** back into host code.
+
+**Capabilities (negotiated, not assumed).** A backend advertises optional
+capabilities beyond the mandatory core — cross-thread observation, hot
+reload (`reload`, §13.15), persistence, real-time bounds — and the
+observability/cadence cell hints (§15.4.1.2–.3) bias how it stores cells. A
+host queries what a runtime supports rather than assuming the union
+(§13.14.11).
+
+The subsection terminology below (back buffer, atomic swap, producer
+thread, triple buffer) describes the **reference kernel's** realization; an
+alternative runtime need only honor the observable contract — the verb
+names and their guarantees are the abstract form.
 
 #### 13.14.1 Lifecycle
 
-The kernel's lifecycle proceeds in phases:
+The runtime's lifecycle proceeds in phases:
 
 **Startup:**
 
-1. Load the graph specification (per §15.4).
-2. Allocate the reactive state buffer (per §14.3).
+1. Load the IR (per §15.4).
+2. Allocate cell storage (the reference kernel: the reactive state buffer,
+   §14.3).
 3. Initialize all reactive cells (signals, attrs, recurrents,
    deriveds, streams) and evaluate all `when` predicates in
    topological order over their init-time read dependencies, per
@@ -15623,87 +15650,86 @@ The kernel's lifecycle proceeds in phases:
    alongside type-level `when:` predicates in the same topological
    pass; placement-level overrides type-level per §13.9.5 with the
    placement's predicate evaluating in its placement scope rather
-   than the type's own scope. The kernel does not separate this
+   than the type's own scope. The runtime does not separate this
    work into per-declaration-kind phases; the topological sort
    determines the order.
-4. Perform the first publish (atomic current-pointer swap per
-   §14.3.3.1). Consumers' subsequent swaps return real data.
+4. Perform the first commit, publishing the initial snapshot (the
+   reference kernel: an atomic current-pointer swap, §14.3.3.1).
+   Observers' subsequent `acquire_snapshot` calls return real data.
 
-The kernel is "constructing" through steps 1–3; "live" after step
-4 completes. Consumer reads via swap before step 4 return a
-sentinel (or block, per implementation choice).
+The runtime is "constructing" through steps 1–3; "live" after step
+4 completes. Observer reads before step 4 return a sentinel (or block,
+per implementation choice).
 
 **Steady-state operation:**
 
-- Host calls `kernel.write_signal(...)`, `kernel.write_attr(...)`,
-  or `kernel.transaction(...)` to update reactive state. Writes
-  mark dirty bits; no evaluation runs.
-- Host calls `kernel.publish()` to evaluate dirty cells, advance
-  recurrent cells per their expressions, and atomically
-  swap the back buffer for consumer visibility.
-- Consumer threads call `kernel.swap(...)` to obtain the latest
-  published state and read cell values.
+- Host calls `runtime.write_signal(...)`, `runtime.write_attr(...)`,
+  or `runtime.transaction(...)` to stage reactive state. Writes mark
+  dirty; no evaluation runs.
+- Host calls `runtime.commit()` to settle dirty cells, advance
+  recurrents, run reconcilers, and publish a new snapshot for observers.
+- Observers call `runtime.acquire_snapshot(...)` to obtain the latest
+  committed state and read cell values.
 
-**Shutdown:**
+**Shutdown** (`runtime.teardown()`, §13.14.10):
 
 1. Stop accepting new signal/attr writes.
-2. Drain any in-flight publish (the current publish, if running,
-   completes).
+2. Drain any in-flight commit (the current commit, if running, completes).
 3. Drop reactive cells in reverse-of-construction order: connections
    drop before their endpoint instances; within each instance,
    attrs, recurrents, and deriveds drop in reverse declaration
-   order (per §14.8 Drop rules).
+   order (per §14.8 Drop rules); each live effect receives reconciler
+   `teardown`.
 4. Drop top-level signals.
 5. Drop string pool entries (per §14.5).
-6. Deallocate the reactive state buffer.
-7. Kernel is terminated. Subsequent consumer swaps return a sentinel.
+6. Release cell storage.
+7. The runtime is terminated. Subsequent observer reads return a sentinel.
 
-#### 13.14.2 `kernel.write_signal`
+#### 13.14.2 `runtime.write_signal`
 
 A single overloaded call, dispatched by arity:
 
 ```
-kernel.write_signal(signal_id, value)                      // module-level signal
-kernel.write_signal(instance_id, signal_id, value)         // per-instance signal
+runtime.write_signal(signal_id, value)                      // module-level signal
+runtime.write_signal(instance_id, signal_id, value)         // per-instance signal
 ```
 
-Both arities write a new value to the named signal's cell. The
-calls are synchronous and inexpensive: they update the back
-buffer's cell and set the dirty bit for dependents. No evaluation
-runs at this point.
+Both arities stage a new value for the named signal's cell. The calls are
+synchronous and inexpensive: they record the pending value and mark
+dependents dirty. No evaluation runs at this point — that happens at the
+next `commit` (§13.14.4). (The reference kernel records the value in the
+back buffer.)
 
-**Module-level form** — `kernel.write_signal(signal_id, value)`:
+**Module-level form** — `runtime.write_signal(signal_id, value)`:
 writes to a top-level signal. The `signal_id` identifies a
 module-scope signal declared per §13.2.1. One cell exists for the
 entire program.
 
 **Per-instance form** —
-`kernel.write_signal(instance_id, signal_id, value)`:
+`runtime.write_signal(instance_id, signal_id, value)`:
 writes to a node-level or connection-level signal on a specific
 instance. The `instance_id` identifies the instance (assigned at
 compile time per placement); `signal_id` identifies the signal on
 that instance's type. Each placement creates its own cell; the
 write targets one specific cell.
 
-Both arities must be called from the producer thread (the kernel's
-designated thread for write/evaluation/publish operations; see
-§14.7). Other threads write indirectly by enqueueing requests for
-the producer thread to apply — that's a host-application concern,
-not a kernel concern.
+Both arities must be called from the runtime's driving context (the single
+context permitted to write/evaluate/commit; the reference kernel maps this
+to a producer thread, §14.7). Other threads write indirectly by enqueueing
+requests for that context to apply — a host-application concern.
 
-Signal IDs and instance IDs are obtained at compile time from the
-graph specification (each signal and each placement has a stable ID
-assigned during compilation, per §15.4).
+Signal IDs and instance IDs are obtained at compile time from the IR (each
+signal and each placement has a stable id per §15.4.1.1).
 
-#### 13.14.3 `kernel.write_attr`
+#### 13.14.3 `runtime.write_attr`
 
 ```
-kernel.write_attr(instance_id, attr_id, value)
+runtime.write_attr(instance_id, attr_id, value)
 ```
 
-Writes a new value to the cell of a specific instance's attr.
-Otherwise behaves identically to the per-instance form of `kernel.write_signal`:
-synchronous, back-buffer-only, dirty-bit propagation, no evaluation.
+Stages a new value for a specific instance's attr cell. Otherwise behaves
+identically to the per-instance form of `runtime.write_signal`: synchronous,
+staged-only, dirty propagation, no evaluation.
 
 `instance_id` identifies the instance (assigned at compile time per
 placement); `attr_id` identifies the attr on that instance's type.
@@ -15712,36 +15738,33 @@ The same call applies to attrs declared on node instances or
 connection instances — both kinds of instance live in the same ID
 space.
 
-#### 13.14.4 `kernel.publish`
+#### 13.14.4 `runtime.commit`
 
 ```
-kernel.publish()
+runtime.commit()
 ```
 
-Performs the complete publish operation specified in §13.10.2:
-evaluates dirty deriveds and recurrent expressions in
-topological order, commits recurrent advancements, and atomically
-swaps the back buffer pointer (§14.3.3.1) so consumers see the new
-state.
+Performs the complete commit operation specified in §13.10.2: settles all
+dirty deriveds and recurrent expressions glitch-free in topological order,
+advances recurrents, fires `suspend`/`resume` for effects whose effective
+activation changed, and publishes a new consistent snapshot for observers.
+This is the sole point at which staged writes become observable.
 
-Synchronous; runs on the producer thread; blocks until the publish
-completes. Cost is bounded by the size of the dirty set
-(deriveds and recurrents with fired triggers) plus the constant
-cost of the atomic swap.
+Synchronous; runs on the driving context; returns when the commit
+completes. Cost is bounded by the dirty set (deriveds and recurrents with
+fired triggers) plus the constant cost of publishing the snapshot.
+Observers see the new state on their next `acquire_snapshot`. A commit with
+no dirty cells is idempotent — a fresh snapshot is published but its values
+are identical. (The reference kernel publishes via an atomic back-buffer
+swap, §14.3.3.1.)
 
-Consumer threads see the new state on their next swap. Calling
-publish with no dirty cells is idempotent — the buffer swap still
-occurs but consumers observe identical state.
+The host chooses the commit cadence per its domain — per audio block, per
+frame, per event; the runtime imposes none.
 
-The host chooses the publish cadence per its domain: audio hosts
-may publish per audio block; UI hosts may publish per frame;
-event-driven hosts may publish per event. The kernel imposes no
-cadence.
-
-#### 13.14.5 `kernel.transaction`
+#### 13.14.5 `runtime.transaction`
 
 ```
-kernel.transaction(|tx| {
+runtime.transaction(|tx| {
   tx.write_signal(a_id, new_a);
   tx.write_signal(b_id, new_b);
 })
@@ -15749,45 +15772,39 @@ kernel.transaction(|tx| {
 
 Provides atomic grouping of writes.
 
-The transaction's closure executes synchronously. Writes accumulate
-in the back buffer and commit atomically at closure completion. The
-full semantic rules for atomicity, panic-on-abort, nesting flattening,
-and `tx.abort()` rollback are specified in §13.10.4; the API surface
-here is the syntactic invocation form. Transactions provide
-*atomicity of grouped writes*; dirty cells remain dirty until the
-next `kernel.publish()`, which performs evaluation and consumer
-visibility.
+The transaction's closure executes synchronously; its writes stage
+atomically at closure completion. The full rules for atomicity,
+panic-on-abort, nesting flattening, and `tx.abort()` rollback are
+specified in §13.10.4; this is the invocation form. Transactions give
+*atomicity of grouped writes*; the staged cells remain dirty until the next
+`runtime.commit()`, which settles and publishes them.
 
-#### 13.14.6 `kernel.swap`
+#### 13.14.6 `runtime.acquire_snapshot`
 
 ```
-kernel.swap() -> BufferView
+runtime.acquire_snapshot() -> Snapshot
 ```
 
-Called by a consumer thread to obtain a view of the latest
-published state. The call is wait-free: a single atomic load of
-the current-pointer per §14.3.3.2.
+Called by an observer to obtain a **consistent snapshot** of the latest
+committed state — the observable face of snapshot isolation (§13.14). Every
+cell read from one snapshot is coherent with every other (no torn or
+cross-cell-inconsistent reads); reads are wait-free.
 
-The returned view provides cell-read access. Reading a cell from
-the view is wait-free: a single atomic load. The view remains
-valid until the consumer next calls swap; subsequent calls obtain
-a new view (potentially pointing at a different buffer if the
-producer has published in the interim).
+The snapshot remains valid until the observer next acquires one; a later
+call obtains a newer snapshot if a commit has occurred in the interim.
+Multiple snapshots may be held concurrently; acquiring or holding one never
+blocks a `commit`. (The reference kernel realizes a snapshot as a
+triple-buffer view obtained by a single atomic load, §14.3.3.2.)
 
-Consumers may hold multiple views concurrently if needed; the
-triple-buffer arrangement allows the producer to continue
-publishing without disturbing held views.
-
-#### 13.14.7 `kernel.register_reconciler`
+#### 13.14.7 `runtime.register_reconciler`
 
 ```
-kernel.register_reconciler(effect_type_name, reconciler)
+runtime.register_reconciler(effect_type_name, reconciler)
 ```
 
 Registers a host-side reconciler for a specific effect type (§13.19).
-Must be called before the kernel transitions to the live state
-(§13.14.1 step 4); registrations after the kernel is live are
-rejected.
+Must be called before the runtime transitions to the live state
+(§13.14.1 step 4); registrations after it is live are rejected.
 
 The `effect_type_name` is a string identifier matching the name of
 an `effect` declaration in the loaded source. The `reconciler` is a
@@ -15802,7 +15819,7 @@ implementing the reconciler interface:
   an existing instance becomes dirty. Receives the instance ID, the
   reconciler-side instance state, and current values for parameters
   and desired cells. Writes the alignment outcome into observed cells
-  via `kernel.write_signal` (§13.14.2) or `kernel.push_stream`
+  via `runtime.write_signal` (§13.14.2) or `runtime.push_stream`
   (§13.14.8).
 - A *teardown* hook invoked when an effect instance leaves scope.
   Receives the instance ID and the reconciler-side instance state.
@@ -15824,10 +15841,10 @@ implementing the reconciler interface:
   round-trip that does not reinitialize instance state; only `teardown`
   followed by a fresh `create` does.
 
-The host language's binding to this API is implementation-defined.
-The normative requirement is that the five hooks be invokable by
-the kernel at the publish-cycle boundary, with the per-instance
-state managed by the host between invocations.
+The host language's binding to this interface is implementation-defined.
+The normative requirement is that the five hooks be invokable by the
+runtime at the commit boundary, with the per-instance state managed by the
+host between invocations.
 
 **Generic effects.** For a generic effect (§13.19.9), reconciler
 registration is per-effect-type-per-concrete-instantiation. The
@@ -15835,18 +15852,18 @@ registration is per-effect-type-per-concrete-instantiation. The
 type parameters; the host registers one reconciler per concrete
 instantiation it intends to support. Instantiations without a
 registered reconciler are detected at startup (per §13.14.1) and
-cause the kernel to refuse the live transition.
+cause the runtime to refuse the live transition.
 
-**Unregistered effect types.** If the loaded source declares an
+**Unregistered effect types.** If the loaded program declares an
 effect type but no reconciler is registered, startup fails with a
-diagnostic naming the effect type. The kernel does not enter the
+diagnostic naming the effect type. The runtime does not enter the
 live state.
 
-#### 13.14.8 `kernel.push_stream`
+#### 13.14.8 `runtime.push_stream`
 
 ```
-kernel.push_stream(instance_id, stream_id, value)             // per-instance stream cell
-kernel.push_stream(stream_id, value)                          // module-level stream cell
+runtime.push_stream(instance_id, stream_id, value)             // per-instance stream cell
+runtime.push_stream(stream_id, value)                          // module-level stream cell
 ```
 
 Pushes a value into a stream cell. Used by host-side reconcilers
@@ -15871,29 +15888,29 @@ event is appended to the back-buffer's ring; the swap on the next
 publish makes it visible.
 
 **Per-instance form** —
-`kernel.push_stream(instance_id, stream_id, value)` writes to a
+`runtime.push_stream(instance_id, stream_id, value)` writes to a
 stream cell scoped to a specific effect or node instance. The
 `instance_id` identifies the instance (assigned at compile time per
 placement); `stream_id` identifies the stream cell on that instance's
 type.
 
-**Module-level form** — `kernel.push_stream(stream_id, value)` writes
+**Module-level form** — `runtime.push_stream(stream_id, value)` writes
 to a top-level stream cell. The `stream_id` identifies a module-
 scope stream declared per §13.18.
 
 #### 13.14.9 Reconciler protocol
 
-The reconciler protocol is the contract between the kernel and host-
+The reconciler protocol is the contract between the runtime and host-
 registered reconcilers (§13.14.7). The normative shape of the
 protocol:
 
 **Lifecycle alignment with effect instances.**
 
-The kernel maintains a one-to-one correspondence between live effect
+The runtime maintains a one-to-one correspondence between live effect
 instances and reconciler-side instance states. The reconciler's
 `create` hook fires when an instance enters scope; `teardown` fires
 when it leaves scope; `update` fires when parameters or `desired:`
-cells become dirty during a publish; `suspend` fires when the
+cells become dirty during a commit; `suspend` fires when the
 instance's enclosing subtree is gated off and `resume` when it is gated
 back on (§13.9.7).
 
@@ -15905,37 +15922,36 @@ which drops the instance state. **Ordering when scope death overlaps a
 suspended state:** a suspended instance whose scope then dies receives
 `teardown` directly (not a `resume` first) — teardown subsumes the
 release suspend already performed, and the reconciler must tolerate
-`teardown` arriving while suspended. The kernel never delivers `resume`
+`teardown` arriving while suspended. The runtime never delivers `resume`
 to an instance that is leaving scope.
 
 **Hook timing.**
 
-Hooks fire at the publish-cycle boundary, after publish-and-swap
-completes (§13.10.2) and before the next publish begins. The hooks
-run on the kernel's producer thread; the reconciler implementation
-must not block long-running operations on this thread (long
-operations should be dispatched to host-managed worker threads,
-with results written back via the host API on completion).
+Hooks fire at the commit boundary, after the commit publishes its snapshot
+(§13.10.2) and before the next commit begins. They run on the runtime's
+driving context; the reconciler implementation must not block long-running
+operations there (long operations should be dispatched to host-managed
+worker threads, with results written back via the interface on completion).
 
 **Write semantics.**
 
 Writes from reconcilers into observed cells via
-`kernel.write_signal` and `kernel.push_stream` are dirty-tracked in
-the standard way. The writes accumulate in the back buffer; they
-become visible to program-side consumers on the next publish.
+`runtime.write_signal` and `runtime.push_stream` are dirty-tracked in
+the standard way. The writes stage and become visible to program-side
+observers on the next commit.
 
 **Idempotence requirement.**
 
 Reconciler implementations are expected to be idempotent in the
 reconciliation sense: applying the same desired state twice produces
-the same alignment outcome. The kernel may invoke `update` with
-unchanged desired values if a publish marks an instance dirty for
+the same alignment outcome. The runtime may invoke `update` with
+unchanged desired values if a commit marks an instance dirty for
 unrelated reasons; reconcilers must not produce duplicate
 side effects in this case. The host-side state managed by the
 reconciler is the canonical source of "what we've already done";
 desired cells describe "what we want to be true."
 
-The same idempotence applies to `suspend` and `resume`: the kernel
+The same idempotence applies to `suspend` and `resume`: the runtime
 delivers `suspend` only on a gate-close transition and `resume` only on
 a gate-open transition (never repeated for the same transition), but a
 reconciler should still treat a redundant `suspend` on an
@@ -15950,14 +15966,57 @@ serves only to mark the instance frozen.
 Reconciler errors (network failures, resource exhaustion, host-
 level issues) are reported to the program through the effect's
 `observed:` cells, typically an `error: Signal[Option[E]]` cell.
-Reconcilers do not panic the kernel; reconciler-internal errors are
+Reconcilers do not panic the runtime; reconciler-internal errors are
 domain errors expressed through the value track (§8).
 
-A reconciler that panics is treated as a host bug; the kernel's
+A reconciler that panics is treated as a host bug; the runtime's
 behavior in that case is implementation-defined (typically the
-panic propagates to the host's thread, with the kernel marking the
+panic propagates to the host's thread, with the runtime marking the
 effect instance as failed and writing an error sentinel to the
 instance's observed error cell if such a cell is declared).
+
+#### 13.14.10 Behavior ABI and `runtime.teardown`
+
+**Behavior ABI.** Beyond the host-facing verbs above, the runtime calls
+*behaviors* (§15.4.5) — the pure compute of each derived, gate predicate,
+and effect `desired:` builder. It invokes a behavior by its
+content-addressed id with the current values of that behavior's input
+cells, and receives the output; it never reaches inside. Inputs are passed
+per the behavior's declared ownership modes, and the per-role input/output
+shapes are given in §15.4.5. This callback — together with the reconciler
+hooks (§13.14.7) — is the whole of what the runtime calls back into.
+
+**`runtime.teardown()`.** Shuts the graph down, running the §13.14.1
+shutdown sequence: it drains any in-flight commit, delivers reconciler
+`teardown` to every live effect, drops all cells in reverse-construction
+order, and releases storage. After teardown the runtime is terminated.
+
+#### 13.14.11 Capabilities
+
+A runtime implements the **mandatory core** — `install`, `write`/`push`,
+`commit`, `acquire_snapshot`/`read`, `transaction`, `register_reconciler`,
+`teardown`, plus the behavior ABI and reconciler hooks — and advertises a
+set of **optional capabilities** it additionally supports. A host queries
+the set rather than assuming the union; using an unsupported capability is a
+load-time error, not silent misbehavior. The defined capabilities:
+
+- **cross-thread observation** — `acquire_snapshot`/`read` may be called
+  from threads other than the driving context (honoring the
+  `cross_thread_*` observability classes, §15.4.1.2). A single-threaded
+  runtime omits this; `confined` cells need it from no one.
+- **hot reload** — `runtime.reload(diff)` applies an IR diff (§15.7) to the
+  live graph: cells/scopes are matched by path (state preserved), changed
+  behaviors are swapped by content-hash, and added/removed nodes are
+  mounted/unmounted. See §13.15.
+- **persistence** — the runtime can serialize and restore live graph state
+  across runs.
+- **real-time bounds** — the runtime honors the `realtime` cadence hint
+  (§15.4.1.3) with bounded, non-blocking observation.
+
+The `observability` and `cadence_hint` cell fields (§15.4.1.2–.3) are
+inputs to capability negotiation: they tell the runtime what concurrency
+and timing each cell needs, and the runtime selects storage that honors
+them (or rejects a graph it cannot serve).
 
 ### 13.15 Hot Reload of the Reactive Graph
 
