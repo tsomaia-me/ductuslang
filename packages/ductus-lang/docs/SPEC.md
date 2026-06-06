@@ -21,12 +21,18 @@ revised to match.
 
 ### 1.2 Status
 
-The specification is under active development. The type system (this section
-and §§2–10) is fully specified, including object safety (§5.2.4) and coercion
-to `dyn` (§5.2.5). The reactive
-system, runtime semantics, and the node/connection composition model are
-partially specified or deferred. Sections labeled "deferred" indicate
-decisions consciously postponed for later refinement.
+The specification is under active development, but it carries no
+postponed design decisions: every feature it describes is specified
+definitively, and every feature it excludes is excluded definitively with
+its idiomatic alternative. This covers the type system (§§2–10, including
+object safety §5.2.4, coercion to `dyn` §5.2.5, and closure types
+§11.10.6), the reactive system and composition model (§13), the
+implementation model (§14), and compilation (§15). Where the document
+stops short, it does so by stating an explicit boundary — work delegated
+to the standard library, or behavior left implementation-defined — not by
+deferring a decision. The word "deferred" appears only in that
+boundary-setting sense and in runtime-timing descriptions (e.g. lazy
+evaluation), never to mark an open question.
 
 ### 1.3 Design Philosophy
 
@@ -5897,11 +5903,28 @@ are bound by the generic parameter list. Per §2.3, each unique
 tuple-type instantiation produces its own specialized code.
 
 **Variadic generics** — abstraction over tuples of arbitrary arity — are
-not supported in v1. Functions generic over "any tuple" would require
-either macro support or a different abstraction mechanism (e.g., a trait
-with associated types for each component). May be added later if usage
-patterns justify the complexity. For now,
-generic-over-tuple-component-types covers the common case.
+not part of Ductus. A function is generic over fixed-arity tuple
+component types (above); there is no "for any number of components" form.
+The needs that variadic generics serve elsewhere are met by other
+constructs already in the language:
+
+- *Holding a fixed bundle of different types* is a tuple (accessed by
+  position, `.0`/`.1`) or a record (accessed by name).
+- *Looping over many values of varying shape and handling each* is the
+  enum-plus-collection pattern: wrap the variants in an enum so they
+  share one type, hold them in an array or `Vec`, and iterate with `for`
+  + `match` (§6.2.4, §12). The enum tags each value, so `match` is
+  exhaustive — strictly better than walking a bare tuple, whose elements
+  carry no tag.
+- *A trait across a whole tuple* (`Eq`, `Ord`, `Hash`, `Clone`,
+  `Display`, `Debug`) is the compiler-structural derivation of §9.2.6, at
+  any arity.
+- *Interpolating several values into a string* is interpolation
+  (`"{a}{b}{c}"`, §9.1.9).
+
+Because these cover the real use cases, Ductus does not carry the weight
+of variadic generics (the same conclusion Rust reaches under the same
+monomorphization model).
 
 #### 9.2.6 Trait conformance for tuples
 
@@ -8901,8 +8924,14 @@ iteration:
 - An array literal `[e1, …, eK]` where every element expression is
   compile-time known.
 
-Iteration over a tuple of values is deferred. Type-list iteration is out
-of scope.
+Iterating over the elements of a tuple, and iterating over a list of
+types, are not provided. A concrete tuple's elements are reached by
+position (`.0`/`.1`); a whole-tuple trait operation uses the structural
+derivation of §9.2.6; and looping over many values of varying shape uses
+the enum-plus-collection pattern (an enum over the variants, held in an
+array or `Vec`, iterated with `for` + `match`). A bare tuple element
+carries no tag to branch on, so tuple-element iteration would add nothing
+the enum pattern does not do better; see §9.2.5.
 
 **Fixed-extent vs. variable-extent types.** A loop over a value of a
 *fixed-extent* type unrolls; a loop over a *variable-extent* type runs at
@@ -14594,8 +14623,8 @@ expose:
     SomeFallback
 ```
 
-and the multi-variant case the old draft deferred to a future `Match`
-node is now the `given` block (§13.9.14). `When`/`Then`/`Else` are
+and the multi-variant case is the `given` block (§13.9.14).
+`When`/`Then`/`Else` are
 retained, if at all, only as thin stdlib sugar over the block forms; they
 carry no kernel-aware special-casing and are not the recommended form.
 
