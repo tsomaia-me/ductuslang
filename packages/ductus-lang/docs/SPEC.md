@@ -2314,6 +2314,12 @@ user modules, and are not subject to the orphan rule:
   Copy impls from stdlib. The orphan rule prevents user redefinition
   (neither the trait nor the type comes from user code); users can
   derive Copy for their own types via `@derive(Copy)`.
+- *Compiler-structural derivation of the standard traits for tuples
+  (§9.2.6).* `Eq`, `Ord`, `Hash`, `Clone`, `Display`, `Debug` are
+  provided for a tuple type at any arity iff every component type has
+  the trait — the same component-by-component derivation as `@derive`
+  for records (§3.8.2), generated per instantiation. Structural impl,
+  exempt from the orphan rule (the tuple originates in no crate).
 - *Stdlib auto-impl `From[()] for Option[T]`* — provides the `None`
   value for use in the `?` desugaring per §8.4.1. The impl is
   universally available for any T; the orphan rule prevents user
@@ -5925,12 +5931,21 @@ fulfill Display for (i32, string):          // ✗ both element types foreign,
   ...
 ```
 
-Stdlib provides `fulfill` blocks for common tuple types implementing
-common traits (`Eq`, `Ord`, `Hash`, `Clone`, `Display`, `Debug`).
-Coverage extends through **tuple arity 12** — beyond arity 12, users
-implement explicitly. The arity limit reflects the practical observation
-that tuples larger than 12 components are rare and typically indicate
-the user should be using a record (§6.1) instead.
+The standard derivable traits (`Eq`, `Ord`, `Hash`, `Clone`, `Display`,
+`Debug`) are provided for tuples **structurally, at any arity**, by the
+compiler — the same component-by-component derivation `@derive` performs
+for records (§3.8.2). A tuple type has one of these traits iff every
+component type has it; the implementation is generated per instantiation
+during monomorphization. There is no arity cap, and no hand-written
+per-arity stdlib impls. Tuples are not annotated (they have no
+declaration site), so this derivation is automatic-when-eligible rather
+than opt-in, paralleling the existing structural `Copy` rule for tuples
+of `Copy` components (§11.4.1).
+
+Any *other* trait — user-defined or a non-derivable stdlib trait — is
+implemented for a specific tuple type with a manual `fulfill` block,
+subject to the orphan rule above, at whatever arity is needed. There is
+likewise no arity limit on manual impls.
 
 #### 9.2.7 Tuple-to-record conversion
 
