@@ -20032,10 +20032,11 @@ dynamic-size values, and `closure<(T,…)->R>`. Behaviors are fully typed;
 the graph is **type-erased** to tag + size/align — the runtime moves bits
 and never needs nominal types (§15.4.3).
 
-**Serialization.** The IR's **text form is normative** — it is what this
-section defines and what tests assert against. Any wire encoding (a binary
-schema, in-memory structs, or none at all) is implementation-defined; no
-serialization is mandated, and this specification defines none.
+**Serialization.** The IR's **text form is normative**: it is the one
+serialization this specification defines, and it is what tests assert against.
+No *binary or wire* encoding is mandated — that is implementation-defined. An
+implementation need not use any external representation at all; holding the IR
+in memory across the frontend→backend boundary is conforming.
 
 #### 15.4.1 Graph IR
 
