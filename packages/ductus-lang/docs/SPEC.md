@@ -2370,7 +2370,7 @@ fn duplicate[T: Copy](value: T) -> (T, T):
 
 This category is distinct from two superficially similar things:
 
-- `Drop` (§14.8) is compiler-aware but carries a method (`fn drop`); it
+- `Drop` (§14.7) is compiler-aware but carries a method (`fn drop`); it
   is therefore not a marker trait.
 - The empty `trait Marker` shown in §3.1 illustrates a *user-writable*
   pattern — empty traits whose only purpose is to act as a nominal tag.
@@ -7195,7 +7195,7 @@ constituent resources require cleanup (heap allocations, file handles
 via stdlib, etc.), the type's drop behavior is invoked.
 
 Drop semantics for user-defined types are specified through the trait
-system; the precise mechanism is specified in §14.8.
+system; the precise mechanism is specified in §14.7.
 
 #### 11.3.4 Cluster and borrow lifetime
 
@@ -9690,7 +9690,7 @@ remain inside the iterator's internal storage. When the iterator is
 dropped (at loop exit), the remaining elements are dropped per their
 `Drop` semantics, and the underlying buffer is released.
 
-The exact `Drop` mechanism for non-Copy types is specified in §14.8.
+The exact `Drop` mechanism for non-Copy types is specified in §14.7.
 For Copy types, drop is a no-op.
 
 #### 12.9.4 Implementing `IntoIterable`
@@ -10865,7 +10865,7 @@ node Delay:
   expression. It may not reference reactive cells (signals, attrs,
   recurrents, deriveds), since those are runtime values.
 - **Not reactive.** A const value never changes during the runtime's
-  lifetime. It does not occupy a cell in the reactive state buffer
+  lifetime. It does not occupy a reactive cell
   and does not participate in dirty propagation.
 - **Allowed complex types.** Because consts are not stored in the
   single-cell reactive buffer (§13.12.4), they may hold complex
@@ -10923,7 +10923,7 @@ serialized steps for signals, attrs, recurrents, and deriveds.
    is needed.
 2. **Per-type consts** declared inside node/connection bodies are
    similarly resolved at compile time. They are not allocated
-   cells in the reactive state buffer.
+   reactive cells.
 
 **Startup pass (during runtime initialization):**
 
@@ -11433,7 +11433,7 @@ allocated instance. Cell allocation happens only when the receiving
 node instantiates the specification — typically once at startup,
 producing one set of template cells with paths under the receiving
 node's path (e.g., `host.item.<template_field>`). Drop of the
-receiving node drops the template cells per §14.8.
+receiving node drops the template cells per §14.7.
 
 For *child-placement-style* external supply with cardinality, list
 semantics, and possible per-instance scoping (the pattern used by
@@ -12517,7 +12517,7 @@ time) does not vary; the operations therefore parameterize only the
   from the construct's per-template pool if absent. Newly-allocated
   scopes initialize the template's state cells to their declared
   initial values (per §13.2.6).
-- **`scope_drop(key)`** — drop scope `key`: invoke `Drop` (§14.8)
+- **`scope_drop(key)`** — drop scope `key`: invoke `Drop` (§14.7)
   on its state cells in reverse declaration order; return the pool
   slot.
 - **`scope_evaluate(key)`** — evaluate the template's deriveds and
@@ -12540,7 +12540,7 @@ template type's **state-shape** (§13.5.2). The pool's index space is
 the construct's key domain. Scopes are independent — no cell sharing
 across keys.
 
-Pool sizing follows the §14.3.5 extensible-pool model: pools grow
+Pool sizing follows the §14.3.3 extensible-pool model: pools grow
 as keys are added and shrink as keys are dropped, subject to the
 runtime's pool-management policy.
 
@@ -12650,8 +12650,8 @@ repeat <bind> in <source> keyed by <key-expr>:
   the iteration source.
 
   *Why this is sound.* Each `scope_evaluate` runs in isolation
-  against the source signal's *current* buffer — a commit's current
-  buffer is read-only; writes go to the next buffer per §14.3.3.
+  against the source signal's *current* committed snapshot, which is
+  read-only; writes settle into the next committed state per §13.14.
   The runtime hands each `scope_evaluate` a unique pointer to its
   element, and no other code can read or write that element during
   the scope's execution. Unique access for the scope's duration is
@@ -12711,7 +12711,8 @@ both apply (e.g., when a user has fulfilled both `Keyed` and
 Whenever `<source>` is dirty, the runtime:
 
 1. Reads the current value of `<source>` from the signal's current
-   buffer (§14.3.3) and iterates it via `Iterable::iterator` (§12.8),
+   committed snapshot (§13.14) and iterates it via `Iterable::iterator`
+   (§12.8),
    enumerating each element. The bind sees the owned element type per
    the move-promotion rule of §13.5.4.1 (promoted from the
    borrow-equivalent alias that `Iterable::iterator` yields).
@@ -15014,8 +15015,7 @@ operation:
    their newly-advanced values.
 5. **Publish the snapshot.** The runtime atomically makes the
    just-committed values the visible snapshot; observers' subsequent
-   reads return the new state. (The reference kernel: an atomic
-   current-pointer swap, §14.3.3.)
+   reads return the new state.
 6. **Clear dirty bits.** Ready for the next commit.
 
 Writes during a commit are forbidden (the driving context is busy in
@@ -15352,14 +15352,12 @@ from the type's size and shape:
 **Direct in-cell storage (no indirection):**
 
 - Types whose size is ≤ the platform's atomic word width (typically
-  one i64 = 8 bytes) are stored directly in the reactive state
-  buffer's cell. The atomic publication (§14.3.3) is a single
-  atomic store. No allocation, no refcount, no pool.
-- On platforms supporting wider atomics (x86_64 with `CMPXCHG16B`,
-  ARM64 with `LDXP`/`STXP`), types of size 9–16 bytes are stored
-  across two consecutive 64-bit cells with atomic-pair updates
-  (§14.3.4). On platforms without wide-atomic support, types in
-  this range fall back to handle-based storage.
+  one i64 = 8 bytes) are stored directly in a cell. Publishing such a
+  cell at commit (§13.14) requires no allocation, no refcount, no pool.
+- A backend may store types of size 9–16 bytes across two consecutive
+  cells where the platform supports it; otherwise types in this range
+  fall back to handle-based storage. This is a backend choice, not a
+  language requirement.
 - `Result[T, E]` and `Option[T]` follow the same rule: if the total
   bit width (discriminant + maximum payload) fits the atomic word,
   direct storage applies.
@@ -15409,7 +15407,7 @@ from the type's size and shape:
 | `(i32, f32)` tuple                              | direct (8 bytes)                                           |
 | `Option[i32]`                                   | direct (1-bit tag + 4 = 5 bytes)                           |
 | `Result[i32, i32]`                              | direct (1-bit tag + 4 = 5 bytes)                           |
-| Record with two `i64` fields                    | direct on wide-atomic platforms (16 bytes); pool otherwise |
+| Record with two `i64` fields                    | direct where the backend supports two-cell storage (16 bytes); pool otherwise |
 | Record with five `i64` fields                   | pool (40 bytes)                                            |
 | `string`                                        | pool (variable; via string pool §14.5)                     |
 | `Vec[i32]`                                      | pool (variable)                                            |
@@ -15420,7 +15418,7 @@ from the type's size and shape:
 Sizes shown are value widths. Storage is in 64-bit (8-byte) cells:
 values ≤8 bytes occupy one cell with appropriate padding/extension;
 larger values span multiple consecutive cells per §14.3.2 or use pool
-storage per §14.3.5.
+storage per §14.3.3.
 
 **Dynamic-size handle-based types:**
 
@@ -15462,7 +15460,7 @@ uses inline+heap; RingBuf uses fixed ring) are observably
 indistinguishable from "always returns new" semantics. Sharing
 and in-place optimization are runtime concerns, transparent at
 the language level. See §14.3 (extensible pools) for the storage
-model and §14.8 for drop and eviction ordering.
+model and §14.7 for drop and eviction ordering.
 
 **Cost model for users not using dynamic types:**
 
@@ -15502,8 +15500,8 @@ current pool handle) plus the compile-time-known offsets. Per-emission
 cost is unchanged from an ordinary commit: the cell's slot is
 **pre-allocated at runtime construction** (directly, or as a fixed-size
 pool slot for sizes above word width), and the runtime writes the value
-into it; making it visible is a constant-time publish, not a copy (the
-reference kernel: an atomic pointer swap, §14.3). No per-emission
+into it; making it visible is a constant-time publish, not a copy. No
+per-emission
 allocation, no realloc, no resize. A reactive
 function whose body iterates a fixed-extent cell — e.g.
 `fn process(buf: Cell[f32[64]]):` with `for x in buf.value():` — thus
@@ -15594,10 +15592,9 @@ provide a hidden recovery mechanism.
 A *runtime* exposes this interface for host code (the application embedding
 it) to drive and observe the reactive graph. It is the **contract every
 backend must satisfy** — the abstract counterpart to the IR (§15.4): the IR
-is what the compiler emits; this interface is how a runtime is driven. The
-reference triple-buffered kernel (§14.3) is one runtime that implements it;
-others may differ entirely in mechanism. The shape of the interface is
-normative; the host-language binding (Rust, etc.) is implementation-defined.
+is what the compiler emits; this interface is how a runtime is driven.
+Runtimes may differ entirely in mechanism. The shape of the interface is
+normative; the host-language binding is implementation-defined.
 
 **Conceptual model.** A runtime is a transactional store of reactive cells
 with snapshot isolation: deriveds are materialized views; a `commit`
@@ -15618,10 +15615,8 @@ observability/cadence cell hints (§15.4.1.2–.3) bias how it stores cells. A
 host queries what a runtime supports rather than assuming the union
 (§13.14.11).
 
-The subsection terminology below (back buffer, atomic swap, producer
-thread, triple buffer) describes the **reference kernel's** realization; an
-alternative runtime need only honor the observable contract — the verb
-names and their guarantees are the abstract form.
+The verb names and their guarantees are the abstract form; a runtime need
+only honor the observable contract, by whatever mechanism it chooses.
 
 #### 13.14.1 Lifecycle
 
@@ -15630,8 +15625,7 @@ The runtime's lifecycle proceeds in phases:
 **Startup:**
 
 1. Load the IR (per §15.4).
-2. Allocate cell storage (the reference kernel: the reactive state buffer,
-   §14.3).
+2. Allocate cell storage (§14.3).
 3. Initialize all reactive cells (signals, attrs, recurrents,
    deriveds, streams) and evaluate all `when` predicates in
    topological order over their init-time read dependencies, per
@@ -15650,8 +15644,7 @@ The runtime's lifecycle proceeds in phases:
    than the type's own scope. The runtime does not separate this
    work into per-declaration-kind phases; the topological sort
    determines the order.
-4. Perform the first commit, publishing the initial snapshot (the
-   reference kernel: an atomic current-pointer swap, §14.3.3).
+4. Perform the first commit, publishing the initial snapshot.
    Observers' subsequent `acquire_snapshot` calls return real data.
 
 The runtime is "constructing" through steps 1–3; "live" after step
@@ -15675,7 +15668,7 @@ per implementation choice).
 3. Drop reactive cells in reverse-of-construction order: connections
    drop before their endpoint instances; within each instance,
    attrs, recurrents, and deriveds drop in reverse declaration
-   order (per §14.8 Drop rules); each live effect receives reconciler
+   order (per §14.7 Drop rules); each live effect receives reconciler
    `teardown`.
 4. Drop top-level signals.
 5. Drop string pool entries (per §14.5).
@@ -15694,8 +15687,7 @@ runtime.write_signal(instance_id, signal_id, value)         // per-instance sign
 Both arities stage a new value for the named signal's cell. The calls are
 synchronous and inexpensive: they record the pending value and mark
 dependents dirty. No evaluation runs at this point — that happens at the
-next `commit` (§13.14.4). (The reference kernel records the value in the
-back buffer.)
+next `commit` (§13.14.4).
 
 **Module-level form** — `runtime.write_signal(signal_id, value)`:
 writes to a top-level signal. The `signal_id` identifies a
@@ -15711,9 +15703,9 @@ that instance's type. Each placement creates its own cell; the
 write targets one specific cell.
 
 Both arities must be called from the runtime's driving context (the single
-context permitted to write/evaluate/commit; the reference kernel maps this
-to a producer thread, §14.7). Other threads write indirectly by enqueueing
-requests for that context to apply — a host-application concern.
+context permitted to write/evaluate/commit). Other threads write indirectly
+by enqueueing requests for that context to apply — a host-application
+concern.
 
 Signal IDs and instance IDs are obtained at compile time from the IR (each
 signal and each placement has a stable id per §15.4.1.1).
@@ -15752,8 +15744,7 @@ completes. Cost is bounded by the dirty set (deriveds and recurrents with
 fired triggers) plus the constant cost of publishing the snapshot.
 Observers see the new state on their next `acquire_snapshot`. A commit with
 no dirty cells is idempotent — a fresh snapshot is published but its values
-are identical. (The reference kernel publishes via an atomic back-buffer
-swap, §14.3.3.)
+are identical.
 
 The host chooses the commit cadence per its domain — per audio block, per
 frame, per event; the runtime imposes none.
@@ -15790,8 +15781,7 @@ cross-cell-inconsistent reads); reads are wait-free.
 The snapshot remains valid until the observer next acquires one; a later
 call obtains a newer snapshot if a commit has occurred in the interim.
 Multiple snapshots may be held concurrently; acquiring or holding one never
-blocks a `commit`. (The reference kernel realizes a snapshot as a
-triple-buffer view obtained by a single atomic load, §14.3.3.)
+blocks a `commit`.
 
 #### 13.14.7 `runtime.register_reconciler`
 
@@ -16000,7 +15990,7 @@ load-time error, not silent misbehavior. The defined capabilities:
   from threads other than the driving context (honoring the
   `cross_thread_*` observability classes, §15.4.1.2). A single-threaded
   runtime omits this; `confined` cells need it from no one.
-- **hot reload** — `runtime.reload(diff)` applies an IR diff (§15.7) to the
+- **hot reload** — `runtime.reload(diff)` applies an IR diff (§15.6) to the
   live graph: cells/scopes are matched by path (state preserved), changed
   behaviors are swapped by content-hash, and added/removed nodes are
   mounted/unmounted. See §13.15.
@@ -16017,7 +16007,7 @@ them (or rejects a graph it cannot serve).
 ### 13.15 Hot Reload of the Reactive Graph
 
 The runtime supports hot reload of the reactive graph when the host
-provides updated source code (per §14.9). The reactive system's
+provides updated source code (per §14.8). The reactive system's
 specific hot reload semantics are as follows.
 
 #### 13.15.1 Compile-time validation gate
@@ -16080,9 +16070,9 @@ in the following order:
 4. Compute the diff between old and new graphs: which cells are
    surviving (same path, same type), which are added, which are
    removed.
-5. For added cells: allocate space in the reactive state buffer
+5. For added cells: allocate cell storage
    and initialize per the new source.
-6. For removed cells: invoke their Drop per §14.8, in
+6. For removed cells: invoke their Drop per §14.7, in
    reverse-declaration order. Connections drop before endpoint
    instances; within each instance, attrs, recurrents, and
    deriveds drop in reverse declaration order.
@@ -16095,8 +16085,7 @@ in the following order:
    from old to new), recompute its initial value from current
    inputs. For deriveds whose body is unchanged, the value
    persists.
-9. Commit the reloaded state (the reference kernel: an atomic
-   current-pointer swap).
+9. Commit the reloaded state.
 10. Release the reload lock. Resume signal/attr writes; apply any
     queued writes to the new state.
 
@@ -16112,9 +16101,9 @@ recomputed.
 Some changes are not safely hot-reloadable in place and require a
 restart — either full-runtime or per-instance, depending on the change:
 
-- Changes to the layout of the reactive state buffer that would
+- Changes to the layout of cell storage that would
   require relocating live cells. The reload's diff-and-apply
-  approach handles incremental changes but not whole-buffer
+  approach handles incremental changes but not wholesale storage
   reorganization. **Full-runtime restart required.**
 - Operator-specific changes that require restart for the affected
   operator instances:
@@ -16262,9 +16251,8 @@ before the reload reaches the live state.
 §13 specifies the reactive system's source-level semantics. Those semantics
 are realized through two backend-agnostic contracts — the **IR** (§15.4),
 which the compiler emits, and the **runtime interface** (§13.14), which a
-runtime implements. The reference triple-buffered kernel
-(`backends/triple-buffered-kernel.md`) is one such runtime; the map below
-names the abstract contract for each §13 construct, not a mechanism.
+runtime implements. The map below names the abstract contract for each §13
+construct, not a mechanism.
 
 - Reactive cells (signal, attr, recurrent, derived) are graph-IR cells
   (§15.4.1); the runtime stores their values (§14.3) and keeps them current
@@ -16588,8 +16576,8 @@ Operator instances contribute to the runtime's graph specification
 (§15.4) the same way node placements and connection placements do.
 Each instance's internal cells (recurrents, deriveds, synthesized
 cells from the operator body and from `let` bindings) are counted
-against the reactive state buffer's allocation and against any
-per-type pool sizing for dynamic-size cells (§14.3.5).
+against the runtime's cell-storage allocation and against any
+per-type pool sizing for dynamic-size cells (§14.3.3).
 
 The compiler enumerates operator call sites at compile time;
 recursion through operators is forbidden (an operator may not
@@ -16752,7 +16740,7 @@ The reload-unsafe operator changes are:
 
 If a call site changes which operator is invoked (`source |> op_a`
 becomes `source |> op_b`), the old instance's cells are dropped
-per §14.8 eviction; the new instance's cells initialize fresh.
+per §14.7 eviction; the new instance's cells initialize fresh.
 The two operators are treated as distinct instances even if
 op_b's signature matches op_a's.
 
@@ -16803,7 +16791,7 @@ Calls to other operators inside the body create further
 instantiations; calls to `fn`s inside the body remain
 reactive-transparent in the standard way.
 
-**With dynamic-size types (§13.12.4, §14.3.5):** operator-internal
+**With dynamic-size types (§13.12.4, §14.3.3):** operator-internal
 recurrents may hold dynamic-size types (`Vec[T]`, etc.). Storage
 follows the same pool-with-handle mechanism. The operator's
 instance-specific allocation contributes to per-type pool sizing
@@ -17030,7 +17018,7 @@ the same abstract `Stream[T]`; the implementation propagates the
 concrete policy from input to output.
 
 **Capacity as a type parameter.** Capacity is part of the type for
-analysis and pool sizing (§14.3.5) but does not generally appear in
+analysis and pool sizing (§14.3.3) but does not generally appear in
 operator constraints. An operator that accepts `Stream[T]` accepts
 any capacity. An operator that needs a specific capacity bound
 declares it explicitly: `Stream[T]` for any, `RingStream[T, N]` for
@@ -18027,7 +18015,7 @@ A stream's storage consists of:
    Stored as part of the consumer's per-instance state.
 
 The ring buffer itself is allocated from a per-`(T, capacity)` pool
-in the reactive state buffer (§14.3.5). All stream instances with
+(§14.3.3). All stream instances with
 the same element type and capacity share a pool; each instance
 occupies one buffer-sized slot within the pool. The compiler
 enumerates stream declarations at compile time and computes the
@@ -18035,7 +18023,7 @@ per-`(T, capacity)` pool sizes statically.
 
 Hot reload can extend or shrink these pools as stream declarations
 are added or removed; the per-`(T, capacity)` pool mechanism is the
-same as for other dynamic-size cell types (§14.3.5).
+same as for other dynamic-size cell types (§14.3.3).
 
 **No dynamic allocation.** Streams do not allocate memory at runtime
 beyond their initial buffer. Producers write into pre-allocated
@@ -18949,7 +18937,7 @@ forces clear.
 
 An effect instance lives as long as its enclosing scope. When the
 scope dies, the effect instance and all its cells are dropped per
-§14.8. The host's reconciler receives a teardown call with the
+§14.7. The host's reconciler receives a teardown call with the
 instance ID, allowing it to release any external resources (open
 sockets, audio sessions, file handles, pending requests).
 
@@ -19355,7 +19343,7 @@ Characteristics:
 - Sub-second compilation time, suitable for live editing.
 - Performance lower than native (a typical interpretation overhead is
   5–20× slower in tight loops; acceptable for development).
-- Supports hot reload (§14.9): individual behaviors can be replaced
+- Supports hot reload (§14.8): individual behaviors can be replaced
   in a running runtime without restarting.
 - The bytecode format is implementation-internal and not stable across
   Ductus versions. It is not a distribution format.
@@ -19377,13 +19365,12 @@ Characteristics:
 - Does not support hot reload at runtime; rebuild is required to
   change the program.
 
-The emitted Rust source is **fully monomorphic and Ductus-trait-free**
-(with the narrow exception of Rust operator-overloading impls per
-§15.5.2). Per
-§15.5, the Rust emitter produces concrete struct definitions and
-specialized function definitions per Ductus instantiation. Ductus's
-trait system is not exported into the emitted Rust; trait dispatch
-sites are resolved to direct function calls during frontend processing.
+The emitted native code is **fully monomorphic and Ductus-trait-free**:
+the IR it lowers is already monomorphic with dispatch resolved (§15.4).
+The emitter produces concrete type and function definitions per Ductus
+instantiation. Ductus's trait system is not exported into the emitted
+code; trait dispatch sites are resolved to direct function calls during
+frontend processing.
 
 ### 14.2 The Ductus CLI
 
@@ -19401,7 +19388,7 @@ required.
 - **`ductus watch <file>`** — interpreter mode with file watching
   and hot reload. The runtime runs continuously; saved changes to the
   source trigger recompilation and reload of affected behaviors per
-  §14.9.
+  §14.8.
 
 - **`ductus build <file> [--release]`** — invokes native mode.
   Compiles via Rust to a native executable. `--release` enables
@@ -19446,31 +19433,15 @@ implementation-specific.
 ### 14.3 Reactive Cell Storage
 
 The runtime holds the value of every reactive cell and keeps it current.
-*How* cells are stored is a backend concern — the reference kernel uses a
-contiguous, triple-buffered region (the *reactive state buffer*; see
-`backends/triple-buffered-kernel.md`). What every backend must preserve is
-the per-cell value semantics below.
+*How* cells are stored is a backend concern. What every backend must
+preserve is the per-cell value semantics below.
 
 #### 14.3.1 Cell representation
 
 Each reactive cell holds a value of its declared type, read and written
-losslessly (bit-exact); other backends may represent cells however they
-like as long as reads and writes are value-preserving. The reference kernel
-represents a cell as a 64-bit `AtomicI64` slot (the complete buffer is
-`Arc<[AtomicI64]>`), storing any 8-byte-or-smaller primitive by bit
-reinterpretation:
-
-| Type                   | Storage in cell                                                    |
-|------------------------|--------------------------------------------------------------------|
-| `bool`, `char`         | Single cell; value occupies the low bits, upper bits are zero.     |
-| `i8`–`i64`, `u8`–`u64` | Single cell; value is sign- or zero-extended to 64 bits as needed. |
-| `f32`, `f64`           | Single cell; value is bit-reinterpreted (transmute) as i64.        |
-| `string`               | Single cell; value is a u64 handle into the string pool (§14.5).   |
-
-Lossless conversion: reading and writing a cell preserves the
-bit-exact value of any of these primitive types. `f64::from_bits` and
-`f64::to_bits` perform the reinterpretation in the reference Rust
-implementation.
+losslessly (bit-exact); a backend may represent cells however it likes as
+long as reads and writes are value-preserving. Values wider than one
+storage slot occupy consecutive slots (§14.3.2).
 
 #### 14.3.2 Multi-cell types
 
@@ -19499,59 +19470,43 @@ type `i128` or nested non-Copy records) follow the same per-field
 layout, with multi-cell types occupying their own consecutive cells
 within the enclosing record's allocation.
 
-#### 14.3.3 Triple-buffering
-
-Triple-buffering is a mechanism of the reference kernel, not a language
-requirement. It is specified in `backends/triple-buffered-kernel.md`. The
-abstract contract it realizes — glitch-free, consistent snapshots published
-at each commit — is the runtime interface (§13.14).
-
-#### 14.3.4 Wide-atomic optimization (optional)
-
-The wide-atomic optimization is an optional optimization of the
-reference kernel, not a language requirement. It is specified in
-`backends/triple-buffered-kernel.md`. The abstract contract it realizes
-is the runtime interface (§13.14).
-
-#### 14.3.5 Extensible pools for dynamic-size types
+#### 14.3.3 Extensible pools for dynamic-size types
 
 Dynamic-size cell types (`Vec[T]`, `SmallVec[T, N]`, `RingBuf[T, N]`,
 `string`, etc., per §13.12.4) cannot live directly in the fixed-size
-cell slots. Their storage uses **extensible pools** alongside the
-reactive state buffer.
+cell slots. Their storage uses **extensible pools**.
 
 For each dynamic-size type used in the program, the runtime allocates
-a per-type pool. The reactive cell holds a fixed-size handle (one
-`AtomicI64` slot, encoding a pool index plus version metadata); the
-actual variable-size value lives in the pool.
+a per-type pool. The reactive cell holds a fixed-size handle into the
+pool; the actual variable-size value lives in the pool. On commit, the
+runtime updates the handle to refer to the new value and publishes it
+with consistent visibility — an observer that reads a cell never sees a
+partial write, and a handle read resolves to a value coherent with the
+snapshot it was read from.
 
 **Pool mechanics:**
 
 - Each pool is an arena of slots. Each slot holds one value of the
-  pool's type, plus refcount metadata sufficient for the runtime's
-  snapshot scheme.
-- Writes: on commit, the runtime allocates a fresh pool slot, writes
-  the value, and publishes the new handle in the new snapshot.
+  pool's type, plus the metadata the runtime needs to keep values that
+  belong to distinct committed states distinct until released.
+- Writes: on commit, the runtime writes the new value into the pool and
+  updates the cell's handle so subsequent reads resolve to it.
 - Reads: dereference the handle through the pool to obtain the value's
   address, then read the value.
 
-**Versioned handles:**
+**Sharing across committed states:**
 
-Each retained snapshot references its own pool slot for a given
-dynamic-size cell. On commit, the cell's handle is updated to a fresh
-slot; snapshots taken before the commit keep pointing at their old
-slots until released. (The reference kernel realizes this with its
-triple-buffer copies — see the backend doc.)
+A value observed under one committed state remains valid until that
+state is released, even after a later commit updates the cell's handle.
 
 For persistent data structures (e.g., `Vec[T]` as persistent vector
 trie), pool slots may share internal nodes across versions. The pool
-tracks the trie's node-level refcounts; old nodes are reclaimed when
-no snapshot references them.
+tracks the trie's node-level refcounts; old nodes are reclaimed when no
+live state references them.
 
 For value types (`SmallVec[T, N]`, `RingBuf[T, N]`), each retained
-snapshot's slot holds a complete copy of the value. The snapshot
-scheme ensures observers never see partial writes; per-commit work is
-bounded by the value's size.
+value is a complete copy; per-commit work is bounded by the value's
+size.
 
 **Initial allocation:**
 
@@ -19602,13 +19557,13 @@ policy) happen only at positions past any cursor that's caught up;
 lagging cursors that were pointing at overwritten positions jump
 forward per §13.18.12.
 
-**Drop and eviction:** see §14.8.
+**Drop and eviction:** see §14.7.
 
 ### 14.4 What Is Reactive State
 
 Only **reactive cells** are *reactive state* — values the runtime owns and
-keeps current across commits (the reference kernel stores them in its
-triple-buffered buffer, §14.3). Specifically, the values held by:
+keeps current across commits (the runtime stores them, §14.3).
+Specifically, the values held by:
 
 - `signal` declarations.
 - `attr` declarations on node and connection instances.
@@ -19616,7 +19571,7 @@ triple-buffered buffer, §14.3). Specifically, the values held by:
 - `derived` declarations (the cached computed value).
 - `stream` declarations (head pointer, metadata, and synthesized
   observation cells per §13.18.6; the ring buffer slot array itself
-  lives in the per-`(T, N)` pool per §14.3.5).
+  lives in the per-`(T, N)` pool per §14.3.3).
 - Cells declared inside an `effect`'s `desired:` and `observed:`
   blocks (§13.19.4, §13.19.5). These are ordinary Signal or
   Stream cells per their declared type; the effect is a grouping
@@ -19662,8 +19617,7 @@ allows:
 - Commit cost to remain O(N) in *cell count*, not in *string content
   size*. Changing a 1-megabyte string updates a single 8-byte handle;
   the megabyte of data is allocated once in the pool, not copied per
-  snapshot. (The reference kernel keeps one pool shared across its
-  triple-buffer copies — see the backend doc.)
+  snapshot.
 
 - Strings to be referenced by multiple cells (in the same or different
   snapshots) via shared handles. Refcounting ensures the data is
@@ -19684,52 +19638,16 @@ allows:
 
 The pool's allocation and refcount operations are atomic but may block
 briefly under contention; reads via handles are wait-free. Which
-execution context performs writes versus reads is a backend concern
-(the reference kernel's producer/consumer roles — see the backend
-doc); the contract is only that handle reads stay wait-free.
+execution context performs writes versus reads is a backend concern; the
+contract is only that handle reads stay wait-free.
 
-### 14.6 The Behavior ABI (reference realization)
+### 14.6 The Behavior ABI
 
-The *abstract* behavior ABI — how a runtime invokes a behavior by id with
-input-cell values — is part of the IR (§15.4.4). This section gives the
-**reference kernel's** concrete realization of it. Functions called from
-reactive bodies are reactive-transparent per §13.12.2: they compile to
-ordinary functions (the native backend: Rust, per the backend doc) reached
-transitively from the registered behaviors, not as separately-registered
-behaviors of their own.
-
-#### 14.6.1 Behavior signature
-
-Every behavior has the same calling convention:
-
-```
-fn behavior(runtime: &KernelHandle, instance: InstanceId) -> ()
-```
-
-- `runtime`: a borrowed handle to the runtime, used for reading and
-  writing reactive cells, allocating strings, and other runtime
-  services.
-- `instance`: an opaque identifier for the specific node or connection
-  instance the behavior is being invoked for (relevant for `attr` and
-  `derived` declarations on a particular instance).
-
-The behavior reads its inputs from runtime cells via the handle,
-performs its computation, and writes its outputs (if any) back to
-runtime cells. Return value is unit; all effects are side effects
-through the runtime handle.
-
-This uniform shape means the runtime maintains a single function
-pointer table: `Vec<fn(&KernelHandle, u64) -> ()>` (in the
-reference Rust implementation; the function pointer type uses
-`&KernelHandle` and relies on Rust's higher-rank trait bound
-semantics for the lifetime parameter). The runtime invokes
-behaviors by index into this table; no per-behavior dispatch logic
-is needed.
-
-`InstanceId` is a transparent newtype over `u64` defined in the
-runtime; the function-pointer table uses `u64` directly since
-`fn`-pointer types in Rust do not preserve newtype identity at the
-ABI level. The two are interconvertible at zero cost.
+The behavior ABI — how a runtime invokes a behavior by id with input-cell
+values and receives its outputs — is defined abstractly in the Behavior IR
+(§15.4.4). The runtime reaches a behavior only through that interface; it
+never reaches inside. The remaining subsections specify the
+backend-independent obligations on behaviors.
 
 #### 14.6.2 Statelessness
 
@@ -19756,7 +19674,7 @@ process; recoverable conditions are expressed as value-track
 runtime does not isolate behavior traps — there is no `catch_unwind`
 boundary, no errored-cell sentinel, no continuation past a trap.
 See §13.13.1 for full rules and worked examples; the same semantics
-apply uniformly to all behaviors invoked by the producer.
+apply uniformly to all behaviors the runtime invokes.
 
 #### 14.6.4 Behavior identity
 
@@ -19770,8 +19688,8 @@ declarations, renaming local bindings — do not perturb the ID.
 Semantic changes — different operations, different inputs, different
 output type — produce different IDs.
 
-The hash algorithm is fixed per Ductus toolchain version (§14.10)
-so that hot reload (§14.9) within one version reliably matches
+The hash algorithm is fixed per Ductus toolchain version (§14.9)
+so that hot reload (§14.8) within one version reliably matches
 unchanged behaviors across recompilations. Across major toolchain
 versions the canonicalization may change; cross-version hot reload
 is not supported.
@@ -19783,30 +19701,21 @@ behaviors by ID; debug names appear only in diagnostic output.
 
 #### 14.6.5 Thread invocation
 
-Behaviors are invoked by the runtime; the specific thread that
-invokes each behavior is the producer-role thread, which the runtime
-maps to a specific OS thread at startup (implementation-defined per
-§14.7.1). Ductus source does not specify thread roles.
+Behaviors are invoked by the runtime; which execution context invokes
+each behavior, and how it maps onto OS threads, is a backend concern.
+Ductus source does not specify thread roles.
 
 Ductus source code does not encounter cross-thread concerns:
 behaviors are thread-safe by construction (no shared mutable state
 outside reactive cells, which are coordinated by the runtime per
-§14.3.3).
+§14.3).
 
-### 14.7 Producer and Consumer Roles
-
-The SPSC producer/consumer thread roles are a feature of the reference
-runtime, not a language requirement. They are specified in
-`backends/triple-buffered-kernel.md`. The abstract contract these roles
-realize is the runtime interface (§13.14) and its concurrency
-capabilities (§13.14.11).
-
-### 14.8 Drop Semantics
+### 14.7 Drop Semantics
 
 Ductus's `Drop` trait — referenced from §11.3.3 and §12.9.3 — is
 specified here.
 
-#### 14.8.1 The Drop trait
+#### 14.7.1 The Drop trait
 
 ```
 trait Drop:
@@ -19819,7 +19728,7 @@ value by `mut` (the only place in the language where a `mut`
 parameter is permitted — internally generated by the compiler at the
 scope-exit point).
 
-#### 14.8.2 When drop runs
+#### 14.7.2 When drop runs
 
 The compiler inserts drop calls at:
 
@@ -19834,20 +19743,20 @@ The compiler inserts drop calls at:
 Compound values (records, enums) drop in **reverse declaration
 order** of their fields: the last-declared field drops first.
 
-#### 14.8.3 Partial moves
+#### 14.7.3 Partial moves
 
 If only some fields of a record have been moved out when the binding
 goes out of scope, only the un-moved fields drop. The compiler tracks
 per-binding move flags during semantic analysis.
 
-#### 14.8.4 Drop and panic
+#### 14.7.4 Drop and panic
 
 If a `drop` method panics, the process aborts (the standard trap
 behavior per §4.6.1). This prevents double-drop hazards from
 mid-drop panics that would otherwise leave the program in an
 inconsistent state.
 
-#### 14.8.5 Drop on reactive cells
+#### 14.7.5 Drop on reactive cells
 
 The runtime manages drop for reactive cells. When a node or connection
 instance is removed (removal mechanics are specified in §13.15), its
@@ -19855,19 +19764,12 @@ attr and derived cells are dropped per their type's `Drop` impl.
 Initial declarations (signals declared at program startup) live for the
 program's lifetime; their cells are dropped at program shutdown.
 
-#### 14.8.6 Drop and triple-buffer eviction for dynamic-size cells
-
-Slot eviction for dynamic-size cells across buffer rotation is the
-reference kernel's mechanism, not a language requirement. It is
-specified in `backends/triple-buffered-kernel.md`. The abstract Drop
-semantics it realizes are §14.8.1–§14.8.5.
-
-### 14.9 Hot Reload
+### 14.8 Hot Reload
 
 Interpreter mode (§14.1.2) supports hot reload of individual
 behaviors in a running runtime.
 
-#### 14.9.1 Granularity
+#### 14.8.1 Granularity
 
 The unit of hot reload is the **behavior**. When a Ductus source
 file changes:
@@ -19882,7 +19784,7 @@ file changes:
    3b. **Cell identity (§13.15.2).** The runtime computes the cell-diff
    by fully-qualified declaration path. Cells with matching path and
    type carry forward (preserving values); new cells are added;
-   removed cells are dropped per §14.8.
+   removed cells are dropped per §14.7.
    3c. **Operator instance identity (§13.17.10).** Operator instances
    are matched by (enclosing scope, operator name, argument bindings)
    with tolerance for positional moves within the same scope. Matched
@@ -19893,30 +19795,29 @@ file changes:
       content-addressed ID; graph specification edges and cell allocations
       referencing the new behavior's ID become live; subsequent
       invocations dispatch through the new behavior's ID.
-    - For each added cell: allocate space in the reactive state buffer
+    - For each added cell: allocate cell storage
       and initialize per the new source.
     - For each added operator instance: allocate internal cell state
       and initialize per the new source.
 
 5. **Apply removals.**
     - For each removed behavior: deregister from the behavior table.
-    - For each removed cell: invoke drop per §14.8 in
+    - For each removed cell: invoke drop per §14.7 in
       reverse-declaration order.
     - For each removed operator instance: drop internal cells per
-      §14.8.
+      §14.7.
 
 6. **Run re-initialization evaluation pass.** For each derived whose
    behavior body changed (different content-addressed ID), recompute
    its initial value from current inputs. Deriveds whose body is
    unchanged retain their values.
 
-7. **Commit the reloaded state** (the reference kernel: an atomic
-   current-pointer swap).
+7. **Commit the reloaded state.**
 
 8. **Release the reload lock.** Resume signal/attr writes; apply any
    queued writes to the new state.
 
-#### 14.9.2 State preservation
+#### 14.8.2 State preservation
 
 Reactive cell values persist across hot reload. Signal values, attr
 values, and derived cached values are unchanged unless the source
@@ -19929,7 +19830,7 @@ positional moves within the same scope). Matched instances preserve
 their internal cell state via the same cell-identity mechanism
 (§13.15.2) used for top-level cells.
 
-#### 14.9.3 Reload-safe and reload-unsafe changes
+#### 14.8.3 Reload-safe and reload-unsafe changes
 
 Changes safe to hot reload:
 
@@ -19960,7 +19861,7 @@ either rejects them (runtime keeps running old version) or applies
 the appropriate restart — full-runtime or per-instance per §13.15.4
 — cleanly. The choice is implementation-defined.
 
-#### 14.9.4 Reload failure
+#### 14.8.4 Reload failure
 
 If the new source fails to compile (parse error, type error,
 ownership error), the reload is abandoned. The runtime keeps running
@@ -19971,7 +19872,7 @@ Hot reload never produces a runtime in an inconsistent state. Either
 the old version continues running, or the new version is fully
 applied, never a mix.
 
-### 14.10 Versioning
+### 14.9 Versioning
 
 Ductus's source format, graph specification format, behavior ABI, and
 runtime build are versioned together. Each Ductus release is a
@@ -20004,10 +19905,9 @@ Ductus compilation transforms source files into executable form plus
 the build-time artifacts the runtime consumes at startup. This section
 specifies the semantic obligations of the compiler (§15.2), the
 artifacts it produces (§15.3), the normative format of the reactive
-graph specification (§15.4), the Ductus-to-Rust lowering rules
-(§15.5), the two compilation modes (§15.6), the diff algorithm hot
-reload depends on (§15.7), and what implementations must satisfy to
-be conformant (§15.8).
+graph specification (§15.4), the two compilation modes (§15.5), the
+hot-reload diff (§15.6), and what implementations must satisfy to
+be conformant (§15.7).
 
 Runtime concerns — cells, runtime mechanics, threading, drop, hot-
 reload application — are the subject of §14.
@@ -20021,12 +19921,13 @@ classes:
   source compiled by `rustc` (native mode, §14.1.3).
 - **The reactive graph specification** — a build-time description of
   the program's reactive shape that the runtime consumes at startup
-  and that hot reload diffs against (§15.4, §15.7).
+  and that hot reload diffs against (§15.4, §15.6).
 
 Both artifacts share the same frontend (§14.1.1), which performs
 name resolution, type checking, trait resolution, borrow checking,
 monomorphization, and reactive-graph extraction (§15.2). Backends
-fork only at the final lowering step (§15.5).
+fork only at the final lowering step, where each consumes the IR
+(§15.4) to produce its executable artifact.
 
 This section does not prescribe the compiler's internal IR shape.
 Implementations may use any phase organization that satisfies the
@@ -20083,8 +19984,7 @@ semantics of §§1–13.
 
 A successful compilation produces two artifact classes:
 
-- **Executable code** — the per-mode artifact described in §15.5
-  and §15.6.
+- **Executable code** — the per-mode artifact described in §15.5.
 - **Reactive graph specification** — the normative build-time
   description of the program's reactive shape, specified in §15.4.
   The specification carries all build-time metadata the runtime
@@ -20097,21 +19997,19 @@ executable-code form differs.
 #### 15.3.1 Embedding and packaging
 
 In **interpreter mode** (§14.1.2), both artifacts are held in memory
-by the running runtime. Hot reload (§14.9) replaces them in place.
+by the running runtime. Hot reload (§14.8) replaces them in place.
 
 In **native mode** (§14.1.3), both artifacts are embedded in the
-compiled binary, typically as data sections produced by Rust's
-`include_bytes!` or analogous mechanism. At program startup the
-runtime deserializes the graph specification and registers the
-behavior table.
+compiled binary, typically as embedded data sections. At program
+startup the runtime deserializes the graph specification and registers
+the behavior table.
 
 ### 15.4 The Ductus IR
 
 The **Ductus IR** is the build-time artifact the frontend emits and a
 runtime consumes — the backend-agnostic contract between them, and the
-unit a hot reload diffs (§15.7). Every backend (compiled, interpreted, or
-a future alternative) is implemented against it; the reference
-triple-buffered kernel is one such backend.
+unit a hot reload diffs (§15.6). Every backend (compiled, interpreted, or
+a future alternative) is implemented against it.
 
 An IR **module** has three parts over a shared type table:
 
@@ -20166,7 +20064,7 @@ The graph is a structured record with the following entries.
 
 - `id`: the cell's fully-qualified declaration path (§15.4.1.1).
 - `type`: the cell's primitive type tag, per §4.1, plus the
-  string-handle (§14.5) and dynamic-pool-handle (§14.3.5) types.
+  string-handle (§14.5) and dynamic-pool-handle (§14.3.3) types.
 - `observability`: one of `cross_thread_snapshot`,
   `cross_thread_atomic`, or `confined` (§15.4.1.2).
 - `cadence_hint` (optional): one of `realtime`, `bounded`, or `lazy`
@@ -20283,7 +20181,7 @@ each instantiation is a distinct key.
 pre-loaded into the pool at startup (§14.5).
 
 **Schema version.** The Ductus toolchain version that produced the
-specification, per §14.10.
+specification, per §14.9.
 
 **Format version.** The version of the abstract data model itself,
 distinct from the toolchain version. Allows the schema to evolve
@@ -20327,17 +20225,8 @@ honors the contract.
 | `confined`               | Cell accessed only from one thread; no atomic required. |
 
 The mapping from observability to storage is the runtime's
-concern, not a spec mandate. Typical mappings on a conformant
-runtime:
-
-| `observability`         | Typical mechanism      |
-|-------------------------|------------------------|
-| `cross_thread_snapshot` | Triple-buffer (§14.3.3) |
-| `cross_thread_atomic`   | AtomicBuffer            |
-| `confined`              | Plain memory            |
-
-Alternative runtimes may select different mechanisms as long as the
-observability contract is met.
+concern, not a spec mandate. A runtime selects whatever storage
+mechanism satisfies the contract for each observability class.
 
 ##### 15.4.1.3 Cadence hint
 
@@ -20346,8 +20235,7 @@ update-timing expectation for the cell. It is informational; the
 runtime uses it to bias storage-mechanism selection. Defined values:
 
 - `realtime` — updates are deadline-bound; readers (e.g., audio
-  thread) cannot block. Typically pairs with `cross_thread_snapshot`
-  (the reference kernel: a triple-buffer mapping).
+  thread) cannot block. Typically pairs with `cross_thread_snapshot`.
 - `bounded` — updates are committed but not deadline-bound. Pairs
   with any `observability` value.
 - `lazy` — updates are best-effort; the cell tolerates large
@@ -20393,12 +20281,12 @@ non-realtime paths get `bounded`.
 The specification carries two version numbers:
 
 - **Schema version** — the Ductus toolchain version that produced
-  the spec, per §14.10.
+  the spec, per §14.9.
 - **Format version** — the version of the abstract data model itself.
 
 A conformant runtime accepts specifications whose format version it
 understands. Format-version mismatches are diagnosed at load time
-per §14.10.
+per §14.9.
 
 #### 15.4.3 What the specification does not contain
 
@@ -20585,14 +20473,7 @@ anonymous instance (§15.4.1.1); and `desired.text` is a pure function of
 `message` (bound to `App.label`) — there is no activation input anywhere,
 consistent with the suspend/resume-only model (§13.19.12).
 
-### 15.5 Lowering (Ductus → Rust)
-
-Lowering the IR (§15.4) to Rust is the reference native backend's
-concern, not a language requirement. It is specified in
-`backends/triple-buffered-kernel.md`. The abstract artifact this
-lowering consumes is the Ductus IR (§15.4).
-
-### 15.6 Compilation Modes
+### 15.5 Compilation Modes
 
 The compiler supports two output modes, described in §14.1.2
 (interpreter) and §14.1.3 (native). Both modes share the entire
@@ -20603,31 +20484,23 @@ This section does not specify the bytecode format (interpreter mode)
 or the per-mode build pipeline. Mode selection and toolchain
 integration are implementation concerns documented in §14.2.
 
-### 15.7 Hot-Reload Diff
+### 15.6 Hot-Reload Diff
 
-Hot reload (§14.9) operates by comparing the graph specifications
+Hot reload (§14.8) operates by comparing the graph specifications
 (§15.4) of two builds of the same program: the currently running
 build (`old_spec`) and the newly compiled build (`new_spec`). The
 diff algorithm computes the changes the runtime applies.
 
 This section specifies the diff algorithm and its result format. The
-runtime's mechanics for applying the diff are §14.9; the source-level
+runtime's mechanics for applying the diff are §14.8; the source-level
 identity rules the diff implements are §13.15.
 
-#### 15.7.1 Diff algorithm
-
-The reload-diff algorithm is the reference kernel's mechanism for
-reconciling old and new graph specifications. It is specified in
-`backends/triple-buffered-kernel.md`. The abstract hot-reload contract
-it realizes is §13.15, and the reload capability it depends on is
-§13.14.11.
-
-#### 15.7.2 Reload classification
+#### 15.6.1 Reload classification
 
 The diff classifies the overall change set per §13.15.4 into one of
 three categories:
 
-- **Reload-safe** — applied in place per §14.9 (hot reload).
+- **Reload-safe** — applied in place per §14.8 (hot reload).
 - **Per-instance restart required** — operator-specific reinit per
   §13.17.10.
 - **Full-runtime restart required** — buffer-layout relocation per
@@ -20636,24 +20509,24 @@ three categories:
 The classification is computed from the diff alone; the runtime does
 not need to re-parse source.
 
-#### 15.7.3 Diff result format
+#### 15.6.2 Diff result format
 
 The diff produces a **reload plan**: a sequenced list of (cell
 add/remove/change, connection add/remove/change, behavior
 add/remove) operations the runtime applies in topological order.
 
 The plan format is implementation-defined but must preserve the
-ordering constraints of §14.8 (drop reverse-declaration order;
-connections before endpoint instances; etc.) and §14.9.
+ordering constraints of §14.7 (drop reverse-declaration order;
+connections before endpoint instances; etc.) and §14.8.
 
-### 15.8 Conformance
+### 15.7 Conformance
 
 A Ductus implementation consists of a **compiler** and a **runtime**
 that operate on the same graph specification format. An
 implementation is conformant if both components meet their
 respective criteria.
 
-#### 15.8.1 Compiler conformance
+#### 15.7.1 Compiler conformance
 
 A conformant compiler:
 
@@ -20669,7 +20542,7 @@ A conformant compiler:
    runtime with the produced graph specification, exhibits the
    observable behavior defined by §§1–13.
 
-#### 15.8.2 Runtime conformance
+#### 15.7.2 Runtime conformance
 
 A conformant runtime:
 
@@ -20681,7 +20554,7 @@ A conformant runtime:
 3. Implements the runtime semantics of §13 and §14: cell evaluation
    order, drop semantics, hot reload, thread orchestration.
 
-#### 15.8.3 Interoperability
+#### 15.7.3 Interoperability
 
 Interop is defined against the IR's text form (§15.4); where two
 implementations exchange a serialization, it must load at the same
@@ -20689,7 +20562,7 @@ format version. Cross-implementation mixing (compiler from
 implementation A, runtime from implementation B) is permitted at the
 same schema and format version per §15.4.2.
 
-#### 15.8.4 Conformance testing
+#### 15.7.4 Conformance testing
 
 The spec does not prescribe a reference test suite. Implementations
 may publish conformance suites; passing such a suite is not a
