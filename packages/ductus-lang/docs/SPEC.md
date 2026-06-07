@@ -2640,9 +2640,9 @@ financial domains beyond 64-bit range).
 
 `isize` and `usize` are platform-sized integers. They are distinct types
 serving distinct roles: `isize` is the array-length and index type
-(§9.3); `usize` exists for FFI compatibility with C-family `size_t`
-APIs, byte-count contexts where the non-negative invariant is load-bearing,
-and low-level memory layout work. Most code uses `isize`; `usize` appears in
+(§9.3); `usize` exists for FFI/ABI interop where a pointer-width unsigned
+integer is required, byte-count contexts where the non-negative invariant
+is load-bearing, and low-level memory layout work. Most code uses `isize`; `usize` appears in
 low-level corners.
 
 Half-precision (`f16`) and quadruple-precision (`f128`) floats are not
@@ -2670,15 +2670,14 @@ These are true aliases — transparent substitution, shared identity, fully
 interchangeable with the underlying type at every use site. A value of type
 `int` *is* a value of type `i32`; the alias adds no new identity, no new
 trait impls, no conversion cost. Aliases are provided for users who prefer
-C-traditional names; the canonical explicit-width names remain the
+traditional short names; the canonical explicit-width names remain the
 language's primary identifiers and appear unaltered throughout the standard
 library and documentation.
 
-No alias for `f32` is provided. The natural C-traditional name `float` would
-conflict with the lowercase `float` placeholder keyword (§1.4 and §2.2.4)
-and would mislead users from C-family languages
-where `float` is single-precision. `double` is the canonical short name for
-`f64`; users wanting `f32` write `f32` directly.
+No alias for `f32` is provided. The natural short name `float` would
+conflict with the lowercase `float` placeholder keyword (§1.4 and §2.2.4).
+`double` is the canonical short name for `f64`; users wanting `f32` write
+`f32` directly.
 
 No alias is provided for `i128`, `u128`, `isize`, `usize`, `i8`, `u16`,
 `u32`, or `u64` — these types have no widely-shared traditional short name
@@ -3687,9 +3686,8 @@ the final type set:
 | `Signed`   | `i32`        | Workhorse signed integer                      |
 | `Unsigned` | `u32`        | Symmetric counterpart to `i32`                |
 
-The `i32` and `f64` defaults match modern language convention (Rust, Swift,
-Kotlin, C#) and reflect the types where the cost/precision tradeoffs are
-most balanced for general code.
+The `i32` and `f64` defaults reflect the types where the cost/precision
+tradeoffs are most balanced for general code.
 
 #### 4.9.4 Auto-implementations for built-in numeric types
 
@@ -4654,7 +4652,7 @@ arm, evaluates that arm to a value, and discards the rest. It is used
 everywhere a value is produced — function bodies and reactive `derived`/
 `recurrent` expressions alike. It is *not* used to gate reactive
 *structure*: selecting which node/connection subtree is exposed and kept
-live is the role of the `given` block (§13.9.14), the structure-level
+live is the role of the `given` block (§13.9.13), the structure-level
 counterpart that builds all arms and freezes the unselected ones rather
 than discarding them. The two share arm shape and this exhaustiveness
 rule; they differ in operation (discard vs. freeze).
@@ -5108,7 +5106,7 @@ built-in lossless widenings specified in §4.5. A user implementing
 without explicit invocation; the user writes `let f: Fahrenheit =
 some_c.into()` or `let f: Fahrenheit = Fahrenheit::from(some_c)`.
 
-This prevents the C-family hazard of action at a distance through
+This prevents the hazard of action at a distance through
 user-defined conversions. The set of types that auto-convert is fixed by
 the language and discoverable from §4.5; user types never silently
 participate in expression-level type adjustment.
@@ -5920,8 +5918,7 @@ constructs already in the language:
   (`"{a}{b}{c}"`, §9.1.9).
 
 Because these cover the real use cases, Ductus does not carry the weight
-of variadic generics (the same conclusion Rust reaches under the same
-monomorphization model).
+of variadic generics under its monomorphization model.
 
 #### 9.2.6 Trait conformance for tuples
 
@@ -8404,8 +8401,8 @@ The index, field, and whole-value assignments above mutate a value the
 in-place guarantee extends to the **consume-and-produce** form — a
 function `fn f(own subject, …) -> Subject` that takes its subject by value
 and returns the transformed subject. This is the canonical way a type
-exposes mutation under single ownership (the language has no `&mut`
-parameter, §11.9), used by stdlib collections (`push`, `insert`,
+exposes mutation under single ownership (the language has no
+mutable-reference parameter, §11.9), used by stdlib collections (`push`, `insert`,
 `into_sorted`, …) and any user type alike.
 
 When such a function is called on a binding that
@@ -9406,7 +9403,7 @@ The choice of pattern is the iterator author's, expressed by declaring
 
 The trait method returns `(Option[Item], Subject)` because the iterator's
 internal cursor state must be mutated across calls, but the language has
-no `&mut` parameter form (§11.9) and forbids `mut` on parameters
+no mutable-reference parameter form (§11.9) and forbids `mut` on parameters
 (§11.7.2). Under these constraints, the only way to advance an
 iterator's state across a method call is to take the iterator by value
 (consume it) and return the advanced version alongside the item.
@@ -9421,8 +9418,7 @@ Because the for-loop's iterator binding is owned exclusively by the loop
 and is reassigned only by the loop's internal desugaring, the iterator's
 ownership is *linear* (single owner at every moment, no aliasing). The
 compiler recognizes this pattern and emits in-place cursor mutation —
-equivalent to the machine code produced for `&mut self` methods in
-languages with mutable references.
+the same machine code as a direct in-place update of the cursor.
 
 Specifically, when:
 
@@ -10552,7 +10548,7 @@ counters, whose history remains meaningful across a gap, use the default
 **Triggers are implicit from non-self references.** A recurrent
 re-evaluates whenever any cell it references (other than via
 `.previous`/`.past` on itself) commits a new value. This is the
-same spreadsheet-style reactive default as `derived` (§13.2.3): the
+same reactive default as `derived` (§13.2.3): the
 expression's value is its definition at all times, and the runtime
 maintains that invariant.
 
@@ -10594,10 +10590,8 @@ visible through these accessors during that same commit.
 Recurrents whose expressions did not re-evaluate in this pass do not
 advance; they retain their existing values.
 
-This is the standard synchronous-dataflow semantics (Lustre,
-Esterel, Verilog `<=` non-blocking assignment). The new value of
-any re-evaluated recurrent is a pure function of the previous-
-committed values and the inputs received during this pass.
+The new value of any re-evaluated recurrent is a pure function of the
+previous-committed values and the inputs received during this pass.
 
 ##### 13.2.4.2 Recurrent vs attr
 
@@ -10788,7 +10782,7 @@ Use `observe` when:
 - Trigger sets need explicit filtering via `where` (§13.18.10).
 
 When all references in the expression naturally drive re-evaluation
-(spreadsheet-style implicit triggers), `observe` is not needed.
+(implicit triggers), `observe` is not needed.
 
 ##### 13.2.4.8 Dynamic-size cell types
 
@@ -11440,7 +11434,7 @@ is for child-placement slots with cardinality.
 A `Node[T]` is a *value* (a deferred placement spec), so a value
 conditional may select among `Node[T]` values: `match scrutinee: …`
 yielding a `Node[T]` chooses *one* spec, which the receiving node then
-materializes once. This is distinct from the `given` block (§13.9.14),
+materializes once. This is distinct from the `given` block (§13.9.13),
 which gates *structure*: `given` builds every arm's subtree and switches
 which is live, freezing the others. Use `match`→`Node[T]` when exactly
 one of several specs should ever exist; use `given` when all alternatives
@@ -12058,8 +12052,8 @@ Two forms apply inside `expose:`:
 
 - An individual entry may carry the inline `when` modifier (§13.9.3) for
   single-placement gating.
-- An entry may itself be a **`when` block** (§13.9.13, boolean selection,
-  simple or multi-way guard arms) or a **`given` block** (§13.9.14,
+- An entry may itself be a **`when` block** (§13.9.12, boolean selection,
+  simple or multi-way guard arms) or a **`given` block** (§13.9.13,
   exhaustive discriminant selection over a sum scrutinee). Each arm body
   is a list of exposition entries; the runtime exposes the active arm and
   freezes the rest (Model B, §13.9.7).
@@ -14114,7 +14108,7 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
   being overridden), `when` slots immediately after whichever
   preceding element is present. This inline `when` is the
   single-placement *modifier* (§13.9.3); the block selection forms —
-  `when` blocks (§13.9.13) and `given` blocks (§13.9.14) — are not
+  `when` blocks (§13.9.12) and `given` blocks (§13.9.13) — are not
   inline-parts modifiers: they appear as standalone entries at
   `expose:`/body level, each owning an indented arm body, and so do not
   participate in this ordering.
@@ -14266,9 +14260,9 @@ The structural conditional surfaces are:
   (§13.9.3).
 - **`when` block** — a boolean-condition selector at `expose:`/body
   level, in simple (then / `default`) and multi-way (guard-arm) forms
-  (§13.9.13).
+  (§13.9.12).
 - **`given` block** — an exhaustive discriminant selector over a sum
-  scrutinee, with pattern arms (§13.9.14).
+  scrutinee, with pattern arms (§13.9.13).
 
 All of them gate *propagation*, never *existence*: a gated instance is
 constructed unconditionally (the static-graph rule of §13.1) and, while
@@ -14727,7 +14721,7 @@ error: instantaneous cycle in reactive expressions
         eliminate the cyclic dependency
 ```
 
-#### 13.9.13 The `when` block
+#### 13.9.12 The `when` block
 
 Beyond the type-level `when:` member (§13.9.2) and the inline placement
 modifier (§13.9.3), `when` has a **block form** that selects which
@@ -14782,7 +14776,7 @@ as §13.9.4). Because boolean guards do not partition by construction, a
 `when:` block is an **open** selector: it cannot be exhaustiveness-
 checked, so `default:` is the catch-all and is required unless some guard
 is provably total. For *closed*, exhaustively-checked selection over a
-sum discriminant, use the `given` block (§13.9.14) — do **not** reach for
+sum discriminant, use the `given` block (§13.9.13) — do **not** reach for
 `when x is Variant` guards, which forfeit exhaustiveness.
 
 **Semantics.** A `when` block is a gate, not a value selector: every arm
@@ -14806,7 +14800,7 @@ any `:`-introduced construct, owns an indented body and therefore
 occupies its own lines; it cannot share a line with sibling placements
 (§13.8.10).
 
-#### 13.9.14 The `given` block
+#### 13.9.13 The `given` block
 
 `given` is the **structural discriminant selector**: it gates among arms
 by the current variant of a sum-typed scrutinee, exhaustively. It is the
@@ -14831,7 +14825,7 @@ connection placement `Name: dest` (and at `expose:` level there are no
 connection placements at all — §13.3.7.5). Each arm body is itself a list
 of placements, indented under the arm.
 
-`given` applies in the same contexts as the `when` block (§13.9.13),
+`given` applies in the same contexts as the `when` block (§13.9.12),
 including an `effects:` clause (§13.3.8) — there each arm body is a list
 of effect entries, and an arm header `Variant:` (using `:`) never
 collides with a named effect entry `name = …` (using `=`).
@@ -15120,10 +15114,7 @@ of what its expression computes this commit. The end-of-commit
 commit (§13.10.2 step 4) is what advances the cell for the next
 commit to observe.
 
-This is the same semantic primitive used by hardware registers
-(Verilog `<=` non-blocking assignment), synchronous-dataflow
-languages (Lustre `fby`), and signal-flow audio languages
-(Faust `~`). The behavior is fully specified at the language
+The behavior is fully specified at the language
 level; the runtime requires no per-implementation convention beyond
 the `recurrent` declaration.
 
@@ -15386,9 +15377,8 @@ second type parameter. Generic parameter lists use commas throughout
 §2.5) and supplied as a value at use sites (`SmallVec[i32, 8]`).
 
 `Vec[T]` is the default for unbounded growth; the persistent
-vector trie (Clojure/Scala/Rust `im::Vector` family) provides
-sublinear append and read with structural sharing across
-committed versions. `SmallVec[T, N]` optimizes the common
+vector trie provides sublinear append and read with structural
+sharing across committed versions. `SmallVec[T, N]` optimizes the common
 case of small bounded collections with cache-friendly inline
 storage. `RingBuf[T, N]` provides constant-time bounded history
 with automatic eviction.
@@ -15741,7 +15731,7 @@ Must be called before the runtime transitions to the live state
 
 The `effect_type_name` is a string identifier matching the name of
 an `effect` declaration in the loaded source. The `reconciler` is a
-host-language construct (Rust struct, function table, or analogous)
+host-language construct (a struct, function table, or analogous)
 implementing the reconciler interface:
 
 - A *create* hook invoked when a new effect instance enters the live
@@ -18112,7 +18102,7 @@ to the base stream reload rules above:
   cycle, a consumer observes the set of events committed by the
   end of producer evaluation; events emitted *during* the consumer's
   own evaluation are deferred to the next commit. This preserves
-  the synchronous-dataflow semantics (§13.2.4.1).
+  the lockstep semantics (§13.2.4.1).
 - **Streams may not be passed to `runtime.write_signal` or
   `runtime.write_attr`.** Streams are not signal-shaped or attr-
   shaped cells. Host-side writes into a stream go through the
@@ -18282,16 +18272,7 @@ instances are values of that type with addressable cells.
 
 #### 13.19.1 Concept
 
-Earlier reactive systems and effect libraries (React `useEffect`,
-Elm `Cmd`, Haskell `IO`, Solid `createResource`, Angular
-`rxResource`) express effects as *invocations*: a function body
-runs in response to a trigger, performs an action, and produces a
-result. The invocation model handles request/response shapes
-cleanly but struggles with long-lived resources, bidirectional
-streams, and effects whose lifecycle is entangled with program
-state.
-
-Ductus effects use a *reconciliation* model instead. An effect
+Ductus effects use a *reconciliation* model. An effect
 declaration consists of two record-shaped blocks:
 
 - **`desired:`** — cells the program writes (or that flow from the
@@ -18511,7 +18492,7 @@ source's key set changes. Per-scope paths follow §13.5.3 with the
 effect instance as the enclosing context.
 
 **`when` / `given` blocks.** A `desired:` block may also contain `when`
-and `given` selection blocks (§13.9.13, §13.9.14), whose arms hold
+and `given` selection blocks (§13.9.12, §13.9.13), whose arms hold
 desired-cell declarations (and `repeat`s). They carry the same **freeze**
 semantics as everywhere else (Model B, §13.9.7): every arm is
 constructed, the active arm's desired cells are live, the inactive arms'
@@ -18576,7 +18557,7 @@ directly via the runtime API). Effects that need history-aware
 behavior must compute it in the host's reconciler.
 
 `repeat` (§13.5.4) — and likewise the `when` / `given` selection blocks
-(§13.9.13, §13.9.14) — are not valid in `observed:` blocks. Observed
+(§13.9.12, §13.9.13) — are not valid in `observed:` blocks. Observed
 blocks declare cells that receive host-pushed data; they do not host
 reactive-structure declarations. To materialize per-element scopes from
 an observed cell, place the `repeat` in a node body or the same effect's
@@ -18763,7 +18744,7 @@ effect fetch(url: Signal[Url]):
   ...
 
 // Used as type:
-operator render_fetch_card(f: fetch) -> Signal[VNode]:
+operator render_fetch_card(f: fetch) -> Signal[View]:
   ...
 
 // Used as constructor — in a node's effects: clause:
@@ -18944,15 +18925,15 @@ effect's type as the parameter type) or take a specific cell
 projected by field access:
 
 ```
-operator render_fetch_card(f: fetch) -> Signal[VNode]:
+operator render_fetch_card(f: fetch) -> Signal[View]:
   // receives the whole composite
   ...
 
 // in a node body:
 effects:
   f = current_url |> fetch
-derived card: VNode = f |> render_fetch_card          // whole composite
-derived display: VNode = f.response |> render_response // projected cell
+derived card: View = f |> render_fetch_card          // whole composite
+derived display: View = f.response |> render_response // projected cell
 ```
 
 The first form passes the composite; the second projects a specific
@@ -18965,7 +18946,7 @@ node's deriveds via the flat namespace rule (§13.19.7):
 ```
 effects:
   f = current_url |> fetch
-derived display: VNode = f.response |> render_response
+derived display: View = f.response |> render_response
 derived loading: bool = f.in_flight |> as_loading_class
 derived err_msg: string = f.error |> as_error_message
 ```
@@ -18985,7 +18966,7 @@ derived messages_per_second: f32 = ws.inbound |> count |> rate_per_second
 Effects are interpreted by the host. The host registers a
 *reconciler* for each effect type via the host API (§13.14.7), keyed
 by the effect's type name. The reconciler is a host-language object
-(Rust struct, function table, or analogous construct) whose interface
+(a struct, function table, or analogous construct) whose interface
 mirrors the effect's declaration:
 
 - **Read access** to the effect's parameter values and `desired:`
@@ -20048,7 +20029,7 @@ nearest enclosing gated instance, or `null` if none. The runtime composes
 each instance's own predicate with its `gate_parent` chain to obtain
 *effective* activation (§13.9.7), which drives transitive freeze and the
 suspend/resume delivery of §13.14.9. Block selectors (`when`/`given`,
-§13.9.13–§13.9.14) lower to per-arm gates: each arm becomes a gated
+§13.9.12–§13.9.13) lower to per-arm gates: each arm becomes a gated
 subtree whose predicate is the arm's guard (for a `when` block) or the
 arm's variant test against the scrutinee (for a `given` block). The
 compiler encodes declaration-order priority and exhaustiveness into the
