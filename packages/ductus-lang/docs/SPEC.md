@@ -1,8 +1,7 @@
 # Ductus Language Specification
 
 **Status:** Draft v0.1. Living document. Working reference for the language's
-design. Pairs with `GRAMMAR.md` (lexical and syntactic structure) and
-`Topics.md` (decision log).
+design. Pairs with `GRAMMAR.md` (lexical and syntactic structure).
 
 ---
 
@@ -1884,7 +1883,7 @@ resolution algorithm prioritizes trait implementations over free functions:
    dispatch.
 7. **Multiple free functions in scope under the same local name are
    impossible.** Free functions are uniquely named within their module per
-   §10 (Option E in Topics.md); only one can be in scope under any
+   §10; only one can be in scope under any
    given local name. Cross-module conflicts are resolved at import time, not
    at call time.
 8. **Nothing matches → unknown method error.** The diagnostic includes the
@@ -2656,7 +2655,7 @@ types.
 ### 4.2 Type Aliases
 
 The standard library provides convenience aliases using the `alias type`
-mechanism (Topic 18 in the decision log; see §6.3 for newtypes, which
+mechanism (see §6.3 for newtypes, which
 contrast with `alias type`):
 
 ```
@@ -2949,7 +2948,7 @@ level.
 Comparison works on both integer and float kinds. Mixed-kind comparisons
 promote per §4.5 before comparing. Float comparison follows IEEE 754
 semantics including NaN behavior: `NaN < x` is `false`, `NaN > x` is `false`,
-`NaN == NaN` is `false` (via the `is` operator below). This is a property of
+`NaN is NaN` is `false` (via the `is` operator below). This is a property of
 IEEE 754, not a language design choice; user code working with potentially-
 NaN floats must handle the NaN cases explicitly.
 
@@ -3172,12 +3171,12 @@ wrapping on overflow:
 
 | Operator   | Trait            | Behavior                                              |
 |------------|------------------|-------------------------------------------------------|
-| `+%`       | `WrappingAdd`    | `255_u8 +% 1 == 0_u8`                                 |
-| `-%`       | `WrappingSub`    | `0_u8 -% 1 == 255_u8`                                 |
-| `*%`       | `WrappingMul`    | `200_u8 *% 2 == 144_u8`                               |
-| `//%`      | `WrappingIntDiv` | `(-128_i8) //% (-1_i8) == -128_i8` (no overflow trap) |
+| `+%`       | `WrappingAdd`    | `255_u8 +% 1 is 0_u8`                                 |
+| `-%`       | `WrappingSub`    | `0_u8 -% 1 is 255_u8`                                 |
+| `*%`       | `WrappingMul`    | `200_u8 *% 2 is 144_u8`                               |
+| `//%`      | `WrappingIntDiv` | `(-128_i8) //% (-1_i8) is -128_i8` (no overflow trap) |
 | `%%`       | `WrappingRem`    | rare; defined for completeness                        |
-| unary `-%` | `WrappingNeg`    | `(-128_i8) -% == -128_i8` (no overflow trap)          |
+| unary `-%` | `WrappingNeg`    | `(-128_i8) -% is -128_i8` (no overflow trap)          |
 
 Wrapping is the right choice for hash functions, cryptographic primitives,
 counters where modular arithmetic is the intent, and bit-manipulation
@@ -3201,12 +3200,12 @@ overflow:
 
 | Operator    | Trait              | Behavior                            |
 |-------------|--------------------|-------------------------------------|
-| `+\|`       | `SaturatingAdd`    | `255_u8 +\| 1 == 255_u8`            |
-| `-\|`       | `SaturatingSub`    | `0_u8 -\| 1 == 0_u8`                |
-| `*\|`       | `SaturatingMul`    | `200_u8 *\| 2 == 255_u8`            |
-| `//\|`      | `SaturatingIntDiv` | `(-128_i8) //\| (-1_i8) == 127_i8`  |
+| `+\|`       | `SaturatingAdd`    | `255_u8 +\| 1 is 255_u8`            |
+| `-\|`       | `SaturatingSub`    | `0_u8 -\| 1 is 0_u8`                |
+| `*\|`       | `SaturatingMul`    | `200_u8 *\| 2 is 255_u8`            |
+| `//\|`      | `SaturatingIntDiv` | `(-128_i8) //\| (-1_i8) is 127_i8`  |
 | `%\|`       | `SaturatingRem`    | rare; defined for completeness      |
-| unary `-\|` | `SaturatingNeg`    | `(-128_i8) -\| == 127_i8`           |
+| unary `-\|` | `SaturatingNeg`    | `(-128_i8) -\| is 127_i8`           |
 
 Saturation is the right choice for DSP (audio sample clamping), image
 processing (pixel value clamping), and any context where producing a
@@ -3323,8 +3322,8 @@ Examples:
 ```
 let x: i32 = 300
 let y: u8 = u8(x)                    // ✗ traps at runtime — 300 doesn't fit u8
-let y: u8 = u8%(x)                   // ✓ wraps: 300 mod 256 == 44
-let y: u8 = u8|(x)                   // ✓ saturates to u8::MAX == 255
+let y: u8 = u8%(x)                   // ✓ wraps: 300 mod 256 is 44
+let y: u8 = u8|(x)                   // ✓ saturates to u8::MAX is 255
 let y: Option[u8] = u8?(x)           // ✓ None — out of range
 let z: i32 = i32(some_float)         // truncating float-to-int (may trap)
 ```
@@ -3671,8 +3670,8 @@ or absence of `Neg` in the type's effective method set: types satisfying
 `Signed` implement `Neg`; types satisfying `Unsigned` do not; floats
 implement `Neg` via the `Float` umbrella.
 
-`Div` is on `Float` only (not on `Integer` or `Numeric`), reflecting Topic
-5's rule that `/` always produces `Float`. Integer operands to `/` are
+`Div` is on `Float` only (not on `Integer` or `Numeric`), reflecting the
+rule that `/` always produces `Float`. Integer operands to `/` are
 implicitly widened to float per §4.4.1.1 before `Div::div` is dispatched.
 
 #### 4.9.3 Default mappings
@@ -6895,10 +6894,9 @@ any moment; function parameters and let-rebindings produce borrow-
 equivalent aliases in the same cluster as the source. Consumption is
 opt-in via `own` in the signature and `move` at the call site.
 
-This section supersedes the absolute-immutability language in §1.3. The
-broader principle stands — immutability is the default and external state
-remains immutable — but local mutation is permitted inside function bodies
-as a controlled escape hatch for performance.
+Immutability is the default and external state remains immutable; local
+mutation is permitted inside function bodies as a controlled escape hatch
+for performance (§1.3).
 
 ### 11.1 Design Principles
 
@@ -9936,7 +9934,7 @@ fn total[T: Iterable](source: T) -> T.Iter.Item where T.Iter.Item: Numeric:
 The compiler verifies the constraints at definition and monomorphizes
 per call site.
 
-### 12.13 Interaction with Reactivity (Forward-Looking)
+### 12.13 Interaction with Reactivity
 
 The reactive system is specified in §13. Loops in reactive contexts
 follow §11.14:
@@ -10089,45 +10087,30 @@ role:
   reconciliation model. The host-interpreted bridge between program
   state and the runtime environment.
 
-Earlier drafts of this specification collapsed outside-world effects
-into nodes the host interpreted: a `Log` node with a `message` attr,
-a `Delay` node with a `time` attr, and so on. The host walked the
-node graph and dispatched on type. The motivating argument was
-parsimony — one composition layer (nodes + parts + connections +
-reactive cells) covering both data flow and effects.
-
-That design conflated two distinct concerns. Topology — the node-
-and-connection graph the runtime traverses — has its own
+Topology and outside-world alignment are distinct concerns. Topology
+— the node-and-connection graph the runtime traverses — has its own
 discipline: structural identity, child placement, connection
 endpoints, exposition. Outside-world alignment — sending a request,
 opening a connection, playing audio — has a different shape:
 request/response, long-lived resources, event streams, bidirectional
-flows, lifecycle entangled with program state. Forcing both into a
-single mechanism either flattened topology's structural advantages
-or distorted effects' alignment semantics.
+flows, lifecycle entangled with program state.
 
-The present design separates them. Effects are first-class via the
-`effect` construct (§13.19), using a reconciliation model
-(`desired:` / `observed:`) that subsumes request/response, long-
-lived resources, fire-and-forget, and event-stream shapes under one
-primitive. Nodes remain topology; runtime hosts are free to
-interpret nodes of specific types as before (DSP node graphs,
+Effects are first-class via the `effect` construct (§13.19), using a
+reconciliation model (`desired:` / `observed:`) that subsumes
+request/response, long-lived resources, fire-and-forget, and
+event-stream shapes under one primitive. Nodes are topology; runtime
+hosts are free to interpret nodes of specific types (DSP node graphs,
 UI children, music clips), but are not obliged to use nodes for
-outside-world alignment.
-
-The trade-off has moved. Effects carry interpretation complexity in
-the host's reconciler implementations (which is the right place — the
-host knows its domain). The language carries two distinct construct
-kinds (nodes for topology, effects for alignment) rather than one
-overloaded kind. The conceptual clarity and the alignment with
-standard reconciliation patterns (Kubernetes controllers, Erlang/OTP
-supervision, Elm subscriptions) outweighs the additional construct.
+outside-world alignment. Effects carry interpretation complexity in
+the host's reconciler implementations — the host knows its domain;
+the language carries two distinct construct kinds, nodes for topology
+and effects for alignment.
 
 Adding a new effect type is achieved by declaring a new `effect`;
 the host registers a reconciler for that effect type. Adding a new
 topological participant is achieved by declaring a new `node`; the
 host extends its interpreter for traversed node types (e.g., DSP
-graph evaluation). The two paths are no longer entangled.
+graph evaluation).
 
 #### 13.1.1 A small example
 
@@ -11584,8 +11567,8 @@ type is determined by the surrounding context:
 - Assigned to a `Signal`/`derived`/`recurrent` binding, or used in a
   context expecting `Signal[T]`: produces `Signal[T]`.
 - Assigned to a `stream` declaration, or used in a context expecting
-  `Stream[T]`: produces `Stream[T, P, N]` per the stream context's
-  policy/capacity.
+  `Stream[T]`: produces the concrete stream type (`RingStream[T, N]`
+  or `GateStream[T, N]`) per the stream context's policy/capacity.
 
 All arms' expressions must produce values of the same type T,
 matched against the surrounding context. Type mismatch across arms
@@ -12036,7 +12019,7 @@ node TypeName:
     SomeB
   attr foo: i32
   signal user_name: string = "world"
-  derived greeting: string = "hello " ++ user_name
+  derived greeting: string = "hello " + user_name
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
@@ -14388,7 +14371,7 @@ modifier-style clauses:
 
 ```
 Logger l1 when debug_enabled
-Filter f1 / "low-pass" when dsp_mode == DspMode::Realtime | gain=0.5
+Filter f1 / "low-pass" when dsp_mode is DspMode::Realtime | gain=0.5
 ShowsCount when from.count > 0: d1
 ```
 
@@ -14743,41 +14726,6 @@ error: instantaneous cycle in reactive expressions
   hint: introduce a `recurrent` declaration on the cycle, or
         eliminate the cyclic dependency
 ```
-
-#### 13.9.12 Superseded: the `When` / `Then` / `Else` stdlib pattern
-
-Earlier drafts expressed conditional exposition through a stdlib pattern
-— `When`/`Then`/`Else` wrapper nodes whose `expose:` clause gated each
-child with a per-entry `when cond` / `when !cond`:
-
-```
-node When:                                   -- superseded; see below
-  default attr cond: Signal[bool]
-  parts: Then!, Else?
-  expose:
-    parts.Then when cond
-    parts.Else when !cond
-```
-
-This pattern is **superseded by the language-level `when` and `given`
-blocks** (§13.9.13, §13.9.14). The block forms express selection
-directly, without wrapper nodes, and — for the multi-way and discriminant
-cases — with compiler-checked exhaustiveness that the hand-written
-`cond`/`!cond` partition could not provide. The two-way example above is
-written directly as:
-
-```
-expose:
-  when cond:
-    SomeDecision
-  default:
-    SomeFallback
-```
-
-and the multi-variant case is the `given` block (§13.9.14).
-`When`/`Then`/`Else` are
-retained, if at all, only as thin stdlib sugar over the block forms; they
-carry no runtime-aware special-casing and are not the recommended form.
 
 #### 13.9.13 The `when` block
 
@@ -16479,7 +16427,7 @@ type PeakResult:
 operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
   recurrent (peak, count): (f32, u32) = (
     max(peak.previous(source), source),
-    if source > peak.previous(source) then count.previous(0) + 1 else count.previous(0),
+    if source > peak.previous(source): count.previous(0) + 1 else: count.previous(0),
   )
 
   PeakResult(peak: peak, count: count)
@@ -16769,7 +16717,7 @@ gated wrapper operator that conditionally falls through:
 
 ```
 operator conditional_smooth(source: Signal[f32], gate: Signal[bool], clock: Signal[u64]) -> Signal[f32]:
-  derived effective: f32 = if gate then (source |> smooth(rate: 0.1, clock: clock)) else source
+  derived effective: f32 = if gate: (source |> smooth(rate: 0.1, clock: clock)) else: source
   effective
 ```
 
@@ -17161,10 +17109,10 @@ The full observation surface, available on every stream:
 |---|---|---|
 | `pending_count` | `Signal[i32]` | Events in the buffer not yet observed by every cursor |
 | `pressure` | `Signal[f32]` | `pending_count / capacity`, range `0.0..1.0` |
-| `is_full` | `Signal[bool]` | `true` when `pending_count == capacity` |
+| `is_full` | `Signal[bool]` | `true` when `pending_count is capacity` |
 | `dropped_total` | `Signal[i64]` | Cumulative count of events displaced by overflow (ring only; always `0` for gate) |
 | `rejected_total` | `Signal[i64]` | Cumulative count of pushes rejected by overflow (gate only; always `0` for ring) |
-| `last_overflow_at` | `Signal[Option[instant]]` | Timestamp of the most recent overflow event, or `none` if never |
+| `last_overflow_at` | `Signal[Option[instant]]` | Timestamp of the most recent overflow event, or `None` if never |
 
 These cells are ordinary `Signal[T]` cells for all purposes —
 participating in the commit cycle, in derived dependencies, in hot
@@ -17347,7 +17295,7 @@ stream ring sum: i32 = stream_a + stream_b
 **Conditional transformation:**
 
 ```
-stream ring clamped: i32 = if raw > max_allowed then max_allowed else raw
+stream ring clamped: i32 = if raw > max_allowed: max_allowed else: raw
 // Per-event of raw, output the clamped value.
 ```
 
@@ -17398,10 +17346,10 @@ recurrent[N]? stream policy[capacity]? NAME: Type? = EXPR
   referenced (including `NAME` itself).
 
 ```
-recurrent stream ring filtered: i32 = if count % 2 == 0 then count else count.previous(0)
+recurrent stream ring filtered: i32 = if count % 2 is 0: count else: count.previous(0)
 recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
 recurrent stream ring smoothed: f32 = (count + smoothed.previous(0.0)) / 2
-recurrent[5] stream ring debounced: i32 = if count.past(5, 0) == count then count else debounced.previous(0)
+recurrent[5] stream ring debounced: i32 = if count.past(5, 0) is count: count else: debounced.previous(0)
 ```
 
 Each example uses the default capacity. Assuming `count: ring[1024]`:
@@ -17448,7 +17396,7 @@ fallback values within the same expression:
 
 ```
 recurrent stream ring blend: i32 =
-  if condition then count.previous(0) else count.previous(99)
+  if condition: count.previous(0) else: count.previous(99)
 // Two calls on count.previous, with different fallbacks. Both
 // are valid; each contributes independently to its branch.
 ```
@@ -17668,7 +17616,7 @@ operator scan[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Stream[A]:
 
 operator pairwise[T](source: Stream[T]) -> Stream[(T, Option[T])]:
   // emits each event paired with the previous event;
-  // the first output is (first_input, none).
+  // the first output is (first_input, None).
 ```
 
 These are the operator-form equivalents of `recurrent[N] stream`'s
@@ -17705,7 +17653,7 @@ A where C
 ```
 stream ring big_clicks = clicks where clicks.position.x > 1000
 stream ring positive = numbers where numbers > 0
-stream ring relevant = events where (events.priority == high and active_signal)
+stream ring relevant = events where (events.priority is high and active_signal)
 ```
 
 For signals on the LHS, the implicit `to_stream` semantics apply:
@@ -17749,7 +17697,7 @@ a reactive expression referencing in-scope cells directly); `filter`
 is the operator form (predicate is a closure).
 
 ```
-stream ring active_events = events where active_signal == true
+stream ring active_events = events where active_signal is true
 // emits each event of `events` for which `active_signal` is true
 // at that moment. If `active_signal` flips false then true again
 // between events, no event is re-emitted — the filter only fires on
@@ -17792,8 +17740,8 @@ capacity follow:
 `where` is left-associative; multiple filters chain naturally:
 
 ```
-stream ring active_big_clicks = clicks where clicks.area > 100 where clicks.priority == high
-// equivalent to: (clicks where clicks.area > 100) where clicks.priority == high
+stream ring active_big_clicks = clicks where clicks.area > 100 where clicks.priority is high
+// equivalent to: (clicks where clicks.area > 100) where clicks.priority is high
 ```
 
 `where` composes with other stream operators (§13.18.9) at any
@@ -18274,11 +18222,11 @@ error: `stream` declarations are not permitted inside function bodies
 
 ```
 error: `.past` and `.previous` are only valid inside a `recurrent[N] stream` declaration
-  --> stream filtered = if count % 2 == 0 then count else count.previous(0)
-                                                                ^^^^^^^^^^^
+  --> stream filtered = if count % 2 is 0: count else: count.previous(0)
+                                                             ^^^^^^^^^^^
   hint: history access requires opting into a recurrent stream
         declaration, which allocates the per-stream memory:
-        `recurrent stream filtered = if count % 2 == 0 then count else count.previous(0)`
+        `recurrent stream filtered = if count % 2 is 0: count else: count.previous(0)`
 ```
 
 **Output `.past(k, ...)` exceeds declared `[N]`:**
@@ -18366,10 +18314,6 @@ discipline; it pays for itself by absorbing cancellation, restart,
 lifecycle, and resource cleanup into a single mechanism (§13.19.11
 hot reload; §13.19.12 lifetime).
 
-The historical rationale for not having a dedicated effects construct
-appears in the revised §13.1; the design space that justifies the
-present construct is laid out there.
-
 #### 13.19.2 Declaration
 
 ```
@@ -18423,8 +18367,8 @@ effect fetch(url: Signal[Url], method: Method = Method::GET):
   desired:
     derived request: Request = Request { method: method, target: url }
   observed:
-    signal response: Option[Response] = none
-    signal error: Option[FetchError] = none
+    signal response: Option[Response] = None
+    signal error: Option[FetchError] = None
     signal in_flight: bool = false
 ```
 
@@ -18439,7 +18383,7 @@ effect websocket(url: Signal[Url]):
   observed:
     stream ring[1024] inbound: Message
     signal is_open: bool = false
-    signal last_error: Option[WSError] = none
+    signal last_error: Option[WSError] = None
 ```
 
 A long-lived resource effect with bidirectional message flow. The
@@ -18452,7 +18396,7 @@ signal cells.
 Effect parameters are cell-bound or value-typed, with the same rules
 as operator parameters (§13.17.3):
 
-**Cell-bound parameters** (`name: Signal[T]`, `name: Stream[T, P, N]`,
+**Cell-bound parameters** (`name: Signal[T]`, `name: Stream[T]`,
 `name: <other Cell[T] type>`):
 - Bind to a reactive cell at instantiation.
 - The host's reconciler reads the cell's current value (or observes
@@ -18594,8 +18538,8 @@ cell's current value; the host updates it via the host API
 
 ```
 observed:
-  signal response: Option[Response] = none
-  signal error: Option[FetchError] = none
+  signal response: Option[Response] = None
+  signal error: Option[FetchError] = None
   signal in_flight: bool = false
   signal is_open: bool = false
 ```
@@ -18603,7 +18547,7 @@ observed:
 The declaration shape matches a regular `signal` declaration
 (§13.2.1): name, value type, and an initial value. The initial value
 is what the program reads before the host's first write — typically
-a sentinel like `none` for `Option[T]` or `false` for `bool`.
+a sentinel like `None` for `Option[T]` or `false` for `bool`.
 
 The host writes signal cells via `runtime.write_signal` against the
 effect instance ID (§13.14.2 per-instance form; §13.14.9 reconciler
@@ -18838,9 +18782,9 @@ effect cached_fetch[T: Cacheable](
   cache: Signal[Cache[T]],
 ):
   observed:
-    signal value: Option[T] = none
+    signal value: Option[T] = None
     signal cache_hit: bool = false
-    signal error: Option[FetchError] = none
+    signal error: Option[FetchError] = None
 ```
 
 Standard generics machinery applies (§3 traits, §2.2 inference).
@@ -18953,8 +18897,8 @@ lifetime follows that clause's scope:
 
 **"Desired says no resource needed" is not the same as "effect
 dies."** When a `desired:` cell's value implies the host should not
-be holding a resource (e.g., a `derived target: Option[Url] = none`
-that evaluates to `none` because the program hasn't supplied a URL),
+be holding a resource (e.g., a `derived target: Option[Url] = None`
+that evaluates to `None` because the program hasn't supplied a URL),
 the host tears down the resource but the effect instance is still
 alive. The host remains ready to re-establish the resource if the
 desired changes back. Only scope death causes instance teardown.
@@ -18964,7 +18908,7 @@ subtree is gated off (§13.9.7), the runtime delivers the reconciler's
 `suspend` hook (§13.14.7, §13.14.9): the resource is released but the
 instance state is preserved, exactly the "resource down, instance alive"
 case above. Reopening the gate delivers `resume`, re-establishing the
-resource. Gating, like a `none` desired, never destroys the instance —
+resource. Gating, like a `None` desired, never destroys the instance —
 only scope death does. Gating is transitive: closing any ancestor gate
 suspends every contained effect, regardless of the effects' own gates
 (§13.9.7).
@@ -19080,7 +19024,7 @@ must be registered before the runtime becomes live.
 **Reconciler error reporting.** Reconciler errors (network failure,
 resource exhaustion, etc.) are reported to the program through the
 effect's `observed:` cells (typically a `signal error: Option[E] =
-none` cell). The reconciler does not panic the runtime;
+None` cell). The reconciler does not panic the runtime;
 reconciler-internal errors are domain errors expressed through the
 value track (§8).
 
