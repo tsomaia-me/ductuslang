@@ -15651,7 +15651,7 @@ The runtime's lifecycle proceeds in phases:
    work into per-declaration-kind phases; the topological sort
    determines the order.
 4. Perform the first commit, publishing the initial snapshot (the
-   reference kernel: an atomic current-pointer swap, §14.3.3.1).
+   reference kernel: an atomic current-pointer swap, §14.3.3).
    Observers' subsequent `acquire_snapshot` calls return real data.
 
 The runtime is "constructing" through steps 1–3; "live" after step
@@ -15753,7 +15753,7 @@ fired triggers) plus the constant cost of publishing the snapshot.
 Observers see the new state on their next `acquire_snapshot`. A commit with
 no dirty cells is idempotent — a fresh snapshot is published but its values
 are identical. (The reference kernel publishes via an atomic back-buffer
-swap, §14.3.3.1.)
+swap, §14.3.3.)
 
 The host chooses the commit cadence per its domain — per audio block, per
 frame, per event; the runtime imposes none.
@@ -15791,7 +15791,7 @@ The snapshot remains valid until the observer next acquires one; a later
 call obtains a newer snapshot if a commit has occurred in the interim.
 Multiple snapshots may be held concurrently; acquiring or holding one never
 blocks a `commit`. (The reference kernel realizes a snapshot as a
-triple-buffer view obtained by a single atomic load, §14.3.3.2.)
+triple-buffer view obtained by a single atomic load, §14.3.3.)
 
 #### 13.14.7 `runtime.register_reconciler`
 
@@ -16068,7 +16068,7 @@ gate-open.
 
 #### 13.15.3 Reload sequence
 
-The runtime performs the reload atomically on the producer thread,
+The runtime performs the reload atomically on its driving context,
 in the following order:
 
 1. Compile new source. On failure, reject reload; runtime state
@@ -20347,7 +20347,7 @@ runtime uses it to bias storage-mechanism selection. Defined values:
 
 - `realtime` — updates are deadline-bound; readers (e.g., audio
   thread) cannot block. Typically pairs with `cross_thread_snapshot`
-  and selects a triple-buffer mapping.
+  (the reference kernel: a triple-buffer mapping).
 - `bounded` — updates are committed but not deadline-bound. Pairs
   with any `observability` value.
 - `lazy` — updates are best-effort; the cell tolerates large
