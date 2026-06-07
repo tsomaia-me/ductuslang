@@ -16302,8 +16302,9 @@ An *operator* is a reusable, cell-allocating reactive transformation
 declared with the `operator` keyword. Operators take `Signal[T]`
 inputs (and optionally non-reactive value parameters), allocate
 internal reactive cells (recurrents and/or deriveds) per
-instantiation, and produce a `Signal[T]` output. They are the
-primary mechanism for composing reactive transformations.
+instantiation, and produce a `Cell[T]` output (typically `Signal[T]`,
+but `Stream[T]`/`Sink[T]` for event/sink operators — §13.17.5). They are
+the primary mechanism for composing reactive transformations.
 
 Operators are distinct from `fn` declarations:
 
@@ -16339,7 +16340,7 @@ cells; multiple call sites do not share state.
 #### 13.17.2 Declaration
 
 ```
-operator name[GenericParams]?(params...) -> Signal[T]:
+operator name[GenericParams]?(params...) -> Cell[T]:
   body
 ```
 
