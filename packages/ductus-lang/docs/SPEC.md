@@ -151,7 +151,7 @@ Every separated list (call arguments, generic parameters, tuple
 components, `parts:`/`incoming:`/`outgoing:` entries, etc.) uses the
 comma, the newline, or both. A `;` in Ductus source is a lex error.
 (This governs Ductus source only. Non-Ductus code shown for
-illustration — host-driver pseudocode that embeds the kernel, and the
+illustration — host-driver pseudocode that embeds the runtime, and the
 Rust comparison snippets in §15 and §18 — follows its own language's
 rules and may use semicolons.)
 
@@ -6289,7 +6289,7 @@ no other introspection is provided.
 ##### 9.4.2.3 Limitation: no cross-run serialization
 
 Because the `instant` epoch is implementation-defined and tied to a
-single kernel run (typically program start), instants cannot be
+single runtime run (typically program start), instants cannot be
 reliably serialized to disk and restored across runs — a saved
 `instant` from one run has no meaningful interpretation in a later
 run started from a different epoch. Programs that need persistent
@@ -16076,7 +16076,7 @@ in the following order:
    reverse-declaration order. Connections drop before endpoint
    instances; within each instance, attrs, recurrents, and
    deriveds drop in reverse declaration order.
-7. Update the behavior table (§14.6.4): register behaviors with
+7. Update the behavior table (§14.6.3): register behaviors with
    new content-addressed IDs; deregister behaviors no longer
    present. Behaviors with unchanged content-addressed IDs are
    carried over.
@@ -19649,7 +19649,7 @@ values and receives its outputs — is defined abstractly in the Behavior IR
 never reaches inside. The remaining subsections specify the
 backend-independent obligations on behaviors.
 
-#### 14.6.2 Statelessness
+#### 14.6.1 Statelessness
 
 Behaviors are **stateless** at the runtime level. All state lives in
 reactive cells (attrs, signals, derived results). Behaviors are pure
@@ -19664,7 +19664,7 @@ Local mutation within a behavior (`mut` bindings, indexed assignment,
 iterator state) is permitted per §§11–12. These mutations are visible
 only within the behavior's invocation; they do not escape.
 
-#### 14.6.3 Error handling
+#### 14.6.2 Error handling
 
 Behaviors follow Ductus's two-track failure model per §13.13:
 trap-track failures (arithmetic overflow under default operators,
@@ -19676,7 +19676,7 @@ boundary, no errored-cell sentinel, no continuation past a trap.
 See §13.13.1 for full rules and worked examples; the same semantics
 apply uniformly to all behaviors the runtime invokes.
 
-#### 14.6.4 Behavior identity
+#### 14.6.3 Behavior identity
 
 Each behavior is identified by a stable u32 ID assigned at compile
 time. IDs are **content-addressed**: a stable hash of the canonicalized
@@ -19699,7 +19699,7 @@ Each behavior also carries a debug name: the qualified source path
 diagnostics, profiles, and error messages. The runtime resolves
 behaviors by ID; debug names appear only in diagnostic output.
 
-#### 14.6.5 Thread invocation
+#### 14.6.4 Thread invocation
 
 Behaviors are invoked by the runtime; which execution context invokes
 each behavior, and how it maps onto OS threads, is a backend concern.
@@ -19776,8 +19776,8 @@ file changes:
 
 1. The CLI's watch mode detects the change.
 2. The frontend re-runs on the changed file.
-   3a. **Behavior identity (§14.6.4).** The frontend computes
-   content-addressed IDs for each behavior per §14.6.4. Behaviors
+   3a. **Behavior identity (§14.6.3).** The frontend computes
+   content-addressed IDs for each behavior per §14.6.3. Behaviors
    whose IDs are present only in the old program are *removed*;
    behaviors present only in the new program are *added*; behaviors
    present in both are *carried over* unchanged.
@@ -20100,7 +20100,7 @@ stream-cell encoding. Recurrents whose expression is an `observe`
 block additionally carry the observe's per-arm trigger sets.
 
 **`when`-gates.** Per gated instance, the predicate expression in
-compiled form (behavior ID per §14.6.4, plus input cell IDs the
+compiled form (behavior ID per §14.6.3, plus input cell IDs the
 predicate reads), and the instance's `gate_parent` — the path of the
 nearest enclosing gated instance, or `null` if none. The runtime composes
 each instance's own predicate with its `gate_parent` chain to obtain
@@ -20117,7 +20117,7 @@ values each commit.
 
 **Behavior table.** A list of `(behavior_id, debug_name,
 input_cell_ids, output_cell_id?)` entries. Behavior IDs are
-content-addressed per §14.6.4. The runtime binds IDs to function
+content-addressed per §14.6.3. The runtime binds IDs to function
 pointers at program startup.
 
 **Stream cells.** A list of stream cell entries. Each:
@@ -20305,7 +20305,7 @@ traits; it manages bits in cells and invokes functions by ID.
 
 A *behavior* is a pure function the runtime invokes to compute a derived
 value, a gate predicate, or an effect's desired state — the leaf compute
-the graph (§15.4.1) names by content-addressed id (§14.6.4). The behavior
+the graph (§15.4.1) names by content-addressed id (§14.6.3). The behavior
 IR is:
 
 - **typed** — every value has a concrete type (the §15.4 vocabulary);
