@@ -6120,7 +6120,7 @@ Only fixed-size arrays receive dedicated language syntax. Stdlib's
 dynamic collections are ordinary generic types per §2.
 
 Stdlib collections receive no special powers. Their mutating operations
-are ordinary `own self -> Subject` methods (§11.11.2): a call mutates in
+are ordinary `own subject -> Subject` methods (§11.11.2): a call mutates in
 place or yields a fresh value entirely according to the caller's
 ownership, never a property of the type — there is no separate "mutable
 collection" type. The only primitive such a collection rests on is the
@@ -8406,7 +8406,7 @@ moved into the binding (consumed from its source).
 The index, field, and whole-value assignments above mutate a value the
 `mut` binding already owns; they are in place by construction. The same
 in-place guarantee extends to the **consume-and-produce** form — a
-function `fn f(own self, …) -> Subject` that takes its subject by value
+function `fn f(own subject, …) -> Subject` that takes its subject by value
 and returns the transformed subject. This is the canonical way a type
 exposes mutation under single ownership (the language has no `&mut`
 parameter, §11.9), used by stdlib collections (`push`, `insert`,
@@ -8447,7 +8447,7 @@ use(a)
 #### 11.11.3 Method-receiver sugar for consume-and-produce
 
 A method call on a `mut` binding whose receiver parameter is `own` may
-omit the receiver `move` and the rebind. When `m` takes `own self` and
+omit the receiver `move` and the rebind. When `m` takes `own subject` and
 returns `Subject`,
 
 ```
@@ -8910,7 +8910,7 @@ mut destinations = make_collection()
 let records: Vec[Record] = make_records()
 for own r in records:                            // r: Record (real owner)
   destinations = (move destinations).push(move r)
-                                                  // ✓ push takes (own self, own elem);
+                                                  // ✓ push takes (own subject, own elem);
                                                   //   both arguments require explicit
                                                   //   `move` (category A; §11.8.5)
 // records is consumed; destinations contains the records' owned values
@@ -9677,7 +9677,7 @@ for own r in records:                            // `for own`; r: Record (real o
   if r.is_valid():                                // predicate borrows r (default
                                                   //   convention; r still owned)
     destinations = (move destinations).push(move r)
-                                                  // ✓ push takes (own self, own elem);
+                                                  // ✓ push takes (own subject, own elem);
                                                   //   explicit `move` on both (§11.8.5)
 // records consumed; destinations holds the valid records
 ```
@@ -13421,7 +13421,7 @@ left side of `::`):
   named parameter in a `fulfill`-block function.
 - **`Subject`** — the *type-level* alias for the implementing/subject
   type, usable only in type positions in trait declarations and
-  `fulfill` blocks (§3.1.1). It replaces the older `Self` alias.
+  `fulfill` blocks (§3.1.1).
 - **`here`** — the current (innermost) scope as a *namespace*. Scope
   resolution uses `::`: `here::x` resolves `x` in the current scope,
   bypassing any shadowing from inner blocks. `here` is not a value and
