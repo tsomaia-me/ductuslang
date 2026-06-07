@@ -517,19 +517,20 @@ specific to defaults.
 ```
 operator merge[
   T,
-  const N: usize = A.capacity + B.capacity,
+  const A: usize,
+  const B: usize,
+  const N: usize = A + B,
 ](
   a: RingStream[T, A],
   b: RingStream[T, B],
 ) -> RingStream[T, N]
 ```
 
-Here `N` defaults to `A.capacity + B.capacity` — an expression
-referencing the const-generic values `A.capacity` and `B.capacity`
-associated with the inferred type parameters. The default is
-evaluated at instantiation time using the concrete arguments and
-must produce a compile-time-known value of the declared type
-(here, `usize`).
+Here `N` defaults to `A + B` — an expression over the const-generic
+values `A` and `B`, which are inferred from the input stream types
+`RingStream[T, A]` and `RingStream[T, B]`. The default is evaluated
+at instantiation time using the concrete arguments and must produce
+a compile-time-known value of the declared type (here, `usize`).
 
 **Evaluation rules.**
 
@@ -538,9 +539,6 @@ must produce a compile-time-known value of the declared type
 - The expression may reference other generic parameters of the same
   declaration that precede it in the parameter list. Forward
   references are not permitted.
-- The expression may reference projections of generic-parameter
-  types that are const-generics (e.g., `A.capacity` where `A` is
-  itself a type parameter that carries a capacity).
 - The expression must produce a value of the declared parameter
   type. Compile error otherwise.
 
@@ -552,12 +550,13 @@ At a call site, the const-generic parameter may be:
   the default, subject to type-correctness.
 
 ```
-// Use default: N = a.capacity + b.capacity
+// Use default: N = A + B (A, B inferred from the stream types)
 let m1 = merge(stream_a, stream_b)
 
 // Override: N = 1024 (must be type-correct; the override is
-// the caller's assertion that 1024 suffices)
-let m2 = merge::[Event, 1024](stream_a, stream_b)
+// the caller's assertion that 1024 suffices). N is supplied by name
+// per §2.2.5 — A and B still infer from the stream types.
+let m2 = merge::[T = Event, N = 1024](stream_a, stream_b)
 ```
 
 **Type-parameter defaults** (§3.1.6.1) and const-generic defaults
@@ -889,7 +888,7 @@ const BUF: usize = 1024
 stream ring[BUF * 2] events: Event     // capacity 2048
 let history: i32[fib(10) + 1]          // pure call in an array size
 recurrent[BUF / 8] stream avg = ...    // division is fine: operands are known
-let m = merge::[Event, BUF_A + BUF_B](a, b)
+let m = merge::[T = Event, N = BUF_A + BUF_B](a, b)
 ```
 
 Regular `const`s (§2.4.1) are admitted here on the same footing as
@@ -1085,7 +1084,7 @@ const-generic expression and obeys §2.5.2–§2.5.4: symbolic where it
 references unbound parameters, concrete once they are known.
 
 ```
-operator merge[T, const N: usize = A.capacity + B.capacity](
+operator merge[T, const A: usize, const B: usize, const N: usize = A + B](
   a: RingStream[T, A],
   b: RingStream[T, B],
 ) -> RingStream[T, N]
@@ -1469,10 +1468,11 @@ methods:
   `Type`'s body is a compile error: the implementation has no declared
   contract.
 
-The exception is traits with no methods (pure-requirement traits, §3.3.5):
-these are automatically satisfied when all required traits are satisfied; no
-`satisfies` clause is needed on the type and no `fulfill` block is needed for
-the umbrella.
+The exception is traits with no methods (pure-requirement traits, §3.3.5),
+and traits all of whose methods have default bodies: these are automatically
+satisfied when all required traits are satisfied; no `satisfies` clause is
+needed on the type and no `fulfill` block is needed for the auto-satisfied
+trait.
 
 #### 3.2.1 Satisfied traits must have disjoint method names
 
@@ -1783,19 +1783,29 @@ A trait that declares no methods and no associated types — only `requires`
 clauses — is a pure-requirement trait. Examples are the umbrella traits from
 §3.6 (`Numeric`, `Integer`, `Float`, `Signed`, `Unsigned`).
 
-Pure-requirement traits are automatically satisfied when all required traits
-are satisfied. No `fulfill` block is needed for the umbrella; no `satisfies`
-clause is needed on the type for the umbrella (though it may be included for
-documentation). The trait is *structurally* satisfied via the satisfaction of
-its requirements, but it remains *nominally* present in the trait system:
-generic constraints `T: Numeric` are checked against the trait's name, and
-the compiler verifies that `T`'s satisfied trait set includes everything
-`Numeric` requires.
+A trait is **automatically satisfied** — no explicit `satisfies` clause on
+the type and no `fulfill` block for the trait itself are needed — when both
+hold: all of its `requires` are satisfied, *and* every method it declares has
+a default body (§3.1.3), i.e. it has no *abstract* method (a method with no
+default body). Pure-requirement traits are the sub-case where the method set
+is empty; a trait whose every method carries a default body auto-satisfies on
+the same footing, because each default body supplies the implementation. A
+trait with one or more abstract methods still requires explicit `satisfies` +
+`fulfill` per §3.2.
+
+For an auto-satisfied trait, no `fulfill` block is needed; no `satisfies`
+clause is needed on the type (though it may be included for documentation).
+The trait is *structurally* satisfied — via the satisfaction of its
+requirements and the presence of default bodies for any methods it declares —
+but it remains *nominally* present in the trait system: generic constraints
+`T: Numeric` are checked against the trait's name, and the compiler verifies
+that `T`'s satisfied trait set includes everything `Numeric` requires.
 
 This carves out the only point of structural satisfaction in the language's
 otherwise-nominal trait system, and it is bounded: the structural rule
-applies only to traits with no methods. Any trait with method signatures
-requires explicit `satisfies` + `fulfill` per §3.2.
+applies only to traits with no abstract methods (no methods at all, or only
+methods with default bodies). Any trait with one or more abstract method
+signatures requires explicit `satisfies` + `fulfill` per §3.2.
 
 #### 3.3.6 Visibility of `fulfill` blocks
 
@@ -3000,7 +3010,7 @@ This table specifies the mapping:
 | `+`                                         | `Add`                                   | `Output` (associated type)                           |
 | `-` (binary)                                | `Sub`                                   | `Output` (associated type)                           |
 | `*`                                         | `Mul`                                   | `Output` (associated type)                           |
-| `/`                                         | `Numeric`                               | `Subject` on `Float` umbrella (per §4.4.1.1)            |
+| `/`                                         | `Numeric`²                              | `Subject` on `Float` umbrella (per §4.4.1.1)            |
 | `//`                                        | `IntDiv`                                | `Output` (associated type)                           |
 | `%`                                         | `Rem`                                   | `Output` (associated type)                           |
 | `-` (unary)                                 | `Neg`                                   | same type as operand                                 |
@@ -3027,6 +3037,9 @@ This table specifies the mapping:
 ¹ The right operand may be any unsigned integer type narrower than or
 equal to u32 (implicit widening per §4.5.1); other types require an
 explicit cast.
+
+² `i128`/`u128` operands require an explicit cast to float (§4.4.1.1);
+implicit widening does not apply at the 128-bit boundary.
 
 Per §3.1.6's default-type-parameter resolution, each table entry that
 names a bare trait (e.g., `Add`) refers to the trait instance with
@@ -3602,12 +3615,19 @@ Non-numeric types (strings, enums, records) may also be ordered or compared,
 so these traits live outside the numeric hierarchy.
 
 `Ord` is an umbrella per §3.3.5: it requires the four ordering traits and
-declares no methods of its own. A type satisfies `Ord` automatically when it
-satisfies `Lt`, `Le`, `Gt`, `Ge`. In practice, implementers fulfill `Lt` and
-`Eq` only — the default bodies on `Le`, `Gt`, `Ge` derive their behavior from
-`Lt::lt` and `Eq::eq` per §3.1.3. Auto-derivation via `@derive(Ord)` per
-§3.8 generates the full set of fulfill blocks structurally; manual
-implementation requires only `fulfill Lt for X` and `fulfill Eq for X`.
+declares no methods of its own, so it auto-satisfies once `Lt`, `Le`, `Gt`,
+`Ge` are satisfied. Of those four, `Le`, `Gt`, and `Ge` each declare a single
+method with a default body in terms of `Lt::lt` and `Eq::eq` (per §3.1.3 — `Le`
+and `Gt` use both, `Ge` uses `Lt::lt` alone), and none has an abstract method;
+under §3.3.5 they therefore auto-satisfy themselves once the traits named in
+their own `requires` clauses are satisfied (`Lt` and `Eq` for `Le` and `Gt`;
+`Lt` for `Ge`). `Lt` and `Eq` are the only traits in this closure with
+abstract methods. In practice, then, implementers fulfill `Lt` and `Eq` only;
+satisfying those two cascades — `Le`, `Gt`, `Ge`, and finally `Ord`
+auto-satisfy from their default bodies and requirements. Auto-derivation via
+`@derive(Ord)` per §3.8 generates the full set of fulfill blocks
+structurally; manual implementation requires only `fulfill Lt for X` and
+`fulfill Eq for X`.
 
 The `is not` operator does not have its own trait method. `a is not b`
 desugars at parse time to `not (a is b)` and dispatches through `Eq::eq` per
@@ -7445,6 +7465,7 @@ The following types automatically implement `Copy`:
 - `Range[T]` when `T: Copy` (stdlib provides a conditional Copy impl
   on this stdlib type; users may write the same conditional pattern
   for their own generic types).
+- Closure types (§11.10.6) — they capture only `Copy` values.
 
 #### 11.4.2 Opt-in via `@derive(Copy)`
 
@@ -11007,8 +11028,11 @@ imperatively modify it from within.
 
 #### 13.2.8 The `Signal[T]` type
 
-`Signal[T]` is the umbrella type for any reactive cell whose
-value type is `T`. It is a first-class type usable in parameter
+`Signal[T]` is the umbrella type over the three value-cell subkinds
+(signal, derived, recurrent) whose value type is `T`. Streams and sinks
+are reactive cells too but are not `Signal[T]`; the broader abstraction
+over *all* reactive cells (including streams and sinks) is `Cell[T]`
+(§13.18.5). `Signal[T]` is a first-class type usable in parameter
 positions, return types, and generic arguments.
 
 **Subkinds.** Three reactive declaration kinds produce values of
@@ -11426,8 +11450,12 @@ is for child-placement slots with cardinality.
   Ductus source after the attr is set (per §13.2.7).
 - A `Node[T]` value's captured references (e.g., to exposed attrs
   of the receiving node via its placement name) are bound by
-  reference; per-invocation, the receiving node updates those
-  references and re-invokes the specification.
+  reference. "Re-invoking the specification" per commit means the
+  captured references update and the template's expression is
+  *re-evaluated* against their current values — not that the
+  specification is re-instantiated. Cell allocation still happens once
+  at startup (§13.2.10.2); per-commit re-evaluation reuses those cells,
+  consistent with the static-graph rule (§13.1).
 - Generic constraints on `T` behave as standard generic bounds
   (§3.1, §5.1).
 
@@ -12642,13 +12670,23 @@ repeat <bind> in <source> keyed by <key-expr>:
   owners; cluster members cannot be stored (§11.3.4). Without
   move-promotion, the bind couldn't flow into any placement RHS.
   Move-promotion allows the body to treat `<bind>` as an owned value
-  that may freely participate in category B/D storage operations
-  within the scope's evaluation.
+  for the duration of the scope's evaluation, so it can be used and
+  passed where a real owner is required.
 
-  At the machine level, no copy is performed: the runtime's unique
-  pointer is the storage; promotion is a static reinterpretation by
-  the compiler, not a runtime operation. Attrs, connection arguments,
-  and other placement targets in the body see owned types —
+  At the machine level, move-promotion is zero-copy for *using* the
+  bind within the scope: the runtime's unique pointer is the storage,
+  and promotion is a static reinterpretation by the compiler, not a
+  runtime operation. *Persisting* the bind into a cell or field
+  (category B/D storage) is where the `Copy`/non-`Copy` distinction
+  shows. A `Copy` bind persists by copy as usual, with no effect on
+  the source. A non-`Copy` bind cannot be moved out of its storage:
+  the element lives in the source signal's immutable committed
+  snapshot, other cursors still hold it, and it is re-read on the next
+  commit. Persisting a non-`Copy` bind into category B/D therefore
+  materializes a copy at that point — the same materialization the
+  boundaries of §13.2.9.7 perform — precisely because the source
+  snapshot is immutable and re-read. Attrs, connection arguments, and
+  other placement targets in the body see owned types —
   borrow-equivalent aliases do not leak into attribute or argument
   positions through `repeat`.
 - **`<body>`** is an indented **placement-body block** following
@@ -14339,7 +14377,7 @@ node OneShot:
   recurrent fired: bool = observe:
     on trigger: true
     default: false
-  when: not fired                              // intrinsic refractory gate
+  when: not fired                              // one-shot latch: fires once, then stays closed
 
 connection ActiveEdge:
   from: Source
@@ -14479,7 +14517,16 @@ connection WeightedEdge:
 ```
 
 Type-level self-conditional gates on nodes are likewise allowed
-(refractory, threshold, debounce — §13.9.2 example).
+(one-shot, threshold — §13.9.2 example).
+
+A caveat on what can reopen: a self-conditional gate whose predicate reads a
+same-instance `recurrent` cannot reopen once it closes — a gated node's
+recurrents freeze (§13.9.7) and do not advance while gated off, so the value
+the predicate reads never changes back, and the gate stays closed. A self-gate
+reading an `attr` or `signal` *can* reopen, because those cells keep receiving
+values from outside the gated subtree (input cells stay live, §13.9.7) and so
+can flip the predicate true again. Recurrent-based self-gates are therefore
+inherently one-shot / latching.
 
 #### 13.9.7 Runtime semantics
 
@@ -14840,6 +14887,13 @@ snapshot taken at selection time. Because the exposed subtree is standing
 and reactive, a payload it reads tracks the scrutinee's current value;
 the active arm re-evaluates when the bound payload changes, consistent
 with everything else under `expose:`.
+
+At a variant flip, the deactivating arm freezes at its last value and does
+**not** re-evaluate against the new (now different-variant) scrutinee, so
+its payload projection never reads a payload that the current variant no
+longer carries; the newly-active arm projects the current variant's
+payload. The freeze of the outgoing arm and the projection of the incoming
+arm follow the gate-close/gate-open semantics of §13.9.7.
 
 **Exhaustiveness.** A `given` block is a **closed** selector: it must be
 exhaustive over the scrutinee's variants, checked per §6.2.5. Adding a
@@ -15679,11 +15733,11 @@ activation changed, and publishes a new consistent snapshot for observers.
 This is the sole point at which staged writes become observable.
 
 Synchronous; runs on the driving context; returns when the commit
-completes. Cost is bounded by the dirty set (deriveds and recurrents with
-fired triggers) plus the constant cost of publishing the snapshot.
-Observers see the new state on their next `acquire_snapshot`. A commit with
-no dirty cells is idempotent — a fresh snapshot is published but its values
-are identical.
+completes. The work of settling is bounded by the dirty set (deriveds and
+recurrents with fired triggers); the cost of making the new snapshot visible
+is backend-defined and not asserted here to be constant. Observers see the
+new state on their next `acquire_snapshot`. A commit with no dirty cells is
+idempotent — a fresh snapshot is published but its values are identical.
 
 The host chooses the commit cadence per its domain — per audio block, per
 frame, per event; the runtime imposes none.
@@ -15797,7 +15851,7 @@ writing into effect `observed:` stream cells, and by host code
 producing into top-level stream declarations whose source is host-
 defined.
 
-Both arities push to the named stream's ring buffer per the stream's
+Both arities push to the named stream's buffer per the stream's
 declared policy:
 
 - For `ring` streams, the push always succeeds; if the buffer is
@@ -16085,7 +16139,7 @@ Stream cell identity across reloads follows the same fully-qualified
 declaration path rule as other reactive cells (§13.15.2). Two
 additional rules apply specific to streams:
 
-**Buffer preservation rule.** A stream's ring buffer is preserved
+**Buffer preservation rule.** A stream's buffer is preserved
 across reload iff the stream's *type signature* is byte-identical
 between old and new code:
 
@@ -16807,7 +16861,7 @@ error: operator body returns `i32` but declared return type is `Signal[f32]`
 ### 13.18 Streams
 
 A *stream* is a reactive primitive for append-only event sequences with
-a fixed-size ring buffer. Streams complement the value-cell primitives
+a buffering policy. Streams complement the value-cell primitives
 (signal, attr, recurrent, derived) by expressing event-shaped flows that
 those primitives cannot represent cleanly: discrete sequences of values
 arriving over time, possibly faster than consumers can process them,
@@ -16821,23 +16875,30 @@ distinct from signals.
 
 #### 13.18.1 Concept
 
-A stream carries an append-only sequence of typed events. Each event is
-produced by a *producer* (a stream-emitting operator chain or a host-
-side push) and observed by zero or more *consumers* (operators or
-deriveds reading from the stream).
+A stream carries an append-only sequence of typed events with
+per-consumer cursors. Each event is produced by a *producer* (a
+stream-emitting operator chain or a host-side push) and observed by zero
+or more *consumers* (operators or deriveds reading from the stream), each
+advancing its own cursor independently.
 
-The stream's storage is a fixed-size ring buffer of typed slots,
-allocated once at the stream's declaration site. The buffer's capacity
-is part of the stream's type. When the buffer fills and a producer
-pushes another event, the stream's *policy* (§13.18.3) determines
-whether the new event displaces the oldest (`ring`) or is rejected
-with failure (`gate`).
+A stream's storage is governed by a buffering *policy* (§13.18.3). The two
+v1 policies — `ring` and `gate` — are both **bounded**: each allocates a
+fixed-capacity region of typed slots once at the stream's declaration
+site, and its capacity is part of the stream's concrete type. The policies
+differ in their overflow behavior when the buffer fills and a producer
+pushes another event: the `ring` policy is a true ring buffer (circular,
+overwrite-oldest) and displaces the oldest unconsumed event; the `gate`
+policy is bounded-but-reject — it rejects the new event with failure and
+does not overwrite, so it is not a ring buffer. Boundedness and capacity
+are properties of these bounded policies, not of "stream" in general; the
+spec does not forbid a future unbounded stream policy (capacity would not
+apply to such a policy).
 
 Streams have scope-bound lifetime: a stream lives as long as the
 declaration's enclosing scope and is freed when that scope dies. There
-is no garbage collection of stream events; the ring buffer is one
-fixed memory region for the stream's entire lifetime, reused as events
-arrive.
+is no garbage collection of stream events. For a bounded stream, the
+buffer is one fixed memory region for the stream's entire lifetime, reused
+as events arrive.
 
 Streams are distinct from `Signal[T]`:
 
@@ -16856,7 +16917,7 @@ stream policy[capacity]? name: Type? = source
   (§13.18.3). Mandatory; the declaration has no default policy.
 - **`[capacity]`** is an optional compile-time-known positive `usize`
   (a literal, a `const`, or a const-generic parameter — §2.5)
-  specifying the ring buffer's slot count. When omitted:
+  specifying the buffer's slot count. When omitted:
   - For declarations whose source is a single stream or a stream-
     producing operator chain whose output capacity is known,
     capacity defaults to that output's capacity.
@@ -16919,18 +16980,20 @@ enclosing declaration's visibility.
 
 #### 13.18.3 Stream types
 
-A stream's type encodes its element type, its policy, and its
-capacity. The type hierarchy:
+A *bounded* stream's type encodes its element type, its policy, and its
+capacity. The abstract base `Stream[T]` carries only the element type —
+no policy and no capacity; capacity belongs to the concrete bounded types.
+The type hierarchy:
 
 ```
-Stream[T]                 // abstract base; polymorphic over policy and capacity
+Stream[T]                 // abstract base; element type only — no policy, no capacity
 RingStream[T, N]          // concrete: ring policy, capacity N
 GateStream[T, N]          // concrete: gate policy, capacity N
 ```
 
 `Stream[T]` is the abstract type for any stream of element type `T`,
-regardless of policy or capacity. It is used in operator and function
-signatures that accept any stream:
+regardless of policy or capacity (and carrying neither itself). It is used
+in operator and function signatures that accept any stream:
 
 ```
 operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
@@ -16973,7 +17036,7 @@ type-system view is widened).
 #### 13.18.4 Sink types
 
 A *sink* is the write-side view of a stream. The stream and its
-sink share the same underlying ring buffer; they differ only in
+sink share the same underlying buffer; they differ only in
 access mode:
 
 - A **Stream** is the *read* view. Consumers observe events through
@@ -17014,7 +17077,7 @@ the unit type `()`; the subscription lives for the enclosing scope.
 
 A single sink may receive from multiple stream-sources via multiple
 pipe-into-sink expressions (multi-producer pattern). The receiving
-sink's ring buffer is shared; events from all producers arrive in
+sink's buffer is shared; events from all producers arrive in
 their commit order.
 
 **No standalone sink declaration.** Sinks are not declared with a
@@ -17084,7 +17147,7 @@ unless the operator genuinely produces a polymorphic output.
 
 #### 13.18.6 Observation cells
 
-Every stream automatically exposes a set of derived signal cells
+A bounded stream automatically exposes a set of derived signal cells
 describing its state. These cells are accessed via field syntax on
 the stream value:
 
@@ -17096,7 +17159,9 @@ derived dropped_so_far: i64 = events.dropped_total
 derived backed_up: bool = events.is_full
 ```
 
-The full observation surface, available on every stream:
+The full observation surface, available on every bounded stream (the v1
+policies; `pending_count`, `pressure`, and `is_full` are defined relative
+to the buffer's capacity):
 
 | Cell | Type | Meaning |
 |---|---|---|
@@ -17272,7 +17337,7 @@ stream ring url_events: Url = current_url
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
 // Per-event of price_in_usd: sample rate, compute product.
 // Also emits on rate commits (combine_latest).
-// Default capacity: price_in_usd.capacity + 1024 (the signal).
+// Default capacity: the capacity of price_in_usd plus 1024 (the signal).
 ```
 
 **Multi-stream combine_latest:**
@@ -17282,7 +17347,7 @@ stream ring sum: i32 = stream_a + stream_b
 // Emits whenever a or b emits; output = latest_a + latest_b.
 // First output fires once both a and b have produced at least
 // one event each.
-// Default capacity: stream_a.capacity + stream_b.capacity.
+// Default capacity: the capacity of stream_a plus the capacity of stream_b.
 ```
 
 **Conditional transformation:**
@@ -17560,7 +17625,9 @@ operator filter[T](source: Stream[T], pred: fn(T) -> bool) -> Stream[T]:
 
 operator merge[
   T,
-  const N: usize = A.capacity + B.capacity,
+  const A: usize,
+  const B: usize,
+  const N: usize = A + B,
 ](
   a: RingStream[T, A],
   b: RingStream[T, B],
@@ -17574,16 +17641,17 @@ operator throttle[T](source: Stream[T], window: duration, clock: Signal[u64]) ->
 ```
 
 Transformation operators that preserve policy and capacity do so by
-construction: their output stream uses the same ring buffer
+construction: their output stream uses the same buffer
 configuration as their input.
 
-The `merge` operator uses a const-generic capacity parameter with a
-default expression referencing the input streams' capacities (per
-§2.3.6 const-generic default expressions). Callers may override the
-capacity at the call site via turbofish if they have tighter bounds:
+The `merge` operator uses a const-generic capacity parameter `N` whose
+default expression `A + B` is over the input streams' const-generic
+capacities `A` and `B` (inferred from the input stream types, per §2.3.6
+const-generic default expressions). Callers may override the capacity at
+the call site via turbofish if they have tighter bounds:
 
 ```
-let merged: RingStream[Event, 1024] = merge::[Event, 1024](a, b)
+let merged: RingStream[Event, 1024] = merge::[T = Event, N = 1024](a, b)
 ```
 
 A separate `merge_gate` variant is provided for gate streams with
@@ -17868,7 +17936,7 @@ end-to-end, declare the output as `gate` too.
 #### 13.18.12 Consumer cursors
 
 Each consumer of a stream maintains its own cursor — a position into
-the ring buffer marking the oldest event the consumer has not yet
+the buffer marking the oldest event the consumer has not yet
 observed. Cursors are per-consumer state; two consumers reading the
 same stream advance independently.
 
@@ -17939,14 +18007,14 @@ opt-in.
 
 **No cursor rewind.** Cursors only advance. There is no operation
 to rewind a cursor to an earlier position; the buffer's events are
-not persistently stored beyond the ring buffer's lifetime, and
+not persistently stored beyond the buffer's lifetime, and
 events may have been overwritten.
 
 #### 13.18.13 Memory model
 
 A stream's storage consists of:
 
-1. **The ring buffer.** A fixed-size array of `capacity` slots, each
+1. **The buffer.** A fixed-size array of `capacity` slots, each
    of `sizeof(T)` bytes. Allocated once at stream creation; freed
    when the stream's scope dies. Total size: `capacity * sizeof(T)`.
 2. **The head pointer and per-stream metadata.** Counters for
@@ -17955,7 +18023,7 @@ A stream's storage consists of:
 3. **Per-consumer cursors.** One cursor per consumer instance.
    Stored as part of the consumer's per-instance state.
 
-The ring buffer itself is allocated from a per-`(T, capacity)` pool
+The buffer itself is allocated from a per-`(T, capacity)` pool
 (§14.3.3). All stream instances with
 the same element type and capacity share a pool; each instance
 occupies one buffer-sized slot within the pool. The compiler
@@ -17997,7 +18065,7 @@ allocated at runtime.
 
 #### 13.18.14 Hot reload
 
-Stream hot reload preserves the ring buffer iff the stream's
+Stream hot reload preserves the buffer iff the stream's
 *type signature* is byte-identical between old and new code. The
 type signature comprises:
 
@@ -18005,7 +18073,7 @@ type signature comprises:
 - The policy (`ring` or `gate`).
 - The capacity (the integer literal `N`).
 
-When all three match, the ring buffer's contents survive the reload.
+When all three match, the buffer's contents survive the reload.
 The cursors of consumers preserved by their own identity rules
 (§13.17.10 for operator instances) continue from their previous
 positions. The source expression (the `= source` part of the
@@ -18083,7 +18151,7 @@ to the base stream reload rules above:
   input reload-safely releases its history.
 - **`@reset_on_reload`** on a `recurrent[N] stream` resets both
   the output history and all per-input history, in addition to
-  the base ring buffer.
+  the base buffer.
 
 #### 13.18.15 Restrictions
 
@@ -19454,26 +19522,26 @@ headroom up front.
   overhead depends on the type. Persistent structures share storage
   across versions; flat structures replicate per retained snapshot.
 
-**Stream ring buffers** (§13.18) are a special case of pool-managed
+**Stream buffers** (§13.18) are a special case of pool-managed
 allocation. Each stream declaration with element type `T` and
-capacity `N` allocates a ring buffer of `N * sizeof(T)` bytes. All
+capacity `N` allocates a buffer of `N * sizeof(T)` bytes. All
 stream instances sharing the same `(T, N)` combination across the
 program draw from a per-`(T, N)` pool:
 
 - The runtime enumerates stream declarations at compile time, groups
   them by `(T, N)`, and computes the per-pool size as the number of
   instances of that combination.
-- Each pool slot holds one complete ring buffer. The stream's
+- Each pool slot holds one complete buffer. The stream's
   metadata cells (head pointer, dropped/rejected counters,
   observation cells per §13.18.6) live in the standard reactive
-  state buffer; only the ring buffer's slot array lives in the
+  state buffer; only the buffer's slot array lives in the
   per-`(T, N)` pool.
 - Hot reload can grow or shrink these pools as stream declarations
   are added or removed, per the same extensible-pool mechanism. A
   preserved stream (per §13.18.14's preservation rule) retains its
   pool slot across reload; a new stream allocates a new slot.
 
-Unlike persistent data structures, ring buffer slot arrays are not
+Unlike persistent data structures, buffer slot arrays are not
 versioned per snapshot. Synchronization relies on the head pointer
 (which is part of reactive state): the runtime writes events into slot
 positions, then advances the committed head pointer at commit; an
@@ -19497,7 +19565,7 @@ Specifically, the values held by:
 - `recurrent` declarations on node and connection instances.
 - `derived` declarations (the cached computed value).
 - `stream` declarations (head pointer, metadata, and synthesized
-  observation cells per §13.18.6; the ring buffer slot array itself
+  observation cells per §13.18.6; the buffer slot array itself
   lives in the per-`(T, N)` pool per §14.3.3).
 - Cells declared inside an `effect`'s `desired:` and `observed:`
   blocks (§13.19.4, §13.19.5). These are ordinary Signal or
@@ -19549,6 +19617,13 @@ allows:
 - Strings to be referenced by multiple cells (in the same or different
   snapshots) via shared handles. Refcounting ensures the data is
   reclaimed when no live cell holds the handle.
+
+The invariant that keeps reads wait-free: an observer acquiring or
+releasing a snapshot does not touch per-string refcounts. Refcount
+changes happen producer-side, at write/publish (and at the
+producer-side retirement of a superseded snapshot, §14.5.2), never on
+the observer's read path — so resolving a handle to its string value
+remains wait-free.
 
 #### 14.5.2 Pool operations
 
@@ -19646,14 +19721,21 @@ specified here.
 
 ```
 trait Drop:
-  fn drop(value: mut Subject)
+  fn drop(own value: Subject)
 ```
 
 A type implementing `Drop` provides cleanup logic that runs when a
 value of the type goes out of scope. The `drop` method receives the
-value by `mut` (the only place in the language where a `mut`
-parameter is permitted — internally generated by the compiler at the
-scope-exit point).
+value by `own`: it is the value's final owner. The body may move fields
+out to release them (partial moves, §14.7.3) and, when in-place teardown
+is needed, rebind the value to a `mut` *local* (§11.7.3) — the ordinary
+`own`-parameter-to-`mut`-local pattern, not a `mut` parameter. No `mut`
+parameter is involved; §11.7.2's prohibition holds without exception.
+
+The compiler emits the consuming `drop` call (a `move` of the value into
+`drop`) at scope exit. Any fields left un-moved by the body drop
+afterward via drop glue, in reverse declaration order (§14.7.2); drop
+glue does not re-invoke `Drop::drop` on the value itself.
 
 #### 14.7.2 When drop runs
 
