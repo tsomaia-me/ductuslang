@@ -456,10 +456,10 @@ the graph specification:
   semantics as for cells: matched → carried over; otherwise removed
     + added. Attr value changes on a matched connection are value
       changes, not identity changes; the connection itself is carried
-      over and its attrs updated per the kernel mechanics of §14.9.
+      over and its attrs updated per the kernel mechanics of §14.8.
 
 - **Behaviors.** Matched by content-addressed `behavior_id` per
-  §14.6.4. Same ID → carried over (no rebinding needed). Different
+  §14.6.3. Same ID → carried over (no rebinding needed). Different
   ID → removed + added (kernel rebinds function-pointer table).
 
 - **Derived dependency edges, recurrent dependency edges, when-gates.**
