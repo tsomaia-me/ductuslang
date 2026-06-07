@@ -62,7 +62,7 @@ moment. Function parameters default to borrow-equivalent access: the
 function gets a read-only alias of the caller's value for the duration
 of the call, and the caller's binding survives. Consumption is opt-in
 via `own` in the signature and `move` at the call site (§11.7, §11.8).
-Returning a value transfers ownership to the caller. There is no
+Returning transfers ownership to the caller when the result is a real owner or the signature opts into `-> own T`; a default return rooted in a borrowed input is itself borrow-equivalent (§11.3.6). There is no
 garbage collector, no reference counting at the language level (the
 runtime may use refcounting internally for specific types like
 `string` per §11.6), and no shared mutable state.
@@ -154,6 +154,8 @@ illustration — host-driver pseudocode that embeds the runtime, and the
 host-language comparison snippets — follows its own language's
 rules and may use semicolons.)
 
+A line comment begins with `--` and runs to end of line; there is no block-comment form. This rule is normative and takes precedence over any conflicting grammar.
+
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
 be concrete.
@@ -208,8 +210,8 @@ concrete types:
 
 ```
 let x = 5
-let a: i32 = x      // x resolves to i32 here
-let b: i64 = x      // x resolves to i64 here
+let a: i32 = x      -- x resolves to i32 here
+let b: i64 = x      -- x resolves to i64 here
 ```
 
 This is sound because the value `5` is compile-time known (§2.4) and the
@@ -223,11 +225,11 @@ a different kind, provided the value fits exactly:
 
 ```
 let x = 5
-let f: f64 = x         // ✓ integer placeholder resolves to f64; value 5 fits exactly
-let g: f32 = x         // ✓ same; value 5 fits exactly in f32
-let h = x * 1.5_f32    // ✓ integer placeholder resolves to f32 in mixed-kind expression
-                       //   per the placeholder cross-kind resolution rule (§2.1) and
-                       //   the value-fits-type check (§2.4.3); value 5 fits exactly in f32
+let f: f64 = x         -- ✓ integer placeholder resolves to f64; value 5 fits exactly
+let g: f32 = x         -- ✓ same; value 5 fits exactly in f32
+let h = x * 1.5_f32    -- ✓ integer placeholder resolves to f32 in mixed-kind expression
+                       --   per the placeholder cross-kind resolution rule (§2.1) and
+                       --   the value-fits-type check (§2.4.3); value 5 fits exactly in f32
 ```
 
 A binding whose right-hand side is itself an expression with a placeholder
@@ -243,8 +245,8 @@ When a binding's right-hand side has a concrete type, the binding carries that
 concrete type. There is no placeholder to propagate:
 
 ```
-let x: i32 = 5             // x is i32
-let y = some_function()    // y is whatever some_function() returns, concretely
+let x: i32 = 5             -- x is i32
+let y = some_function()    -- y is whatever some_function() returns, concretely
 ```
 
 #### 2.1.4 Resolution failures
@@ -312,7 +314,7 @@ mechanically to the explicit form, one fresh parameter per omitted slot:
 
 ```
 fn lerp(a, b, c): a + (b - a) * c
-// initial desugaring (before inference):
+-- initial desugaring (before inference):
 fn lerp[T0, T1, T2](a: T0, b: T1, c: T2): a + (b - a) * c
 ```
 
@@ -328,7 +330,7 @@ parameters remain distinct:
 
 ```
 fn pair(a, b): (a, b)
-// desugars to (and stays as):
+-- desugars to (and stays as):
 fn pair[T0, T1](a: T0, b: T1) -> (T0, T1)
 ```
 
@@ -364,22 +366,22 @@ value arguments (§3.5).
   given and the trailing arguments omitted:
 
   ```
-  lerp::[f64](0.0, 1.0, 0.5)        // all positional
-  resize::[2](stream)               // prefix: supply the first, omit the rest
+  lerp::[f64](0.0, 1.0, 0.5)        -- all positional
+  resize::[2](stream)               -- prefix: supply the first, omit the rest
   ```
 
 - **Wildcard `_`** — a positional hole, resolved exactly like an omitted
   argument; used to skip an *interior* parameter (§2.2.6):
 
   ```
-  resize::[2, _, _](stream)         // supply the first, infer the rest
+  resize::[2, _, _](stream)         -- supply the first, infer the rest
   ```
 
 - **Named** — `Name = value`, in any order, naming the parameters to
   supply and omitting the rest:
 
   ```
-  resize::[K = 2](stream)           // supply K by name; order-independent
+  resize::[K = 2](stream)           -- supply K by name; order-independent
   ```
 
   Named generic arguments use `=`, not the `:` of named *value*
@@ -409,8 +411,8 @@ named form. This is the same consideration as ordering
 required-before-optional value parameters.
 
 ```
-let r = lerp(0.0_f64, 1.0_f64, 0.5_f64)        // T inferred from arguments
-let r = lerp::[f64](0.0, 1.0, 0.5)             // T explicit
+let r = lerp(0.0_f64, 1.0_f64, 0.5_f64)        -- T inferred from arguments
+let r = lerp::[f64](0.0, 1.0, 0.5)             -- T explicit
 ```
 
 The `::` prefix on the type-argument list disambiguates from indexing
@@ -426,9 +428,9 @@ compiler should infer from context. It is a placeholder per §2.1, resolved
 at its use site by the surrounding type information.
 
 ```
-let r: Result[i32, _] = compute()       // i32 pinned; error type inferred
-let v: Vec[_] = make_ints()             // element type inferred
-let pair: (_, string) = build()         // tuple's first component inferred
+let r: Result[i32, _] = compute()       -- i32 pinned; error type inferred
+let v: Vec[_] = make_ints()             -- element type inferred
+let pair: (_, string) = build()         -- tuple's first component inferred
 ```
 
 The wildcard is permitted in any type-expression position: generic
@@ -517,9 +519,9 @@ specific to defaults.
 ```
 operator merge[
   T,
-  const A: usize,
-  const B: usize,
-  const N: usize = A + B,
+  const A: isize,
+  const B: isize,
+  const N: isize = A + B,
 ](
   a: RingStream[T, A],
   b: RingStream[T, B],
@@ -550,12 +552,12 @@ At a call site, the const-generic parameter may be:
   the default, subject to type-correctness.
 
 ```
-// Use default: N = A + B (A, B inferred from the stream types)
+-- Use default: N = A + B (A, B inferred from the stream types)
 let m1 = merge(stream_a, stream_b)
 
-// Override: N = 1024 (must be type-correct; the override is
-// the caller's assertion that 1024 suffices). N is supplied by name
-// per §2.2.5 — A and B still infer from the stream types.
+-- Override: N = 1024 (must be type-correct; the override is
+-- the caller's assertion that 1024 suffices). N is supplied by name
+-- per §2.2.5 — A and B still infer from the stream types.
 let m2 = merge::[T = Event, N = 1024](stream_a, stream_b)
 ```
 
@@ -629,12 +631,12 @@ The language has two binding forms:
 
 ```
 const PI = 3.14159
-const TAU = 2.0 * PI            // derived from another const, also compile-time
+const TAU = 2.0 * PI            -- derived from another const, also compile-time
 const MAX_ITEMS: usize = 1024
 
-let x = 5                       // compile-time known, but compiler decides what to do
-let y = compute(input)          // compile-time known iff input is non-reactive
-let z = read_sensor()           // reactive, runtime
+let x = 5                       -- compile-time known, but compiler decides what to do
+let y = compute(input)          -- compile-time known iff input is non-reactive
+let z = read_sensor()           -- reactive, runtime
 ```
 
 #### 2.4.1.2 Semantics of `const`
@@ -652,7 +654,7 @@ A `const` binding has three properties beyond what `let` provides:
    inlined directly. Wherever it is referenced from another `const` or from
    type-level context, the value is used at compile time only. A `const` that
    is unreferenced (or referenced only from compile-time contexts whose results
-   are themselves unused) does not appear in the compiled output at all.
+   are themselves unused) does not appear in the compiled output at all. A `const` of type `string` is represented as a compile-time-assigned handle into the string-pool seed (§14.5, §15.4): its bytes are static, program-lifetime program data — no *dynamic* allocation and no refcount traffic on the read path.
 
 3. **No addressability.** Because a `const` has no runtime location, it has
    no address. Operations that would require a runtime address (passing by
@@ -662,7 +664,7 @@ A `const` binding has three properties beyond what `let` provides:
 #### 2.4.1.3 `const`-eligible types
 
 A type is `const`-eligible if all of its values can be fully represented at
-compile time, with no runtime allocation and no runtime state. The set
+compile time, with no *dynamic* runtime allocation and no mutable runtime state (static, program-lifetime representation is permitted — e.g. a `string`'s pooled bytes, §14.5). The set
 includes:
 
 - All primitive types: `i8`–`i128`, `u8`–`u128`, `isize`, `usize`, `f32`,
@@ -744,24 +746,24 @@ in context. The compiler verifies that the value fits the demanded type and
 produces a compile error if it does not:
 
 ```
-let x: u8 = 200            // ✓ 200 fits in u8 (range 0..255)
-let x: u8 = 300            // ✗ compile error: 300 doesn't fit u8
-let x: i8 = -50            // ✓ -50 fits in i8 (range -128..127)
-let x: u8 = -1             // ✗ compile error: -1 doesn't fit u8
-let x: f32 = 5             // ✓ 5 exactly representable in f32
+let x: u8 = 200            -- ✓ 200 fits in u8 (range 0..255)
+let x: u8 = 300            -- ✗ compile error: 300 doesn't fit u8
+let x: i8 = -50            -- ✓ -50 fits in i8 (range -128..127)
+let x: u8 = -1             -- ✗ compile error: -1 doesn't fit u8
+let x: f32 = 5             -- ✓ 5 exactly representable in f32
 ```
 
 This applies to any compile-time-known value, however computed:
 
 ```
 let y = 200
-let z: u8 = y              // ✓ y is compile-time known as 200, fits u8
-let w: u8 = y + 50         // ✓ compile-time evaluates to 250, fits u8
-let v: u8 = y + 100        // ✗ compile-time evaluates to 300, doesn't fit u8
+let z: u8 = y              -- ✓ y is compile-time known as 200, fits u8
+let w: u8 = y + 50         -- ✓ compile-time evaluates to 250, fits u8
+let v: u8 = y + 100        -- ✗ compile-time evaluates to 300, doesn't fit u8
 
 fn double(x: i32) -> i32: x * 2
-let f = double(100)        // ✓ pure call, evaluates to 200
-let g: u8 = f              // ✓ 200 fits u8
+let f = double(100)        -- ✓ pure call, evaluates to 200
+let g: u8 = f              -- ✓ 200 fits u8
 ```
 
 Integer values require exact fit. Float literal values fit any float type,
@@ -775,8 +777,8 @@ Compile-time-known values can serve as type-level arguments. A
 a type:
 
 ```
-let arr: i32[fib(10) + 1]                  // array size: fib(10) + 1 is compile-time evaluable
-type Buffer[T, const N: usize = 1024]:
+let arr: i32[fib(10) + 1]                  -- array size: fib(10) + 1 is compile-time evaluable
+type Buffer[T, const N: isize = 1024]:
   data: T[N]
 ```
 
@@ -812,9 +814,9 @@ it depends on. This information surfaces in two places:
 
   ```
   const N: usize = sample_count(mouse_position)
-  // error: `const` RHS must be non-reactive; value depends on signal
-  //   `mouse_position` (at line 14). For a runtime-derived value, use
-  //   `let` instead.
+  -- error: `const` RHS must be non-reactive; value depends on signal
+  --   `mouse_position` (at line 14). For a runtime-derived value, use
+  --   `let` instead.
   ```
 
 - **Diagnostic context, not error cause, for ordinary runtime bindings.**
@@ -851,7 +853,7 @@ parameter (the list separator is always a comma — §1.4 — never a
 semicolon):
 
 ```
-type Buffer[T, const N: usize = 1024]:
+type Buffer[T, const N: isize = 1024]:
   data: T[N]
 ```
 
@@ -864,8 +866,10 @@ which expressions are admitted and how the resulting types are compared.
 
 A const-generic parameter's declared type must be either:
 
-- an integer type (`usize`, `u32`, `i64`, …), or
+- an integer type (`isize`, `u32`, `i64`, `usize`, …), or
 - `bool`.
+
+A const-generic parameter in **array-length or container-capacity position** is `isize` — the type of array length and index arithmetic (§9.3.3). Other integer types (`u32`, `i64`, etc.) and `bool` remain available for non-size parameters such as bit-widths, flags, and discriminants.
 
 Floating-point types are **not** permitted as const-generic parameters;
 `type Spinner[const ANGLE: f64]` is a compile error. The reason is in
@@ -879,15 +883,15 @@ When every value a const-generic argument depends on is known, the
 argument may be **any compile-time-known expression** of the parameter's
 type (§2.4.1), evaluated to a concrete value before type-checking
 proceeds. Every compile-time operation is available — arithmetic
-including `/` and `%`, comparisons, conditionals, and calls to pure
+including `//` and `%`, comparisons, conditionals, and calls to pure
 functions:
 
 ```
-const BUF: usize = 1024
+const BUF: isize = 1024
 
-stream ring[BUF * 2] events: Event     // capacity 2048
-let history: i32[fib(10) + 1]          // pure call in an array size
-recurrent[BUF / 8] stream avg = ...    // division is fine: operands are known
+stream ring[BUF * 2] events: Event     -- capacity 2048
+let history: i32[fib(10) + 1]          -- pure call in an array size
+recurrent[BUF - 256] stream avg = ...
 let m = merge::[T = Event, N = BUF_A + BUF_B](a, b)
 ```
 
@@ -932,16 +936,16 @@ unbound**, and permitted the instant every operand is concrete (§2.5.2):
 ```
 type Mode[const VERBOSE: bool, const TIMED: bool]
 
-// ✓ integer arithmetic on a symbolic parameter
-operator widen[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
-operator pair_up[const N: usize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
+-- ✓ integer arithmetic on a symbolic parameter
+operator widen[const N: isize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
+operator pair_up[const N: isize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
 
-// ✓ boolean algebra on symbolic bool parameters
+-- ✓ boolean algebra on symbolic bool parameters
 operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or B]
 
-// ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
-operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
-operator gate[const N: usize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
+-- ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
+operator halve[const N: isize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
+operator gate[const N: isize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
 ```
 
 #### 2.5.4 Canonical form and type identity
@@ -991,9 +995,9 @@ parameters are known; it never **solves** them. Consequently:
   **checked** for consistency against that value.
 
 ```
-operator resize[const K: usize, T, const N: usize](s: RingStream[T, N]) -> RingStream[T, N * K]
+operator resize[const K: isize, T, const N: isize](s: RingStream[T, N]) -> RingStream[T, N * K]
 
-let bigger: RingStream[Event, 16] = resize::[2](small)   // K = 2 supplied; T, N inferred from `small`
+let bigger: RingStream[Event, 16] = resize::[2](small)   -- K = 2 supplied; T, N inferred from `small`
 ```
 
 `T` and `N` are inferred from the argument (they appear bare in
@@ -1015,11 +1019,11 @@ declaration's const-generic parameters and compile-time-known values.
 The `where` clause attaches to the signature, before the body's `:`:
 
 ```
-operator window[T, const N: usize, const K: usize](s: RingStream[T, N]) -> RingStream[T, K]
+operator window[T, const N: isize, const K: isize](s: RingStream[T, N]) -> RingStream[T, K]
   where K <= N, N >= 1:
-  ...                                  // body
+  ...                                  -- body
 
-type EvenBuffer[T, const N: usize] where N % 2 is 0:
+type EvenBuffer[T, const N: isize] where N % 2 is 0:
   data: T[N]
 ```
 
@@ -1062,8 +1066,8 @@ alongside the declared bounds. A matching `where k <= N` does not change
 clearer, earlier instantiation error when violated.
 
 ```
-let w = window::[K = 4](buf16)     // buf16: RingStream[Event, 16] → N=16, K=4 → 4 <= 16 ✓
-let w = window::[K = 32](buf16)    // ✗
+let w = window::[K = 4](buf16)     -- buf16: RingStream[Event, 16] → N=16, K=4 → 4 <= 16 ✓
+let w = window::[K = 32](buf16)    -- ✗
 
 error: const-generic bound violated instantiating `window`
   --> window::[K = 32](buf16)
@@ -1084,7 +1088,7 @@ const-generic expression and obeys §2.5.2–§2.5.4: symbolic where it
 references unbound parameters, concrete once they are known.
 
 ```
-operator merge[T, const A: usize, const B: usize, const N: usize = A + B](
+operator merge[T, const A: isize, const B: isize, const N: isize = A + B](
   a: RingStream[T, A],
   b: RingStream[T, B],
 ) -> RingStream[T, N]
@@ -1202,6 +1206,8 @@ fn sum[P: Producer](p: P) -> P.Item where P.Item: Numeric:
   ...
 ```
 
+A where-clause may also **equate** an associated type to a specific type with `=`: `where Path.Assoc = ConcreteType` constrains `Path.Assoc` to be exactly that type (as opposed to `Path.Assoc: Trait`, which bounds it). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter.Source = Subject`.
+
 **Borrow-default convention on associated-type slots.** Associated
 types follow the same borrow-default convention as function parameter
 slots (§11.7). When an implementation declares `type Name = T`, the
@@ -1301,7 +1307,7 @@ The default must itself satisfy the trait; this is compiler-enforced.
 ```
 @default(i32)
 trait Integer:
-  requires Numeric, IntDiv, Rem, ...    // illustrative; canonical in §4.9.2
+  requires Numeric, IntDiv, Rem, ...    -- illustrative; canonical in §4.9.2
 ```
 
 The exact syntactic form (annotation, dedicated keyword, body clause) is a
@@ -1501,7 +1507,7 @@ under this rule:
 
 ```
 type MyNumber:
-  satisfies From[i32], From[i64]        // ✓ same parent trait From
+  satisfies From[i32], From[i64]        -- ✓ same parent trait From
   ...
 
 fulfill From[i32] for MyNumber:
@@ -1517,9 +1523,9 @@ expected return type. Bare-name dispatch typically succeeds without
 explicit annotation:
 
 ```
-let n1 = MyNumber::from(5_i32)     // resolves to From[i32]::from
-let n2 = MyNumber::from(5_i64)     // resolves to From[i64]::from
-let n3: MyNumber = 5_i32.into()    // Into[MyNumber] from i32 — resolves through From[i32]
+let n1 = MyNumber::from(5_i32)     -- resolves to From[i32]::from
+let n2 = MyNumber::from(5_i64)     -- resolves to From[i64]::from
+let n3: MyNumber = 5_i32.into()    -- Into[MyNumber] from i32 — resolves through From[i32]
 ```
 
 When inference cannot pick a unique instance (e.g., the argument is
@@ -1674,11 +1680,11 @@ signature shorter:
 ```
 fulfill Add for Vec3:
   type Output = Vec3
-  fn add(left: Vec3, right: Vec3) -> Vec3:     // explicit
+  fn add(left: Vec3, right: Vec3) -> Vec3:     -- explicit
     Vec3(x: left.x + right.x, y: left.y + right.y, z: left.z + right.z)
 
 fulfill Display for Result[T, E] where T: Display, E: Display:
-  fn display(result: Result[T, E]) -> string:   // explicit, verbose but clear
+  fn display(result: Result[T, E]) -> string:   -- explicit, verbose but clear
     match result:
       Ok(value): "Ok({value.display()})"
       Err(error): "Err({error.display()})"
@@ -1709,7 +1715,7 @@ Concrete` form:
 fulfill Add for i32:
   type Output = i32
   fn add(left: i32, right: i32) -> i32:
-    // built-in integer addition
+    -- built-in integer addition
 ```
 
 Note: with the §4.9.1 default `type Output = Subject`, the `type Output =
@@ -1737,14 +1743,14 @@ trait Greet:
 fulfill Greet for Loud:
   fn greet(value: Loud) -> string:
     "HELLO"
-  // shout inherited from trait default
+  -- shout inherited from trait default
 
 fulfill Greet for Polite:
   fn greet(value: Polite) -> string:
     "hello"
   fn shout(value: Polite) -> string:
     "(politely): " + greet(value)
-  // shout overridden
+  -- shout overridden
 ```
 
 Abstract methods (no default body) must be implemented; their absence in a
@@ -1775,7 +1781,7 @@ in addition to trait bounds, and the two may be mixed in one
 comma-separated list: `where T: Numeric, N >= 1`. Trait bounds are
 checked where the implementation or call is resolved; const-generic
 value bounds are checked at instantiation against concrete values
-(§2.5.6).
+(§2.5.6). A `where` clause may also carry associated-type **equality** constraints (`Path.Assoc = ConcreteType`, §3.1.2).
 
 #### 3.3.5 Pure-requirement traits and automatic satisfaction
 
@@ -1829,9 +1835,9 @@ containing `fn display(value: Person) -> string`, any of the following are
 valid calls (and equivalent):
 
 ```
-person.display()              // method-call form
-display(person)               // conventional form, requires `display` in scope
-Display::display(person)      // trait-path form, no import needed
+person.display()              -- method-call form
+display(person)               -- conventional form, requires `display` in scope
+Display::display(person)      -- trait-path form, no import needed
 ```
 
 Operator application uses the `|>` token (§13.17); it is not a
@@ -1931,7 +1937,7 @@ turbofish on the trait:
 
 ```
 fn build[T](v: T) -> MyNumber where MyNumber: From[T]:
-  From::[T]::from(v)       // T is generic; turbofish pins the instantiation
+  From::[T]::from(v)       -- T is generic; turbofish pins the instantiation
 ```
 
 This is the turbofish form (§2.2.5) applied to the trait identity,
@@ -2005,8 +2011,8 @@ A single call site uses either positional or named form throughout. Mixing
 is a compile error:
 
 ```
-Shape::Rectangle(width: 10.0, 20.0)       // ✗ mixed — compile error
-add(3, right: 4)                          // ✗ mixed — compile error
+Shape::Rectangle(width: 10.0, 20.0)       -- ✗ mixed — compile error
+add(3, right: 4)                          -- ✗ mixed — compile error
 ```
 
 The rule applies to every call: free functions, trait methods, variant
@@ -2081,11 +2087,11 @@ The rule rewards named-argument call sites for readability.
 fn greet(name: string, greeting: string = "Hello", suffix: string = "!"):
   ...
 
-greet("Alice")                                  // ✓ uses both defaults
-greet("Alice", "Hi")                            // ✓ uses suffix default
-greet("Alice", "Hi", "?")                       // ✓ all positional
-greet(name: "Alice", suffix: "?")               // ✓ named, skipping greeting
-greet("Alice", suffix: "?")                     // ✗ mixed positional and named
+greet("Alice")                                  -- ✓ uses both defaults
+greet("Alice", "Hi")                            -- ✓ uses suffix default
+greet("Alice", "Hi", "?")                       -- ✓ all positional
+greet(name: "Alice", suffix: "?")               -- ✓ named, skipping greeting
+greet("Alice", suffix: "?")                     -- ✗ mixed positional and named
 ```
 
 Defaulted parameters may precede non-defaulted ones:
@@ -2094,11 +2100,11 @@ Defaulted parameters may precede non-defaulted ones:
 fn render(scale: f32 = 1.0, content: string):
   ...
 
-render(content: "hello")                        // ✓ named, uses scale default
-render(scale: 2.0, content: "hello")            // ✓ named, both supplied
-render(1.0, "hello")                            // ✓ positional, both supplied
-render("hello")                                 // ✗ positional cannot skip
-                                                //   scale to bind content
+render(content: "hello")                        -- ✓ named, uses scale default
+render(scale: 2.0, content: "hello")            -- ✓ named, both supplied
+render(1.0, "hello")                            -- ✓ positional, both supplied
+render("hello")                                 -- ✗ positional cannot skip
+                                                --   scale to bind content
 ```
 
 The skipping flexibility of named form is one of its principal practical
@@ -2112,10 +2118,10 @@ A method call `x.f(args)` always passes the receiver `x` positionally
 args)`). The argument form rule applies to `args`, not to the receiver:
 
 ```
-person.display()                                  // no args; trivially valid
-shape.set_dimensions(width: 10.0, height: 20.0)   // named form for trailing args
-shape.set_dimensions(10.0, 20.0)                  // positional form
-shape.set_dimensions(10.0, height: 20.0)          // ✗ mixed
+person.display()                                  -- no args; trivially valid
+shape.set_dimensions(width: 10.0, height: 20.0)   -- named form for trailing args
+shape.set_dimensions(10.0, 20.0)                  -- positional form
+shape.set_dimensions(10.0, height: 20.0)          -- ✗ mixed
 ```
 
 The receiver `x` is conceptually the first positional argument of the
@@ -2192,23 +2198,23 @@ illustration:
 ```
 @default(i32)
 trait Numeric:
-  requires Add, Sub, Mul, Zero, One, ...      // canonical: §4.9.2
+  requires Add, Sub, Mul, Zero, One, ...      -- canonical: §4.9.2
 
 @default(i32)
 trait Integer:
-  requires Numeric, IntDiv, Rem, ...          // canonical: §4.9.2
+  requires Numeric, IntDiv, Rem, ...          -- canonical: §4.9.2
 
 @default(f64)
 trait Float:
-  requires Numeric, Neg, Div, ...             // canonical: §4.9.2
+  requires Numeric, Neg, Div, ...             -- canonical: §4.9.2
 
 @default(i32)
 trait Signed:
-  requires Integer, Neg, ...                  // canonical: §4.9.2
+  requires Integer, Neg, ...                  -- canonical: §4.9.2
 
 @default(u32)
 trait Unsigned:
-  requires Integer                            // Neg deliberately absent (§4.9.2)
+  requires Integer                            -- Neg deliberately absent (§4.9.2)
 ```
 
 The signed/unsigned split is structurally honest: `Neg` lives on `Signed`
@@ -2292,10 +2298,10 @@ the type expression: at least one *concrete local type* must appear in the
 trait-or-type part of the `fulfill` declaration.
 
 ```
-// Permitted in module M defining LocalType:
+-- Permitted in module M defining LocalType:
 fulfill ForeignTrait[LocalType] for ForeignType: ...
 
-// Rejected — no concrete local type:
+-- Rejected — no concrete local type:
 fulfill ForeignTrait[T] for ForeignType: ...
 ```
 
@@ -2321,7 +2327,7 @@ user modules, and are not subject to the orphan rule:
 - *Identity conversion `From[T] for T` for every type.* Structural
   impl; every `T` converts to itself trivially. Exempt from the
   orphan rule because neither argument originates in any particular
-  crate.
+  crate. A user `fulfill From[T] for T` for the same source and target type is a compile error (§7.3); the auto-provided identity is the sole impl for that pair.
 - *Stdlib `Copy` impls for built-in types per §11.4.1.* The primitive
   numeric types, `bool`, `char`, `string`, `duration`, `instant`,
   tuples of Copy components, and `Range[T]` when T: Copy receive
@@ -2829,7 +2835,7 @@ representation. It accepts `Numeric` operands (integer, float, or mixed)
 and always produces a `Float` result. `5 / 2` produces `2.5`, not `2`. The
 result type is determined by the operator itself, not by the operand types:
 even uniformly-integer operands (`10_i32 / 5_i32`) produce a `Float`, not
-an integer.
+an integer. This rule governs `/` on **numeric** operands (integer and float kinds); non-numeric primitives that define their own `/` — notably `duration` (§9.4.1.2) — are not governed by it.
 
 The mechanism is a language-level rule applied at the operator, distinct
 from direct trait dispatch:
@@ -2846,10 +2852,10 @@ from direct trait dispatch:
 Examples:
 
 ```
-5_i32 / 2_i32          // both i32 → both widen to f64 → 2.5_f64
-3.14_f32 / 2_i32       // i32 widens to f64; f32 widens to f64 → ~1.57_f64
-5_i64 / 2_i64          // both i64 → both widen to f64 (pragmatic exception) → 2.5_f64
-5.0_f64 / 2.0_f64      // both f64 → direct Div::div → 2.5_f64
+5_i32 / 2_i32          -- both i32 → both widen to f64 → 2.5_f64
+3.14_f32 / 2_i32       -- i32 widens to f64; f32 widens to f64 → ~1.57_f64
+5_i64 / 2_i64          -- both i64 → both widen to f64 (pragmatic exception) → 2.5_f64
+5.0_f64 / 2.0_f64      -- both f64 → direct Div::div → 2.5_f64
 ```
 
 The choice of which float type to widen to follows §4.5's mixed-kind rules:
@@ -2876,7 +2882,7 @@ This rule is the *only* place in the language where an operator performs
 implicit kind-crossing promotion on uniformly-integer operands. Every other
 operator with mixed-kind support requires at least one operand to already
 be of the target kind; `/` is unique in always producing float regardless
-of input kinds.
+of numeric input kinds.
 
 **Mixed widths and kinds.** When the operands are mixed-width and
 mixed-kind (e.g., `i64 + f32`), the integer first widens to the smallest
@@ -3269,9 +3275,9 @@ per §2.4 and rejects programs where a constant value provably doesn't fit
 its declared or inferred type:
 
 ```
-const x: u8 = 200_u8 + 100_u8                 // compile error: 300 doesn't fit u8
-const x: u8 = 200_u8 +% 100_u8                // compile error: still doesn't fit
-let arr: i32[some_large_compile_time_value]   // compile error if value doesn't fit isize
+const x: u8 = 200_u8 + 100_u8                 -- compile error: 300 doesn't fit u8
+const x: u8 = 200_u8 +% 100_u8                -- compile error: still doesn't fit
+let arr: i32[some_large_compile_time_value]   -- compile error if value doesn't fit isize
 ```
 
 This applies to `+%`, `+|`, `+?` and other variants too: the compile-time
@@ -3333,11 +3339,11 @@ Examples:
 
 ```
 let x: i32 = 300
-let y: u8 = u8(x)                    // ✗ traps at runtime — 300 doesn't fit u8
-let y: u8 = u8%(x)                   // ✓ wraps: 300 mod 256 is 44
-let y: u8 = u8|(x)                   // ✓ saturates to u8::MAX is 255
-let y: Option[u8] = u8?(x)           // ✓ None — out of range
-let z: i32 = i32(some_float)         // truncating float-to-int (may trap)
+let y: u8 = u8(x)                    -- ✗ traps at runtime — 300 doesn't fit u8
+let y: u8 = u8%(x)                   -- ✓ wraps: 300 mod 256 is 44
+let y: u8 = u8|(x)                   -- ✓ saturates to u8::MAX is 255
+let y: Option[u8] = u8?(x)           -- ✓ None — out of range
+let z: i32 = i32(some_float)         -- truncating float-to-int (may trap)
 ```
 
 The trapping default matches §4.6.1's philosophy: in production code,
@@ -3372,9 +3378,9 @@ The methods are callable via uniform call syntax (§3.4) and produce the
 same results as the conversion forms:
 
 ```
-let y: u8 = x.wrapping_as::[u8]()         // equivalent to `u8%(x)`
-let y: u8 = x.saturating_as::[u8]()       // equivalent to `u8|(x)`
-let y: Option[u8] = x.checked_as::[u8]()  // equivalent to `u8?(x)`
+let y: u8 = x.wrapping_as::[u8]()         -- equivalent to `u8%(x)`
+let y: u8 = x.saturating_as::[u8]()       -- equivalent to `u8|(x)`
+let y: Option[u8] = x.checked_as::[u8]()  -- equivalent to `u8?(x)`
 ```
 
 The `T(x)` forms are the canonical user-facing syntax; the trait methods
@@ -3484,9 +3490,9 @@ A user calling `pow` with a negative integer exponent expecting a fractional
 result must explicitly convert to float first:
 
 ```
-let x = 2.pow(-1)              // ✗ compile error or trap: negative exponent on IntPow
-let x = (2.0_f64).pow(-1)      // ✓ 0.5
-let x = f64(2).pow(-1)         // ✓ 0.5
+let x = 2.pow(-1)              -- ✗ compile error or trap: negative exponent on IntPow
+let x = (2.0_f64).pow(-1)      -- ✓ 0.5
+let x = f64(2).pow(-1)         -- ✓ 0.5
 ```
 
 #### 4.8.4 Numeric constants
@@ -3504,13 +3510,13 @@ f64::INFINITY
 f64::NEG_INFINITY
 f64::NAN
 f32::PI
-// ...
+-- ...
 i32::MIN
 i32::MAX
 u8::MAX
 i64::MIN
 i64::MAX
-// ...
+-- ...
 ```
 
 Constants are associated with the concrete type rather than with traits
@@ -3582,7 +3588,7 @@ trait Max:  fn max(a: Subject, b: Subject) -> Subject
 trait Sqrt: fn sqrt(value: Subject) -> Subject
 trait Sin:  fn sin(value: Subject) -> Subject
 trait Cos:  fn cos(value: Subject) -> Subject
-// ... and so on for the float-only operations from §4.8.2
+-- ... and so on for the float-only operations from §4.8.2
 
 trait IntPow:   fn pow(base: Subject, exp: Subject) -> Subject
 trait FloatPow: fn pow(base: Subject, exp: Subject) -> Subject
@@ -3674,8 +3680,8 @@ trait Signed:
 @default(u32)
 trait Unsigned:
   requires Integer
-  // Unsigned does NOT require Neg; types satisfying Unsigned do not
-  // implement Neg, so unary `-` on them is a type error per §4.4.1
+  -- Unsigned does NOT require Neg; types satisfying Unsigned do not
+  -- implement Neg, so unary `-` on them is a type error per §4.4.1
 ```
 
 `Neg` is deliberately not part of `Numeric`. Unsigned integer types cannot
@@ -3819,7 +3825,7 @@ object* dispatches method calls dynamically through a vtable.
 Single-trait `dyn`:
 
 ```
-let x: dyn Drivable = dyn some_value        // explicit coercion, §5.2.5
+let x: dyn Drivable = dyn some_value        -- explicit coercion, §5.2.5
 fn render(item: dyn Renderable) -> string: ...
 ```
 
@@ -3898,17 +3904,17 @@ dispatchable remainder is then object-safe. This factoring is the right
 design, not a workaround.
 
 ```
-trait Display:                                   // object-safe
-  fn display(value: Subject) -> string           //   receiver + plain return
+trait Display:                                   -- object-safe
+  fn display(value: Subject) -> string           --   receiver + plain return
 
-trait Clone:                                     // NOT object-safe
-  fn clone(value: Subject) -> Subject            //   returns Subject (rule 2)
+trait Clone:                                     -- NOT object-safe
+  fn clone(value: Subject) -> Subject            --   returns Subject (rule 2)
 
-trait Ord:                                       // NOT object-safe
-  fn max(a: Subject, b: Subject) -> Subject      //   second Subject + Subject return
+trait Max:                                       -- NOT object-safe
+  fn max(a: Subject, b: Subject) -> Subject      --   second Subject + Subject return
 
-trait Factory:                                   // NOT object-safe
-  fn make() -> Subject                           //   no receiver (rule 1), Subject return
+trait Factory:                                   -- NOT object-safe
+  fn make() -> Subject                           --   no receiver (rule 1), Subject return
 ```
 
 A non-object-safe trait used in a `dyn` position is a compile error at the
@@ -3916,6 +3922,13 @@ use site, naming the trait, the offending method, and the rule it
 violates. A trait whose `requires` closure includes a non-object-safe
 trait is itself non-object-safe (the inherited method is in its effective
 set).
+
+**Structural closure types.** These rules extend to the structural
+function (closure) type `fn(P) -> R` of §11.10.6, treated as a
+single-method callable — the closure value is the receiver and `P`/`R`
+are concrete — so they govern more than nominal `Subject`-bearing
+traits; §11.10.6 derives from them that every closure type is
+object-safe.
 
 Ductus provides no per-method escape hatch (the "admit the trait as `dyn`
 but mark individual methods unavailable on the object" mechanism some
@@ -3928,8 +3941,8 @@ Erasing a concrete value to a trait object is **explicit**, written with
 the `dyn` prefix on the value:
 
 ```
-let shape: dyn Drawable = dyn circle      // annotation supplies the trait set
-shapes.push(dyn circle)                   // element type supplies it
+let shape: dyn Drawable = dyn circle      -- annotation supplies the trait set
+shapes.push(dyn circle)                   -- element type supplies it
 ```
 
 `dyn value` erases `value`'s concrete type to a trait object, attaching
@@ -3973,7 +3986,7 @@ type Insured:
 
 type InsuredCar = Car & Insured
 
-// Equivalent declaration:
+-- Equivalent declaration:
 type InsuredCar:
   brand: string
   speed: f64
@@ -4071,9 +4084,9 @@ rejected at compile time:
 - `Record & Enum` — rejected. Records and enums are distinct compound
   kinds; combining them produces no type the language can represent.
 - `Trait & Enum` — rejected. Same reasoning.
-- `Enum & Enum` — rejected. Enums are tagged unions; intersection of two
-  tagged unions has no meaningful semantics (the union of their variants
-  would be `|`-shaped, not `&`-shaped, and is not provided by the language).
+- `Enum & Enum` — rejected. Enums are tagged unions, and intersecting
+  two tagged unions has no meaningful semantics. (Combining variants is
+  a *sum*, expressed by declaring an `enum` — §6.)
 - Intersections involving tuples, function types, or primitive types —
   rejected. These kinds are not subject to intersection.
 
@@ -4193,7 +4206,7 @@ let alice = Person(
   age: 30,
 )
 
-let w = Window(title: "Main")  // width, height, resizable use their defaults
+let w = Window(title: "Main")  -- width, height, resizable use their defaults
 ```
 
 Field arguments are named, not positional. The order of named arguments
@@ -4211,8 +4224,8 @@ Generic records require concrete type arguments at construction. The
 arguments may be inferred from the field types or supplied explicitly:
 
 ```
-let p: Point[f64] = Point(x: 1.0, y: 2.0)         // T inferred from arguments
-let q = Point::[i32](x: 1, y: 2)                  // T explicit via turbofish
+let p: Point[f64] = Point(x: 1.0, y: 2.0)         -- T inferred from arguments
+let q = Point::[i32](x: 1, y: 2)                  -- T explicit via turbofish
 ```
 
 #### 6.1.4 Field access
@@ -4285,8 +4298,8 @@ merge is a compile error. The `with` expression does not create new types
 at runtime; the language's type system is static.
 
 ```
-let car_2: Car = car_1 with car_3        // ✓ both Car
-let bad = car with insured_record         // ✗ Car and Insured are different types
+let car_2: Car = car_1 with car_3        -- ✓ both Car
+let bad = car with insured_record         -- ✗ Car and Insured are different types
 ```
 
 For combining different types' fields into a new type, the user constructs
@@ -4311,9 +4324,9 @@ Each field carries an independent visibility specifier per §10:
 
 ```
 type Account:
-  public id: i64                  // readable anywhere the type is visible
-  email: string                   // shared (default) — readable within package
-  private password_hash: string   // readable only within this module
+  public id: i64                  -- readable anywhere the type is visible
+  email: string                   -- shared (default) — readable within package
+  private password_hash: string   -- readable only within this module
 ```
 
 Field visibility is independent from the enclosing type's visibility and
@@ -4331,13 +4344,13 @@ The constructor's visibility is independently controllable from the type's
 visibility per §10's `public(constructor_vis)` mechanism:
 
 ```
-public type Email:                            // both public
+public type Email:                            -- both public
   wraps string
 
-public(private) type Email:                   // type public, constructor private
-  wraps string                                // (smart-constructor pattern)
+public(private) type Email:                   -- type public, constructor private
+  wraps string                                -- (smart-constructor pattern)
 
-shared(private) type SecretConfig:            // type shared, constructor private
+shared(private) type SecretConfig:            -- type shared, constructor private
   api_key: string
   endpoint: string
 ```
@@ -4407,9 +4420,9 @@ enum Direction:
   West
 
 enum Shape:
-  Circle(f64)                              // positional payload
-  Rectangle(width: f64, height: f64)       // named payload
-  Triangle(f64, f64, f64)                  // positional payload
+  Circle(f64)                              -- positional payload
+  Rectangle(width: f64, height: f64)       -- named payload
+  Triangle(f64, f64, f64)                  -- positional payload
 
 enum Result[T, E]:
   Ok(T)
@@ -4436,7 +4449,7 @@ compile error:
 
 ```
 enum Bad:
-  Mixed(width: f64, f64)         // ✗ compile error — mixed declaration
+  Mixed(width: f64, f64)         -- ✗ compile error — mixed declaration
 ```
 
 Different variants of the same enum may use different forms independently,
@@ -4459,22 +4472,22 @@ enum Shape:
   Circle(f64)
   Rectangle(width: f64, height: f64)
 
-// Circle (positional declaration):
-let c1 = Shape::Circle(5.0)                            // ✓ positional
-let c2 = Shape::Circle(radius: 5.0)                    // ✗ no name "radius" declared
+-- Circle (positional declaration):
+let c1 = Shape::Circle(5.0)                            -- ✓ positional
+let c2 = Shape::Circle(radius: 5.0)                    -- ✗ no name "radius" declared
 
-// Rectangle (named declaration):
-let r1 = Shape::Rectangle(width: 10.0, height: 20.0)   // ✓ named
-let r2 = Shape::Rectangle(10.0, 20.0)                  // ✓ positional (always available)
-let r3 = Shape::Rectangle(width: 10.0, 20.0)           // ✗ mixed within call
+-- Rectangle (named declaration):
+let r1 = Shape::Rectangle(width: 10.0, height: 20.0)   -- ✓ named
+let r2 = Shape::Rectangle(10.0, 20.0)                  -- ✓ positional (always available)
+let r3 = Shape::Rectangle(width: 10.0, 20.0)           -- ✗ mixed within call
 
-// Pattern matching mirrors construction:
+-- Pattern matching mirrors construction:
 match shape:
-  Circle(r):                                            // ✓ positional binding
+  Circle(r):                                            -- ✓ positional binding
     use_circle(r)
-  Rectangle(w, h):                                      // ✓ positional binding
+  Rectangle(w, h):                                      -- ✓ positional binding
     use_rect(w, h)
-  Rectangle(width: w, height: h):                       // ✓ named binding
+  Rectangle(width: w, height: h):                       -- ✓ named binding
     use_rect(w, h)
 ```
 
@@ -4543,9 +4556,9 @@ variants) supplying its arguments:
 
 ```
 let d = Direction::North
-let c = Shape::Circle(5.0)                         // positional (Circle declared positionally)
-let r1 = Shape::Rectangle(width: 10.0, height: 20.0)   // named (Rectangle has names)
-let r2 = Shape::Rectangle(10.0, 20.0)              // positional (always available)
+let c = Shape::Circle(5.0)                         -- positional (Circle declared positionally)
+let r1 = Shape::Rectangle(width: 10.0, height: 20.0)   -- named (Rectangle has names)
+let r2 = Shape::Rectangle(10.0, 20.0)              -- positional (always available)
 let res: Result[i32, string] = Result::Ok(42)
 let n: Option[i32] = Option::None
 ```
@@ -4561,9 +4574,9 @@ into scope unqualified, the user explicitly imports them via `use`:
 use Result::(Ok, Err)
 use Direction::*
 
-let r = Ok(42)                                 // ✓ Result::Ok imported
-let e = Err("bad")                             // ✓ Result::Err imported
-let d = North                                  // ✓ all Direction variants imported
+let r = Ok(42)                                 -- ✓ Result::Ok imported
+let e = Err("bad")                             -- ✓ Result::Err imported
+let d = North                                  -- ✓ all Direction variants imported
 ```
 
 Selection lists in `use` paths use parentheses. The language uses `()` for
@@ -4577,8 +4590,8 @@ Two enums imported into the same scope whose variants have colliding
 names produce an *import-time* conflict, not a call-site ambiguity:
 
 ```
-use Direction::*       // brings North, South, East, West
-use Heading::*         // ERROR: Heading::North conflicts with Direction::North
+use Direction::*       -- brings North, South, East, West
+use Heading::*         -- ERROR: Heading::North conflicts with Direction::North
 ```
 
 The user resolves by importing selectively (`use Heading::(East, West)` if
@@ -4612,17 +4625,17 @@ Variant patterns parallel variant construction (§6.2.1.1): they may use
 names). Mixing the two within one pattern is a compile error.
 
 ```
-// Positional form — bindings in declaration order:
+-- Positional form — bindings in declaration order:
 Rectangle(width, height): ...
 
-// Named form — bindings by field name (requires named declaration):
+-- Named form — bindings by field name (requires named declaration):
 Rectangle(width: w, height: h): ...
 
-// Named form with bound name matching field name:
-Rectangle(width: width, height: height): ...    // verbose; the positional form is equivalent
+-- Named form with bound name matching field name:
+Rectangle(width: width, height: height): ...    -- verbose; the positional form is equivalent
 
-// Mixed — error:
-Rectangle(width, height: h): ...                // ✗ compile error
+-- Mixed — error:
+Rectangle(width, height: h): ...                -- ✗ compile error
 ```
 
 Named-form patterns are available only when the variant was declared with
@@ -4758,8 +4771,8 @@ The compiler rejects bodies that mix `wraps` with field declarations.
 The contrast with `alias type` from §4.2:
 
 ```
-alias type byte = u8         // transparent alias; byte and u8 are the same type
-type UserId:                 // newtype; UserId is distinct from i64
+alias type byte = u8         -- transparent alias; byte and u8 are the same type
+type UserId:                 -- newtype; UserId is distinct from i64
   wraps i64
 ```
 
@@ -4808,9 +4821,9 @@ Extraction of the underlying value uses the conversion form `T(value)`
 (§4.7.5), naming the wrapped type as `T`:
 
 ```
-let s: string = string(email)        // unwraps Email to string
-let n: i64 = i64(id)                 // unwraps UserId to i64
-let d: f64 = f64(distance)           // unwraps Distance to f64
+let s: string = string(email)        -- unwraps Email to string
+let n: i64 = i64(id)                 -- unwraps UserId to i64
+let d: f64 = f64(distance)           -- unwraps Distance to f64
 ```
 
 ##### Construction vs. extraction
@@ -4828,9 +4841,9 @@ The argument's type completes the picture: `string(email)` with
 value must be extracted before any further conversion:
 
 ```
-let n_str: string = string(i64(some_userid))  // ERROR: i64 -> string isn't a numeric conversion
-let n: i64 = i64(some_userid)                  // extract to i64
-let s = n.to_string()                          // then use stdlib conversion
+let n_str: string = string(i64(some_userid))  -- ERROR: i64 -> string isn't a numeric conversion
+let n: i64 = i64(some_userid)                  -- extract to i64
+let s = n.to_string()                          -- then use stdlib conversion
 ```
 
 The construction/extraction asymmetry is deliberate at the *type* level,
@@ -4916,7 +4929,7 @@ implementing a foreign trait for a *local newtype wrapping* the foreign
 type is permitted:
 
 ```
-// In user module:
+-- In user module:
 type MyVec[T]:
   wraps Vec[T]
   satisfies SomeForeignTrait
@@ -5009,7 +5022,7 @@ declare.
 ### 7.3 Identity Conversion
 
 The language auto-implements `From[T] for T` for every type, providing the
-identity conversion. The corresponding `Into[T] for T` is also auto-derived.
+identity conversion. The corresponding `Into[T] for T` is also auto-derived. A user-written `fulfill From[T] for T` (the source and target type identical) is a compile error: the language's auto-provided identity conversion is the sole impl for that pair, and a self-conversion is required to be a no-op (so that, e.g., `T: Into[U]` accepting a bare `U` stays sound). A self-transformation such as normalization is a method, not a `From` impl.
 
 This makes generic code cleaner: a function parameter `T: Into[U]`
 accepts both `U` (via identity) and any type explicitly convertible to
@@ -5033,17 +5046,17 @@ type must appear in the impl declaration, in either the source type `T`
 Permitted:
 
 ```
-fulfill From[i64] for MyMeasurement       // U is local ✓
-fulfill From[MyMeasurement] for i64       // T is local (covers via §3.7.2) ✓
-fulfill From[Vec[MyType]] for SomeType    // MyType is local, covering ✓
+fulfill From[i64] for MyMeasurement       -- U is local ✓
+fulfill From[MyMeasurement] for i64       -- T is local (covers via §3.7.2) ✓
+fulfill From[Vec[MyType]] for SomeType    -- MyType is local, covering ✓
 ```
 
 Rejected:
 
 ```
-fulfill From[i64] for f64                  // ✗ neither type local — orphan
-                                           //   (and language already provides this)
-fulfill From[string] for Vec[i32]          // ✗ both string and Vec[i32] are foreign
+fulfill From[i64] for f64                  -- ✗ neither type local — orphan
+                                           --   (and language already provides this)
+fulfill From[string] for Vec[i32]          -- ✗ both string and Vec[i32] are foreign
 ```
 
 The generic-parameter-coverage rule is particularly useful for conversions
@@ -5144,10 +5157,10 @@ universally; a fourth implicit form applies only to built-in lossless
 widenings.
 
 ```
-let x: f64 = (5_i32).into::[f64]()        // method form
-let x: f64 = Into::into(5_i32)            // free-function via trait path
-let x: f64 = From::from(5_i32)            // free-function via trait path
-let x: f64 = 5_i32                        // implicit (built-in lossless widening only)
+let x: f64 = (5_i32).into::[f64]()        -- method form
+let x: f64 = Into::into(5_i32)            -- free-function via trait path
+let x: f64 = From::from(5_i32)            -- free-function via trait path
+let x: f64 = 5_i32                        -- implicit (built-in lossless widening only)
 ```
 
 The first three forms are explicit invocations and are available for all
@@ -5190,15 +5203,15 @@ the destination function's error type, or be convertible to it via `From`:
 
 ```
 fn parse_to_string(s: string) -> Result[string, ParseError]:
-  let n: i32 = s.parse::[i32]()?      // source: Result[i32, ParseError]
-                                       //   error types match: ParseError = ParseError ✓
-  Ok(n.to_string())                    // function returns Result[string, ParseError]
+  let n: i32 = s.parse::[i32]()?      -- source: Result[i32, ParseError]
+                                       --   error types match: ParseError = ParseError ✓
+  Ok(n.to_string())                    -- function returns Result[string, ParseError]
 
 fn read_and_parse(path: string) -> Result[i32, AppError]:
-  let bytes: Vec[u8] = read_file(path)?   // source: Result[Vec[u8], IoError]
-                                          //   IoError → AppError via From: ✓
-  let s: string = parse_string(bytes)?     // source: Result[string, ParseError]
-                                          //   ParseError → AppError via From: ✓
+  let bytes: Vec[u8] = read_file(path)?   -- source: Result[Vec[u8], IoError]
+                                          --   IoError → AppError via From: ✓
+  let s: string = parse_string(bytes)?     -- source: Result[string, ParseError]
+                                          --   ParseError → AppError via From: ✓
   let n: i32 = s.parse::[i32]()?
   Ok(n)
 ```
@@ -5321,8 +5334,8 @@ fn unreachable() -> never:
   panic("unreachable code reached")
 
 let x: i32 = if condition: 5 else: unreachable()
-                                    // unreachable() returns never;
-                                    // unifies with i32 ✓
+                                    -- unreachable() returns never;
+                                    -- unifies with i32 ✓
 ```
 
 #### 8.2.3 Trap behavior at runtime
@@ -5573,7 +5586,7 @@ of their own per §6.1.9 and §6.2.6). The following are equivalent:
 ```
 option.unwrap()
 unwrap(option)
-std::option::unwrap(option)        // module-path qualification
+std::option::unwrap(option)        -- module-path qualification
 ```
 
 The module-path form `std::option::unwrap(option)` is used to
@@ -5671,12 +5684,12 @@ enables direct indexing of `char` sequences).
 
 ```
 let c1: char = 'a'
-let c2: char = '\n'                 // newline
-let c3: char = '\t'                 // tab
-let c4: char = '\\'                 // literal backslash
-let c5: char = '\''                 // literal single quote
-let c6: char = '\u{1F600}'          // 😀  (escape for any Unicode scalar)
-let c7: char = '\x41'               // 'A' (escape for ASCII byte)
+let c2: char = '\n'                 -- newline
+let c3: char = '\t'                 -- tab
+let c4: char = '\\'                 -- literal backslash
+let c5: char = '\''                 -- literal single quote
+let c6: char = '\u{1F600}'          -- 😀  (escape for any Unicode scalar)
+let c7: char = '\x41'               -- 'A' (escape for ASCII byte)
 ```
 
 The same escape conventions as string literals (§9.1.3) apply. A
@@ -5823,9 +5836,9 @@ types, §11.10.6). Two tuples with the same component types in the same
 order are the same type:
 
 ```
-(1, 2)         // (i32, i32)
-(3, 4)         // also (i32, i32) — same type as above
-(1, "hello")   // (i32, string) — a different type
+(1, 2)         -- (i32, i32)
+(3, 4)         -- also (i32, i32) — same type as above
+(1, "hello")   -- (i32, string) — a different type
 ```
 
 No type declaration is required to use a tuple type; the type expression
@@ -5840,9 +5853,9 @@ Field access uses numeric postfix syntax per grammar §3.15:
 
 ```
 let t = (1, "hello", 3.14)
-let n = t.0          // i32
-let s = t.1          // string
-let f = t.2          // f64
+let n = t.0          -- i32
+let s = t.1          -- string
+let f = t.2          -- f64
 ```
 
 Indices are zero-based and must be **integer literals**. Bounds checking
@@ -5883,7 +5896,7 @@ producing no meaningful value:
 fn print_hello() -> ():
   println("hello")
 
-fn print_hello():          // same as above; -> () may be omitted
+fn print_hello():          -- same as above; -> () may be omitted
   println("hello")
 ```
 
@@ -5893,8 +5906,8 @@ The 1-tuple form requires a trailing comma to disambiguate from a
 parenthesized expression:
 
 ```
-let single = (42,)         // 1-tuple of type (i32,)
-let grouped = (42)         // just i32 in parens — not a tuple
+let single = (42,)         -- 1-tuple of type (i32,)
+let grouped = (42)         -- just i32 in parens — not a tuple
 ```
 
 The trailing-comma convention is standard across languages with tuple
@@ -5957,15 +5970,15 @@ on the tuple's element types:
   via that local element, and a foreign trait can be implemented.
 
 ```
-// In user module declaring MyTrait and MyType:
-fulfill MyTrait for (i32, string):          // ✓ trait is local
+-- In user module declaring MyTrait and MyType:
+fulfill MyTrait for (i32, string):          -- ✓ trait is local
   ...
 
-fulfill Display for (i32, MyType):          // ✓ MyType covers; Display is foreign
+fulfill Display for (i32, MyType):          -- ✓ MyType covers; Display is foreign
   ...
 
-fulfill Display for (i32, string):          // ✗ both element types foreign,
-                                            //   trait also foreign — orphan
+fulfill Display for (i32, string):          -- ✗ both element types foreign,
+                                            --   trait also foreign — orphan
   ...
 ```
 
@@ -6005,7 +6018,7 @@ fulfill From[(f32, f32, f32)] for Vec3:
   fn from(t: (f32, f32, f32)) -> Vec3:
     Vec3(x: t.0, y: t.1, z: t.2)
 
-// Now:
+-- Now:
 let v: Vec3 = (1.0_f32, 2.0_f32, 3.0_f32).into::[Vec3]()
 ```
 
@@ -6019,9 +6032,9 @@ generic stdlib type.
 #### 9.3.1 Array type syntax
 
 ```
-i32[5]              // 5-element array of i32
-string[10]          // 10-element array of string
-f64[100]            // 100-element array of f64
+i32[5]              -- 5-element array of i32
+string[10]          -- 10-element array of string
+f64[100]            -- 100-element array of f64
 ```
 
 The syntax `T[N]` is dedicated to the array type. There is no exposed
@@ -6070,6 +6083,8 @@ Users needing the "must be non-negative" invariant for low-level work
 (allocation sizes, FFI) can use `usize` explicitly; the language does
 not block this.
 
+A const-generic parameter in length or capacity position must be `isize`; smaller signed types widen to it losslessly (§4.5). `usize` cannot serve directly — its conversion to `isize` requires an explicit cast (§4.5.1), which is unrepresentable in type position — and a negative const length or capacity is a compile error (value-fits, §2.5.2).
+
 #### 9.3.4 Index type
 
 Array index types are flexible. Any integer type is accepted as an
@@ -6092,15 +6107,15 @@ the compiler handles the widening:
 
 ```
 let i: i32 = 3
-let v: i32 = arr[i]            // i32 widens to isize for indexing
+let v: i32 = arr[i]            -- i32 widens to isize for indexing
 
 let n: usize = compute()
-let w = arr[n]                  // usize widens to isize for indexing
+let w = arr[n]                  -- usize widens to isize for indexing
 
 let big: u64 = some_huge()
-let x = arr[big]                // ✗ compile error on 64-bit (u64 doesn't fit isize);
-                                //   may also fail on 32-bit
-let x = arr[isize(big)]         // ✓ explicit conversion
+let x = arr[big]                -- ✗ compile error on 64-bit (u64 doesn't fit isize);
+                                --   may also fail on 32-bit
+let x = arr[isize(big)]         -- ✓ explicit conversion
 ```
 
 #### 9.3.5 Bounds checking
@@ -6116,8 +6131,8 @@ out-of-range access:
 
 ```
 let arr: i32[5] = ...
-let x = arr[10]                 // ✗ compile error — 10 not in 0..5
-let x = arr[3]                  // ✓ compile-time-verified safe
+let x = arr[10]                 -- ✗ compile error — 10 not in 0..5
+let x = arr[3]                  -- ✓ compile-time-verified safe
 ```
 
 For recoverable indexing (where out-of-bounds should produce a value,
@@ -6154,6 +6169,8 @@ Both are first-class primitive types with distinct semantics, dedicated
 operator rules, and (for `duration`) literal syntax. They are lowercase,
 matching the convention of other primitives (`bool`, `string`, `i32`,
 etc.).
+
+The operators on `duration` and `instant` (§9.4.1.2, §9.4.2.1) are **language-defined primitives**, not dispatched through the numeric `/`/`Div` trait machinery (§4.4.1.1, §4.9.1). This is why forms like `duration / Numeric` → `duration` and `duration / duration` → `f64` are well-formed even though they do not fit `Div`'s `Subject` → `Subject` shape.
 
 #### 9.4.1 `duration`
 
@@ -6200,9 +6217,7 @@ The following operators are defined for `duration`:
 | `-duration`                | `duration` | negation                       |
 | `duration <,<=,>=,>` ; `is`,`is not` | `bool` | comparison / equality (§4.4.4) |
 
-The `Numeric` operand may be any integer or float type per §4.1. Integer
-scaling is exact; float scaling rounds to nearest at the nanosecond level
-before storing the result.
+The `Numeric` operand may be any integer or float type per §4.1. Multiplication by an integer is exact; division (by an integer or a float) rounds to nearest at the nanosecond level, since a `duration` holds whole nanoseconds (e.g. `2s / 3` → 666,666,667 ns); multiplication by a float rounds likewise.
 
 Division by zero follows the standard rules of §4.6:
 
@@ -6395,21 +6410,21 @@ traversing the path segments and the parent's module path normally.
 
 ```
 root/
-├── main.duc                  // root module (has .duc directly)
-├── audio/                    // path segment only (no direct .duc)
+├── main.duc                  -- root module (has .duc directly)
+├── audio/                    -- path segment only (no direct .duc)
 │   ├── synth/
-│   │   └── synth.duc         // root::audio::synth module
-│   └── effects/              // path segment only (no direct .duc)
+│   │   └── synth.duc         -- root::audio::synth module
+│   └── effects/              -- path segment only (no direct .duc)
 │       └── reverb/
-│           └── reverb.duc    // root::audio::effects::reverb module
+│           └── reverb.duc    -- root::audio::effects::reverb module
 ```
 
 Use sites resolve through path segments unchanged:
 
 ```
-use root::audio::effects::reverb::Reverb    // ✓ resolves through audio/effects/
-use root::audio::*                           // ✗ audio/ is not a module
-use root::audio::effects                     // ✗ audio/effects/ is not a module
+use root::audio::effects::reverb::Reverb    -- ✓ resolves through audio/effects/
+use root::audio::*                           -- ✗ audio/ is not a module
+use root::audio::effects                     -- ✗ audio/effects/ is not a module
 ```
 
 A subfolder is *not* a "child module" or "submodule of its parent"
@@ -6432,11 +6447,11 @@ files.
 
 ```
 <package_root>/
-├── main.duc           // part of root module; sees signals.duc declarations directly
-├── signals.duc        // part of root module
+├── main.duc           -- part of root module; sees signals.duc declarations directly
+├── signals.duc        -- part of root module
 └── audio/
-    ├── oscillator.duc // part of root::audio; sees filter.duc directly
-    └── filter.duc     // part of root::audio; sees oscillator.duc directly
+    ├── oscillator.duc -- part of root::audio; sees filter.duc directly
+    └── filter.duc     -- part of root::audio; sees oscillator.duc directly
 ```
 
 In this layout: `main.duc` and `signals.duc` are both in the root
@@ -6514,14 +6529,14 @@ replaced throughout by this three-level model; the propagation covers
 all visibility-bearing productions (grammar §3.4 through §3.11).
 
 ```
-public fn render_frame(...): ...           // exported across packages
-fn compute_delta(...): ...                 // shared (default)
-private fn internal_helper(...): ...       // module-local
+public fn render_frame(...): ...           -- exported across packages
+fn compute_delta(...): ...                 -- shared (default)
+private fn internal_helper(...): ...       -- module-local
 
-public type Synthesizer:                   // type public
+public type Synthesizer:                   -- type public
   ...
 
-private const SECRET_KEY: u64 = 0xDEADBEEF // module-local constant
+private const SECRET_KEY: u64 = 0xDEADBEEF -- module-local constant
 ```
 
 Specific visibility rules for each declaration kind are specified in the
@@ -6570,8 +6585,8 @@ specified in grammar §3.3.
 ```
 use root::audio::Synthesizer
 
-let s = Synthesizer(...)              // unqualified — would be
-                                      // root::audio::Synthesizer(...) otherwise
+let s = Synthesizer(...)              -- unqualified — would be
+                                      -- root::audio::Synthesizer(...) otherwise
 ```
 
 `use` statements are required only for *cross-module* references.
@@ -6612,8 +6627,8 @@ Per §6.2.3, selection lists on `use` paths use parentheses; a glob
 imports every visible name from the source:
 
 ```
-use root::ops::(add, sub, mul)        // specific names
-use root::variants::*                 // glob: every visible name
+use root::ops::(add, sub, mul)        -- specific names
+use root::variants::*                 -- glob: every visible name
 ```
 
 Glob imports are subject to the import-time conflict rules per §6.2.3:
@@ -6627,13 +6642,13 @@ path, write an explicit re-declaration rather than a re-exporting
 `use`. Common forms:
 
 ```
-// In root::facade.duc:
+-- In root::facade.duc:
 public alias type Synthesizer = root::audio::internal::Synthesizer
-                                       // alias type form (§4.2)
+                                       -- alias type form (§4.2)
 
 public fn build_default() -> Synthesizer:
   root::audio::internal::build_default_with_params(...)
-                                       // wrapper function
+                                       -- wrapper function
 ```
 
 These are ordinary declarations with their own visibility specifiers,
@@ -6739,16 +6754,16 @@ visibility specifier alongside the type visibility. The syntax uses a
 parenthesized modifier on the type visibility keyword:
 
 ```
-public type Email:                        // newtype; type public, constructor public (default)
+public type Email:                        -- newtype; type public, constructor public (default)
   wraps string
 
-public(shared) type Email:                // newtype; type public, constructor shared
+public(shared) type Email:                -- newtype; type public, constructor shared
   wraps string
 
-public(private) type Email:               // newtype; type public, constructor private
-  wraps string                            //   — the smart-constructor pattern
+public(private) type Email:               -- newtype; type public, constructor private
+  wraps string                            --   — the smart-constructor pattern
 
-shared(private) type SecretConfig:        // record; type shared, constructor private
+shared(private) type SecretConfig:        -- record; type shared, constructor private
   api_key: string
 ```
 
@@ -6784,12 +6799,12 @@ Enum visibility applies uniformly to the enum type and all its variants
 (§6.2.6). There is no per-variant visibility specifier.
 
 ```
-public enum Color:                        // all variants public
+public enum Color:                        -- all variants public
   Red
   Green
   Blue
 
-private enum InternalState:               // type and all variants module-local
+private enum InternalState:               -- type and all variants module-local
   Pending
   Running
   Done
@@ -6808,9 +6823,9 @@ declares its own visibility:
 
 ```
 public type Account:
-  public id: i64                  // readable anywhere the type is visible
-  email: string                   // shared (default)
-  private password_hash: string   // readable only within this module
+  public id: i64                  -- readable anywhere the type is visible
+  email: string                   -- shared (default)
+  private password_hash: string   -- readable only within this module
 ```
 
 A field's visibility never exceeds the enclosing type's visibility —
@@ -6935,8 +6950,7 @@ for-loop iteration variable). The caller hands a value to a callee, or
 names a value with a new binding. The default in this category is
 *borrow-equivalent*: the callee/new binding gets read-only access; the
 caller's binding survives. Opt in to consumption with `own` in the
-signature (§11.7.4) and `move` at the call site (§11.8.5). Function
-return always transfers ownership of the returned value.
+signature (§11.7.4) and `move` at the call site (§11.8.5). Function return transfers ownership when the returned value is a real-owner local or the signature declares `-> own T`; a default return rooted in a borrowed input propagates a borrow-equivalent alias (cluster propagation, §11.3.6).
 
 **B. Structural storage** (record construction, indexed assignment,
 field assignment via `mut`, whole-value reassignment of `mut`, attr
@@ -6978,8 +6992,7 @@ owner. Default function arguments and let-rebindings produce
 *borrow-equivalent aliases* (§11.3.4) in the same cluster as the
 source; the source remains the real owner. Opt-in consumption via
 `own`/`move` transfers ownership to a new owner; the source binding
-becomes inaccessible. Function return transfers ownership of the
-returned value. The compiler tracks ownership and cluster membership at
+becomes inaccessible. Function return transfers ownership when the returned value is a real owner or the signature declares `-> own T`; otherwise a default return rooted in a borrowed input is a borrow-equivalent alias (§11.3.6). The compiler tracks ownership and cluster membership at
 every binding site; using a binding after its name has been killed is a
 compile error.
 
@@ -7019,8 +7032,8 @@ imperative implementation underneath.
 The language has two binding forms for runtime values:
 
 ```
-let x = expr        // immutable binding
-mut x = expr        // mutable binding (function bodies only)
+let x = expr        -- immutable binding
+mut x = expr        -- mutable binding (function bodies only)
 ```
 
 `let` is the general-purpose binding form, identical to the form specified
@@ -7056,10 +7069,7 @@ at module scope are governed by §13's reactive contract.
 **Top-level consts and the ownership system.** A top-level `const`
 (per §2.4.1.1) is compile-time-only: each use site reifies a fresh
 compile-time value. Consts do not enter the §11 ownership system —
-there is no runtime "owner" of a const to consume or transfer. Per
-§2.4.1.1, const types must be compile-time-constructible, which in
-practice means `Copy` primitive and small composite types; non-`Copy`
-const types (heap-backed containers, etc.) are not supported.
+there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool handle. Types that are not statically representable — dynamic collections such as `Vec`/`HashMap`, whose contents are built by runtime allocation — are not supported as const types.
 Attempts to apply `move` or to pass a const to an `own` parameter
 position are diagnosed as: *"const `X` is compile-time-only and has
 no runtime identity; consumption does not apply."*
@@ -7070,8 +7080,8 @@ Either form may shadow a previously declared binding in the same scope:
 
 ```
 fn process(input: Vec[i32]) -> i32:
-  let input = preprocess(input)       // shadows the parameter
-  let input = filter(input)           // shadows again
+  let input = preprocess(input)       -- shadows the parameter
+  let input = filter(input)           -- shadows again
   sum(input)
 ```
 
@@ -7111,24 +7121,19 @@ Ownership and cluster membership flow through five language operations:
   alias rooted in each successive element of `v` for the body of one
   iteration. `for own x in v:` consumes `v` and binds `x` as a real
   owner for each element (§12.3).
-- **Function return.** `return e` transfers ownership of `e`'s value
-  out of the function. If `e` is a real-owner local, the value moves
-  directly to the call site's receiving binding. If `e` is rooted in a
-  cluster member, anchoring per §11.3.6 produces an owned value at the
-  return site (implicit Copy or Clone where applicable; compile error
-  otherwise).
+- **Function return.** Returns follow the borrow-default convention (§11.3.6). If `e` is a real-owner local, ownership moves directly to the call site's receiving binding. If `e` is rooted in a cluster member, the default (`-> T`) is borrow-equivalent — the caller's binding is an alias in `e`'s cluster (cluster propagation); ownership transfer is opt-in via `-> own T`, where anchoring per §11.3.6 produces an owned value at the return site (implicit Copy or Clone where applicable; compile error otherwise).
 
 "Move" means ownership transfer. The compiler tracks ownership and
 cluster membership statically; using a binding after its name has been
 killed is a compile error reported at the use site.
 
 ```
-let v = make_buffer()       // v is the real owner
-let w = v                   // ownership transfers from v to w;
-                            //   v's name dies (single-name-per-cluster);
-                            //   the buffer is not copied or moved
-print(w)                    // ✓ w is the live name; w is the real owner
-print(v)                    // ✗ compile error: v's name was rebound at line 2
+let v = make_buffer()       -- v is the real owner
+let w = v                   -- ownership transfers from v to w;
+                            --   v's name dies (single-name-per-cluster);
+                            --   the buffer is not copied or moved
+print(w)                    -- ✓ w is the live name; w is the real owner
+print(v)                    -- ✗ compile error: v's name was rebound at line 2
 ```
 
 The buffer's storage is not moved by `let w = v` — only the *name* that
@@ -7151,11 +7156,11 @@ Reading requires no keyword and does not affect ownership or cluster
 membership.
 
 ```
-let r = make_record()        // r is the real owner
-print(r.first_name)          // reads r.first_name; r still owned
-print(r.last_name)           // reads again; r still owned
-consume(move r)              // ✓ consume declares `own r`; explicit move
-print(r.age)                 // ✗ compile error: r was consumed at line 4
+let r = make_record()        -- r is the real owner
+print(r.first_name)          -- reads r.first_name; r still owned
+print(r.last_name)           -- reads again; r still owned
+consume(move r)              -- ✓ consume declares `own r`; explicit move
+print(r.age)                 -- ✗ compile error: r was consumed at line 4
 ```
 
 Consuming includes:
@@ -7187,9 +7192,9 @@ the binding's storage slot, and the old value is dropped:
 
 ```
 mut buf = make_buffer()
-buf = make_other_buffer()    // old buffer dropped, new one bound;
-                             //   no `move` keyword required —
-                             //   whole-value reassignment is category B
+buf = make_other_buffer()    -- old buffer dropped, new one bound;
+                             --   no `move` keyword required —
+                             --   whole-value reassignment is category B
 ```
 
 Reassignment is *not* shadowing — it modifies the existing binding rather
@@ -7316,22 +7321,22 @@ copy."*
 Worked examples:
 
 ```
-fn read(v: Vec[i32]) -> i32: ...               // default: borrow-equivalent
-fn consume(own v: Vec[i32]) -> i32: ...        // opt-in: consumes
+fn read(v: Vec[i32]) -> i32: ...               -- default: borrow-equivalent
+fn consume(own v: Vec[i32]) -> i32: ...        -- opt-in: consumes
 
-fn process(items: Vec[i32]) -> i32:            // items is borrow-equivalent
-  for x in items:                              // x is borrow-equivalent (cluster member)
-    let y = x                                  // ✓ Rule (P): y borrows in same cluster
-    read(y)                                    // ✓ y passed to borrow-default param
-    // consume(move y)                         // ✗ would dig into items[i]
-                                               //   "cannot consume borrow-equivalent
-                                               //    alias y into ownership of Vec[i32]"
-  read(items)                                  // ✓ items unchanged
+fn process(items: Vec[i32]) -> i32:            -- items is borrow-equivalent
+  for x in items:                              -- x is borrow-equivalent (cluster member)
+    let y = x                                  -- ✓ Rule (P): y borrows in same cluster
+    read(y)                                    -- ✓ y passed to borrow-default param
+    -- consume(move y)                         -- ✗ would dig into items[i]
+                                               --   "cannot consume borrow-equivalent
+                                               --    alias y into ownership of Vec[i32]"
+  read(items)                                  -- ✓ items unchanged
 
 fn destroy(items: Vec[i32]) -> i32:
-  for own x in items:                          // x is a real owner each iteration
-    consume(move x)                            // ✓ x is real-owner; can be consumed
-  // items is no longer accessible (consumed by `for own`)
+  for own x in items:                          -- x is a real owner each iteration
+    consume(move x)                            -- ✓ x is real-owner; can be consumed
+  -- items is no longer accessible (consumed by `for own`)
 ```
 
 #### 11.3.6 Returns: borrow-default propagation, opt-in anchoring
@@ -7350,16 +7355,16 @@ the cluster's root, the result is a new alias, and §11.9.2's
 source-mutation invariants apply for the result's lifetime.
 
 ```
-fn first(v: Vec[Record]) -> Record:           // default convention
-  v[0]                                         // returns alias of v[0]
+fn first(v: Vec[Record]) -> Record:           -- default convention
+  v[0]                                         -- returns alias of v[0]
 
 fn caller():
-  let buf = make_records()                    // buf: real owner
-  let r = first(buf)                          // r: borrow-equivalent alias
-                                              //   rooted in buf's cluster
-  print(r.first_name)                         // ✓ reads through r
-  print(buf.length)                           // ✓ buf still owned and readable
-  // buf may not be moved or mutated while r is live (§11.9.2)
+  let buf = make_records()                    -- buf: real owner
+  let r = first(buf)                          -- r: borrow-equivalent alias
+                                              --   rooted in buf's cluster
+  print(r.first_name)                         -- ✓ reads through r
+  print(buf.length)                           -- ✓ buf still owned and readable
+  -- buf may not be moved or mutated while r is live (§11.9.2)
 ```
 
 The compiler infers return rootedness from the function body's
@@ -7389,17 +7394,17 @@ function declares `-> own T`. Anchoring then applies:
   `Clone` for `T`."*
 
 ```
-fn first_owned(v: Vec[Record]) -> own Record: // opt-in own return
-  v[0]                                         // requires Clone impl
-                                               //   on Record; implicit
-                                               //   .clone() at return
+fn first_owned(v: Vec[Record]) -> own Record: -- opt-in own return
+  v[0]                                         -- requires Clone impl
+                                               --   on Record; implicit
+                                               --   .clone() at return
 
 fn caller():
   let buf = make_records()
-  let r = first_owned(buf)                    // r: real owner (independent)
+  let r = first_owned(buf)                    -- r: real owner (independent)
   print(r.first_name)
-  drop(move buf)                              // ✓ buf consumable; r is
-                                              //   independent of buf's cluster
+  drop(move buf)                              -- ✓ buf consumable; r is
+                                              --   independent of buf's cluster
 ```
 
 **Why this completes the borrow-default principle.** All transient
@@ -7504,11 +7509,11 @@ type Point:
   y: f32
 
 let p = Point(x: 1.0, y: 2.0)
-let q = p                         // q is an independent Point; p still usable
-let total_x = p.x + q.x           // both readable
-plot(p)                            // does not consume p
-plot(q)                            // does not consume q
-print(p.x)                         // ✓ p still owned
+let q = p                         -- q is an independent Point; p still usable
+let total_x = p.x + q.x           -- both readable
+plot(p)                            -- does not consume p
+plot(q)                            -- does not consume q
+print(p.x)                         -- ✓ p still owned
 ```
 
 The duplication is conceptually a value-by-value copy. The runtime cost
@@ -7530,10 +7535,10 @@ type Counter:
   value: i32
 
 let original = Counter(value: 0)
-mut working = original              // independent copy
-working.value = 5                   // mutates working's copy
-print(original.value)               // 0; original unchanged
-print(working.value)                // 5
+mut working = original              -- independent copy
+working.value = 5                   -- mutates working's copy
+print(original.value)               -- 0; original unchanged
+print(working.value)                -- 5
 ```
 
 This is the standard interpretation of value-type mutation in
@@ -7589,9 +7594,9 @@ value:
 
 ```
 let buf = make_buffer()
-let backup = buf.clone()          // explicit deep copy
-process(buf)                       // buf consumed
-restore(backup)                    // backup still owned
+let backup = buf.clone()          -- explicit deep copy
+process(buf)                       -- buf consumed
+restore(backup)                    -- backup still owned
 ```
 
 The clone allocates as the type requires. Users who write `.clone()` are
@@ -7661,8 +7666,8 @@ the parameter declaration:
   (§11.8.5).
 
 ```
-fn inspect_buffer(b: Vec[f32]) -> isize: ...        // default: borrow-equivalent
-fn consume_buffer(own b: Vec[f32]) -> Vec[f32]: ... // opt-in: consumes
+fn inspect_buffer(b: Vec[f32]) -> isize: ...        -- default: borrow-equivalent
+fn consume_buffer(own b: Vec[f32]) -> Vec[f32]: ... -- opt-in: consumes
 ```
 
 The default convention is the read-heavy case (computation that
@@ -7693,7 +7698,7 @@ rebind to a `mut` local with an explicit clone (§11.7.3).
 A function parameter may not be declared `mut`:
 
 ```
-fn process(mut buf: Vec[f32]) -> Vec[f32]: ...    // ✗ compile error
+fn process(mut buf: Vec[f32]) -> Vec[f32]: ...    -- ✗ compile error
 ```
 
 The forbid is intentional. A function's signature is its contract with
@@ -7731,19 +7736,19 @@ independent owned copy."*
 
 ```
 fn build_owned_buffer(own arr: i32[16]) -> i32[16]:
-  mut local = arr               // ✓ arr is own (real-owner); transfers
-  // mutate local[i] for each i
+  mut local = arr               -- ✓ arr is own (real-owner); transfers
+  -- mutate local[i] for each i
   local
 
 fn double_in_place(arr: i32[16]) -> i32[16]:
-  mut local = arr.clone()       // ✓ explicit clone produces real owner
-  // mutate local[i] for each i
+  mut local = arr.clone()       -- ✓ explicit clone produces real owner
+  -- mutate local[i] for each i
   local
 
 fn bad(arr: i32[16]) -> i32[16]:
-  mut local = arr               // ✗ compile error: borrow-equivalent
-                                //   cannot become real owner
-                                //   (suggests `arr.clone()` or `own arr`)
+  mut local = arr               -- ✗ compile error: borrow-equivalent
+                                --   cannot become real owner
+                                --   (suggests `arr.clone()` or `own arr`)
   local
 ```
 
@@ -7762,22 +7767,22 @@ structural slots — categories B/D), or dropped at function exit.
 
 ```
 fn into_sorted(own v: Vec[i32]) -> Vec[i32]:
-  mut buf = v                   // v is real-owner; ownership transfers
-  // sort buf in place
+  mut buf = v                   -- v is real-owner; ownership transfers
+  -- sort buf in place
   buf
 
 let v = make_vec()
-let s = into_sorted(move v)     // ✓ explicit move; v's name dies
-print(v)                        // ✗ compile error: v was consumed
+let s = into_sorted(move v)     -- ✓ explicit move; v's name dies
+print(v)                        -- ✗ compile error: v was consumed
 ```
 
 The `own` keyword precedes the binding name in the parameter
 declaration:
 
 ```
-fn f(own x: T) -> U: ...                  // single own parameter
-fn g(a: T, own b: U) -> V: ...            // mixed: a is default, b is own
-fn h(own a: T, own b: U) -> V: ...        // both own
+fn f(own x: T) -> U: ...                  -- single own parameter
+fn g(a: T, own b: U) -> V: ...            -- mixed: a is default, b is own
+fn h(own a: T, own b: U) -> V: ...        -- both own
 ```
 
 `own` is grammatically a keyword in parameter-declaration position; the
@@ -7837,9 +7842,9 @@ arguments:
 
 ```
 let v = make_buffer()
-let n = length(v)             // length takes default parameter; v survives
-let w = into_sorted(move v)   // into_sorted declares `own`; v consumed via `move`
-let m = length(w)             // length again; w still owned
+let n = length(v)             -- length takes default parameter; v survives
+let w = into_sorted(move v)   -- into_sorted declares `own`; v consumed via `move`
+let m = length(w)             -- length again; w still owned
 ```
 
 The default form `f(x)` always means "no consumption": the caller's
@@ -7875,10 +7880,10 @@ expression that consumed the binding:
 
 ```
 let v = make_vec()
-let n = consume_fn(move v)    // v consumed here
-print(v)                       // ✗ compile error:
-                               //   `v` was consumed by `move v` at line 2
-                               //   and is no longer accessible
+let n = consume_fn(move v)    -- v consumed here
+print(v)                       -- ✗ compile error:
+                               --   `v` was consumed by `move v` at line 2
+                               --   and is no longer accessible
 ```
 
 The error is local: the compiler does not need to analyze the
@@ -7895,11 +7900,11 @@ receiver follows the method's first-parameter convention.
 
 ```
 let v = make_buffer()
-let n = v.length()           // sugar for length(v); default; v survives
-let m = v.length()           // default again; v still owned
+let n = v.length()           -- sugar for length(v); default; v survives
+let m = v.length()           -- default again; v still owned
 
-let s = (move v).into_sorted()    // sugar for into_sorted(move v);
-                                   //   v consumed via parenthesized prefix
+let s = (move v).into_sorted()    -- sugar for into_sorted(move v);
+                                   --   v consumed via parenthesized prefix
 ```
 
 The `move` keyword attaches to the consume target via prefix
@@ -7943,21 +7948,21 @@ explicit consumption of an l-value identifier binding.
 sub-expression of a function-call argument list:
 
 ```
-f(move x)                          // ✓ argument to f
-g(a, move b, c)                    // ✓ middle argument
-(move v).method()                  // ✓ method-call receiver via prefix
-                                   //   parenthesization (§11.8.3)
+f(move x)                          -- ✓ argument to f
+g(a, move b, c)                    -- ✓ middle argument
+(move v).method()                  -- ✓ method-call receiver via prefix
+                                   --   parenthesization (§11.8.3)
 ```
 
 `move` is **forbidden** outside call-site argument positions:
 
 ```
-let y = move x                     // ✗ parse error: `move` in let-RHS
-return move x                      // ✗ parse error: `move` in return
-mut z = move x                     // ✗ parse error: `move` in mut-RHS
-move v.method()                    // ✗ parse error: `move` attached to a
-                                   //   dotted expression — ambiguous in
-                                   //   chains; use `(move v).method()`
+let y = move x                     -- ✗ parse error: `move` in let-RHS
+return move x                      -- ✗ parse error: `move` in return
+mut z = move x                     -- ✗ parse error: `move` in mut-RHS
+move v.method()                    -- ✗ parse error: `move` attached to a
+                                   --   dotted expression — ambiguous in
+                                   --   chains; use `(move v).method()`
 ```
 
 The restriction is by design. `move` in let-RHS, return, or mut-RHS
@@ -8052,15 +8057,15 @@ borrows a binding while another sub-expression in the same expression
 attempts to consume the same binding:
 
 ```
-fn combine(a: Vec[i32], b: own Vec[i32]) -> ...   // a default, b own
+fn combine(a: Vec[i32], b: own Vec[i32]) -> ...   -- a default, b own
 fn extract(own v: Vec[i32]) -> Vec[i32]: ...
 
 let v = make_vec()
-let r = combine(v, extract(move v))               // ✗ compile error:
-                                                  //   v has live alias
-                                                  //   (combine's a); cannot
-                                                  //   move v into extract in
-                                                  //   the same expression
+let r = combine(v, extract(move v))               -- ✗ compile error:
+                                                  --   v has live alias
+                                                  --   (combine's a); cannot
+                                                  --   move v into extract in
+                                                  --   the same expression
 ```
 
 The compiler reports the conflict at the offending sub-expression.
@@ -8072,11 +8077,11 @@ are read-only, so no aliasing-with-mutation hazard arises (per §11.9.2
 the source cannot be mutated while any alias is live):
 
 ```
-fn compare(a: Vec[i32], b: Vec[i32]) -> bool      // both default
+fn compare(a: Vec[i32], b: Vec[i32]) -> bool      -- both default
 
 let v = make_vec()
-let r = compare(v, v)                              // ✓ two aliases of v;
-                                                   //   compare reads both
+let r = compare(v, v)                              -- ✓ two aliases of v;
+                                                   --   compare reads both
 ```
 
 Let-rebindings within a cluster proceed step by step: each rebind kills
@@ -8087,11 +8092,11 @@ the original binding and another is being passed through:
 
 ```
 fn process(items: Vec[i32]) -> i32:
-  for x in items:                                  // x is an alias of items[i]
-    let y = x                                      // Rule (P): y replaces x;
-                                                   //   x's name dies
-    read_two(y, items)                             // ✓ two aliases (y, items)
-                                                   //   both live during call
+  for x in items:                                  -- x is an alias of items[i]
+    let y = x                                      -- Rule (P): y replaces x;
+                                                   --   x's name dies
+    read_two(y, items)                             -- ✓ two aliases (y, items)
+                                                   --   both live during call
 ```
 
 #### 11.9.4 Implicit alias propagation in function bodies
@@ -8102,7 +8107,7 @@ syntax:
 
 ```
 fn length(v: Vec[i32]) -> isize:
-  count_elements(v)             // count_elements is default; alias propagates
+  count_elements(v)             -- count_elements is default; alias propagates
 
 fn count_elements(v: Vec[i32]) -> isize: ...
 ```
@@ -8114,13 +8119,13 @@ forbids operations that would require real ownership:
 
 ```
 fn length(v: Vec[i32]) -> isize:
-  count_elements(v)             // ✓ alias propagates
-  consume_vec(move v)           // ✗ v is borrow-equivalent;
-                                //   cannot consume cluster member (Rule P)
-  return v                      // ✓ if Vec[i32] is Clone:
-                                //   §11.3.6 auto-anchoring applies
-  let saved = v                 // alias-rebind (Rule P); saved aliases
-                                //   the same source as v; v's name dies
+  count_elements(v)             -- ✓ alias propagates
+  consume_vec(move v)           -- ✗ v is borrow-equivalent;
+                                --   cannot consume cluster member (Rule P)
+  return v                      -- ✓ if Vec[i32] is Clone:
+                                --   §11.3.6 auto-anchoring applies
+  let saved = v                 -- alias-rebind (Rule P); saved aliases
+                                --   the same source as v; v's name dies
 ```
 
 The Rule (P) machinery in §11.3.5 governs every `let` or `mut`
@@ -8160,24 +8165,24 @@ holds an independent copy.
 
 ```
 let gain: f32 = 1.5
-let process = fn(sample: f32): sample * gain    // captures gain (f32, Copy) ✓
+let process = fn(sample: f32): sample * gain    -- captures gain (f32, Copy) ✓
 ```
 
 For non-`Copy` source values, capture is a compile error:
 
 ```
-let buf = make_buffer()                       // Vec[f32], non-Copy
-let closure = fn(): sum(buf)                   // ✗ compile error:
-                                              //   cannot capture non-Copy value `buf`
+let buf = make_buffer()                       -- Vec[f32], non-Copy
+let closure = fn(): sum(buf)                   -- ✗ compile error:
+                                              --   cannot capture non-Copy value `buf`
 ```
 
 Non-`Copy` values flow through closures as arguments rather than captures:
 
 ```
-let closure = fn(b: Vec[f32]): sum(b)         // closure parameter is default
-                                              //   (borrow-equivalent)
-let total = closure(buf)                      // caller passes buf;
-                                              //   buf survives the call
+let closure = fn(b: Vec[f32]): sum(b)         -- closure parameter is default
+                                              --   (borrow-equivalent)
+let total = closure(buf)                      -- caller passes buf;
+                                              --   buf survives the call
 ```
 
 The closure's parameter follows the default convention from §11.7:
@@ -8194,8 +8199,8 @@ that field is captured — provided the field's type is `Copy`:
 
 ```
 let contact = Contact(first_name: "Alice", age: 30, ...)
-let closure = fn(): contact.age + 1           // captures contact.age (i32, Copy)
-                                              // contact stays in outer scope, fully usable
+let closure = fn(): contact.age + 1           -- captures contact.age (i32, Copy)
+                                              -- contact stays in outer scope, fully usable
 ```
 
 If a captured subvalue's type is not `Copy`, the capture fails regardless
@@ -8209,11 +8214,11 @@ bindings:
 
 ```
 let stable = 5
-let closure_a = fn(): stable + 1              // ✓ capture from let
+let closure_a = fn(): stable + 1              -- ✓ capture from let
 
 mut counter = 0
-let closure_b = fn(): counter + 1            // ✗ compile error:
-                                              //   cannot capture from `mut` binding `counter`
+let closure_b = fn(): counter + 1            -- ✗ compile error:
+                                              --   cannot capture from `mut` binding `counter`
 ```
 
 The forbid prevents a footgun: closures capture by value at definition
@@ -8224,10 +8229,10 @@ user to make the snapshot explicit:
 ```
 mut counter = 0
 counter = compute_initial()
-let snapshot = counter                        // explicit snapshot via let
-let closure = fn(): snapshot + 1              // captures snapshot (Copy)
-counter = counter + 1                         // mut continues to evolve
-                                              // closure still sees the snapshot value
+let snapshot = counter                        -- explicit snapshot via let
+let closure = fn(): snapshot + 1              -- captures snapshot (Copy)
+counter = counter + 1                         -- mut continues to evolve
+                                              -- closure still sees the snapshot value
 ```
 
 For closures that must track live updates of changing state, the reactive
@@ -8244,10 +8249,10 @@ applies only to the closure's captured environment, not to anything the
 body does internally.
 
 ```
-let scale: f32 = 2.0                          // Copy capture
+let scale: f32 = 2.0                          -- Copy capture
 let process = fn(raw: Vec[f32]) -> Vec[f32]:
-  mut local = raw.clone()                      // mut local; clone needed (raw is a non-Copy borrow)
-  apply_scale_in_place(local, scale)           // internal work; captures untouched
+  mut local = raw.clone()                      -- mut local; clone needed (raw is a non-Copy borrow)
+  apply_scale_in_place(local, scale)           -- internal work; captures untouched
   local
 ```
 
@@ -8284,7 +8289,7 @@ closure literals and plain free functions:
 ```
 let inc: fn(i32) -> i32 = fn(x): x + 1
 fn double(x: i32) -> i32: x * 2
-let d: fn(i32) -> i32 = double          // a free function inhabits the type
+let d: fn(i32) -> i32 = double          -- a free function inhabits the type
 ```
 
 **Structural.** A closure type is defined by its signature alone —
@@ -8318,7 +8323,7 @@ concrete types), with no indirection — the zero-cost model of a generic
 parameter (§2.3), behaving as an implicit generic (§2.2.3).
 
 ```
-fn apply(f: fn(i32) -> i32, x: i32) -> i32:   // monomorphized per closure passed
+fn apply(f: fn(i32) -> i32, x: i32) -> i32:   -- monomorphized per closure passed
   f(x)
 ```
 
@@ -8326,11 +8331,18 @@ To hold closures of the same signature but *different* concrete types in
 one place — a record field, a collection element, a binding reassigned
 different closures — they must share one representation, which requires
 erasure: `dyn fn(P) -> R`, the trait-object form (§5.2), paying the
-visible vtable indirection. A closure type is object-safe (§5.2.4), so
-`dyn fn(P) -> R` is always well-formed.
+visible vtable indirection. A closure type `fn(P) -> R` exposes one
+operation — its call — with the closure value as the erased receiver
+and concrete `P`/`R`. Against §5.2.4's rules: rule 1 (`Subject`
+receiver) holds — the closure value is the receiver; rule 2 (`Subject`
+nowhere else) holds — `P` and `R` are concrete and fixed by the closure
+type, so the erased value's type appears only as the receiver; rule 3
+(non-generic) holds — the call declares no type parameters; and there
+are no associated types. Every closure type is therefore object-safe,
+with no exceptions, so `dyn fn(P) -> R` is always well-formed.
 
 ```
-mut handlers: Vec[dyn fn(Event) -> ()] = Vec::new()   // heterogeneous, erased
+mut handlers: Vec[dyn fn(Event) -> ()] = Vec::new()   -- heterogeneous, erased
 ```
 
 So a closure type is used directly (`fn(P) -> R`) wherever it can stay
@@ -8349,10 +8361,10 @@ permitted:
 
 ```
 mut r = make_record()
-r.field = new_value          // ✓ field assignment
+r.field = new_value          -- ✓ field assignment
 
 mut arr = make_array()
-arr[5] = 1.5                  // ✓ indexed assignment
+arr[5] = 1.5                  -- ✓ indexed assignment
 ```
 
 The root binding (`r`, `arr`) must be declared `mut`. The field or
@@ -8377,12 +8389,12 @@ the `move` keyword would add no information.
 
 ```
 mut r = make_record()
-r.field = produce_value()    // produce_value()'s return is consumed
-                             //   into r.field — no `move` keyword
+r.field = produce_value()    -- produce_value()'s return is consumed
+                             --   into r.field — no `move` keyword
 let v = build_vec()
 mut arr = make_array_of_vecs()
-arr[5] = v                   // v is consumed into arr[5]; v's name dies
-                             //   (single-name-per-cluster); no `move` needed
+arr[5] = v                   -- v is consumed into arr[5]; v's name dies
+                             --   (single-name-per-cluster); no `move` needed
 ```
 
 The same rule applies to record construction (§6.1) and to reactive
@@ -8409,7 +8421,7 @@ A `mut` binding may be reassigned entirely:
 
 ```
 mut buf = make_buffer()
-buf = make_other_buffer()    // replaces the buffer; old one dropped
+buf = make_other_buffer()    -- replaces the buffer; old one dropped
 ```
 
 This drops the previous value and binds the new value. The new value is
@@ -8441,7 +8453,7 @@ deterministic.
 
 ```
 mut v = Vec::new()
-v = (move v).push(move x)     // reuses v's storage; in place
+v = (move v).push(move x)     -- reuses v's storage; in place
 ```
 
 §12.7.2's iterator optimization is this rule applied to the for-loop's
@@ -8454,7 +8466,7 @@ explicit (`Clone`, §11.5) and there is no hidden allocation:
 
 ```
 let a = make_vec()
-let b = a.clone().push(move x)   // a survives; b is the grown copy
+let b = a.clone().push(move x)   -- a survives; b is the grown copy
 use(a)
 ```
 
@@ -8465,7 +8477,7 @@ omit the receiver `move` and the rebind. When `m` takes `own subject` and
 returns `Subject`,
 
 ```
-v.m(args)        // v is a mut binding
+v.m(args)        -- v is a mut binding
 ```
 
 desugars to
@@ -8484,8 +8496,8 @@ ownership rules: an `own` non-Copy argument still requires an explicit
 
 ```
 mut v = Vec::new()
-v.push(move item)    // item: non-Copy → explicit move on the argument
-v.push(3)            // 3: Copy → no move
+v.push(move item)    -- item: non-Copy → explicit move on the argument
+v.push(3)            -- 3: Copy → no move
 ```
 
 The sugar applies only to `mut` bindings (a `let` binding cannot be
@@ -8532,14 +8544,14 @@ opts in to consumption (§11.7.4).
 
 ```
 trait Length:
-  fn length(value: Subject) -> isize               // default: borrow-equivalent
+  fn length(value: Subject) -> isize               -- default: borrow-equivalent
 
 fulfill Length for Vec[i32]:
   fn length(value: Vec[i32]) -> isize:
     ...
 
 trait IntoSorted:
-  fn into_sorted(own value: Subject) -> Subject    // opt-in: consumes
+  fn into_sorted(own value: Subject) -> Subject    -- opt-in: consumes
 
 fulfill IntoSorted for Vec[i32]:
   fn into_sorted(own value: Vec[i32]) -> Vec[i32]:
@@ -8666,9 +8678,9 @@ expression syntax is `start..end`, where `start` and `end` are integer
 expressions:
 
 ```
-0..10                          // integers 0, 1, 2, ..., 9
-1..100                         // integers 1, 2, ..., 99
-n..(n + size)                  // dependent on n and size
+0..10                          -- integers 0, 1, 2, ..., 9
+1..100                         -- integers 1, 2, ..., 99
+n..(n + size)                  -- dependent on n and size
 ```
 
 Ranges are half-open and exclusive on the upper bound: `start..end`
@@ -8682,7 +8694,7 @@ mixed-kind operands require explicit conversion). Ranges may be bound,
 passed to functions, returned, and used like any other value:
 
 ```
-let r = 0..1024              // r: Range[i32], by default integer placeholder
+let r = 0..1024              -- r: Range[i32], by default integer placeholder
 fn process_range(r: Range[i32]) -> isize: ...
 ```
 
@@ -8703,7 +8715,7 @@ explicitly:
 
 ```
 for i in 0..(N / 2):
-  let actual_i = i * 2          // 0, 2, 4, ..., N-2
+  let actual_i = i * 2          -- 0, 2, 4, ..., N-2
   process(actual_i)
 ```
 
@@ -8720,7 +8732,7 @@ does not affect the range:
 mut n = 10
 let r = 0..n
 n = 100
-for i in r:                   // iterates 0..10, not 0..100
+for i in r:                   -- iterates 0..10, not 0..100
   ...
 ```
 
@@ -8737,7 +8749,7 @@ otherwise.
 Ranges with negative starts and ends work normally if `T` is signed:
 
 ```
-for i in -10..10:             // i: i32 (default); -10, -9, ..., 9
+for i in -10..10:             -- i: i32 (default); -10, -9, ..., 9
   ...
 ```
 
@@ -8751,11 +8763,11 @@ source. The source can be passed in two forms, which select between
 borrow-equivalent (default) and consuming iteration:
 
 ```
-for x in iterable:           // default: borrow-equivalent iteration
-  body                        //   source survives the loop
+for x in iterable:           -- default: borrow-equivalent iteration
+  body                        --   source survives the loop
 
-for own x in iterable:       // opt-in: consuming iteration
-  body                        //   source consumed at loop entry
+for own x in iterable:       -- opt-in: consuming iteration
+  body                        --   source consumed at loop entry
 ```
 
 The default form `for x in v:` is borrow-equivalent because that is
@@ -8867,9 +8879,9 @@ current element. `buf` survives the loop.
 ```
 let buf: f32[1024] = make_block()
 mut sum: f32 = 0.0
-for sample in buf:                  // sample: f32 (Copy)
+for sample in buf:                  -- sample: f32 (Copy)
   sum = sum + sample
-process_further(buf)                // ✓ buf still owned
+process_further(buf)                -- ✓ buf still owned
 ```
 
 **Default form, non-`Copy` element type** (`for r in records:` where
@@ -8881,15 +8893,15 @@ compare, and inspect, but cannot consume `r` into ownership of
 
 ```
 let records: Vec[Record] = make_records()
-for r in records:                   // r: borrow-equivalent alias of records[i]
-  print(r.first_name)                // ✓ read access
-  process_borrow(r)                  // ✓ process_borrow's parameter is default
-  // consume(move r)                 // ✗ compile error: cannot consume
-                                     //   borrow-equivalent alias r into
-                                     //   ownership of Record (Rule P)
-  let saved = r                      // ✓ Rule P: saved is a new alias
-                                     //   in the same cluster; r's name dies
-process_further(records)             // ✓ records still owned
+for r in records:                   -- r: borrow-equivalent alias of records[i]
+  print(r.first_name)                -- ✓ read access
+  process_borrow(r)                  -- ✓ process_borrow's parameter is default
+  -- consume(move r)                 -- ✗ compile error: cannot consume
+                                     --   borrow-equivalent alias r into
+                                     --   ownership of Record (Rule P)
+  let saved = r                      -- ✓ Rule P: saved is a new alias
+                                     --   in the same cluster; r's name dies
+process_further(records)             -- ✓ records still owned
 ```
 
 The default form's non-`Copy` case is what makes "iterate to inspect
@@ -8908,9 +8920,9 @@ because Copy values don't impose constraints on the source).
 ```
 let buf: f32[1024] = make_block()
 mut sum: f32 = 0.0
-for own sample in buf:              // sample: f32 (Copy)
+for own sample in buf:              -- sample: f32 (Copy)
   sum = sum + sample
-// buf is consumed by `for own`; cannot be used after the loop
+-- buf is consumed by `for own`; cannot be used after the loop
 ```
 
 **`for own` form, non-`Copy` element type** (`for own r in records:`
@@ -8922,12 +8934,12 @@ bindings, passed to consuming functions, stored elsewhere.
 ```
 mut destinations = make_collection()
 let records: Vec[Record] = make_records()
-for own r in records:                            // r: Record (real owner)
+for own r in records:                            -- r: Record (real owner)
   destinations = (move destinations).push(move r)
-                                                  // ✓ push takes (own subject, own elem);
-                                                  //   both arguments require explicit
-                                                  //   `move` (category A; §11.8.5)
-// records is consumed; destinations contains the records' owned values
+                                                  -- ✓ push takes (own subject, own elem);
+                                                  --   both arguments require explicit
+                                                  --   `move` (category A; §11.8.5)
+-- records is consumed; destinations contains the records' owned values
 ```
 
 For how the Iterator trait handles source-bearing iteration (where
@@ -8946,7 +8958,7 @@ persist across iterations and can be mutated if declared `mut`:
 mut total: f32 = 0.0
 for sample in samples:
   total = total + sample
-print(total)                  // accumulated sum
+print(total)                  -- accumulated sum
 ```
 
 This is the accumulator pattern.
@@ -8961,9 +8973,9 @@ produces a use-after-move compile error.
 ```
 let v = make_vec()
 for i in 0..10:
-  consume(move v)            // ✗ compile error: v consumed; subsequent
-                             //   iterations would attempt to use the
-                             //   already-moved v
+  consume(move v)            -- ✗ compile error: v consumed; subsequent
+                             --   iterations would attempt to use the
+                             --   already-moved v
 ```
 
 The compiler detects this conservatively: any `move` of an outer
@@ -8988,8 +9000,8 @@ the source while the cluster has live aliases:
 ```
 mut v = make_vec()
 for x in v:
-  v[0] = 5                   // ✗ compile error: v has live cluster member
-                             //   (iteration alias); cannot mutate during loop
+  v[0] = 5                   -- ✗ compile error: v has live cluster member
+                             --   (iteration alias); cannot mutate during loop
 ```
 
 This prevents iterator invalidation. The cluster's iteration aliases
@@ -9055,7 +9067,7 @@ argument, the same body runs at runtime.
 
 A function that *requires* its loop to be compile-time-unrolled expresses
 that requirement in its **signature**, via a const-generic parameter
-(§2.5) — e.g. `fn process[const N: usize](buf: T[N]):`. A const-generic
+(§2.5) — e.g. `fn process[const N: isize](buf: T[N]):`. A const-generic
 parameter is compile-time known at every call site by virtue of the
 signature, so the function's internal `for i in 0..N` is guaranteed to
 unroll. This is the language's mechanism for "this function only makes
@@ -9082,15 +9094,15 @@ const-generic-parameterized but fixed per instance.
 **Examples.** Same source, two call sites, two kinds of loop:
 
 ```
-fn sum_first[const N: usize](buf: f32[N]) -> f32:
+fn sum_first[const N: isize](buf: f32[N]) -> f32:
   mut total: f32 = 0.0
-  for i in 0..N:                   // N compile-time known → unrolled
+  for i in 0..N:                   -- N compile-time known → unrolled
     total = total + buf[i]
   total
 
 fn sum_runtime(samples: Vec[f32]) -> f32:
   mut total: f32 = 0.0
-  for s in samples:                 // samples is variable-extent → runtime
+  for s in samples:                 -- samples is variable-extent → runtime
     total = total + s
   total
 ```
@@ -9099,11 +9111,11 @@ Same body shape, the *signature* decides the kind:
 
 ```
 fn process(n: usize):
-  for i in 0..n:                    // n is a value parameter → runtime
+  for i in 0..n:                    -- n is a value parameter → runtime
     do_step(i)
 
-fn process_static[const N: usize]():
-  for i in 0..N:                    // N is a const-generic → unrolled
+fn process_static[const N: isize]():
+  for i in 0..N:                    -- N is a const-generic → unrolled
     do_step(i)
 ```
 
@@ -9169,9 +9181,9 @@ statement skips to the next iteration of the innermost enclosing loop.
 ```
 for i in 0..N:
   if should_skip(i):
-    continue                  // skip the rest of this iteration; go to next i
+    continue                  -- skip the rest of this iteration; go to next i
   if should_stop(i):
-    break                     // exit the loop entirely
+    break                     -- exit the loop entirely
   process(i)
 ```
 
@@ -9209,7 +9221,7 @@ fn find_in_grid(g: Grid, target: Cell) -> Option[(isize, isize)]:
   for row in 0..g.rows:
     for col in 0..g.cols:
       if g.get(row, col) is target:
-        return Some((row, col))    // returns from the function, exiting both loops
+        return Some((row, col))    -- returns from the function, exiting both loops
   None
 ```
 
@@ -9278,7 +9290,7 @@ The loop produces unit. This is the statement form.
 ```
 for i in 0..N:
   process(i)
-                              // expression value: () (unit)
+                              -- expression value: () (unit)
 ```
 
 ##### Without `break value`, with `else:`
@@ -9291,8 +9303,8 @@ through `else:`:
 let summary = for sample in samples:
   process(sample)
 else:
-  count_of_samples            // always reached after natural completion
-                              // expression value: count_of_samples
+  count_of_samples            -- always reached after natural completion
+                              -- expression value: count_of_samples
 ```
 
 This form is unusual but consistent. It is most useful when the body has
@@ -9309,9 +9321,9 @@ natural completion produces `None`. The user writes the bare value (not
 ```
 let found = for item in items:
   if matches(item):
-    break item.id              // default form: items survives the loop
-                               // auto-wrapped to Some(item.id)
-                               // expression type: Option[ItemId]
+    break item.id              -- default form: items survives the loop
+                               -- auto-wrapped to Some(item.id)
+                               -- expression type: Option[ItemId]
 ```
 
 For the find-first pattern, the user typically wants `Some(item)` from
@@ -9329,8 +9341,8 @@ let answer = for n in numbers:
   if is_special(n):
     break n
 else:
-  -1                          // fallback when no n is special
-                              // expression value: i32 (n is Copy)
+  -1                          -- fallback when no n is special
+                              -- expression value: i32 (n is Copy)
 ```
 
 This form is typical when the user wants a guaranteed value without
@@ -9347,7 +9359,7 @@ else site.
 ```
 for i in 0..N:
   if cond_a: break 42
-  if cond_b: break "hello"      // ✗ type error: i32 vs string
+  if cond_b: break "hello"      -- ✗ type error: i32 vs string
 else:
   ...
 ```
@@ -9365,9 +9377,9 @@ let value = for i in 0..N:
   if condition(i):
     break i
   else:
-    panic("unexpected")        // diverges; never type
-                                // expression value: i32 (from break)
-                                // no else: clause needed; natural completion unreachable
+    panic("unexpected")        -- diverges; never type
+                                -- expression value: i32 (from break)
+                                -- no else: clause needed; natural completion unreachable
 ```
 
 #### 12.6.5 `continue` and the expression value
@@ -9686,13 +9698,13 @@ value supports.
 ```
 mut destinations = Vec::new()
 let records: Vec[Record] = make_records()
-for own r in records:                            // `for own`; r: Record (real owner)
-  if r.is_valid():                                // predicate borrows r (default
-                                                  //   convention; r still owned)
+for own r in records:                            -- `for own`; r: Record (real owner)
+  if r.is_valid():                                -- predicate borrows r (default
+                                                  --   convention; r still owned)
     destinations = (move destinations).push(move r)
-                                                  // ✓ push takes (own subject, own elem);
-                                                  //   explicit `move` on both (§11.8.5)
-// records consumed; destinations holds the valid records
+                                                  -- ✓ push takes (own subject, own elem);
+                                                  --   explicit `move` on both (§11.8.5)
+-- records consumed; destinations holds the valid records
 ```
 
 #### 12.9.3 Partial consumption and Drop
@@ -9733,7 +9745,7 @@ fulfill IntoIterable for DataStream:
   -- Iter.Source = () satisfied by the where-clause
   fn consuming_iterator(own s: DataStream) -> DataStreamIntoIter:
     DataStreamIntoIter(pending: s.pending, cursor: 0)
-                                   // takes ownership of s's pending events
+                                   -- takes ownership of s's pending events
 ```
 
 The `for own x in d:` syntax (with `d: DataStream`) dispatches to this
@@ -9797,9 +9809,9 @@ of each element:
 ```
 let buf: f32[64] = make_block()
 mut sum: f32 = 0.0
-for sample in buf:                // sample: f32 (Copy); buf survives
+for sample in buf:                -- sample: f32 (Copy); buf survives
   sum = sum + sample
-process(buf)                       // ✓ buf still owned
+process(buf)                       -- ✓ buf still owned
 ```
 
 For non-`Copy` `T`, the iteration variable is a borrow-equivalent
@@ -9808,10 +9820,10 @@ alias; the array survives:
 
 ```
 let records: Record[16] = make_records()
-for r in records:                  // r: borrow-equivalent alias of records[i]
-  print(r.first_name)              // ✓ read access
-  // consume(move r)               // ✗ cannot consume alias (Rule P)
-process(records)                   // ✓ records still owned
+for r in records:                  -- r: borrow-equivalent alias of records[i]
+  print(r.first_name)              -- ✓ read access
+  -- consume(move r)               -- ✗ cannot consume alias (Rule P)
+process(records)                   -- ✓ records still owned
 ```
 
 **`for own` form** (`for own x in arr:`): the array is consumed at
@@ -9821,9 +9833,9 @@ array is no longer usable.
 ```
 mut destinations = Vec::new()
 let records: Record[16] = make_records()
-for own r in records:              // r: Record (real owner); records consumed
+for own r in records:              -- r: Record (real owner); records consumed
   destinations = (move destinations).push(move r)
-// records cannot be used; destinations holds all the records
+-- records cannot be used; destinations holds all the records
 ```
 
 While the array is being iterated under the default form, indexed
@@ -9864,7 +9876,7 @@ buffer is needed after the loop):
 mut sum: f32 = 0.0
 for sample in audio_block:
   sum = sum + sample * sample
-// audio_block still owned; available for further processing
+-- audio_block still owned; available for further processing
 ```
 
 A conforming implementation compiles this to machine code with no heap
@@ -9899,7 +9911,7 @@ value. To filter, the body uses `continue`:
 ```
 for x in items:
   match x:
-    Special(payload): continue        // skip; for filtering, use continue
+    Special(payload): continue        -- skip; for filtering, use continue
     Other(data): process(data)
 ```
 
@@ -9920,7 +9932,7 @@ trait Statistics:
   fn count_above(value: Subject, threshold: f32) -> isize:
     mut count: isize = 0
     let elements = samples(value)
-    for s in elements:                   // default form; s: f32 (Copy)
+    for s in elements:                   -- default form; s: f32 (Copy)
       if s > threshold:
         count = count + 1
     count
@@ -9979,11 +9991,11 @@ expression context) is determined by the else-clause-and-break-value
 table of §12.6.2:
 
 ```
-let result = for x in 0..0:         // empty range (type-resolvable)
+let result = for x in 0..0:         -- empty range (type-resolvable)
   break x
 else:
   default_value
-                                    // result = default_value
+                                    -- result = default_value
 ```
 
 #### 12.14.2 Iterators that never complete
@@ -10174,9 +10186,9 @@ The host drives the program via:
 
 ```
 loop {
-  runtime.write_signal(tick_id, next_tick_value);   // accumulate dirty bits
-  runtime.commit();                                 // evaluate + publish snapshot
-  // observers read d1.shown via runtime.acquire_snapshot()
+  runtime.write_signal(tick_id, next_tick_value);   -- accumulate dirty bits
+  runtime.commit();                                 -- evaluate + publish snapshot
+  -- observers read d1.shown via runtime.acquire_snapshot()
 }
 ```
 
@@ -10291,8 +10303,8 @@ Per-instance *configuration* (user-controlled) is the role of
 #### 13.2.2 `attr`
 
 ```
-attr name: Type = default       // with default — placement may override
-attr name: Type                 // no default — placement must supply
+attr name: Type = default       -- with default — placement may override
+attr name: Type                 -- no default — placement must supply
 ```
 
 An `attr` declares a writable reactive cell that is *per-instance* of
@@ -10327,8 +10339,8 @@ node Synthesizer:
   attr current_pitch: f32 = 440.0
 
 node Endpoint:
-  attr url: string                    // no default — every placement must set
-  attr method: string = "GET"         // has default — placement may omit
+  attr url: string                    -- no default — every placement must set
+  attr method: string = "GET"         -- has default — placement may omit
 ```
 
 The `default` expression, when present, provides the initial value
@@ -10343,7 +10355,7 @@ scope, or any compile-time-evaluable expression.
 ```
 node Filter:
   attr cutoff_hz: f32 = 1000.0
-  attr resonance: f32 = cutoff_hz / 1000.0            // references earlier attr
+  attr resonance: f32 = cutoff_hz / 1000.0            -- references earlier attr
   attr enabled: bool = true
 ```
 
@@ -10351,7 +10363,7 @@ At placement time, the user may override the default by supplying a
 value (§13.8.2):
 
 ```
-Filter f1 | cutoff_hz=500.0          // override default; resonance and enabled use defaults
+Filter f1 | cutoff_hz=500.0          -- override default; resonance and enabled use defaults
 ```
 
 For attrs without defaults, the placement value is mandatory; the
@@ -10384,13 +10396,13 @@ the default attr remains settable by name via the attribute clause
 is an additional, optional positional shortcut:
 
 ```
-// Node:
-Log /"Hello World"                          // /expr sets default attr `message`
-Log | message="Hello World"                 // equivalent attribute-clause form
+-- Node:
+Log /"Hello World"                          -- /expr sets default attr `message`
+Log | message="Hello World"                 -- equivalent attribute-clause form
 
-// Connection (assuming Drives declares `default attr aggressiveness: f32 = 0.5`):
-Drives/0.8: some_car                        // /expr sets default attr `aggressiveness`
-Drives | aggressiveness=0.8: some_car       // equivalent attribute-clause form
+-- Connection (assuming Drives declares `default attr aggressiveness: f32 = 0.5`):
+Drives/0.8: some_car                        -- /expr sets default attr `aggressiveness`
+Drives | aggressiveness=0.8: some_car       -- equivalent attribute-clause form
 ```
 
 Rules:
@@ -10482,7 +10494,7 @@ A recurrent declaration has:
 
 - **`[N]`** (optional) — the cell's self-history depth, used to bound
   `name.past(k, fallback)` accesses. Must be a compile-time-known
-  positive `usize` (a literal, a `const`, or a const-generic parameter
+  positive `isize` (a literal, a `const`, or a const-generic parameter
   — §2.5). When omitted, defaults to `[1]` (only `.previous`
   accessible).
 - **`name`** — a snake_case identifier naming the cell.
@@ -10505,28 +10517,28 @@ i.e., before the cell has received its k-th commit. The
 fallback type must match the cell's element type.
 
 ```
-// Counter that depends on an external input
+-- Counter that depends on an external input
 recurrent counter: i32 = counter.previous(0) + step_value
-//   counter has 1 step of self-memory (default [1]);
-//   re-evaluates when step_value changes (implicit trigger);
-//   on first commit, counter.previous(0) = 0, so counter = 0 + step_value.
+--   counter has 1 step of self-memory (default [1]);
+--   re-evaluates when step_value changes (implicit trigger);
+--   on first commit, counter.previous(0) = 0, so counter = 0 + step_value.
 
-// Fibonacci-style sum of last two
+-- Fibonacci-style sum of last two
 recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)
-//   [2] permits up to 2-step lookback.
+--   [2] permits up to 2-step lookback.
 
-// Moving average over last 3 commits of `input`
+-- Moving average over last 3 commits of `input`
 recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
-//   `input` is an input signal; .past on it allocates per-input
-//   history (2 slots for k up to 2). Output [N] default to 1 here
-//   since the expression doesn't use `avg.past(...)`. See §13.2.4.3.
+--   `input` is an input signal; .past on it allocates per-input
+--   history (2 slots for k up to 2). Output [N] default to 1 here
+--   since the expression doesn't use `avg.past(...)`. See §13.2.4.3.
 
-// One-pole smoother that restarts cleanly after a gated gap
+-- One-pole smoother that restarts cleanly after a gated gap
 @reset_on_reopen
 recurrent smoothed: f32 = (input + smoothed.previous(0.0)) / 2.0
-//   while gated, `smoothed` freezes; on reactivation its history is
-//   cleared, so the first post-gap value is (input + 0.0) / 2.0 rather
-//   than a blend with the stale pre-gap value (§13.9.7).
+--   while gated, `smoothed` freezes; on reactivation its history is
+--   cleared, so the first post-gap value is (input + 0.0) / 2.0 rather
+--   than a blend with the stale pre-gap value (§13.9.7).
 ```
 
 **`@reset_on_reopen`.** By default, a recurrent that has been gated off
@@ -10638,8 +10650,8 @@ Inside a recurrent's expression, past values are accessed via two
 methods on a cell's name:
 
 ```
-cell_name.previous(fallback)         // one step back; sugar for .past(1, fallback)
-cell_name.past(k, fallback)          // k steps back
+cell_name.previous(fallback)         -- one step back; sugar for .past(1, fallback)
+cell_name.past(k, fallback)          -- k steps back
 ```
 
 These accessors work on two distinct subjects:
@@ -10660,15 +10672,15 @@ mechanism applies; the difference is signals contribute commits and
 streams contribute events.
 
 ```
-// Self-history only
+-- Self-history only
 recurrent counter: i32 = counter.previous(0) + 1
 
-// Input history — moving average over last 3 commits of `input`
+-- Input history — moving average over last 3 commits of `input`
 recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
-// `input` is an input signal; the compiler allocates 2 slots of history
-// for it (max k referenced = 2). Output history defaults to [1].
+-- `input` is an input signal; the compiler allocates 2 slots of history
+-- for it (max k referenced = 2). Output history defaults to [1].
 
-// Both — self-feedback with input lookback
+-- Both — self-feedback with input lookback
 recurrent[2] smoothed: f32 =
   0.5 * smoothed.past(1, 0.0) + 0.3 * input + 0.2 * input.past(1, 0.0)
 ```
@@ -10750,10 +10762,10 @@ signal source: f32 = 0.0
 signal noise: f32 = 0.01
 
 fn kalman_step(prev_mean: f32, prev_variance: f32, source: f32, noise: f32) -> (f32, f32):
-  let gain = prev_variance / (prev_variance + noise)   // computed once per call
+  let gain = prev_variance / (prev_variance + noise)   -- computed once per call
   (
-    prev_mean + gain * (source - prev_mean),           // updated mean
-    (1.0 - gain) * prev_variance,                      // updated variance
+    prev_mean + gain * (source - prev_mean),           -- updated mean
+    (1.0 - gain) * prev_variance,                      -- updated variance
   )
 
 recurrent (mean, variance): (f32, f32) =
@@ -11085,7 +11097,7 @@ operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
 fn observe[T](signal: Signal[T]) -> string:
-  // some debugging utility, etc.
+  -- some debugging utility, etc.
   ...
 ```
 
@@ -11141,7 +11153,7 @@ derived A = PeakResult(
 
 ```
 derived t = (signal_a, 15, signal_b)
-// t: (f32, i32, f32)
+-- t: (f32, i32, f32)
 ```
 
 **Fixed arrays:**
@@ -11231,8 +11243,8 @@ and implicit derived cells) or returns the embedded constant (for
 static fields):
 
 ```
-derived peak_x: f32 = A.some_property         // reads A.some_property cell
-let r: i32 = A.some_regular_property          // returns embedded 15
+derived peak_x: f32 = A.some_property         -- reads A.some_property cell
+let r: i32 = A.some_regular_property          -- returns embedded 15
 ```
 
 **Whole-composite reads** — passing the composite to a function
@@ -11245,8 +11257,8 @@ the caller's composite:
 
 ```
 fn report(p: PeakResult) -> string:
-  // p.some_property here resolves to A.some_property's cell
-  // when this function is reached from a context where p was A
+  -- p.some_property here resolves to A.some_property's cell
+  -- when this function is reached from a context where p was A
   ...
 
 derived msg: string = report(A)
@@ -11265,8 +11277,8 @@ snapshot taken at let-binding time:
 
 ```
 fn process(p: PeakResult) -> f32:
-  let q = p                         // q aliases p; same cells
-  q.some_property * 2.0             // reads p.some_property's cell live
+  let q = p                         -- q aliases p; same cells
+  q.some_property * 2.0             -- reads p.some_property's cell live
 ```
 
 This is the composite-typed analogue of the §13.2.8 `Signal[T]`
@@ -11295,9 +11307,9 @@ boundaries force materialization to a concrete value:
   the current per-field values:
 
   ```
-  // vec: Vec[PeakResult]
-  let vec2 = vec.push(A)             // A materialized at push time;
-                                      // vec2 holds a concrete snapshot.
+  -- vec: Vec[PeakResult]
+  let vec2 = vec.push(A)             -- A materialized at push time;
+                                      -- vec2 holds a concrete snapshot.
   ```
 
   The pushed element is a concrete snapshot; subsequent changes to
@@ -11323,16 +11335,16 @@ rules of §13.2.9.3:
 
 ```
 derived A2 = A with some_regular_property: signal_c
-// A2.some_regular_property is now aliased to signal_c;
-// A.some_regular_property remains the static value 15.
+-- A2.some_regular_property is now aliased to signal_c;
+-- A.some_regular_property remains the static value 15.
 
 derived A3 = A with some_property: 0.0
-// A3.some_property is now a static 0.0;
-// A.some_property remains aliased to signal_a.
+-- A3.some_property is now a static 0.0;
+-- A.some_property remains aliased to signal_a.
 
 derived A4 = A with some_property: signal_a * 0.5
-// A4.some_property is an implicit derived cell;
-// A.some_property remains aliased to signal_a.
+-- A4.some_property is an implicit derived cell;
+-- A.some_property remains aliased to signal_a.
 ```
 
 The result of `with` is a new reactive composite binding with its
@@ -11402,9 +11414,9 @@ in-line.
 
 ```
 node ItemHost:
-  attr item: Node[Post]            // accepts a Node[Post] specification
+  attr item: Node[Post]            -- accepts a Node[Post] specification
 
-ItemHost host | item=PostItem/some_post   // PostItem/some_post is the Node[Post] value
+ItemHost host | item=PostItem/some_post   -- PostItem/some_post is the Node[Post] value
 ```
 
 Here `PostItem/some_post` is a `Node[Post]` value — a placement
@@ -11681,21 +11693,21 @@ reactive cells managed by the runtime.
 
 ```
 node TypeName[GenericParams]?:
-  satisfies Trait1, Trait2                            // optional trait conformance
-  parts: Type1, Type2                                 // optional permitted part types
-  incoming: Conn1, Conn2                              // optional incoming connection types
-  outgoing: Conn3, Conn4                              // optional outgoing connection types
-  when: predicate                                     // optional activation predicate (§13.9)
-  expose:                                             // structural output (§13.3.7)
+  satisfies Trait1, Trait2                            -- optional trait conformance
+  parts: Type1, Type2                                 -- optional permitted part types
+  incoming: Conn1, Conn2                              -- optional incoming connection types
+  outgoing: Conn3, Conn4                              -- optional outgoing connection types
+  when: predicate                                     -- optional activation predicate (§13.9)
+  expose:                                             -- structural output (§13.3.7)
     SomePart
-  const name: Type = value                            // per-type compile-time constants
-  signal name: Type = initial                         // per-instance runtime-fed entry points
-  attr name: Type = default                           // per-instance user-configured cells
-  default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
-  derived name: Type = expr                           // per-instance reactive values
-  stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
-  effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
+  const name: Type = value                            -- per-type compile-time constants
+  signal name: Type = initial                         -- per-instance runtime-fed entry points
+  attr name: Type = default                           -- per-instance user-configured cells
+  default attr name: Type = default                   -- positional default attr (at most one; §13.2.2.1)
+  recurrent[N]? name: Type = expression          -- per-instance memory cells (§13.2.4)
+  derived name: Type = expr                           -- per-instance reactive values
+  stream policy[N] name: Type = source                -- per-instance event sequences (§13.18)
+  effects:                                            -- side-effect zone (§13.3.8) — the sole host for effects
     source |> effect
 ```
 
@@ -11864,7 +11876,7 @@ node OscBank:
   for i in 0..VOICE_COUNT:
     Oscillator | freq=base_freq(i)
 
-OscBank bank                    // every instance materializes 8 Oscillators
+OscBank bank                    -- every instance materializes 8 Oscillators
 ```
 
 Generic over a const-generic parameter — multiplicity becomes a
@@ -11876,8 +11888,8 @@ node OscBank[const N: usize]:
   for i in 0..N:
     Oscillator | freq=base_freq(i)
 
-OscBank[16] sixteen_bank        // 16 Oscillators per instance
-OscBank[8]  eight_bank          // 8 Oscillators per instance
+OscBank[16] sixteen_bank        -- 16 Oscillators per instance
+OscBank[8]  eight_bank          -- 8 Oscillators per instance
 ```
 
 **Cardinality.** Parts placed by a type-body `for` are counted toward
@@ -12174,8 +12186,8 @@ node App:
   derived label: string = "loading {url}"
 
   effects:
-    f = url |> fetch          // named: binds the instance value `f`
-    label |> log              // anonymous: run for its side effect only
+    f = url |> fetch          -- named: binds the instance value `f`
+    label |> log              -- anonymous: run for its side effect only
 ```
 
 A **named** entry binds the effect instance value; the name is in
@@ -12184,7 +12196,7 @@ declarations are order-independent), and the instance's cells are read
 elsewhere by flat access `name.field` (§13.19.7):
 
 ```
-  derived spinner: bool = f.in_flight     // reads the effect named below
+  derived spinner: bool = f.in_flight     -- reads the effect named below
   effects:
     f = url |> fetch
 ```
@@ -12200,9 +12212,9 @@ placements:
 ```
   effects:
     when online:
-      pending |> sync                     // gated effect
+      pending |> sync                     -- gated effect
     repeat job in jobs:
-      job.url |> fetch                     // one effect per element
+      job.url |> fetch                     -- one effect per element
     given mode:
       Live:   feed |> stream_to_disk
       Replay: feed |> stream_to_buffer
@@ -12301,9 +12313,11 @@ clause is declared:
 
 - **Heterogeneous:** `parts` — a structural iterable over all
   parts of the parent, regardless of their types.
-    - When `parts:` is declared, the iteration variable is typed as
-      the sum of the listed types. The body must compile for every
-      listed type (per the heterogeneous iteration rules of §13.4.2).
+    - When `parts:` is declared, the iteration variable is
+      specialized per declared part type — the loop unrolls to one
+      concretely-typed copy per listed type. The body must compile for
+      every listed type (per the heterogeneous iteration rules of
+      §13.4.2).
     - When `parts:` is omitted, the iteration variable's static type
       cannot be inferred from the declaration alone (any node type
       may have been placed). The body must declare an explicit trait
@@ -12381,13 +12395,17 @@ node Composite:
   parts: Oscillator+, Filter [=1], Amplifier [=1]
 ```
 
-Inside the body, `p` is typed as the sum `Oscillator | Filter |
-Amplifier` (the union of all declared part types). The compiler
-unrolls the loop to one body copy per part instance, dispatching
-the `p.render()` call statically based on the concrete type. The
-body must compile for every part type that appears; if `render`
-is unavailable on any part type, the unroll-copy fails at the
-for-loop site.
+Inside the body, `p` is **specialized per declared part type**: the
+compiler unrolls the loop to one concretely-typed body copy per part
+type (`Oscillator`, `Filter`, `Amplifier`), dispatching the
+`p.render()` call statically on each concrete type — the same
+monomorphization Ductus applies to generics (§2.3) and closures
+(§11.10.6). There is no combined runtime value and no new type former.
+The body must compile for every part type that appears; if `render` is
+unavailable on any part type, the unroll-copy fails at the for-loop
+site. Where one uniform stored representation is genuinely needed, use
+`dyn Trait` (§5.2); the explicit-trait-bound form below names the
+contract directly.
 
 **Heterogeneous iteration with an explicit trait bound:**
 
@@ -12412,7 +12430,7 @@ fn process(c: Composite):
       Amplifier(a): a.amplify()
 ```
 
-`p`'s sum type permits regular pattern matching. The compiler
+Regular pattern matching applies to `p`. The compiler
 unrolls per part instance and simplifies the match at compile time
 so only the matching branch survives in each copy.
 
@@ -12424,8 +12442,8 @@ part-specialization of the compile-time unrolling rule in §12.3.7.
 `c.parts.Oscillator` and `c.parts` are compile-time-known iterables
 because the parent's `parts:` declaration fixes part identities at
 compile time per §13.1's static-graph principle. The mechanics described
-above — one body copy per part, static dispatch, sum-type collapse via
-`match` — are this specialization in action; a `for` loop in a function
+above — one body copy per part, static dispatch, compile-time `match`
+simplification — are this specialization in action; a `for` loop in a function
 body whose iterable is *not* part-iteration but is otherwise
 compile-time-known (a range, an array literal) unrolls by the same rule.
 
@@ -12826,7 +12844,7 @@ effect DBQueryAuto:
   observed:
     signal rows: Vec[DbRow] = []
   desired:
-    repeat row in rows:                  // implicit via DbRow's Keyed
+    repeat row in rows:                  -- implicit via DbRow's Keyed
       RowComponent | data=row
 ```
 
@@ -13014,17 +13032,17 @@ error.
 
 ```
 connection TypeName[GenericParams]?:
-  satisfies Trait1, Trait2                            // optional trait conformance
-  from: SourceType                                    // required, exactly once
-  to: DestType                                        // required, exactly once
-  when: predicate                                     // optional activation predicate (§13.9)
-  const name: Type = value                            // per-type compile-time constants
-  signal name: Type = initial                         // per-instance runtime-fed entry points
-  attr name: Type = default                           // per-instance writable cells
-  default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
-  recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
-  derived name: Type = expr                           // per-instance reactive values
-  stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
+  satisfies Trait1, Trait2                            -- optional trait conformance
+  from: SourceType                                    -- required, exactly once
+  to: DestType                                        -- required, exactly once
+  when: predicate                                     -- optional activation predicate (§13.9)
+  const name: Type = value                            -- per-type compile-time constants
+  signal name: Type = initial                         -- per-instance runtime-fed entry points
+  attr name: Type = default                           -- per-instance writable cells
+  default attr name: Type = default                   -- positional default attr (at most one; §13.2.2.1)
+  recurrent[N]? name: Type = expression          -- per-instance memory cells (§13.2.4)
+  derived name: Type = expr                           -- per-instance reactive values
+  stream policy[N] name: Type = source                -- per-instance event sequences (§13.18)
 ```
 
 A connection type may declare a `default attr` per §13.2.2.1. At
@@ -13058,14 +13076,16 @@ instances directly (their concrete types).
 connection TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
+  -- body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
-placements. Inside the body, `from` is the sum type of all
-listed from-types, and `to` is the sum type of all listed
-to-types. Pattern matching is required to extract the concrete
-endpoint types.
+placements. The connection body is **specialized per from×to
+combination**: the required `match` (below) supplies a body per
+combination, resolved statically, and the exhaustiveness requirement
+is a compile-time check over the statically-known combinations. Within
+each combination's body, `from` and `to` are concretely typed; there
+is no combined runtime value and no new type former.
 
 Example:
 
@@ -13092,12 +13112,12 @@ connection TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
+  -- body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
-body, the endpoints are accessed via `pair`, a sum type whose
-variants correspond to the declared pairs.
+body, the endpoints are accessed via `pair`, matched per declared
+pair — one concretely-typed `(from, to)` combination per arm.
 
 Example:
 
@@ -13141,13 +13161,13 @@ of its declaration (§13.6.1):
   directly; `to` is typed as `Y` directly. Attrs and deriveds
   of the endpoints are accessible via `from.attr_name`,
   `to.attr_name`, etc.
-- **Cartesian form** (`from: X, Y / to: A, B`): `from` is the
-  sum `X | Y`; `to` is the sum `A | B`. Pattern matching
-  against the sums (typically as a tuple `(from, to)`)
-  is required to extract concrete endpoint types.
-- **Pairs form** (`pairs:`): `pair` is the sum of declared
-  (FromType, ToType) tuples. Pattern matching against `pair`
-  extracts the concrete pair. `from` and `to` are not
+- **Cartesian form** (`from: X, Y / to: A, B`): the body is
+  specialized per `from`×`to` combination; a `match` (typically on the
+  tuple `(from, to)`) supplies a body per combination, resolved
+  statically, with `from`/`to` concretely typed within each.
+- **Pairs form** (`pairs:`): the body is specialized per declared
+  `(FromType, ToType)` pair; a `match` on `pair` extracts the concrete
+  pair. `from` and `to` are not
   independently available in pairs form.
 
 `from`, `to`, and `pair` are bound at the
@@ -13271,14 +13291,14 @@ reference to a module-level name not shadowed by a member resolves
 to the module-level declaration (scope 3).
 
 ```
-signal master_gain: f32 = 1.0          // module-level
+signal master_gain: f32 = 1.0          -- module-level
 
 node Channel:
   attr local_gain: f32 = 0.5
   derived effective: f32 = local_gain * master_gain
-  //                       ^^^^^^^^^^   ^^^^^^^^^^^
-  //                       member       module-level
-  //                       (scope 2)    (scope 3, not shadowed)
+  --                       ^^^^^^^^^^   ^^^^^^^^^^^
+  --                       member       module-level
+  --                       (scope 2)    (scope 3, not shadowed)
 ```
 
 Neither reference needs `here::` or `module::`: `local_gain` is found
@@ -13303,11 +13323,11 @@ alias (§13.7.7) for the subject type.
 ```
 node Driver:
   attr expertise_level: i32 = 5
-  derived skill_factor: f32 = f32(here::expertise_level) / 10.0   // explicit anchor
-  derived also_skill: f32 = f32(expertise_level) / 10.0           // bare — same cell
+  derived skill_factor: f32 = f32(here::expertise_level) / 10.0   -- explicit anchor
+  derived also_skill: f32 = f32(expertise_level) / 10.0           -- bare — same cell
 
 fn aggressive(d: Driver) -> bool:
-  d.risk_tolerance > 0.7        // free function uses the parameter name
+  d.risk_tolerance > 0.7        -- free function uses the parameter name
 ```
 
 The bare and `here::`-anchored forms resolve to the same cell when
@@ -13325,9 +13345,9 @@ so resolution uses `::`, not `.`.
 signal tick: i64 = 0
 
 node Counter:
-  recurrent tick: i64 = observe:            // a member also named `tick`
-    on module::tick: tick.previous(0) + 1   // trigger on the module-level tick;
-                                            // tick.previous refers to the member
+  recurrent tick: i64 = observe:            -- a member also named `tick`
+    on module::tick: tick.previous(0) + 1   -- trigger on the module-level tick;
+                                            -- tick.previous refers to the member
 ```
 
 `module::` reaches only the current module's top level. Cross-module
@@ -13342,14 +13362,14 @@ compile error**. The programmer must disambiguate with `here::x` (the
 member) or `module::x` (the module-level declaration):
 
 ```
-signal gain: f32 = 1.0           // module-level
+signal gain: f32 = 1.0           -- module-level
 
 node Channel:
-  attr gain: f32 = 0.5           // member with the same name
+  attr gain: f32 = 0.5           -- member with the same name
 
-  derived a: f32 = gain          // ✗ compile error: ambiguous `gain`
-  derived b: f32 = here::gain     // ✓ the member (0.5)
-  derived c: f32 = module::gain  // ✓ the module-level signal (1.0)
+  derived a: f32 = gain          -- ✗ compile error: ambiguous `gain`
+  derived b: f32 = here::gain     -- ✓ the member (0.5)
+  derived c: f32 = module::gain  -- ✓ the module-level signal (1.0)
 ```
 
 This is deliberate: bare names never silently shadow across the
@@ -13383,8 +13403,8 @@ connection Drives:
   from: Driver
   to: Drivable
   derived speed: f32 = f32(from.expertise_level) * to.top_speed
-  //                   ^^^^                          ^^
-  //                   here::from                     here::to
+  --                   ^^^^                          ^^
+  --                   here::from                     here::to
 
 node Display:
   incoming: ShowsCount [=1]
@@ -13480,8 +13500,8 @@ instance_name` form is unambiguous and the `as` name marker is **optional**
 here:
 
 ```
-Driver john_doe              // canonical: declaration form, no `as`
-Driver as john_doe           // also allowed — identical meaning
+Driver john_doe              -- canonical: declaration form, no `as`
+Driver as john_doe           -- also allowed — identical meaning
 ```
 
 By convention top-level placements omit `as`. The marker is *required*
@@ -13567,19 +13587,19 @@ The right-hand side of an attribute setting at placement may be:
 ```
 App my_app:
   Fetch as fetcher / "url"
-  Log / fetcher.response                  // reactive binding (category C):
-                                           // Log's default attr tracks
-                                           // fetcher.response; no consumption
+  Log / fetcher.response                  -- reactive binding (category C):
+                                           -- Log's default attr tracks
+                                           -- fetcher.response; no consumption
 
 App other_app:
   Counter as c1
-  Display as d1 | label=format(c1.count)  // reactive (category C): d1.label
-                                           // tracks c1.count formatted
+  Display as d1 | label=format(c1.count)  -- reactive (category C): d1.label
+                                           -- tracks c1.count formatted
 
 App config_app:
-  Server as srv | port=8080               // value RHS (category B): 8080 is
-                                           // consumed into srv.port's slot
-                                           // at instantiation
+  Server as srv | port=8080               -- value RHS (category B): 8080 is
+                                           -- consumed into srv.port's slot
+                                           -- at instantiation
 ```
 
 Mechanically, a reactive placement value introduces a synthesized
@@ -13648,7 +13668,7 @@ node Counter:
   attr step: i32 = 1
   recurrent count: i32 = count.previous(start_value) + step
 
-Counter c1 | start_value=100 step=5    // per-instance configuration via attrs
+Counter c1 | start_value=100 step=5    -- per-instance configuration via attrs
 ```
 
 If a cell is not set at placement, its declared default (for attrs)
@@ -13664,8 +13684,8 @@ syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
 
 ```
 Component chip_b | label="B":
-  Pin as out1                             // child part (Pin instance named out1)
-  Pin as in1                              // another child part
+  Pin as out1                             -- child part (Pin instance named out1)
+  Pin as in1                              -- another child part
 ```
 
 A child placement that names a node type listed in the parent's
@@ -13740,7 +13760,7 @@ node Synthesizer:
   parts: Oscillator [=VOICE_COUNT]
   derived total: f32 = total_output(subject)
 
-Synthesizer synth:                 // top-level declaration form (§13.8.1)
+Synthesizer synth:                 -- top-level declaration form (§13.8.1)
   for i in 0..VOICE_COUNT:
     Oscillator | freq=base_freq(i)
 ```
@@ -13780,12 +13800,12 @@ determined positionally.
 
 ```
 App my_app:
-  Fetcher as fetcher / "url"                    // part placement
-  WiresToExternal: external_target              // source = my_app
+  Fetcher as fetcher / "url"                    -- part placement
+  WiresToExternal: external_target              -- source = my_app
 
   Filter as filter / "low-pass":
-    Cascade: next_filter                        // source = filter
-    WiresTo | gain=0.5: monitor                 // source = filter
+    Cascade: next_filter                        -- source = filter
+    WiresTo | gain=0.5: monitor                 -- source = filter
   Filter as next_filter / "high-pass"
   Monitor as monitor
 ```
@@ -13812,13 +13832,13 @@ ordering between `/Expr` and the attribute clause (§13.8.9), before
 the body's `:`:
 
 ```
-// (presumes Filter declares signal_active and App declares debug_enabled)
+-- (presumes Filter declares signal_active and App declares debug_enabled)
 App my_app:
   Filter as filter / "low-pass":
-    Cascade when filter.signal_active: next_filter     // gated on filter's own attr
+    Cascade when filter.signal_active: next_filter     -- gated on filter's own attr
   Filter as next_filter / "high-pass"
   Monitor as monitor
-  WiresTo when my_app.debug_enabled: monitor           // gated on my_app's attr
+  WiresTo when my_app.debug_enabled: monitor           -- gated on my_app's attr
 ```
 
 **Scope of placement-level `when`.** The `when` predicate evaluates
@@ -13870,12 +13890,12 @@ existing instance whose type satisfies the connection's `to:` clause
 (§13.6.1.1).
 
 ```
-// connection Drives: from: Driver; to: Drivable; default attr aggressiveness: f32 = 0.5
+-- connection Drives: from: Driver; to: Drivable; default attr aggressiveness: f32 = 0.5
 
-Drives: some_car                          // no /expr; destination only
-Drives/0.8: some_car                      // /expr sets default attr; destination in body
-Drives | enhanced_handling=true: some_car // attr clause + destination
-Drives/0.8 | enhanced_handling=true:      // /expr + attr clause + multi-line body
+Drives: some_car                          -- no /expr; destination only
+Drives/0.8: some_car                      -- /expr sets default attr; destination in body
+Drives | enhanced_handling=true: some_car -- attr clause + destination
+Drives/0.8 | enhanced_handling=true:      -- /expr + attr clause + multi-line body
   some_car
 ```
 
@@ -14029,9 +14049,9 @@ type may be annotated with `@flag` and set via the flag form at
 placement.
 
 ```
-Pin' p1                                // ' is a flag on Pin (node placement)
-Component?* c1                         // two flags: ? and *
-WiresTo'! my_wire: chip_b.in1          // two flags on a connection placement
+Pin' p1                                -- ' is a flag on Pin (node placement)
+Component?* c1                         -- two flags: ? and *
+WiresTo'! my_wire: chip_b.in1          -- two flags on a connection placement
 ```
 
 Flags are declared on attr declarations via the `@flag('c')`
@@ -14105,10 +14125,10 @@ whitespace) is a flag-run opener. In any other position
 (expression context, annotation context, etc.) it is the operator.
 
 ```
-Pin' p1                            // flag run after TypeRef (placement context)
-let c: char = '\''                 // char literal in expression context
-let r = some_fallible()?           // postfix Try in expression context
-@derive(Eq) type Point:            // annotation prefix in declaration context
+Pin' p1                            -- flag run after TypeRef (placement context)
+let c: char = '\''                 -- char literal in expression context
+let r = some_fallible()?           -- postfix Try in expression context
+@derive(Eq) type Point:            -- annotation prefix in declaration context
   ...
 ```
 
@@ -14120,7 +14140,7 @@ the flag form, or the inline `name` / `!name` / `name=value` form
 is a compile error.
 
 ```
-Pin' p1 | reverse_polarity=false    // ✗ duplicate: ' flag and inline both target reverse_polarity
+Pin' p1 | reverse_polarity=false    -- ✗ duplicate: ' flag and inline both target reverse_polarity
 ```
 
 The diagnostic class is the same as duplicate-set for inline
@@ -14216,8 +14236,8 @@ Multiple placements may appear on a single line, separated by
 Dense sequences read cleanly:
 
 ```
-C/4 G'/4 A                               // three /expr placements
-A3 rest A4                               // three bare placements
+C/4 G'/4 A                               -- three /expr placements
+A3 rest A4                               -- three bare placements
 ```
 
 The whitespace form is unambiguous only when each placement is
@@ -14239,10 +14259,10 @@ silently mis-parses — `C/x - G` is ambiguous between two placements and
 one subtraction.
 
 ```
-C/4 G'/4 A                                            // ✓ self-delimiting atoms
-G as a  rest  C                                       // ✓ `as` name is bounded
-(Sensor as s1 | gain=0.5) (Sensor as s2 | gain=0.7)   // ✓ attrs ⇒ parenthesized
-Sensor as s1 | gain=0.5                               // ✓ or alone on its line
+C/4 G'/4 A                                            -- ✓ self-delimiting atoms
+G as a  rest  C                                       -- ✓ `as` name is bounded
+(Sensor as s1 | gain=0.5) (Sensor as s2 | gain=0.7)   -- ✓ attrs ⇒ parenthesized
+Sensor as s1 | gain=0.5                               -- ✓ or alone on its line
 ```
 
 The `as` name is parser-safe unparenthesized (it binds exactly one
@@ -14257,20 +14277,20 @@ line and the indented block that follows. To combine `:`-bearing
 placements with same-line siblings, use multi-line layout:
 
 ```
-// ✗ disallowed (the body owns the line):
-//   SomePart: Child1 Child2  AnotherPart
+-- ✗ disallowed (the body owns the line):
+--   SomePart: Child1 Child2  AnotherPart
 
-// ✓ SomePart with three inline children (no siblings on this line):
+-- ✓ SomePart with three inline children (no siblings on this line):
 SomePart: Child1 Child2 Child3
 
-// ✓ Same-line siblings, none with a `:` body:
+-- ✓ Same-line siblings, none with a `:` body:
 SomePartA (SomePartB | attr=1) SomePartC
 
-// ✓ Multi-line — `:`-bearing placement on its own line:
+-- ✓ Multi-line — `:`-bearing placement on its own line:
 SomePart:
   Child1
   Child2
-AnotherPart                                // sibling on next line
+AnotherPart                                -- sibling on next line
 ```
 
 Same-line multi-placement is opt-in: one placement per line remains
@@ -14344,12 +14364,12 @@ the full placement scope.
 connection Pulse:
   from: Driver
   to: Listener
-  when: from.is_emitting                       // type-level gate
+  when: from.is_emitting                       -- type-level gate
 ```
 
 ```
 App my_app:
-  Logger as l1 when my_app.debug_enabled       // placement-level gate
+  Logger as l1 when my_app.debug_enabled       -- placement-level gate
 ```
 
 Two design moves justify the clause:
@@ -14377,13 +14397,13 @@ node OneShot:
   recurrent fired: bool = observe:
     on trigger: true
     default: false
-  when: not fired                              // one-shot latch: fires once, then stays closed
+  when: not fired                              -- one-shot latch: fires once, then stays closed
 
 connection ActiveEdge:
   from: Source
   to: Sink
   attr weight: f32 = 1.0
-  when: weight > 0.0                           // self-conditional gate
+  when: weight > 0.0                           -- self-conditional gate
 ```
 
 Type-level gates encode constraints intrinsic to the type — a
@@ -14421,9 +14441,9 @@ node App:
   attr health_checks_enabled: bool = true
 
 App my_app:
-  Logger as l1                                      // always active
-  Logger as l2 when my_app.verbose                  // gated on parent attr
-  Monitor as m1 when my_app.health_checks_enabled   // feature flag
+  Logger as l1                                      -- always active
+  Logger as l2 when my_app.verbose                  -- gated on parent attr
+  Monitor as m1 when my_app.health_checks_enabled   -- feature flag
 ```
 
 `l2` and `m1` are constructed unconditionally (the static graph
@@ -14479,8 +14499,8 @@ connection Pulse:
 App my_app:
   Driver as d1
   Listener as l1
-  Pulse: l1                                           // gate: from.is_emitting
-  Pulse when my_app.debug_audio: l1                    // gate: my_app.debug_audio (overrides type-level)
+  Pulse: l1                                           -- gate: from.is_emitting
+  Pulse when my_app.debug_audio: l1                    -- gate: my_app.debug_audio (overrides type-level)
 ```
 
 If a placement needs both predicates, the placement-level form must
@@ -14513,7 +14533,7 @@ connection WeightedEdge:
   from: Node
   to: Node
   attr weight: f32 = 1.0
-  when: weight > 0.0                                  // self-conditional
+  when: weight > 0.0                                  -- self-conditional
 ```
 
 Type-level self-conditional gates on nodes are likewise allowed
@@ -14698,14 +14718,14 @@ territory (§13.5.4), which carries its own construction-time guarantees;
 gates do not.
 
 ```
-// Forbidden even if Edge has a `when` clause that will be false at runtime
+-- Forbidden even if Edge has a `when` clause that will be false at runtime
 connection Edge:
   from: A
   to: B
-  when: false                                    // always closed
+  when: false                                    -- always closed
 
-// Cycle A → B → A via Edge in both directions is still a topology
-// error unless at least one Edge type satisfies Circularity.
+-- Cycle A → B → A via Edge in both directions is still a topology
+-- error unless at least one Edge type satisfies Circularity.
 ```
 
 #### 13.9.10 Hot reload of `when` predicates
@@ -14936,10 +14956,10 @@ and fires no triggers — regardless of intermediate values during
 the accumulation.
 
 ```
-// Outside or inside a transaction, identical semantics:
-runtime.write_signal(x_id, 1);   // staged value now 1
-runtime.write_signal(x_id, 0);   // staged value back to 0
-runtime.commit();                // x's value equals previous commit — no dirty bit
+-- Outside or inside a transaction, identical semantics:
+runtime.write_signal(x_id, 1);   -- staged value now 1
+runtime.write_signal(x_id, 0);   -- staged value back to 0
+runtime.commit();                -- x's value equals previous commit — no dirty bit
 ```
 
 This decouples writes from evaluation. Multiple writes between
@@ -15294,10 +15314,10 @@ provenance set.
 signal global_offset: f32 = 0.0
 
 fn shifted(x: f32) -> f32:
-  x + global_offset                    // reads signal `global_offset`
+  x + global_offset                    -- reads signal `global_offset`
 
 derived adjusted: f32 = shifted(base_value)
-                       // provenance = { base_value, global_offset }
+                       -- provenance = { base_value, global_offset }
 ```
 
 The compiler's provenance analysis is transitive — it follows
@@ -15323,9 +15343,9 @@ closure is constructed with a reactive value in scope, it captures
 the value at construction time as a snapshot — not the live cell.
 
 ```
-let current_threshold: f32 = some_signal    // snapshot at this moment
+let current_threshold: f32 = some_signal    -- snapshot at this moment
 let predicate = fn(x: f32): x > current_threshold
-                        // closure captures the snapshotted f32 value, not the signal
+                        -- closure captures the snapshotted f32 value, not the signal
 ```
 
 Calling `predicate` later does *not* observe subsequent changes to
@@ -15430,7 +15450,7 @@ documented complexity bounds.
 In `[T, N]`, `N` is a const-generic parameter (the slot count), not a
 second type parameter. Generic parameter lists use commas throughout
 (§1.4 — never semicolons); a const-generic parameter is marked by the
-`const` keyword in the declaration (`type SmallVec[T, const N: usize]`,
+`const` keyword in the declaration (`type SmallVec[T, const N: isize]`,
 §2.5) and supplied as a value at use sites (`SmallVec[i32, 8]`).
 
 `Vec[T]` is the default for unbounded growth; the persistent
@@ -15560,7 +15580,7 @@ node Consumer:
       Err(DivideError::ByZero): "result: undefined"
 
 Consumer my_consumer:
-  Divider as divider            // names the contained Divider part
+  Divider as divider            -- names the contained Divider part
 ```
 
 The divide-by-zero case never traps; it produces `Err(...)`. The
@@ -15673,8 +15693,8 @@ per implementation choice).
 A single overloaded call, dispatched by arity:
 
 ```
-runtime.write_signal(signal_id, value)                      // module-level signal
-runtime.write_signal(instance_id, signal_id, value)         // per-instance signal
+runtime.write_signal(signal_id, value)                      -- module-level signal
+runtime.write_signal(instance_id, signal_id, value)         -- per-instance signal
 ```
 
 Both arities stage a new value for the named signal's cell. The calls are
@@ -15842,8 +15862,8 @@ live state.
 #### 13.14.8 `runtime.push_stream`
 
 ```
-runtime.push_stream(instance_id, stream_id, value)             // per-instance stream cell
-runtime.push_stream(stream_id, value)                          // module-level stream cell
+runtime.push_stream(instance_id, stream_id, value)             -- per-instance stream cell
+runtime.push_stream(stream_id, value)                          -- module-level stream cell
 ```
 
 Pushes a value into a stream cell. Used by host-side reconcilers
@@ -15972,7 +15992,7 @@ order, and releases storage. After teardown the runtime is terminated.
 
 #### 13.14.11 Capabilities
 
-A runtime implements the **mandatory core** — `install`, `write`/`push`,
+A runtime implements the **mandatory core** — `write`/`push`,
 `commit`, `acquire_snapshot`/`read`, `transaction`, `register_reconciler`,
 `teardown`, plus the behavior ABI and reconciler hooks — and advertises a
 set of **optional capabilities** it additionally supports. A host queries
@@ -16327,7 +16347,7 @@ operator name[GenericParams]?(params...) -> Signal[T]:
 - `GenericParams` are optional type parameters with optional trait
   bounds (§3, §5).
 - `params` is a comma-separated parameter list (§13.17.3).
-- The return type is always `Signal[T]` for some value type `T`.
+- The return type is a `Cell[T]` for some value type `T` — typically `Signal[T]`, but `Stream[T]` or `Sink[T]` for event-producing or sink operators (§13.17.5, §13.18.5).
 - The body is a sequence of reactive declarations (recurrents,
   deriveds) followed by a final expression that becomes the output.
 
@@ -16363,9 +16383,9 @@ deployment-time choice should be `T`.
 
 ```
 operator smooth(
-  source: Signal[f32],         // cell-bound: tracked over time
-  rate: f32 = 0.1,             // value: snapshotted at instantiation
-  clock: Signal[u64],          // cell-bound: drives the trigger
+  source: Signal[f32],         -- cell-bound: tracked over time
+  rate: f32 = 0.1,             -- value: snapshotted at instantiation
+  clock: Signal[u64],          -- cell-bound: drives the trigger
 ) -> Signal[f32]:
   ...
 ```
@@ -16400,7 +16420,7 @@ to that cell.
 
 ```
 operator example(s: Signal[f32]) -> Signal[f32]:
-  derived doubled: f32 = s * 2.0       // s: Signal[f32] auto-derefs to f32 in arithmetic context
+  derived doubled: f32 = s * 2.0       -- s: Signal[f32] auto-derefs to f32 in arithmetic context
   doubled
 ```
 
@@ -16450,12 +16470,12 @@ Not permitted in operator bodies:
   enclosing node's `effects:` clause (§13.3.8), never inside the
   operator.
 
-The final expression's type must be either `T` or `Signal[T]`
-(matching the operator's return type `Signal[T]`). If the type is
+The final expression's type must be either `T` or a `Cell[T]`
+(matching the operator's return type). If the type is
 `T`, the compiler synthesizes a derived cell holding the final
 expression's value, and exposes that cell as the operator instance's
-output. If the type is already `Signal[T]` (e.g., a named recurrent
-or derived in the body), that cell is the output directly — no
+output. If the type is already a `Cell[T]` (e.g., a named recurrent,
+derived, or stream in the body), that cell is the output directly — no
 synthesis needed.
 
 #### 13.17.5 Output
@@ -16480,7 +16500,7 @@ operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
   PeakResult(peak: peak, count: count)
 
 operator changes[T](source: Signal[T]) -> Stream[T]:
-  // emits an event each time source changes
+  -- emits an event each time source changes
   ...
 ```
 
@@ -16490,8 +16510,8 @@ cells:
 Consumers project fields via reactive expressions:
 
 ```
-let result = source |> peak_detector            // Signal[PeakResult]
-derived just_peak: f32 = result.peak            // reactive projection
+let result = source |> peak_detector            -- Signal[PeakResult]
+derived just_peak: f32 = result.peak            -- reactive projection
 derived just_count: u32 = result.count
 ```
 
@@ -16540,7 +16560,7 @@ are passed by name:
 operator combine(primary: Signal[T], other: Signal[T], weight: f32) -> Signal[T]:
   ...
 
-// Call:
+-- Call:
 let result = source |> combine(other: another_signal, weight: 0.5)
 ```
 
@@ -16615,7 +16635,7 @@ forwarding into an effect's sink also lives in `effects:`:
 ```
 effects:
   ws = current_url |> websocket
-  messages_to_send |> ws.outbound       // forwards stream into the sink
+  messages_to_send |> ws.outbound       -- forwards stream into the sink
 ```
 
 LHS rules common to all cases:
@@ -16633,8 +16653,8 @@ LHS rules common to all cases:
 arithmetic and logical operators bind tighter. Specifically:
 
 ```
-a + b |> op            // parses as (a + b) |> op
-a |> op1 |> op2        // parses as (a |> op1) |> op2
+a + b |> op            -- parses as (a + b) |> op
+a |> op1 |> op2        -- parses as (a |> op1) |> op2
 ```
 
 Bitwise `|` (§4.4.2) has the same low precedence as `|>`. Expressions
@@ -16645,7 +16665,7 @@ desired grouping.
 Using `|>` with a `fn` is a compile error:
 
 ```
-let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator or effect
+let bar = 0.0 |> some_fn       -- ✗ error: `|>` requires an operator or effect
 ```
 
 Diagnostic class:
@@ -16915,7 +16935,7 @@ stream policy[capacity]? name: Type? = source
 
 - **`policy`** is one of the policy keywords `ring` or `gate`
   (§13.18.3). Mandatory; the declaration has no default policy.
-- **`[capacity]`** is an optional compile-time-known positive `usize`
+- **`[capacity]`** is an optional compile-time-known positive `isize`
   (a literal, a `const`, or a const-generic parameter — §2.5)
   specifying the buffer's slot count. When omitted:
   - For declarations whose source is a single stream or a stream-
@@ -16947,22 +16967,22 @@ stream policy[capacity]? name: Type? = source
 Examples:
 
 ```
-// Operator chain source
+-- Operator chain source
 stream ring[2048] user_clicks: ClickEvent = button_press |> to_stream
 
-// Type inferred from source
+-- Type inferred from source
 stream gate[256] db_writes = pending_writes
 
-// Default capacity (1024) + inferred type + operator chain
+-- Default capacity (1024) + inferred type + operator chain
 stream ring url_changes: Url = current_url |> to_stream |> skip_first
 
-// Reactive expression source (one stream + one signal)
+-- Reactive expression source (one stream + one signal)
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
 
-// Multi-stream expression (combine_latest)
+-- Multi-stream expression (combine_latest)
 stream ring sum: i32 = stream_a + stream_b
 
-// Single signal source (implicit to_stream)
+-- Single signal source (implicit to_stream)
 stream ring url_events: Url = current_url
 ```
 
@@ -16986,9 +17006,9 @@ no policy and no capacity; capacity belongs to the concrete bounded types.
 The type hierarchy:
 
 ```
-Stream[T]                 // abstract base; element type only — no policy, no capacity
-RingStream[T, N]          // concrete: ring policy, capacity N
-GateStream[T, N]          // concrete: gate policy, capacity N
+Stream[T]                 -- abstract base; element type only — no policy, no capacity
+RingStream[T, N]          -- concrete: ring policy, capacity N
+GateStream[T, N]          -- concrete: gate policy, capacity N
 ```
 
 `Stream[T]` is the abstract type for any stream of element type `T`,
@@ -17007,7 +17027,7 @@ operators or effects that constrain their inputs:
 
 ```
 operator persist[T](writes: GateStream[T]) -> ...:
-  // requires gate policy — persist must never silently drop writes
+  -- requires gate policy — persist must never silently drop writes
   ...
 ```
 
@@ -17045,9 +17065,9 @@ access mode:
   buffer.
 
 ```
-Sink[T]                   // abstract base
-RingSink[T, N]            // concrete: ring policy, capacity N
-GateSink[T, N]            // concrete: gate policy, capacity N
+Sink[T]                   -- abstract base
+RingSink[T, N]            -- concrete: ring policy, capacity N
+GateSink[T, N]            -- concrete: gate policy, capacity N
 ```
 
 Sinks appear primarily in effect declarations (§13.19.4): an
@@ -17068,7 +17088,7 @@ Producers push into a sink by piping a stream into it directly via
 ```
 let events_to_log: Stream[LogEntry] = ...
 let log_sink: Sink[LogEntry] = ...
-events_to_log |> log_sink                // forwards stream into sink
+events_to_log |> log_sink                -- forwards stream into sink
 ```
 
 The pipe establishes a forwarding subscription: each event observed
@@ -17095,12 +17115,12 @@ that carry values of type `T`. It is implemented by `Signal[T]`,
 `Stream[T]`, and `Sink[T]` (and their concrete sub-types).
 
 ```
-Cell[T]                       // abstract base — any reactive cell carrying values of type T
-  Signal[T]                   // single current value (§13.2.8)
-  Stream[T]                   // append-only event sequence (§13.18.3)
+Cell[T]                       -- abstract base — any reactive cell carrying values of type T
+  Signal[T]                   -- single current value (§13.2.8)
+  Stream[T]                   -- append-only event sequence (§13.18.3)
     RingStream[T, N]
     GateStream[T, N]
-  Sink[T]                     // write-only stream end (§13.18.4)
+  Sink[T]                     -- write-only stream end (§13.18.4)
     RingSink[T, N]
     GateSink[T, N]
 ```
@@ -17111,7 +17131,7 @@ kind:
 
 ```
 operator monitor[T, C: Cell[T]](source: C) -> Signal[bool]:
-  // works with any Signal, Stream, or Sink carrying T
+  -- works with any Signal, Stream, or Sink carrying T
   ...
 ```
 
@@ -17231,14 +17251,14 @@ first emission).
 
 ```
 stream ring price_in_eur = price_in_usd * usd_to_eur_rate
-// price_in_usd is a stream; usd_to_eur_rate is a signal.
-// Emits whenever either changes — at the stream's events with
-// the rate's current value, and at the rate's commits with the
-// last price.
+-- price_in_usd is a stream; usd_to_eur_rate is a signal.
+-- Emits whenever either changes — at the stream's events with
+-- the rate's current value, and at the rate's commits with the
+-- last price.
 
 stream ring sum = stream_a + stream_b
-// Two streams. Emits whenever either emits; combine_latest pairs
-// the latest of each.
+-- Two streams. Emits whenever either emits; combine_latest pairs
+-- the latest of each.
 ```
 
 Other combining behaviors (`zip`, `sample`, `merge`, etc.) require
@@ -17324,44 +17344,44 @@ allowed and overrides the default.
 ```
 signal current_url: Url = "https://example.com"
 stream ring url_events: Url = current_url
-// Equivalent to: stream ring url_events = current_url |> to_stream
-// Default capacity: 1024 (signal contributes its implicit
-// to_stream default).
-// Emits "https://example.com" during startup, then each subsequent
-// commit of current_url.
+-- Equivalent to: stream ring url_events = current_url |> to_stream
+-- Default capacity: 1024 (signal contributes its implicit
+-- to_stream default).
+-- Emits "https://example.com" during startup, then each subsequent
+-- commit of current_url.
 ```
 
 **Signal-and-stream mixed:**
 
 ```
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
-// Per-event of price_in_usd: sample rate, compute product.
-// Also emits on rate commits (combine_latest).
-// Default capacity: the capacity of price_in_usd plus 1024 (the signal).
+-- Per-event of price_in_usd: sample rate, compute product.
+-- Also emits on rate commits (combine_latest).
+-- Default capacity: the capacity of price_in_usd plus 1024 (the signal).
 ```
 
 **Multi-stream combine_latest:**
 
 ```
 stream ring sum: i32 = stream_a + stream_b
-// Emits whenever a or b emits; output = latest_a + latest_b.
-// First output fires once both a and b have produced at least
-// one event each.
-// Default capacity: the capacity of stream_a plus the capacity of stream_b.
+-- Emits whenever a or b emits; output = latest_a + latest_b.
+-- First output fires once both a and b have produced at least
+-- one event each.
+-- Default capacity: the capacity of stream_a plus the capacity of stream_b.
 ```
 
 **Conditional transformation:**
 
 ```
 stream ring clamped: i32 = if raw > max_allowed: max_allowed else: raw
-// Per-event of raw, output the clamped value.
+-- Per-event of raw, output the clamped value.
 ```
 
 **Composition with operators downstream:**
 
 ```
 stream ring filtered: i32 = (count * 2) |> filter(is_positive)
-// Expression part produces a Stream[i32]; the operator chain continues.
+-- Expression part produces a Stream[i32]; the operator chain continues.
 ```
 
 ##### 13.18.7.6 Compile-error examples
@@ -17456,8 +17476,8 @@ fallback values within the same expression:
 ```
 recurrent stream ring blend: i32 =
   if condition: count.previous(0) else: count.previous(99)
-// Two calls on count.previous, with different fallbacks. Both
-// are valid; each contributes independently to its branch.
+-- Two calls on count.previous, with different fallbacks. Both
+-- are valid; each contributes independently to its branch.
 ```
 
 ##### 13.18.8.4 Memory allocation
@@ -17523,9 +17543,9 @@ primitives. All use the standard operator-application syntax
 **Signal-to-stream bridge:**
 
 ```
-operator to_stream[T, const N: usize = 1024](source: Signal[T]) -> RingStream[T, N]:
-  // emits initial value as first event;
-  // emits each subsequent committed value of source as a new event
+operator to_stream[T, const N: isize = 1024](source: Signal[T]) -> RingStream[T, N]:
+  -- emits initial value as first event;
+  -- emits each subsequent committed value of source as a new event
   ...
 ```
 
@@ -17538,8 +17558,8 @@ The output is a `RingStream[T, N]`. The capacity `N` defaults to
 `1024`; callers may override via turbofish:
 
 ```
-let s = some_signal |> to_stream                       // RingStream[T, 1024]
-let s = some_signal |> to_stream::[Url, 2048]          // RingStream[Url, 2048]
+let s = some_signal |> to_stream                       -- RingStream[T, 1024]
+let s = some_signal |> to_stream::[Url, 2048]          -- RingStream[Url, 2048]
 ```
 
 The `to_stream` operator always produces `ring` policy. To convert
@@ -17556,8 +17576,8 @@ default.
 
 ```
 operator to_signal[T](source: Stream[T], default: T) -> Signal[T]:
-  // returns a Signal[T] whose value is the latest observed event,
-  // or `default` if no event has been observed yet
+  -- returns a Signal[T] whose value is the latest observed event,
+  -- or `default` if no event has been observed yet
   ...
 ```
 
@@ -17569,17 +17589,17 @@ returned signal updates on each new event.
 
 ```
 operator skip[T](source: Stream[T], n: i32) -> Stream[T]:
-  // drops the first `n` events observed from source
+  -- drops the first `n` events observed from source
 
 operator skip_first[T](source: Stream[T]) -> Stream[T]:
-  // equivalent to skip(1)
+  -- equivalent to skip(1)
 
 operator take[T](source: Stream[T], n: i32) -> Stream[T]:
-  // emits the first `n` events observed from source, then emits no
-  // more (the output stream is complete after n events)
+  -- emits the first `n` events observed from source, then emits no
+  -- more (the output stream is complete after n events)
 
 operator take_first[T](source: Stream[T]) -> Stream[T]:
-  // equivalent to take(1)
+  -- equivalent to take(1)
 ```
 
 `skip` and `take` are duals: `skip(n)` discards the first n events
@@ -17597,16 +17617,16 @@ stream ring changes: Url = current_url |> to_stream |> skip_first
 
 ```
 operator count[T](source: Stream[T]) -> Signal[i64]:
-  // running count of events observed
+  -- running count of events observed
 
 operator fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Signal[A]:
-  // running accumulator
+  -- running accumulator
 
 operator any[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]:
-  // true once any event satisfies pred
+  -- true once any event satisfies pred
 
 operator all[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]:
-  // true if every event so far satisfies pred (true initially)
+  -- true if every event so far satisfies pred (true initially)
 ```
 
 These produce signals from streams without requiring a default value
@@ -17618,26 +17638,26 @@ value structurally (`0` for `count`, `init` for `fold`, `false` for
 
 ```
 operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
-  // policy and capacity preserved from source
+  -- policy and capacity preserved from source
 
 operator filter[T](source: Stream[T], pred: fn(T) -> bool) -> Stream[T]:
-  // policy and capacity preserved from source
+  -- policy and capacity preserved from source
 
 operator merge[
   T,
-  const A: usize,
-  const B: usize,
-  const N: usize = A + B,
+  const A: isize,
+  const B: isize,
+  const N: isize = A + B,
 ](
   a: RingStream[T, A],
   b: RingStream[T, B],
 ) -> RingStream[T, N]:
-  // interleaves events from both sources in commit order;
-  // default capacity is the sum of input capacities, ensuring no
-  // overflow if both inputs fill simultaneously
+  -- interleaves events from both sources in commit order;
+  -- default capacity is the sum of input capacities, ensuring no
+  -- overflow if both inputs fill simultaneously
 
 operator throttle[T](source: Stream[T], window: duration, clock: Signal[u64]) -> Stream[T]:
-  // rate-limits events to at most one per window
+  -- rate-limits events to at most one per window
 ```
 
 Transformation operators that preserve policy and capacity do so by
@@ -17674,12 +17694,12 @@ type-directed dispatch handles the case when the RHS is a Sink.
 
 ```
 operator scan[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Stream[A]:
-  // emits f(state, event) on each event, threading state through.
-  // The output's first event is f(init, first_input_event).
+  -- emits f(state, event) on each event, threading state through.
+  -- The output's first event is f(init, first_input_event).
 
 operator pairwise[T](source: Stream[T]) -> Stream[(T, Option[T])]:
-  // emits each event paired with the previous event;
-  // the first output is (first_input, None).
+  -- emits each event paired with the previous event;
+  -- the first output is (first_input, None).
 ```
 
 These are the operator-form equivalents of `recurrent[N] stream`'s
@@ -17723,7 +17743,7 @@ For signals on the LHS, the implicit `to_stream` semantics apply:
 
 ```
 stream ring above_threshold = sensor_signal where sensor_signal > 100
-// equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
+-- equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
 ```
 
 ##### 13.18.10.2 References inside `C` and per-LHS-event semantics
@@ -17761,15 +17781,15 @@ is the operator form (predicate is a closure).
 
 ```
 stream ring active_events = events where active_signal is true
-// emits each event of `events` for which `active_signal` is true
-// at that moment. If `active_signal` flips false then true again
-// between events, no event is re-emitted — the filter only fires on
-// `events` emissions.
+-- emits each event of `events` for which `active_signal` is true
+-- at that moment. If `active_signal` flips false then true again
+-- between events, no event is re-emitted — the filter only fires on
+-- `events` emissions.
 
 stream ring x_clicks_in_zone = clicks where clicks.x > zone_threshold
-// each click event is checked against zone_threshold's current
-// value. If zone_threshold changes between clicks, the new value
-// applies to subsequent clicks. Past clicks are not re-evaluated.
+-- each click event is checked against zone_threshold's current
+-- value. If zone_threshold changes between clicks, the new value
+-- applies to subsequent clicks. Past clicks are not re-evaluated.
 ```
 
 **Distinction from value-producing expressions.** Filters are a
@@ -17804,7 +17824,7 @@ capacity follow:
 
 ```
 stream ring active_big_clicks = clicks where clicks.area > 100 where clicks.priority is high
-// equivalent to: (clicks where clicks.area > 100) where clicks.priority is high
+-- equivalent to: (clicks where clicks.area > 100) where clicks.priority is high
 ```
 
 `where` composes with other stream operators (§13.18.9) at any
@@ -17876,7 +17896,7 @@ preserve the policy type:
 operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
   ...
 
-// At a call site:
+-- At a call site:
 let mapped: RingStream[U, 1024] = (some_ring_stream: RingStream[T, 1024]) |> map(f)
 let mapped2: GateStream[U, 256] = (some_gate_stream: GateStream[T, 256]) |> map(f)
 ```
@@ -17890,11 +17910,11 @@ policy declare it concretely in the signature:
 
 ```
 operator persist[T: Persistable](writes: GateStream[T]) -> EffectResult:
-  // writes must be lossless; passing a RingStream is a type error
+  -- writes must be lossless; passing a RingStream is a type error
   ...
 
 operator emit_telemetry[T: Telemetry](events: RingStream[T]) -> ():
-  // ring is the right semantics for telemetry — losing oldest events on overload is acceptable
+  -- ring is the right semantics for telemetry — losing oldest events on overload is acceptable
   ...
 ```
 
@@ -18054,9 +18074,9 @@ allocations on top of the base stream storage:
 Total memory for a `recurrent[N] stream X = expr` declaration:
 
 ```
-ring_buffer(X)                          // base stream storage
-+ N * sizeof(T_X)                       // output history
-+ Σ max_k(input_i) * sizeof(T_input_i)  // per-input history
+ring_buffer(X)                          -- base stream storage
++ N * sizeof(T_X)                       -- output history
++ Σ max_k(input_i) * sizeof(T_input_i)  -- per-input history
 ```
 
 Inputs not accessed via `.past` add no history overhead. All
@@ -18480,7 +18500,7 @@ cell as the first parameter:
 effect fetch(url: Signal[Url], method: Method = Method::GET):
   ...
 
-// usage (in a node's effects: clause, §13.3.8):
+-- usage (in a node's effects: clause, §13.3.8):
 effects:
   response = current_url |> fetch(method: Method::POST)
 ```
@@ -18491,9 +18511,9 @@ reconciler observes events from the parameter stream:
 
 ```
 effect log(entries: GateStream[LogEntry, 4096]):
-  // no desired, no observed — pure fire-and-forget consumer
+  -- no desired, no observed — pure fire-and-forget consumer
 
-// usage (in a node's effects: clause, §13.3.8):
+-- usage (in a node's effects: clause, §13.3.8):
 effects:
   log_events |> log
 ```
@@ -18716,9 +18736,9 @@ instance:
 ```
 effects:
   f = current_url |> fetch
-derived req: Request = f.request               // desired.request (a `derived` cell)
-derived r: Option[Response] = f.response       // observed.response (a `signal` cell)
-derived loading: bool = f.in_flight            // observed.in_flight
+derived req: Request = f.request               -- desired.request (a `derived` cell)
+derived r: Option[Response] = f.response       -- observed.response (a `signal` cell)
+derived loading: bool = f.in_flight            -- observed.in_flight
 ```
 
 The cell-name collision rule (§13.19.6) ensures `f.<name>` is
@@ -18746,7 +18766,7 @@ live in the `effects:` clause:
 ```
 effects:
   ws = current_url |> websocket
-  my_outgoing_messages |> ws.outbound      // forward a stream into the sink
+  my_outgoing_messages |> ws.outbound      -- forward a stream into the sink
 ```
 
 Piping a `Stream[T]` into a `Sink[T]` establishes a forwarding
@@ -18763,8 +18783,8 @@ reads:
 ```
 effects:
   ws = current_url |> websocket
-derived latest: Message = ws.inbound |> to_signal(empty_message)  // project to signal
-derived total: u64 = ws.inbound |> count                          // running count
+derived latest: Message = ws.inbound |> to_signal(empty_message)  -- project to signal
+derived total: u64 = ws.inbound |> count                          -- running count
 stream ring[64] recent_text: Message = ws.inbound |> filter(is_text)
 ```
 
@@ -18816,11 +18836,11 @@ type names (PascalCase) from placement syntax.
 effect fetch(url: Signal[Url]):
   ...
 
-// Used as type:
+-- Used as type:
 operator render_fetch_card(f: fetch) -> Signal[View]:
   ...
 
-// Used as constructor — in a node's effects: clause:
+-- Used as constructor — in a node's effects: clause:
 effects:
   f = current_url |> fetch
   f2 = fetch(current_url)
@@ -18999,14 +19019,14 @@ projected by field access:
 
 ```
 operator render_fetch_card(f: fetch) -> Signal[View]:
-  // receives the whole composite
+  -- receives the whole composite
   ...
 
-// in a node body:
+-- in a node body:
 effects:
   f = current_url |> fetch
-derived card: View = f |> render_fetch_card          // whole composite
-derived display: View = f.response |> render_response // projected cell
+derived card: View = f |> render_fetch_card          -- whole composite
+derived display: View = f.response |> render_response -- projected cell
 ```
 
 The first form passes the composite; the second projects a specific
@@ -19212,7 +19232,7 @@ error: only role-keyword declarations are permitted inside effect blocks
 
 ```
 error: effects cannot be placed via node-style placement syntax
-  --> Fetcher f1                       // ✗ effect type used as placement
+  --> Fetcher f1                       -- ✗ effect type used as placement
       ^^^^^^^^^^
   hint: effects are not topology. Instantiate the effect in the node's
         `effects:` clause (§13.3.8):
@@ -19234,7 +19254,7 @@ error: effects are not exposition
 
 ```
 error: effects cannot be instantiated at module level
-  --> let f = some_url |> fetch        // ✗ top-level effect
+  --> let f = some_url |> fetch        -- ✗ top-level effect
               ^^^^^^^^^^^^^^^^^
   hint: effects are instantiated only in a node's `effects:` clause
         (§13.3.8). For an application-global effect, host it in a
@@ -19258,7 +19278,7 @@ error: effects cannot be instantiated in an operator body
 ```
 error: effects must be instantiated in the `effects:` clause
   --> node App:
-        derived f = url |> fetch        // ✗ effect outside effects:
+        derived f = url |> fetch        -- ✗ effect outside effects:
                     ^^^^^^^^^^^^
   hint: within a node, effects are instantiated only in the `effects:`
         clause (§13.3.8). Move the instantiation there and read its
@@ -20024,9 +20044,9 @@ An IR **module** has three parts over a shared type table:
 
 ```
 module <name> {
-  types     { … }   // %TypeId -> layout (size, align, field/variant order)
-  graph     { … }   // the reactive wiring — six primitives (§15.4.1)
-  behaviors { … }   // the leaf compute — typed-SSA functions (§15.4.4)
+  types     { … }   -- %TypeId -> layout (size, align, field/variant order)
+  graph     { … }   -- the reactive wiring — six primitives (§15.4.1)
+  behaviors { … }   -- the leaf compute — typed-SSA functions (§15.4.4)
 }
 ```
 
