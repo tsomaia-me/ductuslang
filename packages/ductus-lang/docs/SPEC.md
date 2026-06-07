@@ -152,7 +152,7 @@ components, `parts:`/`incoming:`/`outgoing:` entries, etc.) uses the
 comma, the newline, or both. A `;` in Ductus source is a lex error.
 (This governs Ductus source only. Non-Ductus code shown for
 illustration — host-driver pseudocode that embeds the runtime, and the
-Rust comparison snippets in §15 and §18 — follows its own language's
+host-language comparison snippets — follows its own language's
 rules and may use semicolons.)
 
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
@@ -19298,15 +19298,14 @@ representation, executed by an interpreter embedded in the runtime.
 Used for development workflows: fast iteration, hot reload, live
 coding.
 
-**Native mode** — Ductus source compiles, via a Rust intermediate
-form, to a native executable. Used for production: maximum performance,
+**Native mode** — Ductus source compiles to a native executable. Used for production: maximum performance,
 distributable artifact.
 
 Both modes share the same frontend: lexer, parser, type checker,
 semantic analysis. The frontend produces a typed intermediate
 representation. The two modes diverge after this point: the bytecode
-emitter targets the interpreter; the Rust emitter targets a Rust source
-file that is then compiled by `rustc`.
+emitter targets the interpreter; the native emitter targets a native
+executable.
 
 The two modes produce equivalent observable behavior. A program that
 runs correctly in interpreter mode produces the same output (modulo
@@ -19326,8 +19325,8 @@ The frontend performs:
 4. **Reactive analysis** per §13. Identifies reactive declarations,
    computes dependency graphs, and extracts graph specification.
 5. **Monomorphization** per §2.3. Resolves all generic instantiations
-   in Ductus before lowering. Ductus's compiler does not delegate
-   monomorphization to Rust; emitted code is fully concrete.
+   in Ductus before lowering — the compiler does not delegate
+   monomorphization to a backend; emitted code is fully concrete.
 
 After these passes, the typed IR is consumed by one of the two
 backends.
@@ -19350,16 +19349,17 @@ Characteristics:
 
 #### 14.1.3 Native mode
 
-The Rust emitter lowers the typed IR to Rust source code, which is then
-compiled by the bundled `rustc` toolchain into a native executable. The
-resulting binary is the distribution artifact.
+The native backend lowers the typed IR to a native executable. The
+resulting binary is the distribution artifact. (How a given
+implementation generates native code — its intermediate form and
+toolchain — is a backend concern, outside this specification.)
 
 Characteristics:
 
-- Native performance, equivalent to hand-written Rust for the
+- Native performance, equivalent to hand-written native code for the
   equivalent program.
-- Compilation time is dominated by `rustc` (typically seconds to tens
-  of seconds for non-trivial programs).
+- Compilation time is dominated by the native toolchain (typically
+  seconds to tens of seconds for non-trivial programs).
 - Produces a single executable embedding both the compiled behaviors
   and the graph specification (§15.4).
 - Does not support hot reload at runtime; rebuild is required to
@@ -19391,8 +19391,8 @@ required.
   §14.8.
 
 - **`ductus build <file> [--release]`** — invokes native mode.
-  Compiles via Rust to a native executable. `--release` enables
-  optimization. The output is a single executable file.
+  Compiles to a native executable. `--release` enables optimization.
+  The output is a single executable file.
 
 - **`ductus check <file>`** — runs the frontend (lexing, parsing,
   type checking, ownership checking, reactive analysis) without
@@ -19412,14 +19412,13 @@ use:
 
 - The Ductus frontend.
 - The bytecode interpreter (part of the runtime).
-- A `rustc` toolchain for native-mode builds.
+- The native-mode toolchain.
 - The Ductus stdlib and reactive runtime.
 
-Users do not install `rustc` or `cargo` separately. The CLI does not
-expose `cargo` directly; all Rust-toolchain invocations are internal.
-Build output from `rustc` is suppressed in normal operation and
-surfaced only when a compilation failure prevents Ductus's output
-from being produced.
+Users do not install or manage the native toolchain separately; all of
+its invocations are internal. Its build output is suppressed in normal
+operation and surfaced only when a compilation failure prevents Ductus's
+output from being produced.
 
 #### 14.2.3 Project layout
 
@@ -19917,8 +19916,8 @@ reload application — are the subject of §14.
 The compiler ingests Ductus source files and emits two artifact
 classes:
 
-- **Executable code** — bytecode (interpreter mode, §14.1.2) or Rust
-  source compiled by `rustc` (native mode, §14.1.3).
+- **Executable code** — bytecode (interpreter mode, §14.1.2) or a
+  native executable (native mode, §14.1.3).
 - **The reactive graph specification** — a build-time description of
   the program's reactive shape that the runtime consumes at startup
   and that hot reload diffs against (§15.4, §15.6).
