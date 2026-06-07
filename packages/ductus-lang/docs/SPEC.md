@@ -1152,14 +1152,12 @@ trait Eq:
 Eq for i32` block, `Subject` resolves to `i32`, so the method's signature becomes
 `fn eq(a: i32, b: i32) -> bool`.
 
-Trait methods do not use a `self` parameter. The instance value `subject`
-(§13.7.7) is reserved for reactive context inside node and connection bodies
-(§13); trait methods have no implicit receiver. Trait method signatures name
-their receiver parameter explicitly. The first parameter's type is
-conventionally `Subject` for
-methods that operate on instances, but trait methods may have any parameter
+Trait method signatures name their receiver parameter explicitly; there is
+no implicit receiver. The first parameter's type is conventionally `Subject`
+for methods that operate on instances, but trait methods may have any parameter
 list — including no `Subject` parameter at all (for "associated functions" like
-constructors).
+constructors). The instance value `subject` (§13.7.7) is reserved for reactive
+context inside node and connection bodies (§13) and is not bound here.
 
 **Ownership conventions in trait method signatures.** Trait method
 signatures may declare any parameter with the `own` keyword (§11.7.4)
