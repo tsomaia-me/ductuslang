@@ -259,7 +259,7 @@ A single value used at multiple use sites that demand mutually incompatible
 concrete types is also a use-site issue, surfaced as errors at the conflicting
 sites.
 
-#### 2.1.5 No first-class runtime placeholders
+#### 2.1.5 Placeholders are compile-time only
 
 The placeholder is strictly compile-time. No value at runtime has placeholder
 type; no machine representation corresponds to a placeholder. This forecloses
@@ -468,7 +468,7 @@ representation) to any module that calls them. Generic definitions are not
 closed binary units from the linker's perspective. (This is a constraint on the
 module system design, not on the type system.)
 
-#### 2.3.3 Polymorphic recursion is forbidden
+#### 2.3.3 Recursion preserves type arguments
 
 Polymorphic recursion — a recursive call within a generic function body that
 would require a different type instantiation than the caller — is rejected at
@@ -1474,7 +1474,7 @@ these are automatically satisfied when all required traits are satisfied; no
 `satisfies` clause is needed on the type and no `fulfill` block is needed for
 the umbrella.
 
-#### 3.2.1 No overlapping method names across satisfied traits
+#### 3.2.1 Satisfied traits must have disjoint method names
 
 A type's `satisfies` set must not contain two *distinct trait identities*
 whose method names overlap. If `Trait1` and `Trait2` (different traits, not
@@ -1989,7 +1989,7 @@ argument calls to one form.
 A no-argument call (`person.display()`) is trivially both forms; the
 parentheses are empty and no mixing question arises.
 
-#### 3.5.2 No mixing within one call
+#### 3.5.2 One argument form per call
 
 A single call site uses either positional or named form throughout. Mixing
 is a compile error:
@@ -5097,7 +5097,7 @@ The summary: `T(value)` (with its variants) is the form for built-in
 numeric conversions and newtype unwraps; the conversion traits are the
 mechanism for everything else.
 
-### 7.7 No Implicit User-Defined Conversions
+### 7.7 User-Defined Conversions Are Explicit
 
 User-defined `From` impls do *not* produce implicit conversions. The
 implicit-conversion surface of the language is strictly limited to the
@@ -5479,7 +5479,7 @@ The success type at the `?` site becomes the local expression's value
 and has no relationship to the function's return success type — the
 function's `Ok(...)` site satisfies that contract separately.
 
-### 8.6 No Cross-Type `?`
+### 8.6 `?` Stays Within One Failure Track
 
 Using `?` on an `Option` value inside a function returning `Result`, or
 on a `Result` value inside a function returning `Option`, is a compile
@@ -5589,8 +5589,8 @@ accepts either signature; users choose based on what callers need.
 
 ### 8.9 Error Handling in the Reactive Context
 
-The reactive system (specified in §13.2.3 for derived error
-semantics) uses the same two-track failure model. A trap inside a `derived` expression's
+The reactive system (specified in §13.13 for error handling in
+reactive contexts) uses the same two-track failure model. A trap inside a `derived` expression's
 computation propagates as a normal trap — the reactive system does not
 catch traps. A `derived` declaration whose expression has type
 `Result[T, E]` or `Option[T]` produces a reactive value of that type;
@@ -5699,7 +5699,7 @@ value is valid UTF-8. No invalid-UTF-8 string can exist at runtime;
 constructors and conversions that take untrusted input either reject
 ill-formed input or return a fallible result.
 
-#### 9.1.5 No direct indexing
+#### 9.1.5 String access is by API, not indexing
 
 Strings are opaque with respect to indexing — there is no `s[i]`
 operator. Direct indexing is rejected as a footgun:
@@ -6105,7 +6105,7 @@ not a trap), the user calls stdlib methods like `arr.get(i)` returning
 `Option[T]`, or uses the `?` variant per §4.6.4 if such an indexing
 operator is provided.
 
-#### 9.3.6 Dynamic arrays are not in the language
+#### 9.3.6 Fixed-Size Arrays; Dynamic Collections Are Stdlib
 
 The dynamic-sized vector type (heap-allocated, growable) is a standard
 library concern, not a language-level type. Its name and syntax (`Vec[T]`,
@@ -6640,7 +6640,7 @@ top of the file, which aids tooling, navigation, and reasoning
 about dependencies. It also avoids the complexity of nested-scope
 import shadowing.
 
-#### 10.4.4 Circular module references are forbidden
+#### 10.4.4 Module references form an acyclic graph
 
 The cross-module `use`-and-reference graph must be acyclic. If any
 cycle exists — a chain of modules where each references the next
@@ -7667,7 +7667,7 @@ A default parameter is immutable. To mutate locally, the function body
 must either declare the parameter as `own` (gaining a real owner) or
 rebind to a `mut` local with an explicit clone (§11.7.3).
 
-#### 11.7.2 No `mut` on parameters
+#### 11.7.2 Parameters are immutable bindings
 
 A function parameter may not be declared `mut`:
 
@@ -8225,12 +8225,12 @@ body does internally.
 ```
 let scale: f32 = 2.0                          // Copy capture
 let process = fn(raw: Vec[f32]) -> Vec[f32]:
-  mut local = raw                              // mut local; allowed inside closure body
+  mut local = raw.clone()                      // mut local; clone needed (raw is a non-Copy borrow)
   apply_scale_in_place(local, scale)           // internal work; captures untouched
   local
 ```
 
-#### 11.10.5 Borrow-equivalent aliases cannot be captured
+#### 11.10.5 Escaping closures capture only owned Copy values
 
 A closure that escapes its defining scope cannot capture
 borrow-equivalent aliases — cluster members from the enclosing function
@@ -9364,7 +9364,7 @@ values on demand:
 trait Iterator:
   type Item
   type Source = ()
-  fn next(iter: Subject, source: Source) -> (Option[Item], Subject)
+  fn next(own iter: Subject, source: Source) -> (Option[Item], Subject)
 ```
 
 The `next` method takes the iterator by value, an external `source` of
@@ -9462,7 +9462,7 @@ type SquareIter:
 fulfill Iterator for SquareIter:
   type Item = i32
   -- type Source = () inherited from default
-  fn next(iter: SquareIter, source: ()) -> (Option[i32], SquareIter):
+  fn next(own iter: SquareIter, source: ()) -> (Option[i32], SquareIter):
     mut local = iter
     if local.next_value >= local.limit:
       (None, local)
@@ -9495,7 +9495,7 @@ type MyVecIter[T]:
 fulfill Iterator for MyVecIter[Record]:
   type Item = Record               -- borrow-default rooted in source
   type Source = MyVec[Record]      -- collection passed each call
-  fn next(iter: MyVecIter[Record], source: MyVec[Record])
+  fn next(own iter: MyVecIter[Record], source: MyVec[Record])
     -> (Option[Record], MyVecIter[Record]):
     mut local = iter
     if local.cursor >= source.length:
@@ -9592,7 +9592,7 @@ type DataPointsIter:
 fulfill Iterator for DataPointsIter:
   type Item = f32                  -- f32 is Copy; borrow vs own indistinguishable
   type Source = DataPoints         -- supplied each next() call
-  fn next(iter: DataPointsIter, source: DataPoints)
+  fn next(own iter: DataPointsIter, source: DataPoints)
     -> (Option[f32], DataPointsIter):
     mut local = iter
     if local.cursor >= source.count:
@@ -9702,7 +9702,7 @@ type DataStreamIntoIter:
 fulfill Iterator for DataStreamIntoIter:
   type Item = own Event            -- owned items (consumed out of pending)
   type Source = ()                 -- no external source needed
-  fn next(iter: DataStreamIntoIter, source: ())
+  fn next(own iter: DataStreamIntoIter, source: ())
     -> (Option[Event], DataStreamIntoIter):
     -- read/move from iter.pending; source is unused
     ...
@@ -10978,7 +10978,7 @@ dependency graph includes cross-instance edges. Cycles across
 instances are compile errors at the same severity as within-instance
 init cycles, identifying the participating instances and cells.
 
-#### 13.2.7 No mutation of cells from Ductus source
+#### 13.2.7 Cell mutation is runtime-only (host/runtime-driven)
 
 Ductus source has no syntactic form for assigning to a signal,
 attr, recurrent, derived, or const after declaration. Source-level
@@ -11658,6 +11658,8 @@ node TypeName[GenericParams]?:
   incoming: Conn1, Conn2                              // optional incoming connection types
   outgoing: Conn3, Conn4                              // optional outgoing connection types
   when: predicate                                     // optional activation predicate (§13.9)
+  expose:                                             // structural output (§13.3.7)
+    SomePart
   const name: Type = value                            // per-type compile-time constants
   signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
@@ -11951,7 +11953,7 @@ Each instantiation of `Buffer` with a different concrete `T`
 produces a distinct node type with its own cells. Monomorphization
 follows §2.3.
 
-#### 13.3.6 No methods in node body
+#### 13.3.6 Behavior lives outside the node body
 
 A node body does not contain `fn` declarations. Behavior associated
 with a node type lives as free functions whose first parameter is
@@ -11962,7 +11964,7 @@ This separation enforces the "node bodies are declarative" rule:
 nodes describe structure and reactive content; functions and
 methods are imperative computation, distinct in kind.
 
-##### 13.3.6.1 Nodes are not values
+##### 13.3.6.1 Nodes are structural, not first-class values
 
 A node type may not appear as the return type of a function, may not be
 bound to a `let` or `const`, may not be passed as a function argument by
@@ -12017,7 +12019,7 @@ node TypeName:
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
-→ `outgoing:` → `expose:` → cell declarations → `effects:` (§13.3.8).
+→ `outgoing:` → `when:` → `expose:` → cell declarations → `effects:` (§13.3.8).
 
 ##### 13.3.7.1 Content
 
@@ -12779,7 +12781,7 @@ type DbRow:
 
 fulfill Keyed for DbRow:
   type Key = u64
-  fn key(r: &DbRow) -> u64:
+  fn key(r: DbRow) -> u64:
     r.id
 
 effect DBQueryAuto:
@@ -12791,7 +12793,7 @@ effect DBQueryAuto:
 ```
 
 No `keyed by` clause is needed at the call site — the `Keyed` fulfill
-on `DbRow` supplies `Keyed::key(&row)` automatically, and every
+on `DbRow` supplies `Keyed::key(row)` automatically, and every
 `repeat` over `Vec[DbRow]` (or any other iterable of `DbRow`) reuses
 the same key derivation.
 
@@ -13131,7 +13133,7 @@ Generic parameters scope over the connection's `from`, `to`, attrs,
 recurrents, and deriveds. Each unique instantiation produces a
 distinct connection type per §2.3.
 
-#### 13.6.4 No methods in connection body
+#### 13.6.4 Behavior lives outside the connection body
 
 A connection body does not contain `fn` declarations. Functions on
 connections are free functions taking the connection type, dispatched
@@ -14050,13 +14052,14 @@ omit the flag.
 
 ##### 13.8.8.4 Flag/operator disambiguation
 
-Several flag characters double as operator tokens elsewhere in the
-language:
+Several flag characters double as tokens with another meaning
+elsewhere in the language:
 
 - `'` is both a flag and the opener of a `char` literal (§9.1.2).
 - `?` is both a flag and the postfix Try operator (§8.4).
 - `@` is both a flag and the annotation prefix (`@derive`).
-- `!` is both a flag and the boolean-NOT operator.
+- `!` is both a flag and the leading marker of the `!name`
+  attribute-false form (§13.8.7).
 
 Disambiguation is positional: in placement position, a non-letter
 character immediately following the `TypeRef` path (no intervening
@@ -14071,7 +14074,7 @@ let r = some_fallible()?           // postfix Try in expression context
   ...
 ```
 
-##### 13.8.8.5 No duplicate-set across forms
+##### 13.8.8.5 Each boolean attr is set by one form per placement
 
 A boolean attr may be set via at most one mechanism per placement:
 the flag form, or the inline `name` / `!name` / `name=value` form
@@ -15515,7 +15518,7 @@ recoverable errors, use the checked variants (`+?`, `-?`, etc.)
 per §4.6.4. Their results are `Option[T]` values that flow through
 the type system.
 
-#### 13.13.3 The reactive context is not an exception
+#### 13.13.3 The reactive context preserves trap semantics
 
 The reactive evaluation context does not modify Ductus's trap
 semantics. A behavior that traps aborts the process, same as a
@@ -17321,8 +17324,9 @@ recurrent[N]? stream policy[capacity]? NAME: Type? = EXPR
 
 - `recurrent[N]?` is the recurrent prefix. `[N]` is the output
   stream's self-history size — the maximum lookback `k` permitted
-  in `NAME.past(k, ...)` self-references. Must be a positive
-  integer literal. `recurrent stream` (with no brackets) is
+  in `NAME.past(k, ...)` self-references. Must be a compile-time-known
+  positive integer — a literal, a `const`, or a const-generic
+  parameter (§2.5). `recurrent stream` (with no brackets) is
   shorthand for `recurrent[1] stream` (one step of self-memory).
 - `policy[capacity]?` follows the standard stream declaration form
   (§13.18.2): policy is mandatory; capacity is optional. When
@@ -17412,8 +17416,9 @@ all referenced inputs.
   error.
 - `.past` or `.previous` access outside the body of a `recurrent[N]
   stream` declaration: compile error.
-- `n` argument of `.past(n, fallback)` must be a positive integer
-  literal; non-literal expressions are rejected at parse time.
+- `n` argument of `.past(n, fallback)` must be a compile-time-known
+  positive integer — a literal, a `const`, or a const-generic
+  parameter (§2.5).
 
 ##### 13.18.8.6 Composition with operators
 
@@ -18346,7 +18351,7 @@ or through expression position (§13.19.13).
 ```
 effect fetch(url: Signal[Url], method: Method = Method::GET):
   desired:
-    derived request: Request = Request { method: method, target: url }
+    derived request: Request = Request(method: method, target: url)
   observed:
     signal response: Option[Response] = None
     signal error: Option[FetchError] = None
@@ -18441,7 +18446,7 @@ any input cell changes:
 
 ```
 desired:
-  derived request: Request = Request { method: method, target: url }
+  derived request: Request = Request(method: method, target: url)
   derived auth_header: Option[string] = current_token |> as_bearer
 ```
 
@@ -19373,8 +19378,8 @@ reactive values) occupy multiple consecutive cells in the buffer.
 For example, an `i128` value occupies two cells: the low 64 bits in
 cell N, the high 64 bits in cell N+1.
 
-A record `Vec3 { x: f32, y: f32, z: f32 }` used as a reactive cell
-value occupies one cell per field — three consecutive cells per
+A record `Vec3` with fields `x`, `y`, `z` of type `f32`, used as a
+reactive cell value, occupies one cell per field — three consecutive cells per
 `Vec3`, each padded from 4 bytes to 8 bytes. This per-field layout
 is the **canonical** layout; implementations conforming to the spec
 must support it.
@@ -19528,7 +19533,7 @@ counts.
 
 Reactive cells of type `string` store a **handle** (u64) into the pool
 rather than the string content itself. The handle indexes the pool;
-the pool resolves the handle to the actual `Arc<str>` data.
+the pool resolves the handle to the actual string data.
 
 #### 14.5.1 Cross-thread consistency
 
@@ -20211,7 +20216,7 @@ A conformant runtime accepts specifications whose format version it
 understands. Format-version mismatches are diagnosed at load time
 per §14.9.
 
-#### 15.4.3 What the specification does not contain
+#### 15.4.3 Type erasure at the runtime boundary
 
 The specification is type-erased at the runtime boundary. It contains
 primitive type tags and cell layouts, but **not** Ductus's full type

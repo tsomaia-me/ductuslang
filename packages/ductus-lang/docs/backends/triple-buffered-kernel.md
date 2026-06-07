@@ -4,14 +4,16 @@ This document specifies the reference **triple-buffered SPSC kernel**: one
 concrete runtime that satisfies the abstract contracts in `SPEC.md` — the
 runtime interface (§13.14) and the Ductus IR (§15.4). Other backends may
 realize those contracts by entirely different mechanisms. Nothing here is
-normative for the *language*; it is normative only for this backend.
+normative for the *language*; it is normative only for this one concrete
+backend.
 
-Unqualified section references (§…) point into `SPEC.md`. Each section below
-was relocated verbatim from `SPEC.md` as part of making that document
-backend-agnostic.
+This document's own sections use a `B.x` namespace, so they do not collide
+with `SPEC.md`'s section numbers. References written as `§…` (without the `B`
+prefix) point into `SPEC.md`; references written in the `B.x` form point to
+sections within this document.
 
 ---
-#### 14.3.3 Triple-buffering
+#### B.1 Triple-buffering
 
 The reactive state buffer is **triple-buffered** to provide:
 
@@ -24,7 +26,7 @@ The arrangement is **single-producer, single-consumer (SPSC)**: one
 *producer role* writes, one *consumer role* reads, mediated by three
 buffer copies and an atomic current-pointer swap. The mapping of
 these roles to physical threads, and the trigger that initiates a
-publish, are implementation-defined; §14 specifies only the
+publish, are implementation-defined; this document specifies only the
 mechanism. Typical native deployments map the producer role to the
 host's main thread and the consumer role to one or more application
 threads.
@@ -39,7 +41,7 @@ The kernel maintains three copies of the buffer:
   writing the next batch of state without waiting for the consumer.
   Rotation among the three is producer-managed.
 
-##### 14.3.3.1 Publish operation
+##### B.1.1 Publish operation
 
 To publish accumulated writes, the producer performs:
 
@@ -69,7 +71,7 @@ When the producer chooses to publish (the trigger is specified in
 §13.10 — the kernel's evaluation cycle) is outside the scope of this
 section.
 
-##### 14.3.3.2 Swap operation
+##### B.1.2 Swap operation
 
 The consumer, when it wants to read the latest published state,
 performs **swap**:
@@ -81,7 +83,7 @@ The swap operation runs on the consumer role's thread. Its cost is
 O(1) — one atomic load. The consumer never copies data; it reads in
 place from the buffer the current pointer points to.
 
-##### 14.3.3.3 Why three buffers
+##### B.1.3 Why three buffers
 
 A two-buffer ping-pong would force the producer to wait for the
 consumer to finish reading before publishing the next state. With
@@ -91,7 +93,7 @@ consumer holds its reference into a snapshot for an extended period.
 This preserves wait-free reads on the consumer side without
 producer-side blocking.
 
-##### 14.3.3.4 Multiple cross-thread observers
+##### B.1.4 Multiple cross-thread observers
 
 If a deployment requires multiple cross-thread observers (multiple
 consumers reading the same producer's published state), the SPSC
@@ -101,7 +103,7 @@ not required for the language's basic operation; the specification
 defines SPSC as the canonical mechanism.
 
 
-#### 14.3.4 Wide-atomic optimization (optional)
+#### B.2 Wide-atomic optimization (optional)
 
 On platforms with hardware support for 128-bit atomic operations
 (x86_64 with `CMPXCHG16B`, ARM64 with `LDXP`/`STXP`), the
@@ -116,9 +118,9 @@ exclusively on the triple-buffer mechanism. Programs using `i128` or
 the full per-publish cost for those cells.
 
 
-### 14.7 Producer and Consumer Roles
+### B.3 Producer and Consumer Roles
 
-The triple-buffer mechanism (§14.3.3) operates in terms of two roles:
+The triple-buffer mechanism (B.1) operates in terms of two roles:
 
 - **Producer**: the role that writes the back buffer, runs publish
   cycles (evaluation + atomic swap). There is exactly one producer
@@ -133,9 +135,9 @@ The triple-buffer mechanism (§14.3.3) operates in terms of two roles:
   buffer it points to. Never writes; never invokes behaviors. There
   is one consumer per SPSC channel; if multiple cross-thread
   observers are needed, each maintains its own SPSC channel
-  (§14.3.3.4).
+  (B.1.4).
 
-§14 specifies only the mechanism of these roles — what each role is
+This document specifies only the mechanism of these roles — what each role is
 permitted to do, how the two coordinate via the triple buffer, and
 the costs of the swap and publish operations. The mapping of roles
 to physical threads and the choreography of what the producer does
@@ -143,7 +145,7 @@ between publishes are implementation-defined; the trigger that
 initiates a publish is specified in §13.10 (the kernel's evaluation
 cycle).
 
-#### 14.7.1 Thread-safety properties of the mechanism
+#### B.3.1 Thread-safety properties of the mechanism
 
 By construction of the SPSC triple buffer:
 
@@ -160,10 +162,10 @@ These properties hold regardless of the role-to-thread mapping, which
 is implementation-defined: in typical native deployments the host's
 main thread plays the producer role and one or more application threads
 play the consumer role; other deployments may assign a kernel-configured
-thread to the producer role. The mechanism (§14.3.3, §14.7) does not
+thread to the producer role. The mechanism (B.1, B.3) does not
 depend on the mapping choice.
 
-#### 14.7.2 Behaviors invoked by the mechanism
+#### B.3.2 Behaviors invoked by the mechanism
 
 Reactive behaviors (derived expression bodies and recurrent
 expression bodies) are invoked by the producer. Functions called from
@@ -177,12 +179,12 @@ The behavior ABI (§14.6) is the contract between the producer and
 each invoked behavior. Each invocation receives a kernel handle
 and an instance ID; behavior bodies read from and write to cells
 via the handle. Behaviors are thread-safe by construction
-(§14.7.3).
+(B.3.3).
 
-#### 14.7.3 Why Ductus behaviors are thread-safe by construction
+#### B.3.3 Why Ductus behaviors are thread-safe by construction
 
 Regardless of the role-to-thread mapping (implementation-defined per
-§14.7.1), Ductus source code never sees cross-thread concerns:
+B.3.1), Ductus source code never sees cross-thread concerns:
 
 - No shared mutable state outside reactive cells.
 - Reactive cells are coordinated through the triple-buffer
@@ -191,13 +193,13 @@ Regardless of the role-to-thread mapping (implementation-defined per
 - Closure captures are by-value Copy (§11.10), no shared mutability.
 
 A Ductus program does not declare thread affinity; it does not
-need to. The kernel determines (implementation-defined per §14.7.1)
+need to. The kernel determines (implementation-defined per B.3.1)
 which thread plays which role.
 
 
-#### 14.8.6 Drop and triple-buffer eviction for dynamic-size cells
+#### B.4 Drop and triple-buffer eviction for dynamic-size cells
 
-Dynamic-size cells (per §13.12.4 and §14.3.5) require eviction
+Dynamic-size cells (per §13.12.4 and §14.3.3) require eviction
 ordering across triple-buffer rotation. When the kernel commits a
 new value for a dynamic-size cell, the previous value is still
 referenced by the rotating-out buffer slot until rotation makes
@@ -242,17 +244,17 @@ quarantined slots before releasing them to the free list. No drop
 runs while any buffer still references the slot's handle.
 
 **Drop and panic:** if `drop` panics on a dynamic-size cell value,
-process abort applies per §14.8.4. The pool slot is leaked but the
+process abort applies per §14.7.4. The pool slot is leaked but the
 process is terminating anyway.
 
 
-### 15.5 Lowering (Ductus → Rust)
+### B.5 Lowering (Ductus → Rust)
 
 The native-mode Rust emitter (§14.1.3) lowers the typed IR to Rust
 source per the rules below. Interpreter-mode bytecode emission is
 implementation-defined and out of scope for this section.
 
-#### 15.5.1 Type lowering
+#### B.5.1 Type lowering
 
 | Ductus                 | Rust                                                        |
 |------------------------|-------------------------------------------------------------|
@@ -260,14 +262,14 @@ implementation-defined and out of scope for this section.
 | `i128`, `u128`         | Same Rust types (on supporting targets).                    |
 | `f32`, `f64`           | Same Rust types.                                            |
 | `bool`, `char`         | `bool`, `char`.                                             |
-| `string`               | A newtype wrapping a kernel string handle (see §15.5.1.1).  |
+| `string`               | A newtype wrapping a kernel string handle (see B.5.1.1).    |
 | Tuples                 | Rust tuples.                                                |
 | Arrays `T[N]`          | Rust arrays `[T; N]`.                                       |
 | Records                | Rust structs with same field order.                         |
 | Enums                  | Rust enums with same variant order.                         |
 | Newtypes (§6.3)        | Rust newtype structs.                                       |
 
-##### 15.5.1.1 String storage uniformity
+##### B.5.1.1 String storage uniformity
 
 The `string` type lowers to the same Rust representation regardless
 of whether the binding is reactive or non-reactive: a newtype around
@@ -282,7 +284,7 @@ Non-reactive context (local `let s = "hello"`, function parameter,
 record field outside reactive declaration): the handle lives in
 ordinary Rust memory. The pool entry is still refcounted; ownership
 of the handle increments the refcount, dropping the handle (per
-§14.8) decrements it. Strings created in non-reactive scopes are
+§14.7) decrements it. Strings created in non-reactive scopes are
 reclaimed when their last handle is dropped — typically when the
 function returns and locals go out of scope.
 
@@ -296,7 +298,7 @@ the handle points to.
 The §11.6 "refcount-shared immutable backing" model maps directly
 onto the kernel pool. The pool *is* the shared backing.
 
-#### 15.5.2 Function and trait lowering
+#### B.5.2 Function and trait lowering
 
 Ductus resolves all generic instantiations and trait dispatch during
 frontend processing (§14.1.1). Emitted Rust is fully monomorphic and
@@ -319,7 +321,7 @@ explicit `impl std::ops::Add for Vec3` block in Rust so that `+`
 works on the type at the Rust level. This is a narrow mechanical
 emission, not a full trait export.
 
-#### 15.5.3 Ownership lowering
+#### B.5.3 Ownership lowering
 
 Ductus's ownership rules map directly to Rust's:
 
@@ -344,12 +346,12 @@ Rust's borrow checker enforces the same rules that Ductus's frontend
 already verified through the cluster analysis (§11.3.4) and Rule (P)
 (§11.3.5); any code that passed Ductus's checks passes Rust's.
 
-#### 15.5.4 Iterator lowering
+#### B.5.4 Iterator lowering
 
 Ductus's `Iterator` trait (§12.7) under the P3 design has signature:
 
 ```
-fn next(iter: Subject, source: Source) -> (Option[Item], Subject)
+fn next(own iter: Subject, source: Source) -> (Option[Item], Subject)
 ```
 
 with two associated types (`Item`, `Source`). This shape does not
@@ -417,7 +419,7 @@ trait approach is preferred over emitting against Rust's standard
 `Iterator` because the standard trait cannot express the
 `(Source, Item)` slot relationships natively without compiler tricks.
 
-#### 15.5.5 Reactive primitive lowering
+#### B.5.5 Reactive primitive lowering
 
 Ductus's `signal`, `attr`, `recurrent`, and `derived` declarations
 do not lower to Rust types directly. They lower to:
@@ -435,7 +437,7 @@ graph-construction directives, encoded into the graph specification
 and behavior table.
 
 
-#### 15.7.1 Diff algorithm
+#### B.6 Diff algorithm
 
 The diff is computed entry-by-entry across each artifact field of
 the graph specification:
@@ -446,7 +448,7 @@ the graph specification:
       value).
     - Same `id`, different `type` → **changed** (drop + re-allocate;
       initial value from `new_spec`).
-    - `id` in `old_spec` only → **removed** (kernel drops per §14.8).
+    - `id` in `old_spec` only → **removed** (kernel drops per §14.7).
     - `id` in `new_spec` only → **added** (kernel allocates and
       initializes).
 
