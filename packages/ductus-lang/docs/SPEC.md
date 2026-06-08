@@ -519,9 +519,9 @@ specific to defaults.
 ```
 operator merge[
   T,
-  const A: isize,
-  const B: isize,
-  const N: isize = A + B,
+  const A: usize,
+  const B: usize,
+  const N: usize = A + B,
 ](
   a: RingStream[T, A],
   b: RingStream[T, B],
@@ -778,7 +778,7 @@ a type:
 
 ```
 let arr: i32[fib(10) + 1]                  // array size: fib(10) + 1 is compile-time evaluable
-type Buffer[T, const N: isize = 1024]:
+type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
 
@@ -853,7 +853,7 @@ parameter (the list separator is always a comma — §1.4 — never a
 semicolon):
 
 ```
-type Buffer[T, const N: isize = 1024]:
+type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
 
@@ -866,10 +866,8 @@ which expressions are admitted and how the resulting types are compared.
 
 A const-generic parameter's declared type must be either:
 
-- an integer type (`isize`, `u32`, `i64`, `usize`, …), or
+- an integer type (`usize`, `isize`, `u32`, `i64`, …), or
 - `bool`.
-
-A const-generic parameter in **array-length or container-capacity position** is `isize` — the type of array length and index arithmetic (§9.3.3). Other integer types (`u32`, `i64`, etc.) and `bool` remain available for non-size parameters such as bit-widths, flags, and discriminants.
 
 Floating-point types are **not** permitted as const-generic parameters;
 `type Spinner[const ANGLE: f64]` is a compile error. The reason is in
@@ -887,7 +885,7 @@ including `\` and `%`, comparisons, conditionals, and calls to pure
 functions:
 
 ```
-const BUF: isize = 1024
+const BUF: usize = 1024
 
 stream ring[BUF * 2] events: Event     // capacity 2048
 let history: i32[fib(10) + 1]          // pure call in an array size
@@ -937,15 +935,15 @@ unbound**, and permitted the instant every operand is concrete (§2.5.2):
 type Mode[const VERBOSE: bool, const TIMED: bool]
 
 // ✓ integer arithmetic on a symbolic parameter
-operator widen[const N: isize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
-operator pair_up[const N: isize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
+operator widen[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
+operator pair_up[const N: usize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
 
 // ✓ boolean algebra on symbolic bool parameters
 operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or B]
 
 // ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
-operator halve[const N: isize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
-operator gate[const N: isize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
+operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
+operator gate[const N: usize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
 ```
 
 #### 2.5.4 Canonical form and type identity
@@ -995,7 +993,7 @@ parameters are known; it never **solves** them. Consequently:
   **checked** for consistency against that value.
 
 ```
-operator resize[const K: isize, T, const N: isize](s: RingStream[T, N]) -> RingStream[T, N * K]
+operator resize[const K: usize, T, const N: usize](s: RingStream[T, N]) -> RingStream[T, N * K]
 
 let bigger: RingStream[Event, 16] = resize::[2](small)   // K = 2 supplied; T, N inferred from `small`
 ```
@@ -1019,11 +1017,11 @@ declaration's const-generic parameters and compile-time-known values.
 The `where` clause attaches to the signature, before the body's `:`:
 
 ```
-operator window[T, const N: isize, const K: isize](s: RingStream[T, N]) -> RingStream[T, K]
+operator window[T, const N: usize, const K: usize](s: RingStream[T, N]) -> RingStream[T, K]
   where K <= N, N >= 1:
   ...                                  // body
 
-type EvenBuffer[T, const N: isize] where N % 2 is 0:
+type EvenBuffer[T, const N: usize] where N % 2 is 0:
   data: T[N]
 ```
 
@@ -1088,7 +1086,7 @@ const-generic expression and obeys §2.5.2–§2.5.4: symbolic where it
 references unbound parameters, concrete once they are known.
 
 ```
-operator merge[T, const A: isize, const B: isize, const N: isize = A + B](
+operator merge[T, const A: usize, const B: usize, const N: usize = A + B](
   a: RingStream[T, A],
   b: RingStream[T, B],
 ) -> RingStream[T, N]
@@ -2897,7 +2895,7 @@ the i64 to fit f32), use an explicit cast.
 operands and produces an `Integer` result. `5 \ 2` produces `2`; `-5 \ 2`
 produces `-3` (toward negative infinity). `Float` operands are a type error.
 For float-input integer-output behavior, the user explicitly converts via
-`as` or `From`/`Into`.
+`T(value)` (§4.7) or `From`/`Into`.
 
 The `\` token is reused: at the value level it is the integer-division
 operator above, while inside string and character literals it is the
@@ -2910,7 +2908,7 @@ as its operands. Mixed-kind operands promote per §4.5.
 Unary `-` is defined on signed integers and floats only. Applying unary `-`
 to an unsigned integer is a type error at compile time — silent wrap on
 negation is rejected as a footgun source. To compute the additive inverse of
-an unsigned value, the user explicitly converts to a signed type via `as`
+an unsigned value, the user explicitly converts to a signed type via `T(value)` (§4.7)
 or `From`/`Into` per §7.
 
 Negative integer literals (e.g., `-5` in `let x: i8 = -5`) are not subject
@@ -6088,8 +6086,6 @@ Users needing the "must be non-negative" invariant for low-level work
 (allocation sizes, FFI) can use `usize` explicitly; the language does
 not block this.
 
-A const-generic parameter in length or capacity position must be `isize`; smaller signed types widen to it losslessly (§4.5). `usize` cannot serve directly — its conversion to `isize` requires an explicit cast (§4.5.1), which is unrepresentable in type position — and a negative const length or capacity is a compile error (value-fits, §2.5.2).
-
 #### 9.3.4 Index type
 
 Array index types are flexible. Any integer type is accepted as an
@@ -9072,7 +9068,7 @@ argument, the same body runs at runtime.
 
 A function that *requires* its loop to be compile-time-unrolled expresses
 that requirement in its **signature**, via a const-generic parameter
-(§2.5) — e.g. `fn process[const N: isize](buf: T[N]):`. A const-generic
+(§2.5) — e.g. `fn process[const N: usize](buf: T[N]):`. A const-generic
 parameter is compile-time known at every call site by virtue of the
 signature, so the function's internal `for i in 0..N` is guaranteed to
 unroll. This is the language's mechanism for "this function only makes
@@ -9099,7 +9095,7 @@ const-generic-parameterized but fixed per instance.
 **Examples.** Same source, two call sites, two kinds of loop:
 
 ```
-fn sum_first[const N: isize](buf: f32[N]) -> f32:
+fn sum_first[const N: usize](buf: f32[N]) -> f32:
   mut total: f32 = 0.0
   for i in 0..N:                   // N compile-time known → unrolled
     total = total + buf[i]
@@ -9119,7 +9115,7 @@ fn process(n: usize):
   for i in 0..n:                    // n is a value parameter → runtime
     do_step(i)
 
-fn process_static[const N: isize]():
+fn process_static[const N: usize]():
   for i in 0..N:                    // N is a const-generic → unrolled
     do_step(i)
 ```
@@ -10499,7 +10495,7 @@ A recurrent declaration has:
 
 - **`[N]`** (optional) — the cell's self-history depth, used to bound
   `name.past(k, fallback)` accesses. Must be a compile-time-known
-  positive `isize` (a literal, a `const`, or a const-generic parameter
+  positive `usize` (a literal, a `const`, or a const-generic parameter
   — §2.5). When omitted, defaults to `[1]` (only `.previous`
   accessible).
 - **`name`** — a snake_case identifier naming the cell.
@@ -15455,7 +15451,7 @@ documented complexity bounds.
 In `[T, N]`, `N` is a const-generic parameter (the slot count), not a
 second type parameter. Generic parameter lists use commas throughout
 (§1.4 — never semicolons); a const-generic parameter is marked by the
-`const` keyword in the declaration (`type SmallVec[T, const N: isize]`,
+`const` keyword in the declaration (`type SmallVec[T, const N: usize]`,
 §2.5) and supplied as a value at use sites (`SmallVec[i32, 8]`).
 
 `Vec[T]` is the default for unbounded growth; the persistent
@@ -16941,7 +16937,7 @@ stream policy[capacity]? name: Type? = source
 
 - **`policy`** is one of the policy keywords `ring` or `gate`
   (§13.18.3). Mandatory; the declaration has no default policy.
-- **`[capacity]`** is an optional compile-time-known positive `isize`
+- **`[capacity]`** is an optional compile-time-known positive `usize`
   (a literal, a `const`, or a const-generic parameter — §2.5)
   specifying the buffer's slot count. When omitted:
   - For declarations whose source is a single stream or a stream-
@@ -17549,7 +17545,7 @@ primitives. All use the standard operator-application syntax
 **Signal-to-stream bridge:**
 
 ```
-operator to_stream[T, const N: isize = 1024](source: Signal[T]) -> RingStream[T, N]:
+operator to_stream[T, const N: usize = 1024](source: Signal[T]) -> RingStream[T, N]:
   // emits initial value as first event;
   // emits each subsequent committed value of source as a new event
   ...
@@ -17651,9 +17647,9 @@ operator filter[T](source: Stream[T], pred: fn(T) -> bool) -> Stream[T]:
 
 operator merge[
   T,
-  const A: isize,
-  const B: isize,
-  const N: isize = A + B,
+  const A: usize,
+  const B: usize,
+  const N: usize = A + B,
 ](
   a: RingStream[T, A],
   b: RingStream[T, B],
