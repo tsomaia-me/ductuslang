@@ -11694,10 +11694,14 @@ The reactive graph is the running structure of all node instances
 and the connections between them. Once constructed, the graph's
 shape is fixed (§13.1, "Static graph").
 
-Nodes are distinct from records (§6): records are pure data values
-that exist anywhere in a program; nodes are reactive entities that
-exist only as placed instances in the graph, with per-instance
-reactive cells managed by the runtime.
+Nodes are distinct from records (§6), but the line is *placement and
+structure*, not reactivity. A record's fields can be reactive too — as a
+reactive composite (§13.2.9) — so "reactive vs. plain data" is not what
+separates them. The distinction is this: a record is a value that can
+exist anywhere in a program, whereas a node exists only as a placed
+instance in the graph, with its own graph identity, topology (parts and
+connections), lifecycle, and per-instance reactive cells managed by the
+runtime.
 
 #### 13.3.1 Declaration
 
