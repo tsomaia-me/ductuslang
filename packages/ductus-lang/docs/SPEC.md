@@ -2929,8 +2929,17 @@ of unsigned type, never to literals at their declaration site.
 | `>>`        | `Shr`         | Integer (same type as left operand) |
 
 Bitwise operators are integer-only. Applying them to float values is a type
-error. Bit-level operations on floats require an explicit reinterpret cast
-through `as` to an integer type of the same width.
+error. To operate on a float's bits, first reinterpret it as a same-width
+unsigned integer with the stdlib `to_bits` / `from_bits` pair: `f.to_bits()`
+yields the integer holding the float's IEEE-754 bit pattern (`f32` → `u32`,
+`f64` → `u64`), and `f32::from_bits(bits)` / `f64::from_bits(bits)` rebuild
+the float; operate on the integer, then `from_bits` back if a float result
+is needed. These are ordinary stdlib behaviors over the `raw_read` /
+`raw_write` intrinsics (§15.4.4) — the language adds no bit-reinterpret
+operator, and the round-trip lowers to a zero-cost bitcast. This is a *bit*
+reinterpret, not a value conversion: `(1.0_f32).to_bits()` yields
+`1065353216` (the IEEE-754 bit pattern), whereas `u32(1.0_f32)` (§4.7)
+yields `1` (the value).
 
 The `&` and `|` characters are reused at the type level (`&` for trait
 intersection per §5, `|` as the leader of the placement attribute clause
