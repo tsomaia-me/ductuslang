@@ -12150,6 +12150,24 @@ node Driver:
   incoming: SponsoredBy [..=3]
 ```
 
+**Interaction with dynamic destinations.** A connection whose `to` is a
+reactive reference (§13.6.2) may point at a node at some times and away at
+others, so the set of connections currently *incoming* to a node can vary at
+runtime. Two rules keep `incoming` cardinality meaningful:
+
+- *Upper bounds* are verified over all reachable wirings: the compiler
+  checks, over the candidate edges (§13.11.5), that no reachable
+  configuration directs more than the bound's maximum at any node.
+- *Lower bounds* (a required minimum — `+`, or the `1` in `[=1]`) must be
+  met by connections that *always* point at the node, i.e. by connections
+  with a **static** destination. A dynamic-destination connection cannot
+  count toward a guaranteed minimum, since it may point away. Indexed access
+  `incoming.<ConnType>[i]` for `i <` the guaranteed minimum therefore stays
+  valid.
+
+`outgoing` is unaffected: a node's outgoing connections are declared in its
+own body and do not move — only their destinations do.
+
 ##### 13.3.4.1 Access from inside the node body
 
 Connections of a given type are accessible as `incoming.<ConnType>`
