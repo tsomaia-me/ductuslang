@@ -1377,12 +1377,23 @@ instance, the user supplies explicit type arguments: `Add[i64]`,
 The defaulting happens at name-resolution time; at code-generation
 time, every reference has a fully-specified trait instance.
 
-#### 3.1.7 Required attrs and consts (node and connection types only)
+#### 3.1.7 Required node/connection members (cells, consts, and endpoints)
 
-Traits may declare *required attrs* and *required consts* that
-implementing types must provide. These requirements apply only to
-node and connection types (see §13 for the reactive system); they
-are not applicable to records, enums, newtypes, or primitive types.
+Traits may declare *required members* that implementing types must
+provide: required `attr`, `const`, `signal`, `derived`, `recurrent`, and
+`stream` declarations and — for connection types — required `from` and
+`to` endpoints. These requirements are reactive-graph structure, so they
+apply only to node and connection types (see §13 for the reactive system);
+they are not applicable to records, enums, newtypes, or primitive types.
+
+A trait that declares any such member is a *kind-specific* trait — a *node
+trait* or, when it declares endpoints, a *connection trait*. A trait that
+declares only methods and associated types is *kind-agnostic* and may be
+satisfied by any kind. The compiler enforces the kind restriction at the
+`satisfies` site (the gating rules below). These required members are also
+what make a kind-specific trait usable as the instantiation contract of a
+`Type[…]` value (§5.7.5): the receiver of a `Type[ThatTrait]` may rely on
+exactly the members the trait declares.
 
 ```
 trait Action:
@@ -1394,8 +1405,11 @@ trait Identifiable:
 ```
 
 The forms `attr Name: Type [= Default]?` and `const Name: Type [=
-Default]?` inside a trait body declare requirements. Defaults are
-optional in trait declarations:
+Default]?` inside a trait body declare requirements, as do the other
+reactive-cell forms — `signal`, `derived`, `recurrent`, and `stream` —
+written with the same syntax they use in a node or connection body (§13).
+A connection trait may additionally declare required endpoints with
+`from: Type` and `to: Type`. Defaults are optional in trait declarations:
 
 - **Without a default** — implementing types must supply the
   declaration with a concrete value.
@@ -1429,18 +1443,49 @@ node Delay:
   default attr time: duration
 ```
 
-Restrictions:
+A connection trait additionally constrains endpoints and may require
+reactive cells that describe the relationship:
 
-- Required attrs and consts are forbidden in traits implemented by
-  records, enums, newtypes, or primitives — those types lack the
-  reactive cell machinery. The compiler rejects `satisfies` on
-  such types if the trait has required attrs or consts.
-- Required reactive declarations (`signal`, `recurrent`, `derived`)
-  inside a trait body are *not* supported in v1. Only `attr` and
-  `const` requirements are recognized.
+```
+trait DriveLink:
+  requires Connection                     // intrinsic marker (§3.7.4)
+  from: Driver                            // required source endpoint
+  to: Drivable                            // required destination endpoint
+  attr aggressiveness: f32 = 0.5          // required relationship cell
+  derived effective_speed: f32            // abstract: implementor supplies the body
+
+connection Drives:
+  satisfies DriveLink
+  from: Driver
+  to: Drivable
+  attr aggressiveness: f32 = 0.5
+  derived effective_speed: f32 =
+    to.top_speed * (f32(from.expertise_level) / 10.0)
+```
+
+An implementing connection satisfies `DriveLink` only if its `from`/`to`
+endpoints satisfy the required endpoint types and every required cell is
+present (or defaulted). A trait carrying `from`/`to` makes the trait — and
+any `Type[…]` bounded by it — a connection contract the compiler can check
+at placement (§5.7.5, §13.8.4).
+
+Restrictions and kind gating:
+
+- **A trait that declares any required cell (`attr`, `const`, `signal`,
+  `derived`, `recurrent`, `stream`) or endpoint (`from`, `to`) is a
+  kind-specific trait and cannot be satisfied by a record, enum, newtype,
+  or primitive** — those types lack the reactive-graph machinery. The
+  compiler rejects `satisfies` on such a type if the trait declares any
+  such member.
+- **A trait that declares a `from` or `to` endpoint is a connection trait
+  and cannot be satisfied by a node** — only connections have endpoints.
+  The compiler rejects `satisfies` on a node type if the trait declares
+  `from` or `to`. (Required cells without endpoints are satisfiable by
+  either nodes or connections.)
 - The same name/type matching rules as method signatures apply: an
-  implementing declaration must match the trait's required name
-  and type exactly.
+  implementing declaration must match the trait's required name and type
+  exactly. For `from`/`to`, the implementing connection's endpoint type
+  must satisfy the required endpoint type.
 
 ### 3.2 Conformance Declarations (`satisfies`)
 
@@ -2354,15 +2399,17 @@ special powers beyond defining its own types.
 
 A small, closed category of traits are declared by the language itself,
 have no methods and no associated types, and receive compiler-privileged
-enforcement. A type opts into one of these traits via the usual
-`satisfies` clause or via `@derive` (every member of the category is
-`@derive`-eligible; see §3.8.1); the compiler
-treats membership as a flag carrying load-bearing semantics rather than
-as a vehicle for user-supplied method bodies. Members of this category
-are not redeclarable: user code cannot define a new trait of the same
-name and reuse the privileged behavior.
+enforcement. The compiler treats membership as a flag carrying
+load-bearing semantics rather than as a vehicle for user-supplied method
+bodies. Members of this category are not redeclarable: user code cannot
+define a new trait of the same name and reuse the privileged behavior.
 
-The members of the category in Ductus v1 are:
+The category has two sub-kinds, distinguished by how a type acquires
+membership.
+
+**Opt-in markers.** A type acquires membership *explicitly*, via the usual
+`satisfies` clause or via `@derive` (these markers are `@derive`-eligible;
+see §3.8.1). The members are:
 
 - `Copy` (§11.4) — flags a type whose values are duplicated implicitly
   at every use site. The compiler enforces the auto-derivation rules
@@ -2370,6 +2417,27 @@ The members of the category in Ductus v1 are:
 - `Circularity` (§13.6.5) — flags a connection type that may participate
   in topology cycles in the node graph. The compiler enforces the static
   cycle rule against this flag.
+
+**Intrinsic markers.** Membership is *automatic and universal* for a kind
+of declaration: every declaration of that kind satisfies the marker by
+construction, with no `satisfies` clause and no `@derive`. These markers
+are correspondingly *not* `@derive`-eligible (there is nothing to opt
+into) and cannot be opted out of. The members are:
+
+- `Node` (§13.3) — satisfied by every `node` type. Names "is a node."
+- `Connection` (§13.6) — satisfied by every `connection` type. Names
+  "is a connection."
+- `Effect` (§13.19) — satisfied by every `effect` type. Names "is an
+  effect."
+
+The intrinsic markers exist so that "any node," "any connection," or "any
+effect" is expressible as a generic bound (`[T: Node]`), in `&`
+composition (`Node & Drivable`), and as a super-trait requirement
+(`trait Drivable: requires Node`, §3.1.4 — after which `[T: Drivable]`
+alone implies node-ness). A node/connection/effect *type* used in value
+position is carried by the `Type[…]` meta-type (§5.7); a
+node/connection/effect *instance* referenced through one of these bounds
+is a borrow and obeys ordinary borrow semantics (§11.9, §13.3.6.1).
 
 Like any trait, a language-defined marker trait may be used as a generic
 bound or appear in a `where` clause:
@@ -2389,7 +2457,7 @@ This category is distinct from two superficially similar things:
   members of the language-defined marker traits category and do not
   receive any compiler privilege beyond the usual `satisfies` check.
 
-Adding a new member to this category is a language-level change, not
+Adding a new member to either sub-kind is a language-level change, not
 a user-extensible mechanism.
 
 #### 3.7.5 Newtype pattern as orphan-rule workaround
@@ -2427,20 +2495,22 @@ The traits eligible for automatic derivation are:
 - `Clone` — deep structural copy.
 - `Display` — default human-readable formatting.
 - `Debug` — default debug formatting (structural, compiler-defined).
-- `Copy` (§3.7.4) — language-defined marker trait; derivation performs the
-  structural Copy-eligibility check (every field's type must be `Copy`),
-  no method body is generated.
-- `Circularity` (§3.7.4) — language-defined marker trait; derivation is the
-  opt-in declaration, no method body is generated.
-- Any other language-defined marker trait (§3.7.4). The general rule:
-  every member of the language-defined marker traits category is
-  `@derive`-eligible. Derivation performs whatever structural check the
-  marker's category requires (none for Circularity; Copy-eligibility for
-  Copy) and emits the satisfies-flag with no method body.
+- `Copy` (§3.7.4) — language-defined *opt-in* marker trait; derivation
+  performs the structural Copy-eligibility check (every field's type must
+  be `Copy`), no method body is generated.
+- `Circularity` (§3.7.4) — language-defined *opt-in* marker trait;
+  derivation is the opt-in declaration, no method body is generated.
+- Any other *opt-in* language-defined marker trait (§3.7.4). The general
+  rule: every member of the *opt-in* marker sub-kind is `@derive`-eligible.
+  Derivation performs whatever structural check the marker requires (none
+  for Circularity; Copy-eligibility for Copy) and emits the satisfies-flag
+  with no method body. The *intrinsic* marker sub-kind (`Node`,
+  `Connection`, `Effect`, §3.7.4) is **not** `@derive`-eligible: membership
+  is automatic at declaration, so there is nothing to derive.
 
 The set is fixed in the language: the six structural-derivation traits
 above (Eq, Ord, Hash, Clone, Display, Debug) plus every member of the
-language-defined marker traits category (§3.7.4). Users cannot register
+*opt-in* language-defined marker sub-kind (§3.7.4). Users cannot register
 new traits for `@derive`: the derivable set is fixed by the language. Any
 other trait is implemented with a manual `fulfill` block.
 
@@ -2469,11 +2539,13 @@ For a newtype (§6.3), `@derive` may delegate to the underlying type
 or operate structurally over fields, depending on the newtype's shape; see
 the newtype section for details.
 
-For language-defined marker traits (`Copy`, `Circularity`, and any future
-markers per §3.7.4): derivation performs the marker's structural check
-(Copy-eligibility for `Copy`; none for `Circularity`) and emits the
-satisfies-flag — no method body is generated. The marker-trait derivation
-is purely a structural opt-in.
+For language-defined *opt-in* marker traits (`Copy`, `Circularity`, and
+any future opt-in markers per §3.7.4): derivation performs the marker's
+structural check (Copy-eligibility for `Copy`; none for `Circularity`) and
+emits the satisfies-flag — no method body is generated. The marker-trait
+derivation is purely a structural opt-in. The *intrinsic* markers (`Node`,
+`Connection`, `Effect`) are satisfied automatically at declaration and are
+not derivable.
 
 Derivation requires every field's (or payload's) type to itself satisfy the
 trait being derived. `@derive(Eq)` on `type Foo: x: SomeType` requires
@@ -4121,6 +4193,95 @@ the conjunction is well-formed but produces a constraint that may have no
 satisfying type — generic constraints don't fail at the constraint
 declaration; they fail at the call site where no concrete type satisfies
 both.
+
+### 5.7 The `Type[…]` meta-type
+
+`Type[C]` is the type of a **type value** — a value whose value is a
+*type* satisfying the constraint `C`. Where `dyn` (§5.2) lifts a trait to
+value position as an *instance* (an erased, vtable-dispatched value of some
+implementing type), `Type[…]` lifts a constraint to value position as the
+*type itself*. The two are complementary: `dyn Drivable` is "some Drivable
+value"; `Type[Drivable]` is "some Drivable *type*."
+
+Its primary use is to carry a node, connection, or effect **type** as a
+value — a template or slot that defers *which kind* is placed — given that
+the corresponding *instances* are never values (§13.3.6.1).
+
+#### 5.7.1 The constraint argument
+
+The bracket holds a **constraint on which type** the value may be:
+
+- A **trait** — `Type[Drivable]` — admits any type satisfying that trait
+  (the *existential* form).
+- A **concrete or generic type** — `Type[PostCard]`, `Type[T]` — admits
+  exactly that type (the *singleton* form). `Type[T]` for a generic
+  parameter `T` is the primitive case: "the type `T`, as a value."
+
+A concrete type is simply the tightest possible constraint (one inhabiting
+type); a trait is a wider one.
+
+#### 5.7.2 Value position only
+
+`Type[…]` appears only in **value position** — the type of an attr,
+parameter, return value, `let`/`const` binding, or generic *value*
+argument. It never appears in **bound position**: a generic parameter's
+bound is always a trait, so write `[T: Drivable]`, never `[T: Type[Drivable]]`.
+The instance-versus-type ambiguity that `Type[…]` resolves exists only in
+value position (`x: dyn Drivable` is an instance; `x: Type[Drivable]` is a
+type); in bound position a parameter is always a type and a bound is always
+a trait, so no `Type[…]` is needed or permitted.
+
+#### 5.7.3 Monomorphization, not erasure
+
+A type value is resolved at compile time and carries **no runtime
+representation** — it is not erased behind a vtable the way `dyn` is
+(§2.3.3 admits erasure only via `dyn`). The existential form is sugar for
+an inferred generic parameter:
+
+```
+node ListView:
+  attr item: Type[Drivable]          // sugar
+```
+
+desugars to
+
+```
+node ListView[~F: Drivable]:         // ~F: a compiler-introduced parameter
+  attr item: Type[~F]
+```
+
+Each supply site picks a concrete type, monomorphizing the enclosing type
+for it (`ListView | item=PostCard` infers `~F = PostCard`). Two anonymous
+`Type[Drivable]` slots desugar to two independent parameters, so they may
+hold different types; sharing requires a named parameter (`[T: Drivable]`
+with `Type[T]` in two places forces them equal).
+
+Selecting among type values of the *same* slot type at runtime is allowed
+(`match …` yielding a `Type[C]` picks one). Selecting among *different*
+node structures at runtime is `given` (§13.9.13), not a type value — which
+is why type values never require erasure.
+
+#### 5.7.4 Storage
+
+Because a type value is compile-time data — not a borrow of any instance —
+it may be **stored in persistent slots** (record fields, attrs, cells).
+This is unlike an *instance* reference, which is always a borrow and may
+not be stored (§11.9.1). It is the mechanism by which a node or connection
+*kind* is held as an attr (a template slot) even though a node or
+connection *instance* cannot be (§13.3.6.1).
+
+#### 5.7.5 The constraint is the instantiation contract
+
+A receiver holding a `Type[C]` value knows only what `C` guarantees, and a
+generic body is checked at its definition against `C` alone (§2.2.2), not
+per concrete type. So whatever the receiver does with the type value —
+construct it, place it (§13.8 for nodes/connections) — must be justified by
+`C`. A bare `Type[Node]` (§3.7.4) admits any node type but guarantees only
+"is a node," so it can be held, passed, stored, and returned but **not
+placed**: placement requires the node's input contract, which the bare
+marker does not carry. To place, `C` must be a trait that declares the
+instantiation interface — required attrs/consts/cells and, for
+connections, endpoints (§3.1.7).
 
 ---
 
@@ -11836,8 +11997,8 @@ A part type may carry exactly one cardinality specifier (sigil OR
 bracket, not both); duplicate specifiers are a compile error.
 
 Sigils attach directly to the type name with no intervening
-whitespace: `Type?`, `Type+`, `Type!`. Bracket forms may optionally
-have a space before the bracket: `Type[=1]` and `Type [=1]` are both
+whitespace: `Part?`, `Part+`, `Part!`. Bracket forms may optionally
+have a space before the bracket: `Part[=1]` and `Part [=1]` are both
 valid.
 
 ##### 13.3.3.2 Access from inside the node body
