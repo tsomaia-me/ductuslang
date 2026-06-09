@@ -11567,89 +11567,100 @@ type signature; transparency flows through (§13.12.2). The
 distinction between live and snapshotted access is determined by
 the caller's context, not by the function's signature.
 
-#### 13.2.10 The `Node[T]` type
+#### 13.2.10 Node and connection type slots (`Type[…]`)
 
-`Node[T]` is the type of a node **specification** — a placement
-expression captured as a value, whose later invocation by a
-receiving node instantiates a node whose `default attr`
-(§13.2.2.1) accepts a `T`. `Node[T]` values are first-class:
-they may appear as attr types, function parameters, return
-types, and generic arguments.
+A node or connection **type** can be carried as a value via the `Type[…]`
+meta-type (§5.7) — the mechanism for an attr "template slot" that defers
+*which kind* a receiving node places. The corresponding *instances* are
+never values (§13.3.6.1); the type value is the storable stand-in.
 
-A `Node[T]` value is constructed by writing a placement
-expression in a position expecting `Node[T]`. The placement
-syntax is identical to inline placement (§13.8.5.2); the only
-difference is the *context* — when used as an attr value, the
-placement is captured as a specification rather than performed
-in-line.
+A `Type[…]` slot is filled by naming a node (or connection) type in value
+position; the receiving node later **places** it (§13.8). The slot's
+constraint is an ordinary trait bound, and — per §5.7.5 — it is also the
+*instantiation contract*: the receiver may feed exactly the inputs the
+bound's trait declares as required members (§3.1.7).
 
 ```
+trait RendersPost:
+  requires Node                    // intrinsic marker (§3.7.4)
+  attr post: Post                  // required input the host supplies at placement
+
 node ItemHost:
-  attr item: Node[Post]            // accepts a Node[Post] specification
+  attr item_type: Type[RendersPost]   // accepts any node type that renders a Post
+  attr posts: Vec[Post]
+  expose:
+    for p in posts:
+      item_type | post=p           // place the supplied type, setting its input
 
-ItemHost host | item=PostItem/some_post   // PostItem/some_post is the Node[Post] value
+node PostItem:
+  satisfies RendersPost
+  attr post: Post
+  // … exposes its rendering of `post` …
+
+ItemHost host | item_type=PostItem, posts=all_posts   // supply the TYPE PostItem
 ```
 
-Here `PostItem/some_post` is a `Node[Post]` value — a placement
-specification of a `PostItem` whose `default attr` is bound to
-`some_post`. The specification is *deferred*: it is not evaluated
-when the attr is set, but invoked by the receiving node (`ItemHost`)
-when it chooses to instantiate.
+Here `item_type` holds the *type* `PostItem` (a `Type[RendersPost]` value)
+— not an instance, and not a pre-configured placement. The host places one
+`PostItem` per post, supplying each `post` at placement. To ship a
+*pre-configured* node instead, define or parameterize a type that bakes the
+configuration in and pass that type — the factory pattern (§13.3.6.1); the
+type value itself carries no partial application.
 
-##### 13.2.10.1 What can be placed as a `Node[T]`
+##### 13.2.10.1 What can fill a `Type[C]` slot
 
-Any node type `N` declaring `default attr d: T` (per §13.2.2.1) is
-a valid `Node[T]` value via the placement form `N/expr`. A node without a
-`default attr` cannot be used as a `Node[T]` value: the `Node[T]` form
-binds exactly the type's default attr, so a type that declares none has
-nothing for it to bind.
+Any node (or connection) type satisfying the constraint `C` is a valid
+value for a `Type[C]` slot (§5.7.1). The constraint governs both
+acceptance and what the receiver may do with the value: a bare `Type[Node]`
+admits any node type but is not placeable (it carries no input contract,
+§5.7.5); a `Type[SomeTrait]` whose trait declares required attrs/cells
+(and, for connections, endpoints) is placeable against exactly that
+contract (§3.1.7).
 
-`T` is the type accepted at the `default attr` position. A node
-`PostItem` with `default attr post: Post` produces a `Node[Post]`
-value when written as `PostItem/<expr>`.
+The `default attr` (§13.2.2.1) plays no special role here — it is ordinary
+placement sugar. A receiver may set a placed type's default attr with the
+`/expr` form (§13.8.5) just as in any placement, when the constraint
+guarantees the default attr exists.
 
 ##### 13.2.10.2 Lifetime and identity
 
-A `Node[T]` value held in an attr is a specification, not an
-allocated instance. Cell allocation happens only when the receiving
-node instantiates the specification — typically once at startup,
-producing one set of template cells with paths under the receiving
-node's path (e.g., `host.item.<template_field>`). Drop of the
-receiving node drops the template cells per §14.7.
+A `Type[…]` value held in an attr is a *type*, not an allocated instance.
+Cell allocation happens only when the receiving node **places** the type —
+typically once at startup, producing one set of cells with paths under the
+receiving node's path (e.g., `host.item_type.<field>`), or one set per
+iteration when placed under a loop or `repeat` (§13.5.4). Drop of the
+receiving node drops those cells per §14.7.
 
-For *child-placement-style* external supply with cardinality, list
-semantics, and possible per-instance scoping (the pattern used by
-`repeat`, §13.5.4), the `parts:` clause and §13.5 keyed-scope
-primitive are the appropriate mechanism — not `Node[T]` attrs.
-`Node[T]` is for attr-shaped *singular* template slots; `parts:`
-is for child-placement slots with cardinality.
+A `Type[…]` attr is an *attr-shaped, singular* template slot. It is *not*
+the mechanism for child-placement with cardinality, list semantics, and
+per-instance scoping: that is `parts:` together with placement-time
+children (§13.8.3) and the §13.5 keyed-scope primitive. `parts:` exists
+solely to supply the children a node **exposes** (§13.3.7.4); a `Type[…]`
+attr is an independent value slot.
 
 ##### 13.2.10.3 Restrictions
 
-- `Node[T]` values cannot be read in user expressions or evaluated
-  for their structure; they are consumed only by receiving nodes
-  that know how to instantiate them.
-- A `Node[T]` attr cannot be `mut` and cannot be written to from
-  Ductus source after the attr is set (per §13.2.7).
-- A `Node[T]` value's captured references (e.g., to exposed attrs
-  of the receiving node via its placement name) are bound by
-  reference. "Re-invoking the specification" per commit means the
-  captured references update and the template's expression is
-  *re-evaluated* against their current values — not that the
-  specification is re-instantiated. Cell allocation still happens once
-  at startup (§13.2.10.2); per-commit re-evaluation reuses those cells,
-  consistent with the static-graph rule (§13.1).
-- Generic constraints on `T` behave as standard generic bounds
-  (§3.1, §5.1).
+- A `Type[…]` value's *structure* cannot be read or evaluated in user
+  expressions beyond what its constraint guarantees (§5.7.5); it is
+  consumed by receivers that place it.
+- A `Type[…]` attr cannot be `mut` and cannot be written to from Ductus
+  source after the attr is set (per §13.2.7).
+- References a placed type captures (e.g., to exposed attrs of the
+  receiving node via its placement name) are bound by reference;
+  re-evaluation per commit re-reads them. Cell allocation still happens
+  once at placement, consistent with the static-graph rule's static *node
+  set* (§13.1).
+- Generic constraints on the slot behave as standard generic bounds
+  (§3.1, §5.1, §5.7).
 
-A `Node[T]` is a *value* (a deferred placement spec), so a value
-conditional may select among `Node[T]` values: `match scrutinee: …`
-yielding a `Node[T]` chooses *one* spec, which the receiving node then
-materializes once. This is distinct from the `given` block (§13.9.13),
-which gates *structure*: `given` builds every arm's subtree and switches
-which is live, freezing the others. Use `match`→`Node[T]` when exactly
-one of several specs should ever exist; use `given` when all alternatives
-should be built and kept warm, switching by discriminant.
+A `Type[…]` value is a *value*, so a value conditional may select among
+type values of the same slot type: `match scrutinee: …` yielding a
+`Type[C]` chooses *one* type, which the receiving node then places once.
+This is distinct from the `given` block (§13.9.13), which gates *structure*:
+`given` builds every arm's subtree and switches which is live, freezing the
+others. Use `match`→`Type[C]` when exactly one of several types should ever
+be placed; use `given` when all alternatives should be built and kept warm,
+switching by discriminant.
 
 #### 13.2.11 The `observe` expression
 
@@ -12214,7 +12225,7 @@ compilers enforce it at type-check time.
 #### 13.3.7 Exposition (the `expose:` clause)
 
 The `expose:` clause declares the node type's **structural output**
-— the list of `Node[T]` placements the runtime traverses when it
+— the list of node placements the runtime traverses when it
 encounters an instance of this type. The clause is the node's
 "return value" in the structural sense: it determines what an
 external reader (and the runtime) sees as the node's content.
@@ -12239,7 +12250,7 @@ The canonical clause order is: `satisfies` → `parts:` → `incoming:`
 ##### 13.3.7.1 Content
 
 The body of `expose:` is a list of placements — each entry is a
-`Node[T]` value, with the same syntax as inline child placements
+node placement, with the same syntax as inline child placements
 elsewhere (§13.8). Entries reference:
 
 - A part of the instance by type-bulk access (`parts.SomeA` — the full
@@ -12276,7 +12287,7 @@ Two forms apply inside `expose:`:
   freezes the rest (Model B, §13.9.7).
 
 These reuse the gate constructs that apply elsewhere — no exposition-only
-control-flow syntax is introduced. Because exposition lists only `Node[T]`
+control-flow syntax is introduced. Because exposition lists only node
 placements and never connections (§13.3.7.5), a `given` arm such as
 `Variant: SomeChain` is unambiguous here — there is no `Name: dest`
 connection placement to collide with.
@@ -12293,7 +12304,7 @@ structural output and exists only for its state and connections).
 
 The exposed list is readable from outside the node via the reserved
 `.exposition` field: `instance.exposition` returns the list of
-`Node[T]` values the instance currently exposes. This is the same
+node placements the instance currently exposes. This is the same
 content the runtime traverses; external readers and the runtime see
 identical output.
 
@@ -12304,20 +12315,21 @@ clause (and the placer's supplied parts), not mutable at runtime.
 ##### 13.3.7.4 Runtime traversal
 
 The runtime traverses what `expose:` produces, not the `parts:`
-clause directly. This is the load-bearing distinction:
+clause directly. `parts:` and `expose:` are two halves of one
+mechanism:
 
-- **`parts:`** is the constraint and supply mechanism — declares
-  what child types are accepted, with cardinality; placement-time
-  child placements fill the parts (§13.4, §13.8.3).
-- **`expose:`** is the structural-output mechanism — declares which
-  parts (and/or wrapping internal nodes containing them) participate
-  in the runtime's traversal of this instance.
+- **`parts:`** is the *supply* half — it declares which child types
+  the node accepts, with cardinality; placement-time child placements
+  fill them (§13.4, §13.8.3).
+- **`expose:`** is the *output* half — it declares which of those
+  parts (and/or wrapping internal nodes containing them) the runtime
+  traverses.
 
-A node may receive parts that its exposition does not include — for
-example, a node may accept administrative or diagnostic parts that
-are queried only via the host API, not traversed by the runtime. In
-practice the default `expose: parts` covers the common case
-where every supplied part is exposed.
+`parts:` exists *solely* to feed `expose:`: externally-supplied children
+exist to become the node's structural output. There is no part that is
+never exposed — by default (`expose: parts`, §13.3.7.2) every supplied
+part is exposed; an explicit `expose:` arranges or selects among the
+parts, but always over them.
 
 ##### 13.3.7.5 Connections and exposition
 
@@ -12381,7 +12393,7 @@ elsewhere by flat access `name.field` (§13.19.7):
 in `effects:`, alongside the effect it targets.
 
 **`when` / `given` / `repeat`.** The clause admits the same structural
-constructs as `expose:`, with effect entries in place of `Node[T]`
+constructs as `expose:`, with effect entries in place of node
 placements:
 
 ```
@@ -13188,13 +13200,16 @@ analogy: parts compose into the board (`expose:`); wires between
 parts are connections (instance-to-instance edges held by, but
 not contained within, the parts they connect).
 
-Connection vs. node-typed attr: a node could in principle hold a
-direct reference to another node (e.g., `attr target: SomeNode`),
-but this offers no place to carry per-relationship state, no static
-guarantees about graph topology, and no trait conformance for cycle
-handling. Connections solve all three: they carry state about the
-relationship, give the type system structural information for
-compile-time graph analysis, and integrate with traits.
+Connection vs. node-typed attr: a node **cannot** store a direct reference
+to another node instance (`attr target: SomeNode` is rejected). A
+node-instance reference is a borrow, and a borrow may not be stored in a
+cell (§11.9.1). Use a **connection** for a persistent link between two
+instances — and a connection is the right tool regardless, because it also
+carries per-relationship state, gives the type system structural
+information for compile-time graph analysis, and integrates with traits
+(e.g. `Circularity`), none of which a bare reference would. (To store a
+node *type* rather than an instance — a template slot — use `Type[…]`,
+§5.7.)
 
 #### 13.6.1 Declaration
 
@@ -15099,14 +15114,13 @@ the same evolution-safety guarantee `match` provides, and the reason
 that *suppresses* the exhaustiveness obligation (the author opts out
 knowingly), exactly as a catch-all does in value `match`.
 
-**Distinction from value-selecting a `Node[T]`.** Selecting a single
-`Node[T]` *value* with `match` (§13.2.10) and gating structure with
-`given` are different operations, both legal: `match` chooses one
-placement spec, which is then materialized once; `given` builds every
-arm's subtree and switches which is live, freezing the others. Use
-`match`→`Node[T]` when exactly one of several specs should ever exist;
-use `given` when all alternatives should be built and kept warm,
-switching by discriminant.
+**Distinction from value-selecting a `Type[…]`.** Selecting a single
+node/connection *type value* with `match` (§13.2.10) and gating structure
+with `given` are different operations, both legal: `match` chooses one
+type, which is then placed once; `given` builds every arm's subtree and
+switches which is live, freezing the others. Use `match`→`Type[C]` when
+exactly one of several types should ever be placed; use `given` when all
+alternatives should be built and kept warm, switching by discriminant.
 
 ### 13.10 Reactive Evaluation
 
@@ -17054,6 +17068,39 @@ error: operator body returns `i32` but declared return type is `Signal[f32]`
   hint: the final expression's value type must match the operator's return value type
 ```
 
+#### 13.17.13 Operator type expressions
+
+An operator has a **structural type**, written
+
+```
+operator(P1, P2, …) -> Cell[U]
+```
+
+— the parameter types in order, then the `Cell[U]` output (§13.17.2,
+§13.17.5). This is the operator analog of a function type. Unlike the
+nominal node/connection/effect kinds — carried by the nominal `Type[…]`
+meta-type (§5.7) — operators are carried *structurally*, by signature.
+
+The type expression appears in value position (an operator parameter,
+attr, or return) to carry or defer *which* operator a receiver
+instantiates:
+
+```
+operator apply(
+  source: Signal[f32],
+  kernel: operator(Signal[f32]) -> Signal[f32],   // an operator carried by type
+) -> Signal[f32]:
+  kernel(source)                                    // instantiate the supplied operator
+```
+
+An operator value is named by an operator declaration; supplying one is
+resolved at compile time and monomorphized per supplied operator (no
+erasure, §2.3.3), exactly as a `Type[…]` value is (§5.7.3). The receiver
+may only instantiate the carried operator against the parameter and output
+types its signature states. Cell-bound parameters appear as their cell type
+(`Signal[T]`, §13.17.3); value parameters as their value type. Generic
+operator types follow §13.17.8.
+
 ### 13.18 Streams
 
 A *stream* is a reactive primitive for append-only event sequences with
@@ -18535,9 +18582,14 @@ Effects are distinct from `node`, `operator`, and `fn`:
   with operators via `|>`; instantiated only in a node's `effects:`
   clause (§13.3.8), never via node-style placement.
 
-Effects are first-class typed values. An effect declaration named
-`fetch` introduces both a type `fetch` and a constructor `fetch`;
-instances are values of that type with addressable cells.
+Every effect type intrinsically satisfies the `Effect` marker trait
+(§3.7.4), so "any effect" is expressible as a bound (`[T: Effect]`). An
+effect declaration named `fetch` introduces both a type `fetch` and a
+constructor `fetch`; an instance has addressable cells and is referenced in
+expression position (e.g. `|>` chains, §13.19.13). Like nodes and
+connections, an effect *instance* is a graph member — instantiated only in
+a node's `effects:` clause and held by reference, never stored as a value
+(§13.3.6.1); an effect *type* is carried as a value by `Type[…]` (§5.7).
 
 #### 13.19.1 Concept
 
