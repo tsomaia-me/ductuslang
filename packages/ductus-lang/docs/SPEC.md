@@ -10223,17 +10223,28 @@ declarations. Placement syntax (§13.8) constructs instances.
 Composition is structural — the graph's shape is known at compile
 time.
 
-**Static graph.** Once constructed, the reactive graph's structure
-is fixed for the lifetime of the runtime instance. Signals, attrs,
-recurrents, nodes, and connections are created at startup and not
-added or removed at runtime — except by hot reload (§13.15), which
-replaces the program source and applies a diff atomically, and by
-`repeat` (§13.5.4), the explicit dynamic-lifecycle construct that
-materializes and drops keyed scopes per a runtime source. Conditional
-activation does *not* add or remove instances: a gated instance is
-constructed unconditionally and merely *frozen* while inactive (§13.9),
-never unmounted. Runtime-varying *existence* is `repeat`'s domain;
-gates govern only *activation*.
+**Static instance set, dynamic topology.** The *set of instances* —
+signals, attrs, recurrents, nodes, connections — is fixed for the lifetime
+of the runtime instance: instances are created at startup and not added or
+removed at runtime, except by hot reload (§13.15), which replaces the
+program source and applies a diff atomically, and by `repeat` (§13.5.4), the
+explicit dynamic-lifecycle construct that materializes and drops keyed
+scopes per a runtime source. Conditional activation does *not* add or remove
+instances: a gated instance is constructed unconditionally and merely
+*frozen* while inactive (§13.9), never unmounted. Runtime-varying
+*existence* is `repeat`'s domain; gates govern only *activation*.
+
+What may change at runtime is *topology* — the wiring among existing
+instances. A connection's destination (`to`) may be a reactive node
+reference that re-points over time (§13.6.2, §13.8.5.1): the connection
+instance persists and merely moves which existing node it points at. No
+instance is created or destroyed by re-pointing, so the static instance set
+is untouched — only the edges move. Because every node reference resolves
+within the statically-known instance set (a function or cell can only ever
+yield a node that was already placed, §13.3.6.1), the compiler's
+construction-time guarantees — endpoint typing and topology-cycle analysis
+(§13.11.5) — are preserved by analyzing the *candidate* topology (every node
+a `to` could resolve to), not a single frozen wiring.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
 declarations, attr default expressions, recurrent expressions)
@@ -12190,37 +12201,55 @@ This separation enforces the "node bodies are declarative" rule:
 nodes describe structure and reactive content; functions and
 methods are imperative computation, distinct in kind.
 
-##### 13.3.6.1 Nodes are structural, not first-class values
+##### 13.3.6.1 Nodes are graph-owned; references are borrows
 
-A node type may not appear as the return type of a function, may not be
-bound to a `let` or `const`, may not be passed as a function argument by
-value, and is not a first-class value. The only ways to bring a node
-into the reactive graph are via placement syntax (§13.8.1, §13.8.3) or
-via a `repeat` declaration (§13.5.4).
+A node **instance** is owned by the graph position that places it.
+Placement *is* ownership: the topology that places a node owns it, and the
+only ways to bring a node into the graph are placement syntax (§13.8.1,
+§13.8.3) or a `repeat` declaration (§13.5.4) — both of which create an
+*owned* node at a known graph path (§15.4.1.1).
 
-The reason is structural: a node's identity is its **graph path**
-(§15.4.1.1). The runtime uses paths for per-commit DAG construction,
-monomorphization, and hot-reload cell identity (§13.15.2). A function
-call has no stable graph position to give a returned node — any
-identity scheme derivable from a call site (e.g., caller-name plus call
-index) is unstable across reloads and across program runs, breaking
-§13.15.2's identity rule. Admitting function-returned nodes would
-therefore either silently break hot reload or require an anonymous-node
-concept inconsistent with §13.1's static-graph property.
+Everything else you can do with a node is through a **borrow**. A name
+bound to a node — at top level, inside another node, or as a function
+parameter or return — holds a *reference*, not the node itself, and obeys
+ordinary borrow semantics (§11.9). Three consequences follow mechanically,
+with no node-specific rule:
+
+- **A borrow cannot be placed.** Placement requires ownership, and a borrow
+  is not an owner. So a name cannot be re-placed (no double placement), and
+  a function — which only ever receives and returns borrows (§11.7,
+  §11.3.6) — cannot place a node.
+- **A function cannot create a node.** Creating one would require owning it,
+  and a function never owns a node (placement is a declaration-only form,
+  unavailable in a function body). A function may *take* and *return* node
+  references (borrows), and a returned reference is useful for reading the
+  node's cells and for serving as a connection endpoint (§13.6, §13.8.5.1)
+  — but never for placing.
+- **A node reference cannot be stored.** A borrow may not be put in a cell,
+  record field, enum payload, or tuple (§11.9.1). A persistent link to a
+  node instance is a **connection** (§13.6); a node *type* held as a value
+  is `Type[…]` (§5.7).
+
+The intent behind keeping creation and placement out of functions:
+functions are pure compute (§13.12.2), structure is declarative, and reuse
+of structure is achieved by parameterizing *types*, not by returning
+instances.
 
 **Factory pattern.** To produce a "configured node from parameters,"
 parameterize the *type* via const-generics or generics
-(`node Synth[const N: usize, …]:`) and write the placement at the call
-site (`Synth[8] my_synth`). The reusable parameterization lives in the
-type definition; the placement happens in a context that owns a graph
-path.
+(`node Synth[const N: usize, …]:`) and write the placement at the call site
+(`Synth[8] my_synth`). The reusable parameterization lives in the type
+definition; the placement happens in a context that owns a graph path. To
+defer *which* node type is placed, pass a `Type[…]` value (§5.7).
 
-The same principle applies to **connections**, **operators**, and
-**effects**: they are graph members, not first-class values. Functions
-cannot return them by value or accept them as arguments; the language's
-placement and instantiation syntax (§13.8, §13.17, §13.19) is the only
-way to bring them into the graph. The rule is normative; conformant
-compilers enforce it at type-check time.
+The same ownership rule applies to **connections** and **effects**: an
+*instance* is a graph member, brought in only by the language's placement
+and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow,
+never stored as a value; their *types* travel as values via `Type[…]`
+(§5.7). **Operators** are likewise instantiated only via their own syntax
+(§13.17), and additionally have a structural *type*, `operator(…) -> Cell[U]`
+(§13.17.13), by which an operator can be carried. The rule is normative;
+conformant compilers enforce it at type-check time.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -13186,6 +13215,16 @@ connection participates in the source node's outgoing surface
 (declared via `outgoing:`) and the destination node's incoming
 surface (declared via `incoming:`).
 
+Source and destination differ in how they are fixed. The `from` endpoint is
+the enclosing instance — structural, determined by *where* the connection is
+placed (§13.8.4) — and does not vary at runtime. The `to` endpoint is a node
+*reference*, which may be a reactive value that re-points among existing
+nodes at runtime (§13.6.2, §13.8.5.1). When `to` re-points, the connection
+instance persists and its per-relationship state is retained; only the edge
+moves. No node is created or dropped by re-pointing — a connection never
+owns its endpoints (§13.8.4.1) — so this is rewiring within the static
+instance set, not a change to it (§13.1).
+
 A node declares which connection types it can participate in via
 its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
 constraints. The actual connection instances appear at placement
@@ -13360,11 +13399,15 @@ of its declaration (§13.6.1):
   pair. `from` and `to` are not
   independently available in pairs form.
 
-`from`, `to`, and `pair` are bound at the
-connection's *placement* time. Each placement specifies its source
-(the enclosing instance) and destination (a bare-identifier reference
-in the placement's body, §13.8.5.1). Inside the connection type's
-body, these identifiers resolve to those specific instances.
+`from`, `to`, and `pair` are bound at the connection's *placement* time:
+each placement specifies its source (the enclosing instance) and
+destination (§13.8.5.1). The `from` binding is fixed for the connection's
+lifetime. The `to` binding tracks the destination *reference*: when that
+reference is a reactive value (§13.8.5.1), `to` resolves to whichever node
+it currently designates, and the connection body's reads of `to.*`
+re-evaluate when the destination re-points — a *dynamic dependency* on the
+current target (§13.10.5, §13.12.1). Inside the connection type's body,
+these identifiers resolve to the current endpoint instances.
 
 #### 13.6.3 Generic connections
 
@@ -14010,11 +14053,11 @@ source is determined.
 The connection type must match a type listed in the source instance's
 `outgoing:` clause (or in the type's traits' contributions).
 
-The destination is supplied in the connection placement's body as a
-single bare-identifier reference (§13.8.5.1). The `/expr` slot, when
-present, sets the connection's `default attr` (§13.2.2.1); the
-attribute clause (`| name=value …`) sets named attrs. None of these
-target the destination.
+The destination is supplied in the connection placement's body as a node
+reference (§13.8.5.1) — a bare identifier, or any expression yielding a node
+reference, possibly reactive. The `/expr` slot, when present, sets the
+connection's `default attr` (§13.2.2.1); the attribute clause
+(`| name=value …`) sets named attrs. None of these target the destination.
 
 A placement-level `when` modifier may be attached to gate the
 connection instance (§13.9). The modifier appears in the inline-parts
@@ -14049,9 +14092,10 @@ body), `filter.signal_active` is the source filter's attr. In
 Connections are not "owned" by either endpoint. A connection is an
 *edge* between two instances: it is *initiated from* its source (the
 enclosing instance whose body contains the placement) and
-*terminated at* its destination (the bare-identifier reference in
-the placement's body). "Source" and "destination" are the canonical
-terms; "owner" is not.
+*terminated at* its destination (the node reference in the placement's
+body). "Source" and "destination" are the canonical terms; "owner" is not.
+Because neither endpoint is owned, re-pointing the destination reference
+(§13.6.2) moves the edge without affecting either node's lifetime.
 
 #### 13.8.5 The `/expr` form
 
@@ -14074,10 +14118,9 @@ subtraction).
 ##### 13.8.5.1 For connection placements
 
 For a connection placement, `/expr` sets the connection type's
-`default attr` (when declared); the destination endpoint is supplied
-in the placement's body as a single bare-identifier reference to an
-existing instance whose type satisfies the connection's `to:` clause
-(§13.6.1.1).
+`default attr` (when declared); the destination endpoint is supplied in the
+placement's body as a node *reference* whose type satisfies the connection's
+`to:` clause (§13.6.1.1).
 
 ```
 // connection Drives: from: Driver; to: Drivable; default attr aggressiveness: f32 = 0.5
@@ -14087,12 +14130,28 @@ Drives/0.8: some_car                      // /expr sets default attr; destinatio
 Drives | enhanced_handling=true: some_car // attr clause + destination
 Drives/0.8 | enhanced_handling=true:      // /expr + attr clause + multi-line body
   some_car
+Drives: pick(mode, some_car, other_car)   // destination from a reference-yielding expression
 ```
 
-The destination is a bare identifier resolving to a named instance in
-scope. It must be a reference to an already-placed instance; an inline
-placement spec is not a valid destination. Place the target instance
-first, then name it as the destination.
+The destination is a **reference** to an existing node, not a placement: an
+inline placement spec is not a valid destination — place the target first,
+then point at it. The simplest reference is a bare identifier naming an
+instance in scope (`some_car`), but any expression that *yields a node
+reference* is admissible, including a function return and a reactive cell
+holding a reference. This holds because a connection does not own its
+destination (§13.8.4.1); the endpoint is a borrow, which is exactly what
+such an expression provides (§13.3.6.1).
+
+A destination that varies at runtime makes the connection's `to` endpoint
+**dynamic**: the connection re-points among existing nodes as the reference
+changes (§13.6.2). Every node the reference could yield belongs to the
+statically-known instance set — a function or cell cannot create a node
+(§13.3.6.1) — so the destination always resolves within that set. The
+compiler checks the `to:` constraint against the reference's *type* (so
+every possible target is well-typed) and includes every possible target in
+topology-cycle analysis (§13.11.5). A *reactive* selection is what makes the
+edge move; a compile-time-fixed selection resolves to one node and the edge
+is static.
 
 ##### 13.8.5.2 For node (part) placements
 
@@ -14130,8 +14189,8 @@ attr` (§13.2.2.1):
 - On both nodes and connections, `/expr` targets the type's
   `default attr` (when declared).
 - Connection placements additionally supply the destination as a
-  single bare-identifier reference in the placement body, introduced
-  by `:` (§13.8.5.1).
+  single node reference (a bare identifier or a reference-yielding
+  expression) in the placement body, introduced by `:` (§13.8.5.1).
 
 #### 13.8.6 Disambiguation summary
 
@@ -14144,9 +14203,9 @@ content differs by placement kind:
   multi-placement is whitespace-separated per §13.8.10.
 - **Connection placement body** — the indented block (or inline
   single-line form) after `:` on a connection placement line —
-  contains exactly *one* bare-identifier reference: the destination
-  instance (§13.8.5.1). No child placements, no inline placement
-  specs, no attr settings, no multiple values.
+  contains exactly *one* node reference: the destination (§13.8.5.1).
+  No child placements, no inline placement specs, no attr settings,
+  no multiple values.
 
 **Attribute settings do not appear in the body** of either
 placement kind; they live on the placement's main line via the
@@ -14368,8 +14427,8 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
 - The optional body — introduced by `:` — comes last. For node
   placements, the body holds zero or more child placements (parts
   and connections, §13.8.3, §13.8.4). For connection placements,
-  the body holds exactly one bare-identifier reference to the
-  destination instance (§13.8.5.1, §13.8.6). A `when` predicate
+  the body holds exactly one node reference to the destination
+  (§13.8.5.1, §13.8.6). A `when` predicate
   containing an unparenthesized `:` must be parenthesized to avoid
   colliding with the body-introducer `:`; common predicates are
   flat boolean expressions and do not require parens.
@@ -14572,6 +14631,14 @@ Two design moves justify the clause:
   `active` to mean "this is the gate" would reserve a common
   identifier for what is fundamentally a structural concern. The
   `when` keyword takes the role explicitly.
+
+**Gates vs. dynamic re-pointing.** A gate decides *whether* a constructed
+edge (or subtree) propagates — every alternative is built and kept warm, and
+the gate switches which is live (§13.9.7). A connection with a dynamic
+destination (§13.6.2) instead changes *which existing node* a single edge
+points at. The two are complementary: reach for a gate to turn structure on
+and off; reach for a dynamic `to` to move an edge among nodes that all
+already exist.
 
 #### 13.9.2 Type-level `when:`
 
@@ -14903,9 +14970,16 @@ configuration is a subset of one static edge set. If gates instead
 unmounted instances, the topology graph would change at runtime and the
 compile-time cycle check would be unsound — one could reach a
 configuration whose only `Circularity`-bearing edge is unmounted,
-leaving an instantaneous cycle live. Runtime-varying topology is `repeat`
-territory (§13.5.4), which carries its own construction-time guarantees;
-gates do not.
+leaving an instantaneous cycle live. Runtime-varying *node existence* is
+`repeat` territory (§13.5.4), which carries its own construction-time
+guarantees; gates do not change it.
+
+A connection with a *dynamic* destination (§13.6.2) does vary topology at
+runtime, but it stays inside the same compile-time check: its candidate
+edges are a statically-known set (§13.11.5), so "every reachable
+configuration" simply includes each candidate target, and the `Circularity`
+rule must hold across all of them. Like a gate, it re-points within a fixed
+instance set; unlike `repeat`, it creates and drops nothing.
 
 ```
 // Forbidden even if Edge has a `when` clause that will be false at runtime
@@ -15286,6 +15360,33 @@ atomically at transaction close. Properties:
 Outside transactions, individual `runtime.write_*` calls behave as
 if each were its own one-write transaction.
 
+#### 13.10.5 Dynamic dependencies
+
+Most reactive dependencies are static: an expression's provenance set
+(§13.12.1) is the fixed set of cells it reads. A reactive connection target
+(§13.6.2) introduces a *dynamic* dependency — a connection whose `to` is a
+reactive reference reads `to.*` against whichever node the reference
+currently designates, so the *identity* of the cells in the dependency
+changes when the target re-points. The runtime handles this in two parts:
+
+- **The target reference is itself a dependency.** The cell or expression
+  that produces the `to` reference is part of the connection body's
+  provenance. When it re-points, the connection's deriveds that read `to.*`
+  are marked dirty and re-evaluate in the next commit (§13.10.2), now
+  reading the new target's cells.
+- **The current target's cells are dependencies only while selected.** While
+  `to` designates a particular node, the connection's reads subscribe to
+  that node's cells; on re-point, the subscription is re-established against
+  the new target, and a write to the *old* target no longer dirties the
+  connection.
+
+This is the only form of dynamic dependency in the language; it exists
+because topology may change while the instance set does not (§13.1). It does
+not alter per-commit evaluation order (§13.10.3): within any one commit the
+target is fixed, so that commit's dependency graph is static. The candidate
+set of possible targets is statically known (§13.3.6.1), which is what keeps
+topology-cycle analysis a compile-time check (§13.11.5).
+
 ### 13.11 Cycle Handling
 
 Cycles in Ductus's reactive graph are handled at two distinct
@@ -15387,12 +15488,15 @@ the `recurrent` declaration.
 #### 13.11.5 Topology cycles
 
 Distinct from reactive expression cycles, a *topology cycle* is a
-cycle in the construction-time *topology graph*.
+cycle in the *topology graph*, analyzed at compile time over every
+possible wiring (§13.1).
 
-> **Topology graph.** Nodes correspond to placed instances; for
-> each placed connection, a directed edge runs from the connection's
-> `from`-endpoint instance to its `to`-endpoint instance, labeled
-> with the connection type.
+> **Topology graph.** Nodes correspond to placed instances; for each
+> placed connection, a directed edge runs from the connection's
+> `from`-endpoint instance to its `to`-endpoint instance, labeled with
+> the connection type. When a connection's destination is a *dynamic*
+> reference (§13.8.5.1), the graph carries one *candidate* edge to
+> **each** node the reference could resolve to.
 
 A topology cycle is a sequence of distinct directed edges
 returning to its starting node.
@@ -15406,10 +15510,23 @@ Topology cycles are governed by the `Circularity` trait (§13.6.5):
 > traverse at least one connection whose type satisfies
 > `Circularity`.
 
-The compiler walks the construction-time graph, identifies cycles,
-and verifies each cycle has at least one `Circularity`-satisfying
-connection. Cycles consisting only of non-`Circularity`
-connections are compile errors.
+The compiler walks the topology graph, identifies cycles, and verifies each
+cycle has at least one `Circularity`-satisfying connection. Cycles
+consisting only of non-`Circularity` connections are compile errors.
+
+**Dynamic destinations.** A connection whose `to` is a reactive reference
+(§13.6.2) contributes candidate edges to every node its reference could
+designate. Because that candidate set is statically known — a reference can
+only ever resolve to an already-placed node (§13.3.6.1) — the cycle check
+stays a compile-time analysis: the compiler verifies that *every* cycle in
+the candidate graph traverses a `Circularity` connection, i.e. that no
+reachable wiring can form a non-`Circularity` cycle. The analysis is sound
+but conservative in proportion to how wide the candidate set is. A narrowly
+sourced destination (e.g. one of two named nodes) adds few candidate edges;
+a destination that could be *any* node of the `to:` type adds an edge to
+each, so such a connection will typically have to satisfy `Circularity`
+itself — the correct requirement, since a freely re-pointing edge is exactly
+the kind that can close a runtime loop.
 
 ```
 error: topology cycle with no Circularity-satisfying connection
@@ -15455,6 +15572,14 @@ The compiler uses provenance to:
   signal `mouse_position` at line 14."*
 - Reject use of reactive values in positions where compile-time-
   known values are required (§2.4.2).
+
+A provenance set is normally *static* — fixed for the expression. The one
+exception is a connection body that reads `to.*` against a reactive
+destination (§13.6.2): the *identity* of the depended-on cells changes when
+the destination re-points. This is handled as a dynamic dependency
+(§13.10.5) — the reference producing `to` is itself in the provenance, and a
+given target's cells are in the provenance only while that target is
+selected.
 
 #### 13.12.2 Functions are reactive-transparent
 
