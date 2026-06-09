@@ -11586,10 +11586,11 @@ meta-type (§5.7) — the mechanism for an attr "template slot" that defers
 never values (§13.3.6.1); the type value is the storable stand-in.
 
 A `Type[…]` slot is filled by naming a node (or connection) type in value
-position; the receiving node later **places** it (§13.8). The slot's
-constraint is an ordinary trait bound, and — per §5.7.5 — it is also the
-*instantiation contract*: the receiver may feed exactly the inputs the
-bound's trait declares as required members (§3.1.7).
+position; the receiving node later **places** it (§13.8 — §13.8.4.2 covers
+the connection case). The slot's constraint is an ordinary trait bound, and
+— per §5.7.5 — it is also the *instantiation contract*: the receiver may
+feed exactly the inputs the bound's trait declares as required members
+(§3.1.7).
 
 ```
 trait RendersPost:
@@ -14114,6 +14115,61 @@ enclosing instance whose body contains the placement) and
 body). "Source" and "destination" are the canonical terms; "owner" is not.
 Because neither endpoint is owned, re-pointing the destination reference
 (§13.6.2) moves the edge without affecting either node's lifetime.
+
+##### 13.8.4.2 Placing a connection type value
+
+A connection *type* can be supplied as a value (`Type[…]`, §5.7) and placed,
+exactly as a node type can (§13.2.10). A connection placement fixes its
+source from the enclosing instance and takes its destination at the
+placement site, so a node placing a supplied connection type binds the
+connection's `from` to itself and supplies the `to` where it places it. The
+type is constrained by a trait that carries its endpoints (§3.1.7), so the
+compiler checks both endpoints before the concrete type is known:
+
+```
+trait DriveLink:                       // §3.1.7 — a connection contract
+  requires Connection
+  from: Driver
+  to: Drivable
+
+connection Drives:
+  satisfies DriveLink
+  from: Driver
+  to: Drivable
+  attr aggressiveness: f32 = 0.5
+
+connection Tows:
+  satisfies DriveLink
+  from: Driver
+  to: Drivable
+  attr aggressiveness: f32 = 0.2
+
+node Driver[C: DriveLink]:             // C: a connection type satisfying DriveLink
+  attr link_kind: Type[C]              // which DriveLink kind this driver establishes
+  outgoing: C                          // admits exactly the supplied connection type
+  // …
+
+// alice and bob differ only in which DriveLink kind they establish:
+Garage:
+  Driver as alice | link_kind=Drives:  // C inferred = Drives
+    link_kind: the_car                 // place link_kind's type; from = alice, to = the_car
+  Driver as bob | link_kind=Tows:      // C inferred = Tows
+    link_kind: the_truck
+  Car as the_car                       // satisfies Drivable
+  Truck as the_truck                   // satisfies Drivable
+```
+
+In `link_kind: the_car`, `link_kind` resolves to alice's `Type[C]` attr, so
+the line places *that* connection type with alice as the `from` (the
+enclosing source, §13.8.4) and the sibling `the_car` as the `to`. The
+compiler checks the endpoints against `C: DriveLink`: `from` must be a
+`Driver` (alice is one) and `to` must be a `Drivable` (so `the_car` must
+resolve to one) — both verifiable before `C` is monomorphized to `Drives`
+(for alice) or `Tows` (for bob). `outgoing: C` admits the placed type
+(§13.8.4); per-type attrs such as `aggressiveness` are set with the
+attribute clause, exactly as for a named connection. As with any
+destination, `the_car` may instead be a reactive reference, making the edge
+dynamic (§13.8.5.1).
 
 #### 13.8.5 The `/expr` form
 
@@ -17236,13 +17292,49 @@ operator apply(
   kernel(source)                                    // instantiate the supplied operator
 ```
 
-An operator value is named by an operator declaration; supplying one is
-resolved at compile time and monomorphized per supplied operator (no
-erasure, §2.3.3), exactly as a `Type[…]` value is (§5.7.3). The receiver
-may only instantiate the carried operator against the parameter and output
-types its signature states. Cell-bound parameters appear as their cell type
-(`Signal[T]`, §13.17.3); value parameters as their value type. Generic
-operator types follow §13.17.8.
+An operator value is **named by an operator declaration** — there are no
+anonymous operator literals (an operator carries reactive structure, not
+merely a function body, §13.17.1). Supplying one is resolved at compile time
+and monomorphized per supplied operator (no erasure, §2.3.3), exactly as a
+`Type[…]` value is (§5.7.3): the receiver `apply` above is specialized for
+each operator passed as `kernel`.
+
+```
+operator gain(source: Signal[f32], k: f32 = 1.0) -> Signal[f32]:
+  derived scaled: f32 = source * k
+  scaled
+
+operator invert(source: Signal[f32]) -> Signal[f32]:
+  derived negated: f32 = -source
+  negated
+
+// `kernel` is bound to a named operator at the call site:
+apply(source = some_signal, kernel = gain)     // monomorphizes apply for `gain`
+apply(source = some_signal, kernel = invert)   // a distinct monomorphization
+```
+
+**Signature matching.** A value is admissible for a parameter of type
+`operator(P…) -> Cell[U]` iff the named operator's signature matches
+structurally: the same parameter types in order, and the same output cell
+type. Cell-bound parameters appear as their cell type (`Signal[T]`,
+§13.17.3), value parameters as their value type; a value parameter's
+*default* (§13.17.3) is not part of the type and does not affect matching.
+The output must match the declared `Cell[U]` — `Signal[U]`, `Stream[U]`, or
+`Sink[U]` (§13.17.5).
+
+**Instantiation.** The receiver instantiates the carried operator exactly as
+it would a named one (§13.17.6): by applying it to arguments. The resulting
+operator instance lives at the *receiver's* graph position, not the
+supplier's — passing an operator defers *which* transform runs, not *where*.
+The receiver may instantiate the operator only against the parameter and
+output types its signature states; it cannot otherwise read or decompose the
+operator value.
+
+**Generics and chaining.** A carried operator may be generic; its type is
+written with the generic parameters bound at the use site (e.g.
+`operator(Signal[T]) -> Signal[T]` for a `T` in scope), following §13.17.8.
+An operator carried by type composes in `|>` chains (§13.17.7) at the point
+it is instantiated, identically to a named operator.
 
 ### 13.18 Streams
 
