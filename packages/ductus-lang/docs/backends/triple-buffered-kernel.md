@@ -208,11 +208,11 @@ that slot the next back buffer.
 **Rotation rule:**
 
 A pool slot for a dynamic-size cell becomes eligible for `drop`
-when no buffer references its handle. Concretely:
+when no buffer references its index. Concretely:
 
 1. Producer commits new value → new pool slot allocated → back
-   buffer's handle updated to new slot.
-2. Atomic swap → back becomes current; previous-current's handle
+   buffer's index updated to new slot.
+2. Atomic swap → back becomes current; previous-current's index
    still points at the old slot.
 3. Consumer eventually reads the new current (catches up).
 4. Next publish → previous-current rotates to back. At this point
@@ -237,11 +237,11 @@ refcounts; nodes drop when their refcount reaches zero.
 
 The synchronization between rotation-out and drop+reclamation is
 provided by the kernel's per-pool reclamation epoch: the slot enters
-a quarantine state when its handle is replaced; the pool's
+a quarantine state when its index is replaced; the pool's
 reclamation thread (or the producer thread, depending on
 implementation) advances the epoch atomically and runs drops on
 quarantined slots before releasing them to the free list. No drop
-runs while any buffer still references the slot's handle.
+runs while any buffer still references the slot's index.
 
 **Drop and panic:** if `drop` panics on a dynamic-size cell value,
 process abort applies per §14.7.4. The pool slot is leaked but the

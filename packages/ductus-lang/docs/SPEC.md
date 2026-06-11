@@ -125,7 +125,7 @@ the clause keywords above), all control-flow keywords (`if`, `else`,
 `match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
-import aliases §10.2), and all operator-context keywords (`is`, `and`,
+import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
 `or`, `not`, `weak` — the weak-reference operator, §13.3.6.2). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
@@ -5679,21 +5679,30 @@ nothing at runtime because the `None` case has been proven impossible.
 let car = target!        // &Drivable — accepted only if `target` is provably live
 ```
 
-**Provenance, not assertion.** Whether `opt!` compiles is decided by the same
-provenance analysis used elsewhere (§13.12.1), specialized to optionality:
+**Provenance, not assertion.** Whether `opt!` compiles is decided by a
+**normative, closed** rule, so that the same programs are well-formed under
+every conforming compiler. An `Option`-typed expression is *provably `Some`*
+iff every value that can reach it is one of:
 
-- The canonical *provable* case is a `Handle` (§13.3.6.2) whose candidate
-  referents are **all statically placed** — non-`repeat`, non-dismountable graph
+- a `Some(…)` construction, or
+- the resolution of a `Handle` (§13.3.6.2) whose candidate referents — the
+  same candidate set the compiler derives for topology analysis (§13.11.5) —
+  are **all statically placed**: non-`repeat`, non-dismountable graph
   entities. Such a handle can never resolve `None`, so `h!` is sound and free.
-- The canonical *non-provable* case is a `Handle` into a `repeat` view
-  (§13.5.4.9): a keyed scope is always dismountable, so the compiler cannot prove
-  `Some` and `h!` is **permanently** a compile error there — the right tools are
-  `match` or `?`.
 
-A general `Option` from another source (e.g. checked arithmetic, §4.6.4) is
-provable only in the rare cases where the compiler can show the `None` branch
-unreachable; otherwise `!` is rejected and the caller must handle absence
-explicitly.
+Reaching values are computed over the expression's definitions and the data
+flow into it; anything else — a `None` construction, a `Handle` with any
+dismountable candidate, an `Option` of unknown origin crossing a function
+boundary — makes `!` a compile error. Conforming compilers accept exactly
+this set: no more (no global cleverness that varies by implementation), no
+less.
+
+Two consequences follow. A `Handle` into a `repeat` view (§13.5.4.9) is
+**permanently** non-provable — a keyed scope is always dismountable — so the
+right tools there are `match` or `?`. And a general `Option` from another
+source (e.g. checked arithmetic, §4.6.4) is provable only when its reaching
+values are all `Some(…)` constructions; otherwise the caller must handle
+absence explicitly.
 
 **Why keep `!` when the proof is automatic.** Because the proof is *legible and
 refactor-stable*. `h!` is a visible contract — "I rely on this referent always
@@ -12181,7 +12190,12 @@ accessible via the same `parts.<NodeType>[i]` (§13.4.1) / iteration
 
 **Connections from a type-body for.** A type-body `for` may also place
 connections (§13.6) whose source is the enclosing node instance and
-whose destinations are determined by the unrolled iteration. The same
+whose destinations are determined by the unrolled iteration. These are
+**self-sourced** connections (§13.3.4.2): exempt from the type's
+`outgoing:` clause, subject to endpoint typing, and **positional** like
+any other connection placement — each engages at its position in the
+unrolled sequence, which joins the exposition where the exposition
+includes the loop's placements (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
 
@@ -12226,9 +12240,18 @@ others, so the set of connections currently *incoming* to a node can vary at
 runtime. Two rules keep `incoming` cardinality meaningful, applied over the
 **caller-placed** connections the clause governs:
 
-- *Upper bounds* are verified over all reachable wirings: the compiler
-  checks, over the candidate edges (§13.11.5), that no reachable
-  configuration directs more than the bound's maximum at any node.
+- *Upper bounds* are verified over all reachable wirings, **counted per
+  placed connection instance**. A connection with a static destination
+  contributes one incoming edge to that node. A connection whose destination
+  is dynamic contributes one *potential* incoming edge to **every** instance
+  whose type is in its candidate envelope (§13.11.5) — it points at one node
+  at a time, but may point at any of them. The check: for each node and each
+  incoming connection type, static contributions plus potential contributions
+  must not exceed the bound's maximum. A dynamic connection materialized per
+  `repeat` key (§13.5.4) has no static instance count, so its potential
+  contribution is **unbounded**: a node type with a finite `incoming:` upper
+  bound for `C` may not appear in the candidate envelope of a
+  `repeat`-materialized dynamic `C` — a compile error naming both sites.
 - *Lower bounds* (a required minimum — `+`, or the `1` in `[=1]`) must be
   met by **caller-placed** connections with a **static** destination — those
   that *always* point at the node. A dynamic-destination connection cannot
@@ -12269,8 +12292,9 @@ cells by declared type.
 an endpoint; they do not *establish* any. A node type establishes connections
 **sourced from itself** — edges every instance of the type brings into being,
 with the instance as the `from` endpoint — by placing them **inline in its
-exposition** (§13.3.7.5), at the position in the structural sequence where each
-edge engages (§13.3.7.6). There is no separate clause for them, deliberately: a
+structural sequence**: as exposition entries (§13.3.7.5) or within a type-body
+`for` (§13.3.3.3), in either case at the position where each edge engages
+(§13.3.7.6). There is no separate clause for them, deliberately: a
 connection placement carries *topological* meaning — *where* in the node's
 structure the edge takes effect — and a position-free list would erase exactly
 that information (§13.3.7.5).
@@ -12279,17 +12303,22 @@ A self-sourced connection placement uses the ordinary placement syntax of
 §13.8.4, fixed by the *type* rather than supplied by a caller. The source is
 always the enclosing instance.
 
-**Destinations must be nameable from the type's scope** (§13.7.1). Two forms are
-admissible:
+**Destinations must be nameable from the type's scope** (§13.7.1). Three forms
+are admissible:
 
+- A **part of the node** (scope 2) — a named part instance, or an indexed
+  `parts.X[i]` within the guaranteed minimum (§13.3.3.2). A **static**
+  internal destination: it always points, so it can satisfy the part's
+  `incoming:` lower bounds (§13.3.4).
 - A **module-level instance** (scope 3) — a fixed, shared target every instance
-  connects to, such as a global bus or clock.
+  connects to, such as a global bus or clock. Also static.
 - A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
   wiring. The instance is configured at placement with a handle (§13.3.6.2), and
   its self-sourced edge drives whatever that handle resolves to. This is the
   payoff of the dynamic `to`: *every instance drives whatever it is told to at
   placement*, and the edge freezes while the handle resolves to `None`
-  (§13.9.7).
+  (§13.9.7). Dynamic, so it never counts toward a destination's lower bound
+  (§13.3.4).
 
 ```
 connection Drives:
@@ -12325,6 +12354,15 @@ edge, or a wrapper) terminates at one of the node's **own parts**, the node is
 acting as that part's **caller**, and the edge counts against the *part's*
 `incoming:` budget — the same budget a caller placing the part would draw from.
 A node is the caller of its own parts.
+
+The same accounting applies at any destination: a self-sourced edge is exempt
+at its *source* only. At a **module-level destination**, every placed instance
+of the source type contributes one edge to the target's `incoming:` budget,
+counted per §13.3.4's rules (static edges count everywhere; dynamic edges count
+as potential, per the candidate envelope). When instances of the source type
+are materialized dynamically (`repeat`, §13.5.4), the contribution is
+unbounded, so the shared target must declare an unbounded `incoming:` for that
+connection type — a finite bound there is a compile error naming both sites.
 
 A self-sourced edge is therefore exempt from the source node's
 `outgoing:` clause (which governs caller-originated connections only), but it is
@@ -12574,8 +12612,12 @@ and inline `when` modifier. The entry's position is where the edge
 The entry kind is directed by what `Name` resolves to: a **connection
 type** makes the entry a connection placement (what follows is the
 destination), a **node type** makes it a node/wrapper placement (what
-follows is its body). Node and connection types share one type namespace
-(§2), so the resolution is never ambiguous.
+follows is its body), and a **`Type[…]`-typed binding** (§13.2.10,
+§13.8.4.2) follows its constraint's kind — a `Type[C]` over a connection
+constraint places a connection, over a node constraint a node. A single
+name never denotes both a node type and a connection type in one scope —
+type declarations of every kind share one namespace per scope, and this
+rule is normative here — so the resolution is never ambiguous.
 
 Conditional exposition uses the structural-gate constructs of §13.9.
 Two forms apply inside `expose:`:
@@ -12589,11 +12631,12 @@ Two forms apply inside `expose:`:
   freezes the rest (Model B, §13.9.7).
 
 These reuse the gate constructs that apply elsewhere — no exposition-only
-control-flow syntax is introduced. A `given` arm label such as
-`Variant: SomeChain` does not collide with a `Name: dest` connection
-entry: the position directly under the block header admits only the
-scrutinee's variant labels (arm position), and connection entries appear
-*inside* arm bodies as ordinary indented exposition entries.
+control-flow syntax is introduced. Arm labels do not collide with
+`Name: dest` connection entries, in either block form: the position
+directly under a block header is **arm position** — it admits only the
+scrutinee's variant labels (`given`, §13.9.13) or boolean guard
+expressions (`when:`, §13.9.12) — and connection entries appear *inside*
+arm bodies as ordinary indented exposition entries.
 
 ##### 13.3.7.2 Default
 
@@ -12625,9 +12668,10 @@ mechanism:
 - **`parts:`** is the *supply* half — it declares which child types
   the node accepts, with cardinality; placement-time child placements
   fill them (§13.4, §13.8.3).
-- **`expose:`** is the *output* half — it declares which of those
-  parts (and/or wrapping internal nodes containing them) the runtime
-  traverses.
+- **`expose:`** is the *output* half — it declares the node's ordered
+  structural output: which of those parts (and/or wrapping internal
+  nodes containing them) the runtime traverses, and where the node's
+  self-sourced connections engage among them (§13.3.7.5).
 
 `parts:` exists *solely* to feed `expose:`: externally-supplied children
 exist to become the node's structural output. There is no part that is
@@ -12665,9 +12709,11 @@ before the first note. The same edge at a different position is a
 different program.
 
 Like wires on a circuit schematic, connections are **always present on
-the schema**: the topology is static (§13.1) and complete from
-construction. What is ordered is their *engagement* — when traversal
-first reaches them (§13.3.7.6). And, like a powered circuit, presence is
+the schema**: the instance set is static (§13.1), and every connection
+entry exists from construction — what may change at runtime is where a
+dynamic destination points (§13.6.2), never whether the edge exists.
+What the position orders is *engagement* — when traversal first reaches
+the entry (§13.3.7.6). And, like a powered circuit, presence is
 participation: an exposition entry's connection is reactively live
 whether or not traversal has reached it (§13.3.7.6).
 
@@ -12686,12 +12732,17 @@ subgraph.
 
 What engagement *means* is domain semantics, carried by the specific
 Connection type and interpreted by the runtime/host — it is not a
-language keyword. One connection type may carry await-like meaning (the
-originating node's traversal does not continue until the connected node
-and its dependencies are finished); another may carry parallel meaning
-(the target's traversal starts while the originating node's continues).
-The language fixes only what is common to all of them: **a connection
-first engages when its turn comes in the topological order.**
+language keyword, and the language and IR deliberately carry no
+sequencing flag for it. The host recognizes the connection types of its
+domain and interprets each by type, exactly as it interprets the node
+types it traverses. One connection type may carry await-like meaning
+(the originating node's traversal does not continue until the connected
+node and its dependencies are finished); another may carry parallel
+meaning (the target's traversal starts while the originating node's
+continues). The language fixes only what is common to all of them: **a
+connection first engages when its turn comes in the structural order of
+the exposition.** ("Structural order" here is entry order — distinct
+from the per-commit topological evaluation order of §13.10.3.)
 
 **Engagement is orthogonal to reactive liveness.** The graph is always
 present and always reactive — like a spreadsheet, every cell updates
@@ -13280,13 +13331,17 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 - **`as <view>`** (optional) binds a bare identifier naming the repeat's **keyed
   view**: a lookup table over the scopes it currently holds, addressable by key
   from the surrounding body (§13.5.4.9).
-- **Single root placement.** Every `repeat` body places **exactly one root node**
-  per key — the one node each scope contributes into the enclosing exposition.
-  Connections and nested structure may accompany it (within the root's placement
-  body), but the scope's upward contribution is a single node. This keeps the
-  key ↔ scope ↔ node correspondence one-to-one, which is what makes the keyed
-  view (§13.5.4.9) and stable scope identity (§13.5.4.8) well-defined. A body
-  that needs several siblings per key wraps them under one node.
+- **Single root placement.** In every *structural* context (a node body,
+  placement body, or effect `desired:` block — §13.5.4.7), a `repeat` body
+  places **exactly one root node** per key — the one node each scope
+  contributes into the enclosing exposition. Connections and nested structure
+  may accompany it (within the root's placement body), but the scope's upward
+  contribution is a single node. This keeps the key ↔ scope ↔ node
+  correspondence one-to-one, which is what makes the keyed view (§13.5.4.9)
+  and stable scope identity (§13.5.4.8) well-defined. A body that needs
+  several siblings per key wraps them under one node. In an `effects:` clause
+  (§13.5.4.7), the body is a list of effect entries instead, and the rule does
+  not apply.
 - **Key derivation** proceeds by ordered precedence. The compiler picks
   the first applicable path:
   1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
@@ -13641,9 +13696,10 @@ the act of driving. Connections also satisfy traits (like
 
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
-connection participates in the source node's outgoing surface
-(declared via `outgoing:`) and the destination node's incoming
-surface (declared via `incoming:`).
+**caller-placed** connection participates in the source node's outgoing
+surface (declared via `outgoing:`); a **self-sourced** one (§13.3.4.2)
+sits outside it. Both count against the destination node's incoming
+surface (declared via `incoming:`, per §13.3.4's accounting).
 
 Source and destination differ in how they are fixed. The `from` endpoint is
 the enclosing instance — structural, determined by *where* the connection is
@@ -13655,17 +13711,19 @@ moves. No node is created or dropped by re-pointing — a connection never
 owns its endpoints (§13.8.4.1) — so this is rewiring within the static
 instance set, not a change to it (§13.1).
 
-A node declares which connection types it can participate in via
+A node declares which connection types callers may wire to and from it via
 its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
-constraints. The actual connection instances appear at placement
+constraints; its own self-sourced edges sit outside those clauses
+(§13.3.4.2). The actual connection instances appear at placement
 (§13.8.4).
 
 **Connections and exposition.** A connection placement is an exposition
 entry (§13.3.7.5): it sits at a position in its source's ordered
 structural sequence, and that position is where the edge **engages**
 during traversal (§13.3.7.6). Like wires on a circuit schematic,
-connections are always present on the schema — the topology is static
-and complete from construction (§13.1) — and always reactively live
+connections are always present on the schema — the instance set is
+static (§13.1) and every edge exists from construction; only a dynamic
+destination's target may move (§13.6.2) — and always reactively live
 (§13.3.7.6); what the position orders is their engagement. A connection
 is still owned by no single endpoint (§13.8.4.1): the entry belongs to
 the *source's* exposition, but the edge links two instances at the
@@ -13840,8 +13898,8 @@ currently resolves to, and the body's reads of `to.*` re-evaluate when it
 re-points — a *dynamic dependency* on the current target (§13.10.5, §13.12.1).
 
 Inside the body, `from` and `to` are **never `Option`** — they are the live
-endpoint instances directly. A destination supplied as `Option[&N]` (or a
-`Handle`, which reads as one) is unwrapped at the boundary: while it resolves to
+endpoint instances directly. A destination supplied as a `Handle` (whose
+read is `Option[&N]`, §13.3.6.2) is unwrapped at the boundary: while it resolves to
 `Some`, the connection is active and the body sees the contained node as `to`;
 while it resolves to `None`, the connection **freezes** (§13.9.7) and the body
 does not run at all. The freeze *is* the unwrap, so body code never handles
@@ -14504,12 +14562,19 @@ sibling placements is its **engagement position** (§13.3.7.6): the edge
 engages when traversal reaches that point in the sequence, after the
 siblings written before it. This holds regardless of who places the
 connection — a caller in a placement body, the type itself in its
-exposition (§13.3.7.5), or a `repeat` body alongside its root (§13.5.4).
-Placement-body entries keep their written order: the `expose:` bulk
-references (`parts`, `parts.X` — "in placement order", §13.3.7.1) carry
-caller-supplied connections at their positions among those sibling
-parts, and the default `expose: parts` (§13.3.7.2) traverses the full
-interleaved sequence as written.
+exposition (§13.3.7.5) or a type-body `for` (§13.3.3.3), or within a
+`repeat` root's placement body (§13.5.4.1).
+
+For caller-supplied connections, the position survives the type's
+exposition by **anchoring**: each connection in a placement body anchors
+to its nearest *preceding* sibling node placement, and engages
+immediately after that part wherever the exposition carries it — through
+a bulk reference (`parts`, `parts.X` — "in placement order", §13.3.7.1),
+a by-name entry, or a wrapper. Every part is exposed (§13.3.7.4), so
+every anchor lands. A connection written before any sibling part anchors
+to the body start and engages before the node's first exposed entry.
+Under the default `expose: parts` (§13.3.7.2), this reduces to
+traversing the full interleaved sequence as written.
 
 A **caller-placed** connection's type must match a type listed in the source
 instance's `outgoing:` clause (or in the type's traits' contributions). A
@@ -14519,7 +14584,8 @@ typing.
 
 The destination is supplied in the connection placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
-reference (possibly reactive), or an `Option[&N]` / `Handle[N]` selecting one of
+reference (possibly reactive), or a `Handle[N]` (read as `Option[&N]`,
+§13.3.6.2) selecting one of
 the candidate nodes (the connection freezes while that selection resolves to
 `None`, §13.9.7). The `/expr` slot, when present, sets the connection's
 `default attr` (§13.2.2.1); the attribute clause (`| name=value …`) sets named
@@ -14662,9 +14728,9 @@ reference* is admissible, including a function return. A connection does not
 own its destination (§13.8.4.1); the endpoint is a borrow, which is exactly
 what such an expression provides (§13.3.6.1). A borrow cannot be stored in a
 cell (§11.9.1), so a destination that must persist or re-point across time is
-supplied as an `Option[&N]` — or, equivalently, a `Handle[N]` (§13.3.6.2),
-which reads as `Option[&N]`. The connection points at the contained node while
-that option is `Some` and **freezes** while it is `None` (§13.9.7).
+supplied as a `Handle[N]` (§13.3.6.2) — the storable designation, whose read
+is `Option[&N]`. The connection points at the contained node while that
+resolution is `Some` and **freezes** while it is `None` (§13.9.7).
 
 A destination that varies at runtime makes the connection's `to` endpoint
 **dynamic**: the connection re-points among existing nodes as the reference
@@ -15344,6 +15410,15 @@ propagation cycle. Gated subgraphs do no work; the cost of a
 permanently-gated node is the cost of evaluating its `when`
 predicate.
 
+**Freeze triggers.** A construct freezes under exactly two conditions: a
+gate evaluating false (this section), and — for a connection — a dynamic
+destination resolving to `None` (§13.6.2). The second follows Model B
+identically: the unresolved state behaves as gate-false (the freeze
+semantics below), and resolution returning `Some` behaves as the
+false→true flip (the snap-on-activation semantics below, including its
+propagation event). Nothing else freezes a construct; in particular,
+traversal position never does (§13.3.7.6).
+
 **Definitions.**
 
 - A *gate-true* edge propagates normally.
@@ -15626,7 +15701,10 @@ alternative.
 **Multi-way form (guard arms).** A `when:` block with no condition on the
 header takes a list of `guard: body` arms plus an optional `default:`
 arm. Arms are tried in declaration order; the first whose boolean guard
-holds is the active arm, the rest frozen:
+holds is the active arm, the rest frozen. As in a `given` block
+(§13.9.13), every line at the arm indent is an arm — a guard expression,
+never a connection entry (§13.3.7.1); connection placements appear only
+inside arm bodies:
 
 ```
 expose:
@@ -15895,11 +15973,15 @@ if each were its own one-write transaction.
 #### 13.10.5 Dynamic dependencies
 
 Most reactive dependencies are static: an expression's provenance set
-(§13.12.1) is the fixed set of cells it reads. A reactive connection target
-(§13.6.2) introduces a *dynamic* dependency — a connection whose `to` is a
-reactive reference reads `to.*` against whichever node the reference
-currently designates, so the *identity* of the cells in the dependency
-changes when the target re-points. The runtime handles this in two parts:
+(§13.12.1) is the fixed set of cells it reads. A *dynamic* dependency is one
+whose cell *identity* can change between commits. They arise from **handle
+resolution** (§13.3.6.2) — a read through a `Handle` reaches whichever
+entity the handle currently resolves to, and flips on re-point, mount, and
+dismount — of which the canonical case is a reactive connection target
+(§13.6.2): a connection whose `to` is a reactive selection or `Handle` reads
+`to.*` against whichever node it currently designates, so the identity of
+the cells in the dependency changes when the target re-points. The runtime
+handles this in two parts:
 
 - **The target reference is itself a dependency.** The cell or expression
   that produces the `to` reference is part of the connection body's
@@ -15912,11 +15994,16 @@ changes when the target re-points. The runtime handles this in two parts:
   the new target, and a write to the *old* target no longer dirties the
   connection.
 
-This is the only form of dynamic dependency in the language; it exists
-because topology may change while the instance set does not (§13.1). It does
-not alter per-commit evaluation order (§13.10.3): within any one commit the
-target is fixed, so that commit's dependency graph is static. The candidate
-set of possible targets is statically known (§13.3.6.1), which is what keeps
+The same two-part mechanism covers every handle read — a node-body derived
+reading a `repeat`-view handle (§13.5.4.9) subscribes to the handle's
+resolution and, while resolved, to the referent's cells; a dismount flips
+the resolution to `None` and drops the referent subscription. Handle
+resolution is the **only** source of dynamic dependency in the language; it
+exists because wiring may change while every reachable entity remains
+statically known (§13.1, §13.3.6.1, and per-`repeat`-key scopes §13.5.4). It
+does not alter per-commit evaluation order (§13.10.3): within any one commit
+each resolution is fixed, so that commit's dependency graph is static. The
+candidate set of possible targets is statically known, which is what keeps
 topology-cycle analysis a compile-time check (§13.11.5).
 
 ### 13.11 Cycle Handling
@@ -16112,12 +16199,13 @@ The compiler uses provenance to:
   known values are required (§2.4.2).
 
 A provenance set is normally *static* — fixed for the expression. The one
-exception is a connection body that reads `to.*` against a reactive
-destination (§13.6.2): the *identity* of the depended-on cells changes when
-the destination re-points. This is handled as a dynamic dependency
-(§13.10.5) — the reactive selection (or the resolution of the `Handle` whose
-read produces `to`, §13.3.6.2) is itself in the provenance, and a given
-target's cells are in the provenance only while that target is selected.
+exception is a read through a **handle resolution** (§13.3.6.2, §13.10.5):
+the *identity* of the depended-on cells changes when the resolution
+re-points, mounts, or dismounts. The canonical case is a connection body
+reading `to.*` against a reactive destination (§13.6.2); a node-body read
+through a `repeat`-view handle (§13.5.4.9) is the same mechanism. In every
+case the resolution itself is in the provenance, and a given referent's
+cells are in the provenance only while that referent is resolved.
 
 #### 13.12.2 Functions are reactive-transparent
 
