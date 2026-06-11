@@ -118,7 +118,8 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`), the reserved
+`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`, `connections`),
+the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
 remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
@@ -12014,11 +12015,17 @@ this node at placement time:
   (`parts.<NodeType>[i]`) access are available; cardinality
   is enforced at placement.
 
-The clause does not by itself place specific instances — it only
-constrains what types and how many of each are permitted. Actual
-children appear either at placement (§13.8.3) or, when the multiplicity
-is a property of the type itself, via a compile-time `for` in the node
-body (§13.3.3.3); both sources contribute to the cardinality count.
+The clause does not by itself place specific instances — it only constrains
+what types and how many of each are permitted. It is the node's **caller-facing
+part signature**: it bounds the *statically-determined* children — those a caller
+places (§13.8.3) and those the type itself places via a compile-time `for`
+(§13.3.3.3) — and both contribute to the cardinality count. It does **not** bound
+the node's *dynamic* internal structure: children materialized by a `repeat`
+(§13.5.4) are the node's private realization and are not counted against
+`parts:` — which is why the VoiceMixer of §13.5.4.3 repeats `Voice` children with
+no `parts:` clause at all. The governing principle — signature clauses bound
+callers and static shape; dynamic and self-established internals are unconstrained
+by them — is stated in §13.3.4.2.
 
 ```
 // Restricted parts with cardinality:
@@ -12190,6 +12197,17 @@ node (the node is the `to` endpoint); `outgoing` connections
 originate from this node (the node is the `from` endpoint). See §13.6
 for connection declarations and §13.8.4 for connection placement.
 
+Like `parts:`, these are the node's **caller-facing signature**: they bound the
+connections a *caller* may wire to or from the node. `incoming:` bounds what
+others may direct *at* this node; `outgoing:` bounds what a caller placing this
+node may originate *from* it. They do **not** bound the node's own internal
+wiring — self-sourced `connections:` edges (§13.3.4.2), exposition-wrapper
+connections, and `repeat`-materialized connections are its private realization,
+checked by endpoint typing and topology (§13.11.5) but never counted against
+`incoming:` / `outgoing:`. When such internal wiring targets one of the node's
+own parts, the node acts as the **caller of that part**, and the edge counts
+against the *part's* `incoming:` budget (§13.3.4.2).
+
 Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
 sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
 `[N..]`, `[..=M]`). Default (bare) is unlimited (`0..`).
@@ -12200,23 +12218,28 @@ node Driver:
   incoming: SponsoredBy [..=3]
 ```
 
-**Interaction with dynamic destinations.** A connection whose `to` is a
-reactive reference (§13.6.2) may point at a node at some times and away at
+**Interaction with dynamic destinations.** A caller-placed connection whose `to`
+is a reactive reference (§13.6.2) may point at a node at some times and away at
 others, so the set of connections currently *incoming* to a node can vary at
-runtime. Two rules keep `incoming` cardinality meaningful:
+runtime. Two rules keep `incoming` cardinality meaningful, applied over the
+**caller-placed** connections the clause governs:
 
 - *Upper bounds* are verified over all reachable wirings: the compiler
   checks, over the candidate edges (§13.11.5), that no reachable
   configuration directs more than the bound's maximum at any node.
 - *Lower bounds* (a required minimum — `+`, or the `1` in `[=1]`) must be
-  met by connections that *always* point at the node, i.e. by connections
-  with a **static** destination. A dynamic-destination connection cannot
+  met by **caller-placed** connections with a **static** destination — those
+  that *always* point at the node. A dynamic-destination connection cannot
   count toward a guaranteed minimum, since it may point away. Indexed access
   `incoming.<ConnType>[i]` for `i <` the guaranteed minimum therefore stays
   valid.
 
-`outgoing` is unaffected: a node's outgoing connections are declared in its
-own body and do not move — only their destinations do.
+A node's own self-sourced `connections:` edges (§13.3.4.2) are exempt from this
+accounting at their *source* — they sit outside `outgoing:` — but where one
+targets a part, it counts against that part's `incoming:` exactly as a
+caller-placed edge would (the node is the part's caller). `outgoing:` thus
+governs only caller-originated connections; the destinations of those
+connections may still move (only their existence is fixed).
 
 ##### 13.3.4.1 Access from inside the node body
 
@@ -12237,6 +12260,85 @@ iterables of compile-time-known length range:
 The access syntax is symmetric with parts (§13.3.3.2): three
 member namespaces (`parts`, `incoming`, `outgoing`), each grouping
 cells by declared type.
+
+##### 13.3.4.2 The `connections:` clause
+
+`incoming:` and `outgoing:` declare which connections a node *participates in* as
+an endpoint; they do not *establish* any. The `connections:` clause is how a node
+type establishes connections **sourced from itself** — edges every instance of
+the type brings into being at construction, with the instance as the `from`
+endpoint:
+
+```
+connections:
+  <ConnType>: <destination>
+  <ConnType> | attr=value: <destination>
+```
+
+Each entry places one self-sourced connection of `<ConnType>`, exactly as a
+placement-body connection would (§13.8.4) but fixed by the *type* rather than
+supplied by a caller. The source is always the enclosing instance.
+
+**Destinations must be nameable from the type's scope** (§13.7.1). Two forms are
+admissible:
+
+- A **module-level instance** (scope 3) — a fixed, shared target every instance
+  connects to, such as a global bus or clock.
+- A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
+  wiring. The instance is configured at placement with a handle (§13.3.6.2), and
+  its `connections:` edge drives whatever that handle resolves to. This is the
+  payoff of the dynamic `to`: *every instance drives whatever it is told to at
+  placement*, and the edge freezes while the handle resolves to `None`
+  (§13.9.7).
+
+```
+connection Drives:
+  from: Driver
+  to: Drivable
+
+node Driver:
+  attr wheel: Handle[Drivable]        // configured per instance at placement
+  connections:
+    Drives: wheel                     // self-sourced; drives the configured target
+
+Garage g:
+  Driver | wheel=front_axle           // this Driver drives front_axle
+  Driver | wheel=rear_axle            // this one drives rear_axle
+```
+
+(`Driver` needs no `outgoing: Drives` — a self-sourced edge is not caller-placed;
+see below.)
+
+**Signature vs. internals.** This clause is the concrete case of a general rule.
+A node type's `parts:`, `incoming:`, and `outgoing:` clauses are its
+**caller-facing signature**: they bound what a *caller* may place into, or wire
+to and from, an instance. A node's **internals** — its `connections:` edges, the
+placements a `repeat` materializes (§13.5.4), and the wrapper placements an
+`expose:` introduces (§13.3.7) — are its private realization. Internals are
+**not** bound by the signature clauses; they are checked only by connection
+endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
+
+One consequence is recursive: when a node's internal wiring (a `connections:`
+edge, or a wrapper) terminates at one of the node's **own parts**, the node is
+acting as that part's **caller**, and the edge counts against the *part's*
+`incoming:` budget — the same budget a caller placing the part would draw from.
+A node is the caller of its own parts.
+
+A self-sourced `connections:` edge is therefore exempt from the source node's
+`outgoing:` clause (which governs caller-originated connections only), but it is
+**not** exempt from endpoint typing: the `from`/`to` types must still match the
+connection's declaration (§13.6.1).
+
+`connections:` is a **node-body** clause. Connection bodies remain minimal glue
+(§13.6.4) and take no `connections:` clause; a connection that needs to establish
+further structure is modeled with nodes.
+
+The compiler-checked *total* cardinality of a node — caller-placed plus internal
+— is **not** tracked: there is no single budget spanning the signature and the
+internals, by design (a `repeat` count is not known until runtime). A clause
+cardinality constrains only the caller-facing side. Should a use case require it,
+a `[=N total]`-style annotation could reintroduce a checked union; none is
+specified now.
 
 #### 13.3.5 Generic parameters
 
@@ -12426,7 +12528,8 @@ node TypeName:
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
-→ `outgoing:` → `when:` → `expose:` → cell declarations → `effects:` (§13.3.8).
+→ `outgoing:` → `connections:` → `when:` → `expose:` → cell declarations →
+`effects:` (§13.3.8).
 
 ##### 13.3.7.1 Content
 
@@ -14309,8 +14412,10 @@ their source is `filter`. The rule is uniform across nesting depth;
 the depth at which the connection appears does not change how the
 source is determined.
 
-The connection type must match a type listed in the source instance's
-`outgoing:` clause (or in the type's traits' contributions).
+A **caller-placed** connection's type must match a type listed in the source
+instance's `outgoing:` clause (or in the type's traits' contributions). A
+*self-sourced* connection declared in the source type's own `connections:`
+clause (§13.3.4.2) is exempt from `outgoing:` — but not from endpoint typing.
 
 The destination is supplied in the connection placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
