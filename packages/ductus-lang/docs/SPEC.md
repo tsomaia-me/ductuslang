@@ -13554,12 +13554,26 @@ of its declaration (§13.6.1):
 `from`, `to`, and `pair` are bound at the connection's *placement* time:
 each placement specifies its source (the enclosing instance) and
 destination (§13.8.5.1). The `from` binding is fixed for the connection's
-lifetime. The `to` binding tracks the destination *reference*: when that
-reference is a reactive value (§13.8.5.1), `to` resolves to whichever node
-it currently designates, and the connection body's reads of `to.*`
-re-evaluate when the destination re-points — a *dynamic dependency* on the
-current target (§13.10.5, §13.12.1). Inside the connection type's body,
-these identifiers resolve to the current endpoint instances.
+lifetime. The `to` binding tracks the destination: when the destination is a
+reactive selection or a `Handle` (§13.8.5.1), `to` follows whichever node it
+currently resolves to, and the body's reads of `to.*` re-evaluate when it
+re-points — a *dynamic dependency* on the current target (§13.10.5, §13.12.1).
+
+Inside the body, `from` and `to` are **never `Option`** — they are the live
+endpoint instances directly. A destination supplied as `Option[&N]` (or a
+`Handle`, which reads as one) is unwrapped at the boundary: while it resolves to
+`Some`, the connection is active and the body sees the contained node as `to`;
+while it resolves to `None`, the connection **freezes** (§13.9.7) and the body
+does not run at all. The freeze *is* the unwrap, so body code never handles
+absence.
+
+`from` and `to` are **body-internal**: visible only inside the connection
+type's own body, with no external `some_conn.to` access. A connection does not
+surface its endpoints or its activation as readable fields (§13.9.1); an outside
+observer instead reads the connection's own cells (attrs, deriveds), which hold
+their last committed value even while the connection is frozen (§13.9.7).
+Liveness-awareness *about* a node is the job of a `Handle` (§13.3.6.2), not of a
+connection's surface.
 
 #### 13.6.3 Generic connections
 
@@ -14206,10 +14220,12 @@ The connection type must match a type listed in the source instance's
 `outgoing:` clause (or in the type's traits' contributions).
 
 The destination is supplied in the connection placement's body as a node
-reference (§13.8.5.1) — a bare identifier, or any expression yielding a node
-reference, possibly reactive. The `/expr` slot, when present, sets the
-connection's `default attr` (§13.2.2.1); the attribute clause
-(`| name=value …`) sets named attrs. None of these target the destination.
+reference (§13.8.5.1) — a bare identifier, any expression yielding a node
+reference (possibly reactive), or an `Option[&N]` / `Handle[N]` selecting one of
+the candidate nodes (the connection freezes while that selection resolves to
+`None`, §13.9.7). The `/expr` slot, when present, sets the connection's
+`default attr` (§13.2.2.1); the attribute clause (`| name=value …`) sets named
+attrs. None of these target the destination.
 
 A placement-level `when` modifier may be attached to gate the
 connection instance (§13.9). The modifier appears in the inline-parts
