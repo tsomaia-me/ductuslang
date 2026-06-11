@@ -126,7 +126,7 @@ the clause keywords above), all control-flow keywords (`if`, `else`,
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2), and all operator-context keywords (`is`, `and`,
-`or`, `not`). `as` is **not** a cast operator; explicit conversion uses
+`or`, `not`, `weak` — the weak-reference operator, §13.3.6.2). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
@@ -5664,6 +5664,47 @@ propagation, this is the user's `From[SourceError] for DestError` impl
 Cross-type propagation (Option in a Result-returning function, or vice
 versa) remains forbidden per §8.6 — the failure types are not compatible.
 
+#### 8.4.2 The `!` assertion operator
+
+The postfix `!` operator unwraps an `Option[T]` to its `T` — but, unlike `?`, it
+never propagates and never traps. `opt!` compiles **only when the compiler can
+prove `opt` is always `Some`** at that point; otherwise it is a *compile error*.
+There is no runtime check and no "trust me" escape: a successful `!` costs
+nothing at runtime because the `None` case has been proven impossible.
+
+```
+let car = target!        // &Drivable — accepted only if `target` is provably live
+```
+
+**Provenance, not assertion.** Whether `opt!` compiles is decided by the same
+provenance analysis used elsewhere (§13.12.1), specialized to optionality:
+
+- The canonical *provable* case is a `Handle` (§13.3.6.2) whose candidate
+  referents are **all statically placed** — non-`repeat`, non-dismountable graph
+  entities. Such a handle can never resolve `None`, so `h!` is sound and free.
+- The canonical *non-provable* case is a `Handle` into a `repeat` view
+  (§13.5.4.9): a keyed scope is always dismountable, so the compiler cannot prove
+  `Some` and `h!` is **permanently** a compile error there — the right tools are
+  `match` or `?`.
+
+A general `Option` from another source (e.g. checked arithmetic, §4.6.4) is
+provable only in the rare cases where the compiler can show the `None` branch
+unreachable; otherwise `!` is rejected and the caller must handle absence
+explicitly.
+
+**Why keep `!` when the proof is automatic.** Because the proof is *legible and
+refactor-stable*. `h!` is a visible contract — "I rely on this referent always
+being live" — checked at its own site. Move the referent under a `repeat` later
+and the `!` site fails with a precise error naming the broken contract, instead
+of some distant `match` silently changing meaning. This is the same philosophy as
+mandatory `dyn` (§5.2.2): make the load-bearing assumption appear in the source
+where it is relied upon.
+
+> **Disambiguation.** Postfix `!` on a value expression (`opt!`) is distinct from
+> the `!` cardinality sigil in `parts:` / `incoming:` / `outgoing:`
+> (`Performer!`, "exactly one", §13.3.3.1): the former is in value-expression
+> position, the latter in type-cardinality position, and the two never collide.
+
 ### 8.5 Error-Type Conversion via `From`
 
 The `From::from(failure)` step in `?` propagation enables error-type
@@ -8206,6 +8247,14 @@ to the body, function return to the caller's scope (rooted in inputs),
 associated-type slots to whatever scope the slot's use-site occupies.
 The compiler's cluster analysis (§11.3.4) handles
 both cases.
+
+**The `Handle[T]` exception.** A `Handle[T]` (§13.3.6.2) is *not* an alias — it
+is a `Copy` value that weakly designates a graph entity — and so is exempt from
+every restriction above: a handle may be stored in a cell, record field, enum
+payload, or tuple like any other value. Its *resolution* `Option[&T]`, by
+contrast, contains a borrow (`&T`) and is therefore subject to categories B and
+D exactly like any other alias-bearing value. The resolution is the transient
+read; the handle is the storable carrier.
 
 #### 11.9.2 Constraints during alias lifetime
 
@@ -12245,9 +12294,10 @@ with no node-specific rule:
   node's cells and for serving as a connection endpoint (§13.6, §13.8.5.1)
   — but never for placing.
 - **A node reference cannot be stored.** A borrow may not be put in a cell,
-  record field, enum payload, or tuple (§11.9.1). A persistent link to a
-  node instance is a **connection** (§13.6); a node *type* held as a value
-  is `Type[…]` (§5.7).
+  record field, enum payload, or tuple (§11.9.1). The storable, non-owning way
+  to *designate* a node instance for later is a **`Handle[…]`** (§13.3.6.2); a
+  persistent *wiring* between instances is a **connection** (§13.6); a node
+  *type* held as a value is `Type[…]` (§5.7).
 
 The intent behind keeping creation and placement out of functions:
 functions are pure compute (§13.12.2), structure is declarative, and reuse
@@ -12269,6 +12319,89 @@ never stored as a value; their *types* travel as values via `Type[…]`
 (§13.17), and additionally have a structural *type*, `operator(…) -> Cell[U]`
 (§13.17.13), by which an operator can be carried. The rule is normative;
 conformant compilers enforce it at type-check time.
+
+##### 13.3.6.2 Storable references: the `Handle[…]` type
+
+§13.3.6.1 forbids storing a node reference: a borrow may not live in a cell,
+field, payload, or tuple. Yet some constructs must *remember* a graph entity
+across time and across re-evaluation — a connection whose destination re-points
+(§13.8.5.1), a node body that addresses a dynamically-mounted child by key
+(§13.5.4.9). The storable form of such a designation is a **`Handle[T]`**.
+
+A `Handle[T]` is a **value** — `Copy`, and freely placed in cells, fields,
+tuples, and enum payloads — that *weakly* designates a graph entity. "Weak" is
+literal: a handle **never keeps its referent alive**. There is no reference
+count behind it and no reachability through it; an entity's lifetime is governed
+solely by the graph position or `repeat` scope that owns it (§13.3.6.1,
+§13.5.4). A handle may outlive its referent, and simply resolves to "absent"
+once the referent is gone.
+
+**Kind-scoped.** `T` ranges over graph-entity types only — a node, connection,
+or effect type, or a trait that `requires` one of the `Node` / `Connection` /
+`Effect` markers (§3.7.4). There are **no handles to records, tuples, or other
+plain values**: a value has no identity and no tracked lifecycle to be weak
+*about*. What you would weakly hold is the value's *home* — the node or cell it
+lives in — so handle the home, not the value.
+
+**Resolution is transparent and type-directed.** A handle has no `.resolve()`
+method. As with the value/reference duality of a reactive cell (§13.2.8), what a
+handle *denotes* depends on the position it occupies:
+
+- In a position typed `Handle[T]` — a handle slot, a `Handle[T]` parameter or
+  field, a handle-to-handle comparison — the handle denotes the **inert handle
+  value**. No graph entity is read and nothing becomes reactive.
+- In any *read* or *elimination* position — `match`, `?`, `!`, or anywhere a
+  `&T` is expected — the handle denotes its **resolution**: an `Option[&T]`,
+  `Some(&entity)` while the referent is live and `None` once it is gone. *This*
+  read is the reactive one — it joins the reader's provenance (§13.12.1) and
+  re-fires when the referent mounts or dismounts (§13.10.5).
+
+The two types are deliberately distinct. `Option[&T]` *contains a borrow* and is
+therefore itself unstorable (§11.9.1) — the transient, just-resolved view.
+`Handle[T]` contains no borrow and is the storable carrier. The pair mirrors the
+cell split: a `Handle[T]` is to its `Option[&T]` resolution what a `Signal[T]`
+is to its `T` value (§13.2.8) — one the durable home, the other the momentary
+read.
+
+**Creation — `weak`.** A handle is produced by the prefix operator `weak`
+applied to a node / connection / effect reference:
+
+```
+signal target: Handle[Drivable] = weak some_car   // a stored, re-pointable designation
+target.write(weak other_car)                       // re-point it later (§13.2)
+```
+
+Wherever a `Handle[T]`-typed position receives a reference directly — assigning
+`some_car` to a `Handle`-typed attr, or returning it where a `Handle[T]` is
+expected — the `weak` coercion is inserted automatically. There is no
+`.handle()` method and no sigil; `weak` is the one explicit spelling.
+
+**Elimination.** A handle is consumed through exactly three forms, none of them
+handle-specific. They are the ordinary `Option` eliminators, reached because a
+handle reads as `Option[&T]`:
+
+```
+match target:                       // both arms explicit
+  Some(car): car.speed
+  None: 0.0
+
+let s = target?.speed               // propagate None upward (§8.4)
+let car = target!                   // assert live; compile error unless provable (§8.4.2)
+```
+
+**Liveness and the generation guard.** A handle is, concretely, a graph slot
+plus a **generation** stamp. Resolution compares the stamp: if the slot was
+dismounted and later reused by a different entity, the old handle's generation no
+longer matches and it resolves to `None` — never to the wrong entity. This ABA
+guard is what makes weak resolution sound across mount churn. Because mount and
+dismount flip a handle's resolution, a handle read is a *dynamic* dependency
+(§13.10.5).
+
+**Identity across remount.** A handle obtained by key from a `repeat` view
+(§13.5.4.9) designates the *keyed scope*, not one particular mount. By the
+identity rule of §13.5.4.8, the same key reappearing in the source remounts the
+*same* scope, so a key-addressed handle that had resolved `None` resolves `Some`
+again when its key returns.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -15988,6 +16121,11 @@ For arithmetic operations that may overflow but should produce
 recoverable errors, use the checked variants (`+?`, `-?`, etc.)
 per §4.6.4. Their results are `Option[T]` values that flow through
 the type system.
+
+Where an `Option` is *provably* `Some` — most often a `Handle` whose referents
+are all statically placed (§13.3.6.2) — the postfix `!` operator (§8.4.2)
+unwraps it with no runtime check and no propagation. It is a compile error
+wherever the compiler cannot prove the `None` case impossible.
 
 #### 13.13.3 The reactive context preserves trap semantics
 
