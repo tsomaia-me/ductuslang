@@ -13471,7 +13471,8 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   identity.
 - **`as <view>`** (optional) binds a bare identifier naming the repeat's **keyed
   view**: a lookup table over the scopes it currently holds, addressable by key
-  from the surrounding body (§13.5.4.9).
+  from the surrounding body — for an exposition-level `repeat`, the whole node
+  type body (§13.5.4.9).
 - **Key derivation** proceeds by ordered precedence. The compiler picks
   the first applicable path:
   1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
@@ -13586,8 +13587,9 @@ requirement, with `Vec` supplying the iterator inside the `Signal`.
 ```
 node UserPanel:
   attr active_user_ids: Vec[u64] = []
-  repeat user_id in active_user_ids:
-    UserCard | id=user_id
+  expose:
+    repeat user_id in active_user_ids:
+      UserCard | id=user_id
 ```
 
 **`HashMap` source with destructuring bind** — `HashMap[K, V]`
@@ -13599,8 +13601,9 @@ names the map key as the scope key:
 ```
 node SessionPanel:
   attr sessions: HashMap[SessionId, SessionInfo] = HashMap::new()
-  repeat (sid, info) in sessions keyed by sid:
-    SessionRow | id=sid info=info
+  expose:
+    repeat (sid, info) in sessions keyed by sid:
+      SessionRow | id=sid info=info
 ```
 
 **Implicit keying via the `Keyed` trait** — records opt into implicit
@@ -13722,7 +13725,7 @@ template-scope machinery; the cost model is "pay for what you iterate."
 - **Effect `observed:` blocks** (§13.19.5) — observed blocks declare
   cells receiving host-pushed data; they do not host reactive-structure
   declarations. To materialize per-element scopes from an observed
-  cell, place the `repeat` in a node body or `desired:` block that
+  cell, place the `repeat` in an `expose:` block or `desired:` block that
   consumes the observed cell.
 - **Operator bodies** (§13.17.4) — operators are reactive-transparent
   transforms with fixed-shape state; dynamic-scope materialization is
@@ -13785,9 +13788,10 @@ by scope key:
 node Feed:
   attr posts: Vec[Post] = []
   attr selected: PostId
-  repeat post at i in posts as posts_view keyed by post.id:
-    PostCard | data=post rank=i:
-      Avatar as avatar | url=post.author_url
+  expose:
+    repeat post at i in posts as posts_view keyed by post.id:
+      PostCard | data=post rank=i:
+        Avatar as avatar | url=post.author_url
 
   // `posts_view[selected].avatar` is a Handle[Avatar] — storable, weak:
   derived selected_avatar: Handle[Avatar] = posts_view[selected].avatar
@@ -14097,7 +14101,7 @@ blocks. Same rule as nodes (§13.3.6).
 
 A connection body also does not contain `repeat` declarations (§13.5.4).
 Connections are minimal glue between source and destination instances;
-dynamic-scope structure belongs in node bodies, placement bodies, or
+dynamic-scope structure belongs in `expose:` blocks, placement bodies, or
 effect `desired:` blocks.
 
 A connection body likewise hosts no effect instantiations. Effects are
@@ -17595,7 +17599,7 @@ Not permitted in operator bodies:
 - Side-effecting statements. The body is reactive — declarative,
   not imperative.
 - `repeat` declarations (§13.5.4). Operators have fixed-shape state;
-  dynamic-scope materialization belongs to node bodies, placement
+  dynamic-scope materialization belongs to `expose:` blocks, placement
   bodies, or effect `desired:` blocks, not to operators.
 - Effect instantiations. Operators are pure reactive transforms; they
   may not host effects. An effect composes *through* an operator in a
@@ -19860,7 +19864,7 @@ behavior must compute it in the host's reconciler.
 (§13.9.12, §13.9.13) — are not valid in `observed:` blocks. Observed
 blocks declare cells that receive host-pushed data; they do not host
 reactive-structure declarations. To materialize per-element scopes from
-an observed cell, place the `repeat` in a node body or the same effect's
+an observed cell, place the `repeat` in an `expose:` block or the same effect's
 `desired:` block, consuming the observed cell as the source; to gate
 structure on an observed value, do the same with a `when`/`given` block.
 
