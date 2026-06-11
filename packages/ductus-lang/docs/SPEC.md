@@ -118,7 +118,8 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`), the reserved
+`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
+`dynamic` — the supply-mode marker, §13.3.3.1), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
 remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
@@ -12007,7 +12008,7 @@ fulfill Displayable for Driver:
 #### 13.3.3 `parts` clause
 
 ```
-parts: Type1 [cardinality]?, Type2 [cardinality]?, ...
+parts: [dynamic] Type1 [cardinality]?, [dynamic] Type2 [cardinality]?, ...
 ```
 
 The `parts:` clause is **optional**. Its presence determines what
@@ -12015,28 +12016,26 @@ kinds of child node instances may be placed inside instances of
 this node at placement time:
 
 - **No `parts:` clause** — the node accepts child instances of *any
-  node type*. Inside the node body, only the heterogeneous
-  `parts` form is available, and it requires an explicit trait
-  bound on the iteration variable (`for p: SomeTrait in parts`)
-  per §13.4.1. Type-bulk (`parts.<NodeType>[i]`) and
-  cardinality-bounded forms are not available.
+  node type*. Inside the node body, no bulk access is available —
+  only named access to children the body itself can see (§13.4.1).
+  The host walks such a node's children through its exposition
+  (§13.3.7), not through any body-side iteration.
 - **With a `parts:` clause** — the node accepts only children whose
-  types appear in the listed set, with the declared cardinality
-  constraints. Both heterogeneous (`parts`) and type-bulk
-  (`parts.<NodeType>[i]`) access are available; cardinality
-  is enforced at placement.
+  types appear in the listed set. Unmarked (static) types carry the
+  declared cardinality constraints and type-bulk
+  (`parts.<NodeType>[i]`) access; `dynamic`-marked types may be fed
+  by a caller's `repeat` and are accessed as reactive collections
+  (§13.3.3.4). Cardinality is enforced at placement.
 
 The clause does not by itself place specific instances — it only constrains
 what types and how many of each are permitted. It is the node's **caller-facing
-part signature**: it bounds the *statically-determined* children — those a caller
-places (§13.8.3) and those the type itself places via a compile-time `for`
-(§13.3.3.3) — and both contribute to the cardinality count. It does **not** bound
-the node's *dynamic* internal structure: children materialized by a `repeat`
-(§13.5.4) are the node's private realization and are not counted against
-`parts:` — which is why the VoiceMixer of §13.5.4.3 repeats `Voice` children with
-no `parts:` clause at all. The governing principle — signature clauses bound
-callers and static shape; dynamic and self-established internals are unconstrained
-by them — is stated in §13.3.4.2.
+part signature**: it bounds what a *caller* supplies (§13.8.3), and nothing
+else. The node's own placements — children it emits in its exposition via a
+compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4) — are its private
+realization: they are never counted against `parts:` and never appear in the
+`parts` namespace, exactly as a component's internal structure is invisible to
+its `children`. The governing principle — signature clauses bound callers;
+internals are unconstrained by them — is stated in §13.3.4.2.
 
 ```
 // Restricted parts with cardinality:
@@ -12055,10 +12054,10 @@ node Processor:
   outgoing: WiresTo
 ```
 
-`Processor` accepts any node type as a part. Inside its body, only
-`parts` (heterogeneous iteration) is available; the host walks
-the parts externally based on its own conventions (e.g., per-type
-dispatch via const discriminators — §13.2.5).
+`Processor` accepts any node type as a part. Its body has no bulk
+access to them; the host walks the parts externally through the
+exposition, based on its own conventions (e.g., per-type dispatch
+via const discriminators — §13.2.5).
 
 A node may have parts of its own type (self-recursion) when `parts:`
 is omitted or when the node's own type appears in the `parts:`
@@ -12091,43 +12090,75 @@ whitespace: `Part?`, `Part+`, `Part!`. Bracket forms may optionally
 have a space before the bracket: `Part[=1]` and `Part [=1]` are both
 valid.
 
+**Supply mode — the `dynamic` prefix.** Orthogonal to *count* is
+*supply mode*: whether the set of supplied children is a static fact
+or may vary at runtime. The `dynamic` keyword, prefixed to the type
+name (`parts: Header, dynamic Post`), marks the second mode. It is
+**mutually exclusive with every cardinality specifier** — `dynamic
+Post+` or `dynamic Post [=3]` is a compile error — because a
+runtime-varying set can guarantee no minimum and admit no checked
+maximum, and runtime cardinality checks do not exist in the language.
+An unmarked type is *static*: supplied by explicitly written
+placements only, with the count known per placement site at compile
+time. A `dynamic` type may additionally be fed by a caller's `repeat`
+(§13.3.3.4). The same marker, with the same meaning, applies to
+`incoming:` and `outgoing:` clauses (§13.3.4).
+
 ##### 13.3.3.2 Access from inside the node body
 
-Parts of a given type are accessible as `parts.<NodeType>`,
-which is a structural iterable of compile-time-known length range:
+For a *static* (unmarked) part type, `parts.<NodeType>` is an
+ordinary **read-only array of node references** whose length `N` is
+an implicit const-generic: each placement site fixes its own `N`
+(the exact static supply there), and the declared cardinality
+supplies the compile-time bounds `min..max` that every site's `N`
+must satisfy. Nothing about the form is a special construct — its
+behavior is the ordinary behavior of const-generic arrays:
 
-- Indexed access: `parts.<NodeType>[i]` — legal at type-level
-  expressions iff `i < min_cardinality` of that part type.
-  Example: under `parts: Oscillator+`, `parts.Oscillator[0]`
-  is legal (at least one is guaranteed) but `[1]` is not.
-- Type-bulk iteration: `for o in parts.<NodeType>: ...`
-  always works.
-- Heterogeneous iteration: `for p in parts: ...` iterates
-  all parts of all declared types (§13.4.2).
+- **Indexed access**: `parts.<NodeType>[i]` is legal iff the index
+  is provably in range for *every* admitted `N` — i.e. iff
+  `i < min_cardinality`. This is ordinary const-generic bounds
+  checking, not a parts-specific rule. Example: under
+  `parts: Oscillator+`, `parts.Oscillator[0]` is legal (at least
+  one is guaranteed) but `[1]` is not.
+- **Iteration**: `for o in parts.<NodeType>: ...` always works — a
+  fixed-extent array unrolls per §12.3.7, with each site's actual
+  `N` (whether codegen emits straight-line copies or a counted loop
+  over the known list is an implementation choice).
+- **Order**: placement order, always. `parts.<NodeType>` is a
+  *stable filter* of the caller's written placement sequence — it
+  selects, never reorders. Every projection of the placement
+  sequence in the language preserves this order.
+- **No storage**: the array's elements are references, so the value
+  is transient by the ordinary borrow rules (§11.9, §11.11) — usable
+  in loops, indexing, and calls; storable nowhere.
 
-A node without a `parts` clause may still contain children of any
-node type (per §13.3.3); inside its body, only the heterogeneous
-`parts` form is available, and it requires an explicit trait
-bound on the iteration variable (`for p: SomeTrait in parts`)
-per §13.4.1 — type-bulk and cardinality-bounded forms are not
-available. A node with a `parts` clause may contain children at
-runtime according to the declared cardinality.
+For a **`dynamic`** part type, `parts.<NodeType>` is not an array
+but a **reactive cell** (§13.3.3.4); none of the forms above apply
+to it.
 
-##### 13.3.3.3 Type-level part placements via compile-time `for`
+There is no whole-namespace iteration: `parts` bare is an exposition
+reference (§13.3.7), not a value, and per-type access is the only
+body-side bulk form. A node without a `parts` clause has no bulk
+access at all (named access only, §13.4.1).
 
-A node body may declare child-part instances *directly* via a
-compile-time `for` loop. The loop's body is an indented **placement-body
-block** following the same grammar as §13.8.3's child-parts body — any
-number of placements (parts and/or connections) per iteration, with the
-ordinary clause ordering of §13.8.9 and the whitespace-separation /
-self-delimiting rules of §13.8.10. The iteration is compile-time-unrolled
-per §12.3.7. The unrolled placements become **children of the type
-itself**: every instance of the node materializes them at instantiation,
-with each iteration's loop variable substituted at compile time. The
-iterable must be compile-time-known (the same constraint as for any
-compile-time `for` — §12.3.7); a runtime iterable in a node body is a
-compile error pointing at the iterable, enforced by §13.1's static-graph
-rule (no new diagnostic class).
+##### 13.3.3.3 Type-emitted children via compile-time `for`
+
+A node type may emit child instances *directly* via a compile-time
+`for` loop written **in its `expose:` block** (§13.3.7.1) — structural
+output is emitted in exactly one place, the exposition. The loop's body
+is an indented **placement-body block** following the same grammar as
+§13.8.3's child-parts body — any number of placements (parts and/or
+connections) per iteration, with the ordinary clause ordering of
+§13.8.9 and the whitespace-separation / self-delimiting rules of
+§13.8.10. The iteration is compile-time-unrolled per §12.3.7. The
+unrolled placements become **children of the type itself**: every
+instance of the node materializes them at instantiation, with each
+iteration's loop variable substituted at compile time, at the loop's
+written position in the exposition. The iterable must be
+compile-time-known (the same constraint as for any compile-time `for`
+— §12.3.7); a runtime iterable here is a compile error pointing at the
+iterable, enforced by §13.1's static-graph rule (no new diagnostic
+class).
 
 ```
 const VOICE_COUNT: usize = 8
@@ -12137,9 +12168,9 @@ node Oscillator:
   derived output: f32 = synthesize(freq)
 
 node OscBank:
-  parts: Oscillator [=VOICE_COUNT]
-  for i in 0..VOICE_COUNT:
-    Oscillator | freq=base_freq(i)
+  expose:
+    for i in 0..VOICE_COUNT:
+      Oscillator | freq=base_freq(i)
 
 OscBank bank                    // every instance materializes 8 Oscillators
 ```
@@ -12149,24 +12180,24 @@ property of each instantiation:
 
 ```
 node OscBank[const N: usize]:
-  parts: Oscillator [=N]
-  for i in 0..N:
-    Oscillator | freq=base_freq(i)
+  expose:
+    for i in 0..N:
+      Oscillator | freq=base_freq(i)
 
 OscBank[16] sixteen_bank        // 16 Oscillators per instance
 OscBank[8]  eight_bank          // 8 Oscillators per instance
 ```
 
-**Cardinality.** Parts placed by a type-body `for` are counted toward
-the type's `parts:` cardinality at compile time. A placement body
-(§13.8.3) may add further parts up to the declared cardinality bound;
-the cardinality check is enforced against the *sum* of type-body and
-placement-body contributions.
+Note `OscBank` declares no `parts:` clause: it accepts no
+caller-supplied children, and its own emissions need no clause.
 
-**Exposition.** Parts placed by a type-body `for` are children of the
-instance like any other parts; they are included in the default
-`expose: parts` exposition (§13.3.7) and in explicit `expose:` entries
-that select on their type via `parts.<NodeType>`.
+**Signature and namespace.** Type-emitted children are **internals**
+(§13.3.4.2): they are never counted against the type's `parts:`
+cardinality and never appear in the `parts` namespace — `parts` holds
+caller-supplied children only, exactly as a component's `children`
+never contains its own internal structure. The type reaches its
+emitted children the way it reaches any written structure: by having
+written it (and, where needed, by the names it gives them).
 
 **Hot reload.** When the iterable's compile-time value changes across
 a reload (e.g., a `const N` rises from 8 to 16, or the const-generic
@@ -12178,26 +12209,112 @@ parts dropped by a shrinking count are released per the standard
 removal rule. No special-case logic is required for type-body-for
 parts beyond what §13.15 already specifies.
 
-**Contrast with placement-body `for`** (§13.8.3.1). A type-body `for`
-expands once at type elaboration and applies uniformly to every
-instance of the node; a placement-body `for` expands at each placement
-site and may differ across instances. Use the type-body form when
-multiplicity and per-part configuration are properties of the **type**;
-use the placement-body form when they may differ per instance. Both
-forms unroll by the same §12.3.7 rule and produce anonymous parts
-accessible via the same `parts.<NodeType>[i]` (§13.4.1) / iteration
-(§13.4.2) machinery.
+**Contrast with placement-body `for`** (§13.8.3.1). The two forms
+unroll by the same §12.3.7 rule but sit on opposite sides of the
+signature. A type-emitted `for` expands once at type elaboration,
+applies uniformly to every instance, and produces **internals**
+(above). A placement-body `for` expands at each placement site and is
+**caller supply**: its placements count against the receiving type's
+`parts:` cardinality and appear in the `parts.<NodeType>` array,
+exactly as individually written placements do. Use the type form when
+multiplicity and per-part configuration are properties of the
+**type**; use the placement form when they may differ per instance.
 
-**Connections from a type-body for.** A type-body `for` may also place
+**Connections from a type-emitted for.** The `for` may also place
 connections (§13.6) whose source is the enclosing node instance and
 whose destinations are determined by the unrolled iteration. These are
 **self-sourced** connections (§13.3.4.2): exempt from the type's
 `outgoing:` clause, subject to endpoint typing, and **positional** like
-any other connection placement — each engages at its position in the
-unrolled sequence, which joins the exposition where the exposition
-includes the loop's placements (§13.3.7.5, §13.3.7.6). The same
+any other connection placement — each engages at its written position
+in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
+
+##### 13.3.3.4 Dynamic parts
+
+A part type marked `dynamic` (§13.3.3.1) may be supplied by a caller's
+`repeat` in the placement body, in addition to explicitly written
+placements:
+
+```
+node Posts:
+  parts: dynamic Post
+  expose:
+    parts.Post
+
+node Feed:
+  attr posts: Vec[PostData] = []
+  expose:
+    Posts:
+      repeat post in posts keyed by post.id:
+        Post / post
+```
+
+Feeding an *unmarked* part type with a `repeat` is a compile error at
+the feeding site, naming the receiving clause: a static type's count
+is a per-site compile-time fact, and a `repeat` cannot provide one.
+
+**The cell.** For a `dynamic` type, `parts.<NodeType>` is a **reactive
+cell** whose value is the current collection of supplied children — a
+language-provided, keyed, ordered collection (source order; the
+written interleaving, with each feeding `repeat`'s scopes expanded in
+place). It updates when children mount or dismount. Because its
+elements are node references, the raw value is transient by the borrow
+rules (§11.9, §11.11): it cannot be bound, stored, or returned. It is
+consumed in exactly the two ways any reactive cell is consumed:
+
+- **Operators** (§13.17), for values:
+
+  ```
+  derived titles = parts.Post |> map(fn(p): p.title)   // Signal[Vec[string]]
+  derived count: usize = len(titles)
+  ```
+
+  The per-element closure (`fn(p): …` — ordinary closure literal,
+  §11.10.6) receives each element reference transiently and must
+  produce plain values; the operator's output is an ordinary reactive
+  value, storable and readable like any other.
+
+- **`repeat`** (§13.5.4), for structure:
+
+  ```
+  expose:
+    repeat p in parts.Post:
+      Card:
+        p
+  ```
+
+  This is ordinary `repeat` — the cell is an ordinary reactive
+  collection source. **Keys are carried**: each dynamically supplied
+  element brings the key its feeding `repeat` derived for it, so
+  scope identity is stable end-to-end with no `keyed by` written (the
+  carried key is the first applicable path in §13.5.4.1's key
+  derivation; an explicit `keyed by` retains its ordinary
+  precedence). An explicitly written (static) placement of a
+  `dynamic` type carries a **placement-site key** — stable and
+  path-derived, the same identity scheme as §13.15.2.
+
+No other access exists: `for` cannot iterate the cell (`for` is
+compile-time, §12.3.7, and the set is not a compile-time fact);
+`parts.<NodeType>[i]` is rejected (a positional index into a keyed,
+changing set is not a stable identity); `parts.<NodeType>[key]` is
+rejected (keys belong to the *supplier* — they are derived from the
+caller's data by the caller's `keyed by`, and the receiving type has
+no way to know or name them).
+
+**Exposition.** A bulk `parts` reference in `expose:` carries dynamic
+children like static ones: each feeding `repeat`'s scopes appear at
+the repeat's written position in the supplied sequence, mounting and
+dismounting under Model B (§13.9.7).
+
+**Optimization.** When every supplier at a given placement site is
+provably static, the compiler may compile that site's `repeat` and
+operator applications over the cell as unrolled code. This is an
+implementation choice; the developer writes against the dynamic
+contract regardless, because the *type* admits dynamic supply.
+
+The same marker, cell model, and consumption rules apply to
+`incoming:` and `outgoing:` connection types (§13.3.4.1).
 
 #### 13.3.4 `incoming` and `outgoing` clauses
 
@@ -12911,44 +13028,37 @@ contribute to the structural descent.
 
 #### 13.4.1 Access forms
 
-Parts of a parent instance are accessible in three ways. The
-available access forms depend on whether the parent's `parts:`
-clause is declared:
+Parts of a parent instance are accessible in two ways. The
+available access forms depend on the parent's `parts:` clause:
 
-- **Heterogeneous:** `parts` — a structural iterable over all
-  parts of the parent, regardless of their types.
-    - When `parts:` is declared, the iteration variable is
-      specialized per declared part type — the loop unrolls to one
-      concretely-typed copy per listed type. The body must compile for
-      every listed type (per the heterogeneous iteration rules of
-      §13.4.2).
-    - When `parts:` is omitted, the iteration variable's static type
-      cannot be inferred from the declaration alone (any node type
-      may have been placed). The body must declare an explicit trait
-      bound on the iteration variable (`for p: SomeTrait in
-    parts: ...`); the compiler verifies at each placement
-      that every placed part type satisfies the bound.
-- **Type-bulk (`parts:` declared only):** `parts.<NodeType>` —
-  a structural iterable over all parts of the given type. Length
-  range is determined by the declared cardinality. Available only
-  when `<NodeType>` appears in the `parts:` clause.
+- **Type-bulk (`parts:` declared only):** `parts.<NodeType>`.
+  For a *static* (unmarked) type this is a read-only array of node
+  references with const-generic length bounded by the declared
+  cardinality (§13.3.3.2) — indexable under the guaranteed minimum,
+  iterable with `for`, in placement order. For a **`dynamic`** type
+  it is a reactive cell consumed via operators or `repeat`
+  (§13.3.3.4). Available only when `<NodeType>` appears in the
+  `parts:` clause.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from
   outside the node body) — accesses a specific part by its
   placement-time name. Names are assigned in the placement body
   (§13.8.3) and visible wherever the placement scope is known.
-  Available in both forms (with or without `parts:`).
+  Available with or without a `parts:` clause.
+
+There is no whole-namespace (heterogeneous) iteration over `parts`:
+per-type access is the only bulk form, and a node without a `parts:`
+clause has no bulk access at all (§13.3.3.2).
 
 Summary table:
 
-| Form                         | `parts:` declared | `parts:` omitted                 |
-|------------------------------|-------------------|----------------------------------|
-| `parts.<Type>`          | available         | not available                    |
-| `parts` (unbounded)     | available         | not available (need bound)       |
-| `parts` (trait-bounded) | available         | available (trait bound required) |
-| named (bare `<name>`)        | available         | available                        |
+| Form                  | `parts:` declared              | `parts:` omitted |
+|-----------------------|--------------------------------|------------------|
+| `parts.<Type>` static | array (§13.3.3.2)              | not available    |
+| `parts.<Type>` dynamic| reactive cell (§13.3.3.4)      | not available    |
+| named (bare `<name>`) | available                      | available        |
 
 Inside the parent's own type body (its `derived` and `recurrent`
-expressions), only type-bulk and heterogeneous forms are available;
+expressions), only the type-bulk form is available;
 placement names aren't visible at the type-declaration level.
 Named individual access becomes available in:
 
@@ -12960,9 +13070,10 @@ Named individual access becomes available in:
 - The same placement body where the part is declared (subsequent
   lines may reference the just-named part by name).
 
-All three access forms are compile-time resolved; the graph is
-static (§13.1), so the compiler knows every part's identity, type,
-and placement-name.
+Static type-bulk and named access are compile-time resolved: the
+compiler knows every statically supplied part's identity, type, and
+placement-name per site (§13.1). A `dynamic` type's membership is
+runtime data by declaration, tracked reactively (§13.3.3.4).
 
 #### 13.4.2 Iteration over parts
 
@@ -12988,68 +13099,21 @@ node Synthesizer:
 compiler unrolls the loop to one reference per declared Oscillator
 part.
 
-**Heterogeneous iteration:**
+Iteration is **per-type only**. There is no heterogeneous `for p in
+c.parts` over all declared types: aggregate behavior over several
+part types is written per type and combined explicitly, so that
+adding a type to the `parts:` clause forces a conscious decision
+about its contribution rather than flowing it silently through a
+body that happens to compile. Where one uniform stored
+representation across types is genuinely needed, use `dyn Trait`
+(§5.2).
 
-```
-fn render_all(c: Composite):
-  for p in c.parts:
-    p.render()
-
-node Composite:
-  parts: Oscillator+, Filter [=1], Amplifier [=1]
-```
-
-Inside the body, `p` is **specialized per declared part type**: the
-compiler unrolls the loop to one concretely-typed body copy per part
-type (`Oscillator`, `Filter`, `Amplifier`), dispatching the
-`p.render()` call statically on each concrete type — the same
-monomorphization Ductus applies to generics (§2.3) and closures
-(§11.10.6). There is no combined runtime value and no new type former.
-The body must compile for every part type that appears; if `render` is
-unavailable on any part type, the unroll-copy fails at the for-loop
-site. Where one uniform stored representation is genuinely needed, use
-`dyn Trait` (§5.2); the explicit-trait-bound form below names the
-contract directly.
-
-**Heterogeneous iteration with an explicit trait bound:**
-
-```
-for p: Renderable in c.parts:
-  p.render()
-```
-
-The explicit form enforces that all part types implement
-`Renderable` at the iteration site (clearer error messages). The
-unbounded form (`for p in c.parts`) checks the same constraint
-implicitly through body operations.
-
-**Heterogeneous iteration with `match`:**
-
-```
-fn process(c: Composite):
-  for p in c.parts:
-    match p:
-      Oscillator(o): o.synthesize()
-      Filter(f): f.process()
-      Amplifier(a): a.amplify()
-```
-
-Regular pattern matching applies to `p`. The compiler
-unrolls per part instance and simplifies the match at compile time
-so only the matching branch survives in each copy.
-
-Match exhaustiveness rules apply: if the match omits a declared
-part type and has no wildcard arm, it is a compile error.
-
-**Relation to the general unrolling rule.** Part iteration is the
-part-specialization of the compile-time unrolling rule in §12.3.7.
-`c.parts.Oscillator` and `c.parts` are compile-time-known iterables
-because the parent's `parts:` declaration fixes part identities at
-compile time per §13.1's static-graph principle. The mechanics described
-above — one body copy per part, static dispatch, compile-time `match`
-simplification — are this specialization in action; a `for` loop in a function
-body whose iterable is *not* part-iteration but is otherwise
-compile-time-known (a range, an array literal) unrolls by the same rule.
+**Relation to the general unrolling rule.** Part iteration is not a
+special construct: `c.parts.Oscillator` is a fixed-extent array
+(§13.3.3.2) whose per-site length the parent's `parts:` declaration
+bounds and the placement fixes (§13.1's static-graph principle), so a
+`for` over it unrolls by the ordinary rule of §12.3.7 — the same rule
+by which a range or array literal unrolls.
 
 #### 13.4.3 Reactive dependency tracking through parts
 
@@ -13073,17 +13137,16 @@ transitively through function calls.
   most one part of each name; multiple parts of the same type with
   different names are permitted (subject to the cardinality
   declared in the `parts:` clause).
-- Parts are not added or removed at runtime (except via hot reload).
-- For heterogeneous iteration (`for p in parts`), the body
-  must compile for every declared part type (§13.4.2). The optional
-  explicit trait bound form (`for p: Trait in parts`) gives
-  clearer error messages and enforces the constraint at the
-  iteration site.
+- Statically supplied parts are not added or removed at runtime
+  (except via hot reload). Parts of a `dynamic` type mount and
+  dismount with their feeding `repeat`'s key set (§13.3.3.4).
+- A `dynamic` part type is not `for`-iterable, not indexable, and
+  not key-addressable from the receiving body — operators and
+  `repeat` are its only consumers (§13.3.3.4).
 
-#### 13.4.5 Heterogeneous parts — example
+#### 13.4.5 Parts access — example
 
-Putting type-bulk, heterogeneous, and named individual access
-together:
+Putting type-bulk and named individual access together:
 
 ```
 node Composite:
@@ -13114,10 +13177,9 @@ fn debug(c: Composite) -> string:
   "first oscillator: {c.osc_a.output}, filter: {c.flt1.kind}"
 ```
 
-Three access patterns coexist: `c.parts.Oscillator[i]` (type-bulk
-indexed, bounded by cardinality), `for p in c.parts: ...`
-(heterogeneous), and `c.osc_a` (named individual, requires the
-caller to know placement names).
+Two access patterns coexist: `c.parts.Oscillator[i]` / `for o in
+c.parts.Oscillator` (type-bulk, bounded by cardinality) and `c.osc_a`
+(named individual, requires the caller to know placement names).
 
 ### 13.5 Template Scopes and Keyed Instantiation
 
@@ -14454,11 +14516,11 @@ visible:
   instance, by qualified path: `chip_b.out1`.
 
 Named individual access is the placement-time companion to the
-type-bulk and heterogeneous access forms described in §13.4.1.
+type-bulk access form described in §13.4.1.
 Names are not available inside the parent's own type body (the
 type declaration doesn't know what placements will exist) — within
-the parent type, use `parts.<NodeType>[i]` or `parts`
-instead.
+the parent type, use `parts.<NodeType>[i]` or `parts.<NodeType>`
+iteration instead.
 
 Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
 enforced at placement: the number of placed parts of each type
