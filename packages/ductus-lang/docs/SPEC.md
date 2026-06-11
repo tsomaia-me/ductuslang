@@ -4206,7 +4206,10 @@ value"; `Type[Drivable]` is "some Drivable *type*."
 
 Its primary use is to carry a node, connection, or effect **type** as a
 value — a template or slot that defers *which kind* is placed — given that
-the corresponding *instances* are never values (§13.3.6.1).
+the corresponding *instances* are never values (§13.3.6.1). While an instance
+is never a value, a *weak reference* to one is: a `Handle[T]` (§13.3.6.2)
+carries a graph entity by identity as a storable value — the instance-level
+companion to `Type[…]`'s type-level one.
 
 #### 5.7.1 The constraint argument
 
