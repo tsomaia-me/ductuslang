@@ -9312,12 +9312,12 @@ iterable is runtime. This is **visible at the source** by what is
 iterated, and follows back to the iterable's declaration. There is no
 silent flip between compile-time and runtime based on context.
 
-**Placement-bearing contexts.** A `for` in a node-type body (§13.3.3.3)
-or a placement body (§13.8.3.1) is auto-enforced to be compile-time per
-§13.1's static-graph rule; a runtime iterable there is a compile error.
-See §13.3.3.3 for a `for` declaring parametric parts on the *type*
-(applied to every instance) and §13.8.3.1 for a `for` in a specific
-placement body (applied to that placement only).
+**Placement-bearing contexts.** A `for` in a node type's `expose:`
+block (§13.3.3.3) or a placement body (§13.8.3.1) is auto-enforced to
+be compile-time per §13.1's static-graph rule; a runtime iterable there
+is a compile error. See §13.3.3.3 for a `for` emitting parametric
+children on the *type* (applied to every instance) and §13.8.3.1 for a
+`for` in a specific placement body (applied to that placement only).
 
 **Dynamic placement multiplicity.** For runtime-varying child cardinality
 in a placement, use `repeat` (§13.5.4), not `for`. The compile-time `for`
@@ -10301,7 +10301,7 @@ instances. A connection's destination (`to`) may be a reactive node
 reference that re-points over time (§13.6.2, §13.8.5.1): the connection
 instance persists and merely moves which existing node it points at. No
 instance is created or destroyed by re-pointing, so the static instance set
-is untouched — only the edges move. Because every node reference resolves
+is untouched — only the wiring moves. Because every node reference resolves
 within the statically-known instance set (a function or cell can only ever
 yield a node that was already placed, §13.3.6.1), the compiler's
 construction-time guarantees — endpoint typing and topology-cycle analysis
@@ -12319,8 +12319,8 @@ The same marker, cell model, and consumption rules apply to
 #### 13.3.4 `incoming` and `outgoing` clauses
 
 ```
-incoming: ConnType1 [cardinality]?, ConnType2 [cardinality]?, ...
-outgoing: ConnType3 [cardinality]?, ConnType4 [cardinality]?, ...
+incoming: [dynamic] ConnType1 [cardinality]?, [dynamic] ConnType2 [cardinality]?, ...
+outgoing: [dynamic] ConnType3 [cardinality]?, [dynamic] ConnType4 [cardinality]?, ...
 ```
 
 The `incoming` and `outgoing` clauses list the *types* of connections
@@ -12334,16 +12334,17 @@ Like `parts:`, these are the node's **caller-facing signature**: they bound the
 connections a *caller* may wire to or from the node. `incoming:` bounds what
 others may direct *at* this node; `outgoing:` bounds what a caller placing this
 node may originate *from* it. They do **not** bound the node's own internal
-wiring — self-sourced connection placements (§13.3.4.2), exposition-wrapper
-connections, and `repeat`-materialized connections are its private realization,
-checked by endpoint typing and topology (§13.11.5) but never counted against
-`incoming:` / `outgoing:`. When such internal wiring targets one of the node's
-own parts, the node acts as the **caller of that part**, and the edge counts
-against the *part's* `incoming:` budget (§13.3.4.2).
+wiring — self-sourced connection placements (§13.3.4.2) are its private
+realization, checked by endpoint typing and topology (§13.11.5) but never
+counted against `incoming:` / `outgoing:`. When such internal wiring targets one
+of the node's own parts, the node acts as the **caller of that part**, and the
+connection counts against the *part's* `incoming:` budget (§13.3.4.2).
 
 Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
 sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
-`[N..]`, `[..=M]`). Default (bare) is unlimited (`0..`).
+`[N..]`, `[..=M]`). Default (bare) is unlimited (`0..`). The
+`dynamic` supply-mode prefix is likewise the same marker with the same
+exclusivity rule (§13.3.3.1).
 
 ```
 node Driver:
@@ -12351,70 +12352,103 @@ node Driver:
   incoming: SponsoredBy [..=3]
 ```
 
-**Interaction with dynamic destinations.** A caller-placed connection whose `to`
-is a reactive reference (§13.6.2) may point at a node at some times and away at
-others, so the set of connections currently *incoming* to a node can vary at
-runtime. Two rules keep `incoming` cardinality meaningful, applied over the
-**caller-placed** connections the clause governs:
+**Static and dynamic membership.** A connection belongs to a node's incoming
+set as a *static fact* when both its presence and its destination are fixed at
+compile time. Membership stops being a static fact in exactly two ways: the
+connection is materialized per `repeat` key (its *existence* varies, §13.5.4),
+or its destination is a reactive reference or `Handle` (its *target* varies,
+§13.6.2). The rule:
 
-- *Upper bounds* are verified over all reachable wirings, **counted per
-  placed connection instance**. A connection with a static destination
-  contributes one incoming edge to that node. A connection whose destination
-  is dynamic contributes one *potential* incoming edge to **every** instance
-  whose type is in its candidate envelope (§13.11.5) — it points at one node
-  at a time, but may point at any of them. The check: for each node and each
-  incoming connection type, static contributions plus potential contributions
-  must not exceed the bound's maximum. A dynamic connection materialized per
-  `repeat` key (§13.5.4) has no static instance count, so its potential
-  contribution is **unbounded**: a node type with a finite `incoming:` upper
-  bound for `C` may not appear in the candidate envelope of a
-  `repeat`-materialized dynamic `C` — a compile error naming both sites.
-- *Lower bounds* (a required minimum — `+`, or the `1` in `[=1]`) must be
-  met by **caller-placed** connections with a **static** destination — those
-  that *always* point at the node. A dynamic-destination connection cannot
-  count toward a guaranteed minimum, since it may point away. Indexed access
-  `incoming.<ConnType>[i]` for `i <` the guaranteed minimum therefore stays
-  valid.
+- An **unmarked (static)** `incoming:` type admits only connections whose
+  membership is a static fact. Its cardinality is checked by **exact local
+  arithmetic**: the compiler counts, per instance, the statically present
+  connections directed at it — caller-placed static-destination connections
+  *and* self-sourced static-destination connections (a self-sourced connection
+  into an own part counts at the part, and being always present, it satisfies
+  the part's lower bound). Indexed access `incoming.<ConnType>[i]` for `i <`
+  the guaranteed minimum is backed by exactly these.
+- Any connection whose membership is **not** a static fact requires
+  **`dynamic <ConnType>`** in the `incoming:` clause of **every node type in
+  its candidate envelope** (§13.11.5 — for a dynamic destination, every type
+  the reference's static type admits; for a repeat-materialized connection,
+  its destination's type). The check runs at the connection placement site
+  and names both sites on failure. A `dynamic` incoming type carries no
+  cardinality (§13.3.3.1), so there is no bound to check — the membership is
+  runtime data by declaration, tracked reactively (§13.3.4.1).
 
-A node's own self-sourced edges (§13.3.4.2) are exempt from this
-accounting at their *source* — they sit outside `outgoing:` — but where one
-targets a part, it counts against that part's `incoming:` exactly as a
-caller-placed edge would (the node is the part's caller). `outgoing:` thus
-governs only caller-originated connections; the destinations of those
-connections may still move (only their existence is fixed).
+`outgoing:` is symmetric: a caller may write a `repeat` that places connections
+sourced from the placed instance (fan-out — e.g. `repeat s in sessions:
+Send: s.target` in its placement body), and such caller-supplied connections
+require `outgoing: dynamic Send` on the instance's type, since their count at
+the source is not a static fact. A merely *re-pointing* destination does not
+dynamize the source side: the connection statically exists at its source; only
+its target moves. Self-sourced placements remain outside `outgoing:` entirely
+(the signature is caller-facing).
 
 ##### 13.3.4.1 Access from inside the node body
 
 Connections of a given type are accessible as `incoming.<ConnType>`
 and `outgoing.<ConnType>` (bare, per §13.7.5) or with the explicit
-`here::` anchor (`here::incoming.<ConnType>`), both structural
-iterables of compile-time-known length range:
+`here::` anchor (`here::incoming.<ConnType>`). The model is exactly
+that of parts — three member namespaces (`parts`, `incoming`,
+`outgoing`), each with a static face and a dynamic face:
+
+For a **static** (unmarked) connection type, the form is a read-only
+**array of connection references** with const-generic length bounded
+by the declared cardinality, exactly as §13.3.3.2 specifies for
+parts:
 
 - Indexed: `incoming.<ConnType>[i]` and `outgoing.<ConnType>[i]` are
-  legal iff `i < min_cardinality` of that connection type.
+  legal iff `i < min_cardinality` (ordinary const-generic bounds).
   Example: under `outgoing: Drives [=1]`, `outgoing.Drives[0]` is
   legal.
-- Type-bulk iteration: `for c in outgoing.<ConnType>: ...` always
-  works. Because incoming connections are named `incoming` (not
-  `in`), `for c in incoming.<ConnType>` reads without colliding with
-  the `for ... in` separator.
+- Iteration: `for c in outgoing.<ConnType>: ...` always works,
+  unrolling per §12.3.7. Because incoming connections are named
+  `incoming` (not `in`), `for c in incoming.<ConnType>` reads without
+  colliding with the `for ... in` separator.
 
-The access syntax is symmetric with parts (§13.3.3.2): three
-member namespaces (`parts`, `incoming`, `outgoing`), each grouping
-cells by declared type.
+For a **`dynamic`** connection type, the form is a **reactive cell**
+whose value is the current set of member connections, with the
+consumption rules of §13.3.3.4 — operators for values, `repeat` for
+structure, nothing else. This is the fan-in idiom:
+
+```
+connection Send:
+  from: Session
+  to: Mixer
+  attr gain: f32 = 1.0
+
+node Mixer:
+  incoming: dynamic Send
+  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.signal)
+  derived mix: f32 = sum(contributions)
+  expose:
+    repeat c in incoming.Send:
+      Ack: c.from                 // a back-connection per current Send
+```
+
+`contributions` re-evaluates when Sends mount or dismount and when
+any member's read cells change; `sum` is an ordinary function over
+the resulting values. The `repeat` arm shows the structural side:
+one `Ack` per currently incoming `Send`, mounting and dismounting
+with it. Markers fall on both sides by the rules of §13.3.4: the
+`Ack`s exist per `repeat` key, so `Session` declares
+`incoming: dynamic Ack`; the `Ack`s are self-sourced by `Mixer`'s
+own exposition, so `Mixer` needs no `outgoing:` entry for them.
 
 ##### 13.3.4.2 Self-sourced connections and the signature/internals model
 
 `incoming:` and `outgoing:` declare which connections a node *participates in* as
 an endpoint; they do not *establish* any. A node type establishes connections
-**sourced from itself** — edges every instance of the type brings into being,
-with the instance as the `from` endpoint — by placing them **inline in its
-structural sequence**: as exposition entries (§13.3.7.5) or within a type-body
-`for` (§13.3.3.3), in either case at the position where each edge engages
-(§13.3.7.6). There is no separate clause for them, deliberately: a
-connection placement carries *topological* meaning — *where* in the node's
-structure the edge takes effect — and a position-free list would erase exactly
-that information (§13.3.7.5).
+**sourced from itself** — connections every instance of the type brings into
+being, with the instance as the `from` endpoint — by placing them **inline in
+its structural sequence**: as exposition entries (§13.3.7.5), directly or
+within an exposition-level `for` (§13.3.3.3) or `repeat` (§13.5.4), in every
+case at the position where each connection engages (§13.3.7.6). There is no
+separate clause for them, deliberately: a connection placement carries
+*topological* meaning — *where* in the node's structure the connection takes
+effect — and a position-free list would erase exactly that information
+(§13.3.7.5).
 
 A self-sourced connection placement uses the ordinary placement syntax of
 §13.8.4, fixed by the *type* rather than supplied by a caller. The source is
@@ -12425,22 +12459,27 @@ are admissible:
 
 - A **part of the node** (scope 2) — a named part instance, or an indexed
   `parts.X[i]` within the guaranteed minimum (§13.3.3.2). A **static**
-  internal destination: it always points, so it can satisfy the part's
-  `incoming:` lower bounds (§13.3.4).
+  internal destination: it always points, so it counts as static supply at
+  the part and can satisfy the part's `incoming:` lower bounds (§13.3.4).
 - A **module-level instance** (scope 3) — a fixed, shared target every instance
   connects to, such as a global bus or clock. Also static.
 - A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
   wiring. The instance is configured at placement with a handle (§13.3.6.2), and
-  its self-sourced edge drives whatever that handle resolves to. This is the
-  payoff of the dynamic `to`: *every instance drives whatever it is told to at
-  placement*, and the edge freezes while the handle resolves to `None`
-  (§13.9.7). Dynamic, so it never counts toward a destination's lower bound
+  its self-sourced connection drives whatever that handle resolves to. This is
+  the payoff of the dynamic `to`: *every instance drives whatever it is told to
+  at placement*, and the connection freezes while the handle resolves to `None`
+  (§13.9.7). Membership at the destination is not a static fact, so every node
+  type the handle's type admits must declare `incoming: dynamic <ConnType>`
   (§13.3.4).
 
 ```
 connection Drives:
   from: Driver
   to: Drivable
+
+node Axle:
+  satisfies Drivable
+  incoming: dynamic Drives            // membership varies with the handles — §13.3.4
 
 node Driver:
   attr wheel: Handle[Drivable]        // configured per instance at placement
@@ -12454,34 +12493,36 @@ Garage g:
   Driver | wheel=rear_axle            // this one drives rear_axle
 ```
 
-(`Driver` needs no `outgoing: Drives` — a self-sourced edge is not caller-placed;
-see below.)
+(`Driver` needs no `outgoing: Drives` — a self-sourced connection is not
+caller-placed; see below.)
 
 **Signature vs. internals.** Self-sourced connections are the concrete case of a
 general rule. A node type's `parts:`, `incoming:`, and `outgoing:` clauses are its
 **caller-facing signature**: they bound what a *caller* may place into, or wire
-to and from, an instance. A node's **internals** — its self-sourced connection
-placements, the placements a `repeat` materializes (§13.5.4), and the wrapper
-placements an `expose:` introduces (§13.3.7) — are its private realization.
-Internals are **not** bound by the signature clauses; they are checked only by
-connection endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
+to and from, an instance. A node's **internals** are **every placement the type
+itself makes** — self-sourced connections, type-emitted `for` children
+(§13.3.3.3), `repeat` placements (§13.5.4), wrapper placements (§13.3.7) — its
+private realization. Internals are **not** bound by the signature clauses and
+never appear in the signature namespaces; they are checked only by connection
+endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
 
 One consequence is recursive: when a node's internal wiring (a self-sourced
-edge, or a wrapper) terminates at one of the node's **own parts**, the node is
-acting as that part's **caller**, and the edge counts against the *part's*
-`incoming:` budget — the same budget a caller placing the part would draw from.
-A node is the caller of its own parts.
+connection, or a wrapper) terminates at one of the node's **own parts**, the
+node is acting as that part's **caller**, and the connection counts against the
+*part's* `incoming:` budget — the same budget a caller placing the part would
+draw from. A node is the caller of its own parts.
 
-The same accounting applies at any destination: a self-sourced edge is exempt
-at its *source* only. At a **module-level destination**, every placed instance
-of the source type contributes one edge to the target's `incoming:` budget,
-counted per §13.3.4's rules (static edges count everywhere; dynamic edges count
-as potential, per the candidate envelope). When instances of the source type
-are materialized dynamically (`repeat`, §13.5.4), the contribution is
-unbounded, so the shared target must declare an unbounded `incoming:` for that
-connection type — a finite bound there is a compile error naming both sites.
+The same accounting applies at any destination: a self-sourced connection is
+exempt at its *source* only. At a **module-level destination**, every placed
+instance of the source type contributes one connection to the target's
+`incoming:` accounting, by §13.3.4's rule: contributions that are static facts
+(statically placed source instances, static destinations) count toward a
+static `incoming:` type's exact arithmetic; any contribution that is not a
+static fact — source instances materialized by `repeat`, or a `Handle`
+destination — requires the target to declare `incoming: dynamic` for that
+connection type, with the error naming both sites.
 
-A self-sourced edge is therefore exempt from the source node's
+A self-sourced connection is therefore exempt from the source node's
 `outgoing:` clause (which governs caller-originated connections only), but it is
 **not** exempt from endpoint typing: the `from`/`to` types must still match the
 connection's declaration (§13.6.1).
@@ -12668,8 +12709,8 @@ The `expose:` clause declares the node type's **structural output**
 — the **ordered** list of placements the runtime traverses when it
 encounters an instance of this type. Entries are node placements and
 connection placements (§13.3.7.5), and their order is semantic: it is the
-order in which the runtime walks the node's content and engages its edges
-(§13.3.7.6). The clause is the node's "return value" in the structural
+order in which the runtime walks the node's content and engages its
+connections (§13.3.7.6). The clause is the node's "return value" in the structural
 sense: it determines what an external reader (and the runtime) sees as the
 node's content.
 
@@ -12721,8 +12762,28 @@ reference:
 **Connection entries** place self-sourced connections (§13.3.4.2,
 §13.3.7.5) at their position in the sequence, with the full placement
 syntax of §13.8.4 — `ConnType: dest`, optional `/expr`, attribute clause,
-and inline `when` modifier. The entry's position is where the edge
+and inline `when` modifier. The entry's position is where the connection
 *engages* during traversal (§13.3.7.6).
+
+**Positioning references** place *caller-supplied* connections:
+`outgoing.<ConnType>` (all caller-supplied connections of that static
+type, in placement order) or `outgoing.<ConnType>[i]` (one of them,
+legal under the guaranteed minimum) engages them at this position,
+overriding the anchoring fallback of §13.8.4 for the referenced
+connections. The form is a member-namespace reference with no
+destination, so it never collides with the `ConnType: dest` placement
+shape. Bare `incoming.<ConnType>` as an entry is a **compile error**:
+engagement order belongs to the *source's* traversal (§13.3.7.6), and a
+destination cannot reposition another node's connection within that
+node's structure. The error points at the expression-position idioms
+instead — `incoming.X[i].from` as a back-connection destination, or
+`repeat c in incoming.X: …` (§13.3.4.1).
+
+**Iteration entries** emit type-internal structure in place:
+a compile-time `for` (§13.3.3.3) unrolls its placements at its written
+position; a `repeat` (§13.5.4) mounts its keyed scopes there. Both are
+lowercase-keyword forms, so they never collide with `Name:` entries
+(§1.4's naming rule is normative).
 
 **Entry-kind disambiguation.** Node and connection entries share the
 `Name: …` shape (`SomeInternalWrapper:` + children vs. `Plays: chorus`).
@@ -12760,7 +12821,11 @@ arm bodies as ordinary indented exposition entries.
 When `expose:` is omitted, the node's exposition defaults to
 `expose: parts` — the runtime traverses all supplied placements in
 declaration order: parts and caller-placed connections in their written
-interleaving (§13.8.4). When the node has no `parts:` clause and no
+interleaving (§13.8.4), with a feeding `repeat`'s scopes expanding in
+place at the repeat's written position (§13.3.3.4). The default covers
+**caller-supplied content only**; a type that emits internal structure
+(`for`/`repeat`/wrappers, §13.3.7.1) necessarily writes `expose:`
+explicitly. When the node has no `parts:` clause and no
 `expose:` clause, the exposition is empty (the node has no
 structural output and exists only for its state and connections).
 
@@ -12787,7 +12852,8 @@ mechanism:
   fill them (§13.4, §13.8.3).
 - **`expose:`** is the *output* half — it declares the node's ordered
   structural output: which of those parts (and/or wrapping internal
-  nodes containing them) the runtime traverses, and where the node's
+  nodes containing them) the runtime traverses, where the node's own
+  emissions (`for`/`repeat` entries, §13.3.7.1) appear, and where its
   self-sourced connections engage among them (§13.3.7.5).
 
 `parts:` exists *solely* to feed `expose:`: externally-supplied children
@@ -12805,11 +12871,15 @@ Connections (§13.6) are part of exposition: a connection placement is an
 exposition entry, positioned in the ordered sequence alongside node
 entries (§13.3.7.1). The position is not formatting — it is topology. A
 connection placement says not merely *that* this node connects to a
-target, but *where in this node's structure* the edge takes effect: it
-**engages** when traversal reaches its position (§13.3.7.6), after the
+target, but *where in this node's structure* the connection takes effect:
+it **engages** when traversal reaches its position (§13.3.7.6), after the
 entries before it.
 
 ```
+node Section:
+  incoming: dynamic Plays         // handles re-point — membership is runtime data (§13.3.4)
+  // …
+
 node Verse:
   attr next: Handle[Section]      // configured at placement
   expose:
@@ -12822,15 +12892,15 @@ node Verse:
 Hoisting `Plays: next` into a position-free list would flatten it to the
 mere adjacency fact "a Verse plays some Section" — erasing exactly the
 information that distinguishes a transition after the chord from one
-before the first note. The same edge at a different position is a
+before the first note. The same connection at a different position is a
 different program.
 
 Like wires on a circuit schematic, connections are **always present on
 the schema**: the instance set is static (§13.1), and every connection
 entry exists from construction — what may change at runtime is where a
-dynamic destination points (§13.6.2), never whether the edge exists.
-What the position orders is *engagement* — when traversal first reaches
-the entry (§13.3.7.6). And, like a powered circuit, presence is
+dynamic destination points (§13.6.2), never whether the connection
+exists. What the position orders is *engagement* — when traversal first
+reaches the entry (§13.3.7.6). And, like a powered circuit, presence is
 participation: an exposition entry's connection is reactively live
 whether or not traversal has reached it (§13.3.7.6).
 
@@ -12844,7 +12914,7 @@ clause (§13.3.8), never in `expose:`.
 Traversal (§13.3.7.4) walks the exposition in order. A node entry is
 traversed by **structural descent** — the runtime enters the placement
 and walks *its* exposition. A connection entry is **engaged** — the
-runtime takes up the edge and begins interpreting the connected
+runtime takes up the connection and begins interpreting the connected
 subgraph.
 
 What engagement *means* is domain semantics, carried by the specific
@@ -13322,8 +13392,12 @@ repeat <bind> at <index> in <source> as <view> keyed by <key-expr>:
 The clause order is fixed: `<bind>`, then optional `at <index>`, then
 `in <source>`, then optional `as <view>`, then optional `keyed by <key-expr>`.
 
-- **`<source>`** is `Signal[I]` for some `I: Iterable` (§12.8). The
-  iterator must terminate at each evaluation (see §13.5.4.8). The
+- **`<source>`** is a reactive collection cell: `Signal[I]` for some
+  `I: Iterable` (§12.8), or a **`dynamic` namespace cell** of the
+  enclosing node (`parts.<T>` / `incoming.<C>` / `outgoing.<C>`,
+  §13.3.3.4), whose value is a language-provided keyed, ordered
+  collection — always iterable. The iterator must terminate at each
+  evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
   N), `HashSet[T]`, and `HashMap[K, V]`; user types may fulfill
   `Iterable` to participate. `Stream[T]` is not a valid `repeat` source —
@@ -13381,10 +13455,15 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   borrow-equivalent aliases do not leak into attribute or argument
   positions through `repeat`.
 - **`<body>`** is an indented **placement-body block** following §13.8.3's
-  grammar. It places **exactly one root node** per iteration (the single-root
-  rule below); that root may carry connections and nested structure in its own
-  placement body, with the ordinary clause ordering of §13.8.9 and the
-  whitespace-separation / self-delimiting rules of §13.8.10.
+  grammar — any number of placements per key: nodes, connections, nested
+  structure, or a body of connections only, with the ordinary clause
+  ordering of §13.8.9 and the whitespace-separation / self-delimiting rules
+  of §13.8.10. Each scope's placements join the enclosing structural
+  sequence at the `repeat`'s written position, in source order. There is no
+  one-placement-per-key requirement: scope identity is the *key*
+  (§13.5.4.8), and the keyed view addresses named placements, not a root
+  (§13.5.4.9). In an `effects:` clause (§13.5.4.7), the body is a list of
+  effect entries instead.
 - **`at <index>`** (optional) binds a bare identifier to each element's 0-based
   **enumeration index** (`usize`) in iterator order. It is ordinary per-iteration
   *data* — it updates whenever elements reorder, and it **never participates in
@@ -13393,24 +13472,18 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 - **`as <view>`** (optional) binds a bare identifier naming the repeat's **keyed
   view**: a lookup table over the scopes it currently holds, addressable by key
   from the surrounding body (§13.5.4.9).
-- **Single root placement.** In every *structural* context (a node body,
-  placement body, or effect `desired:` block — §13.5.4.7), a `repeat` body
-  places **exactly one root node** per key — the one node each scope
-  contributes into the enclosing exposition. Connections and nested structure
-  may accompany it (within the root's placement body), but the scope's upward
-  contribution is a single node. This keeps the key ↔ scope ↔ node
-  correspondence one-to-one, which is what makes the keyed view (§13.5.4.9)
-  and stable scope identity (§13.5.4.8) well-defined. A body that needs
-  several siblings per key wraps them under one node. In an `effects:` clause
-  (§13.5.4.7), the body is a list of effect entries instead, and the rule does
-  not apply.
 - **Key derivation** proceeds by ordered precedence. The compiler picks
   the first applicable path:
   1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
      is evaluated with the bind in scope. The result must be a
      `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
      `string`). Explicit always wins when present.
-  2. **`Keyed` trait** — if the element type fulfills the stdlib
+  2. **Carried key** — when the source is a `dynamic` namespace cell
+     (`parts.<T>` / `incoming.<C>` / `outgoing.<C>`, §13.3.3.4), each
+     element arrives with the key its supplier derived for it
+     (placement-site keys for statically written elements), and that
+     key is used.
+  3. **`Keyed` trait** — if the element type fulfills the stdlib
      `Keyed` trait, the key is `Keyed::key(element)`. Trait shape:
      ```
      trait Keyed:
@@ -13421,16 +13494,17 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
      A type fulfills `Keyed` for at most one `Key` (standard trait
      coherence per §3.7); within that constraint, the `Key` associated
      type is uniquely determined.
-  3. **Stringifiable element** — if the element type is itself a
+  4. **Stringifiable element** — if the element type is itself a
      `StringifiableKey`, the element value is the key.
-  4. **Otherwise** — compile error: *"element type T doesn't fulfill
+  5. **Otherwise** — compile error: *"element type T doesn't fulfill
      `Keyed` and isn't a stringifiable primitive; either fulfill
      `Keyed` for T or add `keyed by <expr>`."*
 
-The rule is strict precedence: path 2 always wins over path 3 when
+The rule is strict precedence: path 3 always wins over path 4 when
 both apply (e.g., when a user has fulfilled both `Keyed` and
-`StringifiableKey` for the same newtype), and path 1 always wins over
-2 and 3. There is no ambiguity to resolve at the call site.
+`StringifiableKey` for the same newtype), and paths 1 and 2 win over
+3 and 4 (path 2 applies only to `dynamic` namespace sources). There
+is no ambiguity to resolve at the call site.
 
 ##### 13.5.4.2 Iteration semantics
 
@@ -13483,14 +13557,22 @@ reconciler diffs the key set and materializes / drops `RowComponent`
 scopes per row. Each scope's `RowComponent` cells live at path
 `<effect-instance>.<row.id>.<cell>` per §13.5.3.
 
-**Reactive-signal-driven children in a node body:**
+**Reactive-signal-driven children in a node's exposition:**
 
 ```
 node VoiceMixer:
   attr active_voices: Vec[VoiceConfig] = []
-  repeat cfg in active_voices keyed by cfg.voice_id:
-    Voice | params=cfg
+  expose:
+    repeat cfg in active_voices keyed by cfg.voice_id:
+      Voice | params=cfg
 ```
+
+The `repeat` is written in `expose:` — structural output is emitted in
+exactly one place (§13.3.3.3). These `Voice` children are the type's
+**internals**: never counted against any `parts:` clause and absent from
+the `parts` namespace (§13.3.4.2). A *caller* materializing children
+instead writes the `repeat` in the placement body, feeding a
+`dynamic`-marked part type of the receiving node (§13.3.3.4).
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
 commits for the same `voice_id`. The attr is a reactive cell — reads
@@ -13616,11 +13698,16 @@ template-scope machinery; the cost model is "pay for what you iterate."
 
 `repeat` is admitted in:
 
-- **Node bodies** (§13.3) — scopes become children of every instance of
-  the enclosing node, materialized at instantiation and tracking the
-  source.
+- **`expose:` blocks** (§13.3.7) — scopes become internal children of
+  every instance of the enclosing node, materialized at instantiation,
+  tracking the source, at the `repeat`'s written position in the
+  exposition. Internals: never counted against signature clauses
+  (§13.3.4.2).
 - **Placement bodies** (§13.8.3) — scopes become children of this
-  specific placement.
+  specific placement. This is **caller supply**: node placements feed
+  the receiving type's `dynamic`-marked part types (§13.3.3.4), and
+  connection placements sourced from the placed instance require
+  `outgoing: dynamic` on its type (§13.3.4).
 - **`effects:` clauses** (§13.3.8) — each scope materializes one
   effect-bearing instance per element (e.g., one connection per active
   session); the per-element effects suspend/resume and tear down with
@@ -13670,6 +13757,12 @@ In each rejected context, the diagnostic identifies the misplaced
   across commits, identifies the same scope. The element's *value* is
   carried in `<bind>` and may change commit to commit; the *key*
   identifies the scope.
+- **Carried keys diff identically.** When the source is a `dynamic`
+  namespace cell (§13.3.3.4), the carried key (key-derivation path 2,
+  §13.5.4.1) is the scope key like any other: the diff compares the
+  carried key set across commits, so an element keeps its scope across
+  reorderings and value changes exactly as a `keyed by`-derived key
+  would keep it.
 - **The `at <index>` bind never derives the key.** The index is positional,
   not identity: it is excluded from the implicit key-derivation paths of
   §13.5.4.1 (the `Keyed` trait and stringifiable-element paths), and the
@@ -13719,7 +13812,7 @@ goes through the placement name, not through any instance:
   §13.4, lifted to a per-key lookup.
 
 Every **named** placement in the body is addressable this way, at any nesting
-depth — the root node and any named child alike (`posts_view[k].avatar`). The
+depth — any named placement in the scope (`posts_view[k].avatar`). The
 table is **flat**: names, not paths. Two consequences:
 
 - **Names are unique within the `repeat` body**, across nesting. A duplicate
@@ -13759,37 +13852,39 @@ the act of driving. Connections also satisfy traits (like
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
 **caller-placed** connection participates in the source node's outgoing
-surface (declared via `outgoing:`); a **self-sourced** one (§13.3.4.2)
-sits outside it. Both count against the destination node's incoming
-surface (declared via `incoming:`, per §13.3.4's accounting).
+surface (declared via `outgoing:`, with the `dynamic` marker when the
+caller may supply varying counts); a **self-sourced** one (§13.3.4.2)
+sits outside it. Both count at the destination node's incoming
+surface (declared via `incoming:`, per §13.3.4's static-or-`dynamic`
+membership rules).
 
 Source and destination differ in how they are fixed. The `from` endpoint is
 the enclosing instance — structural, determined by *where* the connection is
 placed (§13.8.4) — and does not vary at runtime. The `to` endpoint is a node
 *reference*, which may be a reactive value that re-points among existing
 nodes at runtime (§13.6.2, §13.8.5.1). When `to` re-points, the connection
-instance persists and its per-relationship state is retained; only the edge
-moves. No node is created or dropped by re-pointing — a connection never
-owns its endpoints (§13.8.4.1) — so this is rewiring within the static
+instance persists and its per-relationship state is retained; only its
+target moves. No node is created or dropped by re-pointing — a connection
+never owns its endpoints (§13.8.4.1) — so this is rewiring within the static
 instance set, not a change to it (§13.1).
 
 A node declares which connection types callers may wire to and from it via
 its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
-constraints; its own self-sourced edges sit outside those clauses
-(§13.3.4.2). The actual connection instances appear at placement
-(§13.8.4).
+constraints and the `dynamic` supply-mode marker; its own self-sourced
+connections sit outside those clauses (§13.3.4.2). The actual connection
+instances appear at placement (§13.8.4).
 
 **Connections and exposition.** A connection placement is an exposition
 entry (§13.3.7.5): it sits at a position in its source's ordered
-structural sequence, and that position is where the edge **engages**
+structural sequence, and that position is where the connection **engages**
 during traversal (§13.3.7.6). Like wires on a circuit schematic,
 connections are always present on the schema — the instance set is
-static (§13.1) and every edge exists from construction; only a dynamic
-destination's target may move (§13.6.2) — and always reactively live
-(§13.3.7.6); what the position orders is their engagement. A connection
-is still owned by no single endpoint (§13.8.4.1): the entry belongs to
-the *source's* exposition, but the edge links two instances at the
-graph level.
+static (§13.1) and every statically placed connection exists from
+construction; only a dynamic destination's target may move (§13.6.2) —
+and always reactively live (§13.3.7.6); what the position orders is their
+engagement. A connection is still owned by no single endpoint (§13.8.4.1):
+the entry belongs to the *source's* exposition, but the connection links
+two instances at the graph level.
 
 Connection vs. node-typed attr: a node **cannot** store a direct reference
 to another node instance (`attr target: SomeNode` is rejected). A
@@ -14534,6 +14629,13 @@ compile-time-known (§12.3.7, §2.4.1). The loop unrolls at compile time,
 producing one child placement per iteration. The static-graph principle
 (§13.1) is preserved: every part is determined at compile time.
 
+The two iteration constructs split a placement body by supply mode:
+**`for` is static supply** — its unrolled placements count against the
+receiving type's cardinality and appear in `parts.<NodeType>`, exactly
+like individually written placements — and **`repeat` is dynamic
+supply** (§13.5.4), legal only against the receiver's `dynamic`-marked
+types (§13.3.3.4).
+
 A `for` in a placement body whose iterable is *not* compile-time-known
 is a compile error pointing at the iterable. No new diagnostic class is
 introduced — the static-graph rule itself enforces this; the diagnostic
@@ -14593,7 +14695,7 @@ intrinsic to a specific placement.
 
 #### 13.8.4 Connections
 
-A connection placement creates a directional edge from a source
+A connection placement creates a directional connection from a source
 instance to a destination instance. The placement is written inside
 the source instance's body. **The source is always the immediately
 enclosing instance** — the instance whose body directly contains the
@@ -14620,23 +14722,27 @@ the depth at which the connection appears does not change how the
 source is determined.
 
 **Position is topology.** A connection placement's position among its
-sibling placements is its **engagement position** (§13.3.7.6): the edge
-engages when traversal reaches that point in the sequence, after the
-siblings written before it. This holds regardless of who places the
-connection — a caller in a placement body, the type itself in its
-exposition (§13.3.7.5) or a type-body `for` (§13.3.3.3), or within a
-`repeat` root's placement body (§13.5.4.1).
+sibling placements is its **engagement position** (§13.3.7.6): the
+connection engages when traversal reaches that point in the sequence,
+after the siblings written before it. This holds regardless of who
+places the connection — a caller in a placement body, the type itself
+in its exposition (§13.3.7.5, including exposition-level `for` and
+`repeat` bodies, §13.3.3.3/§13.5.4).
 
 For caller-supplied connections, the position survives the type's
 exposition by **anchoring**: each connection in a placement body anchors
-to its nearest *preceding* sibling node placement, and engages
-immediately after that part wherever the exposition carries it — through
-a bulk reference (`parts`, `parts.X` — "in placement order", §13.3.7.1),
-a by-name entry, or a wrapper. Every part is exposed (§13.3.7.4), so
-every anchor lands. A connection written before any sibling part anchors
-to the body start and engages before the node's first exposed entry.
-Under the default `expose: parts` (§13.3.7.2), this reduces to
-traversing the full interleaved sequence as written.
+to its nearest *preceding* sibling placement — a node placement, or a
+`repeat` block as a unit (the connection then engages after the block's
+expanded scopes) — and engages immediately after that sibling wherever
+the exposition carries it: through a bulk reference (`parts`, `parts.X`
+— "in placement order", §13.3.7.1), a by-name entry, or a wrapper.
+Every part is exposed (§13.3.7.4), so every anchor lands. A connection
+written before any sibling anchors to the body start and engages before
+the node's first exposed entry. Under the default `expose: parts`
+(§13.3.7.2), this reduces to traversing the full interleaved sequence
+as written. Anchoring is the **fallback**: an explicit `expose:` that
+references caller-supplied connections directly (`outgoing.<ConnType>`,
+§13.3.7.1) overrides the anchor for the referenced connections.
 
 A **caller-placed** connection's type must match a type listed in the source
 instance's `outgoing:` clause (or in the type's traits' contributions). A
@@ -14649,7 +14755,10 @@ reference (§13.8.5.1) — a bare identifier, any expression yielding a node
 reference (possibly reactive), or a `Handle[N]` (read as `Option[&N]`,
 §13.3.6.2) selecting one of
 the candidate nodes (the connection freezes while that selection resolves to
-`None`, §13.9.7). The `/expr` slot, when present, sets the connection's
+`None`, §13.9.7). A reactive or `Handle` destination makes membership at the
+destination a runtime fact: every node type in the reference's candidate
+envelope must declare `incoming: dynamic <ConnType>` (§13.3.4). The `/expr`
+slot, when present, sets the connection's
 `default attr` (§13.2.2.1); the attribute clause (`| name=value …`) sets named
 attrs. None of these target the destination.
 
@@ -14683,13 +14792,14 @@ body), `filter.signal_active` is the source filter's attr. In
 
 ##### 13.8.4.1 Terminology
 
-Connections are not "owned" by either endpoint. A connection is an
-*edge* between two instances: it is *initiated from* its source (the
+Connections are not "owned" by either endpoint. A connection runs
+*between* two instances: it is *initiated from* its source (the
 enclosing instance whose body contains the placement) and
 *terminated at* its destination (the node reference in the placement's
 body). "Source" and "destination" are the canonical terms; "owner" is not.
 Because neither endpoint is owned, re-pointing the destination reference
-(§13.6.2) moves the edge without affecting either node's lifetime.
+(§13.6.2) moves the connection's target without affecting either node's
+lifetime.
 
 ##### 13.8.4.2 Placing a connection type value
 
@@ -14743,8 +14853,8 @@ resolve to one) — both verifiable before `C` is monomorphized to `Drives`
 (for alice) or `Tows` (for bob). `outgoing: C` admits the placed type
 (§13.8.4); per-type attrs such as `aggressiveness` are set with the
 attribute clause, exactly as for a named connection. As with any
-destination, `the_car` may instead be a reactive reference, making the edge
-dynamic (§13.8.5.1).
+destination, `the_car` may instead be a reactive reference, making the
+destination dynamic (§13.8.5.1).
 
 #### 13.8.5 The `/expr` form
 
@@ -14800,10 +14910,14 @@ changes (§13.6.2). Every node the reference could yield belongs to the
 statically-known instance set — a function or cell cannot create a node
 (§13.3.6.1) — so the destination always resolves within that set. The
 compiler checks the `to:` constraint against the reference's *type* (so
-every possible target is well-typed), and topology-cycle analysis (§13.11.5)
-ranges over the node *types* that reference type admits. A *reactive* selection
-is what makes the edge move; a compile-time-fixed selection resolves to one
-node and the edge is static.
+every possible target is well-typed), topology-cycle analysis (§13.11.5)
+ranges over the node *types* that reference type admits, and each of those
+types must declare `incoming: dynamic <ConnType>` (§13.3.4) — in the
+`pick(mode, some_car, other_car)` example above, the destination types of
+`some_car` and `other_car` both declare `incoming: dynamic Drives`. A
+*reactive* selection is what makes the destination move; a
+compile-time-fixed selection resolves to one node and the membership is a
+static fact.
 
 ##### 13.8.5.2 For node (part) placements
 
@@ -15294,10 +15408,10 @@ Two design moves justify the clause:
 **Gates vs. dynamic re-pointing.** A gate decides *whether* a constructed
 edge (or subtree) propagates — every alternative is built and kept warm, and
 the gate switches which is live (§13.9.7). A connection with a dynamic
-destination (§13.6.2) instead changes *which existing node* a single edge
-points at. The two are complementary: reach for a gate to turn structure on
-and off; reach for a dynamic `to` to move an edge among nodes that all
-already exist.
+destination (§13.6.2) instead changes *which existing node* a single
+connection points at. The two are complementary: reach for a gate to turn
+structure on and off; reach for a dynamic `to` to move a connection among
+nodes that all already exist.
 
 #### 13.9.2 Type-level `when:`
 
@@ -15315,7 +15429,7 @@ node OneShot:
     default: false
   when: not fired                              // one-shot latch: fires once, then stays closed
 
-connection ActiveEdge:
+connection ActiveLink:
   from: Source
   to: Sink
   attr weight: f32 = 1.0
@@ -15445,7 +15559,7 @@ propagation event scheduled within the commit that flips the
 predicate (per §13.9.7's snap-on-gate-open rule).
 
 ```
-connection WeightedEdge:
+connection WeightedLink:
   from: Node
   to: Node
   attr weight: f32 = 1.0
@@ -15524,7 +15638,7 @@ false):
   gated node do not deliver to their destinations.
 
 **Behavior on a gated connection** (the connection's own `when` is
-false): a gated connection edge does not propagate at all — its
+false): a gated connection does not propagate at all — its
 destination receives nothing through this connection. Note this
 differs from a gated *node*, whose incoming connections still deliver
 to its input cells (the node's own `when` re-evaluates against those
@@ -15650,14 +15764,14 @@ rule must hold across all of them. Like a gate, it re-points within a fixed
 instance set; unlike `repeat`, it creates and drops nothing.
 
 ```
-// Forbidden even if Edge has a `when` clause that will be false at runtime
-connection Edge:
+// Forbidden even if Link has a `when` clause that will be false at runtime
+connection Link:
   from: A
   to: B
   when: false                                    // always closed
 
-// Cycle A → B → A via Edge in both directions is still a topology
-// error unless at least one Edge type satisfies Circularity.
+// Cycle A → B → A via Link in both directions is still a topology
+// error unless at least one Link type satisfies Circularity.
 ```
 
 #### 13.9.10 Hot reload of `when` predicates
@@ -16059,8 +16173,14 @@ handles this in two parts:
 The same two-part mechanism covers every handle read — a node-body derived
 reading a `repeat`-view handle (§13.5.4.9) subscribes to the handle's
 resolution and, while resolved, to the referent's cells; a dismount flips
-the resolution to `None` and drops the referent subscription. Handle
-resolution is the **only** source of dynamic dependency in the language; it
+the resolution to `None` and drops the referent subscription. The
+**dynamic namespace cells** (§13.3.3.4) are the collective form of the
+same mechanism: an operator over `incoming.<C>` subscribes to the
+membership (the cell itself) and, per current member, to the cells its
+per-element fn reads — a mount or dismount re-establishes the member
+subscriptions exactly as a re-point does. Handle
+resolution — individually or in this collective form — is the **only**
+source of dynamic dependency in the language; it
 exists because wiring may change while every reachable entity remains
 statically known (§13.1, §13.3.6.1, and per-`repeat`-key scopes §13.5.4). It
 does not alter per-commit evaluation order (§13.10.3): within any one commit
@@ -16205,6 +16325,9 @@ from that type — a concrete node type contributes itself; a trait contributes
 every node type that satisfies it (including via a supertrait); the bare
 `Node` bound contributes all — so the set is statically known: a reference can
 only ever resolve to an already-placed node of one of those types (§13.3.6.1).
+This **candidate envelope** serves two checks: the cycle analysis below, and
+the membership-marker rule of §13.3.4 (every type in the envelope must declare
+`incoming: dynamic` for the connection type).
 The cycle check stays a compile-time analysis: the compiler verifies that
 *every* cycle in the candidate graph traverses a `Circularity` connection, i.e.
 that no reachable wiring can form a non-`Circularity` cycle. The analysis is
@@ -16212,8 +16335,8 @@ sound but conservative in proportion to how wide the candidate set is. A
 narrowly typed destination (e.g. a concrete type with one placed instance) adds
 few candidate edges; a destination typed broadly enough to admit many node
 types adds an edge for each, so such a connection will typically have to satisfy
-`Circularity` itself — the correct requirement, since a freely re-pointing edge
-is exactly the kind that can close a runtime loop.
+`Circularity` itself — the correct requirement, since a freely re-pointing
+connection is exactly the kind that can close a runtime loop.
 
 ```
 error: topology cycle with no Circularity-satisfying connection
@@ -16265,9 +16388,11 @@ exception is a read through a **handle resolution** (§13.3.6.2, §13.10.5):
 the *identity* of the depended-on cells changes when the resolution
 re-points, mounts, or dismounts. The canonical case is a connection body
 reading `to.*` against a reactive destination (§13.6.2); a node-body read
-through a `repeat`-view handle (§13.5.4.9) is the same mechanism. In every
-case the resolution itself is in the provenance, and a given referent's
-cells are in the provenance only while that referent is resolved.
+through a `repeat`-view handle (§13.5.4.9) is the same mechanism, and an
+operator over a dynamic namespace cell (§13.3.3.4) is its collective form.
+In every case the resolution itself is in the provenance, and a given
+referent's cells are in the provenance only while that referent is resolved
+(a member's cells, only while it is a member).
 
 #### 13.12.2 Functions are reactive-transparent
 
