@@ -118,7 +118,7 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`, `keyed`), the reserved
+`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
 remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
@@ -13015,7 +13015,14 @@ repeat <bind> in <source>:
 
 repeat <bind> in <source> keyed by <key-expr>:
   <body>
+
+// fullest form — optional index bind (`at`) and view name (`as`):
+repeat <bind> at <index> in <source> as <view> keyed by <key-expr>:
+  <body>
 ```
+
+The clause order is fixed: `<bind>`, then optional `at <index>`, then
+`in <source>`, then optional `as <view>`, then optional `keyed by <key-expr>`.
 
 - **`<source>`** is `Signal[I]` for some `I: Iterable` (§12.8). The
   iterator must terminate at each evaluation (see §13.5.4.8). The
@@ -13075,10 +13082,26 @@ repeat <bind> in <source> keyed by <key-expr>:
   other placement targets in the body see owned types —
   borrow-equivalent aliases do not leak into attribute or argument
   positions through `repeat`.
-- **`<body>`** is an indented **placement-body block** following
-  §13.8.3's grammar — any number of placements (parts and/or connections)
-  per iteration, with the ordinary clause ordering of §13.8.9 and the
+- **`<body>`** is an indented **placement-body block** following §13.8.3's
+  grammar. It places **exactly one root node** per iteration (the single-root
+  rule below); that root may carry connections and nested structure in its own
+  placement body, with the ordinary clause ordering of §13.8.9 and the
   whitespace-separation / self-delimiting rules of §13.8.10.
+- **`at <index>`** (optional) binds a bare identifier to each element's 0-based
+  **enumeration index** (`usize`) in iterator order. It is ordinary per-iteration
+  *data* — it updates whenever elements reorder, and it **never participates in
+  key derivation** (§13.5.4.8). Use it for display ordinals and similar, not for
+  identity.
+- **`as <view>`** (optional) binds a bare identifier naming the repeat's **keyed
+  view**: a lookup table over the scopes it currently holds, addressable by key
+  from the surrounding body (§13.5.4.9).
+- **Single root placement.** Every `repeat` body places **exactly one root node**
+  per key — the one node each scope contributes into the enclosing exposition.
+  Connections and nested structure may accompany it (within the root's placement
+  body), but the scope's upward contribution is a single node. This keeps the
+  key ↔ scope ↔ node correspondence one-to-one, which is what makes the keyed
+  view (§13.5.4.9) and stable scope identity (§13.5.4.8) well-defined. A body
+  that needs several siblings per key wraps them under one node.
 - **Key derivation** proceeds by ordered precedence. The compiler picks
   the first applicable path:
   1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
@@ -13127,11 +13150,13 @@ Whenever `<source>` is dirty, the runtime:
      per-key cells.
    - Keys in `new − old` are added: `scope_obtain(key)` initializes
      the per-key cells per §13.5.2's state-shape.
-4. For each key in iterator order, the runtime updates `<bind>` and
+4. For each key in iterator order, the runtime updates `<bind>` — and the
+   `at <index>` bind, when present, to the element's 0-based position — and
    calls `scope_evaluate(key)`.
 
 Reordering elements in `<source>` without changing the key set performs
-no scope allocations or drops; only the iteration order changes.
+no scope allocations or drops; only the iteration order changes (and, with
+`at <index>`, each surviving scope observes its new index).
 Unordered iterables (`HashSet[T]`, `HashMap[K, V]`) are diffed by key
 identity; iteration order is whatever the underlying type's iterator
 emits and does not affect scope identity.
@@ -13343,6 +13368,74 @@ In each rejected context, the diagnostic identifies the misplaced
   across commits, identifies the same scope. The element's *value* is
   carried in `<bind>` and may change commit to commit; the *key*
   identifies the scope.
+- **The `at <index>` bind never derives the key.** The index is positional,
+  not identity: it is excluded from the implicit key-derivation paths of
+  §13.5.4.1 (the `Keyed` trait and stringifiable-element paths), and the
+  `<key-expr>` / `Keyed::key` body that those paths use must not read it.
+  Keying by position is the React `key={index}` anti-pattern — reorder or
+  insert and one element's per-key scope state bleeds into another. A program
+  that genuinely wants positional identity must opt in explicitly by writing
+  `keyed by <index>`, accepting that consequence; there is no implicit path to
+  it.
+
+##### 13.5.4.9 The view name (`as`)
+
+A `repeat` materializes its scopes anonymously: nothing in the surrounding body
+can name a particular child, because the children are keyed by data, not written
+out individually. The `as <view>` clause closes that gap. It binds a **keyed
+view** — a lookup table over the scopes the `repeat` currently holds, addressed
+by scope key:
+
+```
+node Feed:
+  attr posts: Vec[Post] = []
+  attr selected: PostId
+  repeat post at i in posts as posts_view keyed by post.id:
+    PostCard | data=post rank=i:
+      Avatar as avatar | url=post.author_url
+
+  // `posts_view[selected].avatar` is a Handle[Avatar] — storable, weak:
+  derived selected_avatar: Handle[Avatar] = posts_view[selected].avatar
+
+  // read through it transiently where a value is needed:
+  derived selected_label: string =
+    match selected_avatar:
+      Some(a): a.url
+      None: "(none)"
+```
+
+**Names are scope entries, not instance members.** This is the governing
+principle. A node *instance* exposes its content through its parts and
+exposition (§13.4, §13.3.7.3); a *scope* exposes its placements through their
+**names**. `<view>` reifies the repeat's scope as a value, so addressing a child
+goes through the placement name, not through any instance:
+
+- `<view>[<key>]` selects the scope for `<key>`.
+- `<view>[<key>].<name>` yields a **key-addressed `Handle[T]`** for the
+  placement named `<name>` (named with `as <name>` at its placement site), where
+  `T` is that placement's node type. The form parallels the type-bulk access of
+  §13.4, lifted to a per-key lookup.
+
+Every **named** placement in the body is addressable this way, at any nesting
+depth — the root node and any named child alike (`posts_view[k].avatar`). The
+table is **flat**: names, not paths. Two consequences:
+
+- **Names are unique within the `repeat` body**, across nesting. A duplicate
+  `as`-name inside one `repeat` is a compile error.
+- **Anonymous placements are unaddressable.** Leaving a placement unnamed is the
+  deliberate way to keep it private to its scope.
+
+Because the result is a `Handle` (§13.3.6.2), it is *weak*: `<view>[k].name`
+resolves to `Some(&node)` while key `k`'s scope is mounted and to `None`
+otherwise (an absent key, a dropped element). A view handle is therefore never
+provably live — `<view>[k].name!` is always a compile error (§8.4.2); eliminate
+with `match` or `?`. By the identity rule of §13.5.4.8, a key that leaves and
+later returns remounts the *same* scope, so a stored view handle resumes
+resolving `Some` when its key comes back.
+
+Nested `repeat`s each own a separate `as` view and do not flatten into the outer
+one; a nested view is scoped to its parent key, so cross-level addressing
+composes view by view rather than through one global table.
 
 ### 13.6 Connections
 
