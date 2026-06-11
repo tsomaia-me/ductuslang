@@ -10243,8 +10243,8 @@ is untouched — only the edges move. Because every node reference resolves
 within the statically-known instance set (a function or cell can only ever
 yield a node that was already placed, §13.3.6.1), the compiler's
 construction-time guarantees — endpoint typing and topology-cycle analysis
-(§13.11.5) — are preserved by analyzing the *candidate* topology (every node
-a `to` could resolve to), not a single frozen wiring.
+(§13.11.5) — are preserved by analyzing the *candidate* topology (the node
+types a `to` could resolve to), not a single frozen wiring.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
 declarations, attr default expressions, recurrent expressions)
@@ -14211,10 +14211,13 @@ The destination is a **reference** to an existing node, not a placement: an
 inline placement spec is not a valid destination — place the target first,
 then point at it. The simplest reference is a bare identifier naming an
 instance in scope (`some_car`), but any expression that *yields a node
-reference* is admissible, including a function return and a reactive cell
-holding a reference. This holds because a connection does not own its
-destination (§13.8.4.1); the endpoint is a borrow, which is exactly what
-such an expression provides (§13.3.6.1).
+reference* is admissible, including a function return. A connection does not
+own its destination (§13.8.4.1); the endpoint is a borrow, which is exactly
+what such an expression provides (§13.3.6.1). A borrow cannot be stored in a
+cell (§11.9.1), so a destination that must persist or re-point across time is
+supplied as an `Option[&N]` — or, equivalently, a `Handle[N]` (§13.3.6.2),
+which reads as `Option[&N]`. The connection points at the contained node while
+that option is `Some` and **freezes** while it is `None` (§13.9.7).
 
 A destination that varies at runtime makes the connection's `to` endpoint
 **dynamic**: the connection re-points among existing nodes as the reference
@@ -14222,10 +14225,10 @@ changes (§13.6.2). Every node the reference could yield belongs to the
 statically-known instance set — a function or cell cannot create a node
 (§13.3.6.1) — so the destination always resolves within that set. The
 compiler checks the `to:` constraint against the reference's *type* (so
-every possible target is well-typed) and includes every possible target in
-topology-cycle analysis (§13.11.5). A *reactive* selection is what makes the
-edge move; a compile-time-fixed selection resolves to one node and the edge
-is static.
+every possible target is well-typed), and topology-cycle analysis (§13.11.5)
+ranges over the node *types* that reference type admits. A *reactive* selection
+is what makes the edge move; a compile-time-fixed selection resolves to one
+node and the edge is static.
 
 ##### 13.8.5.2 For node (part) placements
 
@@ -15569,8 +15572,11 @@ possible wiring (§13.1).
 > placed connection, a directed edge runs from the connection's
 > `from`-endpoint instance to its `to`-endpoint instance, labeled with
 > the connection type. When a connection's destination is a *dynamic*
-> reference (§13.8.5.1), the graph carries one *candidate* edge to
-> **each** node the reference could resolve to.
+> reference (§13.8.5.1), the graph carries *candidate* edges to each node
+> *type* the reference's static type admits — a concrete type to itself, a
+> trait to every type satisfying it, the bare `Node` bound to all. The
+> candidate portion is analyzed over node *types*, a sound over-approximation
+> of the instances of those types.
 
 A topology cycle is a sequence of distinct directed edges
 returning to its starting node.
@@ -15589,18 +15595,21 @@ cycle has at least one `Circularity`-satisfying connection. Cycles
 consisting only of non-`Circularity` connections are compile errors.
 
 **Dynamic destinations.** A connection whose `to` is a reactive reference
-(§13.6.2) contributes candidate edges to every node its reference could
-designate. Because that candidate set is statically known — a reference can
-only ever resolve to an already-placed node (§13.3.6.1) — the cycle check
-stays a compile-time analysis: the compiler verifies that *every* cycle in
-the candidate graph traverses a `Circularity` connection, i.e. that no
-reachable wiring can form a non-`Circularity` cycle. The analysis is sound
-but conservative in proportion to how wide the candidate set is. A narrowly
-sourced destination (e.g. one of two named nodes) adds few candidate edges;
-a destination that could be *any* node of the `to:` type adds an edge to
-each, so such a connection will typically have to satisfy `Circularity`
-itself — the correct requirement, since a freely re-pointing edge is exactly
-the kind that can close a runtime loop.
+(§13.6.2) contributes candidate edges to each node *type* its reference's
+static type admits. The compiler infers this candidate set comprehensively
+from that type — a concrete node type contributes itself; a trait contributes
+every node type that satisfies it (including via a supertrait); the bare
+`Node` bound contributes all — so the set is statically known: a reference can
+only ever resolve to an already-placed node of one of those types (§13.3.6.1).
+The cycle check stays a compile-time analysis: the compiler verifies that
+*every* cycle in the candidate graph traverses a `Circularity` connection, i.e.
+that no reachable wiring can form a non-`Circularity` cycle. The analysis is
+sound but conservative in proportion to how wide the candidate set is. A
+narrowly typed destination (e.g. a concrete type with one placed instance) adds
+few candidate edges; a destination typed broadly enough to admit many node
+types adds an edge for each, so such a connection will typically have to satisfy
+`Circularity` itself — the correct requirement, since a freely re-pointing edge
+is exactly the kind that can close a runtime loop.
 
 ```
 error: topology cycle with no Circularity-satisfying connection
@@ -15651,9 +15660,9 @@ A provenance set is normally *static* — fixed for the expression. The one
 exception is a connection body that reads `to.*` against a reactive
 destination (§13.6.2): the *identity* of the depended-on cells changes when
 the destination re-points. This is handled as a dynamic dependency
-(§13.10.5) — the reference producing `to` is itself in the provenance, and a
-given target's cells are in the provenance only while that target is
-selected.
+(§13.10.5) — the reactive selection (or the resolution of the `Handle` whose
+read produces `to`, §13.3.6.2) is itself in the provenance, and a given
+target's cells are in the provenance only while that target is selected.
 
 #### 13.12.2 Functions are reactive-transparent
 
