@@ -118,8 +118,7 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`, `connections`),
-the reserved
+`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
 remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
@@ -12204,7 +12203,7 @@ Like `parts:`, these are the node's **caller-facing signature**: they bound the
 connections a *caller* may wire to or from the node. `incoming:` bounds what
 others may direct *at* this node; `outgoing:` bounds what a caller placing this
 node may originate *from* it. They do **not** bound the node's own internal
-wiring — self-sourced `connections:` edges (§13.3.4.2), exposition-wrapper
+wiring — self-sourced connection placements (§13.3.4.2), exposition-wrapper
 connections, and `repeat`-materialized connections are its private realization,
 checked by endpoint typing and topology (§13.11.5) but never counted against
 `incoming:` / `outgoing:`. When such internal wiring targets one of the node's
@@ -12237,7 +12236,7 @@ runtime. Two rules keep `incoming` cardinality meaningful, applied over the
   `incoming.<ConnType>[i]` for `i <` the guaranteed minimum therefore stays
   valid.
 
-A node's own self-sourced `connections:` edges (§13.3.4.2) are exempt from this
+A node's own self-sourced edges (§13.3.4.2) are exempt from this
 accounting at their *source* — they sit outside `outgoing:` — but where one
 targets a part, it counts against that part's `incoming:` exactly as a
 caller-placed edge would (the node is the part's caller). `outgoing:` thus
@@ -12264,23 +12263,21 @@ The access syntax is symmetric with parts (§13.3.3.2): three
 member namespaces (`parts`, `incoming`, `outgoing`), each grouping
 cells by declared type.
 
-##### 13.3.4.2 The `connections:` clause
+##### 13.3.4.2 Self-sourced connections and the signature/internals model
 
 `incoming:` and `outgoing:` declare which connections a node *participates in* as
-an endpoint; they do not *establish* any. The `connections:` clause is how a node
-type establishes connections **sourced from itself** — edges every instance of
-the type brings into being at construction, with the instance as the `from`
-endpoint:
+an endpoint; they do not *establish* any. A node type establishes connections
+**sourced from itself** — edges every instance of the type brings into being,
+with the instance as the `from` endpoint — by placing them **inline in its
+exposition** (§13.3.7.5), at the position in the structural sequence where each
+edge engages (§13.3.7.6). There is no separate clause for them, deliberately: a
+connection placement carries *topological* meaning — *where* in the node's
+structure the edge takes effect — and a position-free list would erase exactly
+that information (§13.3.7.5).
 
-```
-connections:
-  <ConnType>: <destination>
-  <ConnType> | attr=value: <destination>
-```
-
-Each entry places one self-sourced connection of `<ConnType>`, exactly as a
-placement-body connection would (§13.8.4) but fixed by the *type* rather than
-supplied by a caller. The source is always the enclosing instance.
+A self-sourced connection placement uses the ordinary placement syntax of
+§13.8.4, fixed by the *type* rather than supplied by a caller. The source is
+always the enclosing instance.
 
 **Destinations must be nameable from the type's scope** (§13.7.1). Two forms are
 admissible:
@@ -12289,7 +12286,7 @@ admissible:
   connects to, such as a global bus or clock.
 - A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
   wiring. The instance is configured at placement with a handle (§13.3.6.2), and
-  its `connections:` edge drives whatever that handle resolves to. This is the
+  its self-sourced edge drives whatever that handle resolves to. This is the
   payoff of the dynamic `to`: *every instance drives whatever it is told to at
   placement*, and the edge freezes while the handle resolves to `None`
   (§13.9.7).
@@ -12301,8 +12298,10 @@ connection Drives:
 
 node Driver:
   attr wheel: Handle[Drivable]        // configured per instance at placement
-  connections:
-    Drives: wheel                     // self-sourced; drives the configured target
+  parts: Pedal
+  expose:
+    parts.Pedal
+    Drives: wheel                     // self-sourced; engages after the pedals
 
 Garage g:
   Driver | wheel=front_axle           // this Driver drives front_axle
@@ -12312,29 +12311,29 @@ Garage g:
 (`Driver` needs no `outgoing: Drives` — a self-sourced edge is not caller-placed;
 see below.)
 
-**Signature vs. internals.** This clause is the concrete case of a general rule.
-A node type's `parts:`, `incoming:`, and `outgoing:` clauses are its
+**Signature vs. internals.** Self-sourced connections are the concrete case of a
+general rule. A node type's `parts:`, `incoming:`, and `outgoing:` clauses are its
 **caller-facing signature**: they bound what a *caller* may place into, or wire
-to and from, an instance. A node's **internals** — its `connections:` edges, the
-placements a `repeat` materializes (§13.5.4), and the wrapper placements an
-`expose:` introduces (§13.3.7) — are its private realization. Internals are
-**not** bound by the signature clauses; they are checked only by connection
-endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
+to and from, an instance. A node's **internals** — its self-sourced connection
+placements, the placements a `repeat` materializes (§13.5.4), and the wrapper
+placements an `expose:` introduces (§13.3.7) — are its private realization.
+Internals are **not** bound by the signature clauses; they are checked only by
+connection endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
 
-One consequence is recursive: when a node's internal wiring (a `connections:`
+One consequence is recursive: when a node's internal wiring (a self-sourced
 edge, or a wrapper) terminates at one of the node's **own parts**, the node is
 acting as that part's **caller**, and the edge counts against the *part's*
 `incoming:` budget — the same budget a caller placing the part would draw from.
 A node is the caller of its own parts.
 
-A self-sourced `connections:` edge is therefore exempt from the source node's
+A self-sourced edge is therefore exempt from the source node's
 `outgoing:` clause (which governs caller-originated connections only), but it is
 **not** exempt from endpoint typing: the `from`/`to` types must still match the
 connection's declaration (§13.6.1).
 
-`connections:` is a **node-body** clause. Connection bodies remain minimal glue
-(§13.6.4) and take no `connections:` clause; a connection that needs to establish
-further structure is modeled with nodes.
+Self-sourced connections are a **node-type** concept. Connection bodies remain
+minimal glue (§13.6.4) and have no exposition of their own; a connection that
+needs to establish further structure is modeled with nodes.
 
 The compiler-checked *total* cardinality of a node — caller-placed plus internal
 — is **not** tracked: there is no single budget spanning the signature and the
@@ -12511,10 +12510,13 @@ again when its key returns.
 #### 13.3.7 Exposition (the `expose:` clause)
 
 The `expose:` clause declares the node type's **structural output**
-— the list of node placements the runtime traverses when it
-encounters an instance of this type. The clause is the node's
-"return value" in the structural sense: it determines what an
-external reader (and the runtime) sees as the node's content.
+— the **ordered** list of placements the runtime traverses when it
+encounters an instance of this type. Entries are node placements and
+connection placements (§13.3.7.5), and their order is semantic: it is the
+order in which the runtime walks the node's content and engages its edges
+(§13.3.7.6). The clause is the node's "return value" in the structural
+sense: it determines what an external reader (and the runtime) sees as the
+node's content.
 
 ```
 node TypeName:
@@ -12531,14 +12533,13 @@ node TypeName:
 ```
 
 The canonical clause order is: `satisfies` → `parts:` → `incoming:`
-→ `outgoing:` → `connections:` → `when:` → `expose:` → cell declarations →
-`effects:` (§13.3.8).
+→ `outgoing:` → `when:` → `expose:` → cell declarations → `effects:` (§13.3.8).
 
 ##### 13.3.7.1 Content
 
-The body of `expose:` is a list of placements — each entry is a
-node placement, with the same syntax as inline child placements
-elsewhere (§13.8). Entries reference:
+The body of `expose:` is an ordered list of placements, with the same
+syntax as inline child placements elsewhere (§13.8). Node entries
+reference:
 
 - A part of the instance by type-bulk access (`parts.SomeA` — the full
   list of supplied parts of that type, in placement order).
@@ -12562,6 +12563,20 @@ elsewhere (§13.8). Entries reference:
   declared (in stdlib or user code) and accept children via their
   own `parts:` clause.
 
+**Connection entries** place self-sourced connections (§13.3.4.2,
+§13.3.7.5) at their position in the sequence, with the full placement
+syntax of §13.8.4 — `ConnType: dest`, optional `/expr`, attribute clause,
+and inline `when` modifier. The entry's position is where the edge
+*engages* during traversal (§13.3.7.6).
+
+**Entry-kind disambiguation.** Node and connection entries share the
+`Name: …` shape (`SomeInternalWrapper:` + children vs. `Plays: chorus`).
+The entry kind is directed by what `Name` resolves to: a **connection
+type** makes the entry a connection placement (what follows is the
+destination), a **node type** makes it a node/wrapper placement (what
+follows is its body). Node and connection types share one type namespace
+(§2), so the resolution is never ambiguous.
+
 Conditional exposition uses the structural-gate constructs of §13.9.
 Two forms apply inside `expose:`:
 
@@ -12574,26 +12589,28 @@ Two forms apply inside `expose:`:
   freezes the rest (Model B, §13.9.7).
 
 These reuse the gate constructs that apply elsewhere — no exposition-only
-control-flow syntax is introduced. Because exposition lists only node
-placements and never connections (§13.3.7.5), a `given` arm such as
-`Variant: SomeChain` is unambiguous here — there is no `Name: dest`
-connection placement to collide with.
+control-flow syntax is introduced. A `given` arm label such as
+`Variant: SomeChain` does not collide with a `Name: dest` connection
+entry: the position directly under the block header admits only the
+scrutinee's variant labels (arm position), and connection entries appear
+*inside* arm bodies as ordinary indented exposition entries.
 
 ##### 13.3.7.2 Default
 
 When `expose:` is omitted, the node's exposition defaults to
-`expose: parts` — the runtime traverses all supplied parts in
-declaration order. When the node has no `parts:` clause and no
+`expose: parts` — the runtime traverses all supplied placements in
+declaration order: parts and caller-placed connections in their written
+interleaving (§13.8.4). When the node has no `parts:` clause and no
 `expose:` clause, the exposition is empty (the node has no
 structural output and exists only for its state and connections).
 
 ##### 13.3.7.3 External access via `.exposition`
 
 The exposed list is readable from outside the node via the reserved
-`.exposition` field: `instance.exposition` returns the list of
-node placements the instance currently exposes. This is the same
-content the runtime traverses; external readers and the runtime see
-identical output.
+`.exposition` field: `instance.exposition` returns the ordered list of
+placements — node and connection entries alike (§13.3.7.5) — the
+instance currently exposes. This is the same content the runtime
+traverses; external readers and the runtime see identical output.
 
 Inside the node body, the bare `exposition` field is the same list. The
 field is read-only; the exposition is fixed by the type's `expose:`
@@ -12618,24 +12635,86 @@ never exposed — by default (`expose: parts`, §13.3.7.2) every supplied
 part is exposed; an explicit `expose:` arranges or selects among the
 parts, but always over them.
 
-##### 13.3.7.5 Connections and exposition
+Traversal proceeds **in entry order**: node entries by structural
+descent, connection entries by engagement (§13.3.7.6).
 
-Connections (§13.6) are **not** part of exposition. Connections are
-instance-to-instance edges, placed at the instantiation site of the
-nodes they connect. They are not declared in any node's `expose:`
-clause and do not appear in `instance.exposition`.
+##### 13.3.7.5 Connections in exposition
 
-Effects (§13.19) are likewise **not** exposition. `expose:` describes
+Connections (§13.6) are part of exposition: a connection placement is an
+exposition entry, positioned in the ordered sequence alongside node
+entries (§13.3.7.1). The position is not formatting — it is topology. A
+connection placement says not merely *that* this node connects to a
+target, but *where in this node's structure* the edge takes effect: it
+**engages** when traversal reaches its position (§13.3.7.6), after the
+entries before it.
+
+```
+node Verse:
+  attr next: Handle[Section]      // configured at placement
+  expose:
+    Note/'A4'
+    Note/'G4'
+    Chord/'F#'
+    Plays: next                   // engages after the F# chord — that order is the meaning
+```
+
+Hoisting `Plays: next` into a position-free list would flatten it to the
+mere adjacency fact "a Verse plays some Section" — erasing exactly the
+information that distinguishes a transition after the chord from one
+before the first note. The same edge at a different position is a
+different program.
+
+Like wires on a circuit schematic, connections are **always present on
+the schema**: the topology is static (§13.1) and complete from
+construction. What is ordered is their *engagement* — when traversal
+first reaches them (§13.3.7.6). And, like a powered circuit, presence is
+participation: an exposition entry's connection is reactively live
+whether or not traversal has reached it (§13.3.7.6).
+
+Effects (§13.19) are **not** exposition. `expose:` describes
 topology — what the node *is*; effects describe what the node *does to
 the outside world*. Effects are declared in the separate `effects:`
 clause (§13.3.8), never in `expose:`.
 
-The motherboard analogy: the parts a motherboard exposes (RAM
-slots, CPU socket, expansion slots) are the structural surface of
-the board. The wires connecting those parts to each other and to
-external components are connections — held by the parts, owned by
-no single one, traversed by signals rather than by structural
-descent.
+##### 13.3.7.6 Engagement
+
+Traversal (§13.3.7.4) walks the exposition in order. A node entry is
+traversed by **structural descent** — the runtime enters the placement
+and walks *its* exposition. A connection entry is **engaged** — the
+runtime takes up the edge and begins interpreting the connected
+subgraph.
+
+What engagement *means* is domain semantics, carried by the specific
+Connection type and interpreted by the runtime/host — it is not a
+language keyword. One connection type may carry await-like meaning (the
+originating node's traversal does not continue until the connected node
+and its dependencies are finished); another may carry parallel meaning
+(the target's traversal starts while the originating node's continues).
+The language fixes only what is common to all of them: **a connection
+first engages when its turn comes in the topological order.**
+
+**Engagement is orthogonal to reactive liveness.** The graph is always
+present and always reactive — like a spreadsheet, every cell updates
+when its dependencies change, whether or not any traversal is looking at
+it (§13.10, §13.14). An unengaged connection, an already-passed one, and
+everything downstream of them keep computing: deriveds update,
+recurrents advance. Traversal *interprets* the graph; it does not power
+it. Freezing comes only from the explicit declared conditions —
+`when`/`given` gates (§13.9.7) and an unresolved dynamic destination
+(§13.6.2) — never implicitly from traversal position. A program that
+wants a region dormant until traversal arrives expresses that with an
+explicit gate.
+
+The two axes meet at exactly one point: a connection entry that is
+*frozen* — gated off (§13.9.7) or with an unresolved destination
+(§13.6.2) — is not engaged; traversal passes over it, consistent with
+Model B (a gated-off exposition entry is not exposed). Freezing removes
+an entry from engagement; engagement never affects freezing.
+
+Terminology: **activation** refers to gate-state (§13.9.1) and is
+unchanged; **engagement** refers to traversal reaching an entry. A
+connection can be live yet unengaged (computing, not yet reached) or
+frozen and therefore unengageable.
 
 #### 13.3.8 Effects (the `effects:` clause)
 
@@ -13581,14 +13660,16 @@ its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
 constraints. The actual connection instances appear at placement
 (§13.8.4).
 
-**Connections and exposition.** Connections are not part of any
-node's `expose:` clause (§13.3.7); they are not structural output.
-A connection is held by its endpoint nodes but owned by no single
-one — it lives at the instance graph level, traversed by signals
-rather than by the runtime's structural descent. The motherboard
-analogy: parts compose into the board (`expose:`); wires between
-parts are connections (instance-to-instance edges held by, but
-not contained within, the parts they connect).
+**Connections and exposition.** A connection placement is an exposition
+entry (§13.3.7.5): it sits at a position in its source's ordered
+structural sequence, and that position is where the edge **engages**
+during traversal (§13.3.7.6). Like wires on a circuit schematic,
+connections are always present on the schema — the topology is static
+and complete from construction (§13.1) — and always reactively live
+(§13.3.7.6); what the position orders is their engagement. A connection
+is still owned by no single endpoint (§13.8.4.1): the entry belongs to
+the *source's* exposition, but the edge links two instances at the
+graph level.
 
 Connection vs. node-typed attr: a node **cannot** store a direct reference
 to another node instance (`attr target: SomeNode` is rejected). A
@@ -13764,7 +13845,10 @@ endpoint instances directly. A destination supplied as `Option[&N]` (or a
 `Some`, the connection is active and the body sees the contained node as `to`;
 while it resolves to `None`, the connection **freezes** (§13.9.7) and the body
 does not run at all. The freeze *is* the unwrap, so body code never handles
-absence.
+absence. Gates (§13.9) and this unresolved-destination condition are the
+**only** switches on a connection's reactive liveness — traversal position
+never is: an unengaged or already-passed connection keeps computing
+(§13.3.7.6).
 
 `from` and `to` are **body-internal**: visible only inside the connection
 type's own body, with no external `some_conn.to` access. A connection does not
@@ -14415,10 +14499,23 @@ their source is `filter`. The rule is uniform across nesting depth;
 the depth at which the connection appears does not change how the
 source is determined.
 
+**Position is topology.** A connection placement's position among its
+sibling placements is its **engagement position** (§13.3.7.6): the edge
+engages when traversal reaches that point in the sequence, after the
+siblings written before it. This holds regardless of who places the
+connection — a caller in a placement body, the type itself in its
+exposition (§13.3.7.5), or a `repeat` body alongside its root (§13.5.4).
+Placement-body entries keep their written order: the `expose:` bulk
+references (`parts`, `parts.X` — "in placement order", §13.3.7.1) carry
+caller-supplied connections at their positions among those sibling
+parts, and the default `expose: parts` (§13.3.7.2) traverses the full
+interleaved sequence as written.
+
 A **caller-placed** connection's type must match a type listed in the source
 instance's `outgoing:` clause (or in the type's traits' contributions). A
-*self-sourced* connection declared in the source type's own `connections:`
-clause (§13.3.4.2) is exempt from `outgoing:` — but not from endpoint typing.
+*self-sourced* connection placed in the source type's own exposition
+(§13.3.4.2, §13.3.7.5) is exempt from `outgoing:` — but not from endpoint
+typing.
 
 The destination is supplied in the connection placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
@@ -15031,6 +15128,13 @@ is structural (it freezes, §13.9.7) and, for effects, is delivered to
 the host through the `suspend`/`resume` reconciler hooks (§13.14.9),
 not through a readable activation value.
 
+"Activation" in this section always means **gate-state** — whether a
+gate currently lets a construct propagate. It is distinct from
+**engagement** (§13.3.7.6), which is traversal reaching a connection's
+position in the exposition order. The two interact at exactly one point:
+a gated-off (frozen) connection entry is not engageable (§13.3.7.6);
+otherwise gate-state and traversal are independent axes.
+
 It evaluates in the scope of the construct it modifies: inside a
 type body it sees the body's own cells (by bare name) and items
 visible at the type's declaration scope; inside a placement it sees
@@ -15582,9 +15686,10 @@ arms, written exactly as value-`match` arms (§6.2.4) — bare
 `Pattern: body`, no per-arm keyword. The dedicated header is what
 disambiguates: inside a `given` block every line at the arm indent is an
 arm, so an arm such as `Realtime: RealtimeChain` is never confused with a
-connection placement `Name: dest` (and at `expose:` level there are no
-connection placements at all — §13.3.7.5). Each arm body is itself a list
-of placements, indented under the arm.
+connection placement `Name: dest`. Connection entries are admitted in
+exposition (§13.3.7.5), but inside a `given` block they appear only
+within arm bodies — never at arm position (§13.3.7.1). Each arm body is
+itself a list of placements, indented under the arm.
 
 `given` applies in the same contexts as the `when` block (§13.9.12),
 including an `effects:` clause (§13.3.8) — there each arm body is a list
@@ -20909,7 +21014,9 @@ connection/`|>` → `connection`; operator → a `scope` with ports; stream →
 
 A **`scope`** is the structural container (a node/part/operator instance,
 or a `repeat`'s per-element instance). It carries an `exposes` list — the
-child placements the runtime traverses (topology) — and a separate
+**ordered** placements the runtime traverses: child scopes and references
+to the scope's connection entries, in exposition order (engagement
+positions, §13.3.7.6) — and a separate
 `effects` set — the effects hosted there per §13.3.8, never in `exposes`.
 A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`
 (the only mount/unmount construct; gates merely freeze). Hierarchy is
