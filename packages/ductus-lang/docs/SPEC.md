@@ -12838,8 +12838,12 @@ instance currently exposes. This is the same content the runtime
 traverses; external readers and the runtime see identical output.
 
 Inside the node body, the bare `exposition` field is the same list. The
-field is read-only; the exposition is fixed by the type's `expose:`
-clause (and the placer's supplied parts), not mutable at runtime.
+field is read-only: its *declaration* is fixed by the type's `expose:`
+clause (and the placer's supplied content), and there is no imperative
+mutation. What the current list shows may still vary at runtime — but
+only through the declared constructs themselves: gate arms flip
+(§13.9.7), `repeat` scopes mount and dismount (§13.5.4), dynamic supply
+arrives and leaves (§13.3.3.4).
 
 ##### 13.3.7.4 Runtime traversal
 
