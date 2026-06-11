@@ -654,7 +654,7 @@ A `const` binding has three properties beyond what `let` provides:
    inlined directly. Wherever it is referenced from another `const` or from
    type-level context, the value is used at compile time only. A `const` that
    is unreferenced (or referenced only from compile-time contexts whose results
-   are themselves unused) does not appear in the compiled output at all. A `const` of type `string` is represented as a compile-time-assigned handle into the string-pool seed (§14.5, §15.4): its bytes are static, program-lifetime program data — no *dynamic* allocation and no refcount traffic on the read path.
+   are themselves unused) does not appear in the compiled output at all. A `const` of type `string` is represented as a compile-time-assigned index into the string-pool seed (§14.5, §15.4): its bytes are static, program-lifetime program data — no *dynamic* allocation and no refcount traffic on the read path.
 
 3. **No addressability.** Because a `const` has no runtime location, it has
    no address. Operations that would require a runtime address (passing by
@@ -6509,9 +6509,9 @@ Wrapping in `Result[duration, E]`, `Option[duration]`,
 `Result[instant, E]`, or `Option[instant]` is governed by §13.12.4's
 general storage rules: if the total bit width (discriminant + payload)
 fits the platform atomic word, direct storage applies; otherwise the
-cell uses handle-based pool storage. On platforms supporting wide
+cell uses index-based pool storage. On platforms supporting wide
 atomics, `Option[duration]` (≈9 bytes) fits a 128-bit-coupled cell;
-on platforms without wide atomics, it falls back to handle-based
+on platforms without wide atomics, it falls back to index-based
 storage. The compiler chooses the strategy; the source-level type is
 permitted in all cases.
 
@@ -7240,7 +7240,7 @@ at module scope are governed by §13's reactive contract.
 **Top-level consts and the ownership system.** A top-level `const`
 (per §2.4.1.1) is compile-time-only: each use site reifies a fresh
 compile-time value. Consts do not enter the §11 ownership system —
-there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool handle. Types that are not statically representable — dynamic collections such as `Vec`/`HashMap`, whose contents are built by runtime allocation — are not supported as const types.
+there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool index. Types that are not statically representable — dynamic collections such as `Vec`/`HashMap`, whose contents are built by runtime allocation — are not supported as const types.
 Attempts to apply `move` or to pass a const to an `own` parameter
 position are diagnosed as: *"const `X` is compile-time-only and has
 no runtime identity; consumption does not apply."*
@@ -10275,7 +10275,7 @@ least one connection type satisfying `Circularity`.
 Reactive cells (signal, attr, recurrent, derived) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
-word, or handle-based pool storage for larger or dynamically-sized
+word, or index-based pool storage for larger or dynamically-sized
 values. Imperative data structures (`Vec`, `HashMap`, etc.) are
 first-class as values held inside reactive cells via pool storage,
 and are also usable as ordinary owned values inside function
@@ -15758,20 +15758,20 @@ from the type's size and shape:
   cell at commit (§13.14) requires no allocation, no refcount, no pool.
 - A backend may store types of size 9–16 bytes across two consecutive
   cells where the platform supports it; otherwise types in this range
-  fall back to handle-based storage. This is a backend choice, not a
+  fall back to index-based storage. This is a backend choice, not a
   language requirement.
 - `Result[T, E]` and `Option[T]` follow the same rule: if the total
   bit width (discriminant + maximum payload) fits the atomic word,
   direct storage applies.
 
-**Handle-based pool storage (indirection):**
+**Index-based pool storage (indirection):**
 
 - Types whose size exceeds the platform's atomic word width are
-  stored as handles (one i64 per cell) into a per-type pool. The
-  cell stores the handle; the actual value lives in the pool.
+  stored as pool indices (one i64 per cell) into a per-type pool. The
+  cell stores the index; the actual value lives in the pool.
 - Dynamically-sized types (`string`, `Vec[T]`, `HashMap[K, V]`,
   and other heap-allocated dynamic-size collections) always use
-  handle-based storage. `string` uses the existing string pool
+  index-based storage. `string` uses the existing string pool
   (§14.5); other dynamic types use per-type pools generated by the
   compiler.
 - Refcounting on the pool entry manages lifetime: when the cell is
@@ -15780,14 +15780,14 @@ from the type's size and shape:
 
 **Pool mechanics:**
 
-- Per-type pools. Each reactive cell type that requires handle-based
+- Per-type pools. Each reactive cell type that requires index-based
   storage has its own pool, sized at runtime construction from the IR.
-- The cell still holds a one-word handle; committing the cell
-  publishes the handle unchanged (the value lives in the pool).
+- The cell still holds a one-word pool index; committing the cell
+  publishes the index unchanged (the value lives in the pool).
 - Write cost: writing a complex-typed cell allocates a pool slot (or
-  reuses one), copies the value in, and stages the handle — work
+  reuses one), copies the value in, and stages the index — work
   proportional to the value's size, plus a pool acquire.
-- Read cost: dereferencing the handle to read the value.
+- Read cost: resolving the pool index to read the value.
 
 **Performance implications:**
 
@@ -15796,7 +15796,7 @@ from the type's size and shape:
   involves allocation and refcounting that may not be acceptable
   inside an audio callback or render loop.
 - Direct storage has zero overhead vs. plain atomic reads/writes.
-- Handle storage adds an indirection on read and a pool allocation
+- Index storage adds an indirection on read and a pool allocation
   on write. Acceptable for cold paths, configuration cells,
   network/IO results, etc.
 
@@ -15822,10 +15822,10 @@ values ≤8 bytes occupy one cell with appropriate padding/extension;
 larger values span multiple consecutive cells per §14.3.2 or use pool
 storage per §14.3.3.
 
-**Dynamic-size handle-based types:**
+**Dynamic-size index-based types:**
 
 The stdlib provides three dynamic-size collection types usable as
-reactive cell types. Each uses handle-based pool storage. The
+reactive cell types. Each uses index-based pool storage. The
 cost model below is normative — implementations must achieve the
 documented complexity bounds.
 
@@ -15890,14 +15890,14 @@ batch updates, less suited for fine-grained mutations.
 **Fixed-extent cells and compile-time loops.** A cell whose value
 type is *fixed-extent* (`T[N]`, tuples, records) has compile-time-known
 layout: every element's offset within the cell — or within the pool
-slot, in the handle-based variant for sizes exceeding the atomic
+slot, in the index-based variant for sizes exceeding the atomic
 word — is determined at compile time. Combined with §12.3.7's
 compile-time-unrolling rule, a `for` iterating such a cell's value
 produces element reads at compile-time-known offsets: no runtime loop
 counter, no bounds check, no per-iteration dispatch. Direct-storage
 cells (`T[N]` ≤ word width) are read with no indirection at all;
-handle-storage cells are read with one indirection (dereferencing the
-current pool handle) plus the compile-time-known offsets. Per-emission
+index-storage cells are read with one indirection (resolving the
+current pool index) plus the compile-time-known offsets. Per-emission
 cost is unchanged from an ordinary commit: the cell's slot is
 **pre-allocated at runtime construction** (directly, or as a fixed-size
 pool slot for sizes above word width), and the runtime writes the value
@@ -17195,7 +17195,7 @@ reactive-transparent in the standard way.
 
 **With dynamic-size types (§13.12.4, §14.3.3):** operator-internal
 recurrents may hold dynamic-size types (`Vec[T]`, etc.). Storage
-follows the same pool-with-handle mechanism. The operator's
+follows the same pool-with-index mechanism. The operator's
 instance-specific allocation contributes to per-type pool sizing
 in graph specification.
 
@@ -19955,11 +19955,11 @@ Dynamic-size cell types (`Vec[T]`, `SmallVec[T, N]`, `RingBuf[T, N]`,
 cell slots. Their storage uses **extensible pools**.
 
 For each dynamic-size type used in the program, the runtime allocates
-a per-type pool. The reactive cell holds a fixed-size handle into the
+a per-type pool. The reactive cell holds a fixed-size index into the
 pool; the actual variable-size value lives in the pool. On commit, the
-runtime updates the handle to refer to the new value and publishes it
+runtime updates the index to refer to the new value and publishes it
 with consistent visibility — an observer that reads a cell never sees a
-partial write, and a handle read resolves to a value coherent with the
+partial write, and an index read resolves to a value coherent with the
 snapshot it was read from.
 
 **Pool mechanics:**
@@ -19968,14 +19968,14 @@ snapshot it was read from.
   pool's type, plus the metadata the runtime needs to keep values that
   belong to distinct committed states distinct until released.
 - Writes: on commit, the runtime writes the new value into the pool and
-  updates the cell's handle so subsequent reads resolve to it.
-- Reads: dereference the handle through the pool to obtain the value's
+  updates the cell's index so subsequent reads resolve to it.
+- Reads: resolve the index through the pool to obtain the value's
   address, then read the value.
 
 **Sharing across committed states:**
 
 A value observed under one committed state remains valid until that
-state is released, even after a later commit updates the cell's handle.
+state is released, even after a later commit updates the cell's index.
 
 For persistent data structures (e.g., `Vec[T]` as persistent vector
 trie), pool slots may share internal nodes across versions. The pool
@@ -20001,7 +20001,7 @@ headroom up front.
   in pool); O(value-size) for value copy. Persistent structures
   copy O(log n) nodes per push.
 - Read: one pointer dereference through the pool.
-- Memory: per-cell overhead is one handle slot (8 bytes); per-value
+- Memory: per-cell overhead is one index slot (8 bytes); per-value
   overhead depends on the type. Persistent structures share storage
   across versions; flat structures replicate per retained snapshot.
 
@@ -20082,49 +20082,49 @@ content. The pool is logically a refcounted-shared, append-mostly
 arena: each unique string is stored once and shared via reference
 counts.
 
-Reactive cells of type `string` store a **handle** (u64) into the pool
-rather than the string content itself. The handle indexes the pool;
-the pool resolves the handle to the actual string data.
+Reactive cells of type `string` store a **pool index** (u64) into the pool
+rather than the string content itself. The index addresses the pool;
+the pool resolves the index to the actual string data.
 
 #### 14.5.1 Cross-thread consistency
 
 The pool is shared across all snapshots: cells (and the snapshots that
-retain them) hold handles; the pool holds the data. This separation
+retain them) hold indices; the pool holds the data. This separation
 allows:
 
 - Commit cost to remain O(N) in *cell count*, not in *string content
-  size*. Changing a 1-megabyte string updates a single 8-byte handle;
+  size*. Changing a 1-megabyte string updates a single 8-byte index;
   the megabyte of data is allocated once in the pool, not copied per
   snapshot.
 
 - Strings to be referenced by multiple cells (in the same or different
-  snapshots) via shared handles. Refcounting ensures the data is
-  reclaimed when no live cell holds the handle.
+  snapshots) via shared indices. Refcounting ensures the data is
+  reclaimed when no live cell holds the index.
 
 The invariant that keeps reads wait-free: an observer acquiring or
 releasing a snapshot does not touch per-string refcounts. Refcount
 changes happen producer-side, at write/publish (and at the
 producer-side retirement of a superseded snapshot, §14.5.2), never on
-the observer's read path — so resolving a handle to its string value
+the observer's read path — so resolving an index to its string value
 remains wait-free.
 
 #### 14.5.2 Pool operations
 
 - **Allocation**: the runtime allocates a new string in the pool; the
-  pool returns a handle. Refcount initialized to 1 for the cell that
+  pool returns an index. Refcount initialized to 1 for the cell that
   will hold it.
-- **Refcount increment**: when a handle is copied into another cell,
+- **Refcount increment**: when an index is copied into another cell,
   the pool's refcount on that string increments.
 - **Refcount decrement**: when a cell is overwritten or a snapshot
-  holding it is retired, the previous handle's refcount decrements. If
+  holding it is retired, the previous index's refcount decrements. If
   refcount reaches zero, the pool reclaims the string's storage.
-- **Lookup**: a reader resolves a handle to the corresponding string
+- **Lookup**: a reader resolves an index to the corresponding string
   value (wait-free with a proper pool structure).
 
 The pool's allocation and refcount operations are atomic but may block
-briefly under contention; reads via handles are wait-free. Which
+briefly under contention; reads via indices are wait-free. Which
 execution context performs writes versus reads is a backend concern; the
-contract is only that handle reads stay wait-free.
+contract is only that index reads stay wait-free.
 
 ### 14.6 The Behavior ABI
 
@@ -20521,8 +20521,8 @@ effect-`desired` runs. The two meet only through the behavior ABI
 
 **Shared type table.** Both parts speak one monomorphic type vocabulary
 (the frontend has specialized all generics): the primitives of §4.1, plus
-`str` (a pooled-string handle), tuples `(T,…)`, arrays `[T;N]`, records and
-enums as `%TypeId` (layout in the `types` table), `handle<%PoolId>` for
+`str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, records and
+enums as `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
 dynamic-size values, and `closure<(T,…)->R>`. Behaviors are fully typed;
 the graph is **type-erased** to tag + size/align — the runtime moves bits
 and never needs nominal types (§15.4.3).
@@ -20557,7 +20557,7 @@ The graph is a structured record with the following entries.
 
 - `id`: the cell's fully-qualified declaration path (§15.4.1.1).
 - `type`: the cell's primitive type tag, per §4.1, plus the
-  string-handle (§14.5) and dynamic-pool-handle (§14.3.3) types.
+  string-pool-index (§14.5) and dynamic-pool-index (§14.3.3) types.
 - `observability`: one of `cross_thread_snapshot`,
   `cross_thread_atomic`, or `confined` (§15.4.1.2).
 - `cadence_hint` (optional): one of `realtime`, `bounded`, or `lazy`

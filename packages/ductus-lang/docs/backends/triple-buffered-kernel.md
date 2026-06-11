@@ -262,7 +262,7 @@ implementation-defined and out of scope for this section.
 | `i128`, `u128`         | Same Rust types (on supporting targets).                    |
 | `f32`, `f64`           | Same Rust types.                                            |
 | `bool`, `char`         | `bool`, `char`.                                             |
-| `string`               | A newtype wrapping a kernel string handle (see B.5.1.1).    |
+| `string`               | A newtype wrapping a kernel string-pool index (see B.5.1.1).|
 | Tuples                 | Rust tuples.                                                |
 | Arrays `T[N]`          | Rust arrays `[T; N]`.                                       |
 | Records                | Rust structs with same field order.                         |
@@ -273,27 +273,27 @@ implementation-defined and out of scope for this section.
 
 The `string` type lowers to the same Rust representation regardless
 of whether the binding is reactive or non-reactive: a newtype around
-a u64 handle into the kernel's string pool (§14.5).
+a u64 index into the kernel's string pool (§14.5).
 
 Reactive context (signal/attr/recurrent/derived value of type
-`string`): the handle lives in a reactive cell. The pool entry's
+`string`): the index lives in a reactive cell. The pool entry's
 refcount tracks how many cells reference the string across all
 buffer copies.
 
 Non-reactive context (local `let s = "hello"`, function parameter,
-record field outside reactive declaration): the handle lives in
+record field outside reactive declaration): the index lives in
 ordinary Rust memory. The pool entry is still refcounted; ownership
-of the handle increments the refcount, dropping the handle (per
+of the index increments the refcount, dropping the index (per
 §14.7) decrements it. Strings created in non-reactive scopes are
-reclaimed when their last handle is dropped — typically when the
+reclaimed when their last index is dropped — typically when the
 function returns and locals go out of scope.
 
 This uniformity means: all `string` values share one storage backend
-(the kernel pool), regardless of where their handles are held.
+(the kernel pool), regardless of where their indices are held.
 There is no separate "Rust-local string" representation distinct
 from the "kernel string" representation; the only difference is
-*where the handle is stored* (cell vs ordinary memory), not what
-the handle points to.
+*where the index is stored* (cell vs ordinary memory), not what
+the index points to.
 
 The §11.6 "refcount-shared immutable backing" model maps directly
 onto the kernel pool. The pool *is* the shared backing.
