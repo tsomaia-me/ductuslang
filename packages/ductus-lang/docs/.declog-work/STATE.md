@@ -4,7 +4,7 @@ spec_path: packages/ductus-lang/docs/SPEC.md
 spec_lines: 21818
 spec_blob: 245be34feb8fc4f3e3faebe38f9e7090078a3c21
 phase: A
-next_action: await drafters 04,05,06,07,08 + reviewers 01,02,03; gate each draft on arrival; launch reviewer per gated draft; launch next drafters (09,10,...) as drafter slots free; per-chunk gate cmd: python3 .declog-work/assemble_lint.py gate .declog-work/draft/NN.md
+next_action: clear Recovery TODO (below), then drafters 21-25, then Phase C/D/E per PLAN Addendum A
 
 ## Resume instructions
 Read PLAN.md in this directory FULLY before doing anything. Then verify spec_blob with
@@ -23,22 +23,28 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 07 | x | x | x |
 | 08 | x | x | x |
 | 09 | x | x | x |
-| 10 | x | x | launched |
+| 10 | x | x | x |
 | 11 | x | x | x |
-| 12 | x | x | launched |
-| 13 | x | x | launched |
-| 14 | x | x | launched |
-| 15 | x | x | launched |
-| 16 | launched | - | - |
-| 17 | launched | - | - |
-| 18 | launched | - | - |
-| 19 | launched | - | - |
-| 20 | launched | - | - |
+| 12 | x | x | x |
+| 13 | x | x | x |
+| 14 | x | x | x |
+| 15 | x | x | relaunched |
+| 16 | x | x | launched |
+| 17 | x | x | launched |
+| 18 | relaunched | - | - |
+| 19 | relaunched | - | - |
+| 20 | relaunched | - | - |
 | 21 | - | - | - |
 | 22 | - | - | - |
 | 23 | - | - | - |
 | 24 | - | - | - |
 | 25 | - | - | - |
+
+## Recovery TODO (session-limit event, agents killed ~15:00 UTC, reset 15:20 UTC)
+- reports 10, 13, 14: missing — launch report-reconstruction agents (PLAN Addendum A step 3)
+- reviewed/15: missing — fresh reviewer relaunched
+- drafts 18, 19, 20: missing — drafters relaunched
+- report/12: present; verify closing blocks completeness at Phase D
 
 ## Handoffs
 none

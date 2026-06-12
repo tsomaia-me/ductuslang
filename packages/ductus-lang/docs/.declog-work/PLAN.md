@@ -220,3 +220,25 @@ Gap lines between chunks are blanks/`---` rules only (verified — nothing lost)
 - Findings ledger delivered in full, partitioned genuine/resolved; no defect serialized into the log; every quarantined entry traceable to its finding.
 - Spot-audits find no missing normative content; sentinel decisions present and correctly referenced (e.g., `;` is a lex error §1.4; `/` always produces Float §4.4.1.1; recurrents advance in lockstep §13.2.4.1; gates freeze rather than unmount §13.9.7).
 - Final tree contains exactly: new `DECISION_LOG.md`, edited `CLAUDE.MD`; scratch removed; branch pushed.
+
+
+---
+
+## Addendum A — Operational learnings & continuation procedure (added mid-run)
+
+**Division of labor:** PLAN.md (this file) = the protocol, immutable mid-run except addenda. STATE.md = the live tracker (chunk table, repair notes, recovery TODO). Trust STATE for position, PLAN for rules.
+
+**Session-limit failure mode (observed).** Subagents can be killed mid-flight by usage limits ("You've hit your session limit"); their final replies are lost but their FILES may be complete — the agents write outputs before replying. Recovery loop, per affected chunk:
+1. Check disk: output file exists AND `assemble_lint.py gate` passes (the sentinel is the truncation detector) → ACCEPT the work; the lost reply does not matter.
+2. File missing or gate-failing → relaunch that role from scratch (Write overwrites stale partials; a fresh reviewer writes its own skeleton — never reuse a dead reviewer's skeleton for a fresh review).
+3. reviewed/NN.md green but report/NN.md missing → launch a REPORT-RECONSTRUCTION agent: reads the spec range + draft/NN.md + reviewed/NN.md, independently diffs draft→reviewed, verifies every delta against the spec text (flagging unjustified removals as UNRESOLVED), regenerates the per-§ tally, and writes the standard report. This substitutes for the lost audit because the reconstructor re-verifies the deltas itself.
+
+**Quarantine-violation patterns (3 repairs to date — see STATE Phase D notes).** Watch for: (a) finding recorded but contested entries left serialized in the list; (b) invented in-list annotations (the ONLY legal trailing comment on an entry is ` <!-- ooo -->`); (c) silent resolution by omitting one reading entirely. Repair recipe: move the contested entry text verbatim into the finding's `quarantined:` field, delete the in-list lines, renumber dense, fix COVERAGE counts and sentinel n, re-gate.
+
+**Launch discipline:** ≤ ~10 concurrent agents; reviewers pipeline behind drafters; gate every file on arrival BEFORE dispatching its reviewer; checkpoint-commit (+push) after every gate/launch turn.
+
+**Resume-safe remaining-work algorithm:** for each STATE chunk row — drafted `-` → launch drafter; drafted `x`, gated `-` → gate; gated `x`, reviewed `-` → launch reviewer; all `x` → nothing. Clear the Recovery TODO list first. When all 25 chunks are reviewed AND all 25 reports exist: Phase C (`python3 assemble_lint.py assemble`; fix any coverage-net errors via targeted agents), then Phase D (PLAN §5: findings adjudication, dedup, density outliers, spot audits), then Phase E (header §2.5, CLAUDE.MD §2.6, final commit removing .declog-work, push).
+
+## Addendum B — Prompt construction for relaunched agents
+
+Build prompts per PLAN §5 Phase A (drafters) / Phase B (reviewers), embedding verbatim: §2.1–§2.2 (format registry with the good/bad worked examples), §3 (findings protocol). Per-chunk specifics: chunk id NN; line range and ≤800-line Read slices with the verify-last-line rule; owned-§ list from `manifest.tsv` (`awk -F'\t' '$1=="NN" {print $4}' manifest.tsv`); for reviewers additionally the drafter findings list (read from draft/NN.md's FINDINGS block) and the skeleton-first sequence. Two clauses are MANDATORY verbatim in every prompt: the quarantine form (contested entries OUT of the list, wording inside the finding; `quarantined: none` only when no entry affected) and the only-ooo-comment rule. Output-file layouts: PLAN §5. Final replies must be short summaries (counts, findings, handoff) — never entry dumps.
