@@ -14,19 +14,19 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 ## Chunk status (drafted / gated / reviewed)
 | chunk | drafted | gated | reviewed |
 |-------|---------|-------|----------|
-| 01 | x | x | launched |
-| 02 | x | x | launched |
+| 01 | x | x | x |
+| 02 | x | x | x |
 | 03 | x | x | x |
 | 04 | x | x | launched |
-| 05 | x | x | launched |
-| 06 | launched | - | - |
-| 07 | launched | - | - |
-| 08 | launched | - | - |
-| 09 | launched | - | - |
+| 05 | x | x | x |
+| 06 | x | x | launched |
+| 07 | x | x | launched |
+| 08 | x | x | launched |
+| 09 | x | x | launched |
 | 10 | launched | - | - |
-| 11 | - | - | - |
-| 12 | - | - | - |
-| 13 | - | - | - |
+| 11 | launched | - | - |
+| 12 | launched | - | - |
+| 13 | launched | - | - |
 | 14 | - | - | - |
 | 15 | - | - | - |
 | 16 | - | - | - |
