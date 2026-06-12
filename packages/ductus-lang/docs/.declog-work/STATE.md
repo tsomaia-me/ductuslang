@@ -30,7 +30,7 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 14 | x | x | x |
 | 15 | x | x | relaunched |
 | 16 | x | x | launched |
-| 17 | x | x | launched |
+| 17 | x | x | x |
 | 18 | relaunched | - | - |
 | 19 | relaunched | - | - |
 | 20 | relaunched | - | - |
@@ -41,7 +41,7 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 25 | - | - | - |
 
 ## Recovery TODO (session-limit event, agents killed ~15:00 UTC, reset 15:20 UTC)
-- reports 10, 13, 14: missing — launch report-reconstruction agents (PLAN Addendum A step 3)
+- reports 10, 13: reconstruction in flight; report/14 DONE (0 lost content, quarantine compliant; +2 guidance entries applied by orchestrator, 173->175)
 - reviewed/15: missing — fresh reviewer relaunched
 - drafts 18, 19, 20: missing — drafters relaunched
 - report/12: present; verify closing blocks completeness at Phase D
