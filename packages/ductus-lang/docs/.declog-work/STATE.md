@@ -35,10 +35,10 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 19 | x | x | x |
 | 20 | x | x | x |
 | 21 | x | x | x |
-| 22 | x | x | launched |
-| 23 | x | x | launched |
-| 24 | launched | - | - |
-| 25 | x | x | launched |
+| 22 | x | x | x |
+| 23 | x | x | relaunched |
+| 24 | relaunched | - | - |
+| 25 | x | x | relaunched |
 
 ## Recovery TODO (session-limit event, agents killed ~15:00 UTC, reset 15:20 UTC)
 - RECOVERY COMPLETE: reports 10,13,14 reconstructed (0 lost content each); reviewed/15 fresh (K=111); drafts 18,20 relaunched+gated; draft 19 still in flight. Orchestrator applied: +1 diagnostic entry to 13 (220), +2 guidance entries to 14 (175). Phase D: ratify report/10 asymmetric-quarantine convention (explicit pole serialized, implied pole quarantined).
@@ -50,7 +50,7 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 none
 
 ## Halts
-none
+none (note: 16:06 UTC user-interrupt killed reviewer 23, reviewer 25, drafter 24 mid-flight; all three relaunched fresh per Addendum A — only a stale skeleton/23.md had landed)
 
 ## Phase D notes (orchestrator)
 - reviewed/08.md repaired by orchestrator: reviewer listed contested Rule (P) entries (08-60/08-62 — the two contradictory readings) in the quarantined field but left them serialized; both moved into the finding verbatim, renumbered 137→135.
