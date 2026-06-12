@@ -17,13 +17,13 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 01 | x | x | launched |
 | 02 | x | x | launched |
 | 03 | x | x | launched |
-| 04 | launched | - | - |
+| 04 | x | x | launched |
 | 05 | x | x | launched |
 | 06 | launched | - | - |
 | 07 | launched | - | - |
 | 08 | launched | - | - |
 | 09 | launched | - | - |
-| 10 | - | - | - |
+| 10 | launched | - | - |
 | 11 | - | - | - |
 | 12 | - | - | - |
 | 13 | - | - | - |
