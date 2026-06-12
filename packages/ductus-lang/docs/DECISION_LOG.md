@@ -1,3 +1,14 @@
+# Ductus Decision Log
+
+Decision-of-record for the Ductus language. One atomic decision per numbered entry: `N. <sentence>: <example> (§ref into SPEC.md)`.
+This log is the lossless WHAT; SPEC.md is the normative elaboration holding the WHY — follow an entry's (§) reference for rationale and full nuance. SPEC.md must conform to this log; divergence between the two is a defect.
+Ordering: generic → specific, topic-contiguous (## headers); reading any prefix yields a coherent partial model. Position carries this gradient; numbers are stable identities — never renumbered, never reused. New decisions take the next free integer and are placed by topic; amendments keep their number; revoked numbers are retired (gaps allowed).
+Edit protocol: change this log FIRST, then update the referenced SPEC.md section to conform.
+If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; never silently resolve it.
+Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md during serialization are recorded in DECISION_LOG_FINDINGS.md with their contested wordings; contested content is deliberately NOT serialized here until ruled on.
+
+<!-- BEGIN LOG -->
+
 ## Identity & Philosophy
 
 1. The specification is the authoritative source for the type system, evaluation model, and runtime semantics. (§1.1)

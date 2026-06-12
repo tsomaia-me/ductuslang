@@ -94,3 +94,11 @@ Before responding:
 - Hedging with "it depends" without then actually evaluating the dependencies
 - Guessing when you should be asking
 - Silently resolving ambiguity instead of surfacing it
+
+# Project Map & Reading Protocol (Ductus)
+
+- `packages/ductus-lang/docs/DECISION_LOG.md` — the decision-of-record: every language decision, atomic, numbered, ordered generic→specific. Read this FIRST for WHAT Ductus is and does.
+- `packages/ductus-lang/docs/SPEC.md` — the normative elaboration: rationale, full nuance, worked examples. Reach it via a decision's (§x.y.z) reference, for WHY.
+- `packages/ductus-lang/docs/DECISION_LOG_FINDINGS.md` — quarantined spec defects (contradictions/ambiguities/incoherencies) awaiting rulings; their contested content is deliberately absent from the decision log.
+- Edit protocol: change DECISION_LOG.md first (amend in place; new decisions take the next free number, placed by topic; never renumber or reuse IDs), then update the referenced SPEC section to conform. Divergence between the two is a defect.
+- If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; do not silently resolve.
