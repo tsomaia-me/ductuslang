@@ -37,7 +37,7 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 21 | x | x | x |
 | 22 | x | x | x |
 | 23 | x | x | relaunched |
-| 24 | relaunched | - | - |
+| 24 | x | x | launched |
 | 25 | x | x | relaunched |
 
 ## Recovery TODO (session-limit event, agents killed ~15:00 UTC, reset 15:20 UTC)
