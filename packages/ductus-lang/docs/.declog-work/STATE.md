@@ -29,7 +29,7 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 13 | x | x | x |
 | 14 | x | x | x |
 | 15 | x | x | x |
-| 16 | x | x | launched |
+| 16 | x | x | x |
 | 17 | x | x | x |
 | 18 | relaunched | - | - |
 | 19 | relaunched | - | - |
