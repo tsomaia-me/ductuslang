@@ -315,17 +315,18 @@ def assemble():
         raw = open(os.path.join(rep_dir, fn), encoding='utf-8').read()
         in_nnc = False
         for line in raw.split('\n'):
-            if line.strip() == 'NO-NORMATIVE-CONTENT:':
+            stripped = line.strip()
+            if stripped.startswith('NO-NORMATIVE-CONTENT'):
                 in_nnc = True
                 continue
+            if re.match(r'^(REMOVALS|UNRESOLVED|FINDINGS|ORCHESTRATOR|#|\|)', stripped):
+                in_nnc = False
             if in_nnc:
-                m = COV_RE.match(line.strip()) or re.match(r'^§(' + SEC + r'):\s*\S', line.strip())
+                m = re.match(r'^[-\s]*§(' + SEC + r')\b', stripped)
                 if m:
                     excused.add(m.group(1))
                     continue
-                if line.strip() and not line.startswith('§'):
-                    in_nnc = False
-            if 'FINDINGS' in line or line.startswith('- kind:'):
+            if 'FINDINGS' in line or stripped.startswith('- kind:'):
                 for m in SECTOK_RE.finditer(line):
                     excused.add(m.group(1))
     uncovered = load_headings() - cited - excused

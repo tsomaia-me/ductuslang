@@ -3,8 +3,8 @@
 spec_path: packages/ductus-lang/docs/SPEC.md
 spec_lines: 21818
 spec_blob: 245be34feb8fc4f3e3faebe38f9e7090078a3c21
-phase: A
-next_action: clear Recovery TODO (below), then drafters 21-25, then Phase C/D/E per PLAN Addendum A
+phase: C
+next_action: Phase C assemble (python3 .declog-work/assemble_lint.py assemble), fix coverage-net errors, then Phase D per PLAN
 
 ## Resume instructions
 Read PLAN.md in this directory FULLY before doing anything. Then verify spec_blob with
@@ -37,7 +37,7 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 21 | x | x | x |
 | 22 | x | x | x |
 | 23 | x | x | x |
-| 24 | x | x | launched |
+| 24 | x | x | x |
 | 25 | x | x | x |
 
 ## Recovery TODO (session-limit event, agents killed ~15:00 UTC, reset 15:20 UTC)
