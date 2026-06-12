@@ -32,18 +32,18 @@ ranges are stale). Then continue at next_action. Findings protocol (PLAN.md §3)
 | 16 | x | x | x |
 | 17 | x | x | x |
 | 18 | x | x | launched |
-| 19 | relaunched | - | - |
-| 20 | x | x | launched |
+| 19 | x | x | launched |
+| 20 | x | x | x |
 | 21 | launched | - | - |
 | 22 | launched | - | - |
-| 23 | - | - | - |
-| 24 | - | - | - |
-| 25 | - | - | - |
+| 23 | launched | - | - |
+| 24 | launched | - | - |
+| 25 | launched | - | - |
 
 ## Recovery TODO (session-limit event, agents killed ~15:00 UTC, reset 15:20 UTC)
 - RECOVERY COMPLETE: reports 10,13,14 reconstructed (0 lost content each); reviewed/15 fresh (K=111); drafts 18,20 relaunched+gated; draft 19 still in flight. Orchestrator applied: +1 diagnostic entry to 13 (220), +2 guidance entries to 14 (175). Phase D: ratify report/10 asymmetric-quarantine convention (explicit pole serialized, implied pole quarantined).
 - reviewed/15: DONE (fresh reviewer, K=111, 2 findings)
-- draft 19: in flight (relaunched)
+- (recovery complete; all chunks drafted or in flight)
 - report/12: present; verify closing blocks completeness at Phase D
 
 ## Handoffs
