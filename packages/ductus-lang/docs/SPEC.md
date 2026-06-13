@@ -890,7 +890,7 @@ const BUF: usize = 1024
 
 stream ring[BUF * 2] events: Event     // capacity 2048
 let history: i32[fib(10) + 1]          // pure call in an array size
-recurrent[BUF - 256] stream avg = ...
+recurrent[BUF - 256] stream ring avg = ...
 let m = merge::[T = Event, N = BUF_A + BUF_B](a, b)
 ```
 
@@ -18534,11 +18534,11 @@ projection via `to_signal(default)` (§13.18.9) is required.
 |---|---|---|
 | `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
 | `derived X = expr` | Has streams | Compile error — use `to_signal(default)`. |
-| `stream X = expr` | Has streams | Output stream; per-event evaluation. |
-| `stream X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
-| `stream X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
+| `stream policy X = expr` | Has streams | Output stream; per-event evaluation. |
+| `stream policy X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
+| `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
 
-The `stream X = signal_expr` form is the implicit-conversion case:
+The `stream policy X = signal_expr` form is the implicit-conversion case:
 each signal's commits become events in the output stream. To
 control the conversion mechanism (e.g., to skip the initial value),
 use `to_stream` explicitly with the desired operator chain.
@@ -19515,19 +19515,19 @@ error: `stream` declarations are not permitted inside function bodies
 
 ```
 error: `.past` and `.previous` are only valid inside a `recurrent[N] stream` declaration
-  --> stream filtered = if count % 2 is 0: count else: count.previous(0)
-                                                             ^^^^^^^^^^^
+  --> stream ring filtered = if count % 2 is 0: count else: count.previous(0)
+                                                                  ^^^^^^^^^^^
   hint: history access requires opting into a recurrent stream
         declaration, which allocates the per-stream memory:
-        `recurrent stream filtered = if count % 2 is 0: count else: count.previous(0)`
+        `recurrent stream ring filtered = if count % 2 is 0: count else: count.previous(0)`
 ```
 
 **Output `.past(k, ...)` exceeds declared `[N]`:**
 
 ```
 error: lookback k=5 exceeds declared output history capacity [N=3]
-  --> recurrent[3] stream x = x.past(5, 0)
-                                ^^^^^^^^^^
+  --> recurrent[3] stream ring x = x.past(5, 0)
+                                     ^^^^^^^^^^
   hint: increase the output history capacity (`recurrent[5]`) or
         reduce the lookback depth. The output's `.past(k, ...)` calls
         must satisfy `k ≤ N`.
@@ -19537,8 +19537,8 @@ error: lookback k=5 exceeds declared output history capacity [N=3]
 
 ```
 error: lookback index in `.past(n, fallback)` must be compile-time-known
-  --> recurrent stream x = source.past(some_variable, 0)
-                                       ^^^^^^^^^^^^^
+  --> recurrent stream ring x = source.past(some_variable, 0)
+                                            ^^^^^^^^^^^^^
   hint: the lookback distance must be a compile-time-known `usize` — a
         literal, a `const`, or a const-generic parameter (§2.5) — so the
         compiler can statically determine per-stream memory allocation.

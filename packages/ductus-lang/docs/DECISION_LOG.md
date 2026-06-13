@@ -3508,7 +3508,7 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 3408. Within one commit cycle, a stream consumer observes exactly the set of events committed by the end of producer evaluation. (§13.18.15)
 3409. Events emitted during a consumer's own evaluation are deferred to the next commit. (§13.18.15)
 3410. Streams may not be passed to `runtime.write_signal` or `runtime.write_attr`; host-side stream writes go through `runtime.push_stream`. (§13.18.15)
-3411. An output-stream lookback must satisfy `k ≤ N`: `recurrent[N] stream X = ... X.past(k, ...)` with `k > N` is a compile error. (§13.18.15)
+3411. An output-stream lookback must satisfy `k ≤ N`: `recurrent[N] stream policy X = ... X.past(k, ...)` with `k > N` is a compile error. (§13.18.15)
 3412. Stream-valued expressions cannot be assigned to signal-typed bindings — `derived X = stream_expr` and `signal X = stream_expr` are compile errors; project via `to_signal(default)`. (§13.18.15)
 3413. A stream declaration without a policy keyword (`ring`/`gate`) is a normative error class: `stream my_events: Event = source` ✗. (§13.18.16)
 3414. Operator and effect parameters typed `Stream[T]` are not satisfied by a signal (implicit `to_stream` covers bindings, not parameters); this is a normative error class: `persist(my_signal)` ✗. (§13.18.16)
@@ -3518,7 +3518,7 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 3418. Assignment to a sink is a normative error class; sinks receive events only via stream forwarding: `ws.outbound = some_message` ✗. (§13.18.16)
 3419. A `stream` declaration inside a function body is a normative error class: `stream ring[1024] events` inside `fn helper():` ✗. (§13.18.16)
 3420. `.past`/`.previous` in a plain (non-recurrent) `stream` declaration body is a normative error class: `count.previous(0)` ✗. (§13.18.16)
-3421. An output `.past(k, ...)` exceeding the declared `[N]` is a normative error class: `recurrent[3] stream x = x.past(5, 0)` ✗. (§13.18.16)
+3421. An output `.past(k, ...)` exceeding the declared `[N]` is a normative error class: `recurrent[3] stream ring x = x.past(5, 0)` ✗. (§13.18.16)
 3422. A non-compile-time lookback `n` in `.past(n, fallback)` is a normative error class: `source.past(some_variable, 0)` ✗. (§13.18.16)
 
 ## Effects
