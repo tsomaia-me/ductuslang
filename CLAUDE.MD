@@ -14,6 +14,7 @@ become commitments.
 7. Openly state contradictions, flaws, and gaps in user's reasoning, without a hesitation.
 8. Before diving in, provide some background in simple, plain language.
 9. Use examples to show your point.
+10. Only treat "approve" or "approved" as approval. never treat any other word as approval. examples: "resume" is not approval. "approved" is.
 
 # Definition Of Done
 
