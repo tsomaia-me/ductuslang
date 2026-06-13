@@ -4107,7 +4107,7 @@ trait Display:                                   // object-safe
   fn display(value: Subject) -> string           //   receiver + plain return
 
 trait Clone:                                     // NOT object-safe
-  fn clone(value: Subject) -> Subject            //   returns Subject (rule 2)
+  fn clone(value: Subject) -> own Subject        //   returns Subject (rule 2)
 
 trait Max:                                       // NOT object-safe
   fn max(a: Subject, b: Subject) -> Subject      //   second Subject + Subject return
@@ -7902,12 +7902,13 @@ copy-semantic languages.
 
 ```
 trait Clone:
-  fn clone(value: Subject) -> Subject
+  fn clone(value: Subject) -> own Subject
 ```
 
 The method takes its parameter under the default borrow-equivalent
-convention (§11.7) and returns an independent owned copy. The source
-value is not consumed; the caller's binding survives the call.
+convention (§11.7); its `-> own Subject` return is anchored (§11.3.6),
+so the result is an independent owner. The source value is not consumed;
+the caller's binding survives the call.
 
 Where `Copy` produces implicit duplications with no syntactic marker,
 `Clone` requires an explicit `.clone()` call at every duplication site.
@@ -8321,22 +8322,33 @@ The restriction is by design. `move` in let-RHS, return, or mut-RHS
 would be redundant: single-name-per-cluster already kills the source
 name when the new binding takes its role (§11.3 and §11.3.5).
 Move-on-return without anchoring would conflict with §11.3.6's
-auto-anchoring rule. The keyword's role is to mark the irreversible
+anchoring rule. The keyword's role is to mark the irreversible
 call-site consumption — the one place where locality matters and the
 signature alone does not make the call's effect visible.
 
 **Symmetry with `own`.** Each occurrence of `move` at a call site must
 correspond to a parameter declared `own` in the callee's signature, and
-each `own` parameter must receive a `move` at the call site. Mismatches
-are compile errors:
+each `own` parameter that receives a *named binding* as its argument must
+have that argument marked `move`. Mismatches are compile errors:
 
-- `own` in signature, no `move` at call: *"argument requires `move`
-  because `f`'s parameter is declared `own`."*
+- `own` in signature, named-binding argument with no `move` at call:
+  *"argument requires `move` because `f`'s parameter is declared `own`."*
 - `move` at call, no `own` in signature: *"argument has `move` but
   `f`'s parameter is default; remove `move`."*
 
 The symmetry makes consumption locally readable: every `move` at a
-call site visibly marks where a binding becomes inaccessible.
+call site visibly marks where a named binding becomes inaccessible.
+
+**Rvalue arguments and receivers.** The `move`-for-`own` requirement
+governs *named bindings* — `move` marks the consumption of a binding that
+has a name to render inaccessible (§11.3, §11.3.5). An argument or
+receiver that is not a named binding — a temporary such as a call result
+(`a.clone()`), a constructor expression, or any other rvalue — has no
+name to mark and is consumed into the `own` slot directly, with no
+`move`. Thus `a.clone().push(move x)` consumes the `a.clone()` temporary
+into `push`'s `own` receiver while `move x` consumes the named binding
+`x`; writing `move` on the temporary would be meaningless and is not
+permitted.
 
 ### 11.9 Borrow Semantics and Lifetime Tracking
 
@@ -8478,12 +8490,14 @@ chain. The compiler tracks that `v` is an alias (not a real owner) and
 forbids operations that would require real ownership:
 
 ```
-fn length(v: Vec[i32]) -> isize:
-  count_elements(v)             // ✓ alias propagates
+fn forward(v: Vec[i32]) -> Vec[i32]:
+  count_elements(v)             // ✓ alias propagates (isize result unused)
   consume_vec(move v)           // ✗ v is borrow-equivalent;
                                 //   cannot consume cluster member (Rule P)
-  return v                      // ✓ if Vec[i32] is Clone:
-                                //   §11.3.6 auto-anchoring applies
+  return v                      // ✓ default return: v's cluster propagates
+                                //   to the caller as a borrow-equivalent
+                                //   alias; declare -> own Vec[i32] to
+                                //   return an independent owner instead
   let saved = v                 // alias-rebind (Rule P); saved aliases
                                 //   the same source as v; v's name dies
 ```
@@ -8874,9 +8888,15 @@ The compound types of §6 interact with mutability as follows:
 - Mutability is purely a property of the binding (per §11.2), not of the
   type. A type does not declare "this is mutable"; specific bindings to
   values of the type may be declared `mut`.
-- A record's fields, an enum variant's payload, and a newtype's wrapped
-  value may all be assigned through a `mut` binding to the containing
-  value, provided the field/payload/wrapped type permits assignment.
+- A record's field may be assigned in place through a `mut` binding to
+  the containing record, provided the field's type permits assignment.
+- An enum variant's payload and a newtype's wrapped value have no
+  in-place place form; they are never assigned through the binding. A
+  `mut` enum or newtype is updated only by reassigning the whole value to
+  a freshly constructed one (`state = Active(p2)`, `id = UserId(n2)`); the
+  compiler may reuse the binding's storage in place when the update is
+  provably unobservable (§11.11.2), as an as-if optimization, not a
+  surface place form.
 
 Records (§6.1) explicitly forbid `fn` declarations in their bodies; this
 forbid does not extend to disallowing `mut` interaction. A function
@@ -9016,10 +9036,11 @@ Users may extend iteration to their own types by implementing either
 or both traits.
 
 **Loops are expressions.** Both `for` and `while` produce values. The
-value is determined by the body's `break` statements and an optional
-`else:` clause (§12.6). Loops that are not used in an expression context
-produce unit; loops that are used in an expression context obey the
-value-shaping rules of §12.6.
+value is determined by the body's `break` expressions and an optional
+`else:` clause (§12.6). A loop is an expression in every position: its
+type follows the value-shaping rules of §12.6 regardless of whether the
+value is consumed. Placing a loop where its value is not used leaves that
+value unused — there is no separate statement form and no coercion to `()`.
 
 **Mutation discipline is preserved.** Loop bodies are ordinary function
 body fragments. They can mutate `mut` bindings declared inside or
@@ -9102,9 +9123,8 @@ in the bound expressions traps at construction.
 #### 12.2.3 Negative ranges and empty ranges
 
 A range whose `start >= end` is empty. `for i in 5..3:` produces no
-iterations and (in expression context) goes directly to the `else:`
-clause if present, or produces the natural-completion value per §12.6
-otherwise.
+iterations and completes naturally: it evaluates the `else:` clause if
+present, or produces the natural-completion value per §12.6 otherwise.
 
 Ranges with negative starts and ends work normally if `T` is signed:
 
@@ -9156,9 +9176,10 @@ The iteration source expression is evaluated once at loop entry.
 3. Each iteration step calls `Iterator::next(iter, v)` (§12.7),
    threading the source `v` through every call. The call returns
    `(Option[Item], NewIter)`. The yielded `Item` is borrow-equivalent
-   rooted in `v`'s cluster (the iterator's `Item` slot follows the
-   borrow-default convention of §3.1.2 unless the implementation opts
-   in to `own Item`).
+   rooted in `v`'s cluster: a default-form (`Iterable`-dispatched)
+   iterator's `Item` follows the borrow-default convention of §3.1.2 and
+   is never `own` — owned items require the consuming
+   `for own`/`IntoIterable` path (§12.7.4).
 4. The internal binding is reassigned to `NewIter`.
 5. If the option is `Some(value)`, binds `value` to the iteration
    variable `x` (a cluster member rooted in `v`'s current element)
@@ -9549,7 +9570,7 @@ for i in 0..N:
 
 #### 12.5.1 `break` with value
 
-In expression context (§12.6), `break` may carry a value:
+A `break` may carry a value; the value-shaping rules of §12.6 then determine the resulting loop type:
 
 ```
 break expr
@@ -9645,7 +9666,8 @@ clause's presence. See §12.6.4.
 
 ##### Without `break value`, without `else:`
 
-The loop produces unit. This is the statement form.
+The loop produces `()` on natural completion. (A break-less loop whose
+natural completion is unreachable instead has type `never`, §12.6.4.)
 
 ```
 for i in 0..N:
@@ -9729,8 +9751,14 @@ else:
 If the body provably never completes naturally — for instance, every
 path through the body produces a `break value`, or terminates via
 `return`, `panic`, or other diverging operation — the natural-completion
-case is unreachable. The compiler may use the `never` type (§8.2.2) to
-unify the unreachable case with any other type.
+case is unreachable. The compiler uses the `never` type (§8.2.2) to unify
+the unreachable case: this is required, not implementation-discretionary,
+so a loop whose only exits are `break value` sites has type `T` (not
+`Option[T]`) regardless of any `else:` clause.
+
+When the body has no `break value` and natural completion is likewise
+unreachable — for example a `while true:` loop with no `break` — the loop
+produces no value on any path and the loop expression's type is `never`.
 
 ```
 let value = for i in 0..N:
@@ -9771,9 +9799,11 @@ default to borrow-equivalent under §3.1.2's associated-type slot
 convention: when an implementation declares `type Item = T` or `type
 Source = T`, `T` is treated as borrow-equivalent unless the
 implementation opts in to consuming semantics via `type Item = own T`
-or `type Source = own T`. This is uniform: any trait declaring
-associated types follows the same convention; stdlib types get no
-special treatment.
+or `type Source = own T`. (Which iterators may declare `own Item` is
+constrained by the dispatch path — only the consuming `for own` /
+`IntoIterable` path admits it; see §12.7.4.) This is uniform: any trait
+declaring associated types follows the same convention; stdlib types get
+no special treatment.
 
 **Source's role.** `Source` is the external value the iterator reads
 from on each `next` call. Two patterns arise:
@@ -9919,10 +9949,14 @@ The for-loop machinery (§12.3.1) holds the collection in scope for the
 duration of the loop and threads it through each `next` call as the
 source argument.
 
-To opt into owned items (consuming each element out of the
-collection), the implementation declares `type Item = own Record`. The
-`Iterable` versus `IntoIterable` choice (§12.8, §12.9) determines
-whether the collection survives the loop.
+Opting into owned items (consuming each element out of the collection)
+is exclusive to the consuming path: only an `IntoIterable` iterator
+(whose `Source` is `()`, reached via `for own`, §12.9) may declare
+`type Item = own Record`. A source-bearing `Iterable` iterator may not —
+it cannot move elements out of its borrow-equivalent `source` (above),
+and its collection must survive the loop (§12.3.1). The `Iterable` versus
+`IntoIterable` choice (§12.8, §12.9) thus also determines whether the
+collection survives the loop.
 
 ### 12.8 The `Iterable` Trait
 
@@ -10346,9 +10380,8 @@ cycle and §13.12 for the reactivity boundary).
 #### 12.14.1 Empty iteration
 
 An empty iterable (such as `0..0` or an empty container) produces no
-iterations. The loop's body does not execute. The expression value (in
-expression context) is determined by the else-clause-and-break-value
-table of §12.6.2:
+iterations. The loop's body does not execute. The expression value is
+determined by the else-clause-and-break-value table of §12.6.2:
 
 ```
 let result = for x in 0..0:         // empty range (type-resolvable)
