@@ -2209,6 +2209,8 @@ or named, parallel to variant construction; mixing within one pattern is
 a compile error. Record patterns are always named; tuple patterns are
 always positional.
 
+A record pattern is exhaustive: it must bind every field of the record. A field whose value is not needed is bound to the wildcard `_` (`field: _`); there is no rest or ellipsis token that elides unlisted fields.
+
 This parallelism is structural: a pattern is a "call site for
 destructuring," with the same argument-form rules as a call site for
 construction.
@@ -4705,6 +4707,8 @@ more payload fields. Payload fields may be declared in two forms:
   `Rectangle(width: f64, height: f64)`.
 
 A variant with no payload is a *unit variant* (`North`, `None`).
+
+A payload field, named or positional, may carry a default value with `=`, applied when the field is omitted at construction — exactly as a function-parameter default (§3.5.4). `Rectangle(width: f64 = 1.0, height: f64 = 1.0)` may then be constructed as `Shape::Rectangle(width: 10.0)`, leaving `height` at `1.0`.
 
 Within a single variant's payload declaration, the form is uniform: all
 positional or all named. Mixing within one variant declaration is a
