@@ -1,7 +1,7 @@
 # Ductus Language Specification
 
 **Status:** Draft v0.1. Living document. Working reference for the language's
-design. Pairs with `GRAMMAR.md` (lexical and syntactic structure).
+design.
 
 ---
 
@@ -12,11 +12,8 @@ design. Pairs with `GRAMMAR.md` (lexical and syntactic structure).
 This specification is the authoritative source for Ductus's type system,
 evaluation model, and runtime semantics. Implementation details (compiler
 internals, optimizations, runtime representation) are out of scope except where
-they constrain user-visible semantics. The grammar of the language is specified
-separately in `GRAMMAR.md`; this document refers to grammar productions where
-relevant and does not duplicate them. Where the grammar and this specification
-appear to conflict, this specification is authoritative; the grammar is to be
-revised to match.
+they constrain user-visible semantics. The lexical and syntactic structure of the language is specified directly in
+this document; there is no separate grammar file.
 
 ### 1.2 Status
 
@@ -104,7 +101,7 @@ propagation). The choice is made at the operation site, not retroactively.
 
 ### 1.4 Conventions
 
-Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
+Code examples use Ductus syntax. Type-name case conventions:
 
 - Concrete primitive types: lowercase (`i32`, `f64`, `bool`, `char`, `string`, `never`).
 - Built-in placeholder keywords: lowercase (`numeric`, `integer`, `float`, `signed`, `unsigned`).
@@ -142,7 +139,7 @@ Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
 `audio#main`, `note#`. The `#` character behaves like a letter for
 identifier purposes; it is a valid identifier character in every
-position. Precise lexical rules are in `GRAMMAR.md`; this rule is
+position. This rule is
 normative and takes precedence over any conflicting grammar.
 
 **No statement separator; no semicolon.** Ductus delimits with
@@ -339,9 +336,9 @@ For a function whose body does not relate its parameters, the synthesized
 parameters remain distinct:
 
 ```
-fn pair(a, b): (a, b)
+fn make_pair(a, b): (a, b)
 // desugars to (and stays as):
-fn pair[T0, T1](a: T0, b: T1) -> (T0, T1)
+fn make_pair[T0, T1](a: T0, b: T1) -> (T0, T1)
 ```
 
 Here `a` and `b` are not connected by any operation, so `T0` and `T1` remain
@@ -426,7 +423,7 @@ let r = lerp::[f64](0.0, 1.0, 0.5)             // T explicit
 ```
 
 The `::` prefix on the type-argument list disambiguates from indexing
-(see `GRAMMAR.md` §3.15–§3.16). Without `::`, `foo[T](args)` is ambiguous
+Without `::`, `foo[T](args)` is ambiguous
 between "index `foo` with `T`, then call" and "call generic `foo` with type
 argument `T`". The `::` forces path-navigation mode where `[T]` is
 unambiguously a type-argument list.
@@ -440,7 +437,7 @@ at its use site by the surrounding type information.
 ```
 let r: Result[i32, _] = compute()       // i32 pinned; error type inferred
 let v: Vec[_] = make_ints()             // element type inferred
-let pair: (_, string) = build()         // tuple's first component inferred
+let p: (_, string) = build()            // tuple's first component inferred
 ```
 
 The wildcard is permitted in any type-expression position: generic
@@ -2838,7 +2835,7 @@ exponent (`e` or `E`), or an explicit float suffix:
 ```
 
 A bare `1` is an integer literal; `1.0`, `1e5`, `1_f32` are float literals.
-The grammar requires a digit on each side of the decimal point — leading-dot
+A digit is required on each side of the decimal point — leading-dot
 forms like `.5` are not permitted; write `0.5`.
 
 Float literals may carry suffixes:
@@ -3030,9 +3027,9 @@ yields `1` (the value).
 
 The `&` and `|` characters are reused at the type level (`&` for trait
 intersection per §5, `|` as the leader of the placement attribute clause
-per §13.8 and for enum sum types per §6.2). At the value
+per §13.8). At the value
 level — that is,
-inside expressions — they are bitwise operators. The grammar's context-based
+inside expressions — they are bitwise operators. The context-based
 disambiguation determines which interpretation applies; user-visible
 overloading is avoided through positional context.
 
@@ -5885,8 +5882,8 @@ The non-exhaustive list:
 - `unwrap(value: Subject) -> T` — returns the value or traps if `None`.
 - `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Subject, default: T) -> T` — returns the value or the
-  default.
+- `unwrap_or(value: Subject, fallback: T) -> T` — returns the value or the
+  fallback.
 - `unwrap_or_else(value: Subject, f: fn() -> T) -> T` — returns the value
   or a computed default.
 - `map[U](value: Subject, f: fn(T) -> U) -> Option[U]` — applies a
@@ -5905,7 +5902,7 @@ The non-exhaustive list:
 - `unwrap(value: Subject) -> T` — returns success or traps on `Err`.
 - `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Subject, default: T) -> T`,
+- `unwrap_or(value: Subject, fallback: T) -> T`,
   `unwrap_or_else(value: Subject, f: fn(E) -> T) -> T`.
 - `map[U](value: Subject, f: fn(T) -> U) -> Result[U, E]` — transforms the
   success value.
@@ -6163,7 +6160,7 @@ let summary = "value: {amount * tax_rate}"
 ```
 
 The interpolation expression `{expr}` evaluates the expression and
-converts the result to `string` via the `Display` trait per §3.7. Values
+converts the result to `string` via the `Display` trait. Values
 whose types do not satisfy `Display` produce a compile error at the
 interpolation site.
 
@@ -6402,7 +6399,7 @@ zero, and for FFI bindings to C-style flexible array members.
 
 #### 9.3.2 Disambiguation of `T[args]` in type position
 
-The grammar's `TypePostfixOp` is uniformly `[arg-list]`. The compiler
+Generic instantiation is uniformly `[arg-list]`. The compiler
 interprets it based on what `T` resolves to:
 
 - If `T` is a primitive or other non-generic type, `T[args]` constructs
@@ -6869,9 +6866,9 @@ modules (those still require an absolute `use` path).
 
 ### 10.3 Visibility Specifiers on Declarations
 
-Every position in the grammar that admits a visibility specifier
+Every declaration position that admits a visibility specifier
 accepts one of: `public`, `shared`, `private`, or *absence* (which
-denotes `shared` by default). The grammar's older `pub` keyword is
+denotes `shared` by default). The older `pub` keyword is
 replaced throughout by this three-level model; the propagation covers
 all visibility-bearing declarations.
 
@@ -6926,7 +6923,7 @@ a visibility specifier governing that name's cross-scope reach.
 
 A `use` statement imports a name from a *different module* into the
 current file's scope, allowing the file to refer to that name
-unqualified rather than via its full path. The `use` forms are specified in §10.4.1 below.
+unqualified rather than via its full path. The `use` forms are specified in §10.4 and §10.4.1 below.
 
 ```
 use root::audio::Synthesizer
@@ -7403,7 +7400,7 @@ binding lives only within the function body where it is declared.
 `mut` is **forbidden at module top level**, **forbidden inside type, trait,
 node, and connection bodies**, and **forbidden on function parameters**.
 Only function bodies (and nested block scopes within function bodies) may
-contain `mut` declarations. The grammar and the type checker both enforce
+contain `mut` declarations. The syntax and the type checker both enforce
 this; a `mut` declaration outside a function body is a compile error at
 the declaration site.
 
@@ -10260,8 +10257,8 @@ The iteration variable may be a pattern, not just a single name. The
 pattern destructures each yielded value:
 
 ```
-let pairs: Vec[(i32, string)] = ...
-for (id, name) in pairs:
+let entries: Vec[(i32, string)] = ...
+for (id, name) in entries:
   process(id, name)
 ```
 
@@ -12275,7 +12272,7 @@ access at all (named access only, §13.4.1).
 A node type may emit child instances *directly* via a compile-time
 `for` loop written **in its `expose:` block** (§13.3.7.1) — structural
 output is emitted in exactly one place, the exposition. The loop's body
-is an indented **placement-body block** following the same grammar as
+is an indented **placement-body block** following the same syntax as
 §13.8.3's child-parts body — any number of placements (parts and/or
 connections) per iteration, with the ordinary clause ordering of
 §13.8.9 and the whitespace-separation / self-delimiting rules of
@@ -12372,7 +12369,7 @@ node Posts:
     parts.Post
 
 node Feed:
-  attr posts: Vec[PostData] = []
+  attr posts: Vec[PostData] = Vec::new()
   expose:
     Posts:
       repeat post in posts keyed by post.id:
@@ -13679,7 +13676,7 @@ effect's `desired:` block:
 ```
 effect DBQuery:
   observed:
-    signal current_rows: Vec[Row] = []
+    signal current_rows: Vec[Row] = Vec::new()
 
   desired:
     repeat row in current_rows keyed by row.id:
@@ -13695,7 +13692,7 @@ scopes per row. Each scope's `RowComponent` cells live at path
 
 ```
 node VoiceMixer:
-  attr active_voices: Vec[VoiceConfig] = []
+  attr active_voices: Vec[VoiceConfig] = Vec::new()
   expose:
     repeat cfg in active_voices keyed by cfg.voice_id:
       Voice | params=cfg
@@ -13719,7 +13716,7 @@ requirement, with `Vec` supplying the iterator inside the `Signal`.
 
 ```
 node UserPanel:
-  attr active_user_ids: Vec[u64] = []
+  attr active_user_ids: Vec[u64] = Vec::new()
   expose:
     repeat user_id in active_user_ids:
       UserCard | id=user_id
@@ -13755,7 +13752,7 @@ fulfill Keyed for DbRow:
 
 effect DBQueryAuto:
   observed:
-    signal rows: Vec[DbRow] = []
+    signal rows: Vec[DbRow] = Vec::new()
   desired:
     repeat row in rows:                  // implicit via DbRow's Keyed
       RowComponent | data=row
@@ -13919,7 +13916,7 @@ by scope key:
 
 ```
 node Feed:
-  attr posts: Vec[Post] = []
+  attr posts: Vec[Post] = Vec::new()
   attr selected: PostId
   expose:
     repeat post at i in posts as posts_view keyed by post.id:
@@ -18916,9 +18913,9 @@ default.
 **Stream-to-signal bridge:**
 
 ```
-operator to_signal[T](source: Stream[T], default: T) -> Signal[T]:
+operator to_signal[T](source: Stream[T], fallback: T) -> Signal[T]:
   // returns a Signal[T] whose value is the latest observed event,
-  // or `default` if no event has been observed yet
+  // or `fallback` if no event has been observed yet
   ...
 ```
 
@@ -20048,10 +20045,9 @@ error: cell name `desired` is reserved inside an effect's blocks
         name.
 ```
 
-Outside of effect declarations, `desired` and `observed` are
-ordinary identifiers and may be used freely (as variable names,
-function names, etc.). The reservation is scoped to the effect
-declaration body.
+`desired` and `observed` are reserved keywords everywhere (§1.4); within an
+`effect` declaration body they additionally introduce the desired- and
+observed-cell blocks.
 
 **Cross-block name collision.** An effect cannot declare cells with
 the same name in both `desired:` and `observed:`:
@@ -20678,7 +20674,7 @@ observably between modes are non-conforming.
 
 The frontend performs:
 
-1. **Lexing and parsing** per `GRAMMAR.md`. Produces an AST.
+1. **Lexing and parsing** per this specification. Produces an AST.
 2. **Name resolution and type checking** per §§2–10. Produces a typed
    AST with all generic instantiations resolved and all trait dispatch
    sites bound to concrete implementations.
@@ -21320,7 +21316,7 @@ according to the language semantics defined in §§1–13.
 
 | Obligation                  | Spec reference            |
 |-----------------------------|----------------------------|
-| Lexical and syntactic parse | `GRAMMAR.md`               |
+| Lexical and syntactic parse | this specification (§1–§15) |
 | Name resolution             | §3.4, §10                  |
 | Type checking               | §2, §4, §6, §7, §9         |
 | Trait resolution            | §3.4.2, §3.7               |
