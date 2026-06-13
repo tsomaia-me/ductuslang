@@ -33,9 +33,13 @@ Each phase described as follows, given feature/task <X>:
    bugs. The issues that are unclear or require user input, such as nuances that arose during implementation - must be
    discussed with user. Mechanical issues can be addressed without human-in-the-loop.
 5. Cold Review: Launch cold, reviewer subagents to review the work. Gather findings, verify them against the changes and
-   the plan, and address/resolve the valid ones. Clearly invalid ones can be ignored. Unclear ones must be flagged to the user.
-6. Verification: verify the changes are correct. Depends on the context. One of the universal mechanisms is to
+   the plan, and address/resolve the valid ones. Clearly invalid ones can be ignored. Unclear ones must be flagged to
+   the user.
+6. Verification: verify the changes are correct. Depends on the context. But rule of thumb is: use platform/domain
+   specific measures to verify the results. Ask if unclear. One of the universal mechanisms is to
    cross-reference the changes with the plan.
+
+## You shall only report "done" when all the steps above are finished. Failure to do so is a systematic error.
 
 # Code Discipline
 
