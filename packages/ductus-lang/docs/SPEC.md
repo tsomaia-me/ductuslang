@@ -953,7 +953,7 @@ operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or
 
 // ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
 operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
-operator gate[const N: usize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
+operator bounded[const N: usize, T](s: RingStream[T, N]) -> Mode[N > 0, true]
 ```
 
 #### 2.5.4 Canonical form and type identity
@@ -1407,7 +1407,7 @@ exactly the members the trait declares.
 
 ```
 trait Action:
-  const type: string                    // required const, no default
+  const kind: string                    // required const, no default
   attr enabled: bool = true              // required attr with default
 
 trait Identifiable:
@@ -1437,18 +1437,18 @@ defaulted) in the type's body with a matching name and type:
 
 ```
 trait Action:
-  const type: string
+  const kind: string
   attr enabled: bool = true
 
 node Log:
   satisfies Action
-  const type: string = "@action/log"     // supplies the no-default const
+  const kind: string = "@action/log"     // supplies the no-default const
   // enabled inherits the trait's default (true) automatically
   default attr message: string
 
 node Delay:
   satisfies Action
-  const type: string = "@action/delay"
+  const kind: string = "@action/delay"
   attr enabled: bool = false              // overrides the trait's default
   default attr time: duration
 ```
@@ -11231,12 +11231,12 @@ trait Action
 
 node Log:
   satisfies Action
-  const type: string = "@action/log"
+  const kind: string = "@action/log"
   default attr message: string
 
 node Delay:
   satisfies Action
-  const type: string = "@action/delay"
+  const kind: string = "@action/delay"
   default attr time: duration
 ```
 
@@ -11471,7 +11471,7 @@ abstract over the value type:
 operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
-fn observe[T](signal: Signal[T]) -> string:
+fn describe[T](cell: Signal[T]) -> string:
   // some debugging utility, etc.
   ...
 ```
@@ -14430,9 +14430,10 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 The reserved fields of a node or connection instance — `from`, `to`
 (connection endpoints, §13.6), `incoming`, `outgoing` (connection
 sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
-`exposition` (§13.3.7) — are members of the instance body scope.
-They resolve by bare name in expression-operand position, exactly
-like user-defined members:
+`exposition` (§13.3.7) — occupy field position on the instance and resolve by bare name in
+expression-operand position by the same rule as user-defined members,
+but they are reserved keywords used in field context (§1.4), not
+user-definable members:
 
 ```
 connection Drives:
@@ -18056,8 +18057,8 @@ its output cell or its consumer. The author can also write a
 gated wrapper operator that conditionally falls through:
 
 ```
-operator conditional_smooth(source: Signal[f32], gate: Signal[bool], clock: Signal[u64]) -> Signal[f32]:
-  derived effective: f32 = if gate: (source |> smooth(rate: 0.1, clock: clock)) else: source
+operator conditional_smooth(source: Signal[f32], enabled: Signal[bool], clock: Signal[u64]) -> Signal[f32]:
+  derived effective: f32 = if enabled: (source |> smooth(rate: 0.1, clock: clock)) else: source
   effective
 ```
 
