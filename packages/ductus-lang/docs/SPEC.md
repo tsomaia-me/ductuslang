@@ -2114,8 +2114,7 @@ meaning benefit from positional form.
 
 #### 3.5.4 Defaults and form interaction
 
-Parameters with default values (per §6.1.2 for records and analogous
-features for functions) may appear in any position in the parameter
+Parameters with default values may appear in any position in the parameter
 list, including before non-defaulted parameters. Call sites resolve as
 follows:
 
@@ -3171,30 +3170,31 @@ fine-grained traits per the operators used.
 Operators are listed loosest-binding (top) to tightest-binding (bottom);
 operators on one row share precedence.
 
-| Tier | Operators                                              | Associativity   |
-|------|--------------------------------------------------------|-----------------|
-| 1    | `\|>` (operator / effect application)                  | left            |
-| 2    | `or`                                                   | left            |
-| 3    | `and`                                                  | left            |
-| 4    | `not` (prefix)                                         | right           |
-| 5    | `\|` (bitwise or)                                      | left            |
-| 6    | `^` (bitwise xor)                                      | left            |
-| 7    | `&` (bitwise and)                                      | left            |
-| 8    | `..` (range)                                           | non-associative |
-| 9    | `is`, `is not`, `<`, `<=`, `>`, `>=`                   | non-associative |
-| 10   | `<<`, `>>` (shifts)                                    | left            |
-| 11   | `as`                                                   | left            |
-| 12   | `+`, `-`, `+%`, `-%`, `+\|`, `-\|`                     | left            |
-| 13   | `*`, `/`, `\`, `%`, `*%`, `*\|`                        | left            |
-| 14   | `-`, `~` (prefix)                                      | right           |
-| 15   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts  | left            |
-| 16   | `::`                                                   | left            |
+| Tier | Operators                                                 | Associativity   |
+|------|-----------------------------------------------------------|-----------------|
+| 1    | `\|>` (operator / effect application)                     | left            |
+| 2    | `or`                                                      | left            |
+| 3    | `and`                                                     | left            |
+| 4    | `not` (prefix)                                            | right           |
+| 5    | `\|` (bitwise or)                                         | left            |
+| 6    | `^` (bitwise xor)                                         | left            |
+| 7    | `&` (bitwise and)                                         | left            |
+| 8    | `..` (range)                                              | non-associative |
+| 9    | `is`, `is not`, `<`, `<=`, `>`, `>=`                      | non-associative |
+| 10   | `<<`, `>>` (shifts)                                       | left            |
+| 11   | `+`, `-`                                                  | left            |
+| 12   | `*`, `/`, `\`, `%`                                        | left            |
+| 13   | `-`, `~`, `weak` (prefix)                                 | right           |
+| 14   | `?`, `!`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts | left           |
+| 15   | `::`                                                      | left            |
 
 - `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
 - Bitwise operators bind tighter than the logical operators (`and`/`or`/`not`) but looser than comparison — the C convention — so `a & b is c` parses as `a & (b is c)`; parenthesize when the other grouping is meant.
 - `not` binds looser than comparison and negates the whole comparison: `not a is b` is `not (a is b)`.
 - `..` binds looser than arithmetic, so `0..n + 1` is `0..(n + 1)`.
 - Comparison does not chain: `a < b < c` is rejected (§4.4.3).
+- Each arithmetic policy variant — wrapping `…%`, saturating `…|`, checked `…?` — binds at its base operator's tier: `+%`/`+|`/`+?` are additive, `*%`/`*|`/`*?`/`/?`/`\?`/`%?` multiplicative, and unary `-%`/`-|`/`-?` prefix.
+- `as` is **not** in this table: it is a naming keyword, not a value operator (§4.7); explicit conversion uses the call forms `T()`/`T%()`/`T|()`/`T?()`, which bind at the postfix tier.
 - The cast-policy forms `u8%(x)`/`u8|(x)`/`u8?(x)` are call-like (the `(` disambiguates, §4.7.1), binding at the postfix tier, not as infix operators.
 - Type-level `&` (intersection, §5.1) and `dyn` binding (§5.2.1) are governed separately from this value-expression table.
 
@@ -3799,16 +3799,16 @@ trait Lt:
   fn lt(a: Subject, b: Subject) -> bool
 trait Le:
   requires Lt, Eq
-          fn le(a: Subject, b: Subject) -> bool:
-            lt(a, b) or eq(a, b)
+  fn le(a: Subject, b: Subject) -> bool:
+    lt(a, b) or eq(a, b)
 trait Gt:
   requires Lt, Eq
-          fn gt(a: Subject, b: Subject) -> bool:
-            not (lt(a, b) or eq(a, b))
+  fn gt(a: Subject, b: Subject) -> bool:
+    not (lt(a, b) or eq(a, b))
 trait Ge:
   requires Lt
-          fn ge(a: Subject, b: Subject) -> bool:
-            not lt(a, b)
+  fn ge(a: Subject, b: Subject) -> bool:
+    not lt(a, b)
 ```
 
 This is the canonical fine-grained set. Stdlib may add additional fine-
@@ -6032,7 +6032,7 @@ let c6: char = '\u{1F600}'          // 😀  (escape for any Unicode scalar)
 let c7: char = '\x41'               // 'A' (escape for ASCII byte)
 ```
 
-The same escape conventions as string literals (§9.1.3) apply. A
+The same escape conventions as string literals (§9.1.3) apply, except `\{` (an interpolation escape). A
 character literal contains exactly one Unicode scalar; multi-character
 literals are a compile error.
 
@@ -6059,7 +6059,7 @@ String literals follow grammar §2.5.5:
 
 - **Plain strings**: `"hello world"`.
 - **Raw strings**: `r"no \n escapes"`, `r#"with "quotes""#`.
-- **Escape sequences**: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\{`, `\xHH`, `\u{HHHHHH}`. The same set applies in `char` literals (§9.1.2), so `'\''` and `'\"'` are both valid; in a plain string `\{` produces a literal `{` and suppresses interpolation at that position.
+- **Escape sequences**: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\{`, `\xHH`, `\u{HHHHHH}`. The same set, except `\{` (an interpolation escape), applies in `char` literals (§9.1.2), so `'\''` and `'\"'` are both valid; in a plain string `\{` produces a literal `{` and suppresses interpolation at that position.
 - **Interpolation**: `"user {name} has {count} items"`.
 
 All forms produce values of type `string`.

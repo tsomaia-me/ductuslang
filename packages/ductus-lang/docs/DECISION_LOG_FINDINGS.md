@@ -199,7 +199,7 @@ ROOT CAUSE for most lexical/grammatical items: GRAMMAR.md does not exist, yet ~2
 
 ### Strings, tuples, arrays
 - ◐ Interpolation: which literal forms interpolate (raw too?); brace-escaping for literal `{`/`}` (`{{` vs `\{`); format specifiers inside `{...}`; coexistence of escapes and `{expr}`.
-- ✓ Multi-line string literals (embedded newlines, plain and raw); admissible `\xHH` range vs the UTF-8/scalar invariants.
+- ◐ Multi-line string literals (embedded newlines, plain and raw); admissible `\xHH` range vs the UTF-8/scalar invariants.
 - ✓ Char-literal escape set: is `\'` (and `\"`) valid in a char literal? (§9.1.2 example vs §9.1.3 closed list — also ledgered.)
 - Array-value construction: typing of `[e1, …, eK]` vs `T[N]`, element unification, empty `[]`, repeat-count form — SPEC shows the form only schematically and never defines it; compounds the `Vec[…] = []` cell-initializer question.
 - ✓ Trailing commas in tuples of arity ≥ 2.
