@@ -357,7 +357,7 @@ trait methods (`+` resolves to `Add::add`, where `Add` denotes `Add[Subject]`
 per §3.1.6's default-type-parameter resolution), and the relevant trait
 becomes the constraint on the corresponding parameter. The trait system's
 umbrella traits (§3.6) let the compiler simplify inferred constraint sets for
-readability: `Add + Sub + Mul + Neg + Zero + One` may collapse to `Numeric`
+readability: `Add & Sub & Mul & Neg & Zero & One` may collapse to `Numeric`
 when unambiguous.
 
 #### 2.2.5 Supplying and inferring generic arguments at call sites
@@ -1339,7 +1339,7 @@ Traits may declare type parameters:
 
 ```
 trait From[T]:
-  fn from(value: T) -> Subject
+  fn convert(value: T) -> Subject
 
 trait Add[Rhs = Subject]:
   type Output = Subject
@@ -1561,10 +1561,10 @@ type MyNumber:
   ...
 
 fulfill From[i32] for MyNumber:
-  fn from(value: i32) -> MyNumber: ...
+  fn convert(value: i32) -> MyNumber: ...
 
 fulfill From[i64] for MyNumber:
-  fn from(value: i64) -> MyNumber: ...
+  fn convert(value: i64) -> MyNumber: ...
 ```
 
 The two `from` methods are disambiguated at call sites by argument type
@@ -1573,14 +1573,14 @@ expected return type. Bare-name dispatch typically succeeds without
 explicit annotation:
 
 ```
-let n1 = MyNumber::from(5_i32)     // resolves to From[i32]::from
-let n2 = MyNumber::from(5_i64)     // resolves to From[i64]::from
+let n1 = MyNumber::convert(5_i32)     // resolves to From[i32]::convert
+let n2 = MyNumber::convert(5_i64)     // resolves to From[i64]::convert
 let n3: MyNumber = 5_i32.into()    // Into[MyNumber] from i32 — resolves through From[i32]
 ```
 
 When inference cannot pick a unique instance (e.g., the argument is
 polymorphic), explicit disambiguation via turbofish on the trait is
-available per §3.4.1.1: `From::[i32]::from(value)`.
+available per §3.4.1.1: `From::[i32]::convert(value)`.
 
 The conflict rule applies only to *different parent traits* with
 overlapping method names. The universal identity `From[T] for T` (§7.3)
@@ -1608,7 +1608,7 @@ Given a type `T` with `satisfies T1, T2, ..., Tn`, the compiler computes
    the conflicting name and the two source parent traits.
 5. Multiple entries with the same method name and the same parent-trait
    identity (i.e., different generic instantiations of the same parent —
-   `From[i32]::from` and `From[i64]::from`) do *not* collide. They are
+   `From[i32]::convert` and `From[i64]::convert`) do *not* collide. They are
    logically the same method parameterized over generic arguments;
    dispatch among them is resolved by inference per §3.4.1.1.
 6. Methods reached through multiple `requires` paths but originating from
@@ -1974,7 +1974,7 @@ target `fulfill` block).
 
 When a type satisfies multiple instantiations of the same parent trait
 (e.g., `MyNumber` satisfies both `From[i32]` and `From[i64]`), bare-name
-dispatch at `MyNumber::from(value)` typically resolves via the argument
+dispatch at `MyNumber::convert(value)` typically resolves via the argument
 type: if `value: i32`, the `From[i32]` instantiation is selected; if
 `value: i64`, the `From[i64]` instantiation. The compiler uses the same
 inference algorithm as for generic functions (§2.2.5).
@@ -1987,7 +1987,7 @@ turbofish on the trait:
 
 ```
 fn build[T](v: T) -> MyNumber where MyNumber: From[T]:
-  From::[T]::from(v)       // T is generic; turbofish pins the instantiation
+  From::[T]::convert(v)       // T is generic; turbofish pins the instantiation
 ```
 
 This is the turbofish form (§2.2.5) applied to the trait identity,
@@ -2296,7 +2296,7 @@ This pattern serves three purposes:
   the function might not actually need.
 - *Convenience in explicit constraints:* users writing explicit bounds can use
   umbrella names (`T: Numeric`) without spelling out every operator, while
-  still being able to write fine-grained bounds (`T: Add + Mul`) when
+  still being able to write fine-grained bounds (`T: Add & Mul`) when
   precision matters.
 - *A place for trait-level defaults:* umbrellas are the natural carrier of
   defaulting policy (§3.1.5), because the default is a property of the
@@ -2391,11 +2391,6 @@ user modules, and are not subject to the orphan rule:
   the trait — the same component-by-component derivation as `@derive`
   for records (§3.8.2), generated per instantiation. Structural impl,
   exempt from the orphan rule (the tuple originates in no crate).
-- *Stdlib auto-impl `From[()] for Option[T]`* — provides the `None`
-  value for use in the `?` desugaring per §8.4.1. The impl is
-  universally available for any T; the orphan rule prevents user
-  override (neither `()` nor `Option[T]` comes from user code).
-
 These impls exist outside the user-writable `fulfill`-block space
 under the orphan rule (§3.7) and structural-impl exemption: stdlib
 declares them for types stdlib defines or for structural cases. They
@@ -2977,7 +2972,8 @@ the i64 to fit f32), use an explicit cast.
 
 `\` is the truncating integer division operator. It accepts `Integer`
 operands and produces an `Integer` result. `5 \ 2` produces `2`; `-5 \ 2`
-produces `-3` (toward negative infinity). `Float` operands are a type error.
+produces `-2` (truncated toward zero); `%` takes the dividend's sign, so `-5 % 2`
+is `-1`. `Float` operands are a type error.
 For float-input integer-output behavior, the user explicitly converts via
 `T(value)` (§4.7) or `From`/`Into`.
 
@@ -3160,7 +3156,7 @@ readability in error messages and signatures.
 For example, the body `a + (b - a) * c` infers `Add`, `Sub`, `Mul` on the
 operand types (with the substitution rule that `a`, `b`, `c` are likely
 related by inference — see §2.2.3). The compiler may report the inferred
-bounds as `T: Numeric` rather than `T: Add + Sub + Mul + ...` when the
+bounds as `T: Numeric` rather than `T: Add & Sub & Mul & ...` when the
 umbrella is unambiguous, but the underlying constraints are the
 fine-grained traits per the operators used.
 
@@ -5245,7 +5241,7 @@ system (§3) and complements the built-in numeric implicit-widening rules
 
 ```
 trait From[T]:
-  fn from(value: T) -> Subject
+  fn convert(value: T) -> Subject
 
 trait Into[T]:
   fn into(value: Subject) -> T
@@ -5411,7 +5407,7 @@ with it for numeric cases:
   dedicated unwrap form (§6.3.2). The conversion-trait system does not
   participate; the underlying value is exposed directly.
 - For **user-defined conversions on non-newtype types**, `T(value)` does
-  not apply. Users use `.into()`, `From::from()`, or `.try_into()` per
+  not apply. Users use `.into()`, `From::convert()`, or `.try_into()` per
   §7.8.
 
 The summary: `T(value)` (with its variants) is the form for built-in
@@ -5425,7 +5421,7 @@ implicit-conversion surface of the language is strictly limited to the
 built-in lossless widenings specified in §4.5. A user implementing
 `From[Celsius] for Fahrenheit` does not enable `let f: Fahrenheit = some_c`
 without explicit invocation; the user writes `let f: Fahrenheit =
-some_c.into()` or `let f: Fahrenheit = Fahrenheit::from(some_c)`.
+some_c.into()` or `let f: Fahrenheit = Fahrenheit::convert(some_c)`.
 
 This prevents the hazard of action at a distance through
 user-defined conversions. The set of types that auto-convert is fixed by
@@ -5447,7 +5443,7 @@ widenings.
 ```
 let x: f64 = (5_i32).into::[f64]()        // method form
 let x: f64 = Into::into(5_i32)            // free-function via trait path
-let x: f64 = From::from(5_i32)            // free-function via trait path
+let x: f64 = From::convert(5_i32)            // free-function via trait path
 let x: f64 = 5_i32                        // implicit (built-in lossless widening only)
 ```
 
@@ -5515,7 +5511,7 @@ The error-type rule:
 
 - **Same error type:** trivially valid; no conversion.
 - **Source error convertible to destination error via `From`:** the
-  compiler inserts the `From::from` call automatically at the propagation
+  compiler inserts the `From::convert` call automatically at the propagation
   site.
 - **No relationship via `From`:** compile error at the `?` site,
   identifying the source and destination error types and the missing
@@ -5742,7 +5738,7 @@ enum TryBranch[S, F]:
 
 For `Option[T]`, `Failure = ()` (unit) — there is no inner error value
 beyond the absence itself. For `Result[T, E]`, `Failure = E` — the error
-value. The desugaring in §8.4.1 applies `From::from` to this inner
+value. The desugaring in §8.4.1 applies `From::convert` to this inner
 failure value, not to the wrapped `None`/`Err(...)` container.
 
 User types may implement `Try` to make `?` available on their own
@@ -5763,19 +5759,21 @@ desugars to:
 ```
 match Try::branch(expr):
   Continue(value): value
-  Break(failure): return From::from(failure)
+  Break(failure):
+    // Result-returning function:  return Err(From::convert(failure))
+    // Option-returning function:  return None
+    ...
 ```
 
-The `From::from(failure)` automatically converts the failure value into
-the enclosing function's failure type. When the failure types are
-identical, `From::from` is the trivial identity conversion (§7.3); no
-special-case logic is needed for matching types.
+In a `Result`-returning function the compiler re-wraps the failure as
+`Err(From::convert(failure))`, converting the inner error value to the
+function's error type (the trivial identity conversion when the types
+match, §7.3). In an `Option`-returning function it returns `None` directly.
 
-Under this desugaring, `From::from(failure)` converts the inner failure
-value to the enclosing function's error/absence type. For Result-to-Result
-propagation, this is the user's `From[SourceError] for DestError` impl
-(§7.9). For Option-to-Option propagation, the auto-implementation
-`From[()] for Option[T]` (yielding `None`) is provided by stdlib.
+`From::convert` here is the user's `From[SourceError] for DestError` impl
+(§7.9) — a conversion of the inner error value `E1 -> E2`, never of the
+whole `Result`/`Err` container. The `Option` case carries no error value
+and involves no conversion impl: `?` simply returns `None`.
 Cross-type propagation (Option in a Result-returning function, or vice
 versa) remains forbidden per §8.6 — the failure types are not compatible.
 
@@ -5831,7 +5829,7 @@ where it is relied upon.
 
 ### 8.5 Error-Type Conversion via `From`
 
-The `From::from(failure)` step in `?` propagation enables error-type
+The `From::convert(failure)` step in `?` propagation enables error-type
 chains: a function returning `Result[T, MyError]` can use `?` on any
 `Result[U, OtherError]` provided `fulfill From[OtherError] for MyError`
 exists. The conversion is invisible at the call site but typed
@@ -6359,7 +6357,7 @@ method-call conversion:
 
 ```
 fulfill From[(f32, f32, f32)] for Vec3:
-  fn from(t: (f32, f32, f32)) -> Vec3:
+  fn convert(t: (f32, f32, f32)) -> Vec3:
     Vec3(x: t.0, y: t.1, z: t.2)
 
 // Now:
@@ -6441,20 +6439,22 @@ On 64-bit platforms (where `isize` is 64-bit), this means every integer
 type up to and including `i64` widens losslessly; `u64`, `i128`, and
 `u128` require explicit cast. On 32-bit platforms (where `isize` is
 32-bit), the corresponding rule applies with `isize`'s narrower range.
-The rule is platform-aware: the same source code is valid on every
-platform, but a cast may be required on platforms with narrower `isize`
-that would be unnecessary on wider platforms.
+The widening rule is platform-uniform, but its legality outcome is
+platform-dependent: code that compiles without a cast on a wider-`isize`
+platform may require one on a narrower-`isize` platform, so portable code
+casts proactively.
 
 Users write indexing expressions with whichever integer type is natural
-for their context — counter variables, sizes, computed offsets — and
-the compiler handles the widening:
+for their context; the compiler widens it to `isize` when the widening is
+lossless (same-signedness, range fits), and otherwise requires an explicit
+cast (e.g. for `usize` or `u64`):
 
 ```
 let i: i32 = 3
 let v: i32 = arr[i]            // i32 widens to isize for indexing
 
 let n: usize = compute()
-let w = arr[n]                  // usize widens to isize for indexing
+let w = arr[isize(n)]           // usize crosses to isize only by explicit cast
 
 let big: u64 = some_huge()
 let x = arr[big]                // ✗ compile error on 64-bit (u64 doesn't fit isize);
@@ -17966,7 +17966,7 @@ Operators may take type parameters with optional trait bounds:
 operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
-operator running_total[T: Add + Copy](source: Signal[T]) -> Signal[T]:
+operator running_total[T: Add & Copy](source: Signal[T]) -> Signal[T]:
   recurrent acc: T = acc.previous(source) + source
   acc
 ```
