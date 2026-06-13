@@ -1567,7 +1567,7 @@ fulfill From[i64] for MyNumber:
   fn convert(value: i64) -> MyNumber: ...
 ```
 
-The two `from` methods are disambiguated at call sites by argument type
+The two `convert` methods are disambiguated at call sites by argument type
 (in the `From` direction, the source-value type pins the instance) or by
 expected return type. Bare-name dispatch typically succeeds without
 explicit annotation:
@@ -12547,7 +12547,7 @@ connection Send:
 
 node Mixer:
   incoming: dynamic Send
-  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.signal)
+  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.value)
   derived mix: f32 = sum(contributions)
   expose:
     repeat c in incoming.Send:
@@ -15967,7 +15967,7 @@ participate in cycle detection identically to deriveds.
 
 ```
 error: instantaneous cycle in reactive expressions
-  derived `a.x` depends on `b.gate`
+  derived `a.x` depends on `b`'s `when` predicate
   `when` predicate of `b` depends on `a.x`
   hint: introduce a `recurrent` declaration on the cycle, or
         eliminate the cyclic dependency
@@ -18655,14 +18655,14 @@ An expression's reactive-output type is determined by its inputs:
 The rule follows from input types alone; there is no type-directed
 dispatch on the binding's LHS context. An expression containing
 streams cannot be coerced into a signal silently — explicit
-projection via `to_signal(default)` (§13.18.9) is required.
+projection via `to_signal(fallback)` (§13.18.9) is required.
 
 ##### 13.18.7.4 Assignment rules
 
 | Binding form | RHS expression | Behavior |
 |---|---|---|
 | `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
-| `derived X = expr` | Has streams | Compile error — use `to_signal(default)`. |
+| `derived X = expr` | Has streams | Compile error — use `to_signal(fallback)`. |
 | `stream policy X = expr` | Has streams | Output stream; per-event evaluation. |
 | `stream policy X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
 | `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
@@ -18920,7 +18920,7 @@ operator to_signal[T](source: Stream[T], fallback: T) -> Signal[T]:
   ...
 ```
 
-The default is required because signals must always have a defined
+The fallback is required because signals must always have a defined
 value (§13.2.6 initial value rules; §13.9.7 cell-value reads). The
 returned signal updates on each new event.
 
@@ -19217,7 +19217,7 @@ whose filtered trigger emits in the current commit wins.
 - **Output is always a stream.** A filter may emit zero events per
   input, so signal semantics (always-defined value) don't fit.
   Assigning a `where` expression to a `derived` binding is a
-  compile error; project explicitly via `to_signal(default)` if a
+  compile error; project explicitly via `to_signal(fallback)` if a
   signal-typed result is needed.
 
 #### 13.18.11 Policy as type
@@ -19549,7 +19549,7 @@ to the base stream reload rules above:
   cannot hold that many past events.
 - **Stream-valued expressions cannot be assigned to signal-typed
   bindings.** `derived X = stream_expr` and `signal X = stream_expr`
-  are compile errors; use `to_signal(default)` to project explicitly
+  are compile errors; use `to_signal(fallback)` to project explicitly
   (§13.18.7.3).
 
 #### 13.18.16 Diagnostics
@@ -19590,7 +19590,7 @@ error: cannot assign stream-valued expression to signal binding
   --> derived latest: Event = some_stream * 2
                               ^^^^^^^^^^^^^^^
   hint: a stream-valued expression cannot be coerced to a signal
-        silently. Project explicitly via `to_signal(default)`:
+        silently. Project explicitly via `to_signal(fallback)`:
         `derived latest: Event = (some_stream * 2) |> to_signal(default_event)`
 ```
 

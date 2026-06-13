@@ -5,7 +5,7 @@ This log is the lossless WHAT; SPEC.md is the normative elaboration holding the 
 Ordering: generic → specific, topic-contiguous (## headers); reading any prefix yields a coherent partial model. Position carries this gradient; numbers are stable identities — never renumbered, never reused. New decisions take the next free integer and are placed by topic; amendments keep their number; revoked numbers are retired (gaps allowed).
 Edit protocol: change this log FIRST, then update the referenced SPEC.md section to conform.
 If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; never silently resolve it.
-Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md during serialization are recorded in DECISION_LOG_FINDINGS.md with their contested wordings; contested content is deliberately NOT serialized here until ruled on.
+Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md during serialization are recorded in DECISION_LOG_FINDINGS.md with their contested wordings (see that file for the live count); contested content is deliberately NOT serialized here until ruled on.
 
 <!-- BEGIN LOG -->
 
@@ -2123,7 +2123,7 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 2062. A static connection type reads as a read-only array of connection references with const-generic length bounded by the declared cardinality. (§13.3.4.1)
 2063. Indexed connection access is legal iff the index is below the guaranteed minimum: under `outgoing: Drives [=1]`, `outgoing.Drives[0]` ✓. (§13.3.4.1)
 2064. `for c in outgoing.<ConnType>:` iterates a static connection array, unrolling at compile time. (§13.3.4.1)
-2065. A `dynamic` connection type reads as a reactive cell of the current member set, consumed only by operators and `repeat`: `incoming.Send |> map(fn(c): c.gain * c.from.signal)`. (§13.3.4.1)
+2065. A `dynamic` connection type reads as a reactive cell of the current member set, consumed only by operators and `repeat`: `incoming.Send |> map(fn(c): c.gain * c.from.value)`. (§13.3.4.1)
 2066. A derived over a dynamic connection cell re-evaluates when members mount or dismount and when any member's read cells change. (§13.3.4.1)
 2067. `repeat` over a dynamic connection cell mounts one scope per current member, mounting and dismounting with it: `repeat c in incoming.Send: Ack: c.from`. (§13.3.4.1)
 2068. `incoming:` and `outgoing:` declare which connections a node participates in as an endpoint; they establish none. (§13.3.4.2)
@@ -3408,9 +3408,9 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 3308. A reactive expression containing zero streams has signal result kind. (§13.18.7.3)
 3309. A reactive expression containing one or more streams has stream result kind, and its surrounding declaration must be `stream` or `recurrent[N] stream`. (§13.18.7.3)
 3310. The result kind follows from input types alone; there is no type-directed dispatch on the binding's LHS context. (§13.18.7.3)
-3311. A stream-containing expression is never silently coerced to a signal; explicit projection via `to_signal(default)` is required. (§13.18.7.3)
+3311. A stream-containing expression is never silently coerced to a signal; explicit projection via `to_signal(fallback)` is required. (§13.18.7.3)
 3312. `derived X = expr` with a zero-stream RHS is a standard derived signal. (§13.18.7.4)
-3313. `derived X = expr` with a stream-containing RHS is a compile error; use `to_signal(default)`. (§13.18.7.4)
+3313. `derived X = expr` with a stream-containing RHS is a compile error; use `to_signal(fallback)`. (§13.18.7.4)
 3314. A stream declaration whose RHS contains at least one stream produces an output stream with per-event evaluation. (§13.18.7.4)
 3315. A stream declaration whose RHS contains no streams but at least one signal produces an output stream; the signals participate via implicit `to_stream` with initial-as-first-event. (§13.18.7.4)
 3316. A stream declaration whose RHS has no reactive inputs is a compile error; a stream needs at least one reactive input. (§13.18.7.4)
@@ -3455,8 +3455,8 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 3355. `to_stream` always produces `ring` policy. (§13.18.9)
 3356. A signal is converted to a non-ring stream only by applying further operators/declarations after `to_stream` (e.g., threading into a `gate`-declared output). (§13.18.9)
 3357. The implicit signal-to-stream conversion in reactive expressions uses `to_stream`'s default capacity `N = 1024`. (§13.18.9)
-3358. `to_signal[T](source: Stream[T], default: T) -> Signal[T]` yields a signal holding the latest observed event, updated on each new event. (§13.18.9)
-3359. `to_signal`'s `default` argument is required; the signal holds `default` until the first event is observed. (§13.18.9)
+3358. `to_signal[T](source: Stream[T], fallback: T) -> Signal[T]` yields a signal holding the latest observed event, updated on each new event. (§13.18.9)
+3359. `to_signal`'s `fallback` argument is required; the signal holds `fallback` until the first event is observed. (§13.18.9)
 3360. `skip[T](source: Stream[T], n: i32) -> Stream[T]` drops the first `n` observed events and passes the rest. (§13.18.9)
 3361. `skip_first` is equivalent to `skip(1)`: `current_url |> to_stream |> skip_first` drops the initial-value event. (§13.18.9)
 3362. `take[T](source: Stream[T], n: i32) -> Stream[T]` emits the first `n` events, after which the output stream is complete and emits no more. (§13.18.9)
@@ -3501,7 +3501,7 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 3401. Arm selection over filtered triggers is uniform: the first arm whose (filtered) trigger emits in the current commit wins. (§13.18.10.5)
 3402. `where` applies only to reactive streams and signals; filtering non-reactive collections uses `Iterator` operations instead. (§13.18.10.6)
 3403. The `where` predicate must evaluate to `bool`; any other predicate type is a compile error. (§13.18.10.6)
-3404. Assigning a `where` expression (always stream-valued) to a `derived` binding is a compile error; a signal result requires explicit `to_signal(default)`. (§13.18.10.6)
+3404. Assigning a `where` expression (always stream-valued) to a `derived` binding is a compile error; a signal result requires explicit `to_signal(fallback)`. (§13.18.10.6)
 3405. Stream policy is encoded in the stream's type, not as a runtime attribute. (§13.18.11)
 3406. Policy-preserving operators (`map`, `filter`, `skip`) are written against abstract `Stream[T]`, and the compiler propagates the input's concrete policy: a `GateStream[T, 256]` input gives a `GateStream[U, 256]` `map` output. (§13.18.11)
 3407. Policy-constraining operators declare the required policy concretely in their signature: `persist[T: Persistable](writes: GateStream[T]) -> EffectResult`. (§13.18.11)
@@ -3566,7 +3566,7 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 3466. Events emitted during a consumer's own evaluation are deferred to the next commit. (§13.18.15)
 3467. Streams may not be passed to `runtime.write_signal` or `runtime.write_attr`; host-side stream writes go through `runtime.push_stream`. (§13.18.15)
 3468. An output-stream lookback must satisfy `k ≤ N`: `recurrent[N] stream policy X = ... X.past(k, ...)` with `k > N` is a compile error. (§13.18.15)
-3469. Stream-valued expressions cannot be assigned to signal-typed bindings — `derived X = stream_expr` and `signal X = stream_expr` are compile errors; project via `to_signal(default)`. (§13.18.15)
+3469. Stream-valued expressions cannot be assigned to signal-typed bindings — `derived X = stream_expr` and `signal X = stream_expr` are compile errors; project via `to_signal(fallback)`. (§13.18.15)
 3470. A stream declaration without a policy keyword (`ring`/`gate`) is a normative error class: `stream my_events: Event = source` ✗. (§13.18.16)
 3471. Operator and effect parameters typed `Stream[T]` are not satisfied by a signal (implicit `to_stream` covers bindings, not parameters); this is a normative error class: `persist(my_signal)` ✗. (§13.18.16)
 3472. Assigning a stream-valued expression to a signal binding is a normative error class: `derived latest: Event = some_stream * 2` ✗. (§13.18.16)

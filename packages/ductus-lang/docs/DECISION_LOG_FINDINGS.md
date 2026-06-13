@@ -8,12 +8,12 @@ Counts by kind: 72 ambiguities · 42 incoherencies · 14 contradictions · 1 uns
 
 ## High-priority digest (orchestrator's adjudication of the strongest items)
 
-1. §4.4.1.2 — `\` is called "truncating" integer division but the spec's own example `-5 \ 2` yields `-3` "(toward negative infinity)", i.e. floor division (truncation gives `-2`).
+1. **[RULED S2: truncate toward zero]** §4.4.1.2 — `\` is called "truncating" integer division but the spec's own example `-5 \ 2` yields `-3` "(toward negative infinity)", i.e. floor division (truncation gives `-2`).
 2. §4.4.3/§4.4.6 vs §4.9.1 — comparison operators attributed to `Ord`, but `Ord` is a methodless umbrella; dispatch targets are `Lt::lt`/`Le::le`/`Gt::gt`/`Ge::ge`. Different inferred generic constraints under each reading.
 3. §4.8.2 vs §4.9.2 — `Float` umbrella "requires all" float-op traits, but the canonical §4.9.2 requires-list omits `Log` (two-arg) and the inspection traits (`is_nan` etc.).
 4. §4.5/§4.9.4 vs §4.7 — residual references to lossless casts being "trivially equivalent to `as`" although §4.7 defines `as` as not-a-cast (naming only). Apparent residue of an earlier design.
-5. §8.4.1 vs §7.9 — the literal `?` desugar `return From::from(failure)` type-checks for `Option` (via `From[()] for Option[T]`) but not for `Result`, whose stated requirement `From[SourceError] for DestError` needs an unstated `Err(...)` re-wrap.
-6. §9.3.4 — the `usize`-indexing example (`arr[n]` ✓ "widens to isize") contradicts the stated rule that types whose range exceeds `isize` require an explicit cast; the "same source valid on every platform" claim also conflicts with the platform-dependent cast requirement.
+5. **[RULED S2: inner-error model]** §8.4.1 vs §7.9 — the literal `?` desugar `return From::from(failure)` type-checks for `Option` (via `From[()] for Option[T]`) but not for `Result`, whose stated requirement `From[SourceError] for DestError` needs an unstated `Err(...)` re-wrap.
+6. **[RULED S2: explicit cast]** §9.3.4 — the `usize`-indexing example (`arr[n]` ✓ "widens to isize") contradicts the stated rule that types whose range exceeds `isize` require an explicit cast; the "same source valid on every platform" claim also conflicts with the platform-dependent cast requirement.
 7. §11.3.5 — Rule (P)'s body lists `move x` at a call site among name-only consumes, while the corollary/diagnostic/example make `move` of an alias into an `own` parameter a compile error; §11.8.5 permits `move` only toward `own` parameters, so the success path is unreachable.
 8. §11.10.1 vs §11.10.5/§11.9.1 — unconditional Copy-only closure captures vs non-escaping closures "may treat their environment access as alias access": observable legality differs for `fn(): sum(buf)` with non-Copy `buf`.
 9. §11.5/§11.3.6 — `Clone`'s declared signature `fn clone(value: Subject) -> Subject` is borrow-default-returning under the spec's own return conventions, contradicting its independent-owned-copy contract (would need `-> own Subject`).
@@ -24,7 +24,7 @@ Counts by kind: 72 ambiguities · 42 incoherencies · 14 contradictions · 1 uns
 14. §13.19.2 vs §13.19.3 — "at least one of desired:/observed: must be present" vs the `effect log(...)` example with neither block ("pure fire-and-forget consumer").
 15. §13.17.13 vs §3.5.4 — the operator-type examples use `=` named-argument syntax (`apply(source = s, kernel = gain)`) although named value arguments use `name: value`.
 16. §13.17.7 — "`|>` may only apply operators or effects" vs the same section's Case 3 (RHS is a `Sink[T]`).
-17. §3.6.1/§2.2.4/§13.17.8 vs §5.1 — trait bounds written both `T: Add + Mul` and `T: Numeric & Ord`; only `&` is ever defined as bound conjunction; `+` in bound position is used but never specified.
+17. **[RULED S2: `&` only]** §3.6.1/§2.2.4/§13.17.8 vs §5.1 — trait bounds written both `T: Add + Mul` and `T: Numeric & Ord`; only `&` is ever defined as bound conjunction; `+` in bound position is used but never specified.
 18. §14.6.3 (and §15.4.4's `B@aa10` ids) — behavior IDs are both "stable u32" and "content-addressed stable hash"; width vs content unreconciled, `BID` lexeme undefined in the IR grammar.
 19. §15.4.5 vs §15.4.1 — the worked example's text form diverges from the field lists (standalone `gate ... guards [...]` entries; cell lines carrying `role=`/`uses`/`inputs`/`depth`; omitted observability/size; `App.print:0.text : str` fed by a behavior returning `%TextRec`; `label |> print` producing no `connection` entry despite the desugar map).
 20. §13.2.7 — the no-source-write rule enumerates five declaration kinds but claims to apply "to all six declaration kinds uniformly" (the §13.2 intro's six include `stream`, omitted from the enumeration).
