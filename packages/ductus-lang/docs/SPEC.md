@@ -131,6 +131,8 @@ import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
+Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the node slot `parts`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
+
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
 type alias rather than a keyword, it is capitalized by the type-naming
@@ -785,7 +787,7 @@ Compile-time-known values can serve as type-level arguments. A
 a type:
 
 ```
-let arr: i32[fib(10) + 1]                  // array size: fib(10) + 1 is compile-time evaluable
+fn fill(arr: i32[fib(10) + 1])             // array size: fib(10) + 1 is compile-time evaluable
 type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
@@ -896,7 +898,7 @@ functions:
 const BUF: usize = 1024
 
 stream ring[BUF * 2] events: Event = ...     // capacity 2048
-let history: i32[fib(10) + 1]          // pure call in an array size
+fn recent(h: i32[fib(10) + 1])         // pure call in an array size
 recurrent[BUF - 256] stream ring avg = ...
 let m = merge::[T = Event, N = BUF_A + BUF_B](a, b)
 ```
@@ -3407,7 +3409,7 @@ its declared or inferred type:
 ```
 const x: u8 = 200_u8 + 100_u8                 // compile error: 300 doesn't fit u8
 const x: u8 = 200_u8 +% 100_u8                // compile error: still doesn't fit
-let arr: i32[some_large_compile_time_value]   // compile error if value doesn't fit isize
+fn f(arr: i32[some_large_compile_time_value])  // compile error if value doesn't fit isize
 ```
 
 This applies to `+%`, `+|`, `+?` and other variants too: the compile-time
@@ -6397,6 +6399,8 @@ M-element array of `T[N]`. To form an N-row × M-column matrix, write
 cases in generic code that must abstract over array sizes including
 zero, and for FFI bindings to C-style flexible array members.
 
+**Array construction** uses a bracketed element list: `[1, 2, 3]` is an `i32[3]`. The element type is the unified type of the elements and the size is their count, so `[e1, …, eK]` has type `T[K]`. An empty array `[]` has size 0 and takes its element type from context: `let xs: i32[0] = []`. (`Vec` and other dynamic, growable collections are a stdlib concern, §9.3.6, and are not constructed by this core array-literal form.)
+
 #### 9.3.2 Disambiguation of `T[args]` in type position
 
 The grammar's `TypePostfixOp` is uniformly `[arg-list]`. The compiler
@@ -7014,9 +7018,11 @@ forms).
 A `use` statement may appear only at file scope (alongside other
 top-level declarations). Function-scope `use` (a `use` statement
 inside a function body, block, or other inner scope) is a compile
-error. Local short names within a function body are achieved by
-binding the desired value to a `let` or `mut` (e.g.,
-`let synth = root::audio::Synthesizer`), not by importing the name.
+error. Local short names within a function body are achieved by binding an
+ordinary value to a `let` or `mut`. A type or constructor name is not
+itself a value, so it cannot be bound this way; a short name for an
+imported type is introduced at file scope with `use … as`
+(`use root::audio::Synthesizer as synth`).
 
 This restriction keeps the import surface of a file visible at the
 top of the file, which aids tooling, navigation, and reasoning
@@ -7383,6 +7389,8 @@ The language has two binding forms for runtime values:
 let x = expr        // immutable binding
 mut x = expr        // mutable binding (function bodies only)
 ```
+
+Every binding carries an initial value at its declaration: there is no uninitialized binding and no implicit undefined or zero state. This holds for `let`, `mut`, top-level `let`/`const`, and `signal` alike — a binding always has a value.
 
 `let` is the general-purpose binding form, identical to the form specified
 in §2.1.2 and §2.4.1.1. The binding is immutable: the binding name cannot
