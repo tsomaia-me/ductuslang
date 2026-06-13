@@ -23,6 +23,16 @@ Re-audited against `main`: **86 OPEN · 51 RESOLVED · 2 MOOT · 1 DUP**. So **5
 Findings struck from the ledger: **F003, F005, F011, F038, F044, F047** (140 → 134 open).
 Cascade: F038's "serialize directly" policy reframes the CL-GRAMMAR appendix items from "decide whether GRAMMAR.md exists" to "serialize the actual rule directly" — mostly settled from the legacy grammar we mined; a handful (format specifiers, `\xHH` range, array-repeat form) remain genuine rulings for later sessions.
 
+### Session 2 — Numerics & errors (ruled 2026-06-13 · applied · cold-reviewed · findings struck)
+- **(closed Session 1's F005 tail)** → `from` is a reserved keyword, so the `From` trait method renamed `from`→`convert` (`From::convert` / `fn convert`); the `From` trait name, `into`, `try_from`, `try_into`, and the `here::from` reserved field are untouched.
+- **F013** → only `&` composes trait bounds; the `T: Add + Mul` / `+ Sub` / `+ Copy` examples became `&`.
+- **F022** → `\` truncates toward zero (`-5 \ 2` is `-2`); `%` takes the dividend's sign (`-5 % 2` is `-1`).
+- **F041 / F042** → a `usize` array index requires an explicit `isize(…)` cast (no implicit same-width signed↔unsigned crossing); the widening rule is platform-uniform but its legality is platform-dependent.
+- **F039** → `?` uses the inner-error model: the desugar re-wraps as `Err(From::convert(e))` / `None`; the container impl `From[()] for Option[T]` was removed; users write `From[E1] for E2`.
+- **F047 / #6** → array literals stay array-only (`[e1,…,eK]`→`T[K]`, empty `[]` context-typed); `Vec` is stdlib (`Vec::new()`), never implied language-level.
+
+Findings struck: **F013, F022, F039, F041, F042** (134 → 129 open). Cold-reviewed by two independent agents — clean after fixing 3 log-sync residuals (entries 362/416/455) + 2 clarity nits.
+
 ## Phase-1 agenda — the decisions, grouped into ~7 focused sessions
 
 Ordered so cascading decisions come first. Each fork is one line; full context in the per-finding block below (search `## Fxxx`).
