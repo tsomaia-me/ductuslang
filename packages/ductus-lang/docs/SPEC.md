@@ -3037,10 +3037,10 @@ overloading is avoided through positional context.
 
 At the value level, `|` is bitwise OR (dispatching through `BitOr`); the
 operator-application token is `|>` (§13.17), a distinct token. Bitwise
-`|` and `|>` share the same low precedence and left-associativity, so
-expressions mixing bitwise OR with higher-precedence arithmetic parse
-naturally; users mixing bitwise OR with operator application across the
-same expression should add parentheses to make grouping explicit.
+operators bind tighter than the logical operators but looser than
+comparison (§4.4.7), while `|>` is the loosest-binding operator; users
+mixing bitwise OR with operator application across the same expression
+should add parentheses to make grouping explicit.
 
 The right-shift operator `>>` is a single operator whose behavior depends
 on the signedness of the left operand's type: signed types shift
@@ -3165,6 +3165,38 @@ related by inference — see §2.2.3). The compiler may report the inferred
 bounds as `T: Numeric` rather than `T: Add + Sub + Mul + ...` when the
 umbrella is unambiguous, but the underlying constraints are the
 fine-grained traits per the operators used.
+
+#### 4.4.7 Operator precedence
+
+Operators are listed loosest-binding (top) to tightest-binding (bottom);
+operators on one row share precedence.
+
+| Tier | Operators                                              | Associativity   |
+|------|--------------------------------------------------------|-----------------|
+| 1    | `\|>` (operator / effect application)                  | left            |
+| 2    | `or`                                                   | left            |
+| 3    | `and`                                                  | left            |
+| 4    | `not` (prefix)                                         | right           |
+| 5    | `\|` (bitwise or)                                      | left            |
+| 6    | `^` (bitwise xor)                                      | left            |
+| 7    | `&` (bitwise and)                                      | left            |
+| 8    | `..` (range)                                           | non-associative |
+| 9    | `is`, `is not`, `<`, `<=`, `>`, `>=`                   | non-associative |
+| 10   | `<<`, `>>` (shifts)                                    | left            |
+| 11   | `as`                                                   | left            |
+| 12   | `+`, `-`, `+%`, `-%`, `+\|`, `-\|`                     | left            |
+| 13   | `*`, `/`, `\`, `%`, `*%`, `*\|`                        | left            |
+| 14   | `-`, `~` (prefix)                                      | right           |
+| 15   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts  | left            |
+| 16   | `::`                                                   | left            |
+
+- `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
+- Bitwise operators bind tighter than the logical operators (`and`/`or`/`not`) but looser than comparison — the C convention — so `a & b is c` parses as `a & (b is c)`; parenthesize when the other grouping is meant.
+- `not` binds looser than comparison and negates the whole comparison: `not a is b` is `not (a is b)`.
+- `..` binds looser than arithmetic, so `0..n + 1` is `0..(n + 1)`.
+- Comparison does not chain: `a < b < c` is rejected (§4.4.3).
+- The cast-policy forms `u8%(x)`/`u8|(x)`/`u8?(x)` are call-like (the `(` disambiguates, §4.7.1), binding at the postfix tier, not as infix operators.
+- Type-level `&` (intersection, §5.1) and `dyn` binding (§5.2.1) are governed separately from this value-expression table.
 
 ### 4.5 Implicit Widening
 
@@ -4410,7 +4442,7 @@ type Point[T]:
   y: T
 ```
 
-Each field declares a name, a type, and optionally a default value. The
+Each field declares a name and a type. The
 field type may be any type expression — primitive, record, enum, generic
 parameter, trait object, or compound. A record may declare generic
 parameters in the standard `[T, U, ...]` form; each generic parameter is
@@ -4440,25 +4472,14 @@ indifferently.
 
 A record may declare no fields; its body is then absent (`type Marker`), producing a zero-field nominal type usable as a tag or phantom marker.
 
-#### 6.1.2 Field defaults
+#### 6.1.2 Records have no field defaults
 
-A field may declare a default value:
-
-```
-type Window:
-  title: string
-  width: i32 = 800
-  height: i32 = 600
-  resizable: bool = true
-```
-
-A default value is any expression valid at the record's declaration scope.
-Per §2.4.1, defaults that are compile-time-known (the typical case) are
-evaluated and inlined at construction sites where the field is omitted;
-defaults involving runtime values are evaluated at each construction.
-
-Defaults compose with construction (§6.1.3): a field with a default may be
-omitted at the construction site, in which case the default applies.
+A record field declares only a name and a type; it carries no default
+value, and every field must be supplied at every construction site
+(§6.1.3). Default-bearing construction is expressed by a constructor
+function with default parameters — the smart-constructor pattern
+(§10.5.1) — not by the record type. Function parameters (§3.5.4) and enum
+variant payloads (§6.2.1) do take defaults; record fields do not.
 
 #### 6.1.3 Construction
 
@@ -4471,11 +4492,11 @@ let alice = Person(
   age: 30,
 )
 
-let w = Window(title: "Main")  // width, height, resizable use their defaults
+let w = Window(title: "Main", width: 1024, height: 768, resizable: true)
 ```
 
 Field arguments are named, not positional. The order of named arguments
-does not matter. Every field without a default must be supplied; supplying
+does not matter. Every field must be supplied; supplying
 the same field twice is a compile error; supplying an unknown field name is
 a compile error.
 
@@ -17900,9 +17921,10 @@ a + b |> op            // parses as (a + b) |> op
 a |> op1 |> op2        // parses as (a |> op1) |> op2
 ```
 
-Bitwise `|` (§4.4.2) has the same low precedence as `|>`. Expressions
-mixing bitwise OR with pipe application may need parentheses for the
-desired grouping.
+Bitwise `|` (§4.4.2) binds tighter than `|>` and tighter than the logical
+operators (§4.4.7); `|>` is the loosest-binding operator. Expressions
+mixing bitwise OR with pipe application may still want parentheses for
+clarity.
 
 **`|>` applicability:** `|>` may only apply operators or effects.
 Using `|>` with a `fn` is a compile error:
