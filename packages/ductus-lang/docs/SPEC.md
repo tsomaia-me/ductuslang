@@ -3592,7 +3592,8 @@ base-10, and `log(base, x)` for arbitrary base. The two-argument `log`
 takes the base as its first parameter.
 
 Rounding operations (`floor`, `ceil`, `round`, `trunc`) are defined only on
-floats. Integer ceiling division, floor division, and similar integer-domain
+floats. Integer ceiling division, floor division (distinct from the `\` operator,
+which truncates toward zero, §4.4.1.2), and similar integer-domain
 operations are standard-library concerns (e.g., a `div_ceil` method on
 `Integer` if the stdlib provides it).
 
@@ -6429,9 +6430,9 @@ not block this.
 
 #### 9.3.4 Index type
 
-Array index types are flexible. Any integer type is accepted as an
-index, implicitly widened to `isize` for the indexing operation per
-§4.5's lossless-widening rules. Integer types whose value range fits
+Array index types are flexible. Any integer type may be used as an
+index; it is implicitly widened to `isize` when that widening is lossless
+(per §4.5's rules), and otherwise requires an explicit cast. Integer types whose value range fits
 entirely in `isize`'s range widen losslessly; types whose range exceeds
 `isize`'s range require explicit cast.
 
