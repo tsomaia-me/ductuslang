@@ -11,6 +11,18 @@ Re-audited against `main`: **86 OPEN · 51 RESOLVED · 2 MOOT · 1 DUP**. So **5
 2. **Genuine design forks (~25–30, clustered):** you decide; they reshape the language. These are the agenda below.
 3. **Log-internal contradictions (F050, F054, …):** the decision-of-record itself is self-inconsistent — you rule *and* the log gets corrected (higher stakes; the "clean" source needs fixing).
 
+## Rulings log (applied)
+
+### Session 1 — Grammar & lexis (ruled 2026-06-13 · applied · findings struck)
+- **F038** → syntax is specified directly in log+spec; NO grammar document, no grammar section. All 23 "grammar §N" references removed (restated inline or repointed to real §§).
+- **F005** → every keyword is reserved in every position; field-like keyword uses (`from`/`to`/`parts`/`pair`/`exposition`, `desired`/`observed`) are keywords-in-context, not user fields. Renames: effect field `type`→`kind`, `operator gate`→`bounded`, param `gate`→`enabled`, `fn observe(signal:)`→`describe(cell:)`; §13.7.5 reframed. **Subsumes F011** (dup).
+- **F003** → no binding without an initializer (`let`/`mut`/`const`/`signal`); no implicit undefined or zero state. Principle in §11.2; the 3 initializer-less `let arr: T[…]` examples recast to type position.
+- **F047** → array construction is `[e1,…,eK]` producing `T[K]`; empty `[]` is context-typed; `Vec` stays stdlib. §9.3.1.
+- **F044** → a type/constructor name is not a first-class value; local aliasing is `use … as`. §10.4.3.
+
+Findings struck from the ledger: **F003, F005, F011, F038, F044, F047** (140 → 134 open).
+Cascade: F038's "serialize directly" policy reframes the CL-GRAMMAR appendix items from "decide whether GRAMMAR.md exists" to "serialize the actual rule directly" — mostly settled from the legacy grammar we mined; a handful (format specifiers, `\xHH` range, array-repeat form) remain genuine rulings for later sessions.
+
 ## Phase-1 agenda — the decisions, grouped into ~7 focused sessions
 
 Ordered so cascading decisions come first. Each fork is one line; full context in the per-finding block below (search `## Fxxx`).
