@@ -33,6 +33,16 @@ Cascade: F038's "serialize directly" policy reframes the CL-GRAMMAR appendix ite
 
 Findings struck: **F013, F022, F039, F041, F042** (134 → 129 open). Cold-reviewed by two independent agents — clean after fixing 3 log-sync residuals (entries 362/416/455) + 2 clarity nits.
 
+### Session 3 — Ownership & loops (ruled 2026-06-13 · applied · cold-reviewed · findings struck)
+- **F050 / F054** → "no magic": no type is special-cased to owner-return. `Clone::clone` is declared `-> own Subject` (the owned copy follows from the explicit `own`, not from Clone-ness); a default `-> T` return propagates the cluster as a borrow-equivalent alias with no Clone gate — an owner requires `-> own T`. Struck the §11.9.4 auto-anchor claim + fixed its `-> isize` transcription bug; restored the `-> own T` gate that §11.5.4 and §11.3.1 had dropped (cold-review catch).
+- **F055** → no temporary-specific rule: `move` marks ownership transfer out of a *named* binding only, so a temporary (rvalue, e.g. `a.clone()`) has no name to mark and feeds an `own` parameter/receiver by direct consumption with no `move`. #1382 scoped to named bindings; new rvalue-consume entry. `a.clone().push(move x)` is well-formed.
+- **F057** → an enum payload and a newtype's wrapped value are never assignable in place (no place names them); a `mut` enum/newtype is updated by whole-value reassignment to a freshly constructed value (`state = Active(p2)`), per §11.11.1. Record fields stay assignable (`r.field = v`).
+- **F060** → loop-type collapse is required (MUST, not MAY): with natural completion provably unreachable, a break-value loop is `T` (not `Option[T]`) and a break-less infinite loop (`while true:` no `break`) is `never`. §12.6.4 "may"→"uses"; §12.6.2 table rows + caption scoped to reachable completion.
+- **F062** → everything is an expression; there is no statement form. A loop is an expression in every position; an unused value is simply unused (no coercion to `()`). `break value` is always permitted (not gated on "expression context").
+- **F063** → `type Item = own T` is exclusive to the consuming `IntoIterable`/`for own` path (`Source = ()`); a source-bearing `Iterable`-dispatched iterator may not declare it. Spec-only cleanup (log already correct) + one atomic prohibition entry for log-spec symmetry (cold-review).
+
+Findings struck: **F050, F054, F055, F057, F060, F062, F063** (129 → 122 open). Log 4062→4067. Cold-reviewed by three independent no-context agents (one per cluster: Clone/returns · move-own/enum-newtype · loops/break/own-items); addressed all valid findings — restored the §11.5.4/§11.3.1 `-> own T` gate (high-impact), fixed a misdirected §11.11.2→§11.11.1 reuse citation, scoped the §12.6.2 table, and added the own-Item prohibition entry. Out-of-scope flag (deferred to the reactive session): §13.2.9.7 `let vec2 = vec.push(A)` needs `(move vec)` — own receiver on a `let` binding.
+
 ## Phase-1 agenda — the decisions, grouped into ~7 focused sessions
 
 Ordered so cascading decisions come first. Each fork is one line; full context in the per-finding block below (search `## Fxxx`).

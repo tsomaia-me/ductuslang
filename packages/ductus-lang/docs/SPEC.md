@@ -7520,7 +7520,8 @@ Consuming includes:
 - Function argument passing to an `own` parameter, with explicit `move`
   at the call site: `f(move r)` (category A).
 - Return statements: `return r` for a real-owner local (category A;
-  cluster-member returns are anchored per §11.3.6).
+  a cluster-member return is anchored only under `-> own T`, otherwise
+  it propagates as a borrow-equivalent alias per §11.3.6).
 - Storing in a record field, tuple component, or enum payload —
   category B; implicit move per §11.11.
 - Writing into a reactive cell: `signal.write(r)`, `stream.emit(r)`,
@@ -7957,10 +7958,11 @@ making the cost visible.
 
 #### 11.5.4 Clone as the anchor for rooted returns
 
-`Clone` is the trait the compiler invokes to anchor rooted returns per
-§11.3.6. When a function returns a value rooted in a cluster member,
-and the value's type implements `Clone` but not `Copy`, the compiler
-inserts an implicit `.clone()` call at the return site. The user does
+`Clone` is the trait the compiler invokes to anchor `-> own T` rooted
+returns per §11.3.6. When a function declares `-> own T` and returns a
+value rooted in a cluster member whose type implements `Clone` but not
+`Copy`, the compiler inserts an implicit `.clone()` call at the return
+site. The user does
 not write `.clone()` in the source; the elaborated form of the
 function's body (§11.7) makes the implicit clone visible to
 diagnostics and tooling.
@@ -8487,7 +8489,7 @@ fn count_elements(v: Vec[i32]) -> isize: ...
 Inside the body of `length`, `v` is a borrow-equivalent alias rooted in
 the caller's binding. Passing it to `count_elements` extends the alias
 chain. The compiler tracks that `v` is an alias (not a real owner) and
-forbids operations that would require real ownership:
+forbids operations that would require real ownership (each line below is an independent illustration, not one running program):
 
 ```
 fn forward(v: Vec[i32]) -> Vec[i32]:
@@ -8893,10 +8895,8 @@ The compound types of §6 interact with mutability as follows:
 - An enum variant's payload and a newtype's wrapped value have no
   in-place place form; they are never assigned through the binding. A
   `mut` enum or newtype is updated only by reassigning the whole value to
-  a freshly constructed one (`state = Active(p2)`, `id = UserId(n2)`); the
-  compiler may reuse the binding's storage in place when the update is
-  provably unobservable (§11.11.2), as an as-if optimization, not a
-  surface place form.
+  a freshly constructed one (`state = Active(p2)`, `id = UserId(n2)`), per
+  the whole-value reassignment of §11.11.1.
 
 Records (§6.1) explicitly forbid `fn` declarations in their bodies; this
 forbid does not extend to disallowing `mut` interaction. A function
@@ -9644,8 +9644,10 @@ different semantics here. A reader should understand `else:` on a loop as
 
 #### 12.6.2 Loop expression type
 
-The loop expression's type is determined by the combination of `break
-value` sites in the body and the presence/absence of an `else:` clause:
+For a loop whose natural completion is reachable, the loop expression's
+type is determined by the combination of `break value` sites in the body
+and the presence/absence of an `else:` clause (when natural completion is
+provably unreachable, §12.6.4 governs instead):
 
 | Body has `break value` | `else:` clause | Loop expression type       |
 |------------------------|----------------|----------------------------|
