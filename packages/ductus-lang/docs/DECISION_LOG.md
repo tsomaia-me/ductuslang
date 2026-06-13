@@ -595,7 +595,7 @@ Quarantine: 108 contradictions/ambiguities/incoherencies discovered in SPEC.md d
 564. No stdlib alias is provided for `i128`, `u128`, `isize`, `usize`, `i8`, `u16`, `u32`, or `u64`. (§4.2)
 565. The explicit-width names are the canonical primary identifiers and appear unaltered throughout the stdlib and documentation. (§4.2)
 566. Users may define their own `alias type` aliases anywhere; the built-in aliases have no privileged status. (§4.2)
-567. Numeric literal forms follow grammar §2.5. (§4.3)
+567. Numeric literals comprise integer literals (decimal, `0x`, `0o`, `0b`) and float literals (decimal point, exponent, or float suffix), specified in §4.3.1–§4.3.2. (§4.3)
 568. Integer literals are written in decimal, hexadecimal (`0x`), octal (`0o`), or binary (`0b`): `0b1010_1100`. (§4.3.1)
 569. Underscores are permitted between digits of a numeric literal as visual separators: `1_000_000`. (§4.3.1)
 570. An integer literal may carry an explicit type suffix separated by an underscore: `255_u8`. (§4.3.1)

@@ -1119,7 +1119,7 @@ explicitly declared (and implemented) the same trait.
 
 ### 3.1 Trait Declarations
 
-A trait is declared with the `trait` keyword (grammar §3.7). The body of a
+A trait is declared with the `trait` keyword. The body of a
 trait declares method signatures, associated types, requirements on other
 traits, and optionally default values for the trait's defaulting behavior.
 
@@ -1253,7 +1253,7 @@ omitting the method.
 #### 3.1.4 Super-trait requirements (`requires`)
 
 A trait may require that any type implementing it also implements other traits.
-Requirements are declared with the `requires` keyword (grammar §3.7):
+Requirements are declared with the `requires` keyword:
 
 ```
 trait Student:
@@ -1338,7 +1338,7 @@ at the trait's declaration site and nowhere else.
 
 #### 3.1.6 Generic traits
 
-Traits may declare type parameters (grammar §3.7's `GenericParams`):
+Traits may declare type parameters:
 
 ```
 trait From[T]:
@@ -1500,8 +1500,8 @@ Restrictions and kind gating:
 ### 3.2 Conformance Declarations (`satisfies`)
 
 A type declares conformance to a trait by including a `satisfies` clause in
-its body (grammar §3.5 for records, grammar §3.6 for enums, grammar §3.8
-for nodes, grammar §3.9 for connections):
+its body (§6.1 for records, §6.2 for enums, §13.3 for nodes, §13.6 for
+connections):
 
 ```
 type Person:
@@ -2492,7 +2492,7 @@ Newtype semantics are specified in §6.3.
 ### 3.8 Automatic Derivation (`@derive`)
 
 For a fixed set of common traits, the language provides automatic structural
-derivation via the `@derive` annotation (grammar §3.3). Applying `@derive` to
+derivation via the `@derive` annotation. Applying `@derive` to
 a type generates the appropriate `fulfill` blocks structurally, saving the
 user from writing mechanical implementations.
 
@@ -2787,7 +2787,7 @@ privileged.
 
 ### 4.3 Numeric Literals
 
-Literal forms follow grammar §2.5.
+Numeric literals are written in the forms specified below.
 
 #### 4.3.1 Integer literals
 
@@ -3030,7 +3030,7 @@ yields `1` (the value).
 
 The `&` and `|` characters are reused at the type level (`&` for trait
 intersection per §5, `|` as the leader of the placement attribute clause
-per grammar §3.10 and for enum sum types per grammar §3.6). At the value
+per §13.8 and for enum sum types per §6.2). At the value
 level — that is,
 inside expressions — they are bitwise operators. The grammar's context-based
 disambiguation determines which interpretation applies; user-visible
@@ -3066,8 +3066,8 @@ semantics including NaN behavior: `NaN < x` is `false`, `NaN > x` is `false`,
 IEEE 754, not a language design choice; user code working with potentially-
 NaN floats must handle the NaN cases explicitly.
 
-Comparison chaining (`a < b < c`) is not permitted (grammar §3.15 admits the
-syntax but the type system rejects it: only the rightmost comparison is
+Comparison chaining (`a < b < c`) is not permitted (the
+syntax parses but the type system rejects it: only the rightmost comparison is
 typechecked as boolean-returning; intermediate comparisons in a chain would
 produce a bool which then doesn't compare meaningfully with the next
 operand).
@@ -3080,7 +3080,7 @@ operand).
 | `is not` | `Eq`          | bool   |
 
 Equality uses the keyword forms `is` and `is not`, not symbolic `==`/`!=`
-(grammar §3.15 and grammar §6 reserve symbolic equality against future
+(symbolic equality is reserved against future
 use). The keyword forms read more naturally in this language's
 expression syntax and avoid the visual collision with `=` used for
 binding-initialization.
@@ -4426,7 +4426,7 @@ that the record satisfies, per §3.
 #### 6.1.1 Declaration
 
 A record is declared with the `type` keyword followed by the type name and a
-body of field declarations (grammar §3.5):
+body of field declarations:
 
 ```
 type Person:
@@ -4467,7 +4467,7 @@ block reachable through the module graph; pure-requirement umbrella traits
 per §3.3.5 are satisfied automatically when their requirements are.
 
 Records do not declare methods. Functions operating on record instances are
-free functions defined elsewhere (grammar §3.13) or trait-method
+free functions defined elsewhere or trait-method
 implementations in `fulfill` blocks (§3.3). The uniform function call
 syntax (§3.4) makes these callable as `x.f()` or `f(x)`
 indifferently.
@@ -4698,7 +4698,7 @@ canonical way to inspect which.
 
 #### 6.2.1 Declaration
 
-An enum is declared with the `enum` keyword (grammar §3.6):
+An enum is declared with the `enum` keyword:
 
 ```
 enum Direction:
@@ -4896,8 +4896,7 @@ and makes import-induced confusion visible at the import declarations.
 
 #### 6.2.4 Pattern matching
 
-The `match` expression is the canonical way to consume an enum value
-(grammar §3.13's `MatchExpr`). Each arm specifies a pattern and an
+The `match` expression is the canonical way to consume an enum value. Each arm specifies a pattern and an
 expression:
 
 ```
@@ -5722,7 +5721,7 @@ keeps that surface minimal deliberately.
 
 ### 8.4 The `?` Operator and the `Try` Trait
 
-The `?` postfix operator (grammar §3.15) dispatches through a stdlib
+The `?` postfix operator dispatches through a stdlib
 trait, `Try`, that decomposes a value into either a "continue with this
 success value" or "break with this failure value":
 
@@ -6057,7 +6056,7 @@ decoding is required to extract each `char`.
 
 #### 9.1.3 String literals
 
-String literals follow grammar §2.5.5:
+String literals have these forms:
 
 - **Plain strings**: `"hello world"`.
 - **Raw strings**: `r"no \n escapes"`, `r#"with "quotes""#`.
@@ -6156,7 +6155,7 @@ let greeting = "hello" + " " + "world"
 #### 9.1.9 Interpolation
 
 Interpolation is the preferred form when building strings from
-non-string values, per grammar §2.5.5:
+non-string values:
 
 ```
 let label = "user {name} has {count} items"
@@ -6195,7 +6194,7 @@ contract to preserve.
 
 #### 9.2.1 Field access
 
-Field access uses numeric postfix syntax per grammar §3.15:
+Field access uses numeric postfix syntax:
 
 ```
 let t = (1, "hello", 3.14)
@@ -6215,7 +6214,7 @@ would depend on a runtime value, which the type system cannot express.
 
 #### 9.2.2 Pattern destructuring
 
-Tuple patterns follow grammar §3.14's `TuplePat`:
+Tuple patterns use a parenthesized list of sub-patterns:
 
 ```
 let (a, b, c) = (1, "hello", 3.14)
@@ -6233,7 +6232,7 @@ names, so there is no named form.
 #### 9.2.3 The unit type `()`
 
 The unit type is `()`, with a single value also written `()`. Functions
-without a final expression per grammar §3.13 return the unit value
+without a final expression return the unit value
 implicitly. The unit type appears in pattern position as `()` to match
 unit-typed values and as a type expression for return types of functions
 producing no meaningful value:
@@ -6840,7 +6839,7 @@ Cross-module access always requires explicit reference, either via
 
 #### 10.2.3 Path bases
 
-The grammar's `PathBase` (per grammar §3.4) provides the following entry
+A path base provides the following entry
 points for absolute paths:
 
 - `root` — the current package's root module.
@@ -6874,7 +6873,7 @@ Every position in the grammar that admits a visibility specifier
 accepts one of: `public`, `shared`, `private`, or *absence* (which
 denotes `shared` by default). The grammar's older `pub` keyword is
 replaced throughout by this three-level model; the propagation covers
-all visibility-bearing productions (grammar §3.4 through §3.11).
+all visibility-bearing declarations.
 
 ```
 public fn render_frame(...): ...           // exported across packages
@@ -6927,8 +6926,7 @@ a visibility specifier governing that name's cross-scope reach.
 
 A `use` statement imports a name from a *different module* into the
 current file's scope, allowing the file to refer to that name
-unqualified rather than via its full path. The grammar of `use` is
-specified in grammar §3.3.
+unqualified rather than via its full path. The `use` forms are specified in §10.4.1 below.
 
 ```
 use root::audio::Synthesizer
