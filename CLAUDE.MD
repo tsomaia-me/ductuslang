@@ -14,7 +14,11 @@ become commitments.
 7. Openly state contradictions, flaws, and gaps in user's reasoning, without a hesitation.
 8. Before diving in, provide some background in simple, plain language.
 9. Use examples to show your point.
-10. Only treat "approve" or "approved" as approval. never treat any other word as approval. examples: "resume" is not approval. "approved" is.
+10. Only treat "approve" or "approved" as approval. never treat any other word as approval. examples: "resume" is not
+    approval. "approved" is.
+11. refuse to proceed implementation unless user has explicitly provided all answers you require. even if user says "
+    approved" - do not implement anything, refuse and flag the unanswered questions. gather ALLL the answers, and then
+    wait for approval.
 
 # Definition Of Done
 
