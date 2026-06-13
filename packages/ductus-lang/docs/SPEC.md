@@ -13936,8 +13936,9 @@ In each rejected context, the diagnostic identifies the misplaced
   not identity: it is excluded from the implicit key-derivation paths of
   §13.5.4.1 (the `Keyed` trait and stringifiable-element paths), and the
   `<key-expr>` / `Keyed::key` body that those paths use must not read it.
-  Keying by position is the React `key={index}` anti-pattern — reorder or
-  insert and one element's per-key scope state bleeds into another. A program
+  Keying by position is an anti-pattern — reorder or insert and one
+  element's per-key scope state bleeds into another, since the index now
+  names a different element. A program
   that genuinely wants positional identity must opt in explicitly by writing
   `keyed by <index>`, accepting that consequence; there is no implicit path to
   it.
