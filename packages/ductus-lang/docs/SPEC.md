@@ -1759,7 +1759,7 @@ Concrete` form:
 fulfill Add for i32:
   type Output = i32
   fn add(left: i32, right: i32) -> i32:
-    // built-in integer addition
+    ...                              // built-in integer addition
 ```
 
 Note: with the §4.9.1 default `type Output = Subject`, the `type Output =
@@ -3622,73 +3622,146 @@ Each operator from §4.4 has its own trait, with the method name matching
 the conventional operator name:
 
 ```
-trait Add[Rhs = Subject]:    type Output = Subject; fn add(a: Subject, b: Rhs) -> Output
-trait Sub[Rhs = Subject]:    type Output = Subject; fn sub(a: Subject, b: Rhs) -> Output
-trait Mul[Rhs = Subject]:    type Output = Subject; fn mul(a: Subject, b: Rhs) -> Output
-trait Div:                fn div(a: Subject, b: Subject) -> Subject      // on Float umbrella only; see §4.4.1.1 for widening
-trait IntDiv[Rhs = Subject]: type Output = Subject; fn intdiv(a: Subject, b: Rhs) -> Output
-trait Rem[Rhs = Subject]:    type Output = Subject; fn rem(a: Subject, b: Rhs) -> Output
-trait Neg:                fn neg(value: Subject) -> Subject
+trait Add[Rhs = Subject]:
+  type Output = Subject
+  fn add(a: Subject, b: Rhs) -> Output
+trait Sub[Rhs = Subject]:
+  type Output = Subject
+  fn sub(a: Subject, b: Rhs) -> Output
+trait Mul[Rhs = Subject]:
+  type Output = Subject
+  fn mul(a: Subject, b: Rhs) -> Output
+trait Div:
+  fn div(a: Subject, b: Subject) -> Subject      // on Float umbrella only
+  see §4.4.1.1 for widening
+trait IntDiv[Rhs = Subject]:
+  type Output = Subject
+  fn intdiv(a: Subject, b: Rhs) -> Output
+trait Rem[Rhs = Subject]:
+  type Output = Subject
+  fn rem(a: Subject, b: Rhs) -> Output
+trait Neg:
+  fn neg(value: Subject) -> Subject
 
-trait BitAnd: fn bitand(a: Subject, b: Subject) -> Subject
-trait BitOr:  fn bitor(a: Subject, b: Subject) -> Subject
-trait BitXor: fn bitxor(a: Subject, b: Subject) -> Subject
-trait BitNot: fn bitnot(value: Subject) -> Subject
-trait Shl:    fn shl(value: Subject, n: u32) -> Subject
-trait Shr:    fn shr(value: Subject, n: u32) -> Subject
+trait BitAnd:
+  fn bitand(a: Subject, b: Subject) -> Subject
+trait BitOr:
+  fn bitor(a: Subject, b: Subject) -> Subject
+trait BitXor:
+  fn bitxor(a: Subject, b: Subject) -> Subject
+trait BitNot:
+  fn bitnot(value: Subject) -> Subject
+trait Shl:
+  fn shl(value: Subject, n: u32) -> Subject
+trait Shr:
+  fn shr(value: Subject, n: u32) -> Subject
 
-trait WrappingAdd[Rhs = Subject]:    type Output = Subject; fn wrapping_add(a: Subject, b: Rhs) -> Output
-trait WrappingSub[Rhs = Subject]:    type Output = Subject; fn wrapping_sub(a: Subject, b: Rhs) -> Output
-trait WrappingMul[Rhs = Subject]:    type Output = Subject; fn wrapping_mul(a: Subject, b: Rhs) -> Output
-trait WrappingIntDiv[Rhs = Subject]: type Output = Subject; fn wrapping_intdiv(a: Subject, b: Rhs) -> Output
-trait WrappingRem[Rhs = Subject]:    type Output = Subject; fn wrapping_rem(a: Subject, b: Rhs) -> Output
-trait WrappingNeg:                fn wrapping_neg(value: Subject) -> Subject
+trait WrappingAdd[Rhs = Subject]:
+  type Output = Subject
+  fn wrapping_add(a: Subject, b: Rhs) -> Output
+trait WrappingSub[Rhs = Subject]:
+  type Output = Subject
+  fn wrapping_sub(a: Subject, b: Rhs) -> Output
+trait WrappingMul[Rhs = Subject]:
+  type Output = Subject
+  fn wrapping_mul(a: Subject, b: Rhs) -> Output
+trait WrappingIntDiv[Rhs = Subject]:
+  type Output = Subject
+  fn wrapping_intdiv(a: Subject, b: Rhs) -> Output
+trait WrappingRem[Rhs = Subject]:
+  type Output = Subject
+  fn wrapping_rem(a: Subject, b: Rhs) -> Output
+trait WrappingNeg:
+  fn wrapping_neg(value: Subject) -> Subject
 
-trait SaturatingAdd[Rhs = Subject]:    type Output = Subject; fn saturating_add(a: Subject, b: Rhs) -> Output
-trait SaturatingSub[Rhs = Subject]:    type Output = Subject; fn saturating_sub(a: Subject, b: Rhs) -> Output
-trait SaturatingMul[Rhs = Subject]:    type Output = Subject; fn saturating_mul(a: Subject, b: Rhs) -> Output
-trait SaturatingIntDiv[Rhs = Subject]: type Output = Subject; fn saturating_intdiv(a: Subject, b: Rhs) -> Output
-trait SaturatingRem[Rhs = Subject]:    type Output = Subject; fn saturating_rem(a: Subject, b: Rhs) -> Output
-trait SaturatingNeg:                fn saturating_neg(value: Subject) -> Subject
+trait SaturatingAdd[Rhs = Subject]:
+  type Output = Subject
+  fn saturating_add(a: Subject, b: Rhs) -> Output
+trait SaturatingSub[Rhs = Subject]:
+  type Output = Subject
+  fn saturating_sub(a: Subject, b: Rhs) -> Output
+trait SaturatingMul[Rhs = Subject]:
+  type Output = Subject
+  fn saturating_mul(a: Subject, b: Rhs) -> Output
+trait SaturatingIntDiv[Rhs = Subject]:
+  type Output = Subject
+  fn saturating_intdiv(a: Subject, b: Rhs) -> Output
+trait SaturatingRem[Rhs = Subject]:
+  type Output = Subject
+  fn saturating_rem(a: Subject, b: Rhs) -> Output
+trait SaturatingNeg:
+  fn saturating_neg(value: Subject) -> Subject
 
-trait CheckedAdd[Rhs = Subject]:    type Output = Subject; fn checked_add(a: Subject, b: Rhs) -> Option[Output]
-trait CheckedSub[Rhs = Subject]:    type Output = Subject; fn checked_sub(a: Subject, b: Rhs) -> Option[Output]
-trait CheckedMul[Rhs = Subject]:    type Output = Subject; fn checked_mul(a: Subject, b: Rhs) -> Option[Output]
-trait CheckedDiv[Rhs = Subject]:    type Output = Subject; fn checked_div(a: Subject, b: Rhs) -> Option[Output]
-trait CheckedIntDiv[Rhs = Subject]: type Output = Subject; fn checked_intdiv(a: Subject, b: Rhs) -> Option[Output]
-trait CheckedRem[Rhs = Subject]:    type Output = Subject; fn checked_rem(a: Subject, b: Rhs) -> Option[Output]
-trait CheckedNeg:                fn checked_neg(value: Subject) -> Option[Subject]
+trait CheckedAdd[Rhs = Subject]:
+  type Output = Subject
+  fn checked_add(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedSub[Rhs = Subject]:
+  type Output = Subject
+  fn checked_sub(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedMul[Rhs = Subject]:
+  type Output = Subject
+  fn checked_mul(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedDiv[Rhs = Subject]:
+  type Output = Subject
+  fn checked_div(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedIntDiv[Rhs = Subject]:
+  type Output = Subject
+  fn checked_intdiv(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedRem[Rhs = Subject]:
+  type Output = Subject
+  fn checked_rem(a: Subject, b: Rhs) -> Option[Output]
+trait CheckedNeg:
+  fn checked_neg(value: Subject) -> Option[Subject]
 
-trait WrappingAs[T]:   fn wrapping_as(value: Subject) -> T
-trait SaturatingAs[T]: fn saturating_as(value: Subject) -> T
-trait CheckedAs[T]:    fn checked_as(value: Subject) -> Option[T]
+trait WrappingAs[T]:
+  fn wrapping_as(value: Subject) -> T
+trait SaturatingAs[T]:
+  fn saturating_as(value: Subject) -> T
+trait CheckedAs[T]:
+  fn checked_as(value: Subject) -> Option[T]
 
-trait Zero: fn zero() -> Subject
-trait One:  fn one() -> Subject
+trait Zero:
+  fn zero() -> Subject
+trait One:
+  fn one() -> Subject
 
-trait Abs:  fn abs(value: Subject) -> Subject
-trait Min:  fn min(a: Subject, b: Subject) -> Subject
-trait Max:  fn max(a: Subject, b: Subject) -> Subject
+trait Abs:
+  fn abs(value: Subject) -> Subject
+trait Min:
+  fn min(a: Subject, b: Subject) -> Subject
+trait Max:
+  fn max(a: Subject, b: Subject) -> Subject
 
-trait Sqrt: fn sqrt(value: Subject) -> Subject
-trait Sin:  fn sin(value: Subject) -> Subject
-trait Cos:  fn cos(value: Subject) -> Subject
+trait Sqrt:
+  fn sqrt(value: Subject) -> Subject
+trait Sin:
+  fn sin(value: Subject) -> Subject
+trait Cos:
+  fn cos(value: Subject) -> Subject
 // ... and so on for the float-only operations from §4.8.2
 
-trait IntPow:   fn pow(base: Subject, exp: Subject) -> Subject
-trait FloatPow: fn pow(base: Subject, exp: Subject) -> Subject
+trait IntPow:
+  fn pow(base: Subject, exp: Subject) -> Subject
+trait FloatPow:
+  fn pow(base: Subject, exp: Subject) -> Subject
 
-trait Eq: fn eq(a: Subject, b: Subject) -> bool
+trait Eq:
+  fn eq(a: Subject, b: Subject) -> bool
 
-trait Ord: requires Lt, Le, Gt, Ge
-trait Lt: fn lt(a: Subject, b: Subject) -> bool
-trait Le: requires Lt, Eq
+trait Ord:
+  requires Lt, Le, Gt, Ge
+trait Lt:
+  fn lt(a: Subject, b: Subject) -> bool
+trait Le:
+  requires Lt, Eq
           fn le(a: Subject, b: Subject) -> bool:
             lt(a, b) or eq(a, b)
-trait Gt: requires Lt, Eq
+trait Gt:
+  requires Lt, Eq
           fn gt(a: Subject, b: Subject) -> bool:
             not (lt(a, b) or eq(a, b))
-trait Ge: requires Lt
+trait Ge:
+  requires Lt
           fn ge(a: Subject, b: Subject) -> bool:
             not lt(a, b)
 ```

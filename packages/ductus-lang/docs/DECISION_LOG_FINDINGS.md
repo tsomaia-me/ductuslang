@@ -174,3 +174,58 @@ Counts by kind: 78 ambiguities · 48 incoherencies · 16 contradictions · 1 uns
 [chunk 25] - kind: ambiguity | sections: §15.4, §15.4.1, §15.4.5 | readings: the §15.4.1 abstract record (cell entries with observability/cadence/size fields plus separate dependency-edge lists) determines the normative text form, the §15.4.5 module text being illustrative vs the §15.4.5 text form (cell lines carrying role=/uses/inputs/init/depth inline, omitting observability/size/alignment, with no grammar given for the module/types/graph sections — only behaviors have one, §15.4.4) is itself the normative serialization | impact: §15.4 makes the text form normative and §15.7.3 defines interop against it, yet the graph section's concrete syntax is underdetermined | quarantined: A graph text-form cell line reads `cell App.total : i32 role=recurrent uses B@d2 inputs [App.count] depth 1 init 0`. (§15.4.5)
 [chunk 25] - kind: incoherence | sections: §15.4.1, §15.4.5 | readings: every surface connection/`|>` lowers to a `connection` entry per the desugar map vs a `|>` at an effect pipe-position lowers only to effect `parameter_bindings` (the worked example emits no connection entry for `label |> print` and the scope's `exposes` is empty) | impact: whether effect pipes produce connection entries affects graph contents, `exposes` traversal, and hot-reload diffing | quarantined: none
 [chunk 25] - kind: ambiguity | sections: §15.4.1.4, §15.6.1, §15.7.3 | readings: §15.4.1.4 makes the `cross_thread_snapshot`→`confined` downgrade "implementation-defined" (so compilers A and B may emit different `observability` for the same path-matched cell) and warns the reverse "would silently change concurrency semantics", yet §15.6.1's reload classification (reload-safe / per-instance-restart / full-restart, computed from the diff alone) never lists an observability-class change, while §15.7.3 permits a host swapping one implementation's spec for another's — reading 1: an observability-class change on a carried-over cell is outside the diff's concern and silently honored vs reading 2: it must force a restart class, since silently flipping a cell's concurrency contract across hot reload violates the §15.4.1.4 no-silent-change intent | impact: whether cross-implementation hot reload can silently alter a path-matched cell's concurrency contract; the boundary of the reload-classification's input set | quarantined: none (entries transcribe each section; syntax-sweep discovery, orchestrator-verified against §15.4.1.4/§15.6.1)
+
+---
+
+## Appendix: Spec-silent syntax questions (SPEC decides these nowhere)
+
+Surfaced by the syntax-completeness sweep (reconstruction test over every §). These are NOT defects in existing text — they are decisions the SPEC never makes, so the log cannot serialize them without inventing language. Each needs a ruling; once ruled, add the decision to DECISION_LOG.md (next free number, by topic) and write the governing prose into SPEC.md. The log is reconstructible up to exactly this boundary.
+
+ROOT CAUSE for most lexical/grammatical items: GRAMMAR.md does not exist, yet ~23 SPEC sites delegate micro-syntax to "grammar §x.y" (see the dangling-grammar-refs finding). Authoring GRAMMAR.md (or folding these rules into SPEC) closes the majority in one stroke.
+
+### Lexis & layout (mostly GRAMMAR.md territory)
+- Base identifier alphabet, leading-digit rule, Unicode allowance, case-sensitivity (§1.4 legislates only the `#` rule).
+- Keyword reservedness per class: reserved-everywhere vs contextual (also ledgered as an ambiguity, since SPEC examples name identifiers `gate`/`type`/`observe`/`signal`).
+- Indentation discipline (unit; tabs vs spaces) and line-continuation outside separated lists.
+- Inline-after-colon body legality: is `trait Zero: fn zero() -> Subject` (single-member body on the head line) legal, or must the body be an indented block? SPEC's §4.9.1 catalog used the inline form pervasively; it has now been normalized to multi-line for guaranteed validity, but a ruling that inline IS legal would permit the compact form spec-wide (also governs operator bodies §13.17.2).
+- Leading zeros in decimal literals (`007`): valid or rejected?
+- Float suffix on a based literal: does `0x1_f32` lex as `0x1F32` or as a float-suffixed hex literal?
+- Forced (identifier-)suffix name set: exactly the primitive type names, or also `alias type` names (`255_byte`)?
+
+### Operators & precedence
+- Full precedence/associativity table among `+ - * / \ %`, shifts, `& ^ |`, comparisons, `is`/`is not`, the `%`/`|`/`?` cast-policy families, and `..` — SPEC states only fragments ("arithmetic binds tighter"; `|`≈`|>` low/left).
+- Range operator `..` precedence vs arithmetic (compound bounds are always parenthesized in examples; bare `0..N + 1` undecided).
+- Unary `~` position (prefix vs postfix): no value-level example anywhere (rides with the ledgered `-%`/`-|` unary-position item).
+
+### Strings, tuples, arrays
+- Interpolation: which literal forms interpolate (raw too?); brace-escaping for literal `{`/`}` (`{{` vs `\{`); format specifiers inside `{...}`; coexistence of escapes and `{expr}`.
+- Multi-line string literals (embedded newlines, plain and raw); admissible `\xHH` range vs the UTF-8/scalar invariants.
+- Char-literal escape set: is `\'` (and `\"`) valid in a char literal? (§9.1.2 example vs §9.1.3 closed list — also ledgered.)
+- Array-value construction: typing of `[e1, …, eK]` vs `T[N]`, element unification, empty `[]`, repeat-count form — SPEC shows the form only schematically and never defines it; compounds the `Vec[…] = []` cell-initializer question.
+- Trailing commas in tuples of arity ≥ 2.
+
+### Types, records, enums, conversions
+- Turbofish for enum variants: where `::[…]` attaches on `Enum::Variant`; explicit instantiation of a unit variant (`Option::None`) with no inference context.
+- Value-position `dyn` operand grammar: admitted positions, operand extent/precedence (the "mirrors `move`" hint is itself ledgered as contested).
+- Record-intersection chaining `A & B & C` / parenthesized RHS (associativity stated only for bound-position conjunction).
+- Whether `Type[…]` admits a conjunction constraint (`Type[Drivable & Insurable]`).
+- Named enum payload field defaults (`Rectangle(width: f64 = 1.0)`).
+- Zero-field records / zero-variant enums: declarable? empty-body spelling?
+- Record pattern surface: concrete shape, whether every field must be bound, rest-pattern token (none exists anywhere).
+- Newtype constructor pattern (`UserId(n)`) vs `T(value)` extraction as sole eliminator.
+- `with` grammar extent: chaining (`a with x: 1 with y: 2`), precedence, single-line `with` inside a call-argument list.
+- Fallible-conversion turbofish example aside, no operator-specific turbofish gap (general rule governs).
+
+### Modules
+- `use … as` import renaming (referenced by §1.4/§4.7 but defined nowhere — also ledgered as an incoherence).
+- Module-targeting `use` (`use root::audio::synth` then `synth::X`) — legal or not (also ledgered).
+- Selection-list grammar closure: nested paths/globs inside `use root::(…)`.
+
+### Reactive surface
+- Conditional-`Copy` impl surface a generic type writes (`fulfill Copy for G[T] where T: Copy`, empty body?) — §3.3.4 where-form specified only for method-bearing traits.
+- Multi-segment assignment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring order (only single-segment forms shown).
+- Tuple-component assignability through a `mut` binding and its LHS form.
+- Explicitly-written elaborated borrow signatures: concrete surface (only "Schematically: `fn f(borrow v: T) -> borrow_rooted_in(v) T`" given).
+- Inline `observe` delimiting (as a sub-expression / call argument); multi-line observe-arm bodies (only single-expression arms shown).
+- `default:`/catch-all position in `when:` multi-way and `given` blocks (also ledgered — observe requires last; block forms silent).
+- Connection body: clause-ordering of `from:`/`to:`/`pairs:` vs members; explicit type-arg surface when placing a generic connection; whitespace significance around `/` in the `/expr` slot; `:` placement when a multi-line attr continuation meets a child body; whether an unparenthesized whitespace-bearing attr value is an error; exhaustiveness of pairs-form `match pair:`.
