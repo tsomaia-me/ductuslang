@@ -15074,7 +15074,7 @@ placement.
 ```
 Pin' p1                                // ' is a flag on Pin (node placement)
 Component?* c1                         // two flags: ? and *
-WiresTo'! my_wire: chip_b.in1          // two flags on a connection placement
+WiresTo'! as my_wire: chip_b.in1       // two flags on a connection placement
 ```
 
 Flags are declared on attr declarations via the `@flag('c')`
