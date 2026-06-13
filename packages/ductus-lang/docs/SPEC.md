@@ -157,6 +157,13 @@ rules and may use semicolons.)
 
 A line comment begins with `//` and runs to end of line; there is no block-comment form. This rule is normative and takes precedence over any conflicting grammar.
 
+
+Aside from `#`, an identifier begins with a Unicode letter (any character with the Unicode `Letter` property) or an underscore `_`, and continues with those plus Unicode decimal digits. An identifier may not begin with a digit.
+
+**Layout is significant.** Indentation structures the program; the unit of indentation is the ASCII space, and a tab in the leading whitespace of a non-empty line is a lex error. An increase in indentation opens a nested block and a decrease closes one. Blank lines and comment-only lines do not affect indentation. Inside paired delimiters — `(...)` and `[...]` — and inside string literals, layout is suspended, so multi-line argument lists, generic lists, tuples, and string contents may span lines freely.
+
+**Declaration bodies versus inline bodies.** The body of a `trait`, `type`, `enum`, `node`, or `connection` is always an indented block — its members are never written inline after the `:`. A function body and the arms of `if`/`else` and `match` may be written either as an indented block or as a single expression inline after the `:` (`fn double(x: i32) -> i32: x * 2`; `if a > 0: a else: -a`).
+
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
 be concrete.
@@ -2812,6 +2819,8 @@ Without a suffix, an integer literal produces a value with the *integer
 placeholder*. Resolution proceeds per §2.1 (use-site resolution, with
 cross-kind permitted when the value fits exactly per §2.4.3).
 
+Leading zeros are permitted in a decimal literal and carry no octal meaning: `007` is the integer `7`. The octal base is written only with the explicit `0o` prefix.
+
 #### 4.3.2 Float literals
 
 Float literals require at least one of: a decimal point with digits, an
@@ -2840,6 +2849,8 @@ Float literals may carry suffixes:
 
 Without a suffix, a float literal produces a value with the *float
 placeholder*. Resolution proceeds per §2.1; the default per §3.1.5 is `f64`.
+
+A float suffix attaches only to a decimal literal. Hexadecimal, octal, and binary literals take no float suffix; under longest-match tokenization the suffix characters are absorbed into the digit run wherever they are valid digits, so `0x1_f32` is the hexadecimal integer `0x1F32`, not a float.
 
 #### 4.3.3 Suffixed-literal forms for non-numeric types
 
@@ -4425,6 +4436,8 @@ implementations in `fulfill` blocks (§3.3). The uniform function call
 syntax (§3.4) makes these callable as `x.f()` or `f(x)`
 indifferently.
 
+A record may declare no fields; its body is then absent (`type Marker`), producing a zero-field nominal type usable as a tag or phantom marker.
+
 #### 6.1.2 Field defaults
 
 A field may declare a default value:
@@ -4704,6 +4717,8 @@ enum Bad:
 
 Different variants of the same enum may use different forms independently,
 as `Shape` above shows.
+
+An enum may declare no variants; its body is then absent. A zero-variant enum is uninhabited — it has no values — and serves as a type-level bottom marker.
 
 ##### 6.2.1.1 Implications for construction and patterns
 
@@ -6019,10 +6034,12 @@ String literals follow grammar §2.5.5:
 
 - **Plain strings**: `"hello world"`.
 - **Raw strings**: `r"no \n escapes"`, `r#"with "quotes""#`.
-- **Escape sequences**: `\n`, `\t`, `\\`, `\"`, `\xHH`, `\u{HHHHHH}`.
+- **Escape sequences**: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\{`, `\xHH`, `\u{HHHHHH}`. The same set applies in `char` literals (§9.1.2), so `'\''` and `'\"'` are both valid; in a plain string `\{` produces a literal `{` and suppresses interpolation at that position.
 - **Interpolation**: `"user {name} has {count} items"`.
 
 All forms produce values of type `string`.
+
+A plain string may contain literal newlines; an embedded newline becomes part of the value. A raw string performs no escape processing and no interpolation; every character it contains — backslashes, braces, and newlines included — is literal.
 
 #### 9.1.4 UTF-8 invariant
 
@@ -6128,6 +6145,8 @@ Interpolation expressions are arbitrary expressions, including method
 calls, arithmetic, and field access. They are not limited to bare
 identifiers.
 
+A literal brace is written `\{`, which produces `{` and disables interpolation at that position. Raw strings do not interpolate: braces in a raw string are always literal.
+
 ### 9.2 Tuples
 
 Tuples are *structurally typed* — one of the two structural-typing
@@ -6212,6 +6231,8 @@ let grouped = (42)         // just i32 in parens — not a tuple
 
 The trailing-comma convention is standard across languages with tuple
 support and resolves the syntactic ambiguity cleanly.
+
+A tuple of arity two or more permits an optional trailing comma after its final component: `(1, 2,)` and `(1, 2)` denote the same 2-tuple.
 
 #### 9.2.5 Generics over tuples
 
@@ -6900,6 +6921,8 @@ All `use` paths are absolute, starting from a path base
 (`root` or an external dependency name; see §10.2.3). There is no
 relative-path form.
 
+A `use` may bind the imported name under a local alias with `as`: `use root::audio::Synthesizer as Synth` makes `Synth` the file-local name for the imported declaration. The alias is file-scoped like the `use` itself; `as` here is the same naming keyword used for placement names and `repeat` view names (§1.4).
+
 `use` has **no visibility modifier**. It is a usage-side construct: it
 controls how the current file refers to other names, not how other files
 refer to the current file. A name brought into scope via `use` does not
@@ -6932,6 +6955,8 @@ use root::variants::*                 // glob: every visible name
 Glob imports are subject to the import-time conflict rules per §6.2.3:
 two glob imports that bring colliding names into the same scope produce
 a compile error at the `use` site that introduces the second collision.
+
+A selection-list item may itself be a multi-segment path, carry its own `as` alias, or be a `*` glob, so one `use` may group several reaches: `use root::audio::(synth::Oscillator, Filter as Filt, fx::*)`.
 
 #### 10.4.2 Re-exporting a name
 
