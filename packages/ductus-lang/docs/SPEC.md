@@ -17698,7 +17698,7 @@ upstream cells), the first is the pipe target; subsequent cells
 are passed by name:
 
 ```
-operator combine(primary: Signal[T], other: Signal[T], weight: f32) -> Signal[T]:
+operator combine[T](primary: Signal[T], other: Signal[T], weight: f32) -> Signal[T]:
   ...
 
 // Call:
