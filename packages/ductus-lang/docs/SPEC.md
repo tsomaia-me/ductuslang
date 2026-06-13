@@ -888,7 +888,7 @@ functions:
 ```
 const BUF: usize = 1024
 
-stream ring[BUF * 2] events: Event     // capacity 2048
+stream ring[BUF * 2] events: Event = ...     // capacity 2048
 let history: i32[fib(10) + 1]          // pure call in an array size
 recurrent[BUF - 256] stream ring avg = ...
 let m = merge::[T = Event, N = BUF_A + BUF_B](a, b)
@@ -2177,8 +2177,8 @@ identically to any other parameter (§11.7, §11.8): the receiver is
 borrow-equivalent by default, or consumed when the method declares its
 first parameter `own` and the caller writes `(move x).method(args)`
 per §11.8.3. The dot-call form introduces no implicit consume rule of
-its own — consecutive method calls like `x.foo(); x.bar()` work
-identically to `foo(x); bar(x)` and follow the same default
+its own — consecutive method calls like `x.foo()` then `x.bar()` work
+identically to `foo(x)` then `bar(x)` and follow the same default
 (borrow-equivalent) convention.
 
 #### 3.5.6 The `with` expression uses named form
@@ -2822,7 +2822,7 @@ exponent (`e` or `E`), or an explicit float suffix:
 1.0
 1e6
 2.5e-3
-6.022_e23
+6.022e23
 ```
 
 A bare `1` is an integer literal; `1.0`, `1e5`, `1_f32` are float literals.
@@ -8290,7 +8290,7 @@ borrows a binding while another sub-expression in the same expression
 attempts to consume the same binding:
 
 ```
-fn combine(a: Vec[i32], b: own Vec[i32]) -> ...   // a default, b own
+fn combine(a: Vec[i32], own b: Vec[i32]) -> ...   // a default, b own
 fn extract(own v: Vec[i32]) -> Vec[i32]: ...
 
 let v = make_vec()
