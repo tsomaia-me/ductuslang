@@ -8,11 +8,34 @@ become commitments.
 1. Ask, don't assume: interpret ambiguity as opportunity to ask.
 2. Do not use AskTool, prefer textual conversation.
 3. Phrase your responses in plan, simple language. Do not use academic, complex language and sentences.
-4. Be terse: do not overexplain unless asked to for elaboration. Few carefully selected words > 1000 buzzwords most of the time.
+4. Be terse: do not overexplain unless asked to for elaboration. Few carefully selected words > 1000 buzzwords most of
+   the time.
 6. Be vulnerable: If you don't have enough information to assess something, say so.
 7. Openly state contradictions, flaws, and gaps in user's reasoning, without a hesitation.
 8. Before diving in, provide some background in simple, plain language.
 9. Use examples to show your point.
+
+# Definition Of Done
+
+Definition of done is as follows:
+
+1. Planning -> 2. User Approval -> 3. Implementation -> 4. Self-Review -> 5. Cold Review -> 6. Verification
+
+Each phase described as follows, given feature/task <X>:
+
+1. Planning: User and AI engage in open, cold, grounded discussion about <X>.
+2. User Approval: When planning is finished, plan document exists and user explicitly approves, only then implementation
+   can begin. Approval should not be assumed when
+   user input is not explicit.
+3. Implementation: if the plan document was phased, implementation must be done phased. Simple tasks can be implemented
+   in one-shot. Phased implementation mean, review of the diff must be done after each phase.
+4. Self-review: review the changes yourself, compare to the plan, spot any deviations, contradictions, flaws, gaps,
+   bugs. The issues that are unclear or require user input, such as nuances that arose during implementation - must be
+   discussed with user. Mechanical issues can be addressed without human-in-the-loop.
+5. Cold Review: Launch cold, reviewer subagents to review the work. Gather findings, verify them against the changes and
+   the plan, and address/resolve the valid ones. Clearly invalid ones can be ignored. Unclear ones must be flagged to the user.
+6. Verification: verify the changes are correct. Depends on the context. One of the universal mechanisms is to
+   cross-reference the changes with the plan.
 
 # Code Discipline
 
@@ -97,8 +120,15 @@ Before responding:
 
 # Project Map & Reading Protocol (Ductus)
 
-- `packages/ductus-lang/docs/DECISION_LOG.md` — the decision-of-record: every language decision, atomic, numbered, ordered generic→specific. Read this FIRST for WHAT Ductus is and does.
-- `packages/ductus-lang/docs/SPEC.md` — the normative elaboration: rationale, full nuance, worked examples. Reach it via a decision's (§x.y.z) reference, for WHY.
-- `packages/ductus-lang/docs/DECISION_LOG_FINDINGS.md` — quarantined spec defects (contradictions/ambiguities/incoherencies) awaiting rulings; their contested content is deliberately absent from the decision log.
-- Edit protocol: change DECISION_LOG.md first (amend in place; new decisions take the next free number, placed by topic; never renumber or reuse IDs), then update the referenced SPEC section to conform. Divergence between the two is a defect.
-- If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; do not silently resolve.
+- `packages/ductus-lang/docs/DECISION_LOG.md` — the decision-of-record: every language decision, atomic, numbered,
+  ordered generic→specific. Read this FIRST for WHAT Ductus is and does.
+- `packages/ductus-lang/docs/SPEC.md` — the normative elaboration: rationale, full nuance, worked examples. Reach it via
+  a decision's (§x.y.z) reference, for WHY.
+- `packages/ductus-lang/docs/DECISION_LOG_FINDINGS.md` — quarantined spec defects (
+  contradictions/ambiguities/incoherencies) awaiting rulings; their contested content is deliberately absent from the
+  decision log.
+- Edit protocol: change DECISION_LOG.md first (amend in place; new decisions take the next free number, placed by topic;
+  never renumber or reuse IDs), then update the referenced SPEC section to conform. Divergence between the two is a
+  defect.
+- If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; do not silently
+  resolve.
