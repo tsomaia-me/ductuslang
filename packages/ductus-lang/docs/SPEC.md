@@ -1,7 +1,7 @@
 # Ductus Language Specification
 
 **Status:** Draft v0.1. Living document. Working reference for the language's
-design. Pairs with `GRAMMAR.md` (lexical and syntactic structure).
+design.
 
 ---
 
@@ -12,11 +12,8 @@ design. Pairs with `GRAMMAR.md` (lexical and syntactic structure).
 This specification is the authoritative source for Ductus's type system,
 evaluation model, and runtime semantics. Implementation details (compiler
 internals, optimizations, runtime representation) are out of scope except where
-they constrain user-visible semantics. The grammar of the language is specified
-separately in `GRAMMAR.md`; this document refers to grammar productions where
-relevant and does not duplicate them. Where the grammar and this specification
-appear to conflict, this specification is authoritative; the grammar is to be
-revised to match.
+they constrain user-visible semantics. The lexical and syntactic structure of the language is specified directly in
+this document; there is no separate grammar file.
 
 ### 1.2 Status
 
@@ -104,7 +101,7 @@ propagation). The choice is made at the operation site, not retroactively.
 
 ### 1.4 Conventions
 
-Code examples use Ductus syntax per `GRAMMAR.md`. Type-name case conventions:
+Code examples use Ductus syntax. Type-name case conventions:
 
 - Concrete primitive types: lowercase (`i32`, `f64`, `bool`, `char`, `string`, `never`).
 - Built-in placeholder keywords: lowercase (`numeric`, `integer`, `float`, `signed`, `unsigned`).
@@ -131,6 +128,8 @@ import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
+Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the node slot `parts`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
+
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
 type alias rather than a keyword, it is capitalized by the type-naming
@@ -140,7 +139,7 @@ Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
 `audio#main`, `note#`. The `#` character behaves like a letter for
 identifier purposes; it is a valid identifier character in every
-position. Precise lexical rules are in `GRAMMAR.md`; this rule is
+position. This rule is
 normative and takes precedence over any conflicting grammar.
 
 **No statement separator; no semicolon.** Ductus delimits with
@@ -337,9 +336,9 @@ For a function whose body does not relate its parameters, the synthesized
 parameters remain distinct:
 
 ```
-fn pair(a, b): (a, b)
+fn make_pair(a, b): (a, b)
 // desugars to (and stays as):
-fn pair[T0, T1](a: T0, b: T1) -> (T0, T1)
+fn make_pair[T0, T1](a: T0, b: T1) -> (T0, T1)
 ```
 
 Here `a` and `b` are not connected by any operation, so `T0` and `T1` remain
@@ -358,7 +357,7 @@ trait methods (`+` resolves to `Add::add`, where `Add` denotes `Add[Subject]`
 per §3.1.6's default-type-parameter resolution), and the relevant trait
 becomes the constraint on the corresponding parameter. The trait system's
 umbrella traits (§3.6) let the compiler simplify inferred constraint sets for
-readability: `Add + Sub + Mul + Neg + Zero + One` may collapse to `Numeric`
+readability: `Add & Sub & Mul & Neg & Zero & One` may collapse to `Numeric`
 when unambiguous.
 
 #### 2.2.5 Supplying and inferring generic arguments at call sites
@@ -424,7 +423,7 @@ let r = lerp::[f64](0.0, 1.0, 0.5)             // T explicit
 ```
 
 The `::` prefix on the type-argument list disambiguates from indexing
-(see `GRAMMAR.md` §3.15–§3.16). Without `::`, `foo[T](args)` is ambiguous
+Without `::`, `foo[T](args)` is ambiguous
 between "index `foo` with `T`, then call" and "call generic `foo` with type
 argument `T`". The `::` forces path-navigation mode where `[T]` is
 unambiguously a type-argument list.
@@ -438,7 +437,7 @@ at its use site by the surrounding type information.
 ```
 let r: Result[i32, _] = compute()       // i32 pinned; error type inferred
 let v: Vec[_] = make_ints()             // element type inferred
-let pair: (_, string) = build()         // tuple's first component inferred
+let p: (_, string) = build()            // tuple's first component inferred
 ```
 
 The wildcard is permitted in any type-expression position: generic
@@ -785,7 +784,7 @@ Compile-time-known values can serve as type-level arguments. A
 a type:
 
 ```
-let arr: i32[fib(10) + 1]                  // array size: fib(10) + 1 is compile-time evaluable
+fn fill(arr: i32[fib(10) + 1])             // array size: fib(10) + 1 is compile-time evaluable
 type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
@@ -896,7 +895,7 @@ functions:
 const BUF: usize = 1024
 
 stream ring[BUF * 2] events: Event = ...     // capacity 2048
-let history: i32[fib(10) + 1]          // pure call in an array size
+fn recent(h: i32[fib(10) + 1])         // pure call in an array size
 recurrent[BUF - 256] stream ring avg = ...
 let m = merge::[T = Event, N = BUF_A + BUF_B](a, b)
 ```
@@ -951,7 +950,7 @@ operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or
 
 // ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
 operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
-operator gate[const N: usize, T](s: RingStream[T, N])    -> Mode[N > 0, true]
+operator bounded[const N: usize, T](s: RingStream[T, N]) -> Mode[N > 0, true]
 ```
 
 #### 2.5.4 Canonical form and type identity
@@ -1117,7 +1116,7 @@ explicitly declared (and implemented) the same trait.
 
 ### 3.1 Trait Declarations
 
-A trait is declared with the `trait` keyword (grammar §3.7). The body of a
+A trait is declared with the `trait` keyword. The body of a
 trait declares method signatures, associated types, requirements on other
 traits, and optionally default values for the trait's defaulting behavior.
 
@@ -1251,7 +1250,7 @@ omitting the method.
 #### 3.1.4 Super-trait requirements (`requires`)
 
 A trait may require that any type implementing it also implements other traits.
-Requirements are declared with the `requires` keyword (grammar §3.7):
+Requirements are declared with the `requires` keyword:
 
 ```
 trait Student:
@@ -1336,11 +1335,11 @@ at the trait's declaration site and nowhere else.
 
 #### 3.1.6 Generic traits
 
-Traits may declare type parameters (grammar §3.7's `GenericParams`):
+Traits may declare type parameters:
 
 ```
 trait From[T]:
-  fn from(value: T) -> Subject
+  fn convert(value: T) -> Subject
 
 trait Add[Rhs = Subject]:
   type Output = Subject
@@ -1405,7 +1404,7 @@ exactly the members the trait declares.
 
 ```
 trait Action:
-  const type: string                    // required const, no default
+  const kind: string                    // required const, no default
   attr enabled: bool = true              // required attr with default
 
 trait Identifiable:
@@ -1435,18 +1434,18 @@ defaulted) in the type's body with a matching name and type:
 
 ```
 trait Action:
-  const type: string
+  const kind: string
   attr enabled: bool = true
 
 node Log:
   satisfies Action
-  const type: string = "@action/log"     // supplies the no-default const
+  const kind: string = "@action/log"     // supplies the no-default const
   // enabled inherits the trait's default (true) automatically
   default attr message: string
 
 node Delay:
   satisfies Action
-  const type: string = "@action/delay"
+  const kind: string = "@action/delay"
   attr enabled: bool = false              // overrides the trait's default
   default attr time: duration
 ```
@@ -1498,8 +1497,8 @@ Restrictions and kind gating:
 ### 3.2 Conformance Declarations (`satisfies`)
 
 A type declares conformance to a trait by including a `satisfies` clause in
-its body (grammar §3.5 for records, grammar §3.6 for enums, grammar §3.8
-for nodes, grammar §3.9 for connections):
+its body (§6.1 for records, §6.2 for enums, §13.3 for nodes, §13.6 for
+connections):
 
 ```
 type Person:
@@ -1562,26 +1561,26 @@ type MyNumber:
   ...
 
 fulfill From[i32] for MyNumber:
-  fn from(value: i32) -> MyNumber: ...
+  fn convert(value: i32) -> MyNumber: ...
 
 fulfill From[i64] for MyNumber:
-  fn from(value: i64) -> MyNumber: ...
+  fn convert(value: i64) -> MyNumber: ...
 ```
 
-The two `from` methods are disambiguated at call sites by argument type
+The two `convert` methods are disambiguated at call sites by argument type
 (in the `From` direction, the source-value type pins the instance) or by
 expected return type. Bare-name dispatch typically succeeds without
 explicit annotation:
 
 ```
-let n1 = MyNumber::from(5_i32)     // resolves to From[i32]::from
-let n2 = MyNumber::from(5_i64)     // resolves to From[i64]::from
+let n1 = MyNumber::convert(5_i32)     // resolves to From[i32]::convert
+let n2 = MyNumber::convert(5_i64)     // resolves to From[i64]::convert
 let n3: MyNumber = 5_i32.into()    // Into[MyNumber] from i32 — resolves through From[i32]
 ```
 
 When inference cannot pick a unique instance (e.g., the argument is
 polymorphic), explicit disambiguation via turbofish on the trait is
-available per §3.4.1.1: `From::[i32]::from(value)`.
+available per §3.4.1.1: `From::[i32]::convert(value)`.
 
 The conflict rule applies only to *different parent traits* with
 overlapping method names. The universal identity `From[T] for T` (§7.3)
@@ -1609,7 +1608,7 @@ Given a type `T` with `satisfies T1, T2, ..., Tn`, the compiler computes
    the conflicting name and the two source parent traits.
 5. Multiple entries with the same method name and the same parent-trait
    identity (i.e., different generic instantiations of the same parent —
-   `From[i32]::from` and `From[i64]::from`) do *not* collide. They are
+   `From[i32]::convert` and `From[i64]::convert`) do *not* collide. They are
    logically the same method parameterized over generic arguments;
    dispatch among them is resolved by inference per §3.4.1.1.
 6. Methods reached through multiple `requires` paths but originating from
@@ -1975,7 +1974,7 @@ target `fulfill` block).
 
 When a type satisfies multiple instantiations of the same parent trait
 (e.g., `MyNumber` satisfies both `From[i32]` and `From[i64]`), bare-name
-dispatch at `MyNumber::from(value)` typically resolves via the argument
+dispatch at `MyNumber::convert(value)` typically resolves via the argument
 type: if `value: i32`, the `From[i32]` instantiation is selected; if
 `value: i64`, the `From[i64]` instantiation. The compiler uses the same
 inference algorithm as for generic functions (§2.2.5).
@@ -1988,7 +1987,7 @@ turbofish on the trait:
 
 ```
 fn build[T](v: T) -> MyNumber where MyNumber: From[T]:
-  From::[T]::from(v)       // T is generic; turbofish pins the instantiation
+  From::[T]::convert(v)       // T is generic; turbofish pins the instantiation
 ```
 
 This is the turbofish form (§2.2.5) applied to the trait identity,
@@ -2297,7 +2296,7 @@ This pattern serves three purposes:
   the function might not actually need.
 - *Convenience in explicit constraints:* users writing explicit bounds can use
   umbrella names (`T: Numeric`) without spelling out every operator, while
-  still being able to write fine-grained bounds (`T: Add + Mul`) when
+  still being able to write fine-grained bounds (`T: Add & Mul`) when
   precision matters.
 - *A place for trait-level defaults:* umbrellas are the natural carrier of
   defaulting policy (§3.1.5), because the default is a property of the
@@ -2392,11 +2391,6 @@ user modules, and are not subject to the orphan rule:
   the trait — the same component-by-component derivation as `@derive`
   for records (§3.8.2), generated per instantiation. Structural impl,
   exempt from the orphan rule (the tuple originates in no crate).
-- *Stdlib auto-impl `From[()] for Option[T]`* — provides the `None`
-  value for use in the `?` desugaring per §8.4.1. The impl is
-  universally available for any T; the orphan rule prevents user
-  override (neither `()` nor `Option[T]` comes from user code).
-
 These impls exist outside the user-writable `fulfill`-block space
 under the orphan rule (§3.7) and structural-impl exemption: stdlib
 declares them for types stdlib defines or for structural cases. They
@@ -2490,7 +2484,7 @@ Newtype semantics are specified in §6.3.
 ### 3.8 Automatic Derivation (`@derive`)
 
 For a fixed set of common traits, the language provides automatic structural
-derivation via the `@derive` annotation (grammar §3.3). Applying `@derive` to
+derivation via the `@derive` annotation. Applying `@derive` to
 a type generates the appropriate `fulfill` blocks structurally, saving the
 user from writing mechanical implementations.
 
@@ -2785,7 +2779,7 @@ privileged.
 
 ### 4.3 Numeric Literals
 
-Literal forms follow grammar §2.5.
+Numeric literals are written in the forms specified below.
 
 #### 4.3.1 Integer literals
 
@@ -2836,7 +2830,7 @@ exponent (`e` or `E`), or an explicit float suffix:
 ```
 
 A bare `1` is an integer literal; `1.0`, `1e5`, `1_f32` are float literals.
-The grammar requires a digit on each side of the decimal point — leading-dot
+A digit is required on each side of the decimal point — leading-dot
 forms like `.5` are not permitted; write `0.5`.
 
 Float literals may carry suffixes:
@@ -2978,7 +2972,8 @@ the i64 to fit f32), use an explicit cast.
 
 `\` is the truncating integer division operator. It accepts `Integer`
 operands and produces an `Integer` result. `5 \ 2` produces `2`; `-5 \ 2`
-produces `-3` (toward negative infinity). `Float` operands are a type error.
+produces `-2` (truncated toward zero); `%` takes the dividend's sign, so `-5 % 2`
+is `-1`. `Float` operands are a type error.
 For float-input integer-output behavior, the user explicitly converts via
 `T(value)` (§4.7) or `From`/`Into`.
 
@@ -3028,9 +3023,9 @@ yields `1` (the value).
 
 The `&` and `|` characters are reused at the type level (`&` for trait
 intersection per §5, `|` as the leader of the placement attribute clause
-per grammar §3.10 and for enum sum types per grammar §3.6). At the value
+per §13.8). At the value
 level — that is,
-inside expressions — they are bitwise operators. The grammar's context-based
+inside expressions — they are bitwise operators. The context-based
 disambiguation determines which interpretation applies; user-visible
 overloading is avoided through positional context.
 
@@ -3064,8 +3059,8 @@ semantics including NaN behavior: `NaN < x` is `false`, `NaN > x` is `false`,
 IEEE 754, not a language design choice; user code working with potentially-
 NaN floats must handle the NaN cases explicitly.
 
-Comparison chaining (`a < b < c`) is not permitted (grammar §3.15 admits the
-syntax but the type system rejects it: only the rightmost comparison is
+Comparison chaining (`a < b < c`) is not permitted (the
+syntax parses but the type system rejects it: only the rightmost comparison is
 typechecked as boolean-returning; intermediate comparisons in a chain would
 produce a bool which then doesn't compare meaningfully with the next
 operand).
@@ -3078,7 +3073,7 @@ operand).
 | `is not` | `Eq`          | bool   |
 
 Equality uses the keyword forms `is` and `is not`, not symbolic `==`/`!=`
-(grammar §3.15 and grammar §6 reserve symbolic equality against future
+(symbolic equality is reserved against future
 use). The keyword forms read more naturally in this language's
 expression syntax and avoid the visual collision with `=` used for
 binding-initialization.
@@ -3161,7 +3156,7 @@ readability in error messages and signatures.
 For example, the body `a + (b - a) * c` infers `Add`, `Sub`, `Mul` on the
 operand types (with the substitution rule that `a`, `b`, `c` are likely
 related by inference — see §2.2.3). The compiler may report the inferred
-bounds as `T: Numeric` rather than `T: Add + Sub + Mul + ...` when the
+bounds as `T: Numeric` rather than `T: Add & Sub & Mul & ...` when the
 umbrella is unambiguous, but the underlying constraints are the
 fine-grained traits per the operators used.
 
@@ -3407,7 +3402,7 @@ its declared or inferred type:
 ```
 const x: u8 = 200_u8 + 100_u8                 // compile error: 300 doesn't fit u8
 const x: u8 = 200_u8 +% 100_u8                // compile error: still doesn't fit
-let arr: i32[some_large_compile_time_value]   // compile error if value doesn't fit isize
+fn f(arr: i32[some_large_compile_time_value])  // compile error if value doesn't fit isize
 ```
 
 This applies to `+%`, `+|`, `+?` and other variants too: the compile-time
@@ -3597,7 +3592,8 @@ base-10, and `log(base, x)` for arbitrary base. The two-argument `log`
 takes the base as its first parameter.
 
 Rounding operations (`floor`, `ceil`, `round`, `trunc`) are defined only on
-floats. Integer ceiling division, floor division, and similar integer-domain
+floats. Integer ceiling division, floor division (distinct from the `\` operator,
+which truncates toward zero, §4.4.1.2), and similar integer-domain
 operations are standard-library concerns (e.g., a `div_ceil` method on
 `Integer` if the stdlib provides it).
 
@@ -4424,7 +4420,7 @@ that the record satisfies, per §3.
 #### 6.1.1 Declaration
 
 A record is declared with the `type` keyword followed by the type name and a
-body of field declarations (grammar §3.5):
+body of field declarations:
 
 ```
 type Person:
@@ -4465,7 +4461,7 @@ block reachable through the module graph; pure-requirement umbrella traits
 per §3.3.5 are satisfied automatically when their requirements are.
 
 Records do not declare methods. Functions operating on record instances are
-free functions defined elsewhere (grammar §3.13) or trait-method
+free functions defined elsewhere or trait-method
 implementations in `fulfill` blocks (§3.3). The uniform function call
 syntax (§3.4) makes these callable as `x.f()` or `f(x)`
 indifferently.
@@ -4696,7 +4692,7 @@ canonical way to inspect which.
 
 #### 6.2.1 Declaration
 
-An enum is declared with the `enum` keyword (grammar §3.6):
+An enum is declared with the `enum` keyword:
 
 ```
 enum Direction:
@@ -4894,8 +4890,7 @@ and makes import-induced confusion visible at the import declarations.
 
 #### 6.2.4 Pattern matching
 
-The `match` expression is the canonical way to consume an enum value
-(grammar §3.13's `MatchExpr`). Each arm specifies a pattern and an
+The `match` expression is the canonical way to consume an enum value. Each arm specifies a pattern and an
 expression:
 
 ```
@@ -5247,7 +5242,7 @@ system (§3) and complements the built-in numeric implicit-widening rules
 
 ```
 trait From[T]:
-  fn from(value: T) -> Subject
+  fn convert(value: T) -> Subject
 
 trait Into[T]:
   fn into(value: Subject) -> T
@@ -5413,7 +5408,7 @@ with it for numeric cases:
   dedicated unwrap form (§6.3.2). The conversion-trait system does not
   participate; the underlying value is exposed directly.
 - For **user-defined conversions on non-newtype types**, `T(value)` does
-  not apply. Users use `.into()`, `From::from()`, or `.try_into()` per
+  not apply. Users use `.into()`, `From::convert()`, or `.try_into()` per
   §7.8.
 
 The summary: `T(value)` (with its variants) is the form for built-in
@@ -5427,7 +5422,7 @@ implicit-conversion surface of the language is strictly limited to the
 built-in lossless widenings specified in §4.5. A user implementing
 `From[Celsius] for Fahrenheit` does not enable `let f: Fahrenheit = some_c`
 without explicit invocation; the user writes `let f: Fahrenheit =
-some_c.into()` or `let f: Fahrenheit = Fahrenheit::from(some_c)`.
+some_c.into()` or `let f: Fahrenheit = Fahrenheit::convert(some_c)`.
 
 This prevents the hazard of action at a distance through
 user-defined conversions. The set of types that auto-convert is fixed by
@@ -5449,7 +5444,7 @@ widenings.
 ```
 let x: f64 = (5_i32).into::[f64]()        // method form
 let x: f64 = Into::into(5_i32)            // free-function via trait path
-let x: f64 = From::from(5_i32)            // free-function via trait path
+let x: f64 = From::convert(5_i32)            // free-function via trait path
 let x: f64 = 5_i32                        // implicit (built-in lossless widening only)
 ```
 
@@ -5517,7 +5512,7 @@ The error-type rule:
 
 - **Same error type:** trivially valid; no conversion.
 - **Source error convertible to destination error via `From`:** the
-  compiler inserts the `From::from` call automatically at the propagation
+  compiler inserts the `From::convert` call automatically at the propagation
   site.
 - **No relationship via `From`:** compile error at the `?` site,
   identifying the source and destination error types and the missing
@@ -5720,7 +5715,7 @@ keeps that surface minimal deliberately.
 
 ### 8.4 The `?` Operator and the `Try` Trait
 
-The `?` postfix operator (grammar §3.15) dispatches through a stdlib
+The `?` postfix operator dispatches through a stdlib
 trait, `Try`, that decomposes a value into either a "continue with this
 success value" or "break with this failure value":
 
@@ -5744,7 +5739,7 @@ enum TryBranch[S, F]:
 
 For `Option[T]`, `Failure = ()` (unit) — there is no inner error value
 beyond the absence itself. For `Result[T, E]`, `Failure = E` — the error
-value. The desugaring in §8.4.1 applies `From::from` to this inner
+value. The desugaring in §8.4.1 applies `From::convert` to this inner
 failure value, not to the wrapped `None`/`Err(...)` container.
 
 User types may implement `Try` to make `?` available on their own
@@ -5765,19 +5760,21 @@ desugars to:
 ```
 match Try::branch(expr):
   Continue(value): value
-  Break(failure): return From::from(failure)
+  Break(failure):
+    // Result-returning function:  return Err(From::convert(failure))
+    // Option-returning function:  return None
+    ...
 ```
 
-The `From::from(failure)` automatically converts the failure value into
-the enclosing function's failure type. When the failure types are
-identical, `From::from` is the trivial identity conversion (§7.3); no
-special-case logic is needed for matching types.
+In a `Result`-returning function the compiler re-wraps the failure as
+`Err(From::convert(failure))`, converting the inner error value to the
+function's error type (the trivial identity conversion when the types
+match, §7.3). In an `Option`-returning function it returns `None` directly.
 
-Under this desugaring, `From::from(failure)` converts the inner failure
-value to the enclosing function's error/absence type. For Result-to-Result
-propagation, this is the user's `From[SourceError] for DestError` impl
-(§7.9). For Option-to-Option propagation, the auto-implementation
-`From[()] for Option[T]` (yielding `None`) is provided by stdlib.
+`From::convert` here is the user's `From[SourceError] for DestError` impl
+(§7.9) — a conversion of the inner error value `E1 -> E2`, never of the
+whole `Result`/`Err` container. The `Option` case carries no error value
+and involves no conversion impl: `?` simply returns `None`.
 Cross-type propagation (Option in a Result-returning function, or vice
 versa) remains forbidden per §8.6 — the failure types are not compatible.
 
@@ -5833,7 +5830,7 @@ where it is relied upon.
 
 ### 8.5 Error-Type Conversion via `From`
 
-The `From::from(failure)` step in `?` propagation enables error-type
+The `From::convert(failure)` step in `?` propagation enables error-type
 chains: a function returning `Result[T, MyError]` can use `?` on any
 `Result[U, OtherError]` provided `fulfill From[OtherError] for MyError`
 exists. The conversion is invisible at the call site but typed
@@ -5884,8 +5881,8 @@ The non-exhaustive list:
 - `unwrap(value: Subject) -> T` — returns the value or traps if `None`.
 - `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Subject, default: T) -> T` — returns the value or the
-  default.
+- `unwrap_or(value: Subject, fallback: T) -> T` — returns the value or the
+  fallback.
 - `unwrap_or_else(value: Subject, f: fn() -> T) -> T` — returns the value
   or a computed default.
 - `map[U](value: Subject, f: fn(T) -> U) -> Option[U]` — applies a
@@ -5904,7 +5901,7 @@ The non-exhaustive list:
 - `unwrap(value: Subject) -> T` — returns success or traps on `Err`.
 - `expect(value: Subject, msg: string) -> T` — like `unwrap` with custom
   trap message.
-- `unwrap_or(value: Subject, default: T) -> T`,
+- `unwrap_or(value: Subject, fallback: T) -> T`,
   `unwrap_or_else(value: Subject, f: fn(E) -> T) -> T`.
 - `map[U](value: Subject, f: fn(T) -> U) -> Result[U, E]` — transforms the
   success value.
@@ -6055,7 +6052,7 @@ decoding is required to extract each `char`.
 
 #### 9.1.3 String literals
 
-String literals follow grammar §2.5.5:
+String literals have these forms:
 
 - **Plain strings**: `"hello world"`.
 - **Raw strings**: `r"no \n escapes"`, `r#"with "quotes""#`.
@@ -6154,7 +6151,7 @@ let greeting = "hello" + " " + "world"
 #### 9.1.9 Interpolation
 
 Interpolation is the preferred form when building strings from
-non-string values, per grammar §2.5.5:
+non-string values:
 
 ```
 let label = "user {name} has {count} items"
@@ -6162,7 +6159,7 @@ let summary = "value: {amount * tax_rate}"
 ```
 
 The interpolation expression `{expr}` evaluates the expression and
-converts the result to `string` via the `Display` trait per §3.7. Values
+converts the result to `string` via the `Display` trait. Values
 whose types do not satisfy `Display` produce a compile error at the
 interpolation site.
 
@@ -6193,7 +6190,7 @@ contract to preserve.
 
 #### 9.2.1 Field access
 
-Field access uses numeric postfix syntax per grammar §3.15:
+Field access uses numeric postfix syntax:
 
 ```
 let t = (1, "hello", 3.14)
@@ -6213,7 +6210,7 @@ would depend on a runtime value, which the type system cannot express.
 
 #### 9.2.2 Pattern destructuring
 
-Tuple patterns follow grammar §3.14's `TuplePat`:
+Tuple patterns use a parenthesized list of sub-patterns:
 
 ```
 let (a, b, c) = (1, "hello", 3.14)
@@ -6231,7 +6228,7 @@ names, so there is no named form.
 #### 9.2.3 The unit type `()`
 
 The unit type is `()`, with a single value also written `()`. Functions
-without a final expression per grammar §3.13 return the unit value
+without a final expression return the unit value
 implicitly. The unit type appears in pattern position as `()` to match
 unit-typed values and as a type expression for return types of functions
 producing no meaningful value:
@@ -6361,7 +6358,7 @@ method-call conversion:
 
 ```
 fulfill From[(f32, f32, f32)] for Vec3:
-  fn from(t: (f32, f32, f32)) -> Vec3:
+  fn convert(t: (f32, f32, f32)) -> Vec3:
     Vec3(x: t.0, y: t.1, z: t.2)
 
 // Now:
@@ -6397,9 +6394,11 @@ M-element array of `T[N]`. To form an N-row × M-column matrix, write
 cases in generic code that must abstract over array sizes including
 zero, and for FFI bindings to C-style flexible array members.
 
+**Array construction** uses a bracketed element list: `[1, 2, 3]` is an `i32[3]`. The element type is the unified type of the elements and the size is their count, so `[e1, …, eK]` has type `T[K]`. An empty array `[]` has size 0 and takes its element type from context: `let xs: i32[0] = []`. (`Vec` and other dynamic, growable collections are a stdlib concern, §9.3.6, and are not constructed by this core array-literal form.)
+
 #### 9.3.2 Disambiguation of `T[args]` in type position
 
-The grammar's `TypePostfixOp` is uniformly `[arg-list]`. The compiler
+Generic instantiation is uniformly `[arg-list]`. The compiler
 interprets it based on what `T` resolves to:
 
 - If `T` is a primitive or other non-generic type, `T[args]` constructs
@@ -6431,9 +6430,9 @@ not block this.
 
 #### 9.3.4 Index type
 
-Array index types are flexible. Any integer type is accepted as an
-index, implicitly widened to `isize` for the indexing operation per
-§4.5's lossless-widening rules. Integer types whose value range fits
+Array index types are flexible. Any integer type may be used as an
+index; it is implicitly widened to `isize` when that widening is lossless
+(per §4.5's rules), and otherwise requires an explicit cast. Integer types whose value range fits
 entirely in `isize`'s range widen losslessly; types whose range exceeds
 `isize`'s range require explicit cast.
 
@@ -6441,20 +6440,22 @@ On 64-bit platforms (where `isize` is 64-bit), this means every integer
 type up to and including `i64` widens losslessly; `u64`, `i128`, and
 `u128` require explicit cast. On 32-bit platforms (where `isize` is
 32-bit), the corresponding rule applies with `isize`'s narrower range.
-The rule is platform-aware: the same source code is valid on every
-platform, but a cast may be required on platforms with narrower `isize`
-that would be unnecessary on wider platforms.
+The widening rule is platform-uniform, but its legality outcome is
+platform-dependent: code that compiles without a cast on a wider-`isize`
+platform may require one on a narrower-`isize` platform, so portable code
+casts proactively.
 
 Users write indexing expressions with whichever integer type is natural
-for their context — counter variables, sizes, computed offsets — and
-the compiler handles the widening:
+for their context; the compiler widens it to `isize` when the widening is
+lossless (same-signedness, range fits), and otherwise requires an explicit
+cast (e.g. for `usize` or `u64`):
 
 ```
 let i: i32 = 3
 let v: i32 = arr[i]            // i32 widens to isize for indexing
 
 let n: usize = compute()
-let w = arr[n]                  // usize widens to isize for indexing
+let w = arr[isize(n)]           // usize crosses to isize only by explicit cast
 
 let big: u64 = some_huge()
 let x = arr[big]                // ✗ compile error on 64-bit (u64 doesn't fit isize);
@@ -6836,7 +6837,7 @@ Cross-module access always requires explicit reference, either via
 
 #### 10.2.3 Path bases
 
-The grammar's `PathBase` (per grammar §3.4) provides the following entry
+A path base provides the following entry
 points for absolute paths:
 
 - `root` — the current package's root module.
@@ -6866,11 +6867,11 @@ modules (those still require an absolute `use` path).
 
 ### 10.3 Visibility Specifiers on Declarations
 
-Every position in the grammar that admits a visibility specifier
+Every declaration position that admits a visibility specifier
 accepts one of: `public`, `shared`, `private`, or *absence* (which
-denotes `shared` by default). The grammar's older `pub` keyword is
+denotes `shared` by default). The older `pub` keyword is
 replaced throughout by this three-level model; the propagation covers
-all visibility-bearing productions (grammar §3.4 through §3.11).
+all visibility-bearing declarations.
 
 ```
 public fn render_frame(...): ...           // exported across packages
@@ -6923,8 +6924,7 @@ a visibility specifier governing that name's cross-scope reach.
 
 A `use` statement imports a name from a *different module* into the
 current file's scope, allowing the file to refer to that name
-unqualified rather than via its full path. The grammar of `use` is
-specified in grammar §3.3.
+unqualified rather than via its full path. The `use` forms are specified in §10.4 and §10.4.1 below.
 
 ```
 use root::audio::Synthesizer
@@ -7014,9 +7014,11 @@ forms).
 A `use` statement may appear only at file scope (alongside other
 top-level declarations). Function-scope `use` (a `use` statement
 inside a function body, block, or other inner scope) is a compile
-error. Local short names within a function body are achieved by
-binding the desired value to a `let` or `mut` (e.g.,
-`let synth = root::audio::Synthesizer`), not by importing the name.
+error. Local short names within a function body are achieved by binding an
+ordinary value to a `let` or `mut`. A type or constructor name is not
+itself a value, so it cannot be bound this way; a short name for an
+imported type is introduced at file scope with `use … as`
+(`use root::audio::Synthesizer as synth`).
 
 This restriction keeps the import surface of a file visible at the
 top of the file, which aids tooling, navigation, and reasoning
@@ -7384,6 +7386,8 @@ let x = expr        // immutable binding
 mut x = expr        // mutable binding (function bodies only)
 ```
 
+Every binding carries an initial value at its declaration: there is no uninitialized binding and no implicit undefined or zero state. This holds for `let`, `mut`, top-level `let`/`const`, and `signal` alike — a binding always has a value.
+
 `let` is the general-purpose binding form, identical to the form specified
 in §2.1.2 and §2.4.1.1. The binding is immutable: the binding name cannot
 be reassigned, the bound value cannot be mutated through this binding, and
@@ -7397,7 +7401,7 @@ binding lives only within the function body where it is declared.
 `mut` is **forbidden at module top level**, **forbidden inside type, trait,
 node, and connection bodies**, and **forbidden on function parameters**.
 Only function bodies (and nested block scopes within function bodies) may
-contain `mut` declarations. The grammar and the type checker both enforce
+contain `mut` declarations. The syntax and the type checker both enforce
 this; a `mut` declaration outside a function body is a compile error at
 the declaration site.
 
@@ -10254,8 +10258,8 @@ The iteration variable may be a pattern, not just a single name. The
 pattern destructures each yielded value:
 
 ```
-let pairs: Vec[(i32, string)] = ...
-for (id, name) in pairs:
+let entries: Vec[(i32, string)] = ...
+for (id, name) in entries:
   process(id, name)
 ```
 
@@ -11223,12 +11227,12 @@ trait Action
 
 node Log:
   satisfies Action
-  const type: string = "@action/log"
+  const kind: string = "@action/log"
   default attr message: string
 
 node Delay:
   satisfies Action
-  const type: string = "@action/delay"
+  const kind: string = "@action/delay"
   default attr time: duration
 ```
 
@@ -11463,7 +11467,7 @@ abstract over the value type:
 operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
-fn observe[T](signal: Signal[T]) -> string:
+fn describe[T](cell: Signal[T]) -> string:
   // some debugging utility, etc.
   ...
 ```
@@ -12269,7 +12273,7 @@ access at all (named access only, §13.4.1).
 A node type may emit child instances *directly* via a compile-time
 `for` loop written **in its `expose:` block** (§13.3.7.1) — structural
 output is emitted in exactly one place, the exposition. The loop's body
-is an indented **placement-body block** following the same grammar as
+is an indented **placement-body block** following the same syntax as
 §13.8.3's child-parts body — any number of placements (parts and/or
 connections) per iteration, with the ordinary clause ordering of
 §13.8.9 and the whitespace-separation / self-delimiting rules of
@@ -12366,7 +12370,7 @@ node Posts:
     parts.Post
 
 node Feed:
-  attr posts: Vec[PostData] = []
+  attr posts: Vec[PostData] = Vec::new()
   expose:
     Posts:
       repeat post in posts keyed by post.id:
@@ -12543,7 +12547,7 @@ connection Send:
 
 node Mixer:
   incoming: dynamic Send
-  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.signal)
+  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.value)
   derived mix: f32 = sum(contributions)
   expose:
     repeat c in incoming.Send:
@@ -13673,7 +13677,7 @@ effect's `desired:` block:
 ```
 effect DBQuery:
   observed:
-    signal current_rows: Vec[Row] = []
+    signal current_rows: Vec[Row] = Vec::new()
 
   desired:
     repeat row in current_rows keyed by row.id:
@@ -13689,7 +13693,7 @@ scopes per row. Each scope's `RowComponent` cells live at path
 
 ```
 node VoiceMixer:
-  attr active_voices: Vec[VoiceConfig] = []
+  attr active_voices: Vec[VoiceConfig] = Vec::new()
   expose:
     repeat cfg in active_voices keyed by cfg.voice_id:
       Voice | params=cfg
@@ -13713,7 +13717,7 @@ requirement, with `Vec` supplying the iterator inside the `Signal`.
 
 ```
 node UserPanel:
-  attr active_user_ids: Vec[u64] = []
+  attr active_user_ids: Vec[u64] = Vec::new()
   expose:
     repeat user_id in active_user_ids:
       UserCard | id=user_id
@@ -13749,7 +13753,7 @@ fulfill Keyed for DbRow:
 
 effect DBQueryAuto:
   observed:
-    signal rows: Vec[DbRow] = []
+    signal rows: Vec[DbRow] = Vec::new()
   desired:
     repeat row in rows:                  // implicit via DbRow's Keyed
       RowComponent | data=row
@@ -13913,7 +13917,7 @@ by scope key:
 
 ```
 node Feed:
-  attr posts: Vec[Post] = []
+  attr posts: Vec[Post] = Vec::new()
   attr selected: PostId
   expose:
     repeat post at i in posts as posts_view keyed by post.id:
@@ -14422,9 +14426,10 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 The reserved fields of a node or connection instance — `from`, `to`
 (connection endpoints, §13.6), `incoming`, `outgoing` (connection
 sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
-`exposition` (§13.3.7) — are members of the instance body scope.
-They resolve by bare name in expression-operand position, exactly
-like user-defined members:
+`exposition` (§13.3.7) — occupy field position on the instance and resolve by bare name in
+expression-operand position by the same rule as user-defined members,
+but they are reserved keywords used in field context (§1.4), not
+user-definable members:
 
 ```
 connection Drives:
@@ -15962,7 +15967,7 @@ participate in cycle detection identically to deriveds.
 
 ```
 error: instantaneous cycle in reactive expressions
-  derived `a.x` depends on `b.gate`
+  derived `a.x` depends on `b`'s `when` predicate
   `when` predicate of `b` depends on `a.x`
   hint: introduce a `recurrent` declaration on the cycle, or
         eliminate the cyclic dependency
@@ -17962,7 +17967,7 @@ Operators may take type parameters with optional trait bounds:
 operator passthrough[T](source: Signal[T]) -> Signal[T]:
   source
 
-operator running_total[T: Add + Copy](source: Signal[T]) -> Signal[T]:
+operator running_total[T: Add & Copy](source: Signal[T]) -> Signal[T]:
   recurrent acc: T = acc.previous(source) + source
   acc
 ```
@@ -18048,8 +18053,8 @@ its output cell or its consumer. The author can also write a
 gated wrapper operator that conditionally falls through:
 
 ```
-operator conditional_smooth(source: Signal[f32], gate: Signal[bool], clock: Signal[u64]) -> Signal[f32]:
-  derived effective: f32 = if gate: (source |> smooth(rate: 0.1, clock: clock)) else: source
+operator conditional_smooth(source: Signal[f32], enabled: Signal[bool], clock: Signal[u64]) -> Signal[f32]:
+  derived effective: f32 = if enabled: (source |> smooth(rate: 0.1, clock: clock)) else: source
   effective
 ```
 
@@ -18650,14 +18655,14 @@ An expression's reactive-output type is determined by its inputs:
 The rule follows from input types alone; there is no type-directed
 dispatch on the binding's LHS context. An expression containing
 streams cannot be coerced into a signal silently — explicit
-projection via `to_signal(default)` (§13.18.9) is required.
+projection via `to_signal(fallback)` (§13.18.9) is required.
 
 ##### 13.18.7.4 Assignment rules
 
 | Binding form | RHS expression | Behavior |
 |---|---|---|
 | `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
-| `derived X = expr` | Has streams | Compile error — use `to_signal(default)`. |
+| `derived X = expr` | Has streams | Compile error — use `to_signal(fallback)`. |
 | `stream policy X = expr` | Has streams | Output stream; per-event evaluation. |
 | `stream policy X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
 | `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
@@ -18909,13 +18914,13 @@ default.
 **Stream-to-signal bridge:**
 
 ```
-operator to_signal[T](source: Stream[T], default: T) -> Signal[T]:
+operator to_signal[T](source: Stream[T], fallback: T) -> Signal[T]:
   // returns a Signal[T] whose value is the latest observed event,
-  // or `default` if no event has been observed yet
+  // or `fallback` if no event has been observed yet
   ...
 ```
 
-The default is required because signals must always have a defined
+The fallback is required because signals must always have a defined
 value (§13.2.6 initial value rules; §13.9.7 cell-value reads). The
 returned signal updates on each new event.
 
@@ -19212,7 +19217,7 @@ whose filtered trigger emits in the current commit wins.
 - **Output is always a stream.** A filter may emit zero events per
   input, so signal semantics (always-defined value) don't fit.
   Assigning a `where` expression to a `derived` binding is a
-  compile error; project explicitly via `to_signal(default)` if a
+  compile error; project explicitly via `to_signal(fallback)` if a
   signal-typed result is needed.
 
 #### 13.18.11 Policy as type
@@ -19544,7 +19549,7 @@ to the base stream reload rules above:
   cannot hold that many past events.
 - **Stream-valued expressions cannot be assigned to signal-typed
   bindings.** `derived X = stream_expr` and `signal X = stream_expr`
-  are compile errors; use `to_signal(default)` to project explicitly
+  are compile errors; use `to_signal(fallback)` to project explicitly
   (§13.18.7.3).
 
 #### 13.18.16 Diagnostics
@@ -19585,7 +19590,7 @@ error: cannot assign stream-valued expression to signal binding
   --> derived latest: Event = some_stream * 2
                               ^^^^^^^^^^^^^^^
   hint: a stream-valued expression cannot be coerced to a signal
-        silently. Project explicitly via `to_signal(default)`:
+        silently. Project explicitly via `to_signal(fallback)`:
         `derived latest: Event = (some_stream * 2) |> to_signal(default_event)`
 ```
 
@@ -20041,10 +20046,9 @@ error: cell name `desired` is reserved inside an effect's blocks
         name.
 ```
 
-Outside of effect declarations, `desired` and `observed` are
-ordinary identifiers and may be used freely (as variable names,
-function names, etc.). The reservation is scoped to the effect
-declaration body.
+`desired` and `observed` are reserved keywords everywhere (§1.4); within an
+`effect` declaration body they additionally introduce the desired- and
+observed-cell blocks.
 
 **Cross-block name collision.** An effect cannot declare cells with
 the same name in both `desired:` and `observed:`:
@@ -20671,7 +20675,7 @@ observably between modes are non-conforming.
 
 The frontend performs:
 
-1. **Lexing and parsing** per `GRAMMAR.md`. Produces an AST.
+1. **Lexing and parsing** per this specification. Produces an AST.
 2. **Name resolution and type checking** per §§2–10. Produces a typed
    AST with all generic instantiations resolved and all trait dispatch
    sites bound to concrete implementations.
@@ -21313,7 +21317,7 @@ according to the language semantics defined in §§1–13.
 
 | Obligation                  | Spec reference            |
 |-----------------------------|----------------------------|
-| Lexical and syntactic parse | `GRAMMAR.md`               |
+| Lexical and syntactic parse | this specification (§1–§15) |
 | Name resolution             | §3.4, §10                  |
 | Type checking               | §2, §4, §6, §7, §9         |
 | Trait resolution            | §3.4.2, §3.7               |
