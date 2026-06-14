@@ -3191,7 +3191,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 028-73. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-74. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
 
-## 029. Operators — 125 Rules
+## 029. Operators — 128 Rules
 
 029-1. An operator is a reusable, cell-allocating reactive transformation declared with the `operator` keyword. (§13.17)
 029-2. An operator takes `Signal[T]` inputs, optionally plus non-reactive value parameters, and produces an output of any type, exposed to callers as a reactive cell. (§13.17)
@@ -3201,7 +3201,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 029-6. A stateless operator wraps a pure projection over a source cell: `operator double(source: Signal[f32]) -> Signal[f32]` with body `source * 2`. (§13.17.1)
 029-7. A stateful operator allocates `recurrent` state per instantiation. (§13.17.1)
 029-8. Each instantiation of a stateful operator creates fresh internal cells; multiple call sites do not share state. (§13.17.1)
-029-9. An operator declaration follows the form `operator name[GenericParams]?(params...) -> Cell[T]: body`. (§13.17.2)
+029-9. An operator declaration follows the form `operator name[GenericParams]?(params...) -> T: body`. (§13.17.2)
 029-10. An operator name is a snake_case identifier. (§13.17.2)
 029-11. An operator's declared return type may be any type — a value type, a record/tuple (plain or with cell fields), or an explicit `Cell` type (`Signal[T]`/`Stream[T]`/`Sink[T]`); the output is exposed to callers as a reactive cell. (§13.17.2)
 029-12. An operator parameter may be any value: cell-bound `name: Signal[T]`, value `name: T`, or function- or operator-typed (carried structurally, §13.17.13). (§13.17.3)

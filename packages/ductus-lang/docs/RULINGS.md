@@ -67,6 +67,17 @@ Session 5 was split (5a = gates/commit/reload runtime-semantics core; 5b = opera
 
 Findings struck: **F090–F098, F102–F105, F107** (14 findings; 96 → 82 open). Mostly spec-conformance — the log was already the decision-of-record; F095/F096/F098/F102/F103/F104/F107 needed log changes too, plus the new `otherwise` keyword. Cold-reviewed by three independent no-context agents (gates · commit · reload); addressed all valid findings — three log-sync mirrors the spec edits left stale (022-23 `from.count`, 022-33 `my_app.is_emitting`, 028-13 reload-step-1-compiles). `lint_nnm.py` green (4075 entries). Operators/streams/effects + F141–F148 remain for 5b.
 
+### Session 5b · Operators §13.17 (ruled 2026-06-14 · applied · cold-reviewed · findings struck)
+First 5b sub-pass (operators; streams §13.18 and effects §13.19 + F141–F148 follow).
+- **F108** → an operator *value* parameter is a runtime snapshot (fixed at instantiation), **not** a compile-time constant (§13.17.3).
+- **F109 / F114** → an operator may **return any type**, not just a `Cell`: a value type, a record/tuple in **form 1** (plain — exposed as a single `Signal` of the record) or **form 2** (fields are cells), or an explicit `Cell`. The body's result is **implicitly wrapped into a cell** so callers always see a reactive cell (the `Signal[T]`≅`T` wrap, §13.2.8) and never a non-reactive snapshot; a form-2 record wrapped in a cell respects static memory (inner cells are part of the fixed compile-time shape; the outer wrap is an inert passthrough). "Every operator returns a single reactive cell" / "containing reactive cells" removed; the structural type `-> Cell[U]` → `-> U` everywhere (incl. §13.3.6.1; logs 017-140 / 029-9 / 029-118). New entries 029-126 (implicit wrap) / 029-127 (form-2 static memory).
+- **F110** → a `|>` RHS may be a terminal **sink** (operator, effect, or sink); §13.17.7 + its diagnostic fixed (a `fn` RHS stays an error).
+- **F111** → operator named arguments use **`:`**, not `=` (the §13.17.13 `apply(...)` examples).
+- **F112** → operators are first-class **compile-time** values (no runtime representation, like `Type[…]`); an operator parameter accepts any value (cell, value, function, operator), but a **function may not take an operator parameter** (§13.17.3 reframed; §13.17.13 asymmetry + diagnostic; new entry 029-128).
+- **F113** → pipe-chain intermediates are `Cell`s (`Signal` or `Stream`), not `Signal[T]` only (§13.17.6).
+
+Findings struck: **F108–F114** (7 findings; 82 → 75 open). Section 029 grew 125 → 128 entries. Cold-reviewed by one no-context agent over the operator cluster; addressed both findings it raised — the surviving `-> Cell[T]` operator grammar in log 029-9 and the stale §029 header count. `lint_nnm.py` green (4078 entries). Streams (§13.18) and effects (§13.19) + F141–F148 remain for the next 5b sub-passes.
+
 ## Phase-1 agenda — the decisions, grouped into ~7 focused sessions
 
 Ordered so cascading decisions come first. Each fork is one line; full context in the per-finding block below (search `## Fxxx`).
