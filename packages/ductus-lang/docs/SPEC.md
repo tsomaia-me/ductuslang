@@ -16317,8 +16317,10 @@ atomically at transaction close. Properties:
   the staged values are restored to their pre-transaction state. This
   is the only rollback path.
 - **Relationship to commit:** transaction close applies the staged
-  writes. Dirty cells remain dirty until the next
-  `runtime.commit()`, which performs evaluation and visibility.
+  writes. The staged values remain pending until the next
+  `runtime.commit()`, which computes dirtiness by comparing each staged
+  value to its previous-committed value (§13.10.2 step 1), then performs
+  evaluation and visibility.
   Transactions provide *atomicity of grouped writes*; commit
   provides *evaluation and visibility*.
 
@@ -16444,8 +16446,9 @@ return the previous-committed value. This is the rule that breaks
 reactive cycles.
 
 Reads FROM a `where` guard (its own input cells) are NOT treated as
-previous-commit inputs. The guard evaluates within the current
-commit to determine whether its arm fires (per §13.10.2 step 2). The
+previous-commit inputs. The guard evaluates in topological order
+during commit evaluation (per §13.10.2 step 3), reading the
+freshly-recomputed this-commit values, to determine whether its arm fires. The
 two rules are not in conflict: "reads OF recurrents" refers to what
 value a recurrent cell yields when read; "reads FROM a guard" refers
 to which cells the guard's expression itself reads.
@@ -16818,8 +16821,10 @@ index-storage cells are read with one indirection (resolving the
 current pool index) plus the compile-time-known offsets. Per-emission
 cost is unchanged from an ordinary commit: the cell's slot is
 **pre-allocated at runtime construction** (directly, or as a fixed-size
-pool slot for sizes above word width), and the runtime writes the value
-into it; making it visible is a constant-time publish, not a copy. No
+pool slot for sizes above word width), and the runtime writes the new
+value into reserved capacity (double-buffered / index-flipped) so the
+previous-committed value stays readable until the atomic publish; making
+it visible is a constant-time index flip, not a copy. No
 per-emission
 allocation, no realloc, no resize. A reactive
 function whose body iterates a fixed-extent cell — e.g.
@@ -17088,8 +17093,9 @@ The transaction's closure executes synchronously; its writes stage
 atomically at closure completion. The full rules for atomicity,
 panic-on-abort, nesting flattening, and `tx.abort()` rollback are
 specified in §13.10.4; this is the invocation form. Transactions give
-*atomicity of grouped writes*; the staged cells remain dirty until the next
-`runtime.commit()`, which settles and publishes them.
+*atomicity of grouped writes*; the staged cells remain pending until the next
+`runtime.commit()`, which settles them (computing dirtiness by
+staged-vs-previous-committed comparison) and publishes them.
 
 #### 13.14.6 `runtime.acquire_snapshot`
 
