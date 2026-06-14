@@ -10752,11 +10752,14 @@ node Endpoint:
 The `default` expression, when present, provides the initial value
 used when an instance is constructed without an explicit value for
 that attr. Defaults may reference previously-declared attrs of the
-same node (declaration order is significant; see §13.2.6).
+same enclosing node or connection type (declaration order is significant;
+see §13.2.6).
 
 The default may be a constant expression, an expression involving
 other declared attrs, an expression involving signals visible in
-scope, or any compile-time-evaluable expression.
+scope, or any other compile-time-evaluable expression. Defaults are
+evaluated at instance construction (§13.2.6), not restricted to
+compile-time constants.
 
 ```
 node Filter:
@@ -10828,14 +10831,16 @@ Rules:
 #### 13.2.3 `derived`
 
 ```
-derived name: Type = expression
+derived name: Type? = expression
 ```
 
 A `derived` declares a *read-only* reactive value defined by an
 expression. The runtime maintains the value consistent with its
 inputs: when any signal, attr, recurrent, or other derived that
 the expression reads changes, the expression re-evaluates (under
-the lazy-batched rules of §13.10).
+the lazy-batched rules of §13.10). The type annotation is optional when
+inferable from the expression, paralleling `recurrent` (§13.2.4) and
+`stream` (§13.18.2).
 
 ```
 node Driver:
@@ -11146,7 +11151,7 @@ Multiple recurrents may share a single expression evaluation by
 declaring them as a tuple:
 
 ```
-recurrent[N]? (name1, name2, ...): (Type1, Type2, ...) = tuple_expression
+recurrent[N]? (name1, name2, ...): (Type1, Type2, ...)? = tuple_expression
 ```
 
 The declaration creates N independent cells, each named and typed
@@ -11156,7 +11161,8 @@ Shared computation in the expression is performed once, not N times.
 
 Each cell in the tuple has its own self-history accessor
 (`name1.previous(fb1)`, `name2.previous(fb2)`), and the optional
-`[N]` applies to all cells (they all have the same depth).
+`[N]` applies to all cells (they all have the same depth). The tuple type
+annotation is optional when inferable, as in the scalar form (§13.2.4).
 
 Example — a Kalman filter sharing the gain computation across mean
 and variance updates. Shared work is factored into a helper function
@@ -11446,18 +11452,20 @@ imperatively modify it from within.
 
 #### 13.2.8 The `Signal[T]` type
 
-`Signal[T]` is the umbrella type over the three value-cell subkinds
-(signal, derived, recurrent) whose value type is `T`. Streams and sinks
+`Signal[T]` is the umbrella type over the four value-cell subkinds
+(signal, attr, derived, recurrent) whose value type is `T`. Streams and sinks
 are reactive cells too but are not `Signal[T]`; the broader abstraction
 over *all* reactive cells (including streams and sinks) is `Cell[T]`
 (§13.18.5). `Signal[T]` is a first-class type usable in parameter
 positions, return types, and generic arguments.
 
-**Subkinds.** Three reactive declaration kinds produce values of
+**Subkinds.** Four reactive declaration kinds produce values of
 `Signal[T]`:
 
 - `signal X = init` — host-writable `Signal[T]`. Host pushes
   values via `runtime.write_signal` (§13.14.2).
+- `attr X: T = default` — placement-writable `Signal[T]`. The placing
+  parent supplies its value at placement (§13.8.2); reactive thereafter.
 - `derived X = expr` — projected `Signal[T]`. Runtime maintains
   the value consistent with its inputs.
 - `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
@@ -11489,8 +11497,8 @@ here and elsewhere referenced as "the `Signal[T]` type" vs "a
 `Signal[T]` is read-only when received as a parameter. There is
 no source-level form for writing to a `Signal[T]` value (the
 no-mutation rule of §13.2.7 applies). The cell may still be
-written by the host (for `signal` subkind) or by the runtime (for
-`derived` and `recurrent` subkinds), but not through the
+written by the host (`signal`), the runtime (`derived`/`recurrent`), or
+the placing parent at placement (`attr`), but not through the
 `Signal[T]` reference itself.
 
 **Generics.**
@@ -11740,9 +11748,9 @@ within a reactive declaration context follow the per-field binding
 rules of §13.2.9.3:
 
 ```
-derived A2 = A with some_regular_property: signal_c
-// A2.some_regular_property is now aliased to signal_c;
-// A.some_regular_property remains the static value 15.
+derived A2 = A with some_other_property: signal_c
+// A2.some_other_property is now aliased to signal_c;
+// A.some_other_property remains aliased to signal_b.
 
 derived A3 = A with some_property: 0.0
 // A3.some_property is now a static 0.0;
