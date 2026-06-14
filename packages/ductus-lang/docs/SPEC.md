@@ -13701,23 +13701,21 @@ emits and does not affect scope identity.
 
 ##### 13.5.4.3 Worked examples
 
-**io-driven topology** — render one row component per database row in an
-effect's `desired:` block:
+**io-driven topology** — one effect instance per database row, in a node's
+`effects:` clause:
 
 ```
-effect DBQuery:
-  observed:
-    signal current_rows: Vec[Row] = Vec::new()
-
-  desired:
+node Query:
+  attr current_rows: Vec[Row] = Vec::new()
+  effects:
     repeat row in current_rows keyed by row.id:
-      RowComponent | data=row
+      render_row(data: row)
 ```
 
-The host pushes new query results into `current_rows`; the runtime's
-reconciler diffs the key set and materializes / drops `RowComponent`
-scopes per row. Each scope's `RowComponent` cells live at path
-`<effect-instance>.<row.id>.<cell>` per §13.5.3.
+The runtime's reconciler diffs the key set and materializes / drops one
+`render_row` effect instance per row; per-element effects suspend, resume,
+and tear down with the key (§13.5.4.7). Each instance's cells live at path
+`<node>.<row.id>.<cell>` per §13.5.3.
 
 **Reactive-signal-driven children in a node's exposition:**
 
@@ -13781,10 +13779,9 @@ fulfill Keyed for DbRow:
   fn key(r: DbRow) -> u64:
     r.id
 
-effect DBQueryAuto:
-  observed:
-    signal rows: Vec[DbRow] = Vec::new()
-  desired:
+node DbRowList:
+  attr rows: Vec[DbRow] = Vec::new()
+  expose:
     repeat row in rows:                  // implicit via DbRow's Keyed
       RowComponent | data=row
 ```
@@ -13876,24 +13873,22 @@ template-scope machinery; the cost model is "pay for what you iterate."
   effect-bearing instance per element (e.g., one connection per active
   session); the per-element effects suspend/resume and tear down with
   the element key.
-- **Effect `desired:` blocks** (§13.19.4) — scopes become part of the
-  effect's declared desired state, reconciled by the host.
 
 `repeat` is **not** admitted in:
 
 - **Function bodies** — functions produce values, not reactive
   structure. Same rule as `derived` / `recurrent` / `stream`.
-- **Effect `observed:` blocks** (§13.19.5) — observed blocks declare
-  cells receiving host-pushed data; they do not host reactive-structure
-  declarations. To materialize per-element scopes from an observed
-  cell, place the `repeat` in an `expose:` block or `desired:` block that
-  consumes the observed cell.
+- **Effect blocks** (`desired:` and `observed:`, §13.19) — effects are
+  flat I/O surfaces and host no `repeat`. Per-element dynamic I/O is a
+  node's `effects:` clause `repeat` (one effect instance per element);
+  per-element structure driven by an observed cell goes in an `expose:`
+  block consuming that cell.
 - **Operator bodies** (§13.17.4) — operators are reactive-transparent
   transforms with fixed-shape state; dynamic-scope materialization is
   not in scope for v1.
 - **Connection bodies** (§13.6) — connections are minimal glue between
   source and destination; dynamic-scope structure belongs in node
-  bodies, placement bodies, `effects:` clauses, or `desired:` blocks.
+  bodies, placement bodies, or `effects:` clauses.
 - **Trait and `fulfill` blocks** — these declare behavior, not graph
   structure.
 
