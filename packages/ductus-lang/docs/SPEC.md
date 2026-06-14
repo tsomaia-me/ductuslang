@@ -12758,7 +12758,7 @@ The same ownership rule applies to **connections** and **effects**: an
 and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow,
 never stored as a value; their *types* travel as values via `Type[…]`
 (§5.7). **Operators** are likewise instantiated only via their own syntax
-(§13.17), and additionally have a structural *type*, `operator(…) -> Cell[U]`
+(§13.17), and additionally have a structural *type*, `operator(…) -> U`
 (§13.17.13), by which an operator can be carried. The rule is normative;
 conformant compilers enforce it at type-check time.
 
