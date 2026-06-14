@@ -11423,77 +11423,78 @@ write" rule applies to all six declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
 imperatively modify it from within.
 
-#### 13.2.8 The `Signal[T]` type
+#### 13.2.8 Value-cell types
 
-`Signal[T]` is the umbrella type over the four value-cell subkinds
-(signal, attr, derived, recurrent) whose value type is `T`. Streams and sinks
-are reactive cells too but are not `Signal[T]`; the broader abstraction
-over *all* reactive cells (including streams and sinks) is `Cell[T]`
-(§13.18.5). `Signal[T]` is a first-class type usable in parameter
-positions, return types, and generic arguments.
+The value cells carry a current value of type `T` and come in three concrete
+types: `Signal[T]`, `Derived[T]`, and `Recurrent[T, N]`. The umbrella over
+*all* reactive cells — these plus `Stream[T]` — is `Cell[T]` (§13.18.5). Each
+value-cell type is first-class, usable in parameter positions, return types,
+and generic arguments.
 
-**Subkinds.** Four reactive declaration kinds produce values of
-`Signal[T]`:
+**The three value-cell types.** Four reactive declaration kinds produce value
+cells:
 
-- `signal X = init` — host-writable `Signal[T]`. Host pushes
+- `signal X = init` — a host-writable `Signal[T]`. Host pushes
   values via `runtime.write_signal` (§13.14.2).
-- `attr X: T = default` — placement-writable `Signal[T]`. The placing
+- `attr X: T = default` — a placement-writable `Signal[T]`. The placing
   parent supplies its value at placement (§13.8.2); reactive thereafter.
-- `derived X = expr` — projected `Signal[T]`. Runtime maintains
-  the value consistent with its inputs.
-- `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
-  self-history accessible via `.previous(fallback)` and
-  `.past(k, fallback)`. Runtime re-evaluates the expression when any
-  non-self reference commits (§13.2.4).
+- `derived X = expr` — a `Derived[T]`: a reactive computation with no
+  self-history. The runtime maintains its value consistent with its inputs.
+- `recurrent[N]? X: T = expression` — a `Recurrent[T, N]`: a reactive
+  computation carrying `N` steps of self-history, accessible via
+  `.previous(fallback)` and `.past(k, fallback)`. The runtime re-evaluates the
+  expression when any non-self reference commits (§13.2.4). `Derived[T]` is the
+  degenerate zero-history case (`N = 0`).
 
-The keyword `signal` is overloaded with the type `Signal[T]`:
-the keyword declares one specific subkind (the writable cell);
-the type covers all four subkinds. This overload is documented
-here and elsewhere referenced as "the `Signal[T]` type" vs "a
-`signal` declaration" to disambiguate.
+A reactive value expression combining one or more reactive cells always
+produces a `Derived[T]`.
 
-**Where `Signal[T]` is used:**
+The keyword `signal` and the type `Signal[T]` both name the host-writable value
+cell (an `attr` is also a `Signal[T]`, placement-written); `derived` and
+`recurrent` produce the distinct types `Derived[T]` and `Recurrent[T, N]`.
 
-- **Operator parameters** (§13.17) — operators take `Signal[T]`
-  to bind to a reactive cell at instantiation, allocating
-  internal state tied to that cell.
-- **Operator return types** — operators return `Signal[T]`
-  representing their output cell.
-- **Function parameters** — `fn` may accept `Signal[T]` as a
-  parameter type. The compiler distinguishes call-site semantics
-  by the function's declared signature: a `fn(x: T)` parameter
-  receives the cell's current value (with reactive transparency
-  per §13.12.2); a `fn(s: Signal[T])` parameter receives the
-  cell reference. No call-site syntactic difference; resolution
-  is by type.
+**Where value-cell types are used:**
 
-`Signal[T]` is read-only when received as a parameter. There is
-no source-level form for writing to a `Signal[T]` value (the
-no-mutation rule of §13.2.7 applies). The cell may still be
-written by the host (`signal`), the runtime (`derived`/`recurrent`), or
-the placing parent at placement (`attr`), but not through the
-`Signal[T]` reference itself.
+- **Operator parameters** (§13.17) — a value-reading operator parameter is typed
+  `Cell[T]`, binding to any value cell at instantiation and allocating internal
+  state tied to it. A `Stream[T]` has no current value, so it is excluded at the
+  read site, not by the signature.
+- **Operator return types** — an operator's value output is a computed
+  `Derived[T]`; the return type names the concrete produced type (`Derived[T]`,
+  `Stream[T]`, or `Cell[T]` only for a genuine passthrough), not an umbrella.
+- **Function parameters** — `fn` may accept a value by type `T` or a cell by
+  type `Cell[T]`. The compiler distinguishes call-site semantics by the
+  function's declared signature: a `fn(x: T)` parameter receives the cell's
+  current value (with reactive transparency per §13.12.2); a `fn(s: Cell[T])`
+  parameter receives the cell reference. No call-site syntactic difference;
+  resolution is by type.
+
+A `Cell[T]` is read-only when received as a parameter. There is no source-level
+form for writing to a reactive cell (the no-mutation rule of §13.2.7 applies).
+The cell may still be written by the host (`signal`), the runtime
+(`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
+through the cell reference itself.
 
 **Generics.**
 
-`Signal[T]` is parametric. Generic functions and operators may
-abstract over the value type:
+Value-cell types are parametric. Generic functions and operators abstract over
+the value type via `Cell[T]`:
 
 ```
-operator passthrough[T](source: Signal[T]) -> Signal[T]:
+operator passthrough[T](source: Cell[T]) -> Cell[T]:
   source
 
-fn describe[T](cell: Signal[T]) -> string:
+fn describe[T](cell: Cell[T]) -> string:
   // some debugging utility, etc.
   ...
 ```
 
 Standard trait bounds apply (§3.1, §5.1). The constraint
-`Signal[T: Numeric]` requires T to satisfy `Numeric`.
+`Cell[T: Numeric]` requires T to satisfy `Numeric`.
 
-**Reading a `Signal[T]` field on records.**
+**Reading a value-cell field on records.**
 
-A reactive cell may have a record value: `Signal[Record]`.
+A value cell may have a record value (e.g. `Signal[Record]`).
 Field access on the cell's value is reactive — `cell.field`
 inside a derived expression projects the field, and the derived
 re-evaluates whenever the cell's value changes (any field). This
