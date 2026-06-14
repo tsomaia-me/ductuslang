@@ -19,6 +19,8 @@ become commitments.
 11. refuse to proceed implementation unless user has explicitly provided all answers you require. even if user says "
     approved" - do not implement anything, refuse and flag the unanswered questions. gather ALLL the answers, and then
     wait for approval.
+12. Maintain LEARNINGS.md as described below in the "Mandatory Learnings Protocol" section.
+13. Strictly follow "Mandatory Memory Refresher" as described below in the respective section.
 
 # Definition Of Done
 
