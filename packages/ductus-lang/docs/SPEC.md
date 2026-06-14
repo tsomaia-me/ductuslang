@@ -1387,7 +1387,7 @@ time, every reference has a fully-specified trait instance.
 #### 3.1.7 Required node/connection members (cells, consts, and endpoints)
 
 Traits may declare *required members* that implementing types must
-provide: required `attr`, `const`, `signal`, `derived`, `recurrent`, and
+provide: required `attr`, `const`, `derived`, `recurrent`, and
 `stream` declarations and — for connection types — required `from` and
 `to` endpoints. These requirements are reactive-graph structure, so they
 apply only to node and connection types (see §13 for the reactive system);
@@ -1413,7 +1413,7 @@ trait Identifiable:
 
 The forms `attr Name: Type [= Default]?` and `const Name: Type [=
 Default]?` inside a trait body declare requirements, as do the other
-reactive-cell forms — `signal`, `derived`, `recurrent`, and `stream` —
+reactive-cell forms — `derived`, `recurrent`, and `stream` —
 written with the same syntax they use in a node or connection body (§13).
 A connection trait may additionally declare required endpoints with
 `from: Type` and `to: Type`. Defaults are optional in trait declarations:
@@ -1478,7 +1478,7 @@ at placement (§5.7.5, §13.8.4).
 
 Restrictions and kind gating:
 
-- **A trait that declares any required cell (`attr`, `const`, `signal`,
+- **A trait that declares any required cell (`attr`, `const`,
   `derived`, `recurrent`, `stream`) or endpoint (`from`, `to`) is a
   kind-specific trait and cannot be satisfied by a record, enum, newtype,
   or primitive** — those types lack the reactive-graph machinery. The
@@ -11448,7 +11448,7 @@ positions, return types, and generic arguments.
 
 The keyword `signal` is overloaded with the type `Signal[T]`:
 the keyword declares one specific subkind (the writable cell);
-the type covers all three subkinds. This overload is documented
+the type covers all four subkinds. This overload is documented
 here and elsewhere referenced as "the `Signal[T]` type" vs "a
 `signal` declaration" to disambiguate.
 
@@ -12866,7 +12866,7 @@ node TypeName:
     SomeA
     SomeB
   attr foo: i32
-  signal user_name: string = "world"
+  attr user_name: string = "world"
   derived greeting: string = "hello " + user_name
 ```
 
@@ -13124,7 +13124,7 @@ declares **topology** (what the node *is*), `effects:` declares
 
 ```
 node App:
-  signal url: Url = home_url
+  attr url: Url = home_url
   derived label: string = "loading {url}"
 
   effects:
@@ -21824,8 +21824,8 @@ effect print(message: Signal[string]):
     derived text: string = message
 
 node App:
-  signal count: i32 = 0
-  signal show: bool = true
+  attr count: i32 = 0
+  attr show: bool = true
   derived doubled: i32 = count * 2
   recurrent total: i32 = total.past(1, 0) + count
   derived label: string = "value is {doubled}"
