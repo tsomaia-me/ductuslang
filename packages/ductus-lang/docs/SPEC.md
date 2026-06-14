@@ -14049,8 +14049,9 @@ during traversal (§13.3.7.6). Like wires on a circuit schematic,
 connections are always present on the schema — the instance set is
 static (§13.1) and every statically placed connection exists from
 construction; only a dynamic destination's target may move (§13.6.2) —
-and always reactively live (§13.3.7.6); what the position orders is their
-engagement. A connection is still owned by no single endpoint (§13.8.4.1):
+and always reactively live regardless of traversal position (gates and an
+unresolved destination are the only switches on this liveness, §13.6.2);
+what the position orders is their engagement. A connection is still owned by no single endpoint (§13.8.4.1):
 the entry belongs to the *source's* exposition, but the connection links
 two instances at the graph level.
 
@@ -14342,9 +14343,9 @@ to outer-most is:
 1. **Local bindings** — `let` bindings and `for`-loop variables
    inside a reactive expression.
 2. **The instance body scope** — the node's or connection's members:
-   `attr`, `signal`, `recurrent`, `derived`, `stream` cells; `parts`;
-   and the reserved endpoint/structure fields (`from`, `to`,
-   `incoming`, `outgoing`, `pair`, `exposition` — §13.7.5).
+   `attr`, `recurrent`, `derived`, `stream` cells; and the reserved
+   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`,
+   `pair`, `parts`, `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
 
@@ -14387,6 +14388,7 @@ alias (§13.7.7) for the subject type.
 ```
 node Driver:
   attr expertise_level: i32 = 5
+  attr risk_tolerance: f32 = 0.5
   derived skill_factor: f32 = f32(here::expertise_level) / 10.0   // explicit anchor
   derived also_skill: f32 = f32(expertise_level) / 10.0           // bare — same cell
 

@@ -2518,7 +2518,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 2443. Routine member access uses a bare name or `here::`; `subject` is reserved for the value role. (§13.7)
 2444. Within a node or connection body, the scope chain innermost-first is: local bindings, the instance body scope, the module top-level scope. (§13.7.1)
 2445. Local bindings comprise `let` bindings and `for`-loop variables inside a reactive expression. (§13.7.1)
-2446. The instance body scope comprises `attr`/`signal`/`recurrent`/`derived`/`stream` cells, `parts`, and the reserved fields `from`, `to`, `incoming`, `outgoing`, `pair`, `exposition`. (§13.7.1)
+2446. The instance body scope comprises `attr`/`recurrent`/`derived`/`stream` cells and the reserved fields `from`, `to`, `incoming`, `outgoing`, `pair`, `parts`, `exposition`. (§13.7.1)
 2447. The module top-level scope comprises module-level `signal`, `derived`, `recurrent`, `stream`, `const`, and `let` declarations. (§13.7.1)
 2448. A bare name resolves to the nearest scope in the chain that declares it: `local_gain * master_gain` reads a member and a module cell anchor-free. (§13.7.1)
 2449. `here::x` resolves `x` in the current scope, bypassing inner local bindings and ignoring same-named module-level declarations. (§13.7.2)
