@@ -7346,7 +7346,7 @@ becomes inaccessible. Function return transfers ownership when the returned valu
 every binding site; using a binding after its name has been killed is a
 compile error.
 
-*Exception — reference-typed reactive bindings.* `Signal[T]` parameters
+*Exception — reference-typed reactive bindings.* `Cell[T]` parameters
 (§13.2.8) and reactive composite bindings (§13.2.9.6) name reactive
 cells (specified by §13, §14) rather than stack-owned values;
 multiple live aliases to the same cell may coexist without violating
@@ -11343,7 +11343,7 @@ For each cell:
   the startup pass. Self-history and input-history accessors
   (`.previous(fallback)` / `.past(k, fallback)`, §13.2.4.3) return
   their fallback values, since no committed history exists yet.
-  When the expression reads a `Signal[T]` cell (per §13.2.8), the
+  When the expression reads a value cell (per §13.2.8), the
   read returns the cell's value at the topological-init evaluation
   point — a snapshot of the cell at startup. After startup, the
   recurrent re-evaluates when any non-self reference in its
@@ -11669,7 +11669,7 @@ fn process(p: PeakResult) -> f32:
   q.some_property * 2.0             // reads p.some_property's cell live
 ```
 
-This is the composite-typed analogue of the §13.2.8 `Signal[T]`
+This is the composite-typed analogue of the §13.2.8 `Cell[T]`
 binding form: when the binding's type is the composite's type, the
 binding is structural — it preserves the live cell references of
 its RHS. The standard scalar auto-deref rules of §13.2.8 still
@@ -11679,7 +11679,7 @@ auto-derefs per the existing rules).
 **Ownership.** A reactive composite binding names cells held by
 the runtime, not stack-owned data; multiple live aliases to the
 same composite may coexist without violating §11's single-
-ownership rule, just as multiple `Signal[T]` parameters may name
+ownership rule, just as multiple `Cell[T]` parameters may name
 the same cell. Materialization to a concrete value (§13.2.9.7)
 produces a `PeakResult`/tuple/array instance subject to the
 standard §11 ownership rules from that point on.
@@ -11907,7 +11907,7 @@ observe:
 - All arm expressions must produce the same type T (like `match`
   expressions, §6.2.4).
 - The observe expression's value is a `Cell[T]`; its concrete
-  reactive type (`Signal[T]` or `Stream[T]`) is determined by the
+  reactive type (a value cell or a `Stream[T]`) is determined by the
   context where the observe is used.
 
 ##### 13.2.11.2 Trigger sets and arm selection
@@ -11998,8 +11998,9 @@ activates.
 An observe expression produces a `Cell[T]` (§13.18.5) whose concrete
 type is determined by the surrounding context:
 
-- Assigned to a `Signal`/`derived`/`recurrent` binding, or used in a
-  context expecting `Signal[T]`: produces `Signal[T]`.
+- Assigned to a `signal`/`derived`/`recurrent` binding, or used in a
+  value-cell context: produces the matching value-cell type
+  (`Signal[T]`, `Derived[T]`, or `Recurrent[T, N]`).
 - Assigned to a `stream` declaration, or used in a context expecting
   `Stream[T]`: produces the concrete stream type (`RingStream[T, N]`
   or `GateStream[T, N]`) per the stream context's policy/capacity.
@@ -12802,7 +12803,7 @@ handle *denotes* depends on the position it occupies:
 The two types are deliberately distinct. `Option[&T]` *contains a borrow* and is
 therefore itself unstorable (§11.9.1) — the transient, just-resolved view.
 `Handle[T]` contains no borrow and is the storable carrier. The pair mirrors the
-cell split: a `Handle[T]` is to its `Option[&T]` resolution what a `Signal[T]`
+cell split: a `Handle[T]` is to its `Option[&T]` resolution what a value cell
 is to its `T` value (§13.2.8) — one the durable home, the other the momentary
 read.
 
@@ -18314,9 +18315,10 @@ is no garbage collection of stream events. For a bounded stream, the
 buffer is one fixed memory region for the stream's entire lifetime, reused
 as events arrive.
 
-Streams are distinct from `Signal[T]`:
+Streams are distinct from value cells:
 
-- `Signal[T]` has a single current value, always defined (§13.2.6).
+- A value cell (`Signal[T]`/`Derived[T]`/`Recurrent[T, N]`) has a single
+  current value, always defined (§13.2.6).
 - `Stream[T]` has zero or more pending events, each consumed
   independently. There is no "current value" of a stream; consumers
   project a stream to a signal explicitly (§13.18.9).

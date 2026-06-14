@@ -2030,7 +2030,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 016-275. A reactive value expression combining one or more reactive cells always produces a `Derived[T]`. (§13.2.8)
 016-276. Value-reading operator and function parameters are typed `Cell[T]` (the umbrella); a `Stream[T]` has no current value, so it is excluded at the read site rather than by the signature. (§13.2.8)
 
-## 017. Nodes & Parts — 261 Rules
+## 017. Nodes & Parts — 260 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed connections. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2293,7 +2293,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 017-260. Operators and `repeat` are the only consumers of a `dynamic` part type. (§13.4.4)
 017-261. Type-bulk and named individual access coexist on the same instance: `c.parts.Oscillator[0]` (indexed, legal under `+`) and `c.parts.Filter[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 
-## 018. Keyed Scopes & `repeat` — 139 Rules
+## 018. Keyed Scopes & `repeat` — 138 Rules
 
 018-1. Every conformant runtime exposes the three keyed-scope operations — `scope_obtain`, `scope_drop`, `scope_evaluate` — underlying the language's dynamic-scope reactive constructs. (§13.5)
 018-2. Each instantiation of a keyed-scope template is backed by its own state cells. (§13.5)
@@ -2697,7 +2697,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 021-142. A placement introducing its own children body via `:` owns the rest of its line and the following indented block; it cannot share its line with sibling placements. (§13.8.10)
 021-143. A `:`-bearing placement may carry inline children on its own line when no sibling placements share the line: `SomePart: Child1 Child2 Child3`. (§13.8.10)
 
-## 022. Conditional Activation (Gates) — 118 Rules
+## 022. Conditional Activation (Gates) — 119 Rules
 
 022-1. A gate is a predicate or discriminant that conditions whether a node instance, a connection instance, or an exposed subtree is active. (§13.9)
 022-2. Gates are the structural conditional layer, distinct from the value conditionals `if`/`else`/`match`. (§13.9)
@@ -3194,7 +3194,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 028-73. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-74. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
 
-## 029. Operators — 128 Rules
+## 029. Operators — 123 Rules
 
 029-1. An operator is a reusable, cell-allocating reactive transformation declared with the `operator` keyword. (§13.17)
 029-2. An operator takes `Signal[T]` inputs, optionally plus non-reactive value parameters, and produces an output of any type, exposed to callers as a reactive cell. (§13.17)
@@ -3320,7 +3320,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 029-125. A carried operator composes in `|>` chains at the point it is instantiated, identically to a named operator. (§13.17.13)
 029-129. Ruling A: a value-reading operator or function parameter is typed `Cell[T]` (the umbrella), and an operator's computed value output is a `Derived[T]`; a `Stream[T]` has no current value and is excluded at the read site, not by the signature. (§13.17.3)
 
-## 030. Streams — 269 Rules
+## 030. Streams — 254 Rules
 
 030-1. A stream is a reactive primitive for append-only event sequences governed by a buffering policy. (§13.18)
 030-2. Streams are first-class reactive cells participating in the commit cycle, in cell identity for hot reload, and in the graph specification. (§13.18)
@@ -3577,7 +3577,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 030-273. Concrete stream types always carry their capacity (`RingStream[T, N]`); there is no single-arity concrete form, and capacity-polymorphism uses a `const N` generic. (§13.18.3)
 030-274. `.past`/`.previous` are valid only in a recurrent's producing context — the body of a value `Recurrent[T, N]` (§13.2.4) or a recurrent stream (§13.18.8) declaration. (§13.18.15)
 
-## 031. Effects — 157 Rules
+## 031. Effects — 152 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -3732,7 +3732,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 031-158. `recurrent` is allowed in an effect's `desired:` block (a desired value may depend on its own history) but forbidden in `observed:` (host-fed cells have no expression body for `.past` to read). (§13.19.4)
 031-159. A `desired:` event-output stream's `= source` may read the effect's own `observed:` cells (feedback); such a cycle must pass a delay (a `recurrent`) or a commit boundary so it cannot inherently diverge. (§13.19.4)
 
-## 032. Implementation Model — 177 Rules
+## 032. Implementation Model — 176 Rules
 
 032-1. The implementation model is normative for implementations of Ductus, not for source-level code; program behavior is determined by §§1–13. (§14)
 032-2. A conforming implementation provides two compilation modes: interpreter mode and native mode. (§14.1)
@@ -3911,7 +3911,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 249 Rules
+## 033. Compilation Model & IR — 247 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
