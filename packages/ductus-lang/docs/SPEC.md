@@ -16019,12 +16019,11 @@ declared: an `expose:` clause (§13.3.7), a node body, a placement body,
 an `effects:` clause (§13.3.8), or an effect `desired:` block
 (§13.19.4) — not as an inline modifier. Its arms hold whatever entries
 that context admits: placements at `expose:` and in bodies, effect
-entries in an `effects:` clause, desired-cell declarations and `repeat`s
-in a `desired:` block. Each arm body is its own scope, so arm-local names nest under the
+entries in an `effects:` clause, desired-cell declarations in a
+`desired:` block. Each arm body is its own scope, so arm-local names nest under the
 arm and do not collide across arms (the same scoping as `match` arms,
 `for`/`if` bodies, and `repeat` scopes); a `desired:` arm's cells are
-nested and thus exempt from the flat-namespace uniqueness of §13.19.6,
-exactly as a `repeat`'s per-key cells are.
+nested and thus exempt from the flat-namespace uniqueness of §13.19.6.
 
 **Simple form (then / `otherwise`).** A `when cond:` block introduces a
 then-body of placements; an optional sibling `otherwise:` block supplies
@@ -17831,7 +17830,7 @@ operator changes[T](source: Cell[T]) -> Stream[T]:
 
 For multiple outputs, return a record or tuple. Two forms are valid: a
 plain record/tuple (form 1, like `PeakResult` above — exposed as a single
-`Signal` of the record), or one whose fields are themselves cells (form
+`Derived` of the record), or one whose fields are themselves cells (form
 2). Both respect static memory. Consumers project fields via reactive
 expressions:
 
@@ -18839,8 +18838,9 @@ all referenced inputs.
 
 - `NAME.past(k, ...)` with `k > N` on the declared output: compile
   error.
-- `.past` or `.previous` access outside the body of a `recurrent[N]
-  stream` declaration: compile error.
+- `.past` or `.previous` access outside a recurrent's producing context
+  (a `recurrent[N] stream` body or a value `Recurrent[T, N]` body): compile
+  error.
 - `n` argument of `.past(n, fallback)` must be a compile-time-known
   positive integer — a literal, a `const`, or a const-generic
   parameter (§2.5).
@@ -18959,10 +18959,10 @@ stream ring changes: Url = current_url |> to_stream |> skip_first
 **Projection operators** (Stream → Signal):
 
 ```
-operator count[T](source: Stream[T]) -> Signal[i64]:
+operator count[T](source: Stream[T]) -> Derived[i64]:
   // running count of events observed
 
-operator fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Signal[A]:
+operator fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Derived[A]:
   // running accumulator
 
 operator any[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]:
@@ -18972,7 +18972,7 @@ operator all[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]:
   // true if every event so far satisfies pred (true initially)
 ```
 
-These produce signals from streams without requiring a default value
+These produce value cells (deriveds) from streams without requiring a default value
 because the predicate or accumulator establishes the initial signal
 value structurally (`0` for `count`, `init` for `fold`, `false` for
 `any`, `true` for `all`).
@@ -19571,7 +19571,7 @@ A `stream X = signal_expr` binding is valid via implicit `to_stream`
 actual stream:
 
 ```
-error: cannot pass `Signal[T]` to `Stream[T, _, _]` parameter
+error: cannot pass `Signal[T]` to `Stream[T]` parameter
   --> persist(my_signal)
               ^^^^^^^^^ expected a stream
   hint: `persist`'s parameter requires a stream. Apply `to_stream`
@@ -19592,7 +19592,7 @@ error: cannot assign stream-valued expression to signal binding
 **Stream read as a value (no expression context):**
 
 ```
-error: cannot read `Stream[T, _, _]` as a value
+error: cannot read `Stream[T]` as a value
   --> derived latest: Event = events
                               ^^^^^^ this is a stream, not a value cell
   hint: streams have no current value. Project to a signal via
@@ -19625,14 +19625,14 @@ error: `stream` declarations are not permitted inside function bodies
         or effect scope.
 ```
 
-**`.past` or `.previous` outside `recurrent[N] stream`:**
+**`.past` or `.previous` outside a recurrent's producing context:**
 
 ```
-error: `.past` and `.previous` are only valid inside a `recurrent[N] stream` declaration
+error: `.past` and `.previous` are only valid in a recurrent's producing context
   --> stream ring filtered = if count % 2 is 0: count else: count.previous(0)
                                                                   ^^^^^^^^^^^
-  hint: history access requires opting into a recurrent stream
-        declaration, which allocates the per-stream memory:
+  hint: history access requires a recurrent declaration — a value
+        `recurrent[N]` or a `recurrent[N] stream`, which allocates the history:
         `recurrent stream ring filtered = if count % 2 is 0: count else: count.previous(0)`
 ```
 
@@ -19830,7 +19830,7 @@ intended to be used with `|>`, authors place the primary upstream
 cell as the first parameter:
 
 ```
-effect fetch(url: Signal[Url], method: Method = Method::GET):
+effect fetch(url: Cell[Url], method: Method = Method::GET):
   ...
 
 // usage (in a node's effects: clause, §13.3.8):
@@ -20155,11 +20155,11 @@ operators (§13.17) and contrasts with nodes (§13.3), which separate
 type names (PascalCase) from placement syntax.
 
 ```
-effect fetch(url: Signal[Url]):
+effect fetch(url: Cell[Url]):
   ...
 
 // Used as type:
-operator render_fetch_card(f: fetch) -> Signal[View]:
+operator render_fetch_card(f: fetch) -> Derived[View]:
   ...
 
 // Used as constructor — in a node's effects: clause:
@@ -20174,8 +20174,8 @@ Effects may take type parameters with optional trait bounds:
 
 ```
 effect cached_fetch[T: Cacheable](
-  url: Signal[Url],
-  cache: Signal[Cache[T]],
+  url: Cell[Url],
+  cache: Cell[Cache[T]],
 ):
   observed:
     signal value: Option[T] = None
@@ -20199,7 +20199,7 @@ Effects carry the standard three-level visibility (§10): `public`,
 reachable from other modules; public effects may be re-exported.
 
 ```
-public effect fetch(url: Signal[Url]):
+public effect fetch(url: Cell[Url]):
   ...
 
 private effect internal_health_check():
@@ -20223,7 +20223,7 @@ declared name and type within the effect's body.
   behavior; existing live cells retain their committed values).
 - Adding a new cell in `observed:` or `desired:` — new cells are
   initialized fresh per their declared initial value (signals) or
-  empty (streams, sinks).
+  empty (streams).
 - Changes to `desired:` `derived` cell expressions — the cell
   re-evaluates on the next commit with new logic.
 
@@ -20340,7 +20340,7 @@ effect's type as the parameter type) or take a specific cell
 projected by field access:
 
 ```
-operator render_fetch_card(f: fetch) -> Signal[View]:
+operator render_fetch_card(f: fetch) -> Derived[View]:
   // receives the whole composite
   ...
 
@@ -20524,7 +20524,7 @@ error: effect instantiations are not permitted inside function bodies
 
 ```
 error: effect instantiation inside another effect's body is not permitted
-  --> effect outer(input: Signal[T]):
+  --> effect outer(input: Cell[T]):
         desired:
           derived chained = input |> inner_effect
                                      ^^^^^^^^^^^^ effect-in-effect not allowed
@@ -20587,7 +20587,7 @@ error: effects cannot be instantiated at module level
 
 ```
 error: effects cannot be instantiated in an operator body
-  --> operator cached_fetch(url: Signal[Url]) -> Signal[Response]:
+  --> operator cached_fetch(url: Cell[Url]) -> Derived[Response]:
         f = url |> fetch
             ^^^^^^^^^^^^ effect instantiation in operator
   hint: operators are pure reactive transforms (§13.17). Host the
@@ -21755,7 +21755,7 @@ Bringing the type table, graph IR, and behavior IR together. This source
 (post-`effects:`-clause, §13.3.8) —
 
 ```
-effect print(message: Signal[string]):
+effect print(message: Cell[string]):
   desired:
     derived text: string = message
 
