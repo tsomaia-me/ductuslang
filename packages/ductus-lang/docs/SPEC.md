@@ -12967,9 +12967,12 @@ interleaving (§13.8.4), with a feeding `repeat`'s scopes expanding in
 place at the repeat's written position (§13.3.3.4). The default covers
 **caller-supplied content only**; a type that emits internal structure
 (`for`/`repeat`/wrappers, §13.3.7.1) necessarily writes `expose:`
-explicitly. When the node has no `parts:` clause and no
-`expose:` clause, the exposition is empty (the node has no
-structural output and exists only for its state and connections).
+explicitly. When the node has no `parts:` clause and no `expose:` clause, the
+default `expose: parts` still exposes whatever the caller supplied — the
+open-parts children and caller-placed connections, as-is in written
+order; the exposition is empty only when no such content is supplied
+(the node then has no structural output and exists only for its state
+and connections).
 
 ##### 13.3.7.3 External access via `.exposition`
 
@@ -13003,10 +13006,10 @@ mechanism:
   self-sourced connections engage among them (§13.3.7.5).
 
 `parts:` exists *solely* to feed `expose:`: externally-supplied children
-exist to become the node's structural output. There is no part that is
-never exposed — by default (`expose: parts`, §13.3.7.2) every supplied
-part is exposed; an explicit `expose:` arranges or selects among the
-parts, but always over them.
+exist to become the node's structural output. By default
+(`expose: parts`, §13.3.7.2) every supplied part is exposed; an explicit
+`expose:` may arrange *or select a subset of* the supplied parts, and a
+part it omits has no structural output (not a compile error).
 
 Traversal proceeds **in entry order**: node entries by structural
 descent, connection entries by engagement (§13.3.7.6).
@@ -13041,11 +13044,13 @@ information that distinguishes a transition after the chord from one
 before the first note. The same connection at a different position is a
 different program.
 
-Like wires on a circuit schematic, connections are **always present on
-the schema**: the instance set is static (§13.1), and every connection
-entry exists from construction — what may change at runtime is where a
-dynamic destination points (§13.6.2), never whether the connection
-exists. What the position orders is *engagement* — when traversal first
+Like wires on a circuit schematic, a **directly-written** connection
+entry is always present on the schema: it exists from construction, and
+what may change at runtime is only where a dynamic destination points
+(§13.6.2), never whether the connection exists. A repeat-materialized
+connection placement (§13.3.4, §13.5.4) is the exception — it mounts and
+dismounts with its keyed scope, appearing in `.exposition` only while
+mounted. What the position orders is *engagement* — when traversal first
 reaches the entry (§13.3.7.6). And, like a powered circuit, presence is
 participation: an exposition entry's connection is reactively live
 whether or not traversal has reached it (§13.3.7.6).
