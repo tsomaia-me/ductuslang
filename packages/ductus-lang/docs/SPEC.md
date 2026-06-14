@@ -112,7 +112,7 @@ Code examples use Ductus syntax. Type-name case conventions:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `sink`, `const`, `let`, `mut`, `repeat`), all clause
+`derived`, `stream`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
@@ -13144,10 +13144,6 @@ elsewhere by flat access `name.field` (§13.19.7):
     f = url |> fetch
 ```
 
-**Sink forwarding.** Piping a stream into an effect's sink (Case 3,
-§13.17.7 — `messages |> ws.outbound`) is effect I/O and likewise lives
-in `effects:`, alongside the effect it targets.
-
 **`when` / `given` / `repeat`.** The clause admits the same structural
 constructs as `expose:`, with effect entries in place of node
 placements:
@@ -17466,7 +17462,7 @@ restart — either full-runtime or per-instance, depending on the change:
     - Effect parameter signature changes (added, removed, retyped,
       reordered parameters).
     - `desired:` or `observed:` cell type changes.
-    - Stream/Sink cell policy or capacity changes within an effect.
+    - Stream cell policy or capacity changes within an effect.
 
   See §13.19.11 for full effect-reload rules. **Per-instance
   restart** suffices; the host's reconciler receives a teardown
@@ -17545,7 +17541,7 @@ instance is preserved across reload, the cells declared in its
 
 - `Signal[T]` cells: preserved when type matches; reset to initial
   value if type changes (per §13.15.2).
-- `Stream[T]` and `Sink[T]` cells: preserved per stream reload rules
+- `Stream[T]` cells: preserved per stream reload rules
   (§13.15.5).
 
 **Reload-safe effect changes** preserve the instance and most cells:
@@ -17567,7 +17563,7 @@ instance is preserved across reload, the cells declared in its
 
 - Parameter signature changes.
 - Cell type changes in `desired:` or `observed:`.
-- Stream/Sink policy or capacity changes.
+- Stream policy or capacity changes.
 
 When per-instance restart fires for an effect instance, the runtime
 invokes the host's reconciler teardown hook (§13.14.9), allowing the
@@ -19750,15 +19746,18 @@ declarations:
 
 - `derived` (in `desired:`) — parameter-tracking reactive expression
   (§13.19.4).
-- `sink` (in `desired:`) — write-only stream end (§13.19.4).
+- `recurrent` (in `desired:`) — a desired value with self-history
+  (§13.19.4).
+- `stream` (in `desired:`) — an event-output stream the effect feeds
+  from its parameters or `observed:` cells via `= source` (§13.19.4).
 - `signal` (in `observed:`) — host-written value cell (§13.19.5).
 - `stream` (in `observed:`) — host-written event sequence (§13.19.5).
 
-No other declaration kinds are permitted inside the blocks.
-Reactive declarations not listed above (e.g., `recurrent`, `attr`,
-top-level `signal`) cannot appear inside an effect's body; stateful
-behavior wrapping an effect is expressed via wrapping operators
-(§13.19.15).
+No other declaration kinds are permitted inside the blocks. `recurrent`
+is allowed only in `desired:` (a host-fed `observed:` cell has no
+expression body for `.past` to read). `attr` and top-level `signal`
+cannot appear inside an effect's body; stateful behavior that wraps
+multiple effects is expressed via wrapping operators (§13.19.15).
 
 At least one of `desired:` or `observed:` must be present (an effect
 with neither would have no surface at all). The blocks may be
@@ -19773,7 +19772,7 @@ to themselves — the instance value, accessed through the binding name
 or through expression position (§13.19.13).
 
 ```
-effect fetch(url: Signal[Url], method: Method = Method::GET):
+effect fetch(url: Cell[Url], method: Method = Method::GET):
   desired:
     derived request: Request = Request(method: method, target: url)
   observed:
@@ -19787,9 +19786,9 @@ parameter-tracking `derived` cell expressing the request; the
 `observed:` block declares three host-written signal cells.
 
 ```
-effect websocket(url: Signal[Url]):
+effect websocket(url: Cell[Url], outgoing: RingStream[Message, 1024]):
   desired:
-    sink ring[1024] outbound: Message
+    stream ring[1024] outbound: Message = outgoing
   observed:
     stream ring[1024] inbound: Message
     signal is_open: bool = false
@@ -19797,7 +19796,8 @@ effect websocket(url: Signal[Url]):
 ```
 
 A long-lived resource effect with bidirectional message flow. The
-`desired:` block declares a sink the program pushes into; the
+`desired:` block declares an event-output `stream` the effect feeds
+from its `outgoing` parameter (the host drains the buffer); the
 `observed:` block declares a stream of inbound messages plus two
 signal cells.
 
@@ -19806,8 +19806,8 @@ signal cells.
 Effect parameters are cell-bound or value-typed, with the same rules
 as operator parameters (§13.17.3):
 
-**Cell-bound parameters** (`name: Signal[T]`, `name: Stream[T]`,
-`name: <other Cell[T] type>`):
+**Cell-bound parameters** (`name: Cell[T]` for a value cell, or
+`name: Stream[T]` for an event stream):
 - Bind to a reactive cell at instantiation.
 - The host's reconciler reads the cell's current value (or observes
   events, for stream parameters) during each invocation in which
@@ -19825,7 +19825,7 @@ as operator parameters (§13.17.3):
   method, content type, retry budget).
 
 **Defaults** are allowed on value parameters (§3.5.4 ordering rules
-apply); not on `Signal[T]` parameters in v1.
+apply); not on `Cell[T]` parameters in v1.
 
 **Pipe target.** The first positional parameter is the implicit
 pipe target (§13.17.7 generalized to effects). For an effect
@@ -19861,7 +19861,7 @@ tracked independently for dirty propagation to the reconciler.
 #### 13.19.4 Desired block
 
 The `desired:` block declares cells that the host's reconciler reads
-to determine what alignment to perform. Two cell forms are permitted,
+to determine what alignment to perform. Three cell forms are permitted,
 each introduced by an explicit role keyword:
 
 **`derived` cells** — parameter-tracking reactive expressions. The
@@ -19882,47 +19882,44 @@ invocation. Program code can also read `derived` cells in `desired:`
 via the standard access path (`f.request` — see §13.19.7), but
 cannot write to them.
 
-**`sink` cells** — write-only stream ends. The program pushes events
-into the sink by piping a stream into it via `|>` (§13.17.7
-Case 3); the host's reconciler consumes events from the paired
-Stream view:
+**`recurrent` cells** — desired values with self-history. A `desired:`
+value may depend on its own past via `.previous`/`.past`, e.g. an
+exponential backoff `recurrent backoff: Duration = min(backoff.previous(1s) * 2, 60s)`.
+(`recurrent` is allowed only in `desired:`, never in `observed:`, whose
+host-fed cells have no expression body — §13.19.5.)
+
+**`stream` cells** — event-output streams the effect produces for the
+host. The cell is fed by a `= source` expression over the effect's
+parameters and `observed:` cells; the host's reconciler drains the
+buffer:
 
 ```
 desired:
-  sink ring[1024] outbound: Message
-  sink gate[256] outgoing_writes: PendingWrite
+  stream ring[1024] outbound: Message = outgoing
+  stream gate[256] outgoing_writes: PendingWrite = pending |> to_gate_stream
 ```
 
-The declaration shape parallels the `stream` declaration (§13.18.2)
-— policy keyword (`ring` or `gate`), optional capacity in brackets
-(defaulting to 1024), name, element type. The difference is the
-leading `sink` keyword instead of `stream`, and the absence of an
-`= source` clause: a sink's events come from program-side pipe-
-into-sink expressions, not from a declared source.
+The declaration shape matches a regular `stream` declaration (§13.18.2)
+— policy keyword (`ring` or `gate`), optional capacity (defaulting to
+1024), name, element type, and a `= source`. The effect feeds the
+source internally; there is no external program-side wiring into it.
+A source may read the effect's own `observed:` cells (feedback, e.g.
+replying to `inbound`), provided the cycle passes a delay (a
+`recurrent`) or a commit boundary so it cannot inherently diverge.
 
 **Cell name uniqueness.** Within a single `desired:` block, cell
 names must be distinct. Cells in `desired:` may not share names
 with cells in the same effect's `observed:` block (§13.19.6).
 
-**Host-side semantics.** The reconciler reads `derived` cells on
-each invocation where any of them is dirty. For `sink` cells, the
-reconciler consumes the buffered events in order. The reconciler is
+**Host-side semantics.** The reconciler reads `derived`/`recurrent`
+cells on each invocation where any of them is dirty. For `stream` cells,
+the reconciler consumes the buffered events in order. The reconciler is
 responsible for maintaining the alignment between the desired state
 and the external environment.
 
-**`repeat` declarations.** A `desired:` block may also contain
-`repeat` declarations (§13.5.4) for dynamic-scope materialization
-driven by reactive sources. This is the canonical pattern for
-io-driven topology — rendering one component per database row,
-opening one connection per active session, spawning one worker per
-pending job. Each scope's cells (`derived`, `sink`) are reconciled
-per scope, with the host applying additions and removals as the
-source's key set changes. Per-scope paths follow §13.5.3 with the
-effect instance as the enclosing context.
-
 **`when` / `given` blocks.** A `desired:` block may also contain `when`
 and `given` selection blocks (§13.9.12, §13.9.13), whose arms hold
-desired-cell declarations (and `repeat`s). They carry the same **freeze**
+desired-cell declarations. They carry the same **freeze**
 semantics as everywhere else (Model B, §13.9.7): every arm is
 constructed, the active arm's desired cells are live, the inactive arms'
 are frozen at their last value. No new reconciler mechanism is involved —
@@ -20080,35 +20077,28 @@ The cell-name collision rule (§13.19.6) ensures `f.<name>` is
 unambiguous.
 
 **No write-to-cell from program code.** Effect cells are not writable
-from program code via assignment. The only program-side writes are
-pipe-into-sink expressions (§13.17.7 Case 3). Writing to any effect
-cell — signal, stream, or derived — via assignment is a compile
-error:
+from program code: there are no program-side writes to effect cells.
+Writing to any effect cell — signal, stream, or derived — via
+assignment is a compile error:
 
 ```
 error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. To control
-        the effect's behavior, change the upstream signal(s) bound
-        to its parameters, or pipe a stream into the effect's
-        sink(s) via `|>`.
+        the effect's behavior, change the upstream cell(s) bound
+        to its parameters.
 ```
 
-**Pushing into a sink.** Both the instantiation and the sink-forward
-live in the `effects:` clause:
+**Instantiating an effect.** The instantiation lives in the `effects:`
+clause; an effect's event-output streams are fed internally from its
+parameters (§13.19.4), so there is no program-side wiring into the
+instance:
 
 ```
 effects:
-  ws = current_url |> websocket
-  my_outgoing_messages |> ws.outbound      // forward a stream into the sink
+  ws = websocket(current_url, outgoing: my_outgoing_messages)
 ```
-
-Piping a `Stream[T]` into a `Sink[T]` establishes a forwarding
-subscription. The sink is accessed on the effect instance by name
-(`ws.outbound`). Multiple pipes may target the same sink
-(multi-producer pattern); their events arrive in commit
-order.
 
 **Reading a stream:**
 
@@ -20247,9 +20237,9 @@ declared name and type within the effect's body.
 - Cell type changes in `desired:` or `observed:` (a `signal` cell's
   value type changing from `i32` to `i64`, a stream's element type
   changing, etc.).
-- Policy or capacity changes on `stream` or `sink` cells in the
+- Policy or capacity changes on `stream` cells in the
   effect's blocks.
-- Changes to a cell's role keyword (`derived` becoming `sink`,
+- Changes to a cell's role keyword (`derived` becoming `stream`,
   `signal` becoming `stream`, etc.).
 
 When per-instance restart fires, the host's reconciler receives a
@@ -20461,10 +20451,10 @@ value track (§8).
 - **No reactive declarations outside `desired:` and `observed:`
   blocks inside an effect body.** The effect's body consists only of
   the `desired:` and `observed:` blocks containing role-keyword cell
-  declarations (`derived`, `sink`, `signal`, `stream`). Stateful
-  behavior wrapping an effect — recurrent state, accumulators,
-  retry logic — is expressed via wrapping operators, not via
-  internal declarations in the effect.
+  declarations (`derived`, `recurrent`, `stream` in `desired:`;
+  `signal`, `stream` in `observed:`). Stateful behavior that spans
+  multiple effects — accumulators, retry logic — is expressed via
+  wrapping operators, not via internal declarations in the effect.
 
 #### 13.19.16 Diagnostics
 
@@ -20505,9 +20495,8 @@ error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. To control
-        the effect's behavior, change the upstream signal(s) bound
-        to its parameters, or pipe a stream into the effect's
-        sink(s) via `|>` (§13.17.7 Case 3).
+        the effect's behavior, change the upstream cell(s) bound
+        to its parameters.
 ```
 
 **Effect type with no registered reconciler:**
@@ -20555,12 +20544,13 @@ error: effect instantiation inside another effect's body is not permitted
 error: only role-keyword declarations are permitted inside effect blocks
   --> effect example():
         desired:
-          recurrent count: i32 = count.previous(0) + 1
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: effect blocks accept only `derived`, `sink` (in `desired:`)
-        and `signal`, `stream` (in `observed:`). For stateful behavior
-        wrapping an effect, use a wrapping operator (§13.17) that
-        holds the recurrent state and consumes/produces effect cells.
+          attr count: i32 = 0
+          ^^^^^^^^^^^^^^^^^^^
+  hint: effect blocks accept only `derived`, `recurrent`, `stream` (in
+        `desired:`) and `signal`, `stream` (in `observed:`). `recurrent`
+        in `observed:` is rejected (host-fed cells have no expression
+        body); for state that wraps multiple effects, use a wrapping
+        operator (§13.17).
 ```
 
 **Effect appearing in node-placement position:**
