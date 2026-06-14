@@ -9,7 +9,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 
 <!-- BEGIN LOG -->
 
-## 001. Identity & Philosophy
+## 001. Identity & Philosophy — 35 Rules
 
 001-1. The specification is the authoritative source for the type system, evaluation model, and runtime semantics. (§1.1)
 001-2. Implementation details (compiler internals, optimizations, runtime representation) are out of scope except where they constrain user-visible semantics. (§1.1)
@@ -47,7 +47,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 001-34. Recoverable conditions are expressed as `Option`/`Result` values with `?` propagation. (§1.3)
 001-35. The failure track (bug vs recoverable) is chosen at the operation site, not retroactively. (§1.3)
 
-## 002. Source Form & Lexical Rules
+## 002. Source Form & Lexical Rules — 27 Rules
 
 002-1. Naming conventions: concrete primitive types (`i32`, `bool`) and built-in placeholder keywords (`numeric`, `integer`, `float`, `signed`, `unsigned`) are lowercase; trait and user-defined type names are PascalCase; functions, variables, and fields are snake_case. (§1.4)
 002-2. Keywords are always lowercase with no capitalized form; this rule is normative and takes precedence over any conflicting grammar. (§1.4)
@@ -77,7 +77,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 002-26. A keyword in a field-like position (`from`, `to`, `parts`, `pair`, `exposition`, `desired`, `observed`) is the keyword used in that context with compiler-assigned meaning — like `this`/`super` in other languages — not a user-definable field. (§1.4)
 002-27. The language's syntax is specified directly in this log and SPEC.md; there is no separate grammar document and no normative content is delegated to one. (§1.4)
 
-## 003. Modules, Packages & Visibility
+## 003. Modules, Packages & Visibility — 76 Rules
 
 003-1. `public` visibility exports a declaration across package boundaries to dependent packages. (§10.1)
 003-2. `shared` visibility reaches any file within the declaring package. (§10.1)
@@ -156,7 +156,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 003-75. Every cross-module reference is explicit: the name is brought into scope via `use` or the call uses a path-qualified form like `root::module::function_name(args)`. (§10.10)
 003-76. Trait-method calls follow the same name-resolution rule with the additional reach constraint that the implementation's effective visibility is the minimum of the trait's and the type's. (§10.10)
 
-## 004. Type System Core
+## 004. Type System Core — 153 Rules
 
 004-1. Placeholders are compile-time-only types standing for not-yet-resolved concrete types; they exist solely during type checking and are eliminated before code generation. (§2.1)
 004-2. A placeholder attaches to a value, not a binding; a binding is a transparent alias with no type independent of its value: `let x = 5` carries an integer placeholder. (§2.1.1)
@@ -312,7 +312,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 004-152. A const-generic default is used when the argument is neither supplied nor inferred and may itself be an expression referencing earlier parameters: `const N: usize = A + B`. (§2.5.7)
 004-153. A const-generic default expression obeys the const-generic expression rules: symbolic where it references unbound parameters, concrete once they are known. (§2.5.7)
 
-## 005. Traits
+## 005. Traits — 229 Rules
 
 005-1. A trait declares an interface — method signatures, associated types, and requirements — that types explicitly conform to and provide implementations for. (§3)
 005-2. The trait system is nominal throughout: a type satisfies a trait only via an explicit conformance declaration, never by accidental structural match. (§3)
@@ -544,7 +544,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 005-228. `@literal_suffix` registrations follow normal name-visibility rules: visible in the defining module and to importers. (§3.9.5)
 005-229. The built-in `duration` suffixes are globally visible. (§3.9.5)
 
-## 006. Calls & Argument Forms
+## 006. Calls & Argument Forms — 31 Rules
 
 006-1. Every call site chooses positional or named argument form per call, not per callee. (§3.5)
 006-2. Named form pairs each argument with its parameter name as `name: value`: `clamp(value: temperature, lower: 0, upper: 100)`. (§3.5.1)
@@ -578,7 +578,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 006-30. Tuple patterns are always positional. (§3.5.7)
 006-31. A record pattern is exhaustive — it must bind every field; an unneeded field is bound to `_` (`field: _`), and there is no rest or ellipsis token. (§3.5.7)
 
-## 007. Numerics
+## 007. Numerics — 223 Rules
 
 007-1. The built-in numeric primitive type set is fixed at fourteen types. (§4.1)
 007-2. The signed integer types are `i8`, `i16`, `i32`, `i64`, `i128`, and `isize`. (§4.1)
@@ -804,7 +804,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 007-222. User-defined types may implement cross-type instantiations such as `Add[i32] for Distance`. (§4.9.4)
 007-223. User-defined numeric-like types implement whichever fine-grained traits are appropriate; umbrella satisfaction follows. (§4.9.4)
 
-## 008. Type Composition: `&`, `dyn`, `Type[...]`
+## 008. Type Composition: `&`, `dyn`, `Type[...]` — 70 Rules
 
 008-1. The `&` type-intersection operator appears in exactly three contexts: trait conjunction in generic bounds, trait intersection behind `dyn` at value position, and record intersection in `type` definitions. (§5)
 008-2. In a generic parameter list or where-clause, `T: A & B` constrains `T` to types for which both `fulfill A for T` and `fulfill B for T` exist: `fn pick[T: Drivable & Insurable](item: T)`. (§5.1)
@@ -877,7 +877,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 008-69. A bare `Type[Node]` admits any node type but can only be held, passed, stored, and returned — not placed. (§5.7.5)
 008-70. Placing a type value requires its constraint to be a trait declaring the instantiation interface: required attrs/consts/cells and, for connections, endpoints. (§5.7.5)
 
-## 009. Records, Enums & Newtypes
+## 009. Records, Enums & Newtypes — 118 Rules
 
 009-1. Records (product types), enums (sum types), and newtypes (wrapper types) are the three user-defined nominal compound types, with identity by name rather than structure. (§6)
 009-2. All three compound kinds participate uniformly in the trait system. (§6)
@@ -998,7 +998,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 009-117. The smart-constructor pattern makes the type name publicly visible while restricting construction to the defining module, forcing every value-producing path through the constructor's visibility scope. (§6.3.4)
 009-118. Implementing a foreign trait for a local newtype wrapping a foreign type satisfies the orphan rule: `fulfill SomeForeignTrait for MyVec[T]` where local `MyVec[T]` wraps `Vec[T]`. (§6.3.5)
 
-## 010. Conversions
+## 010. Conversions — 45 Rules
 
 010-1. Infallible user-defined conversions use the `From`/`Into` trait pair. (§7)
 010-2. Fallible user-defined conversions use the `TryFrom`/`TryInto` trait pair. (§7)
@@ -1046,7 +1046,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 010-44. With no `From` relationship between error types, `?` is a compile error identifying the source and destination error types and the missing `From` impl. (§7.9)
 010-45. The error-type rule is the only relationship `?` enforces: no implicit success-type coercion and no fallback through other trait machinery. (§7.9)
 
-## 011. Error Handling
+## 011. Error Handling — 94 Rules
 
 011-1. Failure handling uses a two-track model — traps versus typed values — chosen at the operation site when code is written. (§8)
 011-2. A failure encoded on one track cannot be silently converted to the other. (§8)
@@ -1143,7 +1143,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 011-93. A `derived` whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`. (§8.9)
 011-94. The reactive layer adds no error mechanism beyond the existing type system. (§8.9)
 
-## 012. Strings, Tuples, Arrays & Time
+## 012. Strings, Tuples, Arrays & Time — 146 Rules
 
 012-1. `string`, tuples, and fixed-size arrays `T[N]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
@@ -1292,7 +1292,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 012-145. `Option`/`Result` wrappings of `duration`/`instant` store directly in a reactive cell when discriminant plus payload fits the platform atomic word, and otherwise use index-based pool storage. (§9.4.3)
 012-146. The compiler chooses the cell-storage strategy; the source-level wrapped type is permitted on all platforms. (§9.4.3)
 
-## 013. Ownership & Mutability
+## 013. Ownership & Mutability — 243 Rules
 
 013-1. Category A (value ownership: function call, function return, let-rebinding, for-loop iteration variable) defaults to borrow-equivalent: the callee or new binding gets read-only access and the source binding survives. (§11.1)
 013-2. Category A consumption is opt-in, requiring `own` in the signature and `move` at the call site. (§11.1)
@@ -1538,7 +1538,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 013-242. Function parameters flowing into reactive declarations follow `own`/`move` like any other category A consumption. (§11.14)
 013-243. The reactive boundary is one of the "global" scopes referenced by §11.1's principles; value crossing is fully specified in §13.12. (§11.14)
 
-## 014. Iteration & Loops
+## 014. Iteration & Loops — 166 Rules
 
 014-1. The language's iteration constructs are integer ranges, the `for` loop in default and `for own` forms, the `while` loop, `break` and `continue`, loop expressions with `else:`, and the `Iterator`, `Iterable`, and `IntoIterable` traits. (§12)
 014-2. A `for` loop obtains an iterator through `Iterable` (default form) or `IntoIterable` (`for own` form), then produces successive values through `Iterator`. (§12.1)
@@ -1707,7 +1707,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 014-165. Iterators must not perform externally observable I/O. (§12.14.3)
 014-166. Externally-driven sequences belong to the reactive system's signals (§13); iterators are for collection traversal. (§12.14.3)
 
-## 015. Reactive Model & Principles
+## 015. Reactive Model & Principles — 41 Rules
 
 015-1. Ordinary computation is pure and immutable; change is confined to two contexts: local mutation within a function body and the reactive system. (§13)
 015-2. The reactive expression forms are `observe` and `where`. (§13)
@@ -1751,7 +1751,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
 
-## 016. Reactive Declarations (Cells)
+## 016. Reactive Declarations (Cells) — 271 Rules
 
 016-1. There are exactly six reactive declaration kinds — `signal`, `attr`, `recurrent`, `derived`, `const`, `stream` — distinguished by who controls the value and how it changes. (§13.2)
 016-2. `signal`, `attr`, `recurrent`, and `derived` declare value-shaped reactive cells. (§13.2)
@@ -2025,7 +2025,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 016-270. An active arm whose `where` later evaluates false stays active; `where` gates selection at trigger-emission moments, not continued activeness. (§13.2.11.8)
 016-271. An active arm is supplanted only when a different arm's (possibly filtered) trigger emits and that arm wins declaration-order selection. (§13.2.11.8)
 
-## 017. Nodes & Parts
+## 017. Nodes & Parts — 261 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed connections. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2289,7 +2289,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 017-260. Operators and `repeat` are the only consumers of a `dynamic` part type. (§13.4.4)
 017-261. Type-bulk and named individual access coexist on the same instance: `c.parts.Oscillator[0]` (indexed, legal under `+`) and `c.parts.Filter[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 
-## 018. Keyed Scopes & `repeat`
+## 018. Keyed Scopes & `repeat` — 139 Rules
 
 018-1. Every conformant runtime exposes the three keyed-scope operations — `scope_obtain`, `scope_drop`, `scope_evaluate` — underlying the language's dynamic-scope reactive constructs. (§13.5)
 018-2. Each instantiation of a keyed-scope template is backed by its own state cells. (§13.5)
@@ -2431,7 +2431,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 018-138. Nested `repeat`s each own a separate `as` view and do not flatten into the outer one. (§13.5.4.9)
 018-139. A nested view is scoped to its parent key; cross-level addressing composes view by view rather than through one global table. (§13.5.4.9)
 
-## 019. Connections
+## 019. Connections — 75 Rules
 
 019-1. A connection is a directional, typed link between two node instances. (§13.6.0)
 019-2. Connections are first-class entities: each has its own identity. (§13.6.0)
@@ -2509,7 +2509,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 019-74. Satisfying `Circularity` has no effect beyond opting the connection type into cycle participation; that is its sole purpose. (§13.6.5)
 019-75. Which connection types satisfy `Circularity` is domain-defined. (§13.6.5)
 
-## 020. Name Resolution in Reactive Bodies
+## 020. Name Resolution in Reactive Bodies — 36 Rules
 
 020-1. Name resolution proceeds outward through enclosing scopes, innermost first — standard lexical scoping. (§13.7)
 020-2. A node or connection body is an ordinary scope; its members are in scope within the body's reactive expressions. (§13.7)
@@ -2548,7 +2548,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 020-35. `module` denotes the enclosing module namespace, usable only as the left side of `::`; it is not a value and has no `.` form. (§13.7.7)
 020-36. The four reserved identifiers never overlap in role: `subject` is a value usable in expression positions, `Subject` a type usable in type positions, `here` and `module` namespaces usable only as the left side of `::`. (§13.7.7)
 
-## 021. Placement
+## 021. Placement — 143 Rules
 
 021-1. Placement is the syntax for instantiating nodes, parts, and connections into a concrete reactive graph. (§13.8)
 021-2. Placement is distinct from value construction of records, which uses constructor syntax. (§13.8)
@@ -2694,7 +2694,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 021-142. A placement introducing its own children body via `:` owns the rest of its line and the following indented block; it cannot share its line with sibling placements. (§13.8.10)
 021-143. A `:`-bearing placement may carry inline children on its own line when no sibling placements share the line: `SomePart: Child1 Child2 Child3`. (§13.8.10)
 
-## 022. Conditional Activation (Gates)
+## 022. Conditional Activation (Gates) — 118 Rules
 
 022-1. A gate is a predicate or discriminant that conditions whether a node instance, a connection instance, or an exposed subtree is active. (§13.9)
 022-2. Gates are the structural conditional layer, distinct from the value conditionals `if`/`else`/`match`. (§13.9)
@@ -2815,7 +2815,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 022-117. A `default:` arm in `given` is permitted only as an explicit catch-all that suppresses the exhaustiveness obligation, as in value `match`. (§13.9.13)
 022-118. Selecting a type value with `match` over `Type[…]` and gating structure with `given` are both legal: `match` chooses one type placed once; `given` builds every arm and switches which is live. (§13.9.13)
 
-## 023. Reactive Evaluation & Commit
+## 023. Reactive Evaluation & Commit — 56 Rules
 
 023-1. The reactive runtime exposes exactly two state operations: writes (signal/attr), which stage new values without evaluation, and commit, which evaluates and atomically publishes a new consistent snapshot. (§13.10)
 023-2. A write call (`runtime.write_signal`, `runtime.write_attr`, or any write inside `runtime.transaction`) stages the new value; the staged value is not yet visible to observers. (§13.10.1)
@@ -2874,7 +2874,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 023-55. Dynamic dependencies do not alter per-commit evaluation order: within any one commit every handle resolution is fixed, so that commit's dependency graph is static. (§13.10.5)
 023-56. The candidate set of possible handle targets is statically known, which keeps topology-cycle analysis a compile-time check. (§13.10.5)
 
-## 024. Cycle Handling
+## 024. Cycle Handling — 27 Rules
 
 024-1. Cycles are handled at two distinct layers with separate rules: reactive expression cycles between reactive cells, and topology cycles between node instances via connection placements. (§13.11)
 024-2. The compiler builds the reactive dependency graph by walking every `derived` body and every recurrent expression body, recording the set of reactive cells each reads. (§13.11.1)
@@ -2904,7 +2904,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 024-26. Connection types that imply simultaneous source-destination activation should not satisfy `Circularity`. (§13.11.5)
 024-27. Topology-cycle validation and reactive-expression-cycle validation are independent passes; either kind of cycle can exist without the other. (§13.11.5)
 
-## 025. Reactivity Boundary & Cell Storage
+## 025. Reactivity Boundary & Cell Storage — 66 Rules
 
 025-1. The reactivity boundary determines which expressions become reactive and which remain ordinary computation. (§13.12)
 025-2. The compiler computes for each expression a provenance set: the reactive cells (signals, attrs, recurrents, derived results) it reads, including transitively through function calls and field accesses. (§13.12.1)
@@ -2973,7 +2973,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 025-65. A reactive value flowing into a const-generic argument position is a compile error: `Buffer[some_signal]` ✗. (§13.12.5)
 025-66. A `const` declaration whose right-hand side is reactive is a compile error. (§13.12.5)
 
-## 026. Reactive Error Handling
+## 026. Reactive Error Handling — 12 Rules
 
 026-1. The two-track failure model applies uniformly to reactive contexts. (§13.13)
 026-2. A derived or recurrent expression that traps during evaluation — arithmetic overflow under default operators, division by zero, out-of-range array index, or explicit `panic` — aborts the process. (§13.13.1)
@@ -2988,7 +2988,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 026-11. The reactive evaluation context does not modify trap semantics: a behavior that traps aborts the process, the same as a free-function trap. (§13.13.3)
 026-12. The language provides no hidden recovery mechanism in reactive contexts; graceful handling requires value-track errors. (§13.13.3)
 
-## 027. Runtime Interface
+## 027. Runtime Interface — 122 Rules
 
 027-1. The runtime interface is the normative contract every backend must satisfy — the abstract counterpart to the IR the compiler emits. (§13.14)
 027-2. The shape of the runtime interface is normative; the host-language binding is implementation-defined. (§13.14)
@@ -3113,7 +3113,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 027-121. The real-time bounds capability honors the `realtime` cadence hint with bounded, non-blocking observation. (§13.14.11)
 027-122. The `observability` and `cadence_hint` cell fields are inputs to capability negotiation: the runtime selects storage that honors them or rejects a graph it cannot serve. (§13.14.11)
 
-## 028. Hot Reload
+## 028. Hot Reload — 74 Rules
 
 028-1. The runtime supports hot reload of the reactive graph when the host provides updated source code (per §14.8). (§13.15)
 028-2. Before any runtime-side reload action, the new source must compile under the full type system and reactive-system rules. (§13.15.1)
@@ -3190,7 +3190,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 028-73. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-74. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
 
-## 029. Operators
+## 029. Operators — 125 Rules
 
 029-1. An operator is a reusable, cell-allocating reactive transformation declared with the `operator` keyword. (§13.17)
 029-2. An operator takes `Signal[T]` inputs, optionally plus non-reactive value parameters, and produces a `Cell[T]` output. (§13.17)
@@ -3318,7 +3318,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 029-124. A carried operator may be generic, its type written with the generic parameters bound at the use site: `operator(Signal[T]) -> Signal[T]`. (§13.17.13)
 029-125. A carried operator composes in `|>` chains at the point it is instantiated, identically to a named operator. (§13.17.13)
 
-## 030. Streams
+## 030. Streams — 269 Rules
 
 030-1. A stream is a reactive primitive for append-only event sequences governed by a buffering policy. (§13.18)
 030-2. Streams are first-class reactive cells participating in the commit cycle, in cell identity for hot reload, and in the graph specification. (§13.18)
@@ -3590,7 +3590,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 030-268. An output `.past(k, ...)` exceeding the declared `[N]` is a normative error class: `recurrent[3] stream ring x = x.past(5, 0)` ✗. (§13.18.16)
 030-269. A non-compile-time lookback `n` in `.past(n, fallback)` is a normative error class: `source.past(some_variable, 0)` ✗. (§13.18.16)
 
-## 031. Effects
+## 031. Effects — 157 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -3750,7 +3750,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 031-156. A normative diagnostic class covers effect instantiation in an operator body. (§13.19.16)
 031-157. A normative diagnostic class covers effect instantiation in a node body outside the `effects:` clause. (§13.19.16)
 
-## 032. Implementation Model
+## 032. Implementation Model — 177 Rules
 
 032-1. The implementation model is normative for implementations of Ductus, not for source-level code; program behavior is determined by §§1–13. (§14)
 032-2. A conforming implementation provides two compilation modes: interpreter mode and native mode. (§14.1)
@@ -3930,7 +3930,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR
+## 033. Compilation Model & IR — 249 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
