@@ -13288,8 +13288,9 @@ Named individual access becomes available in:
   where `c` is a Composite parameter).
 - Other instances' placement bodies that reference the named
   instance.
-- The same placement body where the part is declared (subsequent
-  lines may reference the just-named part by name).
+- The same placement body where the part is declared (other lines
+  may reference the named part regardless of order, including ones
+  written earlier or later).
 
 Static type-bulk and named access are compile-time resolved: the
 compiler knows every statically supplied part's identity, type, and
