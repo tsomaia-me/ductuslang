@@ -46,9 +46,21 @@ Each phase described as follows, given feature/task <X>:
 
 ## You shall only report "done" when all the steps above are finished. Failure to do so is a systematic error.
 
+# Mandatory Learnings Protocol
+
+Load LEARNINGS.md at the beginning of each session.
+Maintain separate LEARNINGS.md file for learnings you accumulate overtime.
+For example when user tells you they prefer something in a certain way,
+or when they tell you how and in which style something should be done,
+write it to the LEARNINGS.md as a list item.
+Each learning should be granular, atomic and specific to one things.
+Format should be: "<n+1>. <title>: <learning_description>" followed by
+one or many examples WHEN applicable. <n> is the number of the last learning OR 1 (initially).
+
 # Mandatory Memory Refresher
 
-Re-read this CLAUDE.md in every 7 prompts from the user - depending on the complexity of the context,
+Re-read this CLAUDE.md and LEARNINGS.md in every seven prompts from the user – depending on the complexity of the
+context,
 so that when your context window gets larger OR you go through compaction --
 you get reminded what you are expected of by the fresh read of this CLAUDE.md.
 
