@@ -17680,8 +17680,11 @@ Operators may carry visibility modifiers (`public`, `shared`,
 
 #### 13.17.3 Parameters
 
-Operator parameters are of two kinds, distinguished by declared
-type:
+An operator parameter may be any value. Two kinds carry reactive or
+configuration input — cell-bound and value parameters (below); a
+parameter may additionally be **function-** or **operator-typed**, since
+an operator is a first-class compile-time value (§13.17.13). The kinds
+are distinguished by declared type:
 
 **Cell-bound parameters** (`name: Signal[T]`):
 - Bind to a reactive cell at instantiation.
@@ -18240,6 +18243,21 @@ merely a function body, §13.17.1). Supplying one is resolved at compile time
 and monomorphized per supplied operator (no erasure, §2.3.3), exactly as a
 `Type[…]` value is (§5.7.3): the receiver `apply` above is specialized for
 each operator passed as `kernel`.
+
+Because an operator is a compile-time value with no runtime representation
+(like `Type[…]`, §5.7.3) and instantiating one builds reactive structure
+that must be static (§13.1), an operator may take **operator-** and
+**function-typed** parameters — but a **function may not take an operator
+parameter**: a function body is a non-reactive runtime computation that can
+neither instantiate an operator nor carry one.
+
+```
+error: a function parameter may not be operator-typed
+  --> fn run(k: operator(Signal[f32]) -> f32):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ operators carry reactive
+      structure and have no runtime value
+  hint: take an operator parameter in an `operator`, not a `fn`
+```
 
 ```
 operator gain(source: Signal[f32], k: f32 = 1.0) -> Signal[f32]:
