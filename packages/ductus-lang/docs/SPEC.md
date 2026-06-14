@@ -15632,7 +15632,7 @@ modifier-style clauses:
 ```
 Logger l1 when debug_enabled
 Filter f1 / "low-pass" when dsp_mode is DspMode::Realtime | gain=0.5
-ShowsCount when from.count > 0: d1
+ShowsCount when unread_count > 0: d1
 ```
 
 Parts placed inside a parent's body may carry `when` clauses
@@ -15682,7 +15682,11 @@ rules — no special restrictions.
   normal visibility rules (module-level signals, consts, imports).
 - **Placement level:** the predicate may reference the full
   placement scope — siblings, parent attrs, top-level cells, and
-  any other identifier resolvable at that point.
+  any other identifier resolvable at that point. It does **not**
+  grant `from`/`to`/`pair`: those are connection-private to the
+  type-level predicate. At a placement the author already has direct
+  access to the from- and to-scopes and names those cells directly
+  (the placed source instance, e.g. `d1`, not `from`).
 
 Coupling concerns (a type-level predicate referencing external
 state binds the type to that state) are style, not correctness.
@@ -15712,7 +15716,7 @@ If a placement needs both predicates, the placement-level form must
 combine them explicitly:
 
 ```
-Pulse when my_app.is_emitting and my_app.debug_audio: l1
+Pulse when d1.is_emitting and my_app.debug_audio: l1
 ```
 
 Override is not implicit conjunction because conjunction would make
@@ -15805,10 +15809,7 @@ false):
   `when` predicate must remain current; the runtime keeps the
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
-  level.) This describes the *steady gated state*; the one-shot
-  effect-desired recompute of the close transition (below) happens
-  *at* the false-flip commit, before the subtree settles into this
-  frozen state, and is not a recurring recomputation.
+  level.) This describes the *steady gated state*.
 - **Outputs:** do not propagate. Outgoing connections from the
   gated node do not deliver to their destinations.
 
@@ -15820,8 +15821,8 @@ to its input cells (the node's own `when` re-evaluates against those
 inputs).
 
 **Snap on gate-open.** When a `when` predicate transitions from
-false to true between commits, the runtime treats this as a
-propagation event. The frozen cells re-evaluate against current
+false to true, the runtime treats this as a propagation event
+scheduled within the commit that flips the predicate (§13.9.6, §13.9.8). The frozen cells re-evaluate against current
 upstream state in topological order. Any value that would have
 propagated during the gated period is re-computed *as of now* (not
 replayed); downstream sees the activation as a single jump from
@@ -15899,7 +15900,8 @@ The per-commit DAG (§13.11.3) is constructed each commit; during
 construction, gated edges contribute no dirty propagation to their
 destinations' output-affecting cells, but do contribute to input
 cells and `when` predicate provenance. A subtree that is gated off is
-excluded from the DAG; nothing in it recomputes.
+excluded from the DAG; nothing in it recomputes except the minimum
+subgraph supporting its `when` predicate, which stays current (§13.9.7).
 
 A single delegating note in §13.10.2 records this: edges whose gate
 predicate evaluates false do not propagate to destination outputs, and
@@ -16031,26 +16033,26 @@ arm and do not collide across arms (the same scoping as `match` arms,
 nested and thus exempt from the flat-namespace uniqueness of §13.19.6,
 exactly as a `repeat`'s per-key cells are.
 
-**Simple form (then / `default`).** A `when cond:` block introduces a
-then-body of placements; an optional sibling `default:` block supplies
+**Simple form (then / `otherwise`).** A `when cond:` block introduces a
+then-body of placements; an optional sibling `otherwise:` block supplies
 the else-body:
 
 ```
 expose:
   when cond:
     ThenChain
-  default:
+  otherwise:
     ElseChain
 ```
 
 When `cond` is true, `ThenChain` is active and `ElseChain` is frozen;
-when false, the roles reverse. A `when cond:` with no sibling `default:`
+when false, the roles reverse. A `when cond:` with no sibling `otherwise:`
 is the multi-placement generalization of the inline modifier (§13.9.3):
 the then-body is active while `cond` holds, frozen otherwise, with no
 alternative.
 
 **Multi-way form (guard arms).** A `when:` block with no condition on the
-header takes a list of `guard: body` arms plus an optional `default:`
+header takes a list of `guard: body` arms plus an optional `otherwise:`
 arm. Arms are tried in declaration order; the first whose boolean guard
 holds is the active arm, the rest frozen. As in a `given` block
 (§13.9.13), every line at the arm indent is an arm — a guard expression,
@@ -16062,14 +16064,16 @@ expose:
   when:
     cond_a: ArmA
     cond_b: ArmB
-    default: ArmC
+    otherwise: ArmC
 ```
 
 Guards are arbitrary boolean expressions (the same predicate vocabulary
 as §13.9.4). Because boolean guards do not partition by construction, a
-`when:` block is an **open** selector: it cannot be exhaustiveness-
-checked, so `default:` is the catch-all and is required unless some guard
-is provably total. For *closed*, exhaustively-checked selection over a
+`when:` block is an **open** selector: it is never exhaustiveness-
+checked, so `otherwise:` is the catch-all. It is **optional** — if no
+guard holds and there is no `otherwise:`, no arm is live. When present,
+`otherwise:` must be the **last** arm (a non-last `otherwise:` is a
+compile error). For *closed*, exhaustively-checked selection over a
 sum discriminant, use the `given` block (§13.9.13) — do **not** reach for
 `when x is Variant` guards, which forfeit exhaustiveness.
 
@@ -16077,9 +16081,9 @@ sum discriminant, use the `given` block (§13.9.13) — do **not** reach for
 is built, the active arm propagates, inactive arms freeze (Model B,
 §13.9.7), and switching the active arm runs the close pass on the
 deactivating arm and the open snap on the activating one (§13.9.7). The
-`default:` keyword reuses the reactive-fallback word of `observe`
-(§13.2.11), reinforcing that this is a standing selection, not a
-control-flow branch.
+`otherwise:` keyword reads as the natural-language fallback ("whenever
+none of the guards hold"), reinforcing that this is a standing selection,
+not a control-flow branch.
 
 **Placement and cardinality.** Because every arm is constructed and only
 propagation is gated, placements inside *all* arms of a `when` or `given`
