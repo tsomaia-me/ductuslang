@@ -44,13 +44,13 @@ Each phase described as follows, given feature/task <X>:
    specific measures to verify the results. Ask if unclear. One of the universal mechanisms is to
    cross-reference the changes with the plan.
 
+## You shall only report "done" when all the steps above are finished. Failure to do so is a systematic error.
+
 # Mandatory Memory Refresher
 
 Re-read this CLAUDE.md in every 7 prompts from the user - depending on the complexity of the context,
 so that when your context window gets larger OR you go through compaction --
 you get reminded what you are expected of by the fresh read of this CLAUDE.md.
-
-## You shall only report "done" when all the steps above are finished. Failure to do so is a systematic error.
 
 # Code Discipline
 
