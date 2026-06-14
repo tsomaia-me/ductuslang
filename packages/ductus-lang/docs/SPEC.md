@@ -17995,18 +17995,18 @@ operators (§4.4.7); `|>` is the loosest-binding operator. Expressions
 mixing bitwise OR with pipe application may still want parentheses for
 clarity.
 
-**`|>` applicability:** `|>` may only apply operators or effects.
-Using `|>` with a `fn` is a compile error:
+**`|>` applicability:** `|>` may apply an operator, an effect, or a
+terminal sink (§13.18.4). Using `|>` with a `fn` is a compile error:
 
 ```
-let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator or effect
+let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator, effect, or sink
 ```
 
 Diagnostic class:
 ```
-error: `|>` requires an operator or effect on the right-hand side
+error: `|>` requires an operator, effect, or sink on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator, effect, or sink
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -18163,9 +18163,9 @@ Normative diagnostic classes for operator usage:
 **`|>` applied to a non-operator/non-effect:**
 
 ```
-error: `|>` requires an operator or effect on the right-hand side
+error: `|>` requires an operator, effect, or sink on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator, effect, or sink
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -18269,8 +18269,8 @@ operator invert(source: Signal[f32]) -> Signal[f32]:
   negated
 
 // `kernel` is bound to a named operator at the call site:
-apply(source = some_signal, kernel = gain)     // monomorphizes apply for `gain`
-apply(source = some_signal, kernel = invert)   // a distinct monomorphization
+apply(source: some_signal, kernel: gain)     // monomorphizes apply for `gain`
+apply(source: some_signal, kernel: invert)   // a distinct monomorphization
 ```
 
 **Signature matching.** A value is admissible for a parameter of type
