@@ -3128,7 +3128,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 028-10. `@reset_on_reopen` is not part of cell identity; adding or removing it across a reload preserves the cell's value and history. (§13.15.2)
 028-11. A `@reset_on_reopen` change takes effect at the next gate-open. (§13.15.2)
 028-12. Reload is performed atomically on the runtime's driving context. (§13.15.3)
-028-13. Reload step 1 compiles the new source; on failure the reload is rejected with runtime state unchanged. (§13.15.3)
+028-13. Reload step 1 receives the precompiled IR diff; compilation and the §13.15.1 validation gate are host-side preconditions completed before `reload(diff)` is called, and on a malformed diff the reload is rejected with runtime state unchanged. (§13.15.3)
 028-14. Reload step 2 acquires a reload lock and pauses acceptance of new signal/attr writes; host requests queue. (§13.15.3)
 028-15. Reload step 3 lets any in-flight commit complete, ensuring a between-commits state. (§13.15.3)
 028-16. Reload step 4 computes the old/new graph diff: surviving cells (same path, same type), additions, removals. (§13.15.3)
