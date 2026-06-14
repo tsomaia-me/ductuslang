@@ -1387,7 +1387,7 @@ time, every reference has a fully-specified trait instance.
 #### 3.1.7 Required node/connection members (cells, consts, and endpoints)
 
 Traits may declare *required members* that implementing types must
-provide: required `attr`, `const`, `signal`, `derived`, `recurrent`, and
+provide: required `attr`, `const`, `derived`, `recurrent`, and
 `stream` declarations and — for connection types — required `from` and
 `to` endpoints. These requirements are reactive-graph structure, so they
 apply only to node and connection types (see §13 for the reactive system);
@@ -1413,7 +1413,7 @@ trait Identifiable:
 
 The forms `attr Name: Type [= Default]?` and `const Name: Type [=
 Default]?` inside a trait body declare requirements, as do the other
-reactive-cell forms — `signal`, `derived`, `recurrent`, and `stream` —
+reactive-cell forms — `derived`, `recurrent`, and `stream` —
 written with the same syntax they use in a node or connection body (§13).
 A connection trait may additionally declare required endpoints with
 `from: Type` and `to: Type`. Defaults are optional in trait declarations:
@@ -1478,7 +1478,7 @@ at placement (§5.7.5, §13.8.4).
 
 Restrictions and kind gating:
 
-- **A trait that declares any required cell (`attr`, `const`, `signal`,
+- **A trait that declares any required cell (`attr`, `const`,
   `derived`, `recurrent`, `stream`) or endpoint (`from`, `to`) is a
   kind-specific trait and cannot be satisfied by a record, enum, newtype,
   or primitive** — those types lack the reactive-graph machinery. The
@@ -4107,7 +4107,7 @@ trait Display:                                   // object-safe
   fn display(value: Subject) -> string           //   receiver + plain return
 
 trait Clone:                                     // NOT object-safe
-  fn clone(value: Subject) -> Subject            //   returns Subject (rule 2)
+  fn clone(value: Subject) -> own Subject        //   returns Subject (rule 2)
 
 trait Max:                                       // NOT object-safe
   fn max(a: Subject, b: Subject) -> Subject      //   second Subject + Subject return
@@ -7520,7 +7520,8 @@ Consuming includes:
 - Function argument passing to an `own` parameter, with explicit `move`
   at the call site: `f(move r)` (category A).
 - Return statements: `return r` for a real-owner local (category A;
-  cluster-member returns are anchored per §11.3.6).
+  a cluster-member return is anchored only under `-> own T`, otherwise
+  it propagates as a borrow-equivalent alias per §11.3.6).
 - Storing in a record field, tuple component, or enum payload —
   category B; implicit move per §11.11.
 - Writing into a reactive cell: `signal.write(r)`, `stream.emit(r)`,
@@ -7902,12 +7903,13 @@ copy-semantic languages.
 
 ```
 trait Clone:
-  fn clone(value: Subject) -> Subject
+  fn clone(value: Subject) -> own Subject
 ```
 
 The method takes its parameter under the default borrow-equivalent
-convention (§11.7) and returns an independent owned copy. The source
-value is not consumed; the caller's binding survives the call.
+convention (§11.7); its `-> own Subject` return is anchored (§11.3.6),
+so the result is an independent owner. The source value is not consumed;
+the caller's binding survives the call.
 
 Where `Copy` produces implicit duplications with no syntactic marker,
 `Clone` requires an explicit `.clone()` call at every duplication site.
@@ -7956,10 +7958,11 @@ making the cost visible.
 
 #### 11.5.4 Clone as the anchor for rooted returns
 
-`Clone` is the trait the compiler invokes to anchor rooted returns per
-§11.3.6. When a function returns a value rooted in a cluster member,
-and the value's type implements `Clone` but not `Copy`, the compiler
-inserts an implicit `.clone()` call at the return site. The user does
+`Clone` is the trait the compiler invokes to anchor `-> own T` rooted
+returns per §11.3.6. When a function declares `-> own T` and returns a
+value rooted in a cluster member whose type implements `Clone` but not
+`Copy`, the compiler inserts an implicit `.clone()` call at the return
+site. The user does
 not write `.clone()` in the source; the elaborated form of the
 function's body (§11.7) makes the implicit clone visible to
 diagnostics and tooling.
@@ -8321,22 +8324,33 @@ The restriction is by design. `move` in let-RHS, return, or mut-RHS
 would be redundant: single-name-per-cluster already kills the source
 name when the new binding takes its role (§11.3 and §11.3.5).
 Move-on-return without anchoring would conflict with §11.3.6's
-auto-anchoring rule. The keyword's role is to mark the irreversible
+anchoring rule. The keyword's role is to mark the irreversible
 call-site consumption — the one place where locality matters and the
 signature alone does not make the call's effect visible.
 
 **Symmetry with `own`.** Each occurrence of `move` at a call site must
 correspond to a parameter declared `own` in the callee's signature, and
-each `own` parameter must receive a `move` at the call site. Mismatches
-are compile errors:
+each `own` parameter that receives a *named binding* as its argument must
+have that argument marked `move`. Mismatches are compile errors:
 
-- `own` in signature, no `move` at call: *"argument requires `move`
-  because `f`'s parameter is declared `own`."*
+- `own` in signature, named-binding argument with no `move` at call:
+  *"argument requires `move` because `f`'s parameter is declared `own`."*
 - `move` at call, no `own` in signature: *"argument has `move` but
   `f`'s parameter is default; remove `move`."*
 
 The symmetry makes consumption locally readable: every `move` at a
-call site visibly marks where a binding becomes inaccessible.
+call site visibly marks where a named binding becomes inaccessible.
+
+**Rvalue arguments and receivers.** The `move`-for-`own` requirement
+governs *named bindings* — `move` marks the consumption of a binding that
+has a name to render inaccessible (§11.3, §11.3.5). An argument or
+receiver that is not a named binding — a temporary such as a call result
+(`a.clone()`), a constructor expression, or any other rvalue — has no
+name to mark and is consumed into the `own` slot directly, with no
+`move`. Thus `a.clone().push(move x)` consumes the `a.clone()` temporary
+into `push`'s `own` receiver while `move x` consumes the named binding
+`x`; writing `move` on the temporary would be meaningless and is not
+permitted.
 
 ### 11.9 Borrow Semantics and Lifetime Tracking
 
@@ -8475,15 +8489,17 @@ fn count_elements(v: Vec[i32]) -> isize: ...
 Inside the body of `length`, `v` is a borrow-equivalent alias rooted in
 the caller's binding. Passing it to `count_elements` extends the alias
 chain. The compiler tracks that `v` is an alias (not a real owner) and
-forbids operations that would require real ownership:
+forbids operations that would require real ownership (each line below is an independent illustration, not one running program):
 
 ```
-fn length(v: Vec[i32]) -> isize:
-  count_elements(v)             // ✓ alias propagates
+fn forward(v: Vec[i32]) -> Vec[i32]:
+  count_elements(v)             // ✓ alias propagates (isize result unused)
   consume_vec(move v)           // ✗ v is borrow-equivalent;
                                 //   cannot consume cluster member (Rule P)
-  return v                      // ✓ if Vec[i32] is Clone:
-                                //   §11.3.6 auto-anchoring applies
+  return v                      // ✓ default return: v's cluster propagates
+                                //   to the caller as a borrow-equivalent
+                                //   alias; declare -> own Vec[i32] to
+                                //   return an independent owner instead
   let saved = v                 // alias-rebind (Rule P); saved aliases
                                 //   the same source as v; v's name dies
 ```
@@ -8874,9 +8890,13 @@ The compound types of §6 interact with mutability as follows:
 - Mutability is purely a property of the binding (per §11.2), not of the
   type. A type does not declare "this is mutable"; specific bindings to
   values of the type may be declared `mut`.
-- A record's fields, an enum variant's payload, and a newtype's wrapped
-  value may all be assigned through a `mut` binding to the containing
-  value, provided the field/payload/wrapped type permits assignment.
+- A record's field may be assigned in place through a `mut` binding to
+  the containing record, provided the field's type permits assignment.
+- An enum variant's payload and a newtype's wrapped value have no
+  in-place place form; they are never assigned through the binding. A
+  `mut` enum or newtype is updated only by reassigning the whole value to
+  a freshly constructed one (`state = Active(p2)`, `id = UserId(n2)`), per
+  the whole-value reassignment of §11.11.1.
 
 Records (§6.1) explicitly forbid `fn` declarations in their bodies; this
 forbid does not extend to disallowing `mut` interaction. A function
@@ -9016,10 +9036,11 @@ Users may extend iteration to their own types by implementing either
 or both traits.
 
 **Loops are expressions.** Both `for` and `while` produce values. The
-value is determined by the body's `break` statements and an optional
-`else:` clause (§12.6). Loops that are not used in an expression context
-produce unit; loops that are used in an expression context obey the
-value-shaping rules of §12.6.
+value is determined by the body's `break` expressions and an optional
+`else:` clause (§12.6). A loop is an expression in every position: its
+type follows the value-shaping rules of §12.6 regardless of whether the
+value is consumed. Placing a loop where its value is not used leaves that
+value unused — there is no separate statement form and no coercion to `()`.
 
 **Mutation discipline is preserved.** Loop bodies are ordinary function
 body fragments. They can mutate `mut` bindings declared inside or
@@ -9102,9 +9123,8 @@ in the bound expressions traps at construction.
 #### 12.2.3 Negative ranges and empty ranges
 
 A range whose `start >= end` is empty. `for i in 5..3:` produces no
-iterations and (in expression context) goes directly to the `else:`
-clause if present, or produces the natural-completion value per §12.6
-otherwise.
+iterations and completes naturally: it evaluates the `else:` clause if
+present, or produces the natural-completion value per §12.6 otherwise.
 
 Ranges with negative starts and ends work normally if `T` is signed:
 
@@ -9156,9 +9176,10 @@ The iteration source expression is evaluated once at loop entry.
 3. Each iteration step calls `Iterator::next(iter, v)` (§12.7),
    threading the source `v` through every call. The call returns
    `(Option[Item], NewIter)`. The yielded `Item` is borrow-equivalent
-   rooted in `v`'s cluster (the iterator's `Item` slot follows the
-   borrow-default convention of §3.1.2 unless the implementation opts
-   in to `own Item`).
+   rooted in `v`'s cluster: a default-form (`Iterable`-dispatched)
+   iterator's `Item` follows the borrow-default convention of §3.1.2 and
+   is never `own` — owned items require the consuming
+   `for own`/`IntoIterable` path (§12.7.4).
 4. The internal binding is reassigned to `NewIter`.
 5. If the option is `Some(value)`, binds `value` to the iteration
    variable `x` (a cluster member rooted in `v`'s current element)
@@ -9549,7 +9570,7 @@ for i in 0..N:
 
 #### 12.5.1 `break` with value
 
-In expression context (§12.6), `break` may carry a value:
+A `break` may carry a value; the value-shaping rules of §12.6 then determine the resulting loop type:
 
 ```
 break expr
@@ -9623,8 +9644,10 @@ different semantics here. A reader should understand `else:` on a loop as
 
 #### 12.6.2 Loop expression type
 
-The loop expression's type is determined by the combination of `break
-value` sites in the body and the presence/absence of an `else:` clause:
+For a loop whose natural completion is reachable, the loop expression's
+type is determined by the combination of `break value` sites in the body
+and the presence/absence of an `else:` clause (when natural completion is
+provably unreachable, §12.6.4 governs instead):
 
 | Body has `break value` | `else:` clause | Loop expression type       |
 |------------------------|----------------|----------------------------|
@@ -9645,7 +9668,8 @@ clause's presence. See §12.6.4.
 
 ##### Without `break value`, without `else:`
 
-The loop produces unit. This is the statement form.
+The loop produces `()` on natural completion. (A break-less loop whose
+natural completion is unreachable instead has type `never`, §12.6.4.)
 
 ```
 for i in 0..N:
@@ -9729,8 +9753,14 @@ else:
 If the body provably never completes naturally — for instance, every
 path through the body produces a `break value`, or terminates via
 `return`, `panic`, or other diverging operation — the natural-completion
-case is unreachable. The compiler may use the `never` type (§8.2.2) to
-unify the unreachable case with any other type.
+case is unreachable. The compiler uses the `never` type (§8.2.2) to unify
+the unreachable case: this is required, not implementation-discretionary,
+so a loop whose only exits are `break value` sites has type `T` (not
+`Option[T]`) regardless of any `else:` clause.
+
+When the body has no `break value` and natural completion is likewise
+unreachable — for example a `while true:` loop with no `break` — the loop
+produces no value on any path and the loop expression's type is `never`.
 
 ```
 let value = for i in 0..N:
@@ -9771,9 +9801,11 @@ default to borrow-equivalent under §3.1.2's associated-type slot
 convention: when an implementation declares `type Item = T` or `type
 Source = T`, `T` is treated as borrow-equivalent unless the
 implementation opts in to consuming semantics via `type Item = own T`
-or `type Source = own T`. This is uniform: any trait declaring
-associated types follows the same convention; stdlib types get no
-special treatment.
+or `type Source = own T`. (Which iterators may declare `own Item` is
+constrained by the dispatch path — only the consuming `for own` /
+`IntoIterable` path admits it; see §12.7.4.) This is uniform: any trait
+declaring associated types follows the same convention; stdlib types get
+no special treatment.
 
 **Source's role.** `Source` is the external value the iterator reads
 from on each `next` call. Two patterns arise:
@@ -9919,10 +9951,14 @@ The for-loop machinery (§12.3.1) holds the collection in scope for the
 duration of the loop and threads it through each `next` call as the
 source argument.
 
-To opt into owned items (consuming each element out of the
-collection), the implementation declares `type Item = own Record`. The
-`Iterable` versus `IntoIterable` choice (§12.8, §12.9) determines
-whether the collection survives the loop.
+Opting into owned items (consuming each element out of the collection)
+is exclusive to the consuming path: only an `IntoIterable` iterator
+(whose `Source` is `()`, reached via `for own`, §12.9) may declare
+`type Item = own Record`. A source-bearing `Iterable` iterator may not —
+it cannot move elements out of its borrow-equivalent `source` (above),
+and its collection must survive the loop (§12.3.1). The `Iterable` versus
+`IntoIterable` choice (§12.8, §12.9) thus also determines whether the
+collection survives the loop.
 
 ### 12.8 The `Iterable` Trait
 
@@ -10346,9 +10382,8 @@ cycle and §13.12 for the reactivity boundary).
 #### 12.14.1 Empty iteration
 
 An empty iterable (such as `0..0` or an empty container) produces no
-iterations. The loop's body does not execute. The expression value (in
-expression context) is determined by the else-clause-and-break-value
-table of §12.6.2:
+iterations. The loop's body does not execute. The expression value is
+determined by the else-clause-and-break-value table of §12.6.2:
 
 ```
 let result = for x in 0..0:         // empty range (type-resolvable)
@@ -10606,7 +10641,8 @@ reactive graph by the host or runtime, not computed by Ductus
 source. The host pushes new values into the runtime; the reactive
 graph propagates the changes.
 
-Signals may be declared at three scopes:
+A `signal` may be declared only at a **host boundary** — one of the two
+places the host (runtime or application) feeds values into the program:
 
 **Module-level signals** — declared at module top level (outside
 any node or connection body). One value shared across the program;
@@ -10620,56 +10656,28 @@ signal current_time_ms: i64 = 0
 signal master_volume: f32 = 0.5
 ```
 
-**Node-level signals** — declared inside a node body. Per-instance:
-each placement of the node creates its own cell. The runtime/host
-writes per-instance signals to feed instance-specific data into the
-graph (an HTTP response for a specific `Fetch` instance, a sensor
-reading for a specific `Sensor` instance, etc.).
+**Effect `observed:` signals** — declared inside an effect's `observed:`
+block (§13.19.5). The host writes the observed cell, per effect
+instance, as the inbound half of the effect's reconciliation — for
+example a fetch effect's `response`.
 
-```
-node Fetch:
-  default attr url: string
-  signal response: Result[HttpResponse, HttpError] = Err(NotYetFetched)
-  signal status: i32 = 0
-```
+A `signal` may **not** be declared inside a node body, a connection
+body, a `repeat` template, or an operator body. A composition unit
+receives its inputs from its placer as `attr`s (§13.2.2), never as
+host-written cells injected at depth: the host reaches the program only
+at the two boundaries above, which keeps data flow visible and
+composition encapsulated.
 
-(Types like `HttpResponse`, `HttpError`, and variants such as
-`NotYetFetched` are illustrative; the stdlib or a host package
-provides concrete definitions.)
+At both sites signals share the same semantics: host-written, not
+source-assignable, reactive (writes trigger downstream re-evaluation).
+The site determines instance multiplicity and how the host addresses the
+signal when writing (§13.14.2): one shared cell for a module-level
+signal, one cell per effect instance for an observed signal.
 
-**Connection-level signals** — declared inside a connection body.
-Per-instance per-connection: each placement of the connection
-creates its own cell. The runtime writes per-connection signals to
-feed data flowing through that specific connection instance (bytes
-received on a network connection, audio samples through a routing
-edge, etc.).
-
-```
-connection NetworkChannel:
-  from: Source
-  to: Sink
-  signal bytes_received: Bytes = empty_bytes
-  signal status: ChannelStatus = ChannelStatus::Idle
-```
-
-(Types like `Bytes`, `ChannelStatus`, `Source`, and `Sink` are
-illustrative; the stdlib or domain code provides concrete
-definitions.)
-
-In all three scopes, signals share the same semantics: host-written,
-not source-assignable, reactive (writes trigger downstream
-re-evaluation). The scope determines instance multiplicity and how
-the host addresses the signal when writing (§13.14.2).
-
-Use cases by scope:
-
-- Module-level: program-wide entry points (one cell, shared).
-- Node-level: per-node-instance runtime-fed data.
-- Connection-level: per-connection-instance runtime-fed data.
-
-Per-instance *configuration* (user-controlled) is the role of
-`attr` (§13.2.2); per-instance memory is the role of `recurrent`
-(§13.2.4). Signals are reserved for externally-fed reactive inputs.
+Per-instance *configuration* (placer-controlled) is the role of `attr`
+(§13.2.2); per-instance memory is the role of `recurrent` (§13.2.4).
+Signals are reserved for externally-fed reactive inputs at the host
+boundary.
 
 #### 13.2.2 `attr`
 
@@ -10717,11 +10725,14 @@ node Endpoint:
 The `default` expression, when present, provides the initial value
 used when an instance is constructed without an explicit value for
 that attr. Defaults may reference previously-declared attrs of the
-same node (declaration order is significant; see §13.2.6).
+same enclosing node or connection type (declaration order is significant;
+see §13.2.6).
 
 The default may be a constant expression, an expression involving
 other declared attrs, an expression involving signals visible in
-scope, or any compile-time-evaluable expression.
+scope, or any other compile-time-evaluable expression. Defaults are
+evaluated at instance construction (§13.2.6), not restricted to
+compile-time constants.
 
 ```
 node Filter:
@@ -10793,14 +10804,16 @@ Rules:
 #### 13.2.3 `derived`
 
 ```
-derived name: Type = expression
+derived name: Type? = expression
 ```
 
 A `derived` declares a *read-only* reactive value defined by an
 expression. The runtime maintains the value consistent with its
 inputs: when any signal, attr, recurrent, or other derived that
 the expression reads changes, the expression re-evaluates (under
-the lazy-batched rules of §13.10).
+the lazy-batched rules of §13.10). The type annotation is optional when
+inferable from the expression, paralleling `recurrent` (§13.2.4) and
+`stream` (§13.18.2).
 
 ```
 node Driver:
@@ -10831,7 +10844,7 @@ derived becomes dirty and is recomputed at the next commit.
 
 ##### 13.2.3.1 Scope
 
-A `derived` may be declared at three scopes, paralleling `signal`:
+A `derived` may be declared at three scopes:
 
 - **Module-level** — declared at module top level (outside any node
   or connection body). One cell shared across the program. References
@@ -11094,8 +11107,8 @@ increment because the value changes each time.
 
 ##### 13.2.4.5 Scope
 
-A `recurrent` may be declared at three scopes, paralleling `signal`
-and `derived`:
+A `recurrent` may be declared at three scopes, paralleling
+`derived`:
 
 - **Module-level** — declared at module top level. One cell shared
   across the program. References use the bare name (no `here::`
@@ -11111,7 +11124,7 @@ Multiple recurrents may share a single expression evaluation by
 declaring them as a tuple:
 
 ```
-recurrent[N]? (name1, name2, ...): (Type1, Type2, ...) = tuple_expression
+recurrent[N]? (name1, name2, ...): (Type1, Type2, ...)? = tuple_expression
 ```
 
 The declaration creates N independent cells, each named and typed
@@ -11121,7 +11134,8 @@ Shared computation in the expression is performed once, not N times.
 
 Each cell in the tuple has its own self-history accessor
 (`name1.previous(fb1)`, `name2.previous(fb2)`), and the optional
-`[N]` applies to all cells (they all have the same depth).
+`[N]` applies to all cells (they all have the same depth). The tuple type
+annotation is optional when inferable, as in the scalar form (§13.2.4).
 
 Example — a Kalman filter sharing the gain computation across mean
 and variance updates. Shared work is factored into a helper function
@@ -11411,18 +11425,20 @@ imperatively modify it from within.
 
 #### 13.2.8 The `Signal[T]` type
 
-`Signal[T]` is the umbrella type over the three value-cell subkinds
-(signal, derived, recurrent) whose value type is `T`. Streams and sinks
+`Signal[T]` is the umbrella type over the four value-cell subkinds
+(signal, attr, derived, recurrent) whose value type is `T`. Streams and sinks
 are reactive cells too but are not `Signal[T]`; the broader abstraction
 over *all* reactive cells (including streams and sinks) is `Cell[T]`
 (§13.18.5). `Signal[T]` is a first-class type usable in parameter
 positions, return types, and generic arguments.
 
-**Subkinds.** Three reactive declaration kinds produce values of
+**Subkinds.** Four reactive declaration kinds produce values of
 `Signal[T]`:
 
 - `signal X = init` — host-writable `Signal[T]`. Host pushes
   values via `runtime.write_signal` (§13.14.2).
+- `attr X: T = default` — placement-writable `Signal[T]`. The placing
+  parent supplies its value at placement (§13.8.2); reactive thereafter.
 - `derived X = expr` — projected `Signal[T]`. Runtime maintains
   the value consistent with its inputs.
 - `recurrent[N]? X: T = expression` — memoryful `Signal[T]` with
@@ -11432,7 +11448,7 @@ positions, return types, and generic arguments.
 
 The keyword `signal` is overloaded with the type `Signal[T]`:
 the keyword declares one specific subkind (the writable cell);
-the type covers all three subkinds. This overload is documented
+the type covers all four subkinds. This overload is documented
 here and elsewhere referenced as "the `Signal[T]` type" vs "a
 `signal` declaration" to disambiguate.
 
@@ -11454,8 +11470,8 @@ here and elsewhere referenced as "the `Signal[T]` type" vs "a
 `Signal[T]` is read-only when received as a parameter. There is
 no source-level form for writing to a `Signal[T]` value (the
 no-mutation rule of §13.2.7 applies). The cell may still be
-written by the host (for `signal` subkind) or by the runtime (for
-`derived` and `recurrent` subkinds), but not through the
+written by the host (`signal`), the runtime (`derived`/`recurrent`), or
+the placing parent at placement (`attr`), but not through the
 `Signal[T]` reference itself.
 
 **Generics.**
@@ -11705,9 +11721,9 @@ within a reactive declaration context follow the per-field binding
 rules of §13.2.9.3:
 
 ```
-derived A2 = A with some_regular_property: signal_c
-// A2.some_regular_property is now aliased to signal_c;
-// A.some_regular_property remains the static value 15.
+derived A2 = A with some_other_property: signal_c
+// A2.some_other_property is now aliased to signal_c;
+// A.some_other_property remains aliased to signal_b.
 
 derived A3 = A with some_property: 0.0
 // A3.some_property is now a static 0.0;
@@ -12088,7 +12104,6 @@ node TypeName[GenericParams]?:
   expose:                                             // structural output (§13.3.7)
     SomePart
   const name: Type = value                            // per-type compile-time constants
-  signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
@@ -12851,7 +12866,7 @@ node TypeName:
     SomeA
     SomeB
   attr foo: i32
-  signal user_name: string = "world"
+  attr user_name: string = "world"
   derived greeting: string = "hello " + user_name
 ```
 
@@ -12952,9 +12967,12 @@ interleaving (§13.8.4), with a feeding `repeat`'s scopes expanding in
 place at the repeat's written position (§13.3.3.4). The default covers
 **caller-supplied content only**; a type that emits internal structure
 (`for`/`repeat`/wrappers, §13.3.7.1) necessarily writes `expose:`
-explicitly. When the node has no `parts:` clause and no
-`expose:` clause, the exposition is empty (the node has no
-structural output and exists only for its state and connections).
+explicitly. When the node has no `parts:` clause and no `expose:` clause, the
+default `expose: parts` still exposes whatever the caller supplied — the
+open-parts children and caller-placed connections, as-is in written
+order; the exposition is empty only when no such content is supplied
+(the node then has no structural output and exists only for its state
+and connections).
 
 ##### 13.3.7.3 External access via `.exposition`
 
@@ -12988,10 +13006,10 @@ mechanism:
   self-sourced connections engage among them (§13.3.7.5).
 
 `parts:` exists *solely* to feed `expose:`: externally-supplied children
-exist to become the node's structural output. There is no part that is
-never exposed — by default (`expose: parts`, §13.3.7.2) every supplied
-part is exposed; an explicit `expose:` arranges or selects among the
-parts, but always over them.
+exist to become the node's structural output. By default
+(`expose: parts`, §13.3.7.2) every supplied part is exposed; an explicit
+`expose:` may arrange *or select a subset of* the supplied parts, and a
+part it omits has no structural output (not a compile error).
 
 Traversal proceeds **in entry order**: node entries by structural
 descent, connection entries by engagement (§13.3.7.6).
@@ -13026,11 +13044,13 @@ information that distinguishes a transition after the chord from one
 before the first note. The same connection at a different position is a
 different program.
 
-Like wires on a circuit schematic, connections are **always present on
-the schema**: the instance set is static (§13.1), and every connection
-entry exists from construction — what may change at runtime is where a
-dynamic destination points (§13.6.2), never whether the connection
-exists. What the position orders is *engagement* — when traversal first
+Like wires on a circuit schematic, a **directly-written** connection
+entry is always present on the schema: it exists from construction, and
+what may change at runtime is only where a dynamic destination points
+(§13.6.2), never whether the connection exists. A repeat-materialized
+connection placement (§13.3.4, §13.5.4) is the exception — it mounts and
+dismounts with its keyed scope, appearing in `.exposition` only while
+mounted. What the position orders is *engagement* — when traversal first
 reaches the entry (§13.3.7.6). And, like a powered circuit, presence is
 participation: an exposition entry's connection is reactively live
 whether or not traversal has reached it (§13.3.7.6).
@@ -13104,7 +13124,7 @@ declares **topology** (what the node *is*), `effects:` declares
 
 ```
 node App:
-  signal url: Url = home_url
+  attr url: Url = home_url
   derived label: string = "loading {url}"
 
   effects:
@@ -13268,8 +13288,9 @@ Named individual access becomes available in:
   where `c` is a Composite parameter).
 - Other instances' placement bodies that reference the named
   instance.
-- The same placement body where the part is declared (subsequent
-  lines may reference the just-named part by name).
+- The same placement body where the part is declared (other lines
+  may reference the named part regardless of order, including ones
+  written earlier or later).
 
 Static type-bulk and named access are compile-time resolved: the
 compiler knows every statically supplied part's identity, type, and
@@ -13387,13 +13408,14 @@ c.parts.Oscillator` (type-bulk, bounded by cardinality) and `c.osc_a`
 §13.5.1 defines the **keyed-scope primitive** that underlies the
 language's dynamic-scope reactive constructs. Any conformant runtime
 exposes the three operations of §13.5.1 — `scope_obtain`, `scope_drop`,
-and `scope_evaluate` — by which a template can be instantiated zero, one,
-or many times per source element, with each instantiation backed by its
-own state cells.
+and `scope_evaluate` — by which a template is instantiated **once per
+unique key**; how a construct derives keys from its source elements is
+the construct's own choice (`repeat` derives one key per element,
+§13.5.4), each instantiation backed by its own state cells.
 
 The user-facing surface for this mechanism is the **`repeat` keyword**
 (§13.5.4), which materializes one scope per element yielded by a
-reactive iterable source (`Signal[I]` where `I: Iterable`, §12.8).
+reactive iterable source — a `Signal[I]` where `I: Iterable` (§12.8), or a `dynamic` namespace cell (§13.5.4.1).
 
 #### 13.5.1 The primitive
 
@@ -13439,7 +13461,6 @@ runtime's pool-management policy.
 A template's **state-shape** is the set of stateful cells it
 declares:
 
-- `signal` declarations inside the template's body (§13.2.1).
 - `attr` declarations inside the template's body (§13.2.2).
 - `recurrent` declarations inside the template's body (§13.2.4).
 
@@ -13449,11 +13470,16 @@ context), and the enclosing scope's cells (per §13.7). `const`
 declarations are static and not state.
 
 **When the state-shape is empty** (the template declares only
-deriveds, or no body cells at all), the runtime allocates **no pool**
-for the construct's template. `scope_obtain(key)` becomes a no-op,
-`scope_drop(key)` is a no-op, and `scope_evaluate(key)` evaluates
-the template's deriveds against the loop binding and the enclosing
-scope's cells without any per-key state context.
+deriveds, or no body cells at all), the runtime allocates **no per-key
+cell pool** for the construct's template: the per-key cell handling in
+`scope_obtain(key)` and `scope_drop(key)` becomes a no-op, and
+`scope_evaluate(key)` evaluates the template's deriveds against the loop
+binding and the enclosing scope's cells without any per-key state
+context. Placement materialization is unaffected — a `repeat` body that
+places child instances (§13.5.4) still materializes and drops them per
+key; those children are instances with their own cells, persisted via
+§13.5.3's cell-identity paths, independent of the template's own (empty)
+state-shape.
 
 This is the **stateless-template fast path**: data-driven multiplicity
 incurs no per-key cell allocation or drop. The per-commit iteration
@@ -13649,8 +13675,9 @@ Whenever `<source>` is dirty, the runtime:
    the move-promotion rule of §13.5.4.1 (promoted from the
    borrow-equivalent alias that `Iterable::iterator` yields).
 2. Derives the key for each element per the ordered selection of
-   §13.5.4.1 (explicit `keyed by`, then `Keyed` trait, then
-   stringifiable element, else compile error).
+   §13.5.4.1 (explicit `keyed by`, then the carried key for `dynamic`
+   namespace sources, then `Keyed` trait, then stringifiable element,
+   else compile error).
 3. Diffs the new key set against the previous:
    - Keys in `old ∩ new` carry over: their scopes are preserved per
      §13.5.1; the binding `<bind>` is updated to the new element.
@@ -13661,6 +13688,12 @@ Whenever `<source>` is dirty, the runtime:
 4. For each key in iterator order, the runtime updates `<bind>` — and the
    `at <index>` bind, when present, to the element's 0-based position — and
    calls `scope_evaluate(key)`.
+
+**Duplicate keys.** If two distinct elements in one evaluation derive
+the same key, the first in iterator order wins the scope and the
+`<bind>`; later duplicates are dropped. The runtime raises a non-fatal
+warning — a non-unique `keyed by` derivation is almost always a bug —
+and continues; a duplicate key never halts the program.
 
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes (and, with
@@ -13901,8 +13934,9 @@ In each rejected context, the diagnostic identifies the misplaced
   not identity: it is excluded from the implicit key-derivation paths of
   §13.5.4.1 (the `Keyed` trait and stringifiable-element paths), and the
   `<key-expr>` / `Keyed::key` body that those paths use must not read it.
-  Keying by position is the React `key={index}` anti-pattern — reorder or
-  insert and one element's per-key scope state bleeds into another. A program
+  Keying by position is an anti-pattern — reorder or insert and one
+  element's per-key scope state bleeds into another, since the index now
+  names a different element. A program
   that genuinely wants positional identity must opt in explicitly by writing
   `keyed by <index>`, accepting that consequence; there is no implicit path to
   it.
@@ -14016,8 +14050,9 @@ during traversal (§13.3.7.6). Like wires on a circuit schematic,
 connections are always present on the schema — the instance set is
 static (§13.1) and every statically placed connection exists from
 construction; only a dynamic destination's target may move (§13.6.2) —
-and always reactively live (§13.3.7.6); what the position orders is their
-engagement. A connection is still owned by no single endpoint (§13.8.4.1):
+and always reactively live regardless of traversal position (gates and an
+unresolved destination are the only switches on this liveness, §13.6.2);
+what the position orders is their engagement. A connection is still owned by no single endpoint (§13.8.4.1):
 the entry belongs to the *source's* exposition, but the connection links
 two instances at the graph level.
 
@@ -14048,7 +14083,6 @@ connection TypeName[GenericParams]?:
   to: DestType                                        // required, exactly once
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
-  signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance writable cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
@@ -14087,7 +14121,7 @@ instances directly (their concrete types).
 connection TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
+  // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
@@ -14123,7 +14157,7 @@ connection TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
+  // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
@@ -14310,9 +14344,9 @@ to outer-most is:
 1. **Local bindings** — `let` bindings and `for`-loop variables
    inside a reactive expression.
 2. **The instance body scope** — the node's or connection's members:
-   `attr`, `signal`, `recurrent`, `derived`, `stream` cells; `parts`;
-   and the reserved endpoint/structure fields (`from`, `to`,
-   `incoming`, `outgoing`, `pair`, `exposition` — §13.7.5).
+   `attr`, `recurrent`, `derived`, `stream` cells; and the reserved
+   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`,
+   `pair`, `parts`, `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
 
@@ -14355,6 +14389,7 @@ alias (§13.7.7) for the subject type.
 ```
 node Driver:
   attr expertise_level: i32 = 5
+  attr risk_tolerance: f32 = 0.5
   derived skill_factor: f32 = f32(here::expertise_level) / 10.0   // explicit anchor
   derived also_skill: f32 = f32(expertise_level) / 10.0           // bare — same cell
 
@@ -14610,7 +14645,9 @@ The right-hand side of an attribute setting at placement may be:
 - A **reactive expression** — references reactive cells (signals,
   attrs, recurrents, deriveds) visible at the placement scope:
   sibling part instances by name, top-level signals or consts, or
-  any cell reachable through visible names. The placement creates
+  any cell reachable through visible names (a `const` is visible but
+  contributes no reactivity — a const-only RHS is a category-B value
+  binding, not reactive wiring). The placement creates
   an implicit `derived` bridging the source cells to the target
   attr, so the attr reactively tracks changes to the source. This
   is **reactive wiring** — §11.1 category C — and is governed by
@@ -14673,9 +14710,9 @@ setting the same attr via two mechanisms is a compile error
 (duplicate-set).
 
 Reactive bindings apply to the **`name=value` inline form** for
-attrs. Flag form has no expression slot — a flag always sets a
-literal boolean (true for `'name`, false for `!name`) — so reactive
-bindings do not apply to flags.
+attrs. Flag form has no expression slot — a flag always sets literal `true`
+(`'name`), and the inline `!name` form (§13.8.7) sets `false` — so
+reactive bindings apply to neither.
 
 A type's `default attr` (§13.2.2.1) — when declared — is
 additionally settable via the positional `/expr` form (§13.8.5). The
@@ -14736,9 +14773,9 @@ The optional instance name (`out1`, `in1` in the example) is the
 accessible by that name from contexts where the placement scope is
 visible:
 
-- Inside the same placement body: `out1` refers to the just-placed
-  Pin (useful when subsequent connection placements need to
-  reference it).
+- Inside the same placement body: `out1` refers to the placed Pin and
+  is visible to other placements in the same body regardless of order,
+  including ones written later (placement-scope names are whole-scope).
 - Outside the parent type, in function bodies receiving the parent
   instance: `chip_b.out1` (where `chip_b` is the parameter name)
   accesses the named part directly, in parallel with the type-bulk
@@ -15188,7 +15225,9 @@ The expression in `name=value` may be a compile-time constant *or*
 a reactive expression, per §13.8.2.1. A reactive expression creates
 a synthesized derived bridging the source cells to the target attr.
 All three forms (value, bare, negated-bare) and the flag form
-(§13.8.8) handle attr binding uniformly.
+(§13.8.8) handle attr binding uniformly in target and conflict rules;
+reactive binding, however, applies only to the `name=value` form
+(§13.8.2.2) — the bare, negated-bare, and flag forms set literal booleans.
 
 #### 13.8.8 Flags
 
@@ -15396,7 +15435,7 @@ The whitespace form is unambiguous only when each placement is
 next placement. A placement is self-delimiting when every clause it
 carries is bounded:
 
-- a bare type, with flags and octave/duration sigils: `C`, `G'`, `Pin'!`;
+- a bare type, including any flag run (§13.8.8): `C`, `G'`, `Pin'!`;
 - a single-atom `/expr` — literal, identifier, or path (§13.8.5):
   `C/4`, `Filter/cutoff_default`;
 - an `as` name, which consumes exactly one identifier: `G as a`.
@@ -16962,7 +17001,7 @@ A single overloaded call, dispatched by arity:
 
 ```
 runtime.write_signal(signal_id, value)                      // module-level signal
-runtime.write_signal(instance_id, signal_id, value)         // per-instance signal
+runtime.write_signal(instance_id, signal_id, value)         // effect observed: signal (per effect instance)
 ```
 
 Both arities stage a new value for the named signal's cell. The calls are
@@ -16977,11 +17016,11 @@ entire program.
 
 **Per-instance form** —
 `runtime.write_signal(instance_id, signal_id, value)`:
-writes to a node-level or connection-level signal on a specific
-instance. The `instance_id` identifies the instance (assigned at
-compile time per placement); `signal_id` identifies the signal on
-that instance's type. Each placement creates its own cell; the
-write targets one specific cell.
+writes to an effect's `observed:` signal (§13.19.5) on a specific
+effect instance. The `instance_id` identifies the effect instance;
+`signal_id` identifies the observed signal on that effect's type. Each
+effect instance has its own observed cells; the write targets one
+specific cell.
 
 Both arities must be called from the runtime's driving context (the single
 context permitted to write/evaluate/commit). Other threads write indirectly
@@ -17723,9 +17762,6 @@ by a final expression. Permitted body items:
 
 Not permitted in operator bodies:
 
-- `signal` declarations. Operator-internal cells cannot be
-  host-writable; the host has no addressing mechanism for cells
-  inside an operator instance.
 - `attr` declarations. Per-instance configuration is expressed via
   parameters, not internal attrs.
 - Side-effecting statements. The body is reactive — declarative,
@@ -18125,16 +18161,15 @@ error: cannot pass value of type `f32` to `Signal[f32]` parameter
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
 ```
 
-**`signal` or `attr` declared inside an operator body:**
+**`attr` declared inside an operator body:**
 
 ```
-error: `signal` declarations are not permitted inside operator bodies
+error: `attr` declarations are not permitted inside operator bodies
   --> operator foo(source: Signal[f32]) -> Signal[f32]:
-        signal internal: f32 = 0.0
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: operator-internal cells must be `recurrent` or `derived`. For
-        per-instance configuration, use a parameter; for stateful memory,
-        use `recurrent`.
+        attr rate: f32 = 0.1
+        ^^^^^^^^^^^^^^^^^^^^^
+  hint: operators take per-instance configuration as parameters, not
+        internal attrs; for stateful memory, use `recurrent` or `derived`.
 ```
 
 **Final expression type mismatch with declared return type:**
@@ -21790,8 +21825,8 @@ effect print(message: Signal[string]):
     derived text: string = message
 
 node App:
-  signal count: i32 = 0
-  signal show: bool = true
+  attr count: i32 = 0
+  attr show: bool = true
   derived doubled: i32 = count * 2
   recurrent total: i32 = total.past(1, 0) + count
   derived label: string = "value is {doubled}"
