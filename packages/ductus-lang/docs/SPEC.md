@@ -10641,7 +10641,8 @@ reactive graph by the host or runtime, not computed by Ductus
 source. The host pushes new values into the runtime; the reactive
 graph propagates the changes.
 
-Signals may be declared at three scopes:
+A `signal` may be declared only at a **host boundary** — one of the two
+places the host (runtime or application) feeds values into the program:
 
 **Module-level signals** — declared at module top level (outside
 any node or connection body). One value shared across the program;
@@ -10655,56 +10656,28 @@ signal current_time_ms: i64 = 0
 signal master_volume: f32 = 0.5
 ```
 
-**Node-level signals** — declared inside a node body. Per-instance:
-each placement of the node creates its own cell. The runtime/host
-writes per-instance signals to feed instance-specific data into the
-graph (an HTTP response for a specific `Fetch` instance, a sensor
-reading for a specific `Sensor` instance, etc.).
+**Effect `observed:` signals** — declared inside an effect's `observed:`
+block (§13.19.5). The host writes the observed cell, per effect
+instance, as the inbound half of the effect's reconciliation — for
+example a fetch effect's `response`.
 
-```
-node Fetch:
-  default attr url: string
-  signal response: Result[HttpResponse, HttpError] = Err(NotYetFetched)
-  signal status: i32 = 0
-```
+A `signal` may **not** be declared inside a node body, a connection
+body, a `repeat` template, or an operator body. A composition unit
+receives its inputs from its placer as `attr`s (§13.2.2), never as
+host-written cells injected at depth: the host reaches the program only
+at the two boundaries above, which keeps data flow visible and
+composition encapsulated.
 
-(Types like `HttpResponse`, `HttpError`, and variants such as
-`NotYetFetched` are illustrative; the stdlib or a host package
-provides concrete definitions.)
+At both sites signals share the same semantics: host-written, not
+source-assignable, reactive (writes trigger downstream re-evaluation).
+The site determines instance multiplicity and how the host addresses the
+signal when writing (§13.14.2): one shared cell for a module-level
+signal, one cell per effect instance for an observed signal.
 
-**Connection-level signals** — declared inside a connection body.
-Per-instance per-connection: each placement of the connection
-creates its own cell. The runtime writes per-connection signals to
-feed data flowing through that specific connection instance (bytes
-received on a network connection, audio samples through a routing
-edge, etc.).
-
-```
-connection NetworkChannel:
-  from: Source
-  to: Sink
-  signal bytes_received: Bytes = empty_bytes
-  signal status: ChannelStatus = ChannelStatus::Idle
-```
-
-(Types like `Bytes`, `ChannelStatus`, `Source`, and `Sink` are
-illustrative; the stdlib or domain code provides concrete
-definitions.)
-
-In all three scopes, signals share the same semantics: host-written,
-not source-assignable, reactive (writes trigger downstream
-re-evaluation). The scope determines instance multiplicity and how
-the host addresses the signal when writing (§13.14.2).
-
-Use cases by scope:
-
-- Module-level: program-wide entry points (one cell, shared).
-- Node-level: per-node-instance runtime-fed data.
-- Connection-level: per-connection-instance runtime-fed data.
-
-Per-instance *configuration* (user-controlled) is the role of
-`attr` (§13.2.2); per-instance memory is the role of `recurrent`
-(§13.2.4). Signals are reserved for externally-fed reactive inputs.
+Per-instance *configuration* (placer-controlled) is the role of `attr`
+(§13.2.2); per-instance memory is the role of `recurrent` (§13.2.4).
+Signals are reserved for externally-fed reactive inputs at the host
+boundary.
 
 #### 13.2.2 `attr`
 
@@ -10871,7 +10844,7 @@ derived becomes dirty and is recomputed at the next commit.
 
 ##### 13.2.3.1 Scope
 
-A `derived` may be declared at three scopes, paralleling `signal`:
+A `derived` may be declared at three scopes:
 
 - **Module-level** — declared at module top level (outside any node
   or connection body). One cell shared across the program. References
@@ -11134,8 +11107,8 @@ increment because the value changes each time.
 
 ##### 13.2.4.5 Scope
 
-A `recurrent` may be declared at three scopes, paralleling `signal`
-and `derived`:
+A `recurrent` may be declared at three scopes, paralleling
+`derived`:
 
 - **Module-level** — declared at module top level. One cell shared
   across the program. References use the bare name (no `here::`
@@ -12131,7 +12104,6 @@ node TypeName[GenericParams]?:
   expose:                                             // structural output (§13.3.7)
     SomePart
   const name: Type = value                            // per-type compile-time constants
-  signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
@@ -13482,7 +13454,6 @@ runtime's pool-management policy.
 A template's **state-shape** is the set of stateful cells it
 declares:
 
-- `signal` declarations inside the template's body (§13.2.1).
 - `attr` declarations inside the template's body (§13.2.2).
 - `recurrent` declarations inside the template's body (§13.2.4).
 
@@ -14092,7 +14063,6 @@ connection TypeName[GenericParams]?:
   to: DestType                                        // required, exactly once
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
-  signal name: Type = initial                         // per-instance runtime-fed entry points
   attr name: Type = default                           // per-instance writable cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
@@ -14131,7 +14101,7 @@ instances directly (their concrete types).
 connection TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
+  // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
@@ -14167,7 +14137,7 @@ connection TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, signal, attr, recurrent, derived, stream) per §13.6.1.1
+  // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
@@ -17006,7 +16976,7 @@ A single overloaded call, dispatched by arity:
 
 ```
 runtime.write_signal(signal_id, value)                      // module-level signal
-runtime.write_signal(instance_id, signal_id, value)         // per-instance signal
+runtime.write_signal(instance_id, signal_id, value)         // effect observed: signal (per effect instance)
 ```
 
 Both arities stage a new value for the named signal's cell. The calls are
@@ -17021,11 +16991,11 @@ entire program.
 
 **Per-instance form** —
 `runtime.write_signal(instance_id, signal_id, value)`:
-writes to a node-level or connection-level signal on a specific
-instance. The `instance_id` identifies the instance (assigned at
-compile time per placement); `signal_id` identifies the signal on
-that instance's type. Each placement creates its own cell; the
-write targets one specific cell.
+writes to an effect's `observed:` signal (§13.19.5) on a specific
+effect instance. The `instance_id` identifies the effect instance;
+`signal_id` identifies the observed signal on that effect's type. Each
+effect instance has its own observed cells; the write targets one
+specific cell.
 
 Both arities must be called from the runtime's driving context (the single
 context permitted to write/evaluate/commit). Other threads write indirectly
@@ -17767,9 +17737,6 @@ by a final expression. Permitted body items:
 
 Not permitted in operator bodies:
 
-- `signal` declarations. Operator-internal cells cannot be
-  host-writable; the host has no addressing mechanism for cells
-  inside an operator instance.
 - `attr` declarations. Per-instance configuration is expressed via
   parameters, not internal attrs.
 - Side-effecting statements. The body is reactive — declarative,
@@ -18169,16 +18136,15 @@ error: cannot pass value of type `f32` to `Signal[f32]` parameter
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
 ```
 
-**`signal` or `attr` declared inside an operator body:**
+**`attr` declared inside an operator body:**
 
 ```
-error: `signal` declarations are not permitted inside operator bodies
+error: `attr` declarations are not permitted inside operator bodies
   --> operator foo(source: Signal[f32]) -> Signal[f32]:
-        signal internal: f32 = 0.0
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: operator-internal cells must be `recurrent` or `derived`. For
-        per-instance configuration, use a parameter; for stateful memory,
-        use `recurrent`.
+        attr rate: f32 = 0.1
+        ^^^^^^^^^^^^^^^^^^^^^
+  hint: operators take per-instance configuration as parameters, not
+        internal attrs; for stateful memory, use `recurrent` or `derived`.
 ```
 
 **Final expression type mismatch with declared return type:**
