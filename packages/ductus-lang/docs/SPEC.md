@@ -13407,13 +13407,14 @@ c.parts.Oscillator` (type-bulk, bounded by cardinality) and `c.osc_a`
 §13.5.1 defines the **keyed-scope primitive** that underlies the
 language's dynamic-scope reactive constructs. Any conformant runtime
 exposes the three operations of §13.5.1 — `scope_obtain`, `scope_drop`,
-and `scope_evaluate` — by which a template can be instantiated zero, one,
-or many times per source element, with each instantiation backed by its
-own state cells.
+and `scope_evaluate` — by which a template is instantiated **once per
+unique key**; how a construct derives keys from its source elements is
+the construct's own choice (`repeat` derives one key per element,
+§13.5.4), each instantiation backed by its own state cells.
 
 The user-facing surface for this mechanism is the **`repeat` keyword**
 (§13.5.4), which materializes one scope per element yielded by a
-reactive iterable source (`Signal[I]` where `I: Iterable`, §12.8).
+reactive iterable source — a `Signal[I]` where `I: Iterable` (§12.8), or a `dynamic` namespace cell (§13.5.4.1).
 
 #### 13.5.1 The primitive
 
@@ -13468,11 +13469,16 @@ context), and the enclosing scope's cells (per §13.7). `const`
 declarations are static and not state.
 
 **When the state-shape is empty** (the template declares only
-deriveds, or no body cells at all), the runtime allocates **no pool**
-for the construct's template. `scope_obtain(key)` becomes a no-op,
-`scope_drop(key)` is a no-op, and `scope_evaluate(key)` evaluates
-the template's deriveds against the loop binding and the enclosing
-scope's cells without any per-key state context.
+deriveds, or no body cells at all), the runtime allocates **no per-key
+cell pool** for the construct's template: the per-key cell handling in
+`scope_obtain(key)` and `scope_drop(key)` becomes a no-op, and
+`scope_evaluate(key)` evaluates the template's deriveds against the loop
+binding and the enclosing scope's cells without any per-key state
+context. Placement materialization is unaffected — a `repeat` body that
+places child instances (§13.5.4) still materializes and drops them per
+key; those children are instances with their own cells, persisted via
+§13.5.3's cell-identity paths, independent of the template's own (empty)
+state-shape.
 
 This is the **stateless-template fast path**: data-driven multiplicity
 incurs no per-key cell allocation or drop. The per-commit iteration
@@ -13668,8 +13674,9 @@ Whenever `<source>` is dirty, the runtime:
    the move-promotion rule of §13.5.4.1 (promoted from the
    borrow-equivalent alias that `Iterable::iterator` yields).
 2. Derives the key for each element per the ordered selection of
-   §13.5.4.1 (explicit `keyed by`, then `Keyed` trait, then
-   stringifiable element, else compile error).
+   §13.5.4.1 (explicit `keyed by`, then the carried key for `dynamic`
+   namespace sources, then `Keyed` trait, then stringifiable element,
+   else compile error).
 3. Diffs the new key set against the previous:
    - Keys in `old ∩ new` carry over: their scopes are preserved per
      §13.5.1; the binding `<bind>` is updated to the new element.
@@ -13680,6 +13687,12 @@ Whenever `<source>` is dirty, the runtime:
 4. For each key in iterator order, the runtime updates `<bind>` — and the
    `at <index>` bind, when present, to the element's 0-based position — and
    calls `scope_evaluate(key)`.
+
+**Duplicate keys.** If two distinct elements in one evaluation derive
+the same key, the first in iterator order wins the scope and the
+`<bind>`; later duplicates are dropped. The runtime raises a non-fatal
+warning — a non-unique `keyed by` derivation is almost always a bug —
+and continues; a duplicate key never halts the program.
 
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes (and, with
