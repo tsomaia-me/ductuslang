@@ -16603,12 +16603,12 @@ distinction at the call site is by callee declaration kind:
 transparency; `some_op(my_signal)` instantiates an operator with
 internal state.
 
-Functions may also accept `Signal[T]` parameters (§13.2.8). When a
-function declares `fn some_fn(s: Signal[T])`, the parameter binds
+Functions may also accept `Cell[T]` parameters (§13.2.8). When a
+function declares `fn some_fn(s: Cell[T])`, the parameter binds
 to the cell reference itself rather than its current value. This is
 distinct from the per-emission behavior described above. The
 compiler distinguishes by the declared parameter type; no
-call-site syntactic difference. Use cases for `fn(Signal[T])` are
+call-site syntactic difference. Use cases for `fn(Cell[T])` are
 narrow; the typical `fn` declaration uses bare `T` parameters and
 relies on reactive transparency at the call site.
 
@@ -17623,12 +17623,12 @@ construct, not a mechanism.
 ### 13.17 Operators
 
 An *operator* is a reusable, cell-allocating reactive transformation
-declared with the `operator` keyword. Operators take `Signal[T]`
+declared with the `operator` keyword. Operators take `Cell[T]`
 inputs (and optionally non-reactive value parameters), allocate
 internal reactive cells (recurrents and/or deriveds) per
 instantiation, and produce an output of any type, exposed to callers as
-a reactive cell (typically `Signal[T]`, or `Stream[T]`/`Sink[T]` for
-event/sink operators — §13.17.5). They are
+a reactive cell (typically `Derived[T]`, or `Stream[T]` for event
+operators — §13.17.5). They are
 the primary mechanism for composing reactive transformations.
 
 Operators are distinct from `fn` declarations:
@@ -17636,7 +17636,7 @@ Operators are distinct from `fn` declarations:
 - `fn` is reactive-transparent (§13.12.2). It takes value
   parameters, returns values, and allocates no cells.
 - `operator` is *not* reactive-transparent. It takes cell
-  references (`Signal[T]`), allocates internal cells per
+  references (`Cell[T]`), allocates internal cells per
   instantiation, and is wired into the reactive graph at the call
   site.
 
@@ -17645,14 +17645,14 @@ Operators are distinct from `fn` declarations:
 Stateless operators wrap a pure projection over a source cell:
 
 ```
-operator double(source: Signal[f32]) -> Signal[f32]:
+operator double(source: Cell[f32]) -> Derived[f32]:
   source * 2
 ```
 
 Stateful operators allocate recurrent state per instantiation:
 
 ```
-operator smooth(source: Signal[f32], rate: f32 = 0.1, clock: Signal[u64]) -> Signal[f32]:
+operator smooth(source: Cell[f32], rate: f32 = 0.1, clock: Cell[u64]) -> Derived[f32]:
   recurrent state: f32 = observe:
     on clock: state.previous(source) + (source - state.previous(source)) * rate
     default: source
@@ -17673,7 +17673,7 @@ operator name[GenericParams]?(params...) -> T:
 - `GenericParams` are optional type parameters with optional trait
   bounds (§3, §5).
 - `params` is a comma-separated parameter list (§13.17.3).
-- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `Cell` type (`Signal[T]`/`Stream[T]`/`Sink[T]`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
+- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `Cell` type (`Signal[T]`/`Derived[T]`/`Recurrent[T, N]`/`Stream[T]`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
 - The body is a sequence of reactive declarations (recurrents,
   deriveds) followed by a final expression that becomes the output.
 
@@ -17688,7 +17688,7 @@ parameter may additionally be **function-** or **operator-typed**, since
 an operator is a first-class compile-time value (§13.17.13). The kinds
 are distinguished by declared type:
 
-**Cell-bound parameters** (`name: Signal[T]`):
+**Cell-bound parameters** (`name: Cell[T]`):
 - Bind to a reactive cell at instantiation.
 - The operator tracks the cell's changes over time via the reactive
   engine.
@@ -17709,20 +17709,20 @@ are distinguished by declared type:
 
 The author chooses for each parameter based on intent. A parameter
 the user expects to vary at runtime (e.g., a UI knob driving a
-smoothing rate) should be `Signal[T]`; a parameter that is a
+smoothing rate) should be `Cell[T]`; a parameter that is a
 deployment-time choice should be `T`.
 
 ```
 operator smooth(
-  source: Signal[f32],         // cell-bound: tracked over time
+  source: Cell[f32],           // cell-bound: tracked over time
   rate: f32 = 0.1,             // value: snapshotted at instantiation
-  clock: Signal[u64],          // cell-bound: drives the trigger
-) -> Signal[f32]:
+  clock: Cell[u64],            // cell-bound: drives the trigger
+) -> Derived[f32]:
   ...
 ```
 
 **Default values** are allowed on value parameters. Default values
-on `Signal[T]` parameters are not allowed in v1 (a default cell
+on `Cell[T]` parameters are not allowed in v1 (a default cell
 reference has no clear meaning; if needed, use a stdlib helper
 that constructs a constant cell).
 
@@ -17733,34 +17733,34 @@ relaxation.
 
 **At call sites:**
 
-- Literals passed to `Signal[T]` parameters are wrapped as implicit
+- Literals passed to `Cell[T]` parameters are wrapped as implicit
   constant signal cells (compile-time-fixed `Signal[T]` values). Cost:
   one cell per literal at the call site (effectively zero — folded by
   the compiler when possible).
-- Cells passed to `Signal[T]` parameters bind directly.
+- Cells passed to `Cell[T]` parameters bind directly.
 - Values passed to `T` parameters are evaluated and snapshotted.
 
-##### 13.17.3.1 Signal[T] auto-deref in expression contexts
+##### 13.17.3.1 Value-cell auto-deref in expression contexts
 
 When an expression context requires a value of type `T` and the
-supplied expression has type `Signal[T]`, the compiler implicitly
-inserts a read of the cell — `signal` is dereferenced to its current
-value. The provenance tracking (§13.12.1) records the cell read as a
-dependency, so the surrounding expression becomes reactive on changes
-to that cell.
+supplied expression is a value cell (`Signal[T]`, `Derived[T]`, or
+`Recurrent[T, N]`), the compiler implicitly inserts a read of the cell
+— it is dereferenced to its current value. The provenance tracking
+(§13.12.1) records the cell read as a dependency, so the surrounding
+expression becomes reactive on changes to that cell.
 
 ```
-operator example(s: Signal[f32]) -> Signal[f32]:
-  derived doubled: f32 = s * 2.0       // s: Signal[f32] auto-derefs to f32 in arithmetic context
+operator example(s: Cell[f32]) -> Derived[f32]:
+  derived doubled: f32 = s * 2.0       // s: Cell[f32] auto-derefs to f32 in arithmetic context
   doubled
 ```
 
-The implicit deref applies wherever a `Signal[T]` flows into a
+The implicit deref applies wherever a value cell flows into a
 position expecting `T`: arithmetic operands, function-call arguments
 typed `T`, attribute initial-value expressions, derived bodies,
 recurrent expressions. It does NOT apply when the context expects
-`Signal[T]` directly (operator parameters, function parameters typed
-`Signal[T]`, pipe-form `|>` LHS) — in those cases the cell reference
+`Cell[T]` directly (operator parameters, function parameters typed
+`Cell[T]`, pipe-form `|>` LHS) — in those cases the cell reference
 is bound without dereferencing.
 
 The auto-deref is a compile-time mechanism; no runtime cost beyond
@@ -17774,7 +17774,7 @@ by a final expression. Permitted body items:
 - `recurrent` declarations (with all extensions per §13.2.4).
 - `derived` declarations.
 - `let` bindings for intermediate values, including
-  runtime-evaluated reads of `Signal[T]` parameters and other
+  runtime-evaluated reads of `Cell[T]` parameters and other
   cells in scope. A `let` binding's right-hand side is evaluated
   in a reactive context — reads of cell-bound parameters return
   their current values, and the binding's value is recomputed
@@ -17801,8 +17801,8 @@ Not permitted in operator bodies:
 The final expression's type must match the operator's declared return
 type, which may be any type. If it is a value type (or a plain
 record/tuple), the compiler synthesizes a cell holding the value and
-exposes that cell as the operator instance's output — the `Signal[T]`≅`T`
-wrap (§13.2.8), so a `-> f32` return is carried as `Signal[f32]`, never a
+exposes that cell as the operator instance's output — the `Cell[T]`≅`T`
+wrap (§13.2.8), so a `-> f32` return is carried as `Derived[f32]`, never a
 non-reactive snapshot. If the final expression is already a `Cell` (a
 named recurrent, derived, or stream in the body), that cell is the output
 directly — no synthesis needed. A record whose fields are cells (form 2)
@@ -17815,16 +17815,16 @@ passthrough.
 Whatever an operator's body returns — a value type, a record/tuple
 (plain or with cell fields), or an explicit `Cell` — its output is
 exposed to callers as a single reactive cell; the caller neither knows
-nor cares which. A value-shaped operator typically yields `Signal[T]`;
+nor cares which. A value-shaped operator typically yields `Derived[T]`;
 event-producing operators (e.g., `to_stream`, `filter`, `merge`) yield
-`Stream[T]`; sink-exposing operators yield `Sink[T]` (§13.18.5).
+`Stream[T]` (§13.18.5).
 
 ```
 type PeakResult:
   peak: f32
   count: u32
 
-operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
+operator peak_detector(source: Cell[f32]) -> Derived[PeakResult]:
   recurrent (peak, count): (f32, u32) = (
     max(peak.previous(source), source),
     if source > peak.previous(source): count.previous(0) + 1 else: count.previous(0),
@@ -17832,7 +17832,7 @@ operator peak_detector(source: Signal[f32]) -> Signal[PeakResult]:
 
   PeakResult(peak: peak, count: count)
 
-operator changes[T](source: Signal[T]) -> Stream[T]:
+operator changes[T](source: Cell[T]) -> Stream[T]:
   // emits an event each time source changes
   ...
 ```
@@ -17844,7 +17844,7 @@ plain record/tuple (form 1, like `PeakResult` above — exposed as a single
 expressions:
 
 ```
-let result = source |> peak_detector            // Signal[PeakResult]
+let result = source |> peak_detector            // Derived[PeakResult]
 derived just_peak: f32 = result.peak            // reactive projection
 derived just_count: u32 = result.count
 ```
@@ -17882,7 +17882,7 @@ derived bar: f32 = 0.0 |> clamp(min: 0.0, max: 1.0) |> smooth(rate: 0.1, clock: 
 ```
 
 Each `|>` step is an operator application. The result of each step
-is a `Cell` — a `Signal[T]` for value-shaped operators or a `Stream[T]`
+is a `Cell` — a `Derived[T]` for value-shaped operators or a `Stream[T]`
 for event-producing ones — consumed by the next.
 
 **Convention:** the first positional parameter of any operator is
@@ -17892,7 +17892,7 @@ upstream cells), the first is the pipe target; subsequent cells
 are passed by name:
 
 ```
-operator combine[T](primary: Signal[T], other: Signal[T], weight: f32) -> Signal[T]:
+operator combine[T](primary: Cell[T], other: Cell[T], weight: f32) -> Derived[T]:
   ...
 
 // Call:
@@ -17939,14 +17939,14 @@ a source cell on the left to a destination on the right. The kind
 of connection — apply-and-bind or forward-into — is determined by
 the RHS's kind.
 
-**Three dispatch cases**, distinguished by the RHS:
+**Two dispatch cases**, distinguished by the RHS:
 
 **Case 1: RHS is an operator call** (§13.17). The operator is
 instantiated; the LHS is bound to its first positional parameter.
 The result is the operator's declared output cell.
 
 ```
-let smoothed: Signal[f32] = source |> smooth(rate: 0.1, clock: tick)
+let smoothed: Derived[f32] = source |> smooth(rate: 0.1, clock: tick)
 ```
 
 **Case 2: RHS is an effect call** (§13.19). The effect is
@@ -17960,29 +17960,12 @@ effects:
   f = current_url |> fetch
 ```
 
-**Case 3: RHS is a `Sink[T]`** (§13.18.4). The LHS must be a
-`Stream[T]` of matching element type. A forwarding subscription is
-established: each event observed from the source stream is pushed
-into the sink. The expression's value is the unit type `()`; the
-forwarding subscription lives as long as the enclosing scope. Sink
-forwarding into an effect's sink also lives in `effects:`:
-
-```
-effects:
-  ws = current_url |> websocket
-  messages_to_send |> ws.outbound       // forwards stream into the sink
-```
-
 LHS rules common to all cases:
 
 - LHS must be an expression of a reactive cell type (`Signal[T]`,
-  `Stream[T]`, `Sink[T]`, or any other `Cell[T]` per §13.18.5), or
-  an expression convertible to one. Literals are wrapped as implicit
-  constant signal cells automatically.
-- For Case 3 specifically, the LHS's concrete type must be a
-  `Stream[T]` of matching element type. Piping a `Signal[T]` into a
-  sink is a type error; use `to_stream` (§13.18.9) to convert first
-  if event semantics are desired.
+  `Derived[T]`, `Recurrent[T, N]`, `Stream[T]`, or any other `Cell[T]`
+  per §13.18.5), or an expression convertible to one. Literals are
+  wrapped as implicit constant signal cells automatically.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -17997,18 +17980,18 @@ operators (§4.4.7); `|>` is the loosest-binding operator. Expressions
 mixing bitwise OR with pipe application may still want parentheses for
 clarity.
 
-**`|>` applicability:** `|>` may apply an operator, an effect, or a
-terminal sink (§13.18.4). Using `|>` with a `fn` is a compile error:
+**`|>` applicability:** `|>` may apply an operator or an effect.
+Using `|>` with a `fn` is a compile error:
 
 ```
-let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator, effect, or sink
+let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator or effect
 ```
 
 Diagnostic class:
 ```
-error: `|>` requires an operator, effect, or sink on the right-hand side
+error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator, effect, or sink
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -18021,7 +18004,7 @@ derived bar: f32 = some_fn(source_cell)
 Or wrap the function in an operator:
 
 ```
-operator some_op(source: Signal[f32]) -> Signal[f32]:
+operator some_op(source: Cell[f32]) -> Derived[f32]:
   some_fn(source)
 ```
 
@@ -18030,10 +18013,10 @@ operator some_op(source: Signal[f32]) -> Signal[f32]:
 Operators may take type parameters with optional trait bounds:
 
 ```
-operator passthrough[T](source: Signal[T]) -> Signal[T]:
+operator passthrough[T](source: Cell[T]) -> Cell[T]:
   source
 
-operator running_total[T: Add & Copy](source: Signal[T]) -> Signal[T]:
+operator running_total[T: Add & Copy](source: Cell[T]) -> Derived[T]:
   recurrent acc: T = acc.previous(source) + source
   acc
 ```
@@ -18050,10 +18033,10 @@ Operators carry the standard three-level visibility (§10): `public`,
 reachable from other modules; public operators may be re-exported.
 
 ```
-public operator smooth(source: Signal[f32], rate: f32 = 0.1, clock: Signal[u64]) -> Signal[f32]:
+public operator smooth(source: Cell[f32], rate: f32 = 0.1, clock: Cell[u64]) -> Derived[f32]:
   ...
 
-private operator internal_helper(source: Signal[i32]) -> Signal[i32]:
+private operator internal_helper(source: Cell[i32]) -> Derived[i32]:
   ...
 ```
 
@@ -18120,7 +18103,7 @@ its output cell or its consumer. The author can also write a
 gated wrapper operator that conditionally falls through:
 
 ```
-operator conditional_smooth(source: Signal[f32], enabled: Signal[bool], clock: Signal[u64]) -> Signal[f32]:
+operator conditional_smooth(source: Cell[f32], enabled: Cell[bool], clock: Cell[u64]) -> Derived[f32]:
   derived effective: f32 = if enabled: (source |> smooth(rate: 0.1, clock: clock)) else: source
   effective
 ```
@@ -18165,9 +18148,9 @@ Normative diagnostic classes for operator usage:
 **`|>` applied to a non-operator/non-effect:**
 
 ```
-error: `|>` requires an operator, effect, or sink on the right-hand side
+error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
-                     ^^^^^^^^ `some_fn` is a `fn`, not an operator, effect, or sink
+                     ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
@@ -18178,15 +18161,15 @@ error: operator `smooth` has no positional parameter to bind from `|>`
   --> derived bar: f32 = source |> smooth(rate: 0.1)
                                    ^^^^^^ no positional parameter declared
   hint: either pass the upstream cell as the first positional argument,
-        or declare a positional `Signal[T]` parameter on the operator
+        or declare a positional `Cell[T]` parameter on the operator
 ```
 
-**`Signal[T]` parameter passed a non-cell, non-literal value:**
+**`Cell[T]` parameter passed a non-cell, non-literal value:**
 
 ```
-error: cannot pass value of type `f32` to `Signal[f32]` parameter
+error: cannot pass value of type `f32` to `Cell[f32]` parameter
   --> smooth(source: some_value, rate: 0.1, clock: tick)
-                     ^^^^^^^^^^ expected `Signal[f32]`, found `f32`
+                     ^^^^^^^^^^ expected `Cell[f32]`, found `f32`
   hint: literals are wrapped as implicit constant signal cells
         (compile-time-fixed `Signal[T]` values) automatically; this expression
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
@@ -18196,7 +18179,7 @@ error: cannot pass value of type `f32` to `Signal[f32]` parameter
 
 ```
 error: `attr` declarations are not permitted inside operator bodies
-  --> operator foo(source: Signal[f32]) -> Signal[f32]:
+  --> operator foo(source: Cell[f32]) -> Derived[f32]:
         attr rate: f32 = 0.1
         ^^^^^^^^^^^^^^^^^^^^^
   hint: operators take per-instance configuration as parameters, not
@@ -18206,8 +18189,8 @@ error: `attr` declarations are not permitted inside operator bodies
 **Final expression type mismatch with declared return type:**
 
 ```
-error: operator body returns `i32` but declared return type is `Signal[f32]`
-  --> operator bad(source: Signal[f32]) -> Signal[f32]:
+error: operator body returns `i32` but declared return type is `Derived[f32]`
+  --> operator bad(source: Cell[f32]) -> Derived[f32]:
         ...
         42
         ^^ this expression has type `i32`
@@ -18233,9 +18216,9 @@ instantiates:
 
 ```
 operator apply(
-  source: Signal[f32],
-  kernel: operator(Signal[f32]) -> Signal[f32],   // an operator carried by type
-) -> Signal[f32]:
+  source: Cell[f32],
+  kernel: operator(Cell[f32]) -> Derived[f32],   // an operator carried by type
+) -> Derived[f32]:
   kernel(source)                                    // instantiate the supplied operator
 ```
 
@@ -18255,18 +18238,18 @@ neither instantiate an operator nor carry one.
 
 ```
 error: a function parameter may not be operator-typed
-  --> fn run(k: operator(Signal[f32]) -> f32):
+  --> fn run(k: operator(Cell[f32]) -> f32):
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ operators carry reactive
       structure and have no runtime value
   hint: take an operator parameter in an `operator`, not a `fn`
 ```
 
 ```
-operator gain(source: Signal[f32], k: f32 = 1.0) -> Signal[f32]:
+operator gain(source: Cell[f32], k: f32 = 1.0) -> Derived[f32]:
   derived scaled: f32 = source * k
   scaled
 
-operator invert(source: Signal[f32]) -> Signal[f32]:
+operator invert(source: Cell[f32]) -> Derived[f32]:
   derived negated: f32 = -source
   negated
 
@@ -18278,7 +18261,7 @@ apply(source: some_signal, kernel: invert)   // a distinct monomorphization
 **Signature matching.** A value is admissible for a parameter of type
 `operator(P…) -> U` iff the named operator's signature matches
 structurally: the same parameter types in order, and the same return
-type. Cell-bound parameters appear as their cell type (`Signal[T]`,
+type. Cell-bound parameters appear as their cell type (`Cell[T]`,
 §13.17.3), value parameters as their value type; a value parameter's
 *default* (§13.17.3) is not part of the type and does not affect matching.
 The output must match the declared return type `U` — a value type, a
@@ -18294,7 +18277,7 @@ operator value.
 
 **Generics and chaining.** A carried operator may be generic; its type is
 written with the generic parameters bound at the use site (e.g.
-`operator(Signal[T]) -> Signal[T]` for a `T` in scope), following §13.17.8.
+`operator(Cell[T]) -> Derived[T]` for a `T` in scope), following §13.17.8.
 An operator carried by type composes in `|>` chains (§13.17.7) at the point
 it is instantiated, identically to a named operator.
 
@@ -18910,7 +18893,7 @@ primitives. All use the standard operator-application syntax
 **Signal-to-stream bridge:**
 
 ```
-operator to_stream[T, const N: usize = 1024](source: Signal[T]) -> RingStream[T, N]:
+operator to_stream[T, const N: usize = 1024](source: Cell[T]) -> RingStream[T, N]:
   // emits initial value as first event;
   // emits each subsequent committed value of source as a new event
   ...
@@ -18942,8 +18925,8 @@ default.
 **Stream-to-signal bridge:**
 
 ```
-operator to_signal[T](source: Stream[T], fallback: T) -> Signal[T]:
-  // returns a Signal[T] whose value is the latest observed event,
+operator to_signal[T](source: Stream[T], fallback: T) -> Derived[T]:
+  // returns a Derived[T] whose value is the latest observed event,
   // or `fallback` if no event has been observed yet
   ...
 ```
@@ -18989,10 +18972,10 @@ operator count[T](source: Stream[T]) -> Signal[i64]:
 operator fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Signal[A]:
   // running accumulator
 
-operator any[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]:
+operator any[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]:
   // true once any event satisfies pred
 
-operator all[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]:
+operator all[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]:
   // true if every event so far satisfies pred (true initially)
 ```
 
@@ -19023,7 +19006,7 @@ operator merge[
   // default capacity is the sum of input capacities, ensuring no
   // overflow if both inputs fill simultaneously
 
-operator throttle[T](source: Stream[T], window: duration, clock: Signal[u64]) -> Stream[T]:
+operator throttle[T](source: Stream[T], window: duration, clock: Cell[u64]) -> Stream[T]:
   // rate-limits events to at most one per window
 ```
 
