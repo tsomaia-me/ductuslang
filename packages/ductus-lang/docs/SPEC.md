@@ -16986,7 +16986,8 @@ per implementation choice).
   or `runtime.transaction(...)` to stage reactive state. Writes mark
   dirty; no evaluation runs.
 - Host calls `runtime.commit()` to settle dirty cells, advance
-  recurrents, run reconcilers, and publish a new snapshot for observers.
+  recurrents, publish a new snapshot for observers, and then fire
+  reconciler hooks (which observe the just-published snapshot, §13.14.9).
 - Observers call `runtime.acquire_snapshot(...)` to obtain the latest
   committed state and read cell values.
 
@@ -17120,8 +17121,11 @@ runtime.register_reconciler(effect_type_name, reconciler)
 ```
 
 Registers a host-side reconciler for a specific effect type (§13.19).
-Must be called before the runtime transitions to the live state
-(§13.14.1 step 4); registrations after it is live are rejected.
+Must be called during a pre-live window — before the runtime first
+transitions to the live state (§13.14.1 step 4), or during a hot
+reload's pre-live phase before the reload reaches the live state
+(§13.15.6). Registrations once live and outside a reload window are
+rejected.
 
 The `effect_type_name` is a string identifier matching the name of
 an `effect` declaration in the loaded source. The `reconciler` is a
@@ -17391,8 +17395,10 @@ gate-open.
 The runtime performs the reload atomically on its driving context,
 in the following order:
 
-1. Compile new source. On failure, reject reload; runtime state
-   unchanged.
+1. Receive the precompiled IR diff. Compilation and the §13.15.1
+   validation gate are host-side preconditions, completed before
+   `reload(diff)` is called; on a malformed diff, reject the reload,
+   runtime state unchanged.
 2. Acquire a reload lock. Pause acceptance of new signal/attr
    writes from host code (host requests queue).
 3. Let any in-flight commit complete; ensure the runtime is in a
@@ -17440,8 +17446,8 @@ restart — either full-runtime or per-instance, depending on the change:
     - Operator signature changes (parameters added, removed, or
       retyped; return type changed).
     - Internal cell type changes within an operator body.
-    - Changes to a cell's `= initial` expression in a way that would
-      alter its current state semantics.
+    - Any change to the text of a cell's `= initial` expression
+      (a textual, decidable criterion — no semantic-equivalence judgment).
 
   See §13.17.10 for full operator-reload rules. **Per-instance
   restart** suffices: the affected operator instances are
@@ -18062,8 +18068,9 @@ The reload-unsafe operator changes are:
 - Operator signature changes (parameters added, removed, or
   retyped; return type changed) — per-instance restart.
 - Internal cell type changes — per-instance restart.
-- Changes to a cell's `= initial` expression in a way that would
-  alter its current state semantics — per-instance restart.
+- Any change to the text of a cell's `= initial` expression — a
+  textual, decidable criterion (no semantic-equivalence judgment) —
+  per-instance restart.
 
 **Call-site changes:**
 
