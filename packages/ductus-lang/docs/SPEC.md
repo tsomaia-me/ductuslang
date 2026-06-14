@@ -17663,7 +17663,7 @@ cells; multiple call sites do not share state.
 #### 13.17.2 Declaration
 
 ```
-operator name[GenericParams]?(params...) -> Cell[T]:
+operator name[GenericParams]?(params...) -> T:
   body
 ```
 
@@ -17671,7 +17671,7 @@ operator name[GenericParams]?(params...) -> Cell[T]:
 - `GenericParams` are optional type parameters with optional trait
   bounds (§3, §5).
 - `params` is a comma-separated parameter list (§13.17.3).
-- The return type is a `Cell[T]` for some value type `T` — typically `Signal[T]`, but `Stream[T]` or `Sink[T]` for event-producing or sink operators (§13.17.5, §13.18.5).
+- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `Cell` type (`Signal[T]`/`Stream[T]`/`Sink[T]`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
 - The body is a sequence of reactive declarations (recurrents,
   deriveds) followed by a final expression that becomes the output.
 
@@ -17696,7 +17696,9 @@ type:
   storage operation (§11.11; §11.1): the value flows from the
   instantiation expression into the operator instance's value slot
   with implicit-move semantics. No `move` keyword is required.
-- Inside the body, the parameter is a compile-time-fixed value.
+- Inside the body, the parameter is a value fixed at instantiation (a
+  runtime value snapped once at instantiation, not necessarily a
+  compile-time constant).
 - Useful for configuration that does not change: smoothing rates,
   thresholds, modes, etc.
 
@@ -17791,21 +17793,26 @@ Not permitted in operator bodies:
   enclosing node's `effects:` clause (§13.3.8), never inside the
   operator.
 
-The final expression's type must be either `T` or a `Cell[T]`
-(matching the operator's return type). If the type is
-`T`, the compiler synthesizes a derived cell holding the final
-expression's value, and exposes that cell as the operator instance's
-output. If the type is already a `Cell[T]` (e.g., a named recurrent,
-derived, or stream in the body), that cell is the output directly — no
-synthesis needed.
+The final expression's type must match the operator's declared return
+type, which may be any type. If it is a value type (or a plain
+record/tuple), the compiler synthesizes a cell holding the value and
+exposes that cell as the operator instance's output — the `Signal[T]`≅`T`
+wrap (§13.2.8), so a `-> f32` return is carried as `Signal[f32]`, never a
+non-reactive snapshot. If the final expression is already a `Cell` (a
+named recurrent, derived, or stream in the body), that cell is the output
+directly — no synthesis needed. A record whose fields are cells (form 2)
+is wrapped likewise; its inner cells are part of its fixed compile-time
+shape, so static memory is preserved and the outer wrap is an inert
+passthrough.
 
 #### 13.17.5 Output
 
-Every operator returns a single reactive cell. The return type is
-typically `Signal[T]` for value-shaped operators, but may be any
-`Cell[T]` per §13.18.5 — including `Stream[T]` for event-producing
-operators (e.g., `to_stream`, `filter`, `merge`) and `Sink[T]` for
-operators that expose write-end stream handles.
+Whatever an operator's body returns — a value type, a record/tuple
+(plain or with cell fields), or an explicit `Cell` — its output is
+exposed to callers as a single reactive cell; the caller neither knows
+nor cares which. A value-shaped operator typically yields `Signal[T]`;
+event-producing operators (e.g., `to_stream`, `filter`, `merge`) yield
+`Stream[T]`; sink-exposing operators yield `Sink[T]` (§13.18.5).
 
 ```
 type PeakResult:
@@ -17825,10 +17832,11 @@ operator changes[T](source: Signal[T]) -> Stream[T]:
   ...
 ```
 
-For multiple outputs, return a record or tuple containing reactive
-cells:
-
-Consumers project fields via reactive expressions:
+For multiple outputs, return a record or tuple. Two forms are valid: a
+plain record/tuple (form 1, like `PeakResult` above — exposed as a single
+`Signal` of the record), or one whose fields are themselves cells (form
+2). Both respect static memory. Consumers project fields via reactive
+expressions:
 
 ```
 let result = source |> peak_detector            // Signal[PeakResult]
@@ -17869,7 +17877,8 @@ derived bar: f32 = 0.0 |> clamp(min: 0.0, max: 1.0) |> smooth(rate: 0.1, clock: 
 ```
 
 Each `|>` step is an operator application. The result of each step
-is a `Signal[T]` consumed by the next.
+is a `Cell` — a `Signal[T]` for value-shaped operators or a `Stream[T]`
+for event-producing ones — consumed by the next.
 
 **Convention:** the first positional parameter of any operator is
 the implicit pipe target. Library authors place the upstream cell
@@ -18205,10 +18214,10 @@ error: operator body returns `i32` but declared return type is `Signal[f32]`
 An operator has a **structural type**, written
 
 ```
-operator(P1, P2, …) -> Cell[U]
+operator(P1, P2, …) -> U
 ```
 
-— the parameter types in order, then the `Cell[U]` output (§13.17.2,
+— the parameter types in order, then the return type `U` (any type; §13.17.2,
 §13.17.5). This is the operator analog of a function type. Unlike the
 nominal node/connection/effect kinds — carried by the nominal `Type[…]`
 meta-type (§5.7) — operators are carried *structurally*, by signature.
@@ -18247,13 +18256,13 @@ apply(source = some_signal, kernel = invert)   // a distinct monomorphization
 ```
 
 **Signature matching.** A value is admissible for a parameter of type
-`operator(P…) -> Cell[U]` iff the named operator's signature matches
-structurally: the same parameter types in order, and the same output cell
+`operator(P…) -> U` iff the named operator's signature matches
+structurally: the same parameter types in order, and the same return
 type. Cell-bound parameters appear as their cell type (`Signal[T]`,
 §13.17.3), value parameters as their value type; a value parameter's
 *default* (§13.17.3) is not part of the type and does not affect matching.
-The output must match the declared `Cell[U]` — `Signal[U]`, `Stream[U]`, or
-`Sink[U]` (§13.17.5).
+The output must match the declared return type `U` — a value type, a
+record/tuple, or a `Cell` type (§13.17.5).
 
 **Instantiation.** The receiver instantiates the carried operator exactly as
 it would a named one (§13.17.6): by applying it to arguments. The resulting
