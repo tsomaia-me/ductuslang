@@ -18426,10 +18426,17 @@ no policy and no capacity; capacity belongs to the concrete bounded types.
 The type hierarchy:
 
 ```
-Stream[T]                 // abstract base; element type only — no policy, no capacity
-RingStream[T, N]          // concrete: ring policy, capacity N
-GateStream[T, N]          // concrete: gate policy, capacity N
+Stream[T]                       // abstract base; element type only — no policy, no capacity
+RingStream[T, N]                // concrete: ring policy, capacity N
+GateStream[T, N]                // concrete: gate policy, capacity N
+RecurrentRingStream[T, B, H]    // ring policy, buffer B, H-deep self-history
+RecurrentGateStream[T, B, H]    // gate policy, buffer B, H-deep self-history
 ```
+
+The plain `RingStream[T, N]` / `GateStream[T, N]` are the degenerate
+zero-history (`H = 0`) cases; a recurrent stream declaration (§13.18.8) adds
+`H` steps of self-history and produces the corresponding `Recurrent*Stream`
+type.
 
 `Stream[T]` is the abstract type for any stream of element type `T`,
 regardless of policy or capacity (and carrying neither itself). It is used
@@ -18446,7 +18453,7 @@ the policy or capacity matters at the type-system level, such as in
 operators or effects that constrain their inputs:
 
 ```
-operator persist[T](writes: GateStream[T]) -> ...:
+operator persist[T, const N: usize](writes: GateStream[T, N]) -> ...:
   // requires gate policy — persist must never silently drop writes
   ...
 ```
@@ -18465,7 +18472,9 @@ operator constraints. An operator that accepts `Stream[T]` accepts
 any capacity. An operator that needs a specific capacity bound
 declares it explicitly: `Stream[T]` for any, `RingStream[T, N]` for
 a specific capacity `N`, or with a trait bound expressing capacity
-relationships if relevant.
+relationships if relevant. There is no single-arity concrete form
+(`RingStream[T]` / `GateStream[T]`); a capacity-polymorphic operator binds
+the capacity with a `const N` generic.
 
 **Conversion between concrete and abstract.** A `RingStream[T, N]`
 value is implicitly usable wherever a `Stream[T]` is expected. The
@@ -18862,9 +18871,10 @@ all referenced inputs.
 
 ##### 13.18.8.6 Composition with operators
 
-A `recurrent[N] stream` declaration produces an ordinary
-`Stream[T]` for downstream consumers. Operators apply normally
-(assuming `count` is a stream in scope):
+A `recurrent[N] stream` declaration produces a
+`RecurrentRingStream[T, B, H]` or `RecurrentGateStream[T, B, H]` (per its
+policy), usable as a `Stream[T]` for downstream consumers. Operators apply
+normally (assuming `count` is a stream in scope):
 
 ```
 recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
@@ -18872,8 +18882,9 @@ stream ring scaled: f32 = avg |> map(fn(x): x * 2)
 stream ring filtered: f32 = avg |> filter(fn(x): x > 0.5)
 ```
 
-The recurrent declaration's special semantics are contained within
-its own body; consumers see a regular stream.
+The recurrent declaration's special semantics — the `H`-deep self-history
+the body reads via `.past`/`.previous` — are contained within its own body;
+consumers use it as an ordinary `Stream[T]`.
 
 ##### 13.18.8.7 Restrictions
 
@@ -18882,12 +18893,13 @@ its own body; consumers see a regular stream.
   is not valid in `observed:` blocks because there is no expression
   for `.past` to reference. Effects needing history-aware behavior
   must compute it in the host's reconciler.
-- **Signal recurrents share this design.** Signal-typed
-  `recurrent[N]` declarations (§13.2.4) use the same
+- **Value recurrents share this design.** Value `recurrent[N]`
+  declarations — type `Recurrent[T, N]` (§13.2.4) — use the same
   `.previous(fallback)` / `.past(k, fallback)` accessors with the
   same compile-time bounds. The two are symmetric: same syntax,
-  same memory model, same semantics — differing only in whether
-  the cell is a value-shaped Signal or an event-shaped Stream.
+  same memory model, same semantics — differing only in whether the
+  cell is a value-shaped `Recurrent[T, N]` or an event-shaped
+  recurrent stream.
 
 #### 13.18.9 Stream operators
 
@@ -19253,11 +19265,11 @@ the concrete policy through.
 policy declare it concretely in the signature:
 
 ```
-operator persist[T: Persistable](writes: GateStream[T]) -> EffectResult:
+operator persist[T: Persistable, const N: usize](writes: GateStream[T, N]) -> EffectResult:
   // writes must be lossless; passing a RingStream is a type error
   ...
 
-operator emit_telemetry[T: Telemetry](events: RingStream[T]) -> ():
+operator emit_telemetry[T: Telemetry, const N: usize](events: RingStream[T, N]) -> ():
   // ring is the right semantics for telemetry — losing oldest events on overload is acceptable
   ...
 ```
@@ -19545,9 +19557,11 @@ to the base stream reload rules above:
   shaped cells. Host-side writes into a stream go through the
   dedicated host API (§13.14.8 `runtime.push_stream`).
 - **`.past(n, fallback)` and `.previous(init)` are only valid
-  inside the expression body of a `recurrent[N] stream` declaration**
-  (§13.18.8). Use elsewhere — in plain `stream` declarations,
-  `derived` expressions, signal arms, etc. — is a compile error.
+  inside a recurrent's producing context** — the expression body of a
+  `recurrent[N] stream` (§13.18.8) or a value `recurrent[N]` /
+  `Recurrent[T, N]` (§13.2.4) declaration. Use in a non-recurrent
+  context — a plain `stream` or `derived`, a non-recurrent `signal`
+  arm, etc. — is a compile error.
 - **Output stream `.past(k, ...)` must satisfy `k ≤ N`.** A
   declaration `recurrent[N] stream X = ... X.past(k, ...) ...`
   with `k > N` is a compile error: the output's history allocation
@@ -19620,16 +19634,6 @@ error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
         be incorrect; the source stream uses ring policy. Either
         reconstruct the producing chain as a gate stream, or use a
         lossy-acceptable variant of `persist`.
-```
-
-**Assignment to a sink:**
-
-```
-error: cannot assign to sink `outbound`
-  --> ws.outbound = some_message
-      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: sinks receive events through stream forwarding, not assignment.
-        Pipe a stream into the sink: `stream_of_messages |> ws.outbound`.
 ```
 
 **Stream declaration inside a function body:**
