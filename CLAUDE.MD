@@ -6,7 +6,7 @@ become commitments.
 # Mandatory Operational Protocol
 
 1. Ask, don't assume: interpret ambiguity as opportunity to ask.
-2. Do not use AskTool, prefer textual conversation.
+2. Do not use AskTool ever, prefer textual conversation.
 3. Phrase your responses in plan, simple language. Do not use academic, complex language and sentences.
 4. Be terse: do not overexplain unless asked to for elaboration. Few carefully selected words > 1000 buzzwords most of
    the time.
