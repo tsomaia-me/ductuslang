@@ -18473,76 +18473,21 @@ abstract type is a supertrait of both concrete types; the conversion
 is zero-cost at runtime (the stream value is unchanged; only the
 type-system view is widened).
 
-#### 13.18.4 Sink types
-
-A *sink* is the write-side view of a stream. The stream and its
-sink share the same underlying buffer; they differ only in
-access mode:
-
-- A **Stream** is the *read* view. Consumers observe events through
-  cursors.
-- A **Sink** is the *write* view. Producers push events into the
-  buffer.
-
-```
-Sink[T]                   // abstract base
-RingSink[T, N]            // concrete: ring policy, capacity N
-GateSink[T, N]            // concrete: gate policy, capacity N
-```
-
-Sinks appear primarily in effect declarations (§13.19.4): an
-effect's `desired:` block may declare a sink that the program writes
-to, with the corresponding stream view held by the effect's host-
-side reconciler.
-
-Outside of effect declarations, sinks appear when a stream's
-producer-side handle is exposed explicitly — for instance, an
-operator that constructs a stream and returns both its stream view
-(for consumers) and its sink view (for the operator's caller to
-push into) as a record.
-
-**Pushing into a sink.** Sinks are not written via assignment.
-Producers push into a sink by piping a stream into it directly via
-`|>` (§13.17.7 Case 3):
-
-```
-let events_to_log: Stream[LogEntry] = ...
-let log_sink: Sink[LogEntry] = ...
-events_to_log |> log_sink                // forwards stream into sink
-```
-
-The pipe establishes a forwarding subscription: each event observed
-from the stream is pushed into the sink. The expression's value is
-the unit type `()`; the subscription lives for the enclosing scope.
-
-A single sink may receive from multiple stream-sources via multiple
-pipe-into-sink expressions (multi-producer pattern). The receiving
-sink's buffer is shared; events from all producers arrive in
-their commit order.
-
-**No standalone sink declaration.** Sinks are not declared with a
-top-level `sink` keyword. A sink exists only as the write-side
-counterpart of a declared stream. When a `stream` declaration is
-made, both views are implicit — the declared name binds to the
-Stream view; the Sink view is accessed via the producer-side
-machinery (the source expression in the declaration, or the sink
-field of an effect's desired block).
-
 #### 13.18.5 The `Cell` trait
 
-`Cell[T]` is the common abstraction over the reactive cell types
-that carry values of type `T`. It is implemented by `Signal[T]`,
-`Stream[T]`, and `Sink[T]` (and their concrete sub-types).
+`Cell[T]` is the umbrella over the reactive cell types that carry
+values of type `T`. It is implemented by the value cells `Signal[T]`,
+`Derived[T]`, and `Recurrent[T, N]`, and by `Stream[T]` (and their
+concrete sub-types).
 
 ```
-Cell[T]                       // abstract base — any reactive cell carrying values of type T
-  Signal[T]                   // single current value (§13.2.8)
+Cell[T]                       // umbrella — any reactive cell carrying values of type T
+  Signal[T]                   // host/placement-written value cell (§13.2.8)
+  Derived[T]                  // computed value cell, no history (§13.2.8)
+  Recurrent[T, N]             // computed value cell, N-deep self-history (§13.2.8)
   Stream[T]                   // append-only event sequence (§13.18.3)
     RingStream[T, N]
-    GateStream[T, N]
-  Sink[T]                     // write-only stream end (§13.18.4)
-    RingSink[T, N]
-    GateSink[T, N]
+    GateStream[T, N]          // (+ recurrent stream variants, §13.18.8)
 ```
 
 `Cell[T]` is used in operator and function signatures that accept any
@@ -18550,40 +18495,30 @@ reactive cell containing values of `T`, without constraining which
 kind:
 
 ```
-operator monitor[T, C: Cell[T]](source: C) -> Signal[bool]:
-  // works with any Signal, Stream, or Sink carrying T
+operator monitor[T, C: Cell[T]](source: C) -> Derived[bool]:
+  // works with any value cell or stream carrying T
   ...
 ```
 
 The trait has no required methods at the language level; it is a
 marker indicating participation in the reactive system as a typed
-cell. Concrete behavior (current-value reads, event observation,
-push semantics) is specific to each implementing type and is
+cell. Concrete behavior (current-value reads on value cells, event
+observation on streams) is specific to each implementing type and is
 expressed through the type's own methods and operators.
-
-**Direction-specific sub-traits.** Where an operator needs to
-constrain by direction, two sub-traits refine `Cell[T]`:
-
-- `Readable[T]: Cell[T]` — implemented by `Signal[T]` and `Stream[T]`
-  (the read views).
-- `Writable[T]: Cell[T]` — implemented by `Sink[T]` (and by
-  `Signal[T]` from the host's perspective, though program code
-  cannot write to signals — see §13.2.7).
-
-These finer-grained traits are stdlib-provided; most operators use
-the parent `Cell[T]` or a concrete type directly.
 
 **Why a trait, not a union type.** Ductus does not have ad-hoc union
 types at value position (§5.2 `dyn` is for trait objects). A common
 abstraction over heterogeneous reactive cells must be expressed as
 a trait. `Cell[T]` plays that role.
 
-**Use in generic signatures.** Operators returning a `Cell[T]`
-declare the concrete kind through their return type. For example,
-`to_stream` returns `Stream[T]` (a concrete `Cell[T]`); `to_signal`
-returns `Signal[T]`. The trait is rarely the return type of an
-operator — concrete types carry more information and are preferred
-unless the operator genuinely produces a polymorphic output.
+**Use in generic signatures.** A value-reading operator parameter is
+typed `Cell[T]` (§13.2.8); a `Stream[T]` has no current value, so it is
+excluded at the read site rather than by the signature. Operators
+returning a value cell declare the concrete kind through their return
+type — typically `Derived[T]` for a computed output, `Stream[T]` for a
+stream, or `Cell[T]` only for a genuine passthrough. Concrete types
+carry more information and are preferred unless the operator genuinely
+produces a polymorphic output.
 
 #### 13.18.6 Observation cells
 
@@ -19098,17 +19033,6 @@ A separate `merge_gate` variant is provided for gate streams with
 the same shape; cross-policy merges (one ring, one gate) are not
 permitted (compile error — the result's overflow semantics would be
 ambiguous).
-
-**Stream-to-sink forwarding** is not an operator — it is expressed
-directly via `|>` Case 3 (§13.17.7):
-
-```
-source_stream |> target_sink
-```
-
-The pipe establishes a forwarding subscription that lives for the
-enclosing scope. There is no dedicated operator wrapper; the pipe's
-type-directed dispatch handles the case when the RHS is a Sink.
 
 **History-aware operators** (Stream → Stream with state):
 
@@ -21016,10 +20940,6 @@ Specifically, the values held by:
   Stream cells per their declared type; the effect is a grouping
   construct, not a new storage category.
 
-`Sink[T]` cells (§13.18.4) are the write-side view of a Stream;
-they share the same underlying storage and do not allocate
-separately.
-
 Regular Ductus values — local bindings (`let`/`mut`) inside function
 bodies, function parameters, function return values, iterator state,
 closure captures, ordinary record/array/tuple values used as
@@ -21601,11 +21521,6 @@ pointers at program startup.
   non-recurrent streams or for recurrent streams whose body does
   not call `.past` on any inputs. Determines per-input history
   allocation (§13.18.8.4).
-
-A Sink declared in an effect's `desired:` block shares its cell ID
-with the corresponding Stream view; the spec records a single
-stream entry, with a flag indicating that the cell is exposed in
-both views.
 
 **Effect instances.** A list of effect instance entries. Each:
 
