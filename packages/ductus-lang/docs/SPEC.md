@@ -14644,7 +14644,9 @@ The right-hand side of an attribute setting at placement may be:
 - A **reactive expression** — references reactive cells (signals,
   attrs, recurrents, deriveds) visible at the placement scope:
   sibling part instances by name, top-level signals or consts, or
-  any cell reachable through visible names. The placement creates
+  any cell reachable through visible names (a `const` is visible but
+  contributes no reactivity — a const-only RHS is a category-B value
+  binding, not reactive wiring). The placement creates
   an implicit `derived` bridging the source cells to the target
   attr, so the attr reactively tracks changes to the source. This
   is **reactive wiring** — §11.1 category C — and is governed by
@@ -14707,9 +14709,9 @@ setting the same attr via two mechanisms is a compile error
 (duplicate-set).
 
 Reactive bindings apply to the **`name=value` inline form** for
-attrs. Flag form has no expression slot — a flag always sets a
-literal boolean (true for `'name`, false for `!name`) — so reactive
-bindings do not apply to flags.
+attrs. Flag form has no expression slot — a flag always sets literal `true`
+(`'name`), and the inline `!name` form (§13.8.7) sets `false` — so
+reactive bindings apply to neither.
 
 A type's `default attr` (§13.2.2.1) — when declared — is
 additionally settable via the positional `/expr` form (§13.8.5). The
@@ -14770,9 +14772,9 @@ The optional instance name (`out1`, `in1` in the example) is the
 accessible by that name from contexts where the placement scope is
 visible:
 
-- Inside the same placement body: `out1` refers to the just-placed
-  Pin (useful when subsequent connection placements need to
-  reference it).
+- Inside the same placement body: `out1` refers to the placed Pin and
+  is visible to other placements in the same body regardless of order,
+  including ones written later (placement-scope names are whole-scope).
 - Outside the parent type, in function bodies receiving the parent
   instance: `chip_b.out1` (where `chip_b` is the parameter name)
   accesses the named part directly, in parallel with the type-bulk
@@ -15222,7 +15224,9 @@ The expression in `name=value` may be a compile-time constant *or*
 a reactive expression, per §13.8.2.1. A reactive expression creates
 a synthesized derived bridging the source cells to the target attr.
 All three forms (value, bare, negated-bare) and the flag form
-(§13.8.8) handle attr binding uniformly.
+(§13.8.8) handle attr binding uniformly in target and conflict rules;
+reactive binding, however, applies only to the `name=value` form
+(§13.8.2.2) — the bare, negated-bare, and flag forms set literal booleans.
 
 #### 13.8.8 Flags
 
@@ -15430,7 +15434,7 @@ The whitespace form is unambiguous only when each placement is
 next placement. A placement is self-delimiting when every clause it
 carries is bounded:
 
-- a bare type, with flags and octave/duration sigils: `C`, `G'`, `Pin'!`;
+- a bare type, including any flag run (§13.8.8): `C`, `G'`, `Pin'!`;
 - a single-atom `/expr` — literal, identifier, or path (§13.8.5):
   `C/4`, `Filter/cutoff_default`;
 - an `as` name, which consumes exactly one identifier: `G as a`.
