@@ -78,6 +78,18 @@ First 5b sub-pass (operators; streams §13.18 and effects §13.19 + F141–F148 
 
 Findings struck: **F108–F114** (7 findings; 82 → 75 open). Section 029 grew 125 → 128 entries. Cold-reviewed by one no-context agent over the operator cluster; addressed both findings it raised — the surviving `-> Cell[T]` operator grammar in log 029-9 and the stale §029 header count. `lint_nnm.py` green (4078 entries). Streams (§13.18) and effects (§13.19) + F141–F148 remain for the next 5b sub-passes.
 
+### Reactive-cell type-model overhaul · streams §13.18 + effects §13.19 (ruled 2026-06-14 · applied · cold-reviewed · findings struck)
+The streams+effects 5b sub-pass, taken as a foundational type-model overhaul rather than per-finding patches.
+- **One umbrella.** `Cell[T]` is the **sole** umbrella over reactive cells; `Signal[T]` is **demoted** from umbrella to a concrete host/placement-written value cell. `Readable[T]`/`Writable[T]` removed.
+- **Per-kind value types.** `derived` → `Derived[T]` (no history), `recurrent[N]` → `Recurrent[T, N]` (N-deep self-history); `Derived[T]` is the degenerate N=0 case. A reactive value expression produces `Derived[T]`.
+- **Ruling A.** Value-reading operator/function parameters are typed `Cell[T]` (a stream has no current value, so it is excluded at the read site, not the signature); computed value outputs are `Derived[T]` (§13.2.8, §13.17.3; new entry 029-129).
+- **Recurrent streams are distinct types** `RecurrentRingStream[T,B,H]` / `RecurrentGateStream[T,B,H]`; plain ring/gate are the H=0 degenerate cases. `.past`/`.previous` are producing-context only (F119).
+- **`Sink[T]` and the `sink` keyword removed entirely** (§13.18.4 deleted, pipe Case 3 removed): events are streams, so a stream's write side is mechanism (a `= source`, or the host API), never a named type — making §13.2.7 ("programs describe, never write") hold without exception. (Supersedes F141; folds F142/F145.)
+- **Effects are flat I/O surfaces.** `desired:` holds `derived`/`recurrent` (values) and `stream … = source` (events the effect feeds from its own parameters/observed cells); `observed:` holds `signal`/`stream`. `recurrent` is **allowed in `desired:`**, forbidden in `observed:`. A desired stream's source may read the effect's own observed cells (**feedback**) provided the cycle passes a delay/commit boundary. **No exposed sinks**, no external `|>` into effect cells, and **no `repeat`/topology** in effects (per-element I/O is a node's `effects:`-clause repeat).
+- **No capacity elision** (F116): concrete stream types always carry capacity (`const N` generic for polymorphism). **Observation cells are `Derived[T]`** (runtime-computed, §13.18.6).
+
+Findings struck: **F116, F119** (full ledger 75 → 73) and **F141, F142, F144, F145** (Session-4 block 8 → 4). Implemented log-first across §016/§029/§030/§031 + §002/§017/§018/§022/§028/§032/§033, then SPEC §13.2.8/§13.17/§13.18/§13.19 + §1.4/§13.3.8/§13.5.4/§13.9.12/§15.4.1. Cold-reviewed by three independent no-context agents (value cells+operators · streams · effects+repeat/topology); addressed every valid finding — a band of sweep-missed `Signal[T]`→`Cell[T]`/`Derived[T]` spots (count/fold/render/cached_fetch, §029 param rules, obs/observe entries) plus a stale `repeat`-in-`desired:` admission, two `sink`-in-reload lists, and a `recurrent`-forbidden entry. `lint_nnm.py` green (4053 entries). F143/F146/F147/F148 retained (F147's substance already fixed).
+
 ## Phase-1 agenda — the decisions, grouped into ~7 focused sessions
 
 Ordered so cascading decisions come first. Each fork is one line; full context in the per-finding block below (search `## Fxxx`).

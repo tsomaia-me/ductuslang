@@ -18524,29 +18524,29 @@ to the buffer's capacity):
 
 | Cell | Type | Meaning |
 |---|---|---|
-| `pending_count` | `Signal[i32]` | Events in the buffer not yet observed by every cursor |
-| `pressure` | `Signal[f32]` | `pending_count / capacity`, range `0.0..1.0` |
-| `is_full` | `Signal[bool]` | `true` when `pending_count is capacity` |
-| `dropped_total` | `Signal[i64]` | Cumulative count of events displaced by overflow (ring only; always `0` for gate) |
-| `rejected_total` | `Signal[i64]` | Cumulative count of pushes rejected by overflow (gate only; always `0` for ring) |
-| `last_overflow_at` | `Signal[Option[instant]]` | Timestamp of the most recent overflow event, or `None` if never |
+| `pending_count` | `Derived[i32]` | Events in the buffer not yet observed by every cursor |
+| `pressure` | `Derived[f32]` | `pending_count / capacity`, range `0.0..1.0` |
+| `is_full` | `Derived[bool]` | `true` when `pending_count is capacity` |
+| `dropped_total` | `Derived[i64]` | Cumulative count of events displaced by overflow (ring only; always `0` for gate) |
+| `rejected_total` | `Derived[i64]` | Cumulative count of pushes rejected by overflow (gate only; always `0` for ring) |
+| `last_overflow_at` | `Derived[Option[instant]]` | Timestamp of the most recent overflow event, or `None` if never |
 
-These cells are ordinary `Signal[T]` cells for all purposes —
+These cells are ordinary `Derived[T]` cells for all purposes —
 participating in the commit cycle, in derived dependencies, in hot
 reload identity. They are not separately declared in user code; the
 compiler synthesizes them as part of the stream's storage.
 
 **Pressure-driven self-throttling.** The observation cells let
 producer-side code react to consumer lag. A producer that wishes to
-self-throttle reads the stream's `pressure` (or `is_full`) signal
-and gates emission based on it — e.g., by feeding the signal into a
+self-throttle reads the stream's `pressure` (or `is_full`) cell
+and gates emission based on it — e.g., by feeding the cell into a
 conditional `derived` upstream of the stream-producing chain, or by
-using a stream operator that consults the back-pressure signal.
+using a stream operator that consults the back-pressure cell.
 
 The exact throttling pattern depends on the producing chain's
 shape; the stdlib provides operators that combine well with the
 observation surface (e.g., `throttle` per §13.18.9 with a
-pressure-derived gating signal).
+pressure-derived gating cell).
 
 **Gate-side back-pressure.** For `gate` streams, the `rejected_total`
 signal lets the producer-side code observe rejections and take
