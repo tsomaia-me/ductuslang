@@ -19873,7 +19873,9 @@ desired:
 
 The form matches a regular `derived` declaration (§13.2.3): the
 expression is pure and reactive, reads from parameters and any
-in-scope cells, and the cell value updates when those inputs change.
+in-scope cells (including the effect's own `observed:` cells — see the
+feedback rule under `stream` cells below), and the cell value updates
+when those inputs change.
 The host's reconciler reads the cell's current value on each
 invocation. Program code can also read `derived` cells in `desired:`
 via the standard access path (`f.request` — see §13.19.7), but
@@ -19900,9 +19902,13 @@ The declaration shape matches a regular `stream` declaration (§13.18.2)
 — policy keyword (`ring` or `gate`), optional capacity (defaulting to
 1024), name, element type, and a `= source`. The effect feeds the
 source internally; there is no external program-side wiring into it.
-A source may read the effect's own `observed:` cells (feedback, e.g.
-replying to `inbound`), provided the cycle passes a delay (a
-`recurrent`) or a commit boundary so it cannot inherently diverge.
+A desired cell's expression or `= source` (whether `derived`,
+`recurrent`, or `stream`) may read the effect's own `observed:` cells
+(feedback, e.g. replying to `inbound`), provided the cycle passes a delay
+(a `recurrent`) or a commit boundary so it cannot inherently diverge —
+the host writes `observed:` in commit N, the desired cells recompute, the
+reconciler reads them, and any resulting `observed:` write lands in a
+later commit.
 
 **Cell name uniqueness.** Within a single `desired:` block, cell
 names must be distinct. Cells in `desired:` may not share names
@@ -20003,9 +20009,9 @@ error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. The host's
-        reconciler is the sole writer of cells in `observed:`. To
-        inject test data, construct a different effect instance or
-        use a stub effect.
+        reconciler is the sole writer of `observed:` cells; to control
+        the effect's behavior, change the upstream cell(s) bound to its
+        parameters (or use a stub effect to inject test data).
 ```
 
 **Host-side semantics.** The host writes observed signal cells via
@@ -20082,9 +20088,10 @@ assignment is a compile error:
 error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: effect cells are not writable from program code. To control
-        the effect's behavior, change the upstream cell(s) bound
-        to its parameters.
+  hint: effect cells are not writable from program code. The host's
+        reconciler is the sole writer of `observed:` cells; to control
+        the effect's behavior, change the upstream cell(s) bound to its
+        parameters (or use a stub effect to inject test data).
 ```
 
 **Instantiating an effect.** The instantiation lives in the `effects:`
@@ -20491,9 +20498,10 @@ error: cell name `target` appears in both `desired:` and `observed:` of effect `
 error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: effect cells are not writable from program code. To control
-        the effect's behavior, change the upstream cell(s) bound
-        to its parameters.
+  hint: effect cells are not writable from program code. The host's
+        reconciler is the sole writer of `observed:` cells; to control
+        the effect's behavior, change the upstream cell(s) bound to its
+        parameters (or use a stub effect to inject test data).
 ```
 
 **Effect type with no registered reconciler:**
