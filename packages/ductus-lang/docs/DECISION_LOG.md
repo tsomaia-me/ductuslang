@@ -3597,7 +3597,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 031-10. The reconciler reads an instance's parameters and desired cells, performs the real-world operations that align reality with the desired state, and writes the actual outcome into the observed cells. (§13.19.1)
 031-11. An effect declaration has the form `effect name[GenericParams]?(params...):` followed by its cell blocks. (§13.19.2)
 031-12. An effect's name is a snake_case identifier. (§13.19.2)
-031-13. The `desired:` block and the `observed:` block are each individually optional in an effect declaration. (§13.19.2)
+031-13. The `desired:` and `observed:` blocks are each individually optional, but at least one must be present (an effect with neither has no surface); a stream parameter does not auto-bind, so even a pure consumer declares a block. (§13.19.2)
 031-14. Every cell declaration in an effect block carries an explicit role keyword: `derived`, `recurrent`, or `stream` in `desired:`, `signal` or `stream` in `observed:`. (§13.19.2)
 031-15. Reactive declarations other than the five role-keyword cell forms (e.g. `attr`, top-level `signal`) cannot appear inside an effect's body. (§13.19.2)
 031-16. The `desired:` and `observed:` blocks may be declared in either order; the canonical order is `desired:` first, `observed:` second. (§13.19.2)

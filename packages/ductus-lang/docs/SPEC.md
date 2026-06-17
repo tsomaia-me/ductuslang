@@ -19887,12 +19887,17 @@ effects:
 ```
 
 **Stream parameters.** Parameters may be of stream type
-(`Stream[T]`, `RingStream[T, N]`, `GateStream[T, N]`). The host's
-reconciler observes events from the parameter stream:
+(`Stream[T]`, `RingStream[T, N]`, `GateStream[T, N]`). A parameter does
+not auto-bind to a surface: the effect must still declare at least one
+block (§13.19.2) saying what it does with the parameter's events, and
+the host's reconciler drives that block:
 
 ```
 effect log(entries: GateStream[LogEntry, 4096]):
-  // no desired, no observed — pure fire-and-forget consumer
+  desired:
+    stream gate[4096] out: LogEntry = entries
+    // the parameter feeds a desired stream; the host writes each entry
+    // out. Even a pure consumer makes its reconciliation explicit.
 
 // usage (in a node's effects: clause, §13.3.8):
 effects:
@@ -20499,7 +20504,11 @@ value track (§8).
 - **Effects may not appear inside function bodies.** Functions are
   reactive-transparent (§13.12.2); they cannot host reactive
   declarations or instantiations. An effect-using function would
-  need to be promoted to an operator.
+  need to be promoted to an operator — but promotion does not let the
+  operator *host* the effect either (operators may not instantiate
+  effects, §13.17.4): the operator composes the effect *through* a pipe
+  (`url |> fetch`), and the effect is still instantiated in the
+  enclosing node's `effects:` clause.
 - **No reactive declarations outside `desired:` and `observed:`
   blocks inside an effect body.** The effect's body consists only of
   the `desired:` and `observed:` blocks containing role-keyword cell
