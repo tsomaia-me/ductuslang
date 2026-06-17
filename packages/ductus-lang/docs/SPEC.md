@@ -18971,23 +18971,23 @@ returned signal updates on each new event.
 **Skip / take family:**
 
 ```
-operator skip[T](source: Stream[T], n: i32) -> Stream[T]:
+operator skip[T, P: StreamPolicy](source: Stream[T, P], n: i32) -> Stream[T, P]:
   // drops the first `n` events observed from source
 
-operator skip_first[T](source: Stream[T]) -> Stream[T]:
+operator skip_first[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[T, P]:
   // equivalent to skip(1)
 
-operator take[T](source: Stream[T], n: i32) -> Stream[T]:
+operator take[T, P: StreamPolicy](source: Stream[T, P], n: i32) -> Stream[T, P]:
   // emits the first `n` events observed from source, then emits no
   // more (the output stream is complete after n events)
 
-operator take_first[T](source: Stream[T]) -> Stream[T]:
+operator take_first[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[T, P]:
   // equivalent to take(1)
 ```
 
 `skip` and `take` are duals: `skip(n)` discards the first n events
 and passes the rest; `take(n)` passes the first n events and
-discards the rest. Both preserve the source's policy and capacity.
+discards the rest. Both preserve the source's policy and capacity by threading `P`.
 
 The most common use of `skip_first` is to drop the initial-value
 event emitted by `to_stream`, leaving only true changes:
@@ -19020,11 +19020,11 @@ value structurally (`0` for `count`, `init` for `fold`, `false` for
 **Transformation operators** (Stream → Stream):
 
 ```
-operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
-  // policy and capacity preserved from source
+operator map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]:
+  // policy and capacity preserved by threading P
 
-operator filter[T](source: Stream[T], pred: fn(T) -> bool) -> Stream[T]:
-  // policy and capacity preserved from source
+operator filter[T, P: StreamPolicy](source: Stream[T, P], pred: fn(T) -> bool) -> Stream[T, P]:
+  // policy and capacity preserved by threading P
 
 operator merge[
   T,
@@ -19039,13 +19039,16 @@ operator merge[
   // default capacity is the sum of input capacities, ensuring no
   // overflow if both inputs fill simultaneously
 
-operator throttle[T](source: Stream[T], window: duration, clock: Cell[u64]) -> Stream[T]:
-  // rate-limits events to at most one per window
+operator throttle[T, P: StreamPolicy](source: Stream[T, P], window: duration, clock: Cell[u64]) -> Stream[T, P]:
+  // rate-limits events to at most one per window. `clock` ticks are
+  // nanoseconds (§9.4.1): an event passes when clock - last_emit >= window.
 ```
 
-Transformation operators that preserve policy and capacity do so by
-construction: their output stream uses the same buffer
-configuration as their input.
+Transformation operators preserve policy and capacity by *threading* their
+policy parameter `P` from input to output (`Stream[T, P] -> Stream[U, P]`); the
+preservation is stated in the signature and checked by the type system, not a
+separate propagation rule. `map`, `filter`, `skip`, `take`, `throttle`, `scan`,
+and `pairwise` all preserve this way.
 
 The `merge` operator uses a const-generic capacity parameter `N` whose
 default expression `A + B` is over the input streams' const-generic
@@ -19065,11 +19068,11 @@ ambiguous).
 **History-aware operators** (Stream → Stream with state):
 
 ```
-operator scan[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Stream[A]:
+operator scan[T, A, P: StreamPolicy](source: Stream[T, P], init: A, f: fn(A, T) -> A) -> Stream[A, P]:
   // emits f(state, event) on each event, threading state through.
   // The output's first event is f(init, first_input_event).
 
-operator pairwise[T](source: Stream[T]) -> Stream[(T, Option[T])]:
+operator pairwise[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[(T, Option[T]), P]:
   // emits each event paired with the previous event;
   // the first output is (first_input, None).
 ```
@@ -19265,17 +19268,17 @@ without changing its overflow semantics (`map`, `filter`, `skip`)
 preserve the policy type:
 
 ```
-operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
+operator map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]:
   ...
 
-// At a call site:
+// At a call site, the policy threads through by construction:
 let mapped: RingStream[U, 1024] = (some_ring_stream: RingStream[T, 1024]) |> map(f)
 let mapped2: GateStream[U, 256] = (some_gate_stream: GateStream[T, 256]) |> map(f)
 ```
 
-The output's concrete policy matches the input's. The signature is
-written in terms of the abstract `Stream[T]`; the compiler propagates
-the concrete policy through.
+The output's concrete policy is the input's `P`, threaded through the
+signature: `RingStream[T, 1024]` (= `Stream[T, Ring[1024]]`) in gives
+`RingStream[U, 1024]` out, by type-checking — not a propagation pass.
 
 **Policy-constraining operators.** Operators that require a specific
 policy declare it concretely in the signature:
