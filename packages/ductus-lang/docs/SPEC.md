@@ -19370,10 +19370,12 @@ cursors do hold the buffer.)
 
 When a cursor's position is overwritten by a `ring` policy advance,
 the cursor automatically jumps forward to the oldest still-present
-event. The consumer observes this as a gap — the `dropped_total`
-signal increments by the number of skipped events. Consumers that
-care about completeness must monitor `dropped_total` or use `gate`
-streams.
+event; the consumer observes this as a gap. `dropped_total` is a
+*per-stream* counter (§13.18.6): it increments once per event the
+ring displaces by overflow, independent of how many consumers had yet
+to read it — it is not a per-consumer skip count. A consumer needing
+its own gap size compares cursor positions; consumers that need
+completeness use `gate` streams.
 
 **Cursors under gate-freeze.** When a consumer's enclosing subtree is
 gated off (§13.9.7), its cursor stops advancing — a frozen consumer is
@@ -19537,13 +19539,14 @@ to the base stream reload rules above:
   reload-unsafe; per-instance restart of the affected
   recurrent-stream declarations. The trailing history would have
   no place to live.
-- **Per-input history**: preserved iff the input stream's type
-  signature is byte-identical AND the max `k` referenced for that
-  input does not decrease. Increasing max `k` for an input
-  reload-safely extends its history allocation (older positions
+- **Per-input history**: preserved across reload iff the input
+  stream's type signature is byte-identical. Increasing max `k` for an
+  input reload-safely extends its history allocation (older positions
   initialize from fallbacks). Decreasing max `k` reload-safely
-  truncates allocation. Removing all `.past` references to an
-  input reload-safely releases its history.
+  truncates the allocation to the most-recent `k` entries, which are
+  retained — the window stays full and the dropped entries are the
+  oldest. Removing all `.past` references to an input reload-safely
+  releases its history.
 - **`@reset_on_reload`** on a `recurrent[N] stream` resets both
   the output history and all per-input history, in addition to
   the base buffer.
