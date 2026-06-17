@@ -17821,7 +17821,7 @@ Whatever an operator's body returns — a value type, a record/tuple
 (plain or with cell fields), or an explicit `Cell` — its output is
 exposed to callers as a single reactive cell; the caller neither knows
 nor cares which. A value-shaped operator typically yields `Derived[T]`;
-event-producing operators (e.g., `to_stream`, `filter`, `merge`) yield
+event-producing operators (e.g., `to_ring_stream`, `to_gate_stream`, `filter`, `merge`) yield
 `Stream[T]` (§13.18.5).
 
 ```
@@ -18353,49 +18353,51 @@ stream policy[capacity]? name: Type? = source
     capacity defaults to that output's capacity.
   - For declarations whose source is a reactive expression
     (§13.18.7) involving streams and/or signals, capacity defaults
-    to the **sum of input capacities** across all reactive inputs.
-    Each stream contributes its declared capacity; each signal
-    contributes its implicit `to_stream` default (1024).
+    to the **sum of the stream inputs' capacities** (the event
+    producers). A signal sampled in the expression drives no emission,
+    so it contributes no capacity.
   - For a `recurrent[N] stream` (§13.18.8), the buffer capacity
     defaults to `sum_of_input_capacities`; the self-history depth `N`
     is a *separate* allocation carried by the policy
     (`RecurrentRing[B, N]` / `RecurrentGate[B, N]` — buffer `B` beside
     history `N`), not added to the buffer (§13.18.8.4).
-  - In all other cases (e.g., bare `to_stream` calls without
-    surrounding context), capacity defaults to `1024`.
+  - In all other cases (e.g., a bare `to_ring_stream`/`to_gate_stream`
+    call without surrounding context), capacity defaults to `1024`.
 - **`name`** is a snake_case identifier naming the stream.
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
-- **`source`** is a reactive expression producing events. Valid
-  source forms:
-  - A stream-producing operator chain (e.g., `signal |> to_stream`).
+- **`source`** is a reactive expression producing events, and must
+  contain **at least one stream input** (§13.18.7.4). Valid source forms:
+  - A stream-producing operator chain (e.g., `signal |> to_ring_stream`).
   - A reference to another stream (direct forwarding).
-  - A reactive expression involving one or more streams and/or
-    signals (§13.18.7). Streams contribute events; signals
-    contribute commits via implicit `to_stream` semantics.
-  - A single signal or signal-only expression — equivalent to
-    `signal_expr |> to_stream` (§13.18.7.4).
+  - A reactive expression involving one or more streams (§13.18.7).
+    Streams contribute events; signals are *sampled* at each stream
+    event (they do not become events themselves).
+  - A signal converted explicitly: `signal_expr |> to_ring_stream` or
+    `|> to_gate_stream` (§13.18.7.4). A bare signal — no stream, no
+    explicit conversion — is **not** a stream source; there is no
+    implicit `signal`→`stream` conversion.
 
 Examples:
 
 ```
-// Operator chain source
-stream ring[2048] user_clicks: ClickEvent = button_press |> to_stream
+// Operator chain source (button_press is a signal → explicit conversion)
+stream ring[2048] user_clicks: ClickEvent = button_press |> to_ring_stream
 
-// Type inferred from source
+// Type inferred from source (pending_writes is a stream)
 stream gate[256] db_writes = pending_writes
 
 // Default capacity (1024) + inferred type + operator chain
-stream ring url_changes: Url = current_url |> to_stream |> skip_first
+stream ring url_changes: Url = current_url |> to_ring_stream |> skip_first
 
-// Reactive expression source (one stream + one signal)
+// Reactive expression: one stream (price_in_usd) + a sampled signal
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
 
 // Multi-stream expression (combine_latest)
 stream ring sum: i32 = stream_a + stream_b
 
-// Single signal source (implicit to_stream)
-stream ring url_events: Url = current_url
+// Signal converted explicitly — a bare signal is not a stream source
+stream ring url_events: Url = current_url |> to_ring_stream
 ```
 
 **Where streams may be declared.** Streams are reactive declarations.
@@ -18609,11 +18611,11 @@ A reactive input to an expression participates uniformly:
 - **A stream** contributes its events. The surrounding expression
   is re-evaluated once per event, producing one output event per
   input event.
-- **A signal** contributes its commits (via the same semantics as
-  `to_stream` per §13.18.9: initial value as first contribution,
-  every subsequent *changed* committed value as a new contribution).
-  Same-value commits do not contribute, per the value-change rule
-  (§13.2.4.4).
+- **A signal** is *sampled*, not converted: at each event produced by
+  the expression's driving stream(s), the signal's current value is
+  read. A signal does not itself produce events — there is no implicit
+  `to_stream`. To make a signal an event source, convert it explicitly
+  (`to_ring_stream`/`to_gate_stream`, §13.18.9).
 
 The expression is recomputed whenever *any* of its reactive inputs
 emit. The output stream emits the freshly-computed value as its
@@ -18703,14 +18705,15 @@ projection via `to_signal(fallback)` (§13.18.9) is required.
 |---|---|---|
 | `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
 | `derived X = expr` | Has streams | Compile error — use `to_signal(fallback)`. |
-| `stream policy X = expr` | Has streams | Output stream; per-event evaluation. |
-| `stream policy X = expr` | Zero streams, has signals | Output stream; signals participate via implicit `to_stream` (initial-as-first-event). |
-| `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one reactive input. Include a signal or stream reference, or apply `to_stream` to a signal explicitly. |
+| `stream policy X = expr` | Has ≥1 stream | Output stream; per-event evaluation (signals in the expression are sampled). |
+| `stream policy X = expr` | Zero streams (signals only) | **Compile error** — a signal expression is not a stream; convert a signal explicitly via `to_ring_stream`/`to_gate_stream`, or bind it in a Signal context (§13.18.7.3). |
+| `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one stream input. |
 
-The `stream policy X = signal_expr` form is the implicit-conversion case:
-each signal's commits become events in the output stream. To
-control the conversion mechanism (e.g., to skip the initial value),
-use `to_stream` explicitly with the desired operator chain.
+A `stream policy X = signal_expr` over signals only is **rejected**:
+there is no implicit `signal`→`stream` conversion. Convert a signal
+into an event source explicitly with `to_ring_stream`/`to_gate_stream`
+(§13.18.9), then build the stream expression from that — e.g.
+`stream ring X = (s |> to_ring_stream) ...`.
 
 ##### 13.18.7.5 Worked examples
 
@@ -18718,25 +18721,24 @@ Examples below omit explicit `[capacity]` to demonstrate the
 defaulting rule of §13.18.2; an explicit capacity is always
 allowed and overrides the default.
 
-**Single signal as stream source:**
+**Single signal as stream source (explicit conversion):**
 
 ```
 signal current_url: Url = "https://example.com"
-stream ring url_events: Url = current_url
-// Equivalent to: stream ring url_events = current_url |> to_stream
-// Default capacity: 1024 (signal contributes its implicit
-// to_stream default).
+stream ring url_events: Url = current_url |> to_ring_stream
+// A bare signal is not a stream source — convert it explicitly.
+// Default capacity: 1024 (the to_ring_stream default).
 // Emits "https://example.com" during startup, then each subsequent
 // commit of current_url.
 ```
 
-**Signal-and-stream mixed:**
+**Stream sampling a signal:**
 
 ```
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
-// Per-event of price_in_usd: sample rate, compute product.
-// Also emits on rate commits (combine_latest).
-// Default capacity: the capacity of price_in_usd plus 1024 (the signal).
+// price_in_usd is a stream; usd_to_eur_rate is a signal, sampled at
+// each price event. The signal's own commits do not emit.
+// Default capacity: the capacity of price_in_usd (the sampled signal adds 0).
 ```
 
 **Multi-stream combine_latest:**
@@ -18925,12 +18927,18 @@ Operators that produce, transform, or consume streams are stdlib
 primitives. All use the standard operator-application syntax
 (`|>` chains or function-call form per §13.17.6).
 
-**Signal-to-stream bridge:**
+**Signal-to-stream bridge.** Converting a signal to a stream is **explicit** and
+names the policy — there is no implicit `signal`→`stream` conversion. A signal
+carries only its latest value while a stream carries discrete events; that
+lossiness must never be hidden (§13.18.7.4). Two constructors, one per policy:
 
 ```
-operator to_stream[T, const N: usize = 1024](source: Cell[T]) -> RingStream[T, N]:
-  // emits initial value as first event;
-  // emits each subsequent committed value of source as a new event
+operator to_ring_stream[T, const N: usize = 1024](source: Cell[T]) -> RingStream[T, N]:
+  // emits the source's current value as event 0, then one event per committed change
+  ...
+
+operator to_gate_stream[T, const N: usize = 1024](source: Cell[T]) -> GateStream[T, N]:
+  // same emission, gate policy (back-pressures the producer instead of dropping oldest)
   ...
 ```
 
@@ -18938,24 +18946,13 @@ The semantics: at the moment of stream creation, the source signal's
 current value is emitted as event 0; thereafter, each commit of a new
 value by the source (per the commit cycle) appends an event. Same-
 value commits do not emit (per the value-change semantics of §13.2.4.4).
-
-The output is a `RingStream[T, N]`. The capacity `N` defaults to
-`1024`; callers may override via turbofish:
+The capacity `N` defaults to `1024`; callers may override via turbofish:
 
 ```
-let s = some_signal |> to_stream                       // RingStream[T, 1024]
-let s = some_signal |> to_stream::[Url, 2048]          // RingStream[Url, 2048]
+let s = some_signal |> to_ring_stream                  // RingStream[T, 1024]
+let s = some_signal |> to_ring_stream::[Url, 2048]     // RingStream[Url, 2048]
+let g = some_signal |> to_gate_stream::[Url, 256]      // GateStream[Url, 256]
 ```
-
-The `to_stream` operator always produces `ring` policy. To convert
-a signal to a stream with a different policy, apply additional
-operators after `to_stream` (e.g., to coerce to gate, the user
-declares a `gate`-policied output and threads through). Most cases
-need only the default ring semantics.
-
-The implicit signal-to-stream conversion in reactive expressions
-(§13.18.7.4) uses the default `N = 1024`, matching this operator's
-default.
 
 **Stream-to-signal bridge:**
 
@@ -18992,10 +18989,10 @@ and passes the rest; `take(n)` passes the first n events and
 discards the rest. Both preserve the source's policy and capacity by threading `P`.
 
 The most common use of `skip_first` is to drop the initial-value
-event emitted by `to_stream`, leaving only true changes:
+event emitted by `to_ring_stream`, leaving only true changes:
 
 ```
-stream ring changes: Url = current_url |> to_stream |> skip_first
+stream ring changes: Url = current_url |> to_ring_stream |> skip_first
 ```
 
 **Projection operators** (Stream → Signal):
@@ -19092,10 +19089,10 @@ straightforward arithmetic and conditional history use; `scan` and
 #### 13.18.10 The `where` stream filter
 
 `where` is a stream-filter expression at the expression level. It
-takes a stream (or a signal — implicitly converted via `to_stream`
-per §13.18.9) and a boolean predicate; it produces a new stream
+takes a **stream** and a boolean predicate; it produces a new stream
 emitting only those events of the input whose predicate evaluates
-to true.
+to true. A signal is not a `where` source — convert it to a stream
+explicitly first (`signal |> to_ring_stream`, §13.18.9).
 
 ##### 13.18.10.1 Form
 
@@ -19103,8 +19100,8 @@ to true.
 A where C
 ```
 
-- **`A`** is a stream of element type `T`, or a signal whose value
-  type is `T` (with implicit `to_stream` per §13.18.7.4).
+- **`A`** is a stream of element type `T`. (A signal must be converted
+  to a stream explicitly first — §13.18.9.)
 - **`C`** is a boolean expression evaluated per event of `A`.
 - The output is a stream of `T` emitting events from `A` whose
   evaluation of `C` is true; events whose `C` is false are not
@@ -19116,11 +19113,12 @@ stream ring positive = numbers where numbers > 0
 stream ring relevant = events where (events.priority is high and active_signal)
 ```
 
-For signals on the LHS, the implicit `to_stream` semantics apply:
+A signal must be converted to a stream before filtering:
 
 ```
-stream ring above_threshold = sensor_signal where sensor_signal > 100
-// equivalent to: sensor_signal |> to_stream |> filter(fn(s): s > 100)
+stream ring sensor_events = sensor_signal |> to_ring_stream
+stream ring above_threshold = sensor_events where sensor_events > 100
+// or in one expression: sensor_signal |> to_ring_stream |> filter(fn(s): s > 100)
 ```
 
 ##### 13.18.10.2 References inside `C` and per-LHS-event semantics
@@ -19183,17 +19181,16 @@ contribute values but not emissions.
 The output stream's element type matches the input's. Policy and
 capacity follow:
 
-- **Policy** is inherited from the LHS. A `RingStream[T, ...]`
-  filter produces `RingStream[T, ...]`; a `GateStream[T, ...]`
-  produces `GateStream[T, ...]`. A signal input (implicit
-  `to_stream`) produces a ring stream.
+- **Policy** is the LHS stream's policy `P`, threaded to the output:
+  a `Stream[T, P]` filter produces `Stream[T, P]` (a `RingStream` in
+  gives a `RingStream` out; a `GateStream`, a `GateStream`). There is
+  no signal LHS — a signal is converted to a stream explicitly first.
 - **Capacity** defaults to the LHS stream's capacity. Predicate-
-  referenced cells do not contribute to the capacity sum because
-  they don't drive emission — they're sampled at LHS events.
-  This differs from §13.18.2's default for value-producing
-  expressions, which sums all input capacities. Filter outputs
-  only need to buffer what the LHS produces. Explicit `[capacity]`
-  at the surrounding stream declaration overrides.
+  referenced cells do not contribute — they don't drive emission;
+  they're sampled at LHS events. This matches §13.18.2's rule that
+  only event-producing stream inputs contribute capacity; a filter's
+  sole event producer is its LHS. Explicit `[capacity]` at the
+  surrounding stream declaration overrides.
 
 ##### 13.18.10.4 Composition and chaining
 
@@ -19560,13 +19557,13 @@ to the base stream reload rules above:
   reactive declarations. A function that needs to produce events
   for downstream reactive consumption returns a value the caller
   feeds into an operator that emits a stream.
-- **A stream's `source` must be reactive-valued.** The source
-  expression must include at least one reactive input (signal,
-  stream, or other Cell). Pure-value expressions with no reactive
-  references cannot produce a stream (there's nothing to emit on).
-  Signals participate via implicit `to_stream` semantics
-  (§13.18.7.4); explicit `to_stream` is still available when the
-  user wants different conversion mechanics.
+- **A stream's `source` must include at least one stream.** The
+  source expression must contain at least one stream input — a real
+  stream, or a signal converted explicitly (`signal |> to_ring_stream`
+  / `to_gate_stream`). A pure-value or signals-only expression cannot
+  be a stream source: there is no implicit `signal`→`stream`
+  conversion (§13.18.7.4); signals in a stream expression are sampled,
+  not emitted.
 - **Cursors are not first-class values.** Programs cannot construct,
   store, or pass cursors. Cursors are implementation state of
   consuming operators; they are observable only through the
@@ -19611,19 +19608,19 @@ error: stream declaration requires a policy keyword (`ring` or `gate`)
         `stream ring[1024] my_events: Event = source`
 ```
 
-**Signal passed where Stream specifically required:**
+**Signal passed where a stream is required:**
 
-A `stream X = signal_expr` binding is valid via implicit `to_stream`
-(§13.18.7.4). But operator or effect parameters typed as a specific
-`Stream[T]` (not via reactive-expression coercion) still require an
-actual stream:
+There is no implicit `signal`→`stream` conversion (§13.18.7.4):
+neither a `stream X = signal_expr` binding nor an operator/effect
+parameter typed `Stream[T]` accepts a bare signal. Convert it
+explicitly:
 
 ```
 error: cannot pass `Signal[T]` to `Stream[T]` parameter
   --> persist(my_signal)
               ^^^^^^^^^ expected a stream
-  hint: `persist`'s parameter requires a stream. Apply `to_stream`
-        explicitly: `persist(my_signal |> to_stream)`.
+  hint: `persist`'s parameter requires a stream. Convert the signal
+        explicitly: `persist(my_signal |> to_gate_stream)`.
 ```
 
 **Stream-valued expression assigned to a signal binding:**
