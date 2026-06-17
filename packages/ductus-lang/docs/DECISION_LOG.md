@@ -3225,7 +3225,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 029-26. Auto-deref applies wherever a value cell flows into a `T` position: arithmetic operands, `T`-typed function arguments, attr initial-value expressions, derived bodies, recurrent expressions. (§13.17.3.1)
 029-27. Auto-deref does not apply where the context expects `Cell[T]` directly — operator parameters, `Cell[T]`-typed function parameters, `|>` LHS — there the cell reference binds without dereferencing. (§13.17.3.1)
 029-28. Value-cell auto-deref is a compile-time mechanism with no runtime cost beyond the cell read itself. (§13.17.3.1)
-029-29. The permitted operator body items are `recurrent` declarations (with all §13.2.4 extensions), `derived` declarations, `let` bindings, and a final expression. (§13.17.4)
+029-29. The permitted operator body items are `recurrent` declarations (with all §13.2.4 extensions), `derived` declarations, `stream` declarations (operators are stream transformers and may hold internal stream state, §13.18), `let` bindings, and a final expression. (§13.17.4)
 029-30. An operator-body `let` right-hand side evaluates in a reactive context: reads of cell-bound parameters return current values, and the binding recomputes whenever any read cell changes. (§13.17.4)
 029-31. An operator-body `let` binding behaves as a synthesized derived for dependency-tracking purposes. (§13.17.4)
 029-32. `attr` declarations are forbidden in operator bodies; per-instance configuration is expressed via parameters. (§13.17.4)

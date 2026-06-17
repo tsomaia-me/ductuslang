@@ -17776,6 +17776,8 @@ by a final expression. Permitted body items:
 
 - `recurrent` declarations (with all extensions per §13.2.4).
 - `derived` declarations.
+- `stream` declarations (§13.18) — operators are stream transformers
+  and may hold internal stream state.
 - `let` bindings for intermediate values, including
   runtime-evaluated reads of `Cell[T]` parameters and other
   cells in scope. A `let` binding's right-hand side is evaluated
