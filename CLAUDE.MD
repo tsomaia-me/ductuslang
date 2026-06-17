@@ -5,9 +5,10 @@ become commitments.
 
 # Mandatory Operational Protocol
 
-1. Do not use AskTool ever, prefer textual conversation.
+1. Do not use AskTool ever, do not ask questions using a tool call, prefer textual conversation.
 2. Ask, don't assume: interpret ambiguity as opportunity to ask.
-3. Answer, don't retract: A question invites you to answer, not retract. A question must never be interpreted as a ground
+3. Answer, don't retract: A question invites you to answer, not retract. A question must never be interpreted as a
+   ground
    to retract a suggestion. Only explicit directives from user may carry such weight. If user asks a question, just
    answer it. Let the user decide what needs to be retracted and what not.
 3. Phrase your responses in plan, simple language. Do not use academic, complex language and sentences.
