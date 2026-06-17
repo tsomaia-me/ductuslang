@@ -2777,6 +2777,18 @@ Users may define their own aliases anywhere using the same `alias type`
 syntax. The built-in aliases are a stdlib convenience; nothing about them is
 privileged.
 
+**Generic aliases.** An alias may declare generic parameters — type and/or
+const-generic — and expand to a parameterized use of the underlying type; the
+alias stays transparent:
+
+```
+alias type Pair[T] = (T, T)
+```
+
+`Pair[i32]` *is* `(i32, i32)`. A const-generic parameter of an alias is
+inferred exactly as it would be on the expansion. As with every alias, this
+introduces no new nominal type — for a distinct type use a newtype (§6.3).
+
 ### 4.3 Numeric Literals
 
 Numeric literals are written in the forms specified below.
@@ -18395,67 +18407,91 @@ enclosing declaration's visibility.
 
 #### 13.18.3 Stream types
 
-A *bounded* stream's type encodes its element type, its policy, and its
-capacity. The abstract base `Stream[T]` carries only the element type —
-no policy and no capacity; capacity belongs to the concrete bounded types.
-The type hierarchy:
+A stream's type encodes its element type and its **policy**; the policy
+carries whatever buffer parameters it needs (a bounded policy carries its
+capacity; a recurrent policy carries its buffer depth and its self-history
+depth). Capacity is therefore a property of the policy, not of `Stream`
+itself (§13.18.10.2). A stream type is:
 
 ```
-Stream[T]                       // abstract base; element type only — no policy, no capacity
-RingStream[T, N]                // concrete: ring policy, capacity N
-GateStream[T, N]                // concrete: gate policy, capacity N
-RecurrentRingStream[T, B, H]    // ring policy, buffer B, H-deep self-history
-RecurrentGateStream[T, B, H]    // gate policy, buffer B, H-deep self-history
+Stream[T, P] where P: StreamPolicy
 ```
 
-The plain `RingStream[T, N]` / `GateStream[T, N]` are the degenerate
-zero-history (`H = 0`) cases; a recurrent stream declaration (§13.18.8) adds
-`H` steps of self-history and produces the corresponding `Recurrent*Stream`
-type.
-
-`Stream[T]` is the abstract type for any stream of element type `T`,
-regardless of policy or capacity (and carrying neither itself). It is used
-in operator and function signatures that accept any stream:
+`StreamPolicy` is a **sealed** trait — a closed set declared by the
+language; users cannot add policies, exactly as `Into`/`TryInto` are
+language-sealed (§7.2). Its members are the four v1 policy types, each a
+nominal tag carrying its own buffer parameters:
 
 ```
-operator map[T, U](source: Stream[T], f: fn(T) -> U) -> Stream[U]:
+trait StreamPolicy                                   // sealed (language-closed)
+
+type Ring[const N: usize]                            // ring policy, buffer capacity N
+type Gate[const N: usize]                            // gate policy, buffer capacity N
+type RecurrentRing[const B: usize, const H: usize]   // ring, buffer B, H-deep self-history
+type RecurrentGate[const B: usize, const H: usize]   // gate, buffer B, H-deep self-history
+
+fulfill StreamPolicy for Ring[N]
+fulfill StreamPolicy for Gate[N]
+fulfill StreamPolicy for RecurrentRing[B, H]
+fulfill StreamPolicy for RecurrentGate[B, H]
+```
+
+`Ring[N]` / `Gate[N]` are the no-self-history policies; a recurrent stream
+declaration (§13.18.8) uses `RecurrentRing[B, H]` / `RecurrentGate[B, H]`,
+which carry `H` steps of self-history *beside* the buffer `B` — the two are
+separate allocations (§13.18.8.4).
+
+**Convenience aliases.** The standard library provides transparent generic
+aliases (§4.2) for the common spellings — the same type, not new ones:
+
+```
+alias type RingStream[T, const N: usize]            = Stream[T, Ring[N]]
+alias type GateStream[T, const N: usize]            = Stream[T, Gate[N]]
+alias type RecurrentRingStream[T, const B: usize, const H: usize] = Stream[T, RecurrentRing[B, H]]
+alias type RecurrentGateStream[T, const B: usize, const H: usize] = Stream[T, RecurrentGate[B, H]]
+```
+
+`RingStream[T, N]` *is* `Stream[T, Ring[N]]` at every use site.
+
+**The erased supertype `Stream[T]`.** `Stream[T]` (element type only, policy
+erased) is the abstract supertype of every `Stream[T, P]`; a concrete stream
+is implicitly usable wherever `Stream[T]` is expected (zero-cost widening —
+only the type-system view changes). Use it in a signature that accepts any
+stream of `T` regardless of policy and does not thread the policy through to
+its result — e.g. `to_signal`, `count`, `fold`:
+
+```
+operator count[T](source: Stream[T]) -> Derived[i64]:
   ...
 ```
 
-`RingStream[T, N]` and `GateStream[T, N]` are concrete types — every
-stream value belongs to one of these at runtime. They are used when
-the policy or capacity matters at the type-system level, such as in
-operators or effects that constrain their inputs:
+**Preserving the policy — thread `P`.** An operator that returns a stream and
+keeps its input's policy and capacity threads the policy parameter from input
+to output. The preservation is then *type-true* — stated in the signature,
+not asserted in prose:
+
+```
+operator map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]:
+  ...
+```
+
+`map` over a `Stream[T, Ring[16]]` yields `Stream[U, Ring[16]]`; over a
+`Stream[T, Gate[8]]`, `Stream[U, Gate[8]]` — by construction.
+
+**Mandating a policy.** An operator that requires a specific policy, or whose
+output policy is not its input's, names the policy concretely in its
+signature. `persist` requires gate (it must never silently drop writes):
 
 ```
 operator persist[T, const N: usize](writes: GateStream[T, N]) -> ...:
-  // requires gate policy — persist must never silently drop writes
+  // requires gate policy
   ...
 ```
 
-**Policy as a constraint.** An operator parameter typed
-`RingStream[T, N]` accepts only ring streams; passing a gate stream
-is a type error. An operator parameter typed `Stream[T]` is
-polymorphic over both policies. Operators that preserve policy
-(e.g., `map`, `filter`) declare both input and output in terms of
-the same abstract `Stream[T]`; the implementation propagates the
-concrete policy from input to output.
-
-**Capacity as a type parameter.** Capacity is part of the type for
-analysis and pool sizing (§14.3.3) but does not generally appear in
-operator constraints. An operator that accepts `Stream[T]` accepts
-any capacity. An operator that needs a specific capacity bound
-declares it explicitly: `Stream[T]` for any, `RingStream[T, N]` for
-a specific capacity `N`, or with a trait bound expressing capacity
-relationships if relevant. There is no single-arity concrete form
-(`RingStream[T]` / `GateStream[T]`); a capacity-polymorphic operator binds
-the capacity with a `const N` generic.
-
-**Conversion between concrete and abstract.** A `RingStream[T, N]`
-value is implicitly usable wherever a `Stream[T]` is expected. The
-abstract type is a supertrait of both concrete types; the conversion
-is zero-cost at runtime (the stream value is unchanged; only the
-type-system view is widened).
+Passing a `RingStream` where a `GateStream` is required is a type error. There
+is no policy/capacity *inheritance* rule: a stream-returning operator's result
+type is whatever its signature states — a threaded `P` for preservation, or a
+named policy otherwise.
 
 #### 13.18.5 The `Cell` trait
 
@@ -18469,9 +18505,8 @@ Cell[T]                       // umbrella — any reactive cell carrying values 
   Signal[T]                   // host/placement-written value cell (§13.2.8)
   Derived[T]                  // computed value cell, no history (§13.2.8)
   Recurrent[T, N]             // computed value cell, N-deep self-history (§13.2.8)
-  Stream[T]                   // append-only event sequence (§13.18.3)
-    RingStream[T, N]
-    GateStream[T, N]          // (+ recurrent stream variants, §13.18.8)
+  Stream[T]                   // append-only event sequence, policy erased (§13.18.3)
+    Stream[T, P]              // concrete: a stream under policy P  (RingStream[T,N] = Stream[T,Ring[N]], etc.)
 ```
 
 `Cell[T]` is used in operator and function signatures that accept any
