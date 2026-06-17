@@ -5,7 +5,7 @@ become commitments.
 
 # Mandatory Operational Protocol
 
-1. Do not use AskTool ever, do not ask questions using a tool call, prefer textual conversation.
+1. Do not use AskTool ever, do not ask questions using a tool call, ask questions using text.
 2. Ask, don't assume: interpret ambiguity as opportunity to ask.
 3. Answer, don't retract: A question invites you to answer, not retract. A question must never be interpreted as a
    ground
