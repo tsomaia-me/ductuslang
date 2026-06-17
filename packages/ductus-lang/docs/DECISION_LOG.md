@@ -3478,7 +3478,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 030-171. `pairwise[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[(T, Option[T]), P]` emits each event paired with the previous event. (§13.18.9)
 030-172. `pairwise`'s first output is `(first_input, None)`. (§13.18.9)
 030-173. `where` filters a stream by a boolean predicate, emitting only events for which the predicate is true; a signal must be converted to a stream explicitly first. (§13.18.10)
-030-174. The filter form is `A where C`, with stream-or-signal LHS `A` and boolean `C` evaluated per event of `A`: `numbers where numbers > 0`. (§13.18.10.1)
+030-174. The filter form is `A where C`, with stream LHS `A` (a signal must be converted to a stream first, §13.18.9) and boolean `C` evaluated per event of `A`: `numbers where numbers > 0`. (§13.18.10.1)
 030-175. `where` has no signal LHS; convert a signal to a stream explicitly first, then filter: `(sensor_signal |> to_ring_stream) |> filter(...)`. (§13.18.10.1)
 030-176. Inside `C`, the LHS stream's name denotes the current event: `A.field` reads the event's field, and a bare reference to a primitive-typed stream is the event value. (§13.18.10.2)
 030-177. Other reactive cells referenced in `C` contribute their current committed values at the moment the filter evaluates. (§13.18.10.2)
