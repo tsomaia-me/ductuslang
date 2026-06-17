@@ -3346,7 +3346,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 030-21. Omitted capacity with a single-stream source or a known-capacity stream-producing chain defaults to that output's capacity. (§13.18.2)
 030-22. Omitted capacity with a reactive-expression source over streams and/or signals defaults to the sum of input capacities across all reactive inputs. (§13.18.2)
 030-23. In the capacity-default sum, each stream contributes its declared capacity and each signal contributes the implicit `to_stream` default of 1024. (§13.18.2)
-030-24. Omitted capacity on a `recurrent[N] stream` defaults to `sum_of_input_capacities + N`. (§13.18.2)
+030-24. On a `recurrent[N] stream` with omitted capacity, the buffer defaults to `sum_of_input_capacities`; the self-history depth `N` is a separate allocation carried by the `RecurrentRing[B, N]`/`RecurrentGate[B, N]` policy, not added to the buffer. (§13.18.2)
 030-25. In all other omitted-capacity cases (e.g., a bare `to_stream` without surrounding context), capacity defaults to 1024. (§13.18.2)
 030-26. A stream's name is a snake_case identifier. (§13.18.2)
 030-27. The element-type annotation is optional when inferable from the source expression: `stream gate[256] db_writes = pending_writes`. (§13.18.2)

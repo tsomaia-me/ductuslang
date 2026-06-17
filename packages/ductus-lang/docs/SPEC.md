@@ -18310,7 +18310,8 @@ advancing its own cursor independently.
 A stream's storage is governed by a buffering *policy* (§13.18.3). The two
 v1 policies — `ring` and `gate` — are both **bounded**: each allocates a
 fixed-capacity region of typed slots once at the stream's declaration
-site, and its capacity is part of the stream's concrete type. The policies
+site, and its capacity is part of the policy type (`Ring[N]` / `Gate[N]`),
+hence of the stream's concrete type `Stream[T, P]`. The policies
 differ in their overflow behavior when the buffer fills and a producer
 pushes another event: the `ring` policy is a true ring buffer (circular,
 overwrite-oldest) and displaces the oldest unconsumed event; the `gate`
@@ -18353,9 +18354,11 @@ stream policy[capacity]? name: Type? = source
     to the **sum of input capacities** across all reactive inputs.
     Each stream contributes its declared capacity; each signal
     contributes its implicit `to_stream` default (1024).
-  - For `recurrent[N] stream` declarations (§13.18.8), the rule
-    is `sum_of_input_capacities + N` — the recurrent's history
-    depth adds to the base default.
+  - For a `recurrent[N] stream` (§13.18.8), the buffer capacity
+    defaults to `sum_of_input_capacities`; the self-history depth `N`
+    is a *separate* allocation carried by the policy
+    (`RecurrentRing[B, N]` / `RecurrentGate[B, N]` — buffer `B` beside
+    history `N`), not added to the buffer (§13.18.8.4).
   - In all other cases (e.g., bare `to_stream` calls without
     surrounding context), capacity defaults to `1024`.
 - **`name`** is a snake_case identifier naming the stream.
@@ -18789,9 +18792,11 @@ recurrent[N]? stream policy[capacity]? NAME: Type? = EXPR
   shorthand for `recurrent[1] stream` (one step of self-memory).
 - `policy[capacity]?` follows the standard stream declaration form
   (§13.18.2): policy is mandatory; capacity is optional. When
-  capacity is omitted, the default is `sum_of_input_capacities + N`
-  per §13.18.2 — the recurrent's self-history allocation adds to
-  the inferred consumer-buffer capacity.
+  capacity is omitted, the buffer capacity defaults to
+  `sum_of_input_capacities` per §13.18.2; the self-history depth `N`
+  is a *separate* allocation — the recurrent policy is
+  `RecurrentRing[B, N]` / `RecurrentGate[B, N]` (buffer `B` beside
+  history `N`), not folded into the buffer (§13.18.8.4).
 - `NAME` is the snake_case identifier naming the output stream.
 - `Type` is optional when inferable from `EXPR`.
 - `EXPR` is a reactive expression (§13.18.7) that may use
