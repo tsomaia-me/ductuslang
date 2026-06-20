@@ -1537,8 +1537,8 @@ methods:
 
 The exception is traits with no abstract methods — those with no methods at
 all, and those all of whose methods have default bodies (§3.3.5; the term
-"pure-requirement" is reserved there for the stricter no-methods-and-no-
-associated-types sense): these are automatically satisfied when all required
+"pure-requirement" is reserved there for the
+stricter no-methods-and-no-associated-types sense): these are automatically satisfied when all required
 traits are satisfied; no `satisfies` clause is
 needed on the type and no `fulfill` block is needed for the auto-satisfied
 trait.
@@ -1882,8 +1882,9 @@ that `T`'s satisfied trait set includes everything `Numeric` requires.
 This carves out the only point of structural satisfaction in the language's
 otherwise-nominal trait system, and it is bounded: the structural rule
 applies only to traits with no abstract methods (no methods at all, or only
-methods with default bodies). Any trait with one or more abstract method
-signatures requires explicit `satisfies` + `fulfill` per §3.2.
+methods with default bodies) and no undefaulted associated types. Any trait
+with one or more abstract method signatures — or an undefaulted associated
+type — requires explicit `satisfies` + `fulfill` per §3.2.
 
 #### 3.3.6 Visibility of `fulfill` blocks
 
@@ -5772,7 +5773,7 @@ match operation:
 
 Ductus provides no `if let` or check-and-unwrap sugar. The combination of
 `match` (for full discrimination) and `?` (for short-circuit propagation)
-are the primary pattern/short-circuit forms for consuming `Option` and
+is the primary pattern/short-circuit surface for consuming `Option` and
 `Result` (the postfix `!` of §8.4.2 and the stdlib methods of §8.7 also
 consume them); the language keeps that pattern/short-circuit surface minimal
 deliberately.
