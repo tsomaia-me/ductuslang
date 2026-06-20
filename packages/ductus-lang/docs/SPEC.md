@@ -1543,6 +1543,13 @@ traits are satisfied; no `satisfies` clause is
 needed on the type and no `fulfill` block is needed for the auto-satisfied
 trait.
 
+A methodless marker may make its conformance *conditional* on the type's
+parameters by attaching a `where` clause to its `satisfies` clause:
+`satisfies Copy where T: Copy` (§11.4.1) declares that a generic type conforms
+for exactly those instantiations whose parameters meet the bounds. Because
+there are no methods, no `fulfill` block accompanies it; the `where` clause is
+the whole of the conditional contract.
+
 #### 3.2.1 Satisfied traits must have disjoint method names
 
 A type's `satisfies` set must not contain two *distinct trait identities*
@@ -1844,11 +1851,13 @@ closure types typically do not implement `Display`. The compiler verifies
 the conditions at every call site that requires the implementation.
 
 The `satisfies`↔`fulfill` pairing (§3.2) is satisfied by a plain
-unconditional `satisfies Display` in `Result`'s body; there is no
-conditional-`satisfies` syntax. The where-clause on the `fulfill` is the
-sole carrier of the availability condition — the `satisfies` clause states
-the contract unconditionally and the `where` narrows where the
-implementation is available.
+unconditional `satisfies Display` in `Result`'s body. For a trait with
+methods — which always has a `fulfill` — the where-clause on the `fulfill`
+is the sole carrier of the availability condition: the `satisfies` clause
+states the contract unconditionally and the `where` narrows where the
+implementation is available. The sole exception is a methodless marker
+trait, which has no `fulfill`; it carries its condition on a conditional
+`satisfies … where` instead (§3.2, §11.4.1).
 
 The same `where` clause carries **const-generic value bounds** (§2.5.6)
 in addition to trait bounds, and the two may be mixed in one
@@ -3274,6 +3283,14 @@ when widening — requires an explicit cast, because the bit pattern's
 interpretation changes (an unsigned value might not fit a signed range of
 the same width; a negative signed value cannot represent in any unsigned
 type).
+
+Widening *to* the platform-width types `isize`/`usize` follows the same
+principle, evaluated against the target's pointer width: the narrow sources
+above (`i8`/`u8`) fit every supported pointer width and so widen implicitly on
+all targets, while a wider source widens to `isize`/`usize` implicitly only
+where it provably fits the current target's pointer width and otherwise
+requires an explicit cast — the platform-dependent rule stated for array
+indexing in §9.3.4.
 
 #### 4.5.2 Integer-to-float widening
 
@@ -7918,6 +7935,22 @@ The following types automatically implement `Copy`:
   on this stdlib type; users may write the same conditional pattern
   for their own generic types).
 - Closure types (§11.10.6) — they capture only `Copy` values.
+
+A generic type opts into `Copy` *conditionally* by attaching a `where` clause
+to a `satisfies Copy` clause — the same conditional pattern the stdlib uses for
+`Range[T]` above. Because `Copy` is a methodless marker (§11.4), no `fulfill`
+block is written; the `satisfies` clause alone carries the condition:
+
+```
+type Pair[T]:
+  satisfies Copy where T: Copy
+  first: T
+  second: T
+```
+
+`Pair[i32]` is `Copy` (its parameter is `Copy`); `Pair[Buffer]` for a
+non-`Copy` `Buffer` is not. The conditional `satisfies` form is available for
+any methodless marker trait, not only `Copy` (§3.2).
 
 #### 11.4.2 Opt-in via `@derive(Copy)`
 
