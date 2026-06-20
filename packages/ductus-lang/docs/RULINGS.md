@@ -2,6 +2,15 @@
 
 Operating doc for resolving the 140 open spec findings (`F001`–`F140`, stable IDs in `DECISION_LOG_FINDINGS.md`) plus the spec-silent appendix. Built by a 6-way cold triage (each finding re-audited against current `main`, tiered, clustered, and given a recommended ruling + exact log/spec delta). **You rule; I recommend and cascade.** Resumable — rule in sessions; the per-finding blocks below carry everything needed to decide each.
 
+> **Reconciliation note (2026-06-20).** This worksheet is the *original cold triage*; its per-finding
+> blocks and the "86 OPEN" snapshot below reflect the state when it was built. Most findings have since
+> been ruled and applied (see "Rulings log (applied)"). **The live-open set is now 8** — the design
+> forks in `BACKLOG.md` §1 (F020, F129/F134, F133, F135, F138, F140) plus F136 (rides with F138). For
+> every other finding the applied decision-of-record in `DECISION_LOG.md` **supersedes** any
+> recommendation below; where a worksheet's recommended ruling differs from what was ultimately applied,
+> the applied log wins (e.g. F012). Worksheet **line numbers have drifted** — locate targets by `§` +
+> quoted content, never by line number.
+
 ## The shape (why this is not 140 decisions)
 
 Re-audited against `main`: **86 OPEN · 51 RESOLVED · 2 MOOT · 1 DUP**. So **54 of 140 already fell out** — the recent precedence table, record-default removal, enum defaults, exhaustive patterns, the 12 grammar items, and the cold-review fixes resolved them. Of the 86 open, only a minority are genuine design decisions.
@@ -243,6 +252,11 @@ recommend: DUP-of-F005 for the policy; the concrete answer depends on F005's rul
 delta: LOG — defer to F005 ruling. SPEC §3.1.7 — if declaration keywords are globally reserved, rename the `type` member in all §3.1.7 examples (and the mirroring §13 node examples) to a non-keyword like `kind`.
 
 ## F012 — Conditional fulfill vs satisfies/fulfill pairing  [tier: lean] [cluster: standalone]
+> **SUPERSEDED (2026-06-20, applied).** The conditional-`Copy` case reopened this. A methodless
+> **marker** trait now DOES take a conditional `satisfies Copy where T: Copy` (DECISION_LOG
+> 005-234/013-244; SPEC §3.2/§11.4.1); the "no conditional-`satisfies` syntax exists" claim in reading B
+> and the recommendation below was narrowed to **method-bearing** traits (005-230/§3.3.4). Reading A
+> still governs traits with methods (Display etc.).
 §§: §3.2, §3.3.4
 readings: A — a plain unconditional `satisfies Display` clause in `Result[T,E]`'s body, whose *availability* is then narrowed by the fulfill's where-clause | B — a conditional-satisfies surface form (no such syntax exists) | C — pairing is waived for conditional fulfills
 re-audit: OPEN — §3.2 lines 1518–1526 (entry 353-context) require `satisfies`↔`fulfill` pairing for method-bearing traits; §3.3.4 line 1817 (entry 381) shows `fulfill Display for Result[T,E] where T: Display, E: Display` but no `satisfies` line in the snippet. No surface syntax for a conditional `satisfies` exists anywhere. Recent changes (cold-review, etc.) did not add one. So what `Result`'s body must contain to make §3.3.4's canonical example compile is unspecified.
