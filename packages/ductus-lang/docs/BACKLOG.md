@@ -1,26 +1,28 @@
-# Ductus — Decision & Syntax Backlog
+# Ductus — Decision Backlog (rulings & approvals only)
 
-Open items deferred from the spec-findings analysis: genuine design forks, leaned/editorial
-fixes awaiting ratification, and syntax questions the spec decides nowhere. Each item is a
-self-contained ticket so it can be answered without re-reading the 22k-line `SPEC.md`.
+Open items that need an **owner decision**: genuine design forks, plus syntax/semantic questions
+the spec decides nowhere. This file deliberately holds *only* what requires a ruling or your
+approval of a strong recommendation.
+
+Items that only need batch-approval (the 28 lean/editorial fixes) or are pure execution (the
+doc-hygiene reconciliation, the moot no-ops) have been **moved into the implementation plan**
+(Phase 5 and Part D respectively) and are not duplicated here.
 
 **Source & caveat.** Tickets are mined from the `RULINGS.md` per-finding worksheets and the
 `DECISION_LOG_FINDINGS.md` spec-silent appendix. Those worksheets are substance-current for
 these (still-live) findings, but their **line numbers have drifted**; section numbers (`§x.y`)
-are stable. When acting on a ticket, locate the target by `§` + quoted content, not by any line
-number.
+are stable. Locate any target by `§` + quoted content, not by line number.
 
-**Partition of the 61 live findings** (for orientation; resolved/moot are handled outside this
-file): 20 resolved-on-merits · 2 moot (F017, F053) · **11 fork-findings → 10 tickets** (Section
-1) · **28 pure lean/editorial** (Section 2). Section 3 (11) + Section 4 (4) are the open syntax
-questions; Section 5 is doc-hygiene.
+**Contents (25 items):** Section 1 — design forks (10: 6 hard + 4 leaned-reshape) · Section 2 —
+open syntax questions (11) · Section 3 — open semantic questions (4).
 
-**How to use.** Forks (Section 1) need a real decision from the owner — open them one at a time.
-Leans (Section 2) carry a recommendation + the rejected reading; ratify in batches. Sections 3–4
-can be answered directly or delegated to a draft-from-legacy-grammar pass.
+**How to use.** Forks (Section 1) need a real decision — open them one at a time, with discussion.
+Sections 2–3 can be answered directly or delegated to a draft-from-legacy-grammar pass for your
+ratification.
 
 Legend — tier: `foundational` (reshapes a subsystem) · `cluster-root` (cascades to siblings) ·
-`lean` (clear recommendation) · `editorial` (typo / one-defensible-reading).
+`leaned-reshape` (clear recommendation, but it changes a rule, so it needs your nod) ·
+`open-syntax` / `open-semantic` (spec-silent).
 
 ---
 
@@ -322,589 +324,13 @@ sign off on.
 
 -----------
 
-# Section 2 — Pure lean / editorial (ratify in batches)
-
-28 items. Each carries a recommendation and the rejected reading. The DECISION_LOG already takes
-no contrary position; these refine SPEC prose (a few add a small log entry).
-
-## 11. [lean · CL-INITLET-adjacent] Annotation context for a compound placeholder RHS  (F001)
-
-**Problem.** Does a binding annotation flow *into* a compound RHS expression's sub-expressions, or
-only resolve a bare placeholder RHS?
-
-**Context.** §2.1.2 lists "an explicit type annotation (`let y: i32 = x`)" as a use site that
-resolves the RHS placeholder, but a later §2.1.2 paragraph says a compound RHS "resolves first
-from its own context … the binding's annotation status does not provide context to the
-expression." So `let y: i64 = x * 2` (x a placeholder) is ambiguous: resolve `*` at i64 from the
-annotation, or default internally (i32) then check?
-
-**Potential solutions.** (A, lean) The annotation resolves only a *bare* placeholder RHS; a
-compound RHS resolves from its own operand context/defaulting, after which the annotation is
-checked against the result (never flows inward). (B) The annotation flows inward to sub-expressions.
-
-**What.** LOG add the bare-vs-compound rule; SPEC §2.1.2 cross-reference the use-site bullet to the
-forward-only paragraph.
-
-**Why.** Determines inferred types of annotated compound bindings; soundness of "same value
-resolves differently at two sites."
-
-**Refs.** F001 · §2.1.2 · OPEN, lean A.
-
------------
-
-## 12. [editorial · CL-DECLKINDS-adjacent] "Two binding forms" count: let/const vs let/mut  (F004)
-
-**Problem.** §2.4.1.1's unqualified "The language has two binding forms" (let/const) contradicts
-the three-form reality (let, mut, const).
-
-**Context.** §2.4.1.1 lists `let`/`const`, omitting `mut`; §11.2 says "two binding forms **for
-runtime values**" (let/mut) and treats `const` separately. The decision log (202/1252) carries
-§11.2's qualified framing, not the bare count.
-
-**Potential solutions.** (B, lean) Editorial: qualify §2.4.1.1 to the let-vs-const contrast (or
-state three forms total). (A) Leave it (loose wording).
-
-**What.** SPEC §2.4.1.1 qualify the sentence; LOG optional clarifying entry (entries already correct).
-
-**Why.** Removes a self-contradiction; no semantic change.
-
-**Refs.** F004 · §2.4.1.1 vs §11.2 · OPEN, lean B (editorial).
-
------------
-
-## 13. [lean · standalone] `usize` const-generic size param vs `isize` array length  (F006)
-
-**Problem.** A `usize`-typed symbolic size parameter is used as an array length whose type is
-`isize` — is that well-formed?
-
-**Context.** §2.4.4/§2.5.2 declare `const N: usize` then use `data: T[N]`; §9.3.3 fixes array
-length type as `isize`; §4.6.5: `let arr: i32[v]` is a compile error if the value doesn't fit
-`isize`. §9.3.4 already establishes any integer index widens to `isize`.
-
-**Potential solutions.** (A, lean) Well-formed: the symbolic `usize N` bridges to `isize` by
-value-fits checking at instantiation (a `usize` value exceeding `isize::MAX` is then a compile
-error). `usize` is the natural domain for a capacity. (B) Force size params to `isize`.
-
-**What.** LOG add the bridge rule; SPEC §2.5.2 (or §9.3.3) one sentence.
-
-**Why.** Declaration-time well-formedness of `T[N]` with symbolic `usize N`.
-
-**Refs.** F006 · §2.5.2, §9.3.3, §4.6.5 · OPEN, lean A.
-
------------
-
-## 14. [cluster-root · CL-UMBRELLA] Undefaulted associated type vs auto-satisfaction  (F007)
-
-**Problem.** Auto-satisfaction is gated only on satisfied `requires` + all-default-bodied methods
-— silent on associated types — so a trait with an undefaulted associated type but no abstract
-methods would auto-satisfy with the associated type left **unbound**.
-
-**Context.** §3.3.5 states the auto-satisfaction condition without mentioning associated types;
-§3.1.2 shows undefaulted associated types are real (`type Item` with no default); §3.3.2:
-"an associated type without a default must be bound explicitly in the `fulfill` block" — but
-auto-satisfaction skips the `fulfill` block.
-
-**Potential solutions.** (B, lean) Auto-satisfaction additionally requires every associated type
-to have a default (or be absent); an undefaulted associated type forces explicit `satisfies`+
-`fulfill`. (A) Leave it (incoherent — nothing binds the type).
-
-**What.** LOG amend entry 388; SPEC §3.3.5 add "and every associated type has a default."
-
-**Why.** Root of F009 (classification); interacts with F008.
-
-**Refs.** F007 · §3.2, §3.3.5 · CL-UMBRELLA · OPEN, lean B.
-
------------
-
-## 15. [editorial · CL-UMBRELLA] "Pure-requirement trait" definition mismatch  (F009)
-
-**Problem.** §3.2 equates "traits with no methods" with pure-requirement traits, but §3.3.5
-defines pure-requirement as no methods **and** no associated types.
-
-**Context.** §3.2: "traits with no methods (pure-requirement traits, §3.3.5)"; §3.3.5: "declares
-no methods and no associated types." The log (entry 387) already carries §3.3.5's stricter
-definition.
-
-**Potential solutions.** (B, lean) Editorial: tighten §3.2's parenthetical to "traits with no
-abstract methods," reserving "pure-requirement" for §3.3.5's sense.
-
-**What.** SPEC §3.2 change the parenthetical; LOG none.
-
-**Why.** Classification consistency; resolving F007 makes the distinction moot for auto-satisfaction.
-
-**Refs.** F009 · §3.2, §3.3.5 · CL-UMBRELLA · OPEN, lean B (editorial).
-
------------
-
-## 16. [lean · standalone] Conditional `fulfill` vs the satisfies/fulfill pairing rule  (F012)
-
-**Problem.** A conditional `fulfill … where …` requires a paired `satisfies` clause, but no
-conditional-`satisfies` syntax exists — so what must a generic type's body contain?
-
-**Context.** §3.2 requires `satisfies`↔`fulfill` pairing for method-bearing traits; §3.3.4 shows
-`fulfill Display for Result[T,E] where T: Display, E: Display` with no `satisfies` line in the
-snippet. No conditional-`satisfies` surface form exists.
-
-**Potential solutions.** (A, lean) The body carries a plain unconditional `satisfies Display`; the
-`where`-clause on the `fulfill` is the sole carrier of the availability condition. Pairing is
-satisfied; no new syntax needed. (B) Invent conditional-satisfies. (C) Waive pairing.
-
-**What.** LOG add the rule; SPEC §3.3.4 show the `satisfies Display` line or state the pairing.
-
-**Why.** Whether §3.3.4's canonical example compiles.
-
-**Refs.** F012 · §3.2, §3.3.4 · OPEN, lean A.
-
------------
-
-## 17. [lean · standalone] `@literal_suffix` on a bare type alias: error or advice?  (F014)
-
-**Problem.** Is registering a literal suffix on a bare type alias a compile error, or merely
-ineffective advice?
-
-**Context.** §3.9: "Note: the registered type must be a distinct nominal type … a bare type alias
-… defeats the purpose; use a newtype." The phrasing ("Note:", "defeats the purpose") is advisory;
-nothing says "compile error" (contrast §3.9.1/§3.9.2, which say it explicitly).
-
-**Potential solutions.** (B, lean) It compiles but yields no nominal distinction (the suffix's
-values are the underlying type). (A) Stricter: alias registration is a compile error (needs a new
-normative sentence).
-
-**What.** LOG add the legal-but-ineffective rule; SPEC §3.9 leave the Note advisory, optionally
-append "(this is not a compile error)."
-
-**Why.** Whether `@literal_suffix` on `type Frequency = i64` compiles.
-
-**Refs.** F014 · §3.9 · OPEN, lean B.
-
------------
-
-## 18. [lean · CL-GRAMMAR] Digit-initial custom suffixes create lexer ambiguity  (F015)
-
-**Problem.** Suffixes are "one or more identifier-continue characters" (which includes digits), so
-a digit-initial suffix makes `<NumericLiteral><suffix>` tokenization ambiguous (`4402k`: is it
-`440`·`2k` or `4402`·`k`?).
-
-**Context.** §3.9.1 admits digit-first suffixes (`years_2k` example); §3.9.3 gives no
-maximal-munch/boundary rule. §1.4 forbids digit-initial *identifiers*, but a registered suffix is
-governed by the looser identifier-continue rule.
-
-**Potential solutions.** (B, lean) Forbid digit-initial suffixes — a suffix must begin with an
-identifier-*start* character. Costs nothing real (`years_2k` still works; only a literal `2k`
-suffix is disallowed) and makes tokenization unambiguous. (A) Allow them (lexer undefined).
-
-**What.** LOG amend entry 495; SPEC §3.9.1 add the identifier-start constraint.
-
-**Why.** Lexer determinism for custom suffixes.
-
-**Refs.** F015 · §3.9.1, §3.9.3 · CL-GRAMMAR · OPEN, lean B.
-
------------
-
-## 19. [editorial · standalone] Inferred type of an integer literal under a custom suffix  (F016)
-
-**Problem.** A §3.9 comment types `440hz` as an "i64 literal," but the `Numeric`-bound constructor
-defaults the literal to `i32`.
-
-**Context.** `from_hz[N: Numeric](n: N)`; `Numeric` carries `@default(i32)`. With no other context,
-`440` resolves to `i32`, not `i64`. The wrapped type `Frequency` wraps `i64`, but the literal
-*argument* is what the comment annotates.
-
-**Potential solutions.** (B, lean) Editorial: the literal is `i32` (Numeric default), widened to
-`i64` inside the constructor; fix the misleading comment.
-
-**What.** SPEC §3.9 fix the comment; LOG none.
-
-**Why.** Corrects a misleading comment; no rule change.
-
-**Refs.** F016 · §3.9, §3.6.1 · OPEN, lean B (editorial).
-
------------
-
-## 20. [editorial · standalone] Single-argument calls: §3.5.1 "both forms" vs §3.5.3 constraints  (F018)
-
-**Problem.** §3.5.1's "both forms valid for any single-argument call … no special rule restricts
-single-argument calls" reads as permitting `Newtype(value: x)` and positional single-field record
-construction, contradicting §3.5.3's per-callable constraints.
-
-**Context.** §3.5.1's example `square` is a *function* (both forms allowed). §3.5.3 sets per-callable
-rules: records always named, tuples/newtypes always positional. The "no special rule" sentence is
-about *arity*, not per-callable form.
-
-**Potential solutions.** (B, lean) §3.5.1 denies only an *arity*-based restriction; §3.5.3's
-per-callable constraints still govern (`Newtype(value: x)` is illegal; positional single-field
-record construction is illegal).
-
-**What.** SPEC §3.5.1 narrow "no special rule" to "no *arity*-based rule"; LOG none.
-
-**Why.** Legality of named newtype / positional single-field-record construction.
-
-**Refs.** F018 · §3.5.1, §3.5.3 · OPEN, lean B (editorial).
-
------------
-
-## 21. [editorial · CL-GRAMMAR] `<NumericLiteral>` vs `<NumberLiteral>` nonterminal naming  (F019)
-
-**Problem.** §3.9 names the suffixed-token nonterminal `<NumericLiteral>`; §3.9.3 writes
-`<NumberLiteral>`. No two distinct nonterminals are defined.
-
-**Context.** Pure naming inconsistency; the log (entry 492) uses `<NumericLiteral>`.
-
-**Potential solutions.** (A, lean) Standardize on `<NumericLiteral>`; change §3.9.3.
-
-**What.** SPEC §3.9.3 `<NumberLiteral>` → `<NumericLiteral>`; LOG none.
-
-**Why.** Grammar cross-reference consistency.
-
-**Refs.** F019 · §3.9, §3.9.3 · CL-GRAMMAR · OPEN, lean A (editorial).
-
------------
-
-## 22. [lean · standalone] `@literal_suffix` decorates the type vs the constructor  (F021)
-
-**Problem.** `@literal_suffix` appears above both the type declaration (§3.9) and the constructor
-function (§3.9.2) — which is the attachment site?
-
-**Context.** §3.9.1: "Multiple `@literal_suffix` annotations may decorate one type." §3.9.2 places
-it above `fn from_hz…`. §3.9.2's return-type rule ("returns the annotated type") presumes a known
-attachment site.
-
-**Potential solutions.** (A, lean) It attaches to the **type** declaration; the §3.9.2 placement is
-presentational shorthand co-locating it with the named constructor. (B) It decorates the constructor.
-
-**What.** LOG add the attachment rule; SPEC §3.9.2 move the example onto the type or add a note.
-
-**Why.** Defines "the annotated type" in §3.9.2; low stakes (same registration either way).
-
-**Refs.** F021 · §3.9.1, §3.9.2 · OPEN, lean A.
-
------------
-
-## 23. [lean · CL-UMBRELLA] `Float` umbrella requires-list omits `Log` and the inspection traits  (F024)
-
-**Problem.** §4.8.2 says `Float` "requires all" float-only ops, but §4.9.2's `Float` requires-list
-omits two-argument `Log` and the inspection traits (`is_nan`/`is_infinite`/`is_finite`/`is_normal`).
-
-**Context.** Generic `T: Float` code cannot call `log(base, x)` or `is_nan` without extra bounds,
-contradicting §4.8.2. The ops are auto-implemented for `f32`/`f64` regardless (§4.9.4).
-
-**Potential solutions.** (A, lean) Add `Log` + the four inspection traits to `Float`'s requires-list.
-Low design stakes (float-only by definition).
-
-**What.** LOG amend the `Float`-requires entry; SPEC §4.9.2 insert `Log` and the four inspection
-traits (and their `trait` decls into §4.9.1's elided "…and so on").
-
-**Why.** Lets `T: Float` code use logs/inspection without extra bounds.
-
-**Refs.** F024 · §4.8.2, §4.9.2 · CL-UMBRELLA · OPEN, lean A.
-
------------
-
-## 24. [lean · standalone] `/` listed among trapping operators is integer-scoped  (F027)
-
-**Problem.** §4.6.1 lists `/` among default operators that "trap on overflow in all modes," but `/`
-always produces Float, and float overflow yields signed infinity without trapping.
-
-**Context.** §4.4.1.1: `/` always Float; §4.6.6/§4.6.2: float overflow → ±Infinity, no trap. So
-listing `/` under trap-on-overflow is misleading (not behavior-changing).
-
-**Potential solutions.** (B, lean) The trap rule is integer-scoped (`+`,`-`,`*`,`\`,`%`, unary `-`);
-`/` is governed by §4.6.6.
-
-**What.** LOG amend entry 659; SPEC §4.6.1 qualify the operator list (drop `/` or footnote §4.6.6).
-
-**Why.** Removes a misleading inclusion; ties to F028.
-
-**Refs.** F027 · §4.6.1, §4.6.6, §4.6.2 · OPEN, lean B.
-
------------
-
-## 25. [lean · standalone] `5 / 0`: trap vs `f64` Infinity  (F028)
-
-**Problem.** §4.6.7 says "integer division by zero traps," naming `/` — but `/` widens to float
-first, so `5 / 0` is `5.0 / 0.0` = `+Infinity`.
-
-**Context.** §4.4.1.1: `/` always Float; §4.6.4's `/?` already presumes `5/0` is a float Infinity.
-The log (entry 685) already dropped `/` and says only "Integer division by zero traps."
-
-**Potential solutions.** (B, lean) `5 / 0` = `f64::INFINITY`; only `\` and `%` by zero trap.
-
-**What.** LOG amend entry 685; SPEC §4.6.7 scope the zero-trap to `\`/`%`, note `/` by zero →
-±Infinity.
-
-**Why.** Result of `5 / 0`; forced by the always-float rule.
-
-**Refs.** F028 · §4.6.7, §4.4.1.1, §4.6.4 · OPEN, lean B.
-
------------
-
-## 26. [editorial · standalone] `let x: Drivable` error phase: parse vs post-resolution  (F030)
-
-**Problem.** §5.2.2 calls a bare trait at value position a "parse error," but the trigger
-("`Drivable` is a trait, not a type") is decidable only after name resolution.
-
-**Context.** A grammar cannot know `Drivable` is a trait; the `dyn`-required diagnostic belongs to
-the resolver.
-
-**Potential solutions.** (B, lean) Reclassify as a compile-time (post-name-resolution) error.
-
-**What.** LOG amend entries 781/782; SPEC §5.2.2 replace "parse error" with "compile-time error
-(after name resolution)."
-
-**Why.** Correct diagnostic class.
-
-**Refs.** F030 · §5.2.2 · OPEN, lean B (editorial).
-
------------
-
-## 27. [lean · standalone] Record-intersection `@derive` when both operands implement the trait  (F031)
-
-**Problem.** `@derive(Trait)` on `type T = A & B` delegates to an operand's `fulfill`, but
-"when both … would equally apply, derivation is ambiguous" is undefined, and no rule composes two
-impls.
-
-**Context.** §5.3.2 (record-intersection derive), §3.8. The ambiguity clause is in SPEC prose, not
-serialized. Example: `@derive(Display, Hash)` on `type InsuredCar = Car & Insured` when both
-implement.
-
-**Potential solutions.** (A, lean) Exactly one operand implements ⇒ delegate; both ⇒ always
-ambiguous (compile error), user writes the impl. Drop "would equally apply." (B) Define a
-composition test (no semantics exist for merging impls).
-
-**What.** LOG add rule A; SPEC §5.3.2 replace the vague qualifier.
-
-**Why.** Whether a common derive pattern compiles or errors.
-
-**Refs.** F031 · §5.3.2, §3.8 · OPEN, lean A.
-
------------
-
-## 28. [editorial · standalone] `with`-override conversions cite §6.1.3, which states none  (F033)
-
-**Problem.** §6.1.5 says override values are "subject to the same widening and conversion rules as
-direct construction per §6.1.3," but §6.1.3 states no widening/conversion rules.
-
-**Context.** The log (entry 872) already keeps only "Override values must be type-compatible." The
-defect is the dangling citation; implicit widening lives in §4.5, explicit conversions in §4.7.
-
-**Potential solutions.** (A, lean) The citation is misdirected; redirect to §4.5 (implicit
-widening) / §4.7 (explicit `T(x)`).
-
-**What.** SPEC §6.1.5 change the citation; LOG none.
-
-**Why.** Which conversions a `with` override accepts.
-
-**Refs.** F033 · §6.1.5, §6.1.3, §4.5, §4.7 · OPEN, lean A (editorial).
-
------------
-
-## 29. [lean · standalone] Scope of the "at most one `satisfies` clause" rule  (F036)
-
-**Problem.** §6.1.1 says a record body has "at most one" `satisfies` clause, but §6.3.1 says a
-newtype body "may include `satisfies` clauses" (plural).
-
-**Context.** §6.3.1's own example shows exactly one `satisfies`; §6.2.2 gives enums a singular
-clause. The plural is the lone divergence.
-
-**Potential solutions.** (A, lean) One `satisfies` clause per body for all nominal kinds (multiple
-traits comma-separated on that line); `@derive`-implied conformances are separate.
-
-**What.** LOG amend entry 939; SPEC §6.3.1 change "clauses" to "one clause (listing one or more
-traits)."
-
-**Why.** Whether two `satisfies` lines in one body compile.
-
-**Refs.** F036 · §6.1.1, §6.3.1, §6.2.2 · OPEN, lean A.
-
------------
-
-## 30. [editorial · standalone] "`match` and `?` are the complete surface" vs `!` and stdlib methods  (F040)
-
-**Problem.** §8.3.1 calls `match` + `?` "the complete surface for consuming `Option` and `Result`,"
-but the postfix `!` operator (§8.4.2) and stdlib methods (§8.7) also consume them.
-
-**Context.** `!` is a language operator that post-dates the sentence; in context the claim is about
-*minimal pattern/short-circuit sugar* ("no `if let`"), not a normative exclusion.
-
-**Potential solutions.** (A, lean) Soften the wording: `match` and `?` are the *primary* forms;
-`!` and stdlib methods also consume.
-
-**What.** LOG amend entry 1040; SPEC §8.3.1 reword "complete surface" → "primary … forms."
-
-**Why.** Whether §8.3.1 normatively excludes further consumers.
-
-**Refs.** F040 · §8.3.1, §8.4.2, §8.7 · OPEN, lean A (editorial).
-
------------
-
-## 31. [lean · CL-DECLKINDS] Module-targeting `use`: legal or not?  (F045)
-
-**Problem.** A `use` whose path leaf is a module — legal or rejected?
-
-**Context.** §10.4: `use` "imports a name from a module." §10.4.1 shows `use root::audio::(synth::
-Oscillator, …)` reaching *through* sub-modules to a name. The quarantined `✗` example
-(`use root::audio::effects`, "effects is not a module") is consistent with "leaf must be a name."
-
-**Potential solutions.** (B, lean) The leaf must be an importable declaration name; intermediate
-segments may be modules; a `use` targeting a module is a compile error (`synth::Oscillator`
-qualification still works without importing `synth`).
-
-**What.** LOG add the leaf-must-be-a-name rule; SPEC §10.4 one sentence.
-
-**Why.** Legality of `use root::audio::synth`.
-
-**Refs.** F045 · §10.2, §10.4, §10.4.1 · CL-DECLKINDS · OPEN, lean B. (Also a Section-3 dup —
-resolve here.)
-
------------
-
-## 32. [editorial · CL-ASCAST] `duration::`/`instant::` type-qualified call form  (F046)
-
-**Problem.** `duration::from_nanos(n)` / `instant::now()` look like a type-qualified free-function
-call, which §8.7 explicitly forbids.
-
-**Context.** §8.7: "There is no `Option::unwrap(option)` (type-qualified) form." §10.2.3's closed
-`PathBase` set has no primitive-type base. So these are illustrative names for stdlib constructors.
-
-**Potential solutions.** (A, lean) They are illustrative; the real surface is a module path
-(`std::duration::from_nanos`) or a method. Rewrite §9.4.1.4/§9.4.2.2 accordingly.
-
-**What.** LOG amend #1215/#1230 (illustrative, cite §8.7); SPEC §9.4.1.4/§9.4.2.2 rewrite in
-module-path/method form.
-
-**Why.** Avoids implying a banned syntax.
-
-**Refs.** F046 · §9.4.1.4, §9.4.2.2, §8.7, §10.2.3 · CL-ASCAST · OPEN, lean A (editorial).
-
------------
-
-## 33. [lean · CL-LOOPFORMS] `for own` over a Copy-element aggregate: source usable after?  (F061)
-
-**Problem.** `for own` over a Copy-*element* but non-Copy *aggregate* (e.g. `f32[1024]`) — is the
-source usable after the loop?
-
-**Context.** §12.3.3 calls the case "functionally indistinguishable from the default form" (under
-which the source survives), yet the example comments "buf is consumed … cannot be used after." But
-arrays are not Copy (§11.6.1), and `for own` dispatches `consuming_iterator(move buf)`, consuming
-the array.
-
-**Potential solutions.** (A, lean) `for own` over a non-Copy aggregate consumes the source; it is
-unusable after. The indistinguishability holds only when the *source type itself* is Copy (e.g.
-`Range[T]`).
-
-**What.** LOG add the rule; SPEC §12.3.3 scope the indistinguishability claim.
-
-**Why.** Source liveness after `for own`.
-
-**Refs.** F061 · §12.3.3 · CL-LOOPFORMS · OPEN, lean A.
-
------------
-
-## 34. [editorial · standalone] Footnote over-permits >16-byte direct multi-cell spanning  (F099)
-
-**Problem.** §13.12.4's footnote ("larger values span multiple consecutive cells … or use pool
-storage") reads as permitting unbounded direct multi-cell spanning, contradicting the body rule.
-
-**Context.** Body: direct storage only ≤ atomic word; two-cell direct is a backend choice for
-9–16 bytes only; otherwise pool. The cell-fit table sends a 40-byte record to pool.
-
-**Potential solutions.** (A, lean) Bound direct multi-cell to the 9–16-byte two-cell option;
-everything larger is pool.
-
-**What.** SPEC §13.12.4 reword the footnote; LOG none.
-
-**Why.** Whether a >16-byte type may be stored directly across cells.
-
-**Refs.** F099 · §13.12.4 · OPEN, lean A (editorial).
-
------------
-
-## 35. [editorial · standalone] Wrong internal cross-ref "§13.10.1" for dirty propagation  (F101)
-
-**Problem.** §13.12.1 cites "the dirty-bit propagation in §13.10.1," but propagation is defined in
-§13.10.2 step 1.
-
-**Context.** §13.10.1 (lazy writes) states no propagation rule. No conformance divergence — both
-describe the same commit-time model.
-
-**Potential solutions.** (A, lean) Fix the pointer to §13.10.2 step 1.
-
-**What.** SPEC §13.12.1 change the cross-reference; LOG none.
-
-**Why.** Correct internal reference.
-
-**Refs.** F101 · §13.12.1, §13.10.1, §13.10.2 · OPEN, lean A (editorial).
-
------------
-
-## 36. [lean · CL-DROP] Is the overwritten-assignment-target's previous-value drop specified?  (F130)
-
-**Problem.** §14.7.2 says the compiler "inserts a drop call at the point of consumption (move into
-a function parameter or assignment)," but a move into a parameter inserts no drop (the callee owns
-it) — the rule conflates two things.
-
-**Context.** "The moved-out source's drop slot is empty thereafter" = transfer of responsibility
-(no drop runs on the moved value). At an *assignment* `x = new`, the *overwritten previous value*
-of `x` is dropped there. The four drop points don't cleanly name the overwritten-previous-value drop.
-
-**Potential solutions.** (B, lean, with carve-out) Split the bullet: (a) a move transfers drop
-responsibility (no call at the move site); (b) an assignment drops the binding's previous value at
-the assignment point.
-
-**What.** SPEC §14.7.2 split the bullet; LOG amend the §14.7.2 entry.
-
-**Why.** Specifies the overwritten-target drop; removes the move/assignment conflation.
-
-**Refs.** F130 · §14.7.2 · CL-DROP · OPEN, lean B.
-
------------
-
-## 37. [lean · CL-DROP] Are recurrent/stream cells dropped on instance removal?  (F131)
-
-**Problem.** §14.7.5 says only `attr` and `derived` cells receive Drop on removal — leaving
-recurrent and stream-metadata teardown unspecified (resource-leak exposure).
-
-**Context.** §14.4 lists recurrent/stream as instance reactive state; §14.8.1 step 3b says "for
-each removed cell: invoke drop per §14.7" (unqualified). So "attr and derived" is under-inclusive.
-
-**Potential solutions.** (B, lean) All of a removed instance's cells (attr, recurrent, derived,
-stream metadata) are dropped per their Drop impls.
-
-**What.** SPEC §14.7.5 change "attr and derived" → "all of its cells …"; LOG add the rule.
-
-**Why.** Closes a leak under the literal reading.
-
-**Refs.** F131 · §14.7.5, §14.4, §14.8.1 · CL-DROP · OPEN, lean B.
-
------------
-
-## 38. [lean · CL-IR] Does an effect-position `|>` emit a `connection` entry?  (F139)
-
-**Problem.** The §15.4.1 desugar map says "connection/`|>` → `connection`" (unqualified), but the
-worked example lowers an effect-position `|>` to `parameter_bindings` with no connection entry.
-
-**Context.** §15.4.5 lowers `label |> print` to `effect App.print:0 … params [message: App.label]`
-and emits `scope App exposes [] effects [App.print:0]` — `exposes` empty, no connection entry.
-
-**Potential solutions.** (B, lean) An effect-position `|>` lowers to the effect's
-`parameter_bindings`, not a `connection`; only topological `|>`/connections produce `connection`
-entries.
-
-**What.** SPEC §15.4.1 qualify the desugar map; LOG add the rule.
-
-**Why.** Affects graph contents, `exposes` traversal, and hot-reload diffing.
-
-**Refs.** F139 · §15.4.1, §15.4.5 · CL-IR · OPEN, lean B.
-
------------
-
-# Section 3 — Open syntax questions (grammar-class)
+# Section 2 — Open syntax questions (grammar-class)
 
 11 items the SPEC decides nowhere. The mined legacy grammar likely answers most; each needs a nod
 (answer directly, or approve a draft-from-legacy-grammar pass). On ruling: add a DECISION_LOG
 entry + write the governing prose into SPEC, then strike from the spec-silent appendix.
 
-## 39. [open-syntax · CL-GRAMMAR] Forced identifier-suffix name set  (appendix)
+## 11. [open-syntax · CL-GRAMMAR] Forced identifier-suffix name set  (appendix)
 
 **Problem.** A forced (identifier-)suffix on a literal — is the name set exactly the primitive type
 names, or also `alias type` names (e.g. `255_byte`)?
@@ -921,7 +347,7 @@ names, or also `alias type` names (e.g. `255_byte`)?
 
 -----------
 
-## 40. [open-syntax · CL-GRAMMAR] String interpolation format specifiers + `\xHH` range  (appendix, ◐)
+## 12. [open-syntax · CL-GRAMMAR] String interpolation format specifiers + `\xHH` range  (appendix, ◐)
 
 **Problem.** Two string sub-grammar residuals: (1) format specifiers inside `{…}` interpolations
 are undefined; (2) the admissible `\xHH` byte-vs-scalar range vs the UTF-8/scalar invariants is
@@ -941,7 +367,7 @@ basics are settled; these two are not.
 
 -----------
 
-## 41. [open-syntax · CL-GRAMMAR] Array repeat-count form + `Vec[…] = []` initializer  (appendix)
+## 13. [open-syntax · CL-GRAMMAR] Array repeat-count form + `Vec[…] = []` initializer  (appendix)
 
 **Problem.** Array *literal* `[e1,…,eK]`→`T[K]` and empty `[]` are settled (F047), but a
 repeat-count form (`[e; N]`) and the `Vec[…] = []` cell-initializer are not.
@@ -960,7 +386,7 @@ a `Vec` cell is language sugar or stdlib. (B) No repeat form; `Vec` literal stay
 
 -----------
 
-## 42. [open-syntax · CL-GRAMMAR] Turbofish for enum variants  (appendix)
+## 14. [open-syntax · CL-GRAMMAR] Turbofish for enum variants  (appendix)
 
 **Problem.** Where does `::[…]` attach on `Enum::Variant`, and how is a unit variant explicitly
 instantiated with no inference context (`Option::None`)?
@@ -979,7 +405,7 @@ instantiation are undefined.
 
 -----------
 
-## 43. [open-syntax · CL-GRAMMAR] Value-position `dyn` operand extent/precedence  (appendix)
+## 15. [open-syntax · CL-GRAMMAR] Value-position `dyn` operand extent/precedence  (appendix)
 
 **Problem.** F037 settled the admitted *positions* of value-position `dyn`, but the operand
 extent/precedence (how much of the following expression `dyn` binds) is open.
@@ -998,7 +424,7 @@ grammar.
 
 -----------
 
-## 44. [open-syntax · CL-GRAMMAR] `Type[…]` with a conjunction constraint  (appendix)
+## 16. [open-syntax · CL-GRAMMAR] `Type[…]` with a conjunction constraint  (appendix)
 
 **Problem.** May a `Type[…]` meta-type carry a conjunction constraint (`Type[Drivable & Insurable]`)?
 
@@ -1015,7 +441,7 @@ unspecified.
 
 -----------
 
-## 45. [open-syntax · CL-GRAMMAR] Newtype constructor pattern vs `T(value)` sole eliminator  (appendix)
+## 17. [open-syntax · CL-GRAMMAR] Newtype constructor pattern vs `T(value)` sole eliminator  (appendix)
 
 **Problem.** Is there a newtype destructuring *pattern* (`UserId(n)` in a `match`), or is `T(value)`
 extraction the sole eliminator?
@@ -1034,7 +460,7 @@ pattern; extraction via `T(value)` / accessor only.
 
 -----------
 
-## 46. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
+## 18. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
 
 **Problem.** The `with` override form is shown only as a single override; chaining
 (`a with x: 1 with y: 2`), precedence, and use inside a call-argument list are undefined.
@@ -1052,7 +478,7 @@ permitted inside call args with explicit parens. (B) Single-override only.
 
 -----------
 
-## 47. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
+## 19. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
 
 **Problem.** How is an inline `observe` delimited as a sub-expression / call argument, and may an
 `observe` arm body span multiple lines (only single-expression arms are shown)?
@@ -1070,7 +496,7 @@ blocks. (B) `observe` is statement-position only; arms single-expression.
 
 -----------
 
-## 48. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
+## 20. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
 
 **Problem.** Declarations were normalized to multi-line bodies, but whether an operator may carry an
 inline single-member body after the colon (e.g. `operator gain[…]: …`) is unresolved.
@@ -1089,7 +515,7 @@ Operator bodies must be indented blocks.
 
 -----------
 
-## 49. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
+## 21. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
 
 **Problem.** Several connection-body surface points are undefined: clause-ordering of
 `from:`/`to:`/`pairs:` vs members; explicit type-arg surface when placing a generic connection;
@@ -1113,11 +539,11 @@ unverifiable on these points.
 
 -----------
 
-# Section 4 — Open semantic questions (grammar won't help)
+# Section 3 — Open semantic questions (grammar won't help)
 
 4 items needing real rulings, not syntax decisions.
 
-## 50. [open-semantic] Conditional `Copy` impl surface a generic type writes  (appendix)
+## 22. [open-semantic] Conditional `Copy` impl surface a generic type writes  (appendix)
 
 **Problem.** How does a generic type conditionally implement `Copy` — `fulfill Copy for G[T] where
 T: Copy`, and may the body be empty?
@@ -1136,7 +562,7 @@ T: Copy`, and may the body be empty?
 
 -----------
 
-## 51. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
+## 23. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
 
 **Problem.** Only single-segment place assignments are shown (`r.field = v`, `arr[i] = v`).
 Multi-segment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring
@@ -1155,7 +581,7 @@ order are undefined.
 
 -----------
 
-## 52. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
+## 24. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
 
 **Problem.** May a tuple component be assigned through a `mut` binding, and what is its LHS form
 (`t.0 = x`)?
@@ -1174,7 +600,7 @@ immutable-component; whole-value reassignment only.
 
 -----------
 
-## 53. [open-semantic] Explicitly-written elaborated borrow signatures  (appendix)
+## 25. [open-semantic] Explicitly-written elaborated borrow signatures  (appendix)
 
 **Problem.** The spec gives only a schematic for elaborated borrow signatures
 (`fn f(borrow v: T) -> borrow_rooted_in(v) T`); the concrete writable surface is undefined.
@@ -1190,41 +616,3 @@ are spec-internal notation only; never written in source (borrow is always impli
 **Why.** Whether borrow rooting is ever user-written; ties to F052 (`&T` is not surface).
 
 **Refs.** Spec-silent appendix · §11 (adjacent F052) · OPEN.
-
------------
-
-# Section 5 — Doc hygiene
-
-## 54. [doc-hygiene] Reconcile `RULINGS.md` worksheet-vs-applied-log skew + `FINDINGS.md` staleness  (DH-1)
-
-**Problem.** `RULINGS.md` has two layers that disagree: the per-finding worksheets are the original
-triage (their OPEN counts sum to the "86 OPEN" snapshot), while the "Rulings log (applied)" records
-later sessions that struck findings to the current 61. So worksheet verdicts are current only for
-the 61 live findings, and their line numbers have **drifted** (confirmed: F129's cited
-"§14.6.3 line 21042" now lands in the string-pool section). `FINDINGS.md` likewise carries stale
-GRAMMAR.md/worksheet annotations (handled in part by ticket Part D of the immediate plan).
-
-**Context.** Anyone reading the worksheets or `FINDINGS.md` at face value is misled about what is
-open and where it lives.
-
-**Potential solutions.** A reconciliation pass: re-audit the 61 live findings against current SPEC,
-refresh `§` line refs (or drop line numbers in favor of quoted content), and clearly mark struck
-findings as struck in the worksheets.
-
-**What.** Edit `RULINGS.md` (and any residual `FINDINGS.md` annotations) to reflect the applied
-sessions and current SPEC.
-
-**Why.** Prevents future work from re-litigating already-ruled findings or chasing drifted line
-numbers.
-
-**Refs.** DH-1 · `RULINGS.md`, `DECISION_LOG_FINDINGS.md` · OPEN.
-
------------
-
-## Moot (no action — recorded for completeness)
-
-- **F017** (§3.9.1/§3.9.4 reserved-suffix prohibition: unconditional vs same-scope) — moot;
-  duration suffixes are globally visible (§3.9.5), so the "same scope" qualifier never narrows
-  anything. Optional editorial tidy only.
-- **F053** (§11.10.2 "regardless of root Copy" qualifier) — moot; §11.12 forbids a Copy compound
-  with a non-Copy subvalue, so the qualifier is harmlessly vacuous. Optional trim only.
