@@ -3331,7 +3331,7 @@ wrapping on overflow:
 | `*%`       | `WrappingMul`    | `200_u8 *% 2 is 144_u8`                               |
 | `\%`      | `WrappingIntDiv` | `(-128_i8) \% (-1_i8) is -128_i8` (no overflow trap) |
 | `%%`       | `WrappingRem`    | rare; defined for completeness                        |
-| unary `-%` | `WrappingNeg`    | `(-128_i8) -% is -128_i8` (no overflow trap)          |
+| unary `-%` | `WrappingNeg`    | `-%(-128_i8) is -128_i8` (no overflow trap)          |
 
 Wrapping is the right choice for hash functions, cryptographic primitives,
 counters where modular arithmetic is the intent, and bit-manipulation
@@ -3360,7 +3360,7 @@ overflow:
 | `*\|`       | `SaturatingMul`    | `200_u8 *\| 2 is 255_u8`            |
 | `\\\|`      | `SaturatingIntDiv` | `(-128_i8) \\\| (-1_i8) is 127_i8`  |
 | `%\|`       | `SaturatingRem`    | rare; defined for completeness      |
-| unary `-\|` | `SaturatingNeg`    | `(-128_i8) -\| is 127_i8`           |
+| unary `-\|` | `SaturatingNeg`    | `-\|(-128_i8) is 127_i8`           |
 
 Saturation is the right choice for DSP (audio sample clamping), image
 processing (pixel value clamping), and any context where producing a
@@ -3954,12 +3954,12 @@ Specifically:
   results per §4.6.6); the cast trait `WrappingAs[T]` for integer
   destination types `T` (per §4.7.3 — float-to-integer with
   implementation-defined modular truncation) and for wider-float
-  destinations (trivially equivalent to `as` per §4.7.2 since the
+  destinations (trivially equivalent to implicit widening per §4.7.2 since the
   conversion is lossless); the cast traits `SaturatingAs[T]` and
   `CheckedAs[T]` for integer destinations (clamping NaN to 0, etc.,
   per §4.7.3), narrower-float destinations (saturation clamps to the
   destination's range bounds; checked returns `None` on overflow), and
-  wider-float destinations (trivially equivalent to `as` per §4.7.2).
+  wider-float destinations (trivially equivalent to implicit widening per §4.7.2).
   `WrappingAs[T]` is *not* implemented for narrower-float destinations
   because modular wrap has no sensible meaning when the destination has
   reduced range and precision. Plus: float-only operations (`Sqrt`,
@@ -4160,7 +4160,9 @@ shapes.push(dyn circle)                   // element type supplies it
 the vtable (§5.2.3). The coercion is **never implicit**: a concrete value
 is never silently erased. The `dyn` prefix mirrors `move` (§11.8.5) — a
 short keyword that marks, at the site, an operation with a runtime cost
-(here, vtable indirection).
+(here, vtable indirection). The comparison is to `move`'s cost-marking role,
+not its positional grammar: value-position `dyn` is admitted wherever context
+supplies the target trait set (see below), not confined to `move`'s positions.
 
 **Target trait set.** The `dyn` set being erased to is taken from context:
 the binding's annotation, the parameter type at a call, or the collection's
@@ -7655,8 +7657,7 @@ let-rebindings and for-loop iteration variables specifically.
 #### 11.3.5 Rule (P): consume of a borrow-equivalent alias
 
 When a binding `x` is a borrow-equivalent alias in some cluster, and a
-language construct attempts to "consume" `x` (`let y = x`, `mut y = x`,
-`move x` at a call site), the result follows **Rule (P)**:
+language construct attempts to "consume" `x` (`let y = x`, `mut y = x`), the result follows **Rule (P)**:
 
 - The name `x` dies; it is no longer accessible.
 - The borrow-equivalent role transfers to the new binding (the
@@ -7961,7 +7962,7 @@ value:
 ```
 let buf = make_buffer()
 let backup = buf.clone()          // explicit deep copy
-process(buf)                       // buf consumed
+process(move buf)                       // buf consumed
 restore(backup)                    // backup still owned
 ```
 
@@ -8418,7 +8419,8 @@ both cases.
 is a `Copy` value that weakly designates a graph entity — and so is exempt from
 every restriction above: a handle may be stored in a cell, record field, enum
 payload, or tuple like any other value. Its *resolution* `Option[&T]`, by
-contrast, contains a borrow (`&T`) and is therefore subject to categories B and
+contrast, contains a borrow (here `&T` is elaborated-form notation per §11.9,
+not surface-writable) and is therefore subject to categories B and
 D exactly like any other alias-bearing value. The resolution is the transient
 read; the handle is the storable carrier.
 
@@ -8640,7 +8642,7 @@ body does internally.
 let scale: f32 = 2.0                          // Copy capture
 let process = fn(raw: Vec[f32]) -> Vec[f32]:
   mut local = raw.clone()                      // mut local; clone needed (raw is a non-Copy borrow)
-  apply_scale_in_place(local, scale)           // internal work; captures untouched
+  local = (move local).apply_scale(scale)      // scale in place; `scale` capture untouched
   local
 ```
 
@@ -8656,8 +8658,10 @@ lifetime is bounded by its cluster root, and an escaping closure may
 outlive that root.
 
 Non-escaping closures invoked synchronously within the cluster's
-lifetime may treat their environment access as alias access; the
-compiler distinguishes the two cases by closure-flow analysis (whether
+lifetime may have their (already-`Copy`) environment access compiled as alias
+access — an internal representation choice, not permission to capture
+non-`Copy` values; the compiler distinguishes the two cases by closure-flow
+analysis (whether
 the closure is stored, returned, or captured by another escaping
 closure). Most closure uses in Ductus are non-escaping (passed as
 arguments to higher-order functions that invoke them and discard the
@@ -9438,18 +9442,25 @@ array or `Vec`, iterated with `for` + `match`). A bare tuple element
 carries no tag to branch on, so tuple-element iteration would add nothing
 the enum pattern does not do better; see §9.2.5.
 
-**Fixed-extent vs. variable-extent types.** A loop over a value of a
-*fixed-extent* type unrolls; a loop over a *variable-extent* type runs at
-runtime. The extent (the count) is part of the type for fixed-extent
-types, so the compiler knows it:
+**Extent is a type property, not an admission rule.** A type's *extent* —
+whether its element count is part of the type — is distinct from whether a
+`for` over a value of that type unrolls. Only the two admitted forms above
+(a compile-time range, a compile-time array literal) unroll; extent-knowledge
+alone does not make a value an unroll iterable.
 
-- **Fixed-extent (unroll):** `T[N]` (fixed-size arrays), tuples, records.
-- **Variable-extent (runtime):** `Vec[T]`, `SmallVec[T, N]` (capacity is
-  `N` but occupied count varies), `RingBuf[T, N]`, `String` /
-  `s.chars()`, `HashMap`, ranges with runtime bounds.
+- **Fixed-extent types** (count known at compile time): `T[N]` (fixed-size
+  arrays), tuples, records. A *runtime-valued* `T[N]` is iterated with
+  `for i in 0..N` — a compile-time range, which unrolls the loop structure —
+  and runtime indexed access, not by `for x in buf` over the array value.
+  Tuple/record element iteration is not provided (above).
+- **Variable-extent types** (count varies at runtime): `Vec[T]`,
+  `SmallVec[T, N]` (capacity is `N` but occupied count varies),
+  `RingBuf[T, N]`, `String` / `s.chars()`, `HashMap`, ranges with runtime
+  bounds.
 
-The fixed-extent set parallels §2.4.1.3's const-eligible value types: if
-a type can carry a `const` value, a `for` over it unrolls.
+Fixed extent is the same compile-time-known-count property §2.4.1.3 uses for
+const-eligibility and §13.12.4 uses for cell layout; it does not by itself
+admit a `for`.
 
 **Call-site propagation.** A pure function with a `for` in its body has
 **one** source. Whether that `for` unrolls or runs at runtime is decided
@@ -16742,7 +16753,8 @@ from the type's size and shape:
 | Fixed-size array `T[N]` with N×sizeof(T) ≤ word | direct                                                     |
 | Fixed-size array `T[N]` with N×sizeof(T) > word | pool                                                       |
 
-Sizes shown are value widths. Storage is in 64-bit (8-byte) cells:
+Sizes shown are value widths. Storage is in atomic-word-width cells (one
+i64 = 8 bytes on a typical 64-bit platform):
 values ≤8 bytes occupy one cell with appropriate padding/extension;
 larger values span multiple consecutive cells per §14.3.2 or use pool
 storage per §14.3.3.
@@ -17302,7 +17314,7 @@ instance's observed error cell if such a cell is declared).
 #### 13.14.10 Behavior ABI and `runtime.teardown`
 
 **Behavior ABI.** Beyond the host-facing verbs above, the runtime calls
-*behaviors* (§15.4.4) — the pure compute of each derived, gate predicate,
+*behaviors* (§15.4.4) — the pure compute of each derived, recurrent, gate predicate,
 and effect `desired:` builder. It invokes a behavior by its
 content-addressed id with the current values of that behavior's input
 cells, and receives the output; it never reaches inside. Inputs are passed
