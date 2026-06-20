@@ -182,6 +182,17 @@ and the (already-resolved) grammar-inlining decision F038.
 
 **Refs.** F138 · §15.4, §15.4.1, §15.4.5, §15.4.4 · DoR #3851 · CL-IR/CL-GRAMMAR · OPEN.
 
+**Linked — F136 (deferred to this ticket).** F136 is resolved on the merits but cannot be applied
+until this ticket lands. §15.4.5's worked example types the desired cell `App.print:0.text` as
+`str`, yet its behavior `B@d5` returns the whole `%TextRec` record (per the §15.4.4 ABI: the
+desired-builder returns "the desired record", DoR #4018); and by cell-type rule 033-70 an
+aggregate cell must be a **dynamic-pool-index**, not a record tag. So the correct form is a single
+whole-record pool-index desired cell — but the *text-form spelling* of a pool-index cell type is
+undefined, which is exactly this ticket's missing graph grammar. **When F138 is decided, also fix
+§15.4.5:** make `App.print:0` one whole-record pool-index `effect-desired` cell that the runtime
+scatters into per-field desired state, and update the `desired [...]` reference. F136 remains in
+the `FINDINGS.md` ledger until then.
+
 -----------
 
 ## 6. [foundational · CL-IR] Can cross-impl hot reload silently flip a cell's observability class?  (F140)
