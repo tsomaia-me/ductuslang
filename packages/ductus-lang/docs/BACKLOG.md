@@ -13,8 +13,8 @@ doc-hygiene reconciliation, the moot no-ops) have been **moved into the implemen
 these (still-live) findings, but their **line numbers have drifted**; section numbers (`§x.y`)
 are stable. Locate any target by `§` + quoted content, not by line number.
 
-**Contents (25 items):** Section 1 — design forks (10: 6 hard + 4 leaned-reshape) · Section 2 —
-open syntax questions (11) · Section 3 — open semantic questions (4).
+**Contents (20 items):** Section 1 — design forks (6 hard forks) · Section 2 —
+open syntax questions (11) · Section 3 — open semantic questions (3).
 
 **How to use.** Forks (Section 1) need a real decision — open them one at a time, with discussion.
 Sections 2–3 can be answered directly or delegated to a draft-from-legacy-grammar pass for your
@@ -28,8 +28,9 @@ Legend — tier: `foundational` (reshapes a subsystem) · `cluster-root` (cascad
 
 # Section 1 — Design forks (you decide)
 
-11 findings → 10 tickets (F129+F134 are one decision). Six hard forks (no clean default) then
-four leaned-reshape forks (a recommendation exists, but it changes a rule, so it needs ratifying).
+Six hard forks (F129+F134 are one decision), no clean default. (The four leaned-reshape forks —
+F008, F029, F035, F132 — and the conditional-`Copy` surface have since been ruled and applied; see
+the implementation plan's Part F. They are no longer carried here.)
 
 ## 1. [foundational · trait/call] Named-form call: trait param names vs impl-renamed params  (F020)
 
@@ -226,122 +227,13 @@ alter a cell's concurrency contract.
 
 -----------
 
-## 7. [leaned-reshape · CL-UMBRELLA] Extend the dispatch-collision check to auto-satisfied traits  (F008)
-
-**Problem.** The dispatch-determinism guarantee rests on a collision check over the written
-`satisfies` set, but auto-satisfied traits never appear in any `satisfies` set — so two in-scope
-auto-satisfied traits with a same-named default-bodied method could yield two parent-trait
-candidates, which the guarantee says is impossible.
-
-**Context.** §3.4.1 step 1 keys on "x's type **fulfills** T" (includes auto-satisfied traits) and
-asserts determinism "because §3.2.1's parent-trait collision rule guarantees …" — but §3.2.1
-checks the `satisfies` **set** only. Auto-satisfied traits (§3.3.5) are in no `satisfies` set.
-Narrow bite: auto-satisfied traits have no abstract methods, so a collision needs two distinct
-auto-satisfied traits each declaring a same-named *default-bodied* method, both in scope on one type.
-
-**Potential solutions.**
-- (B1, lean) Extend the collision check to the **effective** fulfilled-trait set (directly
-  satisfied + auto-satisfied + their `requires` closures). One uniform rule; may reject some
-  today-legal type/scope combinations; reshapes the determinism proof.
-- (B2) Narrower rule: default-bodied methods on auto-satisfiable traits may not share a name with
-  another in-scope auto-satisfiable trait's method.
-
-**What.** LOG amend the collision check to range over the effective fulfilled-trait set; SPEC
-§3.2.1 + §3.4.1 restate the guarantee and the §3.4.1 determinism justification.
-
-**Why.** Reshapes the dispatch-determinism proof; ratify because B1 can reject existing code.
-
-**Refs.** F008 · §3.2.1, §3.4.1, §3.3.5 · CL-UMBRELLA · OPEN, lean B1.
-
------------
-
-## 8. [leaned-reshape · CL-BOUNDS] Implicit widening to `isize`/`usize` from wider sources  (F029)
-
-**Problem.** §4.5.1 lists `isize`/`usize` widening targets only in the `i8`/`u8` source rows, but
-the prose "same-signedness widening is implicit" reads as general — and `isize` is platform-width,
-so `i64 → isize` is not lossless on a 32-bit target.
-
-**Context.** §4.5.1 table has no row for `i16`/`i32`/`i64` → `isize`; §4.1: `isize` is 32- or
-64-bit per platform; §4.5 invariant: implicit widening "fires only when provably lossless."
-
-**Potential solutions.**
-- (A, lean) Treat the table as the authoritative whitelist: implicit widening to `isize`/`usize`
-  fires only from sources provably ≤ the minimum pointer width (`i8`/`i16`→`isize`,
-  `u8`/`u16`→`usize`, assuming a ≥16-bit floor); `i32`/`i64`/`u32`/`u64`→`isize`/`usize` require
-  an explicit cast.
-- (Owner-fork) Fix a minimum `isize` width and allow `i16`→`isize` implicitly (or not).
-
-**What.** LOG amend; SPEC §4.5.1 add explicit `i16`/`u16` rows (✓ if ≥16-bit floor) and
-`i32`+/`i64`+ rows (✗ explicit cast).
-
-**Why.** Portability of index/size code; ties to F041/F042 (already ruled: same-width signed↔
-unsigned needs an explicit cast).
-
-**Refs.** F029 · §4.5.1 · CL-BOUNDS · OPEN, lean A (owner confirms the min-pointer-width floor).
-
------------
-
-## 9. [leaned-reshape · CL-KEYWORD] Bare variant patterns resolve against the scrutinee enum  (F035)
-
-**Problem.** Every variant reference is path-qualified by default (unqualified needs `use`), yet
-the spec's canonical `match` examples write bare variant patterns with no imports — so either an
-unstated exemption exists, or the examples are wrong.
-
-**Context.** §6.2.3: variant references are path-qualified by default; unqualified requires `use`.
-But §6.2.4/§6.2.1.1 write `Circle(radius):`, `Rectangle(w, h):`; §6.3.1 writes bare `Ok(Email(s))`;
-§8.3.1 writes bare `Some`/`Ok` — none importing. Only `panic` is documented prelude, so the
-prelude theory fails for user enums like `Circle`.
-
-**Potential solutions.**
-- (A, lean) Pattern arms (and constructions with a known expected enum type) resolve variant
-  names against that enum without `use`; path-qualification is required only at *open* value
-  positions where no enum is fixed by context. (Standard ML/Rust model.)
-- (B) The rule is universal and every canonical example must add the missing `use` imports.
-
-**What.** LOG add the pattern/expected-type resolution exemption; SPEC §6.2.3 add a paragraph
-reconciling it with the qualify-by-default rule.
-
-**Why.** Validates ~all `match` examples spec-wide at once (cluster-root). Adjacent to the IR/
-grammar gaps but is a name-resolution decision.
-
-**Refs.** F035 · §6.2.3, §6.2.4, §6.2.1.1, §6.3.1, §8.3.1 · CL-KEYWORD · OPEN, lean A.
-
------------
-
-## 10. [leaned-reshape · CL-DECLKINDS] Does `ductus check` run monomorphization?  (F132)
-
-**Problem.** `ductus check` "runs the frontend," but the parenthetical lists exactly four passes,
-omitting the fifth (monomorphization) — so whether monomorphization-stage diagnostics surface in
-`check`/LSP is undetermined.
-
-**Context.** §14.1.1 lists 5 frontend passes (5 = monomorphization). §14.2.1: "`ductus check` —
-runs the frontend (lexing, parsing, type checking, ownership checking, reactive analysis) without
-invoking either backend" — the parenthetical is exactly passes 1–4. Stakes: deferred const-generic
-bound checks (§2.5.6) arise only during monomorphization.
-
-**Potential solutions.**
-- (B, lean) `check` runs passes 1–4 only (frontend minus monomorphization); LSP gets fast
-  incremental checking; monomorphization-only diagnostics surface at `build`/`run`. Owner must
-  confirm that diagnostic-coverage tradeoff is acceptable.
-- (A) `check` runs all five passes, including monomorphization (slower, fuller diagnostics).
-
-**What.** SPEC §14.2.1 state explicitly which passes `check` runs and where monomorphization-only
-diagnostics surface; LOG add.
-
-**Why.** Determines LSP/editor diagnostic coverage; B is a deliberate tradeoff the owner should
-sign off on.
-
-**Refs.** F132 · §14.2.1, §14.1.1 · CL-DECLKINDS · OPEN, lean B (confirm tradeoff).
-
------------
-
 # Section 2 — Open syntax questions (grammar-class)
 
 11 items the SPEC decides nowhere. The mined legacy grammar likely answers most; each needs a nod
 (answer directly, or approve a draft-from-legacy-grammar pass). On ruling: add a DECISION_LOG
 entry + write the governing prose into SPEC, then strike from the spec-silent appendix.
 
-## 11. [open-syntax · CL-GRAMMAR] Forced identifier-suffix name set  (appendix)
+## 7. [open-syntax · CL-GRAMMAR] Forced identifier-suffix name set  (appendix)
 
 **Problem.** A forced (identifier-)suffix on a literal — is the name set exactly the primitive type
 names, or also `alias type` names (e.g. `255_byte`)?
@@ -358,7 +250,7 @@ names, or also `alias type` names (e.g. `255_byte`)?
 
 -----------
 
-## 12. [open-syntax · CL-GRAMMAR] String interpolation format specifiers + `\xHH` range  (appendix, ◐)
+## 8. [open-syntax · CL-GRAMMAR] String interpolation format specifiers + `\xHH` range  (appendix, ◐)
 
 **Problem.** Two string sub-grammar residuals: (1) format specifiers inside `{…}` interpolations
 are undefined; (2) the admissible `\xHH` byte-vs-scalar range vs the UTF-8/scalar invariants is
@@ -378,7 +270,7 @@ basics are settled; these two are not.
 
 -----------
 
-## 13. [open-syntax · CL-GRAMMAR] Array repeat-count form + `Vec[…] = []` initializer  (appendix)
+## 9. [open-syntax · CL-GRAMMAR] Array repeat-count form + `Vec[…] = []` initializer  (appendix)
 
 **Problem.** Array *literal* `[e1,…,eK]`→`T[K]` and empty `[]` are settled (F047), but a
 repeat-count form (`[e; N]`) and the `Vec[…] = []` cell-initializer are not.
@@ -397,7 +289,7 @@ a `Vec` cell is language sugar or stdlib. (B) No repeat form; `Vec` literal stay
 
 -----------
 
-## 14. [open-syntax · CL-GRAMMAR] Turbofish for enum variants  (appendix)
+## 10. [open-syntax · CL-GRAMMAR] Turbofish for enum variants  (appendix)
 
 **Problem.** Where does `::[…]` attach on `Enum::Variant`, and how is a unit variant explicitly
 instantiated with no inference context (`Option::None`)?
@@ -416,7 +308,7 @@ instantiation are undefined.
 
 -----------
 
-## 15. [open-syntax · CL-GRAMMAR] Value-position `dyn` operand extent/precedence  (appendix)
+## 11. [open-syntax · CL-GRAMMAR] Value-position `dyn` operand extent/precedence  (appendix)
 
 **Problem.** F037 settled the admitted *positions* of value-position `dyn`, but the operand
 extent/precedence (how much of the following expression `dyn` binds) is open.
@@ -435,7 +327,7 @@ grammar.
 
 -----------
 
-## 16. [open-syntax · CL-GRAMMAR] `Type[…]` with a conjunction constraint  (appendix)
+## 12. [open-syntax · CL-GRAMMAR] `Type[…]` with a conjunction constraint  (appendix)
 
 **Problem.** May a `Type[…]` meta-type carry a conjunction constraint (`Type[Drivable & Insurable]`)?
 
@@ -452,7 +344,7 @@ unspecified.
 
 -----------
 
-## 17. [open-syntax · CL-GRAMMAR] Newtype constructor pattern vs `T(value)` sole eliminator  (appendix)
+## 13. [open-syntax · CL-GRAMMAR] Newtype constructor pattern vs `T(value)` sole eliminator  (appendix)
 
 **Problem.** Is there a newtype destructuring *pattern* (`UserId(n)` in a `match`), or is `T(value)`
 extraction the sole eliminator?
@@ -471,7 +363,7 @@ pattern; extraction via `T(value)` / accessor only.
 
 -----------
 
-## 18. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
+## 14. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
 
 **Problem.** The `with` override form is shown only as a single override; chaining
 (`a with x: 1 with y: 2`), precedence, and use inside a call-argument list are undefined.
@@ -489,7 +381,7 @@ permitted inside call args with explicit parens. (B) Single-override only.
 
 -----------
 
-## 19. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
+## 15. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
 
 **Problem.** How is an inline `observe` delimited as a sub-expression / call argument, and may an
 `observe` arm body span multiple lines (only single-expression arms are shown)?
@@ -507,7 +399,7 @@ blocks. (B) `observe` is statement-position only; arms single-expression.
 
 -----------
 
-## 20. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
+## 16. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
 
 **Problem.** Declarations were normalized to multi-line bodies, but whether an operator may carry an
 inline single-member body after the colon (e.g. `operator gain[…]: …`) is unresolved.
@@ -526,7 +418,7 @@ Operator bodies must be indented blocks.
 
 -----------
 
-## 21. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
+## 17. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
 
 **Problem.** Several connection-body surface points are undefined: clause-ordering of
 `from:`/`to:`/`pairs:` vs members; explicit type-arg surface when placing a generic connection;
@@ -552,28 +444,9 @@ unverifiable on these points.
 
 # Section 3 — Open semantic questions (grammar won't help)
 
-4 items needing real rulings, not syntax decisions.
+3 items needing real rulings, not syntax decisions.
 
-## 22. [open-semantic] Conditional `Copy` impl surface a generic type writes  (appendix)
-
-**Problem.** How does a generic type conditionally implement `Copy` — `fulfill Copy for G[T] where
-T: Copy`, and may the body be empty?
-
-**Context.** §3.3.4's `where`-form is specified only for method-bearing traits; `Copy` is a marker
-(methodless) trait, so the conditional-impl surface for it is undefined.
-
-**Potential solutions.** (A) Permit `fulfill Copy for G[T] where T: Copy` with an empty body. (B)
-`Copy` is auto-derived from field Copy-ness only; no manual conditional impl.
-
-**What.** DECISION_LOG entry + §3.3.4/§11.12 prose.
-
-**Why.** Whether generic containers can be conditionally Copy.
-
-**Refs.** Spec-silent appendix · §3.3.4, §11.12 · OPEN.
-
------------
-
-## 23. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
+## 18. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
 
 **Problem.** Only single-segment place assignments are shown (`r.field = v`, `arr[i] = v`).
 Multi-segment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring
@@ -592,7 +465,7 @@ order are undefined.
 
 -----------
 
-## 24. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
+## 19. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
 
 **Problem.** May a tuple component be assigned through a `mut` binding, and what is its LHS form
 (`t.0 = x`)?
@@ -611,19 +484,38 @@ immutable-component; whole-value reassignment only.
 
 -----------
 
-## 25. [open-semantic] Explicitly-written elaborated borrow signatures  (appendix)
+## 20. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
 
-**Problem.** The spec gives only a schematic for elaborated borrow signatures
-(`fn f(borrow v: T) -> borrow_rooted_in(v) T`); the concrete writable surface is undefined.
+**Problem.** Borrow-rootedness — which input cluster(s) a borrow-return is rooted in, including
+the multi-root "union of clusters" — is a compile-time concept with observable effects (which
+`move`s/mutations are rejected) but no surface form. It is the only inferred property in the
+language with no optional explicit annotation (contrast types: inferred yet always annotatable).
 
-**Context.** §11.x (borrow elaboration). Only "Schematically: …" is given; whether/how a user writes
-such a signature is open.
+**Context.** §11.7.5: the elaborated `borrow_rooted_in(v)` form is diagnostic-only ("users do not
+write this"); rootedness is "inferred from the function body." DECISION_LOG 013-66: multiple
+contributing inputs → union of clusters (conservative; locks all). For concrete functions
+body-inference is precise. For abstract trait-method / fn-type returns there is no body, so the
+system falls back to the conservative union — and a trait author cannot constrain rootedness even
+though that is a genuine contract, not a derived fact. (Rust solves this with explicit lifetime
+parameters — signature-local, mandatory-when-ambiguous; that syntax is explicitly off the table.)
 
-**Potential solutions.** (A) Define a concrete surface for elaborated borrow signatures. (B) They
-are spec-internal notation only; never written in source (borrow is always implicit).
+**Potential solutions.**
+- (A, owner-chosen direction) Add a **purely opt-in** rootedness annotation. Default stays
+  body-inferred and invisible (unchanged); the annotation is available only to constrain/document
+  rootedness — most usefully on abstract returns, the exact spot inference can't reach.
+  **Concrete syntax TBD and explicitly NOT lifetime-style** — design deferred to when this item is
+  opened.
+- (B) Status quo: rootedness stays inexpressible; accept conservative union at the abstract
+  boundary.
 
-**What.** DECISION_LOG entry + §11 prose (or an explicit "not surface-writable" rule).
+**What.** A DECISION_LOG entry + §11.7.5 prose introducing the optional annotation and its scope;
+the surface syntax is a separate design pass (owner: not Rust-style).
 
-**Why.** Whether borrow rooting is ever user-written; ties to F052 (`&T` is not surface).
+**Why.** Closes a "no privileged thing the user cannot express" gap — the language reasons in
+rootedness/union terms the user currently cannot write — without taxing concrete code.
 
-**Refs.** Spec-silent appendix · §11 (adjacent F052) · OPEN.
+**Refs.** reframed old elaborated-borrow item · §11.7.5, 013-66, 013-48 · CL-OWNERSHIP · OPEN
+(owner: add it, opt-in only, body-inference stays; syntax deferred). Subsumes the old
+"explicitly-written elaborated borrow signatures" question (F052-adjacent): the elaborated
+`borrow_rooted_in(v)` form stays diagnostic-only; this opt-in annotation is the user-writable
+surface, if any.
