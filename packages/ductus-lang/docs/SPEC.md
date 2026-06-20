@@ -1651,7 +1651,11 @@ The rule shapes dispatch (§3.4): because no type can satisfy two traits
 with *different parent identities* and overlapping method names, the
 case of "multiple distinct-parent trait impls match this call site"
 cannot arise. Call-site name resolution always finds at most one
-parent-trait source for a given (type, method-name) pair. Within a
+parent-trait source for a given (type, method-name) pair. This no-overlap
+check ranges over the type's **effective fulfilled-trait set** — directly
+satisfied traits, auto-satisfied traits (§3.3.5), and their `requires`
+closures — so it also covers auto-satisfied traits, which never appear in a
+written `satisfies` set. Within a
 parent-trait source, multiple generic instantiations may match; these
 are disambiguated by inference per §3.4.1.1.
 
@@ -1979,9 +1983,10 @@ resolution algorithm prioritizes trait implementations over free functions:
    receiver's type, the unmatched name, and any near-matches the compiler
    identified.
 
-The algorithm is deterministic: §3.2.1's parent-trait collision rule
-guarantees that any (type, method-name) pair has at most one parent-trait
-source, and the §10 module rules guarantee that any given module-scope
+The algorithm is deterministic: §3.2.1's parent-trait collision rule —
+over the type's effective fulfilled-trait set, including auto-satisfied
+traits — guarantees that any (type, method-name) pair has at most one
+parent-trait source, and the §10 module rules guarantee that any given module-scope
 name has at most one free-function source. When a parent-trait source has
 multiple generic instantiations, disambiguation among them follows the
 standard inference rules (§2.2.5).
@@ -4915,6 +4920,14 @@ let n: Option[i32] = Option::None
 By default, every variant reference is *path-qualified* with the enum name
 via `::` (`Result::Ok`, `Direction::North`). The path qualification makes
 the variant's enum unambiguous at every use site.
+
+This requirement governs **open value positions**, where no enum is fixed by
+context. In **pattern position** (`match` arms) and in constructions whose
+**expected type is a known enum** (an annotated binding, a typed parameter, a
+return slot), variant names resolve against that enum directly — no `use`, no
+path: a `match` arm `Circle(r):` against a `Shape` scrutinee, and
+`let r: Result[T, E] = Ok(v)`, need no import, because the scrutinee's or
+expected type fixes the enum.
 
 Unqualified variant names are not available by default. To bring variants
 into scope unqualified, the user explicitly imports them via `use`:
@@ -20877,10 +20890,13 @@ required.
   Compiles to a native executable. `--release` enables optimization.
   The output is a single executable file.
 
-- **`ductus check <file>`** — runs the frontend (lexing, parsing,
-  type checking, ownership checking, reactive analysis) without
-  invoking either backend. Produces diagnostics. Used by editor
-  integrations (LSP).
+- **`ductus check <file>`** — runs frontend passes 1–4 of §14.1.1
+  (1 lexing/parsing, 2 name-resolution/type-checking, 3 ownership-checking,
+  4 reactive analysis) — **not** monomorphization (pass 5) — without invoking
+  either backend. Produces
+  diagnostics; those that arise only during monomorphization (e.g. deferred
+  const-generic bound checks, §2.5.6) surface at `build`/`run`, not `check`.
+  Used by editor integrations (LSP).
 
 - **`ductus fmt <file>`** — invokes the canonical formatter.
   Rewrites the source in normalized form.
