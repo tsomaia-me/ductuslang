@@ -205,7 +205,9 @@ A placeholder is resolved to a concrete type at a *use site* — a position in
 the code where the value participates in an operation requiring a concrete
 type. Use sites include:
 
-- An explicit type annotation (`let y: i32 = x`).
+- An explicit type annotation (`let y: i32 = x`). The annotation resolves
+  only a *bare* placeholder-bearing right-hand side; against a *compound* RHS
+  it is checked, not flowed inward (see the forward-only rule below).
 - An argument to a function parameter with a concrete type.
 - An operand to an operator whose other operand is concretely typed.
 - A field assignment in a record where the field type is concrete.
@@ -625,7 +627,9 @@ not annotate it for `let` bindings.
 
 #### 2.4.1.1 `let` and `const` binding forms
 
-The language has two binding forms:
+This section contrasts the two compile-time-relevant binding forms, `let` and
+`const`. (The language has three binding forms in total — `let`, `mut`, and
+`const`; `let`/`mut` bind runtime values, with `mut` covered in §11.2.)
 
 - **`let`** — the general binding form. Immutable. The compiler determines
   compile-time-knowability automatically from the expression. A `let` bound
@@ -907,6 +911,13 @@ A **reactive** value (§13) may never flow into a const-generic argument;
 doing so is a compile error (§13.12.5). The concrete value is then
 checked against the parameter's type and bounds by value-fits-type
 checking (§2.4.3, §2.5.5).
+
+A symbolic size parameter need not itself be `isize`: a `usize`-typed
+`const N` used as an array length (`data: T[N]`) is well-formed at
+declaration, and the concrete value is checked to fit the `isize`
+array-length type (§9.3.3) at instantiation by value-fits-type checking
+(§2.4.3) — a value exceeding `isize`'s range is then a compile error
+(§4.6.5).
 
 #### 2.5.3 The symbolic case: const-generic expressions
 
@@ -1524,9 +1535,11 @@ methods:
   `Type`'s body is a compile error: the implementation has no declared
   contract.
 
-The exception is traits with no methods (pure-requirement traits, §3.3.5),
-and traits all of whose methods have default bodies: these are automatically
-satisfied when all required traits are satisfied; no `satisfies` clause is
+The exception is traits with no abstract methods — those with no methods at
+all, and those all of whose methods have default bodies (§3.3.5; the term
+"pure-requirement" is reserved there for the stricter no-methods-and-no-
+associated-types sense): these are automatically satisfied when all required
+traits are satisfied; no `satisfies` clause is
 needed on the type and no `fulfill` block is needed for the auto-satisfied
 trait.
 
@@ -1826,6 +1839,13 @@ required traits. A `Result[i32, string]` implements `Display` because both
 closure types typically do not implement `Display`. The compiler verifies
 the conditions at every call site that requires the implementation.
 
+The `satisfies`↔`fulfill` pairing (§3.2) is satisfied by a plain
+unconditional `satisfies Display` in `Result`'s body; there is no
+conditional-`satisfies` syntax. The where-clause on the `fulfill` is the
+sole carrier of the availability condition — the `satisfies` clause states
+the contract unconditionally and the `where` narrows where the
+implementation is available.
+
 The same `where` clause carries **const-generic value bounds** (§2.5.6)
 in addition to trait bounds, and the two may be mixed in one
 comma-separated list: `where T: Numeric, N >= 1`. Trait bounds are
@@ -1840,14 +1860,16 @@ clauses — is a pure-requirement trait. Examples are the umbrella traits from
 §3.6 (`Numeric`, `Integer`, `Float`, `Signed`, `Unsigned`).
 
 A trait is **automatically satisfied** — no explicit `satisfies` clause on
-the type and no `fulfill` block for the trait itself are needed — when both
-hold: all of its `requires` are satisfied, *and* every method it declares has
-a default body (§3.1.3), i.e. it has no *abstract* method (a method with no
-default body). Pure-requirement traits are the sub-case where the method set
-is empty; a trait whose every method carries a default body auto-satisfies on
-the same footing, because each default body supplies the implementation. A
-trait with one or more abstract methods still requires explicit `satisfies` +
-`fulfill` per §3.2.
+the type and no `fulfill` block for the trait itself are needed — when all of
+the following hold: all of its `requires` are satisfied, *every method it
+declares has a default body* (§3.1.3, i.e. it has no *abstract* method — a
+method with no default body), *and every associated type it declares has a
+default* (§3.3.2). Pure-requirement traits are the sub-case where the method
+set is empty; a trait whose every method carries a default body auto-satisfies
+on the same footing, because each default body supplies the implementation. A
+trait with one or more abstract methods — or an undefaulted associated type,
+which has no binder under auto-satisfaction — still requires explicit
+`satisfies` + `fulfill` per §3.2.
 
 For an auto-satisfied trait, no `fulfill` block is needed; no `satisfies`
 clause is needed on the type (though it may be included for documentation).
@@ -2048,9 +2070,11 @@ The named form uses `name: value` syntax. In the named form, the order of
 arguments does not matter; the compiler matches by name. In the positional
 form, arguments must appear in declaration order.
 
-Both forms are valid for any single-argument call. `square(5)` and
-`square(value: 5)` are equivalent; no special rule restricts single-
-argument calls to one form.
+Both forms are valid for any single-argument *function* call. `square(5)` and
+`square(value: 5)` are equivalent; no *arity-based* rule restricts single-
+argument calls to one form. Per-callable constraints (§3.5.3) — records
+named-only, tuples and newtypes positional-only — still apply and are not
+relaxed by this paragraph.
 
 A no-argument call (`person.display()`) is trivially both forms; the
 parentheses are empty and no mixing question arises.
@@ -2585,7 +2609,8 @@ fn from_khz[N: Numeric](n: N) -> Frequency:
 fn from_cents[N: Numeric](n: N) -> Frequency:
   ...
 
-let middle_c = 440hz       // resolved to from_hz(440), i64 literal
+let middle_c = 440hz       // resolved to from_hz(440); 440 is an i32 literal
+                           //   (Numeric default, §4.9.3), widened to i64 in from_hz
 let voice    = 1.5khz      // resolved to from_khz(1.5), f64 literal
 ```
 
@@ -2593,7 +2618,8 @@ Note: the registered type must be a distinct nominal type for the
 suffix to provide type-level distinction. A bare type alias (`type
 Frequency = i64`) is interchangeable with its underlying type and
 defeats the purpose; use a newtype (§6.3) to create a fresh nominal
-type.
+type. Registering a suffix on a bare alias is not a compile error — it
+compiles but yields no type-level distinction.
 
 #### 3.9.1 Annotation grammar
 
@@ -2601,9 +2627,13 @@ type.
 @literal_suffix("<suffix>", <constructor>)
 ```
 
-- `"<suffix>"` is a string literal naming the suffix. Suffixes consist of
-  one or more identifier-continue characters (letters, digits, underscores,
-  Unicode identifier characters). Examples: `ms`, `khz`, `μs`, `years_2k`.
+- `"<suffix>"` is a string literal naming the suffix. A suffix must begin
+  with an identifier-*start* character (a letter, underscore, or non-digit
+  Unicode identifier character — §1.4) and may continue with
+  identifier-continue characters (letters, digits, underscores, Unicode
+  identifier characters). A digit-initial suffix is a compile error, so that
+  `<NumericLiteral><suffix>` tokenizes unambiguously by maximal munch.
+  Examples: `ms`, `khz`, `μs`, `years_2k` (✓); `2k` (✗).
 - `<constructor>` is the unqualified name of a function (or trait method)
   in scope, which must take exactly one numeric parameter (`Numeric`-bound)
   and return the annotated type.
@@ -2642,6 +2672,12 @@ Overloading the same suffix with multiple non-generic constructors for
 the same target type (e.g., one taking `i64` and another taking `f64`)
 is a compile error; use a single generic constructor instead.
 
+The `@literal_suffix` annotation attaches to the *type* declaration (§3.9.1:
+"decorate one type"), not to the constructor function. Where an example
+places the annotation above the constructor `fn`, that is presentational
+shorthand co-locating it with the constructor it names; "the annotated type"
+in this section is the decorated type regardless of source layout.
+
 ```
 // Recommended: single generic constructor handles both forms
 @literal_suffix("hz", from_hz)
@@ -2654,7 +2690,7 @@ fn from_hz[N: Numeric](n: N) -> Frequency: ...
 
 #### 3.9.3 Resolution
 
-When the lexer encounters `<NumberLiteral><suffix>`:
+When the lexer encounters `<NumericLiteral><suffix>`:
 
 1. The lexer emits a single suffixed-literal token.
 2. The type checker looks up `(suffix)` in the registered annotations
@@ -3305,9 +3341,11 @@ different policies for handling out-of-range results.
 
 #### 4.6.1 Default trap-on-overflow
 
-The default arithmetic operators (`+`, `-`, `*`, `/`, `\`, `%`, unary `-`)
-trap on overflow at runtime, in all build modes. There is no debug-traps/
-release-wraps distinction.
+The default integer-producing arithmetic operators (`+`, `-`, `*`, `\`, `%`,
+unary `-`) trap on overflow at runtime, in all build modes. There is no
+debug-traps/release-wraps distinction. The `/` operator always yields Float
+(§4.4.1.1) and so never integer-overflow-traps: its overflow follows IEEE 754,
+producing signed infinity with no trap (§4.6.6).
 
 When an operation produces a result outside the destination type's range, the
 runtime halts with a diagnostic identifying the operation, the operand
@@ -3439,9 +3477,11 @@ handling on saturating casts).
 
 #### 4.6.7 Integer division by zero
 
-Integer division by zero traps at runtime, per the default trap-on-overflow
-philosophy. There is no sensible mathematical result for `n / 0` or `n \ 0`
-with integer types.
+Integer division and remainder by zero (`\` and `%`) trap at runtime, per the
+default trap-on-overflow philosophy. There is no sensible mathematical result
+for `n \ 0` or `n % 0` with integer types. The `/` operator is always float
+division (§4.4.1.1), so `n / 0` is `f64(n) / 0.0` and yields ±Infinity per
+IEEE 754 (§4.6.6), not a trap.
 
 The checked variant `/?` (and `\?`) returns `None` for division by zero,
 providing the recoverable form. There is no wrapping or saturating variant
@@ -3880,9 +3920,10 @@ trait Float:
   requires Numeric, Neg, Div,
            CheckedDiv, CheckedNeg,
            Sqrt, Sin, Cos, Tan, Asin, Acos, Atan, Atan2,
-           Ln, Log2, Log10, Exp, Exp2,
+           Ln, Log2, Log10, Log, Exp, Exp2,
            Floor, Ceil, Round, Trunc,
-           FloatPow
+           FloatPow,
+           IsNan, IsInfinite, IsFinite, IsNormal
 
 @default(i32)
 trait Signed:
@@ -4058,9 +4099,12 @@ to the trait-intersection expression as a whole.
 #### 5.2.2 `dyn` is mandatory for trait-object value positions
 
 `dyn` is *required* at every trait-object value position. The bare form
-`let x: Drivable` (no `dyn`) is a parse error when `Drivable` is a trait
-rather than a concrete type. Similarly, `let x: Drivable & Insurable`
-(no `dyn`) is a parse error when both operands are traits.
+`let x: Drivable` (no `dyn`) is a compile-time error (reported after name
+resolution) when `Drivable` is a trait rather than a concrete type — the
+grammar admits `let x: Ident`, and the trait-vs-type discrimination is
+performed by the resolver, not the parser. Similarly, `let x: Drivable &
+Insurable` (no `dyn`) is a compile-time error (reported after name
+resolution) when both operands are traits.
 
 The requirement makes dynamic-dispatch costs visible at the declaration
 site rather than hidden behind syntax that looks like a plain type
@@ -4248,9 +4292,12 @@ operand types' implementations:
 type InsuredCar = Car & Insured
 ```
 
-When both operand records have `fulfill` blocks for the same trait that
-would equally apply, derivation is ambiguous; the compiler reports an error
-and the user must write the implementation manually.
+Derivation succeeds only when exactly one operand implements the derived
+trait; the generated `fulfill` delegates to that operand's implementation.
+When both operand records have `fulfill` blocks for the same trait,
+derivation is ambiguous — the compiler has no rule to compose two
+delegations into one — so it reports an error and the user must write the
+implementation manually.
 
 The mechanism mirrors `@derive` for newtypes (§6.3.3): explicit
 opt-in trait inheritance, no automatic carry-over of traits the user didn't
@@ -4611,8 +4658,9 @@ static fields. See §13.2.9.8 for the reactive-context extension.
 
 Every override field name must exist in the base's type. Overriding a
 non-existent field is a compile error. Override values must be type-
-compatible with the field's declared type (subject to the same widening
-and conversion rules as direct construction per §6.1.3).
+compatible with the field's declared type, subject to implicit widening per
+§4.5 (explicit conversions per §4.7 otherwise), exactly as construction
+arguments are.
 
 #### 6.1.6 Field visibility
 
@@ -5080,8 +5128,8 @@ type UserId:                 // newtype; UserId is distinct from i64
 identity. The two forms are syntactically distinct and serve opposite
 purposes.
 
-A newtype body may include `satisfies` clauses for explicitly implemented
-traits per §3.2:
+A newtype body may include one `satisfies` clause (listing one or more
+traits) for explicitly implemented traits per §3.2, like records and enums:
 
 ```
 type Email:
@@ -5724,8 +5772,10 @@ match operation:
 
 Ductus provides no `if let` or check-and-unwrap sugar. The combination of
 `match` (for full discrimination) and `?` (for short-circuit propagation)
-is the complete surface for consuming `Option` and `Result`; the language
-keeps that surface minimal deliberately.
+are the primary pattern/short-circuit forms for consuming `Option` and
+`Result` (the postfix `!` of §8.4.2 and the stdlib methods of §8.7 also
+consume them); the language keeps that pattern/short-circuit surface minimal
+deliberately.
 
 ### 8.4 The `?` Operator and the `Try` Trait
 
@@ -6623,6 +6673,12 @@ provide:
 - `d.as_secs_f64() -> f64`, `d.as_millis_f64() -> f64`, etc. — float
   variants for ratio-style queries (precision-bound by f64).
 
+The `duration::from_nanos` rendering above is illustrative of a stdlib
+constructor; it is **not** a sanctioned type-qualified call syntax (Ductus
+has no `Type::fn(x)` free-function namespace, §8.7). The real surface form is
+a module path (e.g. `std::duration::from_nanos(n)`, §10.2.3) or the method
+forms shown.
+
 #### 9.4.2 `instant`
 
 An `instant` represents a *monotonic* point in time — a value from a
@@ -6673,6 +6729,11 @@ provide:
 
 Comparison and difference are the canonical operations on `instant`;
 no other introspection is provided.
+
+The `instant::now` rendering above is illustrative of a stdlib constructor;
+it is **not** a sanctioned type-qualified call syntax (Ductus has no
+`Type::fn(x)` free-function namespace, §8.7). The real surface form is a
+module path (e.g. `std::instant::now()`, §10.2.3) or a method form.
 
 ##### 9.4.2.3 Limitation: no cross-run serialization
 
@@ -6939,6 +7000,12 @@ a visibility specifier governing that name's cross-scope reach.
 A `use` statement imports a name from a *different module* into the
 current file's scope, allowing the file to refer to that name
 unqualified rather than via its full path. The `use` forms are specified in §10.4 and §10.4.1 below.
+
+A `use` path's *leaf* must be an importable declaration name; a `use` whose
+leaf is itself a module is a compile error. Intermediate path segments may be
+modules — the path may reach *through* sub-modules to a name (e.g.
+`use root::audio::synth::Oscillator`) — but the imported target is always a
+name, never a module.
 
 ```
 use root::audio::Synthesizer
@@ -9310,9 +9377,12 @@ ensures the source is not moved or mutated for the loop's duration
 
 **`for own` form, `Copy` element type** (`for own sample in buf:`
 where `buf: f32[1024]`): the iteration variable is an owned Copy
-value. `buf` is consumed at loop entry (functionally
-indistinguishable from the default form for Copy element types,
-because Copy values don't impose constraints on the source).
+value. `buf` is consumed at loop entry. The *iteration values* are
+indistinguishable from the default form (Copy elements yield Copy `sample`
+either way), but the *source binding* is not: an array such as `f32[1024]`
+is a non-`Copy` aggregate (§11.6.1), so `for own` consumes it and `buf` is
+unusable after the loop. The source-binding indistinguishability holds only
+when the source type itself is `Copy` (e.g. `Range[T]`).
 
 ```
 let buf: f32[1024] = make_block()
@@ -16573,7 +16643,7 @@ its provenance set is non-empty.
 The compiler uses provenance to:
 
 - Decide which cells to include in a derived's dependency set
-  (used by the dirty-bit propagation in §13.10.1).
+  (used by the dirty-set / dirty-propagation in §13.10.2 step 1).
 - Diagnose reactivity-where-compile-time-required errors with
   precise blame: *"value of `x` is reactive because it depends on
   signal `mouse_position` at line 14."*
@@ -16756,8 +16826,8 @@ from the type's size and shape:
 Sizes shown are value widths. Storage is in atomic-word-width cells (one
 i64 = 8 bytes on a typical 64-bit platform):
 values ≤8 bytes occupy one cell with appropriate padding/extension;
-larger values span multiple consecutive cells per §14.3.2 or use pool
-storage per §14.3.3.
+values of 9–16 bytes MAY use two consecutive cells where the backend
+supports it (§14.3.2); larger values use pool storage (§14.3.3).
 
 **Dynamic-size index-based types:**
 
@@ -21155,9 +21225,11 @@ The compiler inserts drop calls at:
 
 - The end of a value's lexical scope (when its `let` or `mut` binding
   goes out of scope).
-- The point of consumption (when a value is moved into a function
-  parameter or assignment; the moved-out source's drop slot is empty
-  thereafter).
+- On a move into a function parameter or a move-assignment, the moved
+  value's drop responsibility *transfers*; the source's drop slot is empty
+  thereafter and **no drop is run at the move site** (the receiver owns it).
+- On assignment to an existing binding, the binding's **previous** value is
+  dropped at the assignment point.
 - The end of a function for un-returned locals.
 - The point of `break` for non-yielded iterator elements (§12.9.3).
 
@@ -21180,8 +21252,9 @@ inconsistent state.
 #### 14.7.5 Drop on reactive cells
 
 The runtime manages drop for reactive cells. When a node or connection
-instance is removed (removal mechanics are specified in §13.15), its
-attr and derived cells are dropped per their type's `Drop` impl.
+instance is removed (removal mechanics are specified in §13.15), all of its
+cells — attr, recurrent, derived, and stream metadata — are dropped per their
+types' `Drop` impls (consistent with §14.8.1 step 3b).
 Initial declarations (signals declared at program startup) live for the
 program's lifetime; their cells are dropped at program shutdown.
 
@@ -21469,8 +21542,10 @@ The graph is built from **six primitives** — `cell`, `connection`, `gate`,
 identified by a stable path (§15.4.1.1). All surface reactive constructs
 desugar into these six: signal/attr/derived/recurrent/const → `cell`;
 node/part → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
-connection/`|>` → `connection`; operator → a `scope` with ports; stream →
-`stream`; effect → `effect`.
+connection / topological `|>` → `connection` (an *effect-position* `|>`
+instead lowers to the effect entry's `parameter_bindings`, **not** a
+`connection`); operator → a `scope` with ports; stream → `stream`; effect →
+`effect`.
 
 A **`scope`** is the structural container (a node/part/operator instance,
 or a `repeat`'s per-element instance). It carries an `exposes` list — the
