@@ -66,10 +66,10 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 - ◐ Base identifier alphabet, leading-digit rule, Unicode allowance, case-sensitivity (§1.4 legislates only the `#` rule).
 - ✓ Keyword reservedness per class: reserved-everywhere vs contextual (ledgered F005, ruled & applied).
 - ✓ Indentation discipline (unit; tabs vs spaces) and line-continuation outside separated lists.
-- ◐ Inline-after-colon body legality: is `trait Zero: fn zero() -> Subject` (single-member body on the head line) legal, or must the body be an indented block? SPEC's §4.9.1 catalog used the inline form pervasively; it has now been normalized to multi-line for guaranteed validity, but a ruling that inline IS legal would permit the compact form spec-wide (also governs operator bodies §13.17.2).
+- ✓ **RULED (2026-06-20):** operator bodies follow the function rule (002-24) — inline single-expression body allowed (`operator double(s): s * 2`), indented block when declarations are present; 029-130, SPEC §13.17.4. (Declaration bodies were already settled: 002-23 record-likes indented-only, 002-24 functions/control-flow inline-or-block.)
 - ✓ Leading zeros in decimal literals (`007`): valid or rejected?
 - ✓ Float suffix on a based literal: does `0x1_f32` lex as `0x1F32` or as a float-suffixed hex literal?
-- Forced (identifier-)suffix name set: exactly the primitive type names, or also `alias type` names (`255_byte`)?
+- ✓ **RULED (2026-06-20):** literal suffixes unified — all appended directly (no underscore); the 14 numeric type names are pre-registered built-in suffixes (`5i32`) alongside the durations, and the underscore is solely a digit separator. 007-19/34/35, 005-209, §3.9.4/§4.3. (The `255_byte` underscore form is gone; alias/domain literals use `byte(255)` or a custom `@literal_suffix`.)
 
 ### Operators & precedence
 - Full precedence/associativity table among `+ - * / \ %`, shifts, `& ^ |`, comparisons, `is`/`is not`, the `%`/`|`/`?` cast-policy families, and `..` — SPEC states only fragments ("arithmetic binds tighter"; `|`≈`|>` low/left).
@@ -77,8 +77,8 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 - Unary `~` position (prefix vs postfix): no value-level example anywhere (rides with the ledgered `-%`/`-|` unary-position item).
 
 ### Strings, tuples, arrays
-- ◐ Interpolation: which literal forms interpolate (raw too?); brace-escaping for literal `{`/`}` (`{{` vs `\{`); format specifiers inside `{...}`; coexistence of escapes and `{expr}`.
-- ◐ Multi-line string literals (embedded newlines, plain and raw); admissible `\xHH` range vs the UTF-8/scalar invariants.
+- ✓ **RULED (2026-06-20):** interpolation `{expr}` formats only via `Display` — no in-brace format-specifier mini-language (use method/stdlib calls); the sole literal-brace escape is `\{` (no `{{`); raw strings never interpolate. 012-149, SPEC §9.1.9.
+- ✓ **RULED (2026-06-20):** `\xHH` is restricted to ASCII `0x00`–`0x7F`; `\u{…}` covers all higher Unicode scalars (`\x80`+ or a surrogate is a compile error), keeping the UTF-8/scalar invariants airtight. Multi-line plain/raw strings already settled (§9.1.3). 012-20, SPEC §9.1.3.
 - ✓ Char-literal escape set: is `\'` (and `\"`) valid in a char literal? (§9.1.2 example vs §9.1.3 closed list — also ledgered.)
 - ✓ **RULED (2026-06-20):** array construction — literal list `[e1,…,eK]`→`T[K]` and empty `[]` (F047) stand; added the comprehension `[for i in 0..N: expr]` (pure map → `T[N]`) and repeat `[for N: v]` (012-147/012-148, §9.3.1). Vec stays stdlib (no `Vec[…]=[]` language form); no `[0..N]` form (`Range` stays lazy, §12.2).
 - ✓ Trailing commas in tuples of arity ≥ 2.
@@ -92,7 +92,7 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 - ✓ Zero-field records / zero-variant enums: declarable? empty-body spelling?
 - Record pattern surface: concrete shape, whether every field must be bound, rest-pattern token (none exists anywhere).
 - ✓ **RULED (2026-06-20):** a newtype is destructured by a positional pattern `UserId(n)` (mirrors tuple/variant patterns); the `T(value)` extractor coexists. 009-121, SPEC §6.3.2.
-- `with` grammar extent: chaining (`a with x: 1 with y: 2`), precedence, single-line `with` inside a call-argument list.
+- ✓ **RULED (2026-06-20):** `with` is low-precedence, left-associative; chaining `a with x:1 with y:2` is legal (= the comma-list); a comma-list `with` used as a call argument must be parenthesized. 009-122, SPEC §6.1.5.
 - Fallible-conversion turbofish example aside, no operator-specific turbofish gap (general rule governs).
 
 ### Modules
@@ -105,6 +105,6 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 - Multi-segment assignment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring order (only single-segment forms shown).
 - Tuple-component assignability through a `mut` binding and its LHS form.
 - Explicitly-written elaborated borrow signatures: concrete surface (only "Schematically: `fn f(borrow v: T) -> borrow_rooted_in(v) T`" given).
-- Inline `observe` delimiting (as a sub-expression / call argument); multi-line observe-arm bodies (only single-expression arms shown).
+- ✓ **RULED (2026-06-20):** an inline `observe` (sub-expr / call arg) must be parenthesized; an arm body may be a single expression or an indented block (002-24). 016-277/278, SPEC §13.2.11.1.
 - `default:`/catch-all position in `when:` multi-way and `given` blocks (also ledgered — observe requires last; block forms silent).
-- Connection body: clause-ordering of `from:`/`to:`/`pairs:` vs members; explicit type-arg surface when placing a generic connection; whitespace significance around `/` in the `/expr` slot; `:` placement when a multi-line attr continuation meets a child body; whether an unparenthesized whitespace-bearing attr value is an error; exhaustiveness of pairs-form `match pair:`.
+- ✓ **RULED (2026-06-20):** connection-body member order is free (from/to or pairs each once); generic-connection placement writes type args inline (`Contains[i32]`); `/expr` whitespace is insignificant (`Node/arg` = `Node / arg`); pairs-form `match pair:` must be exhaustive. 019-76/77/78, 021-144, SPEC §13.6/§13.8.5. (Already-settled: body `:` placement 021-12; whitespace-bearing attr parenthesization 021-139.)

@@ -236,7 +236,7 @@ a different kind, provided the value fits exactly:
 let x = 5
 let f: f64 = x         // ✓ integer placeholder resolves to f64; value 5 fits exactly
 let g: f32 = x         // ✓ same; value 5 fits exactly in f32
-let h = x * 1.5_f32    // ✓ integer placeholder resolves to f32 in mixed-kind expression
+let h = x * 1.5f32    // ✓ integer placeholder resolves to f32 in mixed-kind expression
                        //   per the placeholder cross-kind resolution rule (§2.1) and
                        //   the value-fits-type check (§2.4.3); value 5 fits exactly in f32
 ```
@@ -420,7 +420,7 @@ named form. This is the same consideration as ordering
 required-before-optional value parameters.
 
 ```
-let r = lerp(0.0_f64, 1.0_f64, 0.5_f64)        // T inferred from arguments
+let r = lerp(0.0f64, 1.0f64, 0.5f64)        // T inferred from arguments
 let r = lerp::[f64](0.0, 1.0, 0.5)             // T explicit
 ```
 
@@ -1593,9 +1593,9 @@ expected return type. Bare-name dispatch typically succeeds without
 explicit annotation:
 
 ```
-let n1 = MyNumber::convert(5_i32)     // resolves to From[i32]::convert
-let n2 = MyNumber::convert(5_i64)     // resolves to From[i64]::convert
-let n3: MyNumber = 5_i32.into()    // Into[MyNumber] from i32 — resolves through From[i32]
+let n1 = MyNumber::convert(5i32)     // resolves to From[i32]::convert
+let n2 = MyNumber::convert(5i64)     // resolves to From[i64]::convert
+let n3: MyNumber = 5i32.into()    // Into[MyNumber] from i32 — resolves through From[i32]
 ```
 
 When inference cannot pick a unique instance (e.g., the argument is
@@ -2643,12 +2643,13 @@ compiles but yields no type-level distinction.
 ```
 
 - `"<suffix>"` is a string literal naming the suffix. A suffix must begin
-  with an identifier-*start* character (a letter, underscore, or non-digit
-  Unicode identifier character — §1.4) and may continue with
-  identifier-continue characters (letters, digits, underscores, Unicode
-  identifier characters). A digit-initial suffix is a compile error, so that
+  with a non-underscore identifier-*start* character (a letter or non-digit
+  Unicode identifier character — §1.4; the underscore is reserved as the
+  digit-group separator, §4.3.1) and may continue with identifier-continue
+  characters (letters, digits, underscores, Unicode identifier characters). A
+  digit-initial or underscore-initial suffix is a compile error, so that
   `<NumericLiteral><suffix>` tokenizes unambiguously by maximal munch.
-  Examples: `ms`, `khz`, `μs`, `years_2k` (✓); `2k` (✗).
+  Examples: `ms`, `khz`, `μs`, `years_2k` (✓); `2k`, `_x` (✗).
 - `<constructor>` is the unqualified name of a function (or trait method)
   in scope, which must take exactly one numeric parameter (`Numeric`-bound)
   and return the annotated type.
@@ -2666,10 +2667,9 @@ The reserved suffix set (forbidden as `@literal_suffix` names) consists
 of all built-in numeric type names — `i8`, `i16`, `i32`, `i64`, `i128`,
 `u8`, `u16`, `u32`, `u64`, `u128`, `isize`, `usize`, `f32`, `f64` —
 plus the built-in `duration` suffixes (§9.4.1.1). Registering any of
-these as a `@literal_suffix` is a compile error. The numeric type
-names are reserved to prevent confusion with the underscore-separated
-numeric type suffix form (`5_i32`); the duration suffixes are reserved
-because they are built into the language.
+these as a `@literal_suffix` is a compile error: both families are
+themselves **built-in literal suffixes** (§4.3.3, §3.9.4), and a
+user-registered suffix may not shadow a built-in one.
 
 #### 3.9.2 Constructor signature
 
@@ -2718,15 +2718,23 @@ The resolution happens at compile time; no runtime dispatch is involved.
 
 #### 3.9.4 Built-in suffixes
 
-The `duration` type (§9.4) has built-in suffixes:
-`ns`, `us`, `μs`, `ms`, `s`, `min`, `h`, `d`. These are reserved and may
-not be re-registered for another type in the same scope.
+Two suffix families are built in and globally reserved (§3.9.1):
+
+- The fourteen **numeric type** names — `i8`, `i16`, `i32`, `i64`, `i128`,
+  `u8`, `u16`, `u32`, `u64`, `u128`, `isize`, `usize`, `f32`, `f64` — each
+  pinning a literal directly to that primitive type (`5i32`, `3.14f64`;
+  §4.3.1/§4.3.2). Their "constructor" is the identity/widening type pin.
+- The `duration` type (§9.4) suffixes: `ns`, `us`, `μs`, `ms`, `s`, `min`,
+  `h`, `d`.
+
+Neither family may be re-registered for another type in any scope.
 
 #### 3.9.5 Scope and visibility
 
 `@literal_suffix` registrations follow normal name-visibility rules:
 registrations made in a module are visible within that module and to
-importers per §10. Built-in suffixes (for `duration`) are globally visible.
+importers per §10. Built-in suffixes (the numeric-type pins and the
+`duration` suffixes) are globally visible.
 
 ---
 
@@ -2858,20 +2866,20 @@ digits as visual separators:
 0o755
 ```
 
-An integer literal may carry an explicit type suffix, separated by an
-underscore:
+An integer literal may carry an explicit type suffix — the type name
+appended directly (no separator), like any literal suffix (§4.3.3):
 
 ```
-5_i32
-255_u8
-1_000_000_u32
-0xFF_u8
+5i32
+255u8
+1_000_000u32
+0xFFu8
 ```
 
 The suffix forces the literal to the specified type, bypassing both the
 placeholder mechanism (§2.1) and the trait-level default (§3.1.5). The
 value-fits check from §2.4.3 still applies: a suffix specifying a type the
-value doesn't fit (`300_u8`) is a compile error.
+value doesn't fit (`300u8`) is a compile error.
 
 Without a suffix, an integer literal produces a value with the *integer
 placeholder*. Resolution proceeds per §2.1 (use-site resolution, with
@@ -2892,17 +2900,17 @@ exponent (`e` or `E`), or an explicit float suffix:
 6.022e23
 ```
 
-A bare `1` is an integer literal; `1.0`, `1e5`, `1_f32` are float literals.
+A bare `1` is an integer literal; `1.0`, `1e5`, `1f32` are float literals.
 A digit is required on each side of the decimal point — leading-dot
 forms like `.5` are not permitted; write `0.5`.
 
 Float literals may carry suffixes:
 
 ```
-3.14_f32
-3.14_f64
-1.0_f32
-6.022e23_f64
+3.14f32
+3.14f64
+1.0f32
+6.022e23f64
 ```
 
 Without a suffix, a float literal produces a value with the *float
@@ -2910,18 +2918,20 @@ placeholder*. Resolution proceeds per §2.1; the default per §3.1.5 is `f64`.
 
 A float suffix attaches only to a decimal literal. Hexadecimal, octal, and binary literals take no float suffix; under longest-match tokenization the suffix characters are absorbed into the digit run wherever they are valid digits, so `0x1_f32` is the hexadecimal integer `0x1F32`, not a float.
 
-#### 4.3.3 Suffixed-literal forms for non-numeric types
+#### 4.3.3 Suffixed-literal forms
 
-In addition to the underscore-separated numeric type suffix
-(`5_i32`, `3.14_f32`), a numeric literal may carry an
-*identifier suffix* (no underscore separator) that produces a value
-of a non-numeric type. The lexer recognizes
-`<NumberLiteral><identifier>` as a single suffixed-literal token; the
-type checker resolves the suffix against the language's built-in
-suffixes and any user-registered suffixes (§3.9).
+All literal suffixes are written the same way — the suffix name appended
+directly to the literal, with no separator. The lexer recognizes
+`<NumberLiteral><suffix>` as a single suffixed-literal token; the type
+checker resolves the suffix against the language's built-in suffixes and any
+user-registered suffixes (§3.9). (The underscore is never a suffix separator —
+between digits it is only a visual group separator, §4.3.1.)
 
-Built-in suffixed-literal forms in the language:
+Built-in suffixes in the language:
 
+- The fourteen **numeric type** names (`i8`–`i128`, `u8`–`u128`, `isize`,
+  `usize`, `f32`, `f64`): `5i32`, `255u8`, `3.14f64`. A numeric-type suffix
+  pins the literal's type directly (§4.3.1/§4.3.2).
 - `duration` suffixes (§9.4.1.1): `ns`, `us`, `μs`, `ms`, `s`, `min`,
   `h`, `d`. Both integer and float literals accept these.
 
@@ -2934,12 +2944,11 @@ Examples:
 2h            // duration: 2 hours
 ```
 
-User-defined suffixes via `@literal_suffix` (§3.9) follow the same
-lexical rule and resolve via the registered constructor function.
-
-The lexer distinguishes the underscore-separated type suffix from the
-identifier suffix by the presence of the underscore: `5_i32` is the
-former (forced numeric type); `5ms` is the latter (suffixed literal).
+User-defined suffixes via `@literal_suffix` (§3.9) follow the same lexical
+rule and resolve via the registered constructor function. A numeric-type
+suffix pins the literal's type; a `duration` or user-defined suffix runs the
+corresponding (pure, compile-time) constructor — but all share one surface
+(`<literal><suffix>`) and one resolution path.
 
 #### 4.3.4 Boolean and character literals
 
@@ -2974,7 +2983,7 @@ The `/` operator is mathematical division, divorced from machine
 representation. It accepts `Numeric` operands (integer, float, or mixed)
 and always produces a `Float` result. `5 / 2` produces `2.5`, not `2`. The
 result type is determined by the operator itself, not by the operand types:
-even uniformly-integer operands (`10_i32 / 5_i32`) produce a `Float`, not
+even uniformly-integer operands (`10i32 / 5i32`) produce a `Float`, not
 an integer. This rule governs `/` on **numeric** operands (integer and float kinds); non-numeric primitives that define their own `/` — notably `duration` (§9.4.1.2) — are not governed by it.
 
 The mechanism is a language-level rule applied at the operator, distinct
@@ -2992,10 +3001,10 @@ from direct trait dispatch:
 Examples:
 
 ```
-5_i32 / 2_i32          // both i32 → both widen to f64 → 2.5_f64
-3.14_f32 / 2_i32       // i32 widens to f64; f32 widens to f64 → ~1.57_f64
-5_i64 / 2_i64          // both i64 → both widen to f64 (pragmatic exception) → 2.5_f64
-5.0_f64 / 2.0_f64      // both f64 → direct Div::div → 2.5_f64
+5i32 / 2i32          // both i32 → both widen to f64 → 2.5f64
+3.14f32 / 2i32       // i32 widens to f64; f32 widens to f64 → ~1.57f64
+5i64 / 2i64          // both i64 → both widen to f64 (pragmatic exception) → 2.5f64
+5.0f64 / 2.0f64      // both f64 → direct Div::div → 2.5f64
 ```
 
 The choice of which float type to widen to follows §4.5's mixed-kind rules:
@@ -3080,8 +3089,8 @@ the float; operate on the integer, then `from_bits` back if a float result
 is needed. These are ordinary stdlib behaviors over the `raw_read` /
 `raw_write` intrinsics (§15.4.4) — the language adds no bit-reinterpret
 operator, and the round-trip lowers to a zero-cost bitcast. This is a *bit*
-reinterpret, not a value conversion: `(1.0_f32).to_bits()` yields
-`1065353216` (the IEEE-754 bit pattern), whereas `u32(1.0_f32)` (§4.7)
+reinterpret, not a value conversion: `(1.0f32).to_bits()` yields
+`1065353216` (the IEEE-754 bit pattern), whereas `u32(1.0f32)` (§4.7)
 yields `1` (the value).
 
 The `&` and `|` characters are reused at the type level (`&` for trait
@@ -3387,12 +3396,12 @@ wrapping on overflow:
 
 | Operator   | Trait            | Behavior                                              |
 |------------|------------------|-------------------------------------------------------|
-| `+%`       | `WrappingAdd`    | `255_u8 +% 1 is 0_u8`                                 |
-| `-%`       | `WrappingSub`    | `0_u8 -% 1 is 255_u8`                                 |
-| `*%`       | `WrappingMul`    | `200_u8 *% 2 is 144_u8`                               |
-| `\%`      | `WrappingIntDiv` | `(-128_i8) \% (-1_i8) is -128_i8` (no overflow trap) |
+| `+%`       | `WrappingAdd`    | `255u8 +% 1 is 0u8`                                 |
+| `-%`       | `WrappingSub`    | `0u8 -% 1 is 255u8`                                 |
+| `*%`       | `WrappingMul`    | `200u8 *% 2 is 144u8`                               |
+| `\%`      | `WrappingIntDiv` | `(-128i8) \% (-1i8) is -128i8` (no overflow trap) |
 | `%%`       | `WrappingRem`    | rare; defined for completeness                        |
-| unary `-%` | `WrappingNeg`    | `-%(-128_i8) is -128_i8` (no overflow trap)          |
+| unary `-%` | `WrappingNeg`    | `-%(-128i8) is -128i8` (no overflow trap)          |
 
 Wrapping is the right choice for hash functions, cryptographic primitives,
 counters where modular arithmetic is the intent, and bit-manipulation
@@ -3416,12 +3425,12 @@ overflow:
 
 | Operator    | Trait              | Behavior                            |
 |-------------|--------------------|-------------------------------------|
-| `+\|`       | `SaturatingAdd`    | `255_u8 +\| 1 is 255_u8`            |
-| `-\|`       | `SaturatingSub`    | `0_u8 -\| 1 is 0_u8`                |
-| `*\|`       | `SaturatingMul`    | `200_u8 *\| 2 is 255_u8`            |
-| `\\\|`      | `SaturatingIntDiv` | `(-128_i8) \\\| (-1_i8) is 127_i8`  |
+| `+\|`       | `SaturatingAdd`    | `255u8 +\| 1 is 255u8`            |
+| `-\|`       | `SaturatingSub`    | `0u8 -\| 1 is 0u8`                |
+| `*\|`       | `SaturatingMul`    | `200u8 *\| 2 is 255u8`            |
+| `\\\|`      | `SaturatingIntDiv` | `(-128i8) \\\| (-1i8) is 127i8`  |
 | `%\|`       | `SaturatingRem`    | rare; defined for completeness      |
-| unary `-\|` | `SaturatingNeg`    | `-\|(-128_i8) is 127_i8`           |
+| unary `-\|` | `SaturatingNeg`    | `-\|(-128i8) is 127i8`           |
 
 Saturation is the right choice for DSP (audio sample clamping), image
 processing (pixel value clamping), and any context where producing a
@@ -3473,8 +3482,8 @@ per §2.4 and rejects programs where a constant value provably doesn't fit
 its declared or inferred type:
 
 ```
-const x: u8 = 200_u8 + 100_u8                 // compile error: 300 doesn't fit u8
-const x: u8 = 200_u8 +% 100_u8                // compile error: still doesn't fit
+const x: u8 = 200u8 + 100u8                 // compile error: 300 doesn't fit u8
+const x: u8 = 200u8 +% 100u8                // compile error: still doesn't fit
 fn f(arr: i32[some_large_compile_time_value])  // compile error if value doesn't fit isize
 ```
 
@@ -3692,7 +3701,7 @@ result must explicitly convert to float first:
 
 ```
 let x = 2.pow(-1)              // ✗ compile error or trap: negative exponent on IntPow
-let x = (2.0_f64).pow(-1)      // ✓ 0.5
+let x = (2.0f64).pow(-1)      // ✓ 0.5
 let x = f64(2).pow(-1)         // ✓ 0.5
 ```
 
@@ -4683,6 +4692,24 @@ For combining different types' fields into a new type, the user constructs
 a record-intersection type per §5.3 and constructs values of it
 explicitly.
 
+##### Associativity, precedence, and nesting
+
+`with` is a **low-precedence, left-associative** postfix update. Its base is a
+complete primary/postfix expression, and `with` binds looser than construction
+and the arithmetic/call operators, so the base and each override value are
+parsed before the update applies.
+
+- **Chaining** is permitted and left-associative: `base with x: 1 with y: 2`
+  parses as `(base with x: 1) with y: 2`. It is equivalent to the single
+  comma-list `base with x: 1, y: 2`; the formatter normalizes to the comma-list.
+  A value expression does not capture a trailing `with` — in
+  `base with x: f() with y: 2` the second `with` updates the whole
+  `base with x: f()`, not `f()`; parenthesize the value to override that.
+- **As a call argument**, a `with` carrying a comma-list must be parenthesized
+  so its commas are not read as further arguments: `g((r with x: 1, y: 2))`.
+  A single-override or chained form needs none: `g(r with x: 1)`,
+  `g(r with x: 1 with y: 2)`.
+
 When `with` appears in a reactive declaration context, additional
 per-field rules apply: bare reactive names alias, reactive expressions
 become implicit derived cells, and literals/non-reactive values become
@@ -5575,10 +5602,10 @@ universally; a fourth implicit form applies only to built-in lossless
 widenings.
 
 ```
-let x: f64 = (5_i32).into::[f64]()        // method form
-let x: f64 = Into::into(5_i32)            // free-function via trait path
-let x: f64 = From::convert(5_i32)            // free-function via trait path
-let x: f64 = 5_i32                        // implicit (built-in lossless widening only)
+let x: f64 = (5i32).into::[f64]()        // method form
+let x: f64 = Into::into(5i32)            // free-function via trait path
+let x: f64 = From::convert(5i32)            // free-function via trait path
+let x: f64 = 5i32                        // implicit (built-in lossless widening only)
 ```
 
 The first three forms are explicit invocations and are available for all
@@ -6191,7 +6218,7 @@ String literals have these forms:
 
 - **Plain strings**: `"hello world"`.
 - **Raw strings**: `r"no \n escapes"`, `r#"with "quotes""#`.
-- **Escape sequences**: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\{`, `\xHH`, `\u{HHHHHH}`. The same set, except `\{` (an interpolation escape), applies in `char` literals (§9.1.2), so `'\''` and `'\"'` are both valid; in a plain string `\{` produces a literal `{` and suppresses interpolation at that position.
+- **Escape sequences**: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\{`, `\xHH`, `\u{HHHHHH}`. `\xHH` denotes a single byte in the ASCII range `0x00`–`0x7F` (a one-byte UTF-8 scalar); for any code point above `0x7F` use `\u{…}` (one to six hex digits naming a Unicode scalar). A `\x80`-or-higher byte, or a surrogate `\u{D800}`–`\u{DFFF}`, is a compile error — so every string stays valid UTF-8 (§9.1.4) and every `char` stays a valid scalar (§9.1.2) by construction. The same set, except `\{` (an interpolation escape), applies in `char` literals (§9.1.2), so `'\''` and `'\"'` are both valid; in a plain string `\{` produces a literal `{` and suppresses interpolation at that position.
 - **Interpolation**: `"user {name} has {count} items"`.
 
 All forms produce values of type `string`.
@@ -6302,7 +6329,9 @@ Interpolation expressions are arbitrary expressions, including method
 calls, arithmetic, and field access. They are not limited to bare
 identifiers.
 
-A literal brace is written `\{`, which produces `{` and disables interpolation at that position. Raw strings do not interpolate: braces in a raw string are always literal.
+A literal brace is written `\{`, which produces `{` and disables interpolation at that position. Raw strings do not interpolate: braces in a raw string are always literal. There is no `{{`/`}}` brace-doubling form — `\{` is the sole literal-brace escape.
+
+There is no in-interpolation format-specifier mini-language: `{expr}` always formats via `Display`. Width, precision, padding, and similar are produced by calling methods or stdlib formatting helpers inside the expression itself — `"{price.round(2)}"`, `"{pad(name, 8)}"` — keeping the interpolation grammar to just `{` arbitrary-expression `}`.
 
 ### 9.2 Tuples
 
@@ -6497,7 +6526,7 @@ fulfill From[(f32, f32, f32)] for Vec3:
     Vec3(x: t.0, y: t.1, z: t.2)
 
 // Now:
-let v: Vec3 = (1.0_f32, 2.0_f32, 3.0_f32).into::[Vec3]()
+let v: Vec3 = (1.0f32, 2.0f32, 3.0f32).into::[Vec3]()
 ```
 
 ### 9.3 Arrays
@@ -12118,6 +12147,17 @@ observe:
   reactive type (a value cell or a `Stream[T]`) is determined by the
   context where the observe is used.
 
+An arm body after the colon is either a single inline expression (`on T1:
+expr1`) or, when intermediate bindings are needed, an indented block ending in
+a final expression — the same inline-or-block choice as a function body (§1.4).
+All arms still agree on the result type T.
+
+Used as a sub-expression or call argument, an `observe` must be parenthesized —
+`f((observe: …))` — because its `observe:`-introduced block is otherwise
+open-ended; the parentheses fix where it ends, the same self-delimiting
+requirement that governs `when`/attribute/`/expr` operands in placements
+(§13.8.10).
+
 ##### 13.2.11.2 Trigger sets and arm selection
 
 An arm's trigger set is the cells listed in its `on` clause. When
@@ -14275,6 +14315,11 @@ single, cartesian, or pairs. A connection uses exactly one form;
 mixing forms (e.g., `pairs:` alongside `from:`+`to:`) is a compile
 error.
 
+The body members may appear in **any order**; the layout shown below is
+conventional, not mandated. The only structural constraints are cardinality
+ones: `from:` and `to:` (single/cartesian) or `pairs:` (pairs form) each
+appear exactly once, and at most one `default attr` (§13.2.2.1).
+
 ##### 13.6.1.1 Single form (one from-type, one to-type)
 
 ```
@@ -14394,6 +14439,9 @@ Rules for pairs form:
 - All attrs/deriveds in the body are uniform across pairs; the body
   cannot vary its content by pair. When different content per pair is
   needed, declare a separate connection type per pair.
+- A `match pair:` in the body must be **exhaustive** over the declared
+  pairs (or carry a `default:` arm), exactly as any `match` (§6.2.4) and as
+  the cartesian form's exhaustiveness requirement (§13.6.1.2).
 
 A connection body does not contain `fn` declarations, paralleling
 node bodies (§13.3.6).
@@ -14457,6 +14505,10 @@ connection Contains[T]:
 Generic parameters scope over the connection's `from`, `to`, attrs,
 recurrents, and deriveds. Each unique instantiation produces a
 distinct connection type per §2.3.
+
+At placement, a generic connection carries its type arguments inline on the
+type name, like any generic instantiation (§9.3.2): `Contains[i32]: item`. The
+arguments may be omitted when the endpoint types determine them by inference.
 
 #### 13.6.4 Behavior lives outside the connection body
 
@@ -15247,6 +15299,10 @@ space-separated placement self-delimiting (§13.8.10); without the
 restriction an open expression could greedily swallow the next
 placement (`C/x - G` would be ambiguous between two placements and one
 subtraction).
+
+Whitespace around the `/` is insignificant: `Drives/0.8`, `Drives /0.8`, and
+`Drives / 0.8` are equivalent. It is the single-atom restriction above, not
+adjacency, that keeps a space-separated placement self-delimiting.
 
 ##### 13.8.5.1 For connection placements
 
@@ -17969,7 +18025,11 @@ the cell read itself.
 #### 13.17.4 Body
 
 The operator body is a sequence of reactive declarations followed
-by a final expression. Permitted body items:
+by a final expression. When the body is *just* that final expression — no
+declarations — it may be written **inline after the colon**
+(`operator double(source): source * 2`), exactly as a function body (§1.4); a
+body carrying any of the declarations below is an indented block. Permitted
+body items:
 
 - `recurrent` declarations (with all extensions per §13.2.4).
 - `derived` declarations.

@@ -13,12 +13,12 @@ doc-hygiene reconciliation, the moot no-ops) have been **moved into the implemen
 these (still-live) findings, but their **line numbers have drifted**; section numbers (`§x.y`)
 are stable. Locate any target by `§` + quoted content, not by line number.
 
-**Contents (15 items):** Section 1 — design forks (6 hard forks) · Section 2 —
-open syntax questions (6) · Section 3 — open semantic questions (3).
+**Contents (9 items):** Section 1 — design forks (6 hard forks) · Section 2 —
+open semantic questions (3). (All open *syntax* questions have been ruled across the round-1/round-2
+bulk passes and removed; see the implementation plan.)
 
 **How to use.** Forks (Section 1) need a real decision — open them one at a time, with discussion.
-Sections 2–3 can be answered directly or delegated to a draft-from-legacy-grammar pass for your
-ratification.
+Section 2 (open semantic) needs real rulings too — grammar won't settle them.
 
 Legend — tier: `foundational` (reshapes a subsystem) · `cluster-root` (cascades to siblings) ·
 `leaned-reshape` (clear recommendation, but it changes a rule, so it needs your nod) ·
@@ -227,136 +227,11 @@ alter a cell's concurrency contract.
 
 -----------
 
-# Section 2 — Open syntax questions (grammar-class)
-
-6 items the SPEC decides nowhere. The mined legacy grammar likely answers most; each needs a nod
-(answer directly, or approve a draft-from-legacy-grammar pass). On ruling: add a DECISION_LOG
-entry + write the governing prose into SPEC, then strike from the spec-silent appendix.
-(Round-1 bulk decisions of 2026-06-20 ruled & removed five tickets — array construction, enum
-turbofish, value-position `dyn` extent, `Type[A & B]`, newtype patterns; see the implementation
-plan's round-1 apply-pass.)
-
-## 7. [open-syntax · CL-GRAMMAR] Forced identifier-suffix name set  (appendix)
-
-**Problem.** A forced (identifier-)suffix on a literal — is the name set exactly the primitive type
-names, or also `alias type` names (e.g. `255_byte`)?
-
-**Context.** §3.9 (literal suffixes). The sweep flags the forced-suffix name set as undecided.
-
-**Potential solutions.** (A) Primitive type names only. (B) Also `alias type` names.
-
-**What.** A DECISION_LOG entry fixing the forced-suffix name set; a §3.9 note.
-
-**Why.** Determines which `<int>_<name>` forms lex as forced suffixes.
-
-**Refs.** Spec-silent appendix · §3.9 · CL-GRAMMAR · OPEN.
-
------------
-
-## 8. [open-syntax · CL-GRAMMAR] String interpolation format specifiers + `\xHH` range  (appendix, ◐)
-
-**Problem.** Two string sub-grammar residuals: (1) format specifiers inside `{…}` interpolations
-are undefined; (2) the admissible `\xHH` byte-vs-scalar range vs the UTF-8/scalar invariants is
-unsettled.
-
-**Context.** §9.1 (string literals). Marked partial (◐) in the appendix — interpolation and escape
-basics are settled; these two are not.
-
-**Potential solutions.** Define a format-spec mini-grammar inside `{…}` (or disallow it); fix
-`\xHH` to a scalar-valid range (or allow raw bytes only in a byte-string form).
-
-**What.** DECISION_LOG entries + §9.1 prose for both.
-
-**Why.** Interpolation/escape determinism; affects every formatted string.
-
-**Refs.** Spec-silent appendix (◐) · §9.1 · CL-GRAMMAR · OPEN.
-
------------
-
-## 9. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
-
-**Problem.** The `with` override form is shown only as a single override; chaining
-(`a with x: 1 with y: 2`), precedence, and use inside a call-argument list are undefined.
-
-**Context.** §6.1.5 (`with`), §6.1.3 (construction). No grammar production defines `with`'s extent.
-
-**Potential solutions.** (A) Left-associative chaining; `with` binds looser than construction;
-permitted inside call args with explicit parens. (B) Single-override only.
-
-**What.** DECISION_LOG entry fixing associativity/precedence/positions; a §6.1.5 note.
-
-**Why.** Affects every override site.
-
-**Refs.** Spec-silent appendix · §6.1.5, §6.1.3 · CL-GRAMMAR · OPEN.
-
------------
-
-## 10. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
-
-**Problem.** How is an inline `observe` delimited as a sub-expression / call argument, and may an
-`observe` arm body span multiple lines (only single-expression arms are shown)?
-
-**Context.** §13.2.11 (`observe`). Only single-line arm bodies and top-level `observe` appear.
-
-**Potential solutions.** (A) Inline `observe` requires parentheses; arm bodies may be indented
-blocks. (B) `observe` is statement-position only; arms single-expression.
-
-**What.** DECISION_LOG entry + §13.2.11 prose.
-
-**Why.** Whether `observe` composes inside expressions and carries block-bodied arms.
-
-**Refs.** Spec-silent appendix · §13.2.11 · CL-GRAMMAR · OPEN.
-
------------
-
-## 11. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
-
-**Problem.** Declarations were normalized to multi-line bodies, but whether an operator may carry an
-inline single-member body after the colon (e.g. `operator gain[…]: …`) is unresolved.
-
-**Context.** §13.17 (operators), §13.17.2 (operator bodies). The inline-after-colon question was
-settled for declarations but left open for operators (◐).
-
-**Potential solutions.** (A) Inline single-member operator bodies are legal (compact form). (B)
-Operator bodies must be indented blocks.
-
-**What.** DECISION_LOG entry + §13.17.2 prose.
-
-**Why.** Permits/forbids the compact operator form spec-wide.
-
-**Refs.** Spec-silent appendix (◐) · §13.17.2 · CL-GRAMMAR · OPEN.
-
------------
-
-## 12. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
-
-**Problem.** Several connection-body surface points are undefined: clause-ordering of
-`from:`/`to:`/`pairs:` vs members; explicit type-arg surface when placing a generic connection;
-whitespace significance around `/` in the `/expr` slot; `:` placement when a multi-line attr
-continuation meets a child body; whether an unparenthesized whitespace-bearing attr value is an
-error; exhaustiveness of the pairs-form `match pair:`.
-
-**Context.** §13.6 (connections), §13.8 (placement). These are the residual connection-surface
-items from the syntax sweep.
-
-**Potential solutions.** Settle each from the legacy grammar (clause order free vs fixed; explicit
-type-arg surface; `/expr` whitespace rule; multi-line-attr `:` rule; parenthesization requirement;
-pairs-form exhaustiveness).
-
-**What.** DECISION_LOG entries + §13.6/§13.8 prose for each sub-point.
-
-**Why.** Connection placement is core to the reactive surface; each example is currently
-unverifiable on these points.
-
-**Refs.** Spec-silent appendix · §13.6, §13.8 · CL-GRAMMAR · OPEN (multi-part).
-
------------
-
-# Section 3 — Open semantic questions (grammar won't help)
+# Section 2 — Open semantic questions (grammar won't help)
 
 3 items needing real rulings, not syntax decisions.
 
-## 13. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
+## 7. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
 
 **Problem.** Only single-segment place assignments are shown (`r.field = v`, `arr[i] = v`).
 Multi-segment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring
@@ -375,7 +250,7 @@ order are undefined.
 
 -----------
 
-## 14. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
+## 8. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
 
 **Problem.** May a tuple component be assigned through a `mut` binding, and what is its LHS form
 (`t.0 = x`)?
@@ -394,7 +269,7 @@ immutable-component; whole-value reassignment only.
 
 -----------
 
-## 15. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
+## 9. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
 
 **Problem.** Borrow-rootedness — which input cluster(s) a borrow-return is rooted in, including
 the multi-root "union of clusters" — is a compile-time concept with observable effects (which
