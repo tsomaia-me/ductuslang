@@ -4249,6 +4249,13 @@ owns its erased payload and is itself a real owner.
 position is the coercion. The parser distinguishes by position, as with
 the other dual-role tokens (§4.4.2).
 
+**Operand extent.** Value-position `dyn` binds a single *primary* expression —
+a literal, identifier, parenthesized expression, or a postfix call/field/index
+access on one. It does not reach across a binary operator: `dyn a + b` parses
+as `(dyn a) + b`, and erasing a compound result requires parentheses,
+`dyn (a + b)`. This tightest-binding prefix reading means `dyn circle`,
+`dyn make_shape(r)`, and `dyn shapes[0]` each erase exactly the named primary.
+
 ### 5.3 Record Intersection at Type Definition
 
 A `type` declaration whose right-hand side is a record-record intersection
@@ -4418,9 +4425,13 @@ The bracket holds a **constraint on which type** the value may be:
 - A **concrete or generic type** — `Type[PostCard]`, `Type[T]` — admits
   exactly that type (the *singleton* form). `Type[T]` for a generic
   parameter `T` is the primitive case: "the type `T`, as a value."
+- An **intersection** — `Type[Drivable & Insurable]` — admits any type that
+  satisfies *all* the conjoined traits, using the same `&` trait-conjunction
+  as a generic bound (§5.1): the existential form over a compound constraint.
 
 A concrete type is simply the tightest possible constraint (one inhabiting
-type); a trait is a wider one.
+type); a trait is a wider one, and an intersection lies between — wider than a
+single type, narrower than a single trait.
 
 #### 5.7.2 Value position only
 
@@ -4934,6 +4945,15 @@ let res: Result[i32, string] = Result::Ok(42)
 let n: Option[i32] = Option::None
 ```
 
+**Explicit type arguments.** A generic enum's type arguments are usually
+inferred — from the payload (`Result::Ok(42)`) or the expected type
+(`let n: Option[i32] = Option::None`). Where neither is available, supply them
+by parameterizing the **enum** with the uniform `[…]` instantiation and then
+naming the variant: `Option[i32]::None`, `Result[i32, string]::Ok(42)`. The
+arguments attach to the enum, never to the variant; there is no separate
+`::[…]` turbofish — the brackets parameterize the enum *type* in path position
+(before `::`), which §9.3.2 already makes an unambiguous instantiation site.
+
 By default, every variant reference is *path-qualified* with the enum name
 via `::` (`Result::Ok`, `Direction::North`). The path qualification makes
 the variant's enum unambiguous at every use site.
@@ -5229,6 +5249,26 @@ even though both use call syntax: construction *creates* domain identity
 (it names the newtype), extraction *discards* it (it names the wrapped
 type). A reader sees which type is named and knows whether identity is
 being introduced or removed.
+
+##### Pattern position
+
+A newtype is also destructured by a **pattern** that names the newtype and
+binds the wrapped value positionally, mirroring tuple and enum-variant
+patterns (§6.2.4):
+
+```
+match user_id:
+  UserId(n): use_raw(n)        // n: i64, the wrapped value
+
+let Email(addr) = verified     // irrefutable binding; addr: string
+```
+
+The pattern `Newtype(binding)` binds the single wrapped value and, like
+construction, is always positional with exactly one element. This is the
+pattern-position eliminator; the `T(value)` form (above) remains the
+expression-position extractor. The two coexist and read oppositely: a
+`match`/`let` pattern *names the newtype*, while `T(value)` *names the wrapped
+type*.
 
 #### 6.3.3 Trait inheritance via `@derive`
 
@@ -6490,6 +6530,34 @@ cases in generic code that must abstract over array sizes including
 zero, and for FFI bindings to C-style flexible array members.
 
 **Array construction** uses a bracketed element list: `[1, 2, 3]` is an `i32[3]`. The element type is the unified type of the elements and the size is their count, so `[e1, …, eK]` has type `T[K]`. An empty array `[]` has size 0 and takes its element type from context: `let xs: i32[0] = []`. (`Vec` and other dynamic, growable collections are a stdlib concern, §9.3.6, and are not constructed by this core array-literal form.)
+
+**Array comprehension.** A bracketed `for`-expression builds an array by
+iterating a compile-time-known iterable: `[for i in 0..N: <expr>]` evaluates
+`<expr>` once per element — binding `i` to each value of the iterable — and
+has type `T[N]`, where `T` is the type of `<expr>` and `N` is the iterable's
+compile-time extent. The iterable is most often a constant range (`0..N`,
+§12.2); the range stays a lazy value and the comprehension is what
+*materializes* it into an array. The body is a pure 1:1 map — there is **no**
+`if`-filter form, because a filter would make the element count not
+compile-time-known, and an array's length is part of its type. Filtered or
+dynamically-sized construction is a stdlib `Vec` concern (§9.3.6).
+
+```
+[for i in 0..4: i * i]          // i32[4] = [0, 1, 4, 9]
+[for k in 0..cols: blank]       // BlankType[cols]
+```
+
+**Repeat form.** The degenerate comprehension `[for N: v]` — a bare
+compile-time count with no binding and no `in` — produces `N` copies of `v`,
+of type `T[N]`:
+
+```
+[for 256: 0]                    // i32[256], all zeros
+[for n: origin]                 // Point[n]
+```
+
+In both forms `N` must be a compile-time-known non-negative integer, since the
+array's length is part of its type.
 
 #### 9.3.2 Disambiguation of `T[args]` in type position
 

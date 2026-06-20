@@ -80,18 +80,18 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 - ◐ Interpolation: which literal forms interpolate (raw too?); brace-escaping for literal `{`/`}` (`{{` vs `\{`); format specifiers inside `{...}`; coexistence of escapes and `{expr}`.
 - ◐ Multi-line string literals (embedded newlines, plain and raw); admissible `\xHH` range vs the UTF-8/scalar invariants.
 - ✓ Char-literal escape set: is `\'` (and `\"`) valid in a char literal? (§9.1.2 example vs §9.1.3 closed list — also ledgered.)
-- Array-value construction: typing of `[e1, …, eK]` vs `T[N]`, element unification, empty `[]`, repeat-count form — SPEC shows the form only schematically and never defines it; compounds the `Vec[…] = []` cell-initializer question.
+- ✓ **RULED (2026-06-20):** array construction — literal list `[e1,…,eK]`→`T[K]` and empty `[]` (F047) stand; added the comprehension `[for i in 0..N: expr]` (pure map → `T[N]`) and repeat `[for N: v]` (012-147/012-148, §9.3.1). Vec stays stdlib (no `Vec[…]=[]` language form); no `[0..N]` form (`Range` stays lazy, §12.2).
 - ✓ Trailing commas in tuples of arity ≥ 2.
 
 ### Types, records, enums, conversions
-- Turbofish for enum variants: where `::[…]` attaches on `Enum::Variant`; explicit instantiation of a unit variant (`Option::None`) with no inference context.
-- Value-position `dyn` operand grammar: admitted positions, operand extent/precedence (the "mirrors `move`" hint is itself ledgered as contested).
+- ✓ **RULED (2026-06-20):** explicit generic-enum variant instantiation parameterizes the enum — `Option[i32]::None` — with no separate `::[…]` turbofish (`Enum[args]` is already unambiguous, §9.3.2). 009-120, SPEC §6.2.3.
+- ✓ **RULED (2026-06-20):** value-position `dyn` binds a single primary expression (parens for compounds); `dyn a + b` = `(dyn a) + b`. 008-72, SPEC §5.2.5. (Positions settled earlier by F037.)
 - Record-intersection chaining `A & B & C` / parenthesized RHS (associativity stated only for bound-position conjunction).
-- Whether `Type[…]` admits a conjunction constraint (`Type[Drivable & Insurable]`).
+- ✓ **RULED (2026-06-20):** `Type[…]` admits a trait intersection — `Type[Drivable & Insurable]` — via the same `&` conjunction as a bound (§5.1). 008-73, SPEC §5.7.1.
 - Named enum payload field defaults (`Rectangle(width: f64 = 1.0)`).
 - ✓ Zero-field records / zero-variant enums: declarable? empty-body spelling?
 - Record pattern surface: concrete shape, whether every field must be bound, rest-pattern token (none exists anywhere).
-- Newtype constructor pattern (`UserId(n)`) vs `T(value)` extraction as sole eliminator.
+- ✓ **RULED (2026-06-20):** a newtype is destructured by a positional pattern `UserId(n)` (mirrors tuple/variant patterns); the `T(value)` extractor coexists. 009-121, SPEC §6.3.2.
 - `with` grammar extent: chaining (`a with x: 1 with y: 2`), precedence, single-line `with` inside a call-argument list.
 - Fallible-conversion turbofish example aside, no operator-specific turbofish gap (general rule governs).
 

@@ -13,8 +13,8 @@ doc-hygiene reconciliation, the moot no-ops) have been **moved into the implemen
 these (still-live) findings, but their **line numbers have drifted**; section numbers (`§x.y`)
 are stable. Locate any target by `§` + quoted content, not by line number.
 
-**Contents (20 items):** Section 1 — design forks (6 hard forks) · Section 2 —
-open syntax questions (11) · Section 3 — open semantic questions (3).
+**Contents (15 items):** Section 1 — design forks (6 hard forks) · Section 2 —
+open syntax questions (6) · Section 3 — open semantic questions (3).
 
 **How to use.** Forks (Section 1) need a real decision — open them one at a time, with discussion.
 Sections 2–3 can be answered directly or delegated to a draft-from-legacy-grammar pass for your
@@ -229,9 +229,12 @@ alter a cell's concurrency contract.
 
 # Section 2 — Open syntax questions (grammar-class)
 
-11 items the SPEC decides nowhere. The mined legacy grammar likely answers most; each needs a nod
+6 items the SPEC decides nowhere. The mined legacy grammar likely answers most; each needs a nod
 (answer directly, or approve a draft-from-legacy-grammar pass). On ruling: add a DECISION_LOG
 entry + write the governing prose into SPEC, then strike from the spec-silent appendix.
+(Round-1 bulk decisions of 2026-06-20 ruled & removed five tickets — array construction, enum
+turbofish, value-position `dyn` extent, `Type[A & B]`, newtype patterns; see the implementation
+plan's round-1 apply-pass.)
 
 ## 7. [open-syntax · CL-GRAMMAR] Forced identifier-suffix name set  (appendix)
 
@@ -270,100 +273,7 @@ basics are settled; these two are not.
 
 -----------
 
-## 9. [open-syntax · CL-GRAMMAR] Array repeat-count form + `Vec[…] = []` initializer  (appendix)
-
-**Problem.** Array *literal* `[e1,…,eK]`→`T[K]` and empty `[]` are settled (F047), but a
-repeat-count form (`[e; N]`) and the `Vec[…] = []` cell-initializer are not.
-
-**Context.** §9.3 (arrays), §13 examples use `attr posts: Vec[PostData] = []`. F047 defined the
-list/empty forms; the repeat-count form and `Vec` literal sugar were left open.
-
-**Potential solutions.** (A) Define `[e; N]` (repeat `e` N times → `T[N]`); decide whether `[]` for
-a `Vec` cell is language sugar or stdlib. (B) No repeat form; `Vec` literal stays stdlib.
-
-**What.** DECISION_LOG entry + §9.3 "Array literals" addition (or stdlib cross-ref).
-
-**Why.** Every fixed-array and Vec-cell initializer example depends on it.
-
-**Refs.** Spec-silent appendix · §9.3 (extends F047) · CL-GRAMMAR · OPEN.
-
------------
-
-## 10. [open-syntax · CL-GRAMMAR] Turbofish for enum variants  (appendix)
-
-**Problem.** Where does `::[…]` attach on `Enum::Variant`, and how is a unit variant explicitly
-instantiated with no inference context (`Option::None`)?
-
-**Context.** §6.2 (enums), §5.7/turbofish. The variant turbofish attachment + unit-variant explicit
-instantiation are undefined.
-
-**Potential solutions.** (A) `Enum::[T]::Variant` (type args on the enum). (B) `Enum::Variant::[T]`
-(on the variant). Decide unit-variant explicit form.
-
-**What.** DECISION_LOG entry + §6.2 prose.
-
-**Why.** Explicit instantiation of generic enums in no-context positions.
-
-**Refs.** Spec-silent appendix · §6.2 · CL-GRAMMAR · OPEN.
-
------------
-
-## 11. [open-syntax · CL-GRAMMAR] Value-position `dyn` operand extent/precedence  (appendix)
-
-**Problem.** F037 settled the admitted *positions* of value-position `dyn`, but the operand
-extent/precedence (how much of the following expression `dyn` binds) is open.
-
-**Context.** §5.2.5. The "mirrors `move`" hint was ruled rhetorical (F037), so it fixes no operand
-grammar.
-
-**Potential solutions.** (A) `dyn` binds a single primary expression (parenthesize for more).
-(B) Binds to a precedence tier (define which).
-
-**What.** DECISION_LOG entry + §5.2.5 operand-extent note.
-
-**Why.** Parse of `dyn expr` in argument/let-RHS/collection positions.
-
-**Refs.** Spec-silent appendix · §5.2.5 (extends F037) · CL-GRAMMAR · OPEN.
-
------------
-
-## 12. [open-syntax · CL-GRAMMAR] `Type[…]` with a conjunction constraint  (appendix)
-
-**Problem.** May a `Type[…]` meta-type carry a conjunction constraint (`Type[Drivable & Insurable]`)?
-
-**Context.** §5.7 (`Type[…]`), §5.1 (`&` intersection). Conjunction in `Type[…]` position is
-unspecified.
-
-**Potential solutions.** (A) Permit `Type[A & B]` (intersection constraint). (B) Single-trait only.
-
-**What.** DECISION_LOG entry + §5.7 prose.
-
-**Why.** Expressiveness of compile-time type-value constraints.
-
-**Refs.** Spec-silent appendix · §5.7, §5.1 · CL-GRAMMAR · OPEN.
-
------------
-
-## 13. [open-syntax · CL-GRAMMAR] Newtype constructor pattern vs `T(value)` sole eliminator  (appendix)
-
-**Problem.** Is there a newtype destructuring *pattern* (`UserId(n)` in a `match`), or is `T(value)`
-extraction the sole eliminator?
-
-**Context.** §6.3 (newtypes). Construction/extraction share `T(value)` (scalar-only extraction,
-per F034), but a *pattern* form for binding the wrapped value is undefined.
-
-**Potential solutions.** (A) Admit `UserId(n)` patterns (mirror tuple/enum patterns). (B) No
-pattern; extraction via `T(value)` / accessor only.
-
-**What.** DECISION_LOG entry + §6.3 prose.
-
-**Why.** Whether newtypes are destructurable in `match`.
-
-**Refs.** Spec-silent appendix · §6.3 (adjacent F034) · CL-GRAMMAR · OPEN.
-
------------
-
-## 14. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
+## 9. [open-syntax · CL-GRAMMAR] `with` grammar extent  (appendix)
 
 **Problem.** The `with` override form is shown only as a single override; chaining
 (`a with x: 1 with y: 2`), precedence, and use inside a call-argument list are undefined.
@@ -381,7 +291,7 @@ permitted inside call args with explicit parens. (B) Single-override only.
 
 -----------
 
-## 15. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
+## 10. [open-syntax · CL-GRAMMAR] Inline `observe` delimiting + multi-line arm bodies  (appendix)
 
 **Problem.** How is an inline `observe` delimited as a sub-expression / call argument, and may an
 `observe` arm body span multiple lines (only single-expression arms are shown)?
@@ -399,7 +309,7 @@ blocks. (B) `observe` is statement-position only; arms single-expression.
 
 -----------
 
-## 16. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
+## 11. [open-syntax · CL-GRAMMAR] Inline-after-colon body for operators  (appendix, ◐)
 
 **Problem.** Declarations were normalized to multi-line bodies, but whether an operator may carry an
 inline single-member body after the colon (e.g. `operator gain[…]: …`) is unresolved.
@@ -418,7 +328,7 @@ Operator bodies must be indented blocks.
 
 -----------
 
-## 17. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
+## 12. [open-syntax · CL-GRAMMAR] Connection-body surface details  (appendix)
 
 **Problem.** Several connection-body surface points are undefined: clause-ordering of
 `from:`/`to:`/`pairs:` vs members; explicit type-arg surface when placing a generic connection;
@@ -446,7 +356,7 @@ unverifiable on these points.
 
 3 items needing real rulings, not syntax decisions.
 
-## 18. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
+## 13. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
 
 **Problem.** Only single-segment place assignments are shown (`r.field = v`, `arr[i] = v`).
 Multi-segment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring
@@ -465,7 +375,7 @@ order are undefined.
 
 -----------
 
-## 19. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
+## 14. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
 
 **Problem.** May a tuple component be assigned through a `mut` binding, and what is its LHS form
 (`t.0 = x`)?
@@ -484,7 +394,7 @@ immutable-component; whole-value reassignment only.
 
 -----------
 
-## 20. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
+## 15. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
 
 **Problem.** Borrow-rootedness — which input cluster(s) a borrow-return is rooted in, including
 the multi-root "union of clusters" — is a compile-time concept with observable effects (which
