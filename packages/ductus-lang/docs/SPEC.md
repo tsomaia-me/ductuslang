@@ -4653,8 +4653,11 @@ let updated = base with other1, other2:
   age: 30
 ```
 
-These are the only two surface forms. Mixing single-line and multi-line in
-one expression is a parse error.
+These are the only two surface forms *of a single `with`*. Mixing single-line
+and multi-line in one expression is a parse error. (Chaining several `with`
+updates — `a with x: 1 with y: 2` — composes that many single-`with`
+expressions and is not a third form; see *Associativity, precedence, and
+nesting* below.)
 
 The expression's components, evaluated left to right:
 

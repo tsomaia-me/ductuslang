@@ -918,7 +918,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 009-23. The `with` expression produces a new record derived from a base, with selected fields overridden or merged from other records: `base with name: "new"`. (§6.1.5)
 009-24. Single-line `with` lists merge sources and field overrides comma-separated: `base with other1, other2, name: "new"`. (§6.1.5)
 009-25. Multi-line `with` puts field overrides in a colon-introduced indented body, optionally after merge sources: `base with other1:` then `name: "new"` lines. (§6.1.5)
-009-26. Single-line and multi-line are the only two `with` surface forms; mixing them in one expression is a parse error. (§6.1.5)
+009-26. Single-line and multi-line are the only two surface forms of a single `with`; mixing them in one expression is a parse error. Chaining several `with` updates is composition of single-`with` expressions, not a third form (009-122). (§6.1.5)
 009-27. The components of a `with` expression are evaluated left to right. (§6.1.5)
 009-28. The result of `with` is always a new record of the base's type. (§6.1.5)
 009-29. Merge sources and field overrides apply left-to-right, with later assignments winning on conflict. (§6.1.5)
