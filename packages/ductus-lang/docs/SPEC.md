@@ -21378,15 +21378,25 @@ apply uniformly to all behaviors the runtime invokes.
 
 #### 14.6.3 Behavior identity
 
-Each behavior is identified by a stable u32 ID assigned at compile
-time. IDs are **content-addressed**: a stable hash of the canonicalized
-typed IR of the behavior body. "Canonicalized" means the IR is
+Each behavior has a stable, **content-addressed identity**: a hash of the
+canonicalized typed IR of the behavior body, wide enough to be a
+collision-free identity (≥128 bits; the exact width and algorithm are
+implementation-defined, §14.9). "Canonicalized" means the IR is
 normalized (alpha-renamed locals, sorted decl order where order is
 irrelevant, position information stripped) before hashing, so
 cosmetic changes — adding whitespace, reordering independent
-declarations, renaming local bindings — do not perturb the ID.
+declarations, renaming local bindings — do not perturb the identity.
 Semantic changes — different operations, different inputs, different
-output type — produce different IDs.
+output type — produce a different identity.
+
+For compact runtime reference, each behavior is also assigned a **`u32`
+handle** — an index into the behavior table, bound at load time to the
+behavior's function pointer (§15.4.1). Cell records carry this handle, and
+the IR text form renders it as a `BID` (`B@…`, §15.4.4). The two
+representations have distinct roles: the wide content-addressed identity is
+the stable key that hot reload (§14.8) and cross-implementation interop
+(§15.7.3) match on; the `u32` handle is a per-build table index with no
+cross-build stability.
 
 The hash algorithm is fixed per Ductus toolchain version (§14.9)
 so that hot reload (§14.8) within one version reliably matches
@@ -21397,7 +21407,7 @@ is not supported.
 Each behavior also carries a debug name: the qualified source path
 (`module::path::clip_name::derived_name`). Names appear in
 diagnostics, profiles, and error messages. The runtime resolves
-behaviors by ID; debug names appear only in diagnostic output.
+behaviors by handle; debug names appear only in diagnostic output.
 
 #### 14.6.4 Thread invocation
 
@@ -21798,8 +21808,8 @@ The graph is a structured record with the following entries.
   sink-side connections).
 - `connection_type`: the connection's declared type.
 - `attrs`: ordered list of `(name, value)` pairs (§13.8.4).
-- `when` (optional): gate predicate, encoded as a behavior ID and
-  its input-cell list.
+- `gate` (optional): the `id` of the gate guarding this connection (the
+  gate objects of `when`-gates below), or absent if ungated.
 
 **Derived dependency edges.** A list of `(derived_cell_id,
 [input_cell_ids])` pairs. Used by the runtime for dirty-set
@@ -21816,16 +21826,20 @@ referenced via `.past(k, ...)` to their maximum `k`, mirroring the
 stream-cell encoding. Recurrents whose expression is an `observe`
 block additionally carry the observe's per-arm trigger sets.
 
-**`when`-gates.** Per gated instance, the predicate expression in
-compiled form (behavior ID per §14.6.3, plus input cell IDs the
-predicate reads), and the instance's `gate_parent` — the path of the
-nearest enclosing gated instance, or `null` if none. The runtime composes
-each instance's own predicate with its `gate_parent` chain to obtain
-*effective* activation (§13.9.7), which drives transitive freeze and the
-suspend/resume delivery of §13.14.9. Block selectors (`when`/`given`,
-§13.9.12–§13.9.13) lower to per-arm gates: each arm becomes a gated
-subtree whose predicate is the arm's guard (for a `when` block) or the
-arm's variant test against the scrutinee (for a `given` block). The
+**`when`-gates.** Gating is encoded as first-class **gate objects**. Each
+gate carries: a stable `id`; its predicate in compiled form (behavior
+handle per §14.6.3 plus the input cell IDs the predicate reads); a `guards`
+list naming the gated instances it controls (each by path); and a
+`gate_parent` — the `id` of the nearest enclosing gate, or `null` if none.
+Every gated instance — cell, connection, or effect — references its gate by
+`id` (a `gate` field); the `guards` list is the materialized inverse. The
+runtime composes a gate's predicate with its `gate_parent` chain to obtain
+the *effective* activation (§13.9.7) of the instances it guards, which
+drives transitive freeze and the suspend/resume delivery of §13.14.9. Block
+selectors (`when`/`given`, §13.9.12–§13.9.13) lower to one gate per arm:
+each arm's gate guards that arm's subtree, its predicate being the arm's
+guard (for a `when` block) or the arm's variant test against the scrutinee
+(for a `given` block). The
 compiler encodes declaration-order priority and exhaustiveness into the
 arm predicates so they are mutually exclusive by construction (e.g. arm
 *i*'s effective predicate conjoins the negations of all earlier arms'
@@ -21876,11 +21890,11 @@ pointers at program startup.
   `desired:` block for this instance.
 - `observed_cell_ids`: IDs of the cells declared in the effect's
   `observed:` block for this instance.
-- `gate_parent`: the path of the nearest enclosing gated instance (the
-  same field carried by `when`-gates above), or `null` if the effect is
-  never gated. The runtime uses it to compute effective activation and to
-  decide when to deliver the `suspend` / `resume` reconciler hooks
-  (§13.14.9) on the effect's enclosing-subtree gate transitions.
+- `gate`: the `id` of the gate guarding this effect (the gate objects
+  above), or `null` if the effect is never gated. The runtime composes that
+  gate's predicate with its `gate_parent` chain to compute effective
+  activation and to decide when to deliver the `suspend` / `resume`
+  reconciler hooks (§13.14.9) on the effect's gate transitions.
 
 **Reconciler dependencies.** A list of `(effect_type_name,
 [concrete_type_parameters])` pairs naming reconciler-registration
@@ -22114,7 +22128,12 @@ params   ::= (('own')? NAME ':' type) (',' …)*
 block    ::= LABEL ('(' params ')')? ':' instr* terminator
 instr    ::= '%'NAME '=' op operand* (':' type)?  |  op operand*
 operand  ::= '%'NAME | 'move' '%'NAME | literal
+BID      ::= 'B@' HEX+        // the behavior's u32 handle (§14.6.3), in hex
 ```
+
+A `BID` renders the behavior's `u32` handle (§14.6.3) in hexadecimal — e.g.
+`B@d1`, `B@aa10`. It is the compact runtime reference; the behavior's wide
+content-addressed identity is not spelled in the text form.
 
 #### 15.4.5 The IR module — a worked example
 

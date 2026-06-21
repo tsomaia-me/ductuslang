@@ -3771,7 +3771,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 031-158. `recurrent` is allowed in an effect's `desired:` block (a desired value may depend on its own history) but forbidden in `observed:` (host-fed cells have no expression body for `.past` to read). (§13.19.4)
 031-159. A `desired:` event-output stream's `= source` may read the effect's own `observed:` cells (feedback); such a cycle must pass a delay (a `recurrent`) or a commit boundary so it cannot inherently diverge. (§13.19.4)
 
-## 032. Implementation Model — 176 Rules
+## 032. Implementation Model — 177 Rules
 
 032-1. The implementation model is normative for implementations of Ductus, not for source-level code; program behavior is determined by §§1–13. (§14)
 032-2. A conforming implementation provides two compilation modes: interpreter mode and native mode. (§14.1)
@@ -3886,10 +3886,11 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-112. Behaviors follow the two-track failure model uniformly: trap-track failures (overflow under default operators, division by zero, out-of-range indices, explicit `panic`) abort the process. (§14.6.2)
 032-113. Recoverable conditions in behaviors are expressed as value-track `Option`/`Result` values flowing through the type system. (§14.6.2)
 032-114. The runtime does not isolate behavior traps: no `catch_unwind` boundary, no errored-cell sentinel, no continuation past a trap. (§14.6.2)
-032-115. Behavior IDs are assigned at compile time and are content-addressed: a stable hash of the canonicalized typed IR of the behavior body. (§14.6.3)
+032-115. A behavior's identity is content-addressed: a stable hash — wide enough to be collision-free (≥128 bits, implementation-defined) — of the canonicalized typed IR of its body, assigned at compile time. (§14.6.3)
 032-116. Canonicalization before hashing alpha-renames locals, sorts declaration order where order is irrelevant, and strips position information. (§14.6.3)
 032-117. Cosmetic changes — added whitespace, reordered independent declarations, renamed local bindings — do not perturb a behavior's ID. (§14.6.3)
 032-118. Semantic changes — different operations, different inputs, different output type — produce different behavior IDs. (§14.6.3)
+032-180. Besides its content-addressed identity, each behavior is assigned a compact `u32` handle: an index into the behavior table bound at load time to the function pointer. Cell records carry the handle and the IR text form renders it as a `BID`; the wide identity is the cross-build hot-reload/interop match key (§14.8, §15.7.3), the handle a per-build table index with no cross-build stability. (§14.6.3)
 032-119. The behavior-ID hash algorithm is fixed per Ductus toolchain version (§14.9). (§14.6.3)
 032-120. Canonicalization may change across major toolchain versions. (§14.6.3)
 032-121. Cross-version hot reload is not supported. (§14.6.3)
@@ -3952,7 +3953,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 247 Rules
+## 033. Compilation Model & IR — 249 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4014,6 +4015,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-58. `when` and `given` lower to `gate`. (§15.4.1)
 033-59. Surface connections and `|>` lower to `connection`. (§15.4.1)
 033-250. An effect-position `|>` (binding the effect's pipe-target parameter) lowers to the effect entry's `parameter_bindings`, not a `connection` entry; only topological `|>`/connections produce `connection` entries: `label |> print` emits `effect App.print:0 ... params [message: App.label]` with no connection and an empty `exposes`. (§15.4.1)
+033-252. Gating is encoded in the graph IR as first-class gate objects — `{id, pred (behavior handle + input cell IDs), guards (gated-instance paths), gate_parent (enclosing gate id or null)}` — and each gated cell, connection, or effect references its gate by `id`; nesting is gate→gate via `gate_parent`, which the runtime walks to compose effective activation. (§15.4.1)
 033-60. An operator lowers to a `scope` with ports. (§15.4.1)
 033-61. A surface stream lowers to the `stream` primitive. (§15.4.1)
 033-62. A surface effect lowers to the `effect` primitive. (§15.4.1)
@@ -4137,6 +4139,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-182. Conversions are explicit per §7.5: `cast.<from>.<to> %x`. (§15.4.4)
 033-183. The aggregate instructions are `tuple.make`/`tuple.get`, `record.make %T {…}`/`field.get`, `enum.make %T #V(p)`/`enum.tag`/`enum.payload`, and `array.make […]`. (§15.4.4)
 033-184. Field/index assignment is a trait `call`, not an IR primitive, so in-place reuse follows the ordinary ownership rules. (§15.4.4)
+033-251. In the IR text form a behavior reference is a `BID` — `'B@' HEX+` — rendering the behavior's `u32` handle (§14.6.3) in hexadecimal (`B@d1`, `B@aa10`); the wide content-addressed identity is not spelled in the text form. (§15.4.4)
 033-185. Direct calls are statically resolved: `call f(move %a, %b)`. (§15.4.4)
 033-186. `call.dyn %obj #m (…)` is the vtable call on a `dyn` trait object. (§15.4.4)
 033-187. `call.closure %c (…)` invokes a closure. (§15.4.4)
