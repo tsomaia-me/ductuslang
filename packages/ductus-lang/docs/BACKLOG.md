@@ -13,14 +13,13 @@ doc-hygiene reconciliation, the moot no-ops) have been **moved into the implemen
 these (still-live) findings, but their **line numbers have drifted**; section numbers (`§x.y`)
 are stable. Locate any target by `§` + quoted content, not by line number.
 
-**Contents (9 items):** Section 1 — design forks (6 hard forks) · Section 2 —
-open semantic questions (3). (The open-*syntax* questions once tracked here were all found already
-decided in the log on 2026-06-21 — see the `DECISION_LOG_FINDINGS.md` appendix re-audit — and
-removed; one of them, the record-pattern rest token, was *amended* to add an opt-in `...` rest
-token, 006-31/006-32.)
+**Contents (3 items):** Section 1 — open semantic questions (3). (The 6 design forks once tracked
+here were all ruled and applied on 2026-06-21 — see the `DECISION_LOG_FINDINGS.md` ledger, now 0
+open, and git history — and removed; the open-*syntax* questions were likewise found already decided
+and removed, one amended to add the opt-in `...` rest token, 006-31/006-32.)
 
-**How to use.** Forks (Section 1) need a real decision — open them one at a time, with discussion.
-Section 2 (open semantic) needs real rulings too — grammar won't settle these.
+**How to use.** These open-semantic questions need real rulings — grammar won't settle them; open
+them one at a time, with discussion.
 
 Legend — tier: `foundational` (reshapes a subsystem) · `cluster-root` (cascades to siblings) ·
 `leaned-reshape` (clear recommendation, but it changes a rule, so it needs your nod) ·
@@ -28,212 +27,11 @@ Legend — tier: `foundational` (reshapes a subsystem) · `cluster-root` (cascad
 
 ---
 
-# Section 1 — Design forks (you decide)
-
-Six hard forks (F129+F134 are one decision), no clean default. (The four leaned-reshape forks —
-F008, F029, F035, F132 — and the conditional-`Copy` surface have since been ruled and applied; see
-the implementation plan's Part F. They are no longer carried here.)
-
-## 1. [foundational · trait/call] Named-form call: trait param names vs impl-renamed params  (F020)
-
-**Problem.** When a trait method is called by named argument, which parameter names are the
-contract — the trait's, or the implementing `fulfill`'s? An impl may freely rename parameters,
-so at a generic call site the legal argument names are undetermined.
-
-**Context.** §3.5.1/§3.5.3 say named form is available for trait methods "at every call site,"
-matched by parameter name. But §3.3.1 says the parameter name is "always the implementer's
-choice": trait `Add` declares `fn add(a: Subject, b: Rhs)`, while `fulfill Add for Vec3` writes
-`fn add(left: Vec3, right: Vec3)`. At a generic site `t.add(? : x)` where `t: T` is only known
-as `T: Add`, the concrete impl (hence its names) is unresolved — so whether `v1.add(b: v2)` or
-`v1.add(right: v2)` is legal is genuinely undefined.
-
-**Potential solutions.**
-- (A) Named-form binds to the **trait's** declared names; impl renames are cosmetic/local
-  (`v1.add(b: v2)`). Keeps §3.3.1 freedom; names the trait as the contract.
-- (B) Named-form binds to the **resolved impl's** names; named form is then unavailable at
-  generic `T: Add` sites, available at concrete sites (`v1.add(right: v2)`).
-- (C) Require `fulfill` parameter names to **equal** the trait's. Uniform, kills the ambiguity,
-  but removes the §3.3.1 "implementer's choice" freedom for trait methods.
-
-**What.** LOG the chosen rule; SPEC §3.5.5/§3.3.1 state the named-form contract for trait
-methods and whether `fulfill` must enforce parameter-name equality (a checker-level consequence).
-
-**Why.** Decides whether the checker enforces `fulfill` param-name equality; affects every
-named call of a trait method. No clean default — A and C trade against §3.3.1's stated freedom.
-
-**Refs.** F020 · §3.5.1, §3.5.3, §3.3.1 · standalone · OPEN.
-
------------
-
-## 2. [foundational · CL-IR] Behavior-ID width is self-contradictory; `BID` lexeme undefined  (F129 / F134)
-
-**Problem.** A behavior's identity is specified two incompatible ways. §14.6.3 calls it a
-"stable u32 ID … content-addressed: a stable hash of the canonicalized typed IR" — but a u32
-cannot losslessly carry a content hash. The IR text form renders IDs as `B@aa10` / `B@d1`…`B@d5`
-(2–4 hex = 8–16 bits, narrower than 32), and the text grammar's
-`behavior ::= 'behavior' BID '(' … '}'` uses a `BID` lexeme that is **never given a production**
-(verified: `BID` used at SPEC ~§15.4.4 and LOG 033-219, defined nowhere).
-
-**Context.** §14.6.3 (behavior ABI), §15.4.4 (IR text form). DECISION_LOG #3740/#3898/#4007 all
-say "content-addressed" and never load-bear a u32 width. §15.4.1 says "runtime binds IDs to
-function pointers" — suggesting a handle/index distinct from the hash. Cross-implementation
-interop (§15.7.3) and hot-reload matching both key on this ID.
-
-**Potential solutions.**
-- (A) The ID is literally u32: the content hash is truncated to 32 bits; the spec must state
-  collision handling (compile error, or disambiguation).
-- (B) The content address is a wide hash (≥128-bit) and "u32" names a separate runtime handle /
-  behavior-table index. Reconciles the DoR, the `B@…` rendering, and the function-pointer role.
-  (Lean: B.)
-
-**What.** Decide width semantics. Define the `BID` lexeme grammar in §15.4.4 (`B@` + fixed hex
-width). Make every `B@…` example width-consistent. Align §14.6.3 wording. Amend DECISION_LOG
-#3740/#3898.
-
-**Why.** Foundational for IR interop and hot-reload identity. Couples with F135/F136/F138
-(text-form shape). One decision answers both F129 and F134.
-
-**Refs.** F129 + F134 · §14.6.3, §15.4.4 · DoR #3740/#3898/#4007 · CL-IR · OPEN.
-
------------
-
-## 3. [foundational · CL-DROP / CL-GRAMMAR] How does a Drop body release (move out) a field?  (F133)
-
-**Problem.** Drop bodies are said to "move fields out," but the `move` grammar accepts only bare
-l-value identifiers and field access never consumes — so `move self.field` is unexpressible. The
-release mechanism is unspecified.
-
-**Context.** §14.7.1: a Drop body "may move fields out to release them (partial moves, §14.7.3)";
-§14.7.3: drop glue drops "fields left un-moved." But §11.8.5: `move <l-value identifier>` is
-legal only as an immediate call-argument sub-expression, and `move v.method()` (dotted) is a
-parse error; §11.8.3/§11.3.1: field access reads "without ownership transfer," never consumes.
-So the surface `move` cannot express `move self.field`.
-
-**Potential solutions.**
-- (a) Extend §11.8.5's `move` grammar to admit field l-values (`move self.field`) in
-  partial-move/Drop contexts.
-- (b) Define a distinct field-release construct.
-- (c) Declare §14.7.1/.3's "move fields out" non-normative — drop glue handles all field
-  teardown; bodies cannot selectively release.
-
-**What.** SPEC §11.8.5 (+§14.7.3) per ruling; LOG add. Fixes `move`'s operand grammar AND
-whether Drop bodies can selectively release fields.
-
-**Why.** Foundational for ownership + teardown semantics; overlaps CL-GRAMMAR (the `move`
-operand production).
-
-**Refs.** F133 · §14.7.1, §14.7.3 vs §11.8.5, §11.8.3, §11.3.1 · CL-DROP/CL-GRAMMAR · OPEN.
-
------------
-
-## 4. [cluster-root · CL-IR] Graph-gate encoding: per-instance `gate_parent` vs named `guards` lists  (F135)
-
-**Problem.** The IR encodes gates two ways. The abstract record gates per gated instance
-(predicate + `gate_parent` path); the text form materializes named gate entries with `guards`
-lists. They are not isomorphic for a shared gate.
-
-**Context.** §15.4.1 abstract record: a `when`-gate is "per gated instance" — predicate behavior
-ID + input cell IDs + `gate_parent` (nearest enclosing gated instance). §15.4.5 worked example:
-`gate App.g0 pred B@d4 inputs [App.show] guards [App.print:0]` (a named gate with a guards list)
-and the guarded `effect App.print:0 ... gate App.g0` references it back. A `when` block guarding
-N instances = one named gate with N guards (text form) vs N instances each pointing at a
-`gate_parent` (abstract record).
-
-**Potential solutions.**
-- (A) Per-gated-instance: each instance carries its own predicate + `gate_parent`; no standalone
-  gate entry.
-- (B) Named gate entries with `guards` lists referenced by guarded instances.
-
-**What.** Reconcile §15.4.1 and §15.4.5 — either add a normative gate entry (`id`,`pred`,
-`inputs`,`guards`) to the §15.4.1 record and relate it to `gate_parent`, or restate §15.4.5 in
-per-instance form. LOG amend the §15.4.5 gate entry.
-
-**Why.** Root of the §15.4 text-form-vs-field-lists divergence. The §15.4.5 example currently
-mixes both encodings. Couples with F138.
-
-**Refs.** F135 · §15.4.1, §15.4.5 · CL-IR · OPEN.
-
------------
-
-## 5. [foundational · CL-IR / CL-GRAMMAR] Which IR serialization is normative; the graph grammar is missing  (F138)
-
-**Problem.** Both the §15.4.1 abstract record and the §15.4.5 text form are declared normative,
-yet they carry different fields — and only `behavior` has a text grammar, so the module/types/
-graph sections have no defined concrete syntax, leaving interop undefined.
-
-**Context.** DoR #3851: "The IR's text form IS normative … what tests assert against." §15.7.1.3:
-"Produces an IR conforming to the abstract data model of §15.4.1. Its text form is normative."
-Divergence: §15.4.1 cells carry observability/cadence/size/alignment + separate dependency-edge
-lists; §15.4.5 cell lines carry `role=`/`uses`/`inputs`/`depth`/`init` inline and OMIT
-observability/size/align, with no separate edge lists. Only §15.4.4 (`behavior`) has a text
-grammar; module/types/graph sections have none. §15.7.3 defines interop against the text form.
-
-**Potential solutions.**
-- (A) The §15.4.1 abstract record is the normative source; the text form is an illustrative
-  rendering whose field omissions are mere brevity.
-- (B) The §15.4.5 text form is the normative serialization, requiring full field fidelity.
-
-Either way: a text grammar for the module/types/graph/cell sections **must** be written
-(paralleling §15.4.4's behavior grammar).
-
-**What.** SPEC §15.4 add the normative graph-section text grammar; reconcile which fields the
-text form carries (observability/size/align must appear if the text form is the interop wire).
-LOG amend #3851.
-
-**Why.** Foundational for IR interop; §15.7.3 is undefined without it. Couples with F135/F136/F137
-and the (already-resolved) grammar-inlining decision F038.
-
-**Refs.** F138 · §15.4, §15.4.1, §15.4.5, §15.4.4 · DoR #3851 · CL-IR/CL-GRAMMAR · OPEN.
-
-**Linked — F136 (deferred to this ticket).** F136 is resolved on the merits but cannot be applied
-until this ticket lands. §15.4.5's worked example types the desired cell `App.print:0.text` as
-`str`, yet its behavior `B@d5` returns the whole `%TextRec` record (per the §15.4.4 ABI: the
-desired-builder returns "the desired record", DoR #4018); and by cell-type rule 033-70 an
-aggregate cell must be a **dynamic-pool-index**, not a record tag. So the correct form is a single
-whole-record pool-index desired cell — but the *text-form spelling* of a pool-index cell type is
-undefined, which is exactly this ticket's missing graph grammar. **When F138 is decided, also fix
-§15.4.5:** make `App.print:0` one whole-record pool-index `effect-desired` cell that the runtime
-scatters into per-field desired state, and update the `desired [...]` reference. F136 remains in
-the `FINDINGS.md` ledger until then.
-
------------
-
-## 6. [foundational · CL-IR] Can cross-impl hot reload silently flip a cell's observability class?  (F140)
-
-**Problem.** A carried-over cell's observability class can differ between the old and new spec
-across a hot reload (or a cross-implementation swap), but the reload classifier never looks at
-observability — while §15.4.1.4 forbids silently changing a cell's concurrency contract.
-
-**Context.** §15.4.1.4: the `cross_thread_snapshot`→`confined` downgrade is "implementation-
-defined" (compilers A and B may emit different observability for the same path-matched cell), and
-the compiler "may NOT upgrade observability — a `confined` cell becoming `cross_thread_snapshot`
-would silently change concurrency semantics." §15.6.1: reload classification (reload-safe /
-per-instance-restart / full-restart) is "computed from the diff alone" and never lists an
-observability-class change. §15.7.3 permits cross-impl mixing (compiler A's spec → runtime B).
-
-**Potential solutions.**
-- (1) An observability-class change on a carried-over cell is outside the diff's input set and
-  silently honored (observability recomputed per build, not part of cell identity).
-- (2) It is a reload-classification input that must force a per-instance/full restart when it
-  would flip the concurrency contract (honoring §15.4.1.4's no-silent-change intent across reload
-  and cross-impl swaps).
-
-**What.** SPEC §15.6.1 add observability-class change to the diff's input set with a
-classification (recommend: downgrade snapshot→confined reload-safe; any contract-widening change
-or cross-thread-observed mismatch forces per-instance restart). §15.4.1.4 cross-reference §15.6.1.
-
-**Why.** Sets the boundary of §15.6.1's input set and whether cross-impl hot reload can silently
-alter a cell's concurrency contract.
-
-**Refs.** F140 · §15.4.1.4, §15.6.1, §15.7.3 · CL-IR · OPEN.
-
------------
-
-# Section 2 — Open semantic questions (grammar won't help)
+# Section 1 — Open semantic questions (grammar won't help)
 
 3 items needing real rulings, not syntax decisions.
 
-## 7. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
+## 1. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
 
 **Problem.** Only single-segment place assignments are shown (`r.field = v`, `arr[i] = v`).
 Multi-segment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring
@@ -252,7 +50,7 @@ order are undefined.
 
 -----------
 
-## 8. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
+## 2. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
 
 **Problem.** May a tuple component be assigned through a `mut` binding, and what is its LHS form
 (`t.0 = x`)?
@@ -271,7 +69,7 @@ immutable-component; whole-value reassignment only.
 
 -----------
 
-## 9. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
+## 3. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
 
 **Problem.** Borrow-rootedness — which input cluster(s) a borrow-return is rooted in, including
 the multi-root "union of clusters" — is a compile-time concept with observable effects (which
