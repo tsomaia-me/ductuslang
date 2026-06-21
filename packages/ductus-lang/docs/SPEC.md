@@ -1773,7 +1773,10 @@ the implementer's choice. There is no implicit receiver for trait methods —
 the instance value `subject` is reserved for reactive context inside node and
 connection bodies (§13, §13.7.7). Explicit parameter naming is the
 language's general principle under uniform function call syntax: every
-parameter has a chosen name, not an implicit one.
+parameter has a chosen name, not an implicit one. A `fulfill`'s parameter
+names are local to its body; for a trait method's *named-call* interface,
+callers use the trait's declared parameter names, not the `fulfill`'s
+(§3.5.5).
 
 Other type-level references in trait signatures (associated types like
 `Output`, `Item`, etc.) follow the same substitution rule: in `fulfill`
@@ -2215,6 +2218,16 @@ shape.set_dimensions(10.0, height: 20.0)          // ✗ mixed
 The receiver `x` is conceptually the first positional argument of the
 underlying free function; the dot-syntax just brings it forward
 syntactically.
+
+For a **trait** method, the names usable in named form are the **trait's**
+declared parameter names, not those of any implementing `fulfill`. A
+`fulfill` may bind its parameters to different local names for its body
+(§3.3.1), but those are body-local and not part of the call interface:
+`v1.add(b: v2)` uses trait `Add`'s declared `b` even where `fulfill Add
+for Vec3` wrote `right`. This keeps named form usable uniformly at generic
+sites — where only `T: Add` is known and the concrete impl is not — and at
+concrete sites, and means the checker does not require a `fulfill`'s
+parameter names to equal the trait's.
 
 Ownership semantics for the receiver follow the method's signature
 identically to any other parameter (§11.7, §11.8): the receiver is
@@ -8532,16 +8545,19 @@ the user toward the correct form.
 #### 11.8.5 The `move` keyword grammar
 
 The `move` keyword applies at call-site argument positions to mark
-explicit consumption of an l-value identifier binding.
+explicit consumption of an l-value.
 
-**Grammar.** `move <l-value identifier>` is legal only as an immediate
-sub-expression of a function-call argument list:
+**Grammar.** `move <l-value>` — where `<l-value>` is a binding identifier
+or a field-access path rooted in an owned binding (`self.handle`,
+`rec.a.b`) — is legal only as an immediate sub-expression of a
+function-call argument list:
 
 ```
 f(move x)                          // ✓ argument to f
 g(a, move b, c)                    // ✓ middle argument
 (move v).method()                  // ✓ method-call receiver via prefix
                                    //   parenthesization (§11.8.3)
+close(move self.handle)            // ✓ field l-value: partial move of `handle`
 ```
 
 `move` is **forbidden** outside call-site argument positions:
@@ -8550,9 +8566,10 @@ g(a, move b, c)                    // ✓ middle argument
 let y = move x                     // ✗ parse error: `move` in let-RHS
 return move x                      // ✗ parse error: `move` in return
 mut z = move x                     // ✗ parse error: `move` in mut-RHS
-move v.method()                    // ✗ parse error: `move` attached to a
-                                   //   dotted expression — ambiguous in
-                                   //   chains; use `(move v).method()`
+move v.method()                    // ✗ a method *call* is not an l-value
+                                   //   (a field l-value `move v.field` IS
+                                   //   allowed); for a moved receiver write
+                                   //   `(move v).method()`
 ```
 
 The restriction is by design. `move` in let-RHS, return, or mut-RHS
@@ -8562,6 +8579,16 @@ Move-on-return without anchoring would conflict with §11.3.6's
 anchoring rule. The keyword's role is to mark the irreversible
 call-site consumption — the one place where locality matters and the
 signature alone does not make the call's effect visible.
+
+**Field l-values and partial moves.** A field-access l-value operand —
+`move self.handle` — consumes that field out of the binding (a *partial
+move*, §14.7.3): the field's move flag is set, drop glue will not drop it,
+and the rest of the binding stays live. This is the sole exception to field
+access reading without ownership transfer (§11.8.3, §11.3.1) — a plain
+`self.handle` still reads without consuming; only the explicit `move`
+consumes, and the root binding must be owned (an `own` parameter or an
+owning local), not a borrow. A method-call operand stays forbidden
+(`move x.f()` ✗ — a call is not an l-value).
 
 **Symmetry with `own`.** Each occurrence of `move` at a call site must
 correspond to a parameter declared `own` in the callee's signature, and
@@ -21429,7 +21456,9 @@ order** of their fields: the last-declared field drops first.
 
 If only some fields of a record have been moved out when the binding
 goes out of scope, only the un-moved fields drop. The compiler tracks
-per-binding move flags during semantic analysis.
+per-binding move flags during semantic analysis. A field is moved out by
+naming it as a `move` operand at a call site — `consume(move rec.field)`
+(§11.8.5).
 
 #### 14.7.4 Drop and panic
 
