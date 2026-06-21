@@ -17234,10 +17234,10 @@ the graph down (§13.14.10). The runtime calls **behaviors** (§15.4.4) and
 
 **Capabilities (negotiated, not assumed).** A backend advertises optional
 capabilities beyond the mandatory core — cross-thread observation, hot
-reload (`reload`, §13.15), persistence, real-time bounds — and the
-observability/cadence cell hints (§15.4.1.2–.3) bias how it stores cells. A
-host queries what a runtime supports rather than assuming the union
-(§13.14.11).
+reload (`reload`, §13.15), persistence, real-time bounds (§13.14.11). A
+host queries what a runtime supports rather than assuming the union; how
+cells are classified and stored to honor these capabilities is
+implementation-defined (§15.4.1.2–.3).
 
 The verb names and their guarantees are the abstract form; a runtime need
 only honor the observable contract, by whatever mechanism it chooses.
@@ -17616,22 +17616,23 @@ the set rather than assuming the union; using an unsupported capability is a
 load-time error, not silent misbehavior. The defined capabilities:
 
 - **cross-thread observation** — `acquire_snapshot`/`read` may be called
-  from threads other than the driving context (honoring the
-  `cross_thread_*` observability classes, §15.4.1.2). A single-threaded
-  runtime omits this; `confined` cells need it from no one.
+  from threads other than the driving context. A single-threaded runtime
+  omits this. How the runtime classifies and stores cells to honor
+  cross-thread reads is implementation-defined (§15.4.1.2).
 - **hot reload** — `runtime.reload(diff)` applies an IR diff (§15.6) to the
   live graph: cells/scopes are matched by path (state preserved), changed
   behaviors are swapped by content-hash, and added/removed nodes are
   mounted/unmounted. See §13.15.
 - **persistence** — the runtime can serialize and restore live graph state
   across runs.
-- **real-time bounds** — the runtime honors the `realtime` cadence hint
-  (§15.4.1.3) with bounded, non-blocking observation.
+- **real-time bounds** — the runtime provides bounded, non-blocking
+  observation for cells on real-time paths (the timing classification is
+  implementation-defined, §15.4.1.3).
 
-The `observability` and `cadence_hint` cell fields (§15.4.1.2–.3) are
-inputs to capability negotiation: they tell the runtime what concurrency
-and timing each cell needs, and the runtime selects storage that honors
-them (or rejects a graph it cannot serve).
+How a runtime classifies cells for cross-thread observation and real-time
+timing — to select storage that honors each, or reject a graph it cannot
+serve — is implementation-defined (§15.4.1.2–.3), not driven by normative
+IR fields.
 
 ### 13.15 Hot Reload of the Reactive Graph
 
@@ -21792,10 +21793,6 @@ The graph is a structured record with the following entries.
 - `id`: the cell's fully-qualified declaration path (§15.4.1.1).
 - `type`: the cell's primitive type tag, per §4.1, plus the
   string-pool-index (§14.5) and dynamic-pool-index (§14.3.3) types.
-- `observability`: one of `cross_thread_snapshot`,
-  `cross_thread_atomic`, or `confined` (§15.4.1.2).
-- `cadence_hint` (optional): one of `realtime`, `bounded`, or `lazy`
-  (§15.4.1.3).
 - `initial_value` (optional): the compile-time initial value for
   reactive-safe initializers per §13.8.2.1.
 - `size`, `alignment`: derived from `type`, recorded explicitly for
@@ -21938,69 +21935,35 @@ Cell IDs are stable across the same source compiled by any
 conformant compiler. Cross-implementation hot reload at the same
 source version yields matching cell IDs by construction.
 
-##### 15.4.1.2 Observability class
+##### 15.4.1.2 Observability class (non-normative)
 
-The `observability` field declares what concurrency contract the
-cell must satisfy. The runtime selects a storage mechanism that
-honors the contract.
+How a runtime coordinates cells for **cross-thread observation** — a host
+reading reactive cells from a thread other than the one driving commits — is
+**implementation-defined**, a backend concern (§14.6.4), not part of the
+normative IR. Ductus source code does not encounter cross-thread concerns:
+behaviors are thread-safe by construction (§14.6.4), and cross-thread
+observation is an *optional* runtime capability (§13.14.11). A cell entry
+therefore carries no normative observability field.
 
-| Value                    | Contract                                         |
-|--------------------------|--------------------------------------------------|
-| `cross_thread_snapshot`  | Multi-thread readers see a snapshot-consistent view; cross-cell consistency within one commit transaction; no torn reads. |
-| `cross_thread_atomic`    | Multi-thread readers see single-cell atomic reads; no cross-cell consistency guarantee. Cell value must fit in one 64-bit atomic slot. |
-| `confined`               | Cell accessed only from one thread; no atomic required. |
+For reference, a runtime offering this capability may classify each cell by a
+concurrency contract — for example a snapshot-consistent multi-thread view, a
+single-cell atomic read, or single-thread confinement — and choose storage
+accordingly. Which contract a cell needs, and the storage mechanism, are the
+runtime's concern.
 
-The mapping from observability to storage is the runtime's
-concern, not a spec mandate. A runtime selects whatever storage
-mechanism satisfies the contract for each observability class.
+##### 15.4.1.3 Cadence hint (non-normative)
 
-##### 15.4.1.3 Cadence hint
+Update-timing expectations — real-time/deadline-bound, bounded, or
+lazy/best-effort — are likewise an implementation-defined backend concern. A
+runtime may take such hints to bias storage selection; none is normatively
+constrained, and a cell entry carries no normative cadence field.
 
-The `cadence_hint` field, when present, tells the runtime about the
-update-timing expectation for the cell. It is informational; the
-runtime uses it to bias storage-mechanism selection. Defined values:
+##### 15.4.1.4 Cells outside the graph specification
 
-- `realtime` — updates are deadline-bound; readers (e.g., audio
-  thread) cannot block. Typically pairs with `cross_thread_snapshot`.
-- `bounded` — updates are committed but not deadline-bound. Pairs
-  with any `observability` value.
-- `lazy` — updates are best-effort; the cell tolerates large
-  staleness. Typically pairs with `confined` and selects plain
-  memory.
+Local `let`/`mut` bindings inside a function body are non-reactive and **do
+not appear in the graph specification** (§14.4). Closure captures and function
+parameters likewise do not appear in the graph specification.
 
-A cell without a `cadence_hint` is treated as `bounded`.
-
-##### 15.4.1.4 Determining observability class
-
-The compiler assigns each cell an observability class based on its
-declaration kind and access pattern observed during reactive
-analysis (§14.1.1 step 4). Defaults:
-
-| Declaration kind                              | Default `observability`     |
-|-----------------------------------------------|------------------------------|
-| `signal` (top-level)                          | `cross_thread_snapshot`     |
-| `attr` on a node/connection instance          | `cross_thread_snapshot`     |
-| `recurrent` on a node/connection instance     | `cross_thread_snapshot`     |
-| `derived` reactive cell                       | `cross_thread_snapshot`     |
-| `stream` cell (head pointer + metadata)       | `cross_thread_snapshot`     |
-| Stream observation cells (§13.18.6)           | `cross_thread_snapshot`     |
-| Effect `observed:` cells (host-written)       | `cross_thread_snapshot`     |
-| Effect `desired:` cells (program-written)     | `cross_thread_snapshot`     |
-| Stdlib single-cell types per §13.12.4         | `cross_thread_atomic`       |
-| Local `let`/`mut` inside a function body      | not in the graph spec (§14.4 — non-reactive) |
-| Closure captures, function parameters         | not in the graph spec       |
-
-The compiler may downgrade `cross_thread_snapshot` to `confined` for
-cells provably accessed from only one thread (e.g., a `derived` on a
-node instance whose enclosing graph context is single-threaded).
-This optimization is implementation-defined. The compiler may not
-upgrade observability — a `confined` cell becoming
-`cross_thread_snapshot` would silently change concurrency semantics.
-
-The default `cadence_hint` follows from the declaration's enclosing
-graph context: cells declared inside placements that participate in
-the runtime's evaluation cycle (§13.10) get `realtime`; cells on
-non-realtime paths get `bounded`.
 
 #### 15.4.2 Versioning
 
@@ -22280,8 +22243,9 @@ A conformant runtime:
 1. Accepts any IR conforming to the abstract data model of §15.4.1,
    in whatever serialization the implementations share (none is
    mandated).
-2. Allocates cells per the observability and cadence contracts of
-   §15.4.1, using any mechanism satisfying those contracts.
+2. Allocates cells using any mechanism it chooses; how cells are
+   classified for cross-thread observation or real-time timing, when
+   offered, is implementation-defined (§15.4.1.2–.3).
 3. Implements the runtime semantics of §13 and §14: cell evaluation
    order, drop semantics, hot reload, thread orchestration.
 
