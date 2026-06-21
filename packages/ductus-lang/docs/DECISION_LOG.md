@@ -5,7 +5,6 @@ This log is the lossless WHAT; SPEC.md is the normative elaboration holding the 
 Ordering: generic → specific, topic-contiguous (## headers); reading any prefix yields a coherent partial model. Position carries this gradient; numbers are stable identities — never renumbered, never reused. New decisions take the next free integer and are placed by topic; amendments keep their number; revoked numbers are retired (gaps allowed).
 Edit protocol: change this log FIRST, then update the referenced SPEC.md section to conform.
 If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; never silently resolve it.
-Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md during serialization are recorded in DECISION_LOG_FINDINGS.md with their contested wordings (see that file for the live count); contested content is deliberately NOT serialized here until ruled on.
 
 <!-- BEGIN LOG -->
 
