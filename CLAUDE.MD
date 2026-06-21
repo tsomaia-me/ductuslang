@@ -5,7 +5,7 @@ become commitments.
 
 # Mandatory Operational Protocol
 
-1. Do not use AskTool ever, do not ask questions using a tool call, ask questions using text.
+1. Never use the AskUserQuestion tool. When a choice is ambiguous, pick the most sensible default, state the assumption in one line, and proceed. Never block on a question.
 2. Ask, don't assume: interpret ambiguity as opportunity to ask.
 3. Answer, don't retract: A question invites you to answer, not retract. A question must never be interpreted as a
    ground
@@ -25,6 +25,7 @@ become commitments.
     wait for approval.
 12. Maintain LEARNINGS.md as described below in the "Mandatory Learnings Protocol" section.
 13. Strictly follow "Mandatory Memory Refresher" as described below in the respective section.
+14. any deviation from what we agreed without discussing with me further is a systematic failure on your side.
 
 # Definition Of Done
 
