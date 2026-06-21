@@ -1315,7 +1315,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 012-145. `Option`/`Result` wrappings of `duration`/`instant` store directly in a reactive cell when discriminant plus payload fits the platform atomic word, and otherwise use index-based pool storage. (§9.4.3)
 012-146. The compiler chooses the cell-storage strategy; the source-level wrapped type is permitted on all platforms. (§9.4.3)
 
-## 013. Ownership & Mutability — 244 Rules
+## 013. Ownership & Mutability — 245 Rules
 
 013-1. Category A (value ownership: function call, function return, let-rebinding, for-loop iteration variable) defaults to borrow-equivalent: the callee or new binding gets read-only access and the source binding survives. (§11.1)
 013-2. Category A consumption is opt-in, requiring `own` in the signature and `move` at the call site. (§11.1)
@@ -3145,7 +3145,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 027-117. A single-threaded runtime omits the cross-thread observation capability. (§13.14.11)
 027-119. The hot reload capability exposes `runtime.reload(diff)`, applying an IR diff to the live graph: cells/scopes matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.14.11)
 027-120. The persistence capability lets the runtime serialize and restore live graph state across runs. (§13.14.11)
-027-121. The real-time bounds capability honors the `realtime` cadence hint with bounded, non-blocking observation. (§13.14.11)
+027-121. The real-time bounds capability provides bounded, non-blocking observation for cells on real-time paths; the timing classification is implementation-defined. (§13.14.11)
 027-122. How a runtime classifies cells for cross-thread observation and real-time timing — selecting storage that honors each, or rejecting a graph it cannot serve — is implementation-defined, not driven by normative IR fields. (§13.14.11)
 
 ## 028. Hot Reload — 74 Rules
@@ -3770,7 +3770,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 031-158. `recurrent` is allowed in an effect's `desired:` block (a desired value may depend on its own history) but forbidden in `observed:` (host-fed cells have no expression body for `.past` to read). (§13.19.4)
 031-159. A `desired:` event-output stream's `= source` may read the effect's own `observed:` cells (feedback); such a cycle must pass a delay (a `recurrent`) or a commit boundary so it cannot inherently diverge. (§13.19.4)
 
-## 032. Implementation Model — 177 Rules
+## 032. Implementation Model — 179 Rules
 
 032-1. The implementation model is normative for implementations of Ductus, not for source-level code; program behavior is determined by §§1–13. (§14)
 032-2. A conforming implementation provides two compilation modes: interpreter mode and native mode. (§14.1)
@@ -3894,7 +3894,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-120. Canonicalization may change across major toolchain versions. (§14.6.3)
 032-121. Cross-version hot reload is not supported. (§14.6.3)
 032-122. Each behavior carries a debug name, the qualified source path: `module::path::clip_name::derived_name`. (§14.6.3)
-032-123. The runtime resolves behaviors by ID; debug names appear only in diagnostic output (diagnostics, profiles, error messages). (§14.6.3)
+032-123. The runtime resolves behaviors by handle; debug names appear only in diagnostic output (diagnostics, profiles, error messages). (§14.6.3)
 032-124. Which execution context invokes each behavior, and how it maps onto OS threads, is a backend concern; Ductus source does not specify thread roles. (§14.6.4)
 032-125. Behaviors are thread-safe by construction: no shared mutable state exists outside reactive cells, which the runtime coordinates. (§14.6.4)
 032-126. The `Drop` trait declares a single method receiving the value by `own`: `trait Drop: fn drop(own value: Subject)`. (§14.7.1)
@@ -3922,7 +3922,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-146. Reload diffs cells by fully-qualified declaration path per §13.15.2: cells with matching path and type carry forward preserving values, new cells are added, removed cells are dropped per §14.7. (§14.8.1)
 032-147. Hot reload matches operator instances by (enclosing scope, operator name, argument bindings), tolerating positional moves within the same scope. (§14.8.1)
 032-148. Reload-matched operator instances preserve their internal cell state; unmatched instances are dropped or added with the corresponding cell churn. (§14.8.1)
-032-149. An added behavior registers in the behavior table at its content-addressed ID; graph-spec edges and cell allocations referencing that ID become live, and subsequent invocations dispatch through it. (§14.8.1)
+032-149. An added behavior registers in the behavior table — matched by its content-addressed identity — and is assigned a handle; graph-spec edges and cell allocations referencing that handle become live, and subsequent invocations dispatch through it. (§14.8.1)
 032-150. An added cell gets storage allocated and initialized per the new source. (§14.8.1)
 032-151. An added operator instance gets internal cell state allocated and initialized per the new source. (§14.8.1)
 032-152. A removed behavior is deregistered from the behavior table. (§14.8.1)
@@ -3952,7 +3952,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 225 Rules
+## 033. Compilation Model & IR — 226 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4048,9 +4048,9 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-92. A `given`-block arm's gate predicate is the arm's variant test against the scrutinee. (§15.4.1)
 033-93. The compiler encodes declaration-order priority and exhaustiveness into arm predicates so arms are mutually exclusive by construction (arm i's effective predicate conjoins the negations of all earlier arms' guards). (§15.4.1)
 033-94. Arm predicates still evaluate against runtime cell values each commit. (§15.4.1)
-033-95. The behavior table is a list of `(behavior_id, debug_name, input_cell_ids, output_cell_id?)` entries. (§15.4.1)
+033-95. The behavior table is a list of `(handle, debug_name, input_cell_ids, output_cell_id?)` entries, indexed by each behavior's u32 handle. (§15.4.1)
 033-96. Behavior IDs are content-addressed per §14.6.3. (§15.4.1)
-033-97. The runtime binds behavior IDs to function pointers at program startup. (§15.4.1)
+033-97. The runtime binds each behavior handle to the behavior's function pointer at program startup. (§15.4.1)
 033-98. A stream entry's `id` is the stream's fully-qualified declaration path. (§15.4.1)
 033-99. A stream entry's `element_type` is the element's type tag, per §15.4.1's cell `type` encoding. (§15.4.1)
 033-100. A stream entry's `policy` is `ring` or `gate`. (§15.4.1)
@@ -4081,7 +4081,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-127. A cell ID for anonymous or duplicated sibling placements carries the ordinal suffix `:N` in the wire format, with N the zero-based declaration-order index among same-type siblings at the same nesting depth. (§15.4.1.1)
 033-128. Cell IDs are stable across the same source compiled by any conformant compiler. (§15.4.1.1)
 033-129. Cross-implementation hot reload at the same source version yields matching cell IDs by construction. (§15.4.1.1)
-033-253. Observability and cadence cell classification is implementation-defined — a backend concern (§14.6.4), not part of the normative IR. A runtime offering the optional cross-thread observation or real-time capabilities (§13.14.11) classifies and stores cells however honors them; the §15.4.1.2–.4 descriptions are non-normative reference, and a cell entry carries no normative observability or cadence field. (§15.4.1.2)
+033-253. Observability and cadence cell classification is implementation-defined — a backend concern (§14.6.4), not part of the normative IR. A runtime offering the optional cross-thread observation or real-time capabilities (§13.14.11) classifies and stores cells however honors them; the §15.4.1.2–.3 descriptions are non-normative reference, and a cell entry carries no normative observability or cadence field. (§15.4.1.2)
 033-151. Local `let`/`mut` bindings inside function bodies are non-reactive and do not appear in the graph specification. (§15.4.1.4)
 033-152. Closure captures and function parameters do not appear in the graph specification. (§15.4.1.4)
 033-157. A conformant runtime accepts any specification whose format version it understands. (§15.4.2)
