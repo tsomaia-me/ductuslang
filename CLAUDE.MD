@@ -5,7 +5,7 @@ become commitments.
 
 # Mandatory Operational Protocol
 
-1. Do not use AskTool ever, do not ask questions using a tool call, ask questions using text.
+1. Never use the AskUserQuestion tool. When a choice is ambiguous, pick the most sensible default, state the assumption in one line, and proceed. Never block on a question.
 2. Ask, don't assume: interpret ambiguity as opportunity to ask.
 3. Answer, don't retract: A question invites you to answer, not retract. A question must never be interpreted as a
    ground
