@@ -1316,7 +1316,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 012-145. `Option`/`Result` wrappings of `duration`/`instant` store directly in a reactive cell when discriminant plus payload fits the platform atomic word, and otherwise use index-based pool storage. (§9.4.3)
 012-146. The compiler chooses the cell-storage strategy; the source-level wrapped type is permitted on all platforms. (§9.4.3)
 
-## 013. Ownership & Mutability — 245 Rules
+## 013. Ownership & Mutability — 249 Rules
 
 013-1. Category A (value ownership: function call, function return, let-rebinding, for-loop iteration variable) defaults to borrow-equivalent: the callee or new binding gets read-only access and the source binding survives. (§11.1)
 013-2. Category A consumption is opt-in, requiring `own` in the signature and `move` at the call site. (§11.1)
@@ -1440,6 +1440,8 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 013-118. Borrow-rootedness of returns is inferred from the function body; `own` parameters and `-> own T` are written by the user in source. (§11.7.5)
 013-119. The elaborated form is normative for diagnostic templates: every ownership-related error references elaborated-form entities rather than the user-facing surface. (§11.7.5)
 013-120. A user may write the elaborated form explicitly in signatures; the explicit and default forms must be equivalent and the compiler verifies the mapping. (§11.7.5)
+013-246. An opt-in return annotation `-> T from v` — and the union form `-> T from (v, w)` — makes a borrow-return's rootedness explicit by naming the contributing input binding(s) directly, reusing the `from` clause keyword (002-4) for origin; it is not lifetime-parameter syntax and does not restate the borrow mode. It is purely optional: the default `-> T` leaves rootedness body-inferred and invisible (013-118). When a `where` clause is also present the `from` clause follows the return type and precedes `where`: `-> T from v where T: Clone`. (§11.7.5)
+013-247. On a concrete function the `-> T from v` annotation (013-246) is an assertion the compiler verifies against the body-inferred rootedness — a disagreement is a compile error; on an abstract return that has no body to infer from (a trait-method signature or a fn-type), it is the rootedness contract implementations must honor, narrowing the otherwise-conservative union of all input clusters (013-66). It is distinct from the diagnostic-only elaborated `borrow_rooted_in(v)` form (013-117, 013-119), which stays compiler-internal. (§11.7.5)
 013-121. The unmarked call form `f(x)` always means no consumption: the caller's binding survives the call regardless of the callee's internal use of its alias. (§11.8)
 013-122. There is no borrow sigil at call sites — no `&v` or `borrow(v)` surface syntax; the compiler inserts the borrow-equivalent aliasing automatically: `length(v)`. (§11.8.1)
 013-123. Use-after-move is a compile error reported at the use site; the diagnostic identifies the `move` expression that consumed the binding. (§11.8.2)
@@ -1518,6 +1520,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 013-196. Field assignment through a `mut` root binding is permitted: `r.field = new_value`. (§11.11)
 013-197. Indexed assignment through a `mut` root binding is permitted: `arr[5] = 1.5`. (§11.11)
 013-198. Field and indexed assignment desugar to operator-trait method calls. (§11.11)
+013-248. A place-assignment LHS may be a multi-segment path of nested `.field` and `[i]` projections rooted in a `mut` binding — `r.a.b = x`, `arr[i].field = y`. Evaluation resolves the place path left-to-right (the receiver, then each segment, with index expressions evaluated in their written order), evaluates the RHS, then performs the innermost assignment; every projection is an in-place place (013-209) into storage the `mut` binding owns and introduces no alias. (§11.11)
 013-199. The exact assignment traits (`FieldAssign`, `IndexAssign`, or analogous) are stdlib concerns specified outside the language spec. (§11.11)
 013-200. The assignment desugaring preserves the single-writer invariant: no other binding to the same underlying value may exist while the mutation occurs. (§11.11)
 013-201. The RHS of an indexed, field, or whole-value assignment is consumed implicitly into the storage slot — no `move` keyword: `arr[5] = v` kills `v`'s name. (§11.11)
@@ -1545,6 +1548,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 013-223. Mutability is a property of the binding, never of the type; a type cannot declare itself mutable. (§11.12)
 013-224. A record's field is assignable in place through a `mut` binding to the containing record, provided the field's type permits assignment: `r.field = v`. (§11.12)
 013-225. An enum variant's payload and a newtype's wrapped value have no in-place place form and are never assigned through the binding; a `mut` enum or newtype is updated only by reassigning the whole value to a freshly constructed one, per the whole-value reassignment of §11.11.1: `state = Active(p2)`. (§11.12)
+013-249. A tuple component is assignable in place through a `mut` tuple binding via the positional LHS `t.0 = x`, mirroring record-field assignment (013-224) and in-place per 013-209; unlike enum payloads and newtype wrapped values (013-225), tuples are not restricted to whole-value reassignment, and the component assignment is not `Copy`-restricted. It composes with multi-segment paths (013-248): `t.0.field = x`. (§11.12)
 013-226. The record-body ban on `fn` declarations does not restrict mutation; any holder of a `mut` binding to a record may assign its fields. (§11.12)
 013-227. The `public(private)` constructor pattern restricts only initial construction; a holder of a `mut` binding may still mutate the fields, subject to field visibility. (§11.12.1)
 013-228. Restricting post-construction mutation is done with field-level visibility (`private field_name: T`), which prevents external code from naming the field in an assignment. (§11.12.1)
