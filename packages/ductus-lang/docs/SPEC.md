@@ -8438,6 +8438,45 @@ when surface visibility is desired (library API documentation, training
 examples). The default-form and the explicit elaborated form must be
 equivalent; the compiler verifies the mapping.
 
+**Opt-in rootedness annotation (`from`).** Borrow-rootedness is the one
+inferred property that, by default, has no surface form: which input
+cluster(s) a borrow-return is rooted in is read off the function body
+(above) and never written. A function may *opt in* to stating it, with a
+return annotation that names the contributing input binding(s) directly:
+
+```
+fn first(v: Vec[Record]) -> Record from v
+fn pick(a: Vec[Record], b: Vec[Record], which: bool) -> Record from (a, b)
+```
+
+The annotation reuses the `from` keyword for "origin"; it is **not**
+lifetime-parameter syntax, and it does not restate the borrow mode (the
+return is borrow-equivalent by default, §11.3.6). A single input is named
+bare (`from v`); multiple contributing inputs use the parenthesized union
+form (`from (a, b)`), denoting a return rooted in the union of those
+clusters (§11.3.6). When a generic `where` clause is also present, the
+`from` clause follows the return type and precedes `where`:
+`fn pick[T](a: Vec[T], b: Vec[T]) -> T from (a, b) where T: Clone`.
+
+The annotation is **purely optional**. Omitting it — the plain `-> T` —
+leaves rootedness body-inferred and invisible, exactly as before. Writing
+it serves two roles depending on where it appears:
+
+- On a **concrete** function it is an *assertion*. The compiler verifies
+  the named roots against the rootedness it infers from the body and
+  reports a mismatch as a compile error. It pins and documents the
+  contract without changing it.
+- On an **abstract** return — a trait-method signature or a `fn`-type,
+  where there is no body to infer from — it is the rootedness *contract*
+  itself. Without it, the system must fall back to the conservative union
+  of every input cluster (§11.3.6); with it, a trait author constrains the
+  return to the named inputs, and an implementation may not root the
+  return in any unnamed input.
+
+This `from` annotation is the user-writable surface for rootedness; it is
+distinct from the diagnostic-only elaborated `borrow_rooted_in(v)` form
+above, which remains compiler-internal and is never required in source.
+
 ### 11.8 Call-Site Semantics
 
 The call form depends on whether the function consumes any of its
@@ -9006,11 +9045,37 @@ r.field = new_value          // ✓ field assignment
 
 mut arr = make_array()
 arr[5] = 1.5                  // ✓ indexed assignment
+
+mut t = (1, "x")
+t.0 = 9                       // ✓ tuple-component assignment
 ```
 
-The root binding (`r`, `arr`) must be declared `mut`. The field or
-element being assigned must itself be of a type compatible with the
-assigned value, per the standard type-check rules.
+The root binding (`r`, `arr`, `t`) must be declared `mut`. The field,
+element, or component being assigned must itself be of a type compatible
+with the assigned value, per the standard type-check rules.
+
+A place-assignment LHS is not limited to a single segment. A
+**multi-segment path** — nested `.field`, `[i]`, and tuple-`.0`
+projections rooted in a `mut` binding — is equally a place:
+
+```
+mut r = make_record()
+r.a.b = x                     // ✓ nested field path
+
+mut arr = make_array()
+arr[i].field = y              // ✓ index, then field
+
+mut t = (make_record(),)
+t.0.field = z                 // ✓ tuple component, then field
+```
+
+The path is resolved **left-to-right**: the root binding first, then each
+segment in turn, with any index expressions evaluated in their written
+order. The compiler then evaluates the RHS and performs the **innermost**
+assignment. Every intermediate projection is itself an in-place place
+(§11.11.2) into the storage the `mut` binding owns — no borrow-equivalent
+alias is created anywhere along the path — so the single-writer invariant
+holds across the whole chain exactly as it does for a single segment.
 
 Field and indexed assignment desugar to operator-trait method calls
 (the exact traits — `FieldAssign`, `IndexAssign`, or analogous — are
@@ -9157,6 +9222,11 @@ The compound types of §6 interact with mutability as follows:
   values of the type may be declared `mut`.
 - A record's field may be assigned in place through a `mut` binding to
   the containing record, provided the field's type permits assignment.
+- A tuple's component is assignable in place through a `mut` binding to
+  the tuple (`t.0 = x`), exactly like a record field; tuples are *not*
+  whole-value-reassignment-only the way enums and newtypes are (next
+  bullet), and the component assignment is not restricted to `Copy`
+  components.
 - An enum variant's payload and a newtype's wrapped value have no
   in-place place form; they are never assigned through the binding. A
   `mut` enum or newtype is updated only by reassigning the whole value to
