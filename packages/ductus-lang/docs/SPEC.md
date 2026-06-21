@@ -114,7 +114,7 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
 `derived`, `stream`, `const`, `let`, `mut`, `repeat`), all clause
 keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
-`satisfies`, `fulfill`, `default`, `from`, `to`, `pairs`, `on`,
+`satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
 `dynamic` — the supply-mode marker, §13.3.3.1), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
@@ -16445,7 +16445,9 @@ the same evolution-safety guarantee `match` provides, and the reason
 `given` exists rather than emulating discriminant selection with
 `when`-guards. A `default:` arm is permitted only as an explicit catch-all
 that *suppresses* the exhaustiveness obligation (the author opts out
-knowingly), exactly as a catch-all does in value `match`.
+knowingly), exactly as a catch-all does in value `match`. When present it
+must be the **last** arm; a non-last `default:` is a compile error (as for
+`when`/`otherwise:`, §13.9.12).
 
 **Distinction from value-selecting a `Type[…]`.** Selecting a single
 node/connection *type value* with `match` (§13.2.10) and gating structure
@@ -19291,7 +19293,7 @@ event emitted by `to_ring_stream`, leaving only true changes:
 stream ring changes: Url = current_url |> to_ring_stream |> skip_first
 ```
 
-**Projection operators** (Stream → Signal):
+**Projection operators** (Stream → Derived):
 
 ```
 operator count[T](source: Stream[T]) -> Derived[i64]:
@@ -21791,6 +21793,8 @@ The graph is a structured record with the following entries.
 **Cells.** A list of cell entries. Each cell entry contains:
 
 - `id`: the cell's fully-qualified declaration path (§15.4.1.1).
+- `kind`: `input` (a stored, externally-written cell), `derived`, or
+  `recurrent` — the cell's classification, leading its text-form line (§15.4.6).
 - `type`: the cell's primitive type tag, per §4.1, plus the
   string-pool-index (§14.5) and dynamic-pool-index (§14.3.3) types.
 - `initial_value` (optional): the compile-time initial value for
@@ -22128,15 +22132,15 @@ module App {
 
   graph {
     scope App  exposes []  effects [App.print:0] {
-      cell App.count   : i32  role=input     init 0
-      cell App.show    : bool role=input     init true
-      cell App.doubled : i32  role=derived   uses B@d1 inputs [App.count]
-      cell App.total   : i32  role=recurrent uses B@d2 inputs [App.count] depth 1 init 0
-      cell App.label   : str  role=derived   uses B@d3 inputs [App.doubled]
+      input     App.count   : i32  init 0
+      input     App.show    : bool init true
+      derived   App.doubled : i32  uses B@d1 inputs [App.count]
+      recurrent App.total   : i32  uses B@d2 inputs [App.count] depth 1 init 0
+      derived   App.label   : str  uses B@d3 inputs [App.doubled]
 
       gate App.g0  pred B@d4  inputs [App.show]  guards [App.print:0]
 
-      cell App.print:0.desired : pool_index<%TextRec> role=derived uses B@d5 inputs [App.label]
+      derived   App.print:0.desired : pool_index<%TextRec> uses B@d5 inputs [App.label]
       effect App.print:0  reconciler "print"  params [message: App.label]
                           desired [App.print:0.desired]  gate App.g0
     }
@@ -22192,9 +22196,9 @@ variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
 graph_section ::= 'graph' '{' scope+ '}'
 scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set '{' entry* '}'
 entry         ::= cell | gate | connection | effect
-cell          ::= 'cell' PATH ':' type_tag 'role' '=' role
+cell          ::= cell_kind PATH ':' type_tag
                   ('uses' BID)? ('inputs' path_set)? ('depth' INT)? ('init' value)? ('gate' PATH)?
-role          ::= 'input' | 'derived' | 'recurrent'
+cell_kind     ::= 'input' | 'derived' | 'recurrent'
 gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
 connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
                   ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
@@ -22217,10 +22221,11 @@ value         ::= INT | 'true' | 'false' | STRING     // a compile-time literal
 The module's three sections appear in order. The `types` table lists the
 record/enum/tuple layouts referenced by `%TypeId` tags, each with its
 `size`/`align`; these are derived from `type` and the target, so a `cell`'s
-`type_tag` does not repeat them. A `cell`'s `role` is `input` (a stored
-attr/signal), `derived`, or `recurrent`; `uses` names its behavior handle and
-`inputs` its input cells; `recurrent` adds `depth`, and a stored or recurrent cell
-an `init`. A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
+`type_tag` does not repeat them. A cell is **kind-led** — `input` (a stored
+attr/signal), `derived`, or `recurrent` leads the line, parallel to
+`behavior`/`gate`/`effect`; a derived or recurrent cell's `uses` names its
+behavior handle and `inputs` its input cells, `recurrent` adds `depth`, and a
+stored or recurrent cell an `init`. A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
 it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
 names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
 record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
