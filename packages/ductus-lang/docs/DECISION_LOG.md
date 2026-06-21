@@ -3952,7 +3952,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 223 Rules
+## 033. Compilation Model & IR — 225 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4002,7 +4002,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-46. `pool_index<%PoolId>` is the IR type for dynamic-size values. (§15.4)
 033-47. Behaviors are fully typed. (§15.4)
 033-48. The graph is type-erased to tag plus size/align. (§15.4)
-033-49. The IR's text form is normative: it is the only serialization this specification defines and what tests assert against. (§15.4)
+033-49. The IR's text form is normative: it is the serialization this specification defines (grammar in §15.4.4 + §15.4.6) and what tests assert against; the §15.4.1 data model is what it renders. No binary or wire encoding is mandated. (§15.4)
 033-50. No binary or wire encoding of the IR is mandated; any such encoding is implementation-defined. (§15.4)
 033-51. An implementation need not externalize the IR at all; holding it in memory across the frontend→backend boundary is conforming. (§15.4)
 033-52. The graph is built from exactly six primitives: `cell`, `connection`, `gate`, `stream`, `effect`, and `scope`. (§15.4.1)
@@ -4113,6 +4113,8 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-183. The aggregate instructions are `tuple.make`/`tuple.get`, `record.make %T {…}`/`field.get`, `enum.make %T #V(p)`/`enum.tag`/`enum.payload`, and `array.make […]`. (§15.4.4)
 033-184. Field/index assignment is a trait `call`, not an IR primitive, so in-place reuse follows the ordinary ownership rules. (§15.4.4)
 033-251. In the IR text form a behavior reference is a `BID` — `'B@' HEX+` — rendering the behavior's `u32` handle (§14.6.3) in hexadecimal (`B@d1`, `B@aa10`); the wide content-addressed identity is not spelled in the text form. (§15.4.4)
+033-254. The IR module text form has a normative grammar for the module, type-table, and graph sections (§15.4.6), parallel to the behavior grammar (§15.4.4); size and alignment are derived from type and the target and are not repeated on graph cell tags. (§15.4.6)
+033-255. An effect's desired state is a single whole-record cell typed `pool_index<%T>` holding the desired-builder behavior's output record; the runtime scatters it into per-field desired state. (§15.4.5)
 033-185. Direct calls are statically resolved: `call f(move %a, %b)`. (§15.4.4)
 033-186. `call.dyn %obj #m (…)` is the vtable call on a `dyn` trait object. (§15.4.4)
 033-187. `call.closure %c (…)` invokes a closure. (§15.4.4)
@@ -4168,7 +4170,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-237. An implementation comprises a compiler and a runtime operating on the same graph specification format; conformance requires both components to meet their criteria. (§15.7)
 033-238. A conformant compiler accepts every program that §§1–13 define as well-formed. (§15.7.1)
 033-239. A conformant compiler rejects every ill-formed program, with diagnostics whose format is implementation-defined. (§15.7.1)
-033-240. A conformant compiler produces an IR conforming to the abstract data model of §15.4.1, with any serialization implementation-defined. (§15.7.1)
+033-240. A conformant compiler produces an IR conforming to the §15.4.1 data model and renders it in the normative text form (§15.4.6); other (binary or in-memory) encodings are implementation-defined. (§15.7.1)
 033-241. A conformant compiler's executable code, run against a conformant runtime with the produced graph specification, exhibits the observable behavior defined by §§1–13. (§15.7.1)
 033-242. A conformant runtime accepts any IR conforming to the §15.4.1 abstract data model, in whatever serialization the implementations share. (§15.7.2)
 033-243. A conformant runtime allocates cells using any mechanism it chooses; how cells are classified for cross-thread observation or real-time timing, when offered, is implementation-defined. (§15.7.2)

@@ -22135,9 +22135,9 @@ module App {
 
       gate App.g0  pred B@d4  inputs [App.show]  guards [App.print:0]
 
-      cell App.print:0.text : str role=derived uses B@d5 inputs [App.label]
+      cell App.print:0.desired : pool_index<%TextRec> role=derived uses B@d5 inputs [App.label]
       effect App.print:0  reconciler "print"  params [message: App.label]
-                          desired [App.print:0.text]  gate App.g0
+                          desired [App.print:0.desired]  gate App.g0
     }
   }
 
@@ -22163,9 +22163,67 @@ module App {
 The effect sits in `App`'s `effects` set, not `exposes` (effects are not
 topology, §13.3.8); the gate `App.g0` guards it (gate-off ⇒ freeze +
 `suspend`, §13.9.7); `App.print:0` uses the ordinal path form for an
-anonymous instance (§15.4.1.1); and `desired.text` is a pure function of
-`message` (bound to `App.label`) — there is no activation input anywhere,
-consistent with the suspend/resume-only model (§13.19.12).
+anonymous instance (§15.4.1.1); and the whole-record desired cell
+`App.print:0.desired` — a `pool_index<%TextRec>` (B@d5 returns the whole
+`%TextRec`) that the runtime scatters into per-field desired state — is a pure
+function of `message` (bound to `App.label`), so there is no activation input
+anywhere, consistent with the suspend/resume-only model (§13.19.12).
+
+#### 15.4.6 IR module text grammar
+
+§15.4.4 gives the `behavior` grammar; this section gives the **module, type-table,
+and graph** grammar — the normative text form of §15.4.1's data model. `NAME`,
+`INT`, `STRING`, and `HEX` are the obvious lexemes; `PATH` is a cell/instance path
+(§15.4.1.1); `BID` is a behavior handle (§15.4.4); `type_tag` is the type-erased
+graph tag (§15.4.3).
+
+```
+module        ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
+
+types_section ::= 'types' '{' type_def* '}'
+type_def      ::= '%'NAME '=' layout 'size' INT 'align' INT
+layout        ::= 'record' '{' field_list '}'
+                | 'enum'   '{' variant (',' variant)* '}'
+                | 'tuple'  '(' type_tag (',' type_tag)* ')'
+field_list    ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
+variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
+
+graph_section ::= 'graph' '{' scope+ '}'
+scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set '{' entry* '}'
+entry         ::= cell | gate | connection | effect
+cell          ::= 'cell' PATH ':' type_tag 'role' '=' role
+                  ('uses' BID)? ('inputs' path_set)? ('depth' INT)? ('init' value)? ('gate' PATH)?
+role          ::= 'input' | 'derived' | 'recurrent'
+gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
+connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
+                  ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
+effect        ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
+                  ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
+
+behaviors_section ::= 'behaviors' '{' behavior* '}'        // behavior per §15.4.4
+
+path_set      ::= '[' (PATH (',' PATH)*)? ']'
+binding_set   ::= '[' (binding (',' binding)*)? ']'
+binding       ::= NAME ':' (PATH | value)
+type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
+                | '(' type_tag (',' type_tag)* ')' | '[' type_tag ';' INT ']'
+                | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
+PRIM          ::= 'i8'|'i16'|'i32'|'i64'|'i128'|'u8'|'u16'|'u32'|'u64'|'u128'
+                | 'isize'|'usize'|'f32'|'f64'|'bool'|'str'
+value         ::= INT | 'true' | 'false' | STRING     // a compile-time literal
+```
+
+The module's three sections appear in order. The `types` table lists the
+record/enum/tuple layouts referenced by `%TypeId` tags, each with its
+`size`/`align`; these are derived from `type` and the target, so a `cell`'s
+`type_tag` does not repeat them. A `cell`'s `role` is `input` (a stored
+attr/signal), `derived`, or `recurrent`; `uses` names its behavior handle and
+`inputs` its input cells; `recurrent` adds `depth`, and a stored or recurrent cell
+an `init`. A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
+it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
+names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
+record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
+`%TypeId`.
 
 ### 15.5 Compilation Modes
 
