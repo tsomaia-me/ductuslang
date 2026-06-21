@@ -152,6 +152,15 @@ Before responding:
 - Guessing when you should be asking
 - Silently resolving ambiguity instead of surfacing it
 
+## How to explain your points and design to me
+- Plain English. Short sentences. No stacked clauses or nested asides.
+- Lead each point with a small code example, THEN one line explaining it.
+- Cite at most one decision-log id per point, in parentheses, after the plain
+  statement — never a pile of ids mid-sentence.
+- Options: each gets a one-line summary + a code snippet showing the difference.
+  No abstract-prose-only options.
+- If you can't show it with an example, it's too abstract — simplify it or cut it.
+
 # Project Map & Reading Protocol (Ductus)
 
 - `packages/ductus-lang/docs/DECISION_LOG.md` — the decision-of-record: every language decision, atomic, numbered,
