@@ -342,17 +342,53 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
   ```
 
 ### 4.14 Resolved follow-ups (Q4, Q5) — tasks/confirms, not open
-- **Body clause order (Q4) — task:** the node body clause order needs respec (views are cell-like;
-  `parts:`/`incoming:`/`outgoing:` removed/remodeled). The new canonical order is defined during the
-  spec work — captured here so it isn't lost. (Also absorbs Q8a.5's exposition positioning, §5/§8a.)
+- **Body clause order (Q4) — RESOLVED:** **free order** among all members (cells, `view`/`dynamic
+  view`, `incoming`/`outgoing`, `satisfies`, `when:`), **except** `effects:` comes after the members
+  and **`expose:` is always last**. Cell init-order-significance (016-20/144/145) unchanged within the
+  free block. Singletons (≤ once): `satisfies`, `when:`, `effects:`, `expose:`, `default attr`.
+  Enforce the two bottom anchors (`effects:` then `expose:`); free above — light, strict-where-it-
+  gives-shape (confirm enforce-level during spec). Replaces the fixed order 017-162 (which named the
+  now-removed clauses).
 - **Survival confirms (Q5) — blast-radius, not a design open:** the blast-radius (not memory) confirms
   `Type[…]` template slots (016-218+), the `exposition` field (017-183), the `effects:` clause, and
   generic-parameter views (`view items: T`) survive **untouched**. Confirm during spec work.
 
-- **Spec impact (whole of §4):** LOG — rewrite §13.3.3 (parts), §13.4 (parts access), §13.3.7.2
-  (default exposition removed); revise 017-16, 017-24; reserved-word changes (free `parts`, 002-5 /
-  020-8); add the `view` declaration, group, cardinality-conjunction, accepted-universe, and
-  hoisting decisions. SPEC — corresponding sections. Depends on §3.
+### 4.15 Exposition entry catalog (Round 2 — `expose:` respec)
+- **Decision:** the valid `expose:` entries under the views model are:
+  - **view name** (snake_case) → caller-supplied children of that view, in placement order (replaces
+    `parts.X`, 017-164).
+  - **connection-view name** (snake_case) → caller-supplied connections of that view, engaged here in
+    placement order (replaces the `outgoing.<C>` positioning entry, 017-168).
+  - **own placement** (PascalCase): `Helper as h`, `for … as`, `repeat … as` (names hoisted).
+  - **self-sourced connection**: `ConnType: dest` (017-167, unchanged).
+  - **gate blocks** `when …:` / `given …:`, inline `when` (017-176/177, unchanged).
+  - **`@content`** — standalone directive (see §4.16).
+  - **error:** a bare incoming-view name as an entry → points at `name[i].from` / `repeat c in name:`
+    (restates 017-170/171).
+- Carry-overs unchanged: omitted view = no output, not an error (017-191); `.exposition` field
+  (017-183); traversal in entry order (017-192).
+
+### 4.16 `@content` — whole-supplied-body exposition directive (Round 2)
+- **Decision:** `@content` is a **standalone directive** used as an `expose:` entry (and inside a
+  wrapper body). It exposes **everything the node accepts — children + outgoing connections — in the
+  caller's original, interleaved order**. Exact port of the old `expose: parts` (017-180), now
+  explicit (no default exposition, §4.1).
+- **Not a named declaration** (the name would only ever be used in `expose:`). Exposition-only — no
+  expression access; typed access goes through views (a heterogeneous bag isn't bare-indexable, §4.5).
+- **Acceptance unchanged:** a node accepts ONLY what its `view`/`outgoing` declarations say (§4.8). A
+  generic container declares explicit catch-all views (`view rest: Node*`, `outgoing wires:
+  Connection*`). **No "content-alone accepts anything" special case** — forced explicit (user decision).
+- Covers **children + outgoing connections only**; never incoming (incoming isn't body-supplied).
+- **Wrappable:** `Padding as pad:` then `@content` inside tucks the whole body into pad. At most one
+  `@content` per `expose:` scope.
+- **Spelling `@content`** (over `*` — can't be wrapped — and `$content`); `@` = directive (§7).
+
+- **Spec impact (whole of §4 + the `expose:` respec):** LOG — rewrite §13.3.3 (parts), §13.4 (parts
+  access), §13.3.7 incl. §13.3.7.2 (default exposition removed) and the entry catalog (017-160..192);
+  revise 017-16, 017-24, 017-162 (clause order), 017-164/166/168/180/181/182; reserved-word changes
+  (free `parts`, 002-5 / 020-8); add the `view` declaration, group, cardinality-conjunction,
+  accepted-universe, hoisting (§4.10), clause-order (§4.14), exposition-entry (§4.15), and `@content`
+  (§4.16) decisions. SPEC — corresponding sections (§13.3.3 / §13.4 / §13.3.7). Depends on §3.
 
 ---
 
@@ -399,16 +435,17 @@ Q8a.4 (no "incoming supplied" — `outgoing` supplies, `incoming` receives).
   `when:`/attrs/recurrents, and connection traits declaring endpoints (005-54/58, §13.6.1) stay as-is.
   Only the node-side `incoming:`/`outgoing:` clauses change.
 
-**Still `OPEN` — Q8a.5 (engagement positioning of *caller-supplied* connections only):**
-- Self-sourced connections are **unaffected** — placed inline in `expose:`, engage in place
-  (017-106/107/167).
-- Caller-supplied (outgoing) connections **are** exposed (017-180 default interleave; 017-183
-  `.exposition`). Today positioned by two tiers, both carry-over candidates: **anchoring fallback**
-  (021-56 — rides nearest-preceding-sibling placement; survives *explicit* exposition too) and
-  **explicit override** (017-168 `outgoing.<C>` → connection-view **name** in the new model).
-- Removing default `expose: parts` (§4.1) drops only the as-written reduction (021-59), **not**
-  anchoring. Open: carry over both tiers, or drop anchoring and require explicit name-positioning for
-  every supplied connection? Belongs to the `expose:` respec (Q4).
+**Q8a.5 (engagement positioning of caller-supplied connections) — RESOLVED (Round 2, §4.15/4.16):**
+- **The type positions caller-supplied connections; anchoring is dropped.** A caller-supplied
+  (outgoing) connection engages only where the type names its **connection-view** in `expose:`, in
+  placement order within that view. A connection-view not named in `expose:` is live (presence =
+  participation, 017-195/202) but never engaged — same as an unexposed view (017-191).
+- **Self-sourced connections unaffected** — placed inline in `expose:` (`ConnType: dest`), engage in
+  place (017-106/107/167). The interleaving use case (notes + `Plays`) is served by self-sourced
+  connections, so dropping anchoring loses nothing real.
+- Grounded: 017-170 ("engagement order belongs to the source's traversal" = the type) + explicit-only
+  philosophy (§4.1/§4.8). **Retires** anchoring (021-54/56/59), the `outgoing.<C>` positioning entry
+  (017-168), and the bare-`incoming` entry rule (017-170/171 → bare incoming-view-name error).
 
 - **Spec impact (§8a):** LOG — rewrite §13.3.4 (`incoming:`/`outgoing:` clauses → per-declaration
   connection-views), §13.3.4.1 (access → named), parts of §13.3.7 (exposition positioning); revise
@@ -462,3 +499,33 @@ provenance-tracked (025-15/16), but the **ownership category of a `Cell[T]` valu
 
 Plus the cross-cutting **instance citizenship reframe** (§3), which arose while discussing #8 and
 underpins §4.
+
+---
+
+## 7. `LOCKED` — `@` directives generalization
+
+- **Background:** `@content` (the whole-body exposition directive, §4.16) raised "what does `@`
+  mean?" Today `@` is the annotation prefix (decorating declarations) plus a placement flag character
+  (021-119/126). `@content` stands alone, which annotations don't — so the model needs generalizing.
+- **Decision — `@<name>` introduces a directive.** A directive is a **language-provided, closed** set
+  of compiler instructions. Each directive has a fixed **role**:
+  - **applied directive** (everyday word: **annotation**) — attaches to an entity. Current set:
+    `@derive`, `@flag`, `@literal_suffix`, `@reset_on_reopen`, `@reset_on_reload`, trait `@default`.
+  - **standalone directive** — stands alone as an element. Current set: `@content`.
+- **Terminology reframe:** "annotation" → "annotation directive" (the applied role); "annotation"
+  stays as everyday shorthand (keep repeated uses simple in a paragraph).
+- **Why:** gives `@content` a principled home instead of a lonely one-off; one rule for `@`; the
+  family already varies (args / no-args), so naming it is honest. The applied/standalone role split
+  keeps the decorator-vs-structural distinction **explicit**, not blurred.
+- **Closed set, stated explicitly** so naming the concept doesn't imply extensibility. **User-defined
+  directives are OUT OF SCOPE / design-intent only — never spec text** (would be metaprogramming,
+  DISCARDED #1; reflection PARKED §1.4; no postponed decision, 001-5).
+- **Word is "directive," not "attribute"** (attribute connotes user-extensible metaprogramming).
+- **Flag-char carve-out:** `@` is also a placement flag character (021-119); the directive rule
+  excludes the flag-after-TypeRef position. Reword 021-126 "annotation prefix" → "directive prefix".
+- Role split is **descriptive** (applied vs standalone), not an elaborate engine — ~7 fixed items.
+- **Spec impact:** LOG — new §002/§1.4 decision "`@<name>` introduces a directive" + the
+  applied/standalone role taxonomy; reword 021-126; light cross-refs on the annotation decisions
+  (006 / §3.8 `@derive`, 021-116 `@flag`, 005-206+ `@literal_suffix`, 016-54 `@reset_on_reopen`,
+  030-236 `@reset_on_reload`, 005-32/35 `@default`). SPEC — §1.4 (lexical) + annotation sections
+  reframed as "annotation directives."
