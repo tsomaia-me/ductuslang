@@ -21843,10 +21843,11 @@ arm predicates so they are mutually exclusive by construction (e.g. arm
 guards); the predicates themselves still evaluate against runtime cell
 values each commit.
 
-**Behavior table.** A list of `(behavior_id, debug_name,
-input_cell_ids, output_cell_id?)` entries. Behavior IDs are
-content-addressed per §14.6.3. The runtime binds IDs to function
-pointers at program startup.
+**Behavior table.** A list of `(handle, debug_name,
+input_cell_ids, output_cell_id?)` entries, indexed by each behavior's
+`u32` handle (§14.6.3). The runtime binds each handle to the behavior's
+function pointer at program startup; the wide content-addressed identity
+is the cross-build match key, not the table index.
 
 **Stream cells.** A list of stream cell entries. Each:
 
@@ -21994,8 +21995,8 @@ traits; it manages bits in cells and invokes functions by ID.
 
 A *behavior* is a pure function the runtime invokes to compute a derived
 value, a gate predicate, or an effect's desired state — the leaf compute
-the graph (§15.4.1) names by content-addressed id (§14.6.3). The behavior
-IR is:
+the graph (§15.4.1) names by behavior handle (a `BID`, §14.6.3/§15.4.4).
+The behavior IR is:
 
 - **typed** — every value has a concrete type (the §15.4 vocabulary);
 - **SSA with block arguments** — each value is assigned once (`%0`, `%1`,
