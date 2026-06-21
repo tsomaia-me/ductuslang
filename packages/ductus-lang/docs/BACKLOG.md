@@ -65,28 +65,14 @@ are not re-litigated.
 - **Decision:** Already specified — 012-93 (`instant`/`duration` primitives) and 012-132
   (`instant - instant -> duration`), full op set 012-128..143. Nothing to do.
 
-### 1.6 `DEFERRED` — Cluster B: `Cell` return/storage gap (#12) + portals (#13)
-- **Background:**
-  - #12: Can a function read a top-level `Cell` and *return* a `Cell`? Reading is allowed and
-    provenance-tracked (025-15/16), but the **ownership category of a `Cell[T]` value** (borrow vs
-    storable) and what *returning* one means are underspecified.
-  - #13: "Portals" — storable, `Copy`, always-`Option`-on-access references to **owned, non-graph**
-    data (records, etc.), to enable self-referential structures (doubly-linked lists). Distinct
-    from `Handle` (which is graph-only).
-- **Decision:** Deferred to its own discussion. Open framing: portals look mechanically near-identical
-  to `Handle` (Copy, Option-on-resolve, address-like) — first question is whether this is just
-  *generalizing `Handle`* to non-graph data, or a stdlib slotmap on the `raw_*` intrinsics (033-193),
-  rather than a new primitive. Hard parts: liveness for arbitrary owned data (generation stamps),
-  and whether portals are ever writable (read-only guts the doubly-linked-list splice case).
-- **Spec impact:** TBD — own discussion.
+### 1.6 `DEFERRED` — Cluster B: `Cell` return/storage (#12) + portals (#13)
+Deferred to its own discussion. Full framing and numbered open questions (Q8b.1–5) live in
+**§5 (§8b)** — not duplicated here.
 
-### 1.7 `DEFERRED` — Connections under the views model
-- **Background:** The node-side views redesign (§4 below) intentionally left connections out.
-- **Decision:** Deferred. Notes captured for later: a node's supplied connections are always
-  *outgoing*; `outgoing` already constrains them; whether connection *access* reuses `outgoing` or
-  takes its own keyword is open; connection-views would need a direction (incoming vs outgoing),
-  since a connection type doesn't encode which side a node is on.
-- **Spec impact:** TBD — next discussion.
+### 1.7 `LOCKED` — Connections under the views model
+Model decided this session (individualistic per-declaration `outgoing name: Type` / `incoming name:
+Type`, bare = 1, `dynamic ⟹ *`, no groups). Full locked model and the one open follow-up (Q8a.5)
+live in **§5 (§8a)** — not duplicated here.
 
 ---
 
@@ -107,6 +93,14 @@ are not re-litigated.
      reload edge (030-251).
   4. The **effect-`desired:` recurrent** case is covered by the general principle (a recurrent in a
      gated `desired:` arm clears its history on reopen); add a §13.19.4 cross-reference.
+  5. **IR representation (closes the former open gap, Q6):** add a `reset_on_reopen` boolean to the
+     IR, the way `@reset_on_reload` already has one (033-104) — because `@reset_on_reopen` is
+     *runtime-behavioral* (the runtime acts on the reopen edge), not frontend-resolved. **Location
+     nuance:** 033-104 is a *stream-entry* field, but `@reset_on_reopen` attaches to **recurrents**
+     (016-54) and **stream consumers** (016-57), so its IR slot sits on the **recurrent cell entry**
+     (033-82 tuple) and the **consumer/cursor** encoding — *not* the stream entry. **General principle
+     to state:** runtime-behavioral annotations get IR fields; compile-time annotations (`@derive`,
+     `@flag`, `@literal_suffix`, trait `@default`) are frontend-resolved and never appear in the IR.
 - **Why:** Two ad-hoc rules don't compose — a recurrent stream is *both* a recurrent and a stream,
   and neither rule alone says what reopen does to it. A single principle ("drop gap-accumulated
   state, per kind") closes that gap and the effect-`desired:` gap for free.
@@ -123,7 +117,8 @@ are not re-litigated.
 - **Spec impact:** LOG — new governing-principle decision in §13.2.4 (next free §016 id), new
   recurrent-stream-reopen decision (next free §030 id), light cross-refs on 016-54/57, 022-53,
   §13.19.4. SPEC — §13.2.4, §13.18.8 (new "Gating and `@reset_on_reopen`" subsection), §13.18.12,
-  §13.9.7, §13.15.5. Reload-safe: 028-10/11 unaffected. (The IR-representation gap is OPEN — §5.)
+  §13.9.7, §13.15.5. Reload-safe: 028-10/11 unaffected. IR — new §033 field(s) on the recurrent cell
+  entry + consumer/cursor encoding, parallel to 033-104 (Decision 5).
 
 ---
 
@@ -155,9 +150,11 @@ are not re-litigated.
   // you reach it through a borrow and cannot relocate/copy/store the instance itself.
   let kept: Handle[Channel] = weak channels[0]   // to persist, take a Handle (storable)
   ```
-- **Open sub-point:** the *word* "first-class" already has loose uses in the spec (016-163
-  "first-class type", 030-2 "first-class reactive cells", 019-2 "first-class entities", 030-254
-  "not first-class values"). The framing is locked; the label/disambiguation is OPEN (§5).
+- **Resolved (Q7):** define "first-class citizen" **precisely in the new §1.3 decision itself**
+  (nameable / passable / returnable; orthogonal to value-semantics). The spec's existing loose uses
+  (016-163 "first-class type", 030-2 "first-class reactive cells", 019-2 "first-class entities",
+  030-254 "not first-class values") are **left as-is** — **no spec-wide rename**; fix a specific loose
+  use only if the blast-radius shows it *actively* contradicts the precise meaning (none expected).
 - **Spec impact:** LOG — revise 016-219, 017-139, 031-5; add the citizenship/value-semantics
   distinction in §1.3 (one or two new §001 ids — count is OPEN). SPEC — §13.2.10, §5.7
   (opening + §5.7.4), §13.3.6.1, §13.19; minor §3.7.4, §1.3. No IR change (instances already lower
@@ -311,11 +308,47 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
 - **Decision:** `dynamic` prefixes a view to mark a reactive, runtime-varying collection:
   `dynamic view voices: Voice*`. Consumed by operators / `repeat`, not indexed. Drops the verbose
   `Cell[…]`/`[]` spellings — `dynamic` carries the reactivity; multiplicity is still explicit (§4.3).
+- **Resolved (Q1) — a dynamic view is always a list, written `dynamic view name: T*`:** the `*` is
+  **required** (the explicit spelling of its inherent 0+ under no-implicit-multiplicity); the bounded
+  specifiers `?`/`+`/`[=N]`/`[N..M]` are **forbidden** on `dynamic`. **There is no single dynamic
+  view.** This **amends 017-36** (today: `dynamic` excludes *every* cardinality specifier) to:
+  `dynamic` takes *exactly* `*`.
 - **Example:**
   ```
-  dynamic view voices: Voice*
+  dynamic view voices: Voice*                     // ✓ the only dynamic form
+  // dynamic view voice:  Voice    ✗  no single dynamic view
+  // dynamic view voices: Voice+   ✗  bounded specifier forbidden on dynamic
   derived names = voices |> map(fn(v): v.name)    // operators, no [i]
   ```
+
+### 4.12 Views capture only caller-supplied children (Q2)
+- **Decision:** `view`/`dynamic view` capture **only caller-supplied children**. A node's **own
+  (internal) children** are reached by their own mechanisms, never by a view:
+  - single internal child → `as <name>` (in `expose:`)
+  - multiple static internal children → `for … as <name>` (proposal #5 — its **own** mechanism)
+  - dynamic internal children → `repeat … as <name>` (018-60 keyed view)
+- **Why:** Preserves the old supply/internal separation (017-21, 017-58) under the new model: views
+  are the *caller-facing* surface, the `as`-family is the *internal* surface.
+- **Provenance fix:** proposal #5 (`for … as`) is its **own** internal-child mechanism, a sibling of
+  `repeat … as` — **not** "absorbed into views." (§6 row #5 corrected.)
+
+### 4.13 Views count gated-but-frozen children (Q3)
+- **Decision:** Views **count** gated-but-frozen children, and reads return their **frozen values** —
+  because gates *freeze*, they don't remove (022-7/9). Distinct from `dynamic`/`repeat`, which change
+  membership.
+- **Example:**
+  ```
+  view chans: Channel+      // a `when`-gated-off Channel still counts here; its reads are frozen
+  ```
+
+### 4.14 Resolved follow-ups (Q4, Q5) — tasks/confirms, not open
+- **Body clause order (Q4) — task:** the node body clause order needs respec (views are cell-like;
+  `parts:`/`incoming:`/`outgoing:` removed/remodeled). The new canonical order is defined during the
+  spec work — captured here so it isn't lost. (Also absorbs Q8a.5's exposition positioning, §5/§8a.)
+- **Survival confirms (Q5) — blast-radius, not a design open:** the blast-radius (not memory) confirms
+  `Type[…]` template slots (016-218+), the `exposition` field (017-183), the `effects:` clause, and
+  generic-parameter views (`view items: T`) survive **untouched**. Confirm during spec work.
+
 - **Spec impact (whole of §4):** LOG — rewrite §13.3.3 (parts), §13.4 (parts access), §13.3.7.2
   (default exposition removed); revise 017-16, 017-24; reserved-word changes (free `parts`, 002-5 /
   020-8); add the `view` declaration, group, cardinality-conjunction, accepted-universe, and
@@ -323,26 +356,89 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
 
 ---
 
-## 5. `OPEN` — not yet resolved (resume here)
+## 5. #8 — Connections under the views model (`LOCKED`) + Cluster B portals/`Cell` (`OPEN`)
 
-- **Dynamic single view** — what `dynamic view x: Post` (single + dynamic) means, or whether only
-  collections may be dynamic.
-- **Own-emitted children aggregation** — do views see the node's own `expose:`-emitted children
-  (e.g. a `for`-emitted bank of 16 oscillators), or only caller-supplied? Old spec kept them apart
-  (017-21, 017-58); the views model reopens it.
-- **Gated children in views** — gates freeze, don't remove (022-7/9), so views *count* gated-but-
-  frozen children and reads return frozen values (unlike `dynamic`/`repeat`, which change the
-  count). Believed correct; needs an explicit yes.
-- **Body clause order** — respec needed (parts:/incoming:/outgoing: changed; views are cell-like).
-- **Survival confirms** — `Type[…]` template slots (016-218+), the `exposition` field (017-183),
-  the `effects:` clause, and generic-parameter views (`view items: T`) are believed unaffected;
-  confirm rather than assume.
-- **`@reset_on_reopen` IR representation** — none exists today (cf. 033-104 for `@reset_on_reload`);
-  closing it needs new §033 decision(s) parallel to 033-104. Whether to do it now or track
-  separately is OPEN.
-- **"first-class" terminology** — the word is overloaded in the spec; the §3 framing is locked, the
-  label/disambiguation is not.
-- **Connections** (§1.7) and **Cluster B / portals** (§1.6) — full chunks deferred.
+### 5a (§8a) `LOCKED` — Connections: individualistic per-declaration model
+Connections get the **individualistic, per-declaration** treatment — parallel to views, but with their
+own keywords and direction semantics. (Was §1.7, deferred; decided this session.)
+
+- **Form:** `outgoing name: Type <card>` (node is `from`) and `incoming name: Type <card>` (node is
+  `to`). Direction-keyword, name, type, opt-in cardinality. Replaces the `incoming:`/`outgoing:`
+  comma-list clauses (017-81/84). (`view` stays node-only; connections use their own keywords — the
+  earlier `view x: incoming SomeConn` candidate is rejected.)
+- **bare = 1, no implicit multiplicity — ALL directions** (incoming too). Reverses 017-84 (bare =
+  `0..`). Fan-in / multi-origin writes `*` (or `+`/`[N..M]`). Coherence over the one-char convenience.
+- **`dynamic` ⟹ `*`:** `dynamic outgoing`/`dynamic incoming` = `*` + runtime membership; inherits §4.11
+  (Q1); replaces the 017-36 exclusion.
+- **Cardinality semantics differ by direction (preserved):** `outgoing` = **local-supply** bound
+  (017-83); `incoming` = **aggregate** reception bound across all sources (caller-placed +
+  self-sourced, 017-88/117). bare-1 incoming = "exactly one, from any source, may target me,"
+  aggregate-checked.
+- **No groups for connections** (Option A; the `group` keyword was rejected — grouping stays
+  node-only). Homogeneous "one of {A,B}" models as a single pairs/cartesian connection type
+  (019-33/38), not a group.
+- **Named access** replaces `outgoing.<C>`/`incoming.<C>` (017-97): body access by view name (`name`,
+  `name[i]` under guaranteed min, `for c in name:`); exposition positioning by name (replaces 017-168);
+  back-connection `name[i].from`, `repeat c in name:`. Named slots permit two slots of the **same**
+  connection type — impossible under type-keyed access.
+- **Self-sourced connections unaffected** (017-121) — internal, placed in `expose:` with `ConnType:
+  dest` syntax, exempt from the caller-facing signature.
+- **Reserved-field cleanup:** `parts`/`incoming`/`outgoing` stop being bulk fields (020-8/020-20);
+  `incoming`/`outgoing` survive as direction keywords; `parts` retires for `view`.
+  `exposition`/`from`/`to`/`pair`/`subject` stay.
+
+**Resolves:** Q8a.1 (replace clauses — yes), Q8a.2 (direction via keyword — yes), Q8a.3 (inherit the
+individualistic form; **diverge** on groups [none] + incoming-cardinality *meaning* [aggregate]),
+Q8a.4 (no "incoming supplied" — `outgoing` supplies, `incoming` receives).
+
+**Confirm during spec work (expected outcomes, not open decisions):**
+- Connection-view *access* yields transient connection-reference borrows under the same borrow-window
+  V1 as node-view access (017-48 analog).
+- Bare-vs-array body access mirrors views: bare (=1) = single connection ref; `*`/`+`/`[N..M]` = array.
+- Blast-radius bound: connection-*type* bodies are **untouched** — `from`/`to`/`pairs`, connection
+  `when:`/attrs/recurrents, and connection traits declaring endpoints (005-54/58, §13.6.1) stay as-is.
+  Only the node-side `incoming:`/`outgoing:` clauses change.
+
+**Still `OPEN` — Q8a.5 (engagement positioning of *caller-supplied* connections only):**
+- Self-sourced connections are **unaffected** — placed inline in `expose:`, engage in place
+  (017-106/107/167).
+- Caller-supplied (outgoing) connections **are** exposed (017-180 default interleave; 017-183
+  `.exposition`). Today positioned by two tiers, both carry-over candidates: **anchoring fallback**
+  (021-56 — rides nearest-preceding-sibling placement; survives *explicit* exposition too) and
+  **explicit override** (017-168 `outgoing.<C>` → connection-view **name** in the new model).
+- Removing default `expose: parts` (§4.1) drops only the as-written reduction (021-59), **not**
+  anchoring. Open: carry over both tiers, or drop anchoring and require explicit name-positioning for
+  every supplied connection? Belongs to the `expose:` respec (Q4).
+
+- **Spec impact (§8a):** LOG — rewrite §13.3.4 (`incoming:`/`outgoing:` clauses → per-declaration
+  connection-views), §13.3.4.1 (access → named), parts of §13.3.7 (exposition positioning); revise
+  017-81/84/97/168, 020-8/020-20; the 017-36 exclusion folds into the `dynamic ⟹ *` rule. SPEC —
+  §13.3.4 / §13.6 cross-refs. Depends on §3 + §4.
+
+### 5b (§8b) `DEFERRED` — Cluster B: portals (#13) + `Cell` return/storage (#12)
+Own discussion (was §1.6). Proposal-form open questions; **no decisions yet.**
+
+**#13 Portals — proposal:** a **storable, `Copy`, always-`Option`-on-access** reference to **owned,
+non-graph** data (records, arbitrary values), to enable self-referential structures (e.g.
+doubly-linked lists). Distinct from `Handle` (graph entities only, 017-145/146); mechanically
+near-identical (Copy, Option-on-resolve, address-like).
+- **Q8b.1** — Is a portal just **`Handle` generalized** to non-graph data, or a **stdlib slotmap** on
+  the `raw_*` intrinsics (033-193) — rather than a new language primitive?
+- **Q8b.2** — Liveness for arbitrary owned data needs **generation stamps** (017-157 analog): who pays
+  the cost, and how does the compiler decide which allocations to instrument (only those a portal is
+  taken to)?
+- **Q8b.3** — Are portals ever **writable**? Read-only portals can't splice a doubly-linked list
+  (can't set `prev`/`next` after construction) — gutting the headline use case. If writable, how does
+  it reconcile with localized mutability (writing through a portal mutates non-local state)?
+- **Q8b.4** — A portal into a **record field dangles when the record moves** (category-B storage,
+  013-3). Caught at runtime (generation stamp → `None`) or forbidden at compile time?
+
+**#12 `Cell` return/storage — open:** reading a top-level `Cell` inside a function is allowed and
+provenance-tracked (025-15/16), but the **ownership category of a `Cell[T]` value is unpinned.**
+- **Q8b.5** — Is `Cell[T]` a **call-scoped borrow** (unstorable) or a **freely-copyable storable
+  reference** (like `Handle`)? That decides what *returning* a `Cell[T]` from a function means.
+  (Connects to portals — both are "references to non-instance data.")
+- **Spec impact:** TBD — own discussion.
 
 ---
 
@@ -354,15 +450,15 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
 | 2 | explicit lifetimes | DISCARDED |
 | 3 | future-forms list | PARKED |
 | 4 | Sync/Async connection markers | DISCARDED |
-| 5 | `as`-name on compile-time `for` | absorbed into views/exposition (`as`-names, hoisting) |
+| 5 | `as`-name on compile-time `for` | LOCKED — its **own** internal-child mechanism (`for … as`), sibling of `repeat … as`; not absorbed into views (§4.12) |
 | 6 | trait-bound `for`/parts | absorbed into views (trait selectors) — §4 |
 | 7 | per-declaration named parts | became the views model — §4 |
 | 8 | placing groups (chords) | became the Group concept — §4.5/4.6 |
 | 9 | slots | subsumed by named views — §4 |
 | 10 | `instant` type | NO-ACTION (already specified) |
 | 11 | `@reset_on_reopen` unification | LOCKED — §2 |
-| 12 | `Cell` access/return | DEFERRED (Cluster B) — §1.6 |
-| 13 | portals | DEFERRED (Cluster B) — §1.6 |
+| 12 | `Cell` access/return | DEFERRED (Cluster B) — §5 (§8b) |
+| 13 | portals | DEFERRED (Cluster B) — §5 (§8b) |
 
 Plus the cross-cutting **instance citizenship reframe** (§3), which arose while discussing #8 and
 underpins §4.
