@@ -552,7 +552,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 005-228. `@literal_suffix` registrations follow normal name-visibility rules: visible in the defining module and to importers. (§3.9.5)
 005-229. The built-in `duration` suffixes are globally visible. (§3.9.5)
 
-## 006. Calls & Argument Forms — 32 Rules
+## 006. Calls & Argument Forms — 33 Rules
 
 006-1. Every call site chooses positional or named argument form per call, not per callee. (§3.5)
 006-2. Named form pairs each argument with its parameter name as `name: value`: `clamp(value: temperature, lower: 0, upper: 100)`. (§3.5.1)
@@ -586,6 +586,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 006-30. Tuple patterns are always positional. (§3.5.7)
 006-31. A record pattern is exhaustive by default — it must bind every field; an unneeded field is bound to `_` (`field: _`), or a trailing `...` rest token elides all remaining unlisted fields (opt-in; see 006-32). (§3.5.7)
 006-32. The `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — is an opt-in, non-binding elision permitted at the trailing position of record, tuple, and variant-payload patterns; it matches and discards every field or component not explicitly listed, and without it patterns remain exhaustive. (§3.5.7)
+006-33. In a trait-method named call the argument names are the trait's declared parameter names, not the implementing `fulfill`'s: a `fulfill` may give its parameters different body-local names, but `v1.add(b: v2)` uses trait `Add`'s `b` even where the impl wrote `right`. Named form thus works uniformly at generic (`T: Add`) and concrete sites, and the checker does not require `fulfill` parameter-name equality. (The receiver is passed positionally per 006-21, so 005-90's receiver-name freedom is unaffected.) (§3.5.5)
 
 ## 007. Numerics — 223 Rules
 
@@ -1314,7 +1315,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 012-145. `Option`/`Result` wrappings of `duration`/`instant` store directly in a reactive cell when discriminant plus payload fits the platform atomic word, and otherwise use index-based pool storage. (§9.4.3)
 012-146. The compiler chooses the cell-storage strategy; the source-level wrapped type is permitted on all platforms. (§9.4.3)
 
-## 013. Ownership & Mutability — 243 Rules
+## 013. Ownership & Mutability — 244 Rules
 
 013-1. Category A (value ownership: function call, function return, let-rebinding, for-loop iteration variable) defaults to borrow-equivalent: the callee or new binding gets read-only access and the source binding survives. (§11.1)
 013-2. Category A consumption is opt-in, requiring `own` in the signature and `move` at the call site. (§11.1)
@@ -1393,6 +1394,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 013-75. Values of a `Copy` type are duplicated implicitly at every use site (assignment, argument passing, return) without ownership transfer; the original binding remains usable. (§11.4)
 013-76. Non-primitive types opt into `Copy` via `@derive(Copy)` or explicit `satisfies Copy`; the two forms have identical semantics. (§11.4)
 013-244. A generic type conditionally opts into a methodless marker like `Copy` via a `where` clause on its `satisfies` clause (005-234): `type Pair[T]:` with `satisfies Copy where T: Copy` makes `Pair[T]` `Copy` exactly for instantiations where `T: Copy` — the same conditional pattern the stdlib uses for `Range[T]` (§11.4.1). No `fulfill` block is written, `Copy` being methodless. (§11.4)
+013-245. The `move` keyword's operand may be a field-access l-value path rooted in an owned binding — `move value.handle`, `move rec.a.b` — not only a bare identifier; this performs a partial move (§14.7.3), consuming that field while the rest of the binding stays live, and is the sole exception to field access reading without ownership transfer (§11.8.3). The root must be owned (an `own` parameter or owning local), and a method-call operand stays forbidden (`move x.f()` ✗ — a call is not an l-value). (§11.8.5)
 013-77. All primitive numeric types (`i8`–`i128`, `u8`–`u128`, `isize`, `usize`, `f32`, `f64`), `bool`, and `char` automatically implement `Copy`. (§11.4.1)
 013-78. `string`, `duration`, and `instant` automatically implement `Copy` (`duration` and `instant` are i64-sized scalars). (§11.4.1)
 013-79. A tuple implements `Copy` when all of its components are `Copy`. (§11.4.1)
