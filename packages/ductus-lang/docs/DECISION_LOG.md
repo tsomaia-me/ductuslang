@@ -588,7 +588,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 006-32. The `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — is an opt-in, non-binding elision permitted at the trailing position of record, tuple, and variant-payload patterns; it matches and discards every field or component not explicitly listed, and without it patterns remain exhaustive. (§3.5.7)
 006-33. In a trait-method named call the argument names are the trait's declared parameter names, not the implementing `fulfill`'s: a `fulfill` may give its parameters different body-local names, but `v1.add(b: v2)` uses trait `Add`'s `b` even where the impl wrote `right`. Named form thus works uniformly at generic (`T: Add`) and concrete sites, and the checker does not require `fulfill` parameter-name equality. (The receiver is passed positionally per 006-21, so 005-90's receiver-name freedom is unaffected.) (§3.5.5)
 
-## 007. Numerics — 223 Rules
+## 007. Numerics — 227 Rules
 
 007-1. The built-in numeric primitive type set is fixed at fourteen types. (§4.1)
 007-2. The signed integer types are `i8`, `i16`, `i32`, `i64`, `i128`, and `isize`. (§4.1)
@@ -670,6 +670,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 007-77. Binary operators are left-associative, comparison and `..` are non-associative, and prefix operators are right-associative. (§4.4.7)
 007-78. Each arithmetic policy variant — wrapping `…%`, saturating `…|`, checked `…?` — binds at its base operator's tier (additive, multiplicative, or prefix negation). (§4.4.7)
 007-79. Comparison operators `<`, `<=`, `>`, `>=` produce `bool` and are defined on both integer and float kinds. (§4.4.3)
+007-227. Comparison operators `<`, `<=`, `>`, `>=` constrain their operands to `Ord` — the operand-trait row of the §4.4.6 inferred-constraint mapping, parallel to arithmetic→`Add`/`Sub`/… (007-41) and equality→`Eq` (007-83). (§4.4.3)
 007-80. Mixed-kind comparisons widen per §4.5 before comparing. (§4.4.3)
 007-81. Float comparison follows IEEE 754 NaN semantics: `NaN < x` is `false`. (§4.4.3)
 007-82. Comparison chaining is rejected by the type system though the grammar admits it: `a < b < c` ✗. (§4.4.3)
@@ -1326,7 +1327,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 013-7. Category A is the only ownership category requiring an explicit call-site consumption marker. (§11.1)
 013-8. Nothing outside a function body is mutable: module-level bindings, record fields, function parameters, and enum variants cannot be declared `mut`. (§11.1)
 013-9. At every moment, every value has exactly one real owner. (§11.1)
-013-10. Exception: `Signal[T]` parameters and reactive composite bindings name reactive cells, so multiple live aliases to the same cell may coexist without violating single ownership. (§11.1)
+013-10. Exception: `Cell[T]` parameters and reactive composite bindings name reactive cells, so multiple live aliases to the same cell may coexist without violating single ownership. (§11.1)
 013-11. Materialization of a reactive composite (at the boundaries of §13.2.9.7) produces a concrete instance subject to standard single-ownership rules from that point on. (§11.1)
 013-12. Single writer: a `mut` binding is the only path through which its underlying value may be mutated. (§11.1)
 013-13. The single-writer rule is enforced entirely at compile time, with no runtime check. (§11.1)
@@ -2729,7 +2730,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 021-142. A placement introducing its own children body via `:` owns the rest of its line and the following indented block; it cannot share its line with sibling placements. (§13.8.10)
 021-143. A `:`-bearing placement may carry inline children on its own line when no sibling placements share the line: `SomePart: Child1 Child2 Child3`. (§13.8.10)
 
-## 022. Conditional Activation (Gates) — 119 Rules
+## 022. Conditional Activation (Gates) — 120 Rules
 
 022-1. A gate is a predicate or discriminant that conditions whether a node instance, a connection instance, or an exposed subtree is active. (§13.9)
 022-2. Gates are the structural conditional layer, distinct from the value conditionals `if`/`else`/`match`. (§13.9)
@@ -2789,6 +2790,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 022-56. A gated node's outputs do not propagate; its outgoing connections do not deliver to their destinations. (§13.9.7)
 022-57. A gated connection does not propagate at all; its destination receives nothing through that connection. (§13.9.7)
 022-58. A false-to-true predicate flip is a propagation event: the frozen deriveds re-evaluate against current upstream state in topological order. (§13.9.7)
+022-120. The gate-open re-evaluation snap is scheduled within the **same commit** that flips the predicate false→true — not the next commit; this contrasts with a reload predicate (next commit, 022-79) and a connection re-point (next commit, 023-49). (§13.9.7)
 022-59. Gated-period values are never replayed at gate-open; they are recomputed as of now, and downstream sees a single jump from frozen to current value. (§13.9.7)
 022-60. The gate primitive performs no smoothing of open-snap discontinuities; smoothing is delegated to the parameter system. (§13.9.7)
 022-61. On a true-to-false flip the subtree freezes: its cells hold their last values and stop recomputing. (§13.9.7)
@@ -3492,10 +3494,10 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 030-152. `take[T, P: StreamPolicy](source: Stream[T, P], n: i32) -> Stream[T, P]` emits the first `n` events, after which the output stream is complete and emits no more. (§13.18.9)
 030-153. `take_first` is equivalent to `take(1)`. (§13.18.9)
 030-154. `skip` and `take` both preserve the source's policy and capacity by threading the policy parameter `P`. (§13.18.9)
-030-155. `count[T](source: Stream[T]) -> Signal[i64]` is the running count of observed events, starting at `0`. (§13.18.9)
-030-156. `fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Signal[A]` is a running accumulator whose initial value is `init`. (§13.18.9)
-030-157. `any[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]` starts `false` and becomes `true` once any event satisfies `pred`. (§13.18.9)
-030-158. `all[T](source: Stream[T], pred: fn(T) -> bool) -> Signal[bool]` starts `true` and stays `true` while every event so far satisfies `pred`. (§13.18.9)
+030-155. `count[T](source: Stream[T]) -> Derived[i64]` is the running count of observed events, starting at `0`. (§13.18.9)
+030-156. `fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Derived[A]` is a running accumulator whose initial value is `init`. (§13.18.9)
+030-157. `any[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]` starts `false` and becomes `true` once any event satisfies `pred`. (§13.18.9)
+030-158. `all[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]` starts `true` and stays `true` while every event so far satisfies `pred`. (§13.18.9)
 030-159. `map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]` preserves policy and capacity by threading `P`. (§13.18.9)
 030-160. `filter[T, P: StreamPolicy](source: Stream[T, P], pred: fn(T) -> bool) -> Stream[T, P]` preserves policy and capacity by threading `P`. (§13.18.9)
 030-161. `merge(a: RingStream[T, A], b: RingStream[T, B]) -> RingStream[T, N]` interleaves events from both sources in commit order. (§13.18.9)
@@ -3952,7 +3954,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 226 Rules
+## 033. Compilation Model & IR — 224 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4015,6 +4017,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-59. Surface connections and `|>` lower to `connection`. (§15.4.1)
 033-250. An effect-position `|>` (binding the effect's pipe-target parameter) lowers to the effect entry's `parameter_bindings`, not a `connection` entry; only topological `|>`/connections produce `connection` entries: `label |> print` emits `effect App.print:0 ... params [message: App.label]` with no connection and an empty `exposes`. (§15.4.1)
 033-252. Gating is encoded in the graph IR as first-class gate objects — `{id, pred (behavior handle + input cell IDs), guards (gated-instance paths), gate_parent (enclosing gate id or null)}` — and each gated cell, connection, or effect references its gate by `id`; nesting is gate→gate via `gate_parent`, which the runtime walks to compose effective activation. (§15.4.1)
+033-256. A gate's effective activation — its own predicate composed up the `gate_parent` chain — drives transitive freeze of its guarded instances and the timing of `suspend`/`resume` reconciler-hook delivery on gate transitions. (§15.4.1)
 033-60. An operator lowers to a `scope` with ports. (§15.4.1)
 033-61. A surface stream lowers to the `stream` primitive. (§15.4.1)
 033-62. A surface effect lowers to the `effect` primitive. (§15.4.1)
@@ -4026,13 +4029,14 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-68. Scope hierarchy is encoded in the entries' fully-qualified paths. (§15.4.1)
 033-69. A cell entry's `id` is the cell's fully-qualified declaration path. (§15.4.1)
 033-70. A cell entry's `type` is a primitive type tag per §4.1, extended with the string-pool-index and dynamic-pool-index types. (§15.4.1)
+033-257. A cell entry carries a `kind` — `input` (a stored, externally-written cell), `derived`, or `recurrent` — classifying it; the kind leads the cell's text-form declaration. (§15.4.1)
+033-258. An aggregate-valued graph cell — a record, enum, or tuple — is typed `pool_index<%TypeId>` (its layout living in the `types` table), never an inline `%TypeId`. (§15.4.1)
 033-73. A cell entry's optional `initial_value` is the compile-time initial value for reactive-safe initializers. (§15.4.1)
 033-74. A cell entry records `size` and `alignment` explicitly — derivable from `type` but recorded for cross-implementation interop. (§15.4.1)
 033-75. A connection entry's `from` is the source instance's fully-qualified path. (§15.4.1)
 033-76. A connection entry's `to` is the destination instance's fully-qualified path, or `null` for sink-side connections. (§15.4.1)
 033-77. A connection entry records the connection's declared `connection_type`. (§15.4.1)
 033-78. A connection entry's `attrs` is an ordered list of `(name, value)` pairs. (§15.4.1)
-033-79. A connection entry's optional `when` is a gate predicate encoded as a behavior ID plus its input-cell list. (§15.4.1)
 033-80. Derived dependency edges are recorded as `(derived_cell_id, [input_cell_ids])` pairs. (§15.4.1)
 033-81. The runtime uses derived dependency edges for dirty-set propagation and topological evaluation ordering. (§15.4.1)
 033-82. Recurrent dependency edges are `(recurrent_cell_id, [input_cell_ids], output_history_N, input_lookback_map)` tuples. (§15.4.1)
@@ -4040,9 +4044,6 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-84. A recurrent edge's `output_history_N` is the declared `[N]` self-history depth, defaulting to 1. (§15.4.1)
 033-85. A recurrent edge's `input_lookback_map` maps input cell IDs referenced via `.past(k, ...)` to their maximum `k`. (§15.4.1)
 033-86. A recurrent whose expression is an `observe` block additionally carries the observe's per-arm trigger sets. (§15.4.1)
-033-87. Each gated instance records its predicate in compiled form: a behavior ID plus the input cell IDs the predicate reads. (§15.4.1)
-033-88. Each gated instance records a `gate_parent`: the path of the nearest enclosing gated instance, or `null` if none. (§15.4.1)
-033-89. The runtime composes an instance's own predicate with its `gate_parent` chain to obtain effective activation, which drives transitive freeze and suspend/resume delivery. (§15.4.1)
 033-90. Block selectors `when` and `given` lower to per-arm gates: each arm becomes a gated subtree. (§15.4.1)
 033-91. A `when`-block arm's gate predicate is the arm's guard. (§15.4.1)
 033-92. A `given`-block arm's gate predicate is the arm's variant test against the scrutinee. (§15.4.1)
@@ -4067,8 +4068,6 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-113. An effect entry's `parameter_bindings` are `(parameter_name, source_cell_id | value_literal)` pairs. (§15.4.1)
 033-114. An effect entry's `desired_cell_ids` name the cells declared in the instance's `desired:` block. (§15.4.1)
 033-115. An effect entry's `observed_cell_ids` name the cells declared in the instance's `observed:` block. (§15.4.1)
-033-116. An effect entry's `gate_parent` is the path of the nearest enclosing gated instance, or `null` if the effect is never gated. (§15.4.1)
-033-117. The runtime uses an effect's `gate_parent` to compute effective activation and to time `suspend`/`resume` reconciler-hook delivery on enclosing-subtree gate transitions. (§15.4.1)
 033-118. Reconciler dependencies are `(effect_type_name, [concrete_type_parameters])` pairs the host must register via `runtime.register_reconciler` before the runtime can enter the live state. (§15.4.1)
 033-119. A non-generic effect's reconciler-registration key has an empty type-parameter list. (§15.4.1)
 033-120. Each generic-effect instantiation is a distinct reconciler-registration key. (§15.4.1)
@@ -4114,6 +4113,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 033-184. Field/index assignment is a trait `call`, not an IR primitive, so in-place reuse follows the ordinary ownership rules. (§15.4.4)
 033-251. In the IR text form a behavior reference is a `BID` — `'B@' HEX+` — rendering the behavior's `u32` handle (§14.6.3) in hexadecimal (`B@d1`, `B@aa10`); the wide content-addressed identity is not spelled in the text form. (§15.4.4)
 033-254. The IR module text form has a normative grammar for the module, type-table, and graph sections (§15.4.6), parallel to the behavior grammar (§15.4.4); size and alignment are derived from type and the target and are not repeated on graph cell tags. (§15.4.6)
+033-259. A graph cell's text-form line is kind-led — `input`/`derived`/`recurrent <path> : <type>` — parallel to `behavior`/`gate`/`effect`; a derived or recurrent cell renders `uses BID` and `inputs [...]` (a recurrent adds `depth`) inline, serializing its behavior-table association (033-95) and dependency edges (033-80/033-82), which remain the runtime's propagation structure. (§15.4.6)
 033-255. An effect's desired state is a single whole-record cell typed `pool_index<%T>` holding the desired-builder behavior's output record; the runtime scatters it into per-field desired state. (§15.4.5)
 033-185. Direct calls are statically resolved: `call f(move %a, %b)`. (§15.4.4)
 033-186. `call.dyn %obj #m (…)` is the vtable call on a `dyn` trait object. (§15.4.4)
