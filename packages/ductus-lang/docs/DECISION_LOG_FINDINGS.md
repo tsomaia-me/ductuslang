@@ -57,13 +57,13 @@ Surfaced by the syntax-completeness sweep (reconstruction test over every §). T
 
 Status key (added 2026-06-13 after the legacy-grammar pass): **✓** closed and applied to spec+log from the legacy grammar with owner approval; **◐** partially closed (sub-question remains); unmarked = still open.
 
-**The still-open items below are now tracked as proper ruling tickets in `BACKLOG.md`** (Section 2 open-syntax §7–12, Section 3 open-semantic §13–15). This appendix is retained as the discovery record; do not re-litigate ✓ items. Each still-open bullet is annotated below with its `→ BACKLOG §N` ticket.
+**Re-audit 2026-06-21:** every open-*syntax* item the sweep raised below was in fact already decided in the log (the sweep mis-flagged them); they are now marked **✓ RESOLVED** with their governing entries, and one (record-pattern rest) was **amended** to add an opt-in `...`. Only three genuine open *semantic* questions remain, tracked as ruling tickets in `BACKLOG.md` Section 2 (§7–9). This appendix is retained as the discovery record; do not re-litigate ✓ items.
 
 
-RESOLVED (F038, session 1): there is **no** separate grammar document, and none is planned (DECISION_LOG 001-3/002-27; SPEC "there is no separate grammar document"). The ~23 SPEC sites that once delegated micro-syntax to "grammar §x.y" were **inlined or removed**. The items below are therefore open *syntax decisions the SPEC never makes* — not dangling deferrals to a missing file — and are now carried as ruling tickets in `BACKLOG.md` (open-syntax §7–12, open-semantic §13–15).
+RESOLVED (F038, session 1): there is **no** separate grammar document, and none is planned (DECISION_LOG 001-3/002-27; SPEC "there is no separate grammar document"). The ~23 SPEC sites that once delegated micro-syntax to "grammar §x.y" were **inlined or removed**. The items below are therefore open *syntax decisions the SPEC never makes* — not dangling deferrals to a missing file. (The open-*syntax* questions the sweep raised were all already resolved in the log; see the 2026-06-21 re-audit above. Only the three remaining open *semantic* items are carried as ruling tickets in `BACKLOG.md` Section 2, §7–9.)
 
 ### Lexis & layout (lexical/grammatical syntax decisions, inlined into SPEC per F038)
-- ◐ Base identifier alphabet, leading-digit rule, Unicode allowance, case-sensitivity (§1.4 legislates only the `#` rule). **→ BACKLOG §8**
+- ✓ **RESOLVED — already specified (mis-flagged as open):** §1.4 fixes the identifier alphabet — a Unicode `Letter` or `_` start (no leading digit), Unicode letters/digits/`_` to continue, and `#` legal as a leading/infix/terminating character. 002-13/002-19, SPEC §1.4.
 - ✓ Keyword reservedness per class: reserved-everywhere vs contextual (ledgered F005, ruled & applied).
 - ✓ Indentation discipline (unit; tabs vs spaces) and line-continuation outside separated lists.
 - ✓ **RULED (2026-06-20):** operator bodies follow the function rule (002-24) — inline single-expression body allowed (`operator double(s): s * 2`), indented block when declarations are present; 029-130, SPEC §13.17.4. (Declaration bodies were already settled: 002-23 record-likes indented-only, 002-24 functions/control-flow inline-or-block.)
@@ -72,9 +72,9 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 - ✓ **RULED (2026-06-20):** literal suffixes unified — all appended directly (no underscore); the 14 numeric type names are pre-registered built-in suffixes (`5i32`) alongside the durations, and the underscore is solely a digit separator. 007-19/34/35, 005-209, §3.9.4/§4.3. (The `255_byte` underscore form is gone; alias/domain literals use `byte(255)` or a custom `@literal_suffix`.)
 
 ### Operators & precedence
-- Full precedence/associativity table among `+ - * / \ %`, shifts, `& ^ |`, comparisons, `is`/`is not`, the `%`/`|`/`?` cast-policy families, and `..` — SPEC states only fragments ("arithmetic binds tighter"; `|`≈`|>` low/left). **→ BACKLOG §7**
-- Range operator `..` precedence vs arithmetic (compound bounds are always parenthesized in examples; bare `0..N + 1` undecided). **→ BACKLOG §7**
-- Unary `~` position (prefix vs postfix): no value-level example anywhere (rides with the ledgered `-%`/`-|` unary-position item). **→ BACKLOG §7**
+- ✓ **RESOLVED — already specified (mis-flagged as open):** §4.4.7 gives the full 15-tier operator precedence/associativity table (`|>`; `or`; `and`; `not`; bitwise `|`/`^`/`&`; `..`; comparison; shifts; additive; multiplicative; prefix; postfix; `::`). 007-73/007-70.
+- ✓ **RESOLVED — already specified:** §4.4.7 — `..` (tier 8) binds looser than arithmetic, so `0..n + 1` is `0..(n + 1)`. 007-73.
+- ✓ **RESOLVED — already specified:** §4.4.7 tier 13 — unary `-`/`~`/`weak` (and the policy negations `-%`/`-|`/`-?`) are prefix, right-associative. 007-73.
 
 ### Strings, tuples, arrays
 - ✓ **RULED (2026-06-20):** interpolation `{expr}` formats only via `Display` — no in-brace format-specifier mini-language (use method/stdlib calls); the sole literal-brace escape is `\{` (no `{{`); raw strings never interpolate. 012-149, SPEC §9.1.9.
@@ -86,11 +86,11 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 ### Types, records, enums, conversions
 - ✓ **RULED (2026-06-20):** explicit generic-enum variant instantiation parameterizes the enum — `Option[i32]::None` — with no separate `::[…]` turbofish (`Enum[args]` is already unambiguous, §9.3.2). 009-120, SPEC §6.2.3.
 - ✓ **RULED (2026-06-20):** value-position `dyn` binds a single primary expression (parens for compounds); `dyn a + b` = `(dyn a) + b`. 008-72, SPEC §5.2.5. (Positions settled earlier by F037.)
-- Record-intersection chaining `A & B & C` / parenthesized RHS (associativity stated only for bound-position conjunction). **→ BACKLOG §9**
+- ✓ **RESOLVED — already specified:** §5.1 — `&` conjunction is commutative and associative, so `A & B & C` ≡ `(A & B) & C`, grouping-independent. (008-73 admits `Type[A & B]` by the same rule.)
 - ✓ **RULED (2026-06-20):** `Type[…]` admits a trait intersection — `Type[Drivable & Insurable]` — via the same `&` conjunction as a bound (§5.1). 008-73, SPEC §5.7.1.
-- Named enum payload field defaults (`Rectangle(width: f64 = 1.0)`). **→ BACKLOG §10**
+- ✓ **RESOLVED — already specified:** variant payload fields **do** take defaults (`Rectangle(width: f64 = 1.0, height: f64 = 1.0)`); construction may omit a defaulted field (`Rectangle(width: 10.0)`). 009-55/56/57, SPEC §6.2.1.
 - ✓ Zero-field records / zero-variant enums: declarable? empty-body spelling?
-- Record pattern surface: concrete shape, whether every field must be bound, rest-pattern token (none exists anywhere). **→ BACKLOG §11**
+- ✓ **AMENDED (2026-06-21):** record patterns were already specified (named call-site form, exhaustive, `field: _` to drop — 006-29/006-31, §3.5.7); owner added an **opt-in trailing `...` rest token** (non-binding, three dots, ≠ the `..` range op) that elides unlisted fields/components, applied uniformly to record, tuple, and variant-payload patterns. Amends 006-31; adds 006-32; SPEC §3.5.7/§9.2.2/§6.2.4.
 - ✓ **RULED (2026-06-20):** a newtype is destructured by a positional pattern `UserId(n)` (mirrors tuple/variant patterns); the `T(value)` extractor coexists. 009-121, SPEC §6.3.2.
 - ✓ **RULED (2026-06-20):** `with` is low-precedence, left-associative; chaining `a with x:1 with y:2` is legal (= the comma-list); a comma-list `with` used as a call argument must be parenthesized. 009-122, SPEC §6.1.5.
 - Fallible-conversion turbofish example aside, no operator-specific turbofish gap (general rule governs).
@@ -102,9 +102,9 @@ RESOLVED (F038, session 1): there is **no** separate grammar document, and none 
 
 ### Reactive surface
 - ✓ **RULED (C1, 2026-06-20):** the conditional-`Copy` surface is `satisfies Copy where T: Copy` — a `where` clause on the bodyless `satisfies` opt-in, no `fulfill` block — generalized to any methodless marker trait. Applied: DECISION_LOG 005-234/013-244 (and 005-230/§3.3.4 narrowed to method-bearing traits); SPEC §3.2/§11.4.1.
-- Multi-segment assignment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring order (only single-segment forms shown). **→ BACKLOG §13**
-- Tuple-component assignability through a `mut` binding and its LHS form. **→ BACKLOG §14**
-- Explicitly-written elaborated borrow signatures: concrete surface (only "Schematically: `fn f(borrow v: T) -> borrow_rooted_in(v) T`" given). **→ BACKLOG §15**
+- Multi-segment assignment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring order (only single-segment forms shown). **→ BACKLOG §7** (genuinely open: the mechanism is set — 013-3/199/209, 033-184 — but the multi-segment desugar order is unstated.)
+- Tuple-component assignability through a `mut` binding and its LHS form. **→ BACKLOG §8** (genuinely open: assignability for `Copy` record/tuple fields is set — §11.4.4, 013-209 — but the tuple-component LHS surface form is unstated.)
+- Explicitly-written elaborated borrow signatures: concrete surface (only "Schematically: `fn f(borrow v: T) -> borrow_rooted_in(v) T`" given). **→ BACKLOG §9** (reframed as the opt-in borrow-rootedness annotation; genuinely open by design — syntax deferred.)
 - ✓ **RULED (2026-06-20):** an inline `observe` (sub-expr / call arg) must be parenthesized; an arm body may be a single expression or an indented block (002-24). 016-277/278, SPEC §13.2.11.1.
-- `default:`/catch-all position in `when:` multi-way and `given` blocks (also ledgered — observe requires last; block forms silent). **→ BACKLOG §12**
+- ✓ **RESOLVED — already specified (the "block forms silent" note was stale):** 022-119 — in a `when:` or `given` block the fallback arm (`otherwise:` / `default:`) must be the last arm; a non-last fallback is a compile error. Observe's `default:`-last is 016-253. SPEC §13.9.12 / §13.2.11.5.
 - ✓ **RULED (2026-06-20):** connection-body member order is free (from/to or pairs each once); generic-connection placement writes type args inline (`Contains[i32]`); `/expr` whitespace is insignificant (`Node/arg` = `Node / arg`); pairs-form `match pair:` must be exhaustive. 019-76/77/78, 021-144, SPEC §13.6/§13.8.5. (Already-settled: body `:` placement 021-12; whitespace-bearing attr parenthesization 021-139.)
