@@ -13,16 +13,14 @@ doc-hygiene reconciliation, the moot no-ops) have been **moved into the implemen
 these (still-live) findings, but their **line numbers have drifted**; section numbers (`§x.y`)
 are stable. Locate any target by `§` + quoted content, not by line number.
 
-**Contents (15 items):** Section 1 — design forks (6 hard forks) · Section 2 —
-open syntax questions (6) · Section 3 — open semantic questions (3). (The 11 open-syntax tickets
-*promoted* in the round-1/round-2 bulk passes were ruled and removed; the 6 items in Section 2 are
-*residual* spec-silent syntax questions that were never promoted — captured here so the tracker is
-complete.)
+**Contents (9 items):** Section 1 — design forks (6 hard forks) · Section 2 —
+open semantic questions (3). (The open-*syntax* questions once tracked here were all found already
+decided in the log on 2026-06-21 — see the `DECISION_LOG_FINDINGS.md` appendix re-audit — and
+removed; one of them, the record-pattern rest token, was *amended* to add an opt-in `...` rest
+token, 006-31/006-32.)
 
 **How to use.** Forks (Section 1) need a real decision — open them one at a time, with discussion.
-Section 2 (open syntax) are spec-silent grammar/notation questions — most are settleable from the
-mined legacy grammar with your nod. Section 3 (open semantic) needs real rulings too — grammar
-won't settle them.
+Section 2 (open semantic) needs real rulings too — grammar won't settle these.
 
 Legend — tier: `foundational` (reshapes a subsystem) · `cluster-root` (cascades to siblings) ·
 `leaned-reshape` (clear recommendation, but it changes a rule, so it needs your nod) ·
@@ -231,145 +229,11 @@ alter a cell's concurrency contract.
 
 -----------
 
-# Section 2 — Open syntax questions (spec-silent grammar/notation)
-
-Six residual spec-silent syntax questions that the legacy-grammar / round-1 / round-2 passes never
-promoted to a ticket. Most are settleable from the mined legacy grammar with your nod; **none is
-decided here** — they are captured so the tracker is complete. Locate targets by `§` + content.
-
-## 7. [open-syntax] Operator precedence, associativity, and unary position — the full table  (appendix)
-
-**Problem.** The SPEC states only *fragments* of operator precedence ("arithmetic binds tighter";
-`|` ≈ `|>` low/left). There is no complete precedence/associativity table; the range operator `..`'s
-precedence vs arithmetic is undecided (compound bounds are always parenthesized in examples, so bare
-`0..N + 1` is undefined); and unary position is unspecified for `~` (prefix vs postfix — no
-value-level example anywhere) and rides with the already-ledgered `-%`/`-|` unary-position item.
-
-**Context.** §4.4.x (binary/unary operators), §12.2 (ranges). Examples parenthesize every compound
-bound and mixed-policy expression, so the grammar is never forced to commit.
-
-**Potential solutions.** (A) Publish one full precedence/associativity table covering `+ - * / \ %`,
-shifts, `& ^ |`, comparisons, `is`/`is not`, the `%`/`|`/`?` cast-policy families, and `..`, plus
-fixed unary positions for `~`/`-%`/`-|`. (B) Require parentheses wherever precedence is otherwise
-ambiguous. The mined legacy grammar likely supplies the table.
-
-**What.** A DECISION_LOG entry fixing the table + unary positions; SPEC §4.4.x prose with the table.
-
-**Why.** Every non-trivial expression's parse depends on it; currently unverifiable against an
-absent table.
-
-**Refs.** Spec-silent appendix (precedence table · range `..` precedence · unary `~`/`-%`/`-|`) ·
-§4.4.x, §12.2 · OPEN.
-
------------
-
-## 8. [open-syntax] Identifier alphabet, leading-digit, Unicode, case-sensitivity  (appendix, ◐)
-
-**Problem.** §1.4 legislates only the `#` identifier rule. The base identifier character set, the
-leading-digit rule, whether non-ASCII/Unicode identifiers are allowed, and case-sensitivity are
-unspecified.
-
-**Context.** §1.4 (lexical / identifiers). The `#`-prefixed form is settled; the ordinary identifier
-alphabet is not.
-
-**Potential solutions.** (A) ASCII-only `[A-Za-z_][A-Za-z0-9_]*`, case-sensitive, no leading digit
-(conventional). (B) Permit Unicode identifiers (UAX-31) with a defined normalization. The legacy
-grammar likely answers this.
-
-**What.** A DECISION_LOG entry + §1.4 prose stating the identifier alphabet and case rule.
-
-**Why.** Determines what is a legal name everywhere; small but foundational.
-
-**Refs.** Spec-silent appendix (◐ partial) · §1.4 · OPEN.
-
------------
-
-## 9. [open-syntax] Record-intersection chaining `A & B & C` associativity  (appendix)
-
-**Problem.** Associativity of the `&` intersection is stated only for bound-position conjunction.
-Whether `A & B & C` (and a parenthesized RHS) is admitted in type position, and how it associates,
-is unspecified.
-
-**Context.** §5.1 (intersection), §6.1 (record intersection). Bound-position `&` has a stated rule;
-type-alias / record-intersection chaining does not.
-
-**Potential solutions.** (A) `&` is associative and commutative for intersection; `A & B & C` is
-admitted and order-independent (mirror the bound-position rule). (B) Require explicit parenthesized
-pairs. Likely answered by the same rule already governing bounds.
-
-**What.** A DECISION_LOG entry + §5.1/§6.1 prose extending the `&` associativity rule to type
-position.
-
-**Why.** Affects every multi-operand intersection type/record.
-
-**Refs.** Spec-silent appendix · §5.1, §6.1 · OPEN.
-
------------
-
-## 10. [open-syntax] Named enum payload field defaults  (appendix)
-
-**Problem.** Whether a named enum-payload field may carry a default (`Rectangle(width: f64 = 1.0)`)
-is unspecified.
-
-**Context.** §6.2 (enums / variant payloads). Record fields' default behavior is settled (no field
-defaults, 009-11); enum named-payload defaults are not addressed.
-
-**Potential solutions.** (A) No payload defaults (parity with records' no-field-defaults rule).
-(B) Permit defaults on named payload fields, applied at construction. (A) is the consistent default.
-
-**What.** A DECISION_LOG entry + §6.2 prose stating whether named payload fields admit defaults.
-
-**Why.** Decides a construction-surface feature for enums; small blast radius.
-
-**Refs.** Spec-silent appendix · §6.2, 009-11 · OPEN.
-
------------
-
-## 11. [open-syntax] Record-pattern surface and rest-pattern token  (appendix)
-
-**Problem.** The concrete record-pattern shape is unspecified: whether every field must be bound,
-the spelling for binding a subset, and the rest-pattern token (none exists anywhere in the SPEC).
-
-**Context.** §6.x / pattern-matching. Tuple and variant positional patterns are settled (incl. the
-newtype `UserId(n)` form, 009-121); record destructuring patterns are not given a surface.
-
-**Potential solutions.** (A) `{ field, other: binding, .. }`-style with a `..` rest token and subset
-binding. (B) Require all fields bound, no rest. (A) mirrors common record-pattern designs but needs
-a chosen rest token; the legacy grammar likely answers this.
-
-**What.** A DECISION_LOG entry + §6.x prose fixing the record-pattern surface and rest token.
-
-**Why.** Affects every `match`/binding over a record.
-
-**Refs.** Spec-silent appendix · §6.x (pattern-matching), 009-121 · OPEN.
-
------------
-
-## 12. [open-syntax] `default:` / catch-all position in `when:` and `given` blocks  (appendix)
-
-**Problem.** For inline `observe`, the catch-all must come last (the `observe` last-arm rule); but
-the `when:` multi-way and `given` block forms are silent on whether their `default:`/catch-all arm
-has a required position.
-
-**Context.** §13.9 (`when:`/`given` gating), §6.2.4 (match exhaustiveness). The `observe` last-arm
-rule is settled; the gating-block forms are not.
-
-**Potential solutions.** (A) `default:` must be the last arm everywhere (uniform with `observe`).
-(B) Position-free `default:`, matched only when no other arm fires. (A) is the consistent default.
-
-**What.** A DECISION_LOG entry + §13.9 prose stating the catch-all position rule for the block forms.
-
-**Why.** Affects every multi-way `when:`/`given`; parity with `observe`/`match`.
-
-**Refs.** Spec-silent appendix · §13.9, §6.2.4 · OPEN.
-
------------
-
-# Section 3 — Open semantic questions (grammar won't help)
+# Section 2 — Open semantic questions (grammar won't help)
 
 3 items needing real rulings, not syntax decisions.
 
-## 13. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
+## 7. [open-semantic] Multi-segment assignment LHS + desugar order  (appendix)
 
 **Problem.** Only single-segment place assignments are shown (`r.field = v`, `arr[i] = v`).
 Multi-segment LHS (`r.a.b = x`, `arr[i].field = y`) and the FieldAssign/IndexAssign desugaring
@@ -388,7 +252,7 @@ order are undefined.
 
 -----------
 
-## 14. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
+## 8. [open-semantic] Tuple-component assignability through a `mut` binding  (appendix)
 
 **Problem.** May a tuple component be assigned through a `mut` binding, and what is its LHS form
 (`t.0 = x`)?
@@ -407,7 +271,7 @@ immutable-component; whole-value reassignment only.
 
 -----------
 
-## 15. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
+## 9. [open-semantic · CL-OWNERSHIP] Optional surface form for borrow-rootedness (incl. union)  (reframed from old elaborated-borrow item)
 
 **Problem.** Borrow-rootedness — which input cluster(s) a borrow-return is rooted in, including
 the multi-root "union of clusters" — is a compile-time concept with observable effects (which

@@ -2246,7 +2246,7 @@ or named, parallel to variant construction; mixing within one pattern is
 a compile error. Record patterns are always named; tuple patterns are
 always positional.
 
-A record pattern is exhaustive: it must bind every field of the record. A field whose value is not needed is bound to the wildcard `_` (`field: _`); there is no rest or ellipsis token that elides unlisted fields.
+Patterns are exhaustive by default: a record pattern must bind every field, and a tuple or variant-payload pattern every component, in their respective named or positional forms. A field or component whose value is not needed is bound to the wildcard `_` (`field: _`). Alternatively, a trailing `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — opts out of exhaustiveness: it matches and discards every field or component not explicitly listed, binding nothing — for example, the record pattern `Point(x: px, ...)` binds `x` and discards the remaining fields. The `...` is permitted only as the final element of a pattern.
 
 This parallelism is structural: a pattern is a "call site for
 destructuring," with the same argument-form rules as a call site for
@@ -5078,6 +5078,10 @@ variant's field value to a new local name. The positional form
 names) is the conventional terse choice when the field names happen to
 match the desired local names.
 
+A trailing `...` elides the remaining payload fields of a variant pattern in
+either form — `Rectangle(width: w, ...)` binds `width` and discards the rest
+(§3.5.7). Without it, a variant pattern binds every payload field.
+
 Patterns may be nested for compound values:
 
 ```
@@ -6383,11 +6387,15 @@ Tuple patterns use a parenthesized list of sub-patterns:
 let (a, b, c) = (1, "hello", 3.14)
 let (x, _, z) = some_tuple
 let ((a, b), c) = ((1, 2), 3)
+let (first, ...) = some_tuple            // bind first, elide the rest
 ```
 
 Tuple patterns appear in `let` bindings, `match` arms, and any other
 position where patterns are admitted. Nested tuple patterns work to
-arbitrary depth. The wildcard `_` ignores a component without binding it.
+arbitrary depth. The wildcard `_` ignores a component without binding it. A
+trailing `...` elides all remaining components at once, so the pattern need not
+name every one (§3.5.7); without it a tuple pattern is exhaustive over the
+tuple's components.
 
 Tuple patterns are always positional per §3.5 — tuples have no field
 names, so there is no named form.

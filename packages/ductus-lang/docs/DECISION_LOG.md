@@ -552,7 +552,7 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 005-228. `@literal_suffix` registrations follow normal name-visibility rules: visible in the defining module and to importers. (§3.9.5)
 005-229. The built-in `duration` suffixes are globally visible. (§3.9.5)
 
-## 006. Calls & Argument Forms — 31 Rules
+## 006. Calls & Argument Forms — 32 Rules
 
 006-1. Every call site chooses positional or named argument form per call, not per callee. (§3.5)
 006-2. Named form pairs each argument with its parameter name as `name: value`: `clamp(value: temperature, lower: 0, upper: 100)`. (§3.5.1)
@@ -584,7 +584,8 @@ Quarantine: the contradictions/ambiguities/incoherencies discovered in SPEC.md d
 006-28. Mixing positional and named bindings within one pattern is a compile error. (§3.5.7)
 006-29. Record patterns are always named. (§3.5.7)
 006-30. Tuple patterns are always positional. (§3.5.7)
-006-31. A record pattern is exhaustive — it must bind every field; an unneeded field is bound to `_` (`field: _`), and there is no rest or ellipsis token. (§3.5.7)
+006-31. A record pattern is exhaustive by default — it must bind every field; an unneeded field is bound to `_` (`field: _`), or a trailing `...` rest token elides all remaining unlisted fields (opt-in; see 006-32). (§3.5.7)
+006-32. The `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — is an opt-in, non-binding elision permitted at the trailing position of record, tuple, and variant-payload patterns; it matches and discards every field or component not explicitly listed, and without it patterns remain exhaustive. (§3.5.7)
 
 ## 007. Numerics — 223 Rules
 
