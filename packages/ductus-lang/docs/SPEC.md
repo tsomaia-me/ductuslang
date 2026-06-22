@@ -170,7 +170,7 @@ newlines and indentation. The semicolon `;` is **not a token** in the
 grammar and never appears in Ductus source — not as a statement
 terminator, not as a list separator, not in generic parameter lists.
 Every separated list (call arguments, generic parameters, tuple
-components, `incoming:`/`outgoing:` entries, etc.) uses the
+components, etc.) uses the
 comma, the newline, or both. A `;` in Ductus source is a lex error.
 (This governs Ductus source only. Non-Ductus code shown for
 illustration — host-driver pseudocode that embeds the runtime, and the
@@ -7291,7 +7291,7 @@ identifies the cycle's members.
 - **Type-reference cycles between sibling files are permitted.**
   Files inside the same module share scope and are compiled as a
   single unit, so mutually-referencing type declarations (e.g.,
-  one file's `node` declares an `outgoing:` connection type defined in
+  one file's `node` declares an `outgoing` connection-view of a connection type defined in
   a sibling file, and the sibling's `connection` declares `from:`
   the first file's node) are resolved in one pass. This is the
   normal case for any non-trivial module split across files.
@@ -10930,14 +10930,14 @@ node Counter:
   recurrent count: i32 = observe:
     on tick: count.previous(0) + 1      // `tick`: module-level (scope 3);
                                         // `count.previous`: self-history (scope 2)
-  outgoing: ShowsCount [=1]
+  outgoing shows: ShowsCount
 
 // Display reads the count through its incoming connection.
 node Display:
   attr label: string = "Unnamed"
-  incoming: ShowsCount [=1]
-  derived shown: string = "{label}: {incoming.ShowsCount[0].count}"
-                          // `label`, `incoming`: body-scope members (bare; §13.7)
+  incoming shows: ShowsCount
+  derived shown: string = "{label}: {shows[0].count}"
+                          // `label`, `shows`: body-scope members (bare; §13.7)
 
 // Connection from Counter to Display carries a derived count.
 connection ShowsCount:
@@ -10975,7 +10975,7 @@ Each `commit()`:
 This example demonstrates every reactive declaration kind (signal,
 attr, recurrent, derived), composition through nodes and connections,
 cardinality (`[=1]`), placement with overrides, indexed access
-through the connection (`incoming.ShowsCount[0].count`), bare
+through the connection-view (`shows[0].count`), bare
 body-scope member access (§13.7), and the commit-driven evaluation
 cycle.
 
@@ -12476,8 +12476,8 @@ runtime.
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
   view name: Selector <cardinality>                   // optional child views (§13.3.3)
-  incoming: Conn1, Conn2                              // optional incoming connection types
-  outgoing: Conn3, Conn4                              // optional outgoing connection types
+  outgoing name: ConnType <card>                      // optional outgoing connection-views
+  incoming name: ConnType <card>                      // optional incoming connection-views
   when: predicate                                     // optional activation predicate (§13.9)
   expose:                                             // structural output (§13.3.7)
     SomePart
@@ -12497,7 +12497,7 @@ children, and no connections is legal but typically unused.
 ```
 node Driver:
   satisfies Drivable
-  outgoing: Drives
+  outgoing drives: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
   derived is_aggressive: bool = risk_tolerance > 0.7
@@ -12578,7 +12578,7 @@ In this example: at least one Oscillator (`+`), exactly one Filter
 // Catch-all view (any node type accepted):
 node Processor:
   view children: Node*               // any node, zero or more
-  outgoing: WiresTo
+  outgoing wires: WiresTo
 ```
 
 `Processor` accepts any node type through its `children` view, reading the
@@ -12644,8 +12644,8 @@ checked maximum, and runtime cardinality checks do not exist in the
 language. An unmarked view is *static*: supplied by explicitly written
 placements only, with the count known per placement site at compile time. A
 `dynamic` view may additionally be fed by a caller's `repeat` (§13.3.3.4).
-The same marker, with the same meaning, applies to `incoming:` and
-`outgoing:` connection declarations (§13.3.4).
+The same marker applies identically to `incoming`/`outgoing` connection-views
+(§13.3.4).
 
 ##### 13.3.3.2 Access from inside the node body
 
@@ -12766,7 +12766,7 @@ multiplicity and per-child configuration are properties of the
 connections (§13.6) whose source is the enclosing node instance and
 whose destinations are determined by the unrolled iteration. These are
 **self-sourced** connections (§13.3.4.2): exempt from the type's
-`outgoing:` clause, subject to endpoint typing, and **positional** like
+`outgoing` connection-views, subject to endpoint typing, and **positional** like
 any other connection placement — each engages at its written position
 in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
@@ -12855,7 +12855,7 @@ implementation choice; the developer writes against the dynamic
 contract regardless, because the *type* admits dynamic supply.
 
 The same marker, cell model, and consumption rules apply to
-`incoming:` and `outgoing:` connection types (§13.3.4.1).
+`incoming`/`outgoing` connection-views (§13.3.4.1).
 
 ##### 13.3.3.5 Groups
 
@@ -13298,8 +13298,8 @@ node's content.
 node TypeName:
   satisfies SomeTrait
   parts: SomeA, SomeB
-  incoming: ConnIn1
-  outgoing: ConnOut1
+  incoming in1: ConnIn1
+  outgoing out1: ConnOut1
   expose:
     SomeA
     SomeB
@@ -13462,7 +13462,7 @@ entries before it.
 
 ```
 node Section:
-  incoming: dynamic Plays         // handles re-point — membership is runtime data (§13.3.4)
+  dynamic incoming plays: Plays*  // handles re-point — membership is runtime data (§13.3.4)
   // …
 
 node Verse:
@@ -13973,7 +13973,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 
 - **`<source>`** is a reactive collection cell: `Signal[I]` for some
   `I: Iterable` (§12.8), or a **`dynamic` collection cell** of the
-  enclosing node (a `dynamic` view, or `incoming.<C>` / `outgoing.<C>`,
+  enclosing node (a `dynamic` view or connection-view,
   §13.3.3.4), whose value is a language-provided keyed, ordered
   collection — always iterable. The iterator must terminate at each
   evaluation (see §13.5.4.8). The
@@ -14059,7 +14059,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
      `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
      `string`). Explicit always wins when present.
   2. **Carried key** — when the source is a `dynamic` collection cell
-     (a `dynamic` view, or `incoming.<C>` / `outgoing.<C>`, §13.3.3.4), each
+     (a `dynamic` view or connection-view, §13.3.3.4), each
      element arrives with the key its supplier derived for it
      (placement-site keys for statically written elements), and that
      key is used.
@@ -14292,7 +14292,7 @@ template-scope machinery; the cost model is "pay for what you iterate."
   specific placement. This is **caller supply**: node placements feed
   the receiving type's `dynamic` views (§13.3.3.4), and
   connection placements sourced from the placed instance require
-  `outgoing: dynamic` on its type (§13.3.4).
+  a `dynamic outgoing` connection-view on its type (§13.3.4).
 - **`effects:` clauses** (§13.3.8) — each scope materializes one
   effect-bearing instance per element (e.g., one connection per active
   session); the per-element effects suspend/resume and tear down with
@@ -15416,7 +15416,7 @@ connection Tows:
 
 node Driver[C: DriveLink]:             // C: a connection type satisfying DriveLink
   attr link_kind: Type[C]              // which DriveLink kind this driver establishes
-  outgoing: C                          // admits exactly the supplied connection type
+  outgoing link: C                     // admits exactly the supplied connection type
   // …
 
 // alice and bob differ only in which DriveLink kind they establish:
@@ -15435,7 +15435,7 @@ enclosing source, §13.8.4) and the sibling `the_car` as the `to`. The
 compiler checks the endpoints against `C: DriveLink`: `from` must be a
 `Driver` (alice is one) and `to` must be a `Drivable` (so `the_car` must
 resolve to one) — both verifiable before `C` is monomorphized to `Drives`
-(for alice) or `Tows` (for bob). `outgoing: C` admits the placed type
+(for alice) or `Tows` (for bob). The `outgoing link: C` view admits the placed type
 (§13.8.4); per-type attrs such as `aggressiveness` are set with the
 attribute clause, exactly as for a named connection. As with any
 destination, `the_car` may instead be a reactive reference, making the
@@ -16015,7 +16015,7 @@ fields (`from:`, `to:`, `attr name:`, `recurrent name:`, etc.):
 signal trigger: u64 = 0
 
 node OneShot:
-  outgoing: Pulse
+  outgoing pulse: Pulse
   recurrent fired: bool = observe:
     on trigger: true
     default: false
@@ -16775,7 +16775,7 @@ reading a `repeat`-view handle (§13.5.4.9) subscribes to the handle's
 resolution and, while resolved, to the referent's cells; a dismount flips
 the resolution to `None` and drops the referent subscription. The
 **dynamic namespace cells** (§13.3.3.4) are the collective form of the
-same mechanism: an operator over `incoming.<C>` subscribes to the
+same mechanism: an operator over a dynamic connection-view subscribes to the
 membership (the cell itself) and, per current member, to the cells its
 per-element fn reads — a mount or dismount re-establishes the member
 subscriptions exactly as a re-point does. Handle
@@ -16928,7 +16928,7 @@ every node type that satisfies it (including via a supertrait); the bare
 only ever resolve to an already-placed node of one of those types (§13.3.6.1).
 This **candidate envelope** serves two checks: the cycle analysis below, and
 the membership-marker rule of §13.3.4 (every type in the envelope must declare
-`incoming: dynamic` for the connection type).
+a `dynamic incoming` connection-view for the connection type).
 The cycle check stays a compile-time analysis: the compiler verifies that
 *every* cycle in the candidate graph traverses a `Circularity` connection, i.e.
 that no reachable wiring can form a non-`Circularity` cycle. The analysis is
