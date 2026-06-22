@@ -8,7 +8,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 
 <!-- BEGIN LOG -->
 
-## 001. Identity & Philosophy — 35 Rules
+## 001. Identity & Philosophy — 38 Rules
 
 001-1. The specification is the authoritative source for the type system, evaluation model, and runtime semantics. (§1.1)
 001-2. Implementation details (compiler internals, optimizations, runtime representation) are out of scope except where they constrain user-visible semantics. (§1.1)
@@ -32,6 +32,9 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 001-20. A default return rooted in a borrowed input is itself borrow-equivalent. (§1.3)
 001-21. There is no garbage collector and no language-level reference counting; the runtime may use refcounting internally for specific types such as `string`. (§1.3)
 001-22. There is no shared mutable state. (§1.3)
+001-36. A first-class citizen is a value that can be named in a binding, passed to and returned from functions, and used in expression position. (§1.3)
+001-37. Value-semantics — the implicit ability to relocate, copy, or structurally compare a value — is a capability orthogonal to citizenship: a type may be a first-class citizen yet lack value-semantics. (§1.3)
+001-38. Node, connection, and effect instances are first-class citizens that lack value-semantics; their non-storability (held only by borrow, never placed in cells or records) follows from single ownership and the borrow rules (001-16, §13.3.6.1), not from a special "instances are never values" axiom. (§1.3)
 001-23. From the caller's perspective every user-defined function is referentially transparent: same inputs produce the same outputs with no externally observable side effects beyond the declared return value. (§1.3)
 001-24. A function may use `mut` bindings, indexed assignment, and `while`/`for` loops internally; these are invisible at the call site. (§1.3)
 001-25. Any expression not involving a signal or external input is compile-time evaluable. (§1.3)
@@ -2001,7 +2004,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 016-216. Reactivity is a property of the binding (recorded in the graph specification) and its per-field cells, not of the type. (§13.2.9.10)
 016-217. A function over a composite type works identically with a reactive binding or a concrete value; live-vs-snapshot access is determined by the caller's context, not the function signature. (§13.2.9.10)
 016-218. A node or connection type is carried as a value via the `Type[...]` meta-type, the mechanism for an attr template slot deferring which kind a receiver places. (§13.2.10)
-016-219. Node and connection instances are never values; the type value is the storable stand-in. (§13.2.10)
+016-219. Node and connection instances are first-class citizens that lack value-semantics: not storable, so the `Type[...]` value is the storable stand-in (001-38). (§13.2.10)
 016-220. A `Type[...]` slot is filled by naming a type in value position, and the receiving node later places it: `ItemHost host | item_type=PostItem`. (§13.2.10)
 016-221. A `Type[...]` slot's constraint is an ordinary trait bound that doubles as the instantiation contract: the receiver may feed exactly the inputs the bound trait declares as required members. (§13.2.10)
 016-222. A `Type[...]` value carries no partial application; shipping a pre-configured node requires defining or parameterizing a type that bakes the configuration in. (§13.2.10)
@@ -2202,7 +2205,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-136. The storable, non-owning designation of a node instance is `Handle[…]`; persistent wiring between instances is a connection; a node type held as a value is `Type[…]`. (§13.3.6.1)
 017-137. The factory pattern is parameterizing the type (generics/const-generics) and placing at the call site: `Synth[8] my_synth`. (§13.3.6.1)
 017-138. Deferring which node type is placed is done by passing a `Type[…]` value. (§13.3.6.1)
-017-139. Connection and effect instances obey the same ownership rule: brought in only by the language's placement/instantiation syntax, held only by borrow, never stored as values; their types travel via `Type[…]`. (§13.3.6.1)
+017-139. Connection and effect instances obey the same ownership rule: brought in only by the language's placement/instantiation syntax and held only by borrow — first-class citizens lacking value-semantics, hence unstorable (001-38), not a special axiom; their types travel via `Type[…]`. (§13.3.6.1)
 017-140. Operators are instantiated only via operator syntax and are carried via the structural type `operator(…) -> U`. (§13.3.6.1)
 017-141. The graph-ownership rule is normative: conformant compilers enforce it at type-check time. (§13.3.6.1)
 017-142. `Handle[T]` is a `Copy` value, freely placed in cells, fields, tuples, and enum payloads, that weakly designates a graph entity. (§13.3.6.2)
@@ -3626,7 +3629,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
 031-3. Effects are distinct from `fn` (reactive-transparent pure computation), `operator` (stateful cell-to-cell transform, pure with respect to outside reality), and `node` (topological graph participant): only `effect` is the host-interpreted bridge to the runtime environment. (§13.19)
 031-4. Every effect type intrinsically satisfies the `Effect` marker trait, so "any effect" is expressible as a bound: `[T: Effect]`. (§13.19)
-031-5. Like nodes and connections, an effect instance is a graph member: instantiated only in a node's `effects:` clause, held by reference, never stored as a value. (§13.19)
+031-5. Like nodes and connections, an effect instance is a graph member: instantiated only in a node's `effects:` clause and held by borrow — a first-class citizen lacking value-semantics, hence unstorable (001-38). (§13.19)
 031-6. An effect type (as opposed to an instance) is carried as a value via `Type[…]`. (§13.19)
 031-7. An effect declaration consists of two record-shaped blocks, `desired:` and `observed:`. (§13.19.1)
 031-8. Cells in `desired:` are written by the program (or flow from the effect's parameters) and read by the host. (§13.19.1)

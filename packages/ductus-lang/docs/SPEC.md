@@ -64,6 +64,20 @@ garbage collector, no reference counting at the language level (the
 runtime may use refcounting internally for specific types like
 `string` per §11.6), and no shared mutable state.
 
+**First-class citizenship, distinct from value-semantics.** A *first-class
+citizen* is a value that can be named in a binding, passed to and returned
+from functions, and used in expression position. *Value-semantics* — the
+implicit ability to relocate, copy, or structurally compare a value — is an
+orthogonal capability a type may or may not have; a type can be a first-class
+citizen yet lack value-semantics. Node, connection, and effect instances are
+exactly such citizens: nameable, passable, returnable graph members that
+nonetheless lack value-semantics and so cannot be stored in cells or records.
+That restriction is not a special "instances are never values" axiom — it
+follows from single ownership and the borrow rules above (a borrow is
+unstorable, §13.3.6.1). The storable stand-in for *which kind* to place is the
+type value `Type[…]` (§5.7); for *which instance*, a weak `Handle[T]`
+(§13.3.6.2).
+
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
 the same outputs, with no externally observable side effects on the
@@ -4433,10 +4447,11 @@ value"; `Type[Drivable]` is "some Drivable *type*."
 
 Its primary use is to carry a node, connection, or effect **type** as a
 value — a template or slot that defers *which kind* is placed — given that
-the corresponding *instances* are never values (§13.3.6.1). While an instance
-is never a value, a *weak reference* to one is: a `Handle[T]` (§13.3.6.2)
-carries a graph entity by identity as a storable value — the instance-level
-companion to `Type[…]`'s type-level one.
+the corresponding *instances*, while first-class citizens, lack value-semantics
+and so are not storable (§13.3.6.1). A *weak reference* to an instance, by
+contrast, is storable: a `Handle[T]` (§13.3.6.2) carries a graph entity by
+identity as a storable value — the instance-level companion to `Type[…]`'s
+type-level one.
 
 #### 5.7.1 The constraint argument
 
@@ -12134,7 +12149,8 @@ the caller's context, not by the function's signature.
 A node or connection **type** can be carried as a value via the `Type[…]`
 meta-type (§5.7) — the mechanism for an attr "template slot" that defers
 *which kind* a receiving node places. The corresponding *instances* are
-never values (§13.3.6.1); the type value is the storable stand-in.
+first-class citizens that lack value-semantics (§13.3.6.1) and so are not
+storable; the type value is the storable stand-in.
 
 A `Type[…]` slot is filled by naming a node (or connection) type in value
 position; the receiving node later **places** it (§13.8 — §13.8.4.2 covers
@@ -13113,8 +13129,9 @@ defer *which* node type is placed, pass a `Type[…]` value (§5.7).
 
 The same ownership rule applies to **connections** and **effects**: an
 *instance* is a graph member, brought in only by the language's placement
-and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow,
-never stored as a value; their *types* travel as values via `Type[…]`
+and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow —
+a first-class citizen lacking value-semantics, hence unstorable by the borrow
+rule rather than any special axiom; their *types* travel as values via `Type[…]`
 (§5.7). **Operators** are likewise instantiated only via their own syntax
 (§13.17), and additionally have a structural *type*, `operator(…) -> U`
 (§13.17.13), by which an operator can be carried. The rule is normative;
@@ -20102,8 +20119,9 @@ effect declaration named `fetch` introduces both a type `fetch` and a
 constructor `fetch`; an instance has addressable cells and is referenced in
 expression position (e.g. `|>` chains, §13.19.13). Like nodes and
 connections, an effect *instance* is a graph member — instantiated only in
-a node's `effects:` clause and held by reference, never stored as a value
-(§13.3.6.1); an effect *type* is carried as a value by `Type[…]` (§5.7).
+a node's `effects:` clause and held by borrow: a first-class citizen lacking
+value-semantics, hence unstorable (§13.3.6.1); an effect *type* is carried as
+a value by `Type[…]` (§5.7).
 
 #### 13.19.1 Concept
 
