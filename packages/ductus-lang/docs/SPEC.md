@@ -10788,7 +10788,7 @@ externally-driven sequences; iterators are for collection traversal.
 This section specifies the language's reactive composition layer: the
 declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
 `stream`), the reactive expression forms (`observe`, `where`), the
-composition constructs (`node`, `connection`, parts, `operator`,
+composition constructs (`node`, `connection`, `operator`,
 `effect`), the rules governing reactive expression evaluation, and
 the host API through which external code drives and observes the
 reactive graph.
@@ -10859,7 +10859,7 @@ via connections are handled separately via the `Circularity` trait
 (§13.6, §13.11): a topology cycle is valid only if it traverses at
 least one connection type satisfying `Circularity`.
 
-**Reactive composition uses nodes, parts, and connections.**
+**Reactive composition uses nodes and connections.**
 Reactive cells (signal, attr, recurrent, derived) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
@@ -12450,7 +12450,7 @@ a node type creates an instance with its own cells.
 Composition takes two forms:
 
 - *Containment* — sub-nodes are placed inside a parent node as
-  *parts* (§13.4). The parent owns the parts; their lifetimes are
+  *children* (§13.4). The parent owns the children; their lifetimes are
   bound to the parent's.
 - *Communication* — nodes communicate with each other through
   *connections* (§13.6). Connections are typed directed links
@@ -12466,7 +12466,7 @@ structure*, not reactivity. A record's fields can be reactive too — as a
 reactive composite (§13.2.9) — so "reactive vs. plain data" is not what
 separates them. The distinction is this: a record is a value that can
 exist anywhere in a program, whereas a node exists only as a placed
-instance in the graph, with its own graph identity, topology (parts and
+instance in the graph, with its own graph identity, topology (children and
 connections), lifecycle, and per-instance reactive cells managed by the
 runtime.
 
@@ -12492,7 +12492,7 @@ node TypeName[GenericParams]?:
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
-parts, and no connections is legal but typically unused.
+children, and no connections is legal but typically unused.
 
 ```
 node Driver:
@@ -12759,7 +12759,7 @@ applies uniformly to every instance, and produces **internals**
 **caller supply**: its placements count against the receiving type's view
 cardinality and appear in the matching view, exactly as individually
 written placements do. Use the type form when
-multiplicity and per-part configuration are properties of the
+multiplicity and per-child configuration are properties of the
 **type**; use the placement form when they may differ per instance.
 
 **Connections from a type-emitted for.** The `for` may also place
@@ -13123,7 +13123,7 @@ specified now.
 
 A node may declare generic parameters in the standard `[T, U, ...]`
 form. Generic parameters are in scope within the body's attr,
-recurrent, derived, const, parts, and connection declarations:
+recurrent, derived, const, view, and connection declarations:
 
 ```
 node Buffer[T: Numeric]:
@@ -13605,7 +13605,7 @@ the inactive arm and suspends its effects (Model B, §13.9.7); see
 §13.19.12.
 
 **Local-only.** A node defines its own effects. Effects are never
-passed into a node from outside — there are no effect parts and no
+passed into a node from outside — there are no effect children and no
 effect parameters. A caller influences a node's effects only through
 **data in** (signals/attrs/streams supplied as parameters) and
 **streams out** (the child exposes an outgoing stream that the parent
@@ -13940,7 +13940,7 @@ across all live keys.
 #### 13.5.4 Dynamic scope materialization via `repeat`
 
 The `repeat` keyword declares one reactive scope per element of a
-runtime reactive source. Each scope is a template of placements (parts
+runtime reactive source. Each scope is a template of placements (child nodes
 and connections) that the runtime materializes per element via §13.5.1's
 operations: `scope_obtain` on key emergence, `scope_drop` on key
 disappearance, `scope_evaluate` per active key per commit.
@@ -14389,7 +14389,7 @@ node Feed:
 ```
 
 **Names are scope entries, not instance members.** This is the governing
-principle. A node *instance* exposes its content through its parts and
+principle. A node *instance* exposes its content through its children and
 exposition (§13.4, §13.3.7.3); a *scope* exposes its placements through their
 **names**. `<view>` reifies the repeat's scope as a value, so addressing a child
 goes through the placement name, not through any instance:
@@ -14972,7 +14972,7 @@ usable only as the left side of `::`. They never overlap.
 
 ### 13.8 Placement
 
-*Placement* is the syntax for instantiating nodes, parts, and
+*Placement* is the syntax for instantiating nodes and
 connections into a concrete reactive graph. It is distinct from
 value construction of records (which uses constructor syntax per
 §6.1.3).
@@ -14996,7 +14996,7 @@ The first line is the type name followed by the instance name
 declaration — `signal master_gain`, `node Channel`, `attr gain` — it
 names its subject positionally: the type, then the name, with no marker
 between them. A top-level placement is *mandatorily* named (unlike nested
-parts, which may be anonymous, §13.8.3), so the bare `TypeName
+children, which may be anonymous, §13.8.3), so the bare `TypeName
 instance_name` form is unambiguous and the `as` name marker is **optional**
 here:
 
@@ -15006,7 +15006,7 @@ Driver as john_doe           // also allowed — identical meaning
 ```
 
 By convention top-level placements omit `as`. The marker is *required*
-only where placements may be anonymous (nested parts and children,
+only where placements may be anonymous (nested children,
 §13.8.3), since there bare `Type name` is ambiguous between one named
 placement and two anonymous ones.
 
@@ -15077,7 +15077,7 @@ The right-hand side of an attribute setting at placement may be:
   slot on the node instance is filled at construction time.
 - A **reactive expression** — references reactive cells (signals,
   attrs, recurrents, deriveds) visible at the placement scope:
-  sibling part instances by name, top-level signals or consts, or
+  sibling child instances by name, top-level signals or consts, or
   any cell reachable through visible names (a `const` is visible but
   contributes no reactivity — a const-only RHS is a category-B value
   binding, not reactive wiring). The placement creates
@@ -15187,8 +15187,8 @@ syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
 
 ```
 Component chip_b | label="B":
-  Pin as out1                             // child part (Pin instance named out1)
-  Pin as in1                              // another child part
+  Pin as out1                             // child node (Pin instance named out1)
+  Pin as in1                              // another child node
 ```
 
 A child placement that names a node type admitted by one of the parent's
@@ -15275,7 +15275,7 @@ compile-time known — `VOICE_COUNT` is a `const`), so the `for` in the
 placement body unrolls into eight anonymous `Oscillator` child
 placements with statically-determined `freq` attrs. The cardinality
 `Oscillator [=VOICE_COUNT]` declared by the type is satisfied at compile
-time by the unrolled placements. The parts are accessible via the
+time by the unrolled placements. The children are accessible via the
 indexed view form `synth.oscillators[i]` (§13.4.1), and the parent type's
 own iteration uses `for o in oscillators:` (§13.4.2).
 
@@ -15287,7 +15287,7 @@ here is for *parametric* topology: multiplicity that is parameterized
 by a const-generic (or otherwise compile-time-known) value but fixed
 per instance.
 
-**Type-body counterpart.** When the multiplicity and per-part
+**Type-body counterpart.** When the multiplicity and per-child
 configuration are properties of the **type** rather than the placement
 site — i.e., every instance of the node materializes the same N
 children — declare them in the node body via §13.3.3.3 instead. The
@@ -15305,7 +15305,7 @@ determined positionally.
 
 ```
 App my_app:
-  Fetcher as fetcher / "url"                    // part placement
+  Fetcher as fetcher / "url"                    // child placement
   WiresToExternal: external_target              // source = my_app
 
   Filter as filter / "low-pass":
@@ -15364,7 +15364,7 @@ slot, when present, sets the connection's
 attrs. None of these target the destination.
 
 A placement-level `when` modifier may be attached to gate the
-connection instance (§13.9). The modifier appears in the inline-parts
+connection instance (§13.9). The modifier appears in the inline-element
 ordering between `/Expr` and the attribute clause (§13.8.9), before
 the body's `:`:
 
@@ -15524,7 +15524,7 @@ types must declare `incoming: dynamic <ConnType>` (§13.3.4) — in the
 compile-time-fixed selection resolves to one node and the membership is a
 static fact.
 
-##### 13.8.5.2 For node (part) placements
+##### 13.8.5.2 For node (child) placements
 
 For a node placement (typically a child placed inside a parent),
 `/expr` sets the type's `default attr` (§13.2.2.1). The expression
@@ -15539,7 +15539,7 @@ Program p1:
   Log /"System ready"
 ```
 
-Each `Log /"..."` placement creates a Log part with its `message`
+Each `Log /"..."` placement creates a Log child with its `message`
 attr set to the string. Equivalent inline form:
 
 ```
@@ -15569,7 +15569,7 @@ Both node and connection placements may have a body, but the body's
 content differs by placement kind:
 
 - **Node placement body** — the indented block after `:` on a node
-  placement line — contains child placements: parts and connections
+  placement line — contains child placements: child nodes and connections
   (§13.8.3, §13.8.4). Multiple children allowed; same-line
   multi-placement is whitespace-separated per §13.8.10.
 - **Connection placement body** — the indented block (or inline
@@ -15768,9 +15768,9 @@ Pin' p1 | reverse_polarity=false    // ✗ duplicate: ' flag and inline both tar
 The diagnostic class is the same as duplicate-set for inline
 attributes (§13.8.7).
 
-#### 13.8.9 Ordering of inline parts
+#### 13.8.9 Ordering of inline elements
 
-A placement's inline parts have a fixed order:
+A placement's inline elements have a fixed order:
 
 ```
 TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
@@ -15792,13 +15792,13 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
   preceding element is present. This inline `when` is the
   single-placement *modifier* (§13.9.3); the block selection forms —
   `when` blocks (§13.9.12) and `given` blocks (§13.9.13) — are not
-  inline-parts modifiers: they appear as standalone entries at
+  inline-element modifiers: they appear as standalone entries at
   `expose:`/body level, each owning an indented arm body, and so do not
   participate in this ordering.
 - The attribute clause (§13.8.7) — a single leading `|` followed
   by attribute settings — follows next.
 - The optional body — introduced by `:` — comes last. For node
-  placements, the body holds zero or more child placements (parts
+  placements, the body holds zero or more child placements (child nodes
   and connections, §13.8.3, §13.8.4). For connection placements,
   the body holds exactly one node reference to the destination
   (§13.8.5.1, §13.8.6). A `when` predicate
@@ -16068,7 +16068,7 @@ ShowsCount when unread_count > 0: d1
 ```
 
 Children placed inside a parent's body may carry `when` clauses
-identically — the same grammar applies to part placements as to
+identically — the same grammar applies to child placements as to
 top-level placements:
 
 ```
@@ -16091,7 +16091,7 @@ What `when` controls is propagation: when `my_app.verbose` is false,
 and its outputs do not propagate. Its cells hold their initial
 values per Model B (§13.9.7).
 
-Position in the inline-parts ordering is fixed by §13.8.9: after
+Position in the inline-element ordering is fixed by §13.8.9: after
 `/Expr` (if present), before the attribute clause. When `/Expr` is
 absent the `when` clause follows whatever element does precede it.
 
@@ -17236,8 +17236,8 @@ hard-realtime workloads.
   beyond what the reactive cell model supports).
 
 For "collection of reactive things" patterns, prefer composition
-via parts (§13.4): a parent node with N parts of the same child
-type, each part holding its own attrs/deriveds. This is the
+via children (§13.4): a parent node with N children of the same
+type, each holding its own attrs/deriveds. This is the
 canonical reactive composition mechanism. Reactive cells of
 collection types (`Vec[T]`, etc.) work via pool storage but each
 write involves rebuilding/replacing the collection — fine for
@@ -20158,7 +20158,7 @@ Effects are distinct from `node`, `operator`, and `fn`:
 - `operator` is a stateful reactive transform from cells to cells
   (§13.17), pure with respect to outside reality.
 - `node` is a topological participant in the reactive graph
-  (§13.3), composed via parts and connections.
+  (§13.3), composed via children and connections.
 - `effect` describes outside-world alignment — the host-interpreted
   bridge between program state and runtime environment. Composes
   with operators via `|>`; instantiated only in a node's `effects:`
@@ -21911,13 +21911,13 @@ The graph is built from **six primitives** — `cell`, `connection`, `gate`,
 `stream`, `effect`, and `scope` — each referencing behaviors by id and
 identified by a stable path (§15.4.1.1). All surface reactive constructs
 desugar into these six: signal/attr/derived/recurrent/const → `cell`;
-node/part → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
+node (top-level or child) → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
 connection / topological `|>` → `connection` (an *effect-position* `|>`
 instead lowers to the effect entry's `parameter_bindings`, **not** a
 `connection`); operator → a `scope` with ports; stream → `stream`; effect →
 `effect`.
 
-A **`scope`** is the structural container (a node/part/operator instance,
+A **`scope`** is the structural container (a node or operator instance,
 or a `repeat`'s per-element instance). It carries an `exposes` list — the
 **ordered** placements the runtime traverses: child scopes and references
 to the scope's connection entries, in exposition order (engagement
@@ -22061,7 +22061,7 @@ dot-separated sequence of identifiers naming the lexical nesting
 from module root through enclosing instances to the cell name.
 
 Example: `audio.synth_a.osc_1.frequency` — module `audio`,
-top-level instance `synth_a`, nested part `osc_1`, attr
+top-level instance `synth_a`, nested child `osc_1`, attr
 `frequency`.
 
 The path is derived deterministically from source: nesting plus
