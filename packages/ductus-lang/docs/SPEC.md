@@ -149,6 +149,15 @@ subject-type alias used in trait and `fulfill` type positions. Being a
 type alias rather than a keyword, it is capitalized by the type-naming
 convention; it does not fall under the lowercase-keyword rule above.
 
+**Directives.** The `@` sigil introduces a *directive* — a member of a
+fixed, language-provided set; there are no user-defined directives. A
+directive is either *applied*, attached to a declaration or value to modify
+it (the everyday "annotation") — `@derive` (§3.8), `@literal_suffix`
+(§3.9.1), `@flag` (§13.8.8), `@reset_on_reopen` (§13.2.4), `@reset_on_reload`
+(§13.18.14), and a trait's `@default` (§3.1.5) — or *standalone*, a construct
+in its own right: `@content` (§13.3.7). In placement position `@` is instead a
+flag-run character; the positional disambiguation is in §13.8.8.4.
+
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
 `audio#main`, `note#`. The `#` character behaves like a letter for
@@ -1340,8 +1349,8 @@ trait Integer:
   requires Numeric, IntDiv, Rem, ...    // illustrative; canonical in §4.9.2
 ```
 
-The exact syntactic form (annotation, dedicated keyword, body clause) is a
-syntax detail; the semantic decision is that defaults are declared on the
+The declaration form is the applied `@default(<Type>)` directive (§1.4),
+shown above; the semantic decision is that defaults are declared on the
 trait, not on the compiler.
 
 A trait without a declared default produces a compile error at any use site
@@ -15687,7 +15696,7 @@ elsewhere in the language:
 
 - `'` is both a flag and the opener of a `char` literal (§9.1.2).
 - `?` is both a flag and the postfix Try operator (§8.4).
-- `@` is both a flag and the annotation prefix (`@derive`).
+- `@` is both a flag and the directive prefix (`@derive`).
 - `!` is both a flag and the leading marker of the `!name`
   attribute-false form (§13.8.7).
 
@@ -15700,7 +15709,7 @@ whitespace) is a flag-run opener. In any other position
 Pin' p1                            // flag run after TypeRef (placement context)
 let c: char = '\''                 // char literal in expression context
 let r = some_fallible()?           // postfix Try in expression context
-@derive(Eq) type Point:            // annotation prefix in declaration context
+@derive(Eq) type Point:            // directive prefix in declaration context
   ...
 ```
 

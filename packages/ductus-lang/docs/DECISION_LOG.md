@@ -49,7 +49,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 001-34. Recoverable conditions are expressed as `Option`/`Result` values with `?` propagation. (§1.3)
 001-35. The failure track (bug vs recoverable) is chosen at the operation site, not retroactively. (§1.3)
 
-## 002. Source Form & Lexical Rules — 27 Rules
+## 002. Source Form & Lexical Rules — 29 Rules
 
 002-1. Naming conventions: concrete primitive types (`i32`, `bool`) and built-in placeholder keywords (`numeric`, `integer`, `float`, `signed`, `unsigned`) are lowercase; trait and user-defined type names are PascalCase; functions, variables, and fields are snake_case. (§1.4)
 002-2. Keywords are always lowercase with no capitalized form; this rule is normative and takes precedence over any conflicting grammar. (§1.4)
@@ -63,6 +63,8 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 002-10. `as` is not a cast operator; explicit conversion uses call syntax `T(value)`. (§1.4)
 002-11. The operator-context keywords are `is`, `and`, `or`, `not`, and `weak` (the weak-reference operator). (§1.4)
 002-12. The sole reserved type identifier is `Subject`, the subject-type alias usable in trait and `fulfill` type positions; it is a capitalized type alias, not a keyword. (§1.4)
+002-28. The `@` sigil introduces a **directive**: a member of a fixed, language-provided set; there are no user-defined directives. (§1.4)
+002-29. A directive is either **applied** — attached to a declaration or value to modify it, the everyday "annotation" (`@derive`, `@literal_suffix`, `@flag`, `@reset_on_reopen`, `@reset_on_reload`, and a trait's `@default`) — or **standalone**, a construct in its own right (`@content`). (§1.4)
 002-13. Identifiers may contain `#` as a leading, infix, or terminating character, and `#` behaves like a letter in every position — normative, taking precedence over any conflicting grammar: `#default`, `audio#main`, `note#`. (§1.4)
 002-14. The semicolon `;` is not a token; a `;` anywhere in Ductus source is a lex error. (§1.4)
 002-15. Ductus delimits with newlines and indentation; there is no statement separator. (§1.4)
@@ -353,7 +355,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 005-32. A trait may declare a default concrete type used by the defaulting mechanism: `@default(i32) trait Integer`. (§3.1.5)
 005-33. A trait's declared default fires when a use site is constrained solely by traits with declared defaults and nothing else pins the type. (§3.1.5)
 005-34. A trait's declared default type must itself satisfy the trait; this is compiler-enforced. (§3.1.5)
-005-35. The concrete syntax for declaring a trait default (annotation, dedicated keyword, or body clause) is unspecified; the normative decision is that defaults are declared on the trait, not built into the compiler. (§3.1.5)
+005-35. The trait-default declaration form is the applied `@default(<Type>)` directive (005-32, 002-29); the normative decision is that defaults are declared on the trait, not built into the compiler. (§3.1.5)
 005-36. Any use site that would require defaulting through a trait with no declared default is a compile error. (§3.1.5)
 005-37. Trait-declared defaults are the only defaulting mechanism: there are no compiler-internal defaults, no module-level pragmas, and no use-site overrides via alternative defaulting paths. (§3.1.5)
 005-38. When the default mechanism does not fire, the user resolves the type through explicit annotation only. (§3.1.5)
@@ -2717,7 +2719,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 021-123. At a placement site, each flag character in the run resolves to the boolean attr it aliases and sets that attr to `true`. (§13.8.8.3)
 021-124. There is no flag form for setting `false`; overriding a default-`true` attr to `false` uses the inline `!name` form. (§13.8.8.3)
 021-125. In placement position, a non-letter character immediately following the TypeRef path with no intervening whitespace is a flag-run opener. (§13.8.8.4)
-021-126. A flag character that doubles as a token elsewhere carries its other meaning in any non-placement position: `'` opens a char literal, `?` is postfix Try, `@` is the annotation prefix, `!` is the attribute-false marker. (§13.8.8.4)
+021-126. A flag character that doubles as a token elsewhere carries its other meaning in any non-placement position: `'` opens a char literal, `?` is postfix Try, `@` is the directive prefix (002-28), `!` is the attribute-false marker. (§13.8.8.4)
 021-127. A boolean attr may be set via at most one mechanism per placement — flag form or inline `name`/`!name`/`name=value`; using two on the same attr is a compile error: `Pin' p1 | reverse_polarity=false` ✗. (§13.8.8.5)
 021-128. The two-mechanism duplicate uses the same diagnostic class as duplicate-set for inline attributes. (§13.8.8.5)
 021-129. A placement's inline parts have the fixed order TypeRef, flags run, `as` name, `/Expr`, `when` predicate, attribute clause, `:` body — each element after TypeRef optional: `Drives'! as my_drive / 0.8 | enhanced_handling: some_car`. (§13.8.9)
