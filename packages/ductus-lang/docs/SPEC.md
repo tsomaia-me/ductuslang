@@ -13294,19 +13294,23 @@ node's content.
 ```
 node TypeName:
   satisfies SomeTrait
-  parts: SomeA, SomeB
+  view a: SomeA
+  view b: SomeB
   incoming in1: ConnIn1
   outgoing out1: ConnOut1
-  expose:
-    SomeA
-    SomeB
   attr foo: i32
   attr user_name: string = "world"
   derived greeting: string = "hello " + user_name
+  expose:
+    a
+    b
 ```
 
-The canonical clause order is: `satisfies` → `parts:` → `incoming:`
-→ `outgoing:` → `when:` → `expose:` → cell declarations → `effects:` (§13.3.8).
+Node-body members — cells, `view`/`dynamic view`, `incoming`/`outgoing`
+connection-views, `satisfies`, and `when:` — appear in **free order**; the
+only positional constraints are that `effects:` (§13.3.8) comes after the
+members and `expose:` comes last. `satisfies`, `when:`, `effects:`,
+`expose:`, and `default attr` each appear at most once.
 
 ##### 13.3.7.1 Content
 
@@ -13314,27 +13318,32 @@ The body of `expose:` is an ordered list of placements, with the same
 syntax as inline child placements elsewhere (§13.8). Node entries
 reference:
 
-- A part of the instance by type-bulk access (`parts.SomeA` — the full
-  list of supplied parts of that type, in placement order).
-- A named part instance (`osc1` — see §13.4.1) — when the
-  exposition needs a specific named child rather than all parts of
-  a type.
-- A wrapper placement that contains parts as its own children. The
-  wrapper is a node-internal type the exposition uses for structural
-  composition:
+- A **view by name** (`oscs` — the caller-supplied children of that
+  view, in placement order; §13.4.1).
+- A **named child** (`osc1` — see §13.4.1) by its placement name, when
+  the exposition needs one specific child rather than a whole view.
+- An **own placement** — a node-internal placement of the type's own
+  structure, optionally bound with `as` (`Helper as h`). Such a name is
+  hoisted into the body namespace and readable body-wide (§13.7.1).
+- A wrapper placement that contains supplied children as its own
+  children. The wrapper is a node-internal type the exposition uses for
+  structural composition:
 
   ```
   node MyContainer:
-    parts: Item
+    view items: Item*
     expose:
       SomeInternalWrapper:
-        parts.Item
+        items
   ```
 
   Here `SomeInternalWrapper` is a wrapper node whose body contains
   the supplied `Item` children. Internal nodes used this way are
   declared (in stdlib or user code) and accept children via their
-  own `parts:` clause.
+  own `view` declarations.
+- The **`@content` directive** (§13.3.7.2), which exposes everything the
+  node accepts — caller-supplied children and outgoing connections — in
+  the caller's original order.
 
 **Connection entries** place self-sourced connections (§13.3.4.2,
 §13.3.7.5) at their position in the sequence, with the full placement
@@ -13391,21 +13400,48 @@ scrutinee's variant labels (`given`, §13.9.13) or boolean guard
 expressions (`when:`, §13.9.12) — and connection entries appear *inside*
 arm bodies as ordinary indented exposition entries.
 
-##### 13.3.7.2 Default
+##### 13.3.7.2 `@content` and the absence of `expose:`
 
-When `expose:` is omitted, the node's exposition defaults to
-`expose: parts` — the runtime traverses all supplied placements in
-declaration order: parts and caller-placed connections in their written
-interleaving (§13.8.4), with a feeding `repeat`'s scopes expanding in
-place at the repeat's written position (§13.3.3.4). The default covers
-**caller-supplied content only**; a type that emits internal structure
-(`for`/`repeat`/wrappers, §13.3.7.1) necessarily writes `expose:`
-explicitly. When the node has no `parts:` clause and no `expose:` clause, the
-default `expose: parts` still exposes whatever the caller supplied — the
-open-parts children and caller-placed connections, as-is in written
-order; the exposition is empty only when no such content is supplied
-(the node then has no structural output and exists only for its state
-and connections).
+A node with no `expose:` clause has **no structural output** — its
+exposition is empty. Caller-supplied content becomes output only by being
+named in `expose:` (a view name or a named child, §13.4.1) or through the
+`@content` directive. A node without `expose:` exists only for its state
+and connections.
+
+`@content` is a **standalone directive** (§1.4) used as an `expose:`
+entry. It exposes **everything the node accepts** — its caller-supplied
+children and outgoing connections — in the caller's original, interleaved
+order:
+
+```
+node Frame:
+  view rest: Node*
+  outgoing wires: Connection*
+  expose:
+    @content              // children + outgoing connections, in caller order
+```
+
+`@content` is not a named declaration and has no expression access; typed
+access to supplied content goes through views (§13.4.1). It covers
+caller-supplied children and outgoing connections only — never incoming
+connections, which are not body-supplied (§13.3.4).
+
+`@content` does not widen acceptance: a node accepts only what its
+`view`/`outgoing` declarations name (§13.3.3.1, §13.3.4). A container that
+takes arbitrary content declares explicit catch-all views (`view rest:
+Node*`, `outgoing wires: Connection*`); there is no "content accepts
+anything" shortcut.
+
+`@content` is **wrappable** — placed inside a wrapper body it tucks the
+whole supplied body into that wrapper:
+
+```
+expose:
+  Padding as pad:
+    @content              // the entire supplied body nests under pad
+```
+
+At most one `@content` appears per `expose:` scope.
 
 ##### 13.3.7.3 External access via `.exposition`
 
@@ -13425,24 +13461,21 @@ arrives and leaves (§13.3.3.4).
 
 ##### 13.3.7.4 Runtime traversal
 
-The runtime traverses what `expose:` produces, not the `parts:`
-clause directly. `parts:` and `expose:` are two halves of one
-mechanism:
+The runtime traverses what `expose:` produces, not the view declarations
+directly. Views and `expose:` are two halves of one mechanism:
 
-- **`parts:`** is the *supply* half — it declares which child types
-  the node accepts, with cardinality; placement-time child placements
-  fill them (§13.4, §13.8.3).
+- **Views** are the *supply* half — they declare which child types the
+  node accepts, with cardinality; placement-time child placements fill
+  them (§13.4, §13.8.3).
 - **`expose:`** is the *output* half — it declares the node's ordered
-  structural output: which of those parts (and/or wrapping internal
+  structural output: which of those children (and/or wrapping internal
   nodes containing them) the runtime traverses, where the node's own
   emissions (`for`/`repeat` entries, §13.3.7.1) appear, and where its
   self-sourced connections engage among them (§13.3.7.5).
 
-`parts:` exists *solely* to feed `expose:`: externally-supplied children
-exist to become the node's structural output. By default
-(`expose: parts`, §13.3.7.2) every supplied part is exposed; an explicit
-`expose:` may arrange *or select a subset of* the supplied parts, and a
-part it omits has no structural output (not a compile error).
+An explicit `expose:` may arrange *or select a subset of* the
+caller-supplied children: a view it omits has no structural output (not a
+compile error). A node with no `expose:` exposes nothing (§13.3.7.2).
 
 Traversal proceeds **in entry order**: node entries by structural
 descent, connection entries by engagement (§13.3.7.6).
