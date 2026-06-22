@@ -13749,8 +13749,8 @@ about its contribution rather than flowing it silently through a body that
 happens to compile. Where one uniform stored representation across child
 types is genuinely needed, use `dyn Trait` (§5.2).
 
-**Relation to the general unrolling rule.** View iteration is not a special
-construct: a static view `c.oscillators` is a fixed-extent array (§13.3.3.2)
+**Relation to the general unrolling rule.** Iterating a static view needs no
+dedicated construct: a static view `c.oscillators` is a fixed-extent array (§13.3.3.2)
 whose per-site length the view's cardinality bounds and the placement fixes
 (§13.1's static-graph principle), so a `for` over it unrolls by the ordinary
 rule of §12.3.7 — the same rule by which a range or array literal unrolls.

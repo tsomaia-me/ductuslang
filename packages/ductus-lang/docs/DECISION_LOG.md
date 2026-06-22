@@ -2324,7 +2324,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-248. The view-iteration bind has the concrete child type in each iteration. (§13.4.2)
 017-249. There is no heterogeneous `for` over all of a node's children: aggregate behavior over several views is written per view and combined explicitly. (§13.4.2)
 017-250. A uniform stored representation across child types uses `dyn Trait`, not heterogeneous child iteration. (§13.4.2)
-017-251. View iteration is not a special construct: a view `c.oscs` is a fixed-extent array, so `for` over it unrolls by the ordinary rule of §12.3.7 to one reference per element. (§13.4.2)
+017-251. Iterating a static view needs no dedicated construct: a static view is a fixed-extent array of borrows, so `for c in oscs:` unrolls by the ordinary rule of §12.3.7 to one reference per element. (§13.4.2)
 017-252. When a function called from a reactive expression iterates a view, each child reactive cell it reads contributes to the calling expression's dependency set. (§13.4.3)
 017-253. When any one contributing child cell changes, the dependent derived becomes dirty. (§13.4.3)
 017-254. Dependency tracking is provenance-based: reactive cells read by an expression are tracked transitively through function calls. (§13.4.3)
