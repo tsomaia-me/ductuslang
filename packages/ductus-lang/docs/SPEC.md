@@ -12897,40 +12897,43 @@ view selects — while the **outer** cardinality (group count) is the count
 constraint. This keeps distinct group shapes independent: `[Note[=2]]+` and
 `[Note[=3]]+` select disjoint sets of groups and do not conflict.
 
-#### 13.3.4 `incoming` and `outgoing` clauses
+#### 13.3.4 Connection-views (`incoming` and `outgoing`)
 
 ```
-incoming: [dynamic] ConnType1 [cardinality]?, [dynamic] ConnType2 [cardinality]?, ...
-outgoing: [dynamic] ConnType3 [cardinality]?, [dynamic] ConnType4 [cardinality]?, ...
+outgoing name: [dynamic] Type <cardinality>      // node is the `from` endpoint
+incoming name: [dynamic] Type <cardinality>      // node is the `to` endpoint
 ```
 
-The `incoming` and `outgoing` clauses list the *types* of connections
-in which instances of this node may participate as endpoints, with
-optional cardinality constraints. `incoming` connections target this
-node (the node is the `to` endpoint); `outgoing` connections
-originate from this node (the node is the `from` endpoint). See §13.6
-for connection declarations and §13.8.4 for connection placement.
+Connections a node participates in are declared **per-view**, parallel to node
+views (§13.3.3) but with their own direction keywords: `outgoing name: Type`
+makes the node the `from` endpoint, `incoming name: Type` makes it the `to`
+endpoint. Each declaration is a **connection-view** — a direction keyword, a
+unique name (§13.7.1), a connection type, and optional cardinality. These
+replace the old bulk `incoming:`/`outgoing:` list clauses. See §13.6 for
+connection declarations and §13.8.4 for connection placement.
 
-Like `parts:`, these are the node's **caller-facing signature**: they bound the
-connections a *caller* may wire to or from the node. `incoming:` bounds what
-others may direct *at* this node; `outgoing:` bounds what a caller placing this
-node may originate *from* it. They do **not** bound the node's own internal
+Like node views, connection-views are the node's **caller-facing signature**:
+they bound the connections a *caller* may wire to or from the node. An
+`outgoing` view bounds what a caller placing this node may originate *from* it
+(a local-supply bound); an `incoming` view bounds what may be directed *at* it,
+aggregated across all sources. They do **not** bound the node's own internal
 wiring — self-sourced connection placements (§13.3.4.2) are its private
 realization, checked by endpoint typing and topology (§13.11.5) but never
-counted against `incoming:` / `outgoing:`. When such internal wiring targets one
-of the node's own parts, the node acts as the **caller of that part**, and the
-connection counts against the *part's* `incoming:` budget (§13.3.4.2).
+counted against any connection-view. When such internal wiring targets one of
+the node's own children, the node acts as the **caller of that child**, and the
+connection counts against the *child's* incoming budget (§13.3.4.2).
 
-Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
-sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
-`[N..]`, `[..=M]`). Default (bare) is unlimited (`0..`). The
-`dynamic` supply-mode prefix is likewise the same marker with the same
-exclusivity rule (§13.3.3.1).
+Cardinality uses the same specifiers as node views (§13.3.3.1) with the same
+meaning — **bare = exactly one** in every direction (incoming included),
+multiplicity always explicit (`?`, `+`, `*`, `[=N]`, `[N..=M]`, `[N..]`,
+`[..=M]`); fan-in or multi-origin is written `*`. The `dynamic` prefix is the
+same marker and takes exactly `*` (§13.3.3.1).
 
 ```
 node Driver:
-  outgoing: Drives [=1], MaintainedBy?
-  incoming: SponsoredBy [..=3]
+  outgoing drive:       Drives          // exactly one
+  outgoing maintenance: MaintainedBy?   // 0 or 1
+  incoming sponsors:    SponsoredBy [..=3]
 ```
 
 **Static and dynamic membership.** A connection belongs to a node's incoming
@@ -12940,58 +12943,53 @@ connection is materialized per `repeat` key (its *existence* varies, §13.5.4),
 or its destination is a reactive reference or `Handle` (its *target* varies,
 §13.6.2). The rule:
 
-- An **unmarked (static)** `incoming:` type admits only connections whose
+- An **unmarked (static)** `incoming` view admits only connections whose
   membership is a static fact. Its cardinality is checked by **exact local
   arithmetic**: the compiler counts, per instance, the statically present
   connections directed at it — caller-placed static-destination connections
   *and* self-sourced static-destination connections (a self-sourced connection
-  into an own part counts at the part, and being always present, it satisfies
-  the part's lower bound). Indexed access `incoming.<ConnType>[i]` for `i <`
-  the guaranteed minimum is backed by exactly these.
-- Any connection whose membership is **not** a static fact requires
-  **`dynamic <ConnType>`** in the `incoming:` clause of **every node type in
+  into an own child counts at the child, and being always present, it satisfies
+  the child's lower bound). Indexed access `name[i]` for `i <` the guaranteed
+  minimum is backed by exactly these.
+- Any connection whose membership is **not** a static fact requires a
+  **`dynamic incoming`** connection-view of that type on **every node type in
   its candidate envelope** (§13.11.5 — for a dynamic destination, every type
   the reference's static type admits; for a repeat-materialized connection,
   its destination's type). The check runs at the connection placement site
-  and names both sites on failure. A `dynamic` incoming type carries no
-  cardinality (§13.3.3.1), so there is no bound to check — the membership is
+  and names both sites on failure. A `dynamic` connection-view carries the `*`
+  specifier (§13.3.3.1), so there is no bound to check — the membership is
   runtime data by declaration, tracked reactively (§13.3.4.1).
 
-`outgoing:` is symmetric: a caller may write a `repeat` that places connections
+`outgoing` is symmetric: a caller may write a `repeat` that places connections
 sourced from the placed instance (fan-out — e.g. `repeat s in sessions:
 Send: s.target` in its placement body), and such caller-supplied connections
-require `outgoing: dynamic Send` on the instance's type, since their count at
-the source is not a static fact. A merely *re-pointing* destination does not
-dynamize the source side: the connection statically exists at its source; only
-its target moves. Self-sourced placements remain outside `outgoing:` entirely
-(the signature is caller-facing).
+require a `dynamic outgoing` connection-view (e.g. `outgoing sends: dynamic
+Send*`) on the instance's type, since their count at the source is not a static
+fact. A merely *re-pointing* destination does not dynamize the source side: the
+connection statically exists at its source; only its target moves. Self-sourced
+placements remain outside the `outgoing` connection-views entirely (the
+signature is caller-facing).
 
 ##### 13.3.4.1 Access from inside the node body
 
-Connections of a given type are accessible as `incoming.<ConnType>`
-and `outgoing.<ConnType>` (bare, per §13.7.5) or with the explicit
-`here::` anchor (`here::incoming.<ConnType>`). The model is exactly
-that of parts — three member namespaces (`parts`, `incoming`,
-`outgoing`), each with a static face and a dynamic face:
+A connection-view is accessed by its **name**, under the same borrow-window
+rule as node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
+reads as a single connection reference; a multi-valued one has a static face
+and a dynamic face.
 
-For a **static** (unmarked) connection type, the form is a read-only
-**array of connection references** with const-generic length bounded
-by the declared cardinality, exactly as §13.3.3.2 specifies for
-parts:
+For a **static** (unmarked) connection-view, the name is a read-only **array of
+connection-reference borrows** with const-generic length bounded by the
+declared cardinality, exactly as §13.3.3.2 specifies for node views:
 
-- Indexed: `incoming.<ConnType>[i]` and `outgoing.<ConnType>[i]` are
-  legal iff `i < min_cardinality` (ordinary const-generic bounds).
-  Example: under `outgoing: Drives [=1]`, `outgoing.Drives[0]` is
-  legal.
-- Iteration: `for c in outgoing.<ConnType>: ...` always works,
-  unrolling per §12.3.7. Because incoming connections are named
-  `incoming` (not `in`), `for c in incoming.<ConnType>` reads without
-  colliding with the `for ... in` separator.
+- Indexed: `name[i]` is legal iff `i < min_cardinality` (ordinary
+  const-generic bounds). Example: under `outgoing wires: WiresTo+`, `wires[0]`
+  is legal.
+- Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
-For a **`dynamic`** connection type, the form is a **reactive cell**
-whose value is the current set of member connections, with the
-consumption rules of §13.3.3.4 — operators for values, `repeat` for
-structure, nothing else. This is the fan-in idiom:
+For a **`dynamic`** connection-view, the name is a **reactive cell** whose
+value is the current set of member connections, with the consumption rules of
+§13.3.3.4 — operators for values, `repeat` for structure, nothing else. This is
+the fan-in idiom:
 
 ```
 connection Send:
@@ -13000,11 +12998,11 @@ connection Send:
   attr gain: f32 = 1.0
 
 node Mixer:
-  incoming: dynamic Send
-  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.value)
+  dynamic incoming sends: Send*
+  derived contributions = sends |> map(fn(c): c.gain * c.from.value)
   derived mix: f32 = sum(contributions)
   expose:
-    repeat c in incoming.Send:
+    repeat c in sends:
       Ack: c.from                 // a back-connection per current Send
 ```
 
@@ -13013,14 +13011,14 @@ any member's read cells change; `sum` is an ordinary function over
 the resulting values. The `repeat` arm shows the structural side:
 one `Ack` per currently incoming `Send`, mounting and dismounting
 with it. Markers fall on both sides by the rules of §13.3.4: the
-`Ack`s exist per `repeat` key, so `Session` declares
-`incoming: dynamic Ack`; the `Ack`s are self-sourced by `Mixer`'s
-own exposition, so `Mixer` needs no `outgoing:` entry for them.
+`Ack`s exist per `repeat` key, so `Session` declares a
+`dynamic incoming` connection-view of `Ack`; the `Ack`s are self-sourced by
+`Mixer`'s own exposition, so `Mixer` needs no `outgoing` connection-view for them.
 
 ##### 13.3.4.2 Self-sourced connections and the signature/internals model
 
-`incoming:` and `outgoing:` declare which connections a node *participates in* as
-an endpoint; they do not *establish* any. A node type establishes connections
+Connection-views declare which connections a node *participates in* as an
+endpoint; they do not *establish* any. A node type establishes connections
 **sourced from itself** — connections every instance of the type brings into
 being, with the instance as the `from` endpoint — by placing them **inline in
 its structural sequence**: as exposition entries (§13.3.7.5), directly or
@@ -13038,10 +13036,10 @@ always the enclosing instance.
 **Destinations must be nameable from the type's scope** (§13.7.1). Three forms
 are admissible:
 
-- A **part of the node** (scope 2) — a named part instance, or an indexed
-  `parts.X[i]` within the guaranteed minimum (§13.3.3.2). A **static**
-  internal destination: it always points, so it counts as static supply at
-  the part and can satisfy the part's `incoming:` lower bounds (§13.3.4).
+- A **child of the node** (scope 2) — a named child instance, or a view element
+  `name[i]` within the guaranteed minimum (§13.3.3.2). A **static** internal
+  destination: it always points, so it counts as static supply at the child and
+  can satisfy the child's incoming lower bounds (§13.3.4).
 - A **module-level instance** (scope 3) — a fixed, shared target every instance
   connects to, such as a global bus or clock. Also static.
 - A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
@@ -13050,8 +13048,8 @@ are admissible:
   the payoff of the dynamic `to`: *every instance drives whatever it is told to
   at placement*, and the connection freezes while the handle resolves to `None`
   (§13.9.7). Membership at the destination is not a static fact, so every node
-  type the handle's type admits must declare `incoming: dynamic <ConnType>`
-  (§13.3.4).
+  type the handle's type admits must declare a `dynamic incoming`
+  connection-view of that type (§13.3.4).
 
 ```
 connection Drives:
@@ -13060,13 +13058,13 @@ connection Drives:
 
 node Axle:
   satisfies Drivable
-  incoming: dynamic Drives            // membership varies with the handles — §13.3.4
+  dynamic incoming drives: Drives*    // membership varies with the handles — §13.3.4
 
 node Driver:
   attr wheel: Handle[Drivable]        // configured per instance at placement
-  parts: Pedal
+  view pedals: Pedal+
   expose:
-    parts.Pedal
+    pedals
     Drives: wheel                     // self-sourced; engages after the pedals
 
 Garage g:
@@ -13074,37 +13072,37 @@ Garage g:
   Driver | wheel=rear_axle            // this one drives rear_axle
 ```
 
-(`Driver` needs no `outgoing: Drives` — a self-sourced connection is not
-caller-placed; see below.)
+(`Driver` needs no `outgoing` connection-view for `Drives` — a self-sourced
+connection is not caller-placed; see below.)
 
 **Signature vs. internals.** Self-sourced connections are the concrete case of a
-general rule. A node type's `parts:`, `incoming:`, and `outgoing:` clauses are its
+general rule. A node type's views and connection-views are its
 **caller-facing signature**: they bound what a *caller* may place into, or wire
 to and from, an instance. A node's **internals** are **every placement the type
 itself makes** — self-sourced connections, type-emitted `for` children
 (§13.3.3.3), `repeat` placements (§13.5.4), wrapper placements (§13.3.7) — its
-private realization. Internals are **not** bound by the signature clauses and
-never appear in the signature namespaces; they are checked only by connection
-endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
+private realization. Internals are **not** bound by the signature and never
+appear in it; they are checked only by connection endpoint typing (§13.8.4) and
+topology-cycle analysis (§13.11.5).
 
 One consequence is recursive: when a node's internal wiring (a self-sourced
-connection, or a wrapper) terminates at one of the node's **own parts**, the
-node is acting as that part's **caller**, and the connection counts against the
-*part's* `incoming:` budget — the same budget a caller placing the part would
-draw from. A node is the caller of its own parts.
+connection, or a wrapper) terminates at one of the node's **own children**, the
+node is acting as that child's **caller**, and the connection counts against the
+*child's* incoming budget — the same budget a caller placing the child would
+draw from. A node is the caller of its own children.
 
 The same accounting applies at any destination: a self-sourced connection is
 exempt at its *source* only. At a **module-level destination**, every placed
 instance of the source type contributes one connection to the target's
-`incoming:` accounting, by §13.3.4's rule: contributions that are static facts
+incoming accounting, by §13.3.4's rule: contributions that are static facts
 (statically placed source instances, static destinations) count toward a
-static `incoming:` type's exact arithmetic; any contribution that is not a
+static `incoming` view's exact arithmetic; any contribution that is not a
 static fact — source instances materialized by `repeat`, or a `Handle`
-destination — requires the target to declare `incoming: dynamic` for that
-connection type, with the error naming both sites.
+destination — requires the target to declare a `dynamic incoming`
+connection-view for that type, with the error naming both sites.
 
 A self-sourced connection is therefore exempt from the source node's
-`outgoing:` clause (which governs caller-originated connections only), but it is
+`outgoing` connection-views (which govern caller-originated connections only), but it is
 **not** exempt from endpoint typing: the `from`/`to` types must still match the
 connection's declaration (§13.6.1).
 
@@ -13347,19 +13345,17 @@ syntax of §13.8.4 — `ConnType: dest`, optional `/expr`, attribute clause,
 and inline `when` modifier. The entry's position is where the connection
 *engages* during traversal (§13.3.7.6).
 
-**Positioning references** place *caller-supplied* connections:
-`outgoing.<ConnType>` (all caller-supplied connections of that static
-type, in placement order) or `outgoing.<ConnType>[i]` (one of them,
-legal under the guaranteed minimum) engages them at this position,
-overriding the anchoring fallback of §13.8.4 for the referenced
-connections. The form is a member-namespace reference with no
-destination, so it never collides with the `ConnType: dest` placement
-shape. Bare `incoming.<ConnType>` as an entry is a **compile error**:
-engagement order belongs to the *source's* traversal (§13.3.7.6), and a
-destination cannot reposition another node's connection within that
-node's structure. The error points at the expression-position idioms
-instead — `incoming.X[i].from` as a back-connection destination, or
-`repeat c in incoming.X: …` (§13.3.4.1).
+**Connection-view entries** position *caller-supplied* (outgoing) connections:
+naming an `outgoing` connection-view in `expose:` engages the connections
+supplied to it at that position, in placement order within the view. A
+connection-view the type never names in `expose:` still participates (presence
+is participation) but is never engaged — the same as an unexposed node view
+(§13.3.7.4). A bare **`incoming`** connection-view name as an entry is a
+**compile error**: engagement order belongs to the *source's* traversal
+(§13.3.7.6), and a destination cannot reposition another node's connection
+within that node's structure. The error points at the expression-position
+idioms instead — `name[i].from` as a back-connection destination, or
+`repeat c in name: …` (§13.3.4.1).
 
 **Iteration entries** emit type-internal structure in place:
 a compile-time `for` (§13.3.3.3) unrolls its placements at its written
@@ -14441,11 +14437,11 @@ the act of driving. Connections also satisfy traits (like
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
 **caller-placed** connection participates in the source node's outgoing
-surface (declared via `outgoing:`, with the `dynamic` marker when the
-caller may supply varying counts); a **self-sourced** one (§13.3.4.2)
-sits outside it. Both count at the destination node's incoming
-surface (declared via `incoming:`, per §13.3.4's static-or-`dynamic`
-membership rules).
+surface (declared via its `outgoing` connection-views, with the `dynamic`
+marker when the caller may supply varying counts); a **self-sourced** one
+(§13.3.4.2) sits outside it. Both count at the destination node's incoming
+surface (declared via its `incoming` connection-views, per §13.3.4's
+static-or-`dynamic` membership rules).
 
 Source and destination differ in how they are fixed. The `from` endpoint is
 the enclosing instance — structural, determined by *where* the connection is
@@ -14457,10 +14453,10 @@ target moves. No node is created or dropped by re-pointing — a connection
 never owns its endpoints (§13.8.4.1) — so this is rewiring within the static
 instance set, not a change to it (§13.1).
 
-A node declares which connection types callers may wire to and from it via
-its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
-constraints and the `dynamic` supply-mode marker; its own self-sourced
-connections sit outside those clauses (§13.3.4.2). The actual connection
+A node declares which connections callers may wire to and from it via its
+`incoming`/`outgoing` connection-views (§13.3.4), with optional cardinality and
+the `dynamic` supply-mode marker; its own self-sourced connections sit outside
+those connection-views (§13.3.4.2). The actual connection
 instances appear at placement (§13.8.4).
 
 **Connections and exposition.** A connection placement is an exposition
@@ -14892,8 +14888,8 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 #### 13.7.5 Reserved-field access
 
 The reserved fields of a node or connection instance — `from`, `to`
-(connection endpoints, §13.6), `incoming`, `outgoing` (connection
-sets, §13.3.4), `pair` (§13.6.1.3), and `exposition` (§13.3.7) — occupy
+(connection endpoints, §13.6), `pair` (§13.6.1.3), and `exposition`
+(§13.3.7) — occupy
 field position on the instance and resolve by bare name in
 expression-operand position by the same rule as user-defined members,
 but they are reserved keywords used in field context (§1.4), not
@@ -14908,21 +14904,19 @@ connection Drives:
   //                   here::from                     here::to
 
 node Display:
-  incoming: ShowsCount [=1]
-  derived shown: string = "{incoming.ShowsCount[0].count}"
+  incoming shows: ShowsCount
+  derived shown: string = "{shows[0].count}"
 ```
 
-These keywords retain their clause-header meaning only in
-declaration position (statement level, trailing colon: `from:`,
-`incoming:`). In expression-operand position they are the
-corresponding instance field. No collision with user names is
-possible — reserved words cannot be declared as cell names. `here::`
-remains available as the explicit form (`here::from`, `here::incoming`).
+These keywords retain their clause-header meaning only in declaration position
+(statement level, trailing colon: `from:`). In expression-operand position
+they are the corresponding instance field. No collision with user names is
+possible — reserved words cannot be declared as cell names. `here::` remains
+available as the explicit form (`here::from`, `here::pair`).
 
-Note that `in` is *not* among these: incoming connections are named
-`incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
-separator (§12.3). `for x in incoming.ShowsCount` reads without
-collision.
+Note that `in` is *not* among these: the incoming direction keyword is
+`incoming` (§13.3.4), distinct from the `for`-loop separator `in` (§12.3), so
+`for c in shows` reads without collision.
 
 #### 13.7.6 Resolution and reactive dependencies
 
@@ -15322,34 +15316,23 @@ their source is `filter`. The rule is uniform across nesting depth;
 the depth at which the connection appears does not change how the
 source is determined.
 
-**Position is topology.** A connection placement's position among its
-sibling placements is its **engagement position** (§13.3.7.6): the
-connection engages when traversal reaches that point in the sequence,
-after the siblings written before it. This holds regardless of who
-places the connection — a caller in a placement body, the type itself
-in its exposition (§13.3.7.5, including exposition-level `for` and
-`repeat` bodies, §13.3.3.3/§13.5.4).
+**Position is topology.** A *self-sourced* connection's position among its
+sibling placements is its **engagement position** (§13.3.7.6): it engages when
+traversal reaches that point in the type's exposition, after the siblings
+written before it (including exposition-level `for` and `repeat` bodies,
+§13.3.3.3/§13.5.4).
 
-For caller-supplied connections, the position survives the type's
-exposition by **anchoring**: each connection in a placement body anchors
-to its nearest *preceding* sibling placement — a node placement, or a
-`repeat` block as a unit (the connection then engages after the block's
-expanded scopes) — and engages immediately after that sibling wherever
-the exposition carries it: through a bulk reference (`parts`, `parts.X`
-— "in placement order", §13.3.7.1), a by-name entry, or a wrapper.
-Every part is exposed (§13.3.7.4), so every anchor lands. A connection
-written before any sibling anchors to the body start and engages before
-the node's first exposed entry. Under the default `expose: parts`
-(§13.3.7.2), this reduces to traversing the full interleaved sequence
-as written. Anchoring is the **fallback**: an explicit `expose:` that
-references caller-supplied connections directly (`outgoing.<ConnType>`,
-§13.3.7.1) overrides the anchor for the referenced connections.
+A *caller-supplied* (outgoing) connection does **not** carry its own engagement
+position into the type. Instead, the **type** positions it: the connection
+engages where the type names its `outgoing` connection-view in `expose:`
+(§13.3.7.1), in placement order within that view. A connection-view the type
+never names in `expose:` still participates but is never engaged (§13.3.7.4).
+There is no anchoring mechanism.
 
-A **caller-placed** connection's type must match a type listed in the source
-instance's `outgoing:` clause (or in the type's traits' contributions). A
-*self-sourced* connection placed in the source type's own exposition
-(§13.3.4.2, §13.3.7.5) is exempt from `outgoing:` — but not from endpoint
-typing.
+A **caller-placed** connection's type must match one of the source instance's
+`outgoing` connection-views (or its traits' contributions). A *self-sourced*
+connection placed in the source type's own exposition (§13.3.4.2, §13.3.7.5) is
+exempt from the `outgoing` connection-views — but not from endpoint typing.
 
 The destination is supplied in the connection placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
@@ -15358,7 +15341,8 @@ reference (possibly reactive), or a `Handle[N]` (read as `Option[&N]`,
 the candidate nodes (the connection freezes while that selection resolves to
 `None`, §13.9.7). A reactive or `Handle` destination makes membership at the
 destination a runtime fact: every node type in the reference's candidate
-envelope must declare `incoming: dynamic <ConnType>` (§13.3.4). The `/expr`
+envelope must declare a `dynamic incoming` connection-view of that type
+(§13.3.4). The `/expr`
 slot, when present, sets the connection's
 `default attr` (§13.2.2.1); the attribute clause (`| name=value …`) sets named
 attrs. None of these target the destination.
@@ -15517,9 +15501,10 @@ statically-known instance set — a function or cell cannot create a node
 compiler checks the `to:` constraint against the reference's *type* (so
 every possible target is well-typed), topology-cycle analysis (§13.11.5)
 ranges over the node *types* that reference type admits, and each of those
-types must declare `incoming: dynamic <ConnType>` (§13.3.4) — in the
-`pick(mode, some_car, other_car)` example above, the destination types of
-`some_car` and `other_car` both declare `incoming: dynamic Drives`. A
+types must declare a `dynamic incoming` connection-view of that type (§13.3.4)
+— in the `pick(mode, some_car, other_car)` example above, the destination types
+of `some_car` and `other_car` both declare a `dynamic incoming` connection-view
+of `Drives`. A
 *reactive* selection is what makes the destination move; a
 compile-time-fixed selection resolves to one node and the membership is a
 static fact.
