@@ -12488,8 +12488,6 @@ node TypeName[GenericParams]?:
   outgoing name: ConnType <card>                      // optional outgoing connection-views
   incoming name: ConnType <card>                      // optional incoming connection-views
   when: predicate                                     // optional activation predicate (§13.9)
-  expose:                                             // structural output (§13.3.7)
-    SomePart
   const name: Type = value                            // per-type compile-time constants
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
@@ -12498,10 +12496,14 @@ node TypeName[GenericParams]?:
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
   effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
     source |> effect
+  expose:                                             // structural output (§13.3.7) — always last
+    name                                              // a declared view (or named child)
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
-children, and no connections is legal but typically unused.
+children, and no connections is legal but typically unused. Members appear
+in free order; `effects:` follows the members and `expose:` is last
+(§13.3.7).
 
 ```
 node Driver:
@@ -12971,7 +12973,7 @@ or its destination is a reactive reference or `Handle` (its *target* varies,
 `outgoing` is symmetric: a caller may write a `repeat` that places connections
 sourced from the placed instance (fan-out — e.g. `repeat s in sessions:
 Send: s.target` in its placement body), and such caller-supplied connections
-require a `dynamic outgoing` connection-view (e.g. `outgoing sends: dynamic
+require a `dynamic outgoing` connection-view (e.g. `dynamic outgoing sends:
 Send*`) on the instance's type, since their count at the source is not a static
 fact. A merely *re-pointing* destination does not dynamize the source side: the
 connection statically exists at its source; only its target moves. Self-sourced
@@ -21969,10 +21971,12 @@ positions, §13.3.7.6) — and a separate
 A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`
 (the only mount/unmount construct; gates merely freeze). A scope that
 hosts a `@reset_on_reopen` stream consumer carries a `reset_on_reopen`
-field — the `(consumer_id, stream_id)` pairs whose cursor resets to the
-current head when the scope's gate reopens (§13.18.12); the cursor itself
-is runtime-only state, so only the reset flag is encoded. Hierarchy is
-encoded in the fully-qualified paths of the entries below.
+field — `(consumer_id, stream_id)` pairs, each a fully-qualified path
+(§15.4.1.1) naming the consuming operator/derived instance and the
+consumed stream, whose cursor resets to the current head when the scope's
+gate reopens (§13.18.12); the cursor itself is runtime-only state, so only
+the reset flag is encoded. Hierarchy is encoded in the fully-qualified
+paths of the entries below.
 
 The graph is a structured record with the following entries.
 
