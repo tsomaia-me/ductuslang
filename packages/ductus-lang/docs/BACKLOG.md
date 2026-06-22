@@ -96,9 +96,10 @@ live in **§5 (§8a)** — not duplicated here.
   5. **IR representation (closes the former open gap, Q6):** add a `reset_on_reopen` boolean to the
      IR, the way `@reset_on_reload` already has one (033-104) — because `@reset_on_reopen` is
      *runtime-behavioral* (the runtime acts on the reopen edge), not frontend-resolved. **Location
-     nuance:** 033-104 is a *stream-entry* field, but `@reset_on_reopen` attaches to **recurrents**
-     (016-54) and **stream consumers** (016-57), so its IR slot sits on the **recurrent cell entry**
-     (033-82 tuple) and the **consumer/cursor** encoding — *not* the stream entry. **General principle
+     nuance:** the flag lands by kind in three places — a value recurrent on its **recurrent cell
+     entry** (033-82 5-tuple / 033-260), a recurrent-stream **producer** on the **stream entry**
+     (033-261, since the producer *is* a stream), and a **consumer** on its **scope entry** (033-262);
+     cursors stay runtime-only. **General principle
      to state:** runtime-behavioral annotations get IR fields; compile-time annotations (`@derive`,
      `@flag`, `@literal_suffix`, trait `@default`) are frontend-resolved and never appear in the IR.
 - **Why:** Two ad-hoc rules don't compose — a recurrent stream is *both* a recurrent and a stream,
@@ -209,7 +210,7 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
 - **Decision:** A view is a transient borrow-window. Reading through it is direct and zero-ceremony
   (`channels[0].gain`) — no `!`, no Handle resolution. A view is **not storable**; to persist a
   reference you take a `Handle` explicitly (`weak`). **No auto-resolve** mechanism is added.
-- **Why:** This is the existing semantics (017-48: part elements are references used in place,
+- **Why:** This is the existing semantics (017-48: view elements are read directly in place,
   "storable nowhere"). Choosing it means the common case stays free and we add no implicit-`!`
   semantics. (The alternative — a view *is* an array of `Handle`s, storable but needing
   resolution/auto-resolve — was considered and rejected.)

@@ -81,7 +81,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 002-26. A keyword in a field-like position (`from`, `to`, `pair`, `exposition`, `desired`, `observed`) is the keyword used in that context with compiler-assigned meaning — like `this`/`super` in other languages — not a user-definable field. (§1.4)
 002-27. The language's syntax is specified directly in this log and SPEC.md; there is no separate grammar document and no normative content is delegated to one. (§1.4)
 
-## 003. Modules, Packages & Visibility — 76 Rules
+## 003. Modules, Packages & Visibility — 77 Rules
 
 003-1. `public` visibility exports a declaration across package boundaries to dependent packages. (§10.1)
 003-2. `shared` visibility reaches any file within the declaring package. (§10.1)
@@ -161,7 +161,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 003-75. Every cross-module reference is explicit: the name is brought into scope via `use` or the call uses a path-qualified form like `root::module::function_name(args)`. (§10.10)
 003-76. Trait-method calls follow the same name-resolution rule with the additional reach constraint that the implementation's effective visibility is the minimum of the trait's and the type's. (§10.10)
 
-## 004. Type System Core — 153 Rules
+## 004. Type System Core — 155 Rules
 
 004-1. Placeholders are compile-time-only types standing for not-yet-resolved concrete types; they exist solely during type checking and are eliminated before code generation. (§2.1)
 004-2. A placeholder attaches to a value, not a binding; a binding is a transparent alias with no type independent of its value: `let x = 5` carries an integer placeholder. (§2.1.1)
@@ -319,7 +319,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 004-152. A const-generic default is used when the argument is neither supplied nor inferred and may itself be an expression referencing earlier parameters: `const N: usize = A + B`. (§2.5.7)
 004-153. A const-generic default expression obeys the const-generic expression rules: symbolic where it references unbound parameters, concrete once they are known. (§2.5.7)
 
-## 005. Traits — 229 Rules
+## 005. Traits — 234 Rules
 
 005-1. A trait declares an interface — method signatures, associated types, and requirements — that types explicitly conform to and provide implementations for. (§3)
 005-2. The trait system is nominal throughout: a type satisfies a trait only via an explicit conformance declaration, never by accidental structural match. (§3)
@@ -822,7 +822,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 007-222. User-defined types may implement cross-type instantiations such as `Add[i32] for Distance`. (§4.9.4)
 007-223. User-defined numeric-like types implement whichever fine-grained traits are appropriate; umbrella satisfaction follows. (§4.9.4)
 
-## 008. Type Composition: `&`, `dyn`, `Type[...]` — 70 Rules
+## 008. Type Composition: `&`, `dyn`, `Type[...]` — 73 Rules
 
 008-1. The `&` type-intersection operator appears in exactly three contexts: trait conjunction in generic bounds, trait intersection behind `dyn` at value position, and record intersection in `type` definitions. (§5)
 008-2. In a generic parameter list or where-clause, `T: A & B` constrains `T` to types for which both `fulfill A for T` and `fulfill B for T` exist: `fn pick[T: Drivable & Insurable](item: T)`. (§5.1)
@@ -898,7 +898,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 008-69. A bare `Type[Node]` admits any node type but can only be held, passed, stored, and returned — not placed. (§5.7.5)
 008-70. Placing a type value requires its constraint to be a trait declaring the instantiation interface: required attrs/consts/cells and, for connections, endpoints. (§5.7.5)
 
-## 009. Records, Enums & Newtypes — 118 Rules
+## 009. Records, Enums & Newtypes — 122 Rules
 
 009-1. Records (product types), enums (sum types), and newtypes (wrapper types) are the three user-defined nominal compound types, with identity by name rather than structure. (§6)
 009-2. All three compound kinds participate uniformly in the trait system. (§6)
@@ -1167,7 +1167,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 011-93. A `derived` whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`. (§8.9)
 011-94. The reactive layer adds no error mechanism beyond the existing type system. (§8.9)
 
-## 012. Strings, Tuples, Arrays & Time — 146 Rules
+## 012. Strings, Tuples, Arrays & Time — 149 Rules
 
 012-1. `string`, tuples, and fixed-size arrays `T[N]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
@@ -1571,7 +1571,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 013-242. Function parameters flowing into reactive declarations follow `own`/`move` like any other category A consumption. (§11.14)
 013-243. The reactive boundary is one of the "global" scopes referenced by §11.1's principles; value crossing is fully specified in §13.12. (§11.14)
 
-## 014. Iteration & Loops — 166 Rules
+## 014. Iteration & Loops — 167 Rules
 
 014-1. The language's iteration constructs are integer ranges, the `for` loop in default and `for own` forms, the `while` loop, `break` and `continue`, loop expressions with `else:`, and the `Iterator`, `Iterable`, and `IntoIterable` traits. (§12)
 014-2. A `for` loop obtains an iterator through `Iterable` (default form) or `IntoIterable` (`for own` form), then produces successive values through `Iterator`. (§12.1)
@@ -1785,7 +1785,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
 
-## 016. Reactive Declarations (Cells) — 277 Rules
+## 016. Reactive Declarations (Cells) — 279 Rules
 
 016-1. There are exactly six reactive declaration kinds — `signal`, `attr`, `recurrent`, `derived`, `const`, `stream` — distinguished by who controls the value and how it changes. (§13.2)
 016-2. `signal`, `attr`, `recurrent`, and `derived` declare value-shaped reactive cells. (§13.2)
@@ -2480,7 +2480,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 018-138. Nested `repeat`s each own a separate `as` view and do not flatten into the outer one. (§13.5.4.9)
 018-139. A nested view is scoped to its parent key; cross-level addressing composes view by view rather than through one global table. (§13.5.4.9)
 
-## 019. Connections — 75 Rules
+## 019. Connections — 78 Rules
 
 019-1. A connection is a directional, typed link between two node instances. (§13.6.0)
 019-2. Connections are first-class entities: each has its own identity. (§13.6.0)
@@ -2602,7 +2602,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 020-37. Every named identifier in an instance body scope — cells of all kinds (`const`/`attr`/`recurrent`/`derived`/`stream`), `view` and connection-view declarations, and placement `as`-names — shares one namespace; no two may share a name regardless of kind, and there is no shadowing across them. This holds uniformly for node and connection bodies. (§13.7.1)
 020-38. View names and exposed placement `as`-names are hoisted — visible body-wide regardless of textual order — because they name structure, not init-time values; cell values still follow initialization order (016-144). (§13.7.1)
 
-## 021. Placement — 136 Rules
+## 021. Placement — 137 Rules
 
 021-1. Placement is the syntax for instantiating nodes and connections into a concrete reactive graph. (§13.8)
 021-2. Placement is distinct from value construction of records, which uses constructor syntax. (§13.8)
@@ -3239,7 +3239,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 028-73. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-74. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
 
-## 029. Operators — 123 Rules
+## 029. Operators — 124 Rules
 
 029-1. An operator is a reusable, cell-allocating reactive transformation declared with the `operator` keyword. (§13.17)
 029-2. An operator takes `Cell[T]` inputs, optionally plus non-reactive value parameters, and produces an output of any type, exposed to callers as a reactive cell. (§13.17)
@@ -3366,7 +3366,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 029-125. A carried operator composes in `|>` chains at the point it is instantiated, identically to a named operator. (§13.17.13)
 029-129. Ruling A: a value-reading operator or function parameter is typed `Cell[T]` (the umbrella), and an operator's computed value output is a `Derived[T]`; a `Stream[T]` has no current value and is excluded at the read site, not by the signature. (§13.17.3)
 
-## 030. Streams — 256 Rules
+## 030. Streams — 262 Rules
 
 030-1. A stream is a reactive primitive for append-only event sequences governed by a buffering policy. (§13.18)
 030-2. Streams are first-class reactive cells participating in the commit cycle, in cell identity for hot reload, and in the graph specification. (§13.18)
