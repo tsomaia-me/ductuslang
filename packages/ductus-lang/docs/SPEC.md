@@ -72,9 +72,8 @@ orthogonal capability a type may or may not have; a type can be a first-class
 citizen yet lack value-semantics. Node, connection, and effect instances are
 exactly such citizens: nameable, passable, returnable graph members that
 nonetheless lack value-semantics and so cannot be stored in cells or records.
-That restriction is not a special "instances are never values" axiom — it
-follows from single ownership and the borrow rules above (a borrow is
-unstorable, §13.3.6.1). The storable stand-in for *which kind* to place is the
+That restriction follows from single ownership and the borrow rules above (a
+borrow is unstorable, §13.3.6.1). The storable stand-in for *which kind* to place is the
 type value `Type[…]` (§5.7); for *which instance*, a weak `Handle[T]`
 (§13.3.6.2).
 
@@ -7115,9 +7114,9 @@ modules (those still require an absolute `use` path).
 
 Every declaration position that admits a visibility specifier
 accepts one of: `public`, `shared`, `private`, or *absence* (which
-denotes `shared` by default). The older `pub` keyword is
-replaced throughout by this three-level model; the propagation covers
-all visibility-bearing declarations.
+denotes `shared` by default). There is no `pub` keyword; this
+three-level model is the only visibility vocabulary, covering every
+visibility-bearing declaration.
 
 ```
 public fn render_frame(...): ...           // exported across packages
@@ -12908,8 +12907,7 @@ Connections a node participates in are declared **per-view**, parallel to node
 views (§13.3.3) but with their own direction keywords: `outgoing name: Type`
 makes the node the `from` endpoint, `incoming name: Type` makes it the `to`
 endpoint. Each declaration is a **connection-view** — a direction keyword, a
-unique name (§13.7.1), a connection type, and optional cardinality. These
-replace the old bulk `incoming:`/`outgoing:` list clauses. See §13.6 for
+unique name (§13.7.1), a connection type, and optional cardinality. See §13.6 for
 connection declarations and §13.8.4 for connection placement.
 
 Like node views, connection-views are the node's **caller-facing signature**:
@@ -13193,8 +13191,7 @@ defer *which* node type is placed, pass a `Type[…]` value (§5.7).
 The same ownership rule applies to **connections** and **effects**: an
 *instance* is a graph member, brought in only by the language's placement
 and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow —
-a first-class citizen lacking value-semantics, hence unstorable by the borrow
-rule rather than any special axiom; their *types* travel as values via `Type[…]`
+a first-class citizen lacking value-semantics, hence unstorable; their *types* travel as values via `Type[…]`
 (§5.7). **Operators** are likewise instantiated only via their own syntax
 (§13.17), and additionally have a structural *type*, `operator(…) -> U`
 (§13.17.13), by which an operator can be carried. The rule is normative;
@@ -15327,7 +15324,6 @@ position into the type. Instead, the **type** positions it: the connection
 engages where the type names its `outgoing` connection-view in `expose:`
 (§13.3.7.1), in placement order within that view. A connection-view the type
 never names in `expose:` still participates but is never engaged (§13.3.7.4).
-There is no anchoring mechanism.
 
 A **caller-placed** connection's type must match one of the source instance's
 `outgoing` connection-views (or its traits' contributions). A *self-sourced*
