@@ -1784,7 +1784,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
 
-## 016. Reactive Declarations (Cells) — 276 Rules
+## 016. Reactive Declarations (Cells) — 277 Rules
 
 016-1. There are exactly six reactive declaration kinds — `signal`, `attr`, `recurrent`, `derived`, `const`, `stream` — distinguished by who controls the value and how it changes. (§13.2)
 016-2. `signal`, `attr`, `recurrent`, and `derived` declare value-shaped reactive cells. (§13.2)
@@ -1845,6 +1845,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 016-57. On a gated stream consumer (an operator or derived reading a stream), `@reset_on_reopen` resets the consumer's cursor on resume to the current head, discarding the gap's backlog. (§13.2.4)
 016-58. While frozen, a `@reset_on_reopen` consumer of a gate-policy stream source releases its buffer hold, neither pinning the buffer nor back-pressuring producers. (§13.2.4)
 016-59. `@reset_on_reopen` acts only on gated instances; on a never-gated instance it never fires and is harmless, not an error. (§13.2.4)
+016-279. `@reset_on_reopen` discards an instance's gap-accumulated state on the gate reopen edge (false→true, 016-56); what counts as gap-state is per kind — a recurrent value cell's self/input history (016-54), a stream consumer's cursor and backlog (016-57), and a recurrent stream producer's output/input history and buffer (030-281) — and a stateless instance has none, so the directive is a harmless no-op (016-59). (§13.2.4)
 016-60. Triggers are implicit: a recurrent re-evaluates whenever any cell it references — other than via `.previous`/`.past` on itself — commits a new value: `counter.previous(0) + step_value` re-evaluates on `step_value`. (§13.2.4)
 016-61. A recurrent whose expression contains only self-references evaluates once and freezes; this is valid behavior, not an error. (§13.2.4)
 016-62. A trigger that contributes no value to the expression (e.g., a pure clock signal) requires an explicit `observe` arm. (§13.2.4)
@@ -3364,7 +3365,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 029-125. A carried operator composes in `|>` chains at the point it is instantiated, identically to a named operator. (§13.17.13)
 029-129. Ruling A: a value-reading operator or function parameter is typed `Cell[T]` (the umbrella), and an operator's computed value output is a `Derived[T]`; a `Stream[T]` has no current value and is excluded at the read site, not by the signature. (§13.17.3)
 
-## 030. Streams — 254 Rules
+## 030. Streams — 256 Rules
 
 030-1. A stream is a reactive primitive for append-only event sequences governed by a buffering policy. (§13.18)
 030-2. Streams are first-class reactive cells participating in the commit cycle, in cell identity for hot reload, and in the graph specification. (§13.18)
@@ -3600,6 +3601,8 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 030-279. Decreasing an input's max `k` is reload-safe: the allocation truncates to the most-recent `k` entries, which are retained (the window stays full; the oldest entries drop). (§13.18.14)
 030-250. Removing all `.past` references to an input reload-safely releases its history allocation. (§13.18.14)
 030-251. `@reset_on_reload` on a `recurrent[N] stream` resets the output history and all per-input history in addition to the base buffer. (§13.18.14)
+030-281. `@reset_on_reopen` on a `recurrent[N] stream` is producer-side: on the producer's gate reopen edge it resets the output history, all per-input history, and the base buffer — the reopen analog of `@reset_on_reload` (030-251) — restarting the stream clean from current inputs. (§13.18.8)
+030-282. A recurrent stream producer's `@reset_on_reopen` (030-281) and a downstream consumer's `@reset_on_reopen` (030-215) are distinct annotation sites on distinct gates: the producer resets its own history and buffer when the producer's subtree reopens, while a consumer resets its cursor when the consumer's subtree reopens; the two never conflate. (§13.18.8)
 030-252. `stream` declarations may not appear inside function bodies. (§13.18.15)
 030-253. A stream's source expression must contain at least one reactive input (signal, stream, or other Cell); a pure-value expression cannot be a stream source. (§13.18.15)
 030-254. Cursors are not first-class values: programs cannot construct, store, or pass them, and they are observable only through consumers' signal outputs. (§13.18.15)
@@ -3627,7 +3630,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 030-277. An operator that requires a specific policy, or whose output policy is not its input's, names the policy concretely in its return type; there is no policy/capacity inheritance rule. (§13.18.3)
 030-278. The stdlib provides transparent generic aliases for the common stream spellings: `RingStream[T, N]` = `Stream[T, Ring[N]]`, `GateStream[T, N]` = `Stream[T, Gate[N]]`, and the recurrent forms. (§13.18.3)
 
-## 031. Effects — 152 Rules
+## 031. Effects — 153 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -3726,6 +3729,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 031-102. Pure positional call-site moves within the same scope preserve effect instance identity. (§13.19.11)
 031-103. A stream cell's buffer inside an effect is preserved across reload iff `(element type, policy, capacity)` is byte-identical. (§13.19.11)
 031-104. `@reset_on_reload` on an effect's stream cell forces a buffer clear on reload. (§13.19.11)
+031-160. `@reset_on_reopen` on a `desired:` recurrent or recurrent stream resets that cell's accumulated state on the effect's gate reopen — the reactivation sibling of `@reset_on_reload` on an effect stream cell (031-104), governed by the effect's gate. (§13.19.4)
 031-105. An effect instance lives as long as its enclosing scope; scope death drops the instance and all its cells. (§13.19.12)
 031-106. On instance teardown the host's reconciler receives a teardown call with the instance ID, allowing release of external resources. (§13.19.12)
 031-107. An effect in a node's `effects:` clause lives as long as the node instance is mounted. (§13.19.12)
@@ -3964,7 +3968,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 224 Rules
+## 033. Compilation Model & IR — 227 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4035,6 +4039,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 033-64. A scope's `exposes` list holds the ordered placements the runtime traverses — child scopes and references to the scope's connection entries, in exposition order (engagement positions). (§15.4.1)
 033-65. A scope's hosted effects live in a separate `effects` set and never appear in `exposes`. (§15.4.1)
 033-66. A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`. (§15.4.1)
+033-262. A scope's `reset_on_reopen` field lists the `(consumer_id, stream_id)` pairs whose cursor resets to the current head when the scope's gate reopens (016-57); the cursor itself stays runtime-only state, so only this reset flag is encoded. (§15.4.1)
 033-67. `repeat` is the only mount/unmount construct; gates merely freeze. (§15.4.1)
 033-68. Scope hierarchy is encoded in the entries' fully-qualified paths. (§15.4.1)
 033-69. A cell entry's `id` is the cell's fully-qualified declaration path. (§15.4.1)
@@ -4049,10 +4054,11 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 033-78. A connection entry's `attrs` is an ordered list of `(name, value)` pairs. (§15.4.1)
 033-80. Derived dependency edges are recorded as `(derived_cell_id, [input_cell_ids])` pairs. (§15.4.1)
 033-81. The runtime uses derived dependency edges for dirty-set propagation and topological evaluation ordering. (§15.4.1)
-033-82. Recurrent dependency edges are `(recurrent_cell_id, [input_cell_ids], output_history_N, input_lookback_map)` tuples. (§15.4.1)
+033-82. Recurrent dependency edges are `(recurrent_cell_id, [input_cell_ids], output_history_N, input_lookback_map, reset_on_reopen)` tuples. (§15.4.1)
 033-83. A recurrent edge's `input_cell_ids` are the non-self references that drive re-evaluation (implicit triggers). (§15.4.1)
 033-84. A recurrent edge's `output_history_N` is the declared `[N]` self-history depth, defaulting to 1. (§15.4.1)
 033-85. A recurrent edge's `input_lookback_map` maps input cell IDs referenced via `.past(k, ...)` to their maximum `k`. (§15.4.1)
+033-260. A recurrent edge's `reset_on_reopen` boolean is true exactly when the recurrent carries `@reset_on_reopen` (016-54), directing the runtime to clear the cell's self/input history on the gate reopen edge. (§15.4.1)
 033-86. A recurrent whose expression is an `observe` block additionally carries the observe's per-arm trigger sets. (§15.4.1)
 033-90. Block selectors `when` and `given` lower to per-arm gates: each arm becomes a gated subtree. (§15.4.1)
 033-91. A `when`-block arm's gate predicate is the arm's guard. (§15.4.1)
@@ -4069,6 +4075,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 033-102. A stream entry's `source_dependencies` are the input cells the source expression reads, used for dirty-set propagation when the source is a derived chain. (§15.4.1)
 033-103. A stream entry's `observation_cell_ids` name the synthesized observation cells: `pending_count`, `pressure`, `is_full`, `dropped_total`, `rejected_total`, `last_overflow_at`. (§15.4.1)
 033-104. A stream entry's `reset_on_reload` boolean is true exactly when the stream carries `@reset_on_reload`. (§15.4.1)
+033-261. A stream entry's `reset_on_reopen` boolean is true exactly when the stream carries `@reset_on_reopen`; on a `recurrent[N] stream` it directs the reopen reset of output/input history and buffer (030-281). (§15.4.1)
 033-105. A stream entry's `output_history_size` is the integer N from `recurrent[N] stream`, or 0 for a non-recurrent stream declaration. (§15.4.1)
 033-106. `output_history_size` determines the number of past-event slots allocated for `.past(k, ...)` access on the stream's output. (§15.4.1)
 033-107. A stream entry's `input_lookback_map` maps input cell IDs read via `.past(k, ...)` in a recurrent stream's body to integer max-`k`, determining per-input history allocation. (§15.4.1)

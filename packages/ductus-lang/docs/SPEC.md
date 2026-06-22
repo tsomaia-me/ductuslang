@@ -11302,19 +11302,29 @@ current inputs instead of blending in stale pre-gap state. It fires
 receives no triggers for a while is correctly holding its value.
 
 It is the reactivation counterpart to `@reset_on_reload` (§13.15.5):
-both reset a cell's accumulated state on a lifecycle event —
-`@reset_on_reload` across a hot reload, `@reset_on_reopen` across a gate
-gap. On a **recurrent** cell it clears the self- and input-history
-(§13.2.4.3), so the first post-gap evaluation reads fallbacks. On a
-**stream consumer** (an operator or derived reading a stream whose
-enclosing subtree is gated) it resets the consumer's cursor: on resume
-the cursor skips to the current head (discarding the gap's backlog) and,
-for a **gate**-policy source, the consumer additionally *releases its
-buffer hold during the freeze* so it does not pin the buffer or
-back-pressure producers while frozen (§13.18.12). In both forms the
+both reset accumulated state on a lifecycle event — `@reset_on_reload`
+across a hot reload, `@reset_on_reopen` across a gate gap. What counts as
+accumulated state is per kind:
+
+- On a **recurrent** value cell it clears the self- and input-history
+  (§13.2.4.3), so the first post-gap evaluation reads fallbacks.
+- On a **recurrent stream** producer it clears the output history, all
+  per-input history, and the base buffer (§13.18.8), restarting the
+  stream clean from current inputs.
+- On a **stream consumer** (an operator or derived reading a stream whose
+  enclosing subtree is gated) it resets the consumer's cursor: on resume
+  the cursor skips to the current head (discarding the gap's backlog)
+  and, for a **gate**-policy source, the consumer additionally *releases
+  its buffer hold during the freeze* so it does not pin the buffer or
+  back-pressure producers while frozen (§13.18.12).
+
+A recurrent stream producer and a downstream consumer are distinct
+annotation sites governed by distinct gates — the producer resets when
+the producer's subtree reopens, a consumer when the consumer's own
+subtree reopens — and the two are never conflated. In every form the
 decorator means "do not carry accumulated state across the gap," and in
-both it has effect only on a *gated* instance. Because gating may be
-introduced at the type level or at a placement (§13.9.3), whether a
+every form it has effect only on a *gated* instance. Because gating may
+be introduced at the type level or at a placement (§13.9.3), whether a
 given instance is ever gated is not in general known at the declaration
 site; on an instance that is never gated the decorator simply never
 fires — it is harmless, not an error.
@@ -19371,6 +19381,19 @@ consumers use it as an ordinary `Stream[T]`.
   cell is a value-shaped `Recurrent[T, N]` or an event-shaped
   recurrent stream.
 
+##### 13.18.8.8 Reset on reopen
+
+A `recurrent[N] stream` whose enclosing subtree is gated (§13.9) follows
+the recurrent default on reopen: it resumes from its pre-gap history.
+Carrying `@reset_on_reopen` (§13.2.4) makes it instead reset on the gate
+false→true edge — clearing its output history, all per-input history, and
+the base buffer — so it restarts clean from current inputs. This is the
+**producer-side** reset, the reopen analog of `@reset_on_reload`
+(§13.18.14). It is distinct from a downstream consumer's cursor reset
+(§13.18.12), which is governed by the consumer's own gate; a producer and
+a consumer that both carry the decorator reset independently, each on its
+own subtree's reopen.
+
 #### 13.18.9 Stream operators
 
 Operators that produce, transform, or consume streams are stdlib
@@ -19849,7 +19872,9 @@ buffer hold during the freeze*, so a reset-annotated gate consumer does
 not pin the buffer or back-pressure producers while frozen. Use it when
 gap events would be stale or misinterpreted on resume; the trade is the
 same as for recurrent history (§13.2.4): preserve by default, reset on
-opt-in.
+opt-in. This consumer-side reset is governed by the consumer's own gate,
+distinct from a recurrent stream producer's reopen reset of its own output
+history and buffer (§13.18.8).
 
 **No cursor rewind.** Cursors only advance. There is no operation
 to rewind a cursor to an earlier position; the buffer's events are
@@ -20386,7 +20411,11 @@ cannot write to them.
 value may depend on its own past via `.previous`/`.past`, e.g. an
 exponential backoff `recurrent backoff: Duration = min(backoff.previous(1s) * 2, 60s)`.
 (`recurrent` is allowed only in `desired:`, never in `observed:`, whose
-host-fed cells have no expression body — §13.19.5.)
+host-fed cells have no expression body — §13.19.5.) A `desired:`
+`recurrent` or recurrent stream may carry `@reset_on_reopen` (§13.2.4);
+when the effect's enclosing subtree is gated, it resets its accumulated
+state on the effect's gate reopen — the reactivation sibling of
+`@reset_on_reload` on a `desired:` stream cell (§13.19.11).
 
 **`stream` cells** — event-output streams the effect produces for the
 host. The cell is fed by a `= source` expression over the effect's
@@ -21938,7 +21967,11 @@ to the scope's connection entries, in exposition order (engagement
 positions, §13.3.7.6) — and a separate
 `effects` set — the effects hosted there per §13.3.8, never in `exposes`.
 A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`
-(the only mount/unmount construct; gates merely freeze). Hierarchy is
+(the only mount/unmount construct; gates merely freeze). A scope that
+hosts a `@reset_on_reopen` stream consumer carries a `reset_on_reopen`
+field — the `(consumer_id, stream_id)` pairs whose cursor resets to the
+current head when the scope's gate reopens (§13.18.12); the cursor itself
+is runtime-only state, so only the reset flag is encoded. Hierarchy is
 encoded in the fully-qualified paths of the entries below.
 
 The graph is a structured record with the following entries.
@@ -21970,15 +22003,18 @@ The graph is a structured record with the following entries.
 propagation and topological evaluation ordering.
 
 **Recurrent dependency edges.** A list of `(recurrent_cell_id,
-[input_cell_ids], output_history_N, input_lookback_map)` tuples,
-encoding each recurrent's reactive inputs and its self-/input-
+[input_cell_ids], output_history_N, input_lookback_map, reset_on_reopen)`
+tuples, encoding each recurrent's reactive inputs and its self-/input-
 history allocation per §13.2.4. `input_cell_ids` are the non-self
 references that drive re-evaluation (implicit triggers).
 `output_history_N` is the recurrent's declared `[N]` self-history
 depth (defaulting to 1). `input_lookback_map` maps input cell IDs
 referenced via `.past(k, ...)` to their maximum `k`, mirroring the
-stream-cell encoding. Recurrents whose expression is an `observe`
-block additionally carry the observe's per-arm trigger sets.
+stream-cell encoding. `reset_on_reopen` is a boolean, true exactly when
+the recurrent carries `@reset_on_reopen` (§13.2.4): the runtime clears the
+cell's self-/input-history on the gate reopen edge. Recurrents whose
+expression is an `observe` block additionally carry the observe's per-arm
+trigger sets.
 
 **`when`-gates.** Gating is encoded as first-class **gate objects**. Each
 gate carries: a stable `id`; its predicate in compiled form (behavior
@@ -22021,6 +22057,10 @@ is the cross-build match key, not the table index.
   `dropped_total`, `rejected_total`, `last_overflow_at`.
 - `reset_on_reload`: boolean, true if the stream carries the
   `@reset_on_reload` annotation.
+- `reset_on_reopen`: boolean, true if the stream carries the
+  `@reset_on_reopen` annotation; on a `recurrent[N] stream` it directs
+  the producer-side reopen reset of output/input history and buffer
+  (§13.18.8).
 - `output_history_size`: integer N from `recurrent[N] stream`, or
   0 if not a recurrent stream declaration. Determines the number
   of past-event slots allocated for `NAME.past(k, ...)` access on
@@ -22347,10 +22387,12 @@ field_list    ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
 variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
 
 graph_section ::= 'graph' '{' scope+ '}'
-scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set '{' entry* '}'
+scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set
+                  ('reset_on_reopen' reopen_set)? '{' entry* '}'
 entry         ::= cell | gate | connection | effect
 cell          ::= cell_kind PATH ':' type_tag
-                  ('uses' BID)? ('inputs' path_set)? ('depth' INT)? ('init' value)? ('gate' PATH)?
+                  ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
+                  ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
 cell_kind     ::= 'input' | 'derived' | 'recurrent'
 gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
 connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
@@ -22362,6 +22404,7 @@ behaviors_section ::= 'behaviors' '{' behavior* '}'        // behavior per §15.
 
 path_set      ::= '[' (PATH (',' PATH)*)? ']'
 binding_set   ::= '[' (binding (',' binding)*)? ']'
+reopen_set    ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'  // (consumer_id : stream_id) pairs
 binding       ::= NAME ':' (PATH | value)
 type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
                 | '(' type_tag (',' type_tag)* ')' | '[' type_tag ';' INT ']'
@@ -22382,7 +22425,10 @@ stored or recurrent cell an `init`. A `gate` carries its predicate behavior (`pr
 it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
 names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
 record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
-`%TypeId`.
+`%TypeId`. A `recurrent` cell's optional `reset_on_reopen` flag marks
+`@reset_on_reopen` (§13.2.4); a `scope`'s optional `reset_on_reopen` set
+names the `(consumer : stream)` cursors it resets to head on gate reopen
+(§13.18.12).
 
 ### 15.5 Compilation Modes
 
