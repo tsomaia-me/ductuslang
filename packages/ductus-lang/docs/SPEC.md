@@ -126,13 +126,13 @@ Code examples use Ductus syntax. Type-name case conventions:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `const`, `let`, `mut`, `repeat`), all clause
-keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
+`derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`), all clause
+keywords (`incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
 `dynamic` — the supply-mode marker, §13.3.3.1), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
-remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
+remaining fields `from`, `to`, `incoming`, `outgoing` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
 `match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
 scope-anchor namespaces (`here`, `module`), the instance value
@@ -142,7 +142,7 @@ import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
-Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the node slot `parts`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
+Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
 
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
@@ -170,7 +170,7 @@ newlines and indentation. The semicolon `;` is **not a token** in the
 grammar and never appears in Ductus source — not as a statement
 terminator, not as a list separator, not in generic parameter lists.
 Every separated list (call arguments, generic parameters, tuple
-components, `parts:`/`incoming:`/`outgoing:` entries, etc.) uses the
+components, `incoming:`/`outgoing:` entries, etc.) uses the
 comma, the newline, or both. A `;` in Ductus source is a lex error.
 (This governs Ductus source only. Non-Ductus code shown for
 illustration — host-driver pseudocode that embeds the runtime, and the
@@ -6028,11 +6028,6 @@ and the `!` site fails with a precise error naming the broken contract, instead
 of some distant `match` silently changing meaning. This is the same philosophy as
 mandatory `dyn` (§5.2.2): make the load-bearing assumption appear in the source
 where it is relied upon.
-
-> **Disambiguation.** Postfix `!` on a value expression (`opt!`) is distinct from
-> the `!` cardinality sigil in `parts:` / `incoming:` / `outgoing:`
-> (`Performer!`, "exactly one", §13.3.3.1): the former is in value-expression
-> position, the latter in type-cardinality position, and the two never collide.
 
 ### 8.5 Error-Type Conversion via `From`
 
@@ -12221,10 +12216,10 @@ receiving node drops those cells per §14.7.
 
 A `Type[…]` attr is an *attr-shaped, singular* template slot. It is *not*
 the mechanism for child-placement with cardinality, list semantics, and
-per-instance scoping: that is `parts:` together with placement-time
-children (§13.8.3) and the §13.5 keyed-scope primitive. `parts:` exists
-solely to supply the children a node **exposes** (§13.3.7.4); a `Type[…]`
-attr is an independent value slot.
+per-instance scoping: that is views together with placement-time children
+(§13.8.3) and the §13.5 keyed-scope primitive. Views exist to supply the
+children a node **exposes** (§13.3.7.4); a `Type[…]` attr is an independent
+value slot.
 
 ##### 13.2.10.3 Restrictions
 
@@ -12480,7 +12475,7 @@ runtime.
 ```
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
-  parts: Type1, Type2                                 // optional permitted part types
+  view name: Selector <cardinality>                   // optional child views (§13.3.3)
   incoming: Conn1, Conn2                              // optional incoming connection types
   outgoing: Conn3, Conn4                              // optional outgoing connection types
   when: predicate                                     // optional activation predicate (§13.9)
@@ -13137,7 +13132,7 @@ node Buffer[T: Numeric]:
   derived utilization: f32 =
     f32(fill_level) / f32(capacity)
 
-  parts: BufferSlot[T]
+  view slots: BufferSlot[T]*
 ```
 
 Each instantiation of `Buffer` with a different concrete `T`
@@ -13640,27 +13635,26 @@ in the `effects:` clause of a **top-level node instance** (§13.8.1).
 `f = url |> fetch` or `derived x = url |> effect` elsewhere in the node
 body is a compile error directing the author to `effects:` (§13.19.16).
 
-### 13.4 Parts
+### 13.4 Children and View Access
 
 #### 13.4.0 Concept
 
-"Part" is a *role*, not a separate type. A part is a child node
-instance placed inside a parent node at construction time. Parts
-exist for *containment* (§13.3.0 framing): a parent node may own
-child nodes whose lifetimes and addressing are bound to the parent.
+"Child" is a *role*, not a separate type. A child is a node instance placed
+inside a parent node at construction time. Children exist for *containment*
+(§13.3.0 framing): a parent node may own child nodes whose lifetimes and
+addressing are bound to the parent.
 
-Parts vs. top-level placements: a node placed at the module top
-level is an independent instance addressable by its name. A node
-placed as a part is contained within a parent instance and
-addressable only through that parent (e.g., `parent.osc1` or
-`parent.parts.Oscillator[0]`). The structural distinction matters
-for ownership, hot-reload diffing, and addressing — both kinds of
-instances have reactive cells that participate in dependency
-graphs, but a part's cells are reachable through the parent's
-`parts.<Type>` mechanism, whereas a top-level instance is
-reachable only by its module-scope name or through connections.
+Children vs. top-level placements: a node placed at the module top level is
+an independent instance addressable by its name. A node placed as a child is
+contained within a parent instance and addressable only through that parent
+(e.g., `parent.osc1` or, through a view, `parent.oscs[0]`). The structural
+distinction matters for ownership, hot-reload diffing, and addressing — both
+kinds of instances have reactive cells that participate in dependency
+graphs, but a child's cells are reachable through the parent's views,
+whereas a top-level instance is reachable only by its module-scope name or
+through connections.
 
-Use parts when:
+Use children when:
 
 - The contained instance is conceptually "owned" by the parent
   (a Synthesizer owns its Oscillators; a Form owns its Fields).
@@ -13673,160 +13667,151 @@ Use top-level placements when the instance stands on its own and
 participates in the graph through connections rather than
 containment.
 
-The parent declares the types of children it accepts via its
-`parts:` clause (§13.3.3) with optional cardinality; the specific
-instances appear via placement (§13.8.3).
+The parent declares the children it accepts via `view` declarations
+(§13.3.3) with cardinality; the specific instances appear via placement
+(§13.8.3).
 
-**Runtime traversal goes through `expose:`, not through `parts:`
-directly.** The `parts:` clause is the constraint and supply
-mechanism — declared types, cardinality, and placement-time
-filling. The `expose:` clause (§13.3.7) is the structural output
-the runtime walks; it references parts (via `parts.<Type>` or
-by named instance), possibly wrapping them in internal nodes.
-Parts that the exposition does not include are not traversed by
-the runtime — they remain queryable via the host API and addressable
-within the parent's own reactive expressions, but they do not
-contribute to the structural descent.
+**Runtime traversal goes through `expose:`, not through the views
+directly.** A view is the constraint-and-access mechanism — declared
+selector, cardinality, and placement-time filling. The `expose:` clause
+(§13.3.7) is the structural output the runtime walks; it references children
+(via a view name or a named instance), possibly wrapping them in internal
+nodes. Children the exposition does not include are not traversed by the
+runtime — they remain queryable via the host API and addressable within the
+parent's own reactive expressions, but they do not contribute to the
+structural descent.
 
 #### 13.4.1 Access forms
 
-Parts of a parent instance are accessible in two ways. The
-available access forms depend on the parent's `parts:` clause:
+Children of a parent instance are accessible in two ways:
 
-- **Type-bulk (`parts:` declared only):** `parts.<NodeType>`.
-  For a *static* (unmarked) type this is a read-only array of node
-  references with const-generic length bounded by the declared
-  cardinality (§13.3.3.2) — indexable under the guaranteed minimum,
-  iterable with `for`, in placement order. For a **`dynamic`** type
-  it is a reactive cell consumed via operators or `repeat`
-  (§13.3.3.4). Available only when `<NodeType>` appears in the
-  `parts:` clause.
-- **Named individual:** bare `<name>` (or `paramName.<name>` from
-  outside the node body) — accesses a specific part by its
-  placement-time name. Names are assigned in the placement body
-  (§13.8.3) and visible wherever the placement scope is known.
-  Available with or without a `parts:` clause.
+- **By view:** a view name. For a *static* (unmarked) view this is a
+  read-only array of borrows with const-generic length bounded by the
+  declared cardinality (§13.3.3.2) — indexable under the guaranteed
+  minimum, iterable with `for`, in placement order. For a **`dynamic`**
+  view it is a reactive cell consumed via operators or `repeat`
+  (§13.3.3.4). Bulk access exists only through a declared view name.
+- **Named individual:** bare `<name>` (or `paramName.<name>` from outside
+  the node body) — accesses a specific child by its placement-time name.
+  Names are assigned in the placement body (§13.8.3) and visible wherever
+  the placement scope is known. Available independent of any view.
 
-There is no whole-namespace (heterogeneous) iteration over `parts`:
-per-type access is the only bulk form, and a node without a `parts:`
-clause has no bulk access at all (§13.3.3.2).
+There is no whole-namespace (heterogeneous) iteration over a node's
+children: a (homogeneous) view is the only bulk form, and a node with no
+views has no bulk access at all (§13.3.3.2).
 
 Summary table:
 
-| Form                  | `parts:` declared              | `parts:` omitted |
-|-----------------------|--------------------------------|------------------|
-| `parts.<Type>` static | array (§13.3.3.2)              | not available    |
-| `parts.<Type>` dynamic| reactive cell (§13.3.3.4)      | not available    |
-| named (bare `<name>`) | available                      | available        |
+| Form                  | view declared             | no matching view |
+|-----------------------|---------------------------|------------------|
+| view name (static)    | array (§13.3.3.2)         | not available    |
+| view name (dynamic)   | reactive cell (§13.3.3.4) | not available    |
+| named (bare `<name>`) | available                 | available        |
 
 Inside the parent's own type body (its `derived` and `recurrent`
-expressions), only the type-bulk form is available;
-placement names aren't visible at the type-declaration level.
-Named individual access becomes available in:
+expressions), caller-supplied children are reached by view name; a caller's
+placement names for those children aren't visible at the type-declaration
+level. Named individual access becomes available in:
 
-- Function bodies receiving a specific instance, where the
-  instance's placement names are visible (e.g., `c.osc1.output`
-  where `c` is a Composite parameter).
-- Other instances' placement bodies that reference the named
-  instance.
-- The same placement body where the part is declared (other lines
-  may reference the named part regardless of order, including ones
-  written earlier or later).
+- Function bodies receiving a specific instance, where the instance's
+  placement names are visible (e.g., `c.osc1.output` where `c` is a
+  Composite parameter).
+- Other instances' placement bodies that reference the named instance.
+- The same placement body where the child is declared (other lines may
+  reference the named child regardless of order, including ones written
+  earlier or later).
 
-Static type-bulk and named access are compile-time resolved: the
-compiler knows every statically supplied part's identity, type, and
-placement-name per site (§13.1). A `dynamic` type's membership is
-runtime data by declaration, tracked reactively (§13.3.3.4).
+Static view and named access are compile-time resolved: the compiler knows
+every statically supplied child's identity, type, and placement-name per
+site (§13.1). A `dynamic` view's membership is runtime data by declaration,
+tracked reactively (§13.3.3.4).
 
-#### 13.4.2 Iteration over parts
+#### 13.4.2 Iteration over a view
 
-A function body that receives the parent node as a parameter may
-iterate its parts using a `for` loop, accessed via the parameter
-name (developer-chosen, not an implicit receiver).
+A function body that receives the parent node as a parameter may iterate a
+view using a `for` loop, accessed via the parameter name (developer-chosen,
+not an implicit receiver).
 
-**Type-bulk iteration:**
+**View iteration:**
 
 ```
 fn total_output(s: Synthesizer) -> f32:
   mut sum: f32 = 0.0
-  for o in s.parts.Oscillator:
+  for o in s.oscillators:
     sum = sum + o.output
   sum
 
 node Synthesizer:
-  parts: Oscillator+
+  view oscillators: Oscillator+
   derived total: f32 = total_output(subject)
 ```
 
-`o` has the concrete type `Oscillator` in each iteration. The
-compiler unrolls the loop to one reference per declared Oscillator
-part.
+`o` has the concrete type `Oscillator` in each iteration. The compiler
+unrolls the loop to one reference per supplied Oscillator.
 
-Iteration is **per-type only**. There is no heterogeneous `for p in
-c.parts` over all declared types: aggregate behavior over several
-part types is written per type and combined explicitly, so that
-adding a type to the `parts:` clause forces a conscious decision
-about its contribution rather than flowing it silently through a
-body that happens to compile. Where one uniform stored
-representation across types is genuinely needed, use `dyn Trait`
-(§5.2).
+Iteration is **per-view only**. There is no heterogeneous `for` over all of
+a node's children: aggregate behavior over several views is written per view
+and combined explicitly, so that adding a view forces a conscious decision
+about its contribution rather than flowing it silently through a body that
+happens to compile. Where one uniform stored representation across child
+types is genuinely needed, use `dyn Trait` (§5.2).
 
-**Relation to the general unrolling rule.** Part iteration is not a
-special construct: `c.parts.Oscillator` is a fixed-extent array
-(§13.3.3.2) whose per-site length the parent's `parts:` declaration
-bounds and the placement fixes (§13.1's static-graph principle), so a
-`for` over it unrolls by the ordinary rule of §12.3.7 — the same rule
-by which a range or array literal unrolls.
+**Relation to the general unrolling rule.** View iteration is not a special
+construct: a static view `c.oscillators` is a fixed-extent array (§13.3.3.2)
+whose per-site length the view's cardinality bounds and the placement fixes
+(§13.1's static-graph principle), so a `for` over it unrolls by the ordinary
+rule of §12.3.7 — the same rule by which a range or array literal unrolls.
 
-#### 13.4.3 Reactive dependency tracking through parts
+#### 13.4.3 Reactive dependency tracking through a view
 
-When a function called from a reactive expression iterates parts,
-each part's reactive cells contribute to the calling expression's
-dependency set. In the example above:
+When a function called from a reactive expression iterates a view, each
+child's reactive cells contribute to the calling expression's dependency
+set. In the example above:
 
-- `total_output(subject)` reads `p.output` for each part.
-- Each `p.output` is a derived on the part.
-- The `Synthesizer.total` derived's dependency set includes every
-  part's `output` derived.
-- When any one part's `output` changes, `total` is dirty.
+- `total_output(subject)` reads `o.output` for each child.
+- Each `o.output` is a derived on the child.
+- The `Synthesizer.total` derived's dependency set includes every child's
+  `output` derived.
+- When any one child's `output` changes, `total` is dirty.
 
-This works because dependency tracking is provenance-based (§13.12.1):
-the compiler tracks reactive cells read by an expression,
-transitively through function calls.
+This works because dependency tracking is provenance-based (§13.12.1): the
+compiler tracks reactive cells read by an expression, transitively through
+function calls.
 
 #### 13.4.4 Restrictions
 
-- Parts are bound to placement-time names. A node may contain at
-  most one part of each name; multiple parts of the same type with
-  different names are permitted (subject to the cardinality
-  declared in the `parts:` clause).
-- Statically supplied parts are not added or removed at runtime
-  (except via hot reload). Parts of a `dynamic` type mount and
-  dismount with their feeding `repeat`'s key set (§13.3.3.4).
-- A `dynamic` part type is not `for`-iterable, not indexable, and
-  not key-addressable from the receiving body — operators and
-  `repeat` are its only consumers (§13.3.3.4).
+- Children are bound to placement-time names. A node may contain at most
+  one child of each name; multiple children of the same type with different
+  names are permitted (subject to the declared view cardinality).
+- Statically supplied children are not added or removed at runtime (except
+  via hot reload). Children of a `dynamic` view mount and dismount with
+  their feeding `repeat`'s key set (§13.3.3.4).
+- A `dynamic` view is not `for`-iterable, not indexable, and not
+  key-addressable from the receiving body — operators and `repeat` are its
+  only consumers (§13.3.3.4).
 
-#### 13.4.5 Parts access — example
+#### 13.4.5 View access — example
 
-Putting type-bulk and named individual access together:
+Putting view and named individual access together:
 
 ```
 node Composite:
-  parts: Oscillator+, Filter [=1], Amplifier [=1]
+  view oscillators: Oscillator+
+  view filter:      Filter
+  view amplifier:   Amplifier
   derived total_oscillation: f32 = sum_oscillators(subject)
   derived processed: f32 = process(subject)
 
 fn sum_oscillators(c: Composite) -> f32:
   mut sum: f32 = 0.0
-  for o in c.parts.Oscillator:        // type-specific iteration
+  for o in c.oscillators:               // view iteration
     sum = sum + o.output
   sum
 
 fn process(c: Composite) -> f32:
-  let raw = c.parts.Oscillator[0].output      // indexed, legal under `+`
-  let filtered = c.parts.Filter[0].apply(raw) // indexed, legal under `[=1]`
-  c.parts.Amplifier[0].amplify(filtered)
+  let raw = c.oscillators[0].output      // indexed, legal under `+`
+  let filtered = c.filter[0].apply(raw)  // indexed, legal under exactly-one
+  c.amplifier[0].amplify(filtered)
 
 // Placement with optional names:
 Composite c1:
@@ -13840,9 +13825,9 @@ fn debug(c: Composite) -> string:
   "first oscillator: {c.osc_a.output}, filter: {c.flt1.kind}"
 ```
 
-Two access patterns coexist: `c.parts.Oscillator[i]` / `for o in
-c.parts.Oscillator` (type-bulk, bounded by cardinality) and `c.osc_a`
-(named individual, requires the caller to know placement names).
+Two access patterns coexist: `c.oscillators[i]` / `for o in c.oscillators`
+(by view, bounded by cardinality) and `c.osc_a` (named individual, requires
+the caller to know placement names).
 
 ### 13.5 Template Scopes and Keyed Instantiation
 
@@ -13991,8 +13976,8 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 `in <source>`, then optional `as <view>`, then optional `keyed by <key-expr>`.
 
 - **`<source>`** is a reactive collection cell: `Signal[I]` for some
-  `I: Iterable` (§12.8), or a **`dynamic` namespace cell** of the
-  enclosing node (`parts.<T>` / `incoming.<C>` / `outgoing.<C>`,
+  `I: Iterable` (§12.8), or a **`dynamic` collection cell** of the
+  enclosing node (a `dynamic` view, or `incoming.<C>` / `outgoing.<C>`,
   §13.3.3.4), whose value is a language-provided keyed, ordered
   collection — always iterable. The iterator must terminate at each
   evaluation (see §13.5.4.8). The
@@ -14028,7 +14013,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   invariant.
 
   *Why repeat needs this.* The body's placements (attrs, connection
-  arguments, child parts) consume their RHS values into structural
+  arguments, child placements) consume their RHS values into structural
   storage per categories B/D in §11.1. Storage sites require real
   owners; cluster members cannot be stored (§11.3.4). Without
   move-promotion, the bind couldn't flow into any placement RHS.
@@ -14077,8 +14062,8 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
      is evaluated with the bind in scope. The result must be a
      `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
      `string`). Explicit always wins when present.
-  2. **Carried key** — when the source is a `dynamic` namespace cell
-     (`parts.<T>` / `incoming.<C>` / `outgoing.<C>`, §13.3.3.4), each
+  2. **Carried key** — when the source is a `dynamic` collection cell
+     (a `dynamic` view, or `incoming.<C>` / `outgoing.<C>`, §13.3.3.4), each
      element arrives with the key its supplier derived for it
      (placement-site keys for statically written elements), and that
      key is used.
@@ -14173,10 +14158,9 @@ node VoiceMixer:
 
 The `repeat` is written in `expose:` — structural output is emitted in
 exactly one place (§13.3.3.3). These `Voice` children are the type's
-**internals**: never counted against any `parts:` clause and absent from
-the `parts` namespace (§13.3.4.2). A *caller* materializing children
-instead writes the `repeat` in the placement body, feeding a
-`dynamic`-marked part type of the receiving node (§13.3.3.4).
+**internals**: never counted by any view (§13.3.4.2). A *caller*
+materializing children instead writes the `repeat` in the placement body,
+feeding a `dynamic` view of the receiving node (§13.3.3.4).
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
 commits for the same `voice_id`. The attr is a reactive cell — reads
@@ -14310,7 +14294,7 @@ template-scope machinery; the cost model is "pay for what you iterate."
   (§13.3.4.2).
 - **Placement bodies** (§13.8.3) — scopes become children of this
   specific placement. This is **caller supply**: node placements feed
-  the receiving type's `dynamic`-marked part types (§13.3.3.4), and
+  the receiving type's `dynamic` views (§13.3.3.4), and
   connection placements sourced from the placed instance require
   `outgoing: dynamic` on its type (§13.3.4).
 - **`effects:` clauses** (§13.3.8) — each scope materializes one
@@ -14792,9 +14776,10 @@ to outer-most is:
 1. **Local bindings** — `let` bindings and `for`-loop variables
    inside a reactive expression.
 2. **The instance body scope** — the node's or connection's members:
-   `attr`, `recurrent`, `derived`, `stream` cells; and the reserved
-   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`,
-   `pair`, `parts`, `exposition` — §13.7.5).
+   `attr`, `recurrent`, `derived`, `stream` cells; `view` and
+   connection-view declarations; placement `as`-names; and the reserved
+   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`, `pair`,
+   `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
 
@@ -14908,8 +14893,8 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 
 The reserved fields of a node or connection instance — `from`, `to`
 (connection endpoints, §13.6), `incoming`, `outgoing` (connection
-sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
-`exposition` (§13.3.7) — occupy field position on the instance and resolve by bare name in
+sets, §13.3.4), `pair` (§13.6.1.3), and `exposition` (§13.3.7) — occupy
+field position on the instance and resolve by bare name in
 expression-operand position by the same rule as user-defined members,
 but they are reserved keywords used in field context (§1.4), not
 user-definable members:
@@ -14929,7 +14914,7 @@ node Display:
 
 These keywords retain their clause-header meaning only in
 declaration position (statement level, trailing colon: `from:`,
-`incoming:`, `parts:`). In expression-operand position they are the
+`incoming:`). In expression-operand position they are the
 corresponding instance field. No collision with user names is
 possible — reserved words cannot be declared as cell names. `here::`
 remains available as the explicit form (`here::from`, `here::incoming`).
@@ -15192,10 +15177,10 @@ Counter c1 | start_value=100 step=5    // per-instance configuration via attrs
 If a cell is not set at placement, its declared default (for attrs)
 applies. Consts always have their type-declared value.
 
-#### 13.8.3 Child parts
+#### 13.8.3 Child placements
 
 The body of a placement (the indented block introduced by `:`) is
-reserved exclusively for child placements — parts and connections.
+reserved exclusively for child placements — child nodes and connections.
 Attribute settings on the enclosing instance do not appear in the
 body; they live on the placement's main line via inline attribute
 syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
@@ -15206,18 +15191,17 @@ Component chip_b | label="B":
   Pin as in1                              // another child part
 ```
 
-A child placement that names a node type listed in the parent's
-`parts:` clause is a part. The placement creates an instance of
-that node type as a child of the parent.
+A child placement that names a node type admitted by one of the parent's
+views creates an instance of that node type as a child of the parent.
 
 A nested placement is named with the **`as` marker**: `Pin as out1`.
 The marker is required for nested placements because they may be
-anonymous (`Pin` alone is a valid unnamed part), so bare `Pin out1`
-would be ambiguous between one named part and two anonymous ones. (At
+anonymous (`Pin` alone is a valid unnamed child), so bare `Pin out1`
+would be ambiguous between one named child and two anonymous ones. (At
 top level, where names are mandatory, `as` is optional — §13.8.1.)
 
 The optional instance name (`out1`, `in1` in the example) is the
-*placement-time name* of the part. Once named, the part is
+*placement-time name* of the child. Once named, the child is
 accessible by that name from contexts where the placement scope is
 visible:
 
@@ -15226,36 +15210,33 @@ visible:
   including ones written later (placement-scope names are whole-scope).
 - Outside the parent type, in function bodies receiving the parent
   instance: `chip_b.out1` (where `chip_b` is the parameter name)
-  accesses the named part directly, in parallel with the type-bulk
-  form `chip_b.parts.Pin[i]`.
+  accesses the named child directly, in parallel with the view form
+  `chip_b.pins[i]`.
 - In other instances' placement bodies that reference this
   instance, by qualified path: `chip_b.out1`.
 
-Named individual access is the placement-time companion to the
-type-bulk access form described in §13.4.1.
-Names are not available inside the parent's own type body (the
-type declaration doesn't know what placements will exist) — within
-the parent type, use `parts.<NodeType>[i]` or `parts.<NodeType>`
-iteration instead.
+Named individual access is the placement-time companion to the view access
+form described in §13.4.1. A caller's placement names are not available
+inside the parent's own type body (the type declaration doesn't know what
+placements will exist) — within the parent type, use a view (`viewname[i]`
+or iteration over it) instead.
 
-Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
-enforced at placement: the number of placed parts of each type
-must satisfy the declared cardinality. Violations are compile
-errors at the placement site.
+Cardinality declared in the parent's views (§13.3.3.1) is enforced at
+placement: the number of placed children matching each view must satisfy its
+declared cardinality. Violations are compile errors at the placement site.
 
 ##### 13.8.3.1 Parametric topology via compile-time `for`
 
 A placement body may contain a `for` loop whose iterable is
 compile-time-known (§12.3.7, §2.4.1). The loop unrolls at compile time,
 producing one child placement per iteration. The static-graph principle
-(§13.1) is preserved: every part is determined at compile time.
+(§13.1) is preserved: every child is determined at compile time.
 
 The two iteration constructs split a placement body by supply mode:
 **`for` is static supply** — its unrolled placements count against the
-receiving type's cardinality and appear in `parts.<NodeType>`, exactly
-like individually written placements — and **`repeat` is dynamic
-supply** (§13.5.4), legal only against the receiver's `dynamic`-marked
-types (§13.3.3.4).
+receiving type's view cardinality and appear in the matching view, exactly
+like individually written placements — and **`repeat` is dynamic supply**
+(§13.5.4), legal only against the receiver's `dynamic` views (§13.3.3.4).
 
 A `for` in a placement body whose iterable is *not* compile-time-known
 is a compile error pointing at the iterable. No new diagnostic class is
@@ -15264,14 +15245,13 @@ identifies the iterable and (via §2.4.6's reactivity-provenance
 machinery) cites the runtime source if the runtime-ness flows from a
 reactive value.
 
-Anonymous parts produced by an unrolled placement loop are addressable
-via the indexed type-bulk form `parts.<NodeType>[i]` (§13.4.1) from
-function bodies that receive the parent instance, and via the bare
-type-bulk form `parts.<NodeType>` from inside the parent's type body
+Anonymous children produced by an unrolled placement loop are addressable
+via the view (`viewname[i]`, §13.4.1) from function bodies that receive the
+parent instance, and via the view name from inside the parent's type body
 (§13.4.2).
 
 **Example.** A synthesizer whose voice count is fixed at module scope
-via a `const`, used both in the type's `parts:` cardinality and in the
+via a `const`, used both in the type's view cardinality and in the
 placement's body loop:
 
 ```
@@ -15282,7 +15262,7 @@ node Oscillator:
   derived output: f32 = synthesize(freq)
 
 node Synthesizer:
-  parts: Oscillator [=VOICE_COUNT]
+  view oscillators: Oscillator [=VOICE_COUNT]
   derived total: f32 = total_output(subject)
 
 Synthesizer synth:                 // top-level declaration form (§13.8.1)
@@ -15296,8 +15276,8 @@ placement body unrolls into eight anonymous `Oscillator` child
 placements with statically-determined `freq` attrs. The cardinality
 `Oscillator [=VOICE_COUNT]` declared by the type is satisfied at compile
 time by the unrolled placements. The parts are accessible via the
-indexed type-bulk form `synth.parts.Oscillator[i]` (§13.4.1), and the
-parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
+indexed view form `synth.oscillators[i]` (§13.4.1), and the parent type's
+own iteration uses `for o in oscillators:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a reactive iterable source (`Signal[I]`
@@ -15546,7 +15526,7 @@ static fact.
 
 ##### 13.8.5.2 For node (part) placements
 
-For a node placement (typically a part placed inside a parent),
+For a node placement (typically a child placed inside a parent),
 `/expr` sets the type's `default attr` (§13.2.2.1). The expression
 must match the default attr's declared type.
 
@@ -16087,13 +16067,14 @@ Filter f1 / "low-pass" when dsp_mode is DspMode::Realtime | gain=0.5
 ShowsCount when unread_count > 0: d1
 ```
 
-Parts placed inside a parent's body may carry `when` clauses
+Children placed inside a parent's body may carry `when` clauses
 identically — the same grammar applies to part placements as to
 top-level placements:
 
 ```
 node App:
-  parts: Logger [=2], Monitor [=1]
+  view loggers: Logger [=2]
+  view monitor: Monitor
   attr verbose: bool = false
   attr health_checks_enabled: bool = true
 
@@ -16539,12 +16520,12 @@ not a control-flow branch.
 **Placement and cardinality.** Because every arm is constructed and only
 propagation is gated, placements inside *all* arms of a `when` or `given`
 block used in a node or placement body count toward the enclosing type's
-`parts:` cardinality — the same rule as parts placed by a type-body `for`
-(§13.3.3.3). A two-arm block each placing one `Oscillator` constructs
-two, so `parts: Oscillator [=1]` would be violated; size the cardinality
+view cardinality — the same rule as children placed by a type-body `for`
+(§13.3.3.3). A two-arm block each placing one `Oscillator` constructs two,
+so `view osc: Oscillator` (exactly one) would be violated; size the cardinality
 for the sum across arms. (At `expose:` level this does not arise:
-exposition references already-placed parts and constructs only wrapper
-placements, not cardinality-constrained parts — §13.3.7.1.) A block, like
+exposition references already-placed children and constructs only wrapper
+placements, not cardinality-constrained children — §13.3.7.1.) A block, like
 any `:`-introduced construct, owns an indented body and therefore
 occupies its own lines; it cannot share a line with sibling placements
 (§13.8.10).
@@ -17338,14 +17319,14 @@ node Divider:
       Ok(numerator / denominator)
 
 node Consumer:
-  parts: Divider
+  view divider: Divider
   derived report: string =
-    match divider.quotient:
+    match divider[0].quotient:
       Ok(value): "result: {value}"
       Err(DivideError::ByZero): "result: undefined"
 
 Consumer my_consumer:
-  Divider as divider            // names the contained Divider part
+  Divider as divider            // names the contained Divider child
 ```
 
 The divide-by-zero case never traps; it produces `Err(...)`. The
