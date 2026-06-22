@@ -12530,75 +12530,81 @@ fulfill Displayable for Driver:
     "Driver(exp: {d.expertise_level}, risk: {d.risk_tolerance})"
 ```
 
-#### 13.3.3 `parts` clause
+#### 13.3.3 Views
 
 ```
-parts: [dynamic] Type1 [cardinality]?, [dynamic] Type2 [cardinality]?, ...
+view name: <selector> <cardinality>
+dynamic view name: <selector>*
 ```
 
-The `parts:` clause is **optional**. Its presence determines what
-kinds of child node instances may be placed inside instances of
-this node at placement time:
+Children are accessed through **`view` declarations** — a declaration kind
+parallel to `attr`, living in the body name-scope with names unique across
+the whole body (§13.7.1). A view names a **receiver-side query** over the
+children a caller supplies: its `<selector>` is a concrete node type, a
+trait, or the marker `Node`, and its `<cardinality>` (§13.3.3.1) constrains
+how many supplied children match.
 
-- **No `parts:` clause** — the node accepts child instances of *any
-  node type*. Inside the node body, no bulk access is available —
-  only named access to children the body itself can see (§13.4.1).
-  The host walks such a node's children through its exposition
-  (§13.3.7), not through any body-side iteration.
-- **With a `parts:` clause** — the node accepts only children whose
-  types appear in the listed set. Unmarked (static) types carry the
-  declared cardinality constraints and type-bulk
-  (`parts.<NodeType>[i]`) access; `dynamic`-marked types may be fed
-  by a caller's `repeat` and are accessed as reactive collections
-  (§13.3.3.4). Cardinality is enforced at placement.
+- **Views overlap rather than partition.** Each view is an independent
+  query over the whole supplied set, so one child may be counted by several
+  views at once.
+- **Accepted universe.** What a node accepts is the union of its view
+  selectors: a node with **no views accepts nothing**, and a `Node` (or
+  `Connection`) catch-all view opens it fully.
+- **Homogeneous.** Every child a view yields satisfies its one selector;
+  heterogeneous bundles are **groups**, a distinct kind (§13.3.3.5).
+- **Gated children still count.** A `when`-gated-off child remains in the
+  views that match it and its reads return frozen values — gates freeze
+  rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
+  membership.
 
-The clause does not by itself place specific instances — it only constrains
-what types and how many of each are permitted. It is the node's **caller-facing
-part signature**: it bounds what a *caller* supplies (§13.8.3), and nothing
-else. The node's own placements — children it emits in its exposition via a
-compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4) — are its private
-realization: they are never counted against `parts:` and never appear in the
-`parts` namespace, exactly as a component's internal structure is invisible to
-its `children`. The governing principle — signature clauses bound callers;
-internals are unconstrained by them — is stated in §13.3.4.2.
+A `view` declaration **places no instances**; it is purely the node's
+caller-facing query, bounding only what a *caller* supplies (§13.8.3). The
+node's own internal children — those it emits in its exposition via a
+compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4), or places and names
+with `as` (§13.3.7) — are its private realization: they are never counted by
+a view and never appear in one, exactly as a component's internal structure
+is invisible to its `children`. The governing principle — signature
+declarations bound callers; internals are unconstrained by them — is stated
+in §13.3.4.2.
 
 ```
-// Restricted parts with cardinality:
+// Views with cardinality:
 node Synthesizer:
-  parts: Oscillator+, Filter [=1], Amplifier?
+  view oscillators: Oscillator+      // at least one
+  view filter:      Filter           // exactly one
+  view amplifier:   Amplifier?       // at most one
   attr master_volume: f32 = 1.0
 ```
 
 In this example: at least one Oscillator (`+`), exactly one Filter
-(`[=1]`), at most one Amplifier (`?`).
+(bare = exactly one), at most one Amplifier (`?`).
 
 ```
-// Open parts (any node type accepted):
+// Catch-all view (any node type accepted):
 node Processor:
-  // no `parts:` clause; accepts any node as a child
+  view children: Node*               // any node, zero or more
   outgoing: WiresTo
 ```
 
-`Processor` accepts any node type as a part. Its body has no bulk
-access to them; the host walks the parts externally through the
-exposition, based on its own conventions (e.g., per-type dispatch
-via const discriminators — §13.2.5).
+`Processor` accepts any node type through its `children` view, reading the
+supplied children directly (`children[i]`, §13.3.3.2). A node that declares
+no view accepts nothing.
 
-A node may have parts of its own type (self-recursion) when `parts:`
-is omitted or when the node's own type appears in the `parts:`
-clause. Self-recursive placements terminate because each placement
-is an explicit user act — the compiler walks finite placement trees,
-not infinite type recursions.
+A node may declare a view selecting its own type (self-recursion).
+Self-recursive placements terminate because each placement is an explicit
+user act — the compiler walks finite placement trees, not infinite type
+recursions.
 
 ##### 13.3.3.1 Cardinality forms
 
-Cardinality may be written as a sigil or a bracketed range. Sigils
-cover common cases:
+A view's cardinality may be written as a sigil or a bracketed range. The
+default — **no sigil, no bracket — means exactly one**; multiplicity is
+always explicit. Sigils cover the common cases:
 
-- (no sigil, no bracket) — `0..` (zero or more, unlimited)
+- (no sigil, no bracket) — **exactly one**
 - `?` — `0..=1` (optional)
 - `+` — `1..` (at least one)
-- `!` — exactly one (shorthand for `[=1]`)
+- `*` — `0..` (zero or more)
 
 Bracketed range forms support arbitrary bounds:
 
@@ -12607,63 +12613,80 @@ Bracketed range forms support arbitrary bounds:
 - `[N..]` — at least N (no upper bound)
 - `[..=M]` — up to M (lower bound 0)
 
-A part type may carry exactly one cardinality specifier (sigil OR
-bracket, not both); duplicate specifiers are a compile error.
+A view carries exactly one cardinality specifier (sigil OR bracket, not
+both); duplicate specifiers are a compile error. Sigils attach directly to
+the selector with no intervening whitespace: `Reverb?`, `Channel+`,
+`Voice*`. Bracket forms may optionally have a space before the bracket:
+`Filter[=1]` and `Filter [=1]` are both valid.
 
-Sigils attach directly to the type name with no intervening
-whitespace: `Part?`, `Part+`, `Part!`. Bracket forms may optionally
-have a space before the bracket: `Part[=1]` and `Part [=1]` are both
-valid.
+**Conjunction.** Each view's cardinality constrains the count of supplied
+children matching its selector, and all of a node's views hold
+**simultaneously** — there is no precedence or resolution among them.
+Because views overlap, a child counts toward every view it matches:
 
-**Supply mode — the `dynamic` prefix.** Orthogonal to *count* is
-*supply mode*: whether the set of supplied children is a static fact
-or may vary at runtime. The `dynamic` keyword, prefixed to the type
-name (`parts: Header, dynamic Post`), marks the second mode. It is
-**mutually exclusive with every cardinality specifier** — `dynamic
-Post+` or `dynamic Post [=3]` is a compile error — because a
-runtime-varying set can guarantee no minimum and admit no checked
-maximum, and runtime cardinality checks do not exist in the language.
-An unmarked type is *static*: supplied by explicitly written
-placements only, with the count known per placement site at compile
-time. A `dynamic` type may additionally be fed by a caller's `repeat`
-(§13.3.3.4). The same marker, with the same meaning, applies to
-`incoming:` and `outgoing:` clauses (§13.3.4).
+```
+node Fleet:
+  view drivables: Drivable[=5]   // exactly 5 Drivables — any concrete types
+  view cars:      Car[=2]        // 2 of those 5 are Cars  (Car ⊆ Drivable)
+```
+
+The only conflict is **unsatisfiability**, diagnosed by a cheap subset-edge
+static check along the known trait/marker subset lattice plus placement-time
+counting — there is no general feasibility solver. A view whose selector is
+a subset of another's but whose bound cannot be reconciled with it is a
+static error: `view all: Node[=3]` alongside `view drivables: Drivable[=5]`
+cannot be satisfied (Drivable ⊆ Node, 5 > 3).
+
+**Supply mode — the `dynamic` prefix.** Orthogonal to *count* is *supply
+mode*: whether the set of supplied children is a static fact or may vary at
+runtime. The `dynamic` keyword prefixes a **view** (`dynamic view voices:
+Voice*`), marking the second mode. A `dynamic` view takes **exactly the `*`
+specifier** — its inherent zero-or-more; the bounded specifiers
+`?`/`+`/`[=N]`/`[N..M]` are forbidden on `dynamic`, and there is no single
+dynamic view (`dynamic view voice: Voice` ✗, `dynamic view voices: Voice+`
+✗) — because a runtime-varying set can guarantee no minimum and admit no
+checked maximum, and runtime cardinality checks do not exist in the
+language. An unmarked view is *static*: supplied by explicitly written
+placements only, with the count known per placement site at compile time. A
+`dynamic` view may additionally be fed by a caller's `repeat` (§13.3.3.4).
+The same marker, with the same meaning, applies to `incoming:` and
+`outgoing:` connection declarations (§13.3.4).
 
 ##### 13.3.3.2 Access from inside the node body
 
-For a *static* (unmarked) part type, `parts.<NodeType>` is an
-ordinary **read-only array of node references** whose length `N` is
-an implicit const-generic: each placement site fixes its own `N`
-(the exact static supply there), and the declared cardinality
-supplies the compile-time bounds `min..max` that every site's `N`
-must satisfy. Nothing about the form is a special construct — its
-behavior is the ordinary behavior of const-generic arrays:
+A view is a **transient borrow-window** onto the children it selects. For a
+*static* (unmarked) view, the view name is an ordinary **read-only array of
+borrows** whose length `N` is an implicit const-generic: each placement site
+fixes its own `N` (the exact static supply there), and the declared
+cardinality supplies the compile-time bounds `min..max` that every site's
+`N` must satisfy. Reading through it is direct and zero-ceremony —
+`channels[0].gain`, no `!`, no Handle resolution. Nothing about the form is
+a special construct; its behavior is the ordinary behavior of const-generic
+arrays:
 
-- **Indexed access**: `parts.<NodeType>[i]` is legal iff the index
-  is provably in range for *every* admitted `N` — i.e. iff
-  `i < min_cardinality`. This is ordinary const-generic bounds
-  checking, not a parts-specific rule. Example: under
-  `parts: Oscillator+`, `parts.Oscillator[0]` is legal (at least
-  one is guaranteed) but `[1]` is not.
-- **Iteration**: `for o in parts.<NodeType>: ...` always works — a
-  fixed-extent array unrolls per §12.3.7, with each site's actual
-  `N` (whether codegen emits straight-line copies or a counted loop
-  over the known list is an implementation choice).
-- **Order**: placement order, always. `parts.<NodeType>` is a
-  *stable filter* of the caller's written placement sequence — it
-  selects, never reorders. Every projection of the placement
-  sequence in the language preserves this order.
-- **No storage**: the array's elements are references, so the value
-  is transient by the ordinary borrow rules (§11.9, §11.11) — usable
-  in loops, indexing, and calls; storable nowhere.
+- **Indexed access**: `viewname[i]` is legal iff the index is provably in
+  range for *every* admitted `N` — i.e. iff `i < min_cardinality`. This is
+  ordinary const-generic bounds checking, not a view-specific rule. Example:
+  under `view oscs: Oscillator+`, `oscs[0]` is legal (at least one is
+  guaranteed) but `oscs[1]` is not.
+- **Iteration**: `for o in oscs: ...` always works — a fixed-extent array
+  unrolls per §12.3.7, with each site's actual `N` (whether codegen emits
+  straight-line copies or a counted loop over the known list is an
+  implementation choice).
+- **Order**: placement order, always. A view is a *stable filter* of the
+  caller's written placement sequence — it selects, never reorders. Every
+  projection of the placement sequence in the language preserves this order.
+- **No storage**: a view's elements are borrows, so the value is transient
+  by the ordinary borrow rules (§11.9, §11.11) — usable in loops, indexing,
+  and calls; **storable nowhere**. To persist a reference to a child, take a
+  `Handle` explicitly with `weak` (`attr favorite: Handle[Channel] = weak
+  channels[0]`, §13.3.6.2); no implicit auto-resolve is added.
 
-For a **`dynamic`** part type, `parts.<NodeType>` is not an array
-but a **reactive cell** (§13.3.3.4); none of the forms above apply
-to it.
+For a **`dynamic`** view, the view name is not an array but a **reactive
+cell** (§13.3.3.4); none of the forms above apply to it.
 
-There is no whole-namespace iteration: `parts` bare is an exposition
-reference (§13.3.7), not a value, and per-type access is the only
-body-side bulk form. A node without a `parts` clause has no bulk
+A view is the only body-side bulk form: there is no whole-namespace
+iteration over a node's children, and a node with no views has no bulk
 access at all (named access only, §13.4.1).
 
 ##### 13.3.3.3 Type-emitted children via compile-time `for`
@@ -12672,7 +12695,7 @@ A node type may emit child instances *directly* via a compile-time
 `for` loop written **in its `expose:` block** (§13.3.7.1) — structural
 output is emitted in exactly one place, the exposition. The loop's body
 is an indented **placement-body block** following the same syntax as
-§13.8.3's child-parts body — any number of placements (parts and/or
+§13.8.3's child-placement body — any number of placements (children and/or
 connections) per iteration, with the ordinary clause ordering of
 §13.8.9 and the whitespace-separation / self-delimiting rules of
 §13.8.10. The iteration is compile-time-unrolled per §12.3.7. The
@@ -12713,35 +12736,34 @@ OscBank[16] sixteen_bank        // 16 Oscillators per instance
 OscBank[8]  eight_bank          // 8 Oscillators per instance
 ```
 
-Note `OscBank` declares no `parts:` clause: it accepts no
-caller-supplied children, and its own emissions need no clause.
+Note `OscBank` declares no view: it accepts no caller-supplied children,
+and its own emissions need no view.
 
-**Signature and namespace.** Type-emitted children are **internals**
-(§13.3.4.2): they are never counted against the type's `parts:`
-cardinality and never appear in the `parts` namespace — `parts` holds
-caller-supplied children only, exactly as a component's `children`
-never contains its own internal structure. The type reaches its
-emitted children the way it reaches any written structure: by having
-written it (and, where needed, by the names it gives them).
+**Signature and views.** Type-emitted children are **internals**
+(§13.3.4.2): they are never counted by any view, which captures
+caller-supplied children only, exactly as a component's `children` never
+contains its own internal structure. The type reaches its emitted children
+the way it reaches any written structure: by having written it (and, where
+needed, by the names it gives them).
 
 **Hot reload.** When the iterable's compile-time value changes across
 a reload (e.g., a `const N` rises from 8 to 16, or the const-generic
 argument at a placement site changes), §13.15.2's path-based
-cell-identity rules apply uniformly: existing parts whose
+cell-identity rules apply uniformly: existing children whose
 fully-qualified path is unchanged are preserved with their state;
-newly-introduced parts (higher loop indices) are allocated fresh;
-parts dropped by a shrinking count are released per the standard
-removal rule. No special-case logic is required for type-body-for
-parts beyond what §13.15 already specifies.
+newly-introduced children (higher loop indices) are allocated fresh;
+children dropped by a shrinking count are released per the standard
+removal rule. No special-case logic is required for type-body-`for`
+children beyond what §13.15 already specifies.
 
 **Contrast with placement-body `for`** (§13.8.3.1). The two forms
 unroll by the same §12.3.7 rule but sit on opposite sides of the
 signature. A type-emitted `for` expands once at type elaboration,
 applies uniformly to every instance, and produces **internals**
 (above). A placement-body `for` expands at each placement site and is
-**caller supply**: its placements count against the receiving type's
-`parts:` cardinality and appear in the `parts.<NodeType>` array,
-exactly as individually written placements do. Use the type form when
+**caller supply**: its placements count against the receiving type's view
+cardinality and appear in the matching view, exactly as individually
+written placements do. Use the type form when
 multiplicity and per-part configuration are properties of the
 **type**; use the placement form when they may differ per instance.
 
@@ -12755,17 +12777,17 @@ in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
 
-##### 13.3.3.4 Dynamic parts
+##### 13.3.3.4 Dynamic views
 
-A part type marked `dynamic` (§13.3.3.1) may be supplied by a caller's
+A view marked `dynamic` (§13.3.3.1) may be supplied by a caller's
 `repeat` in the placement body, in addition to explicitly written
 placements:
 
 ```
 node Posts:
-  parts: dynamic Post
+  dynamic view items: Post*
   expose:
-    parts.Post
+    items
 
 node Feed:
   attr posts: Vec[PostData] = Vec::new()
@@ -12775,12 +12797,12 @@ node Feed:
         Post / post
 ```
 
-Feeding an *unmarked* part type with a `repeat` is a compile error at
-the feeding site, naming the receiving clause: a static type's count
-is a per-site compile-time fact, and a `repeat` cannot provide one.
+Feeding an *unmarked* view with a `repeat` is a compile error at the
+feeding site, naming the receiving view: a static view's count is a
+per-site compile-time fact, and a `repeat` cannot provide one.
 
-**The cell.** For a `dynamic` type, `parts.<NodeType>` is a **reactive
-cell** whose value is the current collection of supplied children — a
+**The cell.** A `dynamic` view is a **reactive cell** whose value is the
+current collection of supplied children — a
 language-provided, keyed, ordered collection (source order; the
 written interleaving, with each feeding `repeat`'s scopes expanded in
 place). It updates when children mount or dismount. Because its
@@ -12791,7 +12813,7 @@ consumed in exactly the two ways any reactive cell is consumed:
 - **Operators** (§13.17), for values:
 
   ```
-  derived titles = parts.Post |> map(fn(p): p.title)   // Signal[Vec[string]]
+  derived titles = items |> map(fn(p): p.title)   // Signal[Vec[string]]
   derived count: usize = len(titles)
   ```
 
@@ -12804,7 +12826,7 @@ consumed in exactly the two ways any reactive cell is consumed:
 
   ```
   expose:
-    repeat p in parts.Post:
+    repeat p in items:
       Card:
         p
   ```
@@ -12819,18 +12841,17 @@ consumed in exactly the two ways any reactive cell is consumed:
   `dynamic` type carries a **placement-site key** — stable and
   path-derived, the same identity scheme as §13.15.2.
 
-No other access exists: `for` cannot iterate the cell (`for` is
+No other access exists: `for` cannot iterate a dynamic view (`for` is
 compile-time, §12.3.7, and the set is not a compile-time fact);
-`parts.<NodeType>[i]` is rejected (a positional index into a keyed,
-changing set is not a stable identity); `parts.<NodeType>[key]` is
-rejected (keys belong to the *supplier* — they are derived from the
-caller's data by the caller's `keyed by`, and the receiving type has
-no way to know or name them).
+`viewname[i]` is rejected (a positional index into a keyed, changing set is
+not a stable identity); `viewname[key]` is rejected (keys belong to the
+*supplier* — they are derived from the caller's data by the caller's
+`keyed by`, and the receiving type has no way to know or name them).
 
-**Exposition.** A bulk `parts` reference in `expose:` carries dynamic
-children like static ones: each feeding `repeat`'s scopes appear at
-the repeat's written position in the supplied sequence, mounting and
-dismounting under Model B (§13.9.7).
+**Exposition.** A view referenced in `expose:` carries its dynamic children
+like static ones: each feeding `repeat`'s scopes appear at the repeat's
+written position in the supplied sequence, mounting and dismounting under
+Model B (§13.9.7).
 
 **Optimization.** When every supplier at a given placement site is
 provably static, the compiler may compile that site's `repeat` and
@@ -12840,6 +12861,46 @@ contract regardless, because the *type* admits dynamic supply.
 
 The same marker, cell model, and consumption rules apply to
 `incoming:` and `outgoing:` connection types (§13.3.4.1).
+
+##### 13.3.3.5 Groups
+
+A **group** is a *heterogeneous* bundle of co-placed children, written
+`[...]` at the placement site (§13.8.3). It is a distinct kind from a view:
+a view is homogeneous (one selector), whereas a group may mix types. **Only
+an explicit `[...]` is a group** — a bare placement is not.
+
+A group is reached **only via `.<Type>`**, which yields a (homogeneous) view
+of that type's members within the group; there is **no bare positional index
+into a group**. Forcing `.<Type>` first means a heterogeneous bundle is
+never indexed directly, so the "what type does `group[i]` return?" problem
+never arises (Ductus has no ad-hoc unions).
+
+```
+view bar: [Note+ Rest*]      // one group: 1+ Note, 0+ Rest
+bar.Note[0].pitch            // .Note -> view of the group's Notes, then index
+bar.Rest                     // .Rest -> view of the group's Rests
+```
+
+**Flat views flatten through groups; group views see brackets.** A view
+whose selector is a plain type counts and sees the group's *elements*; a
+view whose selector is itself a group (`[...]`) counts and sees the
+*brackets*:
+
+```
+verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one group
+view notes:  Note+           // flat    -> sees C4, F4, G4, E4   (4)
+view chords: [Note+]+        // grouped -> sees [F4 G4]          (1 group)
+chords[0].Note[1]            // 2nd Note of group 0
+```
+
+With a single matching group, members are reached `bar.Note[i]`; with
+multiple groups, the group is indexed first: `bars[g].Note[i]`.
+
+**Group cardinality.** For a group view, the **inner** cardinality (members
+per group) is part of the match predicate — a *filter* on which groups the
+view selects — while the **outer** cardinality (group count) is the count
+constraint. This keeps distinct group shapes independent: `[Note[=2]]+` and
+`[Note[=3]]+` select disjoint sets of groups and do not conflict.
 
 #### 13.3.4 `incoming` and `outgoing` clauses
 
