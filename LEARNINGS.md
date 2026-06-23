@@ -21,3 +21,13 @@ Accumulated, granular preferences and working rules for this project. One atomic
 9. Don't report work as done unless it is: Never claim a file was edited/captured without actually making the edit. Example: said the View/Group findings were "captured in the plan file" when no edit had been made — a faithfulness failure.
 
 10. Don't pattern-match syntax into a data model: Naming an access form (e.g. "array of borrows") is not a data-structure design. A real array can't hold a View/Group/borrow (§11.3.4); state what structure actually backs each construct, or say it is unpinned. Example: "cardinality yields an array of elements" was monkey-patched and rejected — the backing structure was never defined.
+
+11. Verify before conceding or defending: On a challenge, check DECISION_LOG/BACKLOG before caving or doubling down — this session I both wrongly caved and wrongly bluffed.
+
+12. Re-anchor on redirection: When the user pivots or asks "what were we doing," drop the tangent and return to the prior task instead of riding the current one.
+
+13. Lead with a code example, then one line; cite at most one decision-log id per point, never a pile of ids mid-sentence.
+
+14. Don't pass coined terms off as defined: Cite the decision that defines a term, or drop the term — e.g. "collection of groups" was my phrase, not a defined concept.
+
+15. Don't let a sub-question balloon scope: A small clarification (e.g. "for…as") must not silently turn into an unrelated deep redesign mid-task; finish the current thread first.
