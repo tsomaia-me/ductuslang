@@ -64,6 +64,19 @@ garbage collector, no reference counting at the language level (the
 runtime may use refcounting internally for specific types like
 `string` per §11.6), and no shared mutable state.
 
+**First-class citizenship, distinct from value-semantics.** A *first-class
+citizen* is a value that can be named in a binding, passed to and returned
+from functions, and used in expression position. *Value-semantics* — the
+implicit ability to relocate, copy, or structurally compare a value — is an
+orthogonal capability a type may or may not have; a type can be a first-class
+citizen yet lack value-semantics. Node, connection, and effect instances are
+exactly such citizens: nameable, passable, returnable graph members that
+nonetheless lack value-semantics and so cannot be stored in cells or records.
+That restriction follows from single ownership and the borrow rules above (a
+borrow is unstorable, §13.3.6.1). The storable stand-in for *which kind* to place is the
+type value `Type[…]` (§5.7); for *which instance*, a weak `Handle[T]`
+(§13.3.6.2).
+
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
 the same outputs, with no externally observable side effects on the
@@ -112,13 +125,13 @@ Code examples use Ductus syntax. Type-name case conventions:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `const`, `let`, `mut`, `repeat`), all clause
-keywords (`parts`, `incoming`, `outgoing`, `expose`, `when`,
+`derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`), all clause
+keywords (`incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
 `dynamic` — the supply-mode marker, §13.3.3.1), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
-remaining fields `from`, `to`, `incoming`, `outgoing`, `parts` double as
+remaining fields `from`, `to`, `incoming`, `outgoing` double as
 the clause keywords above), all control-flow keywords (`if`, `else`,
 `match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
 scope-anchor namespaces (`here`, `module`), the instance value
@@ -128,12 +141,21 @@ import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
-Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the node slot `parts`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
+Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
 
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
 type alias rather than a keyword, it is capitalized by the type-naming
 convention; it does not fall under the lowercase-keyword rule above.
+
+**Directives.** The `@` sigil introduces a *directive* — a member of a
+fixed, language-provided set; there are no user-defined directives. A
+directive is either *applied*, attached to a declaration or value to modify
+it (the everyday "annotation") — `@derive` (§3.8), `@literal_suffix`
+(§3.9.1), `@flag` (§13.8.8), `@reset_on_reopen` (§13.2.4), `@reset_on_reload`
+(§13.18.14), and a trait's `@default` (§3.1.5) — or *standalone*, a construct
+in its own right: `@content` (§13.3.7). In placement position `@` is instead a
+flag-run character; the positional disambiguation is in §13.8.8.4.
 
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
@@ -147,7 +169,7 @@ newlines and indentation. The semicolon `;` is **not a token** in the
 grammar and never appears in Ductus source — not as a statement
 terminator, not as a list separator, not in generic parameter lists.
 Every separated list (call arguments, generic parameters, tuple
-components, `parts:`/`incoming:`/`outgoing:` entries, etc.) uses the
+components, etc.) uses the
 comma, the newline, or both. A `;` in Ductus source is a lex error.
 (This governs Ductus source only. Non-Ductus code shown for
 illustration — host-driver pseudocode that embeds the runtime, and the
@@ -1326,8 +1348,8 @@ trait Integer:
   requires Numeric, IntDiv, Rem, ...    // illustrative; canonical in §4.9.2
 ```
 
-The exact syntactic form (annotation, dedicated keyword, body clause) is a
-syntax detail; the semantic decision is that defaults are declared on the
+The declaration form is the applied `@default(<Type>)` directive (§1.4),
+shown above; the semantic decision is that defaults are declared on the
 trait, not on the compiler.
 
 A trait without a declared default produces a compile error at any use site
@@ -4433,10 +4455,11 @@ value"; `Type[Drivable]` is "some Drivable *type*."
 
 Its primary use is to carry a node, connection, or effect **type** as a
 value — a template or slot that defers *which kind* is placed — given that
-the corresponding *instances* are never values (§13.3.6.1). While an instance
-is never a value, a *weak reference* to one is: a `Handle[T]` (§13.3.6.2)
-carries a graph entity by identity as a storable value — the instance-level
-companion to `Type[…]`'s type-level one.
+the corresponding *instances*, while first-class citizens, lack value-semantics
+and so are not storable (§13.3.6.1). A *weak reference* to an instance, by
+contrast, is storable: a `Handle[T]` (§13.3.6.2) carries a graph entity by
+identity as a storable value — the instance-level companion to `Type[…]`'s
+type-level one.
 
 #### 5.7.1 The constraint argument
 
@@ -6005,11 +6028,6 @@ of some distant `match` silently changing meaning. This is the same philosophy a
 mandatory `dyn` (§5.2.2): make the load-bearing assumption appear in the source
 where it is relied upon.
 
-> **Disambiguation.** Postfix `!` on a value expression (`opt!`) is distinct from
-> the `!` cardinality sigil in `parts:` / `incoming:` / `outgoing:`
-> (`Performer!`, "exactly one", §13.3.3.1): the former is in value-expression
-> position, the latter in type-cardinality position, and the two never collide.
-
 ### 8.5 Error-Type Conversion via `From`
 
 The `From::convert(failure)` step in `?` propagation enables error-type
@@ -7096,9 +7114,9 @@ modules (those still require an absolute `use` path).
 
 Every declaration position that admits a visibility specifier
 accepts one of: `public`, `shared`, `private`, or *absence* (which
-denotes `shared` by default). The older `pub` keyword is
-replaced throughout by this three-level model; the propagation covers
-all visibility-bearing declarations.
+denotes `shared` by default). There is no `pub` keyword; this
+three-level model is the only visibility vocabulary, covering every
+visibility-bearing declaration.
 
 ```
 public fn render_frame(...): ...           // exported across packages
@@ -7272,7 +7290,7 @@ identifies the cycle's members.
 - **Type-reference cycles between sibling files are permitted.**
   Files inside the same module share scope and are compiled as a
   single unit, so mutually-referencing type declarations (e.g.,
-  one file's `node` declares an `outgoing:` connection type defined in
+  one file's `node` declares an `outgoing` connection-view of a connection type defined in
   a sibling file, and the sibling's `connection` declares `from:`
   the first file's node) are resolved in one pass. This is the
   normal case for any non-trivial module split across files.
@@ -10769,7 +10787,7 @@ externally-driven sequences; iterators are for collection traversal.
 This section specifies the language's reactive composition layer: the
 declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
 `stream`), the reactive expression forms (`observe`, `where`), the
-composition constructs (`node`, `connection`, parts, `operator`,
+composition constructs (`node`, `connection`, `operator`,
 `effect`), the rules governing reactive expression evaluation, and
 the host API through which external code drives and observes the
 reactive graph.
@@ -10840,7 +10858,7 @@ via connections are handled separately via the `Circularity` trait
 (§13.6, §13.11): a topology cycle is valid only if it traverses at
 least one connection type satisfying `Circularity`.
 
-**Reactive composition uses nodes, parts, and connections.**
+**Reactive composition uses nodes and connections.**
 Reactive cells (signal, attr, recurrent, derived) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
@@ -10911,14 +10929,14 @@ node Counter:
   recurrent count: i32 = observe:
     on tick: count.previous(0) + 1      // `tick`: module-level (scope 3);
                                         // `count.previous`: self-history (scope 2)
-  outgoing: ShowsCount [=1]
+  outgoing shows: ShowsCount
 
 // Display reads the count through its incoming connection.
 node Display:
   attr label: string = "Unnamed"
-  incoming: ShowsCount [=1]
-  derived shown: string = "{label}: {incoming.ShowsCount[0].count}"
-                          // `label`, `incoming`: body-scope members (bare; §13.7)
+  incoming shows: ShowsCount
+  derived shown: string = "{label}: {shows[0].count}"
+                          // `label`, `shows`: body-scope members (bare; §13.7)
 
 // Connection from Counter to Display carries a derived count.
 connection ShowsCount:
@@ -10956,7 +10974,7 @@ Each `commit()`:
 This example demonstrates every reactive declaration kind (signal,
 attr, recurrent, derived), composition through nodes and connections,
 cardinality (`[=1]`), placement with overrides, indexed access
-through the connection (`incoming.ShowsCount[0].count`), bare
+through the connection-view (`shows[0].count`), bare
 body-scope member access (§13.7), and the commit-driven evaluation
 cycle.
 
@@ -11284,19 +11302,29 @@ current inputs instead of blending in stale pre-gap state. It fires
 receives no triggers for a while is correctly holding its value.
 
 It is the reactivation counterpart to `@reset_on_reload` (§13.15.5):
-both reset a cell's accumulated state on a lifecycle event —
-`@reset_on_reload` across a hot reload, `@reset_on_reopen` across a gate
-gap. On a **recurrent** cell it clears the self- and input-history
-(§13.2.4.3), so the first post-gap evaluation reads fallbacks. On a
-**stream consumer** (an operator or derived reading a stream whose
-enclosing subtree is gated) it resets the consumer's cursor: on resume
-the cursor skips to the current head (discarding the gap's backlog) and,
-for a **gate**-policy source, the consumer additionally *releases its
-buffer hold during the freeze* so it does not pin the buffer or
-back-pressure producers while frozen (§13.18.12). In both forms the
+both reset accumulated state on a lifecycle event — `@reset_on_reload`
+across a hot reload, `@reset_on_reopen` across a gate gap. What counts as
+accumulated state is per kind:
+
+- On a **recurrent** value cell it clears the self- and input-history
+  (§13.2.4.3), so the first post-gap evaluation reads fallbacks.
+- On a **recurrent stream** producer it clears the output history, all
+  per-input history, and the base buffer (§13.18.8), restarting the
+  stream clean from current inputs.
+- On a **stream consumer** (an operator or derived reading a stream whose
+  enclosing subtree is gated) it resets the consumer's cursor: on resume
+  the cursor skips to the current head (discarding the gap's backlog)
+  and, for a **gate**-policy source, the consumer additionally *releases
+  its buffer hold during the freeze* so it does not pin the buffer or
+  back-pressure producers while frozen (§13.18.12).
+
+A recurrent stream producer and a downstream consumer are distinct
+annotation sites governed by distinct gates — the producer resets when
+the producer's subtree reopens, a consumer when the consumer's own
+subtree reopens — and the two are never conflated. In every form the
 decorator means "do not carry accumulated state across the gap," and in
-both it has effect only on a *gated* instance. Because gating may be
-introduced at the type level or at a placement (§13.9.3), whether a
+every form it has effect only on a *gated* instance. Because gating may
+be introduced at the type level or at a placement (§13.9.3), whether a
 given instance is ever gated is not in general known at the declaration
 site; on an instance that is never gated the decorator simply never
 fires — it is harmless, not an error.
@@ -12134,7 +12162,8 @@ the caller's context, not by the function's signature.
 A node or connection **type** can be carried as a value via the `Type[…]`
 meta-type (§5.7) — the mechanism for an attr "template slot" that defers
 *which kind* a receiving node places. The corresponding *instances* are
-never values (§13.3.6.1); the type value is the storable stand-in.
+first-class citizens that lack value-semantics (§13.3.6.1) and so are not
+storable; the type value is the storable stand-in.
 
 A `Type[…]` slot is filled by naming a node (or connection) type in value
 position; the receiving node later **places** it (§13.8 — §13.8.4.2 covers
@@ -12196,10 +12225,10 @@ receiving node drops those cells per §14.7.
 
 A `Type[…]` attr is an *attr-shaped, singular* template slot. It is *not*
 the mechanism for child-placement with cardinality, list semantics, and
-per-instance scoping: that is `parts:` together with placement-time
-children (§13.8.3) and the §13.5 keyed-scope primitive. `parts:` exists
-solely to supply the children a node **exposes** (§13.3.7.4); a `Type[…]`
-attr is an independent value slot.
+per-instance scoping: that is views together with placement-time children
+(§13.8.3) and the §13.5 keyed-scope primitive. Views exist to supply the
+children a node **exposes** (§13.3.7.4); a `Type[…]` attr is an independent
+value slot.
 
 ##### 13.2.10.3 Restrictions
 
@@ -12430,7 +12459,7 @@ a node type creates an instance with its own cells.
 Composition takes two forms:
 
 - *Containment* — sub-nodes are placed inside a parent node as
-  *parts* (§13.4). The parent owns the parts; their lifetimes are
+  *children* (§13.4). The parent owns the children; their lifetimes are
   bound to the parent's.
 - *Communication* — nodes communicate with each other through
   *connections* (§13.6). Connections are typed directed links
@@ -12446,7 +12475,7 @@ structure*, not reactivity. A record's fields can be reactive too — as a
 reactive composite (§13.2.9) — so "reactive vs. plain data" is not what
 separates them. The distinction is this: a record is a value that can
 exist anywhere in a program, whereas a node exists only as a placed
-instance in the graph, with its own graph identity, topology (parts and
+instance in the graph, with its own graph identity, topology (children and
 connections), lifecycle, and per-instance reactive cells managed by the
 runtime.
 
@@ -12455,12 +12484,10 @@ runtime.
 ```
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
-  parts: Type1, Type2                                 // optional permitted part types
-  incoming: Conn1, Conn2                              // optional incoming connection types
-  outgoing: Conn3, Conn4                              // optional outgoing connection types
+  view name: Selector <cardinality>                   // optional child views (§13.3.3)
+  outgoing name: ConnType <card>                      // optional outgoing connection-views
+  incoming name: ConnType <card>                      // optional incoming connection-views
   when: predicate                                     // optional activation predicate (§13.9)
-  expose:                                             // structural output (§13.3.7)
-    SomePart
   const name: Type = value                            // per-type compile-time constants
   attr name: Type = default                           // per-instance user-configured cells
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
@@ -12469,15 +12496,19 @@ node TypeName[GenericParams]?:
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
   effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
     source |> effect
+  expose:                                             // structural output (§13.3.7) — always last
+    name                                              // a declared view (or named child)
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
-parts, and no connections is legal but typically unused.
+children, and no connections is legal but typically unused. Members appear
+in free order; `effects:` follows the members and `expose:` is last
+(§13.3.7).
 
 ```
 node Driver:
   satisfies Drivable
-  outgoing: Drives
+  outgoing drives: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
   derived is_aggressive: bool = risk_tolerance > 0.7
@@ -12505,75 +12536,81 @@ fulfill Displayable for Driver:
     "Driver(exp: {d.expertise_level}, risk: {d.risk_tolerance})"
 ```
 
-#### 13.3.3 `parts` clause
+#### 13.3.3 Views
 
 ```
-parts: [dynamic] Type1 [cardinality]?, [dynamic] Type2 [cardinality]?, ...
+view name: <selector> <cardinality>
+dynamic view name: <selector>*
 ```
 
-The `parts:` clause is **optional**. Its presence determines what
-kinds of child node instances may be placed inside instances of
-this node at placement time:
+Children are accessed through **`view` declarations** — a declaration kind
+parallel to `attr`, living in the body name-scope with names unique across
+the whole body (§13.7.1). A view names a **receiver-side query** over the
+children a caller supplies: its `<selector>` is a concrete node type, a
+trait, or the marker `Node`, and its `<cardinality>` (§13.3.3.1) constrains
+how many supplied children match.
 
-- **No `parts:` clause** — the node accepts child instances of *any
-  node type*. Inside the node body, no bulk access is available —
-  only named access to children the body itself can see (§13.4.1).
-  The host walks such a node's children through its exposition
-  (§13.3.7), not through any body-side iteration.
-- **With a `parts:` clause** — the node accepts only children whose
-  types appear in the listed set. Unmarked (static) types carry the
-  declared cardinality constraints and type-bulk
-  (`parts.<NodeType>[i]`) access; `dynamic`-marked types may be fed
-  by a caller's `repeat` and are accessed as reactive collections
-  (§13.3.3.4). Cardinality is enforced at placement.
+- **Views overlap rather than partition.** Each view is an independent
+  query over the whole supplied set, so one child may be counted by several
+  views at once.
+- **Accepted universe.** What a node accepts is the union of its view
+  selectors: a node with **no views accepts nothing**, and a `Node` (or
+  `Connection`) catch-all view opens it fully.
+- **Homogeneous.** Every child a view yields satisfies its one selector;
+  heterogeneous bundles are **groups**, a distinct kind (§13.3.3.5).
+- **Gated children still count.** A `when`-gated-off child remains in the
+  views that match it and its reads return frozen values — gates freeze
+  rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
+  membership.
 
-The clause does not by itself place specific instances — it only constrains
-what types and how many of each are permitted. It is the node's **caller-facing
-part signature**: it bounds what a *caller* supplies (§13.8.3), and nothing
-else. The node's own placements — children it emits in its exposition via a
-compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4) — are its private
-realization: they are never counted against `parts:` and never appear in the
-`parts` namespace, exactly as a component's internal structure is invisible to
-its `children`. The governing principle — signature clauses bound callers;
-internals are unconstrained by them — is stated in §13.3.4.2.
+A `view` declaration **places no instances**; it is purely the node's
+caller-facing query, bounding only what a *caller* supplies (§13.8.3). The
+node's own internal children — those it emits in its exposition via a
+compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4), or places and names
+with `as` (§13.3.7) — are its private realization: they are never counted by
+a view and never appear in one, exactly as a component's internal structure
+is invisible to its `children`. The governing principle — signature
+declarations bound callers; internals are unconstrained by them — is stated
+in §13.3.4.2.
 
 ```
-// Restricted parts with cardinality:
+// Views with cardinality:
 node Synthesizer:
-  parts: Oscillator+, Filter [=1], Amplifier?
+  view oscillators: Oscillator+      // at least one
+  view filter:      Filter           // exactly one
+  view amplifier:   Amplifier?       // at most one
   attr master_volume: f32 = 1.0
 ```
 
 In this example: at least one Oscillator (`+`), exactly one Filter
-(`[=1]`), at most one Amplifier (`?`).
+(bare = exactly one), at most one Amplifier (`?`).
 
 ```
-// Open parts (any node type accepted):
+// Catch-all view (any node type accepted):
 node Processor:
-  // no `parts:` clause; accepts any node as a child
-  outgoing: WiresTo
+  view children: Node*               // any node, zero or more
+  outgoing wires: WiresTo
 ```
 
-`Processor` accepts any node type as a part. Its body has no bulk
-access to them; the host walks the parts externally through the
-exposition, based on its own conventions (e.g., per-type dispatch
-via const discriminators — §13.2.5).
+`Processor` accepts any node type through its `children` view, reading the
+supplied children directly (`children[i]`, §13.3.3.2). A node that declares
+no view accepts nothing.
 
-A node may have parts of its own type (self-recursion) when `parts:`
-is omitted or when the node's own type appears in the `parts:`
-clause. Self-recursive placements terminate because each placement
-is an explicit user act — the compiler walks finite placement trees,
-not infinite type recursions.
+A node may declare a view selecting its own type (self-recursion).
+Self-recursive placements terminate because each placement is an explicit
+user act — the compiler walks finite placement trees, not infinite type
+recursions.
 
 ##### 13.3.3.1 Cardinality forms
 
-Cardinality may be written as a sigil or a bracketed range. Sigils
-cover common cases:
+A view's cardinality may be written as a sigil or a bracketed range. The
+default — **no sigil, no bracket — means exactly one**; multiplicity is
+always explicit. Sigils cover the common cases:
 
-- (no sigil, no bracket) — `0..` (zero or more, unlimited)
+- (no sigil, no bracket) — **exactly one**
 - `?` — `0..=1` (optional)
 - `+` — `1..` (at least one)
-- `!` — exactly one (shorthand for `[=1]`)
+- `*` — `0..` (zero or more)
 
 Bracketed range forms support arbitrary bounds:
 
@@ -12582,63 +12619,80 @@ Bracketed range forms support arbitrary bounds:
 - `[N..]` — at least N (no upper bound)
 - `[..=M]` — up to M (lower bound 0)
 
-A part type may carry exactly one cardinality specifier (sigil OR
-bracket, not both); duplicate specifiers are a compile error.
+A view carries exactly one cardinality specifier (sigil OR bracket, not
+both); duplicate specifiers are a compile error. Sigils attach directly to
+the selector with no intervening whitespace: `Reverb?`, `Channel+`,
+`Voice*`. Bracket forms may optionally have a space before the bracket:
+`Filter[=1]` and `Filter [=1]` are both valid.
 
-Sigils attach directly to the type name with no intervening
-whitespace: `Part?`, `Part+`, `Part!`. Bracket forms may optionally
-have a space before the bracket: `Part[=1]` and `Part [=1]` are both
-valid.
+**Conjunction.** Each view's cardinality constrains the count of supplied
+children matching its selector, and all of a node's views hold
+**simultaneously** — there is no precedence or resolution among them.
+Because views overlap, a child counts toward every view it matches:
 
-**Supply mode — the `dynamic` prefix.** Orthogonal to *count* is
-*supply mode*: whether the set of supplied children is a static fact
-or may vary at runtime. The `dynamic` keyword, prefixed to the type
-name (`parts: Header, dynamic Post`), marks the second mode. It is
-**mutually exclusive with every cardinality specifier** — `dynamic
-Post+` or `dynamic Post [=3]` is a compile error — because a
-runtime-varying set can guarantee no minimum and admit no checked
-maximum, and runtime cardinality checks do not exist in the language.
-An unmarked type is *static*: supplied by explicitly written
-placements only, with the count known per placement site at compile
-time. A `dynamic` type may additionally be fed by a caller's `repeat`
-(§13.3.3.4). The same marker, with the same meaning, applies to
-`incoming:` and `outgoing:` clauses (§13.3.4).
+```
+node Fleet:
+  view drivables: Drivable[=5]   // exactly 5 Drivables — any concrete types
+  view cars:      Car[=2]        // 2 of those 5 are Cars  (Car ⊆ Drivable)
+```
+
+The only conflict is **unsatisfiability**, diagnosed by a cheap subset-edge
+static check along the known trait/marker subset lattice plus placement-time
+counting — there is no general feasibility solver. A view whose selector is
+a subset of another's but whose bound cannot be reconciled with it is a
+static error: `view all: Node[=3]` alongside `view drivables: Drivable[=5]`
+cannot be satisfied (Drivable ⊆ Node, 5 > 3).
+
+**Supply mode — the `dynamic` prefix.** Orthogonal to *count* is *supply
+mode*: whether the set of supplied children is a static fact or may vary at
+runtime. The `dynamic` keyword prefixes a **view** (`dynamic view voices:
+Voice*`), marking the second mode. A `dynamic` view takes **exactly the `*`
+specifier** — its inherent zero-or-more; the bounded specifiers
+`?`/`+`/`[=N]`/`[N..M]` are forbidden on `dynamic`, and there is no single
+dynamic view (`dynamic view voice: Voice` ✗, `dynamic view voices: Voice+`
+✗) — because a runtime-varying set can guarantee no minimum and admit no
+checked maximum, and runtime cardinality checks do not exist in the
+language. An unmarked view is *static*: supplied by explicitly written
+placements only, with the count known per placement site at compile time. A
+`dynamic` view may additionally be fed by a caller's `repeat` (§13.3.3.4).
+The same marker applies identically to `incoming`/`outgoing` connection-views
+(§13.3.4).
 
 ##### 13.3.3.2 Access from inside the node body
 
-For a *static* (unmarked) part type, `parts.<NodeType>` is an
-ordinary **read-only array of node references** whose length `N` is
-an implicit const-generic: each placement site fixes its own `N`
-(the exact static supply there), and the declared cardinality
-supplies the compile-time bounds `min..max` that every site's `N`
-must satisfy. Nothing about the form is a special construct — its
-behavior is the ordinary behavior of const-generic arrays:
+A view is a **transient borrow-window** onto the children it selects. For a
+*static* (unmarked) view, the view name is an ordinary **read-only array of
+borrows** whose length `N` is an implicit const-generic: each placement site
+fixes its own `N` (the exact static supply there), and the declared
+cardinality supplies the compile-time bounds `min..max` that every site's
+`N` must satisfy. Reading through it is direct and zero-ceremony —
+`channels[0].gain`, no `!`, no Handle resolution. Nothing about the form is
+a special construct; its behavior is the ordinary behavior of const-generic
+arrays:
 
-- **Indexed access**: `parts.<NodeType>[i]` is legal iff the index
-  is provably in range for *every* admitted `N` — i.e. iff
-  `i < min_cardinality`. This is ordinary const-generic bounds
-  checking, not a parts-specific rule. Example: under
-  `parts: Oscillator+`, `parts.Oscillator[0]` is legal (at least
-  one is guaranteed) but `[1]` is not.
-- **Iteration**: `for o in parts.<NodeType>: ...` always works — a
-  fixed-extent array unrolls per §12.3.7, with each site's actual
-  `N` (whether codegen emits straight-line copies or a counted loop
-  over the known list is an implementation choice).
-- **Order**: placement order, always. `parts.<NodeType>` is a
-  *stable filter* of the caller's written placement sequence — it
-  selects, never reorders. Every projection of the placement
-  sequence in the language preserves this order.
-- **No storage**: the array's elements are references, so the value
-  is transient by the ordinary borrow rules (§11.9, §11.11) — usable
-  in loops, indexing, and calls; storable nowhere.
+- **Indexed access**: `viewname[i]` is legal iff the index is provably in
+  range for *every* admitted `N` — i.e. iff `i < min_cardinality`. This is
+  ordinary const-generic bounds checking, not a view-specific rule. Example:
+  under `view oscs: Oscillator+`, `oscs[0]` is legal (at least one is
+  guaranteed) but `oscs[1]` is not.
+- **Iteration**: `for o in oscs: ...` always works — a fixed-extent array
+  unrolls per §12.3.7, with each site's actual `N` (whether codegen emits
+  straight-line copies or a counted loop over the known list is an
+  implementation choice).
+- **Order**: placement order, always. A view is a *stable filter* of the
+  caller's written placement sequence — it selects, never reorders. Every
+  projection of the placement sequence in the language preserves this order.
+- **No storage**: a view's elements are borrows, so the value is transient
+  by the ordinary borrow rules (§11.9, §11.11) — usable in loops, indexing,
+  and calls; **storable nowhere**. To persist a reference to a child, take a
+  `Handle` explicitly with `weak` (`attr favorite: Handle[Channel] = weak
+  channels[0]`, §13.3.6.2); no implicit auto-resolve is added.
 
-For a **`dynamic`** part type, `parts.<NodeType>` is not an array
-but a **reactive cell** (§13.3.3.4); none of the forms above apply
-to it.
+For a **`dynamic`** view, the view name is not an array but a **reactive
+cell** (§13.3.3.4); none of the forms above apply to it.
 
-There is no whole-namespace iteration: `parts` bare is an exposition
-reference (§13.3.7), not a value, and per-type access is the only
-body-side bulk form. A node without a `parts` clause has no bulk
+A view is the only body-side bulk form: there is no whole-namespace
+iteration over a node's children, and a node with no views has no bulk
 access at all (named access only, §13.4.1).
 
 ##### 13.3.3.3 Type-emitted children via compile-time `for`
@@ -12647,7 +12701,7 @@ A node type may emit child instances *directly* via a compile-time
 `for` loop written **in its `expose:` block** (§13.3.7.1) — structural
 output is emitted in exactly one place, the exposition. The loop's body
 is an indented **placement-body block** following the same syntax as
-§13.8.3's child-parts body — any number of placements (parts and/or
+§13.8.3's child-placement body — any number of placements (children and/or
 connections) per iteration, with the ordinary clause ordering of
 §13.8.9 and the whitespace-separation / self-delimiting rules of
 §13.8.10. The iteration is compile-time-unrolled per §12.3.7. The
@@ -12688,59 +12742,58 @@ OscBank[16] sixteen_bank        // 16 Oscillators per instance
 OscBank[8]  eight_bank          // 8 Oscillators per instance
 ```
 
-Note `OscBank` declares no `parts:` clause: it accepts no
-caller-supplied children, and its own emissions need no clause.
+Note `OscBank` declares no view: it accepts no caller-supplied children,
+and its own emissions need no view.
 
-**Signature and namespace.** Type-emitted children are **internals**
-(§13.3.4.2): they are never counted against the type's `parts:`
-cardinality and never appear in the `parts` namespace — `parts` holds
-caller-supplied children only, exactly as a component's `children`
-never contains its own internal structure. The type reaches its
-emitted children the way it reaches any written structure: by having
-written it (and, where needed, by the names it gives them).
+**Signature and views.** Type-emitted children are **internals**
+(§13.3.4.2): they are never counted by any view, which captures
+caller-supplied children only, exactly as a component's `children` never
+contains its own internal structure. The type reaches its emitted children
+the way it reaches any written structure: by having written it (and, where
+needed, by the names it gives them).
 
 **Hot reload.** When the iterable's compile-time value changes across
 a reload (e.g., a `const N` rises from 8 to 16, or the const-generic
 argument at a placement site changes), §13.15.2's path-based
-cell-identity rules apply uniformly: existing parts whose
+cell-identity rules apply uniformly: existing children whose
 fully-qualified path is unchanged are preserved with their state;
-newly-introduced parts (higher loop indices) are allocated fresh;
-parts dropped by a shrinking count are released per the standard
-removal rule. No special-case logic is required for type-body-for
-parts beyond what §13.15 already specifies.
+newly-introduced children (higher loop indices) are allocated fresh;
+children dropped by a shrinking count are released per the standard
+removal rule. No special-case logic is required for type-body-`for`
+children beyond what §13.15 already specifies.
 
 **Contrast with placement-body `for`** (§13.8.3.1). The two forms
 unroll by the same §12.3.7 rule but sit on opposite sides of the
 signature. A type-emitted `for` expands once at type elaboration,
 applies uniformly to every instance, and produces **internals**
 (above). A placement-body `for` expands at each placement site and is
-**caller supply**: its placements count against the receiving type's
-`parts:` cardinality and appear in the `parts.<NodeType>` array,
-exactly as individually written placements do. Use the type form when
-multiplicity and per-part configuration are properties of the
+**caller supply**: its placements count against the receiving type's view
+cardinality and appear in the matching view, exactly as individually
+written placements do. Use the type form when
+multiplicity and per-child configuration are properties of the
 **type**; use the placement form when they may differ per instance.
 
 **Connections from a type-emitted for.** The `for` may also place
 connections (§13.6) whose source is the enclosing node instance and
 whose destinations are determined by the unrolled iteration. These are
 **self-sourced** connections (§13.3.4.2): exempt from the type's
-`outgoing:` clause, subject to endpoint typing, and **positional** like
+`outgoing` connection-views, subject to endpoint typing, and **positional** like
 any other connection placement — each engages at its written position
 in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
 
-##### 13.3.3.4 Dynamic parts
+##### 13.3.3.4 Dynamic views
 
-A part type marked `dynamic` (§13.3.3.1) may be supplied by a caller's
+A view marked `dynamic` (§13.3.3.1) may be supplied by a caller's
 `repeat` in the placement body, in addition to explicitly written
 placements:
 
 ```
 node Posts:
-  parts: dynamic Post
+  dynamic view items: Post*
   expose:
-    parts.Post
+    items
 
 node Feed:
   attr posts: Vec[PostData] = Vec::new()
@@ -12750,12 +12803,12 @@ node Feed:
         Post / post
 ```
 
-Feeding an *unmarked* part type with a `repeat` is a compile error at
-the feeding site, naming the receiving clause: a static type's count
-is a per-site compile-time fact, and a `repeat` cannot provide one.
+Feeding an *unmarked* view with a `repeat` is a compile error at the
+feeding site, naming the receiving view: a static view's count is a
+per-site compile-time fact, and a `repeat` cannot provide one.
 
-**The cell.** For a `dynamic` type, `parts.<NodeType>` is a **reactive
-cell** whose value is the current collection of supplied children — a
+**The cell.** A `dynamic` view is a **reactive cell** whose value is the
+current collection of supplied children — a
 language-provided, keyed, ordered collection (source order; the
 written interleaving, with each feeding `repeat`'s scopes expanded in
 place). It updates when children mount or dismount. Because its
@@ -12766,7 +12819,7 @@ consumed in exactly the two ways any reactive cell is consumed:
 - **Operators** (§13.17), for values:
 
   ```
-  derived titles = parts.Post |> map(fn(p): p.title)   // Signal[Vec[string]]
+  derived titles = items |> map(fn(p): p.title)   // Signal[Vec[string]]
   derived count: usize = len(titles)
   ```
 
@@ -12779,7 +12832,7 @@ consumed in exactly the two ways any reactive cell is consumed:
 
   ```
   expose:
-    repeat p in parts.Post:
+    repeat p in items:
       Card:
         p
   ```
@@ -12794,18 +12847,17 @@ consumed in exactly the two ways any reactive cell is consumed:
   `dynamic` type carries a **placement-site key** — stable and
   path-derived, the same identity scheme as §13.15.2.
 
-No other access exists: `for` cannot iterate the cell (`for` is
+No other access exists: `for` cannot iterate a dynamic view (`for` is
 compile-time, §12.3.7, and the set is not a compile-time fact);
-`parts.<NodeType>[i]` is rejected (a positional index into a keyed,
-changing set is not a stable identity); `parts.<NodeType>[key]` is
-rejected (keys belong to the *supplier* — they are derived from the
-caller's data by the caller's `keyed by`, and the receiving type has
-no way to know or name them).
+`viewname[i]` is rejected (a positional index into a keyed, changing set is
+not a stable identity); `viewname[key]` is rejected (keys belong to the
+*supplier* — they are derived from the caller's data by the caller's
+`keyed by`, and the receiving type has no way to know or name them).
 
-**Exposition.** A bulk `parts` reference in `expose:` carries dynamic
-children like static ones: each feeding `repeat`'s scopes appear at
-the repeat's written position in the supplied sequence, mounting and
-dismounting under Model B (§13.9.7).
+**Exposition.** A view referenced in `expose:` carries its dynamic children
+like static ones: each feeding `repeat`'s scopes appear at the repeat's
+written position in the supplied sequence, mounting and dismounting under
+Model B (§13.9.7).
 
 **Optimization.** When every supplier at a given placement site is
 provably static, the compiler may compile that site's `repeat` and
@@ -12814,42 +12866,84 @@ implementation choice; the developer writes against the dynamic
 contract regardless, because the *type* admits dynamic supply.
 
 The same marker, cell model, and consumption rules apply to
-`incoming:` and `outgoing:` connection types (§13.3.4.1).
+`incoming`/`outgoing` connection-views (§13.3.4.1).
 
-#### 13.3.4 `incoming` and `outgoing` clauses
+##### 13.3.3.5 Groups
+
+A **group** is a *heterogeneous* bundle of co-placed children, written
+`[...]` at the placement site (§13.8.3). It is a distinct kind from a view:
+a view is homogeneous (one selector), whereas a group may mix types. **Only
+an explicit `[...]` is a group** — a bare placement is not.
+
+A group is reached **only via `.<Type>`**, which yields a (homogeneous) view
+of that type's members within the group; there is **no bare positional index
+into a group**. Forcing `.<Type>` first means a heterogeneous bundle is
+never indexed directly, so the "what type does `group[i]` return?" problem
+never arises (Ductus has no ad-hoc unions).
 
 ```
-incoming: [dynamic] ConnType1 [cardinality]?, [dynamic] ConnType2 [cardinality]?, ...
-outgoing: [dynamic] ConnType3 [cardinality]?, [dynamic] ConnType4 [cardinality]?, ...
+view bar: [Note+ Rest*]      // one group: 1+ Note, 0+ Rest
+bar.Note[0].pitch            // .Note -> view of the group's Notes, then index
+bar.Rest                     // .Rest -> view of the group's Rests
 ```
 
-The `incoming` and `outgoing` clauses list the *types* of connections
-in which instances of this node may participate as endpoints, with
-optional cardinality constraints. `incoming` connections target this
-node (the node is the `to` endpoint); `outgoing` connections
-originate from this node (the node is the `from` endpoint). See §13.6
-for connection declarations and §13.8.4 for connection placement.
+**Flat views flatten through groups; group views see brackets.** A view
+whose selector is a plain type counts and sees the group's *elements*; a
+view whose selector is itself a group (`[...]`) counts and sees the
+*brackets*:
 
-Like `parts:`, these are the node's **caller-facing signature**: they bound the
-connections a *caller* may wire to or from the node. `incoming:` bounds what
-others may direct *at* this node; `outgoing:` bounds what a caller placing this
-node may originate *from* it. They do **not** bound the node's own internal
+```
+verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one group
+view notes:  Note+           // flat    -> sees C4, F4, G4, E4   (4)
+view chords: [Note+]+        // grouped -> sees [F4 G4]          (1 group)
+chords[0].Note[1]            // 2nd Note of group 0
+```
+
+With a single matching group, members are reached `bar.Note[i]`; with
+multiple groups, the group is indexed first: `bars[g].Note[i]`.
+
+**Group cardinality.** For a group view, the **inner** cardinality (members
+per group) is part of the match predicate — a *filter* on which groups the
+view selects — while the **outer** cardinality (group count) is the count
+constraint. This keeps distinct group shapes independent: `[Note[=2]]+` and
+`[Note[=3]]+` select disjoint sets of groups and do not conflict.
+
+#### 13.3.4 Connection-views (`incoming` and `outgoing`)
+
+```
+outgoing name: [dynamic] Type <cardinality>      // node is the `from` endpoint
+incoming name: [dynamic] Type <cardinality>      // node is the `to` endpoint
+```
+
+Connections a node participates in are declared **per-view**, parallel to node
+views (§13.3.3) but with their own direction keywords: `outgoing name: Type`
+makes the node the `from` endpoint, `incoming name: Type` makes it the `to`
+endpoint. Each declaration is a **connection-view** — a direction keyword, a
+unique name (§13.7.1), a connection type, and optional cardinality. See §13.6 for
+connection declarations and §13.8.4 for connection placement.
+
+Like node views, connection-views are the node's **caller-facing signature**:
+they bound the connections a *caller* may wire to or from the node. An
+`outgoing` view bounds what a caller placing this node may originate *from* it
+(a local-supply bound); an `incoming` view bounds what may be directed *at* it,
+aggregated across all sources. They do **not** bound the node's own internal
 wiring — self-sourced connection placements (§13.3.4.2) are its private
 realization, checked by endpoint typing and topology (§13.11.5) but never
-counted against `incoming:` / `outgoing:`. When such internal wiring targets one
-of the node's own parts, the node acts as the **caller of that part**, and the
-connection counts against the *part's* `incoming:` budget (§13.3.4.2).
+counted against any connection-view. When such internal wiring targets one of
+the node's own children, the node acts as the **caller of that child**, and the
+connection counts against the *child's* incoming budget (§13.3.4.2).
 
-Cardinality syntax is identical to that of `parts:` (§13.3.3.1):
-sigils (`?`, `+`, `!`) or bracketed ranges (`[=N]`, `[N..=M]`,
-`[N..]`, `[..=M]`). Default (bare) is unlimited (`0..`). The
-`dynamic` supply-mode prefix is likewise the same marker with the same
-exclusivity rule (§13.3.3.1).
+Cardinality uses the same specifiers as node views (§13.3.3.1) with the same
+meaning — **bare = exactly one** in every direction (incoming included),
+multiplicity always explicit (`?`, `+`, `*`, `[=N]`, `[N..=M]`, `[N..]`,
+`[..=M]`); fan-in or multi-origin is written `*`. The `dynamic` prefix is the
+same marker and takes exactly `*` (§13.3.3.1).
 
 ```
 node Driver:
-  outgoing: Drives [=1], MaintainedBy?
-  incoming: SponsoredBy [..=3]
+  outgoing drive:       Drives          // exactly one
+  outgoing maintenance: MaintainedBy?   // 0 or 1
+  incoming sponsors:    SponsoredBy [..=3]
 ```
 
 **Static and dynamic membership.** A connection belongs to a node's incoming
@@ -12859,58 +12953,53 @@ connection is materialized per `repeat` key (its *existence* varies, §13.5.4),
 or its destination is a reactive reference or `Handle` (its *target* varies,
 §13.6.2). The rule:
 
-- An **unmarked (static)** `incoming:` type admits only connections whose
+- An **unmarked (static)** `incoming` view admits only connections whose
   membership is a static fact. Its cardinality is checked by **exact local
   arithmetic**: the compiler counts, per instance, the statically present
   connections directed at it — caller-placed static-destination connections
   *and* self-sourced static-destination connections (a self-sourced connection
-  into an own part counts at the part, and being always present, it satisfies
-  the part's lower bound). Indexed access `incoming.<ConnType>[i]` for `i <`
-  the guaranteed minimum is backed by exactly these.
-- Any connection whose membership is **not** a static fact requires
-  **`dynamic <ConnType>`** in the `incoming:` clause of **every node type in
+  into an own child counts at the child, and being always present, it satisfies
+  the child's lower bound). Indexed access `name[i]` for `i <` the guaranteed
+  minimum is backed by exactly these.
+- Any connection whose membership is **not** a static fact requires a
+  **`dynamic incoming`** connection-view of that type on **every node type in
   its candidate envelope** (§13.11.5 — for a dynamic destination, every type
   the reference's static type admits; for a repeat-materialized connection,
   its destination's type). The check runs at the connection placement site
-  and names both sites on failure. A `dynamic` incoming type carries no
-  cardinality (§13.3.3.1), so there is no bound to check — the membership is
+  and names both sites on failure. A `dynamic` connection-view carries the `*`
+  specifier (§13.3.3.1), so there is no bound to check — the membership is
   runtime data by declaration, tracked reactively (§13.3.4.1).
 
-`outgoing:` is symmetric: a caller may write a `repeat` that places connections
+`outgoing` is symmetric: a caller may write a `repeat` that places connections
 sourced from the placed instance (fan-out — e.g. `repeat s in sessions:
 Send: s.target` in its placement body), and such caller-supplied connections
-require `outgoing: dynamic Send` on the instance's type, since their count at
-the source is not a static fact. A merely *re-pointing* destination does not
-dynamize the source side: the connection statically exists at its source; only
-its target moves. Self-sourced placements remain outside `outgoing:` entirely
-(the signature is caller-facing).
+require a `dynamic outgoing` connection-view (e.g. `dynamic outgoing sends:
+Send*`) on the instance's type, since their count at the source is not a static
+fact. A merely *re-pointing* destination does not dynamize the source side: the
+connection statically exists at its source; only its target moves. Self-sourced
+placements remain outside the `outgoing` connection-views entirely (the
+signature is caller-facing).
 
 ##### 13.3.4.1 Access from inside the node body
 
-Connections of a given type are accessible as `incoming.<ConnType>`
-and `outgoing.<ConnType>` (bare, per §13.7.5) or with the explicit
-`here::` anchor (`here::incoming.<ConnType>`). The model is exactly
-that of parts — three member namespaces (`parts`, `incoming`,
-`outgoing`), each with a static face and a dynamic face:
+A connection-view is accessed by its **name**, under the same borrow-window
+rule as node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
+reads as a single connection reference; a multi-valued one has a static face
+and a dynamic face.
 
-For a **static** (unmarked) connection type, the form is a read-only
-**array of connection references** with const-generic length bounded
-by the declared cardinality, exactly as §13.3.3.2 specifies for
-parts:
+For a **static** (unmarked) connection-view, the name is a read-only **array of
+connection-reference borrows** with const-generic length bounded by the
+declared cardinality, exactly as §13.3.3.2 specifies for node views:
 
-- Indexed: `incoming.<ConnType>[i]` and `outgoing.<ConnType>[i]` are
-  legal iff `i < min_cardinality` (ordinary const-generic bounds).
-  Example: under `outgoing: Drives [=1]`, `outgoing.Drives[0]` is
-  legal.
-- Iteration: `for c in outgoing.<ConnType>: ...` always works,
-  unrolling per §12.3.7. Because incoming connections are named
-  `incoming` (not `in`), `for c in incoming.<ConnType>` reads without
-  colliding with the `for ... in` separator.
+- Indexed: `name[i]` is legal iff `i < min_cardinality` (ordinary
+  const-generic bounds). Example: under `outgoing wires: WiresTo+`, `wires[0]`
+  is legal.
+- Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
-For a **`dynamic`** connection type, the form is a **reactive cell**
-whose value is the current set of member connections, with the
-consumption rules of §13.3.3.4 — operators for values, `repeat` for
-structure, nothing else. This is the fan-in idiom:
+For a **`dynamic`** connection-view, the name is a **reactive cell** whose
+value is the current set of member connections, with the consumption rules of
+§13.3.3.4 — operators for values, `repeat` for structure, nothing else. This is
+the fan-in idiom:
 
 ```
 connection Send:
@@ -12919,11 +13008,11 @@ connection Send:
   attr gain: f32 = 1.0
 
 node Mixer:
-  incoming: dynamic Send
-  derived contributions = incoming.Send |> map(fn(c): c.gain * c.from.value)
+  dynamic incoming sends: Send*
+  derived contributions = sends |> map(fn(c): c.gain * c.from.value)
   derived mix: f32 = sum(contributions)
   expose:
-    repeat c in incoming.Send:
+    repeat c in sends:
       Ack: c.from                 // a back-connection per current Send
 ```
 
@@ -12932,14 +13021,14 @@ any member's read cells change; `sum` is an ordinary function over
 the resulting values. The `repeat` arm shows the structural side:
 one `Ack` per currently incoming `Send`, mounting and dismounting
 with it. Markers fall on both sides by the rules of §13.3.4: the
-`Ack`s exist per `repeat` key, so `Session` declares
-`incoming: dynamic Ack`; the `Ack`s are self-sourced by `Mixer`'s
-own exposition, so `Mixer` needs no `outgoing:` entry for them.
+`Ack`s exist per `repeat` key, so `Session` declares a
+`dynamic incoming` connection-view of `Ack`; the `Ack`s are self-sourced by
+`Mixer`'s own exposition, so `Mixer` needs no `outgoing` connection-view for them.
 
 ##### 13.3.4.2 Self-sourced connections and the signature/internals model
 
-`incoming:` and `outgoing:` declare which connections a node *participates in* as
-an endpoint; they do not *establish* any. A node type establishes connections
+Connection-views declare which connections a node *participates in* as an
+endpoint; they do not *establish* any. A node type establishes connections
 **sourced from itself** — connections every instance of the type brings into
 being, with the instance as the `from` endpoint — by placing them **inline in
 its structural sequence**: as exposition entries (§13.3.7.5), directly or
@@ -12957,10 +13046,10 @@ always the enclosing instance.
 **Destinations must be nameable from the type's scope** (§13.7.1). Three forms
 are admissible:
 
-- A **part of the node** (scope 2) — a named part instance, or an indexed
-  `parts.X[i]` within the guaranteed minimum (§13.3.3.2). A **static**
-  internal destination: it always points, so it counts as static supply at
-  the part and can satisfy the part's `incoming:` lower bounds (§13.3.4).
+- A **child of the node** (scope 2) — a named child instance, or a view element
+  `name[i]` within the guaranteed minimum (§13.3.3.2). A **static** internal
+  destination: it always points, so it counts as static supply at the child and
+  can satisfy the child's incoming lower bounds (§13.3.4).
 - A **module-level instance** (scope 3) — a fixed, shared target every instance
   connects to, such as a global bus or clock. Also static.
 - A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
@@ -12969,8 +13058,8 @@ are admissible:
   the payoff of the dynamic `to`: *every instance drives whatever it is told to
   at placement*, and the connection freezes while the handle resolves to `None`
   (§13.9.7). Membership at the destination is not a static fact, so every node
-  type the handle's type admits must declare `incoming: dynamic <ConnType>`
-  (§13.3.4).
+  type the handle's type admits must declare a `dynamic incoming`
+  connection-view of that type (§13.3.4).
 
 ```
 connection Drives:
@@ -12979,13 +13068,13 @@ connection Drives:
 
 node Axle:
   satisfies Drivable
-  incoming: dynamic Drives            // membership varies with the handles — §13.3.4
+  dynamic incoming drives: Drives*    // membership varies with the handles — §13.3.4
 
 node Driver:
   attr wheel: Handle[Drivable]        // configured per instance at placement
-  parts: Pedal
+  view pedals: Pedal+
   expose:
-    parts.Pedal
+    pedals
     Drives: wheel                     // self-sourced; engages after the pedals
 
 Garage g:
@@ -12993,37 +13082,37 @@ Garage g:
   Driver | wheel=rear_axle            // this one drives rear_axle
 ```
 
-(`Driver` needs no `outgoing: Drives` — a self-sourced connection is not
-caller-placed; see below.)
+(`Driver` needs no `outgoing` connection-view for `Drives` — a self-sourced
+connection is not caller-placed; see below.)
 
 **Signature vs. internals.** Self-sourced connections are the concrete case of a
-general rule. A node type's `parts:`, `incoming:`, and `outgoing:` clauses are its
+general rule. A node type's views and connection-views are its
 **caller-facing signature**: they bound what a *caller* may place into, or wire
 to and from, an instance. A node's **internals** are **every placement the type
 itself makes** — self-sourced connections, type-emitted `for` children
 (§13.3.3.3), `repeat` placements (§13.5.4), wrapper placements (§13.3.7) — its
-private realization. Internals are **not** bound by the signature clauses and
-never appear in the signature namespaces; they are checked only by connection
-endpoint typing (§13.8.4) and topology-cycle analysis (§13.11.5).
+private realization. Internals are **not** bound by the signature and never
+appear in it; they are checked only by connection endpoint typing (§13.8.4) and
+topology-cycle analysis (§13.11.5).
 
 One consequence is recursive: when a node's internal wiring (a self-sourced
-connection, or a wrapper) terminates at one of the node's **own parts**, the
-node is acting as that part's **caller**, and the connection counts against the
-*part's* `incoming:` budget — the same budget a caller placing the part would
-draw from. A node is the caller of its own parts.
+connection, or a wrapper) terminates at one of the node's **own children**, the
+node is acting as that child's **caller**, and the connection counts against the
+*child's* incoming budget — the same budget a caller placing the child would
+draw from. A node is the caller of its own children.
 
 The same accounting applies at any destination: a self-sourced connection is
 exempt at its *source* only. At a **module-level destination**, every placed
 instance of the source type contributes one connection to the target's
-`incoming:` accounting, by §13.3.4's rule: contributions that are static facts
+incoming accounting, by §13.3.4's rule: contributions that are static facts
 (statically placed source instances, static destinations) count toward a
-static `incoming:` type's exact arithmetic; any contribution that is not a
+static `incoming` view's exact arithmetic; any contribution that is not a
 static fact — source instances materialized by `repeat`, or a `Handle`
-destination — requires the target to declare `incoming: dynamic` for that
-connection type, with the error naming both sites.
+destination — requires the target to declare a `dynamic incoming`
+connection-view for that type, with the error naming both sites.
 
 A self-sourced connection is therefore exempt from the source node's
-`outgoing:` clause (which governs caller-originated connections only), but it is
+`outgoing` connection-views (which govern caller-originated connections only), but it is
 **not** exempt from endpoint typing: the `from`/`to` types must still match the
 connection's declaration (§13.6.1).
 
@@ -13042,7 +13131,7 @@ specified now.
 
 A node may declare generic parameters in the standard `[T, U, ...]`
 form. Generic parameters are in scope within the body's attr,
-recurrent, derived, const, parts, and connection declarations:
+recurrent, derived, const, view, and connection declarations:
 
 ```
 node Buffer[T: Numeric]:
@@ -13051,7 +13140,7 @@ node Buffer[T: Numeric]:
   derived utilization: f32 =
     f32(fill_level) / f32(capacity)
 
-  parts: BufferSlot[T]
+  view slots: BufferSlot[T]*
 ```
 
 Each instantiation of `Buffer` with a different concrete `T`
@@ -13113,8 +13202,8 @@ defer *which* node type is placed, pass a `Type[…]` value (§5.7).
 
 The same ownership rule applies to **connections** and **effects**: an
 *instance* is a graph member, brought in only by the language's placement
-and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow,
-never stored as a value; their *types* travel as values via `Type[…]`
+and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow —
+a first-class citizen lacking value-semantics, hence unstorable; their *types* travel as values via `Type[…]`
 (§5.7). **Operators** are likewise instantiated only via their own syntax
 (§13.17), and additionally have a structural *type*, `operator(…) -> U`
 (§13.17.13), by which an operator can be carried. The rule is normative;
@@ -13217,19 +13306,23 @@ node's content.
 ```
 node TypeName:
   satisfies SomeTrait
-  parts: SomeA, SomeB
-  incoming: ConnIn1
-  outgoing: ConnOut1
-  expose:
-    SomeA
-    SomeB
+  view a: SomeA
+  view b: SomeB
+  incoming in1: ConnIn1
+  outgoing out1: ConnOut1
   attr foo: i32
   attr user_name: string = "world"
   derived greeting: string = "hello " + user_name
+  expose:
+    a
+    b
 ```
 
-The canonical clause order is: `satisfies` → `parts:` → `incoming:`
-→ `outgoing:` → `when:` → `expose:` → cell declarations → `effects:` (§13.3.8).
+Node-body members — cells, `view`/`dynamic view`, `incoming`/`outgoing`
+connection-views, `satisfies`, and `when:` — appear in **free order**; the
+only positional constraints are that `effects:` (§13.3.8) comes after the
+members and `expose:` comes last. `satisfies`, `when:`, `effects:`,
+`expose:`, and `default attr` each appear at most once.
 
 ##### 13.3.7.1 Content
 
@@ -13237,27 +13330,32 @@ The body of `expose:` is an ordered list of placements, with the same
 syntax as inline child placements elsewhere (§13.8). Node entries
 reference:
 
-- A part of the instance by type-bulk access (`parts.SomeA` — the full
-  list of supplied parts of that type, in placement order).
-- A named part instance (`osc1` — see §13.4.1) — when the
-  exposition needs a specific named child rather than all parts of
-  a type.
-- A wrapper placement that contains parts as its own children. The
-  wrapper is a node-internal type the exposition uses for structural
-  composition:
+- A **view by name** (`oscs` — the caller-supplied children of that
+  view, in placement order; §13.4.1).
+- A **named child** (`osc1` — see §13.4.1) by its placement name, when
+  the exposition needs one specific child rather than a whole view.
+- An **own placement** — a node-internal placement of the type's own
+  structure, optionally bound with `as` (`Helper as h`). Such a name is
+  hoisted into the body namespace and readable body-wide (§13.7.1).
+- A wrapper placement that contains supplied children as its own
+  children. The wrapper is a node-internal type the exposition uses for
+  structural composition:
 
   ```
   node MyContainer:
-    parts: Item
+    view items: Item*
     expose:
       SomeInternalWrapper:
-        parts.Item
+        items
   ```
 
   Here `SomeInternalWrapper` is a wrapper node whose body contains
   the supplied `Item` children. Internal nodes used this way are
   declared (in stdlib or user code) and accept children via their
-  own `parts:` clause.
+  own `view` declarations.
+- The **`@content` directive** (§13.3.7.2), which exposes everything the
+  node accepts — caller-supplied children and outgoing connections — in
+  the caller's original order.
 
 **Connection entries** place self-sourced connections (§13.3.4.2,
 §13.3.7.5) at their position in the sequence, with the full placement
@@ -13265,19 +13363,17 @@ syntax of §13.8.4 — `ConnType: dest`, optional `/expr`, attribute clause,
 and inline `when` modifier. The entry's position is where the connection
 *engages* during traversal (§13.3.7.6).
 
-**Positioning references** place *caller-supplied* connections:
-`outgoing.<ConnType>` (all caller-supplied connections of that static
-type, in placement order) or `outgoing.<ConnType>[i]` (one of them,
-legal under the guaranteed minimum) engages them at this position,
-overriding the anchoring fallback of §13.8.4 for the referenced
-connections. The form is a member-namespace reference with no
-destination, so it never collides with the `ConnType: dest` placement
-shape. Bare `incoming.<ConnType>` as an entry is a **compile error**:
-engagement order belongs to the *source's* traversal (§13.3.7.6), and a
-destination cannot reposition another node's connection within that
-node's structure. The error points at the expression-position idioms
-instead — `incoming.X[i].from` as a back-connection destination, or
-`repeat c in incoming.X: …` (§13.3.4.1).
+**Connection-view entries** position *caller-supplied* (outgoing) connections:
+naming an `outgoing` connection-view in `expose:` engages the connections
+supplied to it at that position, in placement order within the view. A
+connection-view the type never names in `expose:` still participates (presence
+is participation) but is never engaged — the same as an unexposed node view
+(§13.3.7.4). A bare **`incoming`** connection-view name as an entry is a
+**compile error**: engagement order belongs to the *source's* traversal
+(§13.3.7.6), and a destination cannot reposition another node's connection
+within that node's structure. The error points at the expression-position
+idioms instead — `name[i].from` as a back-connection destination, or
+`repeat c in name: …` (§13.3.4.1).
 
 **Iteration entries** emit type-internal structure in place:
 a compile-time `for` (§13.3.3.3) unrolls its placements at its written
@@ -13316,21 +13412,48 @@ scrutinee's variant labels (`given`, §13.9.13) or boolean guard
 expressions (`when:`, §13.9.12) — and connection entries appear *inside*
 arm bodies as ordinary indented exposition entries.
 
-##### 13.3.7.2 Default
+##### 13.3.7.2 `@content` and the absence of `expose:`
 
-When `expose:` is omitted, the node's exposition defaults to
-`expose: parts` — the runtime traverses all supplied placements in
-declaration order: parts and caller-placed connections in their written
-interleaving (§13.8.4), with a feeding `repeat`'s scopes expanding in
-place at the repeat's written position (§13.3.3.4). The default covers
-**caller-supplied content only**; a type that emits internal structure
-(`for`/`repeat`/wrappers, §13.3.7.1) necessarily writes `expose:`
-explicitly. When the node has no `parts:` clause and no `expose:` clause, the
-default `expose: parts` still exposes whatever the caller supplied — the
-open-parts children and caller-placed connections, as-is in written
-order; the exposition is empty only when no such content is supplied
-(the node then has no structural output and exists only for its state
-and connections).
+A node with no `expose:` clause has **no structural output** — its
+exposition is empty. Caller-supplied content becomes output only by being
+named in `expose:` (a view name or a named child, §13.4.1) or through the
+`@content` directive. A node without `expose:` exists only for its state
+and connections.
+
+`@content` is a **standalone directive** (§1.4) used as an `expose:`
+entry. It exposes **everything the node accepts** — its caller-supplied
+children and outgoing connections — in the caller's original, interleaved
+order:
+
+```
+node Frame:
+  view rest: Node*
+  outgoing wires: Connection*
+  expose:
+    @content              // children + outgoing connections, in caller order
+```
+
+`@content` is not a named declaration and has no expression access; typed
+access to supplied content goes through views (§13.4.1). It covers
+caller-supplied children and outgoing connections only — never incoming
+connections, which are not body-supplied (§13.3.4).
+
+`@content` does not widen acceptance: a node accepts only what its
+`view`/`outgoing` declarations name (§13.3.3.1, §13.3.4). A container that
+takes arbitrary content declares explicit catch-all views (`view rest:
+Node*`, `outgoing wires: Connection*`); there is no "content accepts
+anything" shortcut.
+
+`@content` is **wrappable** — placed inside a wrapper body it tucks the
+whole supplied body into that wrapper:
+
+```
+expose:
+  Padding as pad:
+    @content              // the entire supplied body nests under pad
+```
+
+At most one `@content` appears per `expose:` scope.
 
 ##### 13.3.7.3 External access via `.exposition`
 
@@ -13350,24 +13473,21 @@ arrives and leaves (§13.3.3.4).
 
 ##### 13.3.7.4 Runtime traversal
 
-The runtime traverses what `expose:` produces, not the `parts:`
-clause directly. `parts:` and `expose:` are two halves of one
-mechanism:
+The runtime traverses what `expose:` produces, not the view declarations
+directly. Views and `expose:` are two halves of one mechanism:
 
-- **`parts:`** is the *supply* half — it declares which child types
-  the node accepts, with cardinality; placement-time child placements
-  fill them (§13.4, §13.8.3).
+- **Views** are the *supply* half — they declare which child types the
+  node accepts, with cardinality; placement-time child placements fill
+  them (§13.4, §13.8.3).
 - **`expose:`** is the *output* half — it declares the node's ordered
-  structural output: which of those parts (and/or wrapping internal
+  structural output: which of those children (and/or wrapping internal
   nodes containing them) the runtime traverses, where the node's own
   emissions (`for`/`repeat` entries, §13.3.7.1) appear, and where its
   self-sourced connections engage among them (§13.3.7.5).
 
-`parts:` exists *solely* to feed `expose:`: externally-supplied children
-exist to become the node's structural output. By default
-(`expose: parts`, §13.3.7.2) every supplied part is exposed; an explicit
-`expose:` may arrange *or select a subset of* the supplied parts, and a
-part it omits has no structural output (not a compile error).
+An explicit `expose:` may arrange *or select a subset of* the
+caller-supplied children: a view it omits has no structural output (not a
+compile error). A node with no `expose:` exposes nothing (§13.3.7.2).
 
 Traversal proceeds **in entry order**: node entries by structural
 descent, connection entries by engagement (§13.3.7.6).
@@ -13384,7 +13504,7 @@ entries before it.
 
 ```
 node Section:
-  incoming: dynamic Plays         // handles re-point — membership is runtime data (§13.3.4)
+  dynamic incoming plays: Plays*  // handles re-point — membership is runtime data (§13.3.4)
   // …
 
 node Verse:
@@ -13523,7 +13643,7 @@ the inactive arm and suspends its effects (Model B, §13.9.7); see
 §13.19.12.
 
 **Local-only.** A node defines its own effects. Effects are never
-passed into a node from outside — there are no effect parts and no
+passed into a node from outside — there are no effect children and no
 effect parameters. A caller influences a node's effects only through
 **data in** (signals/attrs/streams supplied as parameters) and
 **streams out** (the child exposes an outgoing stream that the parent
@@ -13553,27 +13673,26 @@ in the `effects:` clause of a **top-level node instance** (§13.8.1).
 `f = url |> fetch` or `derived x = url |> effect` elsewhere in the node
 body is a compile error directing the author to `effects:` (§13.19.16).
 
-### 13.4 Parts
+### 13.4 Children and View Access
 
 #### 13.4.0 Concept
 
-"Part" is a *role*, not a separate type. A part is a child node
-instance placed inside a parent node at construction time. Parts
-exist for *containment* (§13.3.0 framing): a parent node may own
-child nodes whose lifetimes and addressing are bound to the parent.
+"Child" is a *role*, not a separate type. A child is a node instance placed
+inside a parent node at construction time. Children exist for *containment*
+(§13.3.0 framing): a parent node may own child nodes whose lifetimes and
+addressing are bound to the parent.
 
-Parts vs. top-level placements: a node placed at the module top
-level is an independent instance addressable by its name. A node
-placed as a part is contained within a parent instance and
-addressable only through that parent (e.g., `parent.osc1` or
-`parent.parts.Oscillator[0]`). The structural distinction matters
-for ownership, hot-reload diffing, and addressing — both kinds of
-instances have reactive cells that participate in dependency
-graphs, but a part's cells are reachable through the parent's
-`parts.<Type>` mechanism, whereas a top-level instance is
-reachable only by its module-scope name or through connections.
+Children vs. top-level placements: a node placed at the module top level is
+an independent instance addressable by its name. A node placed as a child is
+contained within a parent instance and addressable only through that parent
+(e.g., `parent.osc1` or, through a view, `parent.oscs[0]`). The structural
+distinction matters for ownership, hot-reload diffing, and addressing — both
+kinds of instances have reactive cells that participate in dependency
+graphs, but a child's cells are reachable through the parent's views,
+whereas a top-level instance is reachable only by its module-scope name or
+through connections.
 
-Use parts when:
+Use children when:
 
 - The contained instance is conceptually "owned" by the parent
   (a Synthesizer owns its Oscillators; a Form owns its Fields).
@@ -13586,160 +13705,151 @@ Use top-level placements when the instance stands on its own and
 participates in the graph through connections rather than
 containment.
 
-The parent declares the types of children it accepts via its
-`parts:` clause (§13.3.3) with optional cardinality; the specific
-instances appear via placement (§13.8.3).
+The parent declares the children it accepts via `view` declarations
+(§13.3.3) with cardinality; the specific instances appear via placement
+(§13.8.3).
 
-**Runtime traversal goes through `expose:`, not through `parts:`
-directly.** The `parts:` clause is the constraint and supply
-mechanism — declared types, cardinality, and placement-time
-filling. The `expose:` clause (§13.3.7) is the structural output
-the runtime walks; it references parts (via `parts.<Type>` or
-by named instance), possibly wrapping them in internal nodes.
-Parts that the exposition does not include are not traversed by
-the runtime — they remain queryable via the host API and addressable
-within the parent's own reactive expressions, but they do not
-contribute to the structural descent.
+**Runtime traversal goes through `expose:`, not through the views
+directly.** A view is the constraint-and-access mechanism — declared
+selector, cardinality, and placement-time filling. The `expose:` clause
+(§13.3.7) is the structural output the runtime walks; it references children
+(via a view name or a named instance), possibly wrapping them in internal
+nodes. Children the exposition does not include are not traversed by the
+runtime — they remain queryable via the host API and addressable within the
+parent's own reactive expressions, but they do not contribute to the
+structural descent.
 
 #### 13.4.1 Access forms
 
-Parts of a parent instance are accessible in two ways. The
-available access forms depend on the parent's `parts:` clause:
+Children of a parent instance are accessible in two ways:
 
-- **Type-bulk (`parts:` declared only):** `parts.<NodeType>`.
-  For a *static* (unmarked) type this is a read-only array of node
-  references with const-generic length bounded by the declared
-  cardinality (§13.3.3.2) — indexable under the guaranteed minimum,
-  iterable with `for`, in placement order. For a **`dynamic`** type
-  it is a reactive cell consumed via operators or `repeat`
-  (§13.3.3.4). Available only when `<NodeType>` appears in the
-  `parts:` clause.
-- **Named individual:** bare `<name>` (or `paramName.<name>` from
-  outside the node body) — accesses a specific part by its
-  placement-time name. Names are assigned in the placement body
-  (§13.8.3) and visible wherever the placement scope is known.
-  Available with or without a `parts:` clause.
+- **By view:** a view name. For a *static* (unmarked) view this is a
+  read-only array of borrows with const-generic length bounded by the
+  declared cardinality (§13.3.3.2) — indexable under the guaranteed
+  minimum, iterable with `for`, in placement order. For a **`dynamic`**
+  view it is a reactive cell consumed via operators or `repeat`
+  (§13.3.3.4). Bulk access exists only through a declared view name.
+- **Named individual:** bare `<name>` (or `paramName.<name>` from outside
+  the node body) — accesses a specific child by its placement-time name.
+  Names are assigned in the placement body (§13.8.3) and visible wherever
+  the placement scope is known. Available independent of any view.
 
-There is no whole-namespace (heterogeneous) iteration over `parts`:
-per-type access is the only bulk form, and a node without a `parts:`
-clause has no bulk access at all (§13.3.3.2).
+There is no whole-namespace (heterogeneous) iteration over a node's
+children: a (homogeneous) view is the only bulk form, and a node with no
+views has no bulk access at all (§13.3.3.2).
 
 Summary table:
 
-| Form                  | `parts:` declared              | `parts:` omitted |
-|-----------------------|--------------------------------|------------------|
-| `parts.<Type>` static | array (§13.3.3.2)              | not available    |
-| `parts.<Type>` dynamic| reactive cell (§13.3.3.4)      | not available    |
-| named (bare `<name>`) | available                      | available        |
+| Form                  | view declared             | no matching view |
+|-----------------------|---------------------------|------------------|
+| view name (static)    | array (§13.3.3.2)         | not available    |
+| view name (dynamic)   | reactive cell (§13.3.3.4) | not available    |
+| named (bare `<name>`) | available                 | available        |
 
 Inside the parent's own type body (its `derived` and `recurrent`
-expressions), only the type-bulk form is available;
-placement names aren't visible at the type-declaration level.
-Named individual access becomes available in:
+expressions), caller-supplied children are reached by view name; a caller's
+placement names for those children aren't visible at the type-declaration
+level. Named individual access becomes available in:
 
-- Function bodies receiving a specific instance, where the
-  instance's placement names are visible (e.g., `c.osc1.output`
-  where `c` is a Composite parameter).
-- Other instances' placement bodies that reference the named
-  instance.
-- The same placement body where the part is declared (other lines
-  may reference the named part regardless of order, including ones
-  written earlier or later).
+- Function bodies receiving a specific instance, where the instance's
+  placement names are visible (e.g., `c.osc1.output` where `c` is a
+  Composite parameter).
+- Other instances' placement bodies that reference the named instance.
+- The same placement body where the child is declared (other lines may
+  reference the named child regardless of order, including ones written
+  earlier or later).
 
-Static type-bulk and named access are compile-time resolved: the
-compiler knows every statically supplied part's identity, type, and
-placement-name per site (§13.1). A `dynamic` type's membership is
-runtime data by declaration, tracked reactively (§13.3.3.4).
+Static view and named access are compile-time resolved: the compiler knows
+every statically supplied child's identity, type, and placement-name per
+site (§13.1). A `dynamic` view's membership is runtime data by declaration,
+tracked reactively (§13.3.3.4).
 
-#### 13.4.2 Iteration over parts
+#### 13.4.2 Iteration over a view
 
-A function body that receives the parent node as a parameter may
-iterate its parts using a `for` loop, accessed via the parameter
-name (developer-chosen, not an implicit receiver).
+A function body that receives the parent node as a parameter may iterate a
+view using a `for` loop, accessed via the parameter name (developer-chosen,
+not an implicit receiver).
 
-**Type-bulk iteration:**
+**View iteration:**
 
 ```
 fn total_output(s: Synthesizer) -> f32:
   mut sum: f32 = 0.0
-  for o in s.parts.Oscillator:
+  for o in s.oscillators:
     sum = sum + o.output
   sum
 
 node Synthesizer:
-  parts: Oscillator+
+  view oscillators: Oscillator+
   derived total: f32 = total_output(subject)
 ```
 
-`o` has the concrete type `Oscillator` in each iteration. The
-compiler unrolls the loop to one reference per declared Oscillator
-part.
+`o` has the concrete type `Oscillator` in each iteration. The compiler
+unrolls the loop to one reference per supplied Oscillator.
 
-Iteration is **per-type only**. There is no heterogeneous `for p in
-c.parts` over all declared types: aggregate behavior over several
-part types is written per type and combined explicitly, so that
-adding a type to the `parts:` clause forces a conscious decision
-about its contribution rather than flowing it silently through a
-body that happens to compile. Where one uniform stored
-representation across types is genuinely needed, use `dyn Trait`
-(§5.2).
+Iteration is **per-view only**. There is no heterogeneous `for` over all of
+a node's children: aggregate behavior over several views is written per view
+and combined explicitly, so that adding a view forces a conscious decision
+about its contribution rather than flowing it silently through a body that
+happens to compile. Where one uniform stored representation across child
+types is genuinely needed, use `dyn Trait` (§5.2).
 
-**Relation to the general unrolling rule.** Part iteration is not a
-special construct: `c.parts.Oscillator` is a fixed-extent array
-(§13.3.3.2) whose per-site length the parent's `parts:` declaration
-bounds and the placement fixes (§13.1's static-graph principle), so a
-`for` over it unrolls by the ordinary rule of §12.3.7 — the same rule
-by which a range or array literal unrolls.
+**Relation to the general unrolling rule.** Iterating a static view needs no
+dedicated construct: a static view `c.oscillators` is a fixed-extent array (§13.3.3.2)
+whose per-site length the view's cardinality bounds and the placement fixes
+(§13.1's static-graph principle), so a `for` over it unrolls by the ordinary
+rule of §12.3.7 — the same rule by which a range or array literal unrolls.
 
-#### 13.4.3 Reactive dependency tracking through parts
+#### 13.4.3 Reactive dependency tracking through a view
 
-When a function called from a reactive expression iterates parts,
-each part's reactive cells contribute to the calling expression's
-dependency set. In the example above:
+When a function called from a reactive expression iterates a view, each
+child's reactive cells contribute to the calling expression's dependency
+set. In the example above:
 
-- `total_output(subject)` reads `p.output` for each part.
-- Each `p.output` is a derived on the part.
-- The `Synthesizer.total` derived's dependency set includes every
-  part's `output` derived.
-- When any one part's `output` changes, `total` is dirty.
+- `total_output(subject)` reads `o.output` for each child.
+- Each `o.output` is a derived on the child.
+- The `Synthesizer.total` derived's dependency set includes every child's
+  `output` derived.
+- When any one child's `output` changes, `total` is dirty.
 
-This works because dependency tracking is provenance-based (§13.12.1):
-the compiler tracks reactive cells read by an expression,
-transitively through function calls.
+This works because dependency tracking is provenance-based (§13.12.1): the
+compiler tracks reactive cells read by an expression, transitively through
+function calls.
 
 #### 13.4.4 Restrictions
 
-- Parts are bound to placement-time names. A node may contain at
-  most one part of each name; multiple parts of the same type with
-  different names are permitted (subject to the cardinality
-  declared in the `parts:` clause).
-- Statically supplied parts are not added or removed at runtime
-  (except via hot reload). Parts of a `dynamic` type mount and
-  dismount with their feeding `repeat`'s key set (§13.3.3.4).
-- A `dynamic` part type is not `for`-iterable, not indexable, and
-  not key-addressable from the receiving body — operators and
-  `repeat` are its only consumers (§13.3.3.4).
+- Children are bound to placement-time names. A node may contain at most
+  one child of each name; multiple children of the same type with different
+  names are permitted (subject to the declared view cardinality).
+- Statically supplied children are not added or removed at runtime (except
+  via hot reload). Children of a `dynamic` view mount and dismount with
+  their feeding `repeat`'s key set (§13.3.3.4).
+- A `dynamic` view is not `for`-iterable, not indexable, and not
+  key-addressable from the receiving body — operators and `repeat` are its
+  only consumers (§13.3.3.4).
 
-#### 13.4.5 Parts access — example
+#### 13.4.5 View access — example
 
-Putting type-bulk and named individual access together:
+Putting view and named individual access together:
 
 ```
 node Composite:
-  parts: Oscillator+, Filter [=1], Amplifier [=1]
+  view oscillators: Oscillator+
+  view filter:      Filter
+  view amplifier:   Amplifier
   derived total_oscillation: f32 = sum_oscillators(subject)
   derived processed: f32 = process(subject)
 
 fn sum_oscillators(c: Composite) -> f32:
   mut sum: f32 = 0.0
-  for o in c.parts.Oscillator:        // type-specific iteration
+  for o in c.oscillators:               // view iteration
     sum = sum + o.output
   sum
 
 fn process(c: Composite) -> f32:
-  let raw = c.parts.Oscillator[0].output      // indexed, legal under `+`
-  let filtered = c.parts.Filter[0].apply(raw) // indexed, legal under `[=1]`
-  c.parts.Amplifier[0].amplify(filtered)
+  let raw = c.oscillators[0].output      // indexed, legal under `+`
+  let filtered = c.filter[0].apply(raw)  // indexed, legal under exactly-one
+  c.amplifier[0].amplify(filtered)
 
 // Placement with optional names:
 Composite c1:
@@ -13753,9 +13863,9 @@ fn debug(c: Composite) -> string:
   "first oscillator: {c.osc_a.output}, filter: {c.flt1.kind}"
 ```
 
-Two access patterns coexist: `c.parts.Oscillator[i]` / `for o in
-c.parts.Oscillator` (type-bulk, bounded by cardinality) and `c.osc_a`
-(named individual, requires the caller to know placement names).
+Two access patterns coexist: `c.oscillators[i]` / `for o in c.oscillators`
+(by view, bounded by cardinality) and `c.osc_a` (named individual, requires
+the caller to know placement names).
 
 ### 13.5 Template Scopes and Keyed Instantiation
 
@@ -13868,7 +13978,7 @@ across all live keys.
 #### 13.5.4 Dynamic scope materialization via `repeat`
 
 The `repeat` keyword declares one reactive scope per element of a
-runtime reactive source. Each scope is a template of placements (parts
+runtime reactive source. Each scope is a template of placements (child nodes
 and connections) that the runtime materializes per element via §13.5.1's
 operations: `scope_obtain` on key emergence, `scope_drop` on key
 disappearance, `scope_evaluate` per active key per commit.
@@ -13904,8 +14014,8 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 `in <source>`, then optional `as <view>`, then optional `keyed by <key-expr>`.
 
 - **`<source>`** is a reactive collection cell: `Signal[I]` for some
-  `I: Iterable` (§12.8), or a **`dynamic` namespace cell** of the
-  enclosing node (`parts.<T>` / `incoming.<C>` / `outgoing.<C>`,
+  `I: Iterable` (§12.8), or a **`dynamic` collection cell** of the
+  enclosing node (a `dynamic` view or connection-view,
   §13.3.3.4), whose value is a language-provided keyed, ordered
   collection — always iterable. The iterator must terminate at each
   evaluation (see §13.5.4.8). The
@@ -13941,7 +14051,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   invariant.
 
   *Why repeat needs this.* The body's placements (attrs, connection
-  arguments, child parts) consume their RHS values into structural
+  arguments, child placements) consume their RHS values into structural
   storage per categories B/D in §11.1. Storage sites require real
   owners; cluster members cannot be stored (§11.3.4). Without
   move-promotion, the bind couldn't flow into any placement RHS.
@@ -13990,8 +14100,8 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
      is evaluated with the bind in scope. The result must be a
      `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
      `string`). Explicit always wins when present.
-  2. **Carried key** — when the source is a `dynamic` namespace cell
-     (`parts.<T>` / `incoming.<C>` / `outgoing.<C>`, §13.3.3.4), each
+  2. **Carried key** — when the source is a `dynamic` collection cell
+     (a `dynamic` view or connection-view, §13.3.3.4), each
      element arrives with the key its supplier derived for it
      (placement-site keys for statically written elements), and that
      key is used.
@@ -14086,10 +14196,9 @@ node VoiceMixer:
 
 The `repeat` is written in `expose:` — structural output is emitted in
 exactly one place (§13.3.3.3). These `Voice` children are the type's
-**internals**: never counted against any `parts:` clause and absent from
-the `parts` namespace (§13.3.4.2). A *caller* materializing children
-instead writes the `repeat` in the placement body, feeding a
-`dynamic`-marked part type of the receiving node (§13.3.3.4).
+**internals**: never counted by any view (§13.3.4.2). A *caller*
+materializing children instead writes the `repeat` in the placement body,
+feeding a `dynamic` view of the receiving node (§13.3.3.4).
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
 commits for the same `voice_id`. The attr is a reactive cell — reads
@@ -14223,9 +14332,9 @@ template-scope machinery; the cost model is "pay for what you iterate."
   (§13.3.4.2).
 - **Placement bodies** (§13.8.3) — scopes become children of this
   specific placement. This is **caller supply**: node placements feed
-  the receiving type's `dynamic`-marked part types (§13.3.3.4), and
+  the receiving type's `dynamic` views (§13.3.3.4), and
   connection placements sourced from the placed instance require
-  `outgoing: dynamic` on its type (§13.3.4).
+  a `dynamic outgoing` connection-view on its type (§13.3.4).
 - **`effects:` clauses** (§13.3.8) — each scope materializes one
   effect-bearing instance per element (e.g., one connection per active
   session); the per-element effects suspend/resume and tear down with
@@ -14318,7 +14427,7 @@ node Feed:
 ```
 
 **Names are scope entries, not instance members.** This is the governing
-principle. A node *instance* exposes its content through its parts and
+principle. A node *instance* exposes its content through its children and
 exposition (§13.4, §13.3.7.3); a *scope* exposes its placements through their
 **names**. `<view>` reifies the repeat's scope as a value, so addressing a child
 goes through the placement name, not through any instance:
@@ -14370,11 +14479,11 @@ the act of driving. Connections also satisfy traits (like
 Communication direction: every connection has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
 **caller-placed** connection participates in the source node's outgoing
-surface (declared via `outgoing:`, with the `dynamic` marker when the
-caller may supply varying counts); a **self-sourced** one (§13.3.4.2)
-sits outside it. Both count at the destination node's incoming
-surface (declared via `incoming:`, per §13.3.4's static-or-`dynamic`
-membership rules).
+surface (declared via its `outgoing` connection-views, with the `dynamic`
+marker when the caller may supply varying counts); a **self-sourced** one
+(§13.3.4.2) sits outside it. Both count at the destination node's incoming
+surface (declared via its `incoming` connection-views, per §13.3.4's
+static-or-`dynamic` membership rules).
 
 Source and destination differ in how they are fixed. The `from` endpoint is
 the enclosing instance — structural, determined by *where* the connection is
@@ -14386,10 +14495,10 @@ target moves. No node is created or dropped by re-pointing — a connection
 never owns its endpoints (§13.8.4.1) — so this is rewiring within the static
 instance set, not a change to it (§13.1).
 
-A node declares which connection types callers may wire to and from it via
-its `incoming:` and `outgoing:` clauses (§13.3.4), with optional cardinality
-constraints and the `dynamic` supply-mode marker; its own self-sourced
-connections sit outside those clauses (§13.3.4.2). The actual connection
+A node declares which connections callers may wire to and from it via its
+`incoming`/`outgoing` connection-views (§13.3.4), with optional cardinality and
+the `dynamic` supply-mode marker; its own self-sourced connections sit outside
+those connection-views (§13.3.4.2). The actual connection
 instances appear at placement (§13.8.4).
 
 **Connections and exposition.** A connection placement is an exposition
@@ -14705,9 +14814,10 @@ to outer-most is:
 1. **Local bindings** — `let` bindings and `for`-loop variables
    inside a reactive expression.
 2. **The instance body scope** — the node's or connection's members:
-   `attr`, `recurrent`, `derived`, `stream` cells; and the reserved
-   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`,
-   `pair`, `parts`, `exposition` — §13.7.5).
+   `attr`, `recurrent`, `derived`, `stream` cells; `view` and
+   connection-view declarations; placement `as`-names; and the reserved
+   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`, `pair`,
+   `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
 
@@ -14820,9 +14930,9 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 #### 13.7.5 Reserved-field access
 
 The reserved fields of a node or connection instance — `from`, `to`
-(connection endpoints, §13.6), `incoming`, `outgoing` (connection
-sets, §13.3.4), `pair` (§13.6.1.3), `parts` (§13.4), and
-`exposition` (§13.3.7) — occupy field position on the instance and resolve by bare name in
+(connection endpoints, §13.6), `pair` (§13.6.1.3), and `exposition`
+(§13.3.7) — occupy
+field position on the instance and resolve by bare name in
 expression-operand position by the same rule as user-defined members,
 but they are reserved keywords used in field context (§1.4), not
 user-definable members:
@@ -14836,21 +14946,19 @@ connection Drives:
   //                   here::from                     here::to
 
 node Display:
-  incoming: ShowsCount [=1]
-  derived shown: string = "{incoming.ShowsCount[0].count}"
+  incoming shows: ShowsCount
+  derived shown: string = "{shows[0].count}"
 ```
 
-These keywords retain their clause-header meaning only in
-declaration position (statement level, trailing colon: `from:`,
-`incoming:`, `parts:`). In expression-operand position they are the
-corresponding instance field. No collision with user names is
-possible — reserved words cannot be declared as cell names. `here::`
-remains available as the explicit form (`here::from`, `here::incoming`).
+These keywords retain their clause-header meaning only in declaration position
+(statement level, trailing colon: `from:`). In expression-operand position
+they are the corresponding instance field. No collision with user names is
+possible — reserved words cannot be declared as cell names. `here::` remains
+available as the explicit form (`here::from`, `here::pair`).
 
-Note that `in` is *not* among these: incoming connections are named
-`incoming` (§13.3.4), leaving `in` to serve solely as the `for`-loop
-separator (§12.3). `for x in incoming.ShowsCount` reads without
-collision.
+Note that `in` is *not* among these: the incoming direction keyword is
+`incoming` (§13.3.4), distinct from the `for`-loop separator `in` (§12.3), so
+`for c in shows` reads without collision.
 
 #### 13.7.6 Resolution and reactive dependencies
 
@@ -14900,7 +15008,7 @@ usable only as the left side of `::`. They never overlap.
 
 ### 13.8 Placement
 
-*Placement* is the syntax for instantiating nodes, parts, and
+*Placement* is the syntax for instantiating nodes and
 connections into a concrete reactive graph. It is distinct from
 value construction of records (which uses constructor syntax per
 §6.1.3).
@@ -14924,7 +15032,7 @@ The first line is the type name followed by the instance name
 declaration — `signal master_gain`, `node Channel`, `attr gain` — it
 names its subject positionally: the type, then the name, with no marker
 between them. A top-level placement is *mandatorily* named (unlike nested
-parts, which may be anonymous, §13.8.3), so the bare `TypeName
+children, which may be anonymous, §13.8.3), so the bare `TypeName
 instance_name` form is unambiguous and the `as` name marker is **optional**
 here:
 
@@ -14934,7 +15042,7 @@ Driver as john_doe           // also allowed — identical meaning
 ```
 
 By convention top-level placements omit `as`. The marker is *required*
-only where placements may be anonymous (nested parts and children,
+only where placements may be anonymous (nested children,
 §13.8.3), since there bare `Type name` is ambiguous between one named
 placement and two anonymous ones.
 
@@ -15005,7 +15113,7 @@ The right-hand side of an attribute setting at placement may be:
   slot on the node instance is filled at construction time.
 - A **reactive expression** — references reactive cells (signals,
   attrs, recurrents, deriveds) visible at the placement scope:
-  sibling part instances by name, top-level signals or consts, or
+  sibling child instances by name, top-level signals or consts, or
   any cell reachable through visible names (a `const` is visible but
   contributes no reactivity — a const-only RHS is a category-B value
   binding, not reactive wiring). The placement creates
@@ -15105,32 +15213,31 @@ Counter c1 | start_value=100 step=5    // per-instance configuration via attrs
 If a cell is not set at placement, its declared default (for attrs)
 applies. Consts always have their type-declared value.
 
-#### 13.8.3 Child parts
+#### 13.8.3 Child placements
 
 The body of a placement (the indented block introduced by `:`) is
-reserved exclusively for child placements — parts and connections.
+reserved exclusively for child placements — child nodes and connections.
 Attribute settings on the enclosing instance do not appear in the
 body; they live on the placement's main line via inline attribute
 syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
 
 ```
 Component chip_b | label="B":
-  Pin as out1                             // child part (Pin instance named out1)
-  Pin as in1                              // another child part
+  Pin as out1                             // child node (Pin instance named out1)
+  Pin as in1                              // another child node
 ```
 
-A child placement that names a node type listed in the parent's
-`parts:` clause is a part. The placement creates an instance of
-that node type as a child of the parent.
+A child placement that names a node type admitted by one of the parent's
+views creates an instance of that node type as a child of the parent.
 
 A nested placement is named with the **`as` marker**: `Pin as out1`.
 The marker is required for nested placements because they may be
-anonymous (`Pin` alone is a valid unnamed part), so bare `Pin out1`
-would be ambiguous between one named part and two anonymous ones. (At
+anonymous (`Pin` alone is a valid unnamed child), so bare `Pin out1`
+would be ambiguous between one named child and two anonymous ones. (At
 top level, where names are mandatory, `as` is optional — §13.8.1.)
 
 The optional instance name (`out1`, `in1` in the example) is the
-*placement-time name* of the part. Once named, the part is
+*placement-time name* of the child. Once named, the child is
 accessible by that name from contexts where the placement scope is
 visible:
 
@@ -15139,36 +15246,33 @@ visible:
   including ones written later (placement-scope names are whole-scope).
 - Outside the parent type, in function bodies receiving the parent
   instance: `chip_b.out1` (where `chip_b` is the parameter name)
-  accesses the named part directly, in parallel with the type-bulk
-  form `chip_b.parts.Pin[i]`.
+  accesses the named child directly, in parallel with the view form
+  `chip_b.pins[i]`.
 - In other instances' placement bodies that reference this
   instance, by qualified path: `chip_b.out1`.
 
-Named individual access is the placement-time companion to the
-type-bulk access form described in §13.4.1.
-Names are not available inside the parent's own type body (the
-type declaration doesn't know what placements will exist) — within
-the parent type, use `parts.<NodeType>[i]` or `parts.<NodeType>`
-iteration instead.
+Named individual access is the placement-time companion to the view access
+form described in §13.4.1. A caller's placement names are not available
+inside the parent's own type body (the type declaration doesn't know what
+placements will exist) — within the parent type, use a view (`viewname[i]`
+or iteration over it) instead.
 
-Cardinality declared in the parent's `parts:` clause (§13.3.3.1) is
-enforced at placement: the number of placed parts of each type
-must satisfy the declared cardinality. Violations are compile
-errors at the placement site.
+Cardinality declared in the parent's views (§13.3.3.1) is enforced at
+placement: the number of placed children matching each view must satisfy its
+declared cardinality. Violations are compile errors at the placement site.
 
 ##### 13.8.3.1 Parametric topology via compile-time `for`
 
 A placement body may contain a `for` loop whose iterable is
 compile-time-known (§12.3.7, §2.4.1). The loop unrolls at compile time,
 producing one child placement per iteration. The static-graph principle
-(§13.1) is preserved: every part is determined at compile time.
+(§13.1) is preserved: every child is determined at compile time.
 
 The two iteration constructs split a placement body by supply mode:
 **`for` is static supply** — its unrolled placements count against the
-receiving type's cardinality and appear in `parts.<NodeType>`, exactly
-like individually written placements — and **`repeat` is dynamic
-supply** (§13.5.4), legal only against the receiver's `dynamic`-marked
-types (§13.3.3.4).
+receiving type's view cardinality and appear in the matching view, exactly
+like individually written placements — and **`repeat` is dynamic supply**
+(§13.5.4), legal only against the receiver's `dynamic` views (§13.3.3.4).
 
 A `for` in a placement body whose iterable is *not* compile-time-known
 is a compile error pointing at the iterable. No new diagnostic class is
@@ -15177,14 +15281,13 @@ identifies the iterable and (via §2.4.6's reactivity-provenance
 machinery) cites the runtime source if the runtime-ness flows from a
 reactive value.
 
-Anonymous parts produced by an unrolled placement loop are addressable
-via the indexed type-bulk form `parts.<NodeType>[i]` (§13.4.1) from
-function bodies that receive the parent instance, and via the bare
-type-bulk form `parts.<NodeType>` from inside the parent's type body
+Anonymous children produced by an unrolled placement loop are addressable
+via the view (`viewname[i]`, §13.4.1) from function bodies that receive the
+parent instance, and via the view name from inside the parent's type body
 (§13.4.2).
 
 **Example.** A synthesizer whose voice count is fixed at module scope
-via a `const`, used both in the type's `parts:` cardinality and in the
+via a `const`, used both in the type's view cardinality and in the
 placement's body loop:
 
 ```
@@ -15195,7 +15298,7 @@ node Oscillator:
   derived output: f32 = synthesize(freq)
 
 node Synthesizer:
-  parts: Oscillator [=VOICE_COUNT]
+  view oscillators: Oscillator [=VOICE_COUNT]
   derived total: f32 = total_output(subject)
 
 Synthesizer synth:                 // top-level declaration form (§13.8.1)
@@ -15208,9 +15311,9 @@ compile-time known — `VOICE_COUNT` is a `const`), so the `for` in the
 placement body unrolls into eight anonymous `Oscillator` child
 placements with statically-determined `freq` attrs. The cardinality
 `Oscillator [=VOICE_COUNT]` declared by the type is satisfied at compile
-time by the unrolled placements. The parts are accessible via the
-indexed type-bulk form `synth.parts.Oscillator[i]` (§13.4.1), and the
-parent type's own iteration uses `for o in parts.Oscillator:` (§13.4.2).
+time by the unrolled placements. The children are accessible via the
+indexed view form `synth.oscillators[i]` (§13.4.1), and the parent type's
+own iteration uses `for o in oscillators:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a reactive iterable source (`Signal[I]`
@@ -15220,7 +15323,7 @@ here is for *parametric* topology: multiplicity that is parameterized
 by a const-generic (or otherwise compile-time-known) value but fixed
 per instance.
 
-**Type-body counterpart.** When the multiplicity and per-part
+**Type-body counterpart.** When the multiplicity and per-child
 configuration are properties of the **type** rather than the placement
 site — i.e., every instance of the node materializes the same N
 children — declare them in the node body via §13.3.3.3 instead. The
@@ -15238,7 +15341,7 @@ determined positionally.
 
 ```
 App my_app:
-  Fetcher as fetcher / "url"                    // part placement
+  Fetcher as fetcher / "url"                    // child placement
   WiresToExternal: external_target              // source = my_app
 
   Filter as filter / "low-pass":
@@ -15255,34 +15358,22 @@ their source is `filter`. The rule is uniform across nesting depth;
 the depth at which the connection appears does not change how the
 source is determined.
 
-**Position is topology.** A connection placement's position among its
-sibling placements is its **engagement position** (§13.3.7.6): the
-connection engages when traversal reaches that point in the sequence,
-after the siblings written before it. This holds regardless of who
-places the connection — a caller in a placement body, the type itself
-in its exposition (§13.3.7.5, including exposition-level `for` and
-`repeat` bodies, §13.3.3.3/§13.5.4).
+**Position is topology.** A *self-sourced* connection's position among its
+sibling placements is its **engagement position** (§13.3.7.6): it engages when
+traversal reaches that point in the type's exposition, after the siblings
+written before it (including exposition-level `for` and `repeat` bodies,
+§13.3.3.3/§13.5.4).
 
-For caller-supplied connections, the position survives the type's
-exposition by **anchoring**: each connection in a placement body anchors
-to its nearest *preceding* sibling placement — a node placement, or a
-`repeat` block as a unit (the connection then engages after the block's
-expanded scopes) — and engages immediately after that sibling wherever
-the exposition carries it: through a bulk reference (`parts`, `parts.X`
-— "in placement order", §13.3.7.1), a by-name entry, or a wrapper.
-Every part is exposed (§13.3.7.4), so every anchor lands. A connection
-written before any sibling anchors to the body start and engages before
-the node's first exposed entry. Under the default `expose: parts`
-(§13.3.7.2), this reduces to traversing the full interleaved sequence
-as written. Anchoring is the **fallback**: an explicit `expose:` that
-references caller-supplied connections directly (`outgoing.<ConnType>`,
-§13.3.7.1) overrides the anchor for the referenced connections.
+A *caller-supplied* (outgoing) connection does **not** carry its own engagement
+position into the type. Instead, the **type** positions it: the connection
+engages where the type names its `outgoing` connection-view in `expose:`
+(§13.3.7.1), in placement order within that view. A connection-view the type
+never names in `expose:` still participates but is never engaged (§13.3.7.4).
 
-A **caller-placed** connection's type must match a type listed in the source
-instance's `outgoing:` clause (or in the type's traits' contributions). A
-*self-sourced* connection placed in the source type's own exposition
-(§13.3.4.2, §13.3.7.5) is exempt from `outgoing:` — but not from endpoint
-typing.
+A **caller-placed** connection's type must match one of the source instance's
+`outgoing` connection-views (or its traits' contributions). A *self-sourced*
+connection placed in the source type's own exposition (§13.3.4.2, §13.3.7.5) is
+exempt from the `outgoing` connection-views — but not from endpoint typing.
 
 The destination is supplied in the connection placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
@@ -15291,13 +15382,14 @@ reference (possibly reactive), or a `Handle[N]` (read as `Option[&N]`,
 the candidate nodes (the connection freezes while that selection resolves to
 `None`, §13.9.7). A reactive or `Handle` destination makes membership at the
 destination a runtime fact: every node type in the reference's candidate
-envelope must declare `incoming: dynamic <ConnType>` (§13.3.4). The `/expr`
+envelope must declare a `dynamic incoming` connection-view of that type
+(§13.3.4). The `/expr`
 slot, when present, sets the connection's
 `default attr` (§13.2.2.1); the attribute clause (`| name=value …`) sets named
 attrs. None of these target the destination.
 
 A placement-level `when` modifier may be attached to gate the
-connection instance (§13.9). The modifier appears in the inline-parts
+connection instance (§13.9). The modifier appears in the inline-element
 ordering between `/Expr` and the attribute clause (§13.8.9), before
 the body's `:`:
 
@@ -15365,7 +15457,7 @@ connection Tows:
 
 node Driver[C: DriveLink]:             // C: a connection type satisfying DriveLink
   attr link_kind: Type[C]              // which DriveLink kind this driver establishes
-  outgoing: C                          // admits exactly the supplied connection type
+  outgoing link: C                     // admits exactly the supplied connection type
   // …
 
 // alice and bob differ only in which DriveLink kind they establish:
@@ -15384,7 +15476,7 @@ enclosing source, §13.8.4) and the sibling `the_car` as the `to`. The
 compiler checks the endpoints against `C: DriveLink`: `from` must be a
 `Driver` (alice is one) and `to` must be a `Drivable` (so `the_car` must
 resolve to one) — both verifiable before `C` is monomorphized to `Drives`
-(for alice) or `Tows` (for bob). `outgoing: C` admits the placed type
+(for alice) or `Tows` (for bob). The `outgoing link: C` view admits the placed type
 (§13.8.4); per-type attrs such as `aggressiveness` are set with the
 attribute clause, exactly as for a named connection. As with any
 destination, `the_car` may instead be a reactive reference, making the
@@ -15450,16 +15542,17 @@ statically-known instance set — a function or cell cannot create a node
 compiler checks the `to:` constraint against the reference's *type* (so
 every possible target is well-typed), topology-cycle analysis (§13.11.5)
 ranges over the node *types* that reference type admits, and each of those
-types must declare `incoming: dynamic <ConnType>` (§13.3.4) — in the
-`pick(mode, some_car, other_car)` example above, the destination types of
-`some_car` and `other_car` both declare `incoming: dynamic Drives`. A
+types must declare a `dynamic incoming` connection-view of that type (§13.3.4)
+— in the `pick(mode, some_car, other_car)` example above, the destination types
+of `some_car` and `other_car` both declare a `dynamic incoming` connection-view
+of `Drives`. A
 *reactive* selection is what makes the destination move; a
 compile-time-fixed selection resolves to one node and the membership is a
 static fact.
 
-##### 13.8.5.2 For node (part) placements
+##### 13.8.5.2 For node (child) placements
 
-For a node placement (typically a part placed inside a parent),
+For a node placement (typically a child placed inside a parent),
 `/expr` sets the type's `default attr` (§13.2.2.1). The expression
 must match the default attr's declared type.
 
@@ -15472,7 +15565,7 @@ Program p1:
   Log /"System ready"
 ```
 
-Each `Log /"..."` placement creates a Log part with its `message`
+Each `Log /"..."` placement creates a Log child with its `message`
 attr set to the string. Equivalent inline form:
 
 ```
@@ -15502,7 +15595,7 @@ Both node and connection placements may have a body, but the body's
 content differs by placement kind:
 
 - **Node placement body** — the indented block after `:` on a node
-  placement line — contains child placements: parts and connections
+  placement line — contains child placements: child nodes and connections
   (§13.8.3, §13.8.4). Multiple children allowed; same-line
   multi-placement is whitespace-separated per §13.8.10.
 - **Connection placement body** — the indented block (or inline
@@ -15670,7 +15763,7 @@ elsewhere in the language:
 
 - `'` is both a flag and the opener of a `char` literal (§9.1.2).
 - `?` is both a flag and the postfix Try operator (§8.4).
-- `@` is both a flag and the annotation prefix (`@derive`).
+- `@` is both a flag and the directive prefix (`@derive`).
 - `!` is both a flag and the leading marker of the `!name`
   attribute-false form (§13.8.7).
 
@@ -15683,7 +15776,7 @@ whitespace) is a flag-run opener. In any other position
 Pin' p1                            // flag run after TypeRef (placement context)
 let c: char = '\''                 // char literal in expression context
 let r = some_fallible()?           // postfix Try in expression context
-@derive(Eq) type Point:            // annotation prefix in declaration context
+@derive(Eq) type Point:            // directive prefix in declaration context
   ...
 ```
 
@@ -15701,9 +15794,9 @@ Pin' p1 | reverse_polarity=false    // ✗ duplicate: ' flag and inline both tar
 The diagnostic class is the same as duplicate-set for inline
 attributes (§13.8.7).
 
-#### 13.8.9 Ordering of inline parts
+#### 13.8.9 Ordering of inline elements
 
-A placement's inline parts have a fixed order:
+A placement's inline elements have a fixed order:
 
 ```
 TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?
@@ -15725,13 +15818,13 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
   preceding element is present. This inline `when` is the
   single-placement *modifier* (§13.9.3); the block selection forms —
   `when` blocks (§13.9.12) and `given` blocks (§13.9.13) — are not
-  inline-parts modifiers: they appear as standalone entries at
+  inline-element modifiers: they appear as standalone entries at
   `expose:`/body level, each owning an indented arm body, and so do not
   participate in this ordering.
 - The attribute clause (§13.8.7) — a single leading `|` followed
   by attribute settings — follows next.
 - The optional body — introduced by `:` — comes last. For node
-  placements, the body holds zero or more child placements (parts
+  placements, the body holds zero or more child placements (child nodes
   and connections, §13.8.3, §13.8.4). For connection placements,
   the body holds exactly one node reference to the destination
   (§13.8.5.1, §13.8.6). A `when` predicate
@@ -15963,7 +16056,7 @@ fields (`from:`, `to:`, `attr name:`, `recurrent name:`, etc.):
 signal trigger: u64 = 0
 
 node OneShot:
-  outgoing: Pulse
+  outgoing pulse: Pulse
   recurrent fired: bool = observe:
     on trigger: true
     default: false
@@ -16000,13 +16093,14 @@ Filter f1 / "low-pass" when dsp_mode is DspMode::Realtime | gain=0.5
 ShowsCount when unread_count > 0: d1
 ```
 
-Parts placed inside a parent's body may carry `when` clauses
-identically — the same grammar applies to part placements as to
+Children placed inside a parent's body may carry `when` clauses
+identically — the same grammar applies to child placements as to
 top-level placements:
 
 ```
 node App:
-  parts: Logger [=2], Monitor [=1]
+  view loggers: Logger [=2]
+  view monitor: Monitor
   attr verbose: bool = false
   attr health_checks_enabled: bool = true
 
@@ -16023,7 +16117,7 @@ What `when` controls is propagation: when `my_app.verbose` is false,
 and its outputs do not propagate. Its cells hold their initial
 values per Model B (§13.9.7).
 
-Position in the inline-parts ordering is fixed by §13.8.9: after
+Position in the inline-element ordering is fixed by §13.8.9: after
 `/Expr` (if present), before the attribute clause. When `/Expr` is
 absent the `when` clause follows whatever element does precede it.
 
@@ -16452,12 +16546,12 @@ not a control-flow branch.
 **Placement and cardinality.** Because every arm is constructed and only
 propagation is gated, placements inside *all* arms of a `when` or `given`
 block used in a node or placement body count toward the enclosing type's
-`parts:` cardinality — the same rule as parts placed by a type-body `for`
-(§13.3.3.3). A two-arm block each placing one `Oscillator` constructs
-two, so `parts: Oscillator [=1]` would be violated; size the cardinality
+view cardinality — the same rule as children placed by a type-body `for`
+(§13.3.3.3). A two-arm block each placing one `Oscillator` constructs two,
+so `view osc: Oscillator` (exactly one) would be violated; size the cardinality
 for the sum across arms. (At `expose:` level this does not arise:
-exposition references already-placed parts and constructs only wrapper
-placements, not cardinality-constrained parts — §13.3.7.1.) A block, like
+exposition references already-placed children and constructs only wrapper
+placements, not cardinality-constrained children — §13.3.7.1.) A block, like
 any `:`-introduced construct, owns an indented body and therefore
 occupies its own lines; it cannot share a line with sibling placements
 (§13.8.10).
@@ -16722,7 +16816,7 @@ reading a `repeat`-view handle (§13.5.4.9) subscribes to the handle's
 resolution and, while resolved, to the referent's cells; a dismount flips
 the resolution to `None` and drops the referent subscription. The
 **dynamic namespace cells** (§13.3.3.4) are the collective form of the
-same mechanism: an operator over `incoming.<C>` subscribes to the
+same mechanism: an operator over a dynamic connection-view subscribes to the
 membership (the cell itself) and, per current member, to the cells its
 per-element fn reads — a mount or dismount re-establishes the member
 subscriptions exactly as a re-point does. Handle
@@ -16875,7 +16969,7 @@ every node type that satisfies it (including via a supertrait); the bare
 only ever resolve to an already-placed node of one of those types (§13.3.6.1).
 This **candidate envelope** serves two checks: the cycle analysis below, and
 the membership-marker rule of §13.3.4 (every type in the envelope must declare
-`incoming: dynamic` for the connection type).
+a `dynamic incoming` connection-view for the connection type).
 The cycle check stays a compile-time analysis: the compiler verifies that
 *every* cycle in the candidate graph traverses a `Circularity` connection, i.e.
 that no reachable wiring can form a non-`Circularity` cycle. The analysis is
@@ -17168,8 +17262,8 @@ hard-realtime workloads.
   beyond what the reactive cell model supports).
 
 For "collection of reactive things" patterns, prefer composition
-via parts (§13.4): a parent node with N parts of the same child
-type, each part holding its own attrs/deriveds. This is the
+via children (§13.4): a parent node with N children of the same
+type, each holding its own attrs/deriveds. This is the
 canonical reactive composition mechanism. Reactive cells of
 collection types (`Vec[T]`, etc.) work via pool storage but each
 write involves rebuilding/replacing the collection — fine for
@@ -17251,14 +17345,14 @@ node Divider:
       Ok(numerator / denominator)
 
 node Consumer:
-  parts: Divider
+  view divider: Divider
   derived report: string =
-    match divider.quotient:
+    match divider[0].quotient:
       Ok(value): "result: {value}"
       Err(DivideError::ByZero): "result: undefined"
 
 Consumer my_consumer:
-  Divider as divider            // names the contained Divider part
+  Divider as divider            // names the contained Divider child
 ```
 
 The divide-by-zero case never traps; it produces `Err(...)`. The
@@ -19289,6 +19383,19 @@ consumers use it as an ordinary `Stream[T]`.
   cell is a value-shaped `Recurrent[T, N]` or an event-shaped
   recurrent stream.
 
+##### 13.18.8.8 Reset on reopen
+
+A `recurrent[N] stream` whose enclosing subtree is gated (§13.9) follows
+the recurrent default on reopen: it resumes from its pre-gap history.
+Carrying `@reset_on_reopen` (§13.2.4) makes it instead reset on the gate
+false→true edge — clearing its output history, all per-input history, and
+the base buffer — so it restarts clean from current inputs. This is the
+**producer-side** reset, the reopen analog of `@reset_on_reload`
+(§13.18.14). It is distinct from a downstream consumer's cursor reset
+(§13.18.12), which is governed by the consumer's own gate; a producer and
+a consumer that both carry the decorator reset independently, each on its
+own subtree's reopen.
+
 #### 13.18.9 Stream operators
 
 Operators that produce, transform, or consume streams are stdlib
@@ -19767,7 +19874,9 @@ buffer hold during the freeze*, so a reset-annotated gate consumer does
 not pin the buffer or back-pressure producers while frozen. Use it when
 gap events would be stale or misinterpreted on resume; the trade is the
 same as for recurrent history (§13.2.4): preserve by default, reset on
-opt-in.
+opt-in. This consumer-side reset is governed by the consumer's own gate,
+distinct from a recurrent stream producer's reopen reset of its own output
+history and buffer (§13.18.8).
 
 **No cursor rewind.** Cursors only advance. There is no operation
 to rewind a cursor to an earlier position; the buffer's events are
@@ -20090,7 +20199,7 @@ Effects are distinct from `node`, `operator`, and `fn`:
 - `operator` is a stateful reactive transform from cells to cells
   (§13.17), pure with respect to outside reality.
 - `node` is a topological participant in the reactive graph
-  (§13.3), composed via parts and connections.
+  (§13.3), composed via children and connections.
 - `effect` describes outside-world alignment — the host-interpreted
   bridge between program state and runtime environment. Composes
   with operators via `|>`; instantiated only in a node's `effects:`
@@ -20102,8 +20211,9 @@ effect declaration named `fetch` introduces both a type `fetch` and a
 constructor `fetch`; an instance has addressable cells and is referenced in
 expression position (e.g. `|>` chains, §13.19.13). Like nodes and
 connections, an effect *instance* is a graph member — instantiated only in
-a node's `effects:` clause and held by reference, never stored as a value
-(§13.3.6.1); an effect *type* is carried as a value by `Type[…]` (§5.7).
+a node's `effects:` clause and held by borrow: a first-class citizen lacking
+value-semantics, hence unstorable (§13.3.6.1); an effect *type* is carried as
+a value by `Type[…]` (§5.7).
 
 #### 13.19.1 Concept
 
@@ -20303,7 +20413,11 @@ cannot write to them.
 value may depend on its own past via `.previous`/`.past`, e.g. an
 exponential backoff `recurrent backoff: Duration = min(backoff.previous(1s) * 2, 60s)`.
 (`recurrent` is allowed only in `desired:`, never in `observed:`, whose
-host-fed cells have no expression body — §13.19.5.)
+host-fed cells have no expression body — §13.19.5.) A `desired:`
+`recurrent` or recurrent stream may carry `@reset_on_reopen` (§13.2.4);
+when the effect's enclosing subtree is gated, it resets its accumulated
+state on the effect's gate reopen — the reactivation sibling of
+`@reset_on_reload` on a `desired:` stream cell (§13.19.11).
 
 **`stream` cells** — event-output streams the effect produces for the
 host. The cell is fed by a `= source` expression over the effect's
@@ -21842,21 +21956,27 @@ The graph is built from **six primitives** — `cell`, `connection`, `gate`,
 `stream`, `effect`, and `scope` — each referencing behaviors by id and
 identified by a stable path (§15.4.1.1). All surface reactive constructs
 desugar into these six: signal/attr/derived/recurrent/const → `cell`;
-node/part → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
+node (top-level or child) → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
 connection / topological `|>` → `connection` (an *effect-position* `|>`
 instead lowers to the effect entry's `parameter_bindings`, **not** a
 `connection`); operator → a `scope` with ports; stream → `stream`; effect →
 `effect`.
 
-A **`scope`** is the structural container (a node/part/operator instance,
+A **`scope`** is the structural container (a node or operator instance,
 or a `repeat`'s per-element instance). It carries an `exposes` list — the
 **ordered** placements the runtime traverses: child scopes and references
 to the scope's connection entries, in exposition order (engagement
 positions, §13.3.7.6) — and a separate
 `effects` set — the effects hosted there per §13.3.8, never in `exposes`.
 A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`
-(the only mount/unmount construct; gates merely freeze). Hierarchy is
-encoded in the fully-qualified paths of the entries below.
+(the only mount/unmount construct; gates merely freeze). A scope that
+hosts a `@reset_on_reopen` stream consumer carries a `reset_on_reopen`
+field — `(consumer_id, stream_id)` pairs, each a fully-qualified path
+(§15.4.1.1) naming the consuming operator/derived instance and the
+consumed stream, whose cursor resets to the current head when the scope's
+gate reopens (§13.18.12); the cursor itself is runtime-only state, so only
+the reset flag is encoded. Hierarchy is encoded in the fully-qualified
+paths of the entries below.
 
 The graph is a structured record with the following entries.
 
@@ -21887,15 +22007,18 @@ The graph is a structured record with the following entries.
 propagation and topological evaluation ordering.
 
 **Recurrent dependency edges.** A list of `(recurrent_cell_id,
-[input_cell_ids], output_history_N, input_lookback_map)` tuples,
-encoding each recurrent's reactive inputs and its self-/input-
+[input_cell_ids], output_history_N, input_lookback_map, reset_on_reopen)`
+tuples, encoding each recurrent's reactive inputs and its self-/input-
 history allocation per §13.2.4. `input_cell_ids` are the non-self
 references that drive re-evaluation (implicit triggers).
 `output_history_N` is the recurrent's declared `[N]` self-history
 depth (defaulting to 1). `input_lookback_map` maps input cell IDs
 referenced via `.past(k, ...)` to their maximum `k`, mirroring the
-stream-cell encoding. Recurrents whose expression is an `observe`
-block additionally carry the observe's per-arm trigger sets.
+stream-cell encoding. `reset_on_reopen` is a boolean, true exactly when
+the recurrent carries `@reset_on_reopen` (§13.2.4): the runtime clears the
+cell's self-/input-history on the gate reopen edge. Recurrents whose
+expression is an `observe` block additionally carry the observe's per-arm
+trigger sets.
 
 **`when`-gates.** Gating is encoded as first-class **gate objects**. Each
 gate carries: a stable `id`; its predicate in compiled form (behavior
@@ -21938,6 +22061,10 @@ is the cross-build match key, not the table index.
   `dropped_total`, `rejected_total`, `last_overflow_at`.
 - `reset_on_reload`: boolean, true if the stream carries the
   `@reset_on_reload` annotation.
+- `reset_on_reopen`: boolean, true if the stream carries the
+  `@reset_on_reopen` annotation; on a `recurrent[N] stream` it directs
+  the producer-side reopen reset of output/input history and buffer
+  (§13.18.8).
 - `output_history_size`: integer N from `recurrent[N] stream`, or
   0 if not a recurrent stream declaration. Determines the number
   of past-event slots allocated for `NAME.past(k, ...)` access on
@@ -21992,7 +22119,7 @@ dot-separated sequence of identifiers naming the lexical nesting
 from module root through enclosing instances to the cell name.
 
 Example: `audio.synth_a.osc_1.frequency` — module `audio`,
-top-level instance `synth_a`, nested part `osc_1`, attr
+top-level instance `synth_a`, nested child `osc_1`, attr
 `frequency`.
 
 The path is derived deterministically from source: nesting plus
@@ -22264,10 +22391,12 @@ field_list    ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
 variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
 
 graph_section ::= 'graph' '{' scope+ '}'
-scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set '{' entry* '}'
+scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set
+                  ('reset_on_reopen' reopen_set)? '{' entry* '}'
 entry         ::= cell | gate | connection | effect
 cell          ::= cell_kind PATH ':' type_tag
-                  ('uses' BID)? ('inputs' path_set)? ('depth' INT)? ('init' value)? ('gate' PATH)?
+                  ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
+                  ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
 cell_kind     ::= 'input' | 'derived' | 'recurrent'
 gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
 connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
@@ -22279,6 +22408,7 @@ behaviors_section ::= 'behaviors' '{' behavior* '}'        // behavior per §15.
 
 path_set      ::= '[' (PATH (',' PATH)*)? ']'
 binding_set   ::= '[' (binding (',' binding)*)? ']'
+reopen_set    ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'  // (consumer_id : stream_id) pairs
 binding       ::= NAME ':' (PATH | value)
 type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
                 | '(' type_tag (',' type_tag)* ')' | '[' type_tag ';' INT ']'
@@ -22299,7 +22429,10 @@ stored or recurrent cell an `init`. A `gate` carries its predicate behavior (`pr
 it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
 names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
 record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
-`%TypeId`.
+`%TypeId`. A `recurrent` cell's optional `reset_on_reopen` flag marks
+`@reset_on_reopen` (§13.2.4); a `scope`'s optional `reset_on_reopen` set
+names the `(consumer : stream)` cursors it resets to head on gate reopen
+(§13.18.12).
 
 ### 15.5 Compilation Modes
 
