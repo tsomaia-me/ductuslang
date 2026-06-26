@@ -709,7 +709,7 @@ includes:
 
 Types not `const`-eligible:
 
-- Heap-allocated collection types (`Vec`, `HashMap`, etc.).
+- Heap-allocated collection types (`Vec`, etc.) and the language-level `Map[K, V]`.
 - Signal-bearing or reactive types.
 - Types containing function references or closures with captured runtime state.
 - `dyn` trait objects.
@@ -8051,7 +8051,7 @@ at module scope are governed by §13's reactive contract.
 **Top-level consts and the ownership system.** A top-level `const`
 (per §2.4.1.1) is compile-time-only: each use site reifies a fresh
 compile-time value. Consts do not enter the §11 ownership system —
-there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool index. Types that are not statically representable — dynamic collections such as `Vec`/`HashMap`, whose contents are built by runtime allocation — are not supported as const types.
+there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool index. Types that are not statically representable — dynamic collections such as `Vec` and the language-level `Map[K, V]`, whose contents are built by runtime allocation — are not supported as const types.
 Attempts to apply `move` or to pass a const to an `own` parameter
 position are diagnosed as: *"const `X` is compile-time-only and has
 no runtime identity; consumption does not apply."*
@@ -8594,7 +8594,7 @@ provides a `.clone()` method that returns the same result as direct use.
 The compiler auto-derives `Clone` for every `Copy` type.
 
 The converse is not true: most `Clone` types are not `Copy`. Heap-allocated
-structures (`Vec`, `HashMap`), arrays, and records containing them are
+structures (`Vec`), `Map[K, V]`, arrays, and records containing them are
 `Clone` (when their fields support it) but not `Copy`.
 
 #### 11.5.3 Usage
@@ -10567,7 +10567,7 @@ from on each `next` call. Two patterns arise:
   the iterator holds all state internally. `type Source = ()` (the
   default); each `next` call receives a unit value that the
   implementation ignores. No external value is needed across calls.
-- **Source-bearing iterators** (Vec, HashMap, user-defined
+- **Source-bearing iterators** (Vec, Map, user-defined
   collections) — the iterator holds only a cursor / position; the
   collection is the source, supplied on each `next` call. `type Source
   = TheCollection`; each `next` call receives the collection under
@@ -10934,7 +10934,7 @@ user-defined types use (§12.7, §12.8, §12.9):
   0..N:` are indistinguishable. The conventional form is the default.
 - **Arrays (`T[N]`)** — implement both `Iterable` (default) and
   `IntoIterable` (`for own`). See §12.10.1 for details.
-- **Stdlib collections** (`Vec[T]`, `HashMap[K, V]`, etc.) — implement
+- **Stdlib collections** (`Vec[T]`, etc.) and language-level `Map[K, V]` — implement
   both, with iterator types specific to each container. The specific
   Item types follow §12.7's slot conventions; the iterator types
   follow the source-bearing pattern of §12.7.4.
@@ -11253,7 +11253,7 @@ Reactive cells (signal, attr, recurrent, derived) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
 word, or index-based pool storage for larger or dynamically-sized
-values. Imperative data structures (`Vec`, `HashMap`, etc.) are
+values. Imperative data structures (`Vec`, etc.) and the language-level `Map[K, V]` are
 first-class as values held inside reactive cells via pool storage,
 and are also usable as ordinary owned values inside function
 bodies (governed by §11). The reactive system organizes
@@ -14684,16 +14684,18 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   collection — always iterable. The iterator must terminate at each
   evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
-  N), `HashSet[T]`, and `HashMap[K, V]`; user types may fulfill
+  N), and `HashSet[T]`; the language-level `Map[K, V]` fulfills
+  `Iterable` as part of its primitive surface (§9.5). User types may
+  fulfill
   `Iterable` to participate. `Stream[T]` is not a valid `repeat` source —
   it's an event source, not a collection with a current snapshot, so it
   has no key set to diff. To drive `repeat` from a stream, first project
   the stream into a collection-valued cell (e.g. fold its events into a
-  `Vec`/`HashMap` via §13.18.9) and repeat over that.
+  `Vec` or `Map` via §13.18.9) and repeat over that.
 - **`<bind>`** is either a bare identifier or a tuple-destructuring
   pattern per §12.12.1 (the same destructuring grammar the for-loop's
   iteration variable accepts; pattern rules in §6.2.4 and §9.2.2).
-  Tuple destructure is the idiomatic form for `HashMap[K, V]`, whose
+  Tuple destructure is the idiomatic form for `Map[K, V]`, whose
   iterator yields `(K, V)` pairs.
 - **Bind ownership.** `<bind>` is typed as the iterator's element type
   after **move-promotion**: a real owner rather than the
@@ -14826,7 +14828,7 @@ and continues; a duplicate key never halts the program.
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes (and, with
 `at <index>`, each surviving scope observes its new index).
-Unordered iterables (`HashSet[T]`, `HashMap[K, V]`) are diffed by key
+Unordered iterables (`HashSet[T]`, `Map[K, V]`) are diffed by key
 identity; iteration order is whatever the underlying type's iterator
 emits and does not affect scope identity.
 
@@ -14881,7 +14883,7 @@ node UserPanel:
       UserCard | id=user_id
 ```
 
-**`HashMap` source with destructuring bind** — `HashMap[K, V]`
+**`Map` source with destructuring bind** — `Map[K, V]`
 iterates as `Iterable` yielding `(K, V)` pairs. Move-promotion
 (§13.5.4.1) gives the bind an owned `(K, V)`, so ordinary tuple
 destructuring (§12.12.1) binds owned `sid` and `info`; `keyed by`
@@ -14889,7 +14891,7 @@ names the map key as the scope key:
 
 ```
 node SessionPanel:
-  attr sessions: HashMap[SessionId, SessionInfo] = HashMap::new()
+  attr sessions: Map[SessionId, SessionInfo] = {}
   expose:
     repeat (sid, info) in sessions keyed by sid:
       SessionRow | id=sid info=info
@@ -15036,7 +15038,7 @@ In each rejected context, the diagnostic identifies the misplaced
 - Nested `repeat` constructs are permitted; each nested level's scopes
   hang off the outer scope's path per §13.5.3.
 - **The iterator must terminate at each evaluation.** Vec[T],
-  HashSet[T], T[N], HashMap[K, V], and any user `Iterable`
+  HashSet[T], T[N], Map[K, V], and any user `Iterable`
   implementation over a bounded-at-commit-time collection satisfy
   this. The spec does not mandate a compiler check for termination on
   user `Iterable` implementations — they are trusted. An iterator
@@ -16003,7 +16005,7 @@ own iteration uses `for o in oscillators:` (§13.4.2).
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a reactive iterable source (`Signal[I]`
 where `I: Iterable`, such as `Vec[T]`, `HashSet[T]`, or
-`HashMap[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
+`Map[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
 here is for *parametric* topology: multiplicity that is parameterized
 by a const-generic (or otherwise compile-time-known) value but fixed
 per instance.
@@ -17835,7 +17837,7 @@ from the type's size and shape:
 - Types whose size exceeds the platform's atomic word width are
   stored as pool indices (one i64 per cell) into a per-type pool. The
   cell stores the index; the actual value lives in the pool.
-- Dynamically-sized types (`string`, `Vec[T]`, `HashMap[K, V]`,
+- Dynamically-sized types (`string`, `Vec[T]`, `Map[K, V]`,
   and other heap-allocated dynamic-size collections) always use
   index-based storage. `string` uses the existing string pool
   (§14.5); other dynamic types use per-type pools generated by the
@@ -17879,7 +17881,7 @@ from the type's size and shape:
 | Record with five `i64` fields                   | pool (40 bytes)                                            |
 | `string`                                        | pool (variable; via string pool §14.5)                     |
 | `Vec[i32]`                                      | pool (variable)                                            |
-| `HashMap[K, V]`                                 | pool (variable)                                            |
+| `Map[K, V]`                                     | pool (variable)                                            |
 | Fixed-size array `T[N]` with N×sizeof(T) ≤ word | direct                                                     |
 | Fixed-size array `T[N]` with N×sizeof(T) > word | pool                                                       |
 
