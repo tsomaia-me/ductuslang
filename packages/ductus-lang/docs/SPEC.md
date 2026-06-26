@@ -12926,71 +12926,106 @@ fulfill Displayable for Driver:
     "Driver(exp: {d.expertise_level}, risk: {d.risk_tolerance})"
 ```
 
-#### 13.3.3 Views
+#### 13.3.3 Acceptance: the `children:` clause and selection views
 
 ```
-view name: <selector> <cardinality>
-dynamic view name: <selector>*
+children:
+  <name>: <selector> <cardinality>          // named — also a selection binding
+  <selector> <cardinality>                  // unnamed — accept-only
 ```
 
-Children are accessed through **`view` declarations** — a declaration kind
-parallel to `attr`, living in the body name-scope with names unique across
-the whole body (§13.7.1). A view names a **receiver-side query** over the
-children a caller supplies: its `<selector>` is a concrete node type, a
-trait, or the marker `Node`, and its `<cardinality>` (§13.3.3.1) constrains
-how many supplied children match.
-
-- **Views overlap rather than partition.** Each view is an independent
-  query over the whole supplied set, so one child may be counted by several
-  views at once.
-- **Accepted universe.** What a node accepts is the union of its view
-  selectors: a node with **no views accepts nothing**, and a `Node` (or
-  `Connection`) catch-all view opens it fully.
-- **Homogeneous.** Every child a view yields satisfies its one selector;
-  homogeneous co-placement uses a **`Bundle[T]`**, a distinct kind
-  (§13.3.3.5).
-- **Gated children still count.** A `when`-gated-off child remains in the
-  views that match it and its reads return frozen values — gates freeze
-  rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
-  membership.
-
-A `view` declaration **places no instances**; it is purely the node's
-caller-facing query, bounding only what a *caller* supplies (§13.8.3). The
-node's own internal children — those it emits in its exposition via a
-compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4), or places and names
-with `as` (§13.3.7) — are its private realization: they are never counted by
-a view and never appear in one, exactly as a component's internal structure
-is invisible to its `children`. The governing principle — signature
-declarations bound callers; internals are unconstrained by them — is stated
-in §13.3.4.2.
+A node accepts children through the **`children:` clause**. The body of
+the clause lists one or more *acceptance entries*; each entry contributes
+to the caller-facing acceptance contract. An entry may be **named** —
+binding it into the body namespace (§13.7.1) as a *view* selection — or
+**unnamed**, in which case it is accept-only (a passthrough that feeds
+`@content`, §13.3.7.2).
 
 ```
-// Views with cardinality:
 node Synthesizer:
-  view oscillators: Oscillator+      // at least one
-  view filter:      Filter           // exactly one
-  view amplifier:   Amplifier?       // at most one
+  children:
+    oscillators: Oscillator+         // at least one — named view binding
+    filter:      Filter              // exactly one
+    amplifier:   Amplifier?          // at most one
   attr master_volume: f32 = 1.0
 ```
 
-In this example: at least one Oscillator (`+`), exactly one Filter
-(bare = exactly one), at most one Amplifier (`?`).
+The same clause-with-entries model governs caller-facing connection
+acceptance via the **`incoming:`** and **`outgoing:`** clauses (§13.3.4).
+
+- **Acceptance entries overlap rather than partition the supplied set.**
+  A named entry with a narrower selector is a *projection* of any broader
+  entry, not a separate acceptance:
+  ```
+  children:
+    drivables: Drivable+
+    cars:      Car*                  // a projection of drivables, not a widening
+  ```
+  Both entries reference the same supplied set; `cars` narrows the
+  selection but does not change what the node accepts.
+- **No `children:` clause means no children.** A node with no
+  `children:` clause accepts nothing; a `Node` (or `Connection`) catch-all
+  entry opens the clause fully.
+- **Homogeneous.** Each entry yields children that all satisfy its one
+  selector; homogeneous co-placement (a co-tied bracket at placement) uses
+  a **`Bundle[T]`** (§13.3.3.5).
+- **Gated children still count.** A `when`-gated-off child remains in the
+  acceptance count and its reads return frozen values — gates freeze
+  rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
+  membership.
+- **Layout.** Each named entry occupies its own line under the clause
+  header. Multiple unnamed entries may share a line, space-separated; a
+  mixed line is not allowed. The clause header takes the colon and an
+  indented body (002-20 indentation rules apply).
+
+An acceptance entry **places no instances**; the clause is purely the
+node's caller-facing contract, bounding only what a *caller* supplies
+(§13.8.3). The node's own internal children — those it emits in its
+exposition via a compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4),
+or places and names with `as` (§13.3.7) — are its private realization:
+they are never counted by an acceptance entry and never appear in a
+selection view, exactly as a component's internal structure is invisible
+to its callers. The governing principle — caller-facing clauses bound
+callers; internals are unconstrained by them — is stated in §13.3.4.2.
+
+##### Selection views
+
+A named acceptance entry *is* a view: it provides a body selection
+binding over the children it accepts. Body code reads the binding under
+the rules of §13.3.3.2 — as a borrow-window for a static view, or a
+`Cell` for a `dynamic` entry (§13.3.3.4).
+
+A separate `view` declaration may be written to provide an *additional*
+selection over already-accepted children — typically for a narrower
+projection that the `children:` clause did not name:
 
 ```
-// Catch-all view (any node type accepted):
 node Processor:
-  view children: Node*               // any node, zero or more
-  outgoing wires: WiresTo
+  children:
+    all: Node*                       // accepts any node
+  view drivables: Drivable+          // projection — selects the Drivable subset
 ```
 
-`Processor` accepts any node type through its `children` view, reading the
-supplied children directly (`children[i]`, §13.3.3.2). A node that declares
-no view accepts nothing.
+The standalone `view` form is purely receiver-side: it never widens
+acceptance, only narrows the selection.
 
-A node may declare a view selecting its own type (self-recursion).
-Self-recursive placements terminate because each placement is an explicit
-user act — the compiler walks finite placement trees, not infinite type
-recursions.
+##### Catch-all and self-recursion
+
+```
+// Accepts any node type:
+node Container:
+  children:
+    inner: Node*
+
+// Self-recursion:
+node TreeNode:
+  children:
+    children: TreeNode*              // accepts further TreeNodes
+```
+
+Self-recursive placements terminate because each placement is an
+explicit user act — the compiler walks finite placement trees, not
+infinite type recursions.
 
 ##### 13.3.3.1 Cardinality forms
 
@@ -13402,42 +13437,50 @@ the caller wrote it — the runtime sees a two-level structure (rows
 containing elements), not a flattened list. This parallels `@content`'s
 order-preservation (017-276) applied to a named bundle view.
 
-#### 13.3.4 Connection-views (`incoming` and `outgoing`)
+#### 13.3.4 Connection-views (`incoming:` and `outgoing:`)
 
 ```
-outgoing name: [dynamic] Type <cardinality>      // node is the `from` endpoint
-incoming name: [dynamic] Type <cardinality>      // node is the `to` endpoint
+outgoing:                                          // node is the `from` endpoint
+  <name>: [dynamic] Type <cardinality>             // named — connection-view binding
+  [dynamic] Type <cardinality>                     // unnamed — accept-only
+
+incoming:                                          // node is the `to` endpoint
+  <name>: [dynamic] Type <cardinality>             // named
+  [dynamic] Type <cardinality>                     // unnamed
 ```
 
-Connections a node participates in are declared **per-view**, parallel to node
-views (§13.3.3) but with their own direction keywords: `outgoing name: Type`
-makes the node the `from` endpoint, `incoming name: Type` makes it the `to`
-endpoint. Each declaration is a **connection-view** — a direction keyword, a
-unique name (§13.7.1), a connection type, and optional cardinality. See §13.6 for
+Connections a node participates in are declared via the **`outgoing:`** and
+**`incoming:`** clauses — the connection-side counterpart to `children:`
+(§13.3.3). Each clause body lists *acceptance entries*: a named entry
+(`<name>: Type <card>`) provides a connection-view selection binding into the
+body namespace (§13.7.1); an unnamed entry is accept-only. See §13.6 for
 connection declarations and §13.8.4 for connection placement.
 
-Like node views, connection-views are the node's **caller-facing signature**:
-they bound the connections a *caller* may wire to or from the node. An
-`outgoing` view bounds what a caller placing this node may originate *from* it
-(a local-supply bound); an `incoming` view bounds what may be directed *at* it,
-aggregated across all sources. They do **not** bound the node's own internal
-wiring — self-sourced connection placements (§13.3.4.2) are its private
-realization, checked by endpoint typing and topology (§13.11.5) but never
-counted against any connection-view. When such internal wiring targets one of
-the node's own children, the node acts as the **caller of that child**, and the
-connection counts against the *child's* incoming budget (§13.3.4.2).
+Like `children:`, the connection-acceptance clauses are the node's
+**caller-facing signature**: they bound the connections a *caller* may wire
+to or from the node. An `outgoing:` entry bounds what a caller placing this
+node may originate *from* it (a local-supply bound); an `incoming:` entry
+bounds what may be directed *at* it, aggregated across all sources. They do
+**not** bound the node's own internal wiring — self-sourced connection
+placements (§13.3.4.2) are its private realization, checked by endpoint
+typing and topology (§13.11.5) but never counted against any
+connection-view. When such internal wiring targets one of the node's own
+children, the node acts as the **caller of that child**, and the connection
+counts against the *child's* incoming budget (§13.3.4.2).
 
-Cardinality uses the same specifiers as node views (§13.3.3.1) with the same
-meaning — **bare = exactly one** in every direction (incoming included),
-multiplicity always explicit (`?`, `+`, `*`, `[=N]`, `[N..=M]`, `[N..]`,
-`[..=M]`); fan-in or multi-origin is written `*`. The `dynamic` prefix is the
-same marker and takes exactly `*` (§13.3.3.1).
+Cardinality uses the same specifiers as `children:` entries (§13.3.3.1)
+with the same meaning — **bare = exactly one** in every direction
+(incoming included), multiplicity always explicit (`?`, `+`, `*`, `[=N]`,
+`[N..=M]`, `[N..]`, `[..=M]`); fan-in or multi-origin is written `*`. The
+`dynamic` prefix is the same marker and takes exactly `*`.
 
 ```
 node Driver:
-  outgoing drive:       Drives          // exactly one
-  outgoing maintenance: MaintainedBy?   // 0 or 1
-  incoming sponsors:    SponsoredBy [..=3]
+  outgoing:
+    drive:       Drives                  // exactly one
+    maintenance: MaintainedBy?           // 0 or 1
+  incoming:
+    sponsors:    SponsoredBy [..=3]
 ```
 
 **Static and dynamic membership.** A connection belongs to a node's incoming
