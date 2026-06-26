@@ -149,7 +149,7 @@ live in **§5 (§8a)** — not duplicated here.
     view channels: Channel+
   // `channels[0]` is a borrow of a Channel instance. The instance IS a value (first-class);
   // you reach it through a borrow and cannot relocate/copy/store the instance itself.
-  let kept: Handle[Channel] = weak channels[0]   // to persist, take a Handle (storable)
+  let kept: Handle[Channel] = handle channels[0]  // to persist, take a Handle (storable)
   ```
 - **Resolved (Q7):** define "first-class citizen" **precisely in the new §1.3 decision itself**
   (nameable / passable / returnable; orthogonal to value-semantics). The spec's existing loose uses
@@ -208,16 +208,16 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
 
 ### 4.4 View = homogeneous borrow-window (the "V1" choice)
 - **Decision:** A view is a transient borrow-window. Reading through it is direct and zero-ceremony
-  (`channels[0].gain`) — no `!`, no Handle resolution. A view is **not storable**; to persist a
-  reference you take a `Handle` explicitly (`weak`). **No auto-resolve** mechanism is added.
+  (`channels[0].gain`) — no Handle resolution. A view is **not storable**; to persist a
+  reference you take a `Handle` explicitly (`handle`). **No auto-resolve** mechanism is added.
 - **Why:** This is the existing semantics (017-48: view elements are read directly in place,
-  "storable nowhere"). Choosing it means the common case stays free and we add no implicit-`!`
-  semantics. (The alternative — a view *is* an array of `Handle`s, storable but needing
+  "storable nowhere"). Choosing it means the common case stays free and we add no implicit
+  resolution. (The alternative — a view *is* an array of `Handle`s, storable but needing
   resolution/auto-resolve — was considered and rejected.)
 - **Example:**
   ```
   derived total: f32 = channels[0].gain + channels[1].gain   // direct
-  attr favorite: Handle[Channel] = weak channels[0]          // explicit, storable
+  attr favorite: Handle[Channel] = handle channels[0]        // explicit, storable
   ```
 
 ### 4.5 Group ≠ View
