@@ -12947,7 +12947,8 @@ how many supplied children match.
   selectors: a node with **no views accepts nothing**, and a `Node` (or
   `Connection`) catch-all view opens it fully.
 - **Homogeneous.** Every child a view yields satisfies its one selector;
-  heterogeneous bundles are **groups**, a distinct kind (§13.3.3.5).
+  homogeneous co-placement uses a **`Bundle[T]`**, a distinct kind
+  (§13.3.3.5).
 - **Gated children still count.** A `when`-gated-off child remains in the
   views that match it and its reads return frozen values — gates freeze
   rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
@@ -13258,45 +13259,148 @@ contract regardless, because the *type* admits dynamic supply.
 The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
 
-##### 13.3.3.5 Groups
+##### 13.3.3.5 Bundles
 
-A **group** is a *heterogeneous* bundle of co-placed children, written
-`[...]` at the placement site (§13.8.3). It is a distinct kind from a view:
-a view is homogeneous (one selector), whereas a group may mix types. **Only
-an explicit `[...]` is a group** — a bare placement is not.
-
-A group is reached **only via `.<Type>`**, which yields a (homogeneous) view
-of that type's members within the group; there is **no bare positional index
-into a group**. Forcing `.<Type>` first means a heterogeneous bundle is
-never indexed directly, so the "what type does `group[i]` return?" problem
-never arises (Ductus has no ad-hoc unions).
+A **`Bundle[T]`** is a *homogeneous* co-placement of children, written
+`[...]` at the placement site (§13.8.3). `T` is a node type, a trait, or
+the `Node` marker. A bundle is a distinct kind from a view: a view selects
+children supplied flat; a bundle ties co-placed children with a bracket
+that survives in the structural output. **Only an explicit `[...]` is a
+bundle** — a bare placement is not.
 
 ```
-view bar: [Note+ Rest*]      // one group: 1+ Note, 0+ Rest
-bar.Note[0].pitch            // .Note -> view of the group's Notes, then index
-bar.Rest                     // .Rest -> view of the group's Rests
+view chords: [Note[=2]]+              // 1+ bundles, each containing exactly 2 Notes
+chords[0][1].pitch                    // bundle 0, element 1
+chords.length                         // number of bundles
+chords[0].length                      // number of elements in bundle 0
 ```
 
-**Flat views flatten through groups; group views see brackets.** A view
-whose selector is a plain type counts and sees the group's *elements*; a
-view whose selector is itself a group (`[...]`) counts and sees the
-*brackets*:
+##### Access via `Index`
+
+Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
+**index-to-min** rule (017-43) at each level:
+
+- `bundle[g]` returns a **row slice** — `Handle[T][..N]` when the row's
+  length is statically derivable (rectangular bundles, single-element
+  rows), `Handle[T][..]` for runtime-length rows (jagged bundles).
+- `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
+- `bundle.length` returns the row count; `bundle[g].length` returns the
+  row's element count.
+
+Direct index `bundle[g]` is legal iff `g < outer_min_cardinality`; direct
+`bundle[g][i]` is additionally legal iff `i < inner_min_cardinality`. For
+unbounded access, use `.get(g)` / `.get(i)` returning `Option`, or `for`:
 
 ```
-verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one group
+let opt: Option[Handle[Note][..]] = chords.get(g)
+for chord in chords:                  // unrolls to one body copy per bundle
+  for note in chord:                  // unrolls per element of the row
+    process(note)
+```
+
+##### Storage (implementation detail)
+
+All bundle forms yield the same external type `Bundle[T]`. Internal
+storage varies — the difference is invisible to user code, which always
+sees a `Handle[T][..N]` or `Handle[T][..]` slice from `bundle[g]`:
+
+- **Rectangular inner cardinality** (e.g. `[Note[=2]]+`): backed by a 2D
+  array `Handle[T][M][N]`; row length is a compile-time constant.
+- **Jagged inner cardinality** (e.g. `[Drivable[2..4]]+`): backed by a
+  flat handle backing plus an offsets table; row length is runtime.
+- **Single-element rows** (e.g. `[Note]+`): no special collapse to a bare
+  `Handle[T]` — each row is a length-1 slice, uniform with the other
+  forms.
+
+Storage strategy is the implementation's choice; the user-visible API is
+the `Index` surface above.
+
+##### Flat views flatten; bundle views see brackets
+
+A view whose selector is a plain type counts and sees the bundle's
+*elements*; a view whose selector is itself a bundle (`[...]`) counts and
+sees the *brackets*:
+
+```
+verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one bundle
 view notes:  Note+           // flat    -> sees C4, F4, G4, E4   (4)
-view chords: [Note+]+        // grouped -> sees [F4 G4]          (1 group)
-chords[0].Note[1]            // 2nd Note of group 0
+view chords: [Note+]+        // bundled -> sees [F4 G4]          (1 bundle)
+chords[0][1]                 // 2nd Note of bundle 0
 ```
 
-With a single matching group, members are reached `bar.Note[i]`; with
-multiple groups, the group is indexed first: `bars[g].Note[i]`.
+With a single matching bundle, members are reached `bundle[i]` and
+`bundle.length`; multiple bundles are addressed with the outer index
+first: `bundles[g][i]`.
 
-**Group cardinality.** For a group view, the **inner** cardinality (members
-per group) is part of the match predicate — a *filter* on which groups the
-view selects — while the **outer** cardinality (group count) is the count
-constraint. This keeps distinct group shapes independent: `[Note[=2]]+` and
-`[Note[=3]]+` select disjoint sets of groups and do not conflict.
+##### Bundle cardinality
+
+For a bundle view, the **inner** cardinality (members per bundle) is part
+of the match predicate — a *filter* on which bundles the view selects —
+while the **outer** cardinality (bundle count) is the count constraint.
+Distinct bundle shapes stay independent: `[Note[=2]]+` and `[Note[=3]]+`
+select disjoint sets of bundles and do not conflict.
+
+##### Contents inside `[...]`
+
+Allowed inside a bundle bracket:
+
+- Node placements (the common case).
+- Gated node placements — the gate freezes per 022-7, but membership is
+  static; gating does not remove the element from the bundle.
+- A compile-time `for` loop (021-42), unrolling into bundle members.
+
+Forbidden inside a bundle bracket:
+
+- `repeat` — a runtime-varying membership inside a static pre-tied
+  bracket contradicts the bundle nature. Dynamic bundles use the
+  reactive `Cell` form below.
+- Connections — bundling is node-only (017-273).
+
+##### `[...]` is an open delimiter
+
+Layout suspends inside `[...]` (parallel to `(...)` and string literals,
+§1.4), so bundle members may span multiple lines and carry attrs,
+children, `when`-gating, etc.:
+
+```
+[
+  Note | pitch=60 duration=0.25
+  Note | pitch=64 duration=0.25
+  Rest                           when silent_break: true
+]
+```
+
+##### `as`-naming
+
+`[n1 n2] as pair` binds `pair` to the row slice form `Handle[T][..N]` (or
+`Handle[T][..]` for jagged rows) — the same type that a receiving view's
+row produces from `view[g]`.
+
+##### Dynamic bundles
+
+A `repeat`-fed bundle stays a reactive `Cell` whose value is consume-only
+(017-76 family); slice-indexing access does not apply. The slice surface
+is only for caller-written static brackets.
+
+##### 2D only
+
+Bundles are exactly one nesting level. `[[T]]` (nested-nested bundles) is
+not provided; deeper structure uses nested node bodies.
+
+##### Storable
+
+A `Bundle[T]` is storable: its fields are all `Copy` (Handles are Copy
+per 017-142; `usize` offset tables are Copy). The bundle value sits in
+cells, fields, records, and attrs. Row slices, however, are borrows
+(§11.9) and follow the ordinary borrow rules — `bundle[g]` cannot be
+stored, only the whole bundle.
+
+##### In `expose:`
+
+A bundle entry in `expose:` preserves its bracket structure exactly as
+the caller wrote it — the runtime sees a two-level structure (rows
+containing elements), not a flattened list. This parallels `@content`'s
+order-preservation (017-276) applied to a named bundle view.
 
 #### 13.3.4 Connection-views (`incoming` and `outgoing`)
 

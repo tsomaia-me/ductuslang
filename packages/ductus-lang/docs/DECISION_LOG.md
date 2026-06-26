@@ -1167,7 +1167,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 
 ## 012. Strings, Tuples, Arrays & Time — 178 Rules
 
-012-1. `string`, tuples, fixed-size arrays `T[N]`, slices `T[..N]` / `T[..]`, and maps `Map[K, V]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
+012-1. `string`, tuples, fixed-size arrays `T[N]`, slices `T[..N]` / `T[..]`, maps `Map[K, V]`, and bundles `Bundle[T]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
 012-3. The lowercase keyword `string` is reserved. (§9.1)
 012-4. The complete set of primitive non-numeric types is `bool`, `char`, `string`, `duration`, and `instant`; no other non-numeric primitives exist. (§9.1.1)
@@ -2095,7 +2095,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 016-275. A reactive value expression combining one or more reactive cells always produces a `Derived[T]`. (§13.2.8)
 016-276. Value-reading operator and function parameters are typed `Cell[T]` (the umbrella); a `Stream[T]` has no current value, so it is excluded at the read site rather than by the signature. (§13.2.8)
 
-## 017. Nodes & Views — 278 Rules
+## 017. Nodes & Views — 287 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed connections. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2177,11 +2177,20 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-80. The same marker, cell model, and consumption rules apply to `dynamic` connection-views (`incoming`/`outgoing`). (§13.3.3.4)
 017-263. Each view's cardinality constrains the count of children matching its selector over the whole supply, and all views' constraints hold simultaneously (conjunction) with no precedence; overlap is fine — a child is counted in every view it matches. (§13.3.3.1)
 017-264. The only cardinality conflict is unsatisfiability, diagnosed by a cheap subset-edge static check along the known trait/marker subset lattice plus placement-time counting, with no general feasibility solver: `view all: Node[=3]` alongside `view ds: Drivable[=5]` is a static error (Drivable ⊆ Node, 5 > 3). (§13.3.3.1)
-017-265. A group is a heterogeneous bundle of co-placed children written `[...]` at placement — a distinct kind from a view (which is homogeneous); only an explicit `[...]` is a group, a bare placement is not. (§13.3.3.5)
-017-266. A group is reached only via `.<Type>`, which yields a homogeneous view; there is no bare positional index into a group: `bar.Note[0].pitch`. (§13.3.3.5)
-017-267. Flat views flatten through groups — they count and see the group's elements — while group views (a `[...]` selector) see the brackets themselves. (§13.3.3.5)
-017-268. With a single matching group its members are reached `bar.Note[i]`; with multiple groups the group is indexed first: `bars[g].Note[i]`. (§13.3.3.5)
-017-269. For a group view the inner cardinality (members per group) is part of the match predicate, a filter, while the outer cardinality (group count) is the count constraint, so `[Note[=2]]+` and `[Note[=3]]+` are disjoint and do not conflict. (§13.3.3.5)
+017-265. A `Bundle[T]` is a homogeneous co-placement of children written `[...]` at placement — a distinct kind from a view; only an explicit `[...]` constructs a bundle, a bare placement is not. (§13.3.3.5)
+017-266. Bundle access goes through the `Index` trait (§4.9.5): `bundle[g]` returns a row slice (`Handle[T][..N]` or `Handle[T][..]`), `bundle[g][i]` returns `Handle[T]`, and `bundle.length` returns the row count. Indexing follows the index-to-min rule (017-43) at each level — outer `[g]` to-min produces the slice, inner `[i]` to-min into it. (§13.3.3.5)
+017-267. Flat views flatten through bundles — they count and see the bundle's elements — while bundle views (a `[...]` selector) see the brackets themselves. (§13.3.3.5)
+017-268. With a single matching bundle its members are reached `bundle[i]` and `bundle.length`; multiple bundles are addressed with the outer index first: `bundles[g][i]`. (§13.3.3.5)
+017-269. For a bundle view the inner cardinality (members per bundle) is part of the match predicate, a filter, while the outer cardinality (bundle count) is the count constraint, so `[Note[=2]]+` and `[Note[=3]]+` are disjoint and do not conflict. (§13.3.3.5)
+017-290. `Bundle[T]` is a language-level compound type with `[...]` placement syntax — homogeneous on `T`, where `T` is a node type, a trait, or the `Node` marker. It joins the 012-1 family alongside `string`, tuples, arrays, slices, and maps. (§13.3.3.5)
+017-291. All bundle forms — rectangular (`[Note[=2]]+`), jagged (`[Drivable[2..4]]+`), and single-element rows (`[Note]+`) — yield the same external type `Bundle[T]`. Internal storage varies (rectangular: `Handle[T][M][N]`; jagged: flat handle backing + offsets table; single-element rows: a length-1 slice for each row), but storage is implementation detail and not user-visible. (§13.3.3.5)
+017-292. Contents allowed inside `[...]` are node placements, gated node placements (membership is static; the gate freezes per 022-7), and a compile-time `for` loop that unrolls into members (021-42). `repeat` is forbidden inside `[...]` — runtime structure inside a static pre-tied bracket contradicts the static-bundle nature. Connections are forbidden (017-273 retained). (§13.3.3.5)
+017-293. `as`-naming a bundle: `[n1 n2] as pair` binds `pair` to the row slice form `Handle[T][..N]` (compile-time row length) or `Handle[T][..]` (runtime length), the same type as the receiving view's row. (§13.3.3.5)
+017-294. Bundle `[...]` is an open delimiter — layout suspends inside it (parallel to 002-21 for `(...)` / string literals) — so members may span multiple lines and carry attrs, children, `when`-gating, etc. (§13.3.3.5)
+017-295. A `Bundle[T]` is storable: its fields are all `Copy` (`Handle[T]` is `Copy` 017-142, `usize` is `Copy`), so the bundle value sits in cells, fields, records, and attrs. Row slices are borrows (013-1) and follow the ordinary borrow rules — `bundle[g]` cannot be stored, only the whole bundle. (§13.3.3.5)
+017-296. A dynamic (repeat-fed) bundle stays a reactive `Cell` whose value is consume-only (017-76 family); slice-indexing access does not apply. The slice surface is only for caller-written static brackets. (§13.3.3.5)
+017-297. Bundles are 2D — exactly one nesting level. No `[[T]]` nested-nested bundles; deeper structure uses nested node bodies. (§13.3.3.5)
+017-298. In `expose:`, a bundle entry preserves its bracket structure exactly as the caller wrote it — the runtime sees a two-level structure (rows containing elements), not a flattened list. This parallels `@content`'s order-preservation (017-276) applied to a named bundle view. (§13.3.7.2)
 017-270. Views count gated-but-frozen children and reads return their frozen values — gates freeze rather than remove (022-7/9) — distinct from `dynamic`/`repeat`, which change membership. (§13.3.3)
 017-81. Connections a node participates in are declared per-view: `outgoing name: Type <card>` (the node is the `from` endpoint) and `incoming name: Type <card>` (the node is the `to` endpoint) — a direction keyword, a unique name, a connection type, and optional cardinality. (§13.3.4)
 017-82. `incoming` connections target the node (it is the `to` endpoint); `outgoing` connections originate from it (it is the `from` endpoint). (§13.3.4)
@@ -2229,7 +2238,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-124. The total cardinality of a node — caller-placed plus internal — is not tracked; a connection-view's cardinality constrains only the caller-facing side, and no `[=N total]`-style annotation is specified. (§13.3.4.2)
 017-271. A signature connection-view (`outgoing name:` / `incoming name:`) must be named, and its name is unique within the body namespace (020-37); inline self-sourced placements may be anonymous, with naming opt-in via `as <name>`. (§13.3.4)
 017-272. Because connection-views are named rather than type-keyed, a node may declare two connection-views of the same connection type. (§13.3.4)
-017-273. Connections have no group form; grouping is node-only. A "one of {A, B}" relationship is modeled as a single `pairs`/cartesian connection type (019-33/38), not a group. (§13.3.4)
+017-273. Connections have no bundle form; bundling is node-only. A "one of {A, B}" relationship is modeled as a single `pairs`/cartesian connection type (019-33/38), not a bundle. (§13.3.4)
 017-274. A caller-supplied (outgoing) connection engages only where the type names its connection-view in `expose:`, in placement order within that view; a connection-view not named in `expose:` still participates (presence is participation) but is never engaged — the same as an unexposed node view (017-191). (§13.3.4)
 017-125. A node may declare generic parameters in the standard `[T, U, ...]` form: `node Buffer[T: Numeric]:`. (§13.3.5)
 017-126. Node generic parameters are in scope within the body's attr, recurrent, derived, const, view, and connection declarations: `view slots: BufferSlot[T]`. (§13.3.5)
