@@ -61,7 +61,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 002-8. `subject` is the instance-value keyword. (§1.4)
 002-9. `as` is the naming/alias keyword, used for placement names, import aliases, and `repeat` view names. (§1.4)
 002-10. `as` is not a cast operator; explicit conversion uses call syntax `T(value)`. (§1.4)
-002-11. The operator-context keywords are `is`, `and`, `or`, `not`, `handle`, and `portal`. (§1.4)
+002-11. The operator-context keywords are `is`, `and`, `or`, `not`, `handle`, `portal`, and `delete`. (§1.4)
 002-12. The sole reserved type identifier is `Subject`, the subject-type alias usable in trait and `fulfill` type positions; it is a capitalized type alias, not a keyword. (§1.4)
 002-28. The `@` sigil introduces a **directive**: a member of a fixed, language-provided set; there are no user-defined directives. (§1.4)
 002-29. A directive is either **applied** — attached to a declaration or value to modify it, the everyday "annotation" (`@derive`, `@literal_suffix`, `@flag`, `@reset_on_reopen`, `@reset_on_reload`, and a trait's `@default`) — or **standalone**, a construct in its own right (`@content`). (§1.4)
@@ -592,7 +592,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 006-32. The `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — is an opt-in, non-binding elision permitted at the trailing position of record, tuple, and variant-payload patterns; it matches and discards every field or component not explicitly listed, and without it patterns remain exhaustive. (§3.5.7)
 006-33. In a trait-method named call the argument names are the trait's declared parameter names, not the implementing `fulfill`'s: a `fulfill` may give its parameters different body-local names, but `v1.add(b: v2)` uses trait `Add`'s `b` even where the impl wrote `right`. Named form thus works uniformly at generic (`T: Add`) and concrete sites, and the checker does not require `fulfill` parameter-name equality. (The receiver is passed positionally per 006-21, so 005-90's receiver-name freedom is unaffected.) (§3.5.5)
 
-## 007. Numerics — 227 Rules
+## 007. Numerics — 237 Rules
 
 007-1. The built-in numeric primitive type set is fixed at fourteen types. (§4.1)
 007-2. The signed integer types are `i8`, `i16`, `i32`, `i64`, `i128`, and `isize`. (§4.1)
@@ -821,6 +821,16 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 007-221. Cross-type arithmetic between built-in numeric types requires explicit conversion. (§4.9.4)
 007-222. User-defined types may implement cross-type instantiations such as `Add[i32] for Distance`. (§4.9.4)
 007-223. User-defined numeric-like types implement whichever fine-grained traits are appropriate; umbrella satisfaction follows. (§4.9.4)
+007-228. The `Index[K]` trait dispatches the `[]` element-access operator: `s[k]` desugars to `Index::index(s, k)`. The trait declares `type Output` (the result of indexing, determined by `(Self, K)`) and `fn index(s: Subject, k: K) -> Output`. (§4.9.5)
+007-229. `Index[K]` is part of trait identity (005-40) — `Index[isize]` and `Index[Range[isize]]` are distinct trait instances on the same type, supporting both element access (`arr[i]`) and range slicing (`arr[2..5]`) through separate fulfillments. (§4.9.5)
+007-230. Built-in `Index` fulfillments: arrays `T[N]` and slices `T[..N]`/`T[..]` fulfill `Index[isize]` (Output = T) and `Index[Range]` (Output = slice); Bundles (§13.3.3.5) fulfill `Index[isize]` returning a row slice; `Map[K, V]` fulfills `Index[K]` returning `V`. (§4.9.5)
+007-231. The `Contains[K]` trait dispatches the `in` membership operator: `k in s` desugars to `Contains::contains(s, k)`. The trait declares `fn contains(s: Subject, k: K) -> bool`. `not k in s` follows from 007-76. (§4.9.5)
+007-232. The `Deletable[K]` trait dispatches the `delete` keyword: `delete s[k]` desugars to a consume-and-produce call (013-210) to `Deletable::delete(own s, k)` returning the modified subject. The trait declares `fn delete(s: own Subject, k: K) -> Subject`. Deleting an absent key is a no-op (idempotent). (§4.9.5)
+007-233. `Index`, `Contains`, and `Deletable` are language-defined operator traits (the 007-184 pattern); the trait set is language-fixed and not user-redeclarable, but user types can `fulfill` them. (§4.9.5)
+007-234. All integer types (`i8`–`i128`, `u8`–`u128`, `isize`, `usize`) auto-implement `Hash`, joining the trait conformance list of 007-211. (§4.9.4)
+007-235. `bool` and `string` auto-implement `Hash` (joining `char`, which 012-16 already established). (§4.9.4)
+007-236. `duration` and `instant` (012-93) auto-implement `Hash` — their i64-backed representation supports the integer hash. (§9.4)
+007-237. Float types (`f32`, `f64`) deliberately do NOT implement `Hash`: `NaN ≠ NaN` violates the `Eq → Hash` equal-implies-equal-hash law. Any expression demanding `Hash` on a float type is a compile error at the bound. (§4.9.4)
 
 ## 008. Type Composition: `&`, `dyn`, `Type[...]` — 73 Rules
 
@@ -2613,7 +2623,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 020-22. In expression-operand position, a reserved-field keyword denotes the corresponding instance field: `from.expertise_level`. (§13.7.5)
 020-23. Reserved words cannot be declared as cell names, so reserved fields never collide with user names. (§13.7.5)
 020-24. `here::` remains available as the explicit form for reserved fields: `here::from`, `here::pair`. (§13.7.5)
-020-25. `in` is not a reserved instance field; it serves solely as the `for`-loop separator: `for c in channels`. (§13.7.5)
+020-25. `in` is not a reserved instance field; it serves both as the `for`-loop separator (`for c in channels`) and as the membership operator dispatching to the `Contains` trait (`k in m`, §4.9.5). The parser disambiguates by syntactic position. (§13.7.5)
 020-26. A cell reference — bare, `here::`-anchored, or `module::`-anchored — joins the reactive dependency graph: `derived x: f32 = y + 1` dirties `x` when the resolved `y` changes. (§13.7.6)
 020-27. Dependency edges are emitted per instance: body-scope references resolve to that specific instance's cells, never another instance's. (§13.7.6)
 020-28. `module::` references resolve to the single shared module-level cell. (§13.7.6)

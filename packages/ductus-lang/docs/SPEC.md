@@ -135,7 +135,7 @@ the clause keywords above), all control-flow keywords (`if`, `else`,
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
-`or`, `not`, `handle` — graph-entity reference, §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3). `as` is **not** a cast operator; explicit conversion uses
+`or`, `not`, `handle` — graph-entity reference, §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3; `delete` — Map / Deletable trait deletion, §4.9.5). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
@@ -4090,6 +4090,103 @@ user-defined types may implement cross-type instantiations such as
 User-defined numeric-like types (`Decimal` from stdlib, custom fixed-point
 types, etc.) implement whichever fine-grained traits are appropriate;
 umbrella satisfaction follows.
+
+#### 4.9.5 Collection and membership operator traits
+
+Three language-defined operator traits dispatch the corresponding
+operators on arrays, slices, maps, bundles, and any user type that
+fulfills them:
+
+##### `Index[K]` — for `[]` element and range access
+
+```
+trait Index[K]:
+  type Output
+  fn index(s: Subject, k: K) -> Output
+```
+
+`s[k]` desugars to `Index::index(s, k)`. The `K` parameter is part of
+trait identity (005-40), so a type fulfilling both `Index[isize]` (for
+element access) and `Index[Range[isize]]` (for range slicing) carries
+two distinct trait instances. The `Output` associated type is
+determined by `(Self, K)`.
+
+Language-level fulfillments:
+
+- **Arrays `T[N]`**: `Index[isize]` → `Output = T`;
+  `Index[Range[isize]]` → `Output = T[..]` (slice).
+- **Slices `T[..N]` / `T[..]`**: same shape.
+- **Bundles `Bundle[T]`** (§13.3.3.5): `Index[isize]` →
+  `Output = Handle[T][..]` (a row slice).
+- **Maps `Map[K, V]`** (§9.5): `Index[K]` → `Output = V`.
+
+Stdlib `Vec[T]` and other indexed collections fulfill the same surface.
+
+##### `Contains[K]` — for `in` membership
+
+```
+trait Contains[K]:
+  fn contains(s: Subject, k: K) -> bool
+```
+
+`k in s` desugars to `Contains::contains(s, k)`. The `in` keyword
+serves both as the `for`-loop separator (§13.7.5) and as the membership
+operator; the parser disambiguates by syntactic position. `not k in s`
+follows from 007-76.
+
+Maps fulfill `Contains[K]`; stdlib collections do too — there is no
+language-privileged dispatch.
+
+##### `Deletable[K]` — for the `delete` keyword
+
+```
+trait Deletable[K]:
+  fn delete(s: own Subject, k: K) -> Subject
+```
+
+`delete s[k]` desugars to a consume-and-produce call (§11.11.2) to
+`Deletable::delete(own s, k)`, returning the modified subject. The
+operation must be **idempotent**: deleting an absent key is a no-op,
+not an error.
+
+`delete` is an operator-context keyword (002-11), like `not` / `handle`
+/ `portal` — a prefix on an expression, not a clause introducer. It
+joins the keyword inventory at the same precedence tier as the other
+operator-context keywords.
+
+##### Why traits, not built-in
+
+Indexing, membership, and deletion are *operations* on types, not
+properties of types. By dispatching them through traits, every
+language-level container (`T[N]`, slices, `Map`, `Bundle`) and every
+stdlib container (`Vec[T]`, etc.) uses the same surface — `[]`, `in`,
+`delete` — without privileged compiler knowledge of any one of them.
+The trait *set* is closed (users cannot define new operator traits),
+but the fulfilling-by-user-types path is open exactly as for the
+arithmetic and comparison operator traits (§4.9.1).
+
+##### Built-in `Hash` conformance
+
+The `Map[K, V]` key bound `K: Eq + Hash` requires explicit `Hash`
+conformance for every built-in type that should be a valid key. The
+language guarantees:
+
+| Type                                         | `Hash` | Rationale                          |
+|----------------------------------------------|:-----:|------------------------------------|
+| `i8`–`i128`, `u8`–`u128`, `isize`, `usize`   | yes   | Trivial integer hash                |
+| `bool`                                       | yes   | Two-value hash                     |
+| `char`                                       | yes   | (012-16) Unicode scalar value      |
+| `string`                                     | yes   | Byte-content hash                  |
+| `duration`, `instant`                        | yes   | i64-backed (§9.4); integer hash    |
+| `f32`, `f64`                                 | **no**| NaN ≠ NaN violates `Eq → Hash`     |
+
+Any expression that demands `Hash` on a float type — for example
+`Map[f32, V]` — is a compile error at the bound. There is no
+special-casing for floats; the trait bound does the work.
+
+Tuples satisfy `Hash` when every component does (§3.7.3); records and
+enums satisfy `Hash` via `@derive(Hash)` (§3.8.2) when every field /
+payload satisfies it.
 
 ---
 
