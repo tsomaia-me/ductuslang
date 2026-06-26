@@ -73,8 +73,7 @@ effect instances are first-class citizens: nameable, passable, returnable
 graph members. A binding to one is a borrow, and a borrow is unstorable
 (§13.3.6.1), so an instance is held only by borrow, never placed in cells
 or records. The storable stand-in for *which kind* to place is the type
-value `Type[…]` (§5.7); for *which instance*, a weak `Handle[T]`
-(§13.3.6.2).
+value `Type[…]` (§5.7); for *which instance*, a `Handle[T]` (§13.3.6.2).
 
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
@@ -136,7 +135,7 @@ the clause keywords above), all control-flow keywords (`if`, `else`,
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
-`or`, `not`, `weak` — the weak-reference operator, §13.3.6.2). `as` is **not** a cast operator; explicit conversion uses
+`or`, `not`, `handle` — graph-entity reference, §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
@@ -3285,7 +3284,7 @@ operators on one row share precedence.
 | 10   | `<<`, `>>` (shifts)                                       | left            |
 | 11   | `+`, `-`                                                  | left            |
 | 12   | `*`, `/`, `\`, `%`                                        | left            |
-| 13   | `-`, `~`, `weak` (prefix)                                 | right           |
+| 13   | `-`, `~`, `handle`, `portal` (prefix)                     | right           |
 | 14   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
 | 15   | `::`                                                      | left            |
 
@@ -4455,8 +4454,8 @@ value"; `Type[Drivable]` is "some Drivable *type*."
 Its primary use is to carry a node, connection, or effect **type** as a
 value — a template or slot that defers *which kind* is placed — given that
 the corresponding *instances* are held only by borrow and so are not
-storable (§13.3.6.1). A *weak reference* to an instance, by
-contrast, is storable: a `Handle[T]` (§13.3.6.2) carries a graph entity by
+storable (§13.3.6.1). For storing an instance reference, the corresponding
+form is a `Handle[T]` (§13.3.6.2), which carries a graph entity by
 identity as a storable value — the instance-level companion to `Type[…]`'s
 type-level one.
 
@@ -8675,7 +8674,8 @@ The compiler's cluster analysis (§11.3.4) handles
 both cases.
 
 **The `Handle[T]` exception.** A `Handle[T]` (§13.3.6.2) is *not* an alias — it
-is a `Copy` value that weakly designates a graph entity — and so is exempt from
+is a `Copy` value that designates a graph entity by identity-stamped
+reference — and so is exempt from
 every restriction above: a handle may be stored in a cell, record field, enum
 payload, or tuple like any other value. Its *resolution* `Option[&T]`, by
 contrast, contains a borrow (here `&T` is elaborated-form notation per §11.9,
@@ -12619,7 +12619,7 @@ borrows** whose length `N` is an implicit const-generic: each placement site
 fixes its own `N` (the exact static supply there), and the declared
 cardinality supplies the compile-time bounds `min..max` that every site's
 `N` must satisfy. Reading through it is direct and zero-ceremony —
-`channels[0].gain`, no `!`, no Handle resolution. Nothing about the form is
+`channels[0].gain`, no Handle resolution. Nothing about the form is
 a special construct; its behavior is the ordinary behavior of const-generic
 arrays:
 
@@ -12638,7 +12638,7 @@ arrays:
 - **No storage**: a view's elements are borrows, so the value is transient
   by the ordinary borrow rules (§11.9, §11.11) — usable in loops, indexing,
   and calls; **storable nowhere**. To persist a reference to a child, take a
-  `Handle` explicitly with `weak` (`attr favorite: Handle[Channel] = weak
+  `Handle` explicitly with `handle` (`attr favorite: Handle[Channel] = handle
   channels[0]`, §13.3.6.2); no implicit auto-resolve is added.
 
 For a **`dynamic`** view, the view name is not an array but a **reactive
@@ -13171,19 +13171,18 @@ across time and across re-evaluation — a connection whose destination re-point
 (§13.5.4.9). The storable form of such a designation is a **`Handle[T]`**.
 
 A `Handle[T]` is a **value** — `Copy`, and freely placed in cells, fields,
-tuples, and enum payloads — that *weakly* designates a graph entity. "Weak" is
-literal: a handle **never keeps its referent alive**. There is no reference
-count behind it and no reachability through it; an entity's lifetime is governed
-solely by the graph position or `repeat` scope that owns it (§13.3.6.1,
-§13.5.4). A handle may outlive its referent, and simply resolves to "absent"
-once the referent is gone.
+tuples, and enum payloads — that designates a graph entity by an
+identity-stamped reference. A handle **never keeps its referent alive**:
+there is no reference count behind it and no reachability through it. An
+entity's lifetime is governed solely by the graph position or `repeat`
+scope that owns it (§13.3.6.1, §13.5.4). A handle may outlive its referent,
+and then resolves to "absent".
 
 **Kind-scoped.** `T` ranges over graph-entity types only — a node, connection,
 or effect type, or a trait that `requires` one of the `Node` / `Connection` /
-`Effect` markers (§3.7.4). There are **no handles to records, tuples, or other
-plain values**: a value has no identity and no tracked lifecycle to be weak
-*about*. What you would weakly hold is the value's *home* — the node or cell it
-lives in — so handle the home, not the value.
+`Effect` markers (§3.7.4). For a reference to a record, tuple, array, `mut`
+binding, cell content, or pool entry, the parallel storable form is a
+`Portal[T]` (§13.3.6.3).
 
 **Resolution is transparent and type-directed.** A handle has no `.resolve()`
 method. As with the value/reference duality of a reactive cell (§13.2.8), what a
@@ -13192,7 +13191,7 @@ handle *denotes* depends on the position it occupies:
 - In a position typed `Handle[T]` — a handle slot, a `Handle[T]` parameter or
   field, a handle-to-handle comparison — the handle denotes the **inert handle
   value**. No graph entity is read and nothing becomes reactive.
-- In any *read* or *elimination* position — `match`, `?`, `!`, or anywhere a
+- In any *read* or *elimination* position — `match`, `?`, or anywhere a
   `&T` is expected — the handle denotes its **resolution**: an `Option[&T]`,
   `Some(&entity)` while the referent is live and `None` once it is gone. *This*
   read is the reactive one — it joins the reader's provenance (§13.12.1) and
@@ -13205,22 +13204,36 @@ cell split: a `Handle[T]` is to its `Option[&T]` resolution what a value cell
 is to its `T` value (§13.2.8) — one the durable home, the other the momentary
 read.
 
-**Creation — `weak`.** A handle is produced by the prefix operator `weak`
-applied to a node / connection / effect reference:
+**Creation — `handle`.** A handle is produced by the prefix keyword `handle`
+applied to a node, connection, or effect reference:
 
 ```
-signal target: Handle[Drivable] = weak some_car   // a stored, re-pointable designation
-target.write(weak other_car)                       // re-point it later (§13.2)
+signal target: Handle[Drivable] = handle some_car   // a stored, re-pointable designation
+target.write(handle other_car)                       // re-point it later (§13.2)
 ```
 
 Wherever a `Handle[T]`-typed position receives a reference directly — assigning
 `some_car` to a `Handle`-typed attr, or returning it where a `Handle[T]` is
-expected — the `weak` coercion is inserted automatically. There is no
-`.handle()` method and no sigil; `weak` is the one explicit spelling.
+expected — the `handle` coercion is inserted automatically. There is no
+`.handle()` method and no sigil; `handle` is the explicit spelling (and the
+parallel `portal` is the explicit spelling for `Portal[T]`, §13.3.6.3).
 
-**Elimination.** A handle is consumed through exactly three forms, none of them
-handle-specific. They are the ordinary `Option` eliminators, reached because a
-handle reads as `Option[&T]`:
+**Named-place-only.** Both `handle` and `portal` accept only references to
+existing slots, never raw values, constructors, literals, or unbound
+temporaries; the referent must have an independent owner:
+
+```
+handle some_voice              // ✓ reference to a placed entity
+handle find_voice()             // ✓ returns a node-reference; graph entity already placed
+handle Voice(...)               // ✗ constructor — no graph slot yet
+```
+
+**Type, not mode.** `Handle[T]` is a type, not a parameter-passing mode
+(§11.7.4); function parameters carry it in type position
+(`fn f(h: Handle[T])`), not as a `handle h: T` mode.
+
+**Elimination.** A handle is consumed through the ordinary `Option`
+eliminators, reached because a handle reads as `Option[&T]`:
 
 ```
 match target:                       // both arms explicit
@@ -13234,7 +13247,7 @@ let s = target?.speed               // propagate None upward (§8.4)
 plus a **generation** stamp. Resolution compares the stamp: if the slot was
 dismounted and later reused by a different entity, the old handle's generation no
 longer matches and it resolves to `None` — never to the wrong entity. This ABA
-guard is what makes weak resolution sound across mount churn. Because mount and
+guard is what makes handle resolution sound across mount churn. Because mount and
 dismount flip a handle's resolution, a handle read is a *dynamic* dependency
 (§13.10.5).
 
@@ -13243,6 +13256,85 @@ dismount flip a handle's resolution, a handle read is a *dynamic* dependency
 identity rule of §13.5.4.8, the same key reappearing in the source remounts the
 *same* scope, so a key-addressed handle that had resolved `None` resolves `Some`
 again when its key returns.
+
+##### 13.3.6.3 Storable references to plain values: the `Portal[…]` type
+
+§13.3.6.2 introduces `Handle[T]` for graph entities — node, connection, and
+effect instances whose mount/dismount lifecycle the runtime tracks. The
+parallel form for **non-graph** data — record fields, tuple components,
+array elements, `mut` bindings, cell contents, pool entries — is a
+**`Portal[T]`**.
+
+A `Portal[T]` is a **value** — `Copy`, and freely placed in cells, fields,
+tuples, and enum payloads — that designates a non-graph slot by an
+identity-stamped reference. A portal **never keeps its referent alive**:
+there is no reference count behind it and no reachability through it. The
+slot's lifetime is governed by its owning binding or container. A portal may
+outlive its slot, and then resolves to "absent".
+
+**Kind-scoped.** `T` ranges over non-graph types: primitives, records,
+enums, newtypes, tuples, arrays. For a reference to a graph entity — a
+node, connection, or effect — use `Handle[T]` (§13.3.6.2).
+
+**Resolution is transparent and type-directed**, exactly as for handles:
+
+- In a position typed `Portal[T]` — a portal slot, a `Portal[T]` parameter
+  or field, a portal-to-portal comparison — the portal denotes the **inert
+  portal value**. No slot is read and nothing becomes reactive.
+- In any *read* or *elimination* position — `match`, `?`, or anywhere a
+  `&T` is expected — the portal denotes its **resolution**: an
+  `Option[&T]`, `Some(&value)` while the slot is live and `None` once it
+  is gone. *This* read is the reactive one — it joins the reader's
+  provenance (§13.12.1) and re-fires when the slot drops or is rebound
+  (§13.10.5).
+
+As with handles, `Option[&T]` *contains a borrow* and is therefore itself
+unstorable (§11.9.1) — the transient, just-resolved view. `Portal[T]`
+contains no borrow and is the storable carrier.
+
+**Creation — `portal`.** A portal is produced by the prefix keyword
+`portal` applied to a reference to a non-graph slot:
+
+```
+let r = SomeRecord(x: 1, y: 2)
+let p: Portal[SomeRecord] = portal r     // a stored, non-owning window onto r's slot
+```
+
+The named-place-only rule (§13.3.6.2) applies: `portal` accepts only
+references to existing slots — never raw values, constructors, literals,
+or unbound temporaries:
+
+```
+portal some_record              // ✓ named binding
+portal SomeRecord(...)          // ✗ constructor — no slot yet
+portal { 'a': 'b' }             // ✗ literal — no slot
+portal some_fn()                // ✗ temporary; born-dead, no independent owner
+```
+
+Wherever a `Portal[T]`-typed position receives a reference directly, the
+`portal` coercion is inserted automatically.
+
+**Type, not mode.** `Portal[T]` is a type; function parameters carry it in
+type position (`fn f(p: Portal[T])`), not as a `portal p: T` mode.
+
+**Slot identity and the generation guard.** A portal is, concretely, a
+slot path plus a **generation** stamp. Resolution compares the stamp: if
+the slot was dropped and later reused by a different value, the old
+portal's generation no longer matches and it resolves to `None` — never to
+the wrong value.
+
+**Reactivity.** `Cell[T]` (§13.2.8) and `Portal[T]` are orthogonal axes.
+`Cell[T]` is a reactive reference whose read subscribes; `Portal[T]` is an
+inert window whose read does not. `Portal[Cell[T]]` is well-formed: the
+portal resolves to `Option[&Cell[T]]`, and the inner cell read remains
+reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
+(§13.10.5) handles the portal flipping to `None` the same way it handles a
+connection re-pointing.
+
+**Hot reload.** A portal preserves across reload only when its targeted
+slot's identity is preserved, by the same path-based identity rule as
+cells (§13.15.2). Slot relocation or removal invalidates portals to that
+slot.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -14368,7 +14460,8 @@ node Feed:
       PostCard | data=post rank=i:
         Avatar as avatar | url=post.author_url
 
-  // `posts_view[selected].avatar` is a Handle[Avatar] — storable, weak:
+  // `posts_view[selected].avatar` is a Handle[Avatar] — storable,
+  // resolves to None when the key leaves:
   derived selected_avatar: Handle[Avatar] = posts_view[selected].avatar
 
   // read through it transiently where a value is needed:
@@ -14399,9 +14492,9 @@ table is **flat**: names, not paths. Two consequences:
 - **Anonymous placements are unaddressable.** Leaving a placement unnamed is the
   deliberate way to keep it private to its scope.
 
-Because the result is a `Handle` (§13.3.6.2), it is *weak*: `<view>[k].name`
-resolves to `Some(&node)` while key `k`'s scope is mounted and to `None`
-otherwise (an absent key, a dropped element); eliminate with `match` or `?`.
+The result is a `Handle` (§13.3.6.2): `<view>[k].name` resolves to
+`Some(&node)` while key `k`'s scope is mounted and to `None` otherwise
+(an absent key, a dropped element); eliminate with `match` or `?`.
 By the identity rule of §13.5.4.8, a key that leaves and later returns
 remounts the *same* scope, so a stored view handle resumes resolving `Some`
 when its key comes back.
