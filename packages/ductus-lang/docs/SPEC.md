@@ -13209,6 +13209,42 @@ in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
 
+**`for … as <name>` — hoisting named placements.** A compile-time `for`
+in a node body or placement body may carry an `as <name>` clause that
+hoists its loop-scoped named placements out of the per-iteration body
+and binds them collectively to `<name>` in the enclosing scope:
+
+```
+node OscBank[const N: usize]:
+  expose:
+    for i in 0..N as bank:
+      Oscillator as osc | freq=base_freq(i)        // emitted N times
+      Filter     as flt | cutoff=cutoff_freq(i)    // emitted N times
+
+  // bank : [bank::entry; N]
+  // bank::entry has fields named after the inner `as` placements:
+  //   osc: Oscillator
+  //   flt: Filter
+
+  derived total: f32 = sum_outputs(bank)            // pass the whole array
+  derived first_freq: f32 = bank[0].osc.freq        // index, then field
+```
+
+`<name>::entry` is a **compiler-minted nominal record** per `for … as`
+site — synthetic, path-derived identity — whose fields are the named
+placements (`as <name>`) inside the loop body. The hoisted binding has
+type `[<name>::entry; N]`: a fixed-extent array of these records, where
+`N` is the loop's compile-time iteration count.
+
+Field access is `bank[i].osc`; whole-row access is `bank[i]`. The minted
+`entry` type is **not nameable in user code as a parameter type** — to
+pass a whole row to a non-generic function, the function must be
+generic over the row's type. Field access never needs the entry name.
+
+`for … as` is the static counterpart to `repeat … as`'s
+`Cell[Map[Key, view::entry]]` (§13.5.4.9): array↔map, positional↔keyed,
+static↔Cell-dynamic. The minted entry-record machinery is parallel.
+
 ##### 13.3.3.4 Dynamic views
 
 A view marked `dynamic` (§13.3.3.1) may be supplied by a caller's

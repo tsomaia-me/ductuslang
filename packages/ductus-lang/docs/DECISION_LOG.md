@@ -2095,7 +2095,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 016-275. A reactive value expression combining one or more reactive cells always produces a `Derived[T]`. (§13.2.8)
 016-276. Value-reading operator and function parameters are typed `Cell[T]` (the umbrella); a `Stream[T]` has no current value, so it is excluded at the read site rather than by the signature. (§13.2.8)
 
-## 017. Nodes & Views — 292 Rules
+## 017. Nodes & Views — 295 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed connections. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2162,6 +2162,9 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-60. A type-emitted `for` expands once at type elaboration and applies uniformly to every instance. (§13.3.3.3)
 017-61. A placement-body `for` expands at each placement site and is caller supply: its placements count against the receiving type's views and appear in the matching view(s). (§13.3.3.3)
 017-62. A type-emitted `for` may place connections sourced from the enclosing instance; they are self-sourced — exempt from the `outgoing` connection-views, subject to endpoint typing, and engaging at their written position in the unrolled sequence. (§13.3.3.3)
+017-304. A compile-time `for` in a node body or placement body may carry an `as <name>` clause: `for i in 0..N as bank: Oscillator as osc | freq=f(i)`. The `as <name>` hoists the loop-scoped named placements out of the per-iteration body and binds them collectively to `<name>` in the enclosing scope. (§13.3.3.3)
+017-305. `for … as <name>` binds `<name>` to `[<name>::entry; N]`, a fixed-extent array of compiler-minted nominal records. `<name>::entry` is path-derived, synthetic, and not nameable in user code as a parameter type; its fields are the named placements (`as <field>`) inside the loop body. Access is `<name>[i].<field>`; whole-row access is `<name>[i]`. (§13.3.3.3)
+017-306. `for … as` is the static counterpart to `repeat … as` (018-127): array↔map, positional↔keyed, static↔Cell-dynamic; the compiler-minted entry-record machinery is parallel. (§13.3.3.3)
 017-63. A caller supplies a `dynamic` view with `repeat` in the placement body: `repeat post in posts keyed by post.id: Post / post`. (§13.3.3.4)
 017-64. Feeding an unmarked (static) view with a `repeat` is a compile error at the feeding site, naming the receiving view. (§13.3.3.4)
 017-65. A `dynamic` view is a reactive cell whose value is the current keyed, ordered collection of supplied children, updating as children mount and dismount. (§13.3.3.4)
