@@ -4023,7 +4023,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 227 Rules
+## 033. Compilation Model & IR — 233 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4071,6 +4071,10 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 033-44. IR `str` is a pooled-string index. (§15.4)
 033-45. Records and enums appear in the IR as `%TypeId` references whose layout lives in the `types` table. (§15.4)
 033-46. `pool_index<%PoolId>` is the IR type for dynamic-size values. (§15.4)
+033-263. Slice types `T[..N]` (compile-time-known length) and `T[..]` (runtime length) join the IR type vocabulary (033-43) as borrow types — represented at the ABI as `(pointer, length)` pairs — used in behavior parameter and return positions only; per 013-52 / 017-151, slices are not cell-storable. (§15.4.1, §15.4.4)
+033-264. `Portal[T]` values join the IR type vocabulary as `(slot_path, generation)` pairs, paralleling `Handle[T]`'s representation. Portal-typed cells are `Copy` and stored inline; resolution compares the stamp in the portal slot table, and a mismatched stamp resolves to `None`. (§15.4.1, §15.4.4)
+033-265. `Map[K, V]` cells use index-based pool storage (033-46 family); the cell value is `pool_index<%PoolId>` resolving to the keyed-associative payload at the pool slot. (§15.4.1)
+033-266. `Bundle[T]` storage variants are inline (rectangular `Handle[T][M][N]` backing) or pool-indexed (jagged: flat handle backing + offsets table); the user-visible cell value is the resulting `Copy`/storable handle to that backing in either case. (§15.4.1)
 033-47. Behaviors are fully typed. (§15.4)
 033-48. The graph is type-erased to tag plus size/align. (§15.4)
 033-49. The IR's text form is normative: it is the serialization this specification defines (grammar in §15.4.4 + §15.4.6) and what tests assert against; the §15.4.1 data model is what it renders. No binary or wire encoding is mandated. (§15.4)
@@ -4091,6 +4095,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 033-61. A surface stream lowers to the `stream` primitive. (§15.4.1)
 033-62. A surface effect lowers to the `effect` primitive. (§15.4.1)
 033-63. A `scope` is the structural container for a node (top-level or child) or operator instance, or a `repeat`'s per-element instance. (§15.4.1)
+033-267. A `Bundle[T]` lowers to an **anonymous grouping** role on the `scope` primitive (033-63): a pure structural container the runtime walks like any other scope, but unnamed and carrying no per-instance state of its own. The bundle's row count becomes the grouping scope's child count; each child slot is an indexed entry into the row. (§15.4.1)
 033-64. A scope's `exposes` list holds the ordered placements the runtime traverses — child scopes and references to the scope's connection entries, in exposition order (engagement positions). (§15.4.1)
 033-65. A scope's hosted effects live in a separate `effects` set and never appear in `exposes`. (§15.4.1)
 033-66. A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`. (§15.4.1)
@@ -4130,6 +4135,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 033-102. A stream entry's `source_dependencies` are the input cells the source expression reads, used for dirty-set propagation when the source is a derived chain. (§15.4.1)
 033-103. A stream entry's `observation_cell_ids` name the synthesized observation cells: `pending_count`, `pressure`, `is_full`, `dropped_total`, `rejected_total`, `last_overflow_at`. (§15.4.1)
 033-104. A stream entry's `reset_on_reload` boolean is true exactly when the stream carries `@reset_on_reload`. (§15.4.1)
+033-268. Across hot reload, a `Portal[T]` preserves iff its target slot's path and kind match the §13.15.2 cell-identity rule; relocation or removal invalidates the portal, and the runtime regenerates the slot stamp at the new path (parallel to 028-6 for cell-value preservation). (§15.4.6)
 033-261. A stream entry's `reset_on_reopen` boolean is true exactly when the stream carries `@reset_on_reopen`; on a `recurrent[N] stream` it directs the reopen reset of output/input history and buffer (030-281). (§15.4.1)
 033-105. A stream entry's `output_history_size` is the integer N from `recurrent[N] stream`, or 0 for a non-recurrent stream declaration. (§15.4.1)
 033-106. `output_history_size` determines the number of past-event slots allocated for `.past(k, ...)` access on the stream's output. (§15.4.1)

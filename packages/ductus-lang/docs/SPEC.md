@@ -22617,11 +22617,16 @@ effect-`desired` runs. The two meet only through the behavior ABI
 
 **Shared type table.** Both parts speak one monomorphic type vocabulary
 (the frontend has specialized all generics): the primitives of §4.1, plus
-`str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, records and
-enums as `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
-dynamic-size values, and `closure<(T,…)->R>`. Behaviors are fully typed;
-the graph is **type-erased** to tag + size/align — the runtime moves bits
-and never needs nominal types (§15.4.3).
+`str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, slices
+`T[..N]` and `T[..]` (borrow types — `(pointer, length)` ABI shape, used
+in behavior parameter and return positions only, never as cell values),
+maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored
+when jagged, inline array when rectangular), records and enums as
+`%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
+dynamic-size values, `(slot_path, generation)` pairs for `Handle[T]` and
+`Portal[T]` (§13.3.6.2–.3), and `closure<(T,…)->R>`. Behaviors are fully
+typed; the graph is **type-erased** to tag + size/align — the runtime
+moves bits and never needs nominal types (§15.4.3).
 
 **Serialization.** The IR's **text form is normative**: it is the one
 serialization this specification defines, and it is what tests assert against.
