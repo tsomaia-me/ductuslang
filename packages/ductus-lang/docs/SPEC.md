@@ -15031,9 +15031,9 @@ In each rejected context, the diagnostic identifies the misplaced
 
 A `repeat` materializes its scopes anonymously: nothing in the surrounding body
 can name a particular child, because the children are keyed by data, not written
-out individually. The `as <view>` clause closes that gap. It binds a **keyed
-view** — a lookup table over the scopes the `repeat` currently holds, addressed
-by scope key:
+out individually. The `as <view>` clause closes that gap. It binds `<view>`
+to a reactive `Cell[Map[Key, <view>::entry]]` (§9.5) whose keyset tracks the
+source's current keys.
 
 ```
 node Feed:
@@ -15044,48 +15044,69 @@ node Feed:
       PostCard | data=post rank=i:
         Avatar as avatar | url=post.author_url
 
-  // `posts_view[selected].avatar` is a Handle[Avatar] — storable,
-  // resolves to None when the key leaves:
-  derived selected_avatar: Handle[Avatar] = posts_view[selected].avatar
+  // posts_view : Cell[Map[PostId, posts_view::entry]]
+  // posts_view::entry has one field per `as <name>` placement — here, `avatar`
 
-  // read through it transiently where a value is needed:
+  // Reading a member is a transient projection through the Cell+Map:
   derived selected_label: string =
-    match selected_avatar:
-      Some(a): a.url
-      None: "(none)"
+    match posts_view.get(selected)?.avatar:
+      Some(a): a.url        // &Avatar — read in place
+      None:    "(none)"     // key absent or scope unmounted
 ```
 
-**Names are scope entries, not instance members.** This is the governing
-principle. A node *instance* exposes its content through its children and
-exposition (§13.4, §13.3.7.3); a *scope* exposes its placements through their
-**names**. `<view>` reifies the repeat's scope as a value, so addressing a child
-goes through the placement name, not through any instance:
+**Compiler-minted `<view>::entry`.** The `entry` record is synthetic and
+path-derived per `repeat … as` site; its **fields are the named placements
+inside the repeat body** (here, `avatar`). The type parallels the
+`for…as` minted record and is not nameable in user code as a parameter
+type — field access is the user-facing surface.
 
-- `<view>[<key>]` selects the scope for `<key>`.
-- `<view>[<key>].<name>` yields a **key-addressed `Handle[T]`** for the
-  placement named `<name>` (named with `as <name>` at its placement site), where
-  `T` is that placement's node type. The form parallels the type-bulk access of
-  §13.4, lifted to a per-key lookup.
+**Map access composes through the Cell** by auto-deref (§13.17.3.1):
 
-Every **named** placement in the body is addressable this way, at any nesting
-depth — any named placement in the scope (`posts_view[k].avatar`). The
-table is **flat**: names, not paths. Two consequences:
+- `<view>.get(k)` returns `Cell[Option[<view>::entry]]`.
+- `<view>.get(k)?.<name>` is a transient projection that resolves to
+  `Option[&T]` — `Some(&node)` while key `k`'s scope is mounted and `None`
+  otherwise.
 
-- **Names are unique within the `repeat` body**, across nesting. A duplicate
-  `as`-name inside one `repeat` is a compile error.
-- **Anonymous placements are unaddressable.** Leaving a placement unnamed is the
-  deliberate way to keep it private to its scope.
+The projection is **transient** — `Option[&T]` contains a borrow and is
+not storable (§11.9.1). The **durable** reference across time is the
+**key**: store the key, look up afresh. By the identity rule of
+§13.5.4.8, a key that leaves and later returns remounts the *same* scope,
+so a stored key resumes resolving to `Some` when re-looked-up after the
+key returns.
 
-The result is a `Handle` (§13.3.6.2): `<view>[k].name` resolves to
-`Some(&node)` while key `k`'s scope is mounted and to `None` otherwise
-(an absent key, a dropped element); eliminate with `match` or `?`.
-By the identity rule of §13.5.4.8, a key that leaves and later returns
-remounts the *same* scope, so a stored view handle resumes resolving `Some`
-when its key comes back.
+**Read-only.** `<view>` is a `Cell[Map[…]]`, and `Cell[T]` parameters are
+read-only (§13.2.8): there is no `<view>[k] = v` or `delete <view>[k]`
+form. The source drives keyset and entry changes.
 
-Nested `repeat`s each own a separate `as` view and do not flatten into the outer
-one; a nested view is scoped to its parent key, so cross-level addressing
-composes view by view rather than through one global table.
+**Named placements only; flat per body.** Every named placement in the
+repeat body becomes a field on `<view>::entry`, at any nesting depth
+within the same body. Names are flat — fields, not paths. Two
+consequences:
+
+- **`as`-names are unique within the `repeat` body**, across nesting. A
+  duplicate is a compile error.
+- **Anonymous placements are unaddressable** through the view; leaving a
+  placement unnamed keeps it private to its scope.
+
+**Nested `repeat … as`.** Each nested `repeat … as <inner>` materializes
+its own `Cell[Map[…]]`, surfaced as a field on the outer `entry`:
+
+```
+posts_view : Cell[Map[PostId, posts_view::entry]]
+posts_view::entry:
+  avatar  : Avatar           // named placement
+  replies : Cell[Map[ReplyId, replies::entry]]   // nested repeat … as replies
+```
+
+Cross-level addressing composes view by view:
+`posts_view.get(post_id)?.replies.get(reply_id)?.<name>`.
+
+**`at` on unordered sources.** When a `repeat`'s source is unordered (a
+`Map` per §9.5, a `HashSet`, etc.), the `at <index>` form is **unstable**:
+the index reflects the iterator's emit order (012-173 / 018-83), which
+can differ commit-to-commit. The compiler accepts `at` on unordered
+sources but flags the instability; programs relying on stable positional
+identity should use `keyed by <expr>` (§13.5.4.1) instead.
 
 ### 13.6 Connections
 

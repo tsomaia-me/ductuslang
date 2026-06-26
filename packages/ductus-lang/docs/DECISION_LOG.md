@@ -2390,7 +2390,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-260. Operators and `repeat` are the only consumers of a `dynamic` view. (§13.4.4)
 017-261. View and named individual access coexist on the same instance: `c.oscs[0]` (indexed, legal under `+`) and `c.filters[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 
-## 018. Keyed Scopes & `repeat` — 137 Rules
+## 018. Keyed Scopes & `repeat` — 139 Rules
 
 018-1. Every conformant runtime exposes the three keyed-scope operations — `scope_obtain`, `scope_drop`, `scope_evaluate` — underlying the language's dynamic-scope reactive constructs. (§13.5)
 018-2. Each instantiation of a keyed-scope template is backed by its own state cells. (§13.5)
@@ -2517,18 +2517,20 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 018-124. The `at` index never derives the key implicitly: it is excluded from the implicit key-derivation paths (`Keyed` trait and stringifiable element). (§13.5.4.8)
 018-125. Positional identity requires explicit opt-in by writing `keyed by <index>`; there is no implicit path to index keying. (§13.5.4.8)
 018-126. Without `as`, a `repeat` materializes its scopes anonymously: nothing in the surrounding body can name a particular child. (§13.5.4.9)
-018-127. `as <view>` binds a keyed view: a lookup table over the scopes the `repeat` currently holds, addressed by scope key. (§13.5.4.9)
-018-128. Names are scope entries, not instance members: a scope exposes its placements through their names, so addressing a child goes through the placement name, not an instance. (§13.5.4.9)
-018-129. `<view>[<key>]` selects the scope for `<key>`. (§13.5.4.9)
-018-130. `<view>[<key>].<name>` yields a key-addressed `Handle[T]` for the placement named `<name>` via `as <name>` at its site, with `T` that placement's node type: `posts_view[selected].avatar`. (§13.5.4.9)
-018-131. Every named placement in the body is addressable through the view at any nesting depth. (§13.5.4.9)
-018-132. The view table is flat: it maps names, not paths. (§13.5.4.9)
+018-127. `as <view>` after a `repeat` binds `<view>` to a reactive `Cell[Map[Key, <view>::entry]]` whose keyset tracks the source's current keys. The `Cell` provides the reactivity; `Map` (§9.5) provides keyed lookup. (§13.5.4.9)
+018-128. `<view>::entry` is a compiler-minted nominal record per `repeat … as` site; its fields are named after the `as <name>` placements inside the repeat body. The record is path-derived and synthetic — not nameable in user code as a parameter type (parallel to `for…as`'s entry type). (§13.5.4.9)
+018-129. Map access composes through the `Cell` by auto-deref (029-24): `<view>.get(k)` returns `Cell[Option[<view>::entry]]`, and a body read like `<view>.get(k)?.<name>` resolves to `Option[&T]` with `T` the field's declared type. (§13.5.4.9)
+018-130. A view lookup is **transient**: the `Option[&T]` projection contains a borrow and is not storable (017-151). The durable reference across time is the **key** — store the key, look up afresh. (§13.5.4.9)
+018-131. Every named placement in the repeat body becomes a field on `<view>::entry`; a nested `repeat … as <inner>` materializes the inner field's type as `Cell[Map[InnerKey, inner::entry]]`, composing view by view (018-138/139). (§13.5.4.9)
+018-132. The minted `<view>::entry` namespace is per-repeat-body: each named placement contributes one field; the user accesses fields, not paths. (§13.5.4.9)
 018-133. `as`-names must be unique within one `repeat` body, across nesting; a duplicate is a compile error. (§13.5.4.9)
-018-134. Anonymous placements are unaddressable through the view; leaving a placement unnamed keeps it private to its scope. (§13.5.4.9)
-018-135. A view lookup is a storable `Handle` (§13.3.6.2): `<view>[k].<name>` resolves to `Some(&node)` while key `k`'s scope is mounted and to `None` otherwise. (§13.5.4.9)
-018-137. A key that leaves and later returns remounts the same scope, so a stored view handle resumes resolving `Some` when its key comes back. (§13.5.4.9)
-018-138. Nested `repeat`s each own a separate `as` view and do not flatten into the outer one. (§13.5.4.9)
-018-139. A nested view is scoped to its parent key; cross-level addressing composes view by view rather than through one global table. (§13.5.4.9)
+018-134. Anonymous placements contribute no field to `<view>::entry`; leaving a placement unnamed keeps it private to its scope. (§13.5.4.9)
+018-135. A view lookup resolves to `Some(&node)` while key `k`'s scope is mounted and `None` otherwise — the same liveness model as a handle resolution (017-149). (§13.5.4.9)
+018-137. A key that leaves and later returns remounts the same scope, so a stored key resumes resolving to `Some` when re-looked-up after the key returns (parallel to 018-122). (§13.5.4.9)
+018-138. Nested `repeat`s each own a separate `as` view; the outer view's `<view>::entry` carries an inner `Cell[Map[...]]` field rather than flattening keys. (§13.5.4.9)
+018-139. A nested view is scoped to its parent key; cross-level addressing composes view by view: `outer.get(k1)?.inner.get(k2)?.<name>`. (§13.5.4.9)
+018-140. `<view>` (the `Cell[Map[…]]` binding) is read-only (016-173): the source drives keyset and entry changes; there is no `<view>[k] = v` or `delete <view>[k]` form. (§13.5.4.9)
+018-141. `at <index>` is unstable when the `repeat` source is unordered (`Map`, `HashSet`, …): the index reflects the iterator's emit order (012-173 / 018-83), which can differ commit-to-commit. The compiler accepts `at` on unordered sources but flags the instability; programs relying on stable positional identity should use `keyed by <expr>` (018-62). (§13.5.4)
 
 ## 019. Connections — 78 Rules
 
