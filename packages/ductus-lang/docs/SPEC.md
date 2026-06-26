@@ -6687,6 +6687,154 @@ collection" type. The only primitive such a collection rests on is the
 allocator intrinsic, a capability available to any program; a user can
 implement an equivalent collection with no privileged access.
 
+#### 9.3.7 Slices: `T[..N]` and `T[..]`
+
+A **slice** is a *borrow of a contiguous sub-range* of a value, instead of
+the whole value. Slices are language-level types, distinct from owned
+arrays (§9.3.1), with dedicated syntax: `T[..N]` is a slice whose length
+`N` is known at compile time; `T[..]` is a slice whose length is runtime
+data.
+
+```
+let arr: i32[5] = [10, 20, 30, 40, 50]
+let mid: i32[..3] = arr[1..4]          // compile-time length 3
+let dyn: i32[..]  = arr[i..j]          // runtime length
+```
+
+The slice forms are visible to user and compiler — a slice is *not* an
+alias for `T[N]`; the type expresses "a window onto something else." `..`
+evokes the range syntax (§12.2).
+
+##### Borrow semantics
+
+A slice is a borrow under the ordinary rules of §11.9:
+
+- It is a cluster member rooted in the source binding (§11.3.4, 013-48).
+- It cannot be stored in a cell, record field, payload, or tuple (013-52).
+- It cannot outlive its source (013-51).
+- While any slice is live, the source value cannot be moved or mutated as a
+  whole (013-56/57), and per-element assignment through the source is also
+  blocked (013-197); §11.3.4 admits sub-range borrows as the single
+  ownership-level addition (013-250).
+- Returning a slice extends the cluster across the call boundary (013-63).
+
+To persist data out of a slice, copy an **element** out (a value, or a
+`Handle[T]` per 017-142); the slice itself is never storable.
+
+##### The `arr[range]` operator
+
+`arr[i]` is element access (012-74); `arr[range]` is slice access:
+
+```
+let s = arr[2..5]           // i32[..3] — a length-3 slice
+let t = vec[k..k+10]        // T[..]   — a runtime-length slice
+```
+
+The slice operator is uniform across arrays, slices, and stdlib indexed
+sequences. **Strings are exempt** — they remain non-indexable per 012-26;
+string slicing uses the methods of §9.1.7.
+
+##### Open-ended ranges (slice-index only)
+
+Inside `[…]` for slicing, three open-ended forms are sugar:
+
+```
+arr[..n]    // 0..n
+arr[k..]    // k..arr.length
+arr[..]     // whole — 0..arr.length
+```
+
+These forms exist only inside a slice-index `[…]`; a bare `let r = k..`
+remains a parse error (014-7 is unchanged).
+
+##### From-the-end indexing — `^k`
+
+Inside `[…]` the prefix `^k` means `arr.length - k`:
+
+```
+arr[^1]         // last element
+arr[^2..]       // last two
+arr[..^1]       // all but the last
+arr[^3..^1]     // window from third-from-end to second-from-end (exclusive)
+```
+
+The `^` here is position-disambiguated from binary bitwise xor (007-69) —
+it is recognized as the from-end prefix only directly inside `[…]` or
+after `..` within a slice index. No new keyword; nothing else in the
+grammar changes.
+
+Plain or computed negative indices on `arr[i]` continue to trap (012-84);
+`^k` is the only form for from-the-end addressing.
+
+##### Window, not copy
+
+A slice is a zero-copy view onto the source:
+
+```
+let s = arr[2..5]   // no allocation; reads through to arr's elements
+```
+
+An owned copy is an explicit operation — e.g. an array literal or a
+collection constructor — not the slice operator's default. Bundles
+(§13.3.3.5) rely on this: a row slice is a window onto the bundle's
+backing storage, never a copy.
+
+##### `.length`
+
+```
+let n: usize = arr.length          // compile-time-known for T[N], T[..N]
+let m: usize = dyn_slice.length    // runtime for T[..]
+```
+
+The accessor is the full word `length`, not `len()`.
+
+##### Read-only
+
+Slices are read-only — no mutable slice form exists. A write through an
+aliased reference is precluded by Ductus' no-mutable-references design
+(013-211); mutation of a sub-range goes through the owning `mut`
+binding's indexed assignment (013-197). While the slice is live, even
+element-by-element assignment through the source is blocked (013-57).
+
+##### Iteration
+
+`T[..N]` and `T[..]` implement `Iterable` and `IntoIterable` with the
+source-bearing pattern of §12.7.4, paralleling arrays (014-143):
+
+```
+for x in slice:                    // works for any T[N], T[..N], T[..]
+  process(x)
+```
+
+##### Widening at parameter positions
+
+```
+fn sum(s: i32[..]) -> i32: ...
+
+let arr: i32[5] = [...]
+let fixed: i32[..3] = arr[0..3]
+
+sum(arr)        // T[N]    widens to T[..]
+sum(fixed)      // T[..N]  widens to T[..]
+sum(arr[0..2])  // T[..2]  widens to T[..]
+```
+
+`T[N]` and `T[..N]` widen to `T[..]` at parameter positions. The widening
+is a zero-cost type-system view; the runtime representation already
+carries length.
+
+##### Safe access via `.get`
+
+```
+let opt: Option[i32]      = arr.get(i)        // safe element access
+let win: Option[i32[..]]  = arr.get(2..5)     // safe range access
+```
+
+`arr.get(i)` returns `Option[T]` (extending 012-86 to slices and Maps),
+and `arr.get(range)` returns `Option[T[..]]`. The `.get` family is the
+language-level safe-access surface across arrays, slices, and Maps
+(§9.x).
+
 ### 9.4 Time Types: `duration` and `instant`
 
 The language provides two built-in time types for representing temporal
@@ -7842,6 +7990,17 @@ that do not escape into a let or for-loop binding are
 call-expression-bounded (§11.7); category B and D storage operations
 are atomic at the assignment site. The cluster machinery handles
 let-rebindings and for-loop iteration variables specifically.
+
+**Sub-range borrows.** A borrow may span a sub-range of its source value,
+not only the whole value. This is the sole ownership-level addition for
+native slices (§9.3.7): `arr[2..5]` produces a `T[..3]` slice that
+borrows three contiguous elements of `arr`. Cluster membership,
+unstorability, source-move-and-mutate locks, and return rootedness all
+apply to sub-range borrows unchanged — the single difference is that the
+borrow's *extent* covers a contiguous sub-range rather than the whole
+value. While any slice into a source is live, the source as a whole is
+subject to the cluster's move/mutate lock above; per-element assignment
+through the source (013-197) is also blocked.
 
 #### 11.3.5 Rule (P): consume of a borrow-equivalent alias
 
@@ -9719,12 +9878,25 @@ compile-time values are themselves compile-time known. Unrolled loops do
 **not** dispatch through `IntoIterable` or `Iterable` (§12.3.1); element
 binding happens at compile time, not by calling `next` on an iterator.
 
-**Admitted iterables (v1).** Two forms produce compile-time-known
+**Admitted iterables (v1).** Three forms produce compile-time-known
 iteration:
 
 - A range `start..end` where both bounds are compile-time known (§12.2).
 - An array literal `[e1, …, eK]` where every element expression is
   compile-time known.
+- A **fixed-extent typed value** — `T[N]` (012-73), `T[..N]` (§9.3.7), or
+  a static view (§13.4.2) — whose extent is part of the type. The loop
+  unrolls structurally to one iteration per element, binding the
+  iteration variable to each successive element in index order; element
+  *values* may be runtime (an array's contents, a view's borrows), while
+  the iteration count and per-element binding structure are compile-time.
+
+For the first two forms, the iteration variable itself is compile-time
+known on each iteration, and §2.4.1 propagation can lift body
+sub-expressions to compile-time. For the third form, the iteration
+variable is a runtime value (an array element, a view borrow); the
+unrolling is purely structural — one body copy per element index, no
+iterator dispatch.
 
 Iterating over the elements of a tuple, and iterating over a list of
 types, are not provided. A concrete tuple's elements are reached by
@@ -9735,25 +9907,11 @@ array or `Vec`, iterated with `for` + `match`). A bare tuple element
 carries no tag to branch on, so tuple-element iteration would add nothing
 the enum pattern does not do better; see §9.2.5.
 
-**Extent is a type property, not an admission rule.** A type's *extent* —
-whether its element count is part of the type — is distinct from whether a
-`for` over a value of that type unrolls. Only the two admitted forms above
-(a compile-time range, a compile-time array literal) unroll; extent-knowledge
-alone does not make a value an unroll iterable.
-
-- **Fixed-extent types** (count known at compile time): `T[N]` (fixed-size
-  arrays), tuples, records. A *runtime-valued* `T[N]` is iterated with
-  `for i in 0..N` — a compile-time range, which unrolls the loop structure —
-  and runtime indexed access, not by `for x in buf` over the array value.
-  Tuple/record element iteration is not provided (above).
-- **Variable-extent types** (count varies at runtime): `Vec[T]`,
-  `SmallVec[T, N]` (capacity is `N` but occupied count varies),
-  `RingBuf[T, N]`, `String` / `s.chars()`, `HashMap`, ranges with runtime
-  bounds.
-
-Fixed extent is the same compile-time-known-count property §2.4.1.3 uses for
-const-eligibility and §13.12.4 uses for cell layout; it does not by itself
-admit a `for`.
+**Variable-extent types.** Types whose count varies at runtime do *not*
+unroll, regardless of context: `Vec[T]`, `SmallVec[T, N]` (capacity is
+`N` but occupied count varies), `RingBuf[T, N]`, `String` / `s.chars()`,
+ranges with runtime bounds. These dispatch through `IntoIterable` /
+`Iterable` at runtime per §12.3.1.
 
 **Call-site propagation.** A pure function with a `for` in its body has
 **one** source. Whether that `for` unrolls or runs at runtime is decided

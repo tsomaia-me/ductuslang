@@ -1155,9 +1155,9 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 011-93. A `derived` whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`. (§8.9)
 011-94. The reactive layer adds no error mechanism beyond the existing type system. (§8.9)
 
-## 012. Strings, Tuples, Arrays & Time — 149 Rules
+## 012. Strings, Tuples, Arrays & Time — 163 Rules
 
-012-1. `string`, tuples, and fixed-size arrays `T[N]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
+012-1. `string`, tuples, fixed-size arrays `T[N]`, and slices `T[..N]` / `T[..]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
 012-3. The lowercase keyword `string` is reserved. (§9.1)
 012-4. The complete set of primitive non-numeric types is `bool`, `char`, `string`, `duration`, and `instant`; no other non-numeric primitives exist. (§9.1.1)
@@ -1239,6 +1239,20 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 012-79. An empty array literal `[]` has size 0 and takes its element type from context: `let xs: i32[0] = []`. (§9.3.1)
 012-147. Beyond the literal list (012-78), an array may be built by a bracketed comprehension `[for i in <iterable>: expr]`: `expr` is evaluated once per element of a compile-time-known iterable (typically a constant range `0..N`, §12.2, which is materialized — the lazy range is unchanged), binding `i` to each value, yielding `T[N]` where `T` is `expr`'s type and `N` the iterable's extent. The body is a pure 1:1 map; there is no `if`-filter form, since a filter would make the length non-constant and an array's length is part of its type (filtered/dynamic construction is a stdlib `Vec` concern). (§9.3.1)
 012-148. The array comprehension's degenerate form `[for N: v]` — a bare compile-time-known count `N`, with no binding and no `in` — produces `N` copies of `v`, of type `T[N]`. (§9.3.1)
+012-150. `T[..N]` and `T[..]` are slice types — borrows of a contiguous sub-range of a value. `T[..N]` has compile-time-known length `N`; `T[..]` has runtime length. Both are language-level types distinct from the owned array `T[N]` (012-73). (§9.3.7)
+012-151. A slice obeys the ordinary borrow rules of §11.9: it is a cluster member (013-48), unstorable (013-52), cannot outlive its source (013-51), and returning a slice extends the cluster (013-63). The sole ownership-level addition is that a borrow may now span a sub-range (013-250 extending §11.3.4). (§9.3.7, §11.3.4)
+012-152. The `arr[range]` operator slices any array, slice, or stdlib indexed sequence: `arr[i]` is element access (012-74), `arr[2..5]` is slice access producing a length-3 window over the source's elements. (§9.3.7)
+012-153. Strings are exempt from `arr[range]` slicing — they remain not indexable (012-26); string slicing uses the methods of §9.1.7. (§9.3.7)
+012-154. Open-ended slice ranges are sugar at slice-index positions only: `arr[..n]` → `0..n`, `arr[k..]` → `k..arr.length`, `arr[..]` → whole. The forms are not standalone `Range` values (014-7) — `let r = k..` stays a parse error outside slice-index position. (§9.3.7)
+012-155. The prefix `^k` inside a slice index means `arr.length - k`: `arr[^1]` last, `arr[^2..]` last two, `arr[..^1]` all-but-last, `arr[^3..^1]` a window from third-from-end to second-from-end. The `^` is position-disambiguated from bitwise xor (007-69); no new keyword. (§9.3.7)
+012-156. Plain or computed negative indices on `arr[i]` continue to trap (012-84); `^k` is the only form for from-the-end addressing. (§9.3.7)
+012-157. A slice is a zero-copy window onto its source: `arr[2..5]` allocates nothing and reads through to the source's elements. An owned copy is an explicit operation, not the slice operator's default. (§9.3.7)
+012-158. `.length` is the full-word slice/array length accessor — compile-time-known for `T[N]` and `T[..N]`, runtime for `T[..]`. (§9.3.7)
+012-159. Slices are read-only: no mutable slice form exists. A write through an aliased reference is precluded by Ductus' no-mutable-references design (013-211); mutation of a sub-range goes through the owning `mut` binding's indexed assignment (013-197). (§9.3.7)
+012-160. While any slice into a value is live, the source value cannot be moved or mutated as a whole (matches cluster rules 013-56/57); element-by-element assignment via the owner's indexed assignment is also blocked while a slice exists. (§9.3.7, §11.3.4)
+012-161. `T[..N]` and `T[..]` implement `Iterable` and `IntoIterable` with the source-bearing pattern of §12.7.4, paralleling arrays (014-143). (§9.3.7, §12.10.1)
+012-162. `T[N]` and `T[..N]` widen to `T[..]` at parameter positions: `fn f(s: T[..])` accepts an owned array, a compile-time-length slice, or a runtime-length slice uniformly. (§9.3.7)
+012-163. `arr.get(i)` returns `Option[T]` for safe element access (extending 012-86 to slices and Maps); `arr.get(range)` returns `Option[T[..]]` for safe range access. The `.get` family is the language-level safe-access surface across arrays, slices, and Maps. (§9.3.7)
 012-80. `T[args]` in type position is interpreted by what `T` resolves to: a primitive or other non-generic type forms an array type (`i32[5]`); a generic type instantiates (`Vec[i32]`). (§9.3.2)
 012-81. Array-vs-generic disambiguation depends only on the kind of `T`, never on the kind of the arguments; there is no parser-level ambiguity. (§9.3.2)
 012-82. The array length type is `isize` — signed and platform-sized; there is no `usize` length type. (§9.3.3)
@@ -1307,7 +1321,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 012-145. `Option`/`Result` wrappings of `duration`/`instant` store directly in a reactive cell when discriminant plus payload fits the platform atomic word, and otherwise use index-based pool storage. (§9.4.3)
 012-146. The compiler chooses the cell-storage strategy; the source-level wrapped type is permitted on all platforms. (§9.4.3)
 
-## 013. Ownership & Mutability — 249 Rules
+## 013. Ownership & Mutability — 250 Rules
 
 013-1. Category A (value ownership: function call, function return, let-rebinding, for-loop iteration variable) defaults to borrow-equivalent: the callee or new binding gets read-only access and the source binding survives. (§11.1)
 013-2. Category A consumption is opt-in, requiring `own` in the signature and `move` at the call site. (§11.1)
@@ -1367,6 +1381,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 013-56. While a cluster has any alias member beyond its root, the root's value cannot be moved (passed to an `own` parameter, returned, or reassigned into a different slot). (§11.3.4)
 013-57. While a cluster has any alias member beyond its root, the root's value cannot be mutated (`mut` reassignment, indexed assignment, field assignment). (§11.3.4)
 013-58. Once every alias goes out of scope, the cluster collapses to its root, which may again be moved or mutated. (§11.3.4)
+013-250. A borrow may span a sub-range of its source value, not only the whole value; this is the sole ownership-level addition for native slices (§9.3.7). Cluster membership (013-48..58), unstorability (013-52), source-move-and-mutate locks (013-56/57), and return rootedness (013-63..67) all apply to sub-range borrows unchanged. (§11.3.4)
 013-59. A function-parameter borrow that does not escape into a `let` or for-loop binding is bounded by the call expression. (§11.3.4)
 013-60. Rule (P): rebinding a borrow-equivalent alias (`let y = x`, `mut y = x`) kills the name `x` and transfers the borrow-equivalent role to the new binding: `let y = x` makes `y` an alias in the same cluster. (§11.3.5)
 013-61. Under Rule (P) the source value is untouched: no data moves out of the cluster's root and no ownership transfer occurs at the value level. (§11.3.5)
@@ -1623,7 +1638,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 014-59. Unrolling reproduces the body once per element, binding the iteration variable to the corresponding compile-time value. (§12.3.7)
 014-60. An unrolled body participates in ordinary §2.4.1 propagation: expressions depending only on the iteration variable and other compile-time values are themselves compile-time known. (§12.3.7)
 014-61. Unrolled loops do not dispatch through `Iterable` or `IntoIterable`; element binding happens at compile time, not by calling `next`. (§12.3.7)
-014-62. Exactly two iterable forms produce compile-time-known iteration in v1: a range with both bounds compile-time known, and an array literal whose every element expression is compile-time known. (§12.3.7)
+014-62. Three iterable forms produce compile-time-known iteration in v1: a range with both bounds compile-time known, an array literal whose every element expression is compile-time known, and a fixed-extent typed value — `T[N]`, `T[..N]`, or a static view (017-44) — whose extent is part of the type. (§12.3.7)
 014-63. Iterating over the elements of a tuple and iterating over a list of types are not provided. (§12.3.7)
 014-64. Loops over variable-extent types run at runtime: `Vec[T]`, `SmallVec[T, N]`, `RingBuf[T, N]`, `String`/`s.chars()`, `HashMap`, and ranges with runtime bounds. (§12.3.7)
 014-65. A pure function with a `for` in its body has one source; whether that loop unrolls is decided at each call site by what flows into the iterable expression. (§12.3.7)
