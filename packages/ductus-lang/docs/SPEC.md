@@ -3286,7 +3286,7 @@ operators on one row share precedence.
 | 11   | `+`, `-`                                                  | left            |
 | 12   | `*`, `/`, `\`, `%`                                        | left            |
 | 13   | `-`, `~`, `weak` (prefix)                                 | right           |
-| 14   | `?`, `!`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts | left           |
+| 14   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
 | 15   | `::`                                                      | left            |
 
 - `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
@@ -5913,9 +5913,8 @@ match operation:
 Ductus provides no `if let` or check-and-unwrap sugar. The combination of
 `match` (for full discrimination) and `?` (for short-circuit propagation)
 is the primary pattern/short-circuit surface for consuming `Option` and
-`Result` (the postfix `!` of §8.4.2 and the stdlib methods of §8.7 also
-consume them); the language keeps that pattern/short-circuit surface minimal
-deliberately.
+`Result` (the stdlib methods of §8.7 also consume them); the language
+keeps that pattern/short-circuit surface minimal deliberately.
 
 ### 8.4 The `?` Operator and the `Try` Trait
 
@@ -5981,51 +5980,6 @@ whole `Result`/`Err` container. The `Option` case carries no error value
 and involves no conversion impl: `?` simply returns `None`.
 Cross-type propagation (Option in a Result-returning function, or vice
 versa) remains forbidden per §8.6 — the failure types are not compatible.
-
-#### 8.4.2 The `!` assertion operator
-
-The postfix `!` operator unwraps an `Option[T]` to its `T` — but, unlike `?`, it
-never propagates and never traps. `opt!` compiles **only when the compiler can
-prove `opt` is always `Some`** at that point; otherwise it is a *compile error*.
-There is no runtime check and no "trust me" escape: a successful `!` costs
-nothing at runtime because the `None` case has been proven impossible.
-
-```
-let car = target!        // &Drivable — accepted only if `target` is provably live
-```
-
-**Provenance, not assertion.** Whether `opt!` compiles is decided by a
-**normative, closed** rule, so that the same programs are well-formed under
-every conforming compiler. An `Option`-typed expression is *provably `Some`*
-iff every value that can reach it is one of:
-
-- a `Some(…)` construction, or
-- the resolution of a `Handle` (§13.3.6.2) whose candidate referents — the
-  same candidate set the compiler derives for topology analysis (§13.11.5) —
-  are **all statically placed**: non-`repeat`, non-dismountable graph
-  entities. Such a handle can never resolve `None`, so `h!` is sound and free.
-
-Reaching values are computed over the expression's definitions and the data
-flow into it; anything else — a `None` construction, a `Handle` with any
-dismountable candidate, an `Option` of unknown origin crossing a function
-boundary — makes `!` a compile error. Conforming compilers accept exactly
-this set: no more (no global cleverness that varies by implementation), no
-less.
-
-Two consequences follow. A `Handle` into a `repeat` view (§13.5.4.9) is
-**permanently** non-provable — a keyed scope is always dismountable — so the
-right tools there are `match` or `?`. And a general `Option` from another
-source (e.g. checked arithmetic, §4.6.4) is provable only when its reaching
-values are all `Some(…)` constructions; otherwise the caller must handle
-absence explicitly.
-
-**Why keep `!` when the proof is automatic.** Because the proof is *legible and
-refactor-stable*. `h!` is a visible contract — "I rely on this referent always
-being live" — checked at its own site. Move the referent under a `repeat` later
-and the `!` site fails with a precise error naming the broken contract, instead
-of some distant `match` silently changing meaning. This is the same philosophy as
-mandatory `dyn` (§5.2.2): make the load-bearing assumption appear in the source
-where it is relied upon.
 
 ### 8.5 Error-Type Conversion via `From`
 
@@ -13274,7 +13228,6 @@ match target:                       // both arms explicit
   None: 0.0
 
 let s = target?.speed               // propagate None upward (§8.4)
-let car = target!                   // assert live; compile error unless provable (§8.4.2)
 ```
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
@@ -14448,11 +14401,10 @@ table is **flat**: names, not paths. Two consequences:
 
 Because the result is a `Handle` (§13.3.6.2), it is *weak*: `<view>[k].name`
 resolves to `Some(&node)` while key `k`'s scope is mounted and to `None`
-otherwise (an absent key, a dropped element). A view handle is therefore never
-provably live — `<view>[k].name!` is always a compile error (§8.4.2); eliminate
-with `match` or `?`. By the identity rule of §13.5.4.8, a key that leaves and
-later returns remounts the *same* scope, so a stored view handle resumes
-resolving `Some` when its key comes back.
+otherwise (an absent key, a dropped element); eliminate with `match` or `?`.
+By the identity rule of §13.5.4.8, a key that leaves and later returns
+remounts the *same* scope, so a stored view handle resumes resolving `Some`
+when its key comes back.
 
 Nested `repeat`s each own a separate `as` view and do not flatten into the outer
 one; a nested view is scoped to its parent key, so cross-level addressing
@@ -17362,11 +17314,6 @@ For arithmetic operations that may overflow but should produce
 recoverable errors, use the checked variants (`+?`, `-?`, etc.)
 per §4.6.4. Their results are `Option[T]` values that flow through
 the type system.
-
-Where an `Option` is *provably* `Some` — most often a `Handle` whose referents
-are all statically placed (§13.3.6.2) — the postfix `!` operator (§8.4.2)
-unwraps it with no runtime check and no propagation. It is a compile error
-wherever the compiler cannot prove the `None` case impossible.
 
 #### 13.13.3 The reactive context preserves trap semantics
 

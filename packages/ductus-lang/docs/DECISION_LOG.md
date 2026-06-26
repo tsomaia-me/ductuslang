@@ -667,7 +667,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 007-70. Bitwise `|` and operator-application `|>` are distinct tokens; `|>` is the loosest-binding operator while bitwise operators bind tighter than the logical operators, per the §4.4.7 precedence table. (§4.4.2)
 007-71. `>>` shifts arithmetically (sign-extending) on signed types and logically (zero-extending) on unsigned types, dispatched via the type's `Shr` impl. (§4.4.2)
 007-72. No `>>>` operator exists; `>>` has no other value-level meaning. (§4.4.2)
-007-73. Operator precedence, loosest to tightest: `|>`; `or`; `and`; `not`; bitwise `|`/`^`/`&`; `..`; comparison; shifts `<<`/`>>`; additive; multiplicative; prefix `-`/`~`/`weak`; postfix `?`/`!`/`.`/`[]`/`()`; `::`. (§4.4.7)
+007-73. Operator precedence, loosest to tightest: `|>`; `or`; `and`; `not`; bitwise `|`/`^`/`&`; `..`; comparison; shifts `<<`/`>>`; additive; multiplicative; prefix `-`/`~`/`weak`; postfix `?`/`.`/`[]`/`()`; `::`. (§4.4.7)
 007-74. Bitwise operators bind tighter than the logical operators but looser than comparison (the C convention): `a & b is c` parses as `a & (b is c)`. (§4.4.7)
 007-75. The range operator `..` binds looser than arithmetic: `0..n + 1` parses as `0..(n + 1)`. (§4.4.7)
 007-76. `not` binds looser than comparison and negates the whole comparison: `not a is b` parses as `not (a is b)`. (§4.4.7)
@@ -1071,7 +1071,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 010-44. With no `From` relationship between error types, `?` is a compile error identifying the source and destination error types and the missing `From` impl. (§7.9)
 010-45. The error-type rule is the only relationship `?` enforces: no implicit success-type coercion and no fallback through other trait machinery. (§7.9)
 
-## 011. Error Handling — 93 Rules
+## 011. Error Handling — 81 Rules
 
 011-1. Failure handling uses a two-track model — traps versus typed values — chosen at the operation site when code is written. (§8)
 011-2. A failure encoded on one track cannot be silently converted to the other. (§8)
@@ -1111,7 +1111,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 011-36. `Result[T, E]` is the stdlib enum with variants `Ok(T)` and `Err(E)`. (§8.3)
 011-37. The `?` and error-conversion interactions are mediated by the stdlib `Try` trait, not by compiler knowledge of `Option`/`Result`. (§8.3)
 011-38. `Option` and `Result` are discriminated with standard exhaustive `match`. (§8.3.1)
-011-39. Ductus provides no `if let` and no check-and-unwrap sugar; `match` (discrimination) and `?` (short-circuit) are the language's primary consuming forms, not an exhaustive surface — the postfix `!` (§8.4.2) and the stdlib methods (§8.7) are additional consumers. (§8.3.1)
+011-39. Ductus provides no `if let` and no check-and-unwrap sugar; `match` (discrimination) and `?` (short-circuit) are the language's primary consuming forms, with the stdlib methods (§8.7) as additional consumers. (§8.3.1)
 011-40. The postfix `?` operator dispatches through the stdlib trait `Try`. (§8.4)
 011-41. `Try` declares `type Success`, `type Failure`, and `fn branch(value: Subject) -> TryBranch[Success, Failure]`. (§8.4)
 011-42. `TryBranch[S, F]` is an enum with variants `Continue(S)` and `Break(F)`. (§8.4)
@@ -1119,18 +1119,6 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 011-44. `Result[T, E]` fulfills `Try` with `Failure = E`: `branch(Ok(x))` is `Continue(x)`; `branch(Err(e))` is `Break(e)`. (§8.4)
 011-45. Any user-defined type may implement `Try` to make `?` available on it. (§8.4)
 011-46. `expr?` desugars to a `match` on `Try::branch(expr)`: `Continue(value)` yields `value`; `Break(failure)` returns early — `Err(From::convert(failure))` in a `Result`-returning function (converting the inner error value) or `None` in an `Option`-returning function. (§8.4.1)
-011-47. The postfix `!` operator unwraps an `Option[T]` to its `T`: `let car = target!`. (§8.4.2)
-011-48. `!` never propagates a failure and never traps. (§8.4.2)
-011-49. `opt!` compiles only when the compiler can prove `opt` is always `Some` at that point; otherwise it is a compile error. (§8.4.2)
-011-50. A compiled `!` performs no runtime check and costs nothing at runtime. (§8.4.2)
-011-51. `!` has no "trust me" escape that bypasses the compile-time proof. (§8.4.2)
-011-52. The `!` provability rule is normative and closed, so the same programs are well-formed under every conforming compiler. (§8.4.2)
-011-53. An `Option`-typed expression is provably `Some` iff every value that can reach it is a `Some(...)` construction or a qualifying `Handle` resolution. (§8.4.2)
-011-54. A `Handle` resolution qualifies for `!` iff its topology-analysis candidate referents are all statically placed: non-`repeat`, non-dismountable graph entities. (§8.4.2)
-011-55. Reaching values for `!` are computed over the expression's definitions and the data flow into it. (§8.4.2)
-011-56. Any other provenance — a reaching `None` construction, a `Handle` with any dismountable candidate, an `Option` of unknown origin crossing a function boundary — makes `!` a compile error. (§8.4.2)
-011-57. Conforming compilers accept exactly the closed `!` provability set: no implementation-specific extensions, no omissions. (§8.4.2)
-011-58. A `Handle` into a `repeat` view is permanently non-provable for `!`, since a keyed scope is always dismountable. (§8.4.2)
 011-60. The compiler verifies the required error `From` impl at every `?` use site, rejecting with an error when no conversion path exists. (§8.5)
 011-61. Using `?` on an `Option` inside a `Result`-returning function, or on a `Result` inside an `Option`-returning function, is a compile error. (§8.6)
 011-62. The cross-track `?` ban is categorical: it holds even when `From` impls exist that could bridge the failure types. (§8.6)
@@ -2067,7 +2055,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 016-275. A reactive value expression combining one or more reactive cells always produces a `Derived[T]`. (§13.2.8)
 016-276. Value-reading operator and function parameters are typed `Cell[T]` (the umbrella); a `Stream[T]` has no current value, so it is excluded at the read site rather than by the signature. (§13.2.8)
 
-## 017. Nodes & Views — 269 Rules
+## 017. Nodes & Views — 268 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed connections. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2227,14 +2215,13 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-146. There are no handles to records, tuples, or other plain values; one handles the value's home (the node or cell it lives in) instead. (§13.3.6.2)
 017-147. A handle has no `.resolve()` method; resolution is transparent and type-directed by the position the handle occupies. (§13.3.6.2)
 017-148. In a `Handle[T]`-typed position, a handle denotes the inert handle value; no graph entity is read and nothing becomes reactive. (§13.3.6.2)
-017-149. In a read or elimination position — `match`, `?`, `!`, or where `&T` is expected — a handle denotes its resolution `Option[&T]`: `Some(&entity)` while live, `None` once gone. (§13.3.6.2)
+017-149. In a read or elimination position — `match`, `?`, or where `&T` is expected — a handle denotes its resolution `Option[&T]`: `Some(&entity)` while live, `None` once gone. (§13.3.6.2)
 017-150. A handle resolution read is reactive: it joins the reader's provenance and re-fires when the referent mounts or dismounts. (§13.3.6.2)
 017-151. `Option[&T]` contains a borrow and is unstorable (the transient resolved view); `Handle[T]` contains no borrow and is the storable carrier. (§13.3.6.2)
 017-152. A handle is produced by the prefix operator `weak` on a node/connection/effect reference: `weak some_car`. (§13.3.6.2)
 017-153. Where a `Handle[T]`-typed position receives a reference directly, the `weak` coercion is inserted automatically. (§13.3.6.2)
 017-154. There is no `.handle()` method and no handle sigil; `weak` is the one explicit spelling. (§13.3.6.2)
-017-155. A handle is eliminated through exactly three forms, the ordinary `Option` eliminators: `match`, `?`, and `!`: `let s = target?.speed`. (§13.3.6.2)
-017-156. `!` on a handle asserts liveness and is a compile error unless liveness is provable. (§13.3.6.2)
+017-155. A handle is eliminated through the ordinary `Option` eliminators `match` and `?`: `let s = target?.speed`. (§13.3.6.2)
 017-157. A handle is concretely a graph slot plus a generation stamp; a slot reused by a different entity fails the stamp comparison, so a stale handle resolves to `None`, never to the wrong entity. (§13.3.6.2)
 017-158. Because mount and dismount flip its resolution, a handle read is a dynamic dependency. (§13.3.6.2)
 017-159. A handle obtained by key from a `repeat` view designates the keyed scope, not one mount: when the same key reappears in the source, a handle that resolved `None` resolves `Some` again. (§13.3.6.2)
@@ -2339,7 +2326,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-260. Operators and `repeat` are the only consumers of a `dynamic` view. (§13.4.4)
 017-261. View and named individual access coexist on the same instance: `c.oscs[0]` (indexed, legal under `+`) and `c.filters[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 
-## 018. Keyed Scopes & `repeat` — 138 Rules
+## 018. Keyed Scopes & `repeat` — 137 Rules
 
 018-1. Every conformant runtime exposes the three keyed-scope operations — `scope_obtain`, `scope_drop`, `scope_evaluate` — underlying the language's dynamic-scope reactive constructs. (§13.5)
 018-2. Each instantiation of a keyed-scope template is backed by its own state cells. (§13.5)
@@ -2475,7 +2462,6 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 018-133. `as`-names must be unique within one `repeat` body, across nesting; a duplicate is a compile error. (§13.5.4.9)
 018-134. Anonymous placements are unaddressable through the view; leaving a placement unnamed keeps it private to its scope. (§13.5.4.9)
 018-135. A view lookup is a weak, storable `Handle` (§13.3.6.2): `<view>[k].<name>` resolves to `Some(&node)` while key `k`'s scope is mounted and to `None` otherwise. (§13.5.4.9)
-018-136. A view handle is never provably live: `<view>[k].<name>!` is always a compile error; eliminate with `match` or `?`. (§13.5.4.9)
 018-137. A key that leaves and later returns remounts the same scope, so a stored view handle resumes resolving `Some` when its key comes back. (§13.5.4.9)
 018-138. Nested `repeat`s each own a separate `as` view and do not flatten into the outer one. (§13.5.4.9)
 018-139. A nested view is scoped to its parent key; cross-level addressing composes view by view rather than through one global table. (§13.5.4.9)
@@ -2723,7 +2709,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 021-123. At a placement site, each flag character in the run resolves to the boolean attr it aliases and sets that attr to `true`. (§13.8.8.3)
 021-124. There is no flag form for setting `false`; overriding a default-`true` attr to `false` uses the inline `!name` form. (§13.8.8.3)
 021-125. In placement position, a non-letter character immediately following the TypeRef path with no intervening whitespace is a flag-run opener. (§13.8.8.4)
-021-126. A flag character that doubles as a token elsewhere carries its other meaning in any non-placement position: `'` opens a char literal, `?` is postfix Try, `@` is the directive prefix (002-28), `!` is the attribute-false marker. (§13.8.8.4)
+021-126. A flag character that doubles as a token elsewhere carries its other meaning in any non-placement position: `'` opens a char literal, `?` is postfix Try, `@` is the directive prefix (002-28). (§13.8.8.4)
 021-127. A boolean attr may be set via at most one mechanism per placement — flag form or inline `name`/`!name`/`name=value`; using two on the same attr is a compile error: `Pin' p1 | reverse_polarity=false` ✗. (§13.8.8.5)
 021-128. The two-mechanism duplicate uses the same diagnostic class as duplicate-set for inline attributes. (§13.8.8.5)
 021-129. A placement's inline elements have the fixed order TypeRef, flags run, `as` name, `/Expr`, `when` predicate, attribute clause, `:` body — each element after TypeRef optional: `Drives'! as my_drive / 0.8 | enhanced_handling: some_car`. (§13.8.9)
@@ -3023,7 +3009,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 025-65. A reactive value flowing into a const-generic argument position is a compile error: `Buffer[some_signal]` ✗. (§13.12.5)
 025-66. A `const` declaration whose right-hand side is reactive is a compile error. (§13.12.5)
 
-## 026. Reactive Error Handling — 12 Rules
+## 026. Reactive Error Handling — 10 Rules
 
 026-1. The two-track failure model applies uniformly to reactive contexts. (§13.13)
 026-2. A derived or recurrent expression that traps during evaluation — arithmetic overflow under default operators, division by zero, out-of-range array index, or explicit `panic` — aborts the process. (§13.13.1)
@@ -3033,8 +3019,6 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 026-6. Recoverable failures in reactive code use value-track errors: declare the derived's type as `Result[T, E]` or `Option[T]` and produce `Err(...)` or `None` explicitly for failure cases. (§13.13.2)
 026-7. Downstream reactive expressions propagate value-track errors through `?` or `match`. (§13.13.2)
 026-8. Arithmetic that may overflow but should fail recoverably uses the checked operator variants (`+?`, `-?`, ...), whose `Option[T]` results flow through the type system. (§13.13.2)
-026-9. Where an `Option` is provably `Some` — most often a `Handle` whose referents are all statically placed — postfix `!` unwraps it with no runtime check and no propagation. (§13.13.2)
-026-10. Postfix `!` is a compile error wherever the compiler cannot prove the `None` case impossible. (§13.13.2)
 026-11. The reactive evaluation context does not modify trap semantics: a behavior that traps aborts the process, the same as a free-function trap. (§13.13.3)
 026-12. The language provides no hidden recovery mechanism in reactive contexts; graceful handling requires value-track errors. (§13.13.3)
 
