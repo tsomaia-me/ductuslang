@@ -7038,6 +7038,188 @@ For minimum-overhead reactive cells, prefer bare `duration` / `instant`
 when an absent/errored sentinel can be encoded in the value's range
 (e.g., `i64::MIN`) rather than via `Option`/`Result`.
 
+### 9.5 Maps: `Map[K, V]`
+
+The keyed-associative primitive `Map[K, V]` joins `string`, tuples,
+arrays, and slices (§9.3.7) as a language-level compound type with
+dedicated syntax. Maps are not stdlib types with privileged syntax — the
+parser knows `{…}` for map literals exactly as it knows `[…]` for
+arrays.
+
+```
+let prices: Map[string, f64] = { 'apple': 1.20, 'banana': 0.50 }
+let counts = { 14: 'fourteen', 27: 'twenty-seven' }   // Map[i32, string], inferred
+```
+
+#### 9.5.1 Literals
+
+A map literal is a brace-delimited list of `key: value` pairs:
+
+```
+let m = { 'a': 1, 'b': 2, 'c': 3 }
+let m = {
+  'a': 1,
+  'b': 2,
+}                                       // trailing comma allowed
+let empty: Map[string, i32] = {}        // empty literal requires annotation
+```
+
+The empty `{}` requires a type annotation — there is nothing to infer
+`K` and `V` from — mirroring empty array `[]` (§9.3.1).
+
+Duplicate keys within a single literal are a compile error (parallel to
+duplicate record-field set, §6.1.3 / §13.8.7).
+
+#### 9.5.2 Structural typing
+
+`Map[K, V]` is structurally typed: the same `Map[string, i32]` value is
+the same type wherever it appears. There is no nominal Map. Mixed-key
+maps do not exist — a single `K` and `V` parameterize the whole type.
+
+#### 9.5.3 Key bounds
+
+Keys must satisfy `K: Eq + Hash`. The Ductus primitive types that
+qualify are:
+
+- All integer types (`i8`..`i128`, `u8`..`u128`, `isize`, `usize`).
+- `bool`.
+- `char`.
+- `string`.
+- `duration` and `instant`.
+
+Float types (`f32`, `f64`) **do not** satisfy `Hash` — `NaN ≠ NaN`
+violates the `Eq → Hash` equal-implies-equal-hash law — so
+`Map[f32, V]` is a compile error at the `Hash` bound. There is no
+special-casing for floats; the trait bound does the work.
+
+User-defined types can satisfy the bound via `@derive(Eq, Hash)`
+(§3.8.2) and become valid map keys.
+
+#### 9.5.4 Access: `m[k]` and `m.get(k)`
+
+Two access forms parallel the array surface (§9.3.5):
+
+```
+let v   = m['apple']         // V — traps on missing key
+let opt = m.get('apple')     // Option[V] — safe form
+```
+
+`m[k]` traps on a missing key — a miss is treated as a bug, the same
+model as `arr[i]` out-of-bounds (§9.3.5). `m.get(k)` is the safe form
+returning `Option[V]`. The `.get(k)` family is the language-level
+safe-access surface across arrays, slices (§9.3.7), and maps.
+
+#### 9.5.5 Membership: `in`
+
+```
+let present: bool = 'apple' in m       // Contains::contains
+let absent        = 'cherry' not in m  // negation via 007-76
+```
+
+The `in` operator dispatches to the language-defined `Contains` trait
+(§4.9.5). Map fulfills it natively; stdlib collections fulfill it too —
+no privilege.
+
+#### 9.5.6 Deletion: `delete`
+
+```
+delete m['cherry']                     // no-op when key is absent
+```
+
+The `delete` keyword dispatches to the language-defined `Deletable`
+trait (§4.9.5). Deleting an absent key is a no-op (idempotent), so
+client code does not need to check membership first.
+
+#### 9.5.7 Merge: `+`
+
+```
+let merged = a + b + { 'c': 3 }        // right-hand keys win on collision
+```
+
+`+` produces a new Map; later (right-hand) entries override earlier
+ones on key collision, mirroring the `with` rule for record-field merge
+(§6.1.5).
+
+#### 9.5.8 Iteration
+
+`Map[K, V]` implements `Iterable` and `IntoIterable`, yielding `(K, V)`
+pairs:
+
+```
+for (k, v) in m:
+  print('{k} = {v}')
+```
+
+**Iteration order is unordered** — keys are emitted in whatever order
+the underlying hash table produces. There is no commitment to insertion
+order or sort order. The `repeat` construct (§13.5.4) treats unordered
+sources by key-set diffing (018-83), so a Map source is a valid `repeat`
+source despite the order non-commitment.
+
+#### 9.5.9 Cost model
+
+Stated at the language level because Map is a primitive:
+
+- Lookup, insert, delete: **O(1) average** (hash table).
+- Iterate: **O(n)** in the number of entries.
+
+These bounds are normative.
+
+#### 9.5.10 Mutation
+
+Maps are mutable only inside function bodies, only through `mut`
+bindings, and only by the dynamic-size memory model the rest of the
+language uses:
+
+```
+fn populate(items: Vec[(string, i32)]) -> Map[string, i32]:
+  mut m: Map[string, i32] = {}
+  for (k, v) in items:
+    m[k] = v                           // insert or update
+  m
+```
+
+`m[k] = v` inserts or updates. Map is the first language-level
+growable type, but with no new memory model: the existing
+allocator-intrinsic (§9.3.6) plus single-ownership in-place reuse
+(§11.11.2) cover it.
+
+#### 9.5.11 Storage in reactive cells
+
+A `Map[K, V]`-typed cell uses pool storage (§13.12.4), joining
+`string`, `Vec[T]`, and other dynamically-sized cell types. Writing
+the cell stages a new map value at commit (the runtime double-buffers
+as for any pool-stored value); per-key updates between commits are
+absorbed into the next published snapshot.
+
+#### 9.5.12 Reactive composites (literal-key only)
+
+A map literal in a *reactive declaration* (`derived`, `attr`,
+`recurrent`) with **compile-time-known keys** forms a per-slot
+reactive composite — like a tuple (016-180) or fixed-array (016-181)
+composite. Each slot is independently reactive; there is no outer
+cell.
+
+```
+derived report: Map[string, Cell[f32]] = {
+  'volume': master_gain,        // alias to the signal cell
+  'pitch':  pitch_signal,       // alias
+  'reverb': 0.3,                // static (no cell)
+}
+```
+
+The map's reactive-composite paths are `<binding>.<key>` (parallel to
+record fields, §13.2.9.4). Keys must be compile-time-known for the
+slot path to be static.
+
+A map whose keys are **runtime values** cannot be a composite — there
+is no static slot path for runtime keys. Such a map is a whole-cell
+`Cell[Map[K, V]]` per §13.2.8.
+
+Composites exist only at reactive-declaration sites (§13.2.9.1);
+function bodies are reactive-transparent (§13.12.2) and build
+plain-value maps, never composites.
+
 ---
 
 ## 10. Visibility and Modules

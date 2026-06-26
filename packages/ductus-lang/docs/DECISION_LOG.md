@@ -1155,9 +1155,9 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 011-93. A `derived` whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`. (§8.9)
 011-94. The reactive layer adds no error mechanism beyond the existing type system. (§8.9)
 
-## 012. Strings, Tuples, Arrays & Time — 163 Rules
+## 012. Strings, Tuples, Arrays & Time — 178 Rules
 
-012-1. `string`, tuples, fixed-size arrays `T[N]`, and slices `T[..N]` / `T[..]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
+012-1. `string`, tuples, fixed-size arrays `T[N]`, slices `T[..N]` / `T[..]`, and maps `Map[K, V]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
 012-3. The lowercase keyword `string` is reserved. (§9.1)
 012-4. The complete set of primitive non-numeric types is `bool`, `char`, `string`, `duration`, and `instant`; no other non-numeric primitives exist. (§9.1.1)
@@ -1253,6 +1253,21 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 012-161. `T[..N]` and `T[..]` implement `Iterable` and `IntoIterable` with the source-bearing pattern of §12.7.4, paralleling arrays (014-143). (§9.3.7, §12.10.1)
 012-162. `T[N]` and `T[..N]` widen to `T[..]` at parameter positions: `fn f(s: T[..])` accepts an owned array, a compile-time-length slice, or a runtime-length slice uniformly. (§9.3.7)
 012-163. `arr.get(i)` returns `Option[T]` for safe element access (extending 012-86 to slices and Maps); `arr.get(range)` returns `Option[T[..]]` for safe range access. The `.get` family is the language-level safe-access surface across arrays, slices, and Maps. (§9.3.7)
+012-164. `Map[K, V]` is a language-level keyed-associative type with `{…}` literal syntax; it joins the 012-1 family alongside `string`, tuples, arrays, and slices. (§9.5)
+012-165. A `Map[K, V]` literal lists `key: value` pairs in braces: `{ 'a': 1, 'b': 2 }`; a trailing comma is allowed but not required. An empty `{}` requires a type annotation, mirroring empty arrays (012-79). (§9.5)
+012-166. `Map[K, V]` is structurally typed by `K` and `V`; nominal Map types do not exist. (§9.5)
+012-167. Keys must satisfy `K: Eq + Hash`. Built-in numerics (integers), `bool`, `char`, and `string` qualify; floats (`f32`/`f64`) do not (`NaN` violates the equal-implies-equal-hash law), so `Map[f32, V]` is a compile error at the `Hash` bound. (§9.5)
+012-168. `m[k]` returns `V` and **traps on a missing key** — the same model as `arr[i]` (012-84); a miss is treated as a bug, not as recoverable absence. (§9.5)
+012-169. `m.get(k)` returns `Option[V]` — the safe form (012-163 family). (§9.5)
+012-170. Membership uses the `in` operator: `k in m` is `bool`, dispatching to the language-defined `Contains` trait; `not k in m` is the negation (007-76). (§9.5)
+012-171. Deletion uses the `delete` keyword: `delete m['k']` dispatches to the language-defined `Deletable` trait; deleting an absent key is a no-op (idempotent). (§9.5)
+012-172. Maps merge with `+`: `x + y` produces a new Map where right-hand keys win on collision (mirroring `with` for records, 009-29). Duplicate keys within a single literal are a compile error (mirroring 009-15 / 021-110). (§9.5)
+012-173. Map iteration is **unordered** — keys and `(K, V)` pairs are yielded in whatever order the underlying hash table emits, with no commitment to insertion or sort order (parallel to 018-83). (§9.5)
+012-174. Map cost model is normative at the language level: lookup, insert, and delete are O(1) average via hash table; iteration is O(n). Stated at the language level because Map is a primitive (contrast Vec's costs at 025-41). (§9.5)
+012-175. Maps are mutable only inside function bodies on `mut` bindings: `m[k] = v` inserts or updates. The first language-level growable type, sharing the dynamic-size memory model of 012-90 and the in-place reuse rule of 013-212. (§9.5)
+012-176. A `Map[K, V]`-typed cell uses pool storage (025-29) — Map joins the dynamically-sized cell types alongside `string`, `Vec[T]`, etc. (§13.2.4.8, §13.12.4)
+012-177. A reactive composite over a map literal exists only for **literal-key maps**: `{ 'a': sig, 'b': 5 }` in a reactive declaration (`derived`/`attr`/`recurrent`) is a per-slot reactive composite, like a tuple (016-180) or fixed-array (016-181) — each slot independently reactive, with composite paths under `<binding>.<key>`. Keys must be compile-time-known for the slot path to be static (016-194). Dynamic-key maps cannot be composites; they are whole-map `Cell[Map[K, V]]`. (§13.2.9.x)
+012-178. `Map[K, V]` implements `Iterable` and `IntoIterable`, yielding `(K, V)` pairs; iteration order is unordered per 012-173. (§9.5, §12.10.x)
 012-80. `T[args]` in type position is interpreted by what `T` resolves to: a primitive or other non-generic type forms an array type (`i32[5]`); a generic type instantiates (`Vec[i32]`). (§9.3.2)
 012-81. Array-vs-generic disambiguation depends only on the kind of `T`, never on the kind of the arguments; there is no parser-level ambiguity. (§9.3.2)
 012-82. The array length type is `isize` — signed and platform-sized; there is no `usize` length type. (§9.3.3)
