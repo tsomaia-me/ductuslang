@@ -13855,8 +13855,15 @@ borrows and are the storable carriers. The pair mirrors the cell split: a
 applied to a node, connection, or effect reference:
 
 ```
-signal target: Handle[Option[Drivable]] = handle some_car   // re-pointable, so possibly-gone
-target.write(handle other_car)                              // re-point it later (§13.2)
+attr wheel: Handle[Drivable] = handle front_wheel   // initialized at placement
+```
+
+At a `Handle[Option[T]]`-typed slot — a re-pointable host-driven attr,
+the entry of a `repeat`-keyed scope — the same keyword applies; the
+variant is chosen by the slot's declared type, not the keyword:
+
+```
+attr current_target: Handle[Option[Drivable]] = handle some_car
 ```
 
 Wherever a `Handle[T]`-typed position receives a reference directly — assigning
