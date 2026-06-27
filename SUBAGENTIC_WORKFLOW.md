@@ -14,7 +14,7 @@ Do NOT use this for:
 - Research/exploration tasks (use a single Explore agent).
 - Anything where the orchestrator can fit the whole thing in context comfortably.
 
-## The five-phase shape (per batch)
+## The six-phase shape (per batch)
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -81,11 +81,25 @@ Do NOT use this for:
                      │
                      ▼
     ┌────────────────────────────────────────────────────────────────┐
-    │  PHASE 5 — Surface                                              │
+    │  PHASE 5 — E2E review (orchestrator forcing function)           │
+    │  ─────────────────                                              │
+    │  1 capture agent: runs `git diff HEAD`, retired-term grep,      │
+    │  byte counts. Stages everything the orchestrator needs to do    │
+    │  one final personal e2e read. The agent gathers; it does NOT    │
+    │  judge. The orchestrator MUST read the unified diff personally  │
+    │  before saying "ready to commit". Trust-but-verify the          │
+    │  adversarial verdict.                                            │
+    └────────────────┬───────────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │  PHASE 6 — Surface                                              │
     │  ─────────────────                                              │
     │  Workflow returns a structured summary:                         │
-    │    { edits, gates, adversarial, totalDiff, haltReasons }       │
-    │  Orchestrator shows it to user, awaits "approve", commits.     │
+    │    { edits, gates, adversarial, e2eReview, haltReasons,        │
+    │      orchestrator_required_step }                              │
+    │  Orchestrator reads e2eReview.unifiedDiff personally,           │
+    │  shows the summary to user, awaits "approve", commits.         │
     └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -147,7 +161,18 @@ Each gate is a fresh agent reading only what its scope requires. Barrier collect
 
 See SUBAGENT_PROTOCOL_ADVERSARIAL.md.
 
-### Phase 5 — Surface
+### Phase 5 — E2E review (orchestrator forcing function)
+
+**Goal:** stage everything the orchestrator needs to do one final personal end-to-end read of the staged diff.
+
+- 1 capture agent. Mechanical: runs `git diff HEAD --stat`, captures full `git diff HEAD`, greps each retired term listed in the plan, captures post-edit byte counts.
+- The agent does NOT judge correctness. It assembles evidence.
+- The orchestrator MUST personally read `e2eReview.unifiedDiff` before declaring the batch ready to commit. The adversarial verdict (Phase 4) is the agent's judgment, not the orchestrator's. Trust-but-verify.
+- This phase is a forcing function: the workflow returns an `orchestrator_required_step` string that names the obligation explicitly so the orchestrator cannot skip it without noticing.
+
+Why this exists: a GREEN adversarial verdict is necessary but not sufficient. Subagents miss things the orchestrator can catch with a 30-second read of a 200-line diff. The cost is one extra agent run + a few seconds of orchestrator attention; the payoff is catching the one defect the cold-read agent didn't.
+
+### Phase 6 — Surface
 
 **Goal:** return a structured summary to the orchestrator for user-approval handoff.
 
@@ -157,28 +182,31 @@ Workflow returns:
   edits: [{site_id, status, diff}…],
   gates: {count, grep, xref, inv, compat},
   adversarial: {findings, verdict},
-  totalDiff: <unified-diff string>,
+  e2eReview: {findings: [{kind, content}…]},   // contains the unified diff
+  orchestrator_required_step: "Read e2eReview.findings[].content end-to-end…",
   haltReasons: [strings]   // empty if clean
 }
 ```
 
-Orchestrator shows it to the user, awaits explicit "approve", then commits + pushes outside the workflow.
+Orchestrator reads `e2eReview.unifiedDiff` personally, shows the summary to the user, awaits explicit "approve", then commits + pushes outside the workflow.
 
 ## Outer loop (between workflows)
 
 ```
 foreach batch in plan.batches:
   1. result = Workflow({script: batch.script})
-  2. surface result to user
-  3. if result.haltReasons.length > 0:
+  2. READ result.e2eReview.findings[].content (the unified diff) end-to-end personally
+     — do NOT delegate; this is the forcing function from Phase 5
+  3. surface result to user (adversarial verdict + your own e2e read findings)
+  4. if result.haltReasons.length > 0 OR your e2e read found issues:
        do NOT commit; await user direction
-  4. else:
+  5. else:
        await user "approve"
        on approve:
          git add <touched files>
          git commit -m "<batch message>"
          git push -u origin <branch>
-  5. next batch
+  6. next batch
 ```
 
 Orchestrator holds: which batch is next, last user directive, high-level halt state. Nothing batch-internal.
@@ -193,8 +221,11 @@ Per batch (rough order of magnitude):
 | Edit pipeline | ~10-15K per site × N sites |
 | Batch gates (5 parallel) | ~40-80K |
 | Adversarial | ~60-120K (high effort) |
+| E2E review (capture) | ~5-10K (mechanical) |
 
 For a 30-site batch: ~500K-700K total. For a 7-site batch: ~150-250K. Plan to budget the largest batch + 50% headroom.
+
+The orchestrator's own e2e diff read costs orchestrator-context tokens (proportional to diff size). A 500-line diff costs ~3-5K. Budget for it in the parent loop.
 
 ## Choice rationale: pipeline vs barrier
 
@@ -213,22 +244,26 @@ Universal fields every agent MUST return:
 
 ## Example skeleton
 
+A full, fill-in-the-blanks reusable template lives at the repo root: **`SUBAGENTIC_WORKFLOW.template.js`**. Copy it, fill in the four CUSTOMIZE blocks (meta, hard-rules, learnings, project-context) and the six SCOPE constants, and run it via `Workflow({scriptPath: '<copy-path>'})`.
+
+Skeleton sketch (the template has the full version):
+
 ```javascript
 export const meta = {
   name: 'batch-foo',
   description: 'Project Foo batch X',
   phases: [
     {title: 'Extract'}, {title: 'Edit'}, {title: 'Batch gates'},
-    {title: 'Adversarial'}, {title: 'Surface'},
+    {title: 'Adversarial'}, {title: 'E2E review'}, {title: 'Surface'},
   ],
 }
 
-// PHASE 1
+// PHASE 1 — Extract
 phase('Extract')
 const sites = await agent(EXTRACT_PROMPT, {schema: SITE_LIST_SCHEMA})
 if (sites.halt) return {halt: true, phase: 'Extract', reason: sites.halt_reason}
 
-// PHASE 2
+// PHASE 2 — Edit pipeline
 phase('Edit')
 const editResults = await pipeline(
   sites.entries,
@@ -240,30 +275,38 @@ const editResults = await pipeline(
 const editHalts = editResults.filter(r => r?.halt)
 if (editHalts.length > 0) return {halt: true, phase: 'Edit', reasons: editHalts}
 
-// PHASE 3
+// PHASE 3 — Batch gates (parallel barrier)
 phase('Batch gates')
 const gates = await parallel([
-  () => agent(GATE_COUNT_PROMPT, {phase: 'Batch gates', schema: GATE_SCHEMA}),
-  () => agent(GATE_GREP_PROMPT, {phase: 'Batch gates', schema: GATE_SCHEMA}),
-  () => agent(GATE_XREF_PROMPT, {phase: 'Batch gates', schema: GATE_SCHEMA}),
-  () => agent(GATE_INV_PROMPT, {phase: 'Batch gates', schema: GATE_SCHEMA}),
-  () => agent(GATE_COMPAT_PROMPT, {phase: 'Batch gates', schema: GATE_SCHEMA}),
+  () => agent(GATE_COUNT_PROMPT,    {phase: 'Batch gates', schema: GATE_SCHEMA}),
+  () => agent(GATE_GREP_PROMPT,     {phase: 'Batch gates', schema: GATE_SCHEMA}),
+  () => agent(GATE_XREF_PROMPT,     {phase: 'Batch gates', schema: GATE_SCHEMA}),
+  () => agent(GATE_INVARIANT_PROMPT,{phase: 'Batch gates', schema: GATE_SCHEMA}),
+  () => agent(GATE_COMPAT_PROMPT,   {phase: 'Batch gates', schema: GATE_SCHEMA}),
 ])
-const gateHalts = gates.filter(g => g?.halt)
-if (gateHalts.length > 0) return {halt: true, phase: 'Batch gates', reasons: gateHalts}
 
-// PHASE 4
+// PHASE 4 — Adversarial cold-read
 phase('Adversarial')
 const adversarial = await agent(ADVERSARIAL_PROMPT,
                                  {schema: ADVERSARIAL_SCHEMA, effort: 'high'})
 
-// PHASE 5
+// PHASE 5 — E2E review capture (orchestrator forcing function)
+phase('E2E review')
+const e2eReview = await agent(E2E_CAPTURE_PROMPT,
+                              {phase: 'E2E review', schema: GATE_SCHEMA})
+
+// PHASE 6 — Surface
 return {
   edits: editResults,
   gates,
   adversarial,
-  totalDiff: editResults.map(e => e.diff).join('\n\n'),
-  haltReasons: adversarial.halt ? [adversarial.halt_reason] : [],
+  e2eReview,
+  orchestrator_required_step:
+    'Read e2eReview.findings[].content (the unified diff) end-to-end personally before approving.',
+  haltReasons: [
+    ...(adversarial.halt ? [adversarial.halt_reason] : []),
+    ...(adversarial.verdict === 'RED' ? [adversarial.verdict_one_line] : []),
+  ],
 }
 ```
 
