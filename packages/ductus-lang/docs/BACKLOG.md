@@ -147,9 +147,9 @@ live in **§5 (§8a)** — not duplicated here.
   ```
   node Mixer:
     view channels: Channel+
-  // `channels[0]` is a borrow of a Channel instance. The instance IS a value (first-class);
-  // you reach it through a borrow and cannot relocate/copy/store the instance itself.
-  let kept: Handle[Channel] = handle channels[0]  // to persist, take a Handle (storable)
+  // `channels[0]` is a `Handle[Channel]` value (Copy); reads through it auto-deref to `&Channel`.
+  // The underlying Channel instance IS a value (first-class) that you cannot relocate/copy/store directly.
+  let kept: Handle[Channel] = channels[0]  // to persist, take a Handle (storable)
   ```
 - **Resolved (Q7):** define "first-class citizen" **precisely in the new §1.3 decision itself**
   (nameable / passable / returnable; orthogonal to value-semantics). The spec's existing loose uses

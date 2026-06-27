@@ -135,7 +135,7 @@ the clause keywords above), all control-flow keywords (`if`, `else`,
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
-`or`, `not`, `handle` — graph-entity reference (dynamically-placed variant), §13.3.6.2; `handle!` — graph-entity reference (statically-placed variant), §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3; `delete` — Map / Deletable trait deletion, §4.9.5). `as` is **not** a cast operator; explicit conversion uses
+`or`, `not`, `handle` — graph-entity reference, dynamically-placed type form (`WeakHandle[T]`), §13.3.6.2; `handle!` — graph-entity reference, statically-placed type form (`Handle[T]`), §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3; `delete` — Map / Deletable trait deletion, §4.9.5). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
@@ -9111,15 +9111,19 @@ associated-type slots to whatever scope the slot's use-site occupies.
 The compiler's cluster analysis (§11.3.4) handles
 both cases.
 
-**The `Handle[T]` exception.** A `Handle[T]` (§13.3.6.2) is *not* an alias — it
-is a `Copy` value that designates a graph entity by identity-stamped
-reference — and so is exempt from
-every restriction above: a handle may be stored in a cell, record field, enum
-payload, or tuple like any other value. Its *resolution* `Option[&T]`, by
-contrast, contains a borrow (here `&T` is elaborated-form notation per §11.9,
-not surface-writable) and is therefore subject to categories B and
-D exactly like any other alias-bearing value. The resolution is the transient
-read; the handle is the storable carrier.
+**Handle, WeakHandle, and Portal are `Copy` carriers, not aliases.**
+A `Handle[T]` (§13.3.6.2) is `Copy` (017-142); a `WeakHandle[T]`
+(§13.3.6.2) and a `Portal[T]` (§13.6.2) are likewise `Copy`. `Copy`
+values are not aliases under §11.9 — they may be stored in a cell,
+record field, enum payload, or tuple like any other `Copy` value. No
+exemption is at work: storability follows from `Copy` semantics, and
+the categories above govern alias-bearing values only.
+
+The *resolution* `Option[&T]`, by contrast, contains a borrow (here
+`&T` is elaborated-form notation per §11.9, not surface-writable) and
+is therefore subject to categories B and D exactly like any other
+alias-bearing value. The resolution is the transient read; the handle,
+weak handle, or portal is the storable carrier.
 
 #### 11.9.2 Constraints during alias lifetime
 
@@ -13093,7 +13097,7 @@ const-generic: each placement site fixes its own `N` (the exact static
 supply there), and the declared cardinality supplies the compile-time
 bounds `min..max` that every site's `N` must satisfy. Static-view
 membership is statically provable, so each element is the
-**statically-placed** `Handle[T]` variant (§13.3.6.2) and reads through it
+**statically-placed** `Handle[T]` type (§13.3.6.2) and reads through it
 auto-deref to `&T` directly — `channels[0].gain` is zero-ceremony, no
 resolution to an `Option`. The behavior is the ordinary behavior of
 const-generic arrays:
@@ -13240,7 +13244,7 @@ type `[<name>::entry; N]`: a fixed-extent array of these records, where
 `N` is the loop's compile-time iteration count.
 
 **Field type.** Each field is typed `Handle[T]` — the statically-placed
-variant (§13.3.6.2). The for-loop is compile-time unrolled, so every
+type form (§13.3.6.2). The for-loop is compile-time unrolled, so every
 iteration's placement is a statically placed child of the surrounding
 node; no dismount is possible. Records cannot hold borrows (013-52,
 013-141), so a bare node-typed binding cannot live in a record field;
@@ -13259,7 +13263,7 @@ the entry name.
 `for … as` is the static counterpart to `repeat … as`'s
 `Cell[Map[Key, view::entry]]` (§13.5.4.9): array↔map, positional↔keyed,
 static↔Cell-dynamic. The entry-field variant tracks the difference:
-`Handle[T]` here vs `Handle[Option[T]]` there.
+`Handle[T]` here vs `WeakHandle[T]` there.
 
 ##### 13.3.3.4 Dynamic views
 
@@ -13580,7 +13584,7 @@ For a **static** (unmarked) connection-view, the name is a read-only
 const-generic length bounded by the declared cardinality, exactly as
 §13.3.3.2 specifies for node views. Static connection-view membership is
 statically provable, so each element is the statically-placed `Handle[C]`
-variant (§13.3.6.2) and reads through it auto-deref to `&C` directly:
+type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 
 - Indexed: `name[i]` is legal iff `i < min_cardinality` (ordinary
   const-generic bounds). Example: under `outgoing wires: WiresTo+`, `wires[0]`
@@ -13644,7 +13648,7 @@ are admissible:
   can satisfy the child's incoming lower bounds (§13.3.4).
 - A **module-level instance** (scope 3) — a fixed, shared target every instance
   connects to, such as a global bus or clock. Also static.
-- A **`Handle[Option[T]]`-typed attr** of the node (scope 2) — per-instance
+- A **`WeakHandle[T]`-typed attr** of the node (scope 2) — per-instance
   parameterized wiring. The instance is configured at placement with a handle
   (§13.3.6.2), and its self-sourced connection drives whatever that handle
   resolves to. This is the payoff of the dynamically-placed `to`: *every
@@ -13818,80 +13822,99 @@ there is no reference count behind it and no reachability through it. An
 entity's lifetime is governed solely by the graph position or `repeat`
 scope that owns it (§13.3.6.1, §13.5.4).
 
-**Two type forms — the static / dynamic placement split.** `Handle` has two
-variants distinguished at the type level:
+**Two distinct types — the static / dynamic placement split.** The handle
+surface is two types, `Handle[T]` and `WeakHandle[T]`, distinguished at the
+type level:
 
-- `Handle[T]` — the **statically-placed** variant. The referent is
+- `Handle[T]` — the **statically-placed** type. The referent is
   statically placed in the graph for the handle's lifetime: a named child
   of a statically-placed parent, a static-view element under its
   guaranteed minimum, a module-level instance, a `Handle[T]`-typed attr
   fed by one of these. Production sites are listed normatively in
-  017-308.
-- `Handle[Option[T]]` — the **dynamically-placed** variant. The referent
-  may be dismounted or re-pointed at runtime: `repeat`-keyed scopes
+  017-308, cases (a)(b)(c)(d).
+- `WeakHandle[T]` — the **dynamically-placed** type. The referent may be
+  dismounted or re-pointed at runtime: `repeat`-keyed scopes
   (§13.5.4.9), re-pointable handle attrs whose destination types include
   dismountable kinds, and any user-explicit widening from `Handle[T]`.
 
-Both share the runtime representation `(slot_path, generation)`; the
-split is a compile-time guarantee, enforced at the production site. A
-`Handle[T]` may always widen to `Handle[Option[T]]` implicitly (the
-`None` arm is reachable but never taken); the reverse narrowing is not
-implicit.
+Both share the runtime representation `(slot_path, generation)`; the split
+is a compile-time guarantee, enforced at the production site.
 
-**Kind-scoped.** `Handle`'s type argument is either `T` or `Option[T]` where
-`T` is a graph-entity type — a node, connection, or effect type, or a
-trait that `requires` one of the `Node` / `Connection` / `Effect` markers
-(§3.7.4). The two forms are integral to the Handle pattern, not an
-exception: `Handle[T]` for statically-placed referents,
-`Handle[Option[T]]` for dynamically-placed ones. For a reference to a
-record, tuple, array, `mut` binding, cell content, or pool entry, the
-parallel storable form is a `Portal[T]` (§13.3.6.3).
+**Lens-propagation rule (017-309).** Widening `Handle[T]` →
+`WeakHandle[T]` is lossless in two positions:
+
+- **Storage widening.** At any assignment, binding, or cell-write whose
+  slot's declared type is `WeakHandle[T]` (or a container parameterized
+  by `WeakHandle[T]`), an incoming `Handle[T]` auto-coerces.
+- **Access widening.** At any read whose access chain begins with a
+  `WeakHandle` resolution, every `Handle[T]` produced along the chain
+  surfaces as `WeakHandle[T]` at the result type. Access widening fires
+  only when the chain starts with a `WeakHandle`; chains that start
+  with a field minted as `WeakHandle` carry the widening from the mint.
+
+Narrowing `WeakHandle[T]` → `Handle[T]` is never implicit; it requires
+`handle!` or an explicit `match` / `?` arm.
+
+**Kind-scoped.** For both `Handle[T]` and `WeakHandle[T]`, `T` is a
+graph-entity type — a node, connection, or effect type, or a trait that
+`requires` one of the `Node` / `Connection` / `Effect` markers (§3.7.4).
+`Handle[T]` and `WeakHandle[T]` are distinct types, not variants of a
+single generic: `Handle[T]` designates a statically-placed referent,
+`WeakHandle[T]` a dynamically-placed one. For a reference to a record,
+tuple, array, `mut` binding, cell content, or pool entry, the parallel
+storable form is a `Portal[T]` (§13.3.6.3).
 
 **Resolution is transparent and type-directed.** A handle has no `.resolve()`
 method. As with the value/reference duality of a reactive cell (§13.2.8), what a
-handle *denotes* depends on its variant and the position it occupies:
+handle *denotes* depends on its type and the position it occupies:
 
-- In a position typed `Handle[T]` or `Handle[Option[T]]` — a handle slot, a
-  `Handle`-typed parameter or field, a handle-to-handle comparison — the
-  handle denotes the **inert handle value**. No graph entity is read and
-  nothing becomes reactive.
+- In a position typed `Handle[T]` or `WeakHandle[T]` — a handle slot, a
+  `Handle`- or `WeakHandle`-typed parameter or field, a handle-to-handle
+  comparison — the handle denotes the **inert handle value**. No graph
+  entity is read and nothing becomes reactive.
 - In a read or `&T`-expected position, a **`Handle[T]`** (statically
   placed) **auto-derefs to `&T` directly** — its statical-placement
   assertion makes resolution unnecessary: `channels[0].gain` is a direct
   read.
-- In a read or `Option[&T]`-expected position, a **`Handle[Option[T]]`**
+- In a read or `Option[&T]`-expected position, a **`WeakHandle[T]`**
   (dynamically placed) denotes its **resolution** `Option[&T]`:
   `Some(&entity)` while the referent is mounted, `None` once it is gone.
   The resolution read is the reactive one — it joins the reader's
   provenance (§13.12.1) and re-fires when the referent mounts or
-  dismounts (§13.10.5).
+  dismounts (§13.10.5). Stepping through the resulting `Option` chain is
+  the job of optional chaining `?.`, `?[]`, `?()` (017-311): the
+  position-disambiguated split of postfix `?` that produces `None` when
+  the chain interrupts and `Some(v)`-continued otherwise. Per the
+  lens-propagation rule (017-309), access widening fires only when
+  the access chain *begins* with a `WeakHandle` resolution; any
+  `Handle[T]` produced further along that chain surfaces as
+  `WeakHandle[T]` at the result type.
 
 `&T` and `Option[&T]` (the two resolution reads) *contain borrows* and are
 therefore themselves unstorable (§11.9.1) — they are the transient,
-just-resolved views. `Handle[T]` and `Handle[Option[T]]` contain no
-borrows and are the storable carriers. The pair mirrors the cell split: a
-`Handle` is to its resolution read what a value cell is to its `T` value
-(§13.2.8) — the durable home vs. the momentary read.
+just-resolved views. `Handle[T]` and `WeakHandle[T]` contain no borrows
+and are the storable carriers. The pair mirrors the cell split: a handle
+is to its resolution read what a value cell is to its `T` value (§13.2.8)
+— the durable home vs. the momentary read.
 
 **Creation — `handle` and `handle!`.** Handle production has two prefix
-keywords, distinguished by which variant they mint:
+keywords, distinguished by which type they mint:
 
-- `handle X` always produces `Handle[Option[T]]` (the dynamically-placed
-  variant). No proof obligation; always accepted.
-- `handle! X` produces `Handle[T]` (the statically-placed variant) and is
-  a **compile error** unless every reaching value of `X` is in the closed
-  statically-placed set of 017-308: a named child placement of a
-  statically-placed parent, a static-view element under its guaranteed
-  minimum, a module-level instance, `subject` inside a statically-placed
-  instance's body, a `Some`-arm projection of a `Handle[T]`, a function
-  parameter typed `Handle[T]`, or a function return typed `-> Handle[T]`.
-  Any other provenance — a `repeat`-keyed reference, a `Handle[Option[T]]`
-  resolution, an `Option` of unknown origin across a function boundary —
-  makes `handle!` a compile error.
+- `handle X` produces `WeakHandle[T]` — the storable, possibly-absent
+  designator. No proof obligation; always accepted.
+- `handle! X` produces `Handle[T]` — the statically-placed assertion —
+  and is a **compile error** unless every reaching value of `X` is in the
+  closed statically-placed set of 017-308: a named
+  child placement of a statically-placed parent, a static-view element
+  under its guaranteed minimum, a module-level instance, or `subject`
+  inside a statically-placed instance's body. Any other provenance — a
+  `repeat`-keyed reference, a `WeakHandle[T]` resolution, an `Option` of
+  unknown origin across a function boundary — makes `handle!` a compile
+  error.
 
 ```
-attr wheel: Handle[Drivable] = handle! front_wheel       // statically placed
-attr current_target: Handle[Option[Drivable]] = handle some_car  // re-pointable
+attr wheel: Handle[Drivable] = handle! front_wheel        // statically placed
+attr current_target: WeakHandle[Drivable] = handle some_car  // re-pointable
 ```
 
 The provability rule is **normative and closed**, so the same programs
@@ -13901,13 +13924,21 @@ makes the `handle!` site fail with a precise error naming the broken
 contract, instead of silently switching variants and changing what the
 caller can rely on.
 
-**Auto-coerce at typed slots.** Wherever a `Handle[T]`-, `Handle[Option[T]]`-,
+**Auto-coerce at typed slots.** Wherever a `Handle[T]`-, `WeakHandle[T]`-,
 or `Portal[T]`-typed position receives a reference directly — an attr
 initializer, a function argument, a return — the appropriate
 `handle`/`handle!`/`portal` coercion is inserted automatically; the
 slot's declared type drives the choice. There is no `.handle()` method
 and no sigil; `handle`, `handle!`, and `portal` are the explicit
 spellings (the parallel `portal` covers non-graph references, §13.3.6.3).
+A `WeakHandle[T]`-typed slot also accepts a `Handle[T]` input directly:
+this is the storage-widening direction of the lens rule (017-309), a
+lossless widening from the statically-placed carrier to its
+possibly-absent superset. Container slots propagate the same widening at
+any nesting depth (017-310): a `Vec[WeakHandle[T]]` slot accepts a
+`Vec[Handle[T]]`, a `Cell[WeakHandle[T]]` accepts a `Cell[Handle[T]]`,
+and so on. The narrowing direction (`WeakHandle[T]` → `Handle[T]`) is
+never implicit; it requires `handle!` or an explicit `match`/`?`.
 
 **Named-place-only.** Both `handle` and `portal` accept only references to
 existing slots, never raw values, constructors, literals, or unbound
@@ -13923,7 +13954,7 @@ handle Voice(...)               // ✗ constructor — no graph slot yet
 (§11.7.4); function parameters carry it in type position
 (`fn f(h: Handle[T])`), not as a `handle h: T` mode.
 
-**Elimination.** A `Handle[Option[T]]` is consumed through the ordinary
+**Elimination.** A `WeakHandle[T]` is consumed through the ordinary
 `Option` eliminators, reached because its read is `Option[&T]`:
 
 ```
@@ -13931,11 +13962,15 @@ match target:                       // both arms explicit
   Some(car): car.speed
   None: 0.0
 
-let s = target?.speed               // propagate None upward (§8.4)
+let s = target?.speed               // optional chaining (017-311):
+                                    // s : Option[Speed]
 ```
 
-A `Handle[T]` (statically placed) needs no elimination — `target.speed`
-reads through the auto-deref-to-`&T` directly.
+The `?.` form here is optional chaining (017-311), not the terminal
+`Try`-propagation `?` of §8.4: a `WeakHandle[T]` read followed by
+`?.field` produces an `Option` of the field type, with `None` short-circuiting
+the chain. A `Handle[T]` (statically placed) needs no elimination —
+`target.speed` reads through the auto-deref-to-`&T` directly.
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
 plus a **generation** stamp. Resolution compares the stamp: if the slot was
@@ -13961,9 +13996,11 @@ array elements, `mut` bindings, cell contents, pool entries — is a
 
 A `Portal[T]` is a **value** — `Copy`, and freely placed in cells, fields,
 tuples, and enum payloads — that designates a non-graph slot by an
-identity-stamped reference. A portal **never keeps its referent alive**:
-there is no reference count behind it and no reachability through it. The
-slot's lifetime is governed by its owning binding or container. A portal may
+identity-stamped reference. `Copy` values are not aliases under §11.9 — a
+`Portal[T]` is storable in any cell, field, payload, or tuple position like
+any other `Copy` value. A portal **never keeps its referent alive**: there
+is no reference count behind it and no reachability through it. The slot's
+lifetime is governed by its owning binding or container. A portal may
 outlive its slot, and then resolves to "absent".
 
 **Kind-scoped.** `T` ranges over non-graph types: primitives, records,
@@ -14029,6 +14066,21 @@ connection re-pointing.
 slot's identity is preserved, by the same path-based identity rule as
 cells (§13.15.2). Slot relocation or removal invalidates portals to that
 slot.
+
+**`Portal[Handle[T]]` does not collapse.** A `Portal[T]` designates a
+slot identity by generation stamp; its lifetime is the lifetime of the
+slot's owner. A `Handle[T]` value sitting in that slot designates a graph
+entity (§13.3.6.2); its lifetime is the entity's mount lifetime. These
+are two independent lifetimes. The slot can drop — the containing record
+drops, the field is reassigned — while the graph entity is still mounted;
+the graph entity can dismount while the slot is still live and holds a
+now-stale handle. A `Portal[Handle[T]]` resolution is therefore a
+two-step presence check: outer `Option[&Handle[T]]` from the portal's
+generation guard, then the handle's own liveness from the inner read.
+Collapsing `Portal[Handle[T]]` to `Handle[T]` would conflate these two
+distinct presence checks into one. `Portal[Portal[T]]` still collapses
+to `Portal[T]`: both layers track the same kind of slot lifetime, so
+nesting them adds no extra check.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -14464,8 +14516,8 @@ Children of a parent instance are accessible in two ways:
 - **By view:** a view name. For a *static* (unmarked) view this is a
   read-only array of `Handle[T]`s with const-generic length bounded by the
   declared cardinality (§13.3.3.2) — indexable under the guaranteed
-  minimum, iterable with `for`, in placement order; elements are the live
-  `Handle[T]` variant and auto-deref to `&T` (§13.3.6.2). For a
+  minimum, iterable with `for`, in placement order; elements are
+  `Handle[T]` values that auto-deref to `&T` (§13.3.6.2). For a
   **`dynamic`** view it is a reactive cell `Cell[Iterator[Handle[T]]]`
   consumed via operators or `repeat` (§13.3.3.4). Bulk access exists only
   through a declared view name.
@@ -15176,12 +15228,12 @@ record is not nameable in user code as a parameter type — field access
 is the user-facing surface.
 
 **Field type.** Each field on `<view>::entry` is typed
-**`Handle[Option[T]]`** — the dynamically-placed variant — because the
+**`WeakHandle[T]`** — the dynamically-placed type — because the
 repeat-keyed scope can dismount between commits, and the whole purpose
 of the entry is being read from *outside* the scope where presence is
 not provable. Records cannot hold borrows (013-52, 013-141), so a bare
 node-typed binding cannot live in a record field; the compiler mints a
-`Handle[Option[T]]` for each placement, which is `Copy` and storable.
+`WeakHandle[T]` for each placement, which is `Copy` and storable.
 The placement binding `<name>` *inside* the repeat body itself stays a
 borrow (017-131) — the entry field is the compiler's separate storable
 representation for outside-the-scope access.
@@ -15191,11 +15243,11 @@ representation for outside-the-scope access.
 `<view>.get(k)?.<name>` resolves end-to-end to `Option[&T]`:
 
 - Outer `Option` from `Map.get` (key absent or scope unmounted).
-- Inner `&T` from the `Handle[Option[T]]` field's read-position
+- Inner `&T` from the `WeakHandle[T]` field's read-position
   resolution (§13.3.6.2): the field reads as `Option[&T]`, and the
   composing `?` arm collapses to `Option[&T]` overall.
 
-For long-term storage, hold the `Handle[Option[T]]` value the field
+For long-term storage, hold the `WeakHandle[T]` value the field
 yields, or — preferred for cross-commit reference — store the **key**:
 by the identity rule of §13.5.4.8, a key that leaves and later returns
 remounts the *same* scope, so a stored key resumes resolving to `Some`
@@ -15461,12 +15513,12 @@ of its declaration (§13.6.1):
 each placement specifies its source (the enclosing instance) and
 destination (§13.8.5.1). The `from` binding is fixed for the connection's
 lifetime. The `to` binding tracks the destination: when the destination is a
-reactive selection or a `Handle` (§13.8.5.1), `to` follows whichever node it
+reactive selection or a `WeakHandle` (§13.8.5.1), `to` follows whichever node it
 currently resolves to, and the body's reads of `to.*` re-evaluate when it
 re-points — a *dynamic dependency* on the current target (§13.10.5, §13.12.1).
 
-Inside the body, `from` and `to` are **never `Option`** — they are the live
-endpoint instances directly. A destination supplied as a `Handle` (whose
+Inside the body, `from` and `to` are **never `Option`** — they are the
+endpoint instances directly. A destination supplied as a `WeakHandle` (whose
 read is `Option[&N]`, §13.3.6.2) is unwrapped at the boundary: while it resolves to
 `Some`, the connection is active and the body sees the contained node as `to`;
 while it resolves to `None`, the connection **freezes** (§13.9.7) and the body
@@ -15481,7 +15533,7 @@ type's own body, with no external `some_conn.to` access. A connection does not
 surface its endpoints or its activation as readable fields (§13.9.1); an outside
 observer instead reads the connection's own cells (attrs, deriveds), which hold
 their last committed value even while the connection is frozen (§13.9.7).
-Liveness-awareness *about* a node is the job of a `Handle` (§13.3.6.2), not of a
+Presence-awareness *about* a node is the job of a `WeakHandle` (§13.3.6.2), not of a
 connection's surface.
 
 #### 13.6.3 Generic connections
@@ -17568,14 +17620,14 @@ if each were its own one-write transaction.
 Most reactive dependencies are static: an expression's provenance set
 (§13.12.1) is the fixed set of cells it reads. A *dynamic* dependency is one
 whose cell *identity* can change between commits. They arise from
-**`Handle[Option[T]]` resolution** (§13.3.6.2) — a read through the
-dynamically-placed Handle variant reaches whichever entity the handle
+**`WeakHandle[T]` resolution** (§13.3.6.2) — a read through the
+dynamically-placed `WeakHandle[T]` type reaches whichever entity the handle
 currently resolves to, and flips on re-point, mount, and dismount. The
-statically-placed `Handle[T]` variant carries no dynamic dependency: its
+statically-placed `Handle[T]` type carries no dynamic dependency: its
 referent is fixed for the handle's lifetime, so reads behave as ordinary
 static references. The canonical dynamic case is a reactive connection
 target (§13.6.2): a connection whose `to` is a reactive selection or a
-`Handle[Option[T]]` reads `to.*` against whichever node it currently
+`WeakHandle[T]` reads `to.*` against whichever node it currently
 designates, so the identity of the cells in the dependency changes when
 the target re-points. The runtime handles this in two parts:
 
@@ -17590,7 +17642,7 @@ the target re-points. The runtime handles this in two parts:
   the new target, and a write to the *old* target no longer dirties the
   connection.
 
-The same two-part mechanism covers every `Handle[Option[T]]` read — a
+The same two-part mechanism covers every `WeakHandle[T]` read — a
 node-body derived reading a `repeat`-view handle (§13.5.4.9) subscribes
 to the handle's resolution and, while resolved, to the referent's cells;
 a dismount flips the resolution to `None` and drops the referent
@@ -17599,7 +17651,7 @@ collective form of the same mechanism: an operator over a dynamic
 connection-view subscribes to the membership (the cell itself) and, per
 current member, to the cells its per-element fn reads — a mount or
 dismount re-establishes the member subscriptions exactly as a re-point
-does. `Handle[Option[T]]` resolution — individually or in this collective
+does. `WeakHandle[T]` resolution — individually or in this collective
 form — is the **only** source of dynamic dependency in the language; it
 exists because wiring may change while every reachable entity remains
 statically known (§13.1, §13.3.6.1, and per-`repeat`-key scopes §13.5.4). It
@@ -17805,7 +17857,7 @@ The compiler uses provenance to:
   known values are required (§2.4.2).
 
 A provenance set is normally *static* — fixed for the expression. The one
-exception is a read through **`Handle[Option[T]]` resolution** (§13.3.6.2,
+exception is a read through **`WeakHandle[T]` resolution** (§13.3.6.2,
 §13.10.5): the *identity* of the depended-on cells changes when the
 resolution re-points, mounts, or dismounts. A statically-placed
 `Handle[T]` carries no such exception — its referent is fixed, so its
