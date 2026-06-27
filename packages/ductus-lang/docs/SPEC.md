@@ -12878,9 +12878,13 @@ runtime.
 ```
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
-  view name: Selector <cardinality>                   // optional child views (§13.3.3)
-  outgoing name: ConnType <card>                      // optional outgoing connection-views
-  incoming name: ConnType <card>                      // optional incoming connection-views
+  children:                                           // optional acceptance of placed children (§13.3.3)
+    name: Selector <cardinality>                      // one named acceptance entry per line
+  incoming:                                           // optional acceptance of incoming connections
+    name: ConnType <card>
+  outgoing:                                           // optional acceptance of outgoing connections
+    name: ConnType <card>
+  view name: Selector <cardinality>                   // optional standalone selection (§13.3.3)
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
   attr name: Type = default                           // per-instance user-configured cells
@@ -12891,7 +12895,7 @@ node TypeName[GenericParams]?:
   effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
     source |> effect
   expose:                                             // structural output (§13.3.7) — always last
-    name                                              // a declared view (or named child)
+    name                                              // a declared view, named acceptance entry, or named child
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
@@ -12902,7 +12906,8 @@ in free order; `effects:` follows the members and `expose:` is last
 ```
 node Driver:
   satisfies Drivable
-  outgoing drives: Drives
+  outgoing:
+    drives: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
   derived is_aggressive: bool = risk_tolerance > 0.7
@@ -13062,25 +13067,27 @@ Because views overlap, a child counts toward every view it matches:
 
 ```
 node Fleet:
-  view drivables: Drivable[=5]   // exactly 5 Drivables — any concrete types
-  view cars:      Car[=2]        // 2 of those 5 are Cars  (Car ⊆ Drivable)
+  children:
+    drivables: Drivable[=5]   // exactly 5 Drivables — any concrete types
+    cars:      Car[=2]        // 2 of those 5 are Cars  (Car ⊆ Drivable)
 ```
 
 The only conflict is **unsatisfiability**, diagnosed by a cheap subset-edge
 static check along the known trait/marker subset lattice plus placement-time
 counting — there is no general feasibility solver. A view whose selector is
 a subset of another's but whose bound cannot be reconciled with it is a
-static error: `view all: Node[=3]` alongside `view drivables: Drivable[=5]`
-cannot be satisfied (Drivable ⊆ Node, 5 > 3).
+static error: a `children:` clause whose entries are `all: Node[=3]` and
+`drivables: Drivable[=5]` cannot be satisfied (Drivable ⊆ Node, 5 > 3).
 
 **Supply mode — the `dynamic` prefix.** Orthogonal to *count* is *supply
 mode*: whether the set of supplied children is a static fact or may vary at
-runtime. The `dynamic` keyword prefixes a **view** (`dynamic view voices:
-Voice*`), marking the second mode. A `dynamic` view takes **exactly the `*`
-specifier** — its inherent zero-or-more; the bounded specifiers
-`?`/`+`/`[=N]`/`[N..M]` are forbidden on `dynamic`, and there is no single
-dynamic view (`dynamic view voice: Voice` ✗, `dynamic view voices: Voice+`
-✗) — because a runtime-varying set can guarantee no minimum and admit no
+runtime. The `dynamic` keyword prefixes a **named acceptance entry** inside
+a `children:` clause (`dynamic voices: Voice*`), marking the second mode. A
+`dynamic` view takes **exactly the `*` specifier** — its inherent
+zero-or-more; the bounded specifiers `?`/`+`/`[=N]`/`[N..M]` are forbidden
+on `dynamic`, and there is no single dynamic view (`dynamic voice: Voice`
+✗, `dynamic voices: Voice+` ✗) — because a runtime-varying set can
+guarantee no minimum and admit no
 checked maximum, and runtime cardinality checks do not exist in the
 language. An unmarked view is *static*: supplied by explicitly written
 placements only, with the count known per placement site at compile time. A
@@ -13175,8 +13182,10 @@ OscBank[16] sixteen_bank        // 16 Oscillators per instance
 OscBank[8]  eight_bank          // 8 Oscillators per instance
 ```
 
-Note `OscBank` declares no view: it accepts no caller-supplied children,
-and its own emissions need no view.
+Note `OscBank` declares no `children:` clause (017-16): it accepts no
+caller-supplied children. Its own emissions are internals (§13.3.4.2)
+and need no acceptance entry; a standalone `view` would only select
+already-accepted children (017-20), not widen what `OscBank` accepts.
 
 **Signature and views.** Type-emitted children are **internals**
 (§13.3.4.2): they are never counted by any view, which captures
@@ -13273,7 +13282,8 @@ placements:
 
 ```
 node Posts:
-  dynamic view items: Post*
+  children:
+    dynamic items: Post*
   expose:
     items
 
@@ -14096,10 +14106,13 @@ node's content.
 ```
 node TypeName:
   satisfies SomeTrait
-  view a: SomeA
-  view b: SomeB
-  incoming in1: ConnIn1
-  outgoing out1: ConnOut1
+  children:
+    a: SomeA
+    b: SomeB
+  incoming:
+    in1: ConnIn1
+  outgoing:
+    out1: ConnOut1
   attr foo: i32
   attr user_name: string = "world"
   derived greeting: string = "hello " + user_name
@@ -14108,11 +14121,17 @@ node TypeName:
     b
 ```
 
-Node-body members — cells, `view`/`dynamic view`, `incoming`/`outgoing`
-connection-views, `satisfies`, and `when:` — appear in **free order**; the
-only positional constraints are that `effects:` (§13.3.8) comes after the
-members and `expose:` comes last. `satisfies`, `when:`, `effects:`,
-`expose:`, and `default attr` each appear at most once.
+Node-body members — cells, standalone selection-only `view`/`dynamic view`
+declarations (017-20), the acceptance clauses `children:` / `incoming:` /
+`outgoing:` (017-9, 017-271), `satisfies`, and `when:` — appear in **free
+order**; the only positional constraints are that `effects:` (§13.3.8)
+comes after the members and `expose:` comes last. `satisfies`, `when:`,
+`effects:`, `expose:`, and `default attr` each appear at most once. An
+acceptance clause is a header keyword followed by `:` and an indented block
+of named entries, one entry per line; each named entry joins the body-wide
+namespace (020-37). A standalone `view` or `dynamic view` declaration is
+pure selection over already-accepted children (017-20) and never widens
+acceptance.
 
 ##### 13.3.7.1 Content
 
@@ -14217,8 +14236,10 @@ order:
 
 ```
 node Frame:
-  view rest: Node*
-  outgoing wires: Connection*
+  children:
+    rest: Node*
+  outgoing:
+    wires: Connection*
   expose:
     @content              // children + outgoing connections, in caller order
 ```
@@ -14229,10 +14250,10 @@ caller-supplied children and outgoing connections only — never incoming
 connections, which are not body-supplied (§13.3.4).
 
 `@content` does not widen acceptance: a node accepts only what its
-`view`/`outgoing` declarations name (§13.3.3.1, §13.3.4). A container that
-takes arbitrary content declares explicit catch-all views (`view rest:
-Node*`, `outgoing wires: Connection*`); there is no "content accepts
-anything" shortcut.
+`children:` and `outgoing:` clause entries name (§13.3.3.1, §13.3.4). A
+container that takes arbitrary content declares explicit catch-all entries
+in those clauses (e.g. `children: rest: Node*` and `outgoing: wires:
+Connection*`); there is no "content accepts anything" shortcut.
 
 `@content` is **wrappable** — placed inside a wrapper body it tucks the
 whole supplied body into that wrapper:
@@ -14626,9 +14647,10 @@ Putting view and named individual access together:
 
 ```
 node Composite:
-  view oscillators: Oscillator+
-  view filter:      Filter
-  view amplifier:   Amplifier
+  children:
+    oscillators: Oscillator+
+    filter:      Filter
+    amplifier:   Amplifier
   derived total_oscillation: f32 = sum_oscillators(subject)
   derived processed: f32 = process(subject)
 
@@ -16927,8 +16949,9 @@ top-level placements:
 
 ```
 node App:
-  view loggers: Logger [=2]
-  view monitor: Monitor
+  children:
+    loggers: Logger [=2]
+    monitor: Monitor
   attr verbose: bool = false
   attr health_checks_enabled: bool = true
 
