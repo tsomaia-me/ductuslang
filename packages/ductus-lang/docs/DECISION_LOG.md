@@ -3317,7 +3317,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 028-73. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-74. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
 
-## 029. Operators — 131 Rules
+## 029. Operators — 125 Rules
 
 029-1. An operator is a reusable, cell-allocating reactive transformation declared with the `operator` keyword. (§13.17)
 029-2. An operator takes `Cell[T]` inputs, optionally plus non-reactive value parameters, and produces an output of any type, exposed to callers as a reactive cell. (§13.17)

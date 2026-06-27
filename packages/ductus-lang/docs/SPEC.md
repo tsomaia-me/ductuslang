@@ -22840,8 +22840,10 @@ effect-`desired` runs. The two meet only through the behavior ABI
 `str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, slices
 `T[..N]` and `T[..]` (borrow types — `(pointer, length)` ABI shape, used
 in behavior parameter and return positions only, never as cell values),
-maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored
-when jagged, inline array when rectangular), records and enums as
+maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored;
+017-291 spells the uniform slice-backed layout, with an optional
+flat-array representation as an internal compiler optimization when
+every row's inner cardinality is statically equal), records and enums as
 `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
 dynamic-size values, `(slot_path, generation)` pairs for `Handle[T]` and
 `Portal[T]` (§13.3.6.2–.3), and `closure<(T,…)->R>`. Behaviors are fully
