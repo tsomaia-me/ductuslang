@@ -15077,10 +15077,6 @@ source's current keys.
 node Feed:
   attr posts: Vec[Post] = Vec::new()
   attr selected: PostId
-  expose:
-    repeat post at i in posts as posts_view keyed by post.id:
-      PostCard | data=post rank=i:
-        Avatar as avatar | url=post.author_url
 
   // posts_view : Cell[Map[PostId, posts_view::entry]]
   // posts_view::entry has one field per `as <name>` placement — here, `avatar`
@@ -15090,6 +15086,11 @@ node Feed:
     match posts_view.get(selected)?.avatar:
       Some(a): a.url        // &Avatar — read in place
       None:    "(none)"     // key absent or scope unmounted
+
+  expose:
+    repeat post at i in posts as posts_view keyed by post.id:
+      PostCard | data=post rank=i:
+        Avatar as avatar | url=post.author_url
 ```
 
 **Compiler-minted `<view>::entry`.** The `entry` record is synthetic and
