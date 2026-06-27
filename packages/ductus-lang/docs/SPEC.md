@@ -13002,7 +13002,7 @@ callers; internals are unconstrained by them — is stated in §13.3.4.2.
 A named acceptance entry *is* a view: it provides a body selection
 binding over the children it accepts. Body code reads the binding under
 the rules of §13.3.3.2 — as a `Handle[T]` array for a static view, or a
-`Cell[Iterator[Handle[T]]]` for a `dynamic` entry (§13.3.3.4).
+`Cell[DynamicView[WeakHandle[T]]]` for a `dynamic` entry (§13.3.3.4).
 
 A separate `view` declaration may be written to provide an *additional*
 selection over already-accepted children — typically for a narrower
@@ -13128,7 +13128,7 @@ const-generic arrays:
   `(slot_path, generation)` pair the Handle always carries.
 
 For a **`dynamic`** view, the view name is not an array but a **reactive
-cell** `Cell[Iterator[Handle[T]]]` (§13.3.3.4); none of the static-array
+cell** `Cell[DynamicView[WeakHandle[T]]]` (§13.3.3.4); none of the static-array
 forms above apply to it.
 
 A view is the only body-side bulk form: there is no whole-namespace
@@ -13300,8 +13300,9 @@ feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
 **The cell.** A `dynamic` view is a **reactive cell**
-`Cell[Iterator[Handle[T]]]` whose value is the current iterator of
-supplied-child `Handle[T]`s — keyed and in source order (the written
+`Cell[DynamicView[WeakHandle[T]]]` (017-313) whose value is the current
+iterator of supplied-child `WeakHandle[T]`s — keyed and in source order
+(the written
 interleaving, with each feeding `repeat`'s scopes expanded in place). The
 cell updates when children mount or dismount. The iterator value is
 consume-only (017-67): it cannot be bound, stored, or returned as a value
@@ -13358,6 +13359,24 @@ contract regardless, because the *type* admits dynamic supply.
 
 The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
+
+**The `DynamicView[T]` type.** The cell payload for a dynamic view is a
+language-level type **`DynamicView[T]`** (017-313). It is iterator-shaped:
+`Item = WeakHandle[T]`, satisfies `Iterable` and `IntoIterable`, and has no
+surface `len` or index operator on its own — storage is implementation-
+defined. `DynamicView[T]` is consume-only: it is not stored bare; it lives
+only inside a `Cell[DynamicView[T]]`, and the containing cell is what is
+bound, stored, and subscribed against (017-315). Consumers are the reactive
+operators (§13.3.3.2) or `repeat` (§13.9.7); the `DynamicView` value itself
+carries no subscription semantics independent of its cell.
+
+**Iteration narrowing.** Iterating a `Cell[DynamicView[WeakHandle[T]]]`
+yields `WeakHandle[T]` on the iterator surface. In a context that proves
+the iterated element is reachable — the typical case being a read inside a
+per-element operator like `map`/`filter` or a `repeat` body — the per-
+element binding projects through the lens-propagation rule to `&T` at that
+read site (017-314); outside any such proven-reachable context the surface
+remains `WeakHandle[T]`.
 
 ##### 13.3.3.5 Bundles
 
@@ -13609,9 +13628,9 @@ type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
 For a **`dynamic`** connection-view, the name is a reactive cell
-`Cell[Iterator[Handle[C]]]` whose value is the current iterator of member
-connections, with the consumption rules of §13.3.3.4 — operators for
-values, `repeat` for structure, nothing else. This is
+`Cell[DynamicView[WeakHandle[C]]]` (017-313) whose value is the current
+iterator of member connections, with the consumption rules of §13.3.3.4
+— operators for values, `repeat` for structure, nothing else. This is
 the fan-in idiom:
 
 ```
@@ -14547,9 +14566,9 @@ Children of a parent instance are accessible in two ways:
   declared cardinality (§13.3.3.2) — indexable under the guaranteed
   minimum, iterable with `for`, in placement order; elements are
   `Handle[T]` values that auto-deref to `&T` (§13.3.6.2). For a
-  **`dynamic`** view it is a reactive cell `Cell[Iterator[Handle[T]]]`
-  consumed via operators or `repeat` (§13.3.3.4). Bulk access exists only
-  through a declared view name.
+  **`dynamic`** view it is a reactive cell `Cell[DynamicView[WeakHandle[T]]]`
+  (017-313) consumed via operators or `repeat` (§13.3.3.4). Bulk access
+  exists only through a declared view name.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from outside
   the node body) — accesses a specific child by its placement-time name.
   Names are assigned in the placement body (§13.8.3) and visible wherever
@@ -19291,8 +19310,9 @@ LHS rules common to all cases:
 
 - LHS must be an expression of a reactive cell type (`Signal[T]`,
   `Derived[T]`, `Recurrent[T, N]`, `Stream[T]`, or any other `Cell[T]`
-  per §13.18.5), or an expression convertible to one. Literals are
-  wrapped as implicit constant signal cells automatically.
+  per §13.18.5), or an expression convertible to one. A static value
+  (literal, `const`, or compile-time constant expression) is wrapped as
+  a degenerate `Derived[T]` cell automatically (029-131).
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -19497,8 +19517,8 @@ error: operator `smooth` has no positional parameter to bind from `|>`
 error: cannot pass value of type `f32` to `Cell[f32]` parameter
   --> smooth(source: some_value, rate: 0.1, clock: tick)
                      ^^^^^^^^^^ expected `Cell[f32]`, found `f32`
-  hint: literals are wrapped as implicit constant signal cells
-        (compile-time-fixed `Signal[T]` values) automatically; this expression
+  hint: static values (literals, `const`s, compile-time constants) are wrapped
+        as degenerate `Derived[T]` cells automatically (029-131); this expression
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
 ```
 
