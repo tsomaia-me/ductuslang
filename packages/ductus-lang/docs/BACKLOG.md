@@ -222,30 +222,31 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
   attr favorite: Handle[Channel] = channels[0]                // Copy out of the view, storable
   ```
 
-### 4.5 Group ≠ View
-- **Decision:** A **group** is a *heterogeneous* bundle of co-placed children, written `[...]` at
-  placement. It is a distinct kind from a view (which is homogeneous). A group is reached **only**
-  via `.<Type>`, which yields a (homogeneous) view; there is no bare positional index into a group.
-- **Why:** A view holds one predicate; a group can mix types. Forcing `.<Type>` first means you
-  never index a heterogeneous thing, so the "what type does `group[i]` return / union?" problem
+### 4.5 Bundle ≠ View
+- **Decision:** A **Bundle** is a *heterogeneous* collection of co-placed children, written `[...]`
+  at placement. It is a distinct kind from a view (which is homogeneous). A Bundle is reached
+  **only** via `.<Type>`, which yields a (homogeneous) view; there is no bare positional index into
+  a Bundle.
+- **Why:** A view holds one predicate; a Bundle can mix types. Forcing `.<Type>` first means you
+  never index a heterogeneous thing, so the "what type does `bundle[i]` return / union?" problem
   never arises (Ductus has no ad-hoc unions, 030-68).
 - **Example:**
   ```
-  view bar: [Note+ Rest*]     // a single group: 1+ Note, 0+ Rest
-  bar.Note[0].pitch           // .Note → view of Notes in the group, then index
-  bar.Rest                    // .Rest → view of Rests in the group
+  view bar: [Note+ Rest*]     // a single bundle: 1+ Note, 0+ Rest
+  bar.Note[0].pitch           // .Note → view of Notes in the bundle, then index
+  bar.Rest                    // .Rest → view of Rests in the bundle
   ```
 
-### 4.6 Bare placement is not a group; group access
-- **Decision:** Only an explicit `[...]` is a group; a bare placement is not. Flat views flatten
-  through groups (count/see elements); group views see brackets. Single group → `bar.Note[i]`;
-  multiple groups → index the group first, `bars[g].Note[i]`.
+### 4.6 Bare placement is not a bundle; bundle access
+- **Decision:** Only an explicit `[...]` is a bundle; a bare placement is not. Flat views flatten
+  through bundles (count/see elements); bundle views see brackets. Single bundle → `bar.Note[i]`;
+  multiple bundles → index the bundle first, `bars[g].Note[i]`.
 - **Example:**
   ```
-  verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one group
+  verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one bundle
   view notes:  Note+           // flat → sees C4, F4, G4, E4   (4)
-  view chords: [Note+]+        // grouped → sees [F4 G4]        (1)
-  chords[0].Note[1]            // 2nd Note of group 0
+  view chords: [Note+]+        // bundled → sees [F4 G4]        (1)
+  chords[0].Note[1]            // 2nd Note of bundle 0
   ```
 
 ### 4.7 Cardinality = conjunction
@@ -254,19 +255,19 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
   precedence/resolution. Overlap is fine (a child counted in every matching view). The only
   "conflict" is unsatisfiability, diagnosed by a **cheap subset-edge static check** (along the known
   trait/marker subset lattice) plus **placement-time counting** — no general feasibility solver.
-  For groups: **inner cardinality (members-per-group) is part of the match predicate (a filter);
-  outer cardinality (group count) is the count constraint.**
+  For bundles: **inner cardinality (members-per-bundle) is part of the match predicate (a filter);
+  outer cardinality (bundle count) is the count constraint.**
 - **Why:** Lets you require "5 Drivables, any concrete type" (`view ds: Drivable[=5]`) while keeping
   conflicts (a subset needing more than a superset allows) detectable. Inner-as-filter avoids false
-  conflicts and lets distinct group shapes (`[Note[=2]]+` vs `[Note[=3]]+`) coexist.
+  conflicts and lets distinct bundle shapes (`[Note[=2]]+` vs `[Note[=3]]+`) coexist.
 - **Example:**
   ```
   view drivables: Drivable[=5]   // exactly 5 Drivables (cars, bikes, trains — don't care)
   view cars:      Car[=2]        // 2 of those 5 are Cars (Car ⊆ Drivable) — both hold
   // view all: Node[=3] + view drivables: Drivable[=5]  →  static error (Drivable ⊆ Node, 5 > 3)
 
-  view duos:  [Note[=2]]+        // selects 2-note groups
-  view trios: [Note[=3]]+        // selects 3-note groups — disjoint, no conflict
+  view duos:  [Note[=2]]+        // selects 2-note bundles
+  view trios: [Note[=3]]+        // selects 3-note bundles — disjoint, no conflict
   ```
 
 ### 4.8 Accepted universe
@@ -495,7 +496,7 @@ provenance-tracked (025-15/16), but the **ownership category of a `Cell[T]` valu
 | 5 | `as`-name on compile-time `for` | LOCKED — its **own** internal-child mechanism (`for … as`), sibling of `repeat … as`; not absorbed into views (§4.12) |
 | 6 | trait-bound `for`/parts | absorbed into views (trait selectors) — §4 |
 | 7 | per-declaration named parts | became the views model — §4 |
-| 8 | placing groups (chords) | became the Group concept — §4.5/4.6 |
+| 8 | placing groups (chords) | became the Bundle concept — §4.5/4.6 |
 | 9 | slots | subsumed by named views — §4 |
 | 10 | `instant` type | NO-ACTION (already specified) |
 | 11 | `@reset_on_reopen` unification | LOCKED — §2 |

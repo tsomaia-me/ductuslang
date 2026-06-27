@@ -13232,6 +13232,9 @@ and binds them collectively to `<name>` in the enclosing scope:
 
 ```
 node OscBank[const N: usize]:
+  derived total: f32 = sum_outputs(bank)            // pass the whole array
+  derived first_freq: f32 = bank[0].osc.freq        // Handle auto-derefs to &Oscillator
+
   expose:
     for i in 0..N as bank:
       Oscillator as osc | freq=base_freq(i)        // emitted N times
@@ -13241,9 +13244,6 @@ node OscBank[const N: usize]:
   // bank::entry has fields named after the inner `as` placements:
   //   osc: Handle[Oscillator]   (statically placed)
   //   flt: Handle[Filter]       (statically placed)
-
-  derived total: f32 = sum_outputs(bank)            // pass the whole array
-  derived first_freq: f32 = bank[0].osc.freq        // Handle auto-derefs to &Oscillator
 ```
 
 `<name>::entry` is a **compiler-minted nominal record** per `for … as`
@@ -13375,14 +13375,19 @@ chords.length                         // number of bundles
 chords[0].length                      // number of elements in bundle 0
 ```
 
+An **empty bundle literal `[]`** is legal (017-265) and has type
+`Bundle[T]` for any `T` the context can infer. The bundle has zero
+elements; its offset table has length 1 (a single zero-length row).
+
 ##### Access via `Index`
 
 Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
 **index-to-min** rule (017-43) at each level:
 
 - `bundle[g]` returns a **row slice** — `Handle[T][..N]` when the row's
-  length is statically derivable (rectangular bundles, single-element
-  rows), `Handle[T][..]` for runtime-length rows (jagged bundles).
+  length is statically derivable (every row's inner cardinality is
+  statically equal, or the row is a single element), `Handle[T][..]`
+  when the row length is only known at runtime (017-291).
 - `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
 - `bundle.length` returns the row count; `bundle[g].length` returns the
   row's element count.
@@ -13400,20 +13405,19 @@ for chord in chords:                  // unrolls to one body copy per bundle
 
 ##### Storage (implementation detail)
 
-All bundle forms yield the same external type `Bundle[T]`. Internal
-storage varies — the difference is invisible to user code, which always
-sees a `Handle[T][..N]` or `Handle[T][..]` slice from `bundle[g]`:
+All bundle forms yield the same external type `Bundle[T]` and share a
+uniform homogeneous slice-backed storage model: a flat `Handle[T]`
+backing buffer plus an offsets table that delimits each row (017-291).
+User code always sees a `Handle[T][..N]` or `Handle[T][..]` slice from
+`bundle[g]`; single-element rows are length-1 slices, uniform with the
+other forms (no collapse to a bare `Handle[T]`). The empty bundle
+literal `[]` is a legal `Bundle[T]` for any inferable `T`; its offsets
+table has length 1 (one zero-length row).
 
-- **Rectangular inner cardinality** (e.g. `[Note[=2]]+`): backed by a 2D
-  array `Handle[T][M][N]`; row length is a compile-time constant.
-- **Jagged inner cardinality** (e.g. `[Drivable[2..4]]+`): backed by a
-  flat handle backing plus an offsets table; row length is runtime.
-- **Single-element rows** (e.g. `[Note]+`): no special collapse to a bare
-  `Handle[T]` — each row is a length-1 slice, uniform with the other
-  forms.
-
-Storage strategy is the implementation's choice; the user-visible API is
-the `Index` surface above.
+As an internal optimization, when every row's inner cardinality is
+statically equal the compiler MAY use a flat-array representation; this
+choice is invisible at the type level and at the surface, and does not
+change the `Index` surface above.
 
 ##### Flat views flatten; bundle views see brackets
 
@@ -13472,9 +13476,12 @@ children, `when`-gating, etc.:
 
 ##### `as`-naming
 
-`[n1 n2] as pair` binds `pair` to the row slice form `Handle[T][..N]` (or
-`Handle[T][..]` for jagged rows) — the same type that a receiving view's
-row produces from `view[g]`.
+`[n1 n2] as pair` binds `pair` to a borrow of the row slice form
+(017-293, learning #16: placement always binds to a borrow). The slice
+element type is `Handle[T]` because the bundle backing stores Handles
+(017-295): `Handle[T][..N]` when the row inner cardinality is statically
+known, `Handle[T][..]` when it is only known at runtime — the same type
+that a receiving view's row produces from `view[g]`.
 
 ##### Dynamic bundles
 
@@ -15563,7 +15570,7 @@ connection's surface.
 Connections may declare generic parameters:
 
 ```
-connection Contains[T]:
+connection Holts[T]:
   from: Container[T]
   to: T
   attr index: usize = 0
@@ -15574,7 +15581,7 @@ recurrents, and deriveds. Each unique instantiation produces a
 distinct connection type per §2.3.
 
 At placement, a generic connection carries its type arguments inline on the
-type name, like any generic instantiation (§9.3.2): `Contains[i32]: item`. The
+type name, like any generic instantiation (§9.3.2): `Holts[i32]: item`. The
 arguments may be omitted when the endpoint types determine them by inference.
 
 #### 13.6.4 Behavior lives outside the connection body
