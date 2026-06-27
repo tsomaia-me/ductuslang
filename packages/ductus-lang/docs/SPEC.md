@@ -6930,7 +6930,7 @@ let win: Option[i32[..]]  = arr.get(2..5)     // safe range access
 `arr.get(i)` returns `Option[T]` (extending 012-86 to slices and Maps),
 and `arr.get(range)` returns `Option[T[..]]`. The `.get` family is the
 language-level safe-access surface across arrays, slices, and Maps
-(§9.x).
+(§9.5).
 
 ### 9.4 Time Types: `duration` and `instant`
 
@@ -13975,11 +13975,11 @@ handle Voice(...)               // ✗ constructor — no graph slot yet
 `Option` eliminators, reached because its read is `Option[&T]`:
 
 ```
-match target:                       // both arms explicit
+match current_target:               // both arms explicit
   Some(car): car.speed
   None: 0.0
 
-let s = target?.speed               // optional chaining (017-311):
+let s = current_target?.speed       // optional chaining (017-311):
                                     // s : Option[Speed]
 ```
 
@@ -13987,7 +13987,8 @@ The `?.` form here is optional chaining (017-311), not the terminal
 `Try`-propagation `?` of §8.4: a `WeakHandle[T]` read followed by
 `?.field` produces an `Option` of the field type, with `None` short-circuiting
 the chain. A `Handle[T]` (statically placed) needs no elimination —
-`target.speed` reads through the auto-deref-to-`&T` directly.
+`wheel.speed` reads through the auto-deref-to-`&T` directly (`wheel` is
+the statically-placed binding declared one paragraph above).
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
 plus a **generation** stamp. Resolution compares the stamp: if the slot was
