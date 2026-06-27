@@ -12992,8 +12992,8 @@ callers; internals are unconstrained by them — is stated in §13.3.4.2.
 
 A named acceptance entry *is* a view: it provides a body selection
 binding over the children it accepts. Body code reads the binding under
-the rules of §13.3.3.2 — as a borrow-window for a static view, or a
-`Cell` for a `dynamic` entry (§13.3.3.4).
+the rules of §13.3.3.2 — as a `Handle[T]` array for a static view, or a
+`Cell[Iterator[Handle[T]]]` for a `dynamic` entry (§13.3.3.4).
 
 A separate `view` declaration may be written to provide an *additional*
 selection over already-accepted children — typically for a narrower
@@ -13086,15 +13086,16 @@ The same marker applies identically to `incoming`/`outgoing` connection-views
 
 ##### 13.3.3.2 Access from inside the node body
 
-A view is a **transient borrow-window** onto the children it selects. For a
-*static* (unmarked) view, the view name is an ordinary **read-only array of
-borrows** whose length `N` is an implicit const-generic: each placement site
-fixes its own `N` (the exact static supply there), and the declared
-cardinality supplies the compile-time bounds `min..max` that every site's
-`N` must satisfy. Reading through it is direct and zero-ceremony —
-`channels[0].gain`, no Handle resolution. Nothing about the form is
-a special construct; its behavior is the ordinary behavior of const-generic
-arrays:
+A view is a **selection** onto the children it accepts. For a *static*
+(unmarked) view, the view name is a **read-only array of `Handle[T]`s**
+— `T` the view's selector type — whose length `N` is an implicit
+const-generic: each placement site fixes its own `N` (the exact static
+supply there), and the declared cardinality supplies the compile-time
+bounds `min..max` that every site's `N` must satisfy. Static-view
+membership is statically provable, so each element is the **live**
+`Handle[T]` variant (§13.3.6.2) and reads through it auto-deref to `&T`
+directly — `channels[0].gain` is zero-ceremony, no resolution to an
+`Option`. The behavior is the ordinary behavior of const-generic arrays:
 
 - **Indexed access**: `viewname[i]` is legal iff the index is provably in
   range for *every* admitted `N` — i.e. iff `i < min_cardinality`. This is
@@ -13108,14 +13109,15 @@ arrays:
 - **Order**: placement order, always. A view is a *stable filter* of the
   caller's written placement sequence — it selects, never reorders. Every
   projection of the placement sequence in the language preserves this order.
-- **No storage**: a view's elements are borrows, so the value is transient
-  by the ordinary borrow rules (§11.9, §11.11) — usable in loops, indexing,
-  and calls; **storable nowhere**. To persist a reference to a child, take a
-  `Handle` explicitly with `handle` (`attr favorite: Handle[Channel] = handle
-  channels[0]`, §13.3.6.2); no implicit auto-resolve is added.
+- **Storage**: the elements are `Handle[T]`s, which are `Copy` and
+  storable (017-142). A reference to a child persists straight out of the
+  view — `attr favorite: Handle[Channel] = channels[0]` — without an
+  explicit `handle` step. The runtime value is the same identity-stamped
+  `(slot_path, generation)` pair the Handle always carries.
 
 For a **`dynamic`** view, the view name is not an array but a **reactive
-cell** (§13.3.3.4); none of the forms above apply to it.
+cell** `Cell[Iterator[Handle[T]]]` (§13.3.3.4); none of the static-array
+forms above apply to it.
 
 A view is the only body-side bulk form: there is no whole-namespace
 iteration over a node's children, and a node with no views has no bulk
@@ -13269,14 +13271,13 @@ Feeding an *unmarked* view with a `repeat` is a compile error at the
 feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
-**The cell.** A `dynamic` view is a **reactive cell** whose value is the
-current collection of supplied children — a
-language-provided, keyed, ordered collection (source order; the
-written interleaving, with each feeding `repeat`'s scopes expanded in
-place). It updates when children mount or dismount. Because its
-elements are node references, the raw value is transient by the borrow
-rules (§11.9, §11.11): it cannot be bound, stored, or returned. It is
-consumed in exactly the two ways any reactive cell is consumed:
+**The cell.** A `dynamic` view is a **reactive cell**
+`Cell[Iterator[Handle[T]]]` whose value is the current iterator of
+supplied-child `Handle[T]`s — keyed and in source order (the written
+interleaving, with each feeding `repeat`'s scopes expanded in place). The
+cell updates when children mount or dismount. The iterator value is
+consume-only (017-67): it cannot be bound, stored, or returned as a value
+— it is consumed in exactly the two ways any reactive cell is consumed:
 
 - **Operators** (§13.17), for values:
 
@@ -13555,23 +13556,27 @@ signature is caller-facing).
 
 ##### 13.3.4.1 Access from inside the node body
 
-A connection-view is accessed by its **name**, under the same borrow-window
-rule as node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
-reads as a single connection reference; a multi-valued one has a static face
-and a dynamic face.
+A connection-view is accessed by its **name**, under the same rules as
+node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
+reads as a single `Handle[C]`; a multi-valued one has a static face and a
+dynamic face.
 
-For a **static** (unmarked) connection-view, the name is a read-only **array of
-connection-reference borrows** with const-generic length bounded by the
-declared cardinality, exactly as §13.3.3.2 specifies for node views:
+For a **static** (unmarked) connection-view, the name is a read-only
+**array of `Handle[C]`s** — `C` the connection-type selector — with
+const-generic length bounded by the declared cardinality, exactly as
+§13.3.3.2 specifies for node views. Static connection-view membership is
+statically provable, so each element is the live `Handle[C]` variant
+(§13.3.6.2) and reads through it auto-deref to `&C` directly:
 
 - Indexed: `name[i]` is legal iff `i < min_cardinality` (ordinary
   const-generic bounds). Example: under `outgoing wires: WiresTo+`, `wires[0]`
   is legal.
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
-For a **`dynamic`** connection-view, the name is a **reactive cell** whose
-value is the current set of member connections, with the consumption rules of
-§13.3.3.4 — operators for values, `repeat` for structure, nothing else. This is
+For a **`dynamic`** connection-view, the name is a reactive cell
+`Cell[Iterator[Handle[C]]]` whose value is the current iterator of member
+connections, with the consumption rules of §13.3.3.4 — operators for
+values, `repeat` for structure, nothing else. This is
 the fan-in idiom:
 
 ```
@@ -13790,13 +13795,31 @@ across time and across re-evaluation — a connection whose destination re-point
 (§13.8.5.1), a node body that addresses a dynamically-mounted child by key
 (§13.5.4.9). The storable form of such a designation is a **`Handle[T]`**.
 
-A `Handle[T]` is a **value** — `Copy`, and freely placed in cells, fields,
+A `Handle` is a **value** — `Copy`, and freely placed in cells, fields,
 tuples, and enum payloads — that designates a graph entity by an
 identity-stamped reference. A handle **never keeps its referent alive**:
 there is no reference count behind it and no reachability through it. An
 entity's lifetime is governed solely by the graph position or `repeat`
-scope that owns it (§13.3.6.1, §13.5.4). A handle may outlive its referent,
-and then resolves to "absent".
+scope that owns it (§13.3.6.1, §13.5.4).
+
+**Two type forms — the liveness split.** `Handle` has two variants
+distinguished at the type level:
+
+- `Handle[T]` — the **live** variant. The compiler can prove the referent
+  remains placed for the handle's lifetime. Production sites that mint a
+  `Handle[T]` are statically-placed graph entities: a named child, an
+  own-child view element, a module-level instance, a `Handle[T]`-typed
+  attr fed by one of these.
+- `Handle[Option[T]]` — the **possibly-gone** variant. The referent may be
+  dismounted at any time. Production sites that mint this variant are
+  `repeat`-keyed scopes (§13.5.4.9), re-pointable handle attrs whose
+  destination types include dismountable kinds, and any user-explicit
+  widening from `Handle[T]`.
+
+Both share the runtime representation `(slot_path, generation)`; the
+split is a compile-time guarantee, enforced at the production site. A
+`Handle[T]` may always widen to `Handle[Option[T]]` implicitly (it gains
+the `None` arm it never reaches); the reverse narrowing is not implicit.
 
 **Kind-scoped.** `T` ranges over graph-entity types only — a node, connection,
 or effect type, or a trait that `requires` one of the `Node` / `Connection` /
@@ -13806,30 +13829,34 @@ binding, cell content, or pool entry, the parallel storable form is a
 
 **Resolution is transparent and type-directed.** A handle has no `.resolve()`
 method. As with the value/reference duality of a reactive cell (§13.2.8), what a
-handle *denotes* depends on the position it occupies:
+handle *denotes* depends on its variant and the position it occupies:
 
-- In a position typed `Handle[T]` — a handle slot, a `Handle[T]` parameter or
-  field, a handle-to-handle comparison — the handle denotes the **inert handle
-  value**. No graph entity is read and nothing becomes reactive.
-- In any *read* or *elimination* position — `match`, `?`, or anywhere a
-  `&T` is expected — the handle denotes its **resolution**: an `Option[&T]`,
-  `Some(&entity)` while the referent is live and `None` once it is gone. *This*
-  read is the reactive one — it joins the reader's provenance (§13.12.1) and
-  re-fires when the referent mounts or dismounts (§13.10.5).
+- In a position typed `Handle[T]` or `Handle[Option[T]]` — a handle slot, a
+  `Handle`-typed parameter or field, a handle-to-handle comparison — the
+  handle denotes the **inert handle value**. No graph entity is read and
+  nothing becomes reactive.
+- In a read or `&T`-expected position, a **`Handle[T]`** (live) **auto-derefs
+  to `&T` directly** — its liveness assertion makes resolution unnecessary:
+  `channels[0].gain` is a direct read.
+- In a read or `Option[&T]`-expected position, a **`Handle[Option[T]]`**
+  (possibly-gone) denotes its **resolution** `Option[&T]`: `Some(&entity)`
+  while the referent is live and `None` once it is gone. The resolution
+  read is the reactive one — it joins the reader's provenance (§13.12.1)
+  and re-fires when the referent mounts or dismounts (§13.10.5).
 
-The two types are deliberately distinct. `Option[&T]` *contains a borrow* and is
-therefore itself unstorable (§11.9.1) — the transient, just-resolved view.
-`Handle[T]` contains no borrow and is the storable carrier. The pair mirrors the
-cell split: a `Handle[T]` is to its `Option[&T]` resolution what a value cell
-is to its `T` value (§13.2.8) — one the durable home, the other the momentary
-read.
+`&T` and `Option[&T]` (the two resolution reads) *contain borrows* and are
+therefore themselves unstorable (§11.9.1) — they are the transient,
+just-resolved views. `Handle[T]` and `Handle[Option[T]]` contain no
+borrows and are the storable carriers. The pair mirrors the cell split: a
+`Handle` is to its resolution read what a value cell is to its `T` value
+(§13.2.8) — the durable home vs. the momentary read.
 
 **Creation — `handle`.** A handle is produced by the prefix keyword `handle`
 applied to a node, connection, or effect reference:
 
 ```
-signal target: Handle[Drivable] = handle some_car   // a stored, re-pointable designation
-target.write(handle other_car)                       // re-point it later (§13.2)
+signal target: Handle[Option[Drivable]] = handle some_car   // re-pointable, so possibly-gone
+target.write(handle other_car)                              // re-point it later (§13.2)
 ```
 
 Wherever a `Handle[T]`-typed position receives a reference directly — assigning
@@ -13852,8 +13879,8 @@ handle Voice(...)               // ✗ constructor — no graph slot yet
 (§11.7.4); function parameters carry it in type position
 (`fn f(h: Handle[T])`), not as a `handle h: T` mode.
 
-**Elimination.** A handle is consumed through the ordinary `Option`
-eliminators, reached because a handle reads as `Option[&T]`:
+**Elimination.** A `Handle[Option[T]]` is consumed through the ordinary
+`Option` eliminators, reached because its read is `Option[&T]`:
 
 ```
 match target:                       // both arms explicit
@@ -13862,6 +13889,9 @@ match target:                       // both arms explicit
 
 let s = target?.speed               // propagate None upward (§8.4)
 ```
+
+A `Handle[T]` (live) needs no elimination — `target.speed` reads through
+the auto-deref-to-`&T` directly.
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
 plus a **generation** stamp. Resolution compares the stamp: if the slot was
@@ -14388,11 +14418,13 @@ structural descent.
 Children of a parent instance are accessible in two ways:
 
 - **By view:** a view name. For a *static* (unmarked) view this is a
-  read-only array of borrows with const-generic length bounded by the
+  read-only array of `Handle[T]`s with const-generic length bounded by the
   declared cardinality (§13.3.3.2) — indexable under the guaranteed
-  minimum, iterable with `for`, in placement order. For a **`dynamic`**
-  view it is a reactive cell consumed via operators or `repeat`
-  (§13.3.3.4). Bulk access exists only through a declared view name.
+  minimum, iterable with `for`, in placement order; elements are the live
+  `Handle[T]` variant and auto-deref to `&T` (§13.3.6.2). For a
+  **`dynamic`** view it is a reactive cell `Cell[Iterator[Handle[T]]]`
+  consumed via operators or `repeat` (§13.3.3.4). Bulk access exists only
+  through a declared view name.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from outside
   the node body) — accesses a specific child by its placement-time name.
   Names are assigned in the placement body (§13.8.3) and visible wherever
