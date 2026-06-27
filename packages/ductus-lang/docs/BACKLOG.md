@@ -207,14 +207,15 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
   ```
 
 ### 4.4 View = homogeneous `Handle[T]` array
-- **Decision:** A static view is an array of live `Handle[T]`s (the live variant per the
-  liveness type-split, 017-307). Reading through it is direct and zero-ceremony
-  (`channels[0].gain`) — the live `Handle[T]` auto-derefs to `&T` on read (017-149). The
-  elements are `Copy` and so storable straight from the view — `attr favorite: Handle[Channel]
-  = channels[0]` — without any explicit `handle` step.
+- **Decision:** A static view is an array of statically-placed `Handle[T]`s (the
+  statically-placed variant per the static/dynamic type-split, 017-307). Reading
+  through it is direct and zero-ceremony (`channels[0].gain`) — the statically-placed
+  `Handle[T]` auto-derefs to `&T` on read (017-149). The elements are `Copy` and so
+  storable straight from the view — `attr favorite: Handle[Channel] = channels[0]` —
+  without any explicit `handle` step.
 - **Why:** One uniform model — view elements ARE Handles, not a separate borrow surface
-  bridged to Handle by an explicit construct. Auto-deref-to-`&T` for live Handles keeps
-  the common-case read direct; storage falls out because Handles are Copy.
+  bridged to Handle by an explicit construct. Auto-deref-to-`&T` for statically-placed
+  Handles keeps the common-case read direct; storage falls out because Handles are Copy.
 - **Example:**
   ```
   derived total: f32 = channels[0].gain + channels[1].gain   // auto-deref through Handle[T]
@@ -430,10 +431,11 @@ individualistic form; **diverge** on groups [none] + incoming-cardinality *meani
 Q8a.4 (no "incoming supplied" — `outgoing` supplies, `incoming` receives).
 
 **Confirm during spec work (expected outcomes, not open decisions):**
-- Connection-view *access* yields live `Handle[C]`s under the same `Handle[T]`-array rule as
-  node-view access (017-48 analog) — auto-derefing to `&C` on read.
-- Bare-vs-array body access mirrors views: bare (=1) = single live `Handle[C]`; `*`/`+`/`[N..M]`
-  = array of live `Handle[C]`s.
+- Connection-view *access* yields statically-placed `Handle[C]`s under the same
+  `Handle[T]`-array rule as node-view access (017-48 analog) — auto-derefing to `&C`
+  on read.
+- Bare-vs-array body access mirrors views: bare (=1) = single statically-placed
+  `Handle[C]`; `*`/`+`/`[N..M]` = array of statically-placed `Handle[C]`s.
 - Blast-radius bound: connection-*type* bodies are **untouched** — `from`/`to`/`pairs`, connection
   `when:`/attrs/recurrents, and connection traits declaring endpoints (005-54/58, §13.6.1) stay as-is.
   Only the node-side `incoming:`/`outgoing:` clauses change.
