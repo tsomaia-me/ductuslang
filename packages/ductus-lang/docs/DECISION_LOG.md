@@ -592,7 +592,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 006-32. The `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — is an opt-in, non-binding elision permitted at the trailing position of record, tuple, and variant-payload patterns; it matches and discards every field or component not explicitly listed, and without it patterns remain exhaustive. (§3.5.7)
 006-33. In a trait-method named call the argument names are the trait's declared parameter names, not the implementing `fulfill`'s: a `fulfill` may give its parameters different body-local names, but `v1.add(b: v2)` uses trait `Add`'s `b` even where the impl wrote `right`. Named form thus works uniformly at generic (`T: Add`) and concrete sites, and the checker does not require `fulfill` parameter-name equality. (The receiver is passed positionally per 006-21, so 005-90's receiver-name freedom is unaffected.) (§3.5.5)
 
-## 007. Numerics — 237 Rules
+## 007. Numerics — 239 Rules
 
 007-1. The built-in numeric primitive type set is fixed at fourteen types. (§4.1)
 007-2. The signed integer types are `i8`, `i16`, `i32`, `i64`, `i128`, and `isize`. (§4.1)
@@ -831,6 +831,8 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 007-235. `bool` and `string` auto-implement `Hash` (joining `char`, which 012-16 already established). (§4.9.4)
 007-236. `duration` and `instant` (012-93) auto-implement `Hash` — their i64-backed representation supports the integer hash. (§9.4)
 007-237. Float types (`f32`, `f64`) deliberately do NOT implement `Hash`: `NaN ≠ NaN` violates the `Eq → Hash` equal-implies-equal-hash law. Any expression demanding `Hash` on a float type is a compile error at the bound. (§4.9.4)
+007-238. `Map[K, V]` does not fulfill `Index[Range[K]]`: range-slicing is unmeaningful on an unordered keyed collection (012-173). `m[k]` (single-key access via 007-230) and `m[k..k']`-style range queries are distinct surfaces; only the former applies to `Map`. A range expression in a `Map` index position is a compile error. (§4.9.5, §9.5)
+007-239. The `delete` keyword uses prefix-operator syntax with a mandatory keyed indexing target: `delete <expr>[<key>]` is the only legal form. A bare `delete <expr>` without indexing is a parse error. The grammar guarantees `delete` always targets a `Deletable[K]` dispatch site (007-232), never a bare binding. (§4.9.5)
 
 ## 008. Type Composition: `&`, `dyn`, `Type[…]` — 73 Rules
 
@@ -1165,7 +1167,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 011-93. A `derived` whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`. (§8.9)
 011-94. The reactive layer adds no error mechanism beyond the existing type system. (§8.9)
 
-## 012. Strings, Tuples, Arrays & Time — 178 Rules
+## 012. Strings, Tuples, Arrays & Time — 187 Rules
 
 012-1. `string`, tuples, fixed-size arrays `T[N]`, slices `T[..N]` / `T[..]`, maps `Map[K, V]`, and bundles `Bundle[T]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
@@ -1278,6 +1280,15 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 012-176. A `Map[K, V]`-typed cell uses pool storage (025-29) — Map joins the dynamically-sized cell types alongside `string`, `Vec[T]`, etc. (§13.2.4.8, §13.12.4)
 012-177. A reactive composite over a map literal exists only for **literal-key maps**: `{ 'a': sig, 'b': 5 }` in a reactive declaration (`derived`/`attr`/`recurrent`) is a per-slot reactive composite, like a tuple (016-180) or fixed-array (016-181) — each slot independently reactive, with composite paths under `<binding>['<key>']` (the bracket-colon form for const-keyed map paths, paralleling `<binding>[<index>]` for arrays). Keys must be compile-time-known for the slot path to be static (016-194). Dynamic-key maps cannot be composites; they are whole-map `Cell[Map[K, V]]`. (§9.5.12)
 012-178. `Map[K, V]` implements `Iterable` and `IntoIterable`, yielding `(K, V)` pairs; iteration order is unordered per 012-173. (§9.5)
+012-179. The compiler provides `Eq`, `Ord`, `Hash`, `Clone`, `Display`, and `Debug` for arrays `T[N]` structurally by element-by-element derivation when `T` itself satisfies the requested trait (parallel to tuples 012-65). The full set lands; arrays are owned values. (§9.3.1)
+012-180. The compiler provides `Eq`, `Hash`, `Display`, and `Debug` for slices `T[..N]` / `T[..]` structurally by element-by-element derivation when `T` itself satisfies the requested trait. `Clone` is NOT derived: a slice is a borrow (012-150 / 013-1), and borrows cannot be cloned; obtaining an owned copy requires a separate explicit operation. `Ord` is derivable when `T: Ord`, with element-by-element lexicographic comparison. (§9.3.7)
+012-181. The compiler provides `Eq`, `Hash`, `Clone`, `Display`, and `Debug` for `Map[K, V]` structurally when `K` and `V` satisfy the requested trait. `Ord` is NOT derived: Map iteration is unordered (012-173), so no canonical comparison order exists; any program demanding `Ord` on a `Map` is a compile error at the bound. (§9.5)
+012-182. `Map[K, V]` is a first-class language-level type — usable in every position that any other 012-1 compound type (string, tuple, array, slice) is usable, including function parameters and returns, record fields, attr/derived/recurrent types, generic-trait bound positions, and reactive cell payloads. No special "lesser" treatment applies. (§9.5)
+012-183. The compile-time length of a slice is preserved through indexing operations whose bounds are statically known: `arr: T[N]` indexed at `arr[lo..hi]` with `lo` and `hi` compile-time-known yields `T[..(hi-lo)]`. When either bound is runtime, the result is `T[..]`. The same rule applies to slicing a slice. (§9.3.7)
+012-184. An empty `Map` literal `{}` in a *function body* (non-reactive) position is a plain value of type `Map[K, V]` with type annotation required (nothing to infer K and V from), mirroring empty array `[]` (012-79). In a *reactive declaration* (`attr`/`derived`/`recurrent`), an empty `{}` is a whole-cell `Cell[Map[K, V]]` — there are no slot paths for an empty map, so it cannot be a per-slot composite (012-177). (§9.5)
+012-185. Nested `Map` storage (e.g. `Map[K1, Map[K2, V]]`) uses the same hash-table representation per level recursively; outer and inner maps each carry their own pool entry (025-29). The nesting strategy is implementation-defined; programs see only the language-level surface. (§9.5)
+012-186. Bracket-colon syntax `{ ['<key>']: <value>, … }` is the const-keyed alternative to colon syntax `{ '<key>': <value>, … }` for reactive composite map literals (012-177); both forms produce identical compile-time-known slot paths under `<binding>['<key>']`. The bracket-colon form parallels the const-indexed access form for arrays (`<binding>[<index>]`). (§9.5)
+012-187. `Map[K, V]` fulfills the `Add` operator-trait family (005-151 / 007-184): `x + y` produces a new `Map` where right-hand keys override left-hand keys on collision (matching the merge semantics of 012-172 and mirroring record `with` 009-29). The Output associated type is the merged `Map[K, V]` itself. (§9.5)
 012-80. `T[args]` in type position is interpreted by what `T` resolves to: a primitive or other non-generic type forms an array type (`i32[5]`); a generic type instantiates (`Vec[i32]`). (§9.3.2)
 012-81. Array-vs-generic disambiguation depends only on the kind of `T`, never on the kind of the arguments; there is no parser-level ambiguity. (§9.3.2)
 012-82. The array length type is `isize` — signed and platform-sized; there is no `usize` length type. (§9.3.3)
@@ -2095,7 +2106,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 016-275. A reactive value expression combining one or more reactive cells always produces a `Derived[T]`. (§13.2.8)
 016-276. Value-reading operator and function parameters are typed `Cell[T]` (the umbrella); a `Stream[T]` has no current value, so it is excluded at the read site rather than by the signature. (§13.2.8)
 
-## 017. Nodes & Views — 306 Rules
+## 017. Nodes & Views — 308 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed connections. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2290,6 +2301,8 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-316. A name declared inside a `repeat` (017-68) body via `as <name>` (018-127) is accessible from outside the `repeat` body through lens-propagation (017-309): an outside read goes through the `repeat`'s reactive cell and projects `WeakHandle[T]` (017-144) for any reaching graph entity reference. Reach is governed entirely by lens-propagation; no separate access rule applies. (§13.3.6.2, §13.3.3.4)
 017-317. The `for … as` (017-304) minted nominal record fields are typed `Handle[T]` (017-142) — statically placed, every iteration's placement a static child (017-305). The `repeat … as` (018-127) minted nominal record fields are typed `WeakHandle[T]` (017-144) — dynamically placed, keyed scope may dismount. Widening between the two forms is handled by lens-propagation (017-309), not by per-access conversion logic. (§13.3.3.3, §13.3.3.4)
 017-318. A `for … as` (017-304) loop with N = 0 iterations is legal and produces a zero-length array of the minted nominal record type (`[entry; 0]`). The body code iterates and reads `len` on it normally; the size is compile-time known, so no runtime check is implied. (§13.3.3.3)
+017-319. The compiler provides `Eq`, `Ord`, `Hash`, `Clone`, `Display`, and `Debug` for `Bundle[T]` (017-290) structurally when the bundle's backing element type `Handle[T]` satisfies the requested trait (017-142: `Handle[T]` is `Copy`, so `Eq`/`Hash`/`Clone`/`Display`/`Debug` lift cleanly; `Ord` lifts when `Handle[T]: Ord`). Derivation walks the offsets-table layout (017-291) row by row, element by element within each row. (§13.3.3.5)
+017-320. `Portal[Portal[T]]` structurally collapses to `Portal[T]`: both layers track the same kind of slot lifetime (017-280), so nesting them adds no extra presence check. The compiler simplifies `Portal[Portal[T]]` to `Portal[T]` at the type level. This is distinct from `Portal[Handle[T]]` (017-312), which does not collapse because the slot lifetime and the graph entity's mount lifetime are independent. (§13.3.6.3)
 017-157. A handle is concretely a graph slot plus a generation stamp; a slot reused by a different entity fails the stamp comparison, so a stale handle resolves to `None`, never to the wrong entity. (§13.3.6.2)
 017-158. Because mount and dismount flip its resolution, a handle read is a dynamic dependency. (§13.3.6.2)
 017-159. A `WeakHandle[T]` obtained by key from a `repeat` view designates the keyed scope, not one mount: when the same key reappears in the source, a handle that resolved `None` resolves `Some` again. A keyed scope is dismountable, so the producing site mints the possibly-gone type form. (§13.3.6.2)
@@ -2404,7 +2417,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 017-260. Operators and `repeat` are the only consumers of a `dynamic` view. (§13.4.4)
 017-261. View and named individual access coexist on the same instance: `c.oscs[0]` (indexed, legal under `+`) and `c.filters[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 
-## 018. Keyed Scopes & `repeat` — 139 Rules
+## 018. Keyed Scopes & `repeat` — 140 Rules
 
 018-1. Every conformant runtime exposes the three keyed-scope operations — `scope_obtain`, `scope_drop`, `scope_evaluate` — underlying the language's dynamic-scope reactive constructs. (§13.5)
 018-2. Each instantiation of a keyed-scope template is backed by its own state cells. (§13.5)
@@ -2544,7 +2557,8 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 018-138. Nested `repeat`s each own a separate `as` view; the outer view's `<view>::entry` carries an inner `Cell[Map[...]]` field rather than flattening keys. (§13.5.4.9)
 018-139. A nested view is scoped to its parent key; cross-level addressing composes view by view: `outer.get(k1)?.inner.get(k2)?.<name>`. (§13.5.4.9)
 018-140. `<view>` (the `Cell[Map[…]]` binding) is read-only (016-173): the source drives keyset and entry changes; there is no `<view>[k] = v` or `delete <view>[k]` form. (§13.5.4.9)
-018-141. `at <index>` is unstable when the `repeat` source is unordered (`Map`, `HashSet`, …): the index reflects the iterator's emit order (012-173 / 018-83), which can differ commit-to-commit. The compiler accepts `at` on unordered sources but flags the instability; programs relying on stable positional identity should use `keyed by <expr>` (018-62). (§13.5.4)
+018-141. `at <index>` on an unordered `repeat` source (`Map`, `HashSet`, …) emits a **normative diagnostic** of class `unstable_positional_iteration_on_unordered_source`: the index reflects the iterator's emit order (012-173 / 018-83), which can differ commit-to-commit. The compiler issues the diagnostic — a warning by default, promotable to an error per build configuration — and accepts the program; for stable positional identity, the `keyed by <expr>` form (018-62) is the prescribed remedy. The diagnostic class name is normative so user tooling can target it. (§13.5.4)
+018-142. Bundle brackets `[…]` are not legal in a `repeat`-rejected context: a `repeat` body cannot contain bundle brackets, and a bundle bracket cannot contain a `repeat` (017-292). The error class is `bundle_in_repeat_rejected` (mirroring 018-141's class-name normativity); the compiler emits it at parse time at the offending site. The same restriction lifts at the boundary: a bundle bracket *outside* a `repeat` body, or a `repeat` *outside* a bundle bracket, are both legal. (§13.5.4)
 
 ## 019. Connections — 78 Rules
 
@@ -3238,7 +3252,7 @@ If you discover a contradiction, ambiguity, or incoherence in either document: s
 028-9. A cell present in both sources with a different type is treated as removal of the old plus addition of the new. (§13.15.2)
 028-10. `@reset_on_reopen` is not part of cell identity; adding or removing it across a reload preserves the cell's value and history. (§13.15.2)
 028-11. A `@reset_on_reopen` change takes effect at the next gate-open. (§13.15.2)
-028-75. A `Portal[T]` preserves across hot reload only when its targeted slot's identity is preserved across the reload, by the same path-based identity rule as cells (028-4, 028-6); slot relocation or removal invalidates portals to that slot. (§13.15.2)
+028-75. A `Portal[T]` preserves across hot reload only when its targeted slot's identity AND generation are preserved across the reload. The portal carries a `(slot_path, generation)` pair (per the Portal section of §13.3.6.3); on the next read after reload, the runtime compares the stamped generation to the slot's current generation, and a mismatch resolves the portal to `None`. Slot relocation or removal increments the generation (or removes the slot entirely), invalidating portals to that slot. The path-based identity rule (028-4, 028-6) governs slot identity itself; generation tracking governs validity across reload. (§13.15.2)
 028-12. Reload is performed atomically on the runtime's driving context. (§13.15.3)
 028-13. Reload step 1 receives the precompiled IR diff; compilation and the §13.15.1 validation gate are host-side preconditions completed before `reload(diff)` is called, and on a malformed diff the reload is rejected with runtime state unchanged. (§13.15.3)
 028-14. Reload step 2 acquires a reload lock and pauses acceptance of new signal/attr writes; host requests queue. (§13.15.3)

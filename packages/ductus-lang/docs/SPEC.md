@@ -6219,13 +6219,19 @@ mechanism beyond what already exists in the type system.
 
 ---
 
-## 9. Strings, Tuples, and Arrays
+## 9. Strings, Tuples, Arrays, Slices, Maps, and Time
 
-This section specifies three foundational compound types that are
-not user-defined: `string` (a primitive built-in), tuples (structural
-anonymous products), and fixed-size arrays (`T[N]`). All three have
-dedicated syntax and language-level treatment; their behaviors are
-specified here rather than emerging from the trait system alone.
+This section specifies the foundational compound types that are not
+user-defined: `string` (a primitive built-in, §9.1), tuples (structural
+anonymous products, §9.2), fixed-size arrays (`T[N]`, §9.3.1), slices
+(`T[..N]` / `T[..]`, §9.3.7), `Map[K, V]` (§9.5), and the time types
+`duration` and `instant` (§9.4). All have dedicated syntax and
+language-level treatment; their behaviors are specified here rather than
+emerging from the trait system alone. `Map` joins this family as a
+first-class primitive (012-182): every position usable by any other
+compound type — function parameters and returns, record fields,
+attr/derived/recurrent declarations, generic-bound positions, and
+reactive cell payloads — accepts `Map` uniformly.
 
 ### 9.1 Strings
 
@@ -7162,7 +7168,17 @@ let empty: Map[string, i32] = {}        // empty literal requires annotation
 ```
 
 The empty `{}` requires a type annotation — there is nothing to infer
-`K` and `V` from — mirroring empty array `[]` (§9.3.1).
+`K` and `V` from — mirroring empty array `[]` (§9.3.1). An empty `{}`
+in a function body is a plain value of type `Map[K, V]`; an empty `{}`
+in a *reactive declaration* (`attr`/`derived`/`recurrent`) is a
+whole-cell `Cell[Map[K, V]]`, never a per-slot composite — there are no
+slot paths for an empty map (012-184; composites covered in §9.5.12).
+
+For const-key composite literals (§9.5.12), the bracket-colon form
+`{ ['<key>']: <value> }` is equivalent to the colon form
+`{ '<key>': <value> }` and parallels the const-indexed-array access
+form (012-186); both produce identical compile-time-known slot paths
+under `<binding>['<key>']`.
 
 Duplicate keys within a single literal are a compile error (parallel to
 duplicate record-field set, §6.1.3 / §13.8.7).
@@ -14100,9 +14116,13 @@ reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
 connection re-pointing.
 
 **Hot reload.** A portal preserves across reload only when its targeted
-slot's identity is preserved, by the same path-based identity rule as
-cells (§13.15.2). Slot relocation or removal invalidates portals to that
-slot.
+slot's identity AND generation are preserved (028-75). The portal carries
+a `(slot_path, generation)` pair; the next read after reload compares the
+stamped generation to the slot's current generation, and a mismatch
+resolves the portal to `None`. Slot relocation or removal increments the
+generation (or removes the slot entirely) — by the same path-based
+identity rule as cells (§13.15.2) for slot identity, with generation
+tracking layered on top for validity across reload.
 
 **`Portal[Handle[T]]` does not collapse.** A `Portal[T]` designates a
 slot identity by generation stamp; its lifetime is the lifetime of the
