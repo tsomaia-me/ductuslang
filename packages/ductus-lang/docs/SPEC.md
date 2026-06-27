@@ -6219,13 +6219,19 @@ mechanism beyond what already exists in the type system.
 
 ---
 
-## 9. Strings, Tuples, and Arrays
+## 9. Strings, Tuples, Arrays, Slices, Maps, and Time
 
-This section specifies three foundational compound types that are
-not user-defined: `string` (a primitive built-in), tuples (structural
-anonymous products), and fixed-size arrays (`T[N]`). All three have
-dedicated syntax and language-level treatment; their behaviors are
-specified here rather than emerging from the trait system alone.
+This section specifies the foundational compound types that are not
+user-defined: `string` (a primitive built-in, §9.1), tuples (structural
+anonymous products, §9.2), fixed-size arrays (`T[N]`, §9.3.1), slices
+(`T[..N]` / `T[..]`, §9.3.7), `Map[K, V]` (§9.5), and the time types
+`duration` and `instant` (§9.4). All have dedicated syntax and
+language-level treatment; their behaviors are specified here rather than
+emerging from the trait system alone. `Map` joins this family as a
+first-class primitive (012-182): every position usable by any other
+compound type — function parameters and returns, record fields,
+attr/derived/recurrent declarations, generic-bound positions, and
+reactive cell payloads — accepts `Map` uniformly.
 
 ### 9.1 Strings
 
@@ -6930,7 +6936,7 @@ let win: Option[i32[..]]  = arr.get(2..5)     // safe range access
 `arr.get(i)` returns `Option[T]` (extending 012-86 to slices and Maps),
 and `arr.get(range)` returns `Option[T[..]]`. The `.get` family is the
 language-level safe-access surface across arrays, slices, and Maps
-(§9.x).
+(§9.5).
 
 ### 9.4 Time Types: `duration` and `instant`
 
@@ -7162,7 +7168,17 @@ let empty: Map[string, i32] = {}        // empty literal requires annotation
 ```
 
 The empty `{}` requires a type annotation — there is nothing to infer
-`K` and `V` from — mirroring empty array `[]` (§9.3.1).
+`K` and `V` from — mirroring empty array `[]` (§9.3.1). An empty `{}`
+in a function body is a plain value of type `Map[K, V]`; an empty `{}`
+in a *reactive declaration* (`attr`/`derived`/`recurrent`) is a
+whole-cell `Cell[Map[K, V]]`, never a per-slot composite — there are no
+slot paths for an empty map (012-184; composites covered in §9.5.12).
+
+For const-key composite literals (§9.5.12), the bracket-colon form
+`{ ['<key>']: <value> }` is equivalent to the colon form
+`{ '<key>': <value> }` and parallels the const-indexed-array access
+form (012-186); both produce identical compile-time-known slot paths
+under `<binding>['<key>']`.
 
 Duplicate keys within a single literal are a compile error (parallel to
 duplicate record-field set, §6.1.3 / §13.8.7).
@@ -12878,9 +12894,13 @@ runtime.
 ```
 node TypeName[GenericParams]?:
   satisfies Trait1, Trait2                            // optional trait conformance
-  view name: Selector <cardinality>                   // optional child views (§13.3.3)
-  outgoing name: ConnType <card>                      // optional outgoing connection-views
-  incoming name: ConnType <card>                      // optional incoming connection-views
+  children:                                           // optional acceptance of placed children (§13.3.3)
+    name: Selector <cardinality>                      // one named acceptance entry per line
+  incoming:                                           // optional acceptance of incoming connections
+    name: ConnType <card>
+  outgoing:                                           // optional acceptance of outgoing connections
+    name: ConnType <card>
+  view name: Selector <cardinality>                   // optional standalone selection (§13.3.3)
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
   attr name: Type = default                           // per-instance user-configured cells
@@ -12891,7 +12911,7 @@ node TypeName[GenericParams]?:
   effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
     source |> effect
   expose:                                             // structural output (§13.3.7) — always last
-    name                                              // a declared view (or named child)
+    name                                              // a declared view, named acceptance entry, or named child
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
@@ -12902,7 +12922,8 @@ in free order; `effects:` follows the members and `expose:` is last
 ```
 node Driver:
   satisfies Drivable
-  outgoing drives: Drives
+  outgoing:
+    drives: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
   derived is_aggressive: bool = risk_tolerance > 0.7
@@ -12997,7 +13018,7 @@ callers; internals are unconstrained by them — is stated in §13.3.4.2.
 A named acceptance entry *is* a view: it provides a body selection
 binding over the children it accepts. Body code reads the binding under
 the rules of §13.3.3.2 — as a `Handle[T]` array for a static view, or a
-`Cell[Iterator[Handle[T]]]` for a `dynamic` entry (§13.3.3.4).
+`Cell[DynamicView[WeakHandle[T]]]` for a `dynamic` entry (§13.3.3.4).
 
 A separate `view` declaration may be written to provide an *additional*
 selection over already-accepted children — typically for a narrower
@@ -13062,25 +13083,27 @@ Because views overlap, a child counts toward every view it matches:
 
 ```
 node Fleet:
-  view drivables: Drivable[=5]   // exactly 5 Drivables — any concrete types
-  view cars:      Car[=2]        // 2 of those 5 are Cars  (Car ⊆ Drivable)
+  children:
+    drivables: Drivable[=5]   // exactly 5 Drivables — any concrete types
+    cars:      Car[=2]        // 2 of those 5 are Cars  (Car ⊆ Drivable)
 ```
 
 The only conflict is **unsatisfiability**, diagnosed by a cheap subset-edge
 static check along the known trait/marker subset lattice plus placement-time
 counting — there is no general feasibility solver. A view whose selector is
 a subset of another's but whose bound cannot be reconciled with it is a
-static error: `view all: Node[=3]` alongside `view drivables: Drivable[=5]`
-cannot be satisfied (Drivable ⊆ Node, 5 > 3).
+static error: a `children:` clause whose entries are `all: Node[=3]` and
+`drivables: Drivable[=5]` cannot be satisfied (Drivable ⊆ Node, 5 > 3).
 
 **Supply mode — the `dynamic` prefix.** Orthogonal to *count* is *supply
 mode*: whether the set of supplied children is a static fact or may vary at
-runtime. The `dynamic` keyword prefixes a **view** (`dynamic view voices:
-Voice*`), marking the second mode. A `dynamic` view takes **exactly the `*`
-specifier** — its inherent zero-or-more; the bounded specifiers
-`?`/`+`/`[=N]`/`[N..M]` are forbidden on `dynamic`, and there is no single
-dynamic view (`dynamic view voice: Voice` ✗, `dynamic view voices: Voice+`
-✗) — because a runtime-varying set can guarantee no minimum and admit no
+runtime. The `dynamic` keyword prefixes a **named acceptance entry** inside
+a `children:` clause (`dynamic voices: Voice*`), marking the second mode. A
+`dynamic` view takes **exactly the `*` specifier** — its inherent
+zero-or-more; the bounded specifiers `?`/`+`/`[=N]`/`[N..M]` are forbidden
+on `dynamic`, and there is no single dynamic view (`dynamic voice: Voice`
+✗, `dynamic voices: Voice+` ✗) — because a runtime-varying set can
+guarantee no minimum and admit no
 checked maximum, and runtime cardinality checks do not exist in the
 language. An unmarked view is *static*: supplied by explicitly written
 placements only, with the count known per placement site at compile time. A
@@ -13121,7 +13144,7 @@ const-generic arrays:
   `(slot_path, generation)` pair the Handle always carries.
 
 For a **`dynamic`** view, the view name is not an array but a **reactive
-cell** `Cell[Iterator[Handle[T]]]` (§13.3.3.4); none of the static-array
+cell** `Cell[DynamicView[WeakHandle[T]]]` (§13.3.3.4); none of the static-array
 forms above apply to it.
 
 A view is the only body-side bulk form: there is no whole-namespace
@@ -13175,8 +13198,10 @@ OscBank[16] sixteen_bank        // 16 Oscillators per instance
 OscBank[8]  eight_bank          // 8 Oscillators per instance
 ```
 
-Note `OscBank` declares no view: it accepts no caller-supplied children,
-and its own emissions need no view.
+Note `OscBank` declares no `children:` clause (017-16): it accepts no
+caller-supplied children. Its own emissions are internals (§13.3.4.2)
+and need no acceptance entry; a standalone `view` would only select
+already-accepted children (017-20), not widen what `OscBank` accepts.
 
 **Signature and views.** Type-emitted children are **internals**
 (§13.3.4.2): they are never counted by any view, which captures
@@ -13223,6 +13248,9 @@ and binds them collectively to `<name>` in the enclosing scope:
 
 ```
 node OscBank[const N: usize]:
+  derived total: f32 = sum_outputs(bank)            // pass the whole array
+  derived first_freq: f32 = bank[0].osc.freq        // Handle auto-derefs to &Oscillator
+
   expose:
     for i in 0..N as bank:
       Oscillator as osc | freq=base_freq(i)        // emitted N times
@@ -13232,9 +13260,6 @@ node OscBank[const N: usize]:
   // bank::entry has fields named after the inner `as` placements:
   //   osc: Handle[Oscillator]   (statically placed)
   //   flt: Handle[Filter]       (statically placed)
-
-  derived total: f32 = sum_outputs(bank)            // pass the whole array
-  derived first_freq: f32 = bank[0].osc.freq        // Handle auto-derefs to &Oscillator
 ```
 
 `<name>::entry` is a **compiler-minted nominal record** per `for … as`
@@ -13273,7 +13298,8 @@ placements:
 
 ```
 node Posts:
-  dynamic view items: Post*
+  children:
+    dynamic items: Post*
   expose:
     items
 
@@ -13290,8 +13316,9 @@ feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
 **The cell.** A `dynamic` view is a **reactive cell**
-`Cell[Iterator[Handle[T]]]` whose value is the current iterator of
-supplied-child `Handle[T]`s — keyed and in source order (the written
+`Cell[DynamicView[WeakHandle[T]]]` (017-313) whose value is the current
+iterator of supplied-child `WeakHandle[T]`s — keyed and in source order
+(the written
 interleaving, with each feeding `repeat`'s scopes expanded in place). The
 cell updates when children mount or dismount. The iterator value is
 consume-only (017-67): it cannot be bound, stored, or returned as a value
@@ -13349,6 +13376,24 @@ contract regardless, because the *type* admits dynamic supply.
 The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
 
+**The `DynamicView[T]` type.** The cell payload for a dynamic view is a
+language-level type **`DynamicView[T]`** (017-313). It is iterator-shaped:
+`Item = WeakHandle[T]`, satisfies `Iterable` and `IntoIterable`, and has no
+surface `len` or index operator on its own — storage is implementation-
+defined. `DynamicView[T]` is consume-only: it is not stored bare; it lives
+only inside a `Cell[DynamicView[T]]`, and the containing cell is what is
+bound, stored, and subscribed against (017-315). Consumers are the reactive
+operators (§13.3.3.2) or `repeat` (§13.9.7); the `DynamicView` value itself
+carries no subscription semantics independent of its cell.
+
+**Iteration narrowing.** Iterating a `Cell[DynamicView[WeakHandle[T]]]`
+yields `WeakHandle[T]` on the iterator surface. In a context that proves
+the iterated element is reachable — the typical case being a read inside a
+per-element operator like `map`/`filter` or a `repeat` body — the per-
+element binding projects through the lens-propagation rule to `&T` at that
+read site (017-314); outside any such proven-reachable context the surface
+remains `WeakHandle[T]`.
+
 ##### 13.3.3.5 Bundles
 
 A **`Bundle[T]`** is a *homogeneous* co-placement of children, written
@@ -13365,14 +13410,19 @@ chords.length                         // number of bundles
 chords[0].length                      // number of elements in bundle 0
 ```
 
+An **empty bundle literal `[]`** is legal (017-265) and has type
+`Bundle[T]` for any `T` the context can infer. The bundle has zero
+elements; its offset table has length 1 (a single zero-length row).
+
 ##### Access via `Index`
 
 Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
 **index-to-min** rule (017-43) at each level:
 
 - `bundle[g]` returns a **row slice** — `Handle[T][..N]` when the row's
-  length is statically derivable (rectangular bundles, single-element
-  rows), `Handle[T][..]` for runtime-length rows (jagged bundles).
+  length is statically derivable (every row's inner cardinality is
+  statically equal, or the row is a single element), `Handle[T][..]`
+  when the row length is only known at runtime (017-291).
 - `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
 - `bundle.length` returns the row count; `bundle[g].length` returns the
   row's element count.
@@ -13390,20 +13440,19 @@ for chord in chords:                  // unrolls to one body copy per bundle
 
 ##### Storage (implementation detail)
 
-All bundle forms yield the same external type `Bundle[T]`. Internal
-storage varies — the difference is invisible to user code, which always
-sees a `Handle[T][..N]` or `Handle[T][..]` slice from `bundle[g]`:
+All bundle forms yield the same external type `Bundle[T]` and share a
+uniform homogeneous slice-backed storage model: a flat `Handle[T]`
+backing buffer plus an offsets table that delimits each row (017-291).
+User code always sees a `Handle[T][..N]` or `Handle[T][..]` slice from
+`bundle[g]`; single-element rows are length-1 slices, uniform with the
+other forms (no collapse to a bare `Handle[T]`). The empty bundle
+literal `[]` is a legal `Bundle[T]` for any inferable `T`; its offsets
+table has length 1 (one zero-length row).
 
-- **Rectangular inner cardinality** (e.g. `[Note[=2]]+`): backed by a 2D
-  array `Handle[T][M][N]`; row length is a compile-time constant.
-- **Jagged inner cardinality** (e.g. `[Drivable[2..4]]+`): backed by a
-  flat handle backing plus an offsets table; row length is runtime.
-- **Single-element rows** (e.g. `[Note]+`): no special collapse to a bare
-  `Handle[T]` — each row is a length-1 slice, uniform with the other
-  forms.
-
-Storage strategy is the implementation's choice; the user-visible API is
-the `Index` surface above.
+As an internal optimization, when every row's inner cardinality is
+statically equal the compiler MAY use a flat-array representation; this
+choice is invisible at the type level and at the surface, and does not
+change the `Index` surface above.
 
 ##### Flat views flatten; bundle views see brackets
 
@@ -13462,9 +13511,12 @@ children, `when`-gating, etc.:
 
 ##### `as`-naming
 
-`[n1 n2] as pair` binds `pair` to the row slice form `Handle[T][..N]` (or
-`Handle[T][..]` for jagged rows) — the same type that a receiving view's
-row produces from `view[g]`.
+`[n1 n2] as pair` binds `pair` to a borrow of the row slice form
+(017-293, learning #16: placement always binds to a borrow). The slice
+element type is `Handle[T]` because the bundle backing stores Handles
+(017-295): `Handle[T][..N]` when the row inner cardinality is statically
+known, `Handle[T][..]` when it is only known at runtime — the same type
+that a receiving view's row produces from `view[g]`.
 
 ##### Dynamic bundles
 
@@ -13592,9 +13644,9 @@ type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
 For a **`dynamic`** connection-view, the name is a reactive cell
-`Cell[Iterator[Handle[C]]]` whose value is the current iterator of member
-connections, with the consumption rules of §13.3.3.4 — operators for
-values, `repeat` for structure, nothing else. This is
+`Cell[DynamicView[WeakHandle[C]]]` (017-313) whose value is the current
+iterator of member connections, with the consumption rules of §13.3.3.4
+— operators for values, `repeat` for structure, nothing else. This is
 the fan-in idiom:
 
 ```
@@ -13958,11 +14010,11 @@ handle Voice(...)               // ✗ constructor — no graph slot yet
 `Option` eliminators, reached because its read is `Option[&T]`:
 
 ```
-match target:                       // both arms explicit
+match current_target:               // both arms explicit
   Some(car): car.speed
   None: 0.0
 
-let s = target?.speed               // optional chaining (017-311):
+let s = current_target?.speed       // optional chaining (017-311):
                                     // s : Option[Speed]
 ```
 
@@ -13970,7 +14022,8 @@ The `?.` form here is optional chaining (017-311), not the terminal
 `Try`-propagation `?` of §8.4: a `WeakHandle[T]` read followed by
 `?.field` produces an `Option` of the field type, with `None` short-circuiting
 the chain. A `Handle[T]` (statically placed) needs no elimination —
-`target.speed` reads through the auto-deref-to-`&T` directly.
+`wheel.speed` reads through the auto-deref-to-`&T` directly (`wheel` is
+the statically-placed binding declared one paragraph above).
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
 plus a **generation** stamp. Resolution compares the stamp: if the slot was
@@ -14063,9 +14116,13 @@ reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
 connection re-pointing.
 
 **Hot reload.** A portal preserves across reload only when its targeted
-slot's identity is preserved, by the same path-based identity rule as
-cells (§13.15.2). Slot relocation or removal invalidates portals to that
-slot.
+slot's identity AND generation are preserved (028-75). The portal carries
+a `(slot_path, generation)` pair; the next read after reload compares the
+stamped generation to the slot's current generation, and a mismatch
+resolves the portal to `None`. Slot relocation or removal increments the
+generation (or removes the slot entirely) — by the same path-based
+identity rule as cells (§13.15.2) for slot identity, with generation
+tracking layered on top for validity across reload.
 
 **`Portal[Handle[T]]` does not collapse.** A `Portal[T]` designates a
 slot identity by generation stamp; its lifetime is the lifetime of the
@@ -14096,10 +14153,13 @@ node's content.
 ```
 node TypeName:
   satisfies SomeTrait
-  view a: SomeA
-  view b: SomeB
-  incoming in1: ConnIn1
-  outgoing out1: ConnOut1
+  children:
+    a: SomeA
+    b: SomeB
+  incoming:
+    in1: ConnIn1
+  outgoing:
+    out1: ConnOut1
   attr foo: i32
   attr user_name: string = "world"
   derived greeting: string = "hello " + user_name
@@ -14108,11 +14168,17 @@ node TypeName:
     b
 ```
 
-Node-body members — cells, `view`/`dynamic view`, `incoming`/`outgoing`
-connection-views, `satisfies`, and `when:` — appear in **free order**; the
-only positional constraints are that `effects:` (§13.3.8) comes after the
-members and `expose:` comes last. `satisfies`, `when:`, `effects:`,
-`expose:`, and `default attr` each appear at most once.
+Node-body members — cells, standalone selection-only `view`/`dynamic view`
+declarations (017-20), the acceptance clauses `children:` / `incoming:` /
+`outgoing:` (017-9, 017-271), `satisfies`, and `when:` — appear in **free
+order**; the only positional constraints are that `effects:` (§13.3.8)
+comes after the members and `expose:` comes last. `satisfies`, `when:`,
+`effects:`, `expose:`, and `default attr` each appear at most once. An
+acceptance clause is a header keyword followed by `:` and an indented block
+of named entries, one entry per line; each named entry joins the body-wide
+namespace (020-37). A standalone `view` or `dynamic view` declaration is
+pure selection over already-accepted children (017-20) and never widens
+acceptance.
 
 ##### 13.3.7.1 Content
 
@@ -14217,8 +14283,10 @@ order:
 
 ```
 node Frame:
-  view rest: Node*
-  outgoing wires: Connection*
+  children:
+    rest: Node*
+  outgoing:
+    wires: Connection*
   expose:
     @content              // children + outgoing connections, in caller order
 ```
@@ -14229,10 +14297,10 @@ caller-supplied children and outgoing connections only — never incoming
 connections, which are not body-supplied (§13.3.4).
 
 `@content` does not widen acceptance: a node accepts only what its
-`view`/`outgoing` declarations name (§13.3.3.1, §13.3.4). A container that
-takes arbitrary content declares explicit catch-all views (`view rest:
-Node*`, `outgoing wires: Connection*`); there is no "content accepts
-anything" shortcut.
+`children:` and `outgoing:` clause entries name (§13.3.3.1, §13.3.4). A
+container that takes arbitrary content declares explicit catch-all entries
+in those clauses (e.g. `children: rest: Node*` and `outgoing: wires:
+Connection*`); there is no "content accepts anything" shortcut.
 
 `@content` is **wrappable** — placed inside a wrapper body it tucks the
 whole supplied body into that wrapper:
@@ -14518,9 +14586,9 @@ Children of a parent instance are accessible in two ways:
   declared cardinality (§13.3.3.2) — indexable under the guaranteed
   minimum, iterable with `for`, in placement order; elements are
   `Handle[T]` values that auto-deref to `&T` (§13.3.6.2). For a
-  **`dynamic`** view it is a reactive cell `Cell[Iterator[Handle[T]]]`
-  consumed via operators or `repeat` (§13.3.3.4). Bulk access exists only
-  through a declared view name.
+  **`dynamic`** view it is a reactive cell `Cell[DynamicView[WeakHandle[T]]]`
+  (017-313) consumed via operators or `repeat` (§13.3.3.4). Bulk access
+  exists only through a declared view name.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from outside
   the node body) — accesses a specific child by its placement-time name.
   Names are assigned in the placement body (§13.8.3) and visible wherever
@@ -14626,9 +14694,10 @@ Putting view and named individual access together:
 
 ```
 node Composite:
-  view oscillators: Oscillator+
-  view filter:      Filter
-  view amplifier:   Amplifier
+  children:
+    oscillators: Oscillator+
+    filter:      Filter
+    amplifier:   Amplifier
   derived total_oscillation: f32 = sum_oscillators(subject)
   derived processed: f32 = process(subject)
 
@@ -15541,7 +15610,7 @@ connection's surface.
 Connections may declare generic parameters:
 
 ```
-connection Contains[T]:
+connection Holts[T]:
   from: Container[T]
   to: T
   attr index: usize = 0
@@ -15552,7 +15621,7 @@ recurrents, and deriveds. Each unique instantiation produces a
 distinct connection type per §2.3.
 
 At placement, a generic connection carries its type arguments inline on the
-type name, like any generic instantiation (§9.3.2): `Contains[i32]: item`. The
+type name, like any generic instantiation (§9.3.2): `Holts[i32]: item`. The
 arguments may be omitted when the endpoint types determine them by inference.
 
 #### 13.6.4 Behavior lives outside the connection body
@@ -16927,8 +16996,9 @@ top-level placements:
 
 ```
 node App:
-  view loggers: Logger [=2]
-  view monitor: Monitor
+  children:
+    loggers: Logger [=2]
+    monitor: Monitor
   attr verbose: bool = false
   attr health_checks_enabled: bool = true
 
@@ -19260,8 +19330,9 @@ LHS rules common to all cases:
 
 - LHS must be an expression of a reactive cell type (`Signal[T]`,
   `Derived[T]`, `Recurrent[T, N]`, `Stream[T]`, or any other `Cell[T]`
-  per §13.18.5), or an expression convertible to one. Literals are
-  wrapped as implicit constant signal cells automatically.
+  per §13.18.5), or an expression convertible to one. A static value
+  (literal, `const`, or compile-time constant expression) is wrapped as
+  a degenerate `Derived[T]` cell automatically (029-131).
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -19466,8 +19537,8 @@ error: operator `smooth` has no positional parameter to bind from `|>`
 error: cannot pass value of type `f32` to `Cell[f32]` parameter
   --> smooth(source: some_value, rate: 0.1, clock: tick)
                      ^^^^^^^^^^ expected `Cell[f32]`, found `f32`
-  hint: literals are wrapped as implicit constant signal cells
-        (compile-time-fixed `Signal[T]` values) automatically; this expression
+  hint: static values (literals, `const`s, compile-time constants) are wrapped
+        as degenerate `Derived[T]` cells automatically (029-131); this expression
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
 ```
 
@@ -22769,8 +22840,10 @@ effect-`desired` runs. The two meet only through the behavior ABI
 `str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, slices
 `T[..N]` and `T[..]` (borrow types — `(pointer, length)` ABI shape, used
 in behavior parameter and return positions only, never as cell values),
-maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored
-when jagged, inline array when rectangular), records and enums as
+maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored;
+017-291 spells the uniform slice-backed layout, with an optional
+flat-array representation as an internal compiler optimization when
+every row's inner cardinality is statically equal), records and enums as
 `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
 dynamic-size values, `(slot_path, generation)` pairs for `Handle[T]` and
 `Portal[T]` (§13.3.6.2–.3), and `closure<(T,…)->R>`. Behaviors are fully
