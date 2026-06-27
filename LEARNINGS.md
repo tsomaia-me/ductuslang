@@ -31,3 +31,5 @@ Accumulated, granular preferences and working rules for this project. One atomic
 14. Don't pass coined terms off as defined: Cite the decision that defines a term, or drop the term — e.g. "collection of groups" was my phrase, not a defined concept.
 
 15. Don't let a sub-question balloon scope: A small clarification (e.g. "for…as") must not silently turn into an unrelated deep redesign mid-task; finish the current thread first.
+
+16. Placements always bind to borrows — that is uniform: `as <name>` on a child placement, `as <name>` on a bundle, every form. The Handle/auto-coerce step happens at the *receiving view's element type* (and at typed slots per 017-153), NOT at the placement. Never describe one placement form as "binding to Handle" or "binding to slice-of-Handles" as if it's a different surface — both are borrows; the Handle-ness lives in what the borrow is into. Example: `[n1 n2] as pair` binds `pair` to a borrow (a slice into the bundle's backing); the slice's *element type* is `Handle[T]` because the bundle's backing stores Handles.

@@ -68,14 +68,12 @@ runtime may use refcounting internally for specific types like
 citizen* is a value that can be named in a binding, passed to and returned
 from functions, and used in expression position. *Value-semantics* — the
 implicit ability to relocate, copy, or structurally compare a value — is an
-orthogonal capability a type may or may not have; a type can be a first-class
-citizen yet lack value-semantics. Node, connection, and effect instances are
-exactly such citizens: nameable, passable, returnable graph members that
-nonetheless lack value-semantics and so cannot be stored in cells or records.
-That restriction follows from single ownership and the borrow rules above (a
-borrow is unstorable, §13.3.6.1). The storable stand-in for *which kind* to place is the
-type value `Type[…]` (§5.7); for *which instance*, a weak `Handle[T]`
-(§13.3.6.2).
+orthogonal capability a type may or may not have. Node, connection, and
+effect instances are first-class citizens: nameable, passable, returnable
+graph members. A binding to one is a borrow, and a borrow is unstorable
+(§13.3.6.1), so an instance is held only by borrow, never placed in cells
+or records. The storable stand-in for *which kind* to place is the type
+value `Type[…]` (§5.7); for *which instance*, a `Handle[T]` (§13.3.6.2).
 
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
@@ -137,7 +135,7 @@ the clause keywords above), all control-flow keywords (`if`, `else`,
 scope-anchor namespaces (`here`, `module`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
-`or`, `not`, `weak` — the weak-reference operator, §13.3.6.2). `as` is **not** a cast operator; explicit conversion uses
+`or`, `not`, `handle` — graph-entity reference, dynamically-placed type form (`WeakHandle[T]`), §13.3.6.2; `handle!` — graph-entity reference, statically-placed type form (`Handle[T]`), §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3; `delete` — Map / Deletable trait deletion, §4.9.5). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar.
 
@@ -711,7 +709,7 @@ includes:
 
 Types not `const`-eligible:
 
-- Heap-allocated collection types (`Vec`, `HashMap`, etc.).
+- Heap-allocated collection types (`Vec`, etc.) and the language-level `Map[K, V]`.
 - Signal-bearing or reactive types.
 - Types containing function references or closures with captured runtime state.
 - `dyn` trait objects.
@@ -3286,8 +3284,8 @@ operators on one row share precedence.
 | 10   | `<<`, `>>` (shifts)                                       | left            |
 | 11   | `+`, `-`                                                  | left            |
 | 12   | `*`, `/`, `\`, `%`                                        | left            |
-| 13   | `-`, `~`, `weak` (prefix)                                 | right           |
-| 14   | `?`, `!`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts | left           |
+| 13   | `-`, `~`, `handle`, `handle!`, `portal` (prefix)          | right           |
+| 14   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
 | 15   | `::`                                                      | left            |
 
 - `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
@@ -4093,6 +4091,103 @@ User-defined numeric-like types (`Decimal` from stdlib, custom fixed-point
 types, etc.) implement whichever fine-grained traits are appropriate;
 umbrella satisfaction follows.
 
+#### 4.9.5 Collection and membership operator traits
+
+Three language-defined operator traits dispatch the corresponding
+operators on arrays, slices, maps, bundles, and any user type that
+fulfills them:
+
+##### `Index[K]` — for `[]` element and range access
+
+```
+trait Index[K]:
+  type Output
+  fn index(s: Subject, k: K) -> Output
+```
+
+`s[k]` desugars to `Index::index(s, k)`. The `K` parameter is part of
+trait identity (005-40), so a type fulfilling both `Index[isize]` (for
+element access) and `Index[Range[isize]]` (for range slicing) carries
+two distinct trait instances. The `Output` associated type is
+determined by `(Self, K)`.
+
+Language-level fulfillments:
+
+- **Arrays `T[N]`**: `Index[isize]` → `Output = T`;
+  `Index[Range[isize]]` → `Output = T[..]` (slice).
+- **Slices `T[..N]` / `T[..]`**: same shape.
+- **Bundles `Bundle[T]`** (§13.3.3.5): `Index[isize]` →
+  `Output = Handle[T][..]` (a row slice).
+- **Maps `Map[K, V]`** (§9.5): `Index[K]` → `Output = V`.
+
+Stdlib `Vec[T]` and other indexed collections fulfill the same surface.
+
+##### `Contains[K]` — for `in` membership
+
+```
+trait Contains[K]:
+  fn contains(s: Subject, k: K) -> bool
+```
+
+`k in s` desugars to `Contains::contains(s, k)`. The `in` keyword
+serves both as the `for`-loop separator (§13.7.5) and as the membership
+operator; the parser disambiguates by syntactic position. `not k in s`
+follows from 007-76.
+
+Maps fulfill `Contains[K]`; stdlib collections do too — there is no
+language-privileged dispatch.
+
+##### `Deletable[K]` — for the `delete` keyword
+
+```
+trait Deletable[K]:
+  fn delete(s: own Subject, k: K) -> Subject
+```
+
+`delete s[k]` desugars to a consume-and-produce call (§11.11.2) to
+`Deletable::delete(own s, k)`, returning the modified subject. The
+operation must be **idempotent**: deleting an absent key is a no-op,
+not an error.
+
+`delete` is an operator-context keyword (002-11), like `not` / `handle`
+/ `portal` — a prefix on an expression, not a clause introducer. It
+joins the keyword inventory at the same precedence tier as the other
+operator-context keywords.
+
+##### Why traits, not built-in
+
+Indexing, membership, and deletion are *operations* on types, not
+properties of types. By dispatching them through traits, every
+language-level container (`T[N]`, slices, `Map`, `Bundle`) and every
+stdlib container (`Vec[T]`, etc.) uses the same surface — `[]`, `in`,
+`delete` — without privileged compiler knowledge of any one of them.
+The trait *set* is closed (users cannot define new operator traits),
+but the fulfilling-by-user-types path is open exactly as for the
+arithmetic and comparison operator traits (§4.9.1).
+
+##### Built-in `Hash` conformance
+
+The `Map[K, V]` key bound `K: Eq + Hash` requires explicit `Hash`
+conformance for every built-in type that should be a valid key. The
+language guarantees:
+
+| Type                                         | `Hash` | Rationale                          |
+|----------------------------------------------|:-----:|------------------------------------|
+| `i8`–`i128`, `u8`–`u128`, `isize`, `usize`   | yes   | Trivial integer hash                |
+| `bool`                                       | yes   | Two-value hash                     |
+| `char`                                       | yes   | (012-16) Unicode scalar value      |
+| `string`                                     | yes   | Byte-content hash                  |
+| `duration`, `instant`                        | yes   | i64-backed (§9.4); integer hash    |
+| `f32`, `f64`                                 | **no**| NaN ≠ NaN violates `Eq → Hash`     |
+
+Any expression that demands `Hash` on a float type — for example
+`Map[f32, V]` — is a compile error at the bound. There is no
+special-casing for floats; the trait bound does the work.
+
+Tuples satisfy `Hash` when every component does (§3.7.3); records and
+enums satisfy `Hash` via `@derive(Hash)` (§3.8.2) when every field /
+payload satisfies it.
+
 ---
 
 ## 5. Type Intersection and `dyn`
@@ -4455,9 +4550,9 @@ value"; `Type[Drivable]` is "some Drivable *type*."
 
 Its primary use is to carry a node, connection, or effect **type** as a
 value — a template or slot that defers *which kind* is placed — given that
-the corresponding *instances*, while first-class citizens, lack value-semantics
-and so are not storable (§13.3.6.1). A *weak reference* to an instance, by
-contrast, is storable: a `Handle[T]` (§13.3.6.2) carries a graph entity by
+the corresponding *instances* are held only by borrow and so are not
+storable (§13.3.6.1). For storing an instance reference, the corresponding
+form is a `Handle[T]` (§13.3.6.2), which carries a graph entity by
 identity as a storable value — the instance-level companion to `Type[…]`'s
 type-level one.
 
@@ -5914,9 +6009,8 @@ match operation:
 Ductus provides no `if let` or check-and-unwrap sugar. The combination of
 `match` (for full discrimination) and `?` (for short-circuit propagation)
 is the primary pattern/short-circuit surface for consuming `Option` and
-`Result` (the postfix `!` of §8.4.2 and the stdlib methods of §8.7 also
-consume them); the language keeps that pattern/short-circuit surface minimal
-deliberately.
+`Result` (the stdlib methods of §8.7 also consume them); the language
+keeps that pattern/short-circuit surface minimal deliberately.
 
 ### 8.4 The `?` Operator and the `Try` Trait
 
@@ -5982,51 +6076,6 @@ whole `Result`/`Err` container. The `Option` case carries no error value
 and involves no conversion impl: `?` simply returns `None`.
 Cross-type propagation (Option in a Result-returning function, or vice
 versa) remains forbidden per §8.6 — the failure types are not compatible.
-
-#### 8.4.2 The `!` assertion operator
-
-The postfix `!` operator unwraps an `Option[T]` to its `T` — but, unlike `?`, it
-never propagates and never traps. `opt!` compiles **only when the compiler can
-prove `opt` is always `Some`** at that point; otherwise it is a *compile error*.
-There is no runtime check and no "trust me" escape: a successful `!` costs
-nothing at runtime because the `None` case has been proven impossible.
-
-```
-let car = target!        // &Drivable — accepted only if `target` is provably live
-```
-
-**Provenance, not assertion.** Whether `opt!` compiles is decided by a
-**normative, closed** rule, so that the same programs are well-formed under
-every conforming compiler. An `Option`-typed expression is *provably `Some`*
-iff every value that can reach it is one of:
-
-- a `Some(…)` construction, or
-- the resolution of a `Handle` (§13.3.6.2) whose candidate referents — the
-  same candidate set the compiler derives for topology analysis (§13.11.5) —
-  are **all statically placed**: non-`repeat`, non-dismountable graph
-  entities. Such a handle can never resolve `None`, so `h!` is sound and free.
-
-Reaching values are computed over the expression's definitions and the data
-flow into it; anything else — a `None` construction, a `Handle` with any
-dismountable candidate, an `Option` of unknown origin crossing a function
-boundary — makes `!` a compile error. Conforming compilers accept exactly
-this set: no more (no global cleverness that varies by implementation), no
-less.
-
-Two consequences follow. A `Handle` into a `repeat` view (§13.5.4.9) is
-**permanently** non-provable — a keyed scope is always dismountable — so the
-right tools there are `match` or `?`. And a general `Option` from another
-source (e.g. checked arithmetic, §4.6.4) is provable only when its reaching
-values are all `Some(…)` constructions; otherwise the caller must handle
-absence explicitly.
-
-**Why keep `!` when the proof is automatic.** Because the proof is *legible and
-refactor-stable*. `h!` is a visible contract — "I rely on this referent always
-being live" — checked at its own site. Move the referent under a `repeat` later
-and the `!` site fails with a precise error naming the broken contract, instead
-of some distant `match` silently changing meaning. This is the same philosophy as
-mandatory `dyn` (§5.2.2): make the load-bearing assumption appear in the source
-where it is relied upon.
 
 ### 8.5 Error-Type Conversion via `From`
 
@@ -6735,6 +6784,154 @@ collection" type. The only primitive such a collection rests on is the
 allocator intrinsic, a capability available to any program; a user can
 implement an equivalent collection with no privileged access.
 
+#### 9.3.7 Slices: `T[..N]` and `T[..]`
+
+A **slice** is a *borrow of a contiguous sub-range* of a value, instead of
+the whole value. Slices are language-level types, distinct from owned
+arrays (§9.3.1), with dedicated syntax: `T[..N]` is a slice whose length
+`N` is known at compile time; `T[..]` is a slice whose length is runtime
+data.
+
+```
+let arr: i32[5] = [10, 20, 30, 40, 50]
+let mid: i32[..3] = arr[1..4]          // compile-time length 3
+let dyn: i32[..]  = arr[i..j]          // runtime length
+```
+
+The slice forms are visible to user and compiler — a slice is *not* an
+alias for `T[N]`; the type expresses "a window onto something else." `..`
+evokes the range syntax (§12.2).
+
+##### Borrow semantics
+
+A slice is a borrow under the ordinary rules of §11.9:
+
+- It is a cluster member rooted in the source binding (§11.3.4, 013-48).
+- It cannot be stored in a cell, record field, payload, or tuple (013-52).
+- It cannot outlive its source (013-51).
+- While any slice is live, the source value cannot be moved or mutated as a
+  whole (013-56/57), and per-element assignment through the source is also
+  blocked (013-197); §11.3.4 admits sub-range borrows as the single
+  ownership-level addition (013-250).
+- Returning a slice extends the cluster across the call boundary (013-63).
+
+To persist data out of a slice, copy an **element** out (a value, or a
+`Handle[T]` per 017-142); the slice itself is never storable.
+
+##### The `arr[range]` operator
+
+`arr[i]` is element access (012-74); `arr[range]` is slice access:
+
+```
+let s = arr[2..5]           // i32[..3] — a length-3 slice
+let t = vec[k..k+10]        // T[..]   — a runtime-length slice
+```
+
+The slice operator is uniform across arrays, slices, and stdlib indexed
+sequences. **Strings are exempt** — they remain non-indexable per 012-26;
+string slicing uses the methods of §9.1.7.
+
+##### Open-ended ranges (slice-index only)
+
+Inside `[…]` for slicing, three open-ended forms are sugar:
+
+```
+arr[..n]    // 0..n
+arr[k..]    // k..arr.length
+arr[..]     // whole — 0..arr.length
+```
+
+These forms exist only inside a slice-index `[…]`; a bare `let r = k..`
+remains a parse error (014-7 is unchanged).
+
+##### From-the-end indexing — `^k`
+
+Inside `[…]` the prefix `^k` means `arr.length - k`:
+
+```
+arr[^1]         // last element
+arr[^2..]       // last two
+arr[..^1]       // all but the last
+arr[^3..^1]     // window from third-from-end to second-from-end (exclusive)
+```
+
+The `^` here is position-disambiguated from binary bitwise xor (007-69) —
+it is recognized as the from-end prefix only directly inside `[…]` or
+after `..` within a slice index. No new keyword; nothing else in the
+grammar changes.
+
+Plain or computed negative indices on `arr[i]` continue to trap (012-84);
+`^k` is the only form for from-the-end addressing.
+
+##### Window, not copy
+
+A slice is a zero-copy view onto the source:
+
+```
+let s = arr[2..5]   // no allocation; reads through to arr's elements
+```
+
+An owned copy is an explicit operation — e.g. an array literal or a
+collection constructor — not the slice operator's default. Bundles
+(§13.3.3.5) rely on this: a row slice is a window onto the bundle's
+backing storage, never a copy.
+
+##### `.length`
+
+```
+let n: usize = arr.length          // compile-time-known for T[N], T[..N]
+let m: usize = dyn_slice.length    // runtime for T[..]
+```
+
+The accessor is the full word `length`, not `len()`.
+
+##### Read-only
+
+Slices are read-only — no mutable slice form exists. A write through an
+aliased reference is precluded by Ductus' no-mutable-references design
+(013-211); mutation of a sub-range goes through the owning `mut`
+binding's indexed assignment (013-197). While the slice is live, even
+element-by-element assignment through the source is blocked (013-57).
+
+##### Iteration
+
+`T[..N]` and `T[..]` implement `Iterable` and `IntoIterable` with the
+source-bearing pattern of §12.7.4, paralleling arrays (014-143):
+
+```
+for x in slice:                    // works for any T[N], T[..N], T[..]
+  process(x)
+```
+
+##### Widening at parameter positions
+
+```
+fn sum(s: i32[..]) -> i32: ...
+
+let arr: i32[5] = [...]
+let fixed: i32[..3] = arr[0..3]
+
+sum(arr)        // T[N]    widens to T[..]
+sum(fixed)      // T[..N]  widens to T[..]
+sum(arr[0..2])  // T[..2]  widens to T[..]
+```
+
+`T[N]` and `T[..N]` widen to `T[..]` at parameter positions. The widening
+is a zero-cost type-system view; the runtime representation already
+carries length.
+
+##### Safe access via `.get`
+
+```
+let opt: Option[i32]      = arr.get(i)        // safe element access
+let win: Option[i32[..]]  = arr.get(2..5)     // safe range access
+```
+
+`arr.get(i)` returns `Option[T]` (extending 012-86 to slices and Maps),
+and `arr.get(range)` returns `Option[T[..]]`. The `.get` family is the
+language-level safe-access surface across arrays, slices, and Maps
+(§9.x).
+
 ### 9.4 Time Types: `duration` and `instant`
 
 The language provides two built-in time types for representing temporal
@@ -6937,6 +7134,188 @@ permitted in all cases.
 For minimum-overhead reactive cells, prefer bare `duration` / `instant`
 when an absent/errored sentinel can be encoded in the value's range
 (e.g., `i64::MIN`) rather than via `Option`/`Result`.
+
+### 9.5 Maps: `Map[K, V]`
+
+The keyed-associative primitive `Map[K, V]` joins `string`, tuples,
+arrays, and slices (§9.3.7) as a language-level compound type with
+dedicated syntax. Maps are not stdlib types with privileged syntax — the
+parser knows `{…}` for map literals exactly as it knows `[…]` for
+arrays.
+
+```
+let prices: Map[string, f64] = { 'apple': 1.20, 'banana': 0.50 }
+let counts = { 14: 'fourteen', 27: 'twenty-seven' }   // Map[i32, string], inferred
+```
+
+#### 9.5.1 Literals
+
+A map literal is a brace-delimited list of `key: value` pairs:
+
+```
+let m = { 'a': 1, 'b': 2, 'c': 3 }
+let m = {
+  'a': 1,
+  'b': 2,
+}                                       // trailing comma allowed
+let empty: Map[string, i32] = {}        // empty literal requires annotation
+```
+
+The empty `{}` requires a type annotation — there is nothing to infer
+`K` and `V` from — mirroring empty array `[]` (§9.3.1).
+
+Duplicate keys within a single literal are a compile error (parallel to
+duplicate record-field set, §6.1.3 / §13.8.7).
+
+#### 9.5.2 Structural typing
+
+`Map[K, V]` is structurally typed: the same `Map[string, i32]` value is
+the same type wherever it appears. There is no nominal Map. Mixed-key
+maps do not exist — a single `K` and `V` parameterize the whole type.
+
+#### 9.5.3 Key bounds
+
+Keys must satisfy `K: Eq + Hash`. The Ductus primitive types that
+qualify are:
+
+- All integer types (`i8`..`i128`, `u8`..`u128`, `isize`, `usize`).
+- `bool`.
+- `char`.
+- `string`.
+- `duration` and `instant`.
+
+Float types (`f32`, `f64`) **do not** satisfy `Hash` — `NaN ≠ NaN`
+violates the `Eq → Hash` equal-implies-equal-hash law — so
+`Map[f32, V]` is a compile error at the `Hash` bound. There is no
+special-casing for floats; the trait bound does the work.
+
+User-defined types can satisfy the bound via `@derive(Eq, Hash)`
+(§3.8.2) and become valid map keys.
+
+#### 9.5.4 Access: `m[k]` and `m.get(k)`
+
+Two access forms parallel the array surface (§9.3.5):
+
+```
+let v   = m['apple']         // V — traps on missing key
+let opt = m.get('apple')     // Option[V] — safe form
+```
+
+`m[k]` traps on a missing key — a miss is treated as a bug, the same
+model as `arr[i]` out-of-bounds (§9.3.5). `m.get(k)` is the safe form
+returning `Option[V]`. The `.get(k)` family is the language-level
+safe-access surface across arrays, slices (§9.3.7), and maps.
+
+#### 9.5.5 Membership: `in`
+
+```
+let present: bool = 'apple' in m       // Contains::contains
+let absent        = 'cherry' not in m  // negation via 007-76
+```
+
+The `in` operator dispatches to the language-defined `Contains` trait
+(§4.9.5). Map fulfills it natively; stdlib collections fulfill it too —
+no privilege.
+
+#### 9.5.6 Deletion: `delete`
+
+```
+delete m['cherry']                     // no-op when key is absent
+```
+
+The `delete` keyword dispatches to the language-defined `Deletable`
+trait (§4.9.5). Deleting an absent key is a no-op (idempotent), so
+client code does not need to check membership first.
+
+#### 9.5.7 Merge: `+`
+
+```
+let merged = a + b + { 'c': 3 }        // right-hand keys win on collision
+```
+
+`+` produces a new Map; later (right-hand) entries override earlier
+ones on key collision, mirroring the `with` rule for record-field merge
+(§6.1.5).
+
+#### 9.5.8 Iteration
+
+`Map[K, V]` implements `Iterable` and `IntoIterable`, yielding `(K, V)`
+pairs:
+
+```
+for (k, v) in m:
+  print('{k} = {v}')
+```
+
+**Iteration order is unordered** — keys are emitted in whatever order
+the underlying hash table produces. There is no commitment to insertion
+order or sort order. The `repeat` construct (§13.5.4) treats unordered
+sources by key-set diffing (018-83), so a Map source is a valid `repeat`
+source despite the order non-commitment.
+
+#### 9.5.9 Cost model
+
+Stated at the language level because Map is a primitive:
+
+- Lookup, insert, delete: **O(1) average** (hash table).
+- Iterate: **O(n)** in the number of entries.
+
+These bounds are normative.
+
+#### 9.5.10 Mutation
+
+Maps are mutable only inside function bodies, only through `mut`
+bindings, and only by the dynamic-size memory model the rest of the
+language uses:
+
+```
+fn populate(items: Vec[(string, i32)]) -> Map[string, i32]:
+  mut m: Map[string, i32] = {}
+  for (k, v) in items:
+    m[k] = v                           // insert or update
+  m
+```
+
+`m[k] = v` inserts or updates. Map is the first language-level
+growable type, but with no new memory model: the existing
+allocator-intrinsic (§9.3.6) plus single-ownership in-place reuse
+(§11.11.2) cover it.
+
+#### 9.5.11 Storage in reactive cells
+
+A `Map[K, V]`-typed cell uses pool storage (§13.12.4), joining
+`string`, `Vec[T]`, and other dynamically-sized cell types. Writing
+the cell stages a new map value at commit (the runtime double-buffers
+as for any pool-stored value); per-key updates between commits are
+absorbed into the next published snapshot.
+
+#### 9.5.12 Reactive composites (literal-key only)
+
+A map literal in a *reactive declaration* (`derived`, `attr`,
+`recurrent`) with **compile-time-known keys** forms a per-slot
+reactive composite — like a tuple (016-180) or fixed-array (016-181)
+composite. Each slot is independently reactive; there is no outer
+cell.
+
+```
+derived report: Map[string, Cell[f32]] = {
+  'volume': master_gain,        // alias to the signal cell
+  'pitch':  pitch_signal,       // alias
+  'reverb': 0.3,                // static (no cell)
+}
+```
+
+The map's reactive-composite paths are `<binding>.<key>` (parallel to
+record fields, §13.2.9.4). Keys must be compile-time-known for the
+slot path to be static.
+
+A map whose keys are **runtime values** cannot be a composite — there
+is no static slot path for runtime keys. Such a map is a whole-cell
+`Cell[Map[K, V]]` per §13.2.8.
+
+Composites exist only at reactive-declaration sites (§13.2.9.1);
+function bodies are reactive-transparent (§13.12.2) and build
+plain-value maps, never composites.
 
 ---
 
@@ -7672,7 +8051,7 @@ at module scope are governed by §13's reactive contract.
 **Top-level consts and the ownership system.** A top-level `const`
 (per §2.4.1.1) is compile-time-only: each use site reifies a fresh
 compile-time value. Consts do not enter the §11 ownership system —
-there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool index. Types that are not statically representable — dynamic collections such as `Vec`/`HashMap`, whose contents are built by runtime allocation — are not supported as const types.
+there is no runtime "owner" of a const to consume or transfer. Per §2.4.1.1, const types must be compile-time-constructible / statically representable (§2.4.1.3); this is a property of the type's representation, not of `Copy`-ness or heap-backedness — `string`, for instance, is heap-backed, `Copy`, and const-eligible, represented as a static string-pool index. Types that are not statically representable — dynamic collections such as `Vec` and the language-level `Map[K, V]`, whose contents are built by runtime allocation — are not supported as const types.
 Attempts to apply `move` or to pass a const to an `own` parameter
 position are diagnosed as: *"const `X` is compile-time-only and has
 no runtime identity; consumption does not apply."*
@@ -7890,6 +8269,17 @@ that do not escape into a let or for-loop binding are
 call-expression-bounded (§11.7); category B and D storage operations
 are atomic at the assignment site. The cluster machinery handles
 let-rebindings and for-loop iteration variables specifically.
+
+**Sub-range borrows.** A borrow may span a sub-range of its source value,
+not only the whole value. This is the sole ownership-level addition for
+native slices (§9.3.7): `arr[2..5]` produces a `T[..3]` slice that
+borrows three contiguous elements of `arr`. Cluster membership,
+unstorability, source-move-and-mutate locks, and return rootedness all
+apply to sub-range borrows unchanged — the single difference is that the
+borrow's *extent* covers a contiguous sub-range rather than the whole
+value. While any slice into a source is live, the source as a whole is
+subject to the cluster's move/mutate lock above; per-element assignment
+through the source (013-197) is also blocked.
 
 #### 11.3.5 Rule (P): consume of a borrow-equivalent alias
 
@@ -8204,7 +8594,7 @@ provides a `.clone()` method that returns the same result as direct use.
 The compiler auto-derives `Clone` for every `Copy` type.
 
 The converse is not true: most `Clone` types are not `Copy`. Heap-allocated
-structures (`Vec`, `HashMap`), arrays, and records containing them are
+structures (`Vec`), `Map[K, V]`, arrays, and records containing them are
 `Clone` (when their fields support it) but not `Copy`.
 
 #### 11.5.3 Usage
@@ -8721,14 +9111,19 @@ associated-type slots to whatever scope the slot's use-site occupies.
 The compiler's cluster analysis (§11.3.4) handles
 both cases.
 
-**The `Handle[T]` exception.** A `Handle[T]` (§13.3.6.2) is *not* an alias — it
-is a `Copy` value that weakly designates a graph entity — and so is exempt from
-every restriction above: a handle may be stored in a cell, record field, enum
-payload, or tuple like any other value. Its *resolution* `Option[&T]`, by
-contrast, contains a borrow (here `&T` is elaborated-form notation per §11.9,
-not surface-writable) and is therefore subject to categories B and
-D exactly like any other alias-bearing value. The resolution is the transient
-read; the handle is the storable carrier.
+**Handle, WeakHandle, and Portal are `Copy` carriers, not aliases.**
+A `Handle[T]` (§13.3.6.2) is `Copy` (017-142); a `WeakHandle[T]`
+(§13.3.6.2) and a `Portal[T]` (§13.6.2) are likewise `Copy`. `Copy`
+values are not aliases under §11.9 — they may be stored in a cell,
+record field, enum payload, or tuple like any other `Copy` value. No
+exemption is at work: storability follows from `Copy` semantics, and
+the categories above govern alias-bearing values only.
+
+The *resolution* `Option[&T]`, by contrast, contains a borrow (here
+`&T` is elaborated-form notation per §11.9, not surface-writable) and
+is therefore subject to categories B and D exactly like any other
+alias-bearing value. The resolution is the transient read; the handle,
+weak handle, or portal is the storable carrier.
 
 #### 11.9.2 Constraints during alias lifetime
 
@@ -9766,12 +10161,25 @@ compile-time values are themselves compile-time known. Unrolled loops do
 **not** dispatch through `IntoIterable` or `Iterable` (§12.3.1); element
 binding happens at compile time, not by calling `next` on an iterator.
 
-**Admitted iterables (v1).** Two forms produce compile-time-known
+**Admitted iterables (v1).** Three forms produce compile-time-known
 iteration:
 
 - A range `start..end` where both bounds are compile-time known (§12.2).
 - An array literal `[e1, …, eK]` where every element expression is
   compile-time known.
+- A **fixed-extent typed value** — `T[N]` (012-73), `T[..N]` (§9.3.7), or
+  a static view (§13.4.2) — whose extent is part of the type. The loop
+  unrolls structurally to one iteration per element, binding the
+  iteration variable to each successive element in index order; element
+  *values* may be runtime (an array's contents, a view's borrows), while
+  the iteration count and per-element binding structure are compile-time.
+
+For the first two forms, the iteration variable itself is compile-time
+known on each iteration, and §2.4.1 propagation can lift body
+sub-expressions to compile-time. For the third form, the iteration
+variable is a runtime value (an array element, a view borrow); the
+unrolling is purely structural — one body copy per element index, no
+iterator dispatch.
 
 Iterating over the elements of a tuple, and iterating over a list of
 types, are not provided. A concrete tuple's elements are reached by
@@ -9782,25 +10190,11 @@ array or `Vec`, iterated with `for` + `match`). A bare tuple element
 carries no tag to branch on, so tuple-element iteration would add nothing
 the enum pattern does not do better; see §9.2.5.
 
-**Extent is a type property, not an admission rule.** A type's *extent* —
-whether its element count is part of the type — is distinct from whether a
-`for` over a value of that type unrolls. Only the two admitted forms above
-(a compile-time range, a compile-time array literal) unroll; extent-knowledge
-alone does not make a value an unroll iterable.
-
-- **Fixed-extent types** (count known at compile time): `T[N]` (fixed-size
-  arrays), tuples, records. A *runtime-valued* `T[N]` is iterated with
-  `for i in 0..N` — a compile-time range, which unrolls the loop structure —
-  and runtime indexed access, not by `for x in buf` over the array value.
-  Tuple/record element iteration is not provided (above).
-- **Variable-extent types** (count varies at runtime): `Vec[T]`,
-  `SmallVec[T, N]` (capacity is `N` but occupied count varies),
-  `RingBuf[T, N]`, `String` / `s.chars()`, `HashMap`, ranges with runtime
-  bounds.
-
-Fixed extent is the same compile-time-known-count property §2.4.1.3 uses for
-const-eligibility and §13.12.4 uses for cell layout; it does not by itself
-admit a `for`.
+**Variable-extent types.** Types whose count varies at runtime do *not*
+unroll, regardless of context: `Vec[T]`, `SmallVec[T, N]` (capacity is
+`N` but occupied count varies), `RingBuf[T, N]`, `String` / `s.chars()`,
+ranges with runtime bounds. These dispatch through `IntoIterable` /
+`Iterable` at runtime per §12.3.1.
 
 **Call-site propagation.** A pure function with a `for` in its body has
 **one** source. Whether that `for` unrolls or runs at runtime is decided
@@ -10177,7 +10571,7 @@ from on each `next` call. Two patterns arise:
   the iterator holds all state internally. `type Source = ()` (the
   default); each `next` call receives a unit value that the
   implementation ignores. No external value is needed across calls.
-- **Source-bearing iterators** (Vec, HashMap, user-defined
+- **Source-bearing iterators** (Vec, Map, user-defined
   collections) — the iterator holds only a cursor / position; the
   collection is the source, supplied on each `next` call. `type Source
   = TheCollection`; each `next` call receives the collection under
@@ -10544,7 +10938,7 @@ user-defined types use (§12.7, §12.8, §12.9):
   0..N:` are indistinguishable. The conventional form is the default.
 - **Arrays (`T[N]`)** — implement both `Iterable` (default) and
   `IntoIterable` (`for own`). See §12.10.1 for details.
-- **Stdlib collections** (`Vec[T]`, `HashMap[K, V]`, etc.) — implement
+- **Stdlib collections** (`Vec[T]`, etc.) and language-level `Map[K, V]` — implement
   both, with iterator types specific to each container. The specific
   Item types follow §12.7's slot conventions; the iterator types
   follow the source-bearing pattern of §12.7.4.
@@ -10863,7 +11257,7 @@ Reactive cells (signal, attr, recurrent, derived) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
 word, or index-based pool storage for larger or dynamically-sized
-values. Imperative data structures (`Vec`, `HashMap`, etc.) are
+values. Imperative data structures (`Vec`, etc.) and the language-level `Map[K, V]` are
 first-class as values held inside reactive cells via pool storage,
 and are also usable as ordinary owned values inside function
 bodies (governed by §11). The reactive system organizes
@@ -12162,8 +12556,8 @@ the caller's context, not by the function's signature.
 A node or connection **type** can be carried as a value via the `Type[…]`
 meta-type (§5.7) — the mechanism for an attr "template slot" that defers
 *which kind* a receiving node places. The corresponding *instances* are
-first-class citizens that lack value-semantics (§13.3.6.1) and so are not
-storable; the type value is the storable stand-in.
+first-class citizens held only by borrow (§13.3.6.1), so the type value is
+the storable stand-in.
 
 A `Type[…]` slot is filled by naming a node (or connection) type in value
 position; the receiving node later **places** it (§13.8 — §13.8.4.2 covers
@@ -12536,70 +12930,106 @@ fulfill Displayable for Driver:
     "Driver(exp: {d.expertise_level}, risk: {d.risk_tolerance})"
 ```
 
-#### 13.3.3 Views
+#### 13.3.3 Acceptance: the `children:` clause and selection views
 
 ```
-view name: <selector> <cardinality>
-dynamic view name: <selector>*
+children:
+  <name>: <selector> <cardinality>          // named — also a selection binding
+  <selector> <cardinality>                  // unnamed — accept-only
 ```
 
-Children are accessed through **`view` declarations** — a declaration kind
-parallel to `attr`, living in the body name-scope with names unique across
-the whole body (§13.7.1). A view names a **receiver-side query** over the
-children a caller supplies: its `<selector>` is a concrete node type, a
-trait, or the marker `Node`, and its `<cardinality>` (§13.3.3.1) constrains
-how many supplied children match.
-
-- **Views overlap rather than partition.** Each view is an independent
-  query over the whole supplied set, so one child may be counted by several
-  views at once.
-- **Accepted universe.** What a node accepts is the union of its view
-  selectors: a node with **no views accepts nothing**, and a `Node` (or
-  `Connection`) catch-all view opens it fully.
-- **Homogeneous.** Every child a view yields satisfies its one selector;
-  heterogeneous bundles are **groups**, a distinct kind (§13.3.3.5).
-- **Gated children still count.** A `when`-gated-off child remains in the
-  views that match it and its reads return frozen values — gates freeze
-  rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
-  membership.
-
-A `view` declaration **places no instances**; it is purely the node's
-caller-facing query, bounding only what a *caller* supplies (§13.8.3). The
-node's own internal children — those it emits in its exposition via a
-compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4), or places and names
-with `as` (§13.3.7) — are its private realization: they are never counted by
-a view and never appear in one, exactly as a component's internal structure
-is invisible to its `children`. The governing principle — signature
-declarations bound callers; internals are unconstrained by them — is stated
-in §13.3.4.2.
+A node accepts children through the **`children:` clause**. The body of
+the clause lists one or more *acceptance entries*; each entry contributes
+to the caller-facing acceptance contract. An entry may be **named** —
+binding it into the body namespace (§13.7.1) as a *view* selection — or
+**unnamed**, in which case it is accept-only (a passthrough that feeds
+`@content`, §13.3.7.2).
 
 ```
-// Views with cardinality:
 node Synthesizer:
-  view oscillators: Oscillator+      // at least one
-  view filter:      Filter           // exactly one
-  view amplifier:   Amplifier?       // at most one
+  children:
+    oscillators: Oscillator+         // at least one — named view binding
+    filter:      Filter              // exactly one
+    amplifier:   Amplifier?          // at most one
   attr master_volume: f32 = 1.0
 ```
 
-In this example: at least one Oscillator (`+`), exactly one Filter
-(bare = exactly one), at most one Amplifier (`?`).
+The same clause-with-entries model governs caller-facing connection
+acceptance via the **`incoming:`** and **`outgoing:`** clauses (§13.3.4).
+
+- **Acceptance entries overlap rather than partition the supplied set.**
+  A named entry with a narrower selector is a *projection* of any broader
+  entry, not a separate acceptance:
+  ```
+  children:
+    drivables: Drivable+
+    cars:      Car*                  // a projection of drivables, not a widening
+  ```
+  Both entries reference the same supplied set; `cars` narrows the
+  selection but does not change what the node accepts.
+- **No `children:` clause means no children.** A node with no
+  `children:` clause accepts nothing; a `Node` (or `Connection`) catch-all
+  entry opens the clause fully.
+- **Homogeneous.** Each entry yields children that all satisfy its one
+  selector; homogeneous co-placement (a co-tied bracket at placement) uses
+  a **`Bundle[T]`** (§13.3.3.5).
+- **Gated children still count.** A `when`-gated-off child remains in the
+  acceptance count and its reads return frozen values — gates freeze
+  rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
+  membership.
+- **Layout.** Each named entry occupies its own line under the clause
+  header. Multiple unnamed entries may share a line, space-separated; a
+  mixed line is not allowed. The clause header takes the colon and an
+  indented body (002-20 indentation rules apply).
+
+An acceptance entry **places no instances**; the clause is purely the
+node's caller-facing contract, bounding only what a *caller* supplies
+(§13.8.3). The node's own internal children — those it emits in its
+exposition via a compile-time `for` (§13.3.3.3) or a `repeat` (§13.5.4),
+or places and names with `as` (§13.3.7) — are its private realization:
+they are never counted by an acceptance entry and never appear in a
+selection view, exactly as a component's internal structure is invisible
+to its callers. The governing principle — caller-facing clauses bound
+callers; internals are unconstrained by them — is stated in §13.3.4.2.
+
+##### Selection views
+
+A named acceptance entry *is* a view: it provides a body selection
+binding over the children it accepts. Body code reads the binding under
+the rules of §13.3.3.2 — as a `Handle[T]` array for a static view, or a
+`Cell[Iterator[Handle[T]]]` for a `dynamic` entry (§13.3.3.4).
+
+A separate `view` declaration may be written to provide an *additional*
+selection over already-accepted children — typically for a narrower
+projection that the `children:` clause did not name:
 
 ```
-// Catch-all view (any node type accepted):
 node Processor:
-  view children: Node*               // any node, zero or more
-  outgoing wires: WiresTo
+  children:
+    all: Node*                       // accepts any node
+  view drivables: Drivable+          // projection — selects the Drivable subset
 ```
 
-`Processor` accepts any node type through its `children` view, reading the
-supplied children directly (`children[i]`, §13.3.3.2). A node that declares
-no view accepts nothing.
+The standalone `view` form is purely receiver-side: it never widens
+acceptance, only narrows the selection.
 
-A node may declare a view selecting its own type (self-recursion).
-Self-recursive placements terminate because each placement is an explicit
-user act — the compiler walks finite placement trees, not infinite type
-recursions.
+##### Catch-all and self-recursion
+
+```
+// Accepts any node type:
+node Container:
+  children:
+    inner: Node*
+
+// Self-recursion:
+node TreeNode:
+  children:
+    children: TreeNode*              // accepts further TreeNodes
+```
+
+Self-recursive placements terminate because each placement is an
+explicit user act — the compiler walks finite placement trees, not
+infinite type recursions.
 
 ##### 13.3.3.1 Cardinality forms
 
@@ -12660,15 +13090,17 @@ The same marker applies identically to `incoming`/`outgoing` connection-views
 
 ##### 13.3.3.2 Access from inside the node body
 
-A view is a **transient borrow-window** onto the children it selects. For a
-*static* (unmarked) view, the view name is an ordinary **read-only array of
-borrows** whose length `N` is an implicit const-generic: each placement site
-fixes its own `N` (the exact static supply there), and the declared
-cardinality supplies the compile-time bounds `min..max` that every site's
-`N` must satisfy. Reading through it is direct and zero-ceremony —
-`channels[0].gain`, no `!`, no Handle resolution. Nothing about the form is
-a special construct; its behavior is the ordinary behavior of const-generic
-arrays:
+A view is a **selection** onto the children it accepts. For a *static*
+(unmarked) view, the view name is a **read-only array of `Handle[T]`s**
+— `T` the view's selector type — whose length `N` is an implicit
+const-generic: each placement site fixes its own `N` (the exact static
+supply there), and the declared cardinality supplies the compile-time
+bounds `min..max` that every site's `N` must satisfy. Static-view
+membership is statically provable, so each element is the
+**statically-placed** `Handle[T]` type (§13.3.6.2) and reads through it
+auto-deref to `&T` directly — `channels[0].gain` is zero-ceremony, no
+resolution to an `Option`. The behavior is the ordinary behavior of
+const-generic arrays:
 
 - **Indexed access**: `viewname[i]` is legal iff the index is provably in
   range for *every* admitted `N` — i.e. iff `i < min_cardinality`. This is
@@ -12682,14 +13114,15 @@ arrays:
 - **Order**: placement order, always. A view is a *stable filter* of the
   caller's written placement sequence — it selects, never reorders. Every
   projection of the placement sequence in the language preserves this order.
-- **No storage**: a view's elements are borrows, so the value is transient
-  by the ordinary borrow rules (§11.9, §11.11) — usable in loops, indexing,
-  and calls; **storable nowhere**. To persist a reference to a child, take a
-  `Handle` explicitly with `weak` (`attr favorite: Handle[Channel] = weak
-  channels[0]`, §13.3.6.2); no implicit auto-resolve is added.
+- **Storage**: the elements are `Handle[T]`s, which are `Copy` and
+  storable (017-142). A reference to a child persists straight out of the
+  view — `attr favorite: Handle[Channel] = channels[0]` — without an
+  explicit `handle` step. The runtime value is the same identity-stamped
+  `(slot_path, generation)` pair the Handle always carries.
 
 For a **`dynamic`** view, the view name is not an array but a **reactive
-cell** (§13.3.3.4); none of the forms above apply to it.
+cell** `Cell[Iterator[Handle[T]]]` (§13.3.3.4); none of the static-array
+forms above apply to it.
 
 A view is the only body-side bulk form: there is no whole-namespace
 iteration over a node's children, and a node with no views has no bulk
@@ -12783,6 +13216,55 @@ in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
 
+**`for … as <name>` — hoisting named placements.** A compile-time `for`
+in a node body or placement body may carry an `as <name>` clause that
+hoists its loop-scoped named placements out of the per-iteration body
+and binds them collectively to `<name>` in the enclosing scope:
+
+```
+node OscBank[const N: usize]:
+  expose:
+    for i in 0..N as bank:
+      Oscillator as osc | freq=base_freq(i)        // emitted N times
+      Filter     as flt | cutoff=cutoff_freq(i)    // emitted N times
+
+  // bank : [bank::entry; N]
+  // bank::entry has fields named after the inner `as` placements:
+  //   osc: Handle[Oscillator]   (statically placed)
+  //   flt: Handle[Filter]       (statically placed)
+
+  derived total: f32 = sum_outputs(bank)            // pass the whole array
+  derived first_freq: f32 = bank[0].osc.freq        // Handle auto-derefs to &Oscillator
+```
+
+`<name>::entry` is a **compiler-minted nominal record** per `for … as`
+site — synthetic, path-derived identity — whose fields are named after
+the `as <name>` placements inside the loop body. The hoisted binding has
+type `[<name>::entry; N]`: a fixed-extent array of these records, where
+`N` is the loop's compile-time iteration count.
+
+**Field type.** Each field is typed `Handle[T]` — the statically-placed
+type form (§13.3.6.2). The for-loop is compile-time unrolled, so every
+iteration's placement is a statically placed child of the surrounding
+node; no dismount is possible. Records cannot hold borrows (013-52,
+013-141), so a bare node-typed binding cannot live in a record field;
+the compiler mints a `Handle[T]` for each placement, which is `Copy` and
+storable. The placement binding `<name>` *inside* the loop body itself
+stays a borrow (017-131) — the entry field is the compiler's separate
+storable representation for body-wide access.
+
+Field access is `bank[i].osc`; the `Handle[T]` field auto-derefs to
+`&Oscillator` in read position (§13.3.6.2). Whole-row access is
+`bank[i]`. The minted `entry` type is **not nameable in user code as a
+parameter type** — to pass a whole row to a non-generic function, the
+function must be generic over the row's type. Field access never needs
+the entry name.
+
+`for … as` is the static counterpart to `repeat … as`'s
+`Cell[Map[Key, view::entry]]` (§13.5.4.9): array↔map, positional↔keyed,
+static↔Cell-dynamic. The entry-field variant tracks the difference:
+`Handle[T]` here vs `WeakHandle[T]` there.
+
 ##### 13.3.3.4 Dynamic views
 
 A view marked `dynamic` (§13.3.3.1) may be supplied by a caller's
@@ -12807,14 +13289,13 @@ Feeding an *unmarked* view with a `repeat` is a compile error at the
 feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
-**The cell.** A `dynamic` view is a **reactive cell** whose value is the
-current collection of supplied children — a
-language-provided, keyed, ordered collection (source order; the
-written interleaving, with each feeding `repeat`'s scopes expanded in
-place). It updates when children mount or dismount. Because its
-elements are node references, the raw value is transient by the borrow
-rules (§11.9, §11.11): it cannot be bound, stored, or returned. It is
-consumed in exactly the two ways any reactive cell is consumed:
+**The cell.** A `dynamic` view is a **reactive cell**
+`Cell[Iterator[Handle[T]]]` whose value is the current iterator of
+supplied-child `Handle[T]`s — keyed and in source order (the written
+interleaving, with each feeding `repeat`'s scopes expanded in place). The
+cell updates when children mount or dismount. The iterator value is
+consume-only (017-67): it cannot be bound, stored, or returned as a value
+— it is consumed in exactly the two ways any reactive cell is consumed:
 
 - **Operators** (§13.17), for values:
 
@@ -12868,82 +13349,193 @@ contract regardless, because the *type* admits dynamic supply.
 The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
 
-##### 13.3.3.5 Groups
+##### 13.3.3.5 Bundles
 
-A **group** is a *heterogeneous* bundle of co-placed children, written
-`[...]` at the placement site (§13.8.3). It is a distinct kind from a view:
-a view is homogeneous (one selector), whereas a group may mix types. **Only
-an explicit `[...]` is a group** — a bare placement is not.
-
-A group is reached **only via `.<Type>`**, which yields a (homogeneous) view
-of that type's members within the group; there is **no bare positional index
-into a group**. Forcing `.<Type>` first means a heterogeneous bundle is
-never indexed directly, so the "what type does `group[i]` return?" problem
-never arises (Ductus has no ad-hoc unions).
+A **`Bundle[T]`** is a *homogeneous* co-placement of children, written
+`[...]` at the placement site (§13.8.3). `T` is a node type, a trait, or
+the `Node` marker. A bundle is a distinct kind from a view: a view selects
+children supplied flat; a bundle ties co-placed children with a bracket
+that survives in the structural output. **Only an explicit `[...]` is a
+bundle** — a bare placement is not.
 
 ```
-view bar: [Note+ Rest*]      // one group: 1+ Note, 0+ Rest
-bar.Note[0].pitch            // .Note -> view of the group's Notes, then index
-bar.Rest                     // .Rest -> view of the group's Rests
+view chords: [Note[=2]]+              // 1+ bundles, each containing exactly 2 Notes
+chords[0][1].pitch                    // bundle 0, element 1
+chords.length                         // number of bundles
+chords[0].length                      // number of elements in bundle 0
 ```
 
-**Flat views flatten through groups; group views see brackets.** A view
-whose selector is a plain type counts and sees the group's *elements*; a
-view whose selector is itself a group (`[...]`) counts and sees the
-*brackets*:
+##### Access via `Index`
+
+Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
+**index-to-min** rule (017-43) at each level:
+
+- `bundle[g]` returns a **row slice** — `Handle[T][..N]` when the row's
+  length is statically derivable (rectangular bundles, single-element
+  rows), `Handle[T][..]` for runtime-length rows (jagged bundles).
+- `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
+- `bundle.length` returns the row count; `bundle[g].length` returns the
+  row's element count.
+
+Direct index `bundle[g]` is legal iff `g < outer_min_cardinality`; direct
+`bundle[g][i]` is additionally legal iff `i < inner_min_cardinality`. For
+unbounded access, use `.get(g)` / `.get(i)` returning `Option`, or `for`:
 
 ```
-verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one group
+let opt: Option[Handle[Note][..]] = chords.get(g)
+for chord in chords:                  // unrolls to one body copy per bundle
+  for note in chord:                  // unrolls per element of the row
+    process(note)
+```
+
+##### Storage (implementation detail)
+
+All bundle forms yield the same external type `Bundle[T]`. Internal
+storage varies — the difference is invisible to user code, which always
+sees a `Handle[T][..N]` or `Handle[T][..]` slice from `bundle[g]`:
+
+- **Rectangular inner cardinality** (e.g. `[Note[=2]]+`): backed by a 2D
+  array `Handle[T][M][N]`; row length is a compile-time constant.
+- **Jagged inner cardinality** (e.g. `[Drivable[2..4]]+`): backed by a
+  flat handle backing plus an offsets table; row length is runtime.
+- **Single-element rows** (e.g. `[Note]+`): no special collapse to a bare
+  `Handle[T]` — each row is a length-1 slice, uniform with the other
+  forms.
+
+Storage strategy is the implementation's choice; the user-visible API is
+the `Index` surface above.
+
+##### Flat views flatten; bundle views see brackets
+
+A view whose selector is a plain type counts and sees the bundle's
+*elements*; a view whose selector is itself a bundle (`[...]`) counts and
+sees the *brackets*:
+
+```
+verse: C4 [F4 G4] E4         // C4, E4 bare; [F4 G4] one bundle
 view notes:  Note+           // flat    -> sees C4, F4, G4, E4   (4)
-view chords: [Note+]+        // grouped -> sees [F4 G4]          (1 group)
-chords[0].Note[1]            // 2nd Note of group 0
+view chords: [Note+]+        // bundled -> sees [F4 G4]          (1 bundle)
+chords[0][1]                 // 2nd Note of bundle 0
 ```
 
-With a single matching group, members are reached `bar.Note[i]`; with
-multiple groups, the group is indexed first: `bars[g].Note[i]`.
+With a single matching bundle, members are reached `bundle[i]` and
+`bundle.length`; multiple bundles are addressed with the outer index
+first: `bundles[g][i]`.
 
-**Group cardinality.** For a group view, the **inner** cardinality (members
-per group) is part of the match predicate — a *filter* on which groups the
-view selects — while the **outer** cardinality (group count) is the count
-constraint. This keeps distinct group shapes independent: `[Note[=2]]+` and
-`[Note[=3]]+` select disjoint sets of groups and do not conflict.
+##### Bundle cardinality
 
-#### 13.3.4 Connection-views (`incoming` and `outgoing`)
+For a bundle view, the **inner** cardinality (members per bundle) is part
+of the match predicate — a *filter* on which bundles the view selects —
+while the **outer** cardinality (bundle count) is the count constraint.
+Distinct bundle shapes stay independent: `[Note[=2]]+` and `[Note[=3]]+`
+select disjoint sets of bundles and do not conflict.
+
+##### Contents inside `[...]`
+
+Allowed inside a bundle bracket:
+
+- Node placements (the common case).
+- Gated node placements — the gate freezes per 022-7, but membership is
+  static; gating does not remove the element from the bundle.
+- A compile-time `for` loop (021-42), unrolling into bundle members.
+
+Forbidden inside a bundle bracket:
+
+- `repeat` — a runtime-varying membership inside a static pre-tied
+  bracket contradicts the bundle nature. Dynamic bundles use the
+  reactive `Cell` form below.
+- Connections — bundling is node-only (017-273).
+
+##### `[...]` is an open delimiter
+
+Layout suspends inside `[...]` (parallel to `(...)` and string literals,
+§1.4), so bundle members may span multiple lines and carry attrs,
+children, `when`-gating, etc.:
 
 ```
-outgoing name: [dynamic] Type <cardinality>      // node is the `from` endpoint
-incoming name: [dynamic] Type <cardinality>      // node is the `to` endpoint
+[
+  Note | pitch=60 duration=0.25
+  Note | pitch=64 duration=0.25
+  Rest                           when silent_break: true
+]
 ```
 
-Connections a node participates in are declared **per-view**, parallel to node
-views (§13.3.3) but with their own direction keywords: `outgoing name: Type`
-makes the node the `from` endpoint, `incoming name: Type` makes it the `to`
-endpoint. Each declaration is a **connection-view** — a direction keyword, a
-unique name (§13.7.1), a connection type, and optional cardinality. See §13.6 for
+##### `as`-naming
+
+`[n1 n2] as pair` binds `pair` to the row slice form `Handle[T][..N]` (or
+`Handle[T][..]` for jagged rows) — the same type that a receiving view's
+row produces from `view[g]`.
+
+##### Dynamic bundles
+
+A `repeat`-fed bundle stays a reactive `Cell` whose value is consume-only
+(017-76 family); slice-indexing access does not apply. The slice surface
+is only for caller-written static brackets.
+
+##### 2D only
+
+Bundles are exactly one nesting level. `[[T]]` (nested-nested bundles) is
+not provided; deeper structure uses nested node bodies.
+
+##### Storable
+
+A `Bundle[T]` is storable: its fields are all `Copy` (Handles are Copy
+per 017-142; `usize` offset tables are Copy). The bundle value sits in
+cells, fields, records, and attrs. Row slices, however, are borrows
+(§11.9) and follow the ordinary borrow rules — `bundle[g]` cannot be
+stored, only the whole bundle.
+
+##### In `expose:`
+
+A bundle entry in `expose:` preserves its bracket structure exactly as
+the caller wrote it — the runtime sees a two-level structure (rows
+containing elements), not a flattened list. This parallels `@content`'s
+order-preservation (017-276) applied to a named bundle view.
+
+#### 13.3.4 Connection-views (`incoming:` and `outgoing:`)
+
+```
+outgoing:                                          // node is the `from` endpoint
+  <name>: [dynamic] Type <cardinality>             // named — connection-view binding
+  [dynamic] Type <cardinality>                     // unnamed — accept-only
+
+incoming:                                          // node is the `to` endpoint
+  <name>: [dynamic] Type <cardinality>             // named
+  [dynamic] Type <cardinality>                     // unnamed
+```
+
+Connections a node participates in are declared via the **`outgoing:`** and
+**`incoming:`** clauses — the connection-side counterpart to `children:`
+(§13.3.3). Each clause body lists *acceptance entries*: a named entry
+(`<name>: Type <card>`) provides a connection-view selection binding into the
+body namespace (§13.7.1); an unnamed entry is accept-only. See §13.6 for
 connection declarations and §13.8.4 for connection placement.
 
-Like node views, connection-views are the node's **caller-facing signature**:
-they bound the connections a *caller* may wire to or from the node. An
-`outgoing` view bounds what a caller placing this node may originate *from* it
-(a local-supply bound); an `incoming` view bounds what may be directed *at* it,
-aggregated across all sources. They do **not** bound the node's own internal
-wiring — self-sourced connection placements (§13.3.4.2) are its private
-realization, checked by endpoint typing and topology (§13.11.5) but never
-counted against any connection-view. When such internal wiring targets one of
-the node's own children, the node acts as the **caller of that child**, and the
-connection counts against the *child's* incoming budget (§13.3.4.2).
+Like `children:`, the connection-acceptance clauses are the node's
+**caller-facing signature**: they bound the connections a *caller* may wire
+to or from the node. An `outgoing:` entry bounds what a caller placing this
+node may originate *from* it (a local-supply bound); an `incoming:` entry
+bounds what may be directed *at* it, aggregated across all sources. They do
+**not** bound the node's own internal wiring — self-sourced connection
+placements (§13.3.4.2) are its private realization, checked by endpoint
+typing and topology (§13.11.5) but never counted against any
+connection-view. When such internal wiring targets one of the node's own
+children, the node acts as the **caller of that child**, and the connection
+counts against the *child's* incoming budget (§13.3.4.2).
 
-Cardinality uses the same specifiers as node views (§13.3.3.1) with the same
-meaning — **bare = exactly one** in every direction (incoming included),
-multiplicity always explicit (`?`, `+`, `*`, `[=N]`, `[N..=M]`, `[N..]`,
-`[..=M]`); fan-in or multi-origin is written `*`. The `dynamic` prefix is the
-same marker and takes exactly `*` (§13.3.3.1).
+Cardinality uses the same specifiers as `children:` entries (§13.3.3.1)
+with the same meaning — **bare = exactly one** in every direction
+(incoming included), multiplicity always explicit (`?`, `+`, `*`, `[=N]`,
+`[N..=M]`, `[N..]`, `[..=M]`); fan-in or multi-origin is written `*`. The
+`dynamic` prefix is the same marker and takes exactly `*`.
 
 ```
 node Driver:
-  outgoing drive:       Drives          // exactly one
-  outgoing maintenance: MaintainedBy?   // 0 or 1
-  incoming sponsors:    SponsoredBy [..=3]
+  outgoing:
+    drive:       Drives                  // exactly one
+    maintenance: MaintainedBy?           // 0 or 1
+  incoming:
+    sponsors:    SponsoredBy [..=3]
 ```
 
 **Static and dynamic membership.** A connection belongs to a node's incoming
@@ -12982,23 +13574,27 @@ signature is caller-facing).
 
 ##### 13.3.4.1 Access from inside the node body
 
-A connection-view is accessed by its **name**, under the same borrow-window
-rule as node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
-reads as a single connection reference; a multi-valued one has a static face
-and a dynamic face.
+A connection-view is accessed by its **name**, under the same rules as
+node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
+reads as a single `Handle[C]`; a multi-valued one has a static face and a
+dynamic face.
 
-For a **static** (unmarked) connection-view, the name is a read-only **array of
-connection-reference borrows** with const-generic length bounded by the
-declared cardinality, exactly as §13.3.3.2 specifies for node views:
+For a **static** (unmarked) connection-view, the name is a read-only
+**array of `Handle[C]`s** — `C` the connection-type selector — with
+const-generic length bounded by the declared cardinality, exactly as
+§13.3.3.2 specifies for node views. Static connection-view membership is
+statically provable, so each element is the statically-placed `Handle[C]`
+type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 
 - Indexed: `name[i]` is legal iff `i < min_cardinality` (ordinary
   const-generic bounds). Example: under `outgoing wires: WiresTo+`, `wires[0]`
   is legal.
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
-For a **`dynamic`** connection-view, the name is a **reactive cell** whose
-value is the current set of member connections, with the consumption rules of
-§13.3.3.4 — operators for values, `repeat` for structure, nothing else. This is
+For a **`dynamic`** connection-view, the name is a reactive cell
+`Cell[Iterator[Handle[C]]]` whose value is the current iterator of member
+connections, with the consumption rules of §13.3.3.4 — operators for
+values, `repeat` for structure, nothing else. This is
 the fan-in idiom:
 
 ```
@@ -13052,14 +13648,16 @@ are admissible:
   can satisfy the child's incoming lower bounds (§13.3.4).
 - A **module-level instance** (scope 3) — a fixed, shared target every instance
   connects to, such as a global bus or clock. Also static.
-- A **`Handle`-typed attr** of the node (scope 2) — per-instance parameterized
-  wiring. The instance is configured at placement with a handle (§13.3.6.2), and
-  its self-sourced connection drives whatever that handle resolves to. This is
-  the payoff of the dynamic `to`: *every instance drives whatever it is told to
-  at placement*, and the connection freezes while the handle resolves to `None`
-  (§13.9.7). Membership at the destination is not a static fact, so every node
-  type the handle's type admits must declare a `dynamic incoming`
-  connection-view of that type (§13.3.4).
+- A **`WeakHandle[T]`-typed attr** of the node (scope 2) — per-instance
+  parameterized wiring. The instance is configured at placement with a handle
+  (§13.3.6.2), and its self-sourced connection drives whatever that handle
+  resolves to. This is the payoff of the dynamically-placed `to`: *every
+  instance drives whatever it is told to at placement*, and the connection
+  freezes while the handle resolves to `None` (§13.9.7). Membership at the
+  destination is not a static fact, so every node type the handle's type
+  admits must declare a `dynamic incoming` connection-view of that type
+  (§13.3.4). A statically-placed `Handle[T]` attr destination does not
+  freeze — its referent is fixed for the handle's lifetime.
 
 ```
 connection Drives:
@@ -13202,9 +13800,9 @@ defer *which* node type is placed, pass a `Type[…]` value (§5.7).
 
 The same ownership rule applies to **connections** and **effects**: an
 *instance* is a graph member, brought in only by the language's placement
-and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow —
-a first-class citizen lacking value-semantics, hence unstorable; their *types* travel as values via `Type[…]`
-(§5.7). **Operators** are likewise instantiated only via their own syntax
+and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow;
+their *types* travel as values via `Type[…]` (§5.7). **Operators** are
+likewise instantiated only via their own syntax
 (§13.17), and additionally have a structural *type*, `operator(…) -> U`
 (§13.17.13), by which an operator can be carried. The rule is normative;
 conformant compilers enforce it at type-check time.
@@ -13217,72 +13815,168 @@ across time and across re-evaluation — a connection whose destination re-point
 (§13.8.5.1), a node body that addresses a dynamically-mounted child by key
 (§13.5.4.9). The storable form of such a designation is a **`Handle[T]`**.
 
-A `Handle[T]` is a **value** — `Copy`, and freely placed in cells, fields,
-tuples, and enum payloads — that *weakly* designates a graph entity. "Weak" is
-literal: a handle **never keeps its referent alive**. There is no reference
-count behind it and no reachability through it; an entity's lifetime is governed
-solely by the graph position or `repeat` scope that owns it (§13.3.6.1,
-§13.5.4). A handle may outlive its referent, and simply resolves to "absent"
-once the referent is gone.
+A `Handle` is a **value** — `Copy`, and freely placed in cells, fields,
+tuples, and enum payloads — that designates a graph entity by an
+identity-stamped reference. A handle **never keeps its referent alive**:
+there is no reference count behind it and no reachability through it. An
+entity's lifetime is governed solely by the graph position or `repeat`
+scope that owns it (§13.3.6.1, §13.5.4).
 
-**Kind-scoped.** `T` ranges over graph-entity types only — a node, connection,
-or effect type, or a trait that `requires` one of the `Node` / `Connection` /
-`Effect` markers (§3.7.4). There are **no handles to records, tuples, or other
-plain values**: a value has no identity and no tracked lifecycle to be weak
-*about*. What you would weakly hold is the value's *home* — the node or cell it
-lives in — so handle the home, not the value.
+**Two distinct types — the static / dynamic placement split.** The handle
+surface is two types, `Handle[T]` and `WeakHandle[T]`, distinguished at the
+type level:
+
+- `Handle[T]` — the **statically-placed** type. The referent is
+  statically placed in the graph for the handle's lifetime: a named child
+  of a statically-placed parent, a static-view element under its
+  guaranteed minimum, a module-level instance, a `Handle[T]`-typed attr
+  fed by one of these. Production sites are listed normatively in
+  017-308, cases (a)(b)(c)(d).
+- `WeakHandle[T]` — the **dynamically-placed** type. The referent may be
+  dismounted or re-pointed at runtime: `repeat`-keyed scopes
+  (§13.5.4.9), re-pointable handle attrs whose destination types include
+  dismountable kinds, and any user-explicit widening from `Handle[T]`.
+
+Both share the runtime representation `(slot_path, generation)`; the split
+is a compile-time guarantee, enforced at the production site.
+
+**Lens-propagation rule (017-309).** Widening `Handle[T]` →
+`WeakHandle[T]` is lossless in two positions:
+
+- **Storage widening.** At any assignment, binding, or cell-write whose
+  slot's declared type is `WeakHandle[T]` (or a container parameterized
+  by `WeakHandle[T]`), an incoming `Handle[T]` auto-coerces.
+- **Access widening.** At any read whose access chain begins with a
+  `WeakHandle` resolution, every `Handle[T]` produced along the chain
+  surfaces as `WeakHandle[T]` at the result type. Access widening fires
+  only when the chain starts with a `WeakHandle`; chains that start
+  with a field minted as `WeakHandle` carry the widening from the mint.
+
+Narrowing `WeakHandle[T]` → `Handle[T]` is never implicit; it requires
+`handle!` or an explicit `match` / `?` arm.
+
+**Kind-scoped.** For both `Handle[T]` and `WeakHandle[T]`, `T` is a
+graph-entity type — a node, connection, or effect type, or a trait that
+`requires` one of the `Node` / `Connection` / `Effect` markers (§3.7.4).
+`Handle[T]` and `WeakHandle[T]` are distinct types, not variants of a
+single generic: `Handle[T]` designates a statically-placed referent,
+`WeakHandle[T]` a dynamically-placed one. For a reference to a record,
+tuple, array, `mut` binding, cell content, or pool entry, the parallel
+storable form is a `Portal[T]` (§13.3.6.3).
 
 **Resolution is transparent and type-directed.** A handle has no `.resolve()`
 method. As with the value/reference duality of a reactive cell (§13.2.8), what a
-handle *denotes* depends on the position it occupies:
+handle *denotes* depends on its type and the position it occupies:
 
-- In a position typed `Handle[T]` — a handle slot, a `Handle[T]` parameter or
-  field, a handle-to-handle comparison — the handle denotes the **inert handle
-  value**. No graph entity is read and nothing becomes reactive.
-- In any *read* or *elimination* position — `match`, `?`, `!`, or anywhere a
-  `&T` is expected — the handle denotes its **resolution**: an `Option[&T]`,
-  `Some(&entity)` while the referent is live and `None` once it is gone. *This*
-  read is the reactive one — it joins the reader's provenance (§13.12.1) and
-  re-fires when the referent mounts or dismounts (§13.10.5).
+- In a position typed `Handle[T]` or `WeakHandle[T]` — a handle slot, a
+  `Handle`- or `WeakHandle`-typed parameter or field, a handle-to-handle
+  comparison — the handle denotes the **inert handle value**. No graph
+  entity is read and nothing becomes reactive.
+- In a read or `&T`-expected position, a **`Handle[T]`** (statically
+  placed) **auto-derefs to `&T` directly** — its statical-placement
+  assertion makes resolution unnecessary: `channels[0].gain` is a direct
+  read.
+- In a read or `Option[&T]`-expected position, a **`WeakHandle[T]`**
+  (dynamically placed) denotes its **resolution** `Option[&T]`:
+  `Some(&entity)` while the referent is mounted, `None` once it is gone.
+  The resolution read is the reactive one — it joins the reader's
+  provenance (§13.12.1) and re-fires when the referent mounts or
+  dismounts (§13.10.5). Stepping through the resulting `Option` chain is
+  the job of optional chaining `?.`, `?[]`, `?()` (017-311): the
+  position-disambiguated split of postfix `?` that produces `None` when
+  the chain interrupts and `Some(v)`-continued otherwise. Per the
+  lens-propagation rule (017-309), access widening fires only when
+  the access chain *begins* with a `WeakHandle` resolution; any
+  `Handle[T]` produced further along that chain surfaces as
+  `WeakHandle[T]` at the result type.
 
-The two types are deliberately distinct. `Option[&T]` *contains a borrow* and is
-therefore itself unstorable (§11.9.1) — the transient, just-resolved view.
-`Handle[T]` contains no borrow and is the storable carrier. The pair mirrors the
-cell split: a `Handle[T]` is to its `Option[&T]` resolution what a value cell
-is to its `T` value (§13.2.8) — one the durable home, the other the momentary
-read.
+`&T` and `Option[&T]` (the two resolution reads) *contain borrows* and are
+therefore themselves unstorable (§11.9.1) — they are the transient,
+just-resolved views. `Handle[T]` and `WeakHandle[T]` contain no borrows
+and are the storable carriers. The pair mirrors the cell split: a handle
+is to its resolution read what a value cell is to its `T` value (§13.2.8)
+— the durable home vs. the momentary read.
 
-**Creation — `weak`.** A handle is produced by the prefix operator `weak`
-applied to a node / connection / effect reference:
+**Creation — `handle` and `handle!`.** Handle production has two prefix
+keywords, distinguished by which type they mint:
+
+- `handle X` produces `WeakHandle[T]` — the storable, possibly-absent
+  designator. No proof obligation; always accepted.
+- `handle! X` produces `Handle[T]` — the statically-placed assertion —
+  and is a **compile error** unless every reaching value of `X` is in the
+  closed statically-placed set of 017-308: a named
+  child placement of a statically-placed parent, a static-view element
+  under its guaranteed minimum, a module-level instance, or `subject`
+  inside a statically-placed instance's body. Any other provenance — a
+  `repeat`-keyed reference, a `WeakHandle[T]` resolution, an `Option` of
+  unknown origin across a function boundary — makes `handle!` a compile
+  error.
 
 ```
-signal target: Handle[Drivable] = weak some_car   // a stored, re-pointable designation
-target.write(weak other_car)                       // re-point it later (§13.2)
+attr wheel: Handle[Drivable] = handle! front_wheel        // statically placed
+attr current_target: WeakHandle[Drivable] = handle some_car  // re-pointable
 ```
 
-Wherever a `Handle[T]`-typed position receives a reference directly — assigning
-`some_car` to a `Handle`-typed attr, or returning it where a `Handle[T]` is
-expected — the `weak` coercion is inserted automatically. There is no
-`.handle()` method and no sigil; `weak` is the one explicit spelling.
+The provability rule is **normative and closed**, so the same programs
+are well-formed under every conforming compiler. `handle!` is the
+load-bearing assertion: refactoring the producer under a `repeat` later
+makes the `handle!` site fail with a precise error naming the broken
+contract, instead of silently switching variants and changing what the
+caller can rely on.
 
-**Elimination.** A handle is consumed through exactly three forms, none of them
-handle-specific. They are the ordinary `Option` eliminators, reached because a
-handle reads as `Option[&T]`:
+**Auto-coerce at typed slots.** Wherever a `Handle[T]`-, `WeakHandle[T]`-,
+or `Portal[T]`-typed position receives a reference directly — an attr
+initializer, a function argument, a return — the appropriate
+`handle`/`handle!`/`portal` coercion is inserted automatically; the
+slot's declared type drives the choice. There is no `.handle()` method
+and no sigil; `handle`, `handle!`, and `portal` are the explicit
+spellings (the parallel `portal` covers non-graph references, §13.3.6.3).
+A `WeakHandle[T]`-typed slot also accepts a `Handle[T]` input directly:
+this is the storage-widening direction of the lens rule (017-309), a
+lossless widening from the statically-placed carrier to its
+possibly-absent superset. Container slots propagate the same widening at
+any nesting depth (017-310): a `Vec[WeakHandle[T]]` slot accepts a
+`Vec[Handle[T]]`, a `Cell[WeakHandle[T]]` accepts a `Cell[Handle[T]]`,
+and so on. The narrowing direction (`WeakHandle[T]` → `Handle[T]`) is
+never implicit; it requires `handle!` or an explicit `match`/`?`.
+
+**Named-place-only.** Both `handle` and `portal` accept only references to
+existing slots, never raw values, constructors, literals, or unbound
+temporaries; the referent must have an independent owner:
+
+```
+handle some_voice              // ✓ reference to a placed entity
+handle find_voice()             // ✓ returns a node-reference; graph entity already placed
+handle Voice(...)               // ✗ constructor — no graph slot yet
+```
+
+**Type, not mode.** `Handle[T]` is a type, not a parameter-passing mode
+(§11.7.4); function parameters carry it in type position
+(`fn f(h: Handle[T])`), not as a `handle h: T` mode.
+
+**Elimination.** A `WeakHandle[T]` is consumed through the ordinary
+`Option` eliminators, reached because its read is `Option[&T]`:
 
 ```
 match target:                       // both arms explicit
   Some(car): car.speed
   None: 0.0
 
-let s = target?.speed               // propagate None upward (§8.4)
-let car = target!                   // assert live; compile error unless provable (§8.4.2)
+let s = target?.speed               // optional chaining (017-311):
+                                    // s : Option[Speed]
 ```
+
+The `?.` form here is optional chaining (017-311), not the terminal
+`Try`-propagation `?` of §8.4: a `WeakHandle[T]` read followed by
+`?.field` produces an `Option` of the field type, with `None` short-circuiting
+the chain. A `Handle[T]` (statically placed) needs no elimination —
+`target.speed` reads through the auto-deref-to-`&T` directly.
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
 plus a **generation** stamp. Resolution compares the stamp: if the slot was
 dismounted and later reused by a different entity, the old handle's generation no
 longer matches and it resolves to `None` — never to the wrong entity. This ABA
-guard is what makes weak resolution sound across mount churn. Because mount and
+guard is what makes handle resolution sound across mount churn. Because mount and
 dismount flip a handle's resolution, a handle read is a *dynamic* dependency
 (§13.10.5).
 
@@ -13291,6 +13985,102 @@ dismount flip a handle's resolution, a handle read is a *dynamic* dependency
 identity rule of §13.5.4.8, the same key reappearing in the source remounts the
 *same* scope, so a key-addressed handle that had resolved `None` resolves `Some`
 again when its key returns.
+
+##### 13.3.6.3 Storable references to plain values: the `Portal[…]` type
+
+§13.3.6.2 introduces `Handle[T]` for graph entities — node, connection, and
+effect instances whose mount/dismount lifecycle the runtime tracks. The
+parallel form for **non-graph** data — record fields, tuple components,
+array elements, `mut` bindings, cell contents, pool entries — is a
+**`Portal[T]`**.
+
+A `Portal[T]` is a **value** — `Copy`, and freely placed in cells, fields,
+tuples, and enum payloads — that designates a non-graph slot by an
+identity-stamped reference. `Copy` values are not aliases under §11.9 — a
+`Portal[T]` is storable in any cell, field, payload, or tuple position like
+any other `Copy` value. A portal **never keeps its referent alive**: there
+is no reference count behind it and no reachability through it. The slot's
+lifetime is governed by its owning binding or container. A portal may
+outlive its slot, and then resolves to "absent".
+
+**Kind-scoped.** `T` ranges over non-graph types: primitives, records,
+enums, newtypes, tuples, arrays. For a reference to a graph entity — a
+node, connection, or effect — use `Handle[T]` (§13.3.6.2).
+
+**Resolution is transparent and type-directed**, exactly as for handles:
+
+- In a position typed `Portal[T]` — a portal slot, a `Portal[T]` parameter
+  or field, a portal-to-portal comparison — the portal denotes the **inert
+  portal value**. No slot is read and nothing becomes reactive.
+- In any *read* or *elimination* position — `match`, `?`, or anywhere a
+  `&T` is expected — the portal denotes its **resolution**: an
+  `Option[&T]`, `Some(&value)` while the slot is live and `None` once it
+  is gone. *This* read is the reactive one — it joins the reader's
+  provenance (§13.12.1) and re-fires when the slot drops or is rebound
+  (§13.10.5).
+
+As with handles, `Option[&T]` *contains a borrow* and is therefore itself
+unstorable (§11.9.1) — the transient, just-resolved view. `Portal[T]`
+contains no borrow and is the storable carrier.
+
+**Creation — `portal`.** A portal is produced by the prefix keyword
+`portal` applied to a reference to a non-graph slot:
+
+```
+let r = SomeRecord(x: 1, y: 2)
+let p: Portal[SomeRecord] = portal r     // a stored, non-owning window onto r's slot
+```
+
+The named-place-only rule (§13.3.6.2) applies: `portal` accepts only
+references to existing slots — never raw values, constructors, literals,
+or unbound temporaries:
+
+```
+portal some_record              // ✓ named binding
+portal SomeRecord(...)          // ✗ constructor — no slot yet
+portal { 'a': 'b' }             // ✗ literal — no slot
+portal some_fn()                // ✗ temporary; born-dead, no independent owner
+```
+
+Wherever a `Portal[T]`-typed position receives a reference directly, the
+`portal` coercion is inserted automatically.
+
+**Type, not mode.** `Portal[T]` is a type; function parameters carry it in
+type position (`fn f(p: Portal[T])`), not as a `portal p: T` mode.
+
+**Slot identity and the generation guard.** A portal is, concretely, a
+slot path plus a **generation** stamp. Resolution compares the stamp: if
+the slot was dropped and later reused by a different value, the old
+portal's generation no longer matches and it resolves to `None` — never to
+the wrong value.
+
+**Reactivity.** `Cell[T]` (§13.2.8) and `Portal[T]` are orthogonal axes.
+`Cell[T]` is a reactive reference whose read subscribes; `Portal[T]` is an
+inert window whose read does not. `Portal[Cell[T]]` is well-formed: the
+portal resolves to `Option[&Cell[T]]`, and the inner cell read remains
+reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
+(§13.10.5) handles the portal flipping to `None` the same way it handles a
+connection re-pointing.
+
+**Hot reload.** A portal preserves across reload only when its targeted
+slot's identity is preserved, by the same path-based identity rule as
+cells (§13.15.2). Slot relocation or removal invalidates portals to that
+slot.
+
+**`Portal[Handle[T]]` does not collapse.** A `Portal[T]` designates a
+slot identity by generation stamp; its lifetime is the lifetime of the
+slot's owner. A `Handle[T]` value sitting in that slot designates a graph
+entity (§13.3.6.2); its lifetime is the entity's mount lifetime. These
+are two independent lifetimes. The slot can drop — the containing record
+drops, the field is reassigned — while the graph entity is still mounted;
+the graph entity can dismount while the slot is still live and holds a
+now-stale handle. A `Portal[Handle[T]]` resolution is therefore a
+two-step presence check: outer `Option[&Handle[T]]` from the portal's
+generation guard, then the handle's own liveness from the inner read.
+Collapsing `Portal[Handle[T]]` to `Handle[T]` would conflate these two
+distinct presence checks into one. `Portal[Portal[T]]` still collapses
+to `Portal[T]`: both layers track the same kind of slot lifetime, so
+nesting them adds no extra check.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -13724,11 +14514,13 @@ structural descent.
 Children of a parent instance are accessible in two ways:
 
 - **By view:** a view name. For a *static* (unmarked) view this is a
-  read-only array of borrows with const-generic length bounded by the
+  read-only array of `Handle[T]`s with const-generic length bounded by the
   declared cardinality (§13.3.3.2) — indexable under the guaranteed
-  minimum, iterable with `for`, in placement order. For a **`dynamic`**
-  view it is a reactive cell consumed via operators or `repeat`
-  (§13.3.3.4). Bulk access exists only through a declared view name.
+  minimum, iterable with `for`, in placement order; elements are
+  `Handle[T]` values that auto-deref to `&T` (§13.3.6.2). For a
+  **`dynamic`** view it is a reactive cell `Cell[Iterator[Handle[T]]]`
+  consumed via operators or `repeat` (§13.3.3.4). Bulk access exists only
+  through a declared view name.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from outside
   the node body) — accesses a specific child by its placement-time name.
   Names are assigned in the placement body (§13.8.3) and visible wherever
@@ -14020,16 +14812,18 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   collection — always iterable. The iterator must terminate at each
   evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
-  N), `HashSet[T]`, and `HashMap[K, V]`; user types may fulfill
+  N), and `HashSet[T]`; the language-level `Map[K, V]` fulfills
+  `Iterable` as part of its primitive surface (§9.5). User types may
+  fulfill
   `Iterable` to participate. `Stream[T]` is not a valid `repeat` source —
   it's an event source, not a collection with a current snapshot, so it
   has no key set to diff. To drive `repeat` from a stream, first project
   the stream into a collection-valued cell (e.g. fold its events into a
-  `Vec`/`HashMap` via §13.18.9) and repeat over that.
+  `Vec` or `Map` via §13.18.9) and repeat over that.
 - **`<bind>`** is either a bare identifier or a tuple-destructuring
   pattern per §12.12.1 (the same destructuring grammar the for-loop's
   iteration variable accepts; pattern rules in §6.2.4 and §9.2.2).
-  Tuple destructure is the idiomatic form for `HashMap[K, V]`, whose
+  Tuple destructure is the idiomatic form for `Map[K, V]`, whose
   iterator yields `(K, V)` pairs.
 - **Bind ownership.** `<bind>` is typed as the iterator's element type
   after **move-promotion**: a real owner rather than the
@@ -14162,7 +14956,7 @@ and continues; a duplicate key never halts the program.
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes (and, with
 `at <index>`, each surviving scope observes its new index).
-Unordered iterables (`HashSet[T]`, `HashMap[K, V]`) are diffed by key
+Unordered iterables (`HashSet[T]`, `Map[K, V]`) are diffed by key
 identity; iteration order is whatever the underlying type's iterator
 emits and does not affect scope identity.
 
@@ -14217,7 +15011,7 @@ node UserPanel:
       UserCard | id=user_id
 ```
 
-**`HashMap` source with destructuring bind** — `HashMap[K, V]`
+**`Map` source with destructuring bind** — `Map[K, V]`
 iterates as `Iterable` yielding `(K, V)` pairs. Move-promotion
 (§13.5.4.1) gives the bind an owned `(K, V)`, so ordinary tuple
 destructuring (§12.12.1) binds owned `sid` and `info`; `keyed by`
@@ -14225,7 +15019,7 @@ names the map key as the scope key:
 
 ```
 node SessionPanel:
-  attr sessions: HashMap[SessionId, SessionInfo] = HashMap::new()
+  attr sessions: Map[SessionId, SessionInfo] = {}
   expose:
     repeat (sid, info) in sessions keyed by sid:
       SessionRow | id=sid info=info
@@ -14372,7 +15166,7 @@ In each rejected context, the diagnostic identifies the misplaced
 - Nested `repeat` constructs are permitted; each nested level's scopes
   hang off the outer scope's path per §13.5.3.
 - **The iterator must terminate at each evaluation.** Vec[T],
-  HashSet[T], T[N], HashMap[K, V], and any user `Iterable`
+  HashSet[T], T[N], Map[K, V], and any user `Iterable`
   implementation over a bounded-at-commit-time collection satisfy
   this. The spec does not mandate a compiler check for termination on
   user `Iterable` implementations — they are trusted. An iterator
@@ -14403,61 +15197,95 @@ In each rejected context, the diagnostic identifies the misplaced
 
 A `repeat` materializes its scopes anonymously: nothing in the surrounding body
 can name a particular child, because the children are keyed by data, not written
-out individually. The `as <view>` clause closes that gap. It binds a **keyed
-view** — a lookup table over the scopes the `repeat` currently holds, addressed
-by scope key:
+out individually. The `as <view>` clause closes that gap. It binds `<view>`
+to a reactive `Cell[Map[Key, <view>::entry]]` (§9.5) whose keyset tracks the
+source's current keys.
 
 ```
 node Feed:
   attr posts: Vec[Post] = Vec::new()
   attr selected: PostId
+
+  // posts_view : Cell[Map[PostId, posts_view::entry]]
+  // posts_view::entry has one field per `as <name>` placement — here, `avatar`
+
+  // Reading a member is a transient projection through the Cell+Map:
+  derived selected_label: string =
+    match posts_view.get(selected)?.avatar:
+      Some(a): a.url        // &Avatar — read in place
+      None:    "(none)"     // key absent or scope unmounted
+
   expose:
     repeat post at i in posts as posts_view keyed by post.id:
       PostCard | data=post rank=i:
         Avatar as avatar | url=post.author_url
-
-  // `posts_view[selected].avatar` is a Handle[Avatar] — storable, weak:
-  derived selected_avatar: Handle[Avatar] = posts_view[selected].avatar
-
-  // read through it transiently where a value is needed:
-  derived selected_label: string =
-    match selected_avatar:
-      Some(a): a.url
-      None: "(none)"
 ```
 
-**Names are scope entries, not instance members.** This is the governing
-principle. A node *instance* exposes its content through its children and
-exposition (§13.4, §13.3.7.3); a *scope* exposes its placements through their
-**names**. `<view>` reifies the repeat's scope as a value, so addressing a child
-goes through the placement name, not through any instance:
+**Compiler-minted `<view>::entry`.** The `entry` record is synthetic and
+path-derived per `repeat … as` site; its **fields are named after the
+`as <name>` placements inside the repeat body** (here, `avatar`). The
+record is not nameable in user code as a parameter type — field access
+is the user-facing surface.
 
-- `<view>[<key>]` selects the scope for `<key>`.
-- `<view>[<key>].<name>` yields a **key-addressed `Handle[T]`** for the
-  placement named `<name>` (named with `as <name>` at its placement site), where
-  `T` is that placement's node type. The form parallels the type-bulk access of
-  §13.4, lifted to a per-key lookup.
+**Field type.** Each field on `<view>::entry` is typed
+**`WeakHandle[T]`** — the dynamically-placed type — because the
+repeat-keyed scope can dismount between commits, and the whole purpose
+of the entry is being read from *outside* the scope where presence is
+not provable. Records cannot hold borrows (013-52, 013-141), so a bare
+node-typed binding cannot live in a record field; the compiler mints a
+`WeakHandle[T]` for each placement, which is `Copy` and storable.
+The placement binding `<name>` *inside* the repeat body itself stays a
+borrow (017-131) — the entry field is the compiler's separate storable
+representation for outside-the-scope access.
 
-Every **named** placement in the body is addressable this way, at any nesting
-depth — any named placement in the scope (`posts_view[k].avatar`). The
-table is **flat**: names, not paths. Two consequences:
+**Read chain.** `<view>.get(k)` returns `Cell[Option[<view>::entry]]`
+(auto-deref through the `Cell` per §13.17.3.1). The transient projection
+`<view>.get(k)?.<name>` resolves end-to-end to `Option[&T]`:
 
-- **Names are unique within the `repeat` body**, across nesting. A duplicate
-  `as`-name inside one `repeat` is a compile error.
-- **Anonymous placements are unaddressable.** Leaving a placement unnamed is the
-  deliberate way to keep it private to its scope.
+- Outer `Option` from `Map.get` (key absent or scope unmounted).
+- Inner `&T` from the `WeakHandle[T]` field's read-position
+  resolution (§13.3.6.2): the field reads as `Option[&T]`, and the
+  composing `?` arm collapses to `Option[&T]` overall.
 
-Because the result is a `Handle` (§13.3.6.2), it is *weak*: `<view>[k].name`
-resolves to `Some(&node)` while key `k`'s scope is mounted and to `None`
-otherwise (an absent key, a dropped element). A view handle is therefore never
-provably live — `<view>[k].name!` is always a compile error (§8.4.2); eliminate
-with `match` or `?`. By the identity rule of §13.5.4.8, a key that leaves and
-later returns remounts the *same* scope, so a stored view handle resumes
-resolving `Some` when its key comes back.
+For long-term storage, hold the `WeakHandle[T]` value the field
+yields, or — preferred for cross-commit reference — store the **key**:
+by the identity rule of §13.5.4.8, a key that leaves and later returns
+remounts the *same* scope, so a stored key resumes resolving to `Some`
+when re-looked-up.
 
-Nested `repeat`s each own a separate `as` view and do not flatten into the outer
-one; a nested view is scoped to its parent key, so cross-level addressing
-composes view by view rather than through one global table.
+**Read-only.** `<view>` is a `Cell[Map[…]]`, and `Cell[T]` parameters are
+read-only (§13.2.8): there is no `<view>[k] = v` or `delete <view>[k]`
+form. The source drives keyset and entry changes.
+
+**Named placements only; flat per body.** Every named placement in the
+repeat body becomes a field on `<view>::entry`, at any nesting depth
+within the same body. Names are flat — fields, not paths. Two
+consequences:
+
+- **`as`-names are unique within the `repeat` body**, across nesting. A
+  duplicate is a compile error.
+- **Anonymous placements are unaddressable** through the view; leaving a
+  placement unnamed keeps it private to its scope.
+
+**Nested `repeat … as`.** Each nested `repeat … as <inner>` materializes
+its own `Cell[Map[…]]`, surfaced as a field on the outer `entry`:
+
+```
+posts_view : Cell[Map[PostId, posts_view::entry]]
+posts_view::entry:
+  avatar  : Avatar           // named placement
+  replies : Cell[Map[ReplyId, replies::entry]]   // nested repeat … as replies
+```
+
+Cross-level addressing composes view by view:
+`posts_view.get(post_id)?.replies.get(reply_id)?.<name>`.
+
+**`at` on unordered sources.** When a `repeat`'s source is unordered (a
+`Map` per §9.5, a `HashSet`, etc.), the `at <index>` form is **unstable**:
+the index reflects the iterator's emit order (012-173 / 018-83), which
+can differ commit-to-commit. The compiler accepts `at` on unordered
+sources but flags the instability; programs relying on stable positional
+identity should use `keyed by <expr>` (§13.5.4.1) instead.
 
 ### 13.6 Connections
 
@@ -14685,12 +15513,12 @@ of its declaration (§13.6.1):
 each placement specifies its source (the enclosing instance) and
 destination (§13.8.5.1). The `from` binding is fixed for the connection's
 lifetime. The `to` binding tracks the destination: when the destination is a
-reactive selection or a `Handle` (§13.8.5.1), `to` follows whichever node it
+reactive selection or a `WeakHandle` (§13.8.5.1), `to` follows whichever node it
 currently resolves to, and the body's reads of `to.*` re-evaluate when it
 re-points — a *dynamic dependency* on the current target (§13.10.5, §13.12.1).
 
-Inside the body, `from` and `to` are **never `Option`** — they are the live
-endpoint instances directly. A destination supplied as a `Handle` (whose
+Inside the body, `from` and `to` are **never `Option`** — they are the
+endpoint instances directly. A destination supplied as a `WeakHandle` (whose
 read is `Option[&N]`, §13.3.6.2) is unwrapped at the boundary: while it resolves to
 `Some`, the connection is active and the body sees the contained node as `to`;
 while it resolves to `None`, the connection **freezes** (§13.9.7) and the body
@@ -14705,7 +15533,7 @@ type's own body, with no external `some_conn.to` access. A connection does not
 surface its endpoints or its activation as readable fields (§13.9.1); an outside
 observer instead reads the connection's own cells (attrs, deriveds), which hold
 their last committed value even while the connection is frozen (§13.9.7).
-Liveness-awareness *about* a node is the job of a `Handle` (§13.3.6.2), not of a
+Presence-awareness *about* a node is the job of a `WeakHandle` (§13.3.6.2), not of a
 connection's surface.
 
 #### 13.6.3 Generic connections
@@ -15318,7 +16146,7 @@ own iteration uses `for o in oscillators:` (§13.4.2).
 **For runtime-varying multiplicity.** When the number of children must
 vary at runtime — driven by a reactive iterable source (`Signal[I]`
 where `I: Iterable`, such as `Vec[T]`, `HashSet[T]`, or
-`HashMap[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
+`Map[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
 here is for *parametric* topology: multiplicity that is parameterized
 by a const-generic (or otherwise compile-time-known) value but fixed
 per instance.
@@ -16791,14 +17619,17 @@ if each were its own one-write transaction.
 
 Most reactive dependencies are static: an expression's provenance set
 (§13.12.1) is the fixed set of cells it reads. A *dynamic* dependency is one
-whose cell *identity* can change between commits. They arise from **handle
-resolution** (§13.3.6.2) — a read through a `Handle` reaches whichever
-entity the handle currently resolves to, and flips on re-point, mount, and
-dismount — of which the canonical case is a reactive connection target
-(§13.6.2): a connection whose `to` is a reactive selection or `Handle` reads
-`to.*` against whichever node it currently designates, so the identity of
-the cells in the dependency changes when the target re-points. The runtime
-handles this in two parts:
+whose cell *identity* can change between commits. They arise from
+**`WeakHandle[T]` resolution** (§13.3.6.2) — a read through the
+dynamically-placed `WeakHandle[T]` type reaches whichever entity the handle
+currently resolves to, and flips on re-point, mount, and dismount. The
+statically-placed `Handle[T]` type carries no dynamic dependency: its
+referent is fixed for the handle's lifetime, so reads behave as ordinary
+static references. The canonical dynamic case is a reactive connection
+target (§13.6.2): a connection whose `to` is a reactive selection or a
+`WeakHandle[T]` reads `to.*` against whichever node it currently
+designates, so the identity of the cells in the dependency changes when
+the target re-points. The runtime handles this in two parts:
 
 - **The target reference is itself a dependency.** The cell or expression
   that produces the `to` reference is part of the connection body's
@@ -16811,17 +17642,17 @@ handles this in two parts:
   the new target, and a write to the *old* target no longer dirties the
   connection.
 
-The same two-part mechanism covers every handle read — a node-body derived
-reading a `repeat`-view handle (§13.5.4.9) subscribes to the handle's
-resolution and, while resolved, to the referent's cells; a dismount flips
-the resolution to `None` and drops the referent subscription. The
-**dynamic namespace cells** (§13.3.3.4) are the collective form of the
-same mechanism: an operator over a dynamic connection-view subscribes to the
-membership (the cell itself) and, per current member, to the cells its
-per-element fn reads — a mount or dismount re-establishes the member
-subscriptions exactly as a re-point does. Handle
-resolution — individually or in this collective form — is the **only**
-source of dynamic dependency in the language; it
+The same two-part mechanism covers every `WeakHandle[T]` read — a
+node-body derived reading a `repeat`-view handle (§13.5.4.9) subscribes
+to the handle's resolution and, while resolved, to the referent's cells;
+a dismount flips the resolution to `None` and drops the referent
+subscription. The **dynamic namespace cells** (§13.3.3.4) are the
+collective form of the same mechanism: an operator over a dynamic
+connection-view subscribes to the membership (the cell itself) and, per
+current member, to the cells its per-element fn reads — a mount or
+dismount re-establishes the member subscriptions exactly as a re-point
+does. `WeakHandle[T]` resolution — individually or in this collective
+form — is the **only** source of dynamic dependency in the language; it
 exists because wiring may change while every reachable entity remains
 statically known (§13.1, §13.3.6.1, and per-`repeat`-key scopes §13.5.4). It
 does not alter per-commit evaluation order (§13.10.3): within any one commit
@@ -17026,15 +17857,18 @@ The compiler uses provenance to:
   known values are required (§2.4.2).
 
 A provenance set is normally *static* — fixed for the expression. The one
-exception is a read through a **handle resolution** (§13.3.6.2, §13.10.5):
-the *identity* of the depended-on cells changes when the resolution
-re-points, mounts, or dismounts. The canonical case is a connection body
-reading `to.*` against a reactive destination (§13.6.2); a node-body read
-through a `repeat`-view handle (§13.5.4.9) is the same mechanism, and an
-operator over a dynamic namespace cell (§13.3.3.4) is its collective form.
-In every case the resolution itself is in the provenance, and a given
-referent's cells are in the provenance only while that referent is resolved
-(a member's cells, only while it is a member).
+exception is a read through **`WeakHandle[T]` resolution** (§13.3.6.2,
+§13.10.5): the *identity* of the depended-on cells changes when the
+resolution re-points, mounts, or dismounts. A statically-placed
+`Handle[T]` carries no such exception — its referent is fixed, so its
+read contributes its referent's cells to the provenance like any static
+reference. The canonical dynamic case is a connection body reading `to.*`
+against a reactive destination (§13.6.2); a node-body read through a
+`repeat`-view handle (§13.5.4.9) is the same mechanism, and an operator
+over a dynamic namespace cell (§13.3.3.4) is its collective form. In every
+dynamic case the resolution itself is in the provenance, and a given
+referent's cells are in the provenance only while that referent is
+resolved (a member's cells, only while it is a member).
 
 #### 13.12.2 Functions are reactive-transparent
 
@@ -17150,7 +17984,7 @@ from the type's size and shape:
 - Types whose size exceeds the platform's atomic word width are
   stored as pool indices (one i64 per cell) into a per-type pool. The
   cell stores the index; the actual value lives in the pool.
-- Dynamically-sized types (`string`, `Vec[T]`, `HashMap[K, V]`,
+- Dynamically-sized types (`string`, `Vec[T]`, `Map[K, V]`,
   and other heap-allocated dynamic-size collections) always use
   index-based storage. `string` uses the existing string pool
   (§14.5); other dynamic types use per-type pools generated by the
@@ -17194,7 +18028,7 @@ from the type's size and shape:
 | Record with five `i64` fields                   | pool (40 bytes)                                            |
 | `string`                                        | pool (variable; via string pool §14.5)                     |
 | `Vec[i32]`                                      | pool (variable)                                            |
-| `HashMap[K, V]`                                 | pool (variable)                                            |
+| `Map[K, V]`                                     | pool (variable)                                            |
 | Fixed-size array `T[N]` with N×sizeof(T) ≤ word | direct                                                     |
 | Fixed-size array `T[N]` with N×sizeof(T) > word | pool                                                       |
 
@@ -17363,11 +18197,6 @@ For arithmetic operations that may overflow but should produce
 recoverable errors, use the checked variants (`+?`, `-?`, etc.)
 per §4.6.4. Their results are `Option[T]` values that flow through
 the type system.
-
-Where an `Option` is *provably* `Some` — most often a `Handle` whose referents
-are all statically placed (§13.3.6.2) — the postfix `!` operator (§8.4.2)
-unwraps it with no runtime check and no propagation. It is a compile error
-wherever the compiler cannot prove the `None` case impossible.
 
 #### 13.13.3 The reactive context preserves trap semantics
 
@@ -20211,9 +21040,8 @@ effect declaration named `fetch` introduces both a type `fetch` and a
 constructor `fetch`; an instance has addressable cells and is referenced in
 expression position (e.g. `|>` chains, §13.19.13). Like nodes and
 connections, an effect *instance* is a graph member — instantiated only in
-a node's `effects:` clause and held by borrow: a first-class citizen lacking
-value-semantics, hence unstorable (§13.3.6.1); an effect *type* is carried as
-a value by `Type[…]` (§5.7).
+a node's `effects:` clause and held only by borrow (§13.3.6.1); an effect
+*type* is carried as a value by `Type[…]` (§5.7).
 
 #### 13.19.1 Concept
 
@@ -21938,11 +22766,16 @@ effect-`desired` runs. The two meet only through the behavior ABI
 
 **Shared type table.** Both parts speak one monomorphic type vocabulary
 (the frontend has specialized all generics): the primitives of §4.1, plus
-`str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, records and
-enums as `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
-dynamic-size values, and `closure<(T,…)->R>`. Behaviors are fully typed;
-the graph is **type-erased** to tag + size/align — the runtime moves bits
-and never needs nominal types (§15.4.3).
+`str` (a pooled-string index), tuples `(T,…)`, arrays `[T;N]`, slices
+`T[..N]` and `T[..]` (borrow types — `(pointer, length)` ABI shape, used
+in behavior parameter and return positions only, never as cell values),
+maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored
+when jagged, inline array when rectangular), records and enums as
+`%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
+dynamic-size values, `(slot_path, generation)` pairs for `Handle[T]` and
+`Portal[T]` (§13.3.6.2–.3), and `closure<(T,…)->R>`. Behaviors are fully
+typed; the graph is **type-erased** to tag + size/align — the runtime
+moves bits and never needs nominal types (§15.4.3).
 
 **Serialization.** The IR's **text form is normative**: it is the one
 serialization this specification defines, and it is what tests assert against.

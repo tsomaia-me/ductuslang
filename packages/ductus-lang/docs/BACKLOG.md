@@ -147,9 +147,9 @@ live in **§5 (§8a)** — not duplicated here.
   ```
   node Mixer:
     view channels: Channel+
-  // `channels[0]` is a borrow of a Channel instance. The instance IS a value (first-class);
-  // you reach it through a borrow and cannot relocate/copy/store the instance itself.
-  let kept: Handle[Channel] = weak channels[0]   // to persist, take a Handle (storable)
+  // `channels[0]` is a `Handle[Channel]` value (Copy); reads through it auto-deref to `&Channel`.
+  // The underlying Channel instance IS a value (first-class) that you cannot relocate/copy/store directly.
+  let kept: Handle[Channel] = channels[0]  // to persist, take a Handle (storable)
   ```
 - **Resolved (Q7):** define "first-class citizen" **precisely in the new §1.3 decision itself**
   (nameable / passable / returnable; orthogonal to value-semantics). The spec's existing loose uses
@@ -206,18 +206,20 @@ them). **Largest change here** — rewrites §13.3.3, §13.4, §13.3.7.2, parts 
   view post:  Post?    // 0 or 1
   ```
 
-### 4.4 View = homogeneous borrow-window (the "V1" choice)
-- **Decision:** A view is a transient borrow-window. Reading through it is direct and zero-ceremony
-  (`channels[0].gain`) — no `!`, no Handle resolution. A view is **not storable**; to persist a
-  reference you take a `Handle` explicitly (`weak`). **No auto-resolve** mechanism is added.
-- **Why:** This is the existing semantics (017-48: view elements are read directly in place,
-  "storable nowhere"). Choosing it means the common case stays free and we add no implicit-`!`
-  semantics. (The alternative — a view *is* an array of `Handle`s, storable but needing
-  resolution/auto-resolve — was considered and rejected.)
+### 4.4 View = homogeneous `Handle[T]` array
+- **Decision:** A static view is an array of statically-placed `Handle[T]`s (the
+  statically-placed variant per the static/dynamic type-split, 017-307). Reading
+  through it is direct and zero-ceremony (`channels[0].gain`) — the statically-placed
+  `Handle[T]` auto-derefs to `&T` on read (017-149). The elements are `Copy` and so
+  storable straight from the view — `attr favorite: Handle[Channel] = channels[0]` —
+  without any explicit `handle` step.
+- **Why:** One uniform model — view elements ARE Handles, not a separate borrow surface
+  bridged to Handle by an explicit construct. Auto-deref-to-`&T` for statically-placed
+  Handles keeps the common-case read direct; storage falls out because Handles are Copy.
 - **Example:**
   ```
-  derived total: f32 = channels[0].gain + channels[1].gain   // direct
-  attr favorite: Handle[Channel] = weak channels[0]          // explicit, storable
+  derived total: f32 = channels[0].gain + channels[1].gain   // auto-deref through Handle[T]
+  attr favorite: Handle[Channel] = channels[0]                // Copy out of the view, storable
   ```
 
 ### 4.5 Group ≠ View
@@ -429,9 +431,11 @@ individualistic form; **diverge** on groups [none] + incoming-cardinality *meani
 Q8a.4 (no "incoming supplied" — `outgoing` supplies, `incoming` receives).
 
 **Confirm during spec work (expected outcomes, not open decisions):**
-- Connection-view *access* yields transient connection-reference borrows under the same borrow-window
-  V1 as node-view access (017-48 analog).
-- Bare-vs-array body access mirrors views: bare (=1) = single connection ref; `*`/`+`/`[N..M]` = array.
+- Connection-view *access* yields statically-placed `Handle[C]`s under the same
+  `Handle[T]`-array rule as node-view access (017-48 analog) — auto-derefing to `&C`
+  on read.
+- Bare-vs-array body access mirrors views: bare (=1) = single statically-placed
+  `Handle[C]`; `*`/`+`/`[N..M]` = array of statically-placed `Handle[C]`s.
 - Blast-radius bound: connection-*type* bodies are **untouched** — `from`/`to`/`pairs`, connection
   `when:`/attrs/recurrents, and connection traits declaring endpoints (005-54/58, §13.6.1) stay as-is.
   Only the node-side `incoming:`/`outgoing:` clauses change.
