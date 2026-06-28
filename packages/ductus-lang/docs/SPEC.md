@@ -125,7 +125,7 @@ Code examples use Ductus syntax. Type-name case conventions:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`), all clause
+`derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`, `main`), all clause
 keywords (`incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
@@ -11527,9 +11527,10 @@ reactive expression creates an implicit-derived bridge that wires the
 source cell(s) to the slot (Category C). Either way the slot is
 reactive and updates downstream readers, but the slot's identity is
 "this attr at this placement path," not a separately-named cell value.
-Like signals, attrs are written only through the host API or at
-placement time (§13.8); source-level assignment to an attr is forbidden
-(§13.2.7 no-mutation rule).
+Like signals, attrs are immutable from the host perspective; attrs are
+written only at placement time (§13.8), source-level assignment is
+forbidden (§13.2.7 no-mutation rule), and the host runtime provides no
+write API for attrs.
 
 An attr declaration may include a `= default` initializer or omit it:
 
@@ -11865,13 +11866,14 @@ previous-committed values and the inputs received during this pass.
 `attr` and `recurrent` are both per-instance cells. The distinction
 is who advances the value:
 
-- `attr` cells change only when the host writes via
-  `runtime.write_attr`. The runtime does not advance them
-  automatically.
+- `attr` cells are set at placement time only; the runtime does not
+  advance them, and the host has no `write_attr` API. Subsequent value
+  changes — when an attr's placement RHS references reactive cells —
+  come from the implicit derived bridge per §13.8.2.1.
 - `recurrent` cells re-evaluate automatically when any non-self
   reference in the expression commits a new value. The host cannot
   directly write a recurrent cell at runtime; control is indirect —
-  the host writes signals/attrs that the recurrent's expression
+  the host writes signals that the recurrent's expression
   reads.
 
 Use `attr` for parameters, configuration, and host-controlled
@@ -12255,10 +12257,12 @@ them.
 
 Writes occur only through:
 
-- The host API (`runtime.write_signal`, `runtime.write_attr`,
-  `runtime.transaction`) per §13.14. The host cannot directly write
-  to recurrents, deriveds, or consts at runtime; influence is
-  indirect via signals and attrs.
+- The host API (`runtime.write_signal`, `runtime.transaction`) per
+  §13.14 for signal cells. Attrs are written only at placement time
+  (§13.8.2) by the placing parent. The host cannot directly write to
+  attrs, recurrents, deriveds, or consts at runtime; influence is
+  indirect via module-level signals and per-effect-instance
+  `observed:` signal cells.
 - Placement-time initial values for attrs and recurrents
   (per §13.8.2). Consts are *not* settable at placement.
 - The runtime's own evaluation of `derived` expressions, which
@@ -12286,8 +12290,10 @@ cells:
 
 - `signal X = init` — a host-writable `Signal[T]`. Host pushes
   values via `runtime.write_signal` (§13.14.2).
-- `attr X: T = default` — a placement-writable `Signal[T]`. The placing
-  parent supplies its value at placement (§13.8.2); reactive thereafter.
+- `attr X: T = default` — a `Signal[T]` that is *placement-written
+  only*. The placing parent supplies its value at placement (§13.8.2)
+  and the cell is reactive thereafter; the host has no write API for
+  attrs and cannot reach them post-construction.
 - `derived X = expr` — a `Derived[T]`: a reactive computation with no
   self-history. The runtime maintains its value consistent with its inputs.
 - `recurrent[N]? X: T = expression` — a `Recurrent[T, N]`: a reactive
@@ -12300,7 +12306,8 @@ A reactive value expression combining one or more reactive cells always
 produces a `Derived[T]`.
 
 The keyword `signal` and the type `Signal[T]` both name the host-writable value
-cell (an `attr` is also a `Signal[T]`, placement-written); `derived` and
+cell (writable via `runtime.write_signal`); an `attr` is also a `Signal[T]` but
+placement-written only and host-unreachable post-construction. `derived` and
 `recurrent` produce the distinct types `Derived[T]` and `Recurrent[T, N]`.
 
 **Where value-cell types are used:**
@@ -16081,6 +16088,38 @@ Instance names are unique within their declaring scope. Two
 top-level placements with the same name in the same module is a
 compile error.
 
+**Entry-point designation.** A top-level placement may be prefixed
+with the `main` keyword to designate it as the program's entry point.
+The `main` prefix appears before the type name and applies to the
+declaration as a whole; attribute settings and child bodies follow
+the usual syntax:
+
+```
+main Driver john_doe | expertise_level=10:
+  Drives | enhanced_handling=true: some_car
+```
+
+Normatively, a program must contain **exactly one** `main`-prefixed
+top-level placement. Zero `main` placements is a compile error of
+class `no_entry_point`; two or more `main` placements is a compile
+error of class `multiple_entry_points`.
+
+**Reachability and initialization scope.** From the unique `main`
+placement, the compiler computes the transitive closure of
+*reachable* top-level instances. The closure includes: (a) the
+`main` instance's own child subtree (placements declared in its
+body, recursively); (b) the destinations of every connection
+placement within that subtree (§13.8.4); and (c) every module-level
+top-level instance reachable through a `Handle` or `WeakHandle`
+(§13.3.6.2) held by any cell in the closure. The transitive closure
+is the program's *initialization scope*: only reachable instances
+are instantiated and wired into the runtime graph.
+
+A top-level placement that is not in the transitive closure of
+`main` is a compile error of class `unreachable_top_level_instance`.
+Module-level instances exist to be referenced (directly as children,
+as connection destinations, or via Handle), not to sit unused.
+
 #### 13.8.2 Setting attrs at placement
 
 Attrs are set via inline attribute syntax on the placement line.
@@ -16178,6 +16217,16 @@ derived. When any cell in the expression's provenance changes
 (§13.12.1), the synthesized derived re-evaluates and the target
 attr updates. A value placement, by contrast, evaluates the RHS once
 and stores the result into the attr's slot.
+
+Normative optimization: a placement with a static (non-reactive) RHS
+allocates no reactive machinery for that placement's attr cell. The
+static value is stored at instantiation and the cell sits inert (no
+re-evaluation on source changes, because no implicit derived exists).
+A placement with a reactive RHS instantiates the synthesized derived
+per §13.8.2.1. The choice is per-placement: a single attr type may
+have static placements (no machinery) and reactive placements (with
+machinery) in the same program; each placement's machinery is
+independent.
 
 The compiler determines the category from the expression's
 provenance set: any reference to a reactive cell makes the expression
@@ -17669,7 +17718,7 @@ publishes a new consistent snapshot so observers see the new state.
 
 #### 13.10.1 Lazy writes
 
-A write call (`runtime.write_signal`, `runtime.write_attr`, or any
+A write call (`runtime.write_signal` or any
 write inside `runtime.transaction`) stages the new value; it is not
 yet visible to observers. **No derived recomputation or recurrent
 advancement happens at write time.** Staged writes accumulate until
@@ -18459,14 +18508,18 @@ The runtime's lifecycle proceeds in phases:
 
 1. Load the IR (per §15.4).
 2. Allocate cell storage (§14.3).
-3. Initialize all reactive cells (signals, attrs, recurrents,
-   deriveds, streams) and evaluate all `when` predicates in
-   topological order over their init-time read dependencies, per
-   §13.2.6's startup pass rules. Signal cells receive declared
-   initial values; attr cells receive declared defaults (or
-   placement-supplied values); recurrent cells evaluate their
-   expressions for the first time (`.previous`/`.past` calls return
-   their fallback values since no history exists yet); derived
+3. Locate the entry-point node instance (the `main` placement,
+   §13.8.1) and compute its **transitive closure**: the entry-point's
+   own subtree plus everything reachable through connections and
+   through module-level `Handle`/`WeakHandle` references. Initialize
+   only the reactive cells (signals, attrs, recurrents, deriveds,
+   streams) within that closure, and evaluate all `when` predicates
+   for those cells in topological order over their init-time read
+   dependencies, per §13.2.6's startup pass rules. Signal cells
+   receive declared initial values; attr cells receive declared
+   defaults (or placement-supplied values); recurrent cells evaluate
+   their expressions for the first time (`.previous`/`.past` calls
+   return their fallback values since no history exists yet); derived
    cells are computed by evaluating their expression bodies;
    stream cells begin empty; `when` predicates are evaluated to
    determine each instance's initial gate state.
@@ -18486,9 +18539,8 @@ per implementation choice).
 
 **Steady-state operation:**
 
-- Host calls `runtime.write_signal(...)`, `runtime.write_attr(...)`,
-  or `runtime.transaction(...)` to stage reactive state. Writes mark
-  dirty; no evaluation runs.
+- Host calls `runtime.write_signal(...)` or `runtime.transaction(...)`
+  to stage reactive state. Writes mark dirty; no evaluation runs.
 - Host calls `runtime.commit()` to settle dirty cells, advance
   recurrents, publish a new snapshot for observers, and then fire
   reconciler hooks (which observe the just-published snapshot, §13.14.9).
@@ -18521,7 +18573,10 @@ runtime.write_signal(instance_id, signal_id, value)         // effect observed: 
 Both arities stage a new value for the named signal's cell. The calls are
 synchronous and inexpensive: they record the pending value and mark
 dependents dirty. No evaluation runs at this point — that happens at the
-next `commit` (§13.14.4).
+next `commit` (§13.14.4). `runtime.write_signal` targets signals only —
+module-level signals (§13.2.1) or per-effect-instance `observed:` signals
+(§13.19.5); it does not write attrs (attrs are placement-written only,
+§13.2.2).
 
 **Module-level form** — `runtime.write_signal(signal_id, value)`:
 writes to a top-level signal. The `signal_id` identifies a
@@ -18543,23 +18598,6 @@ concern.
 
 Signal IDs and instance IDs are obtained at compile time from the IR (each
 signal and each placement has a stable id per §15.4.1.1).
-
-#### 13.14.3 `runtime.write_attr`
-
-```
-runtime.write_attr(instance_id, attr_id, value)
-```
-
-Stages a new value for a specific instance's attr cell. Otherwise behaves
-identically to the per-instance form of `runtime.write_signal`: synchronous,
-staged-only, dirty propagation, no evaluation.
-
-`instance_id` identifies the instance (assigned at compile time per
-placement); `attr_id` identifies the attr on that instance's type.
-
-The same call applies to attrs declared on node instances or
-connection instances — both kinds of instance live in the same ID
-space.
 
 #### 13.14.4 `runtime.commit`
 
@@ -21094,10 +21132,9 @@ to the base stream reload rules above:
   end of producer evaluation; events emitted *during* the consumer's
   own evaluation are deferred to the next commit. This preserves
   the lockstep semantics (§13.2.4.1).
-- **Streams may not be passed to `runtime.write_signal` or
-  `runtime.write_attr`.** Streams are not signal-shaped or attr-
-  shaped cells. Host-side writes into a stream go through the
-  dedicated host API (§13.14.8 `runtime.push_stream`).
+- **Streams may not be passed to `runtime.write_signal`.** Streams
+  are not signal-shaped cells. Host-side writes into a stream go
+  through the dedicated host API (§13.14.8 `runtime.push_stream`).
 - **`.past(n, fallback)` and `.previous(init)` are only valid
   inside a recurrent's producing context** — the expression body of a
   `recurrent[N] stream` (§13.18.8) or a value `recurrent[N]` /
@@ -22353,9 +22390,15 @@ output from being produced.
 A Ductus project is a directory tree containing source files
 (`.duc`). The CLI does not require a manifest file for single-file
 programs (`ductus run file.duc` works on a lone file). Multi-file
-projects use a manifest file specifying the entry point and any
-external dependencies; the format of the manifest is
-implementation-specific.
+projects use a manifest file specifying the **root module** (the
+module whose top-level declarations form the program's top-level
+scope) and any external dependencies; the format of the manifest is
+implementation-specific. The root module declared in the manifest is
+the compilation root for loading and name resolution; the
+**entry-point node instance** — where runtime initialization begins —
+is declared separately in source via the `main` keyword on a top-level
+placement (§13.8.1) and is independent of the manifest's root-module
+specification.
 
 ### 14.3 Reactive Cell Storage
 
@@ -23056,7 +23099,12 @@ The graph is a structured record with the following entries.
 - `to`: destination instance's fully-qualified path (or `null` for
   sink-side connections).
 - `connection_type`: the connection's declared type.
-- `attrs`: ordered list of `(name, value)` pairs (§13.8.4).
+- `attrs`: ordered list of `(name, value, placement_binding_kind)`
+  triples (§13.8.4). The `placement_binding_kind` is `static` (the
+  value is a compile-time / value expression consumed into the attr's
+  storage slot at instantiation) or `reactive` (the value references
+  reactive cells and the runtime must allocate an implicit-derived
+  bridge from those source cells to the attr, per §13.8.2.1).
 - `gate` (optional): the `id` of the gate guarding this connection (the
   gate objects of `when`-gates below), or absent if ungated.
 

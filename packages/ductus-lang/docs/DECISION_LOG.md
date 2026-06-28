@@ -71,7 +71,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 
 002-1. Naming conventions: concrete primitive types (`i32`, `bool`) and built-in placeholder keywords (`numeric`, `integer`, `float`, `signed`, `unsigned`) are lowercase; trait and user-defined type names are PascalCase; functions, variables, and fields are snake_case. (§1.4)
 002-2. Keywords are always lowercase with no capitalized form; this rule is normative and takes precedence over any conflicting grammar. (§1.4)
-002-3. The declaration keywords are `node`, `connection`, `trait`, `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`, `derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`. (§1.4)
+002-3. The declaration keywords are `node`, `connection`, `trait`, `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`, `derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`, `main`. (§1.4)
 002-4. The clause keywords are `children`, `incoming`, `outgoing`, `expose`, `when`, `satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`, `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`, `dynamic` (the supply-mode marker). (§1.4)
 002-5. `pair` and `exposition` are reserved instance-field names; the instance fields `from`, `to` double as clause keywords; `incoming`/`outgoing` head node-body acceptance clauses whose named entries each join the single instance-body namespace shared with cells, views, and placement `as`-names, and also carry direction semantics on connection-view declarations. (§1.4)
 002-6. The control-flow keywords are `if`, `else`, `match`, `for`, `in`, `while`, `break`, `continue`, `return`. (§1.4)
@@ -1624,7 +1624,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 013-238. Reactive values are updated only through the reactive system's defined update mechanisms, never through `mut` assignment. (§11.14)
 013-239. Reactive cell writes — `signal.write(v)`, `stream.emit(v)`, attr reassignment from a recurrent advance — are category D: the RHS is consumed implicitly, with no `move` written. (§11.14)
 013-240. Reactive wiring (category C) — placement attribute assignment from a reactive RHS, connection arguments referencing attrs or signals — does not consume and produces multiple aliases to the same cell. (§11.14)
-013-241. The category-B/C/D distinction at placement attribute assignment is type-directed: a reactive-typed RHS produces wiring; a value-typed RHS is consumed into the attr's slot. (§11.14)
+013-241. The category-B/C distinction at placement attribute assignment is type-directed: a reactive-typed RHS produces wiring; a value-typed RHS is consumed into the attr's slot. Category D applies to recurrent advance, not placement. (§11.14)
 013-242. Function parameters flowing into reactive declarations follow `own`/`move` like any other category A consumption. (§11.14)
 013-243. The reactive boundary is one of the "global" scopes referenced by §11.1's principles; value crossing is fully specified in §13.12. (§11.14)
 
@@ -1842,7 +1842,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
 
-## 016. Reactive Declarations (Cells) — 283 Rules
+## 016. Reactive Declarations (Cells) — 284 Rules
 
 016-1. There are exactly six reactive declaration kinds — `signal`, `attr`, `recurrent`, `derived`, `const`, `stream` — distinguished by who controls the value and how it changes. (§13.2)
 016-2. `signal`, `attr`, `recurrent`, and `derived` declare value-shaped reactive cells. (§13.2)
@@ -1856,8 +1856,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-10. A module-level signal is one cell shared program-wide; all references read the same cell. (§13.2.1)
 016-11. Signal semantics — host-written, not source-assignable, reactive — are identical at both declaration sites: module level and effect `observed:`. (§13.2.1)
 016-12. A signal's scope determines only instance multiplicity and how the host addresses the signal when writing. (§13.2.1)
-016-13. `attr` declares a writable reactive cell that is per-instance of its enclosing node or connection type. (§13.2.2)
-016-14. Attrs are written only through the host API or at placement time. (§13.2.2)
+016-13. `attr` declares a placement-written reactive cell that is per-instance of its enclosing node or connection type. (§13.2.2)
+016-14. Attrs are written only at placement time. (§13.2.2)
 016-15. An attr with a default (`attr name: Type = default`) may be overridden at placement but need not be: `attr method: string = "GET"`. (§13.2.2)
 016-16. An attr without a default (`attr name: Type`) must receive a value at every placement of the enclosing type: `attr url: string`. (§13.2.2)
 016-17. Omitting a defaultless attr's value at placement is a compile error. (§13.2.2)
@@ -1918,7 +1918,6 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-67. A recurrent's own `.previous`/`.past` always return previously-committed values; the value being computed in the current commit is never visible through them. (§13.2.4.1)
 016-68. Recurrents whose expressions did not re-evaluate in a pass do not advance and retain their existing values. (§13.2.4.1)
 016-69. A re-evaluated recurrent's new value is a pure function of the previous-committed values and the inputs received during the pass. (§13.2.4.1)
-016-70. `attr` cells change only when the host writes via `runtime.write_attr`; the runtime never advances them automatically. (§13.2.4.2)
 016-71. The host cannot directly write a recurrent cell at runtime; control is indirect, via the signals and attrs the recurrent's expression reads. (§13.2.4.2)
 016-72. `cell.previous(fallback)` is sugar for `cell.past(1, fallback)`. (§13.2.4.3)
 016-73. Self-history `name.past(k, fb)` reads the recurrent's own value `k` commits ago, with `k` bounded by the declared `[N]` depth (default 1): `recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)`. (§13.2.4.3)
@@ -2001,21 +2000,21 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-150. An initial value referencing a cell on another instance adds cross-instance edges to the init dependency graph. (§13.2.6)
 016-151. Init cycles spanning instances are compile errors at the same severity as within-instance init cycles, identifying the participating instances and cells. (§13.2.6)
 016-152. Ductus source has no syntactic form for assigning to a signal, attr, recurrent, derived, or const after declaration; source expressions only read them. (§13.2.7)
-016-153. Host-driven writes occur only through `runtime.write_signal`, `runtime.write_attr`, and `runtime.transaction`. (§13.2.7)
+016-153. Host-driven writes occur only through `runtime.write_signal` and `runtime.transaction`. (§13.2.7)
 016-154. The host cannot directly write recurrents, deriveds, or consts at runtime; influence is indirect via signals and attrs. (§13.2.7)
 016-155. Placement-time initial values may set attrs and recurrents; consts are not settable at placement. (§13.2.7)
 016-156. The runtime itself writes a derived's output cell when it evaluates the derived's expression. (§13.2.7)
 016-157. The runtime itself commits a recurrent's computed value at the end of the commit cycle. (§13.2.7)
 016-158. The no-source-level-write rule applies uniformly to all six declaration kinds. (§13.2.7)
 016-159. `Cell[T]` is the umbrella type over all reactive cells; the value cells are the concrete types `Signal[T]`, `Derived[T]`, and `Recurrent[T, N]`, whose value type is `T`. (§13.2.8)
-016-160. An `attr` is a placement-written `Signal[T]`: its value is supplied by the placing parent (§13.8.2), reference-passable as a read-only `Signal[T]`. (§13.2.8)
+016-160. An `attr` is a placement-written `Signal[T]`: its value is supplied by the placing parent (§13.8.2), reference-passable as a read-only `Signal[T]` with no host write API after construction. (§13.2.8)
 016-161. Streams are reactive cells but are not value cells (not `Signal[T]`/`Derived[T]`/`Recurrent[T, N]`). (§13.2.8)
 016-162. `Cell[T]` is the umbrella over all reactive cells: `Signal[T]`, `Derived[T]`, `Recurrent[T, N]`, and `Stream[T]`. (§13.2.8)
 016-163. `Signal[T]` is a first-class type usable in parameter positions, return types, and generic arguments. (§13.2.8)
 016-164. `signal X = init` declares a host-writable `Signal[T]`, written via `runtime.write_signal`. (§13.2.8)
 016-165. `derived X = expr` declares a `Derived[T]` whose value the runtime keeps consistent with its inputs. (§13.2.8)
 016-166. `recurrent[N]? X: T = expression` declares a `Recurrent[T, N]` with self-history via `.previous(fallback)` and `.past(k, fallback)`. (§13.2.8)
-016-167. The keyword `signal` and the type `Signal[T]` both name the host-writable value cell (`attr` is also a `Signal[T]`); `derived` and `recurrent` are the distinct types `Derived[T]` and `Recurrent[T, N]`. (§13.2.8)
+016-167. The keyword `signal` names a host-writable `Signal[T]` (written via `runtime.write_signal`); `attr` is also a `Signal[T]` but is placement-written only, never host-writable post-construction; `derived` and `recurrent` are the distinct types `Derived[T]` and `Recurrent[T, N]`. (§13.2.8)
 016-168. An operator value parameter is typed `Cell[T]`, binding to any reactive value cell at instantiation and allocating internal state tied to that cell. (§13.2.8)
 016-169. An operator's value output is a computed `Derived[T]`; the return type names the concrete produced type, not an umbrella. (§13.2.8)
 016-170. A function parameter declared `x: T` receives a cell argument's current value, with reactive transparency. (§13.2.8)
@@ -2127,6 +2126,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-274. `Derived[T]` is the degenerate zero-history case of `Recurrent[T, N]` (`N = 0`). (§13.2.8)
 016-275. A reactive value expression combining one or more reactive cells always produces a `Derived[T]`. (§13.2.8)
 016-276. Value-reading operator and function parameters are typed `Cell[T]` (the umbrella); a `Stream[T]` is excluded at the read site rather than by the signature. (§13.2.8)
+016-284. The host has no write API for `attr` cells; the runtime provides no `write_attr` verb. An attr's value changes only at placement-time instantiation per §13.8.2.1's category-B/C rules, and after instantiation tracks its placement RHS for the instance's lifetime. (§13.2.2)
+016-285. The host-program write surface comprises exactly two channels: `runtime.write_signal` for module-level signals and per-effect-instance `observed:` signals, and `runtime.push_stream` for per-effect-instance `observed:` streams. There is no third channel. (§13.14.2)
 
 ## 017. Nodes & Views — 308 Rules
 
@@ -2704,13 +2705,13 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 020-37. Every named identifier in an instance body scope — cells of all kinds (`const`/`attr`/`recurrent`/`derived`/`stream`), standalone `view` declarations, named entries inside `children:`/`incoming:`/`outgoing:` acceptance clauses, and placement `as`-names — shares one namespace; no two may share a name regardless of kind, and there is no shadowing across them. This holds uniformly for node and connection bodies. (§13.7.1)
 020-38. View names and exposed placement `as`-names are hoisted — visible body-wide regardless of textual order; cell values still follow initialization order, so an attr's default or a recurrent's expression may reference only previously-declared cells of the same body. (§13.7.1)
 
-## 021. Placement — 137 Rules
+## 021. Placement — 142 Rules
 
 021-1. Placement is the syntax for instantiating nodes and connections into a concrete reactive graph. (§13.8)
 021-2. Placement is distinct from value construction of records, which uses constructor syntax. (§13.8)
-021-3. A top-level placement creates a named instance of a node type at module scope: `Driver john_doe`. (§13.8.1)
-021-4. A top-level placement line is the type name, then the instance name, then optional attribute settings, then an optional `:` introducing a body of child placements: `Driver john_doe | expertise_level=10:`. (§13.8.1)
-021-5. A top-level placement is a declaration that names its subject positionally — type then name, with no marker between them. (§13.8.1)
+021-3. A top-level placement creates a named instance of a node type at module scope: `Driver john_doe`. A top-level placement may be prefixed with the `main` keyword to designate it as the program's entry-point. (§13.8.1)
+021-4. A top-level placement line is optionally prefixed with `main`, then the type name, then the instance name, then optional attribute settings, then an optional `:` introducing a body of child placements: `Driver john_doe | expertise_level=10:` for an auxiliary instance, `main Driver john_doe | expertise_level=10:` for the entry-point. (§13.8.1)
+021-5. A top-level placement is a declaration that names its subject positionally — optionally prefixed with `main`, then type then name, with no marker between type and name. (§13.8.1)
 021-6. A top-level placement is mandatorily named. (§13.8.1)
 021-7. The `as` name marker is optional in a top-level placement; `Driver john_doe` and `Driver as john_doe` have identical meaning. (§13.8.1)
 021-8. Instance names are unique within their declaring scope; two top-level placements with the same name in one module is a compile error. (§13.8.1)
@@ -2720,11 +2721,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 021-12. A placement with attrs and children writes attributes inline (or via aligned continuation) and then `:` introducing the body: `Driver john_doe | expertise_level=10:`. (§13.8.2)
 021-13. A placement attribute setting must name a cell declared as an `attr` on the placed type; setting any other identifier — `signal`, `recurrent`, `derived`, or `const` — is a compile error. (§13.8.2)
 021-14. A placement attribute value must match the attr's declared type, subject to the standard widening rules. (§13.8.2)
-021-15. A placement attr RHS whose provenance contains no reactive cell is consumed into the attr's storage slot at instantiation as an implicit move (§11.1 category B), with no `move` keyword required: `Server as srv | port=8080`. (§13.8.2.1)
+021-15. A placement attr RHS whose provenance contains no reactive cell is consumed into the attr's storage slot at instantiation as an implicit move (§11.1 category B), with no `move` keyword required, AND no reactive machinery (no implicit derived bridge) is instantiated for that placement's attr cell — the static value sits inert in the slot thereafter: `Server as srv | port=8080`. (§13.8.2.1)
 021-16. A placement attr RHS that references reactive cells (signals, attrs, recurrents, deriveds) creates an implicit derived bridging the source cells to the target attr, so the attr reactively tracks the sources: `Display as d1 | label=format(c1.count)`. (§13.8.2.1)
 021-17. Reactive placement wiring is §11.1 category C under the reactive-binding exception: the placement is not an ownership operation and the source cell is not consumed. (§13.8.2.1)
 021-18. A reactive placement value synthesizes a derived in the parent's scope; when any cell in the expression's provenance changes, the synthesized derived re-evaluates and the target attr updates. (§13.8.2.1)
-021-19. A value placement evaluates the RHS once and stores the result into the attr's slot. (§13.8.2.1)
+021-19. A static-RHS value placement evaluates the RHS once and stores the result into the attr's slot; the attr cell remains inert (no implicit derived bridge built) for that placement. (§13.8.2.1)
 021-20. The compiler determines the binding category from the expression's provenance set: any reference to a reactive cell makes the expression reactive (category C); otherwise it is a value expression (category B). (§13.8.2.1)
 021-21. A `const` reference in a placement RHS contributes no reactive provenance; a const-only RHS is a category-B value binding, not category-C reactive wiring. (§13.8.2.1)
 021-22. The value-vs-reactive distinction at placement is type-directed and requires no syntactic marker. (§13.8.2.1)
@@ -2843,6 +2844,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 021-141. Naming via `as` never requires parentheses in same-line multi-placement; parenthesizing a named placement is a readability convention, not a rule. (§13.8.10)
 021-142. A placement introducing its own children body via `:` owns the rest of its line and the following indented block; it cannot share its line with sibling placements. (§13.8.10)
 021-143. A `:`-bearing placement may carry inline children on its own line when no sibling placements share the line: `SomePart: Child1 Child2 Child3`. (§13.8.10)
+021-145. The `main` keyword prefixes a top-level placement to designate it as the program's entry-point — the node instance from which startup traversal begins. Form: `main TypeName instance_name [attribute_clause] [: body]`. (§13.8.1)
+021-146. Every program declares exactly one `main` top-level placement. A program with zero `main` placements is a compile error of class `no_entry_point`; a program with two or more `main` placements is a compile error of class `multiple_entry_points`. (§13.8.1)
+021-147. A top-level node instance that is not the entry-point and is not reachable from the entry-point's transitive closure (own subtree, connection destinations, and `Handle`/`WeakHandle`-reachable module-level instances) is a compile error of class `unreachable_top_level_instance`. (§13.8.1)
+021-148. The entry-point's transitive closure defines the live graph: cells are allocated, instances are mounted, connections are engaged, and effects are reconciled for the entry-point and every reachable instance — and only those. (§13.8.1, §13.14.1)
+021-149. The static-vs-reactive distinction at placement is a normative per-placement choice (not per-attr-declaration): a single attr type may have multiple placements with different RHS shapes — some static (no reactive machinery instantiated), some reactive (an implicit derived bridge built) — and each placement's choice is determined independently from its own RHS provenance. (§13.8.2.1)
 
 ## 022. Conditional Activation (Gates) — 120 Rules
 
@@ -2969,8 +2975,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 
 ## 023. Reactive Evaluation & Commit — 56 Rules
 
-023-1. The reactive runtime exposes exactly two state operations: writes (signal/attr), which stage new values without evaluation, and commit, which evaluates and atomically publishes a new consistent snapshot. (§13.10)
-023-2. A write call (`runtime.write_signal`, `runtime.write_attr`, or any write inside `runtime.transaction`) stages the new value; the staged value is not yet visible to observers. (§13.10.1)
+023-1. The reactive runtime exposes exactly two host-level state operations: signal writes (via `runtime.write_signal`), which stage new values without evaluation, and commit, which evaluates and atomically publishes a new consistent snapshot. (§13.10)
+023-2. A write call (`runtime.write_signal` or any write inside `runtime.transaction`) stages the new value; the staged value is not yet visible to observers. (§13.10.1)
 023-3. No derived recomputation and no recurrent advancement happens at write time. (§13.10.1)
 023-4. Staged writes accumulate until the next `runtime.commit()`; only the net change from the previous commit matters. (§13.10.1)
 023-5. Dirty bits are determined at commit time, not per write. (§13.10.1)
@@ -3137,7 +3143,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 026-11. The reactive evaluation context does not modify trap semantics: a behavior that traps aborts the process, the same as a free-function trap. (§13.13.3)
 026-12. The language provides no hidden recovery mechanism in reactive contexts; graceful handling requires value-track errors. (§13.13.3)
 
-## 027. Runtime Interface — 121 Rules
+## 027. Runtime Interface — 120 Rules
 
 027-1. The runtime interface is the normative contract every backend must satisfy — the abstract counterpart to the IR the compiler emits. (§13.14)
 027-2. The shape of the runtime interface is normative; the host-language binding is implementation-defined. (§13.14)
@@ -3156,7 +3162,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-15. A runtime need only honor the verbs' observable contract; the mechanism is its own choice. (§13.14)
 027-16. Startup step 1 loads the IR (per §15.4). (§13.14.1)
 027-17. Startup step 2 allocates cell storage (per §14.3). (§13.14.1)
-027-18. Startup initializes all reactive cells and evaluates all `when` predicates in topological order over their init-time read dependencies, per §13.2.6's startup pass rules. (§13.14.1)
+027-18. Startup initializes the entry-point's transitive-closure reactive cells (the entry-point's own subtree plus connection-reachable instances plus `Handle`/`WeakHandle`-reachable module-level instances) and evaluates all `when` predicates in topological order over their init-time read dependencies, per §13.2.6's startup pass rules. (§13.14.1)
 027-19. At startup, signal cells receive their declared initial values. (§13.14.1)
 027-20. At startup, attr cells receive their declared defaults or placement-supplied values. (§13.14.1)
 027-21. At startup, recurrent cells evaluate their expressions for the first time, with `.previous`/`.past` returning their fallback values since no history exists. (§13.14.1)
@@ -3169,7 +3175,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-28. The final startup step performs the first commit, publishing the initial snapshot; observers' subsequent `acquire_snapshot` calls return real data. (§13.14.1)
 027-29. The runtime is "constructing" until the first commit and "live" only after it completes. (§13.14.1)
 027-30. Observer reads before the first commit return a sentinel or block, per implementation choice. (§13.14.1)
-027-31. In steady state, host writes (`write_signal`, `write_attr`, `transaction`) only stage values and mark dirty; no evaluation runs at write time. (§13.14.1)
+027-31. In steady state, host writes (`write_signal`, `transaction`) only stage values and mark dirty; no evaluation runs at write time. (§13.14.1)
 027-32. In steady state, `runtime.commit()` settles dirty cells, advances recurrents, publishes a new snapshot for observers, and then fires reconciler hooks (which observe the just-published snapshot, §13.14.9). (§13.14.1)
 027-33. Shutdown step 1 stops accepting new signal/attr writes. (§13.14.1)
 027-34. Shutdown step 2 drains any in-flight commit: the current commit, if running, completes. (§13.14.1)
@@ -3187,8 +3193,6 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-46. Both `write_signal` arities must be called from the runtime's driving context — the single context permitted to write, evaluate, and commit. (§13.14.2)
 027-47. Other threads write only indirectly, by enqueueing requests for the driving context to apply. (§13.14.2)
 027-48. Signal IDs and instance IDs are stable, assigned at compile time, and obtained from the IR. (§13.14.2)
-027-49. `runtime.write_attr(instance_id, attr_id, value)` stages a value for one instance's attr cell, behaving identically to per-instance `write_signal`: synchronous, staged-only, dirty propagation, no evaluation. (§13.14.3)
-027-50. `write_attr` applies to attrs on node instances and connection instances alike; both instance kinds share one ID space. (§13.14.3)
 027-51. `runtime.commit()` performs the complete commit operation of §13.10.2: it settles all dirty deriveds and recurrent expressions glitch-free in topological order and advances recurrents. (§13.14.4)
 027-52. `commit` fires `suspend`/`resume` for effects whose effective activation changed. (§13.14.4)
 027-53. `commit` is the sole point at which staged writes become observable, publishing a new consistent snapshot. (§13.14.4)
@@ -3260,6 +3264,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-120. The persistence capability lets the runtime serialize and restore live graph state across runs. (§13.14.11)
 027-121. The real-time bounds capability provides bounded, non-blocking observation for cells on real-time paths; the timing classification is implementation-defined. (§13.14.11)
 027-122. How a runtime classifies cells for cross-thread observation and real-time timing is implementation-defined, not driven by normative IR fields. (§13.14.11)
+027-123. Startup traverses the graph beginning at the program's `main` entry-point; reachable instances are mounted in topological order of their cell dependencies; unreachable top-level instances are absent from the live graph (caught at compile time by class `unreachable_top_level_instance`). (§13.14.1)
 
 ## 028. Hot Reload — 75 Rules
 
@@ -3277,7 +3282,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 028-75. A `Portal[T]` preserves across hot reload only when its targeted slot's identity AND generation are preserved across the reload. The portal carries a `(slot_path, generation)` pair; on the next read after reload, the runtime compares the stamped generation to the slot's current generation, and a mismatch resolves the portal to `None`. Slot relocation or removal increments the generation (or removes the slot entirely), invalidating portals to that slot. (§13.3.6.3)
 028-12. Reload is performed atomically on the runtime's driving context. (§13.15.3)
 028-13. Reload step 1 receives the precompiled IR diff; compilation and the §13.15.1 validation gate are host-side preconditions completed before `reload(diff)` is called, and on a malformed diff the reload is rejected with runtime state unchanged. (§13.15.3)
-028-14. Reload step 2 acquires a reload lock and pauses acceptance of new signal/attr writes; host requests queue. (§13.15.3)
+028-14. Reload step 2 acquires a reload lock and pauses acceptance of new signal writes; host requests queue. (§13.15.3)
 028-15. Reload step 3 lets any in-flight commit complete, ensuring a between-commits state. (§13.15.3)
 028-16. Reload step 4 computes the old/new graph diff: surviving cells (same path, same type), additions, removals. (§13.15.3)
 028-17. Reload step 5 allocates and initializes added cells per the new source. (§13.15.3)
@@ -3710,7 +3715,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-254. Cursors are not first-class values: programs cannot construct, store, or pass them, and they are observable only through consumers' signal outputs. (§13.18.15)
 030-255. Within one commit cycle, a stream consumer observes exactly the set of events committed by the end of producer evaluation. (§13.18.15)
 030-256. Events emitted during a consumer's own evaluation are deferred to the next commit. (§13.18.15)
-030-257. Streams may not be passed to `runtime.write_signal` or `runtime.write_attr`; host-side stream writes go through `runtime.push_stream`. (§13.18.15)
+030-257. Streams may not be passed to `runtime.write_signal`; host-side stream writes go through `runtime.push_stream`. (§13.18.15)
 030-258. An output-stream lookback must satisfy `k ≤ N`: `recurrent[N] stream policy X = ... X.past(k, ...)` with `k > N` is a compile error. (§13.18.15)
 030-259. Stream-valued expressions cannot be assigned to signal-typed bindings — `derived X = stream_expr` and `signal X = stream_expr` are compile errors; project via `to_signal(fallback)`. (§13.18.15)
 030-260. A stream declaration without a policy keyword (`ring`/`gate`) is a normative error class: `stream my_events: Event = source` ✗. (§13.18.16)
@@ -4070,7 +4075,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-176. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-177. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 233 Rules
+## 033. Compilation Model & IR — 234 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4305,3 +4310,4 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-247. Mixing a compiler from one implementation with a runtime from another is permitted at the same schema and format version. (§15.7.3)
 033-248. The spec prescribes no reference test suite. (§15.7.4)
 033-249. Implementations may publish conformance suites; passing such a suite is not a normative requirement. (§15.7.4)
+033-269. The IR representation of an attr placement encodes its provenance category (B static / C reactive) per placement on the connection or scope entry's attr list, enabling per-placement optimization at runtime/codegen: static-RHS placements skip implicit-derived allocation; reactive-RHS placements instantiate the bridge. (§15.4.1)
