@@ -37,3 +37,7 @@ Accumulated, granular preferences and working rules for this project. One atomic
 17. Delegate large-doc reads to subagents: When pulling specifics out of large reference docs (SPEC.md, DECISION_LOG.md), spawn read-only subagents that return short focused summaries instead of reading wide ranges into my own context. Keeps my context lean and lets many lookups run in parallel. Example: for GRAMMAR.md gap-filling, dispatch one subagent per construct (placement, with-expr, observe, …) asking only "give me the surface syntax shape in 5–15 lines", not reading §13.8 myself end-to-end.
 
 18. Double-check via fresh subagents even for things I've already read: Independent re-reads catch misreads, stale recall, and silent assumptions. The cost of redundancy is cheap; the cost of acting on a wrong recall is not. Treat my own prior read as one data point, not ground truth — when stakes are real (writing a normative artifact like GRAMMAR.md), verify with a fresh agent.
+
+19. Node-type body members are clauses only (`satisfies`, `children:`/`incoming:`/`outgoing:`, `view`, `when:`, cells, `effects:`, `expose:`). Placements emitted by the type live in `expose:` (or `effects:`). Placement bodies of caller-side placements hold child placements only — no `expose:`, no clauses. Example: incorrectly putting `expose:` inside a `main App my_app:` body conflated node-type body with placement body.
+
+20. `is not` is two words, never `is_not`. Confirmed in DECISION_LOG 007-85 and 007-197; the underscored form is wrong everywhere.
