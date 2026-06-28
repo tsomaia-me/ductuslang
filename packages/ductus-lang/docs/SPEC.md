@@ -1182,14 +1182,14 @@ The TraitDecl grammar (with FulfillItem at §3.3 as its implementation counterpa
 ```
 TraitDecl     := Annotation* Visibility? 'trait' Ident GenericParams? TraitBody
 TraitBody     := NEWLINE INDENT TraitBodyItem+ DEDENT | NEWLINE
-TraitBodyItem := DocComment? (RequiresClause
+TraitBodyItem := Annotation* DocComment? (RequiresClause
                               | AssocTypeDecl
                               | RequiredCell
                               | EndpointDecl
                               | MethodSig)
 RequiresClause   := 'requires' TypePath (',' TypePath)*
 AssocTypeDecl    := 'type' Ident ('=' TypeExpr)?
-RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' BracketDepth? | 'stream' StreamPolicy '[' ConstExpr ']')
+RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']')
                     Ident ':' TypeExpr ('=' Expr)?
 EndpointDecl     := ('from' | 'to') ':' TypeExpr
 MethodSig        := 'fn' Ident GenericParams? '(' Params? ')' ('->' TypeExpr)? (':' FnBody)?
