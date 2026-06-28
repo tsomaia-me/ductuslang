@@ -12332,14 +12332,12 @@ The cell may still be written by the host (`signal`), the runtime
 (`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
 
-**`Cell[T]` is not a user-storable type.** Cell-typed bindings appear only in
+**`Cell[T]` is the typing umbrella.** Cell-typed bindings typically appear in
 parameter positions, return positions, and compiler-minted internal bindings
 (`Cell[Map[…]]` for `repeat … as` views per §13.5.4.9, `Cell[DynamicView[…]]`
-for dynamic views per §13.3.3.4). A user-declared storage slot of type
-`Cell[T]` — `attr x: Cell[T]`, a record/tuple/enum field typed `Cell[T]`, etc.
-— is a compile error: cross-instance references to reactive state use
-`Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]` for
-non-graph slots (§13.3.6.3), or connections for typed wiring (§13.6).
+for dynamic views per §13.3.3.4). Cross-instance references to reactive state
+use `Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]`
+for non-graph slots (§13.3.6.3), or connections for typed wiring (§13.6).
 
 **Cell-names in reactive expressions are compile-time identifiers, not
 values or borrows.** When a cell-name appears in a reactive expression — `s + 1`
@@ -13483,10 +13481,7 @@ carries no subscription semantics independent of its cell.
 
 The `Cell[DynamicView[…]]` binding for a dynamic view is **compiler-minted**:
 the view-name lives in the body-scope namespace as the receiving binding for
-the view's reactive content, but `Cell[DynamicView[T]]` is not a
-user-declarable storage type. User code cannot write `attr x: Cell[DynamicView[T]]`
-or place a `Cell[DynamicView[…]]`-typed field on a record; such a declaration
-is a compile error. Consumption goes through operators or `repeat` as above.
+the view's reactive content. Consumption goes through operators or `repeat` as above.
 
 **Iteration narrowing.** Iterating a `Cell[DynamicView[WeakHandle[T]]]`
 yields `WeakHandle[T]` on the iterator surface. In a context that proves
@@ -15385,12 +15380,10 @@ to a reactive `Cell[Map[Key, <view>::entry]]` (§9.5) whose keyset tracks the
 source's current keys.
 
 The `Cell[Map[…]]` binding here is **compiler-minted**: the `<view>` name lives
-in the body-scope namespace as the receiving binding for the `repeat`'s output,
-but `Cell[Map[…]]` is not a user-declarable storage type. User code cannot write
-`attr x: Cell[Map[K, V]]` or place a `Cell[Map[…]]`-typed field on a record;
-such a declaration is a compile error. Cross-instance access to repeat-keyed
-state uses the body-scope `<view>.get(k)?.<name>` projection in place, or
-captures the durable **key** for cross-commit reference (see below).
+in the body-scope namespace as the receiving binding for the `repeat`'s output.
+Cross-instance access to repeat-keyed state uses the body-scope
+`<view>.get(k)?.<name>` projection in place, or captures the durable **key**
+for cross-commit reference (see below).
 
 ```
 node Feed:
