@@ -72,8 +72,10 @@ orthogonal capability a type may or may not have. Node, connection, and
 effect instances are first-class citizens: nameable, passable, returnable
 graph members. A binding to one is a borrow, and a borrow is unstorable
 (§13.3.6.1), so an instance is held only by borrow, never placed in cells
-or records. The storable stand-in for *which kind* to place is the type
-value `Type[…]` (§5.7); for *which instance*, a `Handle[T]` (§13.3.6.2).
+or records. Placement is itself ownership: only the graph holds an
+instance, and the binding is the borrow into the graph's slot. The
+storable stand-in for *which kind* to place is the type value `Type[…]`
+(§5.7); for *which instance*, a `Handle[T]` (§13.3.6.2).
 
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
@@ -137,7 +139,7 @@ scope-anchor namespaces (`here`, `module`), the instance value
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
 `or`, `not`, `handle` — graph-entity reference, dynamically-placed type form (`WeakHandle[T]`), §13.3.6.2; `handle!` — graph-entity reference, statically-placed type form (`Handle[T]`), §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3; `delete` — Map / Deletable trait deletion, §4.9.5). `as` is **not** a cast operator; explicit conversion uses
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
-conflicting grammar.
+conflicting grammar. The two-character sequence `handle!` is a single lexer token: the lexer recognizes it as one keyword, distinct from `handle` followed by a separate token.
 
 Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
 
@@ -3157,6 +3159,10 @@ level.
 | `>`      | `Ord`         | bool   |
 | `>=`     | `Ord`         | bool   |
 
+This is the operand-trait row for ordering operators in the
+inferred-constraint mapping of §4.4.6, parallel to arithmetic operators
+mapping to `Add`/`Sub`/… and equality operators mapping to `Eq`.
+
 Comparison works on both integer and float kinds. Mixed-kind comparisons
 promote per §4.5 before comparing. Float comparison follows IEEE 754
 semantics including NaN behavior: `NaN < x` is `false`, `NaN > x` is `false`,
@@ -4016,6 +4022,10 @@ implement `Neg` via the `Float` umbrella.
 rule that `/` always produces `Float`. Integer operands to `/` are
 implicitly widened to float per §4.4.1.1 before `Div::div` is dispatched.
 
+The two-argument `Log` and the four inspection traits (`IsNan`,
+`IsInfinite`, `IsFinite`, `IsNormal`) are part of the `Float` umbrella
+specifically so generic code constrained on `T: Float` can call them.
+
 #### 4.9.3 Default mappings
 
 Defaults declared on the umbrella traits per §3.1.5 are confirmed against
@@ -4118,7 +4128,10 @@ Language-level fulfillments:
 - **Slices `T[..N]` / `T[..]`**: same shape.
 - **Bundles `Bundle[T]`** (§13.3.3.5): `Index[isize]` →
   `Output = Handle[T][..]` (a row slice).
-- **Maps `Map[K, V]`** (§9.5): `Index[K]` → `Output = V`.
+- **Maps `Map[K, V]`** (§9.5): `Index[K]` → `Output = V`. `Map` does NOT
+  fulfill `Index[Range[K]]`: range-slicing is unmeaningful on an
+  unordered keyed collection, so a range expression in a `Map` index
+  position is a compile error.
 
 Stdlib `Vec[T]` and other indexed collections fulfill the same surface.
 
@@ -6350,8 +6363,9 @@ measurement visible at every call site:
   UTF-8-aware handling of multi-byte sequences. The exact return type is
   a stdlib concern.
 - `s.chars()` — returns a sequence of `char` values (Unicode scalars).
-  Iterable in O(n) total traversal. The exact return type is a stdlib
-  concern.
+  Iterable in O(n) total traversal, because UTF-8 decoding must run
+  byte-by-byte (§9.1.4) — there is no O(1) random char access in a
+  variable-width encoding. The exact return type is a stdlib concern.
 - `s.byte_len() -> isize` — length in bytes. O(1).
 - `s.char_count() -> isize` — number of Unicode scalars. O(n).
 
@@ -6791,6 +6805,15 @@ collection" type. The only primitive such a collection rests on is the
 allocator intrinsic, a capability available to any program; a user can
 implement an equivalent collection with no privileged access.
 
+#### 9.3.6.1 Trait derivation for arrays
+
+The compiler derives `Eq`, `Ord`, `Hash`, `Clone`, `Display`, and `Debug`
+structurally for `T[N]` whenever the element type `T` satisfies the
+requested trait. Derivation walks the elements element-by-element in
+index order; `Ord` is lexicographic. The full trait set lands because
+arrays are owned values with no borrow-cloning concern — paralleling
+tuples (§9.2.6).
+
 #### 9.3.7 Slices: `T[..N]` and `T[..]`
 
 A **slice** is a *borrow of a contiguous sub-range* of a value, instead of
@@ -6939,6 +6962,18 @@ let win: Option[i32[..]]  = arr.get(2..5)     // safe range access
 surface across arrays, slices, and Maps
 (§9.5).
 
+##### Trait derivation
+
+The compiler derives `Eq`, `Hash`, `Display`, and `Debug` structurally
+for `T[..N]` and `T[..]` whenever the element type `T` satisfies the
+requested trait, walking elements in index order. `Ord` is derivable
+when `T: Ord`, with element-by-element lexicographic comparison.
+
+`Clone` is **not** derived: a slice is a borrow, and borrows cannot be
+cloned. Obtaining an owned copy of a slice's contents requires a
+separate explicit operation (constructing an array literal, calling a
+stdlib collector, etc.).
+
 ### 9.4 Time Types: `duration` and `instant`
 
 The language provides two built-in time types for representing temporal
@@ -6954,6 +6989,8 @@ matching the convention of other primitives (`bool`, `string`, `i32`,
 etc.).
 
 The operators on `duration` and `instant` (§9.4.1.2, §9.4.2.1) are **language-defined primitives**, not dispatched through the numeric `/`/`Div` trait machinery (§4.4.1.1, §4.9.1). This is why forms like `duration / Numeric` → `duration` and `duration / duration` → `f64` are well-formed even though they do not fit `Div`'s `Subject` → `Subject` shape.
+
+Both `duration` and `instant` auto-implement `Hash`: their i64-backed representation supports the integer hash directly, so they may be used as `Map` keys (§9.5).
 
 #### 9.4.1 `duration`
 
@@ -7333,6 +7370,28 @@ is no static slot path for runtime keys. Such a map is a whole-cell
 Composites exist only at reactive-declaration sites (§13.2.9.1);
 function bodies are reactive-transparent (§13.12.2) and build
 plain-value maps, never composites.
+
+#### 9.5.13 Trait derivation
+
+The compiler derives `Eq`, `Hash`, `Clone`, `Display`, and `Debug`
+structurally for `Map[K, V]` whenever `K` and `V` satisfy the requested
+trait. `Eq` and `Hash` are insensitive to insertion order: two maps are
+equal iff they hold the same key→value set, and their hash agrees
+accordingly.
+
+`Ord` is **not** derived: `Map` iteration is unordered (§9.5.8), so no
+canonical comparison order exists. Any program that requires `Ord` on a
+`Map` is a compile error at the bound, not silently misordered at
+runtime.
+
+#### 9.5.14 Nested map storage
+
+Nested maps such as `Map[K1, Map[K2, V]]` use the same hash-table
+representation at every level recursively; each `Map` value — outer and
+inner — carries its own pool entry (§13.12.4). The exact nesting
+strategy (open addressing, chaining, table layout) is
+implementation-defined; programs see only the language-level surface
+(literal syntax, access operators, iteration semantics).
 
 ---
 
@@ -13580,6 +13639,15 @@ the caller wrote it — the runtime sees a two-level structure (rows
 containing elements), not a flattened list. This parallels `@content`'s
 order-preservation applied to a named bundle view.
 
+##### Trait derivation
+
+The compiler derives `Eq`, `Ord`, `Hash`, `Clone`, `Display`, and
+`Debug` structurally for `Bundle[T]` whenever the backing element type
+`Handle[T]` satisfies the requested trait. Because `Handle[T]` is
+`Copy`, `Eq`/`Hash`/`Clone`/`Display`/`Debug` lift cleanly; `Ord` lifts
+when `Handle[T]: Ord`. Derivation walks the offsets-table layout row by
+row, element by element within each row.
+
 #### 13.3.4 Connection-views (`incoming:` and `outgoing:`)
 
 ```
@@ -14214,7 +14282,10 @@ acceptance clause is a header keyword followed by `:` and an indented block
 of named entries, one entry per line; each named entry joins the body-wide
 namespace. A standalone `view` or `dynamic view` declaration is
 pure selection over already-accepted children and never widens
-acceptance.
+acceptance. Style convention places the acceptance clauses at the top of
+the body for readability, as in the template above; this convention is
+not a positional rule and the parser enforces only the `effects:` /
+`expose:` ordering above.
 
 ##### 13.3.7.1 Content
 
@@ -15396,9 +15467,12 @@ Cross-level addressing composes view by view:
 **`at` on unordered sources.** When a `repeat`'s source is unordered (a
 `Map` per §9.5, a `HashSet`, etc.), the `at <index>` form is **unstable**:
 the index reflects the iterator's emit order, which
-can differ commit-to-commit. The compiler accepts `at` on unordered
-sources but flags the instability; programs relying on stable positional
-identity should use `keyed by <expr>` (§13.5.4.1) instead.
+can differ commit-to-commit. The compiler issues a **normative
+diagnostic** — class **`unstable_positional_iteration_on_unordered_source`**
+— at the placement site: a warning by default, promotable to an error per
+build configuration. The diagnostic class name is normative so user tooling
+(linters, CI gates) may target it directly. Programs relying on stable
+positional identity should use `keyed by <expr>` (§13.5.4.1) instead.
 
 ### 13.6 Connections
 
@@ -15783,6 +15857,16 @@ Neither reference needs `here::` or `module::`: `local_gain` is found
 in the body scope, `master_gain` in the module scope, and there is
 no collision.
 
+**Hoisting within the body scope.** `view` declarations, acceptance-entry
+names, and exposed placement `as`-names are *hoisted*: they are visible
+body-wide regardless of textual order. These names refer to **structural
+declarations** (which children a view selects, which placement is bound
+by an `as`-name) — facts the compiler resolves before any cell evaluates,
+independent of init order. **Cell values** (`attr`, `derived`,
+`recurrent`, `stream`) still follow the topological initialization order
+of §13.12, since a cell's value can depend on another cell's initial
+value; only the *names* of structural declarations hoist.
+
 #### 13.7.2 The `here::` anchor
 
 `here::x` explicitly resolves `x` in the current scope — inside a
@@ -15898,8 +15982,14 @@ possible — reserved words cannot be declared as cell names. `here::` remains
 available as the explicit form (`here::from`, `here::pair`).
 
 Note that `in` is *not* among these: the incoming direction keyword is
-`incoming` (§13.3.4), distinct from the `for`-loop separator `in` (§12.3), so
-`for c in shows` reads without collision.
+`incoming` (§13.3.4), distinct from `in` itself. `in` carries two
+expression-level roles: the **`for`-loop separator** (`for c in shows`,
+§12.3) and the **membership operator** dispatching to the `Contains`
+trait (`k in m`, §4.9.5). The parser disambiguates by syntactic
+position — the `for`-loop separator appears only between the
+loop-variable list and the iterable in a `for`-statement head; in any
+other expression position `in` is the binary membership operator. Both
+roles compose without grammatical collision.
 
 #### 13.7.6 Resolution and reactive dependencies
 
@@ -16885,6 +16975,13 @@ AnotherPart                                // sibling on next line
 Same-line multi-placement is opt-in: one placement per line remains
 the dominant form. Same-line layout is intended for dense sequences
 (e.g., music notation) where vertical compactness aids readability.
+
+No placement-specific diagnostic is mandated for an open-expression
+placement that silently re-parses as a different construct under the
+greedy grammar: the resulting mis-parse surfaces through whatever
+downstream type or arity error the now-misread form produces, like any
+other grammar ambiguity in a whitespace-delimited language. The
+parenthesize-or-newline rule above is the prevention.
 
 ### 13.9 Conditional Activation
 
@@ -18343,8 +18440,11 @@ the graph down (§13.14.10). The runtime calls **behaviors** (§15.4.4) and
 
 **Capabilities (negotiated, not assumed).** A backend advertises optional
 capabilities beyond the mandatory core — cross-thread observation, hot
-reload (`reload`, §13.15), persistence, real-time bounds (§13.14.11). A
-host queries what a runtime supports rather than assuming the union; how
+reload (`reload`, §13.15), persistence, real-time bounds (§13.14.11).
+Ductus source itself does not encounter cross-thread concerns: classification
+of cell storage for cross-thread observation or real-time timing belongs to
+the backend (see §14.6.4 for the threading model the backend must respect).
+A host queries what a runtime supports rather than assuming the union; how
 cells are classified and stored to honor these capabilities is
 implementation-defined (§15.4.1.2–.3).
 
@@ -22927,6 +23027,14 @@ consumed stream, whose cursor resets to the current head when the scope's
 gate reopens (§13.18.12); the cursor itself is runtime-only state, so only
 the reset flag is encoded. Hierarchy is encoded in the fully-qualified
 paths of the entries below.
+
+A `scope` may additionally carry an **`anonymous_grouping`** role: a
+pure structural container with no per-instance state of its own, walked
+like any other scope but unnamed. This is the IR shape a `Bundle[T]`
+(§13.3.3.5) lowers to: the bundle's row count becomes the grouping
+scope's child count, and each child slot is an indexed entry into the
+row. The grouping scope contributes no cells, connections, gates, or
+effects — only the ordered child list and the indexed addressing.
 
 The graph is a structured record with the following entries.
 
