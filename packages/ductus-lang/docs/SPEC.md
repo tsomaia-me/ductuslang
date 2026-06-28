@@ -15735,7 +15735,7 @@ connection's surface.
 Connections may declare generic parameters:
 
 ```
-connection Holts[T]:
+connection Holds[T]:
   from: Container[T]
   to: T
   attr index: usize = 0
@@ -15746,7 +15746,7 @@ recurrents, and deriveds. Each unique instantiation produces a
 distinct connection type per §2.3.
 
 At placement, a generic connection carries its type arguments inline on the
-type name, like any generic instantiation (§9.3.2): `Holts[i32]: item`. The
+type name, like any generic instantiation (§9.3.2): `Holds[i32]: item`. The
 arguments may be omitted when the endpoint types determine them by inference.
 
 #### 13.6.4 Behavior lives outside the connection body
