@@ -1,10 +1,28 @@
 # Ductus Decision Log
 
 Decision-of-record for the Ductus language. One atomic decision per numbered entry: `N. <sentence>: <example> (§ref into SPEC.md)`.
-This log is the lossless WHAT; SPEC.md is the normative elaboration holding the WHY — follow an entry's (§) reference for rationale and full nuance. SPEC.md must conform to this log; divergence between the two is a defect.
-Ordering: generic → specific, topic-contiguous (## headers); reading any prefix yields a coherent partial model. Position carries this gradient; numbers are stable identities — never renumbered, never reused. New decisions take the next free integer and are placed by topic; amendments keep their number; revoked numbers are retired (gaps allowed).
-Edit protocol: change this log FIRST, then update the referenced SPEC.md section to conform.
-If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; never silently resolve it.
+
+## Invariants
+
+This file lives by three invariants. They are enforced by the file's content, not by any external tool; violations are defects.
+
+1. **Dense positional numbering.** Each section's entries are numbered starting from `1` and incrementing by `1` with no gaps. A decision's number is its position in its section, not a stable identifier. Adding an entry inserts it at its topic-correct position and renumbers every later entry in the section. Removing an entry deletes the line and renumbers every later entry. No gaps. No retired numbers.
+
+2. **LOG entries are atomic and self-contained.** A LOG entry contains only the rule it states. It does not reference other LOG entries by number or by name. A reader who needs to understand a rule reads only that one entry. If a rule is incomplete without another rule's content, the rule is restated locally; cross-references between entries are forbidden.
+
+3. **SPEC never references LOG.** Cross-references flow in one direction only: every LOG entry carries a `(§...)` reference into SPEC.md. SPEC.md never carries an `(NNN-MM)` reference into this file. SPEC is the normative elaboration of the rules; LOG is the index of decisions made about them. SPEC is readable without LOG; LOG points into SPEC for rationale and full nuance.
+
+## Document role
+
+This log is the lossless WHAT; SPEC.md is the normative elaboration holding the WHY — follow an entry's `(§)` reference for rationale and full nuance. SPEC.md must conform to this log; divergence between the two is a defect.
+
+## Ordering
+
+Generic → specific, topic-contiguous (`##` headers); reading any prefix yields a coherent partial model. Position carries this gradient, and the entry's number is its position (per Invariant 1).
+
+## Edit protocol
+
+Change this log FIRST, then update the referenced SPEC.md section to conform. If you discover a contradiction, ambiguity, or incoherence in either document: stop and disclose; never silently resolve it.
 
 <!-- BEGIN LOG -->
 
