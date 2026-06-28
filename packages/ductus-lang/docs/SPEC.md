@@ -11459,10 +11459,17 @@ attr name: Type = default       // with default — placement may override
 attr name: Type                 // no default — placement must supply
 ```
 
-An `attr` declares a writable reactive cell that is *per-instance* of
-its enclosing node or connection type. Each instance carries its own
-cell. Like signals, attrs are written only through the host API or
-at placement time (§13.8).
+An `attr` declares a *per-instance reactive slot* on its enclosing node
+or connection type — a property each instance carries. What sits in the
+slot is determined at placement: a compile-time/value expression is
+consumed into the slot's storage (§13.8.2.1 Category B), while a
+reactive expression creates an implicit-derived bridge that wires the
+source cell(s) to the slot (Category C). Either way the slot is
+reactive and updates downstream readers, but the slot's identity is
+"this attr at this placement path," not a separately-named cell value.
+Like signals, attrs are written only through the host API or at
+placement time (§13.8); source-level assignment to an attr is forbidden
+(§13.2.7 no-mutation rule).
 
 An attr declaration may include a `= default` initializer or omit it:
 
@@ -12257,6 +12264,27 @@ form for writing to a reactive cell (the no-mutation rule of §13.2.7 applies).
 The cell may still be written by the host (`signal`), the runtime
 (`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
+
+**`Cell[T]` is not a user-storable type.** Cell-typed bindings appear only in
+parameter positions, return positions, and compiler-minted internal bindings
+(`Cell[Map[…]]` for `repeat … as` views per §13.5.4.9, `Cell[DynamicView[…]]`
+for dynamic views per §13.3.3.4). A user-declared storage slot of type
+`Cell[T]` — `attr x: Cell[T]`, a record/tuple/enum field typed `Cell[T]`, etc.
+— is a compile error: cross-instance references to reactive state use
+`Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]` for
+non-graph slots (§13.3.6.3), or connections for typed wiring (§13.6).
+
+**Cell-names in reactive expressions are compile-time identifiers, not
+values or borrows.** When a cell-name appears in a reactive expression — `s + 1`
+where `s` is a `Signal[T]`, `posts_view.get(k)?.avatar`, `subject.attr_name`,
+etc. — the compiler resolves the name into two things: (a) a provenance entry
+for the enclosing expression's dependency set, and (b) an auto-deref'd
+cell-pool read inserted at the name's position (per §13.17.3.1). No
+`Cell[T]` value is materialized at the name's position; no borrow object
+is constructed. The runtime maintains the subscription edge from the
+referenced cell to the enclosing derived/recurrent body; the reader's
+reactivity is the subscription's effect, not a property of a value the
+user holds.
 
 **Generics.**
 
@@ -13385,6 +13413,13 @@ only inside a `Cell[DynamicView[T]]`, and the containing cell is what is
 bound, stored, and subscribed against (017-315). Consumers are the reactive
 operators (§13.3.3.2) or `repeat` (§13.9.7); the `DynamicView` value itself
 carries no subscription semantics independent of its cell.
+
+The `Cell[DynamicView[…]]` binding for a dynamic view is **compiler-minted**:
+the view-name lives in the body-scope namespace as the receiving binding for
+the view's reactive content, but `Cell[DynamicView[T]]` is not a
+user-declarable storage type. User code cannot write `attr x: Cell[DynamicView[T]]`
+or place a `Cell[DynamicView[…]]`-typed field on a record; such a declaration
+is a compile error. Consumption goes through operators or `repeat` as above.
 
 **Iteration narrowing.** Iterating a `Cell[DynamicView[WeakHandle[T]]]`
 yields `WeakHandle[T]` on the iterator surface. In a context that proves
@@ -15269,6 +15304,14 @@ can name a particular child, because the children are keyed by data, not written
 out individually. The `as <view>` clause closes that gap. It binds `<view>`
 to a reactive `Cell[Map[Key, <view>::entry]]` (§9.5) whose keyset tracks the
 source's current keys.
+
+The `Cell[Map[…]]` binding here is **compiler-minted**: the `<view>` name lives
+in the body-scope namespace as the receiving binding for the `repeat`'s output,
+but `Cell[Map[…]]` is not a user-declarable storage type. User code cannot write
+`attr x: Cell[Map[K, V]]` or place a `Cell[Map[…]]`-typed field on a record;
+such a declaration is a compile error. Cross-instance access to repeat-keyed
+state uses the body-scope `<view>.get(k)?.<name>` projection in place, or
+captures the durable **key** for cross-commit reference (see below).
 
 ```
 node Feed:

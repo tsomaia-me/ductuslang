@@ -1842,7 +1842,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
 
-## 016. Reactive Declarations (Cells) — 279 Rules
+## 016. Reactive Declarations (Cells) — 283 Rules
 
 016-1. There are exactly six reactive declaration kinds — `signal`, `attr`, `recurrent`, `derived`, `const`, `stream` — distinguished by who controls the value and how it changes. (§13.2)
 016-2. `signal`, `attr`, `recurrent`, and `derived` declare value-shaped reactive cells. (§13.2)
@@ -1904,6 +1904,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-58. While frozen, a `@reset_on_reopen` consumer of a gate-policy stream source releases its buffer hold, neither pinning the buffer nor back-pressuring producers. (§13.2.4)
 016-59. `@reset_on_reopen` acts only on gated instances; on a never-gated instance it never fires and is harmless, not an error. (§13.2.4)
 016-279. `@reset_on_reopen` discards an instance's gap-accumulated state on the gate reopen edge (false→true, 016-56); what counts as gap-state is per kind — a recurrent value cell's self/input history (016-54), a stream consumer's cursor and backlog (016-57), and a recurrent stream producer's output/input history and buffer (030-281) — and a stateless instance has none, so the directive is a harmless no-op (016-59). (§13.2.4)
+016-280. `Cell[T]` is the typing umbrella over the reactive cell types `Signal[T]`, `Derived[T]`, `Recurrent[T, N]`, and `Stream[T]`. (§13.2.8)
+016-281. `Cell[T]` is not a user-storable type: a user-declared storage slot typed `Cell[T]` — an attr, a record field, a tuple component, an enum payload, or any other user-declared slot — is a compile error. (§13.2.8)
+016-282. Cell-typed bindings appear only in parameter positions, return positions, and compiler-minted internal bindings such as the `Cell[Map[K, V]]` of a `repeat … as` view or the `Cell[DynamicView[T]]` of a dynamic view. (§13.2.8)
+016-283. A cell-name in a reactive expression is a compile-time identifier, not a value or a borrow: the compiler resolves it into a provenance entry for the enclosing expression and an auto-deref'd cell-pool read inserted at the name's position. (§13.17.3.1)
 016-60. Triggers are implicit: a recurrent re-evaluates whenever any cell it references — other than via `.previous`/`.past` on itself — commits a new value: `counter.previous(0) + step_value` re-evaluates on `step_value`. (§13.2.4)
 016-61. A recurrent whose expression contains only self-references evaluates once and freezes; this is valid behavior, not an error. (§13.2.4)
 016-62. A trigger that contributes no value to the expression (e.g., a pure clock signal) requires an explicit `observe` arm. (§13.2.4)
