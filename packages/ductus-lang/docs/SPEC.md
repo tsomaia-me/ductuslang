@@ -181,9 +181,9 @@ A line comment begins with `//` and runs to end of line; there is no block-comme
 
 Aside from `#`, an identifier begins with a Unicode letter (any character with the Unicode `Letter` property) or an underscore `_`, and continues with those plus Unicode decimal digits. An identifier may not begin with a digit.
 
-**Layout is significant.** Indentation structures the program; the unit of indentation is the ASCII space, and a tab in the leading whitespace of a non-empty line is a lex error. An increase in indentation opens a nested block and a decrease closes one. Blank lines and comment-only lines do not affect indentation. Inside paired delimiters — `(...)` and `[...]` — and inside string literals, layout is suspended, so multi-line argument lists, generic lists, tuples, and string contents may span lines freely.
+**Layout is significant.** Indentation structures the program; the unit of indentation is the ASCII space, and a tab in the leading whitespace of a non-empty line is a lex error. An increase in indentation opens a nested block and a decrease closes one. Blank lines and comment-only lines do not affect indentation. Inside paired delimiters — `(...)` and `[...]` — and inside string literals, layout is suspended, so multi-line argument lists, generic lists, tuples, and string contents may span lines freely. Header continuations `else` and `else if` attach to their owning `if` header by column-alignment: they sit at the `if`'s indentation, never deeper inside the prior arm body (§6.4). In-block terminal arms — `otherwise:` in a `when` block (§13.9.12), `default:` in a `given` block (§13.9.13) or `observe` expression (§13.2.11), the catch-all arm in `match` (§6.2.4) — are arms of their own block and sit at arm indent like every other arm, governed by their construct's own arm-layout rules.
 
-**Declaration bodies versus inline bodies.** The body of a `trait`, `type`, `enum`, `node`, or `connection` is always an indented block — its members are never written inline after the `:`. A function body and the arms of `if`/`else` and `match` may be written either as an indented block or as a single expression inline after the `:` (`fn double(x: i32) -> i32: x * 2`; `if a > 0: a else: -a`).
+**Declaration bodies versus inline bodies.** The body of a `trait`, `type`, `enum`, `node`, or `connection` is always an indented block — its members are never written inline after the `:`. A function body and the arms of `if`/`else` and `match` may be written either as an indented block or as a single expression inline after the `:` (`fn double(x: i32) -> i32: x * 2`; `if a > 0: a else: -a`) — see §6.4 for the full `if` grammar.
 
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
@@ -1176,6 +1176,29 @@ Empty traits ("marker traits") have no methods, no associated types, and no
 requirements. They serve as nominal tags — a type's `satisfies Marker` clause
 is a declarative assertion the user makes about the type, checked only for
 existence by the compiler.
+
+The TraitDecl grammar (with FulfillItem at §3.3 as its implementation counterpart):
+
+```
+TraitDecl     := Annotation* Visibility? 'trait' Ident GenericParams? TraitBody
+TraitBody     := NEWLINE INDENT TraitBodyItem+ DEDENT | NEWLINE
+TraitBodyItem := DocComment? (RequiresClause
+                              | AssocTypeDecl
+                              | RequiredCell
+                              | EndpointDecl
+                              | MethodSig)
+RequiresClause   := 'requires' TypePath (',' TypePath)*
+AssocTypeDecl    := 'type' Ident ('=' TypeExpr)?
+RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' BracketDepth? | 'stream' StreamPolicy '[' ConstExpr ']')
+                    Ident ':' TypeExpr ('=' Expr)?
+EndpointDecl     := ('from' | 'to') ':' TypeExpr
+MethodSig        := 'fn' Ident GenericParams? '(' Params? ')' ('->' TypeExpr)? (':' FnBody)?
+```
+
+The `Annotation*` position covers `@default(T)`. `RequiredCell` coverage spans
+§3.1.7. An empty `TraitBody` yields a marker trait (no methods, no associated
+types). Connection-trait endpoints (`from:`, `to:`) are admitted only when the
+trait will be satisfied by connection types.
 
 #### 3.1.1 Method signatures
 
@@ -2901,6 +2924,10 @@ digits as visual separators:
 0o755
 ```
 
+Underscores appear only between two digits — they may not appear
+immediately after a base prefix (`0x_FF` is a lex error) or at the end of a
+literal (`1_` is a lex error).
+
 An integer literal may carry an explicit type suffix — the type name
 appended directly (no separator), like any literal suffix (§4.3.3):
 
@@ -2938,6 +2965,10 @@ exponent (`e` or `E`), or an explicit float suffix:
 A bare `1` is an integer literal; `1.0`, `1e5`, `1f32` are float literals.
 A digit is required on each side of the decimal point — leading-dot
 forms like `.5` are not permitted; write `0.5`.
+
+Formal exponent production: `Exponent ::= ('e' | 'E') ('+' | '-')? Digit+`.
+At least one digit is required after the optional sign — a literal like
+`2.5e` (no exponent digits) is a lex error.
 
 Float literals may carry suffixes:
 
@@ -5540,6 +5571,78 @@ defined locally" check is satisfied. The wrapping is structurally trivial
 but semantically meaningful: it creates a distinct identity over which
 the user has implementation authority.
 
+### 6.4 If/Else Expressions
+
+The `if`/`else if`/`else` form is a value-conditional expression: it
+evaluates its condition, selects exactly one arm, and yields that arm's
+value. It is structurally distinct from the `when`/`given` *gates*
+described in §13.9, which select live subtrees rather than values; an
+`if` chain is value selection wherever it appears.
+
+#### Inline form
+
+When each arm is a single expression, the entire chain may be written on
+one line, with the arm expression following its `:`:
+
+```
+let bracket = if age >= 18: "adult" else: "minor"
+let s = if x > 0: 1 else if x < 0: -1 else: 0
+```
+
+#### Block form
+
+When arms span multiple statements, each arm body becomes an indented
+block under its head. The `if`, `else if`, and `else` heads align at the
+same column:
+
+```
+let label =
+  if score >= 90:
+    let grade = "A"
+    grade
+  else if score >= 80:
+    let grade = "B"
+    grade
+  else:
+    let grade = "C"
+    grade
+```
+
+`else if` is a literal keyword sequence — two tokens — extending the
+chain to any depth. It is not nesting sugar for `else: if ...`.
+
+#### Mandatory final `else`
+
+An `if` chain without a closing `else` is a compile error. Because the
+chain produces a value, the compiler requires a defined value on every
+path:
+
+```
+let bracket = if age >= 18: "adult"   // ✗ compile error: missing final `else`
+```
+
+A unit-typed chain — one whose arms perform effects rather than yield a
+useful value — must still close with an explicit `else: ()` (or its
+block equivalent).
+
+#### Type unification
+
+All arm bodies of an `if` chain must unify to a single type, by the same
+unification rule that governs `match` arms (§6.2.4). The rule applies
+uniformly to inline and block forms and to chains of any length:
+
+```
+let v = if cond: 1 else: "two"        // ✗ compile error: `i32` and `string`
+                                      //   do not unify
+```
+
+As with `match`, an arm of type `never` (§8.2.2) unifies with any other
+arm's type and contributes nothing to the unified result.
+
+Note that `else:` on a loop (§12.6.1) reuses the same keyword for an
+unrelated purpose — loop-natural-completion — and is not part of an
+`if` chain.
+
 ---
 
 ## 7. Conversion System
@@ -6324,13 +6427,12 @@ decoding is required to extract each `char`.
 String literals have these forms:
 
 - **Plain strings**: `"hello world"`.
-- **Raw strings**: `r"no \n escapes"`, `r#"with "quotes""#`.
 - **Escape sequences**: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\{`, `\xHH`, `\u{HHHHHH}`. `\xHH` denotes a single byte in the ASCII range `0x00`–`0x7F` (a one-byte UTF-8 scalar); for any code point above `0x7F` use `\u{…}` (one to six hex digits naming a Unicode scalar). A `\x80`-or-higher byte, or a surrogate `\u{D800}`–`\u{DFFF}`, is a compile error — so every string stays valid UTF-8 (§9.1.4) and every `char` stays a valid scalar (§9.1.2) by construction. The same set, except `\{` (an interpolation escape), applies in `char` literals (§9.1.2), so `'\''` and `'\"'` are both valid; in a plain string `\{` produces a literal `{` and suppresses interpolation at that position.
 - **Interpolation**: `"user {name} has {count} items"`.
 
 All forms produce values of type `string`.
 
-A plain string may contain literal newlines; an embedded newline becomes part of the value. A raw string performs no escape processing and no interpolation; every character it contains — backslashes, braces, and newlines included — is literal.
+A plain string may contain literal newlines; an embedded newline becomes part of the value.
 
 #### 9.1.4 UTF-8 invariant
 
@@ -6437,7 +6539,7 @@ Interpolation expressions are arbitrary expressions, including method
 calls, arithmetic, and field access. They are not limited to bare
 identifiers.
 
-A literal brace is written `\{`, which produces `{` and disables interpolation at that position. Raw strings do not interpolate: braces in a raw string are always literal. There is no `{{`/`}}` brace-doubling form — `\{` is the sole literal-brace escape.
+A literal brace is written `\{`, which produces `{` and disables interpolation at that position. There is no `{{`/`}}` brace-doubling form — `\{` is the sole literal-brace escape.
 
 There is no in-interpolation format-specifier mini-language: `{expr}` always formats via `Display`. Width, precision, padding, and similar are produced by calling methods or stdlib formatting helpers inside the expression itself — `"{price.round(2)}"`, `"{pad(name, 8)}"` — keeping the interpolation grammar to just `{` arbitrary-expression `}`.
 
@@ -7688,6 +7790,8 @@ two glob imports that bring colliding names into the same scope produce
 a compile error at the `use` site that introduces the second collision.
 
 A selection-list item may itself be a multi-segment path, carry its own `as` alias, or be a `*` glob, so one `use` may group several reaches: `use root::audio::(synth::Oscillator, Filter as Filt, fx::*)`.
+
+Selection lists may nest to arbitrary depth: `use root::a::(b, c::(d, e))` is permitted.
 
 #### 10.4.2 Re-exporting a name
 
@@ -10396,8 +10500,10 @@ statement skips to the next iteration of the innermost enclosing loop.
 for i in 0..N:
   if should_skip(i):
     continue                  // skip the rest of this iteration; go to next i
+  else: ()
   if should_stop(i):
     break                     // exit the loop entirely
+  else: ()
   process(i)
 ```
 
@@ -10436,6 +10542,7 @@ fn find_in_grid(g: Grid, target: Cell) -> Option[(isize, isize)]:
     for col in 0..g.cols:
       if g.get(row, col) is target:
         return Some((row, col))    // returns from the function, exiting both loops
+      else: ()
   None
 ```
 
@@ -10541,6 +10648,7 @@ let found = for item in items:
     break item.id              // default form: items survives the loop
                                // auto-wrapped to Some(item.id)
                                // expression type: Option[ItemId]
+  else: ()
 ```
 
 For the find-first pattern, the user typically wants `Some(item)` from
@@ -10557,6 +10665,7 @@ all produce values of the same type:
 let answer = for n in numbers:
   if is_special(n):
     break n
+  else: ()
 else:
   -1                          // fallback when no n is special
                               // expression value: i32 (n is Copy)
@@ -10575,8 +10684,8 @@ else site.
 
 ```
 for i in 0..N:
-  if cond_a: break 42
-  if cond_b: break "hello"      // ✗ type error: i32 vs string
+  if cond_a: break 42 else: ()
+  if cond_b: break "hello" else: ()    // ✗ type error: i32 vs string
 else:
   ...
 ```
@@ -10933,6 +11042,7 @@ for own r in records:                            // `for own`; r: Record (real o
     destinations = (move destinations).push(move r)
                                                   // ✓ push takes (own subject, own elem);
                                                   //   explicit `move` on both (§11.8.5)
+  else: ()
 // records consumed; destinations holds the valid records
 ```
 
@@ -11164,6 +11274,7 @@ trait Statistics:
     for s in elements:                   // default form; s: f32 (Copy)
       if s > threshold:
         count = count + 1
+      else: ()
     count
 ```
 
@@ -17030,7 +17141,7 @@ parenthesize-or-newline rule above is the prevention.
 A *gate* is a predicate or discriminant that conditions whether a node
 instance, a connection instance, or an exposed subtree is *active*.
 Gates are the **structural** conditional layer, distinct from the
-**value** conditionals `if`/`else`/`match` (§6.2.4). The distinction is
+**value** conditionals `if`/`else` (§6.4) and `match` (§6.2.4). The distinction is
 operational, not stylistic: a value conditional evaluates its scrutinee,
 selects one arm, and *discards* the rest, yielding a value; a structural
 conditional builds *all* of its arms and **freezes** the unselected ones,
@@ -23310,8 +23421,9 @@ The behavior IR is:
   allocate, call other behaviors, and `trap`;
 - **total except `trap`** — the only non-`ret` exit is `trap` (§13.13.1).
 
-**Signature.** `behavior <id> (params) -> <type> { block+ }`. Each param is
-`p: T` (borrow-default — read, not consumed) or `own p: T` (consumed).
+**Signature.** `behavior <id> (params) -> <type_tag> { block+ }`. Each param is
+`p: T` (borrow-default — read, not consumed) or `own p: T` (consumed), where
+`T` is a `type_tag` per §15.4.6.
 
 ```
 behavior B@aa10 (x: i32, flag: bool) -> i32 {
@@ -23385,15 +23497,45 @@ Inputs are passed per the signature's ownership modes (borrow vs `own`).
 This call is the entire graph→behavior coupling: behaviors hold no wiring,
 the graph holds no logic.
 
-**Text grammar.**
+**Text grammar.** Every nonterminal below has a defining production; the
+grammar uses `type_tag` (§15.4.6) uniformly — the bare name `type` does not
+appear.
 ```
-behavior ::= 'behavior' BID '(' params ')' '->' type '{' block+ '}'
-params   ::= (('own')? NAME ':' type) (',' …)*
-block    ::= LABEL ('(' params ')')? ':' instr* terminator
-instr    ::= '%'NAME '=' op operand* (':' type)?  |  op operand*
-operand  ::= '%'NAME | 'move' '%'NAME | literal
-BID      ::= 'B@' HEX+        // the behavior's u32 handle (§14.6.3), in hex
+behavior     ::= 'behavior' BID '(' params ')' '->' type_tag '{' block+ '}'
+params       ::= (('own')? NAME ':' type_tag) (',' ('own')? NAME ':' type_tag)*
+block        ::= LABEL ('(' params ')')? ':' instr* terminator
+instr        ::= '%'NAME '=' op operand* (':' type_tag)?  |  op operand*
+operand      ::= '%'NAME | 'move' '%'NAME | literal
+terminator   ::= 'br' LABEL paren_args?
+               | 'cond_br' '%'NAME ',' LABEL paren_args? ',' LABEL paren_args?
+               | 'switch' '%'NAME switch_table
+               | 'ret' '%'NAME
+               | 'trap' STRING
+paren_args   ::= '(' operand (',' operand)* ')'
+switch_table ::= '[' switch_case (',' switch_case)* ',' 'default' ':' LABEL ']'
+switch_case  ::= INT ':' LABEL
+op           ::= 'const.' PRIM
+               | 'add' | 'sub' | 'mul' | 'div' | 'rem' | 'neg'
+               | 'and' | 'or'  | 'xor' | 'shl' | 'shr' | 'not'
+               | 'eq'  | 'ne'  | 'lt'  | 'le'  | 'gt'  | 'ge'
+               | 'cast.' PRIM '.' PRIM
+               | 'tuple.make'  | 'tuple.get'
+               | 'record.make' | 'field.get'
+               | 'enum.make'   | 'enum.tag' | 'enum.payload'
+               | 'array.make'
+               | 'call' | 'call.dyn' | 'call.closure' | 'closure.make'
+               | 'clone' | 'drop'
+               | 'raw_alloc' | 'raw_free' | 'raw_read' | 'raw_write'
+literal      ::= INT | FLOAT | 'true' | 'false' | STRING
+LABEL        ::= 'bb' INT                       // e.g. bb0, bb1, bb42
+BID          ::= 'B@' HEX+                      // the behavior's u32 handle (§14.6.3), in hex
 ```
+The `op` mnemonics above are the enumerated instruction set; typed variants
+(`add.i32`, `const.f64`, `cast.i32.i64`, …) are formed by suffixing the
+relevant `PRIM` per the prose above. `PRIM` and `type_tag` are defined by the
+module grammar (§15.4.6); `literal` matches the same lexemes as the module
+grammar's `value` (with `FLOAT` additionally permitted for floating-point
+constants).
 
 A `BID` renders the behavior's `u32` handle (§14.6.3) in hexadecimal — e.g.
 `B@d1`, `B@aa10`. It is the compact runtime reference; the behavior's wide
@@ -23474,7 +23616,7 @@ anywhere, consistent with the suspend/resume-only model (§13.19.12).
 
 §15.4.4 gives the `behavior` grammar; this section gives the **module, type-table,
 and graph** grammar — the normative text form of §15.4.1's data model. `NAME`,
-`INT`, `STRING`, and `HEX` are the obvious lexemes; `PATH` is a cell/instance path
+`INT`, `FLOAT`, `STRING`, and `HEX` are the obvious lexemes; `PATH` is a cell/instance path
 (§15.4.1.1); `BID` is a behavior handle (§15.4.4); `type_tag` is the type-erased
 graph tag (§15.4.3).
 
@@ -23531,7 +23673,10 @@ record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an i
 `%TypeId`. A `recurrent` cell's optional `reset_on_reopen` flag marks
 `@reset_on_reopen` (§13.2.4); a `scope`'s optional `reset_on_reopen` set
 names the `(consumer : stream)` cursors it resets to head on gate reopen
-(§13.18.12).
+(§13.18.12). The keyword `reset_on_reopen` thus appears in two grammar
+positions with different arities — a bare flag on `cell` (no payload) and
+`reset_on_reopen reopen_set` on `scope` (carrying the `(consumer : stream)`
+pairs); both spellings are normative.
 
 ### 15.5 Compilation Modes
 
