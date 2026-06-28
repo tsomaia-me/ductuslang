@@ -4106,7 +4106,7 @@ trait Index[K]:
 ```
 
 `s[k]` desugars to `Index::index(s, k)`. The `K` parameter is part of
-trait identity (005-40), so a type fulfilling both `Index[isize]` (for
+trait identity, so a type fulfilling both `Index[isize]` (for
 element access) and `Index[Range[isize]]` (for range slicing) carries
 two distinct trait instances. The `Output` associated type is
 determined by `(Self, K)`.
@@ -4132,7 +4132,8 @@ trait Contains[K]:
 `k in s` desugars to `Contains::contains(s, k)`. The `in` keyword
 serves both as the `for`-loop separator (§13.7.5) and as the membership
 operator; the parser disambiguates by syntactic position. `not k in s`
-follows from 007-76.
+parses as `not (k in s)` — `not` binds looser than the membership
+operator and negates the whole comparison.
 
 Maps fulfill `Contains[K]`; stdlib collections do too — there is no
 language-privileged dispatch.
@@ -4149,7 +4150,7 @@ trait Deletable[K]:
 operation must be **idempotent**: deleting an absent key is a no-op,
 not an error.
 
-`delete` is an operator-context keyword (002-11), like `not` / `handle`
+`delete` is an operator-context keyword, like `not` / `handle`
 / `portal` — a prefix on an expression, not a clause introducer. It
 joins the keyword inventory at the same precedence tier as the other
 operator-context keywords.
@@ -4175,7 +4176,7 @@ language guarantees:
 |----------------------------------------------|:-----:|------------------------------------|
 | `i8`–`i128`, `u8`–`u128`, `isize`, `usize`   | yes   | Trivial integer hash                |
 | `bool`                                       | yes   | Two-value hash                     |
-| `char`                                       | yes   | (012-16) Unicode scalar value      |
+| `char`                                       | yes   | Unicode scalar value               |
 | `string`                                     | yes   | Byte-content hash                  |
 | `duration`, `instant`                        | yes   | i64-backed (§9.4); integer hash    |
 | `f32`, `f64`                                 | **no**| NaN ≠ NaN violates `Eq → Hash`     |
@@ -6228,7 +6229,7 @@ anonymous products, §9.2), fixed-size arrays (`T[N]`, §9.3.1), slices
 `duration` and `instant` (§9.4). All have dedicated syntax and
 language-level treatment; their behaviors are specified here rather than
 emerging from the trait system alone. `Map` joins this family as a
-first-class primitive (012-182): every position usable by any other
+first-class primitive: every position usable by any other
 compound type — function parameters and returns, record fields,
 attr/derived/recurrent declarations, generic-bound positions, and
 reactive cell payloads — accepts `Map` uniformly.
@@ -6812,21 +6813,21 @@ evokes the range syntax (§12.2).
 
 A slice is a borrow under the ordinary rules of §11.9:
 
-- It is a cluster member rooted in the source binding (§11.3.4, 013-48).
-- It cannot be stored in a cell, record field, payload, or tuple (013-52).
-- It cannot outlive its source (013-51).
+- It is a cluster member rooted in the source binding (§11.3.4).
+- It cannot be stored in a cell, record field, payload, or tuple.
+- It cannot outlive its source.
 - While any slice is live, the source value cannot be moved or mutated as a
-  whole (013-56/57), and per-element assignment through the source is also
-  blocked (013-197); §11.3.4 admits sub-range borrows as the single
-  ownership-level addition (013-250).
-- Returning a slice extends the cluster across the call boundary (013-63).
+  whole, and per-element assignment through the source is also
+  blocked; §11.3.4 admits sub-range borrows as the single
+  ownership-level addition.
+- Returning a slice extends the cluster across the call boundary.
 
 To persist data out of a slice, copy an **element** out (a value, or a
-`Handle[T]` per 017-142); the slice itself is never storable.
+`Handle[T]`); the slice itself is never storable.
 
 ##### The `arr[range]` operator
 
-`arr[i]` is element access (012-74); `arr[range]` is slice access:
+`arr[i]` is element access; `arr[range]` is slice access:
 
 ```
 let s = arr[2..5]           // i32[..3] — a length-3 slice
@@ -6834,7 +6835,7 @@ let t = vec[k..k+10]        // T[..]   — a runtime-length slice
 ```
 
 The slice operator is uniform across arrays, slices, and stdlib indexed
-sequences. **Strings are exempt** — they remain non-indexable per 012-26;
+sequences. **Strings are exempt** — they remain non-indexable;
 string slicing uses the methods of §9.1.7.
 
 ##### Open-ended ranges (slice-index only)
@@ -6848,7 +6849,7 @@ arr[..]     // whole — 0..arr.length
 ```
 
 These forms exist only inside a slice-index `[…]`; a bare `let r = k..`
-remains a parse error (014-7 is unchanged).
+remains a parse error.
 
 ##### From-the-end indexing — `^k`
 
@@ -6861,12 +6862,12 @@ arr[..^1]       // all but the last
 arr[^3..^1]     // window from third-from-end to second-from-end (exclusive)
 ```
 
-The `^` here is position-disambiguated from binary bitwise xor (007-69) —
+The `^` here is position-disambiguated from binary bitwise xor —
 it is recognized as the from-end prefix only directly inside `[…]` or
 after `..` within a slice index. No new keyword; nothing else in the
 grammar changes.
 
-Plain or computed negative indices on `arr[i]` continue to trap (012-84);
+Plain or computed negative indices on `arr[i]` continue to trap;
 `^k` is the only form for from-the-end addressing.
 
 ##### Window, not copy
@@ -6894,15 +6895,15 @@ The accessor is the full word `length`, not `len()`.
 ##### Read-only
 
 Slices are read-only — no mutable slice form exists. A write through an
-aliased reference is precluded by Ductus' no-mutable-references design
-(013-211); mutation of a sub-range goes through the owning `mut`
-binding's indexed assignment (013-197). While the slice is live, even
-element-by-element assignment through the source is blocked (013-57).
+aliased reference is precluded by Ductus' no-mutable-references design;
+mutation of a sub-range goes through the owning `mut`
+binding's indexed assignment. While the slice is live, even
+element-by-element assignment through the source is blocked.
 
 ##### Iteration
 
 `T[..N]` and `T[..]` implement `Iterable` and `IntoIterable` with the
-source-bearing pattern of §12.7.4, paralleling arrays (014-143):
+source-bearing pattern of §12.7.4, paralleling arrays:
 
 ```
 for x in slice:                    // works for any T[N], T[..N], T[..]
@@ -6933,9 +6934,9 @@ let opt: Option[i32]      = arr.get(i)        // safe element access
 let win: Option[i32[..]]  = arr.get(2..5)     // safe range access
 ```
 
-`arr.get(i)` returns `Option[T]` (extending 012-86 to slices and Maps),
-and `arr.get(range)` returns `Option[T[..]]`. The `.get` family is the
-language-level safe-access surface across arrays, slices, and Maps
+`arr.get(i)` returns `Option[T]`, and `arr.get(range)` returns
+`Option[T[..]]`. The `.get` family is the language-level safe-access
+surface across arrays, slices, and Maps
 (§9.5).
 
 ### 9.4 Time Types: `duration` and `instant`
@@ -7172,12 +7173,12 @@ The empty `{}` requires a type annotation — there is nothing to infer
 in a function body is a plain value of type `Map[K, V]`; an empty `{}`
 in a *reactive declaration* (`attr`/`derived`/`recurrent`) is a
 whole-cell `Cell[Map[K, V]]`, never a per-slot composite — there are no
-slot paths for an empty map (012-184; composites covered in §9.5.12).
+slot paths for an empty map (composites covered in §9.5.12).
 
 For const-key composite literals (§9.5.12), the bracket-colon form
 `{ ['<key>']: <value> }` is equivalent to the colon form
 `{ '<key>': <value> }` and parallels the const-indexed-array access
-form (012-186); both produce identical compile-time-known slot paths
+form; both produce identical compile-time-known slot paths
 under `<binding>['<key>']`.
 
 Duplicate keys within a single literal are a compile error (parallel to
@@ -7226,7 +7227,7 @@ safe-access surface across arrays, slices (§9.3.7), and maps.
 
 ```
 let present: bool = 'apple' in m       // Contains::contains
-let absent        = 'cherry' not in m  // negation via 007-76
+let absent        = 'cherry' not in m  // negation — `not` binds looser than `in`
 ```
 
 The `in` operator dispatches to the language-defined `Contains` trait
@@ -7266,7 +7267,7 @@ for (k, v) in m:
 **Iteration order is unordered** — keys are emitted in whatever order
 the underlying hash table produces. There is no commitment to insertion
 order or sort order. The `repeat` construct (§13.5.4) treats unordered
-sources by key-set diffing (018-83), so a Map source is a valid `repeat`
+sources by key-set diffing, so a Map source is a valid `repeat`
 source despite the order non-commitment.
 
 #### 9.5.9 Cost model
@@ -7309,7 +7310,7 @@ absorbed into the next published snapshot.
 
 A map literal in a *reactive declaration* (`derived`, `attr`,
 `recurrent`) with **compile-time-known keys** forms a per-slot
-reactive composite — like a tuple (016-180) or fixed-array (016-181)
+reactive composite — like a tuple or fixed-array
 composite. Each slot is independently reactive; there is no outer
 cell.
 
@@ -8295,7 +8296,7 @@ apply to sub-range borrows unchanged — the single difference is that the
 borrow's *extent* covers a contiguous sub-range rather than the whole
 value. While any slice into a source is live, the source as a whole is
 subject to the cluster's move/mutate lock above; per-element assignment
-through the source (013-197) is also blocked.
+through the source is also blocked.
 
 #### 11.3.5 Rule (P): consume of a borrow-equivalent alias
 
@@ -9128,7 +9129,7 @@ The compiler's cluster analysis (§11.3.4) handles
 both cases.
 
 **Handle, WeakHandle, and Portal are `Copy` carriers, not aliases.**
-A `Handle[T]` (§13.3.6.2) is `Copy` (017-142); a `WeakHandle[T]`
+A `Handle[T]` (§13.3.6.2) is `Copy`; a `WeakHandle[T]`
 (§13.3.6.2) and a `Portal[T]` (§13.6.2) are likewise `Copy`. `Copy`
 values are not aliases under §11.9 — they may be stored in a cell,
 record field, enum payload, or tuple like any other `Copy` value. No
@@ -10183,7 +10184,7 @@ iteration:
 - A range `start..end` where both bounds are compile-time known (§12.2).
 - An array literal `[e1, …, eK]` where every element expression is
   compile-time known.
-- A **fixed-extent typed value** — `T[N]` (012-73), `T[..N]` (§9.3.7), or
+- A **fixed-extent typed value** — `T[N]`, `T[..N]` (§9.3.7), or
   a static view (§13.4.2) — whose extent is part of the type. The loop
   unrolls structurally to one iteration per element, binding the
   iteration variable to each successive element in index order; element
@@ -13029,7 +13030,7 @@ acceptance via the **`incoming:`** and **`outgoing:`** clauses (§13.3.4).
 - **Layout.** Each named entry occupies its own line under the clause
   header. Multiple unnamed entries may share a line, space-separated; a
   mixed line is not allowed. The clause header takes the colon and an
-  indented body (002-20 indentation rules apply).
+  indented body.
 
 An acceptance entry **places no instances**; the clause is purely the
 node's caller-facing contract, bounding only what a *caller* supplies
@@ -13166,7 +13167,7 @@ const-generic arrays:
   caller's written placement sequence — it selects, never reorders. Every
   projection of the placement sequence in the language preserves this order.
 - **Storage**: the elements are `Handle[T]`s, which are `Copy` and
-  storable (017-142). A reference to a child persists straight out of the
+  storable. A reference to a child persists straight out of the
   view — `attr favorite: Handle[Channel] = channels[0]` — without an
   explicit `handle` step. The runtime value is the same identity-stamped
   `(slot_path, generation)` pair the Handle always carries.
@@ -13226,10 +13227,10 @@ OscBank[16] sixteen_bank        // 16 Oscillators per instance
 OscBank[8]  eight_bank          // 8 Oscillators per instance
 ```
 
-Note `OscBank` declares no `children:` clause (017-16): it accepts no
+Note `OscBank` declares no `children:` clause: it accepts no
 caller-supplied children. Its own emissions are internals (§13.3.4.2)
 and need no acceptance entry; a standalone `view` would only select
-already-accepted children (017-20), not widen what `OscBank` accepts.
+already-accepted children, not widen what `OscBank` accepts.
 
 **Signature and views.** Type-emitted children are **internals**
 (§13.3.4.2): they are never counted by any view, which captures
@@ -13299,11 +13300,11 @@ type `[<name>::entry; N]`: a fixed-extent array of these records, where
 **Field type.** Each field is typed `Handle[T]` — the statically-placed
 type form (§13.3.6.2). The for-loop is compile-time unrolled, so every
 iteration's placement is a statically placed child of the surrounding
-node; no dismount is possible. Records cannot hold borrows (013-52,
-013-141), so a bare node-typed binding cannot live in a record field;
+node; no dismount is possible. Records cannot hold borrows,
+so a bare node-typed binding cannot live in a record field;
 the compiler mints a `Handle[T]` for each placement, which is `Copy` and
 storable. The placement binding `<name>` *inside* the loop body itself
-stays a borrow (017-131) — the entry field is the compiler's separate
+stays a borrow — the entry field is the compiler's separate
 storable representation for body-wide access.
 
 Field access is `bank[i].osc`; the `Handle[T]` field auto-derefs to
@@ -13344,12 +13345,12 @@ feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
 **The cell.** A `dynamic` view is a **reactive cell**
-`Cell[DynamicView[WeakHandle[T]]]` (017-313) whose value is the current
+`Cell[DynamicView[WeakHandle[T]]]` whose value is the current
 iterator of supplied-child `WeakHandle[T]`s — keyed and in source order
 (the written
 interleaving, with each feeding `repeat`'s scopes expanded in place). The
 cell updates when children mount or dismount. The iterator value is
-consume-only (017-67): it cannot be bound, stored, or returned as a value
+consume-only: it cannot be bound, stored, or returned as a value
 — it is consumed in exactly the two ways any reactive cell is consumed:
 
 - **Operators** (§13.17), for values:
@@ -13405,12 +13406,12 @@ The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
 
 **The `DynamicView[T]` type.** The cell payload for a dynamic view is a
-language-level type **`DynamicView[T]`** (017-313). It is iterator-shaped:
+language-level type **`DynamicView[T]`**. It is iterator-shaped:
 `Item = WeakHandle[T]`, satisfies `Iterable` and `IntoIterable`, and has no
 surface `len` or index operator on its own — storage is implementation-
 defined. `DynamicView[T]` is consume-only: it is not stored bare; it lives
 only inside a `Cell[DynamicView[T]]`, and the containing cell is what is
-bound, stored, and subscribed against (017-315). Consumers are the reactive
+bound, stored, and subscribed against. Consumers are the reactive
 operators (§13.3.3.2) or `repeat` (§13.9.7); the `DynamicView` value itself
 carries no subscription semantics independent of its cell.
 
@@ -13426,7 +13427,7 @@ yields `WeakHandle[T]` on the iterator surface. In a context that proves
 the iterated element is reachable — the typical case being a read inside a
 per-element operator like `map`/`filter` or a `repeat` body — the per-
 element binding projects through the lens-propagation rule to `&T` at that
-read site (017-314); outside any such proven-reachable context the surface
+read site; outside any such proven-reachable context the surface
 remains `WeakHandle[T]`.
 
 ##### 13.3.3.5 Bundles
@@ -13445,19 +13446,19 @@ chords.length                         // number of bundles
 chords[0].length                      // number of elements in bundle 0
 ```
 
-An **empty bundle literal `[]`** is legal (017-265) and has type
+An **empty bundle literal `[]`** is legal and has type
 `Bundle[T]` for any `T` the context can infer. The bundle has zero
 elements; its offset table has length 1 (a single zero-length row).
 
 ##### Access via `Index`
 
 Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
-**index-to-min** rule (017-43) at each level:
+**index-to-min** rule at each level:
 
 - `bundle[g]` returns a **row slice** — `Handle[T][..N]` when the row's
   length is statically derivable (every row's inner cardinality is
   statically equal, or the row is a single element), `Handle[T][..]`
-  when the row length is only known at runtime (017-291).
+  when the row length is only known at runtime.
 - `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
 - `bundle.length` returns the row count; `bundle[g].length` returns the
   row's element count.
@@ -13477,7 +13478,7 @@ for chord in chords:                  // unrolls to one body copy per bundle
 
 All bundle forms yield the same external type `Bundle[T]` and share a
 uniform homogeneous slice-backed storage model: a flat `Handle[T]`
-backing buffer plus an offsets table that delimits each row (017-291).
+backing buffer plus an offsets table that delimits each row.
 User code always sees a `Handle[T][..N]` or `Handle[T][..]` slice from
 `bundle[g]`; single-element rows are length-1 slices, uniform with the
 other forms (no collapse to a bare `Handle[T]`). The empty bundle
@@ -13519,16 +13520,16 @@ select disjoint sets of bundles and do not conflict.
 Allowed inside a bundle bracket:
 
 - Node placements (the common case).
-- Gated node placements — the gate freezes per 022-7, but membership is
+- Gated node placements — the gate freezes, but membership is
   static; gating does not remove the element from the bundle.
-- A compile-time `for` loop (021-42), unrolling into bundle members.
+- A compile-time `for` loop, unrolling into bundle members.
 
 Forbidden inside a bundle bracket:
 
 - `repeat` — a runtime-varying membership inside a static pre-tied
   bracket contradicts the bundle nature. Dynamic bundles use the
   reactive `Cell` form below.
-- Connections — bundling is node-only (017-273).
+- Connections — bundling is node-only.
 
 ##### `[...]` is an open delimiter
 
@@ -13547,16 +13548,16 @@ children, `when`-gating, etc.:
 ##### `as`-naming
 
 `[n1 n2] as pair` binds `pair` to a borrow of the row slice form
-(017-293, learning #16: placement always binds to a borrow). The slice
-element type is `Handle[T]` because the bundle backing stores Handles
-(017-295): `Handle[T][..N]` when the row inner cardinality is statically
+(placement always binds to a borrow). The slice
+element type is `Handle[T]` because the bundle backing stores Handles:
+`Handle[T][..N]` when the row inner cardinality is statically
 known, `Handle[T][..]` when it is only known at runtime — the same type
 that a receiving view's row produces from `view[g]`.
 
 ##### Dynamic bundles
 
-A `repeat`-fed bundle stays a reactive `Cell` whose value is consume-only
-(017-76 family); slice-indexing access does not apply. The slice surface
+A `repeat`-fed bundle stays a reactive `Cell` whose value is consume-only;
+slice-indexing access does not apply. The slice surface
 is only for caller-written static brackets.
 
 ##### 2D only
@@ -13566,8 +13567,8 @@ not provided; deeper structure uses nested node bodies.
 
 ##### Storable
 
-A `Bundle[T]` is storable: its fields are all `Copy` (Handles are Copy
-per 017-142; `usize` offset tables are Copy). The bundle value sits in
+A `Bundle[T]` is storable: its fields are all `Copy` (Handles are Copy;
+`usize` offset tables are Copy). The bundle value sits in
 cells, fields, records, and attrs. Row slices, however, are borrows
 (§11.9) and follow the ordinary borrow rules — `bundle[g]` cannot be
 stored, only the whole bundle.
@@ -13577,7 +13578,7 @@ stored, only the whole bundle.
 A bundle entry in `expose:` preserves its bracket structure exactly as
 the caller wrote it — the runtime sees a two-level structure (rows
 containing elements), not a flattened list. This parallels `@content`'s
-order-preservation (017-276) applied to a named bundle view.
+order-preservation applied to a named bundle view.
 
 #### 13.3.4 Connection-views (`incoming:` and `outgoing:`)
 
@@ -13679,7 +13680,7 @@ type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
 For a **`dynamic`** connection-view, the name is a reactive cell
-`Cell[DynamicView[WeakHandle[C]]]` (017-313) whose value is the current
+`Cell[DynamicView[WeakHandle[C]]]` whose value is the current
 iterator of member connections, with the consumption rules of §13.3.3.4
 — operators for values, `repeat` for structure, nothing else. This is
 the fan-in idiom:
@@ -13917,8 +13918,8 @@ type level:
   statically placed in the graph for the handle's lifetime: a named child
   of a statically-placed parent, a static-view element under its
   guaranteed minimum, a module-level instance, a `Handle[T]`-typed attr
-  fed by one of these. Production sites are listed normatively in
-  017-308, cases (a)(b)(c)(d).
+  fed by one of these. Production sites are listed normatively in the
+  closed enumeration below — cases (a)(b)(c)(d).
 - `WeakHandle[T]` — the **dynamically-placed** type. The referent may be
   dismounted or re-pointed at runtime: `repeat`-keyed scopes
   (§13.5.4.9), re-pointable handle attrs whose destination types include
@@ -13927,7 +13928,7 @@ type level:
 Both share the runtime representation `(slot_path, generation)`; the split
 is a compile-time guarantee, enforced at the production site.
 
-**Lens-propagation rule (017-309).** Widening `Handle[T]` →
+**Lens-propagation rule.** Widening `Handle[T]` →
 `WeakHandle[T]` is lossless in two positions:
 
 - **Storage widening.** At any assignment, binding, or cell-write whose
@@ -13969,10 +13970,10 @@ handle *denotes* depends on its type and the position it occupies:
   The resolution read is the reactive one — it joins the reader's
   provenance (§13.12.1) and re-fires when the referent mounts or
   dismounts (§13.10.5). Stepping through the resulting `Option` chain is
-  the job of optional chaining `?.`, `?[]`, `?()` (017-311): the
+  the job of optional chaining `?.`, `?[]`, `?()`: the
   position-disambiguated split of postfix `?` that produces `None` when
   the chain interrupts and `Some(v)`-continued otherwise. Per the
-  lens-propagation rule (017-309), access widening fires only when
+  lens-propagation rule, access widening fires only when
   the access chain *begins* with a `WeakHandle` resolution; any
   `Handle[T]` produced further along that chain surfaces as
   `WeakHandle[T]` at the result type.
@@ -13991,7 +13992,7 @@ keywords, distinguished by which type they mint:
   designator. No proof obligation; always accepted.
 - `handle! X` produces `Handle[T]` — the statically-placed assertion —
   and is a **compile error** unless every reaching value of `X` is in the
-  closed statically-placed set of 017-308: a named
+  closed statically-placed set: a named
   child placement of a statically-placed parent, a static-view element
   under its guaranteed minimum, a module-level instance, or `subject`
   inside a statically-placed instance's body. Any other provenance — a
@@ -14019,10 +14020,10 @@ slot's declared type drives the choice. There is no `.handle()` method
 and no sigil; `handle`, `handle!`, and `portal` are the explicit
 spellings (the parallel `portal` covers non-graph references, §13.3.6.3).
 A `WeakHandle[T]`-typed slot also accepts a `Handle[T]` input directly:
-this is the storage-widening direction of the lens rule (017-309), a
+this is the storage-widening direction of the lens rule, a
 lossless widening from the statically-placed carrier to its
 possibly-absent superset. Container slots propagate the same widening at
-any nesting depth (017-310): a `Vec[WeakHandle[T]]` slot accepts a
+any nesting depth: a `Vec[WeakHandle[T]]` slot accepts a
 `Vec[Handle[T]]`, a `Cell[WeakHandle[T]]` accepts a `Cell[Handle[T]]`,
 and so on. The narrowing direction (`WeakHandle[T]` → `Handle[T]`) is
 never implicit; it requires `handle!` or an explicit `match`/`?`.
@@ -14049,11 +14050,11 @@ match current_target:               // both arms explicit
   Some(car): car.speed
   None: 0.0
 
-let s = current_target?.speed       // optional chaining (017-311):
+let s = current_target?.speed       // optional chaining:
                                     // s : Option[Speed]
 ```
 
-The `?.` form here is optional chaining (017-311), not the terminal
+The `?.` form here is optional chaining, not the terminal
 `Try`-propagation `?` of §8.4: a `WeakHandle[T]` read followed by
 `?.field` produces an `Option` of the field type, with `None` short-circuiting
 the chain. A `Handle[T]` (statically placed) needs no elimination —
@@ -14151,7 +14152,7 @@ reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
 connection re-pointing.
 
 **Hot reload.** A portal preserves across reload only when its targeted
-slot's identity AND generation are preserved (028-75). The portal carries
+slot's identity AND generation are preserved. The portal carries
 a `(slot_path, generation)` pair; the next read after reload compares the
 stamped generation to the slot's current generation, and a mismatch
 resolves the portal to `None`. Slot relocation or removal increments the
@@ -14204,15 +14205,15 @@ node TypeName:
 ```
 
 Node-body members — cells, standalone selection-only `view`/`dynamic view`
-declarations (017-20), the acceptance clauses `children:` / `incoming:` /
-`outgoing:` (017-9, 017-271), `satisfies`, and `when:` — appear in **free
+declarations, the acceptance clauses `children:` / `incoming:` /
+`outgoing:`, `satisfies`, and `when:` — appear in **free
 order**; the only positional constraints are that `effects:` (§13.3.8)
 comes after the members and `expose:` comes last. `satisfies`, `when:`,
 `effects:`, `expose:`, and `default attr` each appear at most once. An
 acceptance clause is a header keyword followed by `:` and an indented block
 of named entries, one entry per line; each named entry joins the body-wide
-namespace (020-37). A standalone `view` or `dynamic view` declaration is
-pure selection over already-accepted children (017-20) and never widens
+namespace. A standalone `view` or `dynamic view` declaration is
+pure selection over already-accepted children and never widens
 acceptance.
 
 ##### 13.3.7.1 Content
@@ -14622,7 +14623,7 @@ Children of a parent instance are accessible in two ways:
   minimum, iterable with `for`, in placement order; elements are
   `Handle[T]` values that auto-deref to `&T` (§13.3.6.2). For a
   **`dynamic`** view it is a reactive cell `Cell[DynamicView[WeakHandle[T]]]`
-  (017-313) consumed via operators or `repeat` (§13.3.3.4). Bulk access
+  consumed via operators or `repeat` (§13.3.3.4). Bulk access
   exists only through a declared view name.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from outside
   the node body) — accesses a specific child by its placement-time name.
@@ -15343,11 +15344,11 @@ is the user-facing surface.
 **`WeakHandle[T]`** — the dynamically-placed type — because the
 repeat-keyed scope can dismount between commits, and the whole purpose
 of the entry is being read from *outside* the scope where presence is
-not provable. Records cannot hold borrows (013-52, 013-141), so a bare
+not provable. Records cannot hold borrows, so a bare
 node-typed binding cannot live in a record field; the compiler mints a
 `WeakHandle[T]` for each placement, which is `Copy` and storable.
 The placement binding `<name>` *inside* the repeat body itself stays a
-borrow (017-131) — the entry field is the compiler's separate storable
+borrow — the entry field is the compiler's separate storable
 representation for outside-the-scope access.
 
 **Read chain.** `<view>.get(k)` returns `Cell[Option[<view>::entry]]`
@@ -15394,7 +15395,7 @@ Cross-level addressing composes view by view:
 
 **`at` on unordered sources.** When a `repeat`'s source is unordered (a
 `Map` per §9.5, a `HashSet`, etc.), the `at <index>` form is **unstable**:
-the index reflects the iterator's emit order (012-173 / 018-83), which
+the index reflects the iterator's emit order, which
 can differ commit-to-commit. The compiler accepts `at` on unordered
 sources but flags the instability; programs relying on stable positional
 identity should use `keyed by <expr>` (§13.5.4.1) instead.
@@ -19375,7 +19376,7 @@ LHS rules common to all cases:
   `Derived[T]`, `Recurrent[T, N]`, `Stream[T]`, or any other `Cell[T]`
   per §13.18.5), or an expression convertible to one. A static value
   (literal, `const`, or compile-time constant expression) is wrapped as
-  a degenerate `Derived[T]` cell automatically (029-131).
+  a degenerate `Derived[T]` cell automatically.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -19581,7 +19582,7 @@ error: cannot pass value of type `f32` to `Cell[f32]` parameter
   --> smooth(source: some_value, rate: 0.1, clock: tick)
                      ^^^^^^^^^^ expected `Cell[f32]`, found `f32`
   hint: static values (literals, `const`s, compile-time constants) are wrapped
-        as degenerate `Derived[T]` cells automatically (029-131); this expression
+        as degenerate `Derived[T]` cells automatically; this expression
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
 ```
 
@@ -22884,7 +22885,7 @@ effect-`desired` runs. The two meet only through the behavior ABI
 `T[..N]` and `T[..]` (borrow types — `(pointer, length)` ABI shape, used
 in behavior parameter and return positions only, never as cell values),
 maps `Map[K, V]` (pool-stored, §9.5), bundles `Bundle[T]` (pool-stored;
-017-291 spells the uniform slice-backed layout, with an optional
+uniform slice-backed layout, with an optional
 flat-array representation as an internal compiler optimization when
 every row's inner cardinality is statically equal), records and enums as
 `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
