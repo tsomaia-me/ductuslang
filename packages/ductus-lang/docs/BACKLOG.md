@@ -48,8 +48,8 @@ are not re-litigated.
 | 9 | slots | subsumed by named views — §4 |
 | 10 | `instant` type | NO-ACTION (already specified) |
 | 11 | `@reset_on_reopen` unification | LOCKED — §2 |
-| 12 | `Cell` access/return | DEFERRED (Cluster B) — §5 (§8b) |
-| 13 | portals | DEFERRED (Cluster B) — §5 (§8b) |
+| 12 | `Cell` access/return | LANDED — Phase 17 Step 3 + Phase 19a (Cell as type, no special treatment; cross-instance refs via Handle/WeakHandle/Portal/connection) |
+| 13 | portals | LANDED — Phases 3, 15, 16 (Portal[T] type + handle/portal/handle! keywords + lens propagation + collapse rules) |
 
 Plus the cross-cutting **instance citizenship reframe** (§3), which arose while discussing #8 and
 underpins §4.
