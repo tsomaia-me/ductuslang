@@ -12332,14 +12332,12 @@ The cell may still be written by the host (`signal`), the runtime
 (`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
 
-**`Cell[T]` is not a user-storable type.** Cell-typed bindings appear only in
+**`Cell[T]` is the typing umbrella.** Cell-typed bindings typically appear in
 parameter positions, return positions, and compiler-minted internal bindings
 (`Cell[Map[…]]` for `repeat … as` views per §13.5.4.9, `Cell[DynamicView[…]]`
-for dynamic views per §13.3.3.4). A user-declared storage slot of type
-`Cell[T]` — `attr x: Cell[T]`, a record/tuple/enum field typed `Cell[T]`, etc.
-— is a compile error: cross-instance references to reactive state use
-`Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]` for
-non-graph slots (§13.3.6.3), or connections for typed wiring (§13.6).
+for dynamic views per §13.3.3.4). Cross-instance references to reactive state
+use `Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]`
+for non-graph slots (§13.3.6.3), or connections for typed wiring (§13.6).
 
 **Cell-names in reactive expressions are compile-time identifiers, not
 values or borrows.** When a cell-name appears in a reactive expression — `s + 1`
@@ -12348,9 +12346,9 @@ etc. — the compiler resolves the name into two things: (a) a provenance entry
 for the enclosing expression's dependency set, and (b) an auto-deref'd
 cell-pool read inserted at the name's position (per §13.17.3.1). No
 `Cell[T]` value is materialized at the name's position; no borrow object
-is constructed. The runtime maintains the subscription edge from the
+is constructed. The runtime maintains the dependency edge from the
 referenced cell to the enclosing derived/recurrent body; the reader's
-reactivity is the subscription's effect, not a property of a value the
+reactivity is the dependency edge's effect, not a property of a value the
 user holds.
 
 **Generics.**
@@ -13477,16 +13475,13 @@ language-level type **`DynamicView[T]`**. It is iterator-shaped:
 surface `len` or index operator on its own — storage is implementation-
 defined. `DynamicView[T]` is consume-only: it is not stored bare; it lives
 only inside a `Cell[DynamicView[T]]`, and the containing cell is what is
-bound, stored, and subscribed against. Consumers are the reactive
+bound, stored, and joined as a dependency-edge declarer. Consumers are the reactive
 operators (§13.3.3.2) or `repeat` (§13.9.7); the `DynamicView` value itself
-carries no subscription semantics independent of its cell.
+carries no dependency-edge semantics independent of its cell.
 
 The `Cell[DynamicView[…]]` binding for a dynamic view is **compiler-minted**:
 the view-name lives in the body-scope namespace as the receiving binding for
-the view's reactive content, but `Cell[DynamicView[T]]` is not a
-user-declarable storage type. User code cannot write `attr x: Cell[DynamicView[T]]`
-or place a `Cell[DynamicView[…]]`-typed field on a record; such a declaration
-is a compile error. Consumption goes through operators or `repeat` as above.
+the view's reactive content. Consumption goes through operators or `repeat` as above.
 
 **Iteration narrowing.** Iterating a `Cell[DynamicView[WeakHandle[T]]]`
 yields `WeakHandle[T]` on the iterator surface. In a context that proves
@@ -14219,7 +14214,7 @@ portal's generation no longer matches and it resolves to `None` — never to
 the wrong value.
 
 **Reactivity.** `Cell[T]` (§13.2.8) and `Portal[T]` are orthogonal axes.
-`Cell[T]` is a reactive reference whose read subscribes; `Portal[T]` is an
+`Cell[T]` is a reactive reference whose read declares a dependency edge into the enclosing expression's provenance; `Portal[T]` is an
 inert window whose read does not. `Portal[Cell[T]]` is well-formed: the
 portal resolves to `Option[&Cell[T]]`, and the inner cell read remains
 reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
@@ -14638,7 +14633,7 @@ chain (`url |> fetch |> render`), but the effect is hosted here in
 `effects:`; the operator only transforms its output (§13.17).
 
 **Program-global effects.** Because module level is not an effect host,
-an application-global effect (a root logger, a root subscription) lives
+an application-global effect (a root logger, a root event-stream connector) lives
 in the `effects:` clause of a **top-level node instance** (§13.8.1).
 
 **Exclusivity.** A node may instantiate effects only here. A free
@@ -15385,12 +15380,10 @@ to a reactive `Cell[Map[Key, <view>::entry]]` (§9.5) whose keyset tracks the
 source's current keys.
 
 The `Cell[Map[…]]` binding here is **compiler-minted**: the `<view>` name lives
-in the body-scope namespace as the receiving binding for the `repeat`'s output,
-but `Cell[Map[…]]` is not a user-declarable storage type. User code cannot write
-`attr x: Cell[Map[K, V]]` or place a `Cell[Map[…]]`-typed field on a record;
-such a declaration is a compile error. Cross-instance access to repeat-keyed
-state uses the body-scope `<view>.get(k)?.<name>` projection in place, or
-captures the durable **key** for cross-commit reference (see below).
+in the body-scope namespace as the receiving binding for the `repeat`'s output.
+Cross-instance access to repeat-keyed state uses the body-scope
+`<view>.get(k)?.<name>` projection in place, or captures the durable **key**
+for cross-commit reference (see below).
 
 ```
 node Feed:
@@ -17897,20 +17890,20 @@ the target re-points. The runtime handles this in two parts:
   are marked dirty and re-evaluate in the next commit (§13.10.2), now
   reading the new target's cells.
 - **The current target's cells are dependencies only while selected.** While
-  `to` designates a particular node, the connection's reads subscribe to
-  that node's cells; on re-point, the subscription is re-established against
+  `to` designates a particular node, the connection's reads declare dependency edges into
+  that node's cells; on re-point, the dependency edges are re-established against
   the new target, and a write to the *old* target no longer dirties the
   connection.
 
 The same two-part mechanism covers every `WeakHandle[T]` read — a
-node-body derived reading a `repeat`-view handle (§13.5.4.9) subscribes
-to the handle's resolution and, while resolved, to the referent's cells;
+node-body derived reading a `repeat`-view handle (§13.5.4.9) declares
+a dependency edge into the handle's resolution and, while resolved, into the referent's cells;
 a dismount flips the resolution to `None` and drops the referent
-subscription. The **dynamic namespace cells** (§13.3.3.4) are the
+dependency edge. The **dynamic namespace cells** (§13.3.3.4) are the
 collective form of the same mechanism: an operator over a dynamic
-connection-view subscribes to the membership (the cell itself) and, per
-current member, to the cells its per-element fn reads — a mount or
-dismount re-establishes the member subscriptions exactly as a re-point
+connection-view declares a dependency edge into the membership (the cell itself) and, per
+current member, into the cells its per-element fn reads — a mount or
+dismount re-establishes the member dependency edges exactly as a re-point
 does. `WeakHandle[T]` resolution — individually or in this collective
 form — is the **only** source of dynamic dependency in the language; it
 exists because wiring may change while every reachable entity remains
