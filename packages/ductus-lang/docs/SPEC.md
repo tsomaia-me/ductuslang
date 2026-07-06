@@ -1158,7 +1158,7 @@ trait Display:
   fn display(value: Subject) -> string
 
 trait Add[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn add(a: Subject, b: Rhs) -> Output
 
 trait Producer:
@@ -1188,7 +1188,7 @@ TraitBodyItem := Annotation* DocComment? (RequiresClause
                               | EndpointDecl
                               | MethodSig)
 RequiresClause   := 'requires' TypePath (',' TypePath)*
-AssocTypeDecl    := 'type' Ident ('=' TypeExpr)?
+AssocTypeDecl    := 'type' Ident ('is' TypeExpr)?
 RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']')
                     Ident ':' TypeExpr ('=' Expr)?
 EndpointDecl     := ('from' | 'to') ':' TypeExpr
@@ -1249,13 +1249,13 @@ An associated type may declare a default value:
 
 ```
 trait Add[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn add(a: Subject, b: Rhs) -> Output
 ```
 
 When an implementation does not bind `Output` explicitly, the default applies.
 
-Implementations bind associated types via the `type Name = Concrete` form
+Implementations bind associated types via the `type Name is Concrete` form
 inside `fulfill` blocks (§3.3.2).
 
 Bounds on associated types in generic constraints use where-clauses with the
@@ -1267,22 +1267,22 @@ fn sum[P: Producer](p: P) -> P.Item where P.Item: Numeric:
   ...
 ```
 
-A where-clause may also **equate** an associated type to a specific type with `=`: `where Path.Assoc = ConcreteType` constrains `Path.Assoc` to be exactly that type (as opposed to `Path.Assoc: Trait`, which bounds it). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter.Source = Subject`.
+A where-clause may also **equate** an associated type to a specific type with the `is` keyword: `where Path.Assoc is ConcreteType` constrains `Path.Assoc` to be exactly that type (as opposed to `Path.Assoc: Trait`, which bounds it). The `is` keyword — rather than `=` — keeps the assoc-type equality syntactically distinct from value-level assignment, and mirrors the value-level equality keyword (`Eq::is`/`is`). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter.Source is Subject`.
 
 **Borrow-default convention on associated-type slots.** Associated
 types follow the same borrow-default convention as function parameter
-slots (§11.7). When an implementation declares `type Name = T`, the
+slots (§11.7). When an implementation declares `type Name is T`, the
 type `T` is treated under the default convention: appearances of
 `Name` in the trait's method signatures (parameters and returns) are
 borrow-equivalent. To opt in to owned semantics, the implementation
-writes `type Name = own T`; appearances of `Name` then carry owned
+writes `type Name is own T`; appearances of `Name` then carry owned
 semantics. The same mechanism applies uniformly to user-defined traits
 and stdlib traits — there is no language-privileged path that bypasses
 this convention.
 
 Example: `Iterator::Item` (§12.7) defaults to borrow-equivalent.
-Writing `type Item = Record` yields borrow-equivalent records (rooted
-in the iterator's `Source` cluster); writing `type Item = own Record`
+Writing `type Item is Record` yields borrow-equivalent records (rooted
+in the iterator's `Source` cluster); writing `type Item is own Record`
 yields owned records (consumed out of the source).
 
 #### 3.1.3 Default method bodies
@@ -1398,7 +1398,7 @@ trait From[T]:
   fn convert(value: T) -> Subject
 
 trait Add[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn add(a: Subject, b: Rhs) -> Output
 ```
 
@@ -1798,7 +1798,7 @@ signature shorter:
 
 ```
 fulfill Add for Vec3:
-  type Output = Vec3
+  type Output is Vec3
   fn add(left: Vec3, right: Vec3) -> Vec3:     // explicit
     Vec3(x: left.x + right.x, y: left.y + right.y, z: left.z + right.z)
 
@@ -1830,17 +1830,17 @@ the concrete type bound to them.
 
 #### 3.3.2 Associated type bindings
 
-A `fulfill` block binds the trait's associated types via the `type Name =
+A `fulfill` block binds the trait's associated types via the `type Name is
 Concrete` form:
 
 ```
 fulfill Add for i32:
-  type Output = i32
+  type Output is i32
   fn add(left: i32, right: i32) -> i32:
     ...                              // built-in integer addition
 ```
 
-Note: with the §4.9.1 default `type Output = Subject`, the `type Output =
+Note: with the §4.9.1 default `type Output is Subject`, the `type Output is
 i32` binding shown here is explicit but optional. It could be omitted;
 the default applies. Explicit binding is shown for clarity in examples
 and remains valid where the implementer wants to make the choice
@@ -1912,7 +1912,7 @@ in addition to trait bounds, and the two may be mixed in one
 comma-separated list: `where T: Numeric, N >= 1`. Trait bounds are
 checked where the implementation or call is resolved; const-generic
 value bounds are checked at instantiation against concrete values
-(§2.5.6). A `where` clause may also carry associated-type **equality** constraints (`Path.Assoc = ConcreteType`, §3.1.2).
+(§2.5.6). A `where` clause may also carry associated-type **equality** constraints (`Path.Assoc is ConcreteType`, §3.1.2).
 
 #### 3.3.5 Pure-requirement traits and automatic satisfaction
 
@@ -2306,6 +2306,22 @@ always positional.
 
 Patterns are exhaustive by default: a record pattern must bind every field, and a tuple or variant-payload pattern every component, in their respective named or positional forms. A field or component whose value is not needed is bound to the wildcard `_` (`field: _`). Alternatively, a trailing `...` rest token — three dots, distinct from the `..` range operator (§4.4.7) — opts out of exhaustiveness: it matches and discards every field or component not explicitly listed, binding nothing — for example, the record pattern `Point(x: px, ...)` binds `x` and discards the remaining fields. The `...` is permitted only as the final element of a pattern.
 
+**Field-binding shorthand.** In a named record pattern, a field-binding may
+use the shorthand `field` when the binding name matches the field name; the
+long form `field: bound_name` is required when renaming or when destructuring
+the field further with a nested pattern. Shorthand and long-form bindings may
+mix freely in one pattern. For a record `BigRec(a, b, c)`:
+
+```
+let BigRec(a, b: renamed_b, c, ...) = rec
+// equivalent to
+let BigRec(a: a, b: renamed_b, c: c, ...) = rec
+```
+
+The same shorthand is admitted for named variant payload patterns of
+named-declared variants (§6.2.4). The shorthand is the canonical form for
+destructuring records into independent owned bindings (§11.8.5, §14.7.3).
+
 This parallelism is structural: a pattern is a "call site for
 destructuring," with the same argument-form rules as a call site for
 construction.
@@ -2323,15 +2339,15 @@ group of methods, defining a single capability:
 
 ```
 trait Add[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn add(a: Subject, b: Rhs) -> Output
 
 trait Sub[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn sub(a: Subject, b: Rhs) -> Output
 
 trait Mul[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn mul(a: Subject, b: Rhs) -> Output
 
 trait Neg:
@@ -3310,20 +3326,21 @@ operators on one row share precedence.
 | Tier | Operators                                                 | Associativity   |
 |------|-----------------------------------------------------------|-----------------|
 | 1    | `\|>` (operator / effect application)                     | left            |
-| 2    | `or`                                                      | left            |
-| 3    | `and`                                                     | left            |
-| 4    | `not` (prefix)                                            | right           |
-| 5    | `\|` (bitwise or)                                         | left            |
-| 6    | `^` (bitwise xor)                                         | left            |
-| 7    | `&` (bitwise and)                                         | left            |
-| 8    | `..` (range)                                              | non-associative |
-| 9    | `is`, `is not`, `<`, `<=`, `>`, `>=`                      | non-associative |
-| 10   | `<<`, `>>` (shifts)                                       | left            |
-| 11   | `+`, `-`                                                  | left            |
-| 12   | `*`, `/`, `\`, `%`                                        | left            |
-| 13   | `-`, `~`, `handle`, `handle!`, `portal` (prefix)          | right           |
-| 14   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
-| 15   | `::`                                                      | left            |
+| 2    | `where` (stream filter, §13.18.10)                        | left            |
+| 3    | `or`                                                      | left            |
+| 4    | `and`                                                     | left            |
+| 5    | `not` (prefix)                                            | right           |
+| 6    | `\|` (bitwise or)                                         | left            |
+| 7    | `^` (bitwise xor)                                         | left            |
+| 8    | `&` (bitwise and)                                         | left            |
+| 9    | `..` (range)                                              | non-associative |
+| 10   | `is`, `is not`, `<`, `<=`, `>`, `>=`                      | non-associative |
+| 11   | `<<`, `>>` (shifts)                                       | left            |
+| 12   | `+`, `-`                                                  | left            |
+| 13   | `*`, `/`, `\`, `%`                                        | left            |
+| 14   | `-`, `~`, `handle`, `handle!`, `portal` (prefix)          | right           |
+| 15   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
+| 16   | `::`                                                      | left            |
 
 - `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
 - Bitwise operators bind tighter than the logical operators (`and`/`or`/`not`) but looser than comparison — the C convention — so `a & b is c` parses as `a & (b is c)`; parenthesize when the other grouping is meant.
@@ -3818,22 +3835,22 @@ the conventional operator name:
 
 ```
 trait Add[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn add(a: Subject, b: Rhs) -> Output
 trait Sub[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn sub(a: Subject, b: Rhs) -> Output
 trait Mul[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn mul(a: Subject, b: Rhs) -> Output
 trait Div:
   fn div(a: Subject, b: Subject) -> Subject      // on Float umbrella only
   see §4.4.1.1 for widening
 trait IntDiv[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn intdiv(a: Subject, b: Rhs) -> Output
 trait Rem[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn rem(a: Subject, b: Rhs) -> Output
 trait Neg:
   fn neg(value: Subject) -> Subject
@@ -3852,58 +3869,58 @@ trait Shr:
   fn shr(value: Subject, n: u32) -> Subject
 
 trait WrappingAdd[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn wrapping_add(a: Subject, b: Rhs) -> Output
 trait WrappingSub[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn wrapping_sub(a: Subject, b: Rhs) -> Output
 trait WrappingMul[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn wrapping_mul(a: Subject, b: Rhs) -> Output
 trait WrappingIntDiv[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn wrapping_intdiv(a: Subject, b: Rhs) -> Output
 trait WrappingRem[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn wrapping_rem(a: Subject, b: Rhs) -> Output
 trait WrappingNeg:
   fn wrapping_neg(value: Subject) -> Subject
 
 trait SaturatingAdd[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn saturating_add(a: Subject, b: Rhs) -> Output
 trait SaturatingSub[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn saturating_sub(a: Subject, b: Rhs) -> Output
 trait SaturatingMul[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn saturating_mul(a: Subject, b: Rhs) -> Output
 trait SaturatingIntDiv[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn saturating_intdiv(a: Subject, b: Rhs) -> Output
 trait SaturatingRem[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn saturating_rem(a: Subject, b: Rhs) -> Output
 trait SaturatingNeg:
   fn saturating_neg(value: Subject) -> Subject
 
 trait CheckedAdd[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn checked_add(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedSub[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn checked_sub(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedMul[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn checked_mul(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedDiv[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn checked_div(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedIntDiv[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn checked_intdiv(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedRem[Rhs = Subject]:
-  type Output = Subject
+  type Output is Subject
   fn checked_rem(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedNeg:
   fn checked_neg(value: Subject) -> Option[Subject]
@@ -4249,7 +4266,7 @@ The three contexts:
 |----------------------------------------|----------------------|----------------------------|
 | Generic bound                          | Traits               | `fn pick[T: A & B](...)`   |
 | Value-position trait object            | Traits, behind `dyn` | `let x: dyn (A & B) = ...` |
-| Record intersection at type definition | Records              | `type X = A & B`           |
+| Record intersection at type definition | Records              | `type X is A & B`           |
 
 ### 5.1 Trait Conjunction in Generic Bounds
 
@@ -4455,7 +4472,7 @@ type Insured:
   policy_number: string
   premium: f64
 
-type InsuredCar = Car & Insured
+type InsuredCar is Car & Insured
 
 // Equivalent declaration:
 type InsuredCar:
@@ -4503,7 +4520,7 @@ operand types' implementations:
 
 ```
 @derive(Display, Hash)
-type InsuredCar = Car & Insured
+type InsuredCar is Car & Insured
 ```
 
 Derivation succeeds only when exactly one operand implements the derived
@@ -4536,7 +4553,7 @@ side evaluates to:
   time. Record intersection creates a new nominal type with combined
   fields; that creation requires `type`, not `alias type`. Without new
   identity, the intersection has no meaning in the nominal type system.
-  The compile error directs the user to write `type X = A & B` instead.
+  The compile error directs the user to write `type X is A & B` instead.
 
 The asymmetry between trait intersection (aliasable) and record
 intersection (not aliasable) reflects a deeper asymmetry: trait
@@ -5254,6 +5271,13 @@ variant's field value to a new local name. The positional form
 names) is the conventional terse choice when the field names happen to
 match the desired local names.
 
+**Named-form shorthand.** In named form, a binding may use shorthand `field`
+when the binding name matches the field name; long form `field: bound_name`
+is required only when renaming or nesting a pattern. Shorthand and long-form
+bindings may mix in one pattern. This shorthand applies to record patterns
+and named variant patterns alike (§3.5.7): `BigRec(a, b: renamed_b, c, ...)`
+≡ `BigRec(a: a, b: renamed_b, c: c, ...)`.
+
 A trailing `...` elides the remaining payload fields of a variant pattern in
 either form — `Rectangle(width: w, ...)` binds `width` and discards the rest
 (§3.5.7). Without it, a variant pattern binds every payload field.
@@ -5398,7 +5422,7 @@ type Email:
   satisfies TryFrom[string]
 
 fulfill TryFrom[string] for Email:
-  type Error = ValidationError
+  type Error is ValidationError
   fn try_from(s: string) -> Result[Email, Error]:
     if is_valid_email(s):
       Ok(Email(s))
@@ -9174,17 +9198,18 @@ the user toward the correct form.
 The `move` keyword applies at call-site argument positions to mark
 explicit consumption of an l-value.
 
-**Grammar.** `move <l-value>` — where `<l-value>` is a binding identifier
-or a field-access path rooted in an owned binding (`self.handle`,
-`rec.a.b`) — is legal only as an immediate sub-expression of a
-function-call argument list:
+**Grammar.** `move <ident>` — where `<ident>` is a bare binding identifier —
+is legal only as an immediate sub-expression of a function-call argument list.
+The operand is restricted to a bare identifier; field-access l-value paths
+(`move rec.field`, `move self.handle`, `move rec.a.b`) are **not** admitted:
 
 ```
 f(move x)                          // ✓ argument to f
 g(a, move b, c)                    // ✓ middle argument
 (move v).method()                  // ✓ method-call receiver via prefix
                                    //   parenthesization (§11.8.3)
-close(move self.handle)            // ✓ field l-value: partial move of `handle`
+close(move self.handle)            // ✗ field l-value not admitted; destructure
+                                   //   first (see "Consuming fields" below)
 ```
 
 `move` is **forbidden** outside call-site argument positions:
@@ -9194,9 +9219,8 @@ let y = move x                     // ✗ parse error: `move` in let-RHS
 return move x                      // ✗ parse error: `move` in return
 mut z = move x                     // ✗ parse error: `move` in mut-RHS
 move v.method()                    // ✗ a method *call* is not an l-value
-                                   //   (a field l-value `move v.field` IS
-                                   //   allowed); for a moved receiver write
-                                   //   `(move v).method()`
+move v.field                       // ✗ field-access l-value not admitted;
+                                   //   destructure first
 ```
 
 The restriction is by design. `move` in let-RHS, return, or mut-RHS
@@ -9207,15 +9231,25 @@ anchoring rule. The keyword's role is to mark the irreversible
 call-site consumption — the one place where locality matters and the
 signature alone does not make the call's effect visible.
 
-**Field l-values and partial moves.** A field-access l-value operand —
-`move self.handle` — consumes that field out of the binding (a *partial
-move*, §14.7.3): the field's move flag is set, drop glue will not drop it,
-and the rest of the binding stays live. This is the sole exception to field
-access reading without ownership transfer (§11.8.3, §11.3.1) — a plain
-`self.handle` still reads without consuming; only the explicit `move`
-consumes, and the root binding must be owned (an `own` parameter or an
-owning local), not a borrow. A method-call operand stays forbidden
-(`move x.f()` ✗ — a call is not an l-value).
+**Consuming fields: destructure first.** Partial-move of a field via a
+field-access l-value (`move rec.field`, `move self.handle`, `move rec.a.b`)
+is **not admitted**: the `move` operand is restricted to a bare identifier.
+To consume one or more fields of an owned record, destructure the record
+first with a record pattern (§3.5.7, §6.2.4) — each bound field then
+becomes an independent owned local that may be `move`d individually:
+
+```
+// Owned record `rec: BigRec`. Destructure into independent owners:
+let BigRec(handle: handle, ...) = rec     // `rec` is dead from here
+close(move handle)                         // ✓ consume the handle local
+```
+
+The destructuring pattern's shorthand `BigRec(handle, ...)` (§3.5.7) is
+equivalent to the long form shown. Field access by itself does not transfer
+ownership (§11.8.3, §11.3.1) — a plain `self.handle` still reads without
+consuming; consumption is always via `move <ident>` on a binding produced
+either by `let`/`mut` or by a destructuring pattern. A method-call operand
+stays forbidden (`move x.f()` ✗ — a call is not an l-value).
 
 **Symmetry with `own`.** Each occurrence of `move` at a call site must
 correspond to a parameter declared `own` in the callee's signature, and
@@ -10728,7 +10762,7 @@ values on demand:
 ```
 trait Iterator:
   type Item
-  type Source = ()
+  type Source is ()
   fn next(own iter: Subject, source: Source) -> (Option[Item], Subject)
 ```
 
@@ -10740,10 +10774,10 @@ caller binds the returned iterator for the next call.
 
 **Item and Source as associated-type slots.** Both `Item` and `Source`
 default to borrow-equivalent under §3.1.2's associated-type slot
-convention: when an implementation declares `type Item = T` or `type
+convention: when an implementation declares `type Item is T` or `type
 Source = T`, `T` is treated as borrow-equivalent unless the
-implementation opts in to consuming semantics via `type Item = own T`
-or `type Source = own T`. (Which iterators may declare `own Item` is
+implementation opts in to consuming semantics via `type Item is own T`
+or `type Source is own T`. (Which iterators may declare `own Item` is
 constrained by the dispatch path — only the consuming `for own` /
 `IntoIterable` path admits it; see §12.7.4.) This is uniform: any trait
 declaring associated types follows the same convention; stdlib types get
@@ -10753,7 +10787,7 @@ no special treatment.
 from on each `next` call. Two patterns arise:
 
 - **Self-contained iterators** (Range, Counter, infinite generators) —
-  the iterator holds all state internally. `type Source = ()` (the
+  the iterator holds all state internally. `type Source is ()` (the
   default); each `next` call receives a unit value that the
   implementation ignores. No external value is needed across calls.
 - **Source-bearing iterators** (Vec, Map, user-defined
@@ -10817,7 +10851,7 @@ storage-reuse guarantee (§11.11.2).
 #### 12.7.3 Implementing `Iterator` (self-contained)
 
 A self-contained iterator holds its full state internally; no external
-source is needed. The implementation declares `type Source = ()` (or
+source is needed. The implementation declares `type Source is ()` (or
 omits it to use the default) and the `next` method ignores its source
 parameter:
 
@@ -10827,8 +10861,8 @@ type SquareIter:
   limit: i32
 
 fulfill Iterator for SquareIter:
-  type Item = i32
-  // type Source = () inherited from default
+  type Item is i32
+  // type Source is () inherited from default
   fn next(own iter: SquareIter, source: ()) -> (Option[i32], SquareIter):
     mut local = iter
     if local.next_value >= local.limit:
@@ -10848,7 +10882,7 @@ unused.
 
 A source-bearing iterator holds only cursor/position state and reads
 from the external source supplied on each `next` call. The
-implementation declares `type Source = TheCollection` and reads
+implementation declares `type Source is TheCollection` and reads
 through the `source` parameter:
 
 ```
@@ -10860,8 +10894,8 @@ type MyVecIter[T]:
   cursor: isize
 
 fulfill Iterator for MyVecIter[Record]:
-  type Item = Record               // borrow-default rooted in source
-  type Source = MyVec[Record]      // collection passed each call
+  type Item is Record               // borrow-default rooted in source
+  type Source is MyVec[Record]      // collection passed each call
   fn next(own iter: MyVecIter[Record], source: MyVec[Record])
     -> (Option[Record], MyVecIter[Record]):
     mut local = iter
@@ -10896,7 +10930,7 @@ source argument.
 Opting into owned items (consuming each element out of the collection)
 is exclusive to the consuming path: only an `IntoIterable` iterator
 (whose `Source` is `()`, reached via `for own`, §12.9) may declare
-`type Item = own Record`. A source-bearing `Iterable` iterator may not —
+`type Item is own Record`. A source-bearing `Iterable` iterator may not —
 it cannot move elements out of its borrow-equivalent `source` (above),
 and its collection must survive the loop (§12.3.1). The `Iterable` versus
 `IntoIterable` choice (§12.8, §12.9) thus also determines whether the
@@ -10911,11 +10945,11 @@ without consuming the source:
 trait Iterable:
   type Iter: Iterator
   fn iterator(value: Subject) -> Iter
-  where Iter.Source = Subject
+  where Iter.Source is Subject
 ```
 
 The associated type `Iter` is the iterator type produced; it must
-itself implement `Iterator`. The `where Iter.Source = Subject`
+itself implement `Iterator`. The `where Iter.Source is Subject`
 constraint binds the iterator's `Source` to the iterable's own type,
 so the for-loop machinery (§12.3.1) supplies the original value as
 the source on each `next` call.
@@ -10961,8 +10995,8 @@ type DataPointsIter:
   cursor: isize
 
 fulfill Iterator for DataPointsIter:
-  type Item = f32                  // f32 is Copy; borrow vs own indistinguishable
-  type Source = DataPoints         // supplied each next() call
+  type Item is f32                  // f32 is Copy; borrow vs own indistinguishable
+  type Source is DataPoints         // supplied each next() call
   fn next(own iter: DataPointsIter, source: DataPoints)
     -> (Option[f32], DataPointsIter):
     mut local = iter
@@ -10974,8 +11008,8 @@ fulfill Iterator for DataPointsIter:
       (Some(v), local)
 
 fulfill Iterable for DataPoints:
-  type Iter = DataPointsIter
-  // Iter.Source = DataPoints satisfied by the where-clause
+  type Iter is DataPointsIter
+  // Iter.Source is DataPoints satisfied by the where-clause
   fn iterator(d: DataPoints) -> DataPointsIter:
     DataPointsIter(cursor: 0)
 ```
@@ -10994,7 +11028,7 @@ elements are yielded as owned values.
 trait IntoIterable:
   type Iter: Iterator
   fn consuming_iterator(own value: Subject) -> Iter
-  where Iter.Source = ()
+  where Iter.Source is ()
 ```
 
 The associated type `Iter` is the iterator produced; it must itself
@@ -11002,7 +11036,7 @@ implement `Iterator`. The method `consuming_iterator` declares its
 parameter `own`: the source is consumed at the call. The returned
 iterator owns the source's storage.
 
-The `where Iter.Source = ()` constraint binds the iterator's `Source`
+The `where Iter.Source is ()` constraint binds the iterator's `Source`
 to unit: the source value has been consumed into the iterator at
 construction, so the for-loop machinery (§12.3.1) supplies `()` as the
 source on each `next` call. The iterator reads from its own internal
@@ -11072,16 +11106,16 @@ type DataStreamIntoIter:
   cursor: isize
 
 fulfill Iterator for DataStreamIntoIter:
-  type Item = own Event            // owned items (consumed out of pending)
-  type Source = ()                 // no external source needed
+  type Item is own Event            // owned items (consumed out of pending)
+  type Source is ()                 // no external source needed
   fn next(own iter: DataStreamIntoIter, source: ())
     -> (Option[Event], DataStreamIntoIter):
     // read/move from iter.pending; source is unused
     ...
 
 fulfill IntoIterable for DataStream:
-  type Iter = DataStreamIntoIter
-  // Iter.Source = () satisfied by the where-clause
+  type Iter is DataStreamIntoIter
+  // Iter.Source is () satisfied by the where-clause
   fn consuming_iterator(own s: DataStream) -> DataStreamIntoIter:
     DataStreamIntoIter(pending: s.pending, cursor: 0)
                                    // takes ownership of s's pending events
@@ -15117,7 +15151,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 - **Bind ownership.** `<bind>` is typed as the iterator's element type
   after **move-promotion**: a real owner rather than the
   borrow-equivalent alias that `Iterable::iterator` yields under the
-  default `type Item = T` slot convention (§3.1.2, §12.7).
+  default `type Item is T` slot convention (§3.1.2, §12.7).
   Move-promotion converts the cluster-member alias into a real owner
   scoped to one `scope_evaluate` invocation; it is the per-scope
   counterpart of §12.7.2's linear-ownership optimization applied to
@@ -15324,7 +15358,7 @@ type DbRow:
   payload: Payload
 
 fulfill Keyed for DbRow:
-  type Key = u64
+  type Key is u64
   fn key(r: DbRow) -> u64:
     r.id
 
@@ -19934,6 +19968,17 @@ written with the generic parameters bound at the use site (e.g.
 An operator carried by type composes in `|>` chains (§13.17.7) at the point
 it is instantiated, identically to a named operator.
 
+**Return type does not admit `own`.** The return-type position `U` in
+`operator(P…) -> U` does **not** admit the `own` qualifier (`-> own T` is
+not a valid operator return — neither in a structural operator type nor in
+an operator declaration's signature). An operator's output is always wrapped
+into the operator's output cell (§13.17.5) and consumed by the receiver's
+graph position; there is no "owned return into caller scope" target the
+`own` qualifier could refer to. The same restriction applies to operator
+declarations: an `operator` declaration's `-> U` may name any value, record,
+tuple, or `Cell` type, but never `own T`. Function return types continue to
+admit `own` per §11.3.6; this restriction is operator-specific.
+
 ### 13.18 Streams
 
 A *stream* is a reactive primitive for append-only event sequences with
@@ -20869,6 +20914,14 @@ position in a pipeline:
 stream ring filtered_pairs = (events where events.value > 0) |> pairwise
 stream ring scaled_relevant = (numbers |> map(double)) where numbers > 100
 ```
+
+`where` binds tighter than `|>`, so an unparenthesized
+`events where pred |> op` parses as `(events where pred) |> op` —
+filter first, then pipe the filtered stream through the operator.
+The opposite grouping would require `pred |> op` to be a `bool`
+predicate, which is type-meaningless in nearly every real program;
+the tighter-than-`|>` rule matches the intent of stream pipelines and
+keeps `|>` the loosest binary operator in the language (§4.4.7).
 
 ##### 13.18.10.5 Use inside `observe` arm-triggers
 
@@ -22811,16 +22864,18 @@ trait Drop:
 
 A type implementing `Drop` provides cleanup logic that runs when a
 value of the type goes out of scope. The `drop` method receives the
-value by `own`: it is the value's final owner. The body may move fields
-out to release them (partial moves, §14.7.3) and, when in-place teardown
-is needed, rebind the value to a `mut` *local* (§11.7.3) — the ordinary
+value by `own`: it is the value's final owner. To release individual
+resources held in fields, the body destructures the value first
+(§3.5.7, §6.2.4) — yielding independent owned locals it may then `move`
+into the corresponding releasing call. When in-place teardown is needed,
+the body rebinds the value to a `mut` *local* (§11.7.3) — the ordinary
 `own`-parameter-to-`mut`-local pattern, not a `mut` parameter. No `mut`
 parameter is involved; §11.7.2's prohibition holds without exception.
 
 The compiler emits the consuming `drop` call (a `move` of the value into
-`drop`) at scope exit. Any fields left un-moved by the body drop
-afterward via drop glue, in reverse declaration order (§14.7.2); drop
-glue does not re-invoke `Drop::drop` on the value itself.
+`drop`) at scope exit. Any fields not bound by the body's destructure
+drop afterward via drop glue, in reverse declaration order (§14.7.2);
+drop glue does not re-invoke `Drop::drop` on the value itself.
 
 #### 14.7.2 When drop runs
 
@@ -22839,13 +22894,32 @@ The compiler inserts drop calls at:
 Compound values (records, enums) drop in **reverse declaration
 order** of their fields: the last-declared field drops first.
 
-#### 14.7.3 Partial moves
+#### 14.7.3 Per-binding move tracking
 
-If only some fields of a record have been moved out when the binding
-goes out of scope, only the un-moved fields drop. The compiler tracks
-per-binding move flags during semantic analysis. A field is moved out by
-naming it as a `move` operand at a call site — `consume(move rec.field)`
-(§11.8.5).
+The compiler tracks **per-binding** move flags during semantic analysis: each
+binding (a `let`, `mut`, or pattern-bound name) carries a single move flag
+recording whether the value has been consumed by an explicit `move` at a call
+site. A bound, unmoved value drops at the end of its lexical scope; a moved
+value's drop responsibility has transferred to the callee (§14.7.2) and no
+drop is inserted at the source.
+
+Move flags are **not** tracked at field granularity. Partial-move of a record
+field via a field-access l-value (`move rec.field`) is not admitted (§11.8.5);
+the `move` operand is restricted to a bare identifier. To consume individual
+fields of an owned record, the program first destructures the record with a
+record pattern (§3.5.7, §6.2.4):
+
+```
+let BigRec(handle: handle, payload: payload, ...) = rec
+// `rec` is now dead. `handle` and `payload` are independent owned locals,
+// each with its own per-binding move flag.
+close(move handle)        // consumes `handle`; `payload` remains live
+```
+
+After the destructure, the original `rec` binding is dead and contributes
+no drop glue; each destructured field-binding is an independent owner
+tracked individually. Fields not bound by the pattern are dropped at the
+destructure point in reverse declaration order (§14.7.2).
 
 #### 14.7.4 Drop and panic
 
