@@ -511,10 +511,22 @@ arguments as the caller) is permitted and reuses the same instantiation.
 This restriction is structural to the monomorphization model (§2.3): whole-
 program specialization with no type erasure requires a finite, statically
 known set of instantiations, and polymorphic recursion can demand an
-unbounded one. It is therefore a permanent rule, not a temporary limitation.
-The cases that genuinely need it (certain non-regular data structures,
-some functional patterns) use explicit dynamic dispatch via `dyn` (§5),
-which is precisely the erasure escape hatch those cases require.
+unbounded one. It is therefore a permanent rule for **runtime dispatch**,
+not a temporary limitation. The cases that genuinely need it (certain
+non-regular data structures, some functional patterns) use explicit dynamic
+dispatch via `dyn` (§5), which is precisely the erasure escape hatch those
+cases require.
+
+**Carve-out — compile-time interpretation expansion.** Compile-time
+expansion of an in-language interpretation walk (§13.3.7.7) is exempt from
+this ban. When an interpreter recurses over `.exposition`, the recursion is
+bounded by the **finite interpretation closure** — the static set of
+instances an interpretation root can reach (containment closure union
+wire-candidate envelopes, §13.19). Because that closure is finite and
+statically known, the expansion produces a finite instantiation set and
+terminates; the unbounded-instantiation hazard that motivates the ban
+cannot arise. This carve-out is scoped to compile-time interpretation
+expansion only; ordinary runtime polymorphic recursion stays rejected.
 
 #### 2.3.4 Dead code elimination
 
@@ -1231,6 +1243,38 @@ as `own`, no more and no fewer. The compiler enforces this at the
 `fulfill` block. Callers invoking a trait method follow the same
 `own`/`move` symmetry as for free-function calls (§11.8.5).
 
+##### 3.1.1.1 Effect-kind trait methods
+
+A trait may declare **effect-kind methods** — methods introduced with the
+`effect` keyword rather than `fn` — so that interpretation logic can be
+written against a trait instead of a concrete type:
+
+```
+trait Renderable:
+  effect render(value: Subject):
+    observed:
+      audio: stream ring[256] Sample     // contract: minimum required output cells
+```
+
+- An effect-kind method's body is an effect body (§13.19): it may place
+  child effects and declare `desired:` / `observed:` blocks. Its first
+  parameter is conventionally `Subject`-typed (the interpreted value).
+- An **`observed:` contract block** on the method lists the output cells
+  the method's fulfillments must expose. The contract is a **minimum**: a
+  fulfillment may expose *more* cells, but a consumer that projects
+  through the trait sees only the contract cells.
+- Effect-kind methods may carry **default bodies**, exactly as `fn`
+  methods may (§3.1.3).
+- **Collision namespace.** Effect-method names join the ordinary
+  method-name collision namespace — a trait's effect-method name collides
+  with an `fn` method of the same name under the disjoint-names rule
+  (§3.2.1), and effective-set entries sharing a name resolve by the same
+  rules as any other method.
+- **Effect-specific.** An effect-kind trait method is effect-specific: it
+  is invoked as an effect (in `effects:`, bootstrapped via `|>`, §13.19),
+  not as an ordinary function call. A trait carrying effect-kind methods
+  is not thereby a general-purpose value trait.
+
 #### 3.1.2 Associated types
 
 A trait may declare associated types using the `type` keyword inside the body:
@@ -1946,6 +1990,22 @@ applies only to traits with no abstract methods (no methods at all, or only
 methods with default bodies) and no undefaulted associated types. Any trait
 with one or more abstract method signatures — or an undefaulted associated
 type — requires explicit `satisfies` + `fulfill` per §3.2.
+
+**The `fulfill`-without-`satisfies` waiver (distinct from auto-satisfaction).**
+Auto-satisfaction (above) is about a type gaining a trait with *no*
+`fulfill` block at all. A separate, narrower rule governs traits carrying
+effect-kind methods (§3.1.1.1): a trait in which **every** method —
+including every effect-kind method — has a default body **and** which
+declares **no required cells** (no `observed:` contract cells that a
+fulfillment must supply, and no required node/connection members per
+§3.1.7) permits a `fulfill` block **without** a matching `satisfies`
+clause. This is not auto-satisfaction — a `fulfill` block is still
+written, e.g. to override a default effect body — it only waives the
+`satisfies` declaration. `satisfies` remains **mandatory** for any trait
+with an abstract method or with required cells. Keeping this waiver
+separate from auto-satisfaction is deliberate: the two rules govern
+different things (no-`fulfill` presence vs. no-`satisfies` fulfillment)
+and must not be conflated.
 
 #### 3.3.6 Visibility of `fulfill` blocks
 
@@ -3828,6 +3888,20 @@ This section provides the concrete shape of the trait hierarchy referenced
 throughout §3 and the preceding parts of §4. It instantiates the fine-
 grained-plus-umbrella pattern from §3.6 for the numeric domain.
 
+> **Terminology — three distinct "operator" senses.** The word *operator*
+> names three unrelated things in Ductus; they never conflict but are worth
+> distinguishing once:
+> - **Operator application** — the `|>` pipe operator (§13.17) that applies
+>   a reactive transform or bootstraps an interpretation (§13.19). This is an
+>   *application* form.
+> - **Operator traits** — the fine-grained traits below (`Add::add`,
+>   `Sub::sub`, …, §4.9.1) that back the *arithmetic/comparison operator
+>   symbols* (`+`, `-`, …). These are *traits*.
+> - **The `operator` construct** — the reactive-transform declaration form
+>   (§13.17), a stateful cell-to-cell transform. This is a *construct kind*.
+>
+> "Operator trait" (this section) is the second sense only.
+
 #### 4.9.1 Fine-grained operator traits
 
 Each operator from §4.4 has its own trait, with the method name matching
@@ -4177,9 +4251,10 @@ Language-level fulfillments:
 - **Bundles `Bundle[T]`** (§13.3.3.5): `Index[isize]` →
   `Output = Handle[T][..]` (a row slice).
 - **Maps `Map[K, V]`** (§9.5): `Index[K]` → `Output = V`. `Map` does NOT
-  fulfill `Index[Range[K]]`: range-slicing is unmeaningful on an
-  unordered keyed collection, so a range expression in a `Map` index
-  position is a compile error.
+  fulfill `Index[Range[K]]`: even though a Map iterates in insertion
+  order (§9.5.8), its keys are not positions — a key range describes no
+  contiguous span of the collection, so range-slicing is unmeaningful
+  and a range expression in a `Map` index position is a compile error.
 
 Stdlib `Vec[T]` and other indexed collections fulfill the same surface.
 
@@ -6993,8 +7068,8 @@ Inside `[…]` for slicing, three open-ended forms are sugar:
 
 ```
 arr[..n]    // 0..n
-arr[k..]    // k..arr.length
-arr[..]     // whole — 0..arr.length
+arr[k..]    // k..arr.count
+arr[..]     // whole — 0..arr.count
 ```
 
 These forms exist only inside a slice-index `[…]`; a bare `let r = k..`
@@ -7002,7 +7077,7 @@ remains a parse error.
 
 ##### From-the-end indexing — `^k`
 
-Inside `[…]` the prefix `^k` means `arr.length - k`:
+Inside `[…]` the prefix `^k` means `arr.count - k`:
 
 ```
 arr[^1]         // last element
@@ -7032,14 +7107,18 @@ collection constructor — not the slice operator's default. Bundles
 (§13.3.3.5) rely on this: a row slice is a window onto the bundle's
 backing storage, never a copy.
 
-##### `.length`
+##### `.count`
 
 ```
-let n: usize = arr.length          // compile-time-known for T[N], T[..N]
-let m: usize = dyn_slice.length    // runtime for T[..]
+let n: usize = arr.count           // compile-time-known for T[N], T[..N]
+let m: usize = dyn_slice.count     // runtime for T[..]
 ```
 
-The accessor is the full word `length`, not `len()`.
+The accessor is the full word `count`, not `len()` or `length`. This is
+the uniform element-tally name shared by arrays, slices, bundles, `Map`,
+`Vec`, `HashSet`, `yielded` groups, and dynamic views (§13.3.3.4).
+Strings are exempt — they use `byte_len` / `char_count` (§9.1) — and
+stream metrics keep their specialized `pending_count`-style names.
 
 ##### Read-only
 
@@ -7335,7 +7414,7 @@ The empty `{}` requires a type annotation — there is nothing to infer
 `K` and `V` from — mirroring empty array `[]` (§9.3.1). An empty `{}`
 in a function body is a plain value of type `Map[K, V]`; an empty `{}`
 in a *reactive declaration* (`attr`/`derived`/`recurrent`) is a
-whole-cell `Cell[Map[K, V]]`, never a per-slot composite — there are no
+whole-cell `cell Map[K, V]`, never a per-slot composite — there are no
 slot paths for an empty map (composites covered in §9.5.12).
 
 For const-key composite literals (§9.5.12), the bracket-colon form
@@ -7415,7 +7494,12 @@ let merged = a + b + { 'c': 3 }        // right-hand keys win on collision
 
 `+` produces a new Map; later (right-hand) entries override earlier
 ones on key collision, mirroring the `with` rule for record-field merge
-(§6.1.5).
+(§6.1.5). Under insertion order (§9.5.8), the result's key order is: the
+left operand's keys in their existing order, followed by the right
+operand's keys not already present, in the right operand's order. A
+collision keeps the key at its **existing (left) position** while
+taking the right operand's value — position is pinned by first
+insertion, not by the winning write.
 
 #### 9.5.8 Iteration
 
@@ -7427,11 +7511,12 @@ for (k, v) in m:
   print('{k} = {v}')
 ```
 
-**Iteration order is unordered** — keys are emitted in whatever order
-the underlying hash table produces. There is no commitment to insertion
-order or sort order. The `repeat` construct (§13.5.4) treats unordered
-sources by key-set diffing, so a Map source is a valid `repeat`
-source despite the order non-commitment.
+**Iteration order is insertion order** — keys are emitted in the order
+they were first inserted (JavaScript `Map` semantics): updating an
+existing key's value keeps its position; deleting a key and later
+reinserting it appends the key at the end. There is no sort-order
+commitment — insertion order is not key order. The `repeat` construct
+(§13.5.4) walks a Map source in this insertion order.
 
 #### 9.5.9 Cost model
 
@@ -7456,8 +7541,12 @@ fn populate(items: Vec[(string, i32)]) -> Map[string, i32]:
   m
 ```
 
-`m[k] = v` inserts or updates. Map is the first language-level
-growable type, but with no new memory model: the existing
+`m[k] = v` inserts or updates. Under insertion order (§9.5.8), an
+update to an existing key keeps that key at its current position; an
+insert of a new key appends it at the end. (Deleting a key then
+reassigning it therefore moves it to the end — see §9.5.8.) Map is the
+first language-level growable type, but with no new memory model: the
+existing
 allocator-intrinsic (§9.3.6) plus single-ownership in-place reuse
 (§11.11.2) cover it.
 
@@ -7478,7 +7567,7 @@ composite. Each slot is independently reactive; there is no outer
 cell.
 
 ```
-derived report: Map[string, Cell[f32]] = {
+derived report: Map[string, cell f32] = {
   'volume': master_gain,        // alias to the signal cell
   'pitch':  pitch_signal,       // alias
   'reverb': 0.3,                // static (no cell)
@@ -7491,7 +7580,7 @@ slot path to be static.
 
 A map whose keys are **runtime values** cannot be a composite — there
 is no static slot path for runtime keys. Such a map is a whole-cell
-`Cell[Map[K, V]]` per §13.2.8.
+`cell Map[K, V]` per §13.2.8.
 
 Composites exist only at reactive-declaration sites (§13.2.9.1);
 function bodies are reactive-transparent (§13.12.2) and build
@@ -7505,10 +7594,12 @@ trait. `Eq` and `Hash` are insensitive to insertion order: two maps are
 equal iff they hold the same key→value set, and their hash agrees
 accordingly.
 
-`Ord` is **not** derived: `Map` iteration is unordered (§9.5.8), so no
-canonical comparison order exists. Any program that requires `Ord` on a
-`Map` is a compile error at the bound, not silently misordered at
-runtime.
+`Ord` is **not** derived: although `Map` iterates in insertion order
+(§9.5.8), keys are not positions — insertion order reflects write
+history, not any canonical comparison order over key→value content, so
+no meaningful ordering relation exists between two maps. Any program
+that requires `Ord` on a `Map` is a compile error at the bound, not
+silently misordered at runtime.
 
 #### 9.5.14 Nested map storage
 
@@ -8180,7 +8271,7 @@ becomes inaccessible. Function return transfers ownership when the returned valu
 every binding site; using a binding after its name has been killed is a
 compile error.
 
-*Exception — reference-typed reactive bindings.* `Cell[T]` parameters
+*Exception — reference-typed reactive bindings.* `cell T` parameters
 (§13.2.8) and reactive composite bindings (§13.2.9.6) name reactive
 cells (specified by §13, §14) rather than stack-owned values;
 multiple live aliases to the same cell may coexist without violating
@@ -8560,7 +8651,7 @@ fn caller():
   let r = first(buf)                          // r: borrow-equivalent alias
                                               //   rooted in buf's cluster
   print(r.first_name)                         // ✓ reads through r
-  print(buf.length)                           // ✓ buf still owned and readable
+  print(buf.count)                            // ✓ buf still owned and readable
   // buf may not be moved or mutated while r is live (§11.9.2)
 ```
 
@@ -11497,8 +11588,9 @@ role:
 - `stream` (§13.18) — append-only reactive primitive for event-
   shaped flows.
 - `effect` (§13.19) — outside-world alignment via the
-  reconciliation model. The host-interpreted bridge between program
-  state and the runtime environment.
+  reconciliation model. A reconciliation contract between program
+  state and external reality — fulfilled by a host reconciler (leaf),
+  by child effects (interior), or both.
 
 Topology and outside-world alignment are distinct concerns. Topology
 — the node-and-connection graph the runtime traverses — has its own
@@ -11511,19 +11603,24 @@ flows, lifecycle entangled with program state.
 Effects are first-class via the `effect` construct (§13.19), using a
 reconciliation model (`desired:` / `observed:`) that subsumes
 request/response, long-lived resources, fire-and-forget, and
-event-stream shapes under one primitive. Nodes are topology; runtime
-hosts are free to interpret nodes of specific types (DSP node graphs,
-UI children, music clips), but are not obliged to use nodes for
+event-stream shapes under one primitive. Nodes are topology.
+Interpretation — giving meaning to a node by walking its exposition —
+is performable by hosts (DSP node graphs, UI children, music clips)
+OR in-language by effect-kind trait methods walking `.exposition`
+(§13.3.7); in neither case is a host obliged to use nodes for
 outside-world alignment. Effects carry interpretation complexity in
-the host's reconciler implementations — the host knows its domain;
-the language carries two distinct construct kinds, nodes for topology
-and effects for alignment.
+the host's reconciler implementations or in in-language interpreters —
+the interpreter knows its domain; the language carries two distinct
+construct kinds, nodes for topology and effects for alignment.
 
-Adding a new effect type is achieved by declaring a new `effect`;
-the host registers a reconciler for that effect type. Adding a new
-topological participant is achieved by declaring a new `node`; the
-host extends its interpreter for traversed node types (e.g., DSP
-graph evaluation).
+Adding a new effect type is achieved by declaring a new `effect`.
+Reconciler registration is required if and only if the effect's
+`observed:` block declares host-written channels (`signal`/`stream`);
+an interior effect whose contract is fulfilled entirely by child
+effects requires no reconciler. Adding a new topological participant
+is achieved by declaring a new `node`; the host extends its
+interpreter — or an in-language interpreter gains a match arm — for
+traversed node types (e.g., DSP graph evaluation).
 
 #### 13.1.1 A small example
 
@@ -12422,75 +12519,85 @@ write" rule applies to all six declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
 imperatively modify it from within.
 
-#### 13.2.8 Value-cell types
+#### 13.2.8 Value-cell kinds
 
-The value cells carry a current value of type `T` and come in three concrete
-types: `Signal[T]`, `Derived[T]`, and `Recurrent[T, N]`. The umbrella over
-*all* reactive cells — these plus `Stream[T]` — is `Cell[T]` (§13.18.5). Each
-value-cell type is first-class, usable in parameter positions, return types,
-and generic arguments.
+The value cells carry a current value of type `T` and come in three annotation
+kinds: `signal T`, `derived T`, and `recurrent[N] T`. `cell` is a **KIND**, not
+a type or a trait: `cell T` is the umbrella designator spanning *all* reactive
+cells — these value kinds plus the event kind `stream T` and the membership kind
+`yielded T` (§13.20.4). `cell` is never written with brackets; it appears only
+as a lowercase kind keyword in annotation positions. Each value-cell kind is
+first-class, usable in parameter positions, return positions, and generic
+arguments.
 
-**The three value-cell types.** Four reactive declaration kinds produce value
+**The three value-cell kinds.** Four reactive declaration keywords produce value
 cells:
 
-- `signal X = init` — a host-writable `Signal[T]`. Host pushes
+- `signal X = init` — a host-writable `signal T`. Host pushes
   values via `runtime.write_signal` (§13.14.2).
-- `attr X: T = default` — a `Signal[T]` that is *placement-written
+- `attr X: T = default` — a `signal T` that is *placement-written
   only*. The placing parent supplies its value at placement (§13.8.2)
   and the cell is reactive thereafter; the host has no write API for
   attrs and cannot reach them post-construction.
-- `derived X = expr` — a `Derived[T]`: a reactive computation with no
+- `derived X = expr` — a `derived T`: a reactive computation with no
   self-history. The runtime maintains its value consistent with its inputs.
-- `recurrent[N]? X: T = expression` — a `Recurrent[T, N]`: a reactive
-  computation carrying `N` steps of self-history, accessible via
-  `.previous(fallback)` and `.past(k, fallback)`. The runtime re-evaluates the
-  expression when any non-self reference commits (§13.2.4). `Derived[T]` is the
-  degenerate zero-history case (`N = 0`).
+- `recurrent[N]? X: T = expression` — a `recurrent[N] T` (with `N` omitted
+  meaning `[1]`): a reactive computation carrying `N` steps of self-history,
+  accessible via `.previous(fallback)` and `.past(k, fallback)`. The runtime
+  re-evaluates the expression when any non-self reference commits (§13.2.4).
+  `derived T` is the degenerate zero-history case (`N = 0`).
 
 A reactive value expression combining one or more reactive cells always
-produces a `Derived[T]`.
+produces a `derived T`.
 
-The keyword `signal` and the type `Signal[T]` both name the host-writable value
-cell (writable via `runtime.write_signal`); an `attr` is also a `Signal[T]` but
-placement-written only and host-unreachable post-construction. `derived` and
-`recurrent` produce the distinct types `Derived[T]` and `Recurrent[T, N]`.
+The keyword `signal` names the host-writable value cell (writable via
+`runtime.write_signal`); an `attr` is also a `signal T` but placement-written
+only and host-unreachable post-construction. `derived` and `recurrent` produce
+the distinct kinds `derived T` and `recurrent[N] T`.
 
-**Where value-cell types are used:**
+**Where value-cell kinds are used:**
 
-- **Operator parameters** (§13.17) — a value-reading operator parameter is typed
-  `Cell[T]`, binding to any value cell at instantiation and allocating internal
-  state tied to it. A `Stream[T]` has no current value, so it is excluded at the
-  read site, not by the signature.
-- **Operator return types** — an operator's value output is a computed
-  `Derived[T]`; the return type names the concrete produced type (`Derived[T]`,
-  `Stream[T]`, or `Cell[T]` only for a genuine passthrough), not an umbrella.
+- **Operator parameters** (§13.17) — a value-reading operator parameter is
+  annotated `cell T`, binding to any value cell at instantiation and allocating
+  internal state tied to it. A `stream T` has no current value, so it is
+  excluded at the read site, not by the annotation.
+- **Operator return kinds** — an operator's value output is a computed
+  `derived T`; the return annotation names the concrete produced kind
+  (`derived T`, `stream T`, or `cell T` only for a genuine passthrough), not the
+  umbrella.
 - **Function parameters** — `fn` may accept a value by type `T` or a cell by
-  type `Cell[T]`. The compiler distinguishes call-site semantics by the
+  kind `cell T`. The compiler distinguishes call-site semantics by the
   function's declared signature: a `fn(x: T)` parameter receives the cell's
-  current value (with reactive transparency per §13.12.2); a `fn(s: Cell[T])`
+  current value (with reactive transparency per §13.12.2); a `fn(s: cell T)`
   parameter receives the cell reference. No call-site syntactic difference;
-  resolution is by type.
+  resolution is by annotation.
 
-A `Cell[T]` is read-only when received as a parameter. There is no source-level
+A `cell T` is read-only when received as a parameter. There is no source-level
 form for writing to a reactive cell (the no-mutation rule of §13.2.7 applies).
 The cell may still be written by the host (`signal`), the runtime
 (`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
 
-**`Cell[T]` is the typing umbrella.** Cell-typed bindings typically appear in
+**`cell T` is the umbrella KIND.** Cell-kind bindings typically appear in
 parameter positions, return positions, and compiler-minted internal bindings
-(`Cell[Map[…]]` for `repeat … as` views per §13.5.4.9, `Cell[DynamicView[…]]`
-for dynamic views per §13.3.3.4). Cross-instance references to reactive state
-use `Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]`
-for non-graph slots (§13.3.6.3), or connections for typed wiring (§13.6).
+(`cell Map[…]` for `repeat … as` views per §13.5.4.9, `dynamic view V` for
+dynamic views per §13.3.3.4). Membership is a KIND relation, not a subtype or
+trait relation: `signal`, `derived`, `recurrent`, `stream`, and `yielded` are
+all cell kinds; there is no `Cell[T]` type and no `Cell` trait to fulfill.
+Cross-instance references to reactive state keep bracket **storable** types —
+`Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]` for
+non-graph slots (§13.3.6.3) — or connections for typed wiring (§13.6). Kind
+annotations never carry inline bounds: a bound on the value type is written in
+the generic parameter list or a `where` clause, not inside the kind
+(e.g. `operator f[T: Numeric](x: cell T)`, not a bracketed bound on `cell`).
 
 **Cell-names in reactive expressions are compile-time identifiers, not
 values or borrows.** When a cell-name appears in a reactive expression — `s + 1`
-where `s` is a `Signal[T]`, `posts_view.get(k)?.avatar`, `subject.attr_name`,
+where `s` is a `signal T`, `posts_view.get(k)?.avatar`, `subject.attr_name`,
 etc. — the compiler resolves the name into two things: (a) a provenance entry
 for the enclosing expression's dependency set, and (b) an auto-deref'd
 cell-pool read inserted at the name's position (per §13.17.3.1). No
-`Cell[T]` value is materialized at the name's position; no borrow object
+`cell T` value is materialized at the name's position; no borrow object
 is constructed. The runtime maintains the dependency edge from the
 referenced cell to the enclosing derived/recurrent body; the reader's
 reactivity is the dependency edge's effect, not a property of a value the
@@ -12498,24 +12605,26 @@ user holds.
 
 **Generics.**
 
-Value-cell types are parametric. Generic functions and operators abstract over
-the value type via `Cell[T]`:
+Value-cell kinds are parametric in `T`. Generic functions and operators abstract
+over the value type via `cell T`:
 
 ```
-operator passthrough[T](source: Cell[T]) -> Cell[T]:
+operator passthrough[T](source: cell T) -> cell T:
   source
 
-fn describe[T](cell: Cell[T]) -> string:
+fn describe[T](c: cell T) -> string:
   // some debugging utility, etc.
   ...
 ```
 
-Standard trait bounds apply (§3.1, §5.1). The constraint
-`Cell[T: Numeric]` requires T to satisfy `Numeric`.
+Standard trait bounds apply (§3.1, §5.1), written in the generic parameter list
+or a `where` clause since kind annotations carry no inline bounds. The
+constraint `[T: Numeric]` on `cell T` requires T to satisfy `Numeric`
+(e.g. `fn describe[T: Numeric](c: cell T)`).
 
 **Reading a value-cell field on records.**
 
-A value cell may have a record value (e.g. `Signal[Record]`).
+A value cell may have a record value (e.g. `signal Record`).
 Field access on the cell's value is reactive — `cell.field`
 inside a derived expression projects the field, and the derived
 re-evaluates whenever the cell's value changes (any field). This
@@ -12525,12 +12634,42 @@ stable derived cells, expose distinct cells from the source, or
 use a **reactive composite** (§13.2.9) to give each field its own
 cell within a record/tuple/array shape.
 
+##### 13.2.8.1 Kind and storable annotation taxonomy
+
+Ductus annotations fall into two families. **Cell kinds** are lowercase
+keyword designators for reactive binding machinery; they carry no
+brackets around a `Cell` name and never take inline bounds. **Storables**
+keep bracket type syntax because they name values that can be stored,
+passed, and held. The consolidated table:
+
+| Category | Annotation | Notes |
+|---|---|---|
+| Value cell (host-written) | `signal T` | `attr` also produces `signal T` (placement-written) |
+| Value cell (computed) | `derived T` | zero-history reactive computation |
+| Value cell (self-history) | `recurrent[N] T` | `N` omitted = `[1]`; `[0]` degenerates to `derived T` |
+| Event cell | `stream ring[N] T` / `stream gate[N] T` | erased form `stream T` when policy/capacity unresolved |
+| Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (default 0) |
+| Membership cell | `yielded T` / `yielded f32[128]` | ordered membership-varying group (§13.20.4) |
+| Cell umbrella (KIND) | `cell T` | spans all of the above; not a type, not a trait |
+| Dynamic view | `dynamic view V` | replaces `Cell[DynamicView[WeakHandle[V]]]` (§13.3.3.4) |
+| Storable — compile-time type | `Type[C]` | node/connection type slot |
+| Storable — graph handle | `Handle[T]` / `WeakHandle[T]` | cross-instance references |
+| Storable — non-graph slot | `Portal[T]` | identity-as-data; `Portal[cell T]` is the sanctioned cell-identity carrier |
+| Storable — values | `T`, `T[N]`, `T[..]` | plain values, arrays, slices |
+
+Rationale (the **storability razor**): a designator that names something
+storable keeps brackets; a designator that names reactive binding
+machinery is a lowercase kind keyword. Static views get no kind form —
+their members are `Handle[T]` arrays/slices. Bounds on a kind's value
+type go in the generic parameter list or a `where` clause, never inside
+the kind annotation.
+
 #### 13.2.9 Reactive composites
 
 A **reactive composite** is a record, tuple, or fixed-array binding
 whose fields or elements are independently reactive. Reactive
 composites address the coarse-grained limitation noted in §13.2.8
-(where a `Signal[Record]` re-evaluates all consumers on any field
+(where a `signal Record` re-evaluates all consumers on any field
 change) by giving each reactive field or element its own cell while
 preserving the composite's record/tuple/array type at the type-system
 level.
@@ -12586,7 +12725,7 @@ updates, only that field is dirty — consumers reading other fields
 through the same composite are not invalidated.
 
 This distinguishes reactive composites from the §13.2.8
-`Signal[Record]` case, where the entire record value is one cell and
+`signal Record` case, where the entire record value is one cell and
 any field change invalidates all consumers of any field. Reactive
 composites are the recommended construct when fine-grained per-field
 update propagation matters.
@@ -12690,7 +12829,7 @@ fn process(p: PeakResult) -> f32:
   q.some_property * 2.0             // reads p.some_property's cell live
 ```
 
-This is the composite-typed analogue of the §13.2.8 `Cell[T]`
+This is the composite-typed analogue of the §13.2.8 `cell T`
 binding form: when the binding's type is the composite's type, the
 binding is structural — it preserves the live cell references of
 its RHS. The standard scalar auto-deref rules of §13.2.8 still
@@ -12700,7 +12839,7 @@ auto-derefs per the existing rules).
 **Ownership.** A reactive composite binding names cells held by
 the runtime, not stack-owned data; multiple live aliases to the
 same composite may coexist without violating §11's single-
-ownership rule, just as multiple `Cell[T]` parameters may name
+ownership rule, just as multiple `cell T` parameters may name
 the same cell. Materialization to a concrete value (§13.2.9.7)
 produces a `PeakResult`/tuple/array instance subject to the
 standard §11 ownership rules from that point on.
@@ -12915,22 +13054,39 @@ per-trigger logic, used inside `recurrent` (§13.2.4.7), inside
 
 ```
 observe:
-  on T1: expr1
-  on (T1, T2): expr_paired
-  on T3 where C: expr_filtered
+  on T1 as e: expr1
+  on (T1, T2) as (e1, e2): expr_paired
+  on T3 where C as e: expr_filtered
   default: expr_default
 ```
 
 - Each arm consists of an **`on` clause** listing one or more
-  trigger cells, an optional **`where` filter** (§13.18.10), and a
-  colon followed by the **arm expression**.
+  trigger cells, an optional **`where` filter** (§13.18.10), an
+  optional **`as` binder**, and a colon followed by the **arm
+  expression**. The full arm grammar is
+  `on <trigger> [where C] [as <binder>]:`.
+- The **`as` binder** binds the *post-filter* event value so the arm
+  body can name it. A single stream trigger binds the bare event
+  value (`as e` where `e: E`). A multi-trigger set binds either a
+  tuple (`as (e1, e2)`) or a single tuple identifier (`as events`,
+  accessed `.0`/`.1`); each stream slot is typed `Option[E]` — `Some`
+  iff that trigger fired this activation, so a co-firing binds both
+  `Some` — while signal slots bind plainly. In a value-cell context
+  the binder is the *latest event of the commit*; in a stream context
+  the arm evaluates per event. Inside the `where` filter `C`, the bare
+  stream name keeps its event meaning (§13.18.10); in the arm **body**
+  only the binder denotes the event — a bare stream name in the body
+  never denotes an event value.
 - A `default:` arm has no `on` clause — its expression is the
   observe's value when no `on` arm has yet activated.
 - All arm expressions must produce the same type T (like `match`
   expressions, §6.2.4).
-- The observe expression's value is a `Cell[T]`; its concrete
-  reactive type (a value cell or a `Stream[T]`) is determined by the
+- The observe expression's value is a `cell T`; its concrete
+  reactive kind (a value cell or a `stream T`) is determined by the
   context where the observe is used.
+- `combineLatest`-style auto-emit-on-any is **not** available in
+  observe arms — it lives in stream expressions (§13.18); an arm fires
+  on its own trigger set only.
 
 An arm body after the colon is either a single inline expression (`on T1:
 expr1`) or, when intermediate bindings are needed, an indented block ending in
@@ -13028,32 +13184,39 @@ activates.
 
 ##### 13.2.11.6 Output type
 
-An observe expression produces a `Cell[T]` (§13.18.5) whose concrete
-type is determined by the surrounding context:
+An observe expression produces a `cell T` (§13.18.5) whose concrete
+kind is determined by the surrounding context:
 
 - Assigned to a `signal`/`derived`/`recurrent` binding, or used in a
-  value-cell context: produces the matching value-cell type
-  (`Signal[T]`, `Derived[T]`, or `Recurrent[T, N]`).
+  value-cell context: produces the matching value-cell kind
+  (`signal T`, `derived T`, or `recurrent[N] T`).
 - Assigned to a `stream` declaration, or used in a context expecting
-  `Stream[T]`: produces the concrete stream type (`RingStream[T, N]`
-  or `GateStream[T, N]`) per the stream context's policy/capacity.
+  `stream T`: produces the concrete stream kind (`stream ring[N] T`
+  or `stream gate[N] T`) per the stream context's policy/capacity.
 
 All arms' expressions must produce values of the same type T,
-matched against the surrounding context. Type mismatch across arms
-is a compile error.
+matched against the surrounding context. The `as` binder's slot type
+is coherent with the arm expressions: a single stream binds `E`, a
+value cell binds the latest committed event, and a multi-trigger set
+binds `Option[E]` per stream slot / plain per signal slot (§13.2.11.1).
+Type mismatch across arms is a compile error.
 
 ##### 13.2.11.7 Use sites
 
 `observe` is an expression form. It can appear anywhere a reactive
 expression of compatible type is expected:
 
-- As the RHS of a `derived`, `signal`, `recurrent`, `recurrent[N]
-  stream`, or `stream` declaration.
+- As the RHS of a `derived T`, `signal T`, `recurrent[N] T`,
+  `recurrent[H] stream ring[N] T`, or `stream ring[N] T` /
+  `stream gate[N] T` declaration. (The binder's slot typing follows
+  the RHS kind coherently: value-cell RHS binds the latest committed
+  event; stream RHS binds per event; multi-trigger sets bind
+  `Option[E]` per stream slot — §13.2.11.1.)
 - As a sub-expression inside a larger reactive expression.
 - As an argument to a function call (functions are reactive-
   transparent per §13.12.2; the observe's reactive dependencies
   propagate through the call site).
-- Anywhere a `Cell[T]` value is valid.
+- Anywhere a `cell T` value is valid.
 
 Inside a recurrent declaration, the observe's arm expressions may
 use `.previous(fallback)` / `.past(k, fallback)` on the enclosing
@@ -13256,7 +13419,7 @@ callers; internals are unconstrained by them — is stated in §13.3.4.2.
 A named acceptance entry *is* a view: it provides a body selection
 binding over the children it accepts. Body code reads the binding under
 the rules of §13.3.3.2 — as a `Handle[T]` array for a static view, or a
-`Cell[DynamicView[WeakHandle[T]]]` for a `dynamic` entry (§13.3.3.4).
+`dynamic view T` cell for a `dynamic` entry (§13.3.3.4).
 
 A separate `view` declaration may be written to provide an *additional*
 selection over already-accepted children — typically for a narrower
@@ -13382,7 +13545,7 @@ const-generic arrays:
   `(slot_path, generation)` pair the Handle always carries.
 
 For a **`dynamic`** view, the view name is not an array but a **reactive
-cell** `Cell[DynamicView[WeakHandle[T]]]` (§13.3.3.4); none of the static-array
+cell** of kind `dynamic view T` (§13.3.3.4); none of the static-array
 forms above apply to it.
 
 A view is the only body-side bulk form: there is no whole-namespace
@@ -13524,8 +13687,8 @@ function must be generic over the row's type. Field access never needs
 the entry name.
 
 `for … as` is the static counterpart to `repeat … as`'s
-`Cell[Map[Key, view::entry]]` (§13.5.4.9): array↔map, positional↔keyed,
-static↔Cell-dynamic. The entry-field variant tracks the difference:
+`cell Map[Key, view::entry]` (§13.5.4.9): array↔map, positional↔keyed,
+static↔cell-dynamic. The entry-field variant tracks the difference:
 `Handle[T]` here vs `WeakHandle[T]` there.
 
 ##### 13.3.3.4 Dynamic views
@@ -13553,8 +13716,8 @@ Feeding an *unmarked* view with a `repeat` is a compile error at the
 feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
-**The cell.** A `dynamic` view is a **reactive cell**
-`Cell[DynamicView[WeakHandle[T]]]` whose value is the current
+**The cell.** A `dynamic` view is a **reactive cell** of kind
+`dynamic view T` whose value is the current
 iterator of supplied-child `WeakHandle[T]`s — keyed and in source order
 (the written
 interleaving, with each feeding `repeat`'s scopes expanded in place). The
@@ -13565,8 +13728,8 @@ consume-only: it cannot be bound, stored, or returned as a value
 - **Operators** (§13.17), for values:
 
   ```
-  derived titles = items |> map(fn(p): p.title)   // Signal[Vec[string]]
-  derived count: usize = len(titles)
+  derived titles = items |> map(fn(p): p.title)   // derived Vec[string]
+  derived n: usize = items.count                  // element tally (§13.2.8.1)
   ```
 
   The per-element closure (`fn(p): …` — ordinary closure literal,
@@ -13593,12 +13756,15 @@ consume-only: it cannot be bound, stored, or returned as a value
   `dynamic` type carries a **placement-site key** — stable and
   path-derived, the same identity scheme as §13.15.2.
 
-No other access exists: `for` cannot iterate a dynamic view (`for` is
+Beyond the two consumption paths and the `.count` element tally, no
+other access exists: `for` cannot iterate a dynamic view (`for` is
 compile-time, §12.3.7, and the set is not a compile-time fact);
 `viewname[i]` is rejected (a positional index into a keyed, changing set is
 not a stable identity); `viewname[key]` is rejected (keys belong to the
 *supplier* — they are derived from the caller's data by the caller's
 `keyed by`, and the receiving type has no way to know or name them).
+`viewname.count` is the reactive element tally — the uniform `.count`
+accessor (§13.2.8.1), tracking membership like any other read.
 
 **Exposition.** A view referenced in `expose:` carries its dynamic children
 like static ones: each feeding `repeat`'s scopes appear at the repeat's
@@ -13614,21 +13780,23 @@ contract regardless, because the *type* admits dynamic supply.
 The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
 
-**The `DynamicView[T]` type.** The cell payload for a dynamic view is a
-language-level type **`DynamicView[T]`**. It is iterator-shaped:
-`Item = WeakHandle[T]`, satisfies `Iterable` and `IntoIterable`, and has no
-surface `len` or index operator on its own — storage is implementation-
-defined. `DynamicView[T]` is consume-only: it is not stored bare; it lives
-only inside a `Cell[DynamicView[T]]`, and the containing cell is what is
-bound, stored, and joined as a dependency-edge declarer. Consumers are the reactive
-operators (§13.3.3.2) or `repeat` (§13.9.7); the `DynamicView` value itself
-carries no dependency-edge semantics independent of its cell.
+**The `dynamic view T` kind.** The cell for a dynamic view is a
+language-level **cell kind** `dynamic view T` (D0-8; it replaces the old
+spelling `Cell[DynamicView[WeakHandle[T]]]`). It is iterator-shaped:
+`Item = WeakHandle[T]`, satisfies `Iterable` and `IntoIterable`, exposes
+a reactive `.count` element tally but **no index operator** on its own —
+storage is implementation-defined. A `dynamic view T` is consume-only:
+it is not stored bare; the view-name binds the cell directly, and that
+cell is what is bound, stored, and joined as a dependency-edge declarer.
+Consumers are the reactive operators (§13.3.3.2) or `repeat` (§13.9.7);
+the membership value itself carries no dependency-edge semantics
+independent of its cell.
 
-The `Cell[DynamicView[…]]` binding for a dynamic view is **compiler-minted**:
+The `dynamic view T` binding for a dynamic view is **compiler-minted**:
 the view-name lives in the body-scope namespace as the receiving binding for
 the view's reactive content. Consumption goes through operators or `repeat` as above.
 
-**Iteration narrowing.** Iterating a `Cell[DynamicView[WeakHandle[T]]]`
+**Iteration narrowing.** Iterating a `dynamic view T`
 yields `WeakHandle[T]` on the iterator surface. In a context that proves
 the iterated element is reachable — the typical case being a read inside a
 per-element operator like `map`/`filter` or a `repeat` body — the per-
@@ -13648,8 +13816,8 @@ bundle** — a bare placement is not.
 ```
 view chords: [Note[=2]]+              // 1+ bundles, each containing exactly 2 Notes
 chords[0][1].pitch                    // bundle 0, element 1
-chords.length                         // number of bundles
-chords[0].length                      // number of elements in bundle 0
+chords.count                          // number of bundles
+chords[0].count                       // number of elements in bundle 0
 ```
 
 An **empty bundle literal `[]`** is legal and has type
@@ -13666,7 +13834,7 @@ Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
   statically equal, or the row is a single element), `Handle[T][..]`
   when the row length is only known at runtime.
 - `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
-- `bundle.length` returns the row count; `bundle[g].length` returns the
+- `bundle.count` returns the row count; `bundle[g].count` returns the
   row's element count.
 
 Direct index `bundle[g]` is legal iff `g < outer_min_cardinality`; direct
@@ -13710,7 +13878,7 @@ chords[0][1]                 // 2nd Note of bundle 0
 ```
 
 With a single matching bundle, members are reached `bundle[i]` and
-`bundle.length`; multiple bundles are addressed with the outer index
+`bundle.count`; multiple bundles are addressed with the outer index
 first: `bundles[g][i]`.
 
 ##### Bundle cardinality
@@ -13734,7 +13902,7 @@ Forbidden inside a bundle bracket:
 
 - `repeat` — a runtime-varying membership inside a static pre-tied
   bracket contradicts the bundle nature. Dynamic bundles use the
-  reactive `Cell` form below.
+  reactive `cell` form below.
 - Connections — bundling is node-only.
 
 ##### `[...]` is an open delimiter
@@ -13762,7 +13930,7 @@ that a receiving view's row produces from `view[g]`.
 
 ##### Dynamic bundles
 
-A `repeat`-fed bundle stays a reactive `Cell` whose value is consume-only;
+A `repeat`-fed bundle stays a reactive `cell` whose value is consume-only;
 slice-indexing access does not apply. The slice surface
 is only for caller-written static brackets.
 
@@ -13785,6 +13953,32 @@ A bundle entry in `expose:` preserves its bracket structure exactly as
 the caller wrote it — the runtime sees a two-level structure (rows
 containing elements), not a flattened list. This parallels `@content`'s
 order-preservation applied to a named bundle view.
+
+##### Row-matching `[B]`
+
+The bracket appears in three parallel roles — the bracket trilogy:
+
+- **write** — `[n1 n2]` at a placement site *ties* co-placed children
+  into a bundle row (§13.8.3).
+- **accept** — `[Note+]+` in a view selector *accepts* bundle rows.
+- **match** — `[B]` in bundle-payload pattern position *matches a whole
+  row* whose every element satisfies the bound `B` (a trait, a concrete
+  node type, or the `Node` marker). The binding is a **row slice**
+  `Handle[B][..]`:
+
+  ```
+  match entry:
+    Bundle([Oscillator]):   handle_osc_row(...)   // every element an Oscillator
+    Bundle(b):              handle_generic_row(b)  // any row
+  ```
+
+  `[B]` matches the row **as a whole** — every element must satisfy `B`.
+  There is **no `[B ...]` partial-row form**: a bundle is a closed
+  co-placement, so partial-row matching is not provided (R7). There is
+  also **no `T[]` synonym** for a slice type `T[..]` — the slice spelling
+  is `T[..]` only. A `[B]` match arm is an entry-match filter and obeys
+  the entry-match rules of §13.3.7.7 (bounded arm = filter, does not
+  count toward exhaustiveness).
 
 ##### Trait derivation
 
@@ -13894,8 +14088,8 @@ type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
   is legal.
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
-For a **`dynamic`** connection-view, the name is a reactive cell
-`Cell[DynamicView[WeakHandle[C]]]` whose value is the current
+For a **`dynamic`** connection-view, the name is a reactive cell of kind
+`dynamic view C` whose value is the current
 iterator of member connections, with the consumption rules of §13.3.3.4
 — operators for values, `repeat` for structure, nothing else. This is
 the fan-in idiom:
@@ -14239,7 +14433,7 @@ this is the storage-widening direction of the lens rule, a
 lossless widening from the statically-placed carrier to its
 possibly-absent superset. Container slots propagate the same widening at
 any nesting depth: a `Vec[WeakHandle[T]]` slot accepts a
-`Vec[Handle[T]]`, a `Cell[WeakHandle[T]]` accepts a `Cell[Handle[T]]`,
+`Vec[Handle[T]]`, a `cell WeakHandle[T]` accepts a `cell Handle[T]`,
 and so on. The narrowing direction (`WeakHandle[T]` → `Handle[T]`) is
 never implicit; it requires `handle!` or an explicit `match`/`?`.
 
@@ -14358,10 +14552,11 @@ the slot was dropped and later reused by a different value, the old
 portal's generation no longer matches and it resolves to `None` — never to
 the wrong value.
 
-**Reactivity.** `Cell[T]` (§13.2.8) and `Portal[T]` are orthogonal axes.
-`Cell[T]` is a reactive reference whose read declares a dependency edge into the enclosing expression's provenance; `Portal[T]` is an
-inert window whose read does not. `Portal[Cell[T]]` is well-formed: the
-portal resolves to `Option[&Cell[T]]`, and the inner cell read remains
+**Reactivity.** `cell T` (§13.2.8) and `Portal[T]` are orthogonal axes.
+A `cell T` is a reactive reference whose read declares a dependency edge into the enclosing expression's provenance; `Portal[T]` is an
+inert window whose read does not. `Portal[cell T]` is well-formed and is
+the sanctioned identity-as-data carrier for a cell: the portal resolves
+to `Option[&cell T]`, and the inner cell read remains
 reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
 (§13.10.5) handles the portal flipping to `None` the same way it handles a
 connection re-pointing.
@@ -14512,7 +14707,16 @@ Two forms apply inside `expose:`:
   simple or multi-way guard arms) or a **`given` block** (§13.9.13,
   exhaustive discriminant selection over a sum scrutinee). Each arm body
   is a list of exposition entries; the runtime exposes the active arm and
-  freezes the rest (Model B, §13.9.7).
+  freezes the rest (Model B, §13.9.7). To an interpreter, such a block
+  surfaces as a single **`Gated` entry** (§13.3.7.7) that binds **all**
+  arms — a compile-time fixed-extent sequence of arm bodies, each the same
+  walkable type as `.exposition` itself. The interpreter walks every arm
+  at compile time (mirroring Model B). Guarding is **positional**:
+  structural output produced while walking arm *i* takes the gate of arm
+  *i* as its `gate_parent`, and value contributions join folds as
+  activation-driven members (present iff their arm is effectively active,
+  §13.9.7). The block's predicate/scrutinee is never surfaced to the
+  interpreter — only the arm bodies are.
 
 These reuse the gate constructs that apply elsewhere — no exposition-only
 control-flow syntax is introduced. Arm labels do not collide with
@@ -14659,11 +14863,15 @@ runtime takes up the connection and begins interpreting the connected
 subgraph.
 
 What engagement *means* is domain semantics, carried by the specific
-Connection type and interpreted by the runtime/host — it is not a
-language keyword, and the language and IR deliberately carry no
-sequencing flag for it. The host recognizes the connection types of its
-domain and interprets each by type, exactly as it interprets the node
-types it traverses. One connection type may carry await-like meaning
+Connection type and interpreted by the runtime/host or by an in-language
+interpreter — it is not a language keyword, and the language and IR
+deliberately carry no sequencing flag for it. Connection-engagement
+meaning stays **extrinsic**: the connection type itself fixes only
+acceptance, never what engaging it does. An interpreter — a host
+reconciler or an effect-kind trait method walking `.exposition`
+(§13.3.7.7) — recognizes the connection types of its domain and
+interprets each by type, exactly as it interprets the node types it
+traverses. One connection type may carry await-like meaning
 (the originating node's traversal does not continue until the connected
 node and its dependencies are finished); another may carry parallel
 meaning (the target's traversal starts while the originating node's
@@ -14694,6 +14902,77 @@ Terminology: **activation** refers to gate-state (§13.9.1) and is
 unchanged; **engagement** refers to traversal reaching an entry. A
 connection can be live yet unengaged (computing, not yet reached) or
 frozen and therefore unengageable.
+
+##### 13.3.7.7 The entry sum: walking `.exposition`
+
+`.exposition` is not an opaque list — it is a **typed, language-owned,
+CLOSED sum of five entry kinds**. Interpretation — giving meaning to a
+node by walking what it exposes — is expressible IN Ductus, not only in
+a host, by iterating this sum and matching its variants. The five kinds
+are:
+
+| Variant | What it carries |
+|---|---|
+| `Node` | a node placement (a child, wrapper, or own placement) |
+| `Connection` | a connection placement engaged at this position (§13.3.7.5) |
+| `Bundle` | a homogeneous co-placement row (§13.3.3.5) |
+| `DynamicView` | a runtime-varying membership view (§13.3.3.4) |
+| `Gated` | a `when`/`given` block's arm sequence (§13.9) |
+
+**Closed and language-owned.** User code can never add a sixth kind:
+the sum is defined by the language, not the stdlib. Because the
+vocabulary is closed, an interpreter is exhaustively checkable and
+statically monomorphizable.
+
+**Walk = `for entry` + `match`.** An interpretation walks the exposition
+by iterating it and matching each entry:
+
+```
+for entry in subject.exposition:
+  match entry:
+    Node(n):            interpret_node(n)
+    Connection(c):      engage(c)
+    Bundle(b):          for row in b: interpret_node(row)
+    DynamicView(v):     for m in v: interpret_node(m)
+    Gated(arms):        for arm in arms: walk(arm)
+```
+
+`Node(n)` is shorthand for `Node(n: Node)` — the unbounded variant
+binder carries the intrinsic `Node` marker.
+
+**The entry-match-only bounded pattern `Variant(name: Bound)`.** Within
+an entry match *only*, a variant arm may carry a **bound** — a trait or
+concrete type — that filters which entries the arm accepts:
+
+```
+match entry:
+  Node(osc: Oscillator):   interpret_osc(osc)     // only Oscillator nodes
+  Node(n):                 interpret_generic(n)    // all remaining nodes
+```
+
+- The bound binder `name: Bound` is scoped to entry matches; it is not a
+  general pattern shape and does not appear in ordinary `match` over
+  records (trait-headed record match stays banned, §6.2.4).
+- A **bounded arm is a filter**: it never counts toward exhaustiveness.
+  Each variant still needs either an unbounded arm (`Node(_)` / `Node(n)`)
+  or the match a final `_`, or the match fails exhaustiveness.
+- **First match wins**, in declaration order. A broad arm written before
+  a narrower one that can never be reached raises a **dead-arm lint**
+  (broad-before-narrow).
+- **Binding is generic-parameter semantics, monomorphized.** Static
+  entries unroll at compile time with zero runtime type tests; dynamic
+  elements (dynamic-view members) are tagged once at mount over the
+  closed candidate envelope (§13.3.3.4). The bound behaves exactly like a
+  generic parameter constraint at the arm.
+
+**Participation/skip report.** Because the envelope is closed and the
+walk is monomorphized, the compiler can emit, per interpretation root, a
+report of which node/connection types participate in the walk and which
+are skipped (no matching arm) — a static coverage aid, not a runtime
+artifact.
+
+Interpretation bootstraps as an ordinary effect call (§13.19), not a new
+top-level construct; effect-kind trait methods (§3.1) carry the walk.
 
 #### 13.3.8 Effects (the `effects:` clause)
 
@@ -14840,7 +15119,7 @@ Children of a parent instance are accessible in two ways:
   declared cardinality (§13.3.3.2) — indexable under the guaranteed
   minimum, iterable with `for`, in placement order; elements are
   `Handle[T]` values that auto-deref to `&T` (§13.3.6.2). For a
-  **`dynamic`** view it is a reactive cell `Cell[DynamicView[WeakHandle[T]]]`
+  **`dynamic`** view it is a reactive cell of kind `dynamic view T`
   consumed via operators or `repeat` (§13.3.3.4). Bulk access
   exists only through a declared view name.
 - **Named individual:** bare `<name>` (or `paramName.<name>` from outside
@@ -14994,7 +15273,7 @@ the construct's own choice (`repeat` derives one key per element,
 
 The user-facing surface for this mechanism is the **`repeat` keyword**
 (§13.5.4), which materializes one scope per element yielded by a
-reactive iterable source — a `Signal[I]` where `I: Iterable` (§12.8), or a `dynamic` namespace cell (§13.5.4.1).
+reactive iterable source — a `signal I` where `I: Iterable` (§12.8), or a `dynamic` namespace cell (§13.5.4.1).
 
 #### 13.5.1 The primitive
 
@@ -15128,7 +15407,7 @@ repeat <bind> at <index> in <source> as <view> keyed by <key-expr>:
 The clause order is fixed: `<bind>`, then optional `at <index>`, then
 `in <source>`, then optional `as <view>`, then optional `keyed by <key-expr>`.
 
-- **`<source>`** is a reactive collection cell: `Signal[I]` for some
+- **`<source>`** is a reactive collection cell: `signal I` for some
   `I: Iterable` (§12.8), or a **`dynamic` collection cell** of the
   enclosing node (a `dynamic` view or connection-view,
   §13.3.3.4), whose value is a language-provided keyed, ordered
@@ -15138,7 +15417,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   N), and `HashSet[T]`; the language-level `Map[K, V]` fulfills
   `Iterable` as part of its primitive surface (§9.5). User types may
   fulfill
-  `Iterable` to participate. `Stream[T]` is not a valid `repeat` source —
+  `Iterable` to participate. A `stream T` is not a valid `repeat` source —
   it's an event source, not a collection with a current snapshot, so it
   has no key set to diff. To drive `repeat` from a stream, first project
   the stream into a collection-valued cell (e.g. fold its events into a
@@ -15222,8 +15501,12 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
      element arrives with the key its supplier derived for it
      (placement-site keys for statically written elements), and that
      key is used.
-  3. **`Keyed` trait** — if the element type fulfills the stdlib
-     `Keyed` trait, the key is `Keyed::key(element)`. Trait shape:
+  3. **`Keyed` trait** — if the element type fulfills the
+     **language-defined** `Keyed` trait, the key is `Keyed::key(element)`.
+     `Keyed` and `StringifiableKey` are defined by the language, not the
+     stdlib — like the other language-defined trait fulfillments
+     (§5.22-style), the compiler knows their shape and the primitive
+     fulfillments directly. Trait shape:
      ```
      trait Keyed:
        type Key: StringifiableKey
@@ -15279,9 +15562,12 @@ and continues; a duplicate key never halts the program.
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes (and, with
 `at <index>`, each surviving scope observes its new index).
-Unordered iterables (`HashSet[T]`, `Map[K, V]`) are diffed by key
+Unordered iterables (`HashSet[T]`) are diffed by key
 identity; iteration order is whatever the underlying type's iterator
-emits and does not affect scope identity.
+emits and does not affect scope identity. `Map[K, V]` iterates in
+**insertion order** (§9.5.8), so its iteration order is stable; it is
+still diffed by key identity, so reordering under insertion order
+reallocates no scopes.
 
 ##### 13.5.4.3 Worked examples
 
@@ -15319,9 +15605,9 @@ feeding a `dynamic` view of the receiving node (§13.3.3.4).
 
 Each `Voice` scope's state (recurrents inside `Voice`) persists across
 commits for the same `voice_id`. The attr is a reactive cell — reads
-of `active_voices` in the body yield a `Signal[Vec[VoiceConfig]]`;
+of `active_voices` in the body yield a `signal Vec[VoiceConfig]`;
 `Vec[VoiceConfig]: Iterable` satisfies `repeat`'s source-type
-requirement, with `Vec` supplying the iterator inside the `Signal`.
+requirement, with `Vec` supplying the iterator inside the `signal`.
 
 **Implicit keying via stringifiable element** — when the iterator's
 `Item` type is itself a `StringifiableKey`, no `keyed by` is needed:
@@ -15521,10 +15807,10 @@ In each rejected context, the diagnostic identifies the misplaced
 A `repeat` materializes its scopes anonymously: nothing in the surrounding body
 can name a particular child, because the children are keyed by data, not written
 out individually. The `as <view>` clause closes that gap. It binds `<view>`
-to a reactive `Cell[Map[Key, <view>::entry]]` (§9.5) whose keyset tracks the
+to a reactive `cell Map[Key, <view>::entry]` (§9.5) whose keyset tracks the
 source's current keys.
 
-The `Cell[Map[…]]` binding here is **compiler-minted**: the `<view>` name lives
+The `cell Map[…]` binding here is **compiler-minted**: the `<view>` name lives
 in the body-scope namespace as the receiving binding for the `repeat`'s output.
 Cross-instance access to repeat-keyed state uses the body-scope
 `<view>.get(k)?.<name>` projection in place, or captures the durable **key**
@@ -15535,7 +15821,7 @@ node Feed:
   attr posts: Vec[Post] = Vec::new()
   attr selected: PostId
 
-  // posts_view : Cell[Map[PostId, posts_view::entry]]
+  // posts_view : cell Map[PostId, posts_view::entry]
   // posts_view::entry has one field per `as <name>` placement — here, `avatar`
 
   // Reading a member is a transient projection through the Cell+Map:
@@ -15567,8 +15853,8 @@ The placement binding `<name>` *inside* the repeat body itself stays a
 borrow — the entry field is the compiler's separate storable
 representation for outside-the-scope access.
 
-**Read chain.** `<view>.get(k)` returns `Cell[Option[<view>::entry]]`
-(auto-deref through the `Cell` per §13.17.3.1). The transient projection
+**Read chain.** `<view>.get(k)` returns `cell Option[<view>::entry]`
+(auto-deref through the cell per §13.17.3.1). The transient projection
 `<view>.get(k)?.<name>` resolves end-to-end to `Option[&T]`:
 
 - Outer `Option` from `Map.get` (key absent or scope unmounted).
@@ -15582,7 +15868,7 @@ by the identity rule of §13.5.4.8, a key that leaves and later returns
 remounts the *same* scope, so a stored key resumes resolving to `Some`
 when re-looked-up.
 
-**Read-only.** `<view>` is a `Cell[Map[…]]`, and `Cell[T]` parameters are
+**Read-only.** `<view>` is a `cell Map[…]`, and `cell T` parameters are
 read-only (§13.2.8): there is no `<view>[k] = v` or `delete <view>[k]`
 form. The source drives keyset and entry changes.
 
@@ -15597,27 +15883,62 @@ consequences:
   placement unnamed keeps it private to its scope.
 
 **Nested `repeat … as`.** Each nested `repeat … as <inner>` materializes
-its own `Cell[Map[…]]`, surfaced as a field on the outer `entry`:
+its own `cell Map[…]`, surfaced as a field on the outer `entry`:
 
 ```
-posts_view : Cell[Map[PostId, posts_view::entry]]
+posts_view : cell Map[PostId, posts_view::entry]
 posts_view::entry:
   avatar  : Avatar           // named placement
-  replies : Cell[Map[ReplyId, replies::entry]]   // nested repeat … as replies
+  replies : cell Map[ReplyId, replies::entry]   // nested repeat … as replies
 ```
 
 Cross-level addressing composes view by view:
 `posts_view.get(post_id)?.replies.get(reply_id)?.<name>`.
 
 **`at` on unordered sources.** When a `repeat`'s source is unordered (a
-`Map` per §9.5, a `HashSet`, etc.), the `at <index>` form is **unstable**:
-the index reflects the iterator's emit order, which
-can differ commit-to-commit. The compiler issues a **normative
+`HashSet`, or any user `Iterable` with no order commitment), the
+`at <index>` form is **unstable**: the index reflects the iterator's emit
+order, which can differ commit-to-commit. (`Map` is **not** in this
+category — it iterates in insertion order per §9.5.8, so `at` over a `Map`
+is stable under that order.) The compiler issues a **normative
 diagnostic** — class **`unstable_positional_iteration_on_unordered_source`**
 — at the placement site: a warning by default, promotable to an error per
 build configuration. The diagnostic class name is normative so user tooling
 (linters, CI gates) may target it directly. Programs relying on stable
 positional identity should use `keyed by <expr>` (§13.5.4.1) instead.
+
+##### 13.5.4.10 `repeat` in expression position and the typed binder
+
+**Expression position.** `repeat` lifts to **expression position**: a
+`repeat` expression yields exactly what `repeat … as X` binds — the keyed
+view over its scopes. Written with `as`, the name binds that view; the
+bare expression form yields the same value anonymously. The `as` clause is
+therefore **sugar** for naming the expression's result — the value exists
+whether or not it is named.
+
+**The typed filtering binder `repeat (child: Bound)`.** Inside a `dyn:`
+context, a `repeat` may carry a **parenthesized typed binder** that filters
+which candidates it materializes scopes for:
+
+```
+dyn:
+  repeat (osc: Oscillator) in voices:
+    render_voice(osc)
+```
+
+- The binder is `(<name>: Bound)` — parenthesized, bound-colon **inside**
+  the parens (mirroring match payload patterns, where bound-colons always
+  sit inside parens). `Bound` is a trait or concrete type.
+- **Filter semantics, per-candidate monomorphization.** The binder is a
+  *filter*: only members satisfying `Bound` get a scope; non-matching
+  members produce **no scope** (there is no body for them) and imply **no
+  exhaustiveness** obligation. Each matching candidate is monomorphized as
+  under a generic parameter constraint.
+- **Legal only over dynamic views / connection-views** — entity
+  references over closed candidate envelopes (§13.3.3.4). It is **not**
+  legal over value collections: a bound over values would be a record
+  type-case, which is banned (§6.2.4). Value collections keep bare or
+  tuple binders only (§13.5.4.1).
 
 ### 13.6 Connections
 
@@ -15867,6 +16188,40 @@ observer instead reads the connection's own cells (attrs, deriveds), which hold
 their last committed value even while the connection is frozen (§13.9.7).
 Presence-awareness *about* a node is the job of a `WeakHandle` (§13.3.6.2), not of a
 connection's surface.
+
+**Endpoint-derived carve-out (opt-in).** A connection MAY *opt in* to
+surfacing endpoint data by declaring its **own derived** whose value is a
+storable handle to an endpoint:
+
+```
+connection Plays:
+  from: Verse
+  to: Clip
+  derived target: WeakHandle[Clip] = handle to      // opt-in endpoint surface
+```
+
+This is the sanctioned way for an interpreter to reach through a
+connection ("wire-following", §13.19): the connection publishes a
+`WeakHandle`/`Portal` of its own, rather than exposing `to` directly. The
+body-internal rule above is unchanged — `to` itself is still not externally
+readable; only the connection's declared deriveds are. A connection that
+declares no such derived surfaces nothing about its endpoints.
+
+**Named incoming connection-view reads.** An interpreter reads a target
+node's *declared incoming connection-views* by **name** through the node
+reference — `value.mods` where `mods` is the incoming view's name on the
+target's type (§13.3.4). The view name disambiguates when a node declares
+several incoming views; multi-view same-type ambiguity is therefore moot.
+Reading an incoming view this way is a wire-following read of what connects
+*to* the target, distinct from the target's own outgoing surface.
+
+**Acceptance intrinsic, meaning extrinsic.** What a connection type
+*accepts* — its endpoint constraints and any trait selectors for openness
+— is **intrinsic** to the type and meaning-free. What engaging the
+connection *means* is **extrinsic**: carried by the interpreter (host
+reconciler or in-language effect-kind method, §13.3.7.7), never by the
+connection type itself. Connection ownership asymmetry (a connection never
+owns its endpoints) is preserved.
 
 #### 13.6.3 Generic connections
 
@@ -16534,7 +16889,7 @@ indexed view form `synth.oscillators[i]` (§13.4.1), and the parent type's
 own iteration uses `for o in oscillators:` (§13.4.2).
 
 **For runtime-varying multiplicity.** When the number of children must
-vary at runtime — driven by a reactive iterable source (`Signal[I]`
+vary at runtime — driven by a reactive iterable source (`signal I`
 where `I: Iterable`, such as `Vec[T]`, `HashSet[T]`, or
 `Map[K, V]`) — use `repeat` (§13.5.4) rather than `for`. The compile-time `for` described
 here is for *parametric* topology: multiplicity that is parameterized
@@ -17576,6 +17931,35 @@ On a gated node or connection, reads return frozen values: the
 last committed value during an active period, or the initial value
 if the instance has never been active.
 
+**The gate read-path system — four paths.** How a gate is *observed*
+falls into exactly four read-paths, and in none of them is the gate
+predicate itself ever surfaced to a reader:
+
+1. **No-deliver (connections).** A gated-off connection delivers
+   nothing to its destination through that connection (above; a gated
+   connection simply stops propagating).
+2. **Defined-value (cell reads).** A cell read on a gated subgraph
+   always returns a defined value of type T (never `Option[T]`) — the
+   frozen last-committed or initial value (the "Cell-value reads on
+   gated subgraphs" rules above).
+3. **Frozen static-view membership.** A static view's members include
+   gated-off elements as **frozen** members: they remain present in the
+   view's membership (membership is static), and a read of a frozen
+   member returns its frozen value. Gating changes the value-state, not
+   the membership.
+4. **Activation-driven fold membership (new).** When a value
+   contribution flows into a `fold` or `collect` group from inside a
+   gated arm, its membership is **activation-driven**: the member is
+   present in the group iff its arm is *effectively active* (own gate
+   and every ancestor gate open — the effective-activation relation
+   above). Unlike path 3, membership itself toggles with the gate — a
+   gated-off contribution is *absent* from the group, not a frozen
+   present member. This is the read-path exercised by `Gated` exposition
+   entries (§13.3.7.7) whose value contributions join folds positionally
+   (each arm's contributions guarded by that arm's gate). The predicate
+   driving the toggle is never surfaced: the group sees only present/
+   absent membership, never the boolean that decided it.
+
 #### 13.9.8 Interaction with the per-commit DAG
 
 The compiler builds the reactive dependency graph (§13.11.1)
@@ -18017,11 +18401,15 @@ if each were its own one-write transaction.
 
 Most reactive dependencies are static: an expression's provenance set
 (§13.12.1) is the fixed set of cells it reads. A *dynamic* dependency is one
-whose cell *identity* can change between commits. They arise from
-**`WeakHandle[T]` resolution** (§13.3.6.2) — a read through the
-dynamically-placed `WeakHandle[T]` type reaches whichever entity the handle
-currently resolves to, and flips on re-point, mount, and dismount. The
-statically-placed `Handle[T]` type carries no dynamic dependency: its
+whose cell *identity* can change between commits. They arise from **two**
+resolution mechanisms: **`WeakHandle[T]` resolution** (§13.3.6.2) — a read
+through the dynamically-placed `WeakHandle[T]` type reaches whichever
+*graph entity* the handle currently resolves to — and **`Portal[T]`
+resolution** (§13.3.6.3) — a read through a `Portal[T]` reaches whichever
+*non-graph slot* value it currently designates. Both flip on re-point,
+mount, and dismount, and both are handled by the same two-part mechanism
+below. The statically-placed `Handle[T]` type carries no dynamic
+dependency: its
 referent is fixed for the handle's lifetime, so reads behave as ordinary
 static references. The canonical dynamic case is a reactive connection
 target (§13.6.2): a connection whose `to` is a reactive selection or a
@@ -18049,9 +18437,10 @@ collective form of the same mechanism: an operator over a dynamic
 connection-view declares a dependency edge into the membership (the cell itself) and, per
 current member, into the cells its per-element fn reads — a mount or
 dismount re-establishes the member dependency edges exactly as a re-point
-does. `WeakHandle[T]` resolution — individually or in this collective
-form — is the **only** source of dynamic dependency in the language; it
-exists because wiring may change while every reachable entity remains
+does. `WeakHandle[T]` resolution (for graph entities) and `Portal[T]`
+resolution (for non-graph slots) — individually or in this collective
+form — are the **two** sources of dynamic dependency in the language; they
+exist because wiring may change while every reachable entity remains
 statically known (§13.1, §13.3.6.1, and per-`repeat`-key scopes §13.5.4). It
 does not alter per-commit evaluation order (§13.10.3): within any one commit
 each resolution is fixed, so that commit's dependency graph is static. The
@@ -18294,12 +18683,12 @@ distinction at the call site is by callee declaration kind:
 transparency; `some_op(my_signal)` instantiates an operator with
 internal state.
 
-Functions may also accept `Cell[T]` parameters (§13.2.8). When a
-function declares `fn some_fn(s: Cell[T])`, the parameter binds
+Functions may also accept `cell T` parameters (§13.2.8). When a
+function declares `fn some_fn(s: cell T)`, the parameter binds
 to the cell reference itself rather than its current value. This is
 distinct from the per-emission behavior described above. The
-compiler distinguishes by the declared parameter type; no
-call-site syntactic difference. Use cases for `fn(Cell[T])` are
+compiler distinguishes by the declared parameter kind; no
+call-site syntactic difference. Use cases for `fn(cell T)` are
 narrow; the typical `fn` declaration uses bare `T` parameters and
 relies on reactive transparency at the call site.
 
@@ -18521,7 +18910,7 @@ it visible is a constant-time index flip, not a copy. No
 per-emission
 allocation, no realloc, no resize. A reactive
 function whose body iterates a fixed-extent cell — e.g.
-`fn process(buf: Cell[f32[64]]):` with `for x in buf.value():` — thus
+`fn process(buf: cell f32[64]):` with `for x in buf.value():` — thus
 compiles to a straight-line sequence of element accesses against the
 cell's pre-allocated storage, suitable for hot paths.
 
@@ -18855,10 +19244,14 @@ instantiation it intends to support. Instantiations without a
 registered reconciler are detected at startup (per §13.14.1) and
 cause the runtime to refuse the live transition.
 
-**Unregistered effect types.** If the loaded program declares an
-effect type but no reconciler is registered, startup fails with a
-diagnostic naming the effect type. The runtime does not enter the
-live state.
+**Unregistered effect types.** Reconciler registration is required if
+and only if the effect's `observed:` block declares host-written
+channels (`signal`/`stream`); an interior effect whose contract is
+fulfilled entirely by child effects requires no reconciler. If the
+loaded program declares an effect type that *does* require a reconciler
+(its `observed:` block has host-written channels) but no reconciler is
+registered, startup fails with a diagnostic naming the effect type. The
+runtime does not enter the live state.
 
 #### 13.14.8 `runtime.push_stream`
 
@@ -18965,7 +19358,7 @@ serves only to mark the instance frozen.
 
 Reconciler errors (network failures, resource exhaustion, host-
 level issues) are reported to the program through the effect's
-`observed:` cells, typically an `error: Signal[Option[E]]` cell.
+`observed:` cells, typically an `error: signal Option[E]` cell.
 Reconcilers do not panic the runtime; reconciler-internal errors are
 domain errors expressed through the value track (§8).
 
@@ -19223,7 +19616,7 @@ positional moves within the same scope.
 instance is preserved across reload, the cells declared in its
 `desired:` and `observed:` blocks follow per-cell preservation rules:
 
-- `Signal[T]` cells: preserved when type matches; reset to initial
+- `signal T` cells: preserved when type matches; reset to initial
   value if type changes (per §13.15.2).
 - `Stream[T]` cells: preserved per stream reload rules
   (§13.15.5).
@@ -19303,11 +19696,11 @@ construct, not a mechanism.
 ### 13.17 Operators
 
 An *operator* is a reusable, cell-allocating reactive transformation
-declared with the `operator` keyword. Operators take `Cell[T]`
+declared with the `operator` keyword. Operators take `cell T`
 inputs (and optionally non-reactive value parameters), allocate
 internal reactive cells (recurrents and/or deriveds) per
 instantiation, and produce an output of any type, exposed to callers as
-a reactive cell (typically `Derived[T]`, or `Stream[T]` for event
+a reactive cell (typically `derived T`, or `Stream[T]` for event
 operators — §13.17.5). They are
 the primary mechanism for composing reactive transformations.
 
@@ -19316,7 +19709,7 @@ Operators are distinct from `fn` declarations:
 - `fn` is reactive-transparent (§13.12.2). It takes value
   parameters, returns values, and allocates no cells.
 - `operator` is *not* reactive-transparent. It takes cell
-  references (`Cell[T]`), allocates internal cells per
+  references (`cell T`), allocates internal cells per
   instantiation, and is wired into the reactive graph at the call
   site.
 
@@ -19325,14 +19718,14 @@ Operators are distinct from `fn` declarations:
 Stateless operators wrap a pure projection over a source cell:
 
 ```
-operator double(source: Cell[f32]) -> Derived[f32]:
+operator double(source: cell f32) -> derived f32:
   source * 2
 ```
 
 Stateful operators allocate recurrent state per instantiation:
 
 ```
-operator smooth(source: Cell[f32], rate: f32 = 0.1, clock: Cell[u64]) -> Derived[f32]:
+operator smooth(source: cell f32, rate: f32 = 0.1, clock: cell u64) -> derived f32:
   recurrent state: f32 = observe:
     on clock: state.previous(source) + (source - state.previous(source)) * rate
     default: source
@@ -19353,7 +19746,7 @@ operator name[GenericParams]?(params...) -> T:
 - `GenericParams` are optional type parameters with optional trait
   bounds (§3, §5).
 - `params` is a comma-separated parameter list (§13.17.3).
-- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `Cell` type (`Signal[T]`/`Derived[T]`/`Recurrent[T, N]`/`Stream[T]`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
+- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `cell` kind (`signal T`/`derived T`/`recurrent[N] T`/`stream T`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
 - The body is a sequence of reactive declarations (recurrents,
   deriveds) followed by a final expression that becomes the output.
 
@@ -19368,7 +19761,7 @@ parameter may additionally be **function-** or **operator-typed**, since
 an operator is a first-class compile-time value (§13.17.13). The kinds
 are distinguished by declared type:
 
-**Cell-bound parameters** (`name: Cell[T]`):
+**Cell-bound parameters** (`name: cell T`):
 - Bind to a reactive cell at instantiation.
 - The operator tracks the cell's changes over time via the reactive
   engine.
@@ -19389,20 +19782,20 @@ are distinguished by declared type:
 
 The author chooses for each parameter based on intent. A parameter
 the user expects to vary at runtime (e.g., a UI knob driving a
-smoothing rate) should be `Cell[T]`; a parameter that is a
+smoothing rate) should be `cell T`; a parameter that is a
 deployment-time choice should be `T`.
 
 ```
 operator smooth(
-  source: Cell[f32],           // cell-bound: tracked over time
+  source: cell f32,           // cell-bound: tracked over time
   rate: f32 = 0.1,             // value: snapshotted at instantiation
-  clock: Cell[u64],            // cell-bound: drives the trigger
-) -> Derived[f32]:
+  clock: cell u64,            // cell-bound: drives the trigger
+) -> derived f32:
   ...
 ```
 
 **Default values** are allowed on value parameters. Default values
-on `Cell[T]` parameters are not allowed in v1 (a default cell
+on `cell T` parameters are not allowed in v1 (a default cell
 reference has no clear meaning; if needed, use a stdlib helper
 that constructs a constant cell).
 
@@ -19411,27 +19804,50 @@ follows the general rule in §3.5.4 (which applies uniformly to
 functions, operators, and constructors); operators have no special-case
 relaxation.
 
-**At call sites:**
+**At call sites.** A `cell T` argument position accepts *any*
+expression; its provenance — not a declared case list — decides how the
+argument is materialized. This is the uniform cell-argument rule (it
+governs operator args, effect args, placement attrs, and the `|>` LHS
+alike):
 
-- Literals passed to `Cell[T]` parameters are wrapped as implicit
-  constant signal cells (compile-time-fixed `Signal[T]` values). Cost:
-  one cell per literal at the call site (effectively zero — folded by
-  the compiler when possible).
-- Cells passed to `Cell[T]` parameters bind directly.
-- Values passed to `T` parameters are evaluated and snapshotted.
+- **A bare cell binds directly.** A `signal`/`derived`/`recurrent`/
+  `stream` reference passed to a `cell T` parameter is bound as-is; no
+  wrapping, no synthesis.
+- **A static expression is constant-wrapped.** A literal, `const`, or
+  compile-time-constant expression is wrapped as a degenerate constant
+  cell (compile-time-fixed `signal T`). Cost: one cell per literal at
+  the call site (effectively zero — folded by the compiler when
+  possible).
+- **A reactive expression synthesizes an implicit derived bridge.** An
+  expression that reads one or more reactive cells (but is not itself a
+  bare cell reference) synthesizes an implicit `derived T` bridge cell
+  at the *call site*: the bridge recomputes from the read cells and is
+  the cell bound to the parameter. This extends the implicit-derived
+  mechanism of §13.8.2.1 from placement attrs to arguments; the bridge's
+  declaration path is rooted at the call site. The provenance is a
+  compile-time marker, not a third runtime binding case (§15.4.1): the
+  IR's `parameter_bindings` records the source cell (bare or bridge) plus
+  a provenance tag, never a distinct third binding shape.
+- Values passed to `T` (value, non-`cell`) parameters are evaluated and
+  snapshotted, as above.
+
+Instance identity is unaffected by which provenance path applies: the
+same instantiation expression yields the same instance regardless of
+whether its cell arguments were bound directly, constant-wrapped, or
+bridged.
 
 ##### 13.17.3.1 Value-cell auto-deref in expression contexts
 
 When an expression context requires a value of type `T` and the
-supplied expression is a value cell (`Signal[T]`, `Derived[T]`, or
-`Recurrent[T, N]`), the compiler implicitly inserts a read of the cell
+supplied expression is a value cell (`signal T`, `derived T`, or
+`recurrent[N] T`), the compiler implicitly inserts a read of the cell
 — it is dereferenced to its current value. The provenance tracking
 (§13.12.1) records the cell read as a dependency, so the surrounding
 expression becomes reactive on changes to that cell.
 
 ```
-operator example(s: Cell[f32]) -> Derived[f32]:
-  derived doubled: f32 = s * 2.0       // s: Cell[f32] auto-derefs to f32 in arithmetic context
+operator example(s: cell f32) -> derived f32:
+  derived doubled: f32 = s * 2.0       // s: cell f32 auto-derefs to f32 in arithmetic context
   doubled
 ```
 
@@ -19439,8 +19855,8 @@ The implicit deref applies wherever a value cell flows into a
 position expecting `T`: arithmetic operands, function-call arguments
 typed `T`, attribute initial-value expressions, derived bodies,
 recurrent expressions. It does NOT apply when the context expects
-`Cell[T]` directly (operator parameters, function parameters typed
-`Cell[T]`, pipe-form `|>` LHS) — in those cases the cell reference
+`cell T` directly (operator parameters, function parameters typed
+`cell T`, pipe-form `|>` LHS) — in those cases the cell reference
 is bound without dereferencing.
 
 The auto-deref is a compile-time mechanism; no runtime cost beyond
@@ -19460,12 +19876,18 @@ body items:
 - `stream` declarations (§13.18) — operators are stream transformers
   and may hold internal stream state.
 - `let` bindings for intermediate values, including
-  runtime-evaluated reads of `Cell[T]` parameters and other
+  runtime-evaluated reads of `cell T` parameters and other
   cells in scope. A `let` binding's right-hand side is evaluated
   in a reactive context — reads of cell-bound parameters return
   their current values, and the binding's value is recomputed
   whenever any read cell changes (the binding behaves as a
   synthesized derived for dependency-tracking purposes).
+- `collect:` block expressions (§13.20) and `fold` expressions
+  (§13.21) — a `collect` builds a `yielded` group and a `fold` reduces
+  one (or a uniform-slot composite) to a value cell; both may appear as
+  a `derived` RHS or as a body item. A `fold` in an operator body forces
+  the indented block form (its header cannot share the inline-after-colon
+  single-expression body).
 - The final expression — the value (or cell) returned as the
   operator's output.
 
@@ -19487,8 +19909,8 @@ Not permitted in operator bodies:
 The final expression's type must match the operator's declared return
 type, which may be any type. If it is a value type (or a plain
 record/tuple), the compiler synthesizes a cell holding the value and
-exposes that cell as the operator instance's output — the `Cell[T]`≅`T`
-wrap (§13.2.8), so a `-> f32` return is carried as `Derived[f32]`, never a
+exposes that cell as the operator instance's output — the `cell T`≅`T`
+wrap (§13.2.8), so a `-> f32` return is carried as `derived f32`, never a
 non-reactive snapshot. If the final expression is already a `Cell` (a
 named recurrent, derived, or stream in the body), that cell is the output
 directly — no synthesis needed. A record whose fields are cells (form 2)
@@ -19499,18 +19921,18 @@ passthrough.
 #### 13.17.5 Output
 
 Whatever an operator's body returns — a value type, a record/tuple
-(plain or with cell fields), or an explicit `Cell` — its output is
-exposed to callers as a single reactive cell; the caller neither knows
-nor cares which. A value-shaped operator typically yields `Derived[T]`;
-event-producing operators (e.g., `to_ring_stream`, `to_gate_stream`, `filter`, `merge`) yield
-`Stream[T]` (§13.18.5).
+(plain or with cell fields), or an explicit reactive cell — its output
+is exposed to callers as a single reactive cell; the caller neither
+knows nor cares which. A value-shaped operator typically yields
+`derived T`; event-producing operators (e.g., `filter`, `merge`,
+`map`) yield `stream T` (§13.18.5).
 
 ```
 type PeakResult:
   peak: f32
   count: u32
 
-operator peak_detector(source: Cell[f32]) -> Derived[PeakResult]:
+operator peak_detector(source: cell f32) -> derived PeakResult:
   recurrent (peak, count): (f32, u32) = (
     max(peak.previous(source), source),
     if source > peak.previous(source): count.previous(0) + 1 else: count.previous(0),
@@ -19518,19 +19940,23 @@ operator peak_detector(source: Cell[f32]) -> Derived[PeakResult]:
 
   PeakResult(peak: peak, count: count)
 
-operator changes[T](source: Cell[T]) -> Stream[T]:
-  // emits an event each time source changes
+operator edge_events[T](source: cell T) -> stream T:
+  // emits an event each time source crosses a threshold
   ...
 ```
 
+(The synthesized `.changes` member (§13.18.9) already gives the
+"one event per committed change" behavior directly; `edge_events`
+stands only as an illustration of a stream-producing operator.)
+
 For multiple outputs, return a record or tuple. Two forms are valid: a
 plain record/tuple (form 1, like `PeakResult` above — exposed as a single
-`Derived` of the record), or one whose fields are themselves cells (form
+`derived` of the record), or one whose fields are themselves cells (form
 2). Both respect static memory. Consumers project fields via reactive
 expressions:
 
 ```
-let result = source |> peak_detector            // Derived[PeakResult]
+let result = source |> peak_detector            // derived PeakResult
 derived just_peak: f32 = result.peak            // reactive projection
 derived just_count: u32 = result.count
 ```
@@ -19538,7 +19964,7 @@ derived just_count: u32 = result.count
 Field-level reactivity is coarse-grained: a change to any field
 invalidates consumers of all fields. For finer granularity,
 project early into stable derived cells, or expose distinct
-cells from the source. (See §13.2.8 for details on `Signal[T]`
+cells from the source. (See §13.2.8 for details on `signal T`
 field access.)
 
 #### 13.17.6 Instantiation
@@ -19568,7 +19994,7 @@ derived bar: f32 = 0.0 |> clamp(min: 0.0, max: 1.0) |> smooth(rate: 0.1, clock: 
 ```
 
 Each `|>` step is an operator application. The result of each step
-is a `Cell` — a `Derived[T]` for value-shaped operators or a `Stream[T]`
+is a `Cell` — a `derived T` for value-shaped operators or a `Stream[T]`
 for event-producing ones — consumed by the next.
 
 **Convention:** the first positional parameter of any operator is
@@ -19578,7 +20004,7 @@ upstream cells), the first is the pipe target; subsequent cells
 are passed by name:
 
 ```
-operator combine[T](primary: Cell[T], other: Cell[T], weight: f32) -> Derived[T]:
+operator combine[T](primary: cell T, other: cell T, weight: f32) -> derived T:
   ...
 
 // Call:
@@ -19625,14 +20051,15 @@ a source cell on the left to a destination on the right. The kind
 of connection — apply-and-bind or forward-into — is determined by
 the RHS's kind.
 
-**Two dispatch cases**, distinguished by the RHS:
+**Three dispatch cases**, distinguished by the RHS (and, in the third
+case, by the LHS):
 
 **Case 1: RHS is an operator call** (§13.17). The operator is
 instantiated; the LHS is bound to its first positional parameter.
 The result is the operator's declared output cell.
 
 ```
-let smoothed: Derived[f32] = source |> smooth(rate: 0.1, clock: tick)
+let smoothed: derived f32 = source |> smooth(rate: 0.1, clock: tick)
 ```
 
 **Case 2: RHS is an effect call** (§13.19). The effect is
@@ -19646,13 +20073,40 @@ effects:
   f = current_url |> fetch
 ```
 
-LHS rules common to all cases:
+**Case 3: LHS is a node reference and RHS is an effect-kind trait
+method** whose first (Subject-typed) parameter accepts that node
+(§3.1.1.1, effect-kind trait methods). This is the *interpretation
+bootstrap* form: an interpretation root is expressed by piping a node
+reference into an effect-kind trait method that walks the node's
+`.exposition` (§13.3.7). The method is dispatched on the Subject type
+of the node reference; the LHS node reference binds to the method's
+Subject-typed first parameter. The result is the effect instance
+value the method evaluates to, accessed per §13.19.7:
 
-- LHS must be an expression of a reactive cell type (`Signal[T]`,
-  `Derived[T]`, `Recurrent[T, N]`, `Stream[T]`, or any other `Cell[T]`
+```
+effects:
+  audio = render(song) |> audio_out
+  // render(song): a node reference of Subject type Song is piped into
+  // an effect-kind trait method that interprets it. Projection of the
+  // walked result is explicit (here `render(song).audio`, elided).
+```
+
+This case is distinct from Case 2: the RHS is a *trait method* selected
+by the Subject type, not a free effect constructor, and the LHS is a
+*node reference* (a graph member held by borrow, §13.3.6.1), not an
+arbitrary reactive cell. Dispatch keys off both operands — a
+node-reference LHS with an effect-kind-trait-method RHS. The node
+reference joins the interpretation-reachability closure as a borrow
+(not a cell store), and the effect is still hosted in the enclosing
+node's `effects:` clause.
+
+LHS rules common to Cases 1 and 2:
+
+- LHS must be an expression of a reactive cell kind (`signal T`,
+  `derived T`, `recurrent[N] T`, `stream T`, or any other `cell T`
   per §13.18.5), or an expression convertible to one. A static value
   (literal, `const`, or compile-time constant expression) is wrapped as
-  a degenerate `Derived[T]` cell automatically.
+  a degenerate `derived T` cell automatically.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -19691,7 +20145,7 @@ derived bar: f32 = some_fn(source_cell)
 Or wrap the function in an operator:
 
 ```
-operator some_op(source: Cell[f32]) -> Derived[f32]:
+operator some_op(source: cell f32) -> derived f32:
   some_fn(source)
 ```
 
@@ -19700,10 +20154,10 @@ operator some_op(source: Cell[f32]) -> Derived[f32]:
 Operators may take type parameters with optional trait bounds:
 
 ```
-operator passthrough[T](source: Cell[T]) -> Cell[T]:
+operator passthrough[T](source: cell T) -> cell T:
   source
 
-operator running_total[T: Add & Copy](source: Cell[T]) -> Derived[T]:
+operator running_total[T: Add & Copy](source: cell T) -> derived T:
   recurrent acc: T = acc.previous(source) + source
   acc
 ```
@@ -19720,10 +20174,10 @@ Operators carry the standard three-level visibility (§10): `public`,
 reachable from other modules; public operators may be re-exported.
 
 ```
-public operator smooth(source: Cell[f32], rate: f32 = 0.1, clock: Cell[u64]) -> Derived[f32]:
+public operator smooth(source: cell f32, rate: f32 = 0.1, clock: cell u64) -> derived f32:
   ...
 
-private operator internal_helper(source: Cell[i32]) -> Derived[i32]:
+private operator internal_helper(source: cell i32) -> derived i32:
   ...
 ```
 
@@ -19790,7 +20244,7 @@ its output cell or its consumer. The author can also write a
 gated wrapper operator that conditionally falls through:
 
 ```
-operator conditional_smooth(source: Cell[f32], enabled: Cell[bool], clock: Cell[u64]) -> Derived[f32]:
+operator conditional_smooth(source: cell f32, enabled: cell bool, clock: cell u64) -> derived f32:
   derived effective: f32 = if enabled: (source |> smooth(rate: 0.1, clock: clock)) else: source
   effective
 ```
@@ -19841,6 +20295,16 @@ error: `|>` requires an operator or effect on the right-hand side
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
+The `|>` RHS admits three dispatch targets (§13.17.7): an operator call
+(Case 1), an effect call (Case 2), and — when the LHS is a node
+reference — an effect-kind trait method (Case 3, the interpretation
+bootstrap). A `fn` RHS is none of these and remains the error above. The
+Case-3 target is only in scope when the LHS is a node reference and the
+RHS names an effect-kind trait method (§3.1.1.1) with a Subject-typed
+first parameter accepting that node; an effect-kind trait method piped a
+non-node reactive cell falls back to the ordinary operator/effect
+dispatch and is diagnosed accordingly.
+
 **Operator missing first positional parameter:**
 
 ```
@@ -19848,17 +20312,17 @@ error: operator `smooth` has no positional parameter to bind from `|>`
   --> derived bar: f32 = source |> smooth(rate: 0.1)
                                    ^^^^^^ no positional parameter declared
   hint: either pass the upstream cell as the first positional argument,
-        or declare a positional `Cell[T]` parameter on the operator
+        or declare a positional `cell T` parameter on the operator
 ```
 
-**`Cell[T]` parameter passed a non-cell, non-literal value:**
+**`cell T` parameter passed a non-cell, non-literal value:**
 
 ```
-error: cannot pass value of type `f32` to `Cell[f32]` parameter
+error: cannot pass value of type `f32` to `cell f32` parameter
   --> smooth(source: some_value, rate: 0.1, clock: tick)
-                     ^^^^^^^^^^ expected `Cell[f32]`, found `f32`
+                     ^^^^^^^^^^ expected `cell f32`, found `f32`
   hint: static values (literals, `const`s, compile-time constants) are wrapped
-        as degenerate `Derived[T]` cells automatically; this expression
+        as degenerate `derived T` cells automatically; this expression
         cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
 ```
 
@@ -19866,7 +20330,7 @@ error: cannot pass value of type `f32` to `Cell[f32]` parameter
 
 ```
 error: `attr` declarations are not permitted inside operator bodies
-  --> operator foo(source: Cell[f32]) -> Derived[f32]:
+  --> operator foo(source: cell f32) -> derived f32:
         attr rate: f32 = 0.1
         ^^^^^^^^^^^^^^^^^^^^^
   hint: operators take per-instance configuration as parameters, not
@@ -19876,8 +20340,8 @@ error: `attr` declarations are not permitted inside operator bodies
 **Final expression type mismatch with declared return type:**
 
 ```
-error: operator body returns `i32` but declared return type is `Derived[f32]`
-  --> operator bad(source: Cell[f32]) -> Derived[f32]:
+error: operator body returns `i32` but declared return type is `derived f32`
+  --> operator bad(source: cell f32) -> derived f32:
         ...
         42
         ^^ this expression has type `i32`
@@ -19903,9 +20367,9 @@ instantiates:
 
 ```
 operator apply(
-  source: Cell[f32],
-  kernel: operator(Cell[f32]) -> Derived[f32],   // an operator carried by type
-) -> Derived[f32]:
+  source: cell f32,
+  kernel: operator(cell f32) -> derived f32,   // an operator carried by type
+) -> derived f32:
   kernel(source)                                    // instantiate the supplied operator
 ```
 
@@ -19925,18 +20389,18 @@ neither instantiate an operator nor carry one.
 
 ```
 error: a function parameter may not be operator-typed
-  --> fn run(k: operator(Cell[f32]) -> f32):
+  --> fn run(k: operator(cell f32) -> f32):
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ operators carry reactive
       structure and have no runtime value
   hint: take an operator parameter in an `operator`, not a `fn`
 ```
 
 ```
-operator gain(source: Cell[f32], k: f32 = 1.0) -> Derived[f32]:
+operator gain(source: cell f32, k: f32 = 1.0) -> derived f32:
   derived scaled: f32 = source * k
   scaled
 
-operator invert(source: Cell[f32]) -> Derived[f32]:
+operator invert(source: cell f32) -> derived f32:
   derived negated: f32 = -source
   negated
 
@@ -19948,7 +20412,7 @@ apply(source: some_signal, kernel: invert)   // a distinct monomorphization
 **Signature matching.** A value is admissible for a parameter of type
 `operator(P…) -> U` iff the named operator's signature matches
 structurally: the same parameter types in order, and the same return
-type. Cell-bound parameters appear as their cell type (`Cell[T]`,
+type. Cell-bound parameters appear as their cell type (`cell T`,
 §13.17.3), value parameters as their value type; a value parameter's
 *default* (§13.17.3) is not part of the type and does not affect matching.
 The output must match the declared return type `U` — a value type, a
@@ -19964,7 +20428,7 @@ operator value.
 
 **Generics and chaining.** A carried operator may be generic; its type is
 written with the generic parameters bound at the use site (e.g.
-`operator(Cell[T]) -> Derived[T]` for a `T` in scope), following §13.17.8.
+`operator(cell T) -> derived T` for a `T` in scope), following §13.17.8.
 An operator carried by type composes in `|>` chains (§13.17.7) at the point
 it is instantiated, identically to a named operator.
 
@@ -20024,9 +20488,9 @@ as events arrive.
 
 Streams are distinct from value cells:
 
-- A value cell (`Signal[T]`/`Derived[T]`/`Recurrent[T, N]`) has a single
+- A value cell (`signal T`/`derived T`/`recurrent[N] T`) has a single
   current value, always defined (§13.2.6).
-- `Stream[T]` has zero or more pending events, each consumed
+- `stream T` has zero or more pending events, each consumed
   independently. There is no "current value" of a stream; consumers
   project a stream to a signal explicitly (§13.18.9).
 
@@ -20051,37 +20515,37 @@ stream policy[capacity]? name: Type? = source
     so it contributes no capacity.
   - For a `recurrent[N] stream` (§13.18.8), the buffer capacity
     defaults to `sum_of_input_capacities`; the self-history depth `N`
-    is a *separate* allocation carried by the policy
-    (`RecurrentRing[B, N]` / `RecurrentGate[B, N]` — buffer `B` beside
-    history `N`), not added to the buffer (§13.18.8.4).
-  - In all other cases (e.g., a bare `to_ring_stream`/`to_gate_stream`
-    call without surrounding context), capacity defaults to `1024`.
+    is a *separate* allocation on the second stream axis (a `Ring[B]` /
+    `Gate[B]` policy stream carrying history depth `N` — buffer `B`
+    beside history `N`, §13.18.3), not added to the buffer (§13.18.8.4).
+  - In all other cases (e.g., a bare `.changes` member without
+    surrounding context that pins it), capacity defaults to `1024`.
 - **`name`** is a snake_case identifier naming the stream.
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
 - **`source`** is a reactive expression producing events, and must
   contain **at least one stream input** (§13.18.7.4). Valid source forms:
-  - A stream-producing operator chain (e.g., `signal |> to_ring_stream`).
+  - A stream-producing operator chain (e.g., `signal.changes |> ...`).
   - A reference to another stream (direct forwarding).
   - A reactive expression involving one or more streams (§13.18.7).
     Streams contribute events; signals are *sampled* at each stream
     event (they do not become events themselves).
-  - A signal converted explicitly: `signal_expr |> to_ring_stream` or
-    `|> to_gate_stream` (§13.18.7.4). A bare signal — no stream, no
-    explicit conversion — is **not** a stream source; there is no
+  - A signal converted explicitly via its synthesized `.changes` member:
+    `signal_expr.changes` (§13.18.7.4). A bare signal — no stream, no
+    explicit `.changes` — is **not** a stream source; there is no
     implicit `signal`→`stream` conversion.
 
 Examples:
 
 ```
-// Operator chain source (button_press is a signal → explicit conversion)
-stream ring[2048] user_clicks: ClickEvent = button_press |> to_ring_stream
+// Signal source via .changes (button_press is a signal → explicit conversion)
+stream ring[2048] user_clicks: ClickEvent = button_press.changes
 
 // Type inferred from source (pending_writes is a stream)
 stream gate[256] db_writes = pending_writes
 
 // Default capacity (1024) + inferred type + operator chain
-stream ring url_changes: Url = current_url |> to_ring_stream |> skip_first
+stream ring url_changes: Url = current_url.changes |> skip_first
 
 // Reactive expression: one stream (price_in_usd) + a sampled signal
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
@@ -20090,7 +20554,7 @@ stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
 stream ring sum: i32 = stream_a + stream_b
 
 // Signal converted explicitly — a bare signal is not a stream source
-stream ring url_events: Url = current_url |> to_ring_stream
+stream ring url_events: Url = current_url.changes
 ```
 
 **Where streams may be declared.** Streams are reactive declarations.
@@ -20119,27 +20583,34 @@ Stream[T, P] where P: StreamPolicy
 
 `StreamPolicy` is a **sealed** trait — a closed set declared by the
 language; users cannot add policies, exactly as `Into`/`TryInto` are
-language-sealed (§7.2). Its members are the four v1 policy types, each a
-nominal tag carrying its own buffer parameters:
+language-sealed (§7.2). The policy is modelled on **two orthogonal
+axes** rather than as a flat enumeration of four members:
+
+- **Buffer discipline** — `Ring[N]` or `Gate[N]`. The *only* two
+  sealed `StreamPolicy` members. `Ring` overwrites the oldest
+  unconsumed event when full; `Gate` rejects the write when full.
+- **Self-history depth** — a `const H: usize` history-depth parameter
+  on the stream, **default 0** (no self-history). `H > 0` gives the
+  stream `H` steps of self-history *beside* its buffer, as a separate
+  allocation (§13.18.8.4). This is not a policy member; it is a second,
+  independent axis carried by the stream declaration.
 
 ```
 trait StreamPolicy                                   // sealed (language-closed)
 
 type Ring[const N: usize]                            // ring policy, buffer capacity N
 type Gate[const N: usize]                            // gate policy, buffer capacity N
-type RecurrentRing[const B: usize, const H: usize]   // ring, buffer B, H-deep self-history
-type RecurrentGate[const B: usize, const H: usize]   // gate, buffer B, H-deep self-history
 
 fulfill StreamPolicy for Ring[N]
 fulfill StreamPolicy for Gate[N]
-fulfill StreamPolicy for RecurrentRing[B, H]
-fulfill StreamPolicy for RecurrentGate[B, H]
 ```
 
-`Ring[N]` / `Gate[N]` are the no-self-history policies; a recurrent stream
-declaration (§13.18.8) uses `RecurrentRing[B, H]` / `RecurrentGate[B, H]`,
-which carry `H` steps of self-history *beside* the buffer `B` — the two are
-separate allocations (§13.18.8.4).
+There is **no** `RecurrentRing` / `RecurrentGate` StreamPolicy member.
+A recurrent stream declaration (§13.18.8) is a `Ring[N]` or `Gate[N]`
+policy stream carrying a non-zero history depth `H` — the two axes
+combine (`recurrent[H] stream ring[N] T` in kind form, §13.2.8),
+rather than selecting a fourth sealed policy tag. When `H` is omitted
+it defaults to 0 and the stream is an ordinary non-recurrent stream.
 
 **Convenience aliases.** The standard library provides transparent generic
 aliases (§4.2) for the common spellings — the same type, not new ones:
@@ -20147,21 +20618,23 @@ aliases (§4.2) for the common spellings — the same type, not new ones:
 ```
 alias type RingStream[T, const N: usize]            = Stream[T, Ring[N]]
 alias type GateStream[T, const N: usize]            = Stream[T, Gate[N]]
-alias type RecurrentRingStream[T, const B: usize, const H: usize] = Stream[T, RecurrentRing[B, H]]
-alias type RecurrentGateStream[T, const B: usize, const H: usize] = Stream[T, RecurrentGate[B, H]]
 ```
 
-`RingStream[T, N]` *is* `Stream[T, Ring[N]]` at every use site.
+`RingStream[T, N]` *is* `Stream[T, Ring[N]]` at every use site; these
+alias spellings survive as sugar. There are no `RecurrentRing` /
+`RecurrentGate` aliases — a recurrent stream is spelled with the
+history-depth axis on a `Ring`/`Gate` policy stream, not with a
+distinct alias.
 
 **The erased supertype `Stream[T]`.** `Stream[T]` (element type only, policy
 erased) is the abstract supertype of every `Stream[T, P]`; a concrete stream
 is implicitly usable wherever `Stream[T]` is expected (zero-cost widening —
 only the type-system view changes). Use it in a signature that accepts any
 stream of `T` regardless of policy and does not thread the policy through to
-its result — e.g. `to_signal`, `count`, `fold`:
+its result — e.g. `to_signal`, `event_count`, `accumulate`:
 
 ```
-operator count[T](source: Stream[T]) -> Derived[i64]:
+operator event_count[T](source: stream T) -> derived i64:
   ...
 ```
 
@@ -20193,51 +20666,56 @@ is no policy/capacity *inheritance* rule: a stream-returning operator's result
 type is whatever its signature states — a threaded `P` for preservation, or a
 named policy otherwise.
 
-#### 13.18.5 The `Cell` trait
+#### 13.18.5 The `cell` kind umbrella
 
-`Cell[T]` is the umbrella over the reactive cell types that carry
-values of type `T`. It is implemented by the value cells `Signal[T]`,
-`Derived[T]`, and `Recurrent[T, N]`, and by `Stream[T]` (and their
-concrete sub-types).
-
-```
-Cell[T]                       // umbrella — any reactive cell carrying values of type T
-  Signal[T]                   // host/placement-written value cell (§13.2.8)
-  Derived[T]                  // computed value cell, no history (§13.2.8)
-  Recurrent[T, N]             // computed value cell, N-deep self-history (§13.2.8)
-  Stream[T]                   // append-only event sequence, policy erased (§13.18.3)
-    Stream[T, P]              // concrete: a stream under policy P  (RingStream[T,N] = Stream[T,Ring[N]], etc.)
-```
-
-`Cell[T]` is used in operator and function signatures that accept any
-reactive cell containing values of `T`, without constraining which
-kind:
+`cell T` is the umbrella **KIND** over the reactive cell forms that
+carry values of type `T`. It is not a trait and not a value type
+(§13.2.8): `cell` is a lowercase keyword kind occupying an annotation
+position, exactly like `signal`, `derived`, `recurrent`, and `stream`.
+Its members are the reactive-binding kinds — the value cells `signal T`,
+`derived T`, `recurrent[N] T`, and the event kind `stream T` (with its
+policy/capacity/history axes, §13.18.3):
 
 ```
-operator monitor[T, C: Cell[T]](source: C) -> Derived[bool]:
+cell T                        // umbrella KIND — any reactive cell carrying values of type T
+  signal T                    // host/placement-written value cell (§13.2.8)
+  derived T                   // computed value cell, no history (§13.2.8)
+  recurrent[N] T              // computed value cell, N-deep self-history (§13.2.8)
+  stream T                    // append-only event sequence, policy erased (§13.18.3)
+    stream ring[N] T          // concrete: ring policy, capacity N
+    stream gate[N] T          // concrete: gate policy, capacity N
+```
+
+Stream membership is deliberate: `stream T` (and its concrete policy
+forms) belongs under the `cell` umbrella alongside the value kinds, and
+`yielded T` groups (§13.2.8) likewise participate as cell kinds. `cell T`
+is used in operator and function signatures that accept any reactive cell
+carrying values of `T`, without constraining which kind:
+
+```
+operator monitor[T](source: cell T) -> derived bool:
   // works with any value cell or stream carrying T
   ...
 ```
 
-The trait has no required methods at the language level; it is a
-marker indicating participation in the reactive system as a typed
-cell. Concrete behavior (current-value reads on value cells, event
-observation on streams) is specific to each implementing type and is
-expressed through the type's own methods and operators.
-
-**Why a trait, not a union type.** Ductus does not have ad-hoc union
-types at value position (§5.2 `dyn` is for trait objects). A common
-abstraction over heterogeneous reactive cells must be expressed as
-a trait. `Cell[T]` plays that role.
+**Why a kind, not a trait or a union type.** `cell` is a KIND, not a
+trait: it does not implement or require methods, and there is no
+`cell T` value type over which one dispatches. This resolves the older
+type-vs-trait framing — `cell T` was described in some passages as an
+umbrella *type* and in others as a marker *trait*; neither is correct.
+The umbrella is a kind in annotation position. Concrete behavior
+(current-value reads on value cells, event observation on streams) is
+specific to each concrete kind and is reached through that kind's own
+methods and operators, not through any umbrella method set.
 
 **Use in generic signatures.** A value-reading operator parameter is
-typed `Cell[T]` (§13.2.8); a `Stream[T]` has no current value, so it is
-excluded at the read site rather than by the signature. Operators
+annotated `cell T` (§13.2.8); a `stream T` has no current value, so it
+is excluded at the read site rather than by the annotation. Operators
 returning a value cell declare the concrete kind through their return
-type — typically `Derived[T]` for a computed output, `Stream[T]` for a
-stream, or `Cell[T]` only for a genuine passthrough. Concrete types
-carry more information and are preferred unless the operator genuinely
-produces a polymorphic output.
+annotation — typically `derived T` for a computed output, `stream T`
+for a stream, or `cell T` only for a genuine passthrough. Concrete
+kinds carry more information and are preferred unless the operator
+genuinely produces a polymorphic output.
 
 #### 13.18.6 Observation cells
 
@@ -20259,14 +20737,14 @@ to the buffer's capacity):
 
 | Cell | Type | Meaning |
 |---|---|---|
-| `pending_count` | `Derived[i32]` | Events in the buffer not yet observed by every cursor |
-| `pressure` | `Derived[f32]` | `pending_count / capacity`, range `0.0..1.0` |
-| `is_full` | `Derived[bool]` | `true` when `pending_count is capacity` |
-| `dropped_total` | `Derived[i64]` | Cumulative count of events displaced by overflow (ring only; always `0` for gate) |
-| `rejected_total` | `Derived[i64]` | Cumulative count of pushes rejected by overflow (gate only; always `0` for ring) |
-| `last_overflow_at` | `Derived[Option[instant]]` | Timestamp of the most recent overflow event, or `None` if never |
+| `pending_count` | `derived i32` | Events in the buffer not yet observed by every cursor |
+| `pressure` | `derived f32` | `pending_count / capacity`, range `0.0..1.0` |
+| `is_full` | `derived bool` | `true` when `pending_count is capacity` |
+| `dropped_total` | `derived i64` | Cumulative count of events displaced by overflow (ring only; always `0` for gate) |
+| `rejected_total` | `derived i64` | Cumulative count of pushes rejected by overflow (gate only; always `0` for ring) |
+| `last_overflow_at` | `derived Option[instant]` | Timestamp of the most recent overflow event, or `None` if never |
 
-These cells are ordinary `Derived[T]` cells for all purposes —
+These cells are ordinary `derived T` cells for all purposes —
 participating in the commit cycle, in derived dependencies, in hot
 reload identity. They are not separately declared in user code; the
 compiler synthesizes them as part of the stream's storage.
@@ -20308,7 +20786,7 @@ A reactive input to an expression participates uniformly:
   the expression's driving stream(s), the signal's current value is
   read. A signal does not itself produce events — there is no implicit
   `to_stream`. To make a signal an event source, convert it explicitly
-  (`to_ring_stream`/`to_gate_stream`, §13.18.9).
+  via its synthesized `.changes` member (§13.18.9).
 
 The expression is recomputed whenever *any* of its reactive inputs
 emit. The output stream emits the freshly-computed value as its
@@ -20399,14 +20877,14 @@ projection via `to_signal(fallback)` (§13.18.9) is required.
 | `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
 | `derived X = expr` | Has streams | Compile error — use `to_signal(fallback)`. |
 | `stream policy X = expr` | Has ≥1 stream | Output stream; per-event evaluation (signals in the expression are sampled). |
-| `stream policy X = expr` | Zero streams (signals only) | **Compile error** — a signal expression is not a stream; convert a signal explicitly via `to_ring_stream`/`to_gate_stream`, or bind it in a Signal context (§13.18.7.3). |
+| `stream policy X = expr` | Zero streams (signals only) | **Compile error** — a signal expression is not a stream; convert a signal explicitly via its `.changes` member, or bind it in a value-cell context (§13.18.7.3). |
 | `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one stream input. |
 
 A `stream policy X = signal_expr` over signals only is **rejected**:
 there is no implicit `signal`→`stream` conversion. Convert a signal
-into an event source explicitly with `to_ring_stream`/`to_gate_stream`
-(§13.18.9), then build the stream expression from that — e.g.
-`stream ring X = (s |> to_ring_stream) ...`.
+into an event source explicitly via its `.changes` member (§13.18.9),
+then build the stream expression from that — e.g.
+`stream ring X = s.changes ...`.
 
 ##### 13.18.7.5 Worked examples
 
@@ -20418,9 +20896,9 @@ allowed and overrides the default.
 
 ```
 signal current_url: Url = "https://example.com"
-stream ring url_events: Url = current_url |> to_ring_stream
-// A bare signal is not a stream source — convert it explicitly.
-// Default capacity: 1024 (the to_ring_stream default).
+stream ring url_events: Url = current_url.changes
+// A bare signal is not a stream source — convert it explicitly via .changes.
+// Default capacity: 1024 (the .changes default).
 // Emits "https://example.com" during startup, then each subsequent
 // commit of current_url.
 ```
@@ -20469,6 +20947,46 @@ error: cannot assign stream-valued expression to derived `count_signal`
         `derived count_signal: i32 = (some_stream * 2) |> to_signal(0)`
 ```
 
+##### 13.18.7.7 Why the sampling rule, not emit-on-either
+
+The sampling rule of §13.18.7.1 — a stream drives emission while a
+signal referenced in the same expression is merely *sampled* at each
+driving-stream event — is a deliberate design choice, not an
+implementation limitation. The alternative, **emit-on-either** (re-emit
+an output event whenever *any* reactive input changes, promoting a
+signal's commits into output events), is rejected for three reasons:
+
+- **Emit-on-either fabricates phantom events.** A stream event is a
+  discrete occurrence in the domain — a click, a message, a sample. A
+  signal's commit is a *state change*, not an occurrence. Promoting a
+  signal commit into a stream event manufactures an event the domain
+  never produced: downstream consumers counting or accumulating over
+  the stream would over-count, and every stream would silently inherit
+  the emission cadence of every signal it happens to reference. The
+  sampling rule keeps the output stream's event set equal to its
+  driving stream's event set — one output event per real input event.
+
+- **Either-changes is already expressible, and as a derived.** The
+  behavior emit-on-either would provide — "recompute whenever any input
+  changes" — is exactly what a `derived` value cell already does over
+  the same inputs (§13.2.3): a `derived` recomputes on any input commit.
+  If a consumer genuinely wants an every-input-change value, it reads
+  the derived, not a stream. To turn *that* into events (e.g. to buffer
+  them) it takes the derived's own `.changes` member (§13.18.9). Nothing
+  is lost; the every-change behavior lives where it belongs (the value
+  track) and reaches the event track only through an explicit
+  conversion.
+
+- **Per-operand control is retained.** Under the sampling rule the
+  author chooses, per operand, whether a reactive input paces the
+  output (make it a stream — reference it directly, or convert a signal
+  via `.changes`) or merely conditions it (leave it a signal — it is
+  sampled). Emit-on-either erases that distinction: every operand would
+  pace the output identically, and the author could no longer say "emit
+  on price ticks, sampling the current rate" versus "emit on either."
+  The sampling rule makes the pacing operand explicit in the expression's
+  shape.
+
 #### 13.18.8 Recurrent streams
 
 A `recurrent[N] stream` is a stream declaration whose reactive
@@ -20491,9 +21009,9 @@ recurrent[N]? stream policy[capacity]? NAME: Type? = EXPR
   (§13.18.2): policy is mandatory; capacity is optional. When
   capacity is omitted, the buffer capacity defaults to
   `sum_of_input_capacities` per §13.18.2; the self-history depth `N`
-  is a *separate* allocation — the recurrent policy is
-  `RecurrentRing[B, N]` / `RecurrentGate[B, N]` (buffer `B` beside
-  history `N`), not folded into the buffer (§13.18.8.4).
+  is a *separate* allocation on the second stream axis — a `Ring[B]` /
+  `Gate[B]` policy stream carrying history depth `N` (buffer `B` beside
+  history `N`, §13.18.3), not folded into the buffer (§13.18.8.4).
 - `NAME` is the snake_case identifier naming the output stream.
 - `Type` is optional when inferable from `EXPR`.
 - `EXPR` is a reactive expression (§13.18.7) that may use
@@ -20576,7 +21094,7 @@ all referenced inputs.
 - `NAME.past(k, ...)` with `k > N` on the declared output: compile
   error.
 - `.past` or `.previous` access outside a recurrent's producing context
-  (a `recurrent[N] stream` body or a value `Recurrent[T, N]` body): compile
+  (a `recurrent[N] stream` body or a value `recurrent[N] T` body): compile
   error.
 - `n` argument of `.past(n, fallback)` must be a compile-time-known
   positive integer — a literal, a `const`, or a const-generic
@@ -20584,10 +21102,11 @@ all referenced inputs.
 
 ##### 13.18.8.6 Composition with operators
 
-A `recurrent[N] stream` declaration produces a
-`RecurrentRingStream[T, B, H]` or `RecurrentGateStream[T, B, H]` (per its
-policy), usable as a `Stream[T]` for downstream consumers. Operators apply
-normally (assuming `count` is a stream in scope):
+A `recurrent[N] stream` declaration produces a `Ring[B]`- or
+`Gate[B]`-policy stream carrying history depth `H` (per its policy and
+history axes, §13.18.3), usable as an erased `stream T` for downstream
+consumers. Operators apply normally (assuming `count` is a stream in
+scope):
 
 ```
 recurrent[3] stream ring avg: f32 = (count + count.past(1, 0) + count.past(2, 0)) / 3
@@ -20607,11 +21126,11 @@ consumers use it as an ordinary `Stream[T]`.
   for `.past` to reference. Effects needing history-aware behavior
   must compute it in the host's reconciler.
 - **Value recurrents share this design.** Value `recurrent[N]`
-  declarations — type `Recurrent[T, N]` (§13.2.4) — use the same
+  declarations — kind `recurrent[N] T` (§13.2.4) — use the same
   `.previous(fallback)` / `.past(k, fallback)` accessors with the
   same compile-time bounds. The two are symmetric: same syntax,
   same memory model, same semantics — differing only in whether the
-  cell is a value-shaped `Recurrent[T, N]` or an event-shaped
+  cell is a value-shaped `recurrent[N] T` or an event-shaped
   recurrent stream.
 
 ##### 13.18.8.8 Reset on reopen
@@ -20633,45 +21152,73 @@ Operators that produce, transform, or consume streams are stdlib
 primitives. All use the standard operator-application syntax
 (`|>` chains or function-call form per §13.17.6).
 
-**Signal-to-stream bridge.** Converting a signal to a stream is **explicit** and
-names the policy — there is no implicit `signal`→`stream` conversion. A signal
-carries only its latest value while a stream carries discrete events; that
-lossiness must never be hidden (§13.18.7.4). Two constructors, one per policy:
+**Signal-to-stream bridge — `sig.changes`.** Converting a signal to a
+stream is **explicit** — there is no implicit `signal`→`stream`
+conversion. A signal carries only its latest value while a stream
+carries discrete events; that lossiness must never be hidden
+(§13.18.7.4). The bridge is not a pair of constructor operators; it is
+the synthesized member `.changes` on any value cell:
 
 ```
-operator to_ring_stream[T, const N: usize = 1024](source: Cell[T]) -> RingStream[T, N]:
-  // emits the source's current value as event 0, then one event per committed change
-  ...
-
-operator to_gate_stream[T, const N: usize = 1024](source: Cell[T]) -> GateStream[T, N]:
-  // same emission, gate policy (back-pressures the producer instead of dropping oldest)
-  ...
+sig.changes        // a stream of sig's committed changes, one event per change
 ```
 
-The semantics: at the moment of stream creation, the source signal's
-current value is emitted as event 0; thereafter, each commit of a new
-value by the source (per the commit cycle) appends an event. Same-
-value commits do not emit (per the value-change semantics of §13.2.4.4).
-The capacity `N` defaults to `1024`; callers may override via turbofish:
+`.changes` is a **synthesized per-use-site stream member** (the
+synthesized-member precedent of §13.18.6): each textual occurrence of
+`sig.changes` names its *own* stream member on the cell, with its own
+buffer — two textual `sig.changes` sites are two distinct streams. It
+is not a stored field on the cell; the compiler materializes one stream
+member per use site.
+
+The semantics: at the moment the member is materialized, the source
+signal's current value is emitted as event 0; thereafter, each commit
+of a new value by the source (per the commit cycle) appends an event.
+Same-value commits do not emit (per the value-change semantics of
+§13.2.4.4).
+
+**Policy and capacity resolve like placeholders.** `.changes` does not
+name a policy or capacity of its own; both resolve at the use site the
+way a placeholder resolves (the use-site resolution list of §4.4):
+
+- If the `.changes` feeds a stream declaration, it *materializes as*
+  that declared stream — one buffer, the declared policy and capacity:
+  `stream ring[2048] s: Url = current_url.changes` gives a
+  `ring`-policy, capacity-2048 stream.
+- If it flows into a parameter or return position of known stream kind,
+  that kind pins the policy and capacity.
+- Otherwise the default is `ring[1024]`.
+- While unresolved, its display kind is the erased `stream T`
+  (§13.18.3).
 
 ```
-let s = some_signal |> to_ring_stream                  // RingStream[T, 1024]
-let s = some_signal |> to_ring_stream::[Url, 2048]     // RingStream[Url, 2048]
-let g = some_signal |> to_gate_stream::[Url, 256]      // GateStream[Url, 256]
+stream ring[2048] s: Url          = current_url.changes   // ring, capacity 2048
+stream gate[256]  g: Url          = other_url.changes      // gate, capacity 256
+let  x                             = some_signal.changes    // erased stream T until pinned
 ```
 
-**Stream-to-signal bridge:**
+**Stream-to-signal bridge — an ordinary user-written operator.**
+`to_signal` is not a language primitive; it is an ordinary
+user-written operator, expressible with `observe` plus a default arm
+(the R5 observe grammar, §13.2.11, makes this writable in-language):
 
 ```
-operator to_signal[T](source: Stream[T], fallback: T) -> Derived[T]:
-  // returns a Derived[T] whose value is the latest observed event,
-  // or `fallback` if no event has been observed yet
-  ...
+operator to_signal[T](source: stream T, fallback: T) -> derived T:
+  // one observe arm binds each event; the default arm supplies `fallback`
+  // until the first event is observed.
+  observe:
+    on source as e:
+      e
+    default:
+      fallback
 ```
 
-The fallback is required because signals must always have a defined
-value (§13.2.6 initial value rules; §13.9.7 cell-value reads). The
-returned signal updates on each new event.
+It returns a `derived T` whose value is the latest observed event, or
+`fallback` if no event has been observed yet. The fallback is required
+because value cells must always have a defined value (§13.2.6 initial
+value rules; §13.9.7 cell-value reads); the returned cell updates on
+each new event. Because it is user-written, `to_signal` carries no
+special language privilege — any program may write an equivalent
+stream-to-value operator the same way.
 
 **Skip / take family:**
 
@@ -20695,32 +21242,36 @@ and passes the rest; `take(n)` passes the first n events and
 discards the rest. Both preserve the source's policy and capacity by threading `P`.
 
 The most common use of `skip_first` is to drop the initial-value
-event emitted by `to_ring_stream`, leaving only true changes:
+event emitted by `.changes`, leaving only true post-initial changes:
 
 ```
-stream ring changes: Url = current_url |> to_ring_stream |> skip_first
+stream ring url_changes: Url = current_url.changes |> skip_first
 ```
 
 **Projection operators** (Stream → Derived):
 
 ```
-operator count[T](source: Stream[T]) -> Derived[i64]:
+operator event_count[T](source: stream T) -> derived i64:
   // running count of events observed
 
-operator fold[T, A](source: Stream[T], init: A, f: fn(A, T) -> A) -> Derived[A]:
-  // running accumulator
+operator accumulate[T, A](source: stream T, init: A, f: fn(A, T) -> A) -> derived A:
+  // running accumulator (seed-based accumulation over events)
 
-operator any[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]:
+operator any[T](source: stream T, pred: fn(T) -> bool) -> derived bool:
   // true once any event satisfies pred
 
-operator all[T](source: Stream[T], pred: fn(T) -> bool) -> Derived[bool]:
+operator all[T](source: stream T, pred: fn(T) -> bool) -> derived bool:
   // true if every event so far satisfies pred (true initially)
 ```
 
-These produce value cells (deriveds) from streams without requiring a default value
-because the predicate or accumulator establishes the initial signal
-value structurally (`0` for `count`, `init` for `fold`, `false` for
-`any`, `true` for `all`).
+The stream projection formerly named `count` is `event_count` (the
+bare `count` name is reserved for the element-tally rule, §9.3.7); the
+stream projection formerly named `fold` is `accumulate` (it pairs with
+`scan`, and the bare name `fold` names the language fold form,
+§13.21). These produce value cells (deriveds) from streams without
+requiring a default value because the predicate or accumulator
+establishes the initial value structurally (`0` for `event_count`,
+`init` for `accumulate`, `false` for `any`, `true` for `all`).
 
 **Transformation operators** (Stream → Stream):
 
@@ -20744,16 +21295,20 @@ operator merge[
   // default capacity is the sum of input capacities, ensuring no
   // overflow if both inputs fill simultaneously
 
-operator throttle[T, P: StreamPolicy](source: Stream[T, P], window: duration, clock: Cell[u64]) -> Stream[T, P]:
+operator throttle[T, P: StreamPolicy](source: Stream[T, P], window: duration, clock: cell u64) -> Stream[T, P]:
   // rate-limits events to at most one per window. `clock` ticks are
   // nanoseconds (§9.4.1): an event passes when clock - last_emit >= window.
 ```
 
-Transformation operators preserve policy and capacity by *threading* their
-policy parameter `P` from input to output (`Stream[T, P] -> Stream[U, P]`); the
-preservation is stated in the signature and checked by the type system, not a
-separate propagation rule. `map`, `filter`, `skip`, `take`, `throttle`, `scan`,
-and `pairwise` all preserve this way.
+`map`, `filter`, and `merge` are ordinary stdlib operators with **no
+special language privilege** — they are written with the same operator
+machinery any program may use, and a program may write its own
+equivalents. Transformation operators preserve policy and capacity by
+*threading* their policy parameter `P` from input to output
+(`Stream[T, P] -> Stream[U, P]`); the preservation is stated in the
+signature and checked by the type system, not a separate propagation
+rule. `map`, `filter`, `skip`, `take`, `throttle`, `scan`, and
+`pairwise` all preserve this way.
 
 The `merge` operator uses a const-generic capacity parameter `N` whose
 default expression `A + B` is over the input streams' const-generic
@@ -20798,7 +21353,7 @@ straightforward arithmetic and conditional history use; `scan` and
 takes a **stream** and a boolean predicate; it produces a new stream
 emitting only those events of the input whose predicate evaluates
 to true. A signal is not a `where` source — convert it to a stream
-explicitly first (`signal |> to_ring_stream`, §13.18.9).
+explicitly first via its `.changes` member (`signal.changes`, §13.18.9).
 
 ##### 13.18.10.1 Form
 
@@ -20822,9 +21377,9 @@ stream ring relevant = events where (events.priority is high and active_signal)
 A signal must be converted to a stream before filtering:
 
 ```
-stream ring sensor_events = sensor_signal |> to_ring_stream
+stream ring sensor_events = sensor_signal.changes
 stream ring above_threshold = sensor_events where sensor_events > 100
-// or in one expression: sensor_signal |> to_ring_stream |> filter(fn(s): s > 100)
+// or in one expression: sensor_signal.changes |> filter(fn(s): s > 100)
 ```
 
 ##### 13.18.10.2 References inside `C` and per-LHS-event semantics
@@ -21009,7 +21564,7 @@ operator emit_telemetry[T: Telemetry, const N: usize](events: RingStream[T, N]) 
 Passing the wrong policy stream is a compile error:
 
 ```
-error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
+error: cannot pass a `stream ring[1024] Write` to a `stream gate[_] Write` parameter
   --> writes |> persist
               ^^^^^^^^^
   hint: `persist` requires a gate stream because lost writes would be incorrect;
@@ -21275,8 +21830,8 @@ to the base stream reload rules above:
   feeds into an operator that emits a stream.
 - **A stream's `source` must include at least one stream.** The
   source expression must contain at least one stream input — a real
-  stream, or a signal converted explicitly (`signal |> to_ring_stream`
-  / `to_gate_stream`). A pure-value or signals-only expression cannot
+  stream, or a signal converted explicitly via its `.changes` member
+  (`signal.changes`). A pure-value or signals-only expression cannot
   be a stream source: there is no implicit `signal`→`stream`
   conversion (§13.18.7.4); signals in a stream expression are sampled,
   not emitted.
@@ -21294,8 +21849,8 @@ to the base stream reload rules above:
   through the dedicated host API (§13.14.8 `runtime.push_stream`).
 - **`.past(n, fallback)` and `.previous(init)` are only valid
   inside a recurrent's producing context** — the expression body of a
-  `recurrent[N] stream` (§13.18.8) or a value `recurrent[N]` /
-  `Recurrent[T, N]` (§13.2.4) declaration. Use in a non-recurrent
+  `recurrent[N] stream` (§13.18.8) or a value `recurrent[N] T`
+  (§13.2.4) declaration. Use in a non-recurrent
   context — a plain `stream` or `derived`, a non-recurrent `signal`
   arm, etc. — is a compile error.
 - **Output stream `.past(k, ...)` must satisfy `k ≤ N`.** A
@@ -21327,15 +21882,15 @@ error: stream declaration requires a policy keyword (`ring` or `gate`)
 
 There is no implicit `signal`→`stream` conversion (§13.18.7.4):
 neither a `stream X = signal_expr` binding nor an operator/effect
-parameter typed `Stream[T]` accepts a bare signal. Convert it
-explicitly:
+parameter of stream kind (`stream T`) accepts a bare signal. Convert
+it explicitly:
 
 ```
-error: cannot pass `Signal[T]` to `Stream[T]` parameter
+error: cannot pass a `signal T` where a `stream T` is required
   --> persist(my_signal)
               ^^^^^^^^^ expected a stream
   hint: `persist`'s parameter requires a stream. Convert the signal
-        explicitly: `persist(my_signal |> to_gate_stream)`.
+        explicitly via its `.changes` member: `persist(my_signal.changes)`.
 ```
 
 **Stream-valued expression assigned to a signal binding:**
@@ -21352,7 +21907,7 @@ error: cannot assign stream-valued expression to signal binding
 **Stream read as a value (no expression context):**
 
 ```
-error: cannot read `Stream[T]` as a value
+error: cannot read a `stream T` as a value
   --> derived latest: Event = events
                               ^^^^^^ this is a stream, not a value cell
   hint: streams have no current value. Project to a signal via
@@ -21363,7 +21918,7 @@ error: cannot read `Stream[T]` as a value
 **Policy mismatch in pipe chain:**
 
 ```
-error: cannot pass `RingStream[Write, 1024]` to `GateStream[Write, _]` parameter
+error: cannot pass a `stream ring[1024] Write` to a `stream gate[_] Write` parameter
   --> writes |> persist
                 ^^^^^^^
   hint: `persist` requires a gate stream because lost writes would
@@ -21438,8 +21993,10 @@ Effects are distinct from `node`, `operator`, and `fn`:
   (§13.17), pure with respect to outside reality.
 - `node` is a topological participant in the reactive graph
   (§13.3), composed via children and connections.
-- `effect` describes outside-world alignment — the host-interpreted
-  bridge between program state and runtime environment. Composes
+- `effect` describes outside-world alignment — a *reconciliation
+  contract* between program state and external reality, fulfilled by a
+  host reconciler (a leaf effect), by child effects placed in the
+  effect's body (an interior effect), or by both. Composes
   with operators via `|>`; instantiated only in a node's `effects:`
   clause (§13.3.8), never via node-style placement.
 
@@ -21454,19 +22011,38 @@ a node's `effects:` clause and held only by borrow (§13.3.6.1); an effect
 
 #### 13.19.1 Concept
 
-Ductus effects use a *reconciliation* model. An effect
-declaration consists of two record-shaped blocks:
+Ductus effects use a *reconciliation* model. Every effect is a
+**reconciliation contract** — an obligation to align program state
+with external reality. A contract is fulfilled in one of three ways:
+
+- **Leaf effect** — fulfilled by a *host reconciler*. The effect
+  declares host-written channels in its `observed:` block, and a host
+  reconciler (§13.19.14) is registered to write them.
+- **Interior effect** — fulfilled by *child effects* placed as
+  top-of-body items in the effect's body (§13.19.3.1). The interior
+  effect owns no host channels; its contract is discharged entirely by
+  the child effects it composes.
+- **Both** — an effect may place child effects *and* declare host-
+  written channels; the two are orthogonal and may be mixed freely.
+
+An effect declaration consists of optional child-effect placements
+followed by two record-shaped blocks:
 
 - **`desired:`** — cells the program writes (or that flow from the
   effect's parameters); the host reads them.
-- **`observed:`** — cells the host writes; the program reads them.
+- **`observed:`** — cells the host writes, OR computed outputs the
+  effect exposes from its own `desired:`/child cells; the program
+  reads them.
 
-The host registers a *reconciler* keyed by the effect's type name
-(§13.19.14). On each commit, the reconciler reads the effect
-instance's parameters and desired cells, performs whatever real-
-world operations align reality with the desired state, and writes
+For a leaf effect, the host registers a *reconciler* keyed by the
+effect's type name (§13.19.14). On each commit, the reconciler reads
+the effect instance's parameters and desired cells, performs whatever
+real-world operations align reality with the desired state, and writes
 the actual outcome into the observed cells. The program reads the
-observed cells through the standard reactive machinery.
+observed cells through the standard reactive machinery. For an interior
+effect, no reconciler is registered (§13.14.7); the child effects'
+own reconcilers (or their children's, transitively) discharge the
+contract.
 
 This model unifies request/response (a single-value `desired.request`
 that the host satisfies once) with long-lived resources (continuously
@@ -21481,6 +22057,7 @@ hot reload; §13.19.12 lifetime).
 
 ```
 effect name[GenericParams]?(params...):
+  child_placements...        // optional; top-of-body, before the blocks
   desired:
     cell_declarations...
   observed:
@@ -21492,10 +22069,21 @@ effect name[GenericParams]?(params...):
 - **`GenericParams`** are optional type parameters with optional
   trait bounds (§3, §5), parallel to operators (§13.17.8).
 - **`params`** is a comma-separated parameter list (§13.19.3).
+- **`child_placements`** are optional top-of-body child-effect
+  instantiations (`x = effect_expr`), declared **before** `desired:`
+  and `observed:` (§13.19.3.1). An effect that places child effects is
+  an *interior* effect (§13.19.1).
 - **`desired:`** is an optional block declaring cells the host's
   reconciler reads (§13.19.4).
-- **`observed:`** is an optional block declaring cells the host's
-  reconciler writes (§13.19.5).
+- **`observed:`** is an optional block declaring the effect's public
+  surface: host-written cells and/or lifted computed outputs
+  (§13.19.5).
+
+**Body order.** When body items are present, the canonical order is
+**child placements → `desired:` → `observed:`**, with `observed:` last
+(the public surface is stated after everything it may lift from). This
+supersedes the older "blocks may appear in either order" latitude
+whenever top-of-body child placements are present.
 
 Cell declarations inside each block carry an explicit role keyword
 matching the cell's kind, parallel to the language's other reactive
@@ -21516,10 +22104,13 @@ expression body for `.past` to read). `attr` and top-level `signal`
 cannot appear inside an effect's body; stateful behavior that wraps
 multiple effects is expressed via wrapping operators (§13.19.15).
 
-At least one of `desired:` or `observed:` must be present (an effect
-with neither would have no surface at all). The blocks may be
-declared in either order; the canonical order is `desired:` first,
-`observed:` second.
+At least one of `desired:`, `observed:`, or a child-effect placement
+must be present (an effect with none of these would have no surface at
+all — an interior effect satisfies this via its child placements alone).
+Absent top-of-body child placements, the two blocks may be declared in
+either order; the canonical order is `desired:` first, `observed:`
+second. When child placements are present, body order is fixed (see
+above): child placements → `desired:` → `observed:`.
 
 Effects carry visibility modifiers (§13.19.10): `public`, `shared`,
 `private`.
@@ -21529,7 +22120,7 @@ to themselves — the instance value, accessed through the binding name
 or through expression position (§13.19.13).
 
 ```
-effect fetch(url: Cell[Url], method: Method = Method::GET):
+effect fetch(url: cell Url, method: Method = Method::GET):
   desired:
     derived request: Request = Request(method: method, target: url)
   observed:
@@ -21543,7 +22134,7 @@ parameter-tracking `derived` cell expressing the request; the
 `observed:` block declares three host-written signal cells.
 
 ```
-effect websocket(url: Cell[Url], outgoing: RingStream[Message, 1024]):
+effect websocket(url: cell Url, outgoing: stream ring[1024] Message):
   desired:
     stream ring[1024] outbound: Message = outgoing
   observed:
@@ -21563,8 +22154,8 @@ signal cells.
 Effect parameters are cell-bound or value-typed, with the same rules
 as operator parameters (§13.17.3):
 
-**Cell-bound parameters** (`name: Cell[T]` for a value cell, or
-`name: Stream[T]` for an event stream):
+**Cell-bound parameters** (`name: cell T` for a value cell, or
+`name: stream T` for an event stream):
 - Bind to a reactive cell at instantiation.
 - The host's reconciler reads the cell's current value (or observes
   events, for stream parameters) during each invocation in which
@@ -21582,7 +22173,7 @@ as operator parameters (§13.17.3):
   method, content type, retry budget).
 
 **Defaults** are allowed on value parameters (§3.5.4 ordering rules
-apply); not on `Cell[T]` parameters in v1.
+apply); not on `cell T` parameters in v1.
 
 **Pipe target.** The first positional parameter is the implicit
 pipe target (§13.17.7 generalized to effects). For an effect
@@ -21590,7 +22181,7 @@ intended to be used with `|>`, authors place the primary upstream
 cell as the first parameter:
 
 ```
-effect fetch(url: Cell[Url], method: Method = Method::GET):
+effect fetch(url: cell Url, method: Method = Method::GET):
   ...
 
 // usage (in a node's effects: clause, §13.3.8):
@@ -21598,14 +22189,16 @@ effects:
   response = current_url |> fetch(method: Method::POST)
 ```
 
-**Stream parameters.** Parameters may be of stream type
-(`Stream[T]`, `RingStream[T, N]`, `GateStream[T, N]`). A parameter does
+**Stream parameters.** Parameters may be of stream kind
+(erased `stream T`, `stream ring[N] T`, `stream gate[N] T`; the
+`RingStream[T, N]` / `GateStream[T, N]` alias spellings survive as
+sugar, §13.18.3). A parameter does
 not auto-bind to a surface: the effect must still declare at least one
 block (§13.19.2) saying what it does with the parameter's events, and
 the host's reconciler drives that block:
 
 ```
-effect log(entries: GateStream[LogEntry, 4096]):
+effect log(entries: stream gate[4096] LogEntry):
   desired:
     stream gate[4096] out: LogEntry = entries
     // the parameter feeds a desired stream; the host writes each entry
@@ -21619,6 +22212,56 @@ effects:
 **Reactive composite parameters.** Parameters may be reactive
 composites (§13.2.9), in which case each constituent field is
 tracked independently for dirty propagation to the reconciler.
+
+#### 13.19.3.1 Child-effect placements
+
+An effect body may place **child effects** as top-of-body items,
+before the `desired:` and `observed:` blocks. A child placement has the
+form `x = effect_expr` — the same instantiation form as a node's
+`effects:` clause (§13.3.8):
+
+```
+effect resilient_fetch(url: cell Url):
+  attempt = url |> fetch          // child effect, private
+  logged  = attempt.response |> log   // another child effect
+  desired:
+    derived request: Request = Request(target: url)
+  observed:
+    derived response: Option[Response] = attempt.response
+    signal exhausted: bool = false      // host-written channel (optional)
+```
+
+The effect that places child effects is an **interior** effect
+(§13.19.1); its reconciliation contract is discharged (in whole or in
+part) by the child effects it composes.
+
+**Privacy.** Child placements are **private** to the enclosing effect.
+They are *not* part of the effect's public surface — only the
+`observed:` block is (§13.19.5). A consumer of the interior effect sees
+its `observed:` cells and cannot name or reach its child placements.
+To expose a value produced by a child effect, lift it into `observed:`
+as a computed output (`derived response: … = attempt.response`).
+
+**Lifecycle cascade.** Child effects share the enclosing effect's
+lifecycle. When the parent effect instance mounts, its children mount;
+when the parent tears down, its children tear down; when the parent's
+enclosing subtree is gated off (suspend) or back on (resume, §13.14.9),
+the cascade reaches every child in placement order. A child effect
+never outlives its parent and never mounts independently of it.
+
+**Reconciler orthogonality.** Placing child effects is orthogonal to
+declaring host-written channels. An interior effect may *also* declare
+`signal`/`stream` cells in its `observed:` block — in which case it is
+both a leaf and an interior effect, and requires a reconciler for its
+own host channels (§13.19.14) while its children carry their own.
+Mixing child placements and host channels is allowed.
+
+**Composition, not `desired:` nesting.** Child placements are the
+*only* way one effect composes another. An effect's `desired:` block may
+not instantiate a child effect via a `|>` chain in a cell expression
+(§13.19.16); composition happens at the top of the body, where
+lifecycle and reconciler ordering stay explicit rather than being
+buried inside a desired-cell expression.
 
 #### 13.19.4 Desired block
 
@@ -21664,7 +22307,7 @@ buffer:
 ```
 desired:
   stream ring[1024] outbound: Message = outgoing
-  stream gate[256] outgoing_writes: PendingWrite = pending |> to_gate_stream
+  stream gate[256] outgoing_writes: PendingWrite = pending.changes
 ```
 
 The declaration shape matches a regular `stream` declaration (§13.18.2)
@@ -21706,10 +22349,24 @@ release on inactivity is the reconciler's response to the `suspend` hook
 
 #### 13.19.5 Observed block
 
-The `observed:` block declares cells that the host's reconciler
-writes. The program reads these cells through the standard reactive
-machinery. Two cell forms are permitted, each introduced by an
-explicit role keyword:
+The `observed:` block is the effect's **public surface** — the cells
+the program reads. Two provenance categories share this surface:
+
+- **Host-written channels** — `signal` and `stream` cells the host's
+  reconciler writes. An effect that declares any host-written channel
+  is a *leaf* effect and requires a registered reconciler (§13.14.7,
+  §13.19.14).
+- **Computed outputs** — `derived` and (value-)`recurrent` cells the
+  effect itself computes from its own `desired:` cells or its child
+  effects' observed cells (§13.19.3.1). These are *lifted* into the
+  public surface without any host write; an interior effect whose
+  `observed:` block holds only computed outputs needs no reconciler.
+
+Both categories are read the same way by program code (§13.19.7);
+the distinction is purely one of who fills the cell. The two
+host-written channel kinds — `signal` and `stream` — are unchanged:
+the host-WRITE count remains exactly two. Each observed cell is
+introduced by an explicit role keyword. The host-written forms:
 
 **`signal` cells** — host-written value cells. The program reads the
 cell's current value; the host updates it via the host API
@@ -21748,11 +22405,35 @@ The declaration shape parallels the top-level `stream` declaration
 reconciler pushing events via `runtime.push_stream`. Policy and
 capacity work as in regular stream declarations.
 
-`recurrent[N] stream` (§13.18.8) is not valid in `observed:` blocks
-— a recurrent stream requires a reactive expression body, but
-observed-block cells have no body (the host populates them
-directly via the runtime API). Effects that need history-aware
-behavior must compute it in the host's reconciler.
+**Computed outputs (`derived` / `recurrent`).** An `observed:` block
+may also declare `derived` cells and value-`recurrent` cells that the
+effect computes itself — from its own `desired:` cells, its parameters,
+or the observed cells of its child effects (§13.19.3.1). These forms
+carry a reactive expression body, exactly as they do in a `desired:`
+block (§13.19.4), and are *lifted* into the public surface:
+
+```
+observed:
+  derived summary: Status = child_fetch.response |> summarize
+  recurrent attempts: u32 = attempts.previous(0) + 1
+```
+
+A computed output receives no host write — it is filled by ordinary
+reactive evaluation — so an effect whose `observed:` block holds only
+computed outputs (and no host-written `signal`/`stream`) is an interior
+effect and needs no reconciler (§13.19.14). Program code reads a
+computed output through the same access path as a host-written cell
+(§13.19.7); the provenance is invisible at the read site.
+
+**Host-fed recurrent streams stay rejected.** A host-fed
+`recurrent[N] stream` (§13.18.8) is *not* valid in `observed:` blocks.
+The lift admits value-`recurrent` computed outputs (which carry their
+own reactive body); it does **not** admit a host-fed recurrent stream,
+because a host-fed cell has no expression body for `.past` to read —
+the host populates such a cell directly via the runtime API, and there
+is no self-history for the runtime to maintain. Effects that need a
+host-fed history-aware event sequence must compute it in the host's
+reconciler.
 
 `repeat` (§13.5.4) — and likewise the `when` / `given` selection blocks
 (§13.9.12, §13.9.13) — are not valid in `observed:` blocks. Observed
@@ -21777,10 +22458,13 @@ program code is a compile error:
 error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: effect cells are not writable from program code. The host's
-        reconciler is the sole writer of `observed:` cells; to control
-        the effect's behavior, change the upstream cell(s) bound to its
-        parameters (or use a stub effect to inject test data).
+  hint: effect cells are not writable from program code. An `observed:`
+        cell is filled either by the host's reconciler (host-written
+        `signal`/`stream` channels) or by the effect's own reactive
+        evaluation (lifted `derived`/`recurrent` computed outputs);
+        neither is writable from program code. To control the effect's
+        behavior, change the upstream cell(s) bound to its parameters
+        (or use a stub effect to inject test data).
 ```
 
 **Host-side semantics.** The host writes observed signal cells via
@@ -21857,10 +22541,13 @@ assignment is a compile error:
 error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: effect cells are not writable from program code. The host's
-        reconciler is the sole writer of `observed:` cells; to control
-        the effect's behavior, change the upstream cell(s) bound to its
-        parameters (or use a stub effect to inject test data).
+  hint: effect cells are not writable from program code. An `observed:`
+        cell is filled either by the host's reconciler (host-written
+        `signal`/`stream` channels) or by the effect's own reactive
+        evaluation (lifted `derived`/`recurrent` computed outputs);
+        neither is writable from program code. To control the effect's
+        behavior, change the upstream cell(s) bound to its parameters
+        (or use a stub effect to inject test data).
 ```
 
 **Instantiating an effect.** The instantiation lives in the `effects:`
@@ -21931,11 +22618,11 @@ operators (§13.17) and contrasts with nodes (§13.3), which separate
 type names (PascalCase) from placement syntax.
 
 ```
-effect fetch(url: Cell[Url]):
+effect fetch(url: cell Url):
   ...
 
 // Used as type:
-operator render_fetch_card(f: fetch) -> Derived[View]:
+operator render_fetch_card(f: fetch) -> derived View:
   ...
 
 // Used as constructor — in a node's effects: clause:
@@ -21950,8 +22637,8 @@ Effects may take type parameters with optional trait bounds:
 
 ```
 effect cached_fetch[T: Cacheable](
-  url: Cell[Url],
-  cache: Cell[Cache[T]],
+  url: cell Url,
+  cache: cell Cache[T],
 ):
   observed:
     signal value: Option[T] = None
@@ -21975,7 +22662,7 @@ Effects carry the standard three-level visibility (§10): `public`,
 reachable from other modules; public effects may be re-exported.
 
 ```
-public effect fetch(url: Cell[Url]):
+public effect fetch(url: cell Url):
   ...
 
 private effect internal_health_check():
@@ -22116,7 +22803,7 @@ effect's type as the parameter type) or take a specific cell
 projected by field access:
 
 ```
-operator render_fetch_card(f: fetch) -> Derived[View]:
+operator render_fetch_card(f: fetch) -> derived View:
   // receives the whole composite
   ...
 
@@ -22188,10 +22875,16 @@ side effects, no leaked resources, no duplicated requests). This
 property is what allows the runtime to invoke the reconciler freely
 without worrying about whether a previous invocation completed.
 
-**Unregistered effect types.** If an effect type appears in the
-graph specification with no registered reconciler, the runtime emits
+**Unregistered effect types.** Reconciler registration is required if
+and only if the effect's `observed:` block declares host-written
+channels (`signal`/`stream`); an interior effect whose contract is
+fulfilled entirely by child effects requires no reconciler. If an
+effect type that requires a reconciler appears in the graph
+specification with no registered reconciler, the runtime emits
 a diagnostic at startup and refuses to enter the live state. Effects
-must be registered before the runtime becomes live.
+with host-written channels must be registered before the runtime
+becomes live; interior effects fulfilled entirely by child effects
+need no registration.
 
 **Reconciler error reporting.** Reconciler errors (network failure,
 resource exhaustion, etc.) are reported to the program through the
@@ -22208,11 +22901,14 @@ value track (§8).
   connection bodies (§13.6.4), or in function bodies (below). Within a
   node, a free `f = url |> fetch` or `derived x = url |> effect` outside
   `effects:` is a compile error (§13.19.16).
-- **Effects do not compose from effects.** An effect's `desired:` block
-  may not contain another effect's instantiation via `|>` chain. Compose
-  effects at the consumer site instead — feed one effect's observed cells
-  into another's parameters (§13.19.16) — which keeps reconciler ordering
-  and lifecycles explicit rather than nesting them.
+- **Effects compose only via top-of-body child placements.** An effect
+  composes another by placing it as a top-of-body child (`x =
+  effect_expr`, §13.19.3.1) — an interior effect. An effect's `desired:`
+  block may **not** instantiate a child effect via a `|>` chain in a
+  cell expression (§13.19.16); composition stays at the top of the body
+  (or at the consumer site — feeding one effect's observed cells into
+  another's parameters), where reconciler ordering and lifecycles remain
+  explicit rather than being buried inside a desired-cell expression.
 - **Effects do not use node-style placement syntax.** Effects are
   not topological participants; they are not placed via
   `EffectName name /` syntax. They are instantiated by appearance
@@ -22225,13 +22921,16 @@ value track (§8).
   effects, §13.17.4): the operator composes the effect *through* a pipe
   (`url |> fetch`), and the effect is still instantiated in the
   enclosing node's `effects:` clause.
-- **No reactive declarations outside `desired:` and `observed:`
-  blocks inside an effect body.** The effect's body consists only of
-  the `desired:` and `observed:` blocks containing role-keyword cell
-  declarations (`derived`, `recurrent`, `stream` in `desired:`;
-  `signal`, `stream` in `observed:`). Stateful behavior that spans
-  multiple effects — accumulators, retry logic — is expressed via
-  wrapping operators, not via internal declarations in the effect.
+- **No reactive declarations outside child placements and the
+  `desired:`/`observed:` blocks inside an effect body.** The effect's
+  body consists only of optional top-of-body child-effect placements
+  (§13.19.3.1) followed by the `desired:` and `observed:` blocks
+  containing role-keyword cell declarations (`derived`, `recurrent`,
+  `stream` in `desired:`; `signal`, `stream`, and lifted
+  `derived`/`recurrent` computed outputs in `observed:`). Stateful
+  behavior that spans multiple effects — accumulators, retry logic — is
+  expressed via child placements or wrapping operators, not via
+  free-standing declarations elsewhere in the effect body.
 
 #### 13.19.16 Diagnostics
 
@@ -22271,10 +22970,13 @@ error: cell name `target` appears in both `desired:` and `observed:` of effect `
 error: cannot assign to cell `response` on effect instance
   --> f.response = some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  hint: effect cells are not writable from program code. The host's
-        reconciler is the sole writer of `observed:` cells; to control
-        the effect's behavior, change the upstream cell(s) bound to its
-        parameters (or use a stub effect to inject test data).
+  hint: effect cells are not writable from program code. An `observed:`
+        cell is filled either by the host's reconciler (host-written
+        `signal`/`stream` channels) or by the effect's own reactive
+        evaluation (lifted `derived`/`recurrent` computed outputs);
+        neither is writable from program code. To control the effect's
+        behavior, change the upstream cell(s) bound to its parameters
+        (or use a stub effect to inject test data).
 ```
 
 **Effect type with no registered reconciler:**
@@ -22282,11 +22984,16 @@ error: cannot assign to cell `response` on effect instance
 ```
 error: effect type `fetch` has no registered reconciler
   --> at runtime startup
-  hint: every effect type appearing in the graph specification must
+  hint: reconciler registration is required if and only if the effect's
+        `observed:` block declares host-written channels
+        (`signal`/`stream`). `fetch` declares such channels, so it must
         have a reconciler registered via
         `runtime.register_reconciler("fetch", ...)` (§13.14.7) before
-        the runtime enters the live state. Generic effects require
-        one registration per concrete instantiation.
+        the runtime enters the live state. An interior effect whose
+        contract is fulfilled entirely by child effects requires no
+        reconciler and does not raise this error. Generic effects that
+        require a reconciler need one registration per concrete
+        instantiation.
 ```
 
 **Effect instantiation inside a function body:**
@@ -22305,7 +23012,7 @@ error: effect instantiations are not permitted inside function bodies
 
 ```
 error: effect instantiation inside another effect's body is not permitted
-  --> effect outer(input: Cell[T]):
+  --> effect outer(input: cell T):
         desired:
           derived chained = input |> inner_effect
                                      ^^^^^^^^^^^^ effect-in-effect not allowed
@@ -22368,7 +23075,7 @@ error: effects cannot be instantiated at module level
 
 ```
 error: effects cannot be instantiated in an operator body
-  --> operator cached_fetch(url: Cell[Url]) -> Derived[Response]:
+  --> operator cached_fetch(url: cell Url) -> derived Response:
         f = url |> fetch
             ^^^^^^^^^^^^ effect instantiation in operator
   hint: operators are pure reactive transforms (§13.17). Host the
@@ -22388,6 +23095,268 @@ error: effects must be instantiated in the `effects:` clause
         cells by name: `effects:` / `f = url |> fetch`, then
         `derived spinner: bool = f.in_flight`.
 ```
+
+### 13.20 Collect and Yield
+
+`collect:` is a **block expression** that builds a *living membership
+structure* — a `yielded T` group (§13.20.4) whose members are the cells
+contributed by the `yield` expressions inside the block. It is the
+language's construct for producing a membership-varying group of cells
+whose extent tracks structural liveness (static position, `repeat` key,
+gated-arm activation), rather than a stored collection whose contents are
+data.
+
+#### 13.20.1 Forms
+
+`collect` has two legal forms:
+
+- **Block-expression form** — `collect:` used as an expression whose
+  value is a `yielded T` group:
+
+  ```
+  derived voices: yielded Voice = collect:
+    yield lead_voice
+    yield bass_voice
+  ```
+
+- **Statement form** — `collect as x:` binds the resulting group to a
+  name `x` as a statement:
+
+  ```
+  collect as active:
+    yield primary
+    for v in candidates:
+      yield v
+  // `active` is in scope below as a `yielded` group
+  ```
+
+Both forms are legal and equivalent in what they build; they differ only
+in whether the group is the expression's value or a named binding.
+
+#### 13.20.2 `yield` — one member-cell
+
+Inside a `collect` block, each `yield <expr>` contributes **exactly one
+member-cell** to the group. `yield` has a single invariant meaning: *this
+expression is a member of the group while this position is live*. It is
+**not** a coroutine suspension point — `collect` is not a generator.
+
+- **Bare `yield` directly under `collect` is legal.** A `yield` whose
+  lexical position is directly inside the `collect` block (not nested in
+  a `repeat`, gated arm, or conditional) contributes a permanent member.
+- **`yield` outside a `collect` block is a compile error.** The keyword
+  has meaning only inside `collect`.
+
+**What `yield` accepts.** `yield` accepts *any* expression, and the
+member-cell's provenance follows the uniform cell-argument rule
+(§13.17.3):
+
+- A reactive expression (a cell reference, or an expression reading
+  cells) → the member is that cell (or a synthesized `derived` bridge for
+  a compound reactive expression).
+- A static expression (literal, `const`) → the member is a degenerate
+  constant cell.
+
+#### 13.20.3 Positional membership
+
+A `yield`'s **membership driver** is determined by its lexical position
+inside the `collect` block — the same three drivers the IR records
+(§15.4.1):
+
+- **Permanent** — a `yield` at a static position (directly under
+  `collect`, or under a compile-time-unrolled construct). The member is
+  present for the group's whole lifetime.
+- **Key-driven** — a `yield` inside a `repeat` (§13.5.4) over a dynamic
+  view. One member per live key; members join and leave as keys do.
+- **Activation-driven** — a `yield` inside a gated arm (`when`/`given`,
+  a `Gated` exposition arm §13.3.7.7). The member is present iff its arm
+  is *effectively active* (§13.9.7); a gated-off contribution is *absent*
+  from the group, not a frozen present member (the fourth gate read-path,
+  §13.9.7).
+
+`collect` evaluates **once** and builds the living membership structure;
+membership then varies at runtime per the drivers above without
+re-evaluating the block.
+
+##### 13.20.3.1 `yield` under a value `if`/`match` (R4)
+
+A `yield` nested under a value `if`/`match` *inside* `collect` is legal
+**iff** the condition/scrutinee is **compile-time-known** — the `if`/`match`
+is a conditional-expansion construct (the compiler unrolls it, and the
+surviving `yield`s contribute permanent members). This mirrors the
+compile-time-conditional rule for structural expansion elsewhere.
+
+When the condition/scrutinee is **reactive/runtime**, the `yield` is a
+**compile error**. `if`/`match` never gate structure (a value conditional
+selects a value, not a membership); a runtime membership choice must be
+expressed structurally. The diagnostic offers two remedies:
+
+```
+error: `yield` under a runtime `if` cannot vary group membership
+  --> collect:
+        if is_active:            // is_active is a reactive cell
+          yield voice
+          ^^^^^^^^^^^ membership cannot depend on a runtime value here
+  hint: to switch membership on a runtime condition, use a membership-
+        selecting arm (`when`/`given`, §13.9.12) whose arm yields the
+        member — the member is then activation-driven (§13.20.3). To
+        instead choose the member's *value* (keeping it always present),
+        yield a conditional value: `yield if is_active: voice else: muted`.
+```
+
+#### 13.20.4 The `yielded` kind
+
+`yielded T` is the **kind** of the group a `collect` produces: an
+**ordered** (walk-order), membership-varying group of cells carrying
+values of type `T`. It is a cell-KIND (a member of the `cell` umbrella,
+§13.18.5): membership changes propagate dirt to consumers.
+
+- **Stores nothing.** A `yielded` group holds no buffer of values: it is
+  a compile-time wire set (which positions can contribute) plus runtime
+  on/off bits (which are currently live). The member *values* live in the
+  member cells themselves; the group is only the membership structure.
+- **Ordered.** Members are in walk order — the lexical/structural order
+  of their `yield` positions, with `repeat` members interleaved in key
+  order at their position.
+- **Synthesized `count` member.** A `yielded` group has a synthesized
+  `.count` member — the number of currently-live members (an element
+  tally, per the bare-`count` naming rule §9.3.7). `.count` is reactive:
+  it changes as membership does.
+
+##### 13.20.4.1 Consumption
+
+A `yielded` group is consumed in exactly these ways:
+
+- **The fold form** (§13.21) — the primary consumer: a `fold` over a
+  `yielded` group combines its live members.
+- **Yielded-typed parameters** — `yielded T` may be a parameter type on
+  operators *and* on functions; the body walks the members in walk order.
+- **`repeat` over it** (§13.5.4) — materializes one scope per live member.
+
+It is **not** consumed by:
+
+- **Indexing** — a `yielded` group has no positional index operator (its
+  membership is not a stable array).
+- **Compile-time / structural `for`** — a structural `for` over a
+  `yielded` group is a compile error (its extent is a runtime membership,
+  not a compile-time-fixed sequence).
+
+`yielded` is **not** a dynamic-view consumer and does not join the
+dynamic-view consumer surface (§13.3.3.4): the two kinds are distinct.
+
+##### 13.20.4.2 Iterable fulfillment
+
+`yielded T` fulfills `Iterable` (§12.8) at the **language level** —
+authored as a language-defined fulfillment (the same way
+`Keyed`/`StringifiableKey` are language-defined, §13.5.4.2): its `Item` is
+the `T` member values in walk order. This fulfillment is available in **runtime-loop
+contexts only** — `fn`, `derived`, and `operator` bodies where a runtime
+`for` walks the live members — never in compile-time structural `for`
+(above).
+
+### 13.21 The Fold Form
+
+`fold` is a **language expression form** — not an operator, not a method
+(a method's behavior is opaque §13.17; `fold`'s combine semantics are part
+of the language, so it is a form). It combines a membership-varying group
+with a user-supplied binary combiner and an empty-membership default,
+producing a single value cell.
+
+#### 13.21.1 Grammar
+
+```
+fold <members>:
+  by: <fn(T, T) -> T expression>
+  else: <T expression>
+```
+
+- The `fold` header names the `<members>` — a `yielded` group (§13.20) or
+  a reactive composite with a uniform slot type (§13.21.4).
+- **`by:`** and **`else:`** are newline-separated arms — **no comma** —
+  and **both are mandatory**. `else:` comes **last**.
+
+```
+derived total: f32 = fold voices:
+  by: (a, b) => a + b
+  else: 0.0
+```
+
+#### 13.21.2 The `by:` combiner (semigroup)
+
+`by:` takes a **`fn(T, T) -> T`** combiner expression. The form asserts
+**associativity** by its very use (the compiler does not verify it; the
+author asserts it by writing `fold`). **Commutativity is NOT required** —
+the combine tree is deterministic from member order (§13.21.5), so a
+non-commutative combiner yields a well-defined result.
+
+The combiner is a **semigroup** operation: it combines two `T` values into
+one. There is **no identity element** — `fold` is semigroup-plus-default:
+the empty-membership case is handled by the `else:` arm (§13.21.3), not by
+an identity value the combiner would fold in. Ductus has no identity-plus-
+associative-combine algebra trait; the fold form's contract is a bare
+associative combiner and a separate empty default.
+
+#### 13.21.3 The `else:` default
+
+`else:` is the **empty-membership result** — the value the `fold` takes
+when its group has **zero live members**. It is **never combined** into a
+non-empty result: with one or more members, `else:` is not consulted at
+all; the members are combined pairwise by `by:` alone. `else:` exists
+solely so the semigroup (which has no identity) still has a defined value
+on the empty group.
+
+#### 13.21.4 Scope — what is foldable
+
+`fold` folds over **membership structures**, not stored collections:
+
+- **`yielded` groups** (§13.20) — the canonical case.
+- **Reactive composites with a uniform slot type** — the members are the
+  composite's slots **in declared order**; a zero-slot composite folds to
+  `else:`.
+
+A `Cell[Vec[T]]`-shaped value (a stored collection held in a cell) is
+**not** foldable by this form: `fold` is over membership, not over the
+contents of a stored container. To reduce a stored `Vec`, use ordinary
+value-level iteration (§12), not `fold`.
+
+#### 13.21.5 Cost rule (normative)
+
+`fold` maintains its result incrementally. The normative cost rule (a
+member of the same incremental-cost family as the loop/collection cost
+rules §12, §9): **O(log n) combines** per member value-change, join, or
+leave, where *n* is the current member count. The compiler builds a
+**deterministic combine tree** from member order; when one member's value
+changes (or a member joins/leaves), only the O(log n) combines on the path
+from that member to the root re-run. Commutativity is not required because
+the tree shape is fixed by member order.
+
+#### 13.21.6 Where `fold` may appear
+
+A `fold` expression joins the same positions as other reactive
+expressions:
+
+- **Operator-body items** and a **`derived` RHS** — a `fold` may be the
+  right-hand side of a `derived` declaration, or a body item inside an
+  operator (§13.17.4). A `fold` inside an operator body forces the
+  **indented block form** for that body (a `fold` header cannot share the
+  inline-after-colon single-expression body).
+
+The `fold` form's result is a value cell; the surface a consumer sees is
+`derived T` — a `fold` on a `derived` RHS produces a `derived` cell, and
+consumers never see a distinct "fold" surface type.
+
+#### 13.21.7 IR lowering
+
+A `fold` expression lowers to a **new cell kind**, `fold`, in the graph IR
+(§15.4.1). The IR cell-`kind` enum gains `fold` — `input | derived |
+recurrent | fold`. **`fold` is a cell kind, not a seventh graph
+primitive**: the graph's six-primitives count (§15.4.1) is **unchanged**.
+
+A fold-kind cell carries: the **combiner behavior id** (the `by:`
+combiner, a behavior handle §14.6.3); the **else value** (the
+empty-membership result); and the **member edges in member order**, each
+tagged with its **membership driver** — `permanent`, `keyed-template`, or
+`gate-guarded` (§15.4.1). The surface type is that of the enclosing
+`derived` declaration.
 
 ---
 
@@ -23262,14 +24231,27 @@ The graph is a structured record with the following entries.
 **Cells.** A list of cell entries. Each cell entry contains:
 
 - `id`: the cell's fully-qualified declaration path (§15.4.1.1).
-- `kind`: `input` (a stored, externally-written cell), `derived`, or
-  `recurrent` — the cell's classification, leading its text-form line (§15.4.6).
+- `kind`: `input` (a stored, externally-written cell), `derived`,
+  `recurrent`, or `fold` — the cell's classification, leading its
+  text-form line (§15.4.6). The `fold` kind is the IR lowering of the
+  language fold form (§13.21); it is a cell KIND, not a seventh graph
+  primitive — the six-primitives count (above) is unchanged.
 - `type`: the cell's primitive type tag, per §4.1, plus the
   string-pool-index (§14.5) and dynamic-pool-index (§14.3.3) types.
 - `initial_value` (optional): the compile-time initial value for
   reactive-safe initializers per §13.8.2.1.
 - `size`, `alignment`: derived from `type`, recorded explicitly for
   cross-implementation interop.
+- `fold_payload` (present iff `kind` is `fold`): the fold-kind cell's
+  members, carrying — the combiner **behavior id** (`by:`'s combiner
+  function, a behavior handle per §14.6.3); the **else value** (the
+  empty-membership result, §13.21); and the **member edges** in member
+  order, each tagged with its **membership driver** — `permanent` (a
+  static position), `keyed-template` (a `repeat`-driven position, present
+  per key), or `gate-guarded` (a gated-arm position, present iff its gate
+  is effectively active, §13.9.7). The surface remains a `derived T`: the
+  fold's result lives in a `derived` declaration and consumers see
+  `derived T` (§13.21).
 
 **Connections.** A list of connection entries. Each:
 
@@ -23368,11 +24350,24 @@ is the cross-build match key, not the table index.
   dispatch to the host's reconciler — see `reconciler_dependencies`
   below).
 - `parameter_bindings`: list of `(parameter_name, source_cell_id |
-  value_literal)` pairs.
+  value_literal, provenance_marker)` triples. The `provenance_marker`
+  records how the cell argument was materialized under the uniform
+  cell-argument rule (§13.17.3): `bound` (a bare cell bound directly),
+  `constant_wrap` (a static expression wrapped as a degenerate constant
+  cell), or `bridge` (a reactive expression whose implicit `derived`
+  bridge cell — synthesized at the call site — is the `source_cell_id`).
+  The marker is metadata on the existing binding, **not** a third binding
+  case: `source_cell_id | value_literal` still carries the binding
+  itself; the marker only annotates its origin.
 - `desired_cell_ids`: IDs of the cells declared in the effect's
   `desired:` block for this instance.
 - `observed_cell_ids`: IDs of the cells declared in the effect's
-  `observed:` block for this instance.
+  `observed:` block for this instance. This includes both host-written
+  channels (`signal`/`stream`) and lifted computed outputs
+  (`derived`/value-`recurrent` cells the effect computes from its own
+  `desired:`/child cells, §13.19.5); a computed observed cell appears here
+  as an ordinary derived/recurrent cell in the `Cells` list and is filled
+  by reactive evaluation, not by a host write.
 - `gate`: the `id` of the gate guarding this effect (the gate objects
   above), or `null` if the effect is never gated. The runtime composes that
   gate's predicate with its `gate_parent` chain to compute effective
@@ -23382,9 +24377,13 @@ is the cross-build match key, not the table index.
 **Reconciler dependencies.** A list of `(effect_type_name,
 [concrete_type_parameters])` pairs naming reconciler-registration
 keys the host must provide via `runtime.register_reconciler`
-(§13.14.7) before the runtime can enter the live state. For non-
-generic effects, the parameter list is empty; for generic effects,
-each instantiation is a distinct key.
+(§13.14.7) before the runtime can enter the live state. Only effect
+types that require a reconciler are listed: a key appears if and only
+if the effect's `observed:` block declares host-written channels
+(`signal`/`stream`); an interior effect whose contract is fulfilled
+entirely by child effects requires no reconciler and contributes no
+key. For non-generic effects, the parameter list is empty; for generic
+effects, each instantiation is a distinct key.
 
 **String pool seed.** String literals used by the program,
 pre-loaded into the pool at startup (§14.5).
@@ -23416,6 +24415,19 @@ For anonymous or duplicated sibling placements (rare; the language
 encourages explicit naming per §13.8), the compiler appends an
 ordinal suffix `:N` where N is the declaration-order index among
 siblings of the same type at the same nesting depth (zero-based).
+
+**Interpreter-placed effect paths.** An effect that an interpretation
+places while walking a node's `.exposition` (the interpretation-bootstrap
+form, §13.17.7 Case 3) is path-identified exactly like a node-placed
+effect: its path is rooted at the *interpretation site* (the enclosing
+node's `effects:` clause where the bootstrap `|>` appears) and extends
+through the walked instances, mirroring the node-placement path rules
+above. The same `:N` ordinal suffix applies to anonymous interpreter
+placements. This gives interpreter-placed effects stable hot-reload
+identity on the same footing as directly-placed effects (§13.15.2): the
+interpretation closure is static (§13.3.7.7), so the set of placed effects
+and their rooted paths are determined at compile time and match across
+reloads of the same source.
 
 Cell IDs are stable across the same source compiled by any
 conformant compiler. Cross-implementation hot reload at the same
@@ -23621,7 +24633,7 @@ Bringing the type table, graph IR, and behavior IR together. This source
 (post-`effects:`-clause, §13.3.8) —
 
 ```
-effect print(message: Cell[string]):
+effect print(message: cell string):
   desired:
     derived text: string = message
 
@@ -23712,7 +24724,11 @@ entry         ::= cell | gate | connection | effect
 cell          ::= cell_kind PATH ':' type_tag
                   ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
                   ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
-cell_kind     ::= 'input' | 'derived' | 'recurrent'
+                  ('combiner' BID)? ('else' value)? ('members' member_set)?
+cell_kind     ::= 'input' | 'derived' | 'recurrent' | 'fold'
+member_set    ::= '[' (member (',' member)*)? ']'
+member        ::= PATH ':' member_driver
+member_driver ::= 'permanent' | 'keyed-template' | 'gate-guarded'
 gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
 connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
                   ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
@@ -23724,7 +24740,8 @@ behaviors_section ::= 'behaviors' '{' behavior* '}'        // behavior per §15.
 path_set      ::= '[' (PATH (',' PATH)*)? ']'
 binding_set   ::= '[' (binding (',' binding)*)? ']'
 reopen_set    ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'  // (consumer_id : stream_id) pairs
-binding       ::= NAME ':' (PATH | value)
+binding       ::= NAME ':' (PATH | value) ('@' provenance)?
+provenance    ::= 'bound' | 'constant_wrap' | 'bridge'
 type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
                 | '(' type_tag (',' type_tag)* ')' | '[' type_tag ';' INT ']'
                 | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
@@ -23737,10 +24754,16 @@ The module's three sections appear in order. The `types` table lists the
 record/enum/tuple layouts referenced by `%TypeId` tags, each with its
 `size`/`align`; these are derived from `type` and the target, so a `cell`'s
 `type_tag` does not repeat them. A cell is **kind-led** — `input` (a stored
-attr/signal), `derived`, or `recurrent` leads the line, parallel to
+attr/signal), `derived`, `recurrent`, or `fold` leads the line, parallel to
 `behavior`/`gate`/`effect`; a derived or recurrent cell's `uses` names its
 behavior handle and `inputs` its input cells, `recurrent` adds `depth`, and a
-stored or recurrent cell an `init`. A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
+stored or recurrent cell an `init`. A `fold` cell (the lowering of the
+language fold form, §13.21) instead carries its `combiner` behavior
+handle (the `by:` combiner), its `else` empty-membership value, and its
+`members` set — the member cells in member order, each tagged with its
+membership driver (`permanent`, `keyed-template`, or `gate-guarded`); its
+surface type is that of the enclosing `derived` declaration. `fold` is a
+cell kind, not a seventh graph primitive (§15.4.1). A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
 it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
 names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
 record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
@@ -23750,7 +24773,12 @@ names the `(consumer : stream)` cursors it resets to head on gate reopen
 (§13.18.12). The keyword `reset_on_reopen` thus appears in two grammar
 positions with different arities — a bare flag on `cell` (no payload) and
 `reset_on_reopen reopen_set` on `scope` (carrying the `(consumer : stream)`
-pairs); both spellings are normative.
+pairs); both spellings are normative. A `binding` (in an effect's `params`
+or a connection's `attrs`) may carry an optional `@`-suffixed
+**provenance** marker — `bound`, `constant_wrap`, or `bridge` — recording
+how the cell argument was materialized under the uniform cell-argument
+rule (§13.17.3); the marker is metadata on the binding, not a distinct
+binding case (§15.4.1).
 
 ### 15.5 Compilation Modes
 
