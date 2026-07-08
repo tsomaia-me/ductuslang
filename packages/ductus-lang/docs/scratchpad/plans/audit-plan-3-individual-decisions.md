@@ -1142,7 +1142,7 @@ Two phrasings describe one concept: the compile-time criterion is written as "co
 
 Recommended: unify on "compile-time-known," because that is the phrasing used by the defining cluster and the load-bearing `yield` legality gate, and a single term removes the guess; the outlier "compile-time evaluable" appears in only two entries. (If the user prefers keeping both, add an explicit one-line equivalence statement instead.)
 
-For execution: F009. LOG 001-28 (§1.3, "compile-time evaluable"), 004-99 (also "evaluable"), vs 034-7 (§13.20, yield gate), 004-64..004-91 (§2.4.1/2.4.2), 034-7 ("compile-time-known"). Recommended: reword 001-28/004-99 to "compile-time-known".
+For execution: F009. LOG 001-28 (§1.3, "compile-time evaluable"), 004-100 (also "evaluable"; was 004-99 before the M-28 insert renumbered section 004), vs 034-7 (§13.20, yield gate), 004-64..004-92 (§2.4.1/2.4.2), 034-7 ("compile-time-known"). Recommended: reword 001-28/004-100 to "compile-time-known".
 
 #### I-73 — The general glob-collision rule delegates to enum-variant-only material
 

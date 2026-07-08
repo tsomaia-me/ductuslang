@@ -708,9 +708,11 @@ A `const` binding has three properties beyond what `let` provides:
 
 #### 2.4.1.3 `const`-eligible types
 
-A type is `const`-eligible if all of its values can be fully represented at
-compile time, with no *dynamic* runtime allocation and no mutable runtime state (static, program-lifetime representation is permitted — e.g. a `string`'s pooled bytes, §14.5). The set
-includes:
+A `const` holds a static, compile-time serializable and inline-able value —
+never a runtime cell. A type is `const`-eligible if all of its values can be
+fully represented at compile time, with no *dynamic* runtime allocation and no
+mutable runtime state (static, program-lifetime representation is permitted —
+e.g. a `string`'s pooled bytes, §14.5). The set includes:
 
 - All primitive types: `i8`–`i128`, `u8`–`u128`, `isize`, `usize`, `f32`,
   `f64`, `bool`, `char`, `string`, `never`.
@@ -725,7 +727,7 @@ Types not `const`-eligible:
 
 - Heap-allocated collection types (`Vec`, etc.) and the language-level `Map[K, V]`.
 - Signal-bearing or reactive types.
-- Types containing function references or closures with captured runtime state.
+- Types containing function references or closures (capturing or not).
 - `dyn` trait objects.
 
 The compiler checks `const`-eligibility at the declaration site. A `const`
@@ -1621,7 +1623,7 @@ methods:
   Type` block reachable through the module graph is a compile error: the
   promise is unfulfilled. This applies only to traits that require a `fulfill`
   block; four kinds require none and are exempt: (1) marker traits (§3.1),
-  (2) methodless marker traits, (3) pure-requirement umbrella traits (§6.1.1),
+  (2) methodless marker traits, (3) pure-requirement umbrella traits (§3.3.5),
   and (4) a trait all of whose methods — direct and inherited — have default
   bodies.
 - `fulfill Trait for Type` without a corresponding `satisfies Trait` in
@@ -2000,7 +2002,8 @@ type — requires explicit `satisfies` + `fulfill` per §3.2.
 Auto-satisfaction (above) is about a type gaining a trait with *no*
 `fulfill` block at all. A separate, narrower rule governs traits carrying
 effect-kind methods (§3.1.1.1): a trait in which **every** method —
-including every effect-kind method — has a default body **and** which
+declared directly or inherited from its required traits, including every
+effect-kind method — has a default body **and** which
 declares **no required cells** (no `observed:` contract cells that a
 fulfillment must supply, and no required node/connection members per
 §3.1.7) permits a `fulfill` block **without** a matching `satisfies`
@@ -7112,19 +7115,6 @@ collection constructor — not the slice operator's default. Bundles
 (§13.3.3.5) rely on this: a row slice is a window onto the bundle's
 backing storage, never a copy.
 
-##### `.count`
-
-```
-let n: usize = arr.count           // compile-time-known for T[N], T[..N]
-let m: usize = dyn_slice.count     // runtime for T[..]
-```
-
-The accessor is the full word `count`, not `len()` or `length`. This is
-the uniform element-tally name shared by arrays, slices, bundles, `Map`,
-`Vec`, `HashSet`, `yielded` groups, and dynamic views (§13.3.3.4).
-Strings are exempt — they use `byte_len` / `char_count` (§9.1) — and
-stream metrics keep their specialized `pending_count`-style names.
-
 ##### Read-only
 
 Slices are read-only — no mutable slice form exists. A write through an
@@ -7183,6 +7173,19 @@ when `T: Ord`, with element-by-element lexicographic comparison.
 cloned. Obtaining an owned copy of a slice's contents requires a
 separate explicit operation (constructing an array literal, calling a
 stdlib collector, etc.).
+
+#### 9.3.8 The element tally
+
+```
+let n: usize = arr.count           // compile-time-known for T[N], T[..N]
+let m: usize = dyn_slice.count     // runtime for T[..]
+```
+
+The accessor is the full word `count`, not `len()` or `length`. This is
+the uniform element-tally name shared by arrays, slices, bundles, `Map`,
+`Vec`, `HashSet`, `yielded` groups, and dynamic views (§13.3.3.4).
+Strings are exempt — they use `byte_len` / `char_count` (§9.1) — and
+stream metrics keep their specialized `pending_count`-style names.
 
 ### 9.4 Time Types: `duration` and `instant`
 
@@ -21277,7 +21280,7 @@ operator all[T](source: stream T, pred: fn(T) -> bool) -> derived bool:
 ```
 
 The stream projection formerly named `count` is `event_count` (the
-bare `count` name is reserved for the element-tally rule, §9.3.7); the
+bare `count` name is reserved for the element-tally rule, §9.3.8); the
 stream projection formerly named `fold` is `accumulate` (it pairs with
 `scan`, and the bare name `fold` names the language fold form,
 §13.21). These produce value cells (deriveds) from streams without
@@ -23234,7 +23237,7 @@ values of type `T`. It is a cell-KIND (a member of the `cell` umbrella,
   order at their position.
 - **Synthesized `count` member.** A `yielded` group has a synthesized
   `.count` member — the number of currently-live members (an element
-  tally, per the bare-`count` naming rule §9.3.7). `.count` is reactive:
+  tally, per the bare-`count` naming rule §9.3.8). `.count` is reactive:
   it changes as membership does.
 
 ##### 13.20.4.1 Consumption
