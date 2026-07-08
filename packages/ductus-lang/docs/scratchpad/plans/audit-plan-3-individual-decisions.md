@@ -1128,6 +1128,8 @@ For execution: F180. LOG 019-46 (§13.6.1.3); SPEC §6.2.4/§6.2.5 (catch-all de
 
 #### I-71 — A move-position rule is misplaced inside the Copy-trait run
 
+> **SETTLED (2026-07-08, no decision remains):** the grammar-session work merged from `main` (commit f89c179) removed the misplaced rule from the Copy-trait run and replaced it with new entries in the move-rules run (now 013-141/013-142). This item is closed; do not execute.
+
 A move-position rule (§11.8.5, about the `move` keyword's l-value operand) sits wedged between two Copy-trait entries (§11.4). The log orders entries by topic, so this interrupts the Copy-trait run — a reader scanning the Copy block hits an unrelated move-syntax rule. It is a placement smell from an insert, not a semantic bug.
 
 Recommended: relocate the move-l-value rule to sit with the other §11.8.5 move-position entries, but surface it first rather than moving unilaterally, because the log uses dense positional numbering and any relocation renumbers surrounding ids — which the edit protocol forbids doing without the user.
@@ -1328,6 +1330,8 @@ For execution: LOG 032-166 (reword: two classes = required restart scope; either
 **Recommended: dismiss, because** on a fresh read the grammar has no one-line loop-with-else form. The runtime loop's `else:` must sit at loop-head indentation (a dedent boundary), and the only inline `for` (the comprehension) is explicitly else-less. The two-`else:` collision the finding needs cannot be constructed. Note: the genuine inline-`if`/`else:` collision is a separate, already-recorded finding.
 
 #### DP-02 — Does `move` accept a field-access operand like `move self.handle`
+
+> **SETTLED (2026-07-08, no decision remains):** the grammar-session work merged from `main` (commit f89c179) ruled it — the `move` operand is restricted to a bare identifier; a field-access path is a compile error (now 013-142). The finding this item carried (F046, plausible) is dismissed on that ruling. Do not execute.
 
 **What was claimed.** Two log entries restrict `move`'s operand to a bare identifier and declare any `move` on a dotted expression a parse error. But another log entry and the spec both explicitly allow `move self.handle` — a partial move of a field. Build the parser from the two narrow entries and you reject `close(move self.handle)`, which the spec accepts.
 
