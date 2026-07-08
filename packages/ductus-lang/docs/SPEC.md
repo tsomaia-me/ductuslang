@@ -1619,13 +1619,18 @@ methods:
 
 - `satisfies Trait` in a type body without a corresponding `fulfill Trait for
   Type` block reachable through the module graph is a compile error: the
-  promise is unfulfilled.
+  promise is unfulfilled. This applies only to traits that require a `fulfill`
+  block; four kinds require none and are exempt: (1) marker traits (§3.1),
+  (2) methodless marker traits, (3) pure-requirement umbrella traits (§6.1.1),
+  and (4) a trait all of whose methods — direct and inherited — have default
+  bodies.
 - `fulfill Trait for Type` without a corresponding `satisfies Trait` in
   `Type`'s body is a compile error: the implementation has no declared
   contract.
 
-The exception is traits with no abstract methods — those with no methods at
-all, and those all of whose methods have default bodies (§3.3.5; the term
+The exception is traits with no abstract methods, direct or inherited — those
+with no methods at all, and those all of whose methods — declared directly or
+inherited from required traits — have default bodies (§3.3.5; the term
 "pure-requirement" is reserved there for the
 stricter no-methods-and-no-associated-types sense): these are automatically satisfied when all required
 traits are satisfied; no `satisfies` clause is
@@ -1966,9 +1971,9 @@ clauses — is a pure-requirement trait. Examples are the umbrella traits from
 
 A trait is **automatically satisfied** — no explicit `satisfies` clause on
 the type and no `fulfill` block for the trait itself are needed — when all of
-the following hold: all of its `requires` are satisfied, *every method it
-declares has a default body* (§3.1.3, i.e. it has no *abstract* method — a
-method with no default body), *and every associated type it declares has a
+the following hold: all of its `requires` are satisfied, *every method, declared directly or
+inherited from its required traits, has a default body* (§3.1.3, i.e. it has no
+*abstract* method — a method with no default body), *and every associated type it declares has a
 default* (§3.3.2). Pure-requirement traits are the sub-case where the method
 set is empty; a trait whose every method carries a default body auto-satisfies
 on the same footing, because each default body supplies the implementation. A
@@ -3398,7 +3403,7 @@ operators on one row share precedence.
 | 11   | `<<`, `>>` (shifts)                                       | left            |
 | 12   | `+`, `-`                                                  | left            |
 | 13   | `*`, `/`, `\`, `%`                                        | left            |
-| 14   | `-`, `~`, `handle`, `handle!`, `portal` (prefix)          | right           |
+| 14   | `-`, `~`, `handle`, `handle!`, `portal`, `delete` (prefix) | right           |
 | 15   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
 | 16   | `::`                                                      | left            |
 
@@ -3417,7 +3422,7 @@ operators on one row share precedence.
 Implicit widening converts a narrower numeric value to a wider type
 automatically, without an explicit cast, when the conversion is provably
 lossless. All other conversions — narrowing, signed/unsigned crossing,
-precision-losing — require explicit `as` (§4.7) or `From`/`Into` (§7).
+precision-losing — require an explicit conversion call form `T()`/`T%()`/`T|()`/`T?()` (§4.7) or `From`/`Into` (§7).
 
 The general principle: implicit widening fires only when the conversion
 loses no information, with one pragmatic exception specified in §4.5.4.
@@ -7272,8 +7277,9 @@ Attempting any forbidden operation is a compile error.
 Default arithmetic operators trap on overflow per §4.6.1: a `duration`
 result that does not fit i64 nanoseconds aborts the process. Checked
 variants (`+?`, `-?`, `*?`, `/?`, `%?`) per §4.6.4 return
-`Option[duration]` and are recommended where saturation or failure
-recovery is needed.
+`Option[duration]` (or `Option[f64]` for `/?` and `%?` over two
+durations) and are recommended where saturation or failure recovery
+is needed.
 
 ##### 9.4.1.4 Construction and conversion (stdlib)
 
@@ -9242,6 +9248,12 @@ uniform call syntax (and §3.5.5's clarification: the receiver is the
 first positional argument; the dot-call introduces no implicit
 ownership rule of its own). The same ownership rules apply: the
 receiver follows the method's first-parameter convention.
+
+There is exactly one exception to "no implicit ownership rule of its
+own": the receiver-rebind sugar for a `mut` binding whose receiver
+parameter is declared `own` on a call returning `Subject`, where a bare
+`v.m(args)` desugars to `v = (move v).m(args)` (§11.11.3). Outside that
+one case, the dot-call moves nothing implicitly.
 
 ```
 let v = make_buffer()
@@ -12381,11 +12393,11 @@ A const is accessible through three syntactic forms:
 ```
 // Type-level access lets callers read a type's const without an
 // instance. Useful for compile-time tables and dispatch keys.
-const ACTION_LOG_TAG: string = Log::type        // "@action/log"
-const ACTION_DELAY_TAG: string = Delay::type    // "@action/delay"
+const ACTION_LOG_TAG: string = Log::kind        // "@action/log"
+const ACTION_DELAY_TAG: string = Delay::kind    // "@action/delay"
 
 fn tag_for[T: Action](_: T) -> string:
-  T::type           // type-level read; no instance needed at runtime
+  T::kind           // type-level read; no instance needed at runtime
 ```
 
 ##### 13.2.5.3 Declaration order
@@ -13398,7 +13410,7 @@ acceptance via the **`incoming:`** and **`outgoing:`** clauses (§13.3.4).
 - **Gated children still count.** A `when`-gated-off child remains in the
   acceptance count and its reads return frozen values — gates freeze
   rather than remove (§13.9.7) — unlike `dynamic`/`repeat`, which change
-  membership.
+  the view's membership.
 - **Layout.** Each named entry occupies its own line under the clause
   header. Multiple unnamed entries may share a line, space-separated; a
   mixed line is not allowed. The clause header takes the colon and an
@@ -16138,7 +16150,7 @@ Rules for pairs form:
   cannot vary its content by pair. When different content per pair is
   needed, declare a separate connection type per pair.
 - A `match pair:` in the body must be **exhaustive** over the declared
-  pairs (or carry a `default:` arm), exactly as any `match` (§6.2.4) and as
+  pairs (or carry a `default:` arm), exactly as any `match` (§6.2.5) and as
   the cartesian form's exhaustiveness requirement (§13.6.1.2).
 
 A connection body does not contain `fn` declarations, paralleling
@@ -16331,7 +16343,7 @@ to outer-most is:
 2. **The instance body scope** — the node's or connection's members:
    `attr`, `recurrent`, `derived`, `stream` cells; `view` and
    connection-view declarations; placement `as`-names; and the reserved
-   endpoint/structure fields (`from`, `to`, `incoming`, `outgoing`, `pair`,
+   endpoint/structure fields (`from`, `to`, `pair`,
    `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
    `recurrent`, `stream`, `const`, and `let` declarations.
@@ -20085,10 +20097,10 @@ value the method evaluates to, accessed per §13.19.7:
 
 ```
 effects:
-  audio = render(song) |> audio_out
+  audio = render(song).audio |> audio_out
   // render(song): a node reference of Subject type Song is piped into
   // an effect-kind trait method that interprets it. Projection of the
-  // walked result is explicit (here `render(song).audio`, elided).
+  // walked result is written explicitly (here `render(song).audio`).
 ```
 
 This case is distinct from Case 2: the RHS is a *trait method* selected
@@ -22439,7 +22451,7 @@ reconciler.
 (§13.9.12, §13.9.13) — are not valid in `observed:` blocks. Observed
 blocks declare cells that receive host-pushed data; they do not host
 reactive-structure declarations. To materialize per-element scopes from
-an observed cell, place the `repeat` in an `expose:` block or the same effect's
+an observed cell, place the `repeat` in the enclosing node's `expose:` block or the same effect's
 `desired:` block, consuming the observed cell as the source; to gate
 structure on an observed value, do the same with a `when`/`given` block.
 
@@ -22456,7 +22468,7 @@ program code is a compile error:
 
 ```
 error: cannot assign to cell `response` on effect instance
-  --> f.response = some(custom_response)
+  --> f.response = Some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. An `observed:`
         cell is filled either by the host's reconciler (host-written
@@ -22539,7 +22551,7 @@ assignment is a compile error:
 
 ```
 error: cannot assign to cell `response` on effect instance
-  --> f.response = some(custom_response)
+  --> f.response = Some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. An `observed:`
         cell is filled either by the host's reconciler (host-written
@@ -22852,9 +22864,12 @@ mirrors the effect's declaration:
 - **Write access** to the effect's `observed:` cells via the host
   API (§13.14.2 `runtime.write_signal` for Signal cells, §13.14.8
   `runtime.push_stream` for Stream cells).
-- **Lifecycle hooks**: instance creation (when the effect appears
-  in the live graph), update (when parameters or desired cells
-  change), and teardown (when the instance leaves scope).
+- **Lifecycle hooks**: five hooks — instance creation (when the
+  effect appears in the live graph), update (when parameters or
+  desired cells change), teardown (when the instance leaves scope),
+  suspend (when the gate turns off / effective activation becomes
+  false), and resume (when the gate turns on / effective activation
+  becomes true).
 
 The runtime invokes the reconciler at well-defined points in the
 commit cycle:
@@ -22968,7 +22983,7 @@ error: cell name `target` appears in both `desired:` and `observed:` of effect `
 
 ```
 error: cannot assign to cell `response` on effect instance
-  --> f.response = some(custom_response)
+  --> f.response = Some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   hint: effect cells are not writable from program code. An `observed:`
         cell is filled either by the host's reconciler (host-written
@@ -23346,10 +23361,11 @@ consumers never see a distinct "fold" surface type.
 
 #### 13.21.7 IR lowering
 
-A `fold` expression lowers to a **new cell kind**, `fold`, in the graph IR
-(§15.4.1). The IR cell-`kind` enum gains `fold` — `input | derived |
-recurrent | fold`. **`fold` is a cell kind, not a seventh graph
-primitive**: the graph's six-primitives count (§15.4.1) is **unchanged**.
+A `fold` expression lowers to the `fold` cell kind in the graph IR
+(§15.4.1). The `fold` cell kind is one of the IR cell-`kind` enum's
+members — `input | derived | recurrent | fold`. **`fold` is a cell kind,
+not a seventh graph primitive**: the graph's six-primitives count
+(§15.4.1) is **unchanged**.
 
 A fold-kind cell carries: the **combiner behavior id** (the `by:`
 combiner, a behavior handle §14.6.3); the **else value** (the
