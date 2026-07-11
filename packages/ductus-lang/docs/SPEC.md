@@ -8320,7 +8320,7 @@ let x = expr        // immutable binding
 mut x = expr        // mutable binding (function bodies only)
 ```
 
-Every binding carries an initial value at its declaration: there is no uninitialized binding and no implicit undefined or zero state. This holds for `let`, `mut`, top-level `let`/`const`, and `signal` alike — a binding always has a value.
+Every binding carries an initial value at its declaration: there is no uninitialized binding and no implicit undefined or zero state. This holds for `let`, `mut`, `const`, and `signal` alike — a binding always has a value.
 
 `let` is the general-purpose binding form, identical to the form specified
 in §2.1.2 and §2.4.1.1. The binding is immutable: the binding name cannot
@@ -8345,7 +8345,7 @@ asserts compile-time-only and immutable; `mut` is necessarily runtime and
 mutable.
 
 **Module scope.** `let` is a function-body construct only. Module
-scope contains `const`, `signal`, `attr`, `derived`, and `recurrent`
+scope contains `const`, `signal`, `derived`, `recurrent`, and `stream`
 declarations (per their respective sections in §13); it does **not**
 contain `let` bindings. The ownership rules of §11.3–§11.9 apply to
 function bodies (and to function parameter / return wiring at the
@@ -12537,13 +12537,16 @@ imperatively modify it from within.
 #### 13.2.8 Value-cell kinds
 
 The value cells carry a current value of type `T` and come in three annotation
-kinds: `signal T`, `derived T`, and `recurrent[N] T`. `cell` is a **KIND**, not
-a type or a trait: `cell T` is the umbrella designator spanning *all* reactive
-cells — these value kinds plus the event kind `stream T` and the membership kind
-`yielded T` (§13.20.4). `cell` is never written with brackets; it appears only
-as a lowercase kind keyword in annotation positions. Each value-cell kind is
-first-class, usable in parameter positions, return positions, and generic
-arguments.
+kinds: `signal T`, `derived T`, and `recurrent[N] T` (`attr` annotates as
+`signal T`). `cell` is a **KIND**, not a type or a trait: `cell T` is the
+umbrella designator spanning *exactly* these value-cell kinds and nothing else.
+Streams (`stream ring[N] T`, `stream gate[N] T`, erased `stream T`,
+`recurrent[N] stream …`) form their own stream kind class outside the `cell T`
+umbrella, and `yielded T` (§13.20.4) forms its own group kind class outside it;
+explicit conversion mechanisms bridge streams and cells. `cell` is never written
+with brackets; it appears only as a lowercase kind keyword in annotation
+positions. Each value-cell kind is first-class, usable in parameter positions,
+return positions, and generic arguments.
 
 **The three value-cell kinds.** Four reactive declaration keywords produce value
 cells:
@@ -12597,8 +12600,9 @@ through the cell reference itself.
 parameter positions, return positions, and compiler-minted internal bindings
 (`cell Map[…]` for `repeat … as` views per §13.5.4.9, `dynamic view V` for
 dynamic views per §13.3.3.4). Membership is a KIND relation, not a subtype or
-trait relation: `signal`, `derived`, `recurrent`, `stream`, and `yielded` are
-all cell kinds; there is no `Cell[T]` type and no `Cell` trait to fulfill.
+trait relation: `signal`, `attr`-as-`signal`, `derived`, and `recurrent` are
+the cell kinds the umbrella spans; `stream` and `yielded` are their own kind
+classes outside it. There is no `Cell[T]` type and no `Cell` trait to fulfill.
 Cross-instance references to reactive state keep bracket **storable** types —
 `Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]` for
 non-graph slots (§13.3.6.3) — or connections for typed wiring (§13.6). Kind
@@ -12678,6 +12682,15 @@ machinery is a lowercase kind keyword. Static views get no kind form —
 their members are `Handle[T]` arrays/slices. Bounds on a kind's value
 type go in the generic parameter list or a `where` clause, never inside
 the kind annotation.
+
+A kind annotation (`cell T`, `signal T`, `derived T`, `recurrent[N] T`,
+and the other lowercase kinds) is legal only at the **outermost**
+position of a declaration, a parameter, or a return type. A kind never
+appears inside a type constructor — no container, generic argument, or
+other bracketed type holds a kind. The sole exception is `Portal[cell
+T]`, and there the bracket argument is a cell *designation* (which
+cell's identity the portal carries), not a type nested inside the
+constructor.
 
 #### 13.2.9 Reactive composites
 
@@ -14449,8 +14462,15 @@ lossless widening from the statically-placed carrier to its
 possibly-absent superset. Container slots propagate the same widening at
 any nesting depth: a `Vec[WeakHandle[T]]` slot accepts a
 `Vec[Handle[T]]`, a `cell WeakHandle[T]` accepts a `cell Handle[T]`,
-and so on. The narrowing direction (`WeakHandle[T]` → `Handle[T]`) is
-never implicit; it requires `handle!` or an explicit `match`/`?`.
+and so on. These are two distinct axes that compose: widening propagates
+through a container's value type however deeply nested (in records,
+tuples, or maps), and through a cell's kind annotation on its value
+type; a `cell Vec[WeakHandle[T]]` accepts a `cell Vec[Handle[T]]`. But
+"and so on" never licenses a kind nested inside a container: a kind is
+outermost-only (§13.2.8), so no container slot holds a kind for widening
+to propagate through. The narrowing direction (`WeakHandle[T]` →
+`Handle[T]`) is never implicit; it requires `handle!` or an explicit
+`match`/`?`.
 
 **Named-place-only.** Both `handle` and `portal` accept only references to
 existing slots, never raw values, constructors, literals, or unbound
@@ -16349,7 +16369,7 @@ to outer-most is:
    endpoint/structure fields (`from`, `to`, `pair`,
    `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
-   `recurrent`, `stream`, `const`, and `let` declarations.
+   `recurrent`, `stream`, and `const` declarations.
 
 A bare name resolves to the nearest scope in this chain that
 declares it. Inside a node body, a bare reference to a member

@@ -53,3 +53,10 @@ are not re-litigated.
 
 Plus the cross-cutting **instance citizenship reframe** (§3), which arose while discussing #8 and
 underpins §4.
+
+## Main-removal redesign (owner ruling, 2026-07-08) — LOCKED, awaiting amendment plan
+
+- **Background:** audit decisions D-17/D-23 exposed entry-point/closure vocabulary drift; while ruling, the owner issued a broader redesign.
+- **Decision (owner, verbatim intent):** there is no "main" placement anymore; the `main` keyword must vanish. The "main" node is simply the node the user chooses to start traversal from (picked by referencing it first during traversal). Traversal does not happen outside Ductus anymore, but inside. An instance outside the traversal closure is DEAD CODE, not a compile error (the unreachable_top_level_instance error is retired).
+- **Why:** the entry-point construct predates in-language traversal; with traversal inside Ductus the root is a usage fact, not a declaration.
+- **Spec impact (blast radius, to be planned):** `main` in the declaration-keyword list; entry-point/transitive-closure entries (021-140/141 family); startup sequence (027-16..28); the unreachable-instance diagnostic; interpretation-root vocabulary (D-17's Option 1 unification is being executed now and is compatible); GRAMMAR.md productions mentioning main; examples corpus-wide.
