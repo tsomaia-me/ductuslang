@@ -5408,6 +5408,21 @@ counterpart that builds all arms and freezes the unselected ones rather
 than discarding them. The two share arm shape and this exhaustiveness
 rule; they differ in operation (discard vs. freeze).
 
+##### `match` inside reactive structure — unroll or tag, never freeze
+
+A `match` may appear inside reactive structure as it is being built —
+in exposition and placement bodies, e.g. a `match` over `.exposition`
+entries (§13.3.7.3). It gains no structure-gating power there. With a
+compile-time-known scrutinee (such as a static `.exposition` entry),
+the match **unrolls at build time**: only the chosen arm's structure
+ever exists; the unselected arms are never built. With a dynamic
+scrutinee, the match compiles to a **single mount-time tag** choosing
+among the closed candidate envelope — the closed set of arm
+alternatives — and, again, only the chosen arm's structure exists. In
+neither case does a `match` build all arms and freeze the unselected
+ones: keeping an unselected subtree alive so it can later snap live is
+exclusively the `given` block's operation (§13.9.13, §13.9.7).
+
 #### 6.2.6 Enum visibility
 
 Visibility per §10 applies to the enum as a whole, not per-variant:
@@ -15478,9 +15493,14 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   keyed, ordered membership that `repeat` walks structurally, with no
   trait fulfillment involved; or a **`yielded T` group** (§13.20.4),
   which `repeat` walks structurally in walk order — one scope per live
-  member, each per-member scope keyed by the member's walk-order
-  position — so membership changes dirty the `repeat` exactly as
-  source-value changes do. For an iterable source, the iterator must
+  member, each per-member scope keyed by the member's structural
+  coordinate: the `yield` site that produced it plus, for a member born
+  under a `repeat` inside the `collect`, the producing repetition key —
+  so membership changes dirty the `repeat` exactly as source-value
+  changes do. A member's coordinate is fixed at its birth and never
+  shifts when earlier members join or leave — unlike the member's flat
+  position in the walk-order sequence, which is not an identity. For an
+  iterable source, the iterator must
   terminate at each evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
   N), and `HashSet[T]`; the language-level `Map[K, V]` fulfills
@@ -15597,7 +15617,11 @@ both apply (e.g., when a user has fulfilled both `Keyed` and
 3 and 4 (path 2 applies only to `dynamic` namespace sources). There
 is no ambiguity to resolve at the call site. A `yielded` group source
 (§13.20.4) does not enter this precedence at all: its members' keys
-are always their walk-order positions.
+are always their structural coordinates (§13.20.4), and a written
+`keyed by` on a `yielded` group source is a compile error — the
+normative diagnostic class `keyed_by_on_yielded_group_rejected`: group
+member identity is structural, so a written key expression has nothing
+to key.
 
 ##### 13.5.4.2 Iteration semantics
 
@@ -15619,7 +15643,7 @@ Whenever `<source>` is dirty, the runtime:
    `keyed by`, then the carried key for `dynamic` namespace sources,
    then `Keyed` trait, then stringifiable element, else compile
    error); for a `yielded` group source, each member's key is its
-   walk-order position — the group is outside the ordered selection,
+   structural coordinate — the group is outside the ordered selection,
    and no key-derivation compile error arises from it.
 3. Diffs the new key set against the previous:
    - Keys in `old ∩ new` carry over: their scopes are preserved per
@@ -19718,6 +19742,19 @@ identity rule (§13.17.10): the instance is identified by enclosing
 scope, effect type name, and argument bindings, with tolerance for
 positional moves within the same scope.
 
+A keyed `repeat` arm in an `effects:` clause (§13.5.4.7) creates one
+enclosing scope per element key, so the element key enters identity
+through the scope term: two instances with equal argument bindings
+under distinct keys are distinct instances, and each instance's cells
+root at its key path (§13.5.4.4). An interpreter-placed effect
+instance's enclosing scope is its interpretation site; its cell paths
+root there. Declaration paths and the `:N` ordinal (§13.15.2) are how
+an instance's cells are *addressed*, not how the instance is
+identified: a path is derived after the reload diff has decided
+identity — mirroring the syntactic-order matching of indistinguishable
+duplicates (§13.17.10) — so a preserved instance may receive a new
+ordinal and keep its state.
+
 **Cell preservation within preserved instances.** When an effect
 instance is preserved across reload, the cells declared in its
 `desired:` and `observed:` blocks follow per-cell preservation rules:
@@ -23356,9 +23393,24 @@ umbrella (§13.18.5): membership changes propagate dirt to consumers.
   (§13.9.7), never stored — there is no liveness bit-vector. The
   member *values* live in the
   member cells themselves; the group is only the membership structure.
-- **Ordered.** Members are in walk order — the lexical/structural order
-  of their `yield` positions, with `repeat` members interleaved in key
-  order at their position.
+- **Ordered.** Members are in **walk order** — the per-commit sequence
+  over the group's live members: `yield` sites in lexical/structural
+  order, with `repeat`-born members interleaved in their producing key
+  order at their site's position. Walk order is the order a fold's
+  combine tree is fixed by (§13.21.5) and the order a value-position
+  snapshot presents (§13.20.4.2). Walk order is **distinct from
+  exposition entry order** (§13.3.7.4): `yield` positions inside a
+  `collect` and expose entries in a placement tree are different
+  structures, and the two orders are never equated.
+- **Member identity — the structural coordinate.** Each member's
+  identity is fixed at its birth: the `yield` site that produced it
+  plus, for `repeat`-born members, the producing repetition key. A
+  member's flat position in the walk-order sequence is not an
+  identity — it shifts as earlier members join and leave, and keying
+  by it would remount unchanged members. Order and identity are
+  separate: walk order is the sequence consumers combine and snapshot
+  in; the structural coordinate is what `repeat` keying and scope
+  preservation go by (§13.5.4.1).
 - **Synthesized `count` member.** A `yielded` group has a synthesized
   `.count` member — the number of currently-live members (an element
   tally, per the bare-`count` naming rule §9.3.8). `.count` is reactive:
@@ -23378,8 +23430,8 @@ materialized:
 - **`yielded T`-annotated parameters** — `yielded T` may be a parameter type on
   operators *and* on functions; the body walks the members in walk order.
 - **`repeat` over it** (§13.5.4) — materializes one scope per live
-  member, each per-member scope keyed by the member's walk-order
-  position (§13.5.4.1).
+  member, each per-member scope keyed by the member's structural
+  coordinate (§13.5.4.1).
 
 In every wiring position the group has **no positional index operator**
 (its membership is not a stable array), and a **compile-time / structural
@@ -23448,7 +23500,9 @@ A group lowers to existing IR machinery, by consumption:
   (§13.9.7); the descriptor stores no liveness state.
 - **Repeated** — a `repeat` over a group additionally lowers to a
   dynamic `scope` with one per-member instance whose `keyed_by`
-  identity is the member's walk-order position (§13.5.4.1, §15.4.1).
+  identity is the member's structural coordinate — its `yield` site
+  plus, for `repeat`-born members, the producing repetition key
+  (§13.5.4.1, §15.4.1).
 
 A membership-descriptor cell is scheduled exactly as a fold cell is
 (§13.21.7): its member edges feed the ordinary derived dependency-edge
@@ -23526,6 +23580,12 @@ A stored collection held in a value cell (a `Vec[T]`-valued
 **not** foldable by this form: `fold` is over membership, not over the
 contents of a stored container. To reduce a stored `Vec`, use ordinary
 value-level iteration (§12), not `fold`.
+
+**Member order.** The order the combine tree is fixed by (§13.21.5) is
+the fold's **member order**, with one definition per source: for a
+`yielded` group source, member order *is* the group's walk order
+(§13.20.4); for a reactive composite source, member order *is* the
+composite's declared slot order. One term, one referent per source.
 
 #### 13.21.5 Cost rule (normative)
 
@@ -24612,7 +24672,14 @@ is the cross-build match key, not the table index.
   case: `source_cell_id | value_literal` still carries the binding
   itself; the marker only annotates its origin.
 - `desired_cell_ids`: IDs of the cells declared in the effect's
-  `desired:` block for this instance.
+  `desired:` block for this instance — one entry per declaration:
+  `derived`/`recurrent` declarations name their value cells, `stream`
+  declarations name their stream primitives (§15.4.6). These
+  per-declaration cells are the graph-level source of truth for the
+  desired state; program reads of desired fields (§13.19.4) attach
+  dependency edges to them. The whole-record desired view the
+  reconciler consumes is assembled by the runtime from these cells'
+  current values and is not a graph cell (§15.4.5).
 - `observed_cell_ids`: IDs of the cells declared in the effect's
   `observed:` block for this instance. This includes both host-written
   channels (`signal`/`stream`) and lifted computed outputs
@@ -24829,7 +24896,14 @@ and receives outputs; it never reaches inside. Inputs per role:
 | derived | the cell's input cells (current snapshot values) | new value |
 | recurrent | input cells, self-history slots (`name.past(k,d)` → a `pastK` param), and input-history slots (`input.past(k)` → an `<input>_pastK` param) | new value |
 | gate predicate | the gate's input cells | `bool` (or a tag, for a `given` selector) |
-| effect desired-builder | the `desired:` block's input cells | the desired record |
+
+A declaration in an effect's `desired:` block carries an ordinary
+behavior of its declaration kind — a desired `derived` a derived
+behavior, a desired `recurrent` a recurrent behavior. There is no
+separate desired-builder role: the whole-record desired view the
+reconciler consumes is assembled by the runtime from the
+per-declaration desired cells' current values (§15.4.5), not computed
+by a behavior.
 
 Inputs are passed per the signature's ownership modes (borrow vs `own`).
 This call is the entire graph→behavior coupling: behaviors hold no wiring,
@@ -24885,9 +24959,13 @@ Bringing the type table, graph IR, and behavior IR together. This source
 (post-`effects:`-clause, §13.3.8) —
 
 ```
+type Request:
+  text: string
+
 effect print(message: cell string):
   desired:
     derived text: string = message
+    derived request: Request = Request(text: message)
 
 node App:
   attr count: i32 = 0
@@ -24904,7 +24982,7 @@ node App:
 
 ```
 module App {
-  types { %TextRec = record { text: str }  size 8 align 8 }
+  types { %Request = record { text: str }  size 8 align 8 }
 
   graph {
     scope App  exposes []  effects [App.print:0] {
@@ -24916,9 +24994,10 @@ module App {
 
       gate App.g0  pred B@d4  inputs [App.show]  guards [App.print:0]
 
-      derived   App.print:0.desired : pool_index<%TextRec> uses B@d5 inputs [App.label]
+      derived   App.print:0.text    : str                  uses B@d5 inputs [App.label]
+      derived   App.print:0.request : pool_index<%Request> uses B@d6 inputs [App.label]
       effect App.print:0  reconciler "print"  params [message: App.label]
-                          desired [App.print:0.desired]  gate App.g0
+                          desired [App.print:0.text, App.print:0.request]  gate App.g0
     }
   }
 
@@ -24935,8 +25014,10 @@ module App {
 
     behavior B@d4 (show: bool) -> bool { bb0: ret show }
 
-    behavior B@d5 (message: str) -> %TextRec {
-    bb0: %0 = record.make %TextRec { text: message } ; ret %0 }
+    behavior B@d5 (message: str) -> str { bb0: %0 = clone message ; ret %0 }
+
+    behavior B@d6 (message: str) -> %Request {
+    bb0: %0 = record.make %Request { text: message } ; ret %0 }
   }
 }
 ```
@@ -24944,11 +25025,20 @@ module App {
 The effect sits in `App`'s `effects` set, not `exposes` (effects are not
 topology, §13.3.8); the gate `App.g0` guards it (gate-off ⇒ freeze +
 `suspend`, §13.9.7); `App.print:0` uses the ordinal path form for an
-anonymous instance (§15.4.1.1); and the whole-record desired cell
-`App.print:0.desired` — a `pool_index<%TextRec>` (B@d5 returns the whole
-`%TextRec`) that the runtime scatters into per-field desired state — is a pure
-function of `message` (bound to `App.label`), so there is no activation input
-anywhere, consistent with the suspend/resume-only model (§13.19.12).
+anonymous instance (§15.4.1.1). Each declaration in the `desired:` block
+is its own graph cell — `App.print:0.text` and `App.print:0.request`,
+each with its own behavior and dependency edges — and the effect's
+`desired` list names them (§15.4.1's `desired_cell_ids`). Program reads
+of desired fields attach dependency edges to these per-declaration cells;
+the whole-record desired view the reconciler consumes is assembled by the
+runtime from their current values and is not a graph cell. Both desired
+behaviors are pure functions of `message` (bound to `App.label`), so the
+desired computation has no whole-effect activation input — effect
+activation is expressed solely through the suspend/resume model
+(§13.19.12) via the gate. An intra-desired `when`/`given` block, had the
+example used one, would lower its arm cells behind their own gate, whose
+predicate is an activation input for arm selection, distinct from the
+effect's suspend/resume gate.
 
 #### 15.4.6 IR module text grammar
 

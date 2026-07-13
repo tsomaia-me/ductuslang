@@ -97,9 +97,9 @@ PathSegment      ::= NAME (':' INT)?
                    ;  (§15.4.1.1, 033-167)
 
 // The ordinal suffix `:' INT` may attach to ANY path segment, not just
-// the tail — e.g. 'App.print:0.desired' has the ordinal on the middle
+// the tail — e.g. 'App.print:0.text' has the ordinal on the middle
 // component naming an anonymous effect instance. See 033-167/033-168.
-// e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.desired'
+// e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.text'
 ```
 
 A **BID** is a behavior handle — the behavior's `u32` handle (§14.6.3) rendered in hexadecimal, prefixed by `'B@'`. It is the compact runtime reference; the behavior's wide content-addressed identity is not spelled in the text form.
@@ -487,9 +487,13 @@ LABEL            ::= 'bb' INT
 The following example brings the type table, graph IR, and behavior IR together. Lifted verbatim from SPEC §15.4.5. The source (post-`effects:`-clause, §13.3.8):
 
 ```
-effect print(message: Cell[string]):
+type Request:
+  text: string
+
+effect print(message: cell string):
   desired:
     derived text: string = message
+    derived request: Request = Request(text: message)
 
 node App:
   attr count: i32 = 0
@@ -506,7 +510,7 @@ lowers to:
 
 ```
 module App {
-  types { %TextRec = record { text: str }  size 8 align 8 }
+  types { %Request = record { text: str }  size 8 align 8 }
 
   graph {
     scope App  exposes []  effects [App.print:0] {
@@ -518,9 +522,10 @@ module App {
 
       gate App.g0  pred B@d4  inputs [App.show]  guards [App.print:0]
 
-      derived   App.print:0.desired : pool_index<%TextRec> uses B@d5 inputs [App.label]
+      derived   App.print:0.text    : str                  uses B@d5 inputs [App.label]
+      derived   App.print:0.request : pool_index<%Request> uses B@d6 inputs [App.label]
       effect App.print:0  reconciler "print"  params [message: App.label]
-                          desired [App.print:0.desired]  gate App.g0
+                          desired [App.print:0.text, App.print:0.request]  gate App.g0
     }
   }
 
@@ -537,13 +542,15 @@ module App {
 
     behavior B@d4 (show: bool) -> bool { bb0: ret show }
 
-    behavior B@d5 (message: str) -> %TextRec {
-    bb0: %0 = record.make %TextRec { text: message } ; ret %0 }
+    behavior B@d5 (message: str) -> str { bb0: %0 = clone message ; ret %0 }
+
+    behavior B@d6 (message: str) -> %Request {
+    bb0: %0 = record.make %Request { text: message } ; ret %0 }
   }
 }
 ```
 
-The effect sits in `App`'s `effects` set, not `exposes` (effects are not topology, §13.3.8); the gate `App.g0` guards it (gate-off ⇒ freeze + `suspend`, §13.9.7); `App.print:0` uses the ordinal path form for an anonymous instance (§15.4.1.1); and the whole-record desired cell `App.print:0.desired` — a `pool_index<%TextRec>` (B@d5 returns the whole `%TextRec`) that the runtime scatters into per-field desired state — is a pure function of `message` (bound to `App.label`), so there is no activation input anywhere, consistent with the suspend/resume-only model (§13.19.12).
+The effect sits in `App`'s `effects` set, not `exposes` (effects are not topology, §13.3.8); the gate `App.g0` guards it (gate-off ⇒ freeze + `suspend`, §13.9.7); `App.print:0` uses the ordinal path form for an anonymous instance (§15.4.1.1). Each declaration in the `desired:` block is its own graph cell — `App.print:0.text` and `App.print:0.request`, each with its own behavior and dependency edges — and the effect's `desired` list names them (§15.4.1's `desired_cell_ids`). Program reads of desired fields attach dependency edges to these per-declaration cells; the whole-record desired view the reconciler consumes is assembled by the runtime from their current values and is not a graph cell. Both desired behaviors are pure functions of `message` (bound to `App.label`), so the desired computation has no whole-effect activation input — effect activation is expressed solely through the suspend/resume model (§13.19.12) via the gate. An intra-desired `when`/`given` block, had the example used one, would lower its arm cells behind their own gate, whose predicate is an activation input for arm selection, distinct from the effect's suspend/resume gate.
 
 ## 6. Cross-reference table
 
@@ -558,7 +565,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `FLOAT` | §15.4.4 | 033-203 |
 | `STRING` | §15.4.6 | 033-166 |
 | `HEX` | §15.4.4 | 033-203 |
-| `PATH` | §15.4.1.1 | 033-166 / 033-167 / 033-168 (mid-path ordinal for anonymous effect instances; see worked example `App.print:0.desired`) |
+| `PATH` | §15.4.1.1 | 033-166 / 033-167 / 033-168 (mid-path ordinal for anonymous effect instances; see worked example `App.print:0.text`) |
 | `BID` | §15.4.4 | 033-203 |
 | `PRIM` | §15.4.6 | 033-166 |
 | `type_tag` | §15.4.6 | 033-166 / 033-79 |
