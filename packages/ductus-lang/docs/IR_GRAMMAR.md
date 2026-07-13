@@ -132,6 +132,7 @@ PRIM             ::= 'i8'  | 'i16' | 'i32' | 'i64' | 'i128'
 type_tag         ::= PRIM
                    | '%' NAME
                    | 'pool_index' '<' '%' NAME '>'
+                   | 'yielded' '<' type_tag '>'
                    | '(' type_tag (',' type_tag)* ')'
                    | '[' type_tag ';' INT ']'
                    | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
@@ -139,6 +140,9 @@ type_tag         ::= PRIM
 
 // An aggregate-valued cell — a record, enum, or tuple — is typed
 // 'pool_index<%TypeId>' (§14.3.3), never an inline '%TypeId'.
+// 'yielded<T>' is the ABI-only membership-descriptor type (§15.4.1,
+// 033-79): it types synthesized membership-descriptor cells and
+// 'yielded T' parameters, and is never a user-facing value type.
 ```
 
 ## 3. Module text grammar
@@ -174,28 +178,67 @@ scope            ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                    ;  (§15.4.6, 033-166)
 
 // 'reset_on_reopen' on a scope carries a reopen_set of (consumer : stream)
-// pairs; this is one of two grammar positions for the keyword — see also
-// the bare flag on the 'cell' production. Both spellings are normative
-// (033-240).
+// pairs; this is one of three grammar positions for the keyword — see also
+// the bare flag on the 'cell' production and the bare flag on the 'stream'
+// production. All three spellings are normative (033-240).
 
-entry            ::= cell | gate | connection | effect
+entry            ::= cell | gate | connection | effect | stream
                    ;  (§15.4.6, 033-166)
 
 cell             ::= cell_kind PATH ':' type_tag
                      ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
                      ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+                     ('combiner' BID)? ('else' value)? ('members' member_set)?
                    ;  (§15.4.6, 033-166)
 
-// 'reset_on_reopen' on a cell is a bare flag (no payload) — the second
-// grammar position for the keyword (033-240). 'depth' applies only to
+// 'reset_on_reopen' on a cell is a bare flag (no payload) — one of three
+// grammar positions for the keyword (033-240): the bare flag here on
+// 'cell', the bare flag on 'stream', and the 'reopen_set' payload on
+// 'scope'. 'depth' applies only to
 // 'recurrent' cells; 'uses' / 'inputs' apply to 'derived' / 'recurrent';
-// 'init' applies to 'input' and 'recurrent'. The clauses must appear
+// 'init' applies to 'input' and 'recurrent'. 'combiner' and 'else'
+// apply only to 'fold' cells (033-81): 'combiner' names the 'by:'
+// combiner's behavior handle and 'else' the empty-membership result.
+// 'members' applies to 'fold' cells and to membership-descriptor
+// cells — a membership-descriptor cell (the lowering of a standalone
+// 'yielded' group) renders as a 'derived' line typed 'yielded<T>'
+// carrying a 'members' set and no 'uses' / 'inputs' (033-169). The
+// clauses must appear
 // in the order listed in the production (`uses`, `inputs`, `depth`,
-// `reset_on_reopen`, `init`, `gate`); each clause is optional (subject
+// `reset_on_reopen`, `init`, `gate`, `combiner`, `else`, `members`);
+// each clause is optional (subject
 // to the cell-kind constraints above) and appears at most once.
 
-cell_kind        ::= 'input' | 'derived' | 'recurrent'
+cell_kind        ::= 'input' | 'derived' | 'recurrent' | 'fold'
                    ;  (§15.4.6, 033-166)
+
+// The four cell-kind tags are closed (033-80): 'fold' is a cell KIND,
+// not a seventh graph primitive, and no 'yielded' tag exists — a
+// standalone 'yielded' group lowers to a membership-descriptor
+// 'derived' cell (above), and a folded group is absorbed into its
+// fold cell's 'members' set.
+
+member_set       ::= '[' (member (',' member)*)? ']'
+                   ;  (§15.4.6, 033-81)
+
+member           ::= PATH ':' member_driver
+                   ;  (§15.4.6, 033-81)
+
+member_driver    ::= 'permanent' | 'keyed-template' | 'gate-guarded'
+                   ;  (§15.4.6, 033-81)
+
+// A 'members' set lists the member edges in member order (walk order
+// for a membership-descriptor cell), each PATH naming the member cell
+// and each tag naming its membership driver — 'permanent' (a static
+// position), 'keyed-template' (a repeat-driven position, present per
+// key), or 'gate-guarded' (a gated-arm position, present iff its gate
+// is effectively active).
+//
+// **Boundary ambiguity note.** A 'member' pair separator is ':' and a
+// PATH segment may itself end with a "(':' INT)?" ordinal suffix. The
+// disambiguator matches reopen_set's: after a colon, an INT is the
+// left-hand PATH's ordinal segment; a NAME-led token that is one of
+// the three driver keywords closes the pair.
 
 gate             ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
                      ('gate_parent' PATH)?
@@ -208,6 +251,25 @@ connection       ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
 effect           ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
                      ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
                    ;  (§15.4.6, 033-166)
+
+stream           ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capacity' INT
+                     ('source_deps' path_set)? ('observes' path_set)?
+                     ('reset_on_reload')? ('reset_on_reopen')?
+                     ('history' INT)? ('lookback' lookback_map)?
+                   ;  (§15.4.6, 033-106)
+
+// A 'stream' line serializes the stream primitive (§15.4.1's Stream
+// cells) with its ten data-model fields: PATH is the stream's id;
+// type_tag the element_type; 'policy' is 'ring' or 'gate'; 'capacity'
+// the integer capacity; 'source_deps' the source_dependencies; 'observes'
+// the six synthesized observation-cell ids (pending_count, pressure,
+// is_full, dropped_total, rejected_total, last_overflow_at); the two
+// bare flags 'reset_on_reload' and 'reset_on_reopen' mark the matching
+// @-annotations ('reset_on_reopen' here is the third grammar position of
+// the keyword — a bare flag on 'stream', alongside the bare flag on
+// 'cell' and the reopen_set on 'scope', 033-240); 'history' is
+// output_history_size (present only on a recurrent[N] stream); and
+// 'lookback' is the input_lookback_map (input cell id → max lookback k).
 
 behaviors_section ::= 'behaviors' '{' behavior* '}'
                    ;  (§15.4.6, 033-166)
@@ -243,6 +305,15 @@ reopen_set       ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'
 // NAME-led segment (`PathSegment`); the pair separator's RHS always
 // starts with a NAME — so the disambiguator is "next token is INT →
 // ordinal; NAME → pair separator".
+
+lookback_map     ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
+                   ;  (§15.4.6, 033-117)
+
+// lookback_map elements are (input_cell_id : INT) pairs — an input cell
+// read via `.past(k, ...)` in a recurrent stream's body mapped to its
+// maximum lookback k, driving per-input history allocation. Empty for a
+// non-recurrent stream and for a recurrent stream whose body calls no
+// `.past` on inputs (033-118).
 
 binding          ::= NAME ':' (PATH | value)
                    ;  (§15.4.6, 033-166)
@@ -490,7 +561,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `PATH` | §15.4.1.1 | 033-166 / 033-167 / 033-168 (mid-path ordinal for anonymous effect instances; see worked example `App.print:0.desired`) |
 | `BID` | §15.4.4 | 033-203 |
 | `PRIM` | §15.4.6 | 033-166 |
-| `type_tag` | §15.4.6 | 033-166 |
+| `type_tag` | §15.4.6 | 033-166 / 033-79 |
 
 ### §3 — Module text grammar
 
@@ -505,15 +576,20 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `graph_section` | §15.4.6 | 033-166 |
 | `scope` | §15.4.6 | 033-166 / 033-240 |
 | `entry` | §15.4.6 | 033-166 |
-| `cell` | §15.4.6 | 033-166 / 033-240 |
-| `cell_kind` | §15.4.6 | 033-166 |
+| `cell` | §15.4.6 | 033-166 / 033-240 / 033-81 |
+| `cell_kind` | §15.4.6 | 033-166 / 033-80 |
+| `member_set` | §15.4.6 | 033-81 |
+| `member` | §15.4.6 | 033-81 |
+| `member_driver` | §15.4.6 | 033-81 |
 | `gate` | §15.4.6 | 033-166 |
 | `connection` | §15.4.6 | 033-166 |
 | `effect` | §15.4.6 | 033-166 |
+| `stream` | §15.4.6 | 033-106 |
 | `behaviors_section` | §15.4.6 | 033-166 |
 | `path_set` | §15.4.6 | 033-166 |
 | `binding_set` | §15.4.6 | 033-166 |
 | `reopen_set` | §15.4.6 | 033-166 |
+| `lookback_map` | §15.4.6 | 033-117 |
 | `binding` | §15.4.6 | 033-166 |
 | `value` | §15.4.6 | 033-166 |
 

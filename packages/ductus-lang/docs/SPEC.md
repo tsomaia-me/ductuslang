@@ -13,7 +13,10 @@ This specification is the authoritative source for Ductus's type system,
 evaluation model, and runtime semantics. Implementation details (compiler
 internals, optimizations, runtime representation) are out of scope except where
 they constrain user-visible semantics. The lexical and syntactic structure of the language is specified directly in
-this document; there is no separate grammar file.
+this document. There is no separate normative surface-grammar document: the surface-grammar document (GRAMMAR.md) is a
+non-normative derived reformulation of rules this specification states normatively; the IR text-grammar document
+(IR_GRAMMAR.md) is normative for the IR text form; this specification prevails on any conflict with a grammar document,
+and divergence between a grammar document and this specification is a defect.
 
 ### 1.2 Status
 
@@ -125,7 +128,7 @@ Code examples use Ductus syntax. Type-name case conventions:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `view`, `const`, `let`, `mut`, `repeat`, `main`), all clause
+`derived`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`, `main`), all clause
 keywords (`incoming`, `outgoing`, `expose`, `when`,
 `satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
@@ -11507,7 +11510,7 @@ externally-driven sequences; iterators are for collection traversal.
 
 This section specifies the language's reactive composition layer: the
 declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
-`stream`), the reactive expression forms (`observe`, `where`), the
+`stream`, `yielded`), the reactive expression forms (`observe`, `where`), the
 composition constructs (`node`, `connection`, `operator`,
 `effect`), the rules governing reactive expression evaluation, and
 the host API through which external code drives and observes the
@@ -11707,13 +11710,17 @@ cycle.
 
 ### 13.2 Reactive Declarations
 
-The reactive system has six declaration kinds, distinguished by
+The reactive system has seven declaration kinds, distinguished by
 who controls the value and how (or whether) it changes over time.
 Four declare value-shaped reactive cells (signal, attr, recurrent,
 derived); one declares an event-sequence-shaped reactive cell
 (stream, full treatment in §13.18, with the history-aware
 `recurrent[N] stream` variant in §13.18.8); one is a compile-time
-constant (const).
+constant (const); and one declares a membership-varying reactive
+group (`yielded`, full treatment in §13.20). A `yielded` group is
+declared as `yielded <name>: <MemberType> = collect:` with an
+indented body; that declaration form is **body-only** — legal inside
+node and connection bodies, never at module top level.
 
 #### 13.2.1 `signal`
 
@@ -12530,7 +12537,7 @@ Writes occur only through:
 
 Consts are immutable for the runtime's lifetime: their values are
 fixed at compile time and never change. The "no source-level
-write" rule applies to all six declaration kinds uniformly.
+write" rule applies to all seven declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
 imperatively modify it from within.
 
@@ -12577,8 +12584,10 @@ the distinct kinds `derived T` and `recurrent[N] T`.
 
 - **Operator parameters** (§13.17) — a value-reading operator parameter is
   annotated `cell T`, binding to any value cell at instantiation and allocating
-  internal state tied to it. A `stream T` has no current value, so it is
-  excluded at the read site, not by the annotation.
+  internal state tied to it. A `stream T` does not bind to a `cell T` parameter
+  at all — the signature itself excludes it; a stream argument requires the
+  explicit conversion `to_signal(<stream>, <fallback>)` or a `stream T`-annotated
+  parameter.
 - **Operator return kinds** — an operator's value output is a computed
   `derived T`; the return annotation names the concrete produced kind
   (`derived T`, `stream T`, or `cell T` only for a genuine passthrough), not the
@@ -12657,7 +12666,7 @@ cell within a record/tuple/array shape.
 
 Ductus annotations fall into two families. **Cell kinds** are lowercase
 keyword designators for reactive binding machinery; they carry no
-brackets around a `Cell` name and never take inline bounds. **Storables**
+brackets around a kind name and never take inline bounds. **Storables**
 keep bracket type syntax because they name values that can be stored,
 passed, and held. The consolidated table:
 
@@ -12669,7 +12678,7 @@ passed, and held. The consolidated table:
 | Event cell | `stream ring[N] T` / `stream gate[N] T` | erased form `stream T` when policy/capacity unresolved |
 | Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (default 0) |
 | Membership cell | `yielded T` / `yielded f32[128]` | ordered membership-varying group (§13.20.4) |
-| Cell umbrella (KIND) | `cell T` | spans all of the above; not a type, not a trait |
+| Cell umbrella (KIND) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`); streams and `yielded` are outside it; not a type, not a trait |
 | Dynamic view | `dynamic view V` | replaces `Cell[DynamicView[WeakHandle[V]]]` (§13.3.3.4) |
 | Storable — compile-time type | `Type[C]` | node/connection type slot |
 | Storable — graph handle | `Handle[T]` / `WeakHandle[T]` | cross-instance references |
@@ -13745,25 +13754,30 @@ feeding site, naming the receiving view: a static view's count is a
 per-site compile-time fact, and a `repeat` cannot provide one.
 
 **The cell.** A `dynamic` view is a **reactive cell** of kind
-`dynamic view T` whose value is the current
-iterator of supplied-child `WeakHandle[T]`s — keyed and in source order
+`dynamic view T` whose members are the current
+supplied-child `WeakHandle[T]`s — keyed and in source order
 (the written
 interleaving, with each feeding `repeat`'s scopes expanded in place). The
-cell updates when children mount or dismount. The iterator value is
-consume-only: it cannot be bound, stored, or returned as a value
-— it is consumed in exactly the two ways any reactive cell is consumed:
+cell updates when children mount or dismount. The membership is
+consume-only: it cannot be bound, stored, or returned as a value — a
+dynamic view cannot satisfy `Iterable` or `IntoIterable`, and it has no
+snapshot form (its members are instance references, not values). It is
+consumed in exactly two ways — a `collect` block bridging its members
+into a `yielded` group (for values), and `repeat` for structure:
 
-- **Operators** (§13.17), for values:
+- **The `collect` bridge** (§13.20), for values:
 
   ```
-  derived titles = items |> map(fn(p): p.title)   // derived Vec[string]
-  derived n: usize = items.count                  // element tally (§13.2.8.1)
+  yielded titles: string = collect:
+    repeat p in items: yield p.title            // yielded group of string
+  derived n: usize = items.count                // element tally (§13.2.8.1)
   ```
 
-  The per-element closure (`fn(p): …` — ordinary closure literal,
-  §11.10.6) receives each element reference transiently and must
-  produce plain values; the operator's output is an ordinary reactive
-  value, storable and readable like any other.
+  The per-member `yield` expression receives each member reference
+  transiently and must produce a **plain value**; member references never
+  escape into the group — the group's members are values. The resulting
+  `yielded` group is then consumed group-bound by operators or
+  auto-materialized as a value snapshot in value positions (§13.20).
 
 - **`repeat`** (§13.5.4), for structure:
 
@@ -13785,8 +13799,9 @@ consume-only: it cannot be bound, stored, or returned as a value
   path-derived, the same identity scheme as §13.15.2.
 
 Beyond the two consumption paths and the `.count` element tally, no
-other access exists: `for` cannot iterate a dynamic view (`for` is
-compile-time, §12.3.7, and the set is not a compile-time fact);
+other access exists: `for` cannot iterate a dynamic view (a dynamic
+view does not satisfy `Iterable` — its membership varies at runtime,
+which the frozen-source iteration contract cannot express);
 `viewname[i]` is rejected (a positional index into a keyed, changing set is
 not a stable identity); `viewname[key]` is rejected (keys belong to the
 *supplier* — they are derived from the caller's data by the caller's
@@ -13809,28 +13824,36 @@ The same marker, cell model, and consumption rules apply to
 `incoming`/`outgoing` connection-views (§13.3.4.1).
 
 **The `dynamic view T` kind.** The cell for a dynamic view is a
-language-level **cell kind** `dynamic view T` (D0-8; it replaces the old
-spelling `Cell[DynamicView[WeakHandle[T]]]`). It is iterator-shaped:
-`Item = WeakHandle[T]`, satisfies `Iterable` and `IntoIterable`, exposes
-a reactive `.count` element tally but **no index operator** on its own —
-storage is implementation-defined. A `dynamic view T` is consume-only:
-it is not stored bare; the view-name binds the cell directly, and that
-cell is what is bound, stored, and joined as a dependency-edge declarer.
-Consumers are the reactive operators (§13.3.3.2) or `repeat` (§13.9.7);
-the membership value itself carries no dependency-edge semantics
-independent of its cell.
+language-level **structural kind** `dynamic view T` (D0-8; it replaces the
+old spelling `Cell[DynamicView[WeakHandle[T]]]`) whose members are
+**instance references** (`WeakHandle[T]`), not values. Its storage is
+implementation-defined: **no surface index operator**, but it exposes
+`.count` as the bare element tally. It does **not** satisfy `Iterable` or
+`IntoIterable` — its membership varies at runtime and the frozen-source
+iteration contract cannot express that — and it has **no snapshot form**
+(its members are instance references, not values). It is consume-only and
+consumed **only structurally**: `repeat` materializes its members, and a
+`collect` block (into a `yielded` group) is the bridge into value-land. It
+is not stored bare; it lives only as a reactive cell in the `dynamic view T`
+kind, and the cell is what is bound or stored.
 
 The `dynamic view T` binding for a dynamic view is **compiler-minted**:
 the view-name lives in the body-scope namespace as the receiving binding for
-the view's reactive content. Consumption goes through operators or `repeat` as above.
+the view's reactive content. Consumption goes through `repeat` or the
+`collect` bridge as above.
 
-**Iteration narrowing.** Iterating a `dynamic view T`
-yields `WeakHandle[T]` on the iterator surface. In a context that proves
-the iterated element is reachable — the typical case being a read inside a
-per-element operator like `map`/`filter` or a `repeat` body — the per-
-element binding projects through the lens-propagation rule to `&T` at that
-read site; outside any such proven-reachable context the surface
-remains `WeakHandle[T]`.
+**Reactivity surface.** The cell is what declares the dependency edge. Its
+consumers are `repeat` (for structure, §13.9.7) and `collect` (for bridging
+into a `yielded` group); no operator consumes a dynamic view. The
+membership value itself carries no dependency-edge semantics independent of
+its cell.
+
+**Member-reference narrowing.** When a member is read in a context that
+proves it reachable — the per-element scope of a `repeat` over the view, or
+the `collect` that bridges the view into a `yielded` group — the per-member
+binding projects through the lens-propagation rule to `&T` at that read
+site. In every position outside such proven-reachable consumption contexts
+the view surfaces `WeakHandle[T]`.
 
 ##### 13.3.3.5 Bundles
 
@@ -14117,9 +14140,10 @@ type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
 For a **`dynamic`** connection-view, the name is a reactive cell of kind
-`dynamic view C` whose value is the current
-iterator of member connections, with the consumption rules of §13.3.3.4
-— operators for values, `repeat` for structure, nothing else. This is
+`dynamic view C` whose members are the current
+member connections, with the consumption rules of §13.3.3.4
+— `repeat` for structure, a `collect` block bridging members into a
+`yielded` group for values, nothing else. This is
 the fan-in idiom:
 
 ```
@@ -14130,18 +14154,22 @@ connection Send:
 
 node Mixer:
   dynamic incoming sends: Send*
-  derived contributions = sends |> map(fn(c): c.gain * c.from.value)
+  yielded contributions: f32 = collect:
+    repeat c in sends: yield c.gain * c.from.value
   derived mix: f32 = sum(contributions)
   expose:
     repeat c in sends:
       Ack: c.from                 // a back-connection per current Send
 ```
 
-`contributions` re-evaluates when Sends mount or dismount and when
-any member's read cells change; `sum` is an ordinary function over
-the resulting values. The `repeat` arm shows the structural side:
-one `Ack` per currently incoming `Send`, mounting and dismounting
-with it. Markers fall on both sides by the rules of §13.3.4: the
+`contributions` is a `yielded` group (§13.20) whose membership tracks the
+live `Send`s; both membership changes and member-value changes propagate.
+In `sum(contributions)` the group auto-materializes to a fresh walk-order
+value sequence (§13.20), so `mix` re-evaluates whenever Sends mount or
+dismount or a member's read cells change. (A `fold` is the O(log n)
+incremental alternative to the `sum` snapshot.) The `repeat` arm shows
+the structural side: one `Ack` per currently incoming `Send`, mounting and
+dismounting with it. Markers fall on both sides by the rules of §13.3.4: the
 `Ack`s exist per `repeat` key, so `Session` declares a
 `dynamic incoming` connection-view of `Ack`; the `Ack`s are self-sourced by
 `Mixer`'s own exposition, so `Mixer` needs no `outgoing` connection-view for them.
@@ -15307,8 +15335,9 @@ the construct's own choice (`repeat` derives one key per element,
 §13.5.4), each instantiation backed by its own state cells.
 
 The user-facing surface for this mechanism is the **`repeat` keyword**
-(§13.5.4), which materializes one scope per element yielded by a
-reactive iterable source — a `signal I` where `I: Iterable` (§12.8), or a `dynamic` namespace cell (§13.5.4.1).
+(§13.5.4), which materializes one scope per element of its source — a
+`signal I` where `I: Iterable` (§12.8), a `dynamic` namespace cell, or a
+`yielded T` group (§13.5.4.1).
 
 #### 13.5.1 The primitive
 
@@ -15442,12 +15471,17 @@ repeat <bind> at <index> in <source> as <view> keyed by <key-expr>:
 The clause order is fixed: `<bind>`, then optional `at <index>`, then
 `in <source>`, then optional `as <view>`, then optional `keyed by <key-expr>`.
 
-- **`<source>`** is a reactive collection cell: `signal I` for some
-  `I: Iterable` (§12.8), or a **`dynamic` collection cell** of the
-  enclosing node (a `dynamic` view or connection-view,
-  §13.3.3.4), whose value is a language-provided keyed, ordered
-  collection — always iterable. The iterator must terminate at each
-  evaluation (see §13.5.4.8). The
+- **`<source>`** is one of three categories: a reactive collection
+  cell — `signal I` for some `I: Iterable` (§12.8); a **`dynamic`
+  collection cell** of the enclosing node (a `dynamic` view or
+  connection-view, §13.3.3.4), whose value is a language-provided
+  keyed, ordered membership that `repeat` walks structurally, with no
+  trait fulfillment involved; or a **`yielded T` group** (§13.20.4),
+  which `repeat` walks structurally in walk order — one scope per live
+  member, each per-member scope keyed by the member's walk-order
+  position — so membership changes dirty the `repeat` exactly as
+  source-value changes do. For an iterable source, the iterator must
+  terminate at each evaluation (see §13.5.4.8). The
   standard library fulfills `Iterable` for `Vec[T]`, `T[N]` (any const
   N), and `HashSet[T]`; the language-level `Map[K, V]` fulfills
   `Iterable` as part of its primitive surface (§9.5). User types may
@@ -15561,22 +15595,32 @@ The rule is strict precedence: path 3 always wins over path 4 when
 both apply (e.g., when a user has fulfilled both `Keyed` and
 `StringifiableKey` for the same newtype), and paths 1 and 2 win over
 3 and 4 (path 2 applies only to `dynamic` namespace sources). There
-is no ambiguity to resolve at the call site.
+is no ambiguity to resolve at the call site. A `yielded` group source
+(§13.20.4) does not enter this precedence at all: its members' keys
+are always their walk-order positions.
 
 ##### 13.5.4.2 Iteration semantics
 
 Whenever `<source>` is dirty, the runtime:
 
-1. Reads the current value of `<source>` from the signal's current
-   committed snapshot (§13.14) and iterates it via `Iterable::iterator`
-   (§12.8),
-   enumerating each element. The bind sees the owned element type per
-   the move-promotion rule of §13.5.4.1 (promoted from the
-   borrow-equivalent alias that `Iterable::iterator` yields).
-2. Derives the key for each element per the ordered selection of
-   §13.5.4.1 (explicit `keyed by`, then the carried key for `dynamic`
-   namespace sources, then `Keyed` trait, then stringifiable element,
-   else compile error).
+1. For a value-collection source, reads the current value of
+   `<source>` from the signal's current committed snapshot (§13.14)
+   and iterates it via `Iterable::iterator` (§12.8), enumerating each
+   element; for a `dynamic` view or connection-view source, walks the
+   current membership structurally in view order, with no trait
+   protocol involved; for a `yielded` group source, walks the current
+   live membership structurally in walk order, likewise with no trait
+   protocol involved. On the value-collection path the bind sees the
+   owned element type per the move-promotion rule of §13.5.4.1
+   (promoted from the borrow-equivalent alias that
+   `Iterable::iterator` yields).
+2. Derives the key for each element: for an iterable or `dynamic`
+   source, per the ordered selection of §13.5.4.1 (explicit
+   `keyed by`, then the carried key for `dynamic` namespace sources,
+   then `Keyed` trait, then stringifiable element, else compile
+   error); for a `yielded` group source, each member's key is its
+   walk-order position — the group is outside the ordered selection,
+   and no key-derivation compile error arises from it.
 3. Diffs the new key set against the previous:
    - Keys in `old ∩ new` carry over: their scopes are preserved per
      §13.5.1; the binding `<bind>` is updated to the new element.
@@ -15859,7 +15903,7 @@ node Feed:
   // posts_view : cell Map[PostId, posts_view::entry]
   // posts_view::entry has one field per `as <name>` placement — here, `avatar`
 
-  // Reading a member is a transient projection through the Cell+Map:
+  // Reading a member is a transient projection through the minted `cell Map[…]` binding:
   derived selected_label: string =
     match posts_view.get(selected)?.avatar:
       Some(a): a.url        // &Avatar — read in place
@@ -17993,7 +18037,10 @@ predicate itself ever surfaced to a reader:
    entries (§13.3.7.7) whose value contributions join folds positionally
    (each arm's contributions guarded by that arm's gate). The predicate
    driving the toggle is never surfaced: the group sees only present/
-   absent membership, never the boolean that decided it.
+   absent membership, never the boolean that decided it. The toggle
+   takes effect in the commit of the gate transition, in both
+   directions: gate-open adds the member and gate-close removes it
+   within that same commit (§13.9.8).
 
 #### 13.9.8 Interaction with the per-commit DAG
 
@@ -18011,7 +18058,13 @@ A single delegating note in §13.10.2 records this: edges whose gate
 predicate evaluates false do not propagate to destination outputs, and
 the gate-open transition is itself a propagation event scheduled within
 the commit that flips the predicate (the open snap, §13.9.7). Gate-close
-adds no DAG work; its only consequence is that the runtime fires `suspend`
+adds no DAG work for the frozen subtree itself, with one exception: a
+gate transition — open or close — is a dirty root for every fold cell
+(§13.21.7) and membership-descriptor cell (§13.20.4.3) with a member
+guarded by that gate. The member leaves the group in the closing
+commit — symmetric with the gate-open snap — and the fold recomputes
+that same commit without it. Beyond that, gate-close's only consequence
+is that the runtime fires `suspend`
 for effects in the newly-frozen subtree at the commit boundary (§13.9.7,
 §13.14.9). The runtime uses *effective* activation (own gate conjoined
 with all ancestor gates) so that closing an ancestor suspends descendant
@@ -18312,14 +18365,22 @@ operation:
    expression (derived, recurrent, or `observe` arm trigger set)
    re-evaluates when a referenced cell is dirty — value-change
    semantics (§13.2.4.4) operationalized as "current-commit value
-   ≠ previous-commit value." Dirty propagation extends to all
+   ≠ previous-commit value." A membership change of a fold cell's or
+   membership-descriptor cell's member set (§13.21.7, §13.20.4.3) is
+   likewise a dirty root computed in this step, named by its cause —
+   a gate transition on a gate-guarded member, or the `repeat` re-key
+   diff on keyed members — and it dirties the owning cell exactly as
+   an input value change would. Dirty propagation extends to all
    derived cells transitively dependent
    on dirty roots, and to all recurrents whose triggers fired this
    commit. No new dirty bits are added during the rest of the
    commit cycle.
 2. **Compute evaluation order.** Topologically sort the per-commit
    DAG (§13.11.3). Nodes in the DAG are:
-    - Dirty derived expressions.
+    - Dirty derived expressions — including dirty fold cells and
+      membership-descriptor cells (§13.21.7, §13.20.4.3), which are
+      scheduled as derived DAG nodes with their member edges as
+      dependencies.
     - Each recurrent whose expression became dirty this commit. A
       recurrent contributes one DAG node per cell (or one node per
       tuple group for tuple-coupled recurrents, §13.2.4.6). A
@@ -18334,9 +18395,13 @@ operation:
    edges within this commit. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
-   gate-open snap and the suspension of contained effects on gate-close.
+   gate-open snap, the suspension of contained effects on gate-close,
+   and the membership dirty root a gate transition contributes to
+   folds and membership descriptors with a gate-guarded member.
 3. **Evaluate in topological order.** For each node in topo order,
-   invoke its behavior (per §14.6's ABI). Reads resolve as follows:
+   invoke its behavior (per §14.6's ABI); a membership-descriptor
+   node (§13.20.4.3) has no behavior — its evaluation re-derives its
+   live member list structurally. Reads resolve as follows:
     - Signal and attr reads → current staged values
       (most recent writes since the previous commit).
     - Derived reads → this-commit computed values for deriveds
@@ -18468,9 +18533,9 @@ node-body derived reading a `repeat`-view handle (§13.5.4.9) declares
 a dependency edge into the handle's resolution and, while resolved, into the referent's cells;
 a dismount flips the resolution to `None` and drops the referent
 dependency edge. The **dynamic namespace cells** (§13.3.3.4) are the
-collective form of the same mechanism: an operator over a dynamic
-connection-view declares a dependency edge into the membership (the cell itself) and, per
-current member, into the cells its per-element fn reads — a mount or
+collective form of the same mechanism: a `collect` block bridging a dynamic
+connection-view into a `yielded` group declares a dependency edge into the membership (the cell itself) and, per
+current member, into the cells its per-member `yield` expression reads — a mount or
 dismount re-establishes the member dependency edges exactly as a re-point
 does. `WeakHandle[T]` resolution (for graph entities) and `Portal[T]`
 resolution (for non-graph slots) — individually or in this collective
@@ -18492,11 +18557,16 @@ instances via connection placements. Each has its own rules.
 #### 13.11.1 The reactive dependency graph
 
 The compiler constructs the reactive dependency graph by walking
-every `derived` expression's body and every recurrent expression's
-body, recording for each the set of reactive cells it
+every `derived` expression's body, every recurrent expression's
+body, and every `fold` form's member set and `by:` combiner body,
+recording for each the set of reactive cells it
 reads. Edges go from each read cell to the reading expression's
 output cell. Signal, attr, derived, and recurrent reads all
-contribute edges.
+contribute edges; a fold's member reads and combiner reads are
+walked exactly as derived reads — edges run from each member cell
+and combiner-read cell into the fold's cell — and reads of a fold
+cell contribute edges onward, so fold-mediated cycles are detected
+by the ordinary cycle rules (§13.11.2).
 
 The reactive dependency graph is the basis for the per-commit DAG
 constructed each commit (§13.10.2 step 2).
@@ -18686,8 +18756,9 @@ resolution re-points, mounts, or dismounts. A statically-placed
 read contributes its referent's cells to the provenance like any static
 reference. The canonical dynamic case is a connection body reading `to.*`
 against a reactive destination (§13.6.2); a node-body read through a
-`repeat`-view handle (§13.5.4.9) is the same mechanism, and an operator
-over a dynamic namespace cell (§13.3.3.4) is its collective form. In every
+`repeat`-view handle (§13.5.4.9) is the same mechanism, and a `collect`
+block bridging a dynamic namespace cell (§13.3.3.4) into a `yielded` group
+is its collective form. In every
 dynamic case the resolution itself is in the provenance, and a given
 referent's cells are in the provenance only while that referent is
 resolved (a member's cells, only while it is a member).
@@ -19653,7 +19724,7 @@ instance is preserved across reload, the cells declared in its
 
 - `signal T` cells: preserved when type matches; reset to initial
   value if type changes (per §13.15.2).
-- `Stream[T]` cells: preserved per stream reload rules
+- `stream T` cells: preserved per stream reload rules
   (§13.15.5).
 
 **Reload-safe effect changes** preserve the instance and most cells:
@@ -19661,7 +19732,7 @@ instance is preserved across reload, the cells declared in its
 - Adding a new cell to `desired:` or `observed:` — the new cell is
   initialized fresh.
 - Changing the initial-value expression of a `desired:` or
-  `observed:` Signal cell — existing committed values persist;
+  `observed:` signal cell — existing committed values persist;
   the new initial-value expression applies only to fresh instances.
 - Changing a parameter-derived `desired:` cell's derivation
   expression — the cell re-evaluates on the next commit with the
@@ -19735,7 +19806,7 @@ declared with the `operator` keyword. Operators take `cell T`
 inputs (and optionally non-reactive value parameters), allocate
 internal reactive cells (recurrents and/or deriveds) per
 instantiation, and produce an output of any type, exposed to callers as
-a reactive cell (typically `derived T`, or `Stream[T]` for event
+a reactive cell (typically `derived T`, or `stream T` for event
 operators — §13.17.5). They are
 the primary mechanism for composing reactive transformations.
 
@@ -19790,11 +19861,11 @@ Operators may carry visibility modifiers (`public`, `shared`,
 
 #### 13.17.3 Parameters
 
-An operator parameter may be any value. Two kinds carry reactive or
-configuration input — cell-bound and value parameters (below); a
-parameter may additionally be **function-** or **operator-typed**, since
-an operator is a first-class compile-time value (§13.17.13). The kinds
-are distinguished by declared type:
+An operator parameter may be any value. Three kinds carry reactive or
+configuration input — cell-bound, value, and group-bound parameters
+(below); a parameter may additionally be **function-** or **operator-typed**,
+since an operator is a first-class compile-time value (§13.17.13). The
+kinds are distinguished by declared type:
 
 **Cell-bound parameters** (`name: cell T`):
 - Bind to a reactive cell at instantiation.
@@ -19814,6 +19885,15 @@ are distinguished by declared type:
   compile-time constant).
 - Useful for configuration that does not change: smoothing rates,
   thresholds, modes, etc.
+
+**Group-bound parameters** (`name: yielded T`):
+- Bind a `yielded` group as wiring at instantiation — no materialization
+  at the binding.
+- Inside the body the group is consumed per the group-consumption rules
+  (§13.20.4.1): walked in walk order, fed to a `fold`, or auto-materialized
+  to a value snapshot in value positions.
+- Membership changes and member-value changes propagate to the operator
+  like any input change.
 
 The author chooses for each parameter based on intent. A parameter
 the user expects to vary at runtime (e.g., a UI knob driving a
@@ -19845,14 +19925,16 @@ argument is materialized. This is the uniform cell-argument rule (it
 governs operator args, effect args, placement attrs, and the `|>` LHS
 alike):
 
-- **A bare cell binds directly.** A `signal`/`derived`/`recurrent`/
-  `stream` reference passed to a `cell T` parameter is bound as-is; no
-  wrapping, no synthesis.
+- **A bare cell binds directly.** A `signal`/`derived`/`recurrent`
+  reference passed to a `cell T` parameter is bound as-is; no wrapping,
+  no synthesis. A stream reference does not bind to a `cell T` parameter —
+  it binds only to a `stream T`(-family) parameter, and entering a value
+  position requires the explicit conversion `to_signal(<stream>, <fallback>)`.
 - **A static expression is constant-wrapped.** A literal, `const`, or
-  compile-time-constant expression is wrapped as a degenerate constant
-  cell (compile-time-fixed `signal T`). Cost: one cell per literal at
-  the call site (effectively zero — folded by the compiler when
-  possible).
+  compile-time-constant expression is wrapped as a degenerate `derived T`
+  cell (a constant is a nullary computation — there is no host-write
+  carve-out). Cost: one cell per literal at the call site (effectively
+  zero — folded by the compiler when possible).
 - **A reactive expression synthesizes an implicit derived bridge.** An
   expression that reads one or more reactive cells (but is not itself a
   bare cell reference) synthesizes an implicit `derived T` bridge cell
@@ -19890,7 +19972,7 @@ The implicit deref applies wherever a value cell flows into a
 position expecting `T`: arithmetic operands, function-call arguments
 typed `T`, attribute initial-value expressions, derived bodies,
 recurrent expressions. It does NOT apply when the context expects
-`cell T` directly (operator parameters, function parameters typed
+`cell T` directly (operator parameters, function parameters annotated
 `cell T`, pipe-form `|>` LHS) — in those cases the cell reference
 is bound without dereferencing.
 
@@ -19946,7 +20028,7 @@ type, which may be any type. If it is a value type (or a plain
 record/tuple), the compiler synthesizes a cell holding the value and
 exposes that cell as the operator instance's output — the `cell T`≅`T`
 wrap (§13.2.8), so a `-> f32` return is carried as `derived f32`, never a
-non-reactive snapshot. If the final expression is already a `Cell` (a
+non-reactive snapshot. If the final expression is already a cell (a
 named recurrent, derived, or stream in the body), that cell is the output
 directly — no synthesis needed. A record whose fields are cells (form 2)
 is wrapped likewise; its inner cells are part of its fixed compile-time
@@ -20029,7 +20111,7 @@ derived bar: f32 = 0.0 |> clamp(min: 0.0, max: 1.0) |> smooth(rate: 0.1, clock: 
 ```
 
 Each `|>` step is an operator application. The result of each step
-is a `Cell` — a `derived T` for value-shaped operators or a `Stream[T]`
+is a cell — a `derived T` for value-shaped operators or a `stream T`
 for event-producing ones — consumed by the next.
 
 **Convention:** the first positional parameter of any operator is
@@ -20137,11 +20219,11 @@ node's `effects:` clause.
 
 LHS rules common to Cases 1 and 2:
 
-- LHS must be an expression of a reactive cell kind (`signal T`,
-  `derived T`, `recurrent[N] T`, `stream T`, or any other `cell T`
-  per §13.18.5), or an expression convertible to one. A static value
-  (literal, `const`, or compile-time constant expression) is wrapped as
-  a degenerate `derived T` cell automatically.
+- LHS must be an expression of a reactive cell kind — a value cell
+  (`signal T`, `derived T`, `recurrent[N] T`, i.e. any `cell T` per
+  §13.18.5) or a stream (`stream T`) — or an expression convertible to
+  one. A static value (literal, `const`, or compile-time constant
+  expression) is wrapped as a degenerate `derived T` cell automatically.
 
 **Precedence:** `|>` is low-precedence, left-associative. Most
 arithmetic and logical operators bind tighter. Specifically:
@@ -20451,7 +20533,7 @@ type. Cell-bound parameters appear as their cell type (`cell T`,
 §13.17.3), value parameters as their value type; a value parameter's
 *default* (§13.17.3) is not part of the type and does not affect matching.
 The output must match the declared return type `U` — a value type, a
-record/tuple, or a `Cell` type (§13.17.5).
+record/tuple, or an explicit cell kind (§13.17.5).
 
 **Instantiation.** The receiver instantiates the carried operator exactly as
 it would a named one (§13.17.6): by applying it to arguments. The resulting
@@ -20475,7 +20557,7 @@ into the operator's output cell (§13.17.5) and consumed by the receiver's
 graph position; there is no "owned return into caller scope" target the
 `own` qualifier could refer to. The same restriction applies to operator
 declarations: an `operator` declaration's `-> U` may name any value, record,
-tuple, or `Cell` type, but never `own T`. Function return types continue to
+tuple, or an explicit cell kind, but never `own T`. Function return types continue to
 admit `own` per §11.3.6; this restriction is operator-specific.
 
 ### 13.18 Streams
@@ -20661,9 +20743,9 @@ alias spellings survive as sugar. There are no `RecurrentRing` /
 history-depth axis on a `Ring`/`Gate` policy stream, not with a
 distinct alias.
 
-**The erased supertype `Stream[T]`.** `Stream[T]` (element type only, policy
+**The erased supertype `stream T`.** `stream T` (element type only, policy
 erased) is the abstract supertype of every `Stream[T, P]`; a concrete stream
-is implicitly usable wherever `Stream[T]` is expected (zero-cost widening —
+is implicitly usable wherever `stream T` is expected (zero-cost widening —
 only the type-system view changes). Use it in a signature that accepts any
 stream of `T` regardless of policy and does not thread the policy through to
 its result — e.g. `to_signal`, `event_count`, `accumulate`:
@@ -20703,33 +20785,46 @@ named policy otherwise.
 
 #### 13.18.5 The `cell` kind umbrella
 
-`cell T` is the umbrella **KIND** over the reactive cell forms that
-carry values of type `T`. It is not a trait and not a value type
+`cell T` is the umbrella **KIND** over the *value cells* that carry
+values of type `T`. It is not a trait and not a value type
 (§13.2.8): `cell` is a lowercase keyword kind occupying an annotation
-position, exactly like `signal`, `derived`, `recurrent`, and `stream`.
-Its members are the reactive-binding kinds — the value cells `signal T`,
-`derived T`, `recurrent[N] T`, and the event kind `stream T` (with its
-policy/capacity/history axes, §13.18.3):
+position, exactly like `signal`, `derived`, and `recurrent`. Its members
+are exactly the value-cell kinds — `signal T`, `derived T`, and
+`recurrent[N] T`:
 
 ```
-cell T                        // umbrella KIND — any reactive cell carrying values of type T
-  signal T                    // host/placement-written value cell (§13.2.8)
+cell T                        // umbrella KIND — any value cell carrying values of type T
+  signal T                    // host/placement-written value cell; `attr` annotates as `signal T` (§13.2.8)
   derived T                   // computed value cell, no history (§13.2.8)
   recurrent[N] T              // computed value cell, N-deep self-history (§13.2.8)
-  stream T                    // append-only event sequence, policy erased (§13.18.3)
-    stream ring[N] T          // concrete: ring policy, capacity N
-    stream gate[N] T          // concrete: gate policy, capacity N
 ```
 
-Stream membership is deliberate: `stream T` (and its concrete policy
-forms) belongs under the `cell` umbrella alongside the value kinds, and
-`yielded T` groups (§13.2.8) likewise participate as cell kinds. `cell T`
-is used in operator and function signatures that accept any reactive cell
-carrying values of `T`, without constraining which kind:
+Streams and groups sit *outside* the umbrella, each forming its own kind
+class:
+
+```
+stream T                      // stream kind class — event sequence, policy erased (§13.18.3)
+  stream ring[N] T            // concrete: ring policy, capacity N
+  stream gate[N] T            // concrete: gate policy, capacity N
+  recurrent[N] stream …       // stream with self-history
+yielded T                     // group kind class — membership-varying group (§13.20.4)
+```
+
+Class separation is deliberate: the `cell T` umbrella spans the value
+cells only. A `stream T` (and its concrete policy forms) is not a member
+of the umbrella; nor is a `yielded T` group. Streams remain reactive
+cells in the broad sense — a stream declares an event-sequence-shaped
+reactive cell — but they are not `cell T` members and do not bind to a
+`cell T` parameter. The bridge between the stream class and the value
+cells is explicit conversion: `to_signal(<stream>, <fallback>)` turns a
+stream into a value cell, and `.changes` turns a value cell into a
+stream. `cell T` is used in operator and function signatures that accept
+any value cell carrying `T`, without constraining which value-cell kind:
 
 ```
 operator monitor[T](source: cell T) -> derived bool:
-  // works with any value cell or stream carrying T
+  // works with any value cell carrying T; a stream does not bind here —
+  // pass to_signal(<stream>, <fallback>), or annotate the parameter `stream T`
   ...
 ```
 
@@ -20738,19 +20833,21 @@ trait: it does not implement or require methods, and there is no
 `cell T` value type over which one dispatches. This resolves the older
 type-vs-trait framing — `cell T` was described in some passages as an
 umbrella *type* and in others as a marker *trait*; neither is correct.
-The umbrella is a kind in annotation position. Concrete behavior
-(current-value reads on value cells, event observation on streams) is
-specific to each concrete kind and is reached through that kind's own
-methods and operators, not through any umbrella method set.
+The umbrella is a kind in annotation position. Concrete behavior —
+current-value reads — is specific to each value-cell kind and is reached
+through that kind's own methods and operators, not through any umbrella
+method set. (Event observation belongs to the stream class outside the
+umbrella, reached through the stream kinds' own surface.)
 
 **Use in generic signatures.** A value-reading operator parameter is
-annotated `cell T` (§13.2.8); a `stream T` has no current value, so it
-is excluded at the read site rather than by the annotation. Operators
-returning a value cell declare the concrete kind through their return
-annotation — typically `derived T` for a computed output, `stream T`
-for a stream, or `cell T` only for a genuine passthrough. Concrete
-kinds carry more information and are preferred unless the operator
-genuinely produces a polymorphic output.
+annotated `cell T` (§13.2.8); a `stream T` does not bind to a `cell T`
+parameter at all — the signature itself excludes it — and a stream
+argument requires the explicit conversion `to_signal(<stream>, <fallback>)`
+or a `stream T`-annotated parameter. Operators returning a value cell
+declare the concrete kind through their return annotation — typically
+`derived T` for a computed output, `stream T` for a stream, or `cell T`
+only for a genuine passthrough. Concrete kinds carry more information and
+are preferred unless the operator genuinely produces a polymorphic output.
 
 #### 13.18.6 Observation cells
 
@@ -20894,7 +20991,7 @@ An expression's reactive-output type is determined by its inputs:
 
 - **Zero streams** in the expression → result is a signal. The
   surrounding declaration must be a binding context that produces
-  a Signal-typed cell (`derived`, `attr` default expression,
+  a signal-typed cell (`derived`, `attr` default expression,
   `recurrent`'s expression).
 - **One or more streams** in the expression → result is a stream.
   The surrounding declaration must be a `stream` declaration
@@ -20968,7 +21065,7 @@ stream ring clamped: i32 = if raw > max_allowed: max_allowed else: raw
 
 ```
 stream ring filtered: i32 = (count * 2) |> filter(is_positive)
-// Expression part produces a Stream[i32]; the operator chain continues.
+// Expression part produces a stream i32; the operator chain continues.
 ```
 
 ##### 13.18.7.6 Compile-error examples
@@ -21151,7 +21248,7 @@ stream ring filtered: f32 = avg |> filter(fn(x): x > 0.5)
 
 The recurrent declaration's special semantics — the `H`-deep self-history
 the body reads via `.past`/`.previous` — are contained within its own body;
-consumers use it as an ordinary `Stream[T]`.
+consumers use it as an ordinary `stream T`.
 
 ##### 13.18.8.7 Restrictions
 
@@ -21639,7 +21736,7 @@ observed. Cursors are per-consumer state; two consumers reading the
 same stream advance independently.
 
 A consumer is any operator instance whose signature consumes the
-stream (`Stream[T]` parameter). Each instantiation of such an
+stream (`stream T` parameter). Each instantiation of such an
 operator allocates a fresh cursor. Multiple consumers of the same
 stream see the same events; each consumer observes the full sequence
 from its point of attachment.
@@ -22885,8 +22982,8 @@ mirrors the effect's declaration:
 - **Read access** to the effect's parameter values and `desired:`
   cell values for a given instance.
 - **Write access** to the effect's `observed:` cells via the host
-  API (§13.14.2 `runtime.write_signal` for Signal cells, §13.14.8
-  `runtime.push_stream` for Stream cells).
+  API (§13.14.2 `runtime.write_signal` for signal cells, §13.14.8
+  `runtime.push_stream` for stream cells).
 - **Lifecycle hooks**: five hooks — instance creation (when the
   effect appears in the live graph), update (when parameters or
   desired cells change), teardown (when the instance leaves scope),
@@ -23149,27 +23246,31 @@ data.
 `collect` has two legal forms:
 
 - **Block-expression form** — `collect:` used as an expression whose
-  value is a `yielded T` group:
+  value is a `yielded T` group. This is the **anonymous** group: the
+  expression's value is the group itself, consumed in place (for
+  example as a `fold` members operand §13.21, or as an argument to a
+  `yielded T`-typed operator or function §13.20.4.1) without being
+  bound to a name.
 
   ```
-  derived voices: yielded Voice = collect:
+  collect:
     yield lead_voice
     yield bass_voice
   ```
 
-- **Statement form** — `collect as x:` binds the resulting group to a
-  name `x` as a statement:
+- **Declaration form** — `yielded <name>: <MemberType> = collect:`
+  binds the resulting group to a name, with an indented body. This is
+  the **only** way to name a group:
 
   ```
-  collect as active:
-    yield primary
-    for v in candidates:
-      yield v
-  // `active` is in scope below as a `yielded` group
+  yielded voices: Voice = collect:
+    yield lead_voice
+    yield bass_voice
   ```
 
-Both forms are legal and equivalent in what they build; they differ only
-in whether the group is the expression's value or a named binding.
+The declaration form binds the group to a name; the block-expression form
+is the anonymous group used directly as an expression value. They differ
+only in whether the group is bound to a name or consumed in place.
 
 #### 13.20.2 `yield` — one member-cell
 
@@ -23245,12 +23346,15 @@ error: `yield` under a runtime `if` cannot vary group membership
 
 `yielded T` is the **kind** of the group a `collect` produces: an
 **ordered** (walk-order), membership-varying group of cells carrying
-values of type `T`. It is a cell-KIND (a member of the `cell` umbrella,
-§13.18.5): membership changes propagate dirt to consumers.
+values of type `T`. It is its own group kind class, outside the `cell`
+umbrella (§13.18.5): membership changes propagate dirt to consumers.
 
 - **Stores nothing.** A `yielded` group holds no buffer of values: it is
-  a compile-time wire set (which positions can contribute) plus runtime
-  on/off bits (which are currently live). The member *values* live in the
+  a compile-time wire set (which positions can contribute); which
+  members are currently live is *derived*, re-read each commit from
+  each contributing position's guarding gate's effective activation
+  (§13.9.7), never stored — there is no liveness bit-vector. The
+  member *values* live in the
   member cells themselves; the group is only the membership structure.
 - **Ordered.** Members are in walk order — the lexical/structural order
   of their `yield` positions, with `repeat` members interleaved in key
@@ -23262,34 +23366,100 @@ values of type `T`. It is a cell-KIND (a member of the `cell` umbrella,
 
 ##### 13.20.4.1 Consumption
 
-A `yielded` group is consumed in exactly these ways:
+A `yielded` group is consumed in two families of position: **wiring
+positions**, where it passes as wiring with no materialization, and
+**value positions**, where it auto-materializes to a snapshot.
+
+**Wiring positions** — the group passes as wiring; nothing is
+materialized:
 
 - **The fold form** (§13.21) — the primary consumer: a `fold` over a
   `yielded` group combines its live members.
-- **Yielded-typed parameters** — `yielded T` may be a parameter type on
+- **`yielded T`-annotated parameters** — `yielded T` may be a parameter type on
   operators *and* on functions; the body walks the members in walk order.
-- **`repeat` over it** (§13.5.4) — materializes one scope per live member.
+- **`repeat` over it** (§13.5.4) — materializes one scope per live
+  member, each per-member scope keyed by the member's walk-order
+  position (§13.5.4.1).
 
-It is **not** consumed by:
+In every wiring position the group has **no positional index operator**
+(its membership is not a stable array), and a **compile-time / structural
+`for` over the group itself is a compile error** (its extent is a runtime
+membership, not a compile-time-fixed sequence).
 
-- **Indexing** — a `yielded` group has no positional index operator (its
-  membership is not a stable array).
-- **Compile-time / structural `for`** — a structural `for` over a
-  `yielded` group is a compile error (its extent is a runtime membership,
-  not a compile-time-fixed sequence).
+**Value positions** — the group **auto-materializes**. In a value
+position — a `T[..]`-shaped parameter, an arithmetic operand, or a
+value-typed `let` or `derived` right-hand side — the group produces a
+fresh read-only `T[..]`-shaped sequence of its current member values in
+walk order (§13.20.4.2). The consumer re-evaluates whenever the group
+changes (membership or member value). A runtime `for` **is** legal over
+that materialized snapshot value (never over the group itself), and a
+collection-valued `derived` is legal:
+
+```
+derived xs = gains        // xs re-snapshots on every change to `gains`
+```
 
 `yielded` is **not** a dynamic-view consumer and does not join the
 dynamic-view consumer surface (§13.3.3.4): the two kinds are distinct.
 
-##### 13.20.4.2 Iterable fulfillment
+##### 13.20.4.2 No `Iterable` fulfillment — the value-position snapshot
 
-`yielded T` fulfills `Iterable` (§12.8) at the **language level** —
-authored as a language-defined fulfillment (the same way
-`Keyed`/`StringifiableKey` are language-defined, §13.5.4.2): its `Item` is
-the `T` member values in walk order. This fulfillment is available in **runtime-loop
-contexts only** — `fn`, `derived`, and `operator` bodies where a runtime
-`for` walks the live members — never in compile-time structural `for`
-(above).
+A `yielded T` group does **not** fulfill `Iterable` (§12.8); the earlier
+language-level fulfillment is **retired**. A group's membership varies at
+runtime, and the `Iterable` contract iterates a frozen source with no
+mechanism for membership that joins and leaves under it. The capability
+`Iterable` would have provided is supplied instead by the **value-position
+snapshot**: in a value position (§13.20.4.1) the group auto-materializes
+to a fresh read-only `T[..]`-shaped sequence of its current member values
+in walk order, and any user code consumes that snapshot with an ordinary
+runtime `for`. The snapshot is a value, not the group; the consumer
+re-evaluates whenever the group changes (membership or member value).
+
+**The loss law (normative).** An implicit wiring-to-value read exists
+**exactly** where the value form is a *lossless snapshot of current
+state*, and nowhere else. Two cases qualify: a value cell's current value
+(the cell holds exactly one current value), and a `yielded` group's
+current members (the snapshot is the full walk-order sequence of current
+member values). Where reading the current state would **drop
+information**, no implicit read exists: a `stream`'s events have no
+lossless current-state snapshot — a single "current value" cannot stand
+for a sequence of events — so a stream becomes a value cell only through
+the explicit conversion `to_signal(<stream>, <fallback>)` (§13.18).
+
+##### 13.20.4.3 IR lowering
+
+A `yielded` group has no cell-kind tag of its own in the IR: the
+cell-`kind` enum stays `input | derived | recurrent | fold` (§15.4.1).
+A group lowers to existing IR machinery, by consumption:
+
+- **Folded** — a group consumed by a `fold` (§13.21) is absorbed into
+  that fold cell as its member edges and emits no IR object of its
+  own.
+- **Standalone** — a group consumed by `repeat` or bound to a
+  `yielded T` parameter lowers to a synthesized
+  **membership-descriptor cell**: a `derived`-kind graph cell with no
+  behavior of its own, carrying the group's member edges in walk
+  order, each edge tagged with its membership driver — `permanent`,
+  `keyed-template`, or `gate-guarded` (§15.4.1). The descriptor is
+  typed `yielded<T>`, an ABI-only entry in the IR type vocabulary
+  (§15.4.6): it gives a `yielded T` parameter its ABI signature and is
+  never a user-facing value type. Member presence is derived per
+  commit from each member's guarding gate's effective activation
+  (§13.9.7); the descriptor stores no liveness state.
+- **Repeated** — a `repeat` over a group additionally lowers to a
+  dynamic `scope` with one per-member instance whose `keyed_by`
+  identity is the member's walk-order position (§13.5.4.1, §15.4.1).
+
+A membership-descriptor cell is scheduled exactly as a fold cell is
+(§13.21.7): its member edges feed the ordinary derived dependency-edge
+list, it enters the per-commit DAG as a derived node, and a membership
+change — dirty-rooted at the gate transition or the `repeat` re-key
+diff (§13.10.2) — dirties it exactly as an input value change would.
+Its evaluation is structural: the node re-derives its current live
+member list from its member edges' drivers — gate effective
+activation for gate-guarded members, the current key set for
+keyed-template members — and invokes no behavior; the descriptor has
+none.
 
 ### 13.21 The Fold Form
 
@@ -23351,7 +23521,8 @@ on the empty group.
   composite's slots **in declared order**; a zero-slot composite folds to
   `else:`.
 
-A `Cell[Vec[T]]`-shaped value (a stored collection held in a cell) is
+A stored collection held in a value cell (a `Vec[T]`-valued
+`signal`/`derived` — kind `signal Vec[T]` or `derived Vec[T]`) is
 **not** foldable by this form: `fold` is over membership, not over the
 contents of a stored container. To reduce a stored `Vec`, use ordinary
 value-level iteration (§12), not `fold`.
@@ -23366,6 +23537,15 @@ leave, where *n* is the current member count. The compiler builds a
 changes (or a member joins/leaves), only the O(log n) combines on the path
 from that member to the root re-run. Commutativity is not required because
 the tree shape is fixed by member order.
+
+**Snapshot vs. `fold`.** A value-position snapshot of a `yielded` group
+(§13.20.4.2) is the O(n) counterpart of this incremental form: the
+consumer re-evaluates over all *n* current members — O(n) per
+re-evaluation — because it re-reads the whole walk-order sequence each
+time the group changes. `fold` is the **O(log n)** incremental expression
+of the same reduction semantics. Reductions that must scale ride `fold`;
+snapshot reads suit small or infrequently-changing groups, or consumers
+that genuinely need the whole current sequence.
 
 #### 13.21.6 Where `fold` may appear
 
@@ -23396,6 +23576,22 @@ empty-membership result); and the **member edges in member order**, each
 tagged with its **membership driver** — `permanent`, `keyed-template`, or
 `gate-guarded` (§15.4.1). The surface type is that of the enclosing
 `derived` declaration.
+
+**Scheduling — a fold rides the derived machinery.** A fold cell is
+scheduled as a **derived DAG node**: its member edges feed the ordinary
+derived dependency-edge list (§15.4.1), and it enters the per-commit
+DAG (§13.10.2) whenever a member value is dirty or its membership
+changes. A member join or leave dirties the fold exactly as an input
+value change does; the dirty root is named — the gate transition (for
+a gate-guarded member) or the `repeat` re-key diff (for keyed-template
+members), computed in the commit's dirty-set step (§13.10.2), so no
+new dirty bits arise after step 1. A gate-close that removes a
+gate-guarded member recomputes the fold **in that same commit**
+without the departed member — symmetric with the gate-open snap
+(§13.9.8) and within the cost rule's O(log n) combine path
+(§13.21.5). In the reactive dependency graph (§13.11.1), a fold's
+member reads and `by:` combiner reads walk exactly as derived reads,
+so fold-mediated cycles are detected by the ordinary cycle rules.
 
 ---
 
@@ -23708,8 +23904,8 @@ Specifically, the values held by:
   observation cells per §13.18.6; the buffer slot array itself
   lives in the per-`(T, N)` pool per §14.3.3).
 - Cells declared inside an `effect`'s `desired:` and `observed:`
-  blocks (§13.19.4, §13.19.5). These are ordinary Signal or
-  Stream cells per their declared type; the effect is a grouping
+  blocks (§13.19.4, §13.19.5). These are ordinary signal or
+  stream cells per their declared type; the effect is a grouping
   construct, not a new storage category.
 
 Regular Ductus values — local bindings (`let`/`mut`) inside function
@@ -24276,7 +24472,10 @@ The graph is a structured record with the following entries.
   language fold form (§13.21); it is a cell KIND, not a seventh graph
   primitive — the six-primitives count (above) is unchanged.
 - `type`: the cell's primitive type tag, per §4.1, plus the
-  string-pool-index (§14.5) and dynamic-pool-index (§14.3.3) types.
+  string-pool-index (§14.5) and dynamic-pool-index (§14.3.3) types,
+  and `yielded<T>` — an ABI-only type carried by synthesized
+  membership-descriptor cells (below) and `yielded T` parameters,
+  never a user-facing value type.
 - `initial_value` (optional): the compile-time initial value for
   reactive-safe initializers per §13.8.2.1.
 - `size`, `alignment`: derived from `type`, recorded explicitly for
@@ -24291,6 +24490,15 @@ The graph is a structured record with the following entries.
   is effectively active, §13.9.7). The surface remains a `derived T`: the
   fold's result lives in a `derived` declaration and consumers see
   `derived T` (§13.21).
+
+A **membership-descriptor cell** is the lowering of a standalone
+`yielded` group (§13.20.4.3): a `derived`-kind cell typed `yielded<T>`
+with no behavior of its own, carrying the group's member edges in walk
+order, each edge tagged with the same membership drivers as fold
+member edges. Its member presence is derived per commit from each
+member's guarding gate's effective activation (§13.9.7); it stores no
+liveness state. A group consumed by a `fold` is instead absorbed into
+that fold cell as its member edges and produces no separate entry.
 
 **Connections.** A list of connection entries. Each:
 
@@ -24309,7 +24517,12 @@ The graph is a structured record with the following entries.
 
 **Derived dependency edges.** A list of `(derived_cell_id,
 [input_cell_ids])` pairs. Used by the runtime for dirty-set
-propagation and topological evaluation ordering.
+propagation and topological evaluation ordering. Fold cells and
+membership-descriptor cells contribute their member edges to this
+same list and are scheduled as derived DAG nodes: a member join or
+leave dirties the owning cell exactly as an input value change would,
+dirty-rooted at the gate transition or the `repeat` re-key diff
+(§13.10.2).
 
 **Recurrent dependency edges.** A list of `(recurrent_cell_id,
 [input_cell_ids], output_history_N, input_lookback_map, reset_on_reopen)`
@@ -24759,7 +24972,7 @@ variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
 graph_section ::= 'graph' '{' scope+ '}'
 scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                   ('reset_on_reopen' reopen_set)? '{' entry* '}'
-entry         ::= cell | gate | connection | effect
+entry         ::= cell | gate | connection | effect | stream
 cell          ::= cell_kind PATH ':' type_tag
                   ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
                   ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
@@ -24773,20 +24986,26 @@ connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
                   ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
 effect        ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
                   ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
+stream        ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capacity' INT
+                  ('source_deps' path_set)? ('observes' path_set)?
+                  ('reset_on_reload')? ('reset_on_reopen')?
+                  ('history' INT)? ('lookback' lookback_map)?
 
 behaviors_section ::= 'behaviors' '{' behavior* '}'        // behavior per §15.4.4
 
 path_set      ::= '[' (PATH (',' PATH)*)? ']'
 binding_set   ::= '[' (binding (',' binding)*)? ']'
 reopen_set    ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'  // (consumer_id : stream_id) pairs
+lookback_map  ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
 binding       ::= NAME ':' (PATH | value) ('@' provenance)?
 provenance    ::= 'bound' | 'constant_wrap' | 'bridge'
 type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
+                | 'yielded' '<' type_tag '>'
                 | '(' type_tag (',' type_tag)* ')' | '[' type_tag ';' INT ']'
                 | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
 PRIM          ::= 'i8'|'i16'|'i32'|'i64'|'i128'|'u8'|'u16'|'u32'|'u64'|'u128'
                 | 'isize'|'usize'|'f32'|'f64'|'bool'|'str'
-value         ::= INT | 'true' | 'false' | STRING     // a compile-time literal
+value         ::= INT | FLOAT | 'true' | 'false' | STRING     // a compile-time literal
 ```
 
 The module's three sections appear in order. The `types` table lists the
@@ -24802,17 +25021,39 @@ handle (the `by:` combiner), its `else` empty-membership value, and its
 `members` set — the member cells in member order, each tagged with its
 membership driver (`permanent`, `keyed-template`, or `gate-guarded`); its
 surface type is that of the enclosing `derived` declaration. `fold` is a
-cell kind, not a seventh graph primitive (§15.4.1). A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
+cell kind, not a seventh graph primitive (§15.4.1). A
+membership-descriptor cell (the lowering of a standalone `yielded`
+group, §13.20.4.3) renders as a `derived` line typed `yielded<T>`
+carrying a `members` set and no `uses`/`inputs`; `yielded<T>` is an
+ABI-only type-vocabulary entry and never a user-facing value type. A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
 it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
 names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
 record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
-`%TypeId`. A `recurrent` cell's optional `reset_on_reopen` flag marks
-`@reset_on_reopen` (§13.2.4); a `scope`'s optional `reset_on_reopen` set
-names the `(consumer : stream)` cursors it resets to head on gate reopen
-(§13.18.12). The keyword `reset_on_reopen` thus appears in two grammar
-positions with different arities — a bare flag on `cell` (no payload) and
+`%TypeId`. A `stream` line serializes the stream primitive (§15.4.1's
+*Stream cells*) with its ten data-model fields: `PATH` is the stream's id;
+`type_tag` the element type (`element_type`); `policy` is `ring` or `gate`;
+`capacity` the integer capacity; `source_deps` the source-expression input
+cells (`source_dependencies`); `observes` the synthesized observation-cell
+ids (`pending_count`, `pressure`, `is_full`, `dropped_total`,
+`rejected_total`, `last_overflow_at`, §13.18.6); the two bare flags
+`reset_on_reload` and `reset_on_reopen` mark the corresponding
+`@`-annotations; `history` is `output_history_size`, present only for a
+`recurrent[N] stream`; and `lookback` is the `input_lookback_map` (input
+cell id → maximum lookback `k`). For example:
+
+```
+stream app.events : %LogEntry policy ring capacity 1024 source_deps [app.source] observes [app.events.pending_count, app.events.pressure, app.events.is_full, app.events.dropped_total, app.events.rejected_total, app.events.last_overflow_at]
+```
+
+A `recurrent` cell's optional `reset_on_reopen` flag marks
+`@reset_on_reopen` (§13.2.4); a `stream`'s optional `reset_on_reopen` flag
+marks the same annotation on a stream (§13.18.8); a `scope`'s optional
+`reset_on_reopen` set names the `(consumer : stream)` cursors it resets to
+head on gate reopen (§13.18.12). The keyword `reset_on_reopen` thus appears
+in three grammar positions with different arities — a bare flag on `cell`
+(no payload), a bare flag on `stream` (no payload), and
 `reset_on_reopen reopen_set` on `scope` (carrying the `(consumer : stream)`
-pairs); both spellings are normative. A `binding` (in an effect's `params`
+pairs); all three spellings are normative. A `binding` (in an effect's `params`
 or a connection's `attrs`) may carry an optional `@`-suffixed
 **provenance** marker — `bound`, `constant_wrap`, or `bridge` — recording
 how the cell argument was materialized under the uniform cell-argument

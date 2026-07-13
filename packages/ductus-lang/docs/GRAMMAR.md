@@ -21,6 +21,8 @@ This document specifies the **surface grammar** of the Ductus language: the lexi
 
 **Companion document.** The IR text-form grammar (the contract between frontend and runtime) is `IR_GRAMMAR.md`; this file does **not** cover the IR.
 
+**Non-normative status.** This document is **non-normative**. It is a *derived reformulation* of rules stated normatively in the SPEC; on any conflict the SPEC **prevails**, and any divergence between this document and the SPEC is a **defect** in this document (to be repaired here, not in the SPEC). This contrasts with `IR_GRAMMAR.md`, which *is* normative for the IR text form.
+
 **Source documents.** This grammar is a reformulation of rules already established normatively in:
 
 - `SPEC.md` — the language specification (sections referenced as `§N.M`)
@@ -228,10 +230,17 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 ```
 'node'  'connection'  'trait'  'type'  'fn'  'operator'  'effect'
-'signal'  'attr'  'recurrent'  'derived'  'stream'  'view'
-'const'  'let'  'mut'  'repeat'  'main'
+'signal'  'attr'  'recurrent'  'derived'  'stream'  'yielded'  'view'
+'const'  'let'  'mut'  'repeat'  'main'  'collect'
 'use'  'wraps'  'alias'
 ```
+
+// `yielded` is the seventh declaration keyword (016-1); it heads a
+//  body-only named group declaration (`yielded <name>: <MemberType> =
+//  collect:`, §8.9.1). `collect` heads the collect block expression —
+//  written standalone or as the right-hand side of a `yielded`
+//  declaration (002-3, 034-1). `yield` (control-flow block below) is
+//  legal only directly under a `collect` (002-6, 034-4).
 
 // `fulfill` is a *clause keyword only* (per LOG 002-4) — see the
 //  clause-keyword block below. It is *not* a declaration head: a
@@ -266,7 +275,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 **Control-flow keywords** (002-6):
 
 ```
-'if'  'else'  'match'  'for'  'in'  'while'  'break'  'continue'  'return'
+'if'  'else'  'match'  'for'  'in'  'while'  'break'  'continue'  'return'  'yield'
 ```
 
 **Scope-anchor namespace keywords** (002-7):
@@ -1242,6 +1251,75 @@ Turbofish         ::= '::' '[' GenericArgList ']'
 //     method name (and before the `(` of the value-argument list) marks
 //     a generic-argument list for the method, not a trait
 //     disambiguator (per §3.4.1.1, 005-130).
+
+### 3.15 Kind annotations (`cell` / `signal` / `derived` / `recurrent` / `stream` / `yielded` / `dynamic view`)
+
+A **kind annotation** designates a reactive binding form. Kinds are
+*not* types: they carry no bracket type syntax around the kind keyword
+(the bracketed `[N]` on `recurrent` / `stream` is a const-generic
+capacity — `ConstGenericArg` per §3.2 — not a type argument), and a
+kind is legal only in the *outermost* annotation slot of a
+declaration, a parameter, or a return — never nested inside a type
+constructor (§13.2.8, 016-180). The value type `T` that follows a kind
+keyword is an ordinary `TypeExpr`.
+
+```
+KindAnnotation    ::= 'cell' TypeExpr
+                    | 'signal' TypeExpr
+                    | 'derived' TypeExpr
+                    | 'recurrent' '[' ConstGenericArg ']' TypeExpr
+                    | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']' TypeExpr
+                    | 'stream' TypeExpr
+                    | 'recurrent' '[' ConstGenericArg ']' 'stream'
+                          ( ( 'ring' | 'gate' ) '[' ConstGenericArg ']' )? TypeExpr
+                    | 'yielded' TypeExpr
+                    | 'dynamic' 'view' TypeExpr
+                    ;  (§13.2.8, 016-180)
+```
+
+// **Outermost-only; never inside a type constructor (per §13.2.8,
+//  016-180).** A `KindAnnotation` is admissible ONLY as the whole
+//  annotation of a declaration binding, a parameter, or a return type
+//  — the positions wired below. It is never a `GenericArg`, a
+//  container element, a tuple component, or any other nested
+//  `TypeExpr` position; the grammar deliberately does NOT add
+//  `KindAnnotation` as a `TypeExpr` alternative, so each admitting
+//  site names it explicitly. The sole exception is `Portal[cell T]`
+//  (Appendix B.2 / §3.9): there the bracket argument is a cell
+//  *designation* (which cell's identity the portal carries), not a
+//  type nested inside the constructor — and it is handled by the
+//  `Portal` type, not by this production. Consequently `Vec[cell T]`,
+//  `Map[K, signal V]`, and the like are ill-formed.
+// **Wired into (per §13.2.8, 016-180).** The parameter/return
+//  annotation slots that admit a kind carry `( KindAnnotation |
+//  TypeExpr )`: `FnParam` / `FnReturn` (§7.6), `TraitFnParam` (§7.11),
+//  `OperatorParam` and the `OperatorDecl` return (§7.13), `EffectParam`
+//  (§7.14). Reactive *declaration* forms (`signal` / `derived` /
+//  `recurrent` / `stream` at §7.15, `yielded` at §8.9.1) spell their
+//  own kind head inline and do not route through this production.
+// **Value cells and the `cell` umbrella (per §13.2.8, 016-178).**
+//  `signal T`, `derived T`, and `recurrent[N] T` are the value-cell
+//  kinds and `cell T` is the umbrella spanning exactly those (`attr`
+//  annotates as `signal T`). The bracketed `[N]` on `recurrent` is a
+//  history depth; the declaration form (§7.15) may omit it (defaulting
+//  to `[1]`), whereas this annotation form names it explicitly.
+// **Stream kinds (per §13.18.3).** `stream ring[N] T` / `stream
+//  gate[N] T` are the policied stream kinds, `stream T` the erased
+//  form, and `recurrent[N] stream …` the history-bearing stream
+//  (two-axis: the outer `recurrent[N]` is output-history depth, the
+//  inner `stream <policy>[M]` is the buffer policy and capacity).
+//  Stream kinds sit outside the `cell` umbrella.
+// **Group kind (per §13.20.4, 034-10).** `yielded T` is the ordered,
+//  membership-varying group kind, outside the `cell` umbrella; its
+//  declaration form is the §8.9.1 `YieldedDecl` (`yielded <name>:
+//  <MemberType> = collect:`).
+// **Dynamic view (per §13.3.3.4, 017-192).** `dynamic view T` is the
+//  runtime-varying view kind; it is the lowercase-kind spelling that
+//  supersedes any wrapped reactive-view-cell type form (§13.2.8.1).
+// **No inline bounds on a kind (per §13.2.8).** A bound on the value
+//  type is written in the generic parameter list or a `where` clause
+//  (`operator f[T: Numeric](x: cell T)`), never inside the kind
+//  annotation.
 
 ## 4. Patterns
 
@@ -2746,7 +2824,7 @@ PipeRhs           ::= Path CallSuffix?                         // operator or ef
 // **LHS must be a reactive cell type or a statically convertible
 //  value (per §13.17.7).** A static value (literal, `const`,
 //  compile-time constant expression) is wrapped as a degenerate
-//  `Derived[T]` cell automatically. This is a post-parse semantic
+//  `derived T` cell automatically. This is a post-parse semantic
 //  check; the grammar admits any `BinaryExpr` on the LHS.
 // **RHS must be an operator call or an effect call (per §13.17.7).**
 //  Using `|>` with a `fn` is a compile error — diagnostic class:
@@ -3263,10 +3341,10 @@ FnReturnWithFrom  ::= FnReturn FnFromClause?                  // from-clause req
 FnParamList       ::= FnParam ( ',' FnParam )* ','?
                     ;  (§3.5, 006-7)
 
-FnParam           ::= 'own'? IDENT ':' TypeExpr ( '=' Expr )?
+FnParam           ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr ) ( '=' Expr )?  // kind slot per §3.15
                     ;  (§11.7, 013-126)
 
-FnReturn          ::= '->' 'own'? TypeExpr
+FnReturn          ::= '->' 'own'? ( KindAnnotation | TypeExpr )                      // kind slot per §3.15
                     ;  (§11.3.6, 013-126)
 
 FnFromClause      ::= 'from' FnFromRoots
@@ -3605,7 +3683,7 @@ MethodSig         ::= 'fn' IDENT GenericParamList? '(' TraitFnParamList? ')'
 TraitFnParamList  ::= TraitFnParam ( ',' TraitFnParam )* ','?
                     ;  (§3.1.1, 005-30)
 
-TraitFnParam      ::= 'own'? IDENT ':' TypeExpr               // no default-value `'=' Expr` per SPEC §3.1
+TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind slot per §3.15; no default-value `'=' Expr` per SPEC §3.1
                     ;  (§3.1.1, 005-30)
 ```
 
@@ -3708,13 +3786,13 @@ AssocTypeBinding  ::= 'type' IDENT 'is' TypeExpr NEWLINE
 
 ```
 OperatorDecl      ::= Visibility? 'operator' IDENT GenericParamList?
-                      '(' OperatorParamList? ')' '->' TypeExpr WhereClause? OperatorBody
+                      '(' OperatorParamList? ')' '->' ( KindAnnotation | TypeExpr ) WhereClause? OperatorBody  // kind slot per §3.15
                     ;  (§13.17.2, 029-93)
 
 OperatorParamList ::= OperatorParam ( ',' OperatorParam )* ','?
                     ;  (§13.17.3, 029-93)
 
-OperatorParam     ::= IDENT ':' TypeExpr ( '=' Expr )?
+OperatorParam     ::= IDENT ':' ( KindAnnotation | TypeExpr ) ( '=' Expr )?  // kind slot per §3.15
                     ;  (§13.17.3, 029-93)
 
 OperatorBody      ::= ':' INDENT OperatorBodyItem+ DEDENT
@@ -3739,14 +3817,14 @@ OperatorBodyItem  ::= ModuleReactiveDecl                        // recurrent / d
 //  declaration head, not optional.
 // **Inline-vs-block body (per §13.17.4).** An `OperatorBody` whose
 //  only content is the final expression may be written inline after
-//  the colon (`operator double(source: Cell[f32]) -> Derived[f32]: source * 2`);
+//  the colon (`operator double(source: cell f32) -> derived f32: source * 2`);
 //  a body holding any `recurrent`, `derived`, `stream`, or `let`
 //  declarations uses the indented block form.
 // **No `own` on operator parameters (per §13.17.3).** Operators take
-//  cell-bound (`Cell[T]`) or value (`T`) parameters; ownership-consume
+//  cell-bound (`cell T`) or value (`T`) parameters; ownership-consume
 //  conventions are not part of an operator's parameter shape. The
 //  `OperatorParam` production does not admit `'own'`. The default-on
-//  value parameters and disallowed-on-`Cell[T]`-parameters semantic
+//  value parameters and disallowed-on-`cell T`-parameters semantic
 //  restriction (§13.17.3) is a post-parse check.
 // **No `attr` declarations in body (per §13.17.4).** The
 //  `OperatorBodyItem` production admits `ModuleReactiveDecl` — which
@@ -3774,7 +3852,7 @@ EffectDecl        ::= Visibility? 'effect' IDENT GenericParamList?
 EffectParamList   ::= EffectParam ( ',' EffectParam )* ','?
                     ;  (§13.19.3, 029-93)
 
-EffectParam       ::= IDENT ':' TypeExpr ( '=' Expr )?
+EffectParam       ::= IDENT ':' ( KindAnnotation | TypeExpr ) ( '=' Expr )?  // kind slot per §3.15
                     ;  (§13.19.3, 029-93)
 
 EffectBody        ::= ':' INDENT EffectBlock+ DEDENT
@@ -3884,7 +3962,7 @@ DefaultDeclArm    ::= 'default' ':' INDENT DesiredCellDecl+ DEDENT
 //  are not module-level `Decl` alternatives.
 // **No `own` on effect parameters (per §13.19.3).** Effect
 //  parameters are cell-bound or value-typed; the `EffectParam`
-//  production does not admit `'own'`. Defaults on `Cell[T]`
+//  production does not admit `'own'`. Defaults on `cell T`
 //  parameters are not allowed in v1 (post-parse).
 // **Type and constructor share name (per §13.19.8).** The `IDENT`
 //  on `EffectDecl` serves both as the effect's type name (used in
@@ -4328,7 +4406,8 @@ AnnotatedNodeBodyCellDecl ::= Annotation* ( AttrDecl
                                           | DerivedDecl                  // see §7.15
                                           | RecurrentDecl                // see §7.15
                                           | StreamDecl                   // see §7.15
-                                          | TopLevelConstDecl )          // module-style const inside node body
+                                          | TopLevelConstDecl            // module-style const inside node body
+                                          | YieldedDecl )                // see §8.9.1 (named yielded group)
                     ;  (§13.3.1, 017-21)
 
 AttrDecl          ::= 'attr' IDENT ':' TypeExpr ( '=' Expr )?
@@ -4378,6 +4457,93 @@ DefaultAttrDecl   ::= 'default' 'attr' IDENT ':' TypeExpr ( '=' Expr )?
 //  may declare per-type compile-time constants. The
 //  compile-time-RHS rule of §6.1 applies; reactive / signal RHS
 //  is rejected post-parse.
+
+### 8.9.1 `yielded` group declarations (collect body)
+
+A `yielded` declaration binds a *named* membership-varying group of
+cells (§13.20.4). Its right-hand side is a `collect:` block whose
+indented body contributes member-cells via `yield`. `yielded` is a
+**body-only** declaration — it is wired into node bodies (§8.1) and
+connection bodies (§9.1); it is *not* a module-top-level declaration
+(§7.15 has no `yielded` alternative). The declaration form is the only
+way to *name* a group (034-1).
+
+```
+YieldedDecl       ::= 'yielded' IDENT ':' TypeExpr '=' 'collect' ':' INDENT CollectBody DEDENT
+                    ;  (§13.20.4, 034-1)
+
+CollectBody       ::= CollectItem+
+                    ;  (§13.20.1, 034-1)
+
+CollectItem       ::= YieldStmt                                 // permanent member
+                    | YieldRepeat                               // key-driven members
+                    | YieldWhenBlock                            // activation-driven members
+                    | YieldGivenBlock                           // activation-driven members
+                    ;  (§13.20.3, 034-3)
+
+YieldStmt         ::= 'yield' Expr
+                    ;  (§13.20.2, 034-2)
+
+YieldRepeat       ::= 'repeat' RepeatBind RepeatIndex? 'in' Expr RepeatKeyed? ':'
+                      INDENT CollectBody DEDENT                  // RepeatBind / RepeatIndex / RepeatKeyed: §11.9
+                    ;  (§13.20.3, §13.5.4.1)
+
+YieldWhenBlock    ::= 'when' Expr ':' INDENT CollectBody DEDENT YieldOtherwiseArm?
+                    | 'when' ':' INDENT YieldGuardArm+ YieldOtherwiseArm? DEDENT
+                    ;  (§13.20.3, §13.9.12)
+
+YieldGuardArm     ::= Expr ':' INDENT CollectBody DEDENT
+                    ;  (§13.9.12, 022-98)
+
+YieldOtherwiseArm ::= 'otherwise' ':' INDENT CollectBody DEDENT
+                    ;  (§13.9.12, 022-93)
+
+YieldGivenBlock   ::= 'given' Expr ':' INDENT YieldGivenArm+ YieldDefaultArm? DEDENT
+                    ;  (§13.20.3, §13.9.13)
+
+YieldGivenArm     ::= Pattern ':' INDENT CollectBody DEDENT
+                    ;  (§13.9.13, 022-108)
+
+YieldDefaultArm   ::= 'default' ':' INDENT CollectBody DEDENT
+                    ;  (§13.9.13, 022-119)
+```
+
+// **Body-only; the retired `collect … as` statement form is gone (per
+//  §13.20.1, 034-1).** A group is named ONLY by the `YieldedDecl` form
+//  `yielded <name>: <MemberType> = collect:`. There is no
+//  `collect:` … `as <name>:` naming statement. The anonymous
+//  `collect:` block-expression form (a
+//  `yielded T` value consumed in place — e.g. a `fold` members operand
+//  §13.21, or a `yielded T`-typed argument §13.20.4.1) is an
+//  *expression*, not a declaration; it is admitted wherever a value of
+//  its kind is accepted. That anonymous expression form is part of the
+//  wider `collect` / `fold` expression grammar this document does not
+//  yet reformulate (gap).
+// **`yield` is legal only inside a `collect` body (per §13.20.2,
+//  034-4).** `YieldStmt` appears only within a `CollectBody` — directly
+//  (permanent member), inside a `YieldRepeat` (one key-driven member
+//  per live repetition key, §13.5.4), or inside a gated arm
+//  (`YieldWhenBlock` / `YieldGivenBlock`; one activation-driven member
+//  per effectively-active arm, §13.9.7). A `yield` anywhere else is a
+//  compile error; `yield` is not enumerated as a general `BlockItem`.
+// **Reuses the placement / gate arm nonterminals.** `RepeatBind`,
+//  `RepeatIndex`, and `RepeatKeyed` are the §11.9 forms; the `when` /
+//  `given` arm shapes parallel the cell-bearing `WhenBlockDecl` /
+//  `GivenBlockDecl` of §7.14, but each arm body holds a `CollectBody`
+//  (yields) rather than `DesiredCellDecl+`.
+// **`yield` under a value `if` / `match` (per §13.20.3.1, 034-7).** SPEC
+//  admits a `yield` nested under a *compile-time-known* value `if` /
+//  `match` inside `collect` (the conditional is expanded); a runtime
+//  condition is a compile error. This document enumerates only the
+//  three membership drivers above; the compile-time `if` / `match`
+//  expansion form belongs to the wider `collect` expression grammar
+//  not yet reformulated here (gap).
+// **`MemberType` may be any `TypeExpr` (per §13.2.8.1).** `yielded
+//  Voice`, `yielded f32`, and `yielded f32[128]` are all well-formed;
+//  the `TypeExpr` after the `:` is the member value type. The
+//  outermost `yielded` head is a kind (§3.15); it does not route
+//  through `KindAnnotation` because the declaration spells the kind
+//  keyword inline.
 
 ### 8.10 `expose:` clause entries (view-name, named-child, wrapper, connection, `@content`, type-internal `for`/`repeat`, `when`/`given` blocks)
 
@@ -4614,6 +4780,7 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
                     | RecurrentDecl                              // §7.15
                     | StreamDecl                                 // §7.15
                     | ConstStmt                                  // §6.1
+                    | YieldedDecl                                // §8.9.1 (named yielded group)
                     ;  (§13.6.1.1, 017-21)
 ```
 
@@ -5508,7 +5675,7 @@ RepeatKeyed       ::= 'keyed' 'by' Expr
 // **Clause order (per §13.5.4.1).** `<bind>`, then optional
 //  `at <index>`, then `in <source>`, then optional `as <view>`, then
 //  optional `keyed by <key-expr>`. The fixed order is normative.
-// **`as <view>` binds a compiler-minted `Cell[Map[Key, <view>::entry]]`
+// **`as <view>` binds a compiler-minted `cell Map[Key, <view>::entry]`
 //  in the body-scope namespace (per §13.5.4.9).** The `<view>::entry`
 //  type is synthetic, path-derived, with one field per named
 //  (`as <name>`) placement inside the repeat body. Field types are
@@ -6042,19 +6209,33 @@ parser does not special-case them; they participate in the same
 — what they mean, how they behave at runtime, what operations they
 admit — are defined in SPEC.
 
-### B.1 Reactive cells
+### B.1 Reactive streams (policy-parameterized type family)
 
 | Type                  | One-line description                                                                          | SPEC §       |
 |-----------------------|-----------------------------------------------------------------------------------------------|--------------|
-| `Cell[T]`             | The umbrella reactive-cell type; concrete kinds (signal/derived/recurrent/stream) refine it.   | §13.2       |
-| `Signal[T]`           | An input cell whose value is written from the host driver.                                    | §13.2.1     |
-| `Derived[T]`          | A read-only cell whose value is recomputed from other cells.                                  | §13.2.3     |
-| `Recurrent[T, N]`     | A history-bearing recurrent cell of value type `T` with `N` retained past values.             | §13.2.4     |
-| `Stream[T, P]`        | A buffered event stream of element type `T` with policy `P` (e.g., ring, gate).               | §13.18      |
+| `Stream[T, P]`        | A buffered event stream of element type `T` with policy `P: StreamPolicy` (sealed; members `Ring[N]`, `Gate[N]`). | §13.18      |
 
-Concrete stream aliases — `RingStream[T, N]`, `GateStream[T, N]`, and
-`Recurrent` variants — are ordinary type aliases over `Stream[T, P]` /
-`Recurrent[T, N]` and parse via §3.2.
+Concrete stream aliases — `RingStream[T, N]` = `Stream[T, Ring[N]]`
+and `GateStream[T, N]` = `Stream[T, Gate[N]]` — are ordinary type
+aliases over `Stream[T, P]` and parse via §3.2. There are no
+`RecurrentRing` / `RecurrentGate` aliases: a recurrent stream is not a
+distinct policy but a `Ring`/`Gate`-policy stream carrying an
+orthogonal history-depth axis (kind form `recurrent[H] stream ring[N]
+T`; §13.18.3).
+
+**No reactive-cell *types* — the binding forms are lowercase KINDS.**
+There is no `Cell[T]`, `Signal[T]`, `Derived[T]`, or `Recurrent[T, N]`
+type, and no bare single-argument `Stream[T]` type. The reactive
+binding forms are lowercase **kinds** written in annotation position —
+see the `KindAnnotation` production (§3.15): the value-cell umbrella
+`cell T` (spanning the value cells `signal T`, `attr`-as-`signal T`,
+`derived T`, `recurrent[N] T`), the stream kind class (erased
+`stream T`, `stream ring[N] T`, `stream gate[N] T`, `recurrent[N]
+stream …`), the group kind class (`yielded T`), and `dynamic view T`
+(§13.3.3.4). A kind never appears inside a type constructor; the sole
+exception is `Portal[cell T]`, whose bracket carries a cell
+designation, not a type (§13.2.8, 016-180). Only the
+policy-parameterized `Stream[T, P]` *type* family above keeps brackets.
 
 ### B.2 Graph references
 
@@ -6094,7 +6275,7 @@ Concrete stream aliases — `RingStream[T, N]`, `GateStream[T, N]`, and
 | `Range[T]`     | A range of `T` values (the construct produced by `a..b`, §5.8).                              | §12.2       |
 
 **Reminder.** None of these names is special-cased by the grammar.
-`Vec[i32]`, `Handle[Driver]`, `Cell[f32]`, `Option[T]`, and a
+`Vec[i32]`, `Handle[Driver]`, `Stream[f32, Ring[64]]`, `Option[T]`, and a
 user-defined `MyContainer[i32]` all parse identically: a `TypePath`
 followed by `'[' GenericArgs ']'` (§3.2). The grammar admits these as
 generic instantiations of identifiers in scope; whether they resolve
