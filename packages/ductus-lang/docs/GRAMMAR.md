@@ -226,14 +226,21 @@ UnicodeDigit      ::= any character with Unicode `Decimal_Number` property
 
 Keywords are reserved in every position; no keyword spelling may be used as an ordinary identifier (002-27). All keyword spellings are lowercase (002-2). The complete inventory follows.
 
-**Declaration keywords** (002-3; `use` per 003-50, `wraps` per 007-11, `alias` per 009-102):
+**Declaration keywords** (002-3; `use` per 003-50, `wraps` per 007-11, `alias` per 009-102, `sealed` per 005-241):
 
 ```
 'node'  'connection'  'trait'  'type'  'fn'  'operator'  'effect'
 'signal'  'attr'  'recurrent'  'derived'  'stream'  'yielded'  'view'
 'const'  'let'  'mut'  'repeat'  'main'  'collect'
-'use'  'wraps'  'alias'
+'use'  'wraps'  'alias'  'sealed'
 ```
+
+// `sealed` is a trait-declaration modifier (`sealed trait …`, §3.7.6,
+//  005-239): it restricts fulfillment claims to the trait's declaring
+//  module. It is a reserved word in every position (005-241, 002-27).
+//  Its listing in this box is inventory only — the keyword-class
+//  assignment is deferred to the keyword-class taxonomy (005-241); it
+//  is not thereby fixed as a declaration keyword.
 
 // `yielded` is the seventh declaration keyword (016-1); it heads a
 //  body-only named group declaration (`yielded <name>: <MemberType> =
@@ -1254,12 +1261,19 @@ Turbofish         ::= '::' '[' GenericArgList ']'
 
 ### 3.15 Kind annotations (`cell` / `signal` / `derived` / `recurrent` / `stream` / `yielded` / `dynamic view`)
 
-A **kind annotation** designates a reactive binding form. Kinds are
-*not* types: they carry no bracket type syntax around the kind keyword
-(the bracketed `[N]` on `recurrent` / `stream` is a const-generic
-capacity — `ConstGenericArg` per §3.2 — not a type argument), and a
-kind is legal only in the *outermost* annotation slot of a
-declaration, a parameter, or a return — never nested inside a type
+A **kind annotation** designates a reactive binding form. It works on
+two levels. The kind *keyword* alone (`cell`, `stream`, `derived`, …)
+is a **kind** and a keyword — not a type. An *applied* annotation
+(`stream T`, `stream[P] T`, `cell T`) IS a type: a member of the type
+system in a distinct class, the **wiring types** — unstorable by
+nature, expressing wiring rather than a value, and never itself a value
+type (§13.2.8.1). Kind brackets *admit* parameters: const-generic
+arguments (`recurrent[N]`, capacities — `ConstGenericArg` per §3.2)
+and, on `stream`, a policy-type argument bounded by `StreamPolicy`
+(`stream[P]`, `stream[Ring[64]]`). That is the legal direction; the
+banned direction — a wiring type nested inside a value-type constructor
+— never occurs. A kind is legal only in the *outermost* annotation slot
+of a declaration, a parameter, or a return — never nested inside a type
 constructor (§13.2.8, 016-180). The value type `T` that follows a kind
 keyword is an ordinary `TypeExpr`.
 
@@ -1268,10 +1282,12 @@ KindAnnotation    ::= 'cell' TypeExpr
                     | 'signal' TypeExpr
                     | 'derived' TypeExpr
                     | 'recurrent' '[' ConstGenericArg ']' TypeExpr
+                    | 'stream' '[' TypeExpr ']' TypeExpr
                     | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']' TypeExpr
                     | 'stream' TypeExpr
                     | 'recurrent' '[' ConstGenericArg ']' 'stream'
-                          ( ( 'ring' | 'gate' ) '[' ConstGenericArg ']' )? TypeExpr
+                          ( ( 'ring' | 'gate' ) '[' ConstGenericArg ']'
+                            | '[' TypeExpr ']' )? TypeExpr
                     | 'yielded' TypeExpr
                     | 'dynamic' 'view' TypeExpr
                     ;  (§13.2.8, 016-180)
@@ -1287,7 +1303,7 @@ KindAnnotation    ::= 'cell' TypeExpr
 //  site names it explicitly. The sole exception is `Portal[cell T]`
 //  (Appendix B.2 / §3.9): there the bracket argument is a cell
 //  *designation* (which cell's identity the portal carries), not a
-//  type nested inside the constructor — and it is handled by the
+//  nested value type — and it is handled by the
 //  `Portal` type, not by this production. Consequently `Vec[cell T]`,
 //  `Map[K, signal V]`, and the like are ill-formed.
 // **Wired into (per §13.2.8, 016-180).** The parameter/return
@@ -1303,12 +1319,18 @@ KindAnnotation    ::= 'cell' TypeExpr
 //  annotates as `signal T`). The bracketed `[N]` on `recurrent` is a
 //  history depth; the declaration form (§7.15) may omit it (defaulting
 //  to `[1]`), whereas this annotation form names it explicitly.
-// **Stream kinds (per §13.18.3).** `stream ring[N] T` / `stream
-//  gate[N] T` are the policied stream kinds, `stream T` the erased
-//  form, and `recurrent[N] stream …` the history-bearing stream
-//  (two-axis: the outer `recurrent[N]` is output-history depth, the
-//  inner `stream <policy>[M]` is the buffer policy and capacity).
-//  Stream kinds sit outside the `cell` umbrella.
+// **Stream kinds (per §13.18.3).** The policy-generic spelling is
+//  `stream[P] T` with `P: StreamPolicy`; the bracket holds a policy
+//  *type* (a generic `P` or a concrete `Ring[64]` / `Gate[64]`) — not a
+//  `ConstGenericArg`. Concrete instantiation substitutes the policy
+//  (`stream[Ring[64]] f32`), legal in generic and concrete positions
+//  alike. The word forms `stream ring[N] T` / `stream gate[N] T` are the
+//  idiomatic sugar for `stream[Ring[N]] T` / `stream[Gate[N]] T`;
+//  `stream T` is the policy-erased form. A recurrent stream
+//  (`recurrent[N] stream …`) adds the orthogonal output-history-depth
+//  axis (`recurrent[N]`, not a policy) over any of these stream
+//  spellings — spelled with either the word form or the `[P]` policy
+//  bracket. Stream kinds sit outside the `cell` umbrella.
 // **Group kind (per §13.20.4, 034-10).** `yielded T` is the ordered,
 //  membership-varying group kind, outside the `cell` umbrella; its
 //  declaration form is the §8.9.1 `YieldedDecl` (`yielded <name>:
@@ -3636,10 +3658,15 @@ abstract-body `NEWLINE` alternative (semantically equivalent to SPEC
 omitted, matching SPEC §3.1's BNF text.
 
 ```
-TraitDecl         ::= Visibility? 'trait' IDENT GenericParamList? TraitBody
+TraitDecl         ::= Visibility? 'sealed'? 'trait' IDENT GenericParamList? TraitBody
                     ;  (§3.1, 005-30)
 // Directive decoration attaches via the §12.3 AnnotatedDecl wrapper
 //  (Phase D, D4) — TraitDecl itself carries no inline Annotation* head.
+// The optional `sealed` modifier (§3.7.6, 005-239) restricts
+//  fulfillment claims — both `fulfill Trait for Type` blocks and bare
+//  `satisfies Trait` marker claims — to the trait's declaring module;
+//  a claim outside that module is diagnostic
+//  `sealed_trait_fulfillment_outside_module`.
 
 TraitBody         ::= NEWLINE INDENT TraitBodyItem+ DEDENT
                     | NEWLINE
@@ -3671,6 +3698,7 @@ RequiredCellKind  ::= 'attr'
                     | 'derived'
                     | 'recurrent' ( '[' ConstGenericArg ']' )?
                     | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']'
+                    | 'stream' '[' TypeExpr ']'      // bracket-policy head (mirrors KindAnnotation §3.15); same wiring type as the word form (§13.18.3)
                     ;  (§3.1.7, 005-30)
 
 EndpointDecl      ::= ( 'from' | 'to' ) ':' TypeExpr
@@ -3877,14 +3905,20 @@ AnnotatedObservedCellDecl ::= Annotation* ObservedCellDecl
 DesiredCellDecl   ::= 'derived' IDENT ( ':' TypeExpr )? '=' Expr
                     | 'recurrent' RecurrentDepth? RecurrentBind ( ':' TypeExpr )? '=' Expr
                     | 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )? IDENT ( ':' TypeExpr )? '=' Expr
+                    | 'stream' '[' TypeExpr ']' IDENT ( ':' TypeExpr )? '=' Expr
                     | 'recurrent' RecurrentDepth? 'stream' ( 'ring' | 'gate' )
                           ( '[' ConstGenericArg ']' )? IDENT ( ':' TypeExpr )? '=' Expr
+                    | 'recurrent' RecurrentDepth? 'stream' '[' TypeExpr ']'
+                          IDENT ( ':' TypeExpr )? '=' Expr
+                          // bracket-policy declaration heads (mirror KindAnnotation §3.15); each spells the same wiring type as its word-form sibling — the word form is the idiomatic sugar (§13.18.3)
                     | WhenBlockDecl                              // cell-bearing variant of §5.21 (per §13.9.12)
                     | GivenBlockDecl                             // cell-bearing variant of §5.22 (per §13.9.13)
                     ;  (§13.19.4, 029-93)
 
 ObservedCellDecl  ::= 'signal' IDENT ':' TypeExpr '=' Expr
                     | 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )? IDENT ':' TypeExpr
+                    | 'stream' '[' TypeExpr ']' IDENT ':' TypeExpr
+                      // bracket-policy declaration head (mirrors KindAnnotation §3.15); same wiring type as the word form — the word form is the idiomatic sugar (§13.18.3)
                     ;  (§13.19.5, 029-93)
 
 WhenBlockDecl     ::= 'when' Expr ':' INDENT DesiredCellDecl+ DEDENT OtherwiseDeclArm?
@@ -3988,6 +4022,9 @@ DerivedDecl       ::= 'derived' IDENT ( ':' TypeExpr )? '=' Expr
 RecurrentDecl     ::= 'recurrent' RecurrentDepth? RecurrentBind ( ':' TypeExpr )? '=' Expr
                     | 'recurrent' RecurrentDepth? 'stream' ( 'ring' | 'gate' )
                           ( '[' ConstGenericArg ']' )? IDENT ( ':' TypeExpr )? '=' Expr
+                    | 'recurrent' RecurrentDepth? 'stream' '[' TypeExpr ']'
+                          IDENT ( ':' TypeExpr )? '=' Expr
+                          // bracket-policy declaration head (mirrors KindAnnotation §3.15); both spell the same wiring type — the word form is the idiomatic sugar (§13.18.3)
                     ;  (§13.2.4, 016-49)
 
 RecurrentDepth    ::= '[' ConstGenericArg ']'
@@ -3999,6 +4036,9 @@ RecurrentBind     ::= IDENT
 
 StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
                       IDENT ( ':' TypeExpr )? '=' Expr
+                    | 'stream' '[' TypeExpr ']'
+                      IDENT ( ':' TypeExpr )? '=' Expr
+                      // bracket-policy declaration head (mirrors KindAnnotation §3.15); both spell the same wiring type — the word form is the idiomatic sugar (§13.18.3)
                     ;  (§13.18.2, 003-31)
 ```
 
@@ -4038,10 +4078,13 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  bracketed form is a const-generic argument (§3.2 production
 //  `ConstGenericArg`), not a `GenericArgList` — a single
 //  compile-time-known integer.
-// **`stream` policy is mandatory (per §13.18.2).** The `'ring'` or
-//  `'gate'` keyword after `'stream'` is required at every site —
-//  there is no policy-default form. The optional `'[' ConstGenericArg ']'`
-//  is the buffer capacity, defaulting to 1024 (§13.18.2) when absent.
+// **`stream` policy is mandatory (per §13.18.2).** A stream declaration
+//  must name its policy — there is no policy-erased (`stream T`)
+//  declaration form. The policy may be spelled either as the `'ring'` /
+//  `'gate'` word form or as the `'[' TypeExpr ']'` bracket-policy form
+//  (`stream[Ring[64]]`, §13.18.3); the two spell the same wiring type.
+//  On the word form, the optional `'[' ConstGenericArg ']'` is the
+//  buffer capacity, defaulting to 1024 (§13.18.2) when absent.
 // **`'=' Expr` source is mandatory at module level (per §13.18.2).**
 //  SPEC §13.18.2's declaration BNF (`stream policy[capacity]? name:
 //  Type? = source`) has no optionality marker on `= source`, and every
@@ -4449,8 +4492,10 @@ DefaultAttrDecl   ::= 'default' 'attr' IDENT ':' TypeExpr ( '=' Expr )?
 //  matches §7.15 exactly.
 // **`StreamDecl` policy mandatory (per §13.18.2).** A node-body
 //  `stream` declaration follows §7.15's `StreamDecl` shape: the
-//  `'ring'` or `'gate'` policy keyword is required, the bracketed
-//  capacity is optional (defaults to 1024 per §13.18.2), and the
+//  policy is mandatory — spelled as the `'ring'` / `'gate'` word
+//  form or the `'[' TypeExpr ']'` bracket-policy form (§13.18.3),
+//  both the same wiring type — the bracketed capacity on the word
+//  form is optional (defaults to 1024 per §13.18.2), and the
 //  `'=' Expr` source is optional only for host-fed streams
 //  (post-parse semantic).
 // **`ConstStmt` is `const` from §6.1 (per §13.3.1).** A node body
@@ -6209,33 +6254,44 @@ parser does not special-case them; they participate in the same
 — what they mean, how they behave at runtime, what operations they
 admit — are defined in SPEC.
 
-### B.1 Reactive streams (policy-parameterized type family)
+### B.1 Stream policy types
 
-| Type                  | One-line description                                                                          | SPEC §       |
-|-----------------------|-----------------------------------------------------------------------------------------------|--------------|
-| `Stream[T, P]`        | A buffered event stream of element type `T` with policy `P: StreamPolicy` (sealed; members `Ring[N]`, `Gate[N]`). | §13.18      |
+| Type      | One-line description                                                                                                          | SPEC §   |
+|-----------|------------------------------------------------------------------------------------------------------------------------------|----------|
+| `Ring[N]` | Language-provided const-generic marker type fulfilling the sealed trait `StreamPolicy`: bounded ring-buffer policy of capacity `N`. | §13.18.3 |
+| `Gate[N]` | Language-provided const-generic marker type fulfilling the sealed trait `StreamPolicy`: bounded gate-buffer policy of capacity `N`. | §13.18.3 |
 
-Concrete stream aliases — `RingStream[T, N]` = `Stream[T, Ring[N]]`
-and `GateStream[T, N]` = `Stream[T, Gate[N]]` — are ordinary type
-aliases over `Stream[T, P]` and parse via §3.2. There are no
-`RecurrentRing` / `RecurrentGate` aliases: a recurrent stream is not a
-distinct policy but a `Ring`/`Gate`-policy stream carrying an
-orthogonal history-depth axis (kind form `recurrent[H] stream ring[N]
-T`; §13.18.3).
+`StreamPolicy` is a **sealed trait**, not a type — it names no row
+here; the only two types fulfilling it are the marker types above
+(§3.7.6, §13.18.3). `Ring[N]` and `Gate[N]` parse as ordinary generic
+instantiations `TypePath '[' GenericArgs ']'` per §3.2; the parser does
+not special-case them.
 
-**No reactive-cell *types* — the binding forms are lowercase KINDS.**
-There is no `Cell[T]`, `Signal[T]`, `Derived[T]`, or `Recurrent[T, N]`
-type, and no bare single-argument `Stream[T]` type. The reactive
-binding forms are lowercase **kinds** written in annotation position —
-see the `KindAnnotation` production (§3.15): the value-cell umbrella
-`cell T` (spanning the value cells `signal T`, `attr`-as-`signal T`,
-`derived T`, `recurrent[N] T`), the stream kind class (erased
-`stream T`, `stream ring[N] T`, `stream gate[N] T`, `recurrent[N]
-stream …`), the group kind class (`yielded T`), and `dynamic view T`
-(§13.3.3.4). A kind never appears inside a type constructor; the sole
+There are no stream bracket types and no stream alias types: a stream
+is wiring, not a value. The stream annotation is the wiring type
+`stream[P] T` (a `KindAnnotation`, §3.15) with word-form sugar
+`stream ring[N] T` / `stream gate[N] T` for `stream[Ring[N]] T` /
+`stream[Gate[N]] T`. A recurrent stream carries the orthogonal
+history-depth axis (`recurrent[H] stream …`), which is not a policy and
+mints no type of its own (§13.18.3).
+
+**No reactive-cell or reactive-stream *types* — the binding forms are
+lowercase KINDS.** There is no `Cell[T]`, `Signal[T]`, `Derived[T]`, or
+`Recurrent[T, N]` type, and no bracket stream type of any spelling
+(single-argument or policy-carrying). The reactive binding forms are
+lowercase **kinds** written in annotation position — see the
+`KindAnnotation` production (§3.15). Two levels: the keyword alone
+(`cell`, `stream`, `signal`, …) is a **kind**; the applied annotation
+is a **wiring type** — a type-system member, unstorable, never a value
+type (§13.2.8.1). The wiring types are the value-cell umbrella `cell T`
+(spanning the value cells `signal T`, `attr`-as-`signal T`, `derived
+T`, `recurrent[N] T`), the stream kind class (erased `stream T`, the
+policy-generic `stream[P] T`, its word-form sugar `stream ring[N] T` /
+`stream gate[N] T`, and the history-bearing `recurrent[N] stream …`),
+the group kind class (`yielded T`), and `dynamic view T` (§13.3.3.4). A
+wiring type never appears inside a value-type constructor; the sole
 exception is `Portal[cell T]`, whose bracket carries a cell
-designation, not a type (§13.2.8, 016-180). Only the
-policy-parameterized `Stream[T, P]` *type* family above keeps brackets.
+designation, not a nested value type (§13.2.8, 016-180).
 
 ### B.2 Graph references
 
@@ -6275,7 +6331,7 @@ policy-parameterized `Stream[T, P]` *type* family above keeps brackets.
 | `Range[T]`     | A range of `T` values (the construct produced by `a..b`, §5.8).                              | §12.2       |
 
 **Reminder.** None of these names is special-cased by the grammar.
-`Vec[i32]`, `Handle[Driver]`, `Stream[f32, Ring[64]]`, `Option[T]`, and a
+`Vec[i32]`, `Handle[Driver]`, `Ring[64]`, `Option[T]`, and a
 user-defined `MyContainer[i32]` all parse identically: a `TypePath`
 followed by `'[' GenericArgs ']'` (§3.2). The grammar admits these as
 generic instantiations of identifiers in scope; whether they resolve

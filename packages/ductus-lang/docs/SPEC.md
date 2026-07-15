@@ -569,14 +569,14 @@ operator merge[
   const B: usize,
   const N: usize = A + B,
 ](
-  a: RingStream[T, A],
-  b: RingStream[T, B],
-) -> RingStream[T, N]
+  a: stream[Ring[A]] T,
+  b: stream[Ring[B]] T,
+) -> stream[Ring[N]] T
 ```
 
 Here `N` defaults to `A + B` — an expression over the const-generic
 values `A` and `B`, which are inferred from the input stream types
-`RingStream[T, A]` and `RingStream[T, B]`. The default is evaluated
+`stream[Ring[A]] T` and `stream[Ring[B]] T`. The default is evaluated
 at instantiation time using the concrete arguments and must produce
 a compile-time-known value of the declared type (here, `usize`).
 
@@ -962,7 +962,7 @@ array-length type (§9.3.3) at instantiation by value-fits-type checking
 
 Inside a generic declaration, a const-generic argument may be an
 expression over the **in-scope const-generic parameters** — for example
-an operator returning `RingStream[T, N + 1]`. An expression that still
+an operator returning `stream[Ring[N + 1]] T`. An expression that still
 mentions an unbound parameter is *symbolic*. Because the compiler must
 compare symbolic expressions for type identity (§2.5.4) *without knowing
 the parameter values*, only a restricted, decidable set of operations is
@@ -992,16 +992,23 @@ unbound**, and permitted the instant every operand is concrete (§2.5.2):
 type Mode[const VERBOSE: bool, const TIMED: bool]
 
 // ✓ integer arithmetic on a symbolic parameter
-operator widen[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N + 1]
-operator pair_up[const N: usize, T](s: RingStream[T, N]) -> RingStream[T, N * 2]
+operator widen[const N: usize, T](s: stream[Ring[N]] T)   -> stream[Ring[N + 1]] T
+operator pair_up[const N: usize, T](s: stream[Ring[N]] T) -> stream[Ring[N * 2]] T
 
 // ✓ boolean algebra on symbolic bool parameters
-operator both[const A: bool, const B: bool](…)           -> Mode[A and B, A or B]
+operator both[const A: bool, const B: bool](…)            -> Mode[A and B, A or B]
 
 // ✗ division / comparison on a symbolic parameter (each is fine once N is concrete)
-operator halve[const N: usize, T](s: RingStream[T, N])   -> RingStream[T, N / 2]
-operator bounded[const N: usize, T](s: RingStream[T, N]) -> Mode[N > 0, true]
+operator halve[const N: usize, T](s: stream[Ring[N]] T)   -> stream[Ring[N / 2]] T
+operator bounded[const N: usize, T](s: stream[Ring[N]] T) -> Mode[N > 0, true]
 ```
+
+The const-generic machinery is unchanged when a parameter sits inside a
+kind bracket. Symbolic-expression admission, canonicalization (§2.5.4),
+and inference (§2.5.5) apply to const-generic parameters inside kind
+brackets — and to the policy-type arguments those brackets carry —
+identically to any other const-generic position. Only the host spelling
+moved: from a bracket-type constructor to the kind's policy slot.
 
 #### 2.5.4 Canonical form and type identity
 
@@ -1012,8 +1019,8 @@ are pairwise identical and each pair of const-generic arguments has the
 - An **integer-polynomial** argument canonicalizes to a sum of monomials
   with integer coefficients — the monomials in a fixed total order, like
   terms combined. `N + 1` and `1 + N` share the canonical form `N + 1`;
-  `2 * N` and `N + N` share `2·N`. Hence `RingStream[T, N + 1]` and
-  `RingStream[T, 1 + N]` are the same type.
+  `2 * N` and `N + N` share `2·N`. Hence `stream[Ring[N + 1]] T` and
+  `stream[Ring[1 + N]] T` are the same type.
 - A **boolean** argument canonicalizes to a normal form over its
   parameters (equivalently: identical truth tables). `Mode[A and B, …]`
   and `Mode[B and A, …]` are the same type.
@@ -1021,8 +1028,8 @@ are pairwise identical and each pair of const-generic arguments has the
 
 Const-generic positions are **invariant**. There is no subtyping or
 coercion between `C[…, e₁]` and `C[…, e₂]` when their canonical forms
-differ, even when one value is provably larger: `RingStream[T, N]` is
-never assignable to `RingStream[T, N + 1]`. Invariance is what keeps
+differ, even when one value is provably larger: `stream[Ring[N]] T` is
+never assignable to `stream[Ring[N + 1]] T`. Invariance is what keeps
 identity decidable — the checker compares canonical forms and never
 proves inequalities.
 
@@ -1034,8 +1041,8 @@ bit-for-bit), and symbolic float expressions cannot be normalized at all.
 #### 2.5.5 Inference
 
 A const-generic parameter is inferred only from a position
-where it appears as a **bare parameter** — `RingStream[T, N]`, not
-`RingStream[T, N + 1]`. A bare occurrence in the *return* type counts
+where it appears as a **bare parameter** — `stream[Ring[N]] T`, not
+`stream[Ring[N + 1]] T`. A bare occurrence in the *return* type counts
 when the expected type is known from context (e.g. a `let` annotation).
 The compiler **evaluates** const-generic expressions once their
 parameters are known; it never **solves** them. Consequently:
@@ -1043,22 +1050,22 @@ parameters are known; it never **solves** them. Consequently:
 - A parameter that appears only inside an expression (never bare) cannot
   be inferred; it must be supplied or carry a default (§2.5.7).
 - The compiler does not back-solve a parameter from a result type: given
-  `-> RingStream[T, N * K]` and an expected `RingStream[T, 16]`, it will
-  not deduce `K`.
+  `-> stream[Ring[N * K]] T` and an expected `stream[Ring[16]] T`, it
+  will not deduce `K`.
 - When a parameter appears both bare and inside an expression, it is
   inferred from the bare occurrence; the expression occurrence is then
   **checked** for consistency against that value.
 
 ```
-operator resize[const K: usize, T, const N: usize](s: RingStream[T, N]) -> RingStream[T, N * K]
+operator resize[const K: usize, T, const N: usize](s: stream[Ring[N]] T) -> stream[Ring[N * K]] T
 
-let bigger: RingStream[Event, 16] = resize::[2](small)   // K = 2 supplied; T, N inferred from `small`
+let bigger: stream[Ring[16]] Event = resize::[2](small)   // K = 2 supplied; T, N inferred from `small`
 ```
 
 `T` and `N` are inferred from the argument (they appear bare in
-`RingStream[T, N]`); `K` appears only inside `N * K`, so it is supplied.
-The result `RingStream[T, N * K]` is then *evaluated* — not solved — to
-`RingStream[Event, 16]` and checked against the annotation. (`K` is
+`stream[Ring[N]] T`); `K` appears only inside `N * K`, so it is supplied.
+The result `stream[Ring[N * K]] T` is then *evaluated* — not solved — to
+`stream[Ring[16]] Event` and checked against the annotation. (`K` is
 declared first so the positional prefix `::[2]` reaches it — §2.2.5.)
 
 The result of inference is then checked against the parameter's
@@ -1074,7 +1081,7 @@ declaration's const-generic parameters and compile-time-known values.
 The `where` clause attaches to the signature, before the body's `:`:
 
 ```
-operator window[T, const N: usize, const K: usize](s: RingStream[T, N]) -> RingStream[T, K]
+operator window[T, const N: usize, const K: usize](s: stream[Ring[N]] T) -> stream[Ring[K]] T
   where K <= N, N >= 1:
   ...                                  // body
 
@@ -1121,7 +1128,7 @@ alongside the declared bounds. A matching `where k <= N` does not change
 clearer, earlier instantiation error when violated.
 
 ```
-let w = window::[K = 4](buf16)     // buf16: RingStream[Event, 16] → N=16, K=4 → 4 <= 16 ✓
+let w = window::[K = 4](buf16)     // buf16: stream[Ring[16]] Event → N=16, K=4 → 4 <= 16 ✓
 let w = window::[K = 32](buf16)    // ✗
 
 error: const-generic bound violated instantiating `window`
@@ -1144,9 +1151,9 @@ references unbound parameters, concrete once they are known.
 
 ```
 operator merge[T, const A: usize, const B: usize, const N: usize = A + B](
-  a: RingStream[T, A],
-  b: RingStream[T, B],
-) -> RingStream[T, N]
+  a: stream[Ring[A]] T,
+  b: stream[Ring[B]] T,
+) -> stream[Ring[N]] T
 ```
 
 ---
@@ -1206,7 +1213,7 @@ TraitBodyItem := Annotation* DocComment? (RequiresClause
                               | MethodSig)
 RequiresClause   := 'requires' TypePath (',' TypePath)*
 AssocTypeDecl    := 'type' Ident ('is' TypeExpr)?
-RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']')
+RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']' | 'stream' '[' TypeExpr ']')
                     Ident ':' TypeExpr ('=' Expr)?
 EndpointDecl     := ('from' | 'to') ':' TypeExpr
 MethodSig        := 'fn' Ident GenericParams? '(' Params? ')' ('->' TypeExpr)? (':' FnBody)?
@@ -2557,8 +2564,12 @@ user modules, and are not subject to the orphan rule:
   (§7). When a user writes `fulfill From[T] for U`, the language
   automatically provides `Into[U] for T`. This is a coherence rule
   (manual `Into` impls could disagree with the auto-derived inverse
-  of `From`); it applies uniformly to user-defined and stdlib
-  `From`/`TryFrom` pairs.
+  of `From`); it applies uniformly to user-defined and
+  language-built-in `From`/`TryFrom` pairs. The ban on manual `Into`
+  and `TryInto` impls is enforced by ordinary sealing: `Into` and
+  `TryInto` are sealed traits declared in the language core module
+  (§3.7.6), so a fulfillment outside that module is rejected — no
+  privileged mechanism is involved.
 - *Identity conversion `From[T] for T` for every type.* Structural
   impl; every `T` converts to itself trivially. Exempt from the
   orphan rule because neither argument originates in any particular
@@ -2664,6 +2675,57 @@ fulfill SomeForeignTrait for MyVec[T]:
 
 `MyVec` is local to the user's module; the orphan rule is satisfied.
 Newtype semantics are specified in §6.3.
+
+#### 3.7.6 Sealed traits
+
+`sealed` is a trait-declaration modifier available to any module; it
+carries no language privilege. A module writes `sealed trait ColorSpace`
+exactly as it would write a plain `trait ColorSpace`.
+
+A sealed trait is usable everywhere an ordinary trait is — as a generic
+bound, in a `where` clause, and in method dispatch. Sealing restricts one
+thing only: *fulfillment*. A fulfillment claim for a sealed trait is
+legal only inside the trait's own declaring module.
+
+Sealing bars both doors through which a type can acquire a trait:
+
+- A `fulfill Trait for Type` block outside the declaring module.
+- A bare `satisfies Trait` marker claim outside the declaring module.
+
+Both are the same compile error, diagnostic class
+`sealed_trait_fulfillment_outside_module`. The marker-claim door is
+listed explicitly because a marker trait (§3.7.4) can otherwise be
+claimed with a bare `satisfies` clause and no `fulfill` block; sealing
+closes that path too.
+
+```
+sealed trait ColorSpace          // any module may declare one
+
+type Rgb
+fulfill ColorSpace for Rgb       // ✓ same module as the trait
+
+// elsewhere:
+fulfill ColorSpace for MyThing   // ✗ sealed_trait_fulfillment_outside_module
+type T2: satisfies ColorSpace    // ✗ same error — bare marker claims are the second door
+```
+
+Relation to the orphan rule (§3.7.1). The orphan rule permits a
+`fulfill` block when either the trait *or* the type is declared in the
+module. Sealing disables the type-ownership arm of that rule: for a
+sealed trait, owning the `Type` never justifies a fulfillment — only the
+trait's own module may fulfill it. The module unit here is the same unit
+the orphan rule uses (§10.2): a Ductus module is a folder of `.duc`
+files, and Ductus module semantics differ from e.g. JavaScript's
+per-file modules, so read §10.2 for what "the declaring module" denotes.
+
+`sealed` is a reserved word used on the trait declaration; its assignment
+to a keyword class is deferred to the keyword-class taxonomy.
+
+The language seals its own traits through this very mechanism, with
+nothing behind it. `Into` and `TryInto` (§7.2) and `StreamPolicy`
+(§13.18.3) are ordinary sealed traits declared in the language core
+module. Sealing — not a private compiler path — is the whole reason user
+code cannot fulfill them.
 
 ### 3.8 Automatic Derivation (`@derive`)
 
@@ -5810,8 +5872,13 @@ kinds (range error, parse error, validation error, etc.).
 
 ### 7.2 Users Implement `From` and `TryFrom`; the Reverses Auto-Derive
 
-`Into` and `TryInto` are *sealed* traits — declared by the language for
-use in trait bounds and method dispatch, but not implementable by users.
+`Into` and `TryInto` are ordinary `sealed trait` declarations (§3.7.6) in
+the language core module. Like any sealed trait, they are usable
+everywhere in trait bounds and method dispatch; sealing restricts only
+fulfillment. A fulfillment claim outside the core module is rejected with
+`sealed_trait_fulfillment_outside_module`, which is why user code cannot
+write `Into`/`TryInto` impls — no privileged capability the user lacks,
+since any module may seal its own traits the same way (§3.7.6).
 
 Users write `fulfill From[T] for U` (or `fulfill TryFrom[T] for U`); the
 language automatically provides the reverse direction:
@@ -5823,10 +5890,14 @@ language automatically provides the reverse direction:
 The auto-derivation is performed by the language for coherence: a
 manually-written `Into[U] for T` impl could disagree with the
 auto-derived inverse of `From[T] for U`, producing two contradictory
-ways to convert. Forbidding manual `Into`/`TryInto` impls is the
-coherence rule, not a stdlib privilege — the rule applies uniformly to
-every user-defined `From`/`TryFrom` pair, just as it does to
-language-built-in ones.
+ways to convert. The forbidding of manual `Into`/`TryInto` impls is
+delivered by the ordinary sealed-trait module rule (§3.7.6): the traits
+are sealed in the language core module, so a fulfillment elsewhere raises
+the same `sealed_trait_fulfillment_outside_module` error any sealed trait
+raises. It is a coherence rule, not a stdlib privilege — no mechanism the
+user lacks — and the coherence constraint applies uniformly to every
+user-defined `From`/`TryFrom` pair, just as it does to language-built-in
+ones.
 
 All `Into[U] for T` impls come from auto-derivation of a corresponding
 `From[T] for U` impl (plus the identity case per §7.3); all `TryInto[U]
@@ -5919,12 +5990,14 @@ conversions per §4.5's lossless rules:
 and lossy integer-to-float conversions. Each carries an appropriate
 `Error` type (typically a numeric range error).
 
-These impls are provided by stdlib for the language's built-in
-numeric types. The orphan rule (§3.7) prevents users from declaring
-their own `From`/`TryFrom` impls between primitives (neither type
-comes from user code); users can declare such impls for their own
-types using the same trait machinery — there is no special path
-restricted to stdlib.
+These impls are language-provided, declared in the language core module
+beside the numeric types and the conversion traits themselves — which is
+also what the orphan rule (§3.7.1, module-of-declaration) requires, since
+no other module declares either `From` or the numeric types. The orphan
+rule (§3.7) prevents users from declaring their own `From`/`TryFrom` impls
+between primitives (neither type comes from user code); users can declare
+such impls for their own types using the same trait machinery — there is
+no special path reserved to the language core.
 
 ### 7.6 Relationship to `T(value)` conversion
 
@@ -8176,14 +8249,14 @@ the visible one — only whether it is reachable.
 
 ### 10.9 Visibility and the Orphan Rule
 
-The orphan rule (§3.7) operates on *package-of-declaration*, not on
+The orphan rule (§3.7) operates on *module-of-declaration*, not on
 visibility. A `fulfill` block satisfies the orphan rule if the trait
-or the type is declared in the current package (the same package
+or the type is declared in the current module (the same module
 the `fulfill` block resides in) — regardless of either's visibility
 level. Visibility controls *who can see and use* an implementation;
 the orphan rule controls *where it can be declared*.
 
-A `private` trait or type still counts as "in the current package"
+A `private` trait or type still counts as "in the current module"
 for orphan-rule purposes. The combination — a `fulfill` block for a
 private trait and a foreign type, with the implementation accessible
 only inside the declaring module — is rare but valid.
@@ -12560,15 +12633,20 @@ imperatively modify it from within.
 
 The value cells carry a current value of type `T` and come in three annotation
 kinds: `signal T`, `derived T`, and `recurrent[N] T` (`attr` annotates as
-`signal T`). `cell` is a **KIND**, not a type or a trait: `cell T` is the
-umbrella designator spanning *exactly* these value-cell kinds and nothing else.
+`signal T`). The keyword `cell` alone is a **kind** — and a keyword — not a
+type or a trait. The applied annotation `cell T` *is* a type: a **wiring
+type**, a member of the type system in its own class, unstorable by nature and
+expressing wiring rather than a value — never a value type, and not a trait
+(§13.2.8.1). `cell T` is the umbrella designator spanning *exactly* these
+value-cell kinds and nothing else.
 Streams (`stream ring[N] T`, `stream gate[N] T`, erased `stream T`,
 `recurrent[N] stream …`) form their own stream kind class outside the `cell T`
 umbrella, and `yielded T` (§13.20.4) forms its own group kind class outside it;
-explicit conversion mechanisms bridge streams and cells. `cell` is never written
-with brackets; it appears only as a lowercase kind keyword in annotation
-positions. Each value-cell kind is first-class, usable in parameter positions,
-return positions, and generic arguments.
+explicit conversion mechanisms bridge streams and cells. The keyword `cell` is
+never written with brackets — there is no bracketed `Cell[T]` value type — and
+appears only as a lowercase kind keyword in annotation positions. Each
+value-cell kind is first-class, usable in parameter positions, return
+positions, and generic arguments.
 
 **The three value-cell kinds.** Four reactive declaration keywords produce value
 cells:
@@ -12620,7 +12698,8 @@ The cell may still be written by the host (`signal`), the runtime
 (`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
 
-**`cell T` is the umbrella KIND.** Cell-kind bindings typically appear in
+**`cell T` is the umbrella wiring type; `cell` is its kind.** Cell-kind
+bindings typically appear in
 parameter positions, return positions, and compiler-minted internal bindings
 (`cell Map[…]` for `repeat … as` views per §13.5.4.9, `dynamic view V` for
 dynamic views per §13.3.3.4). Membership is a KIND relation, not a subtype or
@@ -12680,8 +12759,16 @@ cell within a record/tuple/array shape.
 ##### 13.2.8.1 Kind and storable annotation taxonomy
 
 Ductus annotations fall into two families. **Cell kinds** are lowercase
-keyword designators for reactive binding machinery; they carry no
-brackets around a kind name and never take inline bounds. **Storables**
+keyword designators for reactive binding machinery, and two levels sit
+here. The keyword alone (`cell`, `signal`, `stream`, ...) is a **kind**.
+The applied annotation (`cell T`, `signal T`, `stream[P] T`, ...) *is* a
+type — a **wiring type**, a type-system member in its own class,
+unstorable by nature and expressing wiring rather than a value. A wiring
+type never spells its value type inside a bracket constructor — the
+bracket a kind keyword may carry (`recurrent[N]`, `stream[P]`) holds
+only that kind's parameters, per the admitted direction below, never the
+element type. A wiring type takes no inline bounds and never appears
+inside a value-type constructor. **Storables**
 keep bracket type syntax because they name values that can be stored,
 passed, and held. The consolidated table:
 
@@ -12693,7 +12780,7 @@ passed, and held. The consolidated table:
 | Event cell | `stream ring[N] T` / `stream gate[N] T` | erased form `stream T` when policy/capacity unresolved |
 | Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (default 0) |
 | Membership cell | `yielded T` / `yielded f32[128]` | ordered membership-varying group (§13.20.4) |
-| Cell umbrella (KIND) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`); streams and `yielded` are outside it; not a type, not a trait |
+| Cell umbrella (wiring type) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`); streams and `yielded` are outside it; its keyword `cell` is the kind; a wiring type, not a value type, not a trait |
 | Dynamic view | `dynamic view V` | replaces `Cell[DynamicView[WeakHandle[V]]]` (§13.3.3.4) |
 | Storable — compile-time type | `Type[C]` | node/connection type slot |
 | Storable — graph handle | `Handle[T]` / `WeakHandle[T]` | cross-instance references |
@@ -12707,14 +12794,19 @@ their members are `Handle[T]` arrays/slices. Bounds on a kind's value
 type go in the generic parameter list or a `where` clause, never inside
 the kind annotation.
 
-A kind annotation (`cell T`, `signal T`, `derived T`, `recurrent[N] T`,
-and the other lowercase kinds) is legal only at the **outermost**
-position of a declaration, a parameter, or a return type. A kind never
-appears inside a type constructor — no container, generic argument, or
-other bracketed type holds a kind. The sole exception is `Portal[cell
-T]`, and there the bracket argument is a cell *designation* (which
-cell's identity the portal carries), not a type nested inside the
-constructor.
+A wiring-type annotation (`cell T`, `signal T`, `derived T`,
+`recurrent[N] T`, `stream[P] T`, and the other applied kinds) is legal
+only at the **outermost** position of a declaration, a parameter, or a
+return type. A wiring type never appears inside a value-type
+constructor — no container, generic argument, or other bracketed value
+type holds one. That is the banned direction. The *admitted* direction is
+the reverse and stays legal: a kind's own brackets admit parameters —
+const integers (`recurrent[N]`, buffer capacities) and StreamPolicy-bounded
+policy types (`stream[P]`). What a kind bracket carries is a const-generic
+argument or a policy type, never a wiring type nested inside a value
+constructor. The sole exception is `Portal[cell T]`, and there the bracket
+argument is a cell *designation* (which cell's identity the portal
+carries), not a nested value type.
 
 #### 13.2.9 Reactive composites
 
@@ -15771,6 +15863,23 @@ whether the reload is a source edit or a program rerun — preserves its
 scope's state, identified by the same path. When the template is
 **stateless** (its state-shape is empty per §13.5.2), no per-key cells
 are allocated and the path machinery is bypassed.
+
+**Group-member paths nest.** A group member's scope path nests. The
+yield-site — a `yield` line within a `collect` body (§13.20.4) — is its
+own path level, indexed by its declaration order in that body, mirroring
+the anonymous-placement ordinal convention (§13.15.2). For a repeat-born
+member, the producing repetition key sits *under* the yield-site index as
+an ordinary key component:
+
+```
+mixer.parts.1              // the permanent member from yield-site 1
+mixer.parts.2.voice_7      // the repeat-born member: site 2, key voice_7
+```
+
+Each component stays a simple stringifiable value, so the scope-key rules
+above hold unchanged. Inserting a `yield` line above an existing site
+shifts the later site indices across a reload, exactly as inserting an
+anonymous placement shifts later `:N` ordinals.
 
 ##### 13.5.4.5 Hot reload
 
@@ -20624,7 +20733,7 @@ A stream's storage is governed by a buffering *policy* (§13.18.3). The two
 v1 policies — `ring` and `gate` — are both **bounded**: each allocates a
 fixed-capacity region of typed slots once at the stream's declaration
 site, and its capacity is part of the policy type (`Ring[N]` / `Gate[N]`),
-hence of the stream's concrete type `Stream[T, P]`. The policies
+hence of the stream's concrete type `stream[P] T`. The policies
 differ in their overflow behavior when the buffer fills and a producer
 pushes another event: the `ring` policy is a true ring buffer (circular,
 overwrite-oldest) and displaces the oldest unconsumed event; the `gate`
@@ -20654,8 +20763,10 @@ Streams are distinct from value cells:
 stream policy[capacity]? name: Type? = source
 ```
 
-- **`policy`** is one of the policy keywords `ring` or `gate`
-  (§13.18.3). Mandatory; the declaration has no default policy.
+- **`policy`** is mandatory; the declaration has no default policy.
+  It may be spelled either as the `ring`/`gate` word form or as the
+  bracket-policy form (`stream[Ring[N]] T`) — both are the same
+  wiring type (§13.18.3).
 - **`[capacity]`** is an optional compile-time-known positive `usize`
   (a literal, a `const`, or a const-generic parameter — §2.5)
   specifying the buffer's slot count. When omitted:
@@ -20728,20 +20839,22 @@ enclosing declaration's visibility.
 A stream's type encodes its element type and its **policy**; the policy
 carries whatever buffer parameters it needs (a bounded policy carries its
 capacity; a recurrent policy carries its buffer depth and its self-history
-depth). Capacity is therefore a property of the policy, not of `Stream`
+depth). Capacity is therefore a property of the policy, not of the stream
 itself (§13.18.10.2). A stream type is:
 
 ```
-Stream[T, P] where P: StreamPolicy
+stream[P] T        where P: StreamPolicy
 ```
 
-`StreamPolicy` is a **sealed** trait — a closed set declared by the
-language; users cannot add policies, exactly as `Into`/`TryInto` are
-language-sealed (§7.2). The policy is modelled on **two orthogonal
-axes** rather than as a flat enumeration of four members:
+`StreamPolicy` is a `sealed trait` (§3.7.6) declared in the language core
+module — the same ordinary sealing any module can apply, no privileged
+mechanism. A fulfillment outside the core module is rejected with
+`sealed_trait_fulfillment_outside_module`, so user code cannot add
+policies. The policy is modelled on **two orthogonal axes** rather than as
+a flat enumeration of four members:
 
-- **Buffer discipline** — `Ring[N]` or `Gate[N]`. The *only* two
-  sealed `StreamPolicy` members. `Ring` overwrites the oldest
+- **Buffer discipline** — `Ring[N]` or `Gate[N]`. The only two types
+  fulfilling `StreamPolicy`. `Ring` overwrites the oldest
   unconsumed event when full; `Gate` rejects the write when full.
 - **Self-history depth** — a `const H: usize` history-depth parameter
   on the stream, **default 0** (no self-history). `H > 0` gives the
@@ -20750,42 +20863,38 @@ axes** rather than as a flat enumeration of four members:
   independent axis carried by the stream declaration.
 
 ```
-trait StreamPolicy                                   // sealed (language-closed)
+sealed trait StreamPolicy                            // declared in the language core module (§3.7.6)
 
 type Ring[const N: usize]                            // ring policy, buffer capacity N
 type Gate[const N: usize]                            // gate policy, buffer capacity N
 
-fulfill StreamPolicy for Ring[N]
-fulfill StreamPolicy for Gate[N]
+fulfill StreamPolicy for Ring[N]                     // ✓ legal — same module as the sealed trait
+fulfill StreamPolicy for Gate[N]                     // ✓ legal — same module as the sealed trait
 ```
 
-There is **no** `RecurrentRing` / `RecurrentGate` StreamPolicy member.
-A recurrent stream declaration (§13.18.8) is a `Ring[N]` or `Gate[N]`
+There is **no** `RecurrentRing` / `RecurrentGate` type fulfilling
+`StreamPolicy`. A recurrent stream declaration (§13.18.8) is a `Ring[N]` or `Gate[N]`
 policy stream carrying a non-zero history depth `H` — the two axes
 combine (`recurrent[H] stream ring[N] T` in kind form, §13.2.8),
 rather than selecting a fourth sealed policy tag. When `H` is omitted
 it defaults to 0 and the stream is an ordinary non-recurrent stream.
 
-**Convenience aliases.** The standard library provides transparent generic
-aliases (§4.2) for the common spellings — the same type, not new ones:
+**The word form is sugar.** The word forms `stream ring[N] T` and
+`stream gate[N] T` are the idiomatic sugar for the bracket forms
+`stream[Ring[N]] T` and `stream[Gate[N]] T` — the same wiring type by
+direct substitution, `Ring[N]` / `Gate[N]` dropped into the `[P]` slot.
+The bracket form is legal in any concrete position; neither form is a
+distinct alias type — there are no alias types here. The history-depth
+axis has no sugar of its own: a recurrent stream spells the depth axis on
+a ring or gate stream (§13.18.8), not with a distinct spelling.
 
-```
-alias type RingStream[T, const N: usize]            = Stream[T, Ring[N]]
-alias type GateStream[T, const N: usize]            = Stream[T, Gate[N]]
-```
-
-`RingStream[T, N]` *is* `Stream[T, Ring[N]]` at every use site; these
-alias spellings survive as sugar. There are no `RecurrentRing` /
-`RecurrentGate` aliases — a recurrent stream is spelled with the
-history-depth axis on a `Ring`/`Gate` policy stream, not with a
-distinct alias.
-
-**The erased supertype `stream T`.** `stream T` (element type only, policy
-erased) is the abstract supertype of every `Stream[T, P]`; a concrete stream
-is implicitly usable wherever `stream T` is expected (zero-cost widening —
-only the type-system view changes). Use it in a signature that accepts any
-stream of `T` regardless of policy and does not thread the policy through to
-its result — e.g. `to_signal`, `event_count`, `accumulate`:
+**The erased form `stream T`.** `stream T` (element type only, policy
+erased) is the policy-erased wiring type every `stream[P] T` widens to; a
+concrete stream is implicitly usable wherever `stream T` is expected.
+Widening is zero-cost — only the type-system view changes; there is no
+value subtyping behind it. Use it in a signature that accepts any stream
+of `T` regardless of policy and does not thread the policy through to its
+result — e.g. `to_signal`, `event_count`, `accumulate`:
 
 ```
 operator event_count[T](source: stream T) -> derived i64:
@@ -20798,39 +20907,40 @@ to output. The preservation is then *type-true* — stated in the signature,
 not asserted in prose:
 
 ```
-operator map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]:
+operator map[T, U, P: StreamPolicy](source: stream[P] T, f: fn(T) -> U) -> stream[P] U:
   ...
 ```
 
-`map` over a `Stream[T, Ring[16]]` yields `Stream[U, Ring[16]]`; over a
-`Stream[T, Gate[8]]`, `Stream[U, Gate[8]]` — by construction.
+`map` over a `stream[Ring[16]] T` yields `stream[Ring[16]] U`; over a
+`stream[Gate[8]] T`, `stream[Gate[8]] U` — by construction.
 
 **Mandating a policy.** An operator that requires a specific policy, or whose
 output policy is not its input's, names the policy concretely in its
 signature. `persist` requires gate (it must never silently drop writes):
 
 ```
-operator persist[T, const N: usize](writes: GateStream[T, N]) -> ...:
+operator persist[T, const N: usize](writes: stream[Gate[N]] T) -> ...:
   // requires gate policy
   ...
 ```
 
-Passing a `RingStream` where a `GateStream` is required is a type error. There
+Passing a ring stream where a gate stream is required is a type error. There
 is no policy/capacity *inheritance* rule: a stream-returning operator's result
 type is whatever its signature states — a threaded `P` for preservation, or a
 named policy otherwise.
 
 #### 13.18.5 The `cell` kind umbrella
 
-`cell T` is the umbrella **KIND** over the *value cells* that carry
-values of type `T`. It is not a trait and not a value type
-(§13.2.8): `cell` is a lowercase keyword kind occupying an annotation
-position, exactly like `signal`, `derived`, and `recurrent`. Its members
-are exactly the value-cell kinds — `signal T`, `derived T`, and
-`recurrent[N] T`:
+`cell T` is the umbrella over the *value cells* that carry values of type
+`T`. The keyword `cell` alone is the **kind**; the applied annotation
+`cell T` is a **wiring type** — a type-system member, not a value type and
+not a trait (§13.2.8, §13.2.8.1). `cell` is a lowercase keyword kind
+occupying an annotation position, exactly like `signal`, `derived`, and
+`recurrent`. Its members are exactly the value-cell kinds — `signal T`,
+`derived T`, and `recurrent[N] T`:
 
 ```
-cell T                        // umbrella KIND — any value cell carrying values of type T
+cell T                        // umbrella wiring type — any value cell carrying values of type T
   signal T                    // host/placement-written value cell; `attr` annotates as `signal T` (§13.2.8)
   derived T                   // computed value cell, no history (§13.2.8)
   recurrent[N] T              // computed value cell, N-deep self-history (§13.2.8)
@@ -20865,12 +20975,15 @@ operator monitor[T](source: cell T) -> derived bool:
   ...
 ```
 
-**Why a kind, not a trait or a union type.** `cell` is a KIND, not a
-trait: it does not implement or require methods, and there is no
-`cell T` value type over which one dispatches. This resolves the older
-type-vs-trait framing — `cell T` was described in some passages as an
-umbrella *type* and in others as a marker *trait*; neither is correct.
-The umbrella is a kind in annotation position. Concrete behavior —
+**Why a kind, not a trait or a union type.** The keyword `cell` is a
+KIND, not a trait: it does not implement or require methods, and there is
+no `cell T` *value* type over which one dispatches. The applied annotation
+`cell T` is a wiring type, but a wiring type is not a value type and is
+not dispatched over. This resolves the older type-vs-trait framing —
+`cell T` was described in some passages as an umbrella *value type* and in
+others as a marker *trait*; neither the value-type nor the trait reading
+is correct. The umbrella keyword is a kind in annotation position; the
+annotation it forms is a wiring type. Concrete behavior —
 current-value reads — is specific to each value-cell kind and is reached
 through that kind's own methods and operators, not through any umbrella
 method set. (Event observation belongs to the stream class outside the
@@ -20890,7 +21003,7 @@ are preferred unless the operator genuinely produces a polymorphic output.
 
 A bounded stream automatically exposes a set of derived signal cells
 describing its state. These cells are accessed via field syntax on
-the stream value:
+the stream:
 
 ```
 stream ring[1024] events: LogEntry = source
@@ -21392,17 +21505,17 @@ stream-to-value operator the same way.
 **Skip / take family:**
 
 ```
-operator skip[T, P: StreamPolicy](source: Stream[T, P], n: i32) -> Stream[T, P]:
+operator skip[T, P: StreamPolicy](source: stream[P] T, n: i32) -> stream[P] T:
   // drops the first `n` events observed from source
 
-operator skip_first[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[T, P]:
+operator skip_first[T, P: StreamPolicy](source: stream[P] T) -> stream[P] T:
   // equivalent to skip(1)
 
-operator take[T, P: StreamPolicy](source: Stream[T, P], n: i32) -> Stream[T, P]:
+operator take[T, P: StreamPolicy](source: stream[P] T, n: i32) -> stream[P] T:
   // emits the first `n` events observed from source, then emits no
   // more (the output stream is complete after n events)
 
-operator take_first[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[T, P]:
+operator take_first[T, P: StreamPolicy](source: stream[P] T) -> stream[P] T:
   // equivalent to take(1)
 ```
 
@@ -21445,10 +21558,10 @@ establishes the initial value structurally (`0` for `event_count`,
 **Transformation operators** (Stream → Stream):
 
 ```
-operator map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]:
+operator map[T, U, P: StreamPolicy](source: stream[P] T, f: fn(T) -> U) -> stream[P] U:
   // policy and capacity preserved by threading P
 
-operator filter[T, P: StreamPolicy](source: Stream[T, P], pred: fn(T) -> bool) -> Stream[T, P]:
+operator filter[T, P: StreamPolicy](source: stream[P] T, pred: fn(T) -> bool) -> stream[P] T:
   // policy and capacity preserved by threading P
 
 operator merge[
@@ -21457,14 +21570,14 @@ operator merge[
   const B: usize,
   const N: usize = A + B,
 ](
-  a: RingStream[T, A],
-  b: RingStream[T, B],
-) -> RingStream[T, N]:
+  a: stream[Ring[A]] T,
+  b: stream[Ring[B]] T,
+) -> stream[Ring[N]] T:
   // interleaves events from both sources in commit order;
   // default capacity is the sum of input capacities, ensuring no
   // overflow if both inputs fill simultaneously
 
-operator throttle[T, P: StreamPolicy](source: Stream[T, P], window: duration, clock: cell u64) -> Stream[T, P]:
+operator throttle[T, P: StreamPolicy](source: stream[P] T, window: duration, clock: cell u64) -> stream[P] T:
   // rate-limits events to at most one per window. `clock` ticks are
   // nanoseconds (§9.4.1): an event passes when clock - last_emit >= window.
 ```
@@ -21474,7 +21587,7 @@ special language privilege** — they are written with the same operator
 machinery any program may use, and a program may write its own
 equivalents. Transformation operators preserve policy and capacity by
 *threading* their policy parameter `P` from input to output
-(`Stream[T, P] -> Stream[U, P]`); the preservation is stated in the
+(`stream[P] T -> stream[P] U`); the preservation is stated in the
 signature and checked by the type system, not a separate propagation
 rule. `map`, `filter`, `skip`, `take`, `throttle`, `scan`, and
 `pairwise` all preserve this way.
@@ -21486,7 +21599,7 @@ const-generic default expressions). Callers may override the capacity at
 the call site via turbofish if they have tighter bounds:
 
 ```
-let merged: RingStream[Event, 1024] = merge::[T = Event, N = 1024](a, b)
+let merged: stream[Ring[1024]] Event = merge::[T = Event, N = 1024](a, b)
 ```
 
 A separate `merge_gate` variant is provided for gate streams with
@@ -21497,11 +21610,11 @@ ambiguous).
 **History-aware operators** (Stream → Stream with state):
 
 ```
-operator scan[T, A, P: StreamPolicy](source: Stream[T, P], init: A, f: fn(A, T) -> A) -> Stream[A, P]:
+operator scan[T, A, P: StreamPolicy](source: stream[P] T, init: A, f: fn(A, T) -> A) -> stream[P] A:
   // emits f(state, event) on each event, threading state through.
   // The output's first event is f(init, first_input_event).
 
-operator pairwise[T, P: StreamPolicy](source: Stream[T, P]) -> Stream[(T, Option[T]), P]:
+operator pairwise[T, P: StreamPolicy](source: stream[P] T) -> stream[P] (T, Option[T]):
   // emits each event paired with the previous event;
   // the first output is (first_input, None).
 ```
@@ -21612,8 +21725,8 @@ The output stream's element type matches the input's. Policy and
 capacity follow:
 
 - **Policy** is the LHS stream's policy `P`, threaded to the output:
-  a `Stream[T, P]` filter produces `Stream[T, P]` (a `RingStream` in
-  gives a `RingStream` out; a `GateStream`, a `GateStream`). There is
+  a `stream[P] T` filter produces `stream[P] T` (a ring stream in
+  gives a ring stream out; a gate stream, a gate stream). There is
   no signal LHS — a signal is converted to a stream explicitly first.
 - **Capacity** defaults to the LHS stream's capacity. Predicate-
   referenced cells do not contribute — they don't drive emission;
@@ -21705,27 +21818,27 @@ without changing its overflow semantics (`map`, `filter`, `skip`)
 preserve the policy type:
 
 ```
-operator map[T, U, P: StreamPolicy](source: Stream[T, P], f: fn(T) -> U) -> Stream[U, P]:
+operator map[T, U, P: StreamPolicy](source: stream[P] T, f: fn(T) -> U) -> stream[P] U:
   ...
 
 // At a call site, the policy threads through by construction:
-let mapped: RingStream[U, 1024] = (some_ring_stream: RingStream[T, 1024]) |> map(f)
-let mapped2: GateStream[U, 256] = (some_gate_stream: GateStream[T, 256]) |> map(f)
+let mapped: stream[Ring[1024]] U = (some_ring_stream: stream[Ring[1024]] T) |> map(f)
+let mapped2: stream[Gate[256]] U = (some_gate_stream: stream[Gate[256]] T) |> map(f)
 ```
 
 The output's concrete policy is the input's `P`, threaded through the
-signature: `RingStream[T, 1024]` (= `Stream[T, Ring[1024]]`) in gives
-`RingStream[U, 1024]` out, by type-checking — not a propagation pass.
+signature: `stream[Ring[1024]] T` in gives `stream[Ring[1024]] U` out,
+by type-checking — not a propagation pass.
 
 **Policy-constraining operators.** Operators that require a specific
 policy declare it concretely in the signature:
 
 ```
-operator persist[T: Persistable, const N: usize](writes: GateStream[T, N]) -> EffectResult:
-  // writes must be lossless; passing a RingStream is a type error
+operator persist[T: Persistable, const N: usize](writes: stream[Gate[N]] T) -> EffectResult:
+  // writes must be lossless; passing a ring stream is a type error
   ...
 
-operator emit_telemetry[T: Telemetry, const N: usize](events: RingStream[T, N]) -> ():
+operator emit_telemetry[T: Telemetry, const N: usize](events: stream[Ring[N]] T) -> ():
   // ring is the right semantics for telemetry — losing oldest events on overload is acceptable
   ...
 ```
@@ -22035,10 +22148,10 @@ to the base stream reload rules above:
 
 Normative diagnostic classes for stream usage.
 
-**Missing policy keyword in stream declaration:**
+**Missing policy in stream declaration:**
 
 ```
-error: stream declaration requires a policy keyword (`ring` or `gate`)
+error: stream declaration requires a policy — the `ring`/`gate` word form or the bracket form `stream[Ring[N]]`
   --> stream my_events: Event = source
              ^^^^^^^^^^ no policy specified
   hint: streams must declare an overflow policy. Use `ring` for
@@ -22360,8 +22473,9 @@ effects:
 
 **Stream parameters.** Parameters may be of stream kind
 (erased `stream T`, `stream ring[N] T`, `stream gate[N] T`; the
-`RingStream[T, N]` / `GateStream[T, N]` alias spellings survive as
-sugar, §13.18.3). A parameter does
+bracket forms `stream[Ring[N]] T` / `stream[Gate[N]] T` are the
+concrete expansions, with the word forms as the idiomatic sugar,
+§13.18.3). A parameter does
 not auto-bind to a surface: the effect must still declare at least one
 block (§13.19.2) saying what it does with the parameter's events, and
 the host's reconciler drives that block:
@@ -22480,7 +22594,8 @@ desired:
 ```
 
 The declaration shape matches a regular `stream` declaration (§13.18.2)
-— policy keyword (`ring` or `gate`), optional capacity (defaulting to
+— policy (the `ring`/`gate` word form or the bracket form, §13.18.3),
+optional capacity (defaulting to
 1024), name, element type, and a `= source`. The effect feeds the
 source internally; there is no external program-side wiring into it.
 A desired cell's expression or `= source` (whether `derived`,
@@ -22742,13 +22857,13 @@ derived total: u64 = ws.inbound |> count                          // running cou
 stream ring[64] recent_text: Message = ws.inbound |> filter(is_text)
 ```
 
-The stream value is the program-readable cursor view; the program
-attaches operators to consume events.
+The stream's name, read in program position, denotes its cursor view;
+the program attaches operators to consume events.
 
 **Reading observation cells of a stream:**
 
 Stream cells expose their observation surface (§13.18.6) via field
-access on the stream value:
+access on the stream:
 
 ```
 effects:
@@ -23415,6 +23530,22 @@ umbrella (§13.18.5): membership changes propagate dirt to consumers.
   `.count` member — the number of currently-live members (an element
   tally, per the bare-`count` naming rule §9.3.8). `.count` is reactive:
   it changes as membership does.
+
+The structural coordinate is what the member's **scope path** is built
+from, and that path nests (§13.5.4.4): the `yield` site is its own path
+level — indexed by declaration order in the `collect` body — and a
+`repeat`-born member's producing key sits under it as an ordinary key
+component:
+
+```
+mixer.parts.1              // the permanent member from yield-site 1
+mixer.parts.2.voice_7      // the repeat-born member: site 2, key voice_7
+```
+
+Each component is a simple stringifiable value, so the scope-key rules
+(§13.5.3) apply unchanged. Inserting a `yield` line above an existing site
+shifts the later site indices across a reload, like anonymous placement
+ordinals (§13.15.2).
 
 ##### 13.20.4.1 Consumption
 
