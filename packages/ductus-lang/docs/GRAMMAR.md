@@ -235,9 +235,11 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 'use'  'wraps'  'alias'  'sealed'
 ```
 
-// `sealed` is a trait-declaration modifier (`sealed trait …`, §3.7.6,
-//  005-239): it restricts fulfillment claims to the trait's declaring
-//  module. It is a reserved word in every position (005-241, 002-27).
+// `sealed` is a trait- and nominal-type-declaration modifier (trait,
+//  type, enum, node, connection; §3.7.6,
+//  005-239, 005-243): it restricts fulfillment claims to the trait's or
+//  the subject's declaring module respectively. It is a reserved word in
+//  every position (005-241, 002-27).
 //  Its listing in this box is inventory only — the keyword-class
 //  assignment is deferred to the keyword-class taxonomy (005-241); it
 //  is not thereby fixed as a declaration keyword.
@@ -270,7 +272,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 ```
 'children'  'incoming'  'outgoing'  'expose'  'when'
-'satisfies'  'fulfill'  'default'  'otherwise'
+'fulfill'  'default'  'otherwise'
 'from'  'to'  'pairs'  'on'  'where'  'desired'  'observed'
 'ring'  'gate'  'keyed'  'at'  'dynamic'
 ```
@@ -3481,7 +3483,7 @@ ClosureParam      ::= 'own'? IDENT ( ':' TypeExpr )?
 ### 7.8 Record (`type Name: <fields>`) declarations
 
 ```
-RecordDecl        ::= Visibility? 'type' IDENT GenericParamList? WhereClause? RecordBody
+RecordDecl        ::= Visibility? 'sealed'? 'type' IDENT GenericParamList? WhereClause? RecordBody
                     ;  (§6.1, 009-1)
 
 RecordBody        ::= ':' INDENT RecordBodyItem+ DEDENT
@@ -3489,12 +3491,8 @@ RecordBody        ::= ':' INDENT RecordBodyItem+ DEDENT
                     | NEWLINE                                   // zero-field marker
                     ;  (§6.1.1, 009-1)
 
-RecordBodyItem    ::= SatisfiesClause
-                    | FieldDecl
+RecordBodyItem    ::= FieldDecl
                     ;  (§6.1.1, 009-1)
-
-SatisfiesClause   ::= 'satisfies' TypePath ( ',' TypePath )* ','?
-                    ;  (§3.2, 017-12)
 
 FieldDecl         ::= FieldVisibility? IDENT ':' TypeExpr
                     ;  (§6.1.1, 009-1)
@@ -3503,27 +3501,33 @@ FieldDecl         ::= FieldVisibility? IDENT ':' TypeExpr
 // **Zero-field marker form (per §6.1.1).** `type Marker` with no
 //  body is admissible — it produces a zero-field nominal type. The
 //  `NEWLINE` alternative of `RecordBody` covers this case.
-// **`SatisfiesClause` placement (per §6.1.1).** A `RecordBody` may
-//  hold at most one `SatisfiesClause`, conventionally at the top.
-//  The grammar admits the clause in any `RecordBodyItem` position;
-//  the at-most-one constraint is a post-parse check.
+// **Trait conformance is not a record-body item (per §6.1.1, 009-8).**
+//  A record declares trait conformance through `fulfill` blocks
+//  (§7.12), never inside its body — a `RecordBodyItem` is a
+//  `FieldDecl` only.
 // **No field defaults (per §6.1.2).** `FieldDecl` does not admit an
 //  `'=' Expr` default — every field must be supplied at every
 //  construction site. The production carries no default position.
 //  This contrasts with `FnParam` (§7.6) and enum-variant payload
 //  fields (§7.10), which do take defaults.
 // **No `fn` declarations (per §6.1.9, 009-46).** A `RecordBodyItem`
-//  is `SatisfiesClause` or `FieldDecl` only — there is no `FnDecl`
+//  is `FieldDecl` only — there is no `FnDecl`
 //  alternative. Behaviour on records is delivered through free
 //  functions or `fulfill`-block methods, never inline.
 // **Discrimination from `NewtypeDecl` (per §6.3.1).** The discriminating
 //  surface token is the presence of a `'wraps'` clause inside the
 //  body. A `RecordDecl` and a `NewtypeDecl` share the same header
-//  (`Visibility? 'type' IDENT GenericParamList? WhereClause?` and
-//  the body's leading `':'` token); the parser commits to one or
+//  (`Visibility? 'sealed'? 'type' IDENT GenericParamList? WhereClause?`
+//  and the body's leading `':'` token); the parser commits to one or
 //  the other based on whether the first body item is `'wraps'` or
-//  a `FieldDecl` / `SatisfiesClause`. The `NewtypeDecl` production
+//  a `FieldDecl`. The `NewtypeDecl` production
 //  is in §7.9.
+// **`sealed` modifier (per §3.7.6, 005-243).** The optional `sealed`
+//  modifier restricts conformance to the type's declaring module — a
+//  `fulfill` block for a sealed type outside that module is diagnostic
+//  `sealed_type_fulfillment_outside_module`. It composes with
+//  trait-side sealing (005-239): a fulfill must pass both checks
+//  (005-244).
 // **`WhereClause?`** is admitted before the `RecordBody`'s `':'`
 //  for generic records carrying constraints (§3.13).
 // **`@derive(...)` directive (per §3.8).** The `@derive` annotation
@@ -3535,14 +3539,13 @@ FieldDecl         ::= FieldVisibility? IDENT ':' TypeExpr
 ### 7.9 Newtype declarations (`wraps`)
 
 ```
-NewtypeDecl       ::= Visibility? 'type' IDENT GenericParamList? WhereClause? NewtypeBody
+NewtypeDecl       ::= Visibility? 'sealed'? 'type' IDENT GenericParamList? WhereClause? NewtypeBody
                     ;  (§6.3, 009-1)
 
 NewtypeBody       ::= ':' INDENT NewtypeBodyItem+ DEDENT
                     ;  (§6.3.1, 009-1)
 
 NewtypeBodyItem   ::= WrapsClause
-                    | SatisfiesClause
                     ;  (§6.3.1, 009-1)
 
 WrapsClause       ::= 'wraps' TypeExpr
@@ -3550,7 +3553,8 @@ WrapsClause       ::= 'wraps' TypeExpr
 ```
 
 // **Discriminating token (per §6.3.1).** A `NewtypeBody` contains
-//  *exactly one* `WrapsClause` and zero or more `SatisfiesClause`s.
+//  *exactly one* `WrapsClause`; conformance is declared via `fulfill`
+//  blocks (§7.12) and `@derive` (§6.3.1), never in the body.
 //  The presence of a `'wraps'` keyword in the body distinguishes
 //  `NewtypeDecl` from `RecordDecl` (§7.8). The parser inspects the
 //  body's first non-clause-keyword item; if it is `'wraps'`, the
@@ -3559,6 +3563,11 @@ WrapsClause       ::= 'wraps' TypeExpr
 // **No `FieldDecl` (per §6.3.1).** A `NewtypeBodyItem` does not admit
 //  `FieldDecl` — newtypes wrap one underlying value via `WrapsClause`,
 //  not a set of fields.
+// **`sealed` modifier (per §3.7.6, 005-243).** A newtype may be
+//  `sealed` (`sealed type Email: wraps string`) — the same
+//  module-scoped conformance restriction as a sealed record (§7.8);
+//  a foreign `fulfill` is diagnostic
+//  `sealed_type_fulfillment_outside_module`.
 // **Constructor is positional with one argument (per §6.3.2).** The
 //  newtype's constructor surface is `TypeName '(' value ')'` —
 //  parsed as an ordinary `CallExpr` (§5.5). There is no separate
@@ -3574,15 +3583,14 @@ WrapsClause       ::= 'wraps' TypeExpr
 ### 7.10 Enum declarations
 
 ```
-EnumDecl          ::= Visibility? 'enum' IDENT GenericParamList? WhereClause? EnumBody
+EnumDecl          ::= Visibility? 'sealed'? 'enum' IDENT GenericParamList? WhereClause? EnumBody
                     ;  (§6.2, 009-1)
 
 EnumBody          ::= ':' INDENT EnumBodyItem+ DEDENT
                     | NEWLINE                                   // uninhabited / zero-variant
                     ;  (§6.2.1, 009-1)
 
-EnumBodyItem      ::= SatisfiesClause
-                    | VariantDecl
+EnumBodyItem      ::= VariantDecl
                     ;  (§6.2.1, 009-1)
 
 VariantDecl       ::= IDENT VariantDeclPayload?
@@ -3638,8 +3646,11 @@ NamedPayloadField ::= IDENT ':' TypeExpr ( '=' Expr )?
 //  the enum's visibility. A `VariantDecl` does not admit a leading
 //  `Visibility` prefix; the production carries none.
 // **No `FieldDecl` outside variants (per §6.2).** An `EnumBody`'s
-//  top-level items are `SatisfiesClause` and `VariantDecl` only —
+//  top-level items are `VariantDecl` only —
 //  fields belong to variant payloads.
+// **`sealed` modifier (per §3.7.6, 005-243).** The optional `sealed`
+//  restricts conformance to the enum's declaring module — a foreign
+//  `fulfill` is diagnostic `sealed_type_fulfillment_outside_module`.
 
 ### 7.11 Trait declarations (TraitDecl BNF — already in SPEC §3.1, mirror exactly)
 
@@ -3663,8 +3674,8 @@ TraitDecl         ::= Visibility? 'sealed'? 'trait' IDENT GenericParamList? Trai
 // Directive decoration attaches via the §12.3 AnnotatedDecl wrapper
 //  (Phase D, D4) — TraitDecl itself carries no inline Annotation* head.
 // The optional `sealed` modifier (§3.7.6, 005-239) restricts
-//  fulfillment claims — both `fulfill Trait for Type` blocks and bare
-//  `satisfies Trait` marker claims — to the trait's declaring module;
+//  fulfillment claims — `fulfill Trait for Type` blocks, bodiless
+//  marker claims included — to the trait's declaring module;
 //  a claim outside that module is diagnostic
 //  `sealed_trait_fulfillment_outside_module`.
 
@@ -3763,8 +3774,9 @@ here verbatim.
 FulfillItem       ::= 'fulfill' TypeExpr 'for' TypeExpr WhereClause? FulfillBody
                     ;  (§3.3, 005-30)
 
-FulfillBody       ::= NEWLINE INDENT FulfillBodyItem+ DEDENT
-                    ;  (§3.3, 005-30)
+FulfillBody       ::= ( NEWLINE INDENT FulfillBodyItem+ DEDENT )
+                    | NEWLINE
+                    ;  (§3.3, 005-30, 005-245)
 
 FulfillBodyItem   ::= Annotation* ( FnDecl | AssocTypeBinding )
                     ;  (§3.3, 005-30)
@@ -3777,6 +3789,11 @@ AssocTypeBinding  ::= 'type' IDENT 'is' TypeExpr NEWLINE
                     ;  (§3.3.2, 005-93)
 ```
 
+// **Bodiless `fulfill` (per §3.2, 005-67).** The `NEWLINE` alternative
+//  of `FulfillBody` is the bodiless `fulfill` — no colon, no body.
+//  `FulfillItem`'s `WhereClause?` still applies, which is how
+//  conditional marker conformance is written:
+//  `fulfill Copy for Pair[T] where T: Copy`.
 // **No visibility prefix on `FulfillItem` (per §10.3).** A `fulfill`
 //  block carries no separate visibility specifier — reachability is
 //  derived from the trait's and the type's joint visibility (§10.3
@@ -4132,12 +4149,12 @@ production block of its own.
 
 ## 8. Node declarations
 
-Productions for `node` declarations: body skeleton, satisfies, children/incoming/outgoing acceptance clauses, standalone views, dynamic marker, cardinality forms, type-level when, body cells, expose, effects.
+Productions for `node` declarations: body skeleton, children/incoming/outgoing acceptance clauses, standalone views, dynamic marker, cardinality forms, type-level when, body cells, expose, effects.
 
 ### 8.1 Node body skeleton (clauses only; no bare placements)
 
 ```
-NodeDecl          ::= Visibility? 'node' IDENT GenericParamList?
+NodeDecl          ::= Visibility? 'sealed'? 'node' IDENT GenericParamList?
                       WhereClause? NodeBody
                     ;  (§13.3.1, 017-8)
 // Directive decoration attaches via the §12.3 `AnnotatedDecl` wrapper
@@ -4146,8 +4163,7 @@ NodeDecl          ::= Visibility? 'node' IDENT GenericParamList?
 NodeBody          ::= ':' INDENT NodeBodyMember+ DEDENT
                     ;  (§13.3.1, 017-8)
 
-NodeBodyMember    ::= SatisfiesClause                            // §8.2
-                    | ChildrenClause                             // §8.3
+NodeBodyMember    ::= ChildrenClause                             // §8.3
                     | IncomingClause                             // §8.4
                     | OutgoingClause                             // §8.4
                     | StandaloneView                             // §8.5
@@ -4173,36 +4189,30 @@ NodeBodyMember    ::= SatisfiesClause                            // §8.2
 //  comes after the members; `expose:` comes last. The grammar admits
 //  any order; the post-parse pass surfaces the position rule.
 // **At-most-once clauses (per §13.3.7 lead paragraph).**
-//  `SatisfiesClause`, `ChildrenClause`, `IncomingClause`,
-//  `OutgoingClause`, `TypeLevelWhenClause`, `EffectsClause`, and
-//  `ExposeClause` may each appear at most once per node body. The
-//  grammar's `+` admits multiple; the at-most-once rule is a
-//  post-parse semantic check.
+//  `ChildrenClause`, `IncomingClause`, `OutgoingClause`,
+//  `TypeLevelWhenClause`, `EffectsClause`, and `ExposeClause` may
+//  each appear at most once per node body. The grammar's `+` admits
+//  multiple; the at-most-once rule is a post-parse semantic check.
 // **`GenericParamList?` and `WhereClause?` (per §13.3.5).** A node
 //  type may carry standard generic parameters (`[T, const N: usize]`)
 //  and a `where` clause; both reuse the productions of §3.12 / §3.13.
+// **`sealed` modifier (per §3.7.6, 005-243).** The optional `sealed`
+//  restricts conformance to the node's declaring module — a foreign
+//  `fulfill` is diagnostic `sealed_type_fulfillment_outside_module`.
 
-### 8.2 `satisfies` clause
+### 8.2 Trait conformance (no body production)
 
-```
-SatisfiesClause   ::= 'satisfies' TypePath ( ',' TypePath )*
-                    ;  (§13.3.2, 005-63)
-```
-
-// **Trait-name list (per §13.3.2).** A `satisfies` clause lists one
-//  or more trait `TypePath`s the node conforms to. Each path is a
-//  trait `TypePath` per §3.1 — the surface accepts generic trait
-//  instantiations (`satisfies Add[i64]`, `satisfies Display`); the
-//  defaulted-type-parameter sugar (`satisfies Add` for
-//  `satisfies Add[Subject]`) is a name-resolution rule per §3.1.6.1
-//  and not a grammar one.
+// **Trait conformance is declared by `fulfill` blocks (per §13.3.2,
+//  017-12).** A node conforms to a trait through a `fulfill` block
+//  (§7.12; SPEC §13.3.2) — `fulfill Drivable for MyNode`, bodiless
+//  when nothing is overridden. There is no node-body conformance
+//  production; a `NodeBodyMember` never lists a trait. A trait's
+//  required cells stay declared in the node body and the compiler
+//  checks the body supplies them.
 // **No `fn` declarations in a node body (per §13.3.2 / §13.3.6).**
 //  Trait methods are implemented in separate `fulfill` blocks
 //  (§7.12); the node body itself contains no `FnDecl`. The grammar
 //  reflects this — `NodeBodyMember` has no `FnDecl` alternative.
-// **At most one `SatisfiesClause` per body (per §13.3.1).** A second
-//  `satisfies` clause is a post-parse semantic error; merge trait
-//  lists into the single clause.
 
 ### 8.3 `children:` acceptance clause (named vs unnamed entries)
 
@@ -4800,7 +4810,7 @@ Productions for `connection` declarations: shell, single / cartesian / pairs for
 ### 9.1 Common shell
 
 ```
-ConnectionDecl    ::= Visibility? 'connection' IDENT GenericParamList?
+ConnectionDecl    ::= Visibility? 'sealed'? 'connection' IDENT GenericParamList?
                       WhereClause? ConnectionBody
                     ;  (§13.6.1, 017-21)
 // Directive decoration attaches via the §12.3 `AnnotatedDecl` wrapper
@@ -4809,8 +4819,7 @@ ConnectionDecl    ::= Visibility? 'connection' IDENT GenericParamList?
 ConnectionBody    ::= ':' INDENT ConnectionBodyMember+ DEDENT
                     ;  (§13.6.1, 017-21)
 
-ConnectionBodyMember ::= SatisfiesClause                         // §8.2
-                    | FromDecl                                   // §9.2
+ConnectionBodyMember ::= FromDecl                                // §9.2
                     | ToDecl                                     // §9.2
                     | FromMultiDecl                              // §9.3
                     | ToMultiDecl                                // §9.3
@@ -4841,8 +4850,8 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
 //  structural constraints are cardinality: exactly one `from:` /
 //  `to:` pair (`FromDecl` or `FromMultiDecl`, plus `ToDecl` or
 //  `ToMultiDecl`) *or* exactly one `PairsClause` appears in the
-//  body; `SatisfiesClause`, `TypeLevelWhenClause`, and
-//  `DefaultAttrDecl` each appear at most once. The grammar's `+`
+//  body; `TypeLevelWhenClause` and `DefaultAttrDecl` each appear at
+//  most once. The grammar's `+`
 //  admits multiples and admits the endpoint members independently
 //  (so `from:` and `to:` may be separated by other clauses); the
 //  at-most-once, exactly-once, and form-exclusivity rules are
@@ -4856,9 +4865,10 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
 //  exactly-one-`from`-and-one-`to` cardinality, and the
 //  single-vs-cartesian classification (see §9.2 / §9.3
 //  disambiguators) are post-parse.
-// **`SatisfiesClause` reuses §8.2 (per §13.6.5).** The trait list
-//  carries language-defined marker traits like `Circularity` (§9.7)
-//  as well as domain traits. Same production, same shape.
+// **Trait conformance via `fulfill` blocks (per §13.6.5).** A
+//  connection declares trait conformance through `fulfill` blocks
+//  (§7.12), never in its body — including language-defined marker
+//  traits like `Circularity` (§9.7), claimed by a bodiless `fulfill`.
 // **Cell forms mirror node body cells (per §13.6.1.1, §13.3.1).**
 //  `AttrDecl`, `DefaultAttrDecl`, `DerivedDecl`, `RecurrentDecl`,
 //  `StreamDecl`, and `ConstStmt` are the same productions used in
@@ -4879,6 +4889,10 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
 //  children nor accepts inbound or outbound wiring beyond its two
 //  endpoints. The grammar enumerates no acceptance-clause
 //  alternative here.
+// **`sealed` modifier (per §3.7.6, 005-243).** The optional `sealed`
+//  restricts conformance to the connection's declaring module — a
+//  foreign `fulfill` is diagnostic
+//  `sealed_type_fulfillment_outside_module`.
 
 ### 9.2 Single form (`from: T` / `to: U`)
 
@@ -4896,8 +4910,8 @@ ToDecl            ::= 'to' ':' TypeExpr
 //  *exactly once* in the body. `FromDecl` and `ToDecl` are
 //  admitted as independent `ConnectionBodyMember` alternatives
 //  (§9.1), so they may appear in either order and may be
-//  separated by other body members (e.g. `satisfies`, `attr`,
-//  `when`); the exactly-once-each rule is a post-parse semantic
+//  separated by other body members (e.g. `attr`, `when`); the
+//  exactly-once-each rule is a post-parse semantic
 //  check across the whole `ConnectionBody`, not enforced by the
 //  local production.
 // **`TypeExpr` is a node type or trait (per §13.6.1.1).** Each
@@ -5114,24 +5128,23 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 
 ```
 // No new production: `Circularity` is a language-defined marker
-// trait (§3.7.4) named in a `SatisfiesClause` (§8.2) of a
-// `ConnectionDecl`. The grammar surface is the standard `TypePath`
-// of §3.1 in the satisfies list — no special trait-name form.
-//                                                  ;  (§13.6.5, 019-73)
+// trait (§3.7.4) claimed by a bodiless `fulfill Circularity for C`
+// block (§7.12) on a `ConnectionDecl` `C`. The grammar surface is
+// the standard `FulfillItem` of §7.12 — no special trait-name form.
+//                                                  ;  (§13.6.5, 019-75)
 ```
 
-// **Surface = `satisfies Circularity` (per §13.6.5).** A
-//  connection type opts into participation in topology cycles by
-//  listing the `Circularity` marker trait in its `SatisfiesClause`.
-//  No special grammar form attaches; the `TypePath` is the same
-//  as for any other trait name (per §3.1 / §8.2). The parser does
-//  not special-case `Circularity` — name resolution does.
+// **Surface = bodiless `fulfill Circularity for C` (per §13.6.5).** A
+//  connection type opts into participation in topology cycles by a
+//  bodiless `fulfill Circularity for C` claim (§7.12). No special
+//  grammar form attaches; the `FulfillItem` is the same as for any
+//  other trait (per §3.1 / §7.12). The parser does not special-case
+//  `Circularity` — name resolution does.
 // **Marker trait — no method bodies (per §13.6.5, §3.7.4).**
-//  `Circularity` is a language-defined marker trait with no
-//  methods; `satisfies Circularity` requires no accompanying
-//  `fulfill` block. The grammar enforces nothing here — the
-//  empty-method-set fact follows from the trait's language-defined
-//  declaration.
+//  `Circularity` is a language-defined marker trait with no methods,
+//  so the `fulfill Circularity for C` claim is bodiless — no method
+//  bodies. The grammar enforces nothing here — the empty-method-set
+//  fact follows from the trait's language-defined declaration.
 // **Static cycle rule is post-parse (per §13.6.5).** The
 //  compiler enforces that every topology cycle in the
 //  construction-time node graph traverses at least one connection

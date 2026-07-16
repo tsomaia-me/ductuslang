@@ -101,7 +101,7 @@ trait-constraint intersections are explicit structural carve-outs with
 clear semantics.
 
 **Traits as the abstraction mechanism.** Behavior abstraction uses nominal
-traits with explicit `satisfies`/`fulfill` declarations. Coherence is enforced
+traits with explicit `fulfill` declarations. Coherence is enforced
 structurally via orphan rules.
 
 **Uniform function call syntax.** Methods and free functions are
@@ -130,7 +130,7 @@ This includes all declaration keywords (`node`, `connection`, `trait`,
 `type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
 `derived`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`, `main`), all clause
 keywords (`incoming`, `outgoing`, `expose`, `when`,
-`satisfies`, `fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
+`fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
 `where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
 `dynamic` — the supply-mode marker, §13.3.3.1), the reserved
 instance-field names (`pair`, `exposition` — §13.7.5; the
@@ -1197,9 +1197,9 @@ trait Marker
 ```
 
 Empty traits ("marker traits") have no methods, no associated types, and no
-requirements. They serve as nominal tags — a type's `satisfies Marker` clause
-is a declarative assertion the user makes about the type, checked only for
-existence by the compiler.
+requirements. They serve as nominal tags — a type's bodiless
+`fulfill Marker for Type` claim is a declarative assertion the user makes
+about the type, checked only for existence by the compiler.
 
 The TraitDecl grammar (with FulfillItem at §3.3 as its implementation counterpart):
 
@@ -1373,9 +1373,9 @@ trait Student:
 ```
 
 A type `T` satisfies `Student` only if `T` also satisfies `Person`. The
-compiler enforces this at the point `satisfies Student` is declared on the
-type: if `Person` is not in the type's `satisfies` set (directly or
-transitively), the declaration is rejected.
+compiler enforces this at the `fulfill Student for T` site: if `Person` is
+not in the type's conformance set (directly or transitively), the fulfill is
+rejected.
 
 A child trait may not redeclare a method already declared by any of its
 required traits (directly or transitively). If `Person` declares `fn display(
@@ -1485,7 +1485,6 @@ trait instance with all defaults applied:
 
 - In `requires` clauses: `requires Add` is sugar for `requires Add[Subject]`.
 - In trait bounds: `T: Add` is sugar for `T: Add[Subject]`.
-- In `satisfies` clauses: `satisfies Add` is sugar for `satisfies Add[Subject]`.
 - In `fulfill` blocks: `fulfill Add for T` is sugar for `fulfill Add[Subject] for T`.
 - In inferred constraints: the compiler infers `T: Add[Subject]` unless the
   operation's operand types force a cross-type form.
@@ -1511,7 +1510,7 @@ A trait that declares any such member is a *kind-specific* trait — a *node
 trait* or, when it declares endpoints, a *connection trait*. A trait that
 declares only methods and associated types is *kind-agnostic* and may be
 satisfied by any kind. The compiler enforces the kind restriction at the
-`satisfies` site (the gating rules below). These required members are also
+`fulfill` site (the gating rules below). These required members are also
 what make a kind-specific trait usable as the instantiation contract of a
 `Type[…]` value (§5.7.5): the receiver of a `Type[ThatTrait]` may rely on
 exactly the members the trait declares.
@@ -1552,16 +1551,18 @@ trait Action:
   attr enabled: bool = true
 
 node Log:
-  satisfies Action
   const kind: string = "@action/log"     // supplies the no-default const
   // enabled inherits the trait's default (true) automatically
   default attr message: string
 
+fulfill Action for Log                   // body supplies the required cells
+
 node Delay:
-  satisfies Action
   const kind: string = "@action/delay"
   attr enabled: bool = false              // overrides the trait's default
   default attr time: duration
+
+fulfill Action for Delay
 ```
 
 A connection trait additionally constrains endpoints and may require
@@ -1576,12 +1577,13 @@ trait DriveLink:
   derived effective_speed: f32            // abstract: implementor supplies the body
 
 connection Drives:
-  satisfies DriveLink
   from: Driver
   to: Drivable
   attr aggressiveness: f32 = 0.5
   derived effective_speed: f32 =
     to.top_speed * (f32(from.expertise_level) / 10.0)
+
+fulfill DriveLink for Drives             // body supplies endpoints and cells
 ```
 
 An implementing connection satisfies `DriveLink` only if its `from`/`to`
@@ -1596,11 +1598,11 @@ Restrictions and kind gating:
   `derived`, `recurrent`, `stream`) or endpoint (`from`, `to`) is a
   kind-specific trait and cannot be satisfied by a record, enum, newtype,
   or primitive** — those types lack the reactive-graph machinery. The
-  compiler rejects `satisfies` on such a type if the trait declares any
+  compiler rejects the `fulfill` on such a type if the trait declares any
   such member.
 - **A trait that declares a `from` or `to` endpoint is a connection trait
   and cannot be satisfied by a node** — only connections have endpoints.
-  The compiler rejects `satisfies` on a node type if the trait declares
+  The compiler rejects the `fulfill` on a node type if the trait declares
   `from` or `to`. (Required cells without endpoints are satisfiable by
   either nodes or connections.)
 - The same name/type matching rules as method signatures apply: an
@@ -1608,76 +1610,96 @@ Restrictions and kind gating:
   exactly. For `from`/`to`, the implementing connection's endpoint type
   must satisfy the required endpoint type.
 
-### 3.2 Conformance Declarations (`satisfies`)
+### 3.2 Conformance Declarations (`fulfill`)
 
-A type declares conformance to a trait by including a `satisfies` clause in
-its body (§6.1 for records, §6.2 for enums, §13.3 for nodes, §13.6 for
-connections):
+A type's conformance to a trait is declared by a `fulfill` block. There is
+no body-level conformance item of any kind: the type body carries fields
+(and, for nodes and connections, reactive cells and endpoints), never a
+conformance clause. One mechanism, one door — the same `fulfill` serves
+local and foreign types alike. Who may write one is gated by the orphan
+rule (§3.7) and by sealing (§3.7.6).
 
 ```
 type Person:
-  satisfies Display, Hash
   first_name: string
   last_name: string
   age: i32
+
+fulfill Display for Person:
+  fn display(value: Person) -> string:
+    "{value.first_name} {value.last_name}"
 ```
 
-`satisfies` makes the conformance visible at the type's declaration site. A
-reader of the type sees its full set of conformances without leaving the
-type's file. The clause names the traits the type promises to implement; the
-actual implementations live in `fulfill` blocks (§3.4), possibly in different
-files (subject to the orphan rule from §3.7).
+The type body names the data; the `fulfill` supplies the behavior the trait
+requires. A `fulfill` may live in a different file from the type, subject to
+the orphan rule.
 
-`satisfies` and `fulfill` are paired and both required for traits with
-methods:
+**Bodiless `fulfill`.** `fulfill Trait for Type` with no colon and no body —
+optionally carrying a `where` clause — is legal (grammar in §3.3). It has
+four roles:
 
-- `satisfies Trait` in a type body without a corresponding `fulfill Trait for
-  Type` block reachable through the module graph is a compile error: the
-  promise is unfulfilled. This applies only to traits that require a `fulfill`
-  block; four kinds require none and are exempt: (1) marker traits (§3.1),
-  (2) methodless marker traits, (3) pure-requirement umbrella traits (§3.3.5),
-  and (4) a trait all of whose methods — direct and inherited — have default
-  bodies and whose effect-kind methods' `observed:` contracts, if any, are
-  fully exposed by those default bodies (§3.3.5).
-- `fulfill Trait for Type` without a corresponding `satisfies Trait` in
-  `Type`'s body is a compile error: the implementation has no declared
-  contract. The sole exception is the fulfill-without-satisfies waiver
-  (§3.3.5) for a trait whose every method — direct and inherited — has a
-  default body and that declares no required node/connection members; an
-  effect-kind method's `observed:` contract cells never block this waiver.
+- **Marker claim.** A methodless marker trait is claimed with a bodiless
+  `fulfill`: `fulfill Copy for Point`.
+- **Conditional marker.** The head's `where` clause makes the claim
+  conditional on the type's parameters: `fulfill Copy for Pair[T] where T:
+  Copy` (§11.4.1) conforms exactly those instantiations whose parameters
+  meet the bounds.
+- **Nothing to override.** A trait all of whose methods have default bodies
+  needs no body: `fulfill Renderable for Song` claims the trait and accepts
+  every default.
+- **Optional pin for an auto-satisfied trait.** When a trait auto-satisfies
+  (§3.3.5), no `fulfill` is required at all; a bodiless `fulfill` may still
+  be written as an explicit pin, but it is never required.
 
-The exception is traits with no abstract methods, direct or inherited — those
-with no methods at all, and those all of whose methods — declared directly or
-inherited from required traits — have default bodies (§3.3.5; the term
-"pure-requirement" is reserved there for the
-stricter no-methods-and-no-associated-types sense): these are automatically satisfied when all required
-traits are satisfied and, for a trait carrying effect-kind methods, every
-`observed:` contract is fully exposed by its method's own default body
-(§3.3.5); no `satisfies` clause is needed on the type and no `fulfill` block
-is needed for the auto-satisfied trait.
+**What requires a non-empty body.** A `fulfill` must carry a body when the
+trait leaves anything for the type to supply:
 
-A methodless marker may make its conformance *conditional* on the type's
-parameters by attaching a `where` clause to its `satisfies` clause:
-`satisfies Copy where T: Copy` (§11.4.1) declares that a generic type conforms
-for exactly those instantiations whose parameters meet the bounds. Because
-there are no methods, no `fulfill` block accompanies it; the `where` clause is
-the whole of the conditional contract.
+- any abstract method — one with no default body, whether declared directly
+  or inherited from a required trait;
+- any associated type the trait does not default;
+- any effect-kind method whose `observed:` contract its own default body
+  leaves uncovered (§3.3.5 elaborates the auto-satisfaction check).
+
+A trait declaring required cells or endpoints (§3.1.7) never auto-satisfies.
+Its conformance always takes an explicit `fulfill` claim — bodiless when
+nothing else is owed — and the claim triggers the compiler's check that the
+implementing body supplies every required member.
+
+**Coherence.** At most one `fulfill` exists per `(trait, type)` pair across
+the whole program. The orphan rule (§3.7) admits exactly the modules it covers
+as legal sites for it: a module declaring the trait, a module declaring the
+type's head constructor, or a module covering the pair through one of its own
+local types appearing as a generic argument or tuple element of the fulfilled
+type. If more than one admissible module writes a `fulfill` for the same pair,
+it is a compile error naming every offending site.
+
+**Open by default; `sealed type` closes.** A type is open to foreign
+conformance: a module that owns a trait may `fulfill` it for a type declared
+elsewhere (the orphan rule's trait-arm). Writing `sealed type` closes this —
+only the type's own module then decides what the type conforms to, and a
+foreign `fulfill` for it is a compile error. §3.7.6 gives the full mirror
+passage.
+
+**Visibility.** `@derive`, written on its own line above the type
+declaration, keeps common conformances visible right at the type (§3.8).
+Conformances declared by out-of-line `fulfill` blocks are surfaced by
+documentation tooling, which lists every trait a type conforms to.
 
 #### 3.2.1 Satisfied traits must have disjoint method names
 
-A type's `satisfies` set must not contain two *distinct trait identities*
-whose method names overlap. If `Trait1` and `Trait2` (different traits, not
+A type's conformance set — every trait the type fulfills, explicitly or
+auto-satisfied — must not contain two *distinct trait identities* whose
+method names overlap. If `Trait1` and `Trait2` (different traits, not
 different instantiations of the same generic trait) each declare a method
-named `display`, no type can declare `satisfies Trait1, Trait2` — the
-compiler rejects the declaration with an error identifying the conflicting
-method name and the two traits.
+named `display`, no type may conform to both — the compiler rejects the
+conformance with an error identifying the conflicting method name and the
+two traits.
 
-This rule preserves the contract semantics of `satisfies`. A reader of a
-type's declaration sees the full set of contracts the type promises; if those
+This rule keeps the conformance set an unambiguous contract sheet. A reader
+of a type's conformances sees the full set of contracts it promises; if those
 contracts had hidden naming conflicts, the contract sheet would be lying
-about what `display` (or whichever method) does. By forbidding overlap at the
-declaration site, the contract remains unambiguous: every method name on the
-type maps to exactly one trait-method origin.
+about what `display` (or whichever method) does. By forbidding overlap, every
+method name on the type maps to exactly one trait-method origin.
 
 ##### Generic trait instantiations do not conflict
 
@@ -1690,13 +1712,12 @@ under this rule:
 
 ```
 type MyNumber:
-  satisfies From[i32], From[i64]        // ✓ same parent trait From
   ...
 
-fulfill From[i32] for MyNumber:
+fulfill From[i32] for MyNumber:       // ✓ same parent trait From — no conflict
   fn convert(value: i32) -> MyNumber: ...
 
-fulfill From[i64] for MyNumber:
+fulfill From[i64] for MyNumber:       // ✓ the two fulfills carry the conformance
   fn convert(value: i64) -> MyNumber: ...
 ```
 
@@ -1723,11 +1744,13 @@ conformance.
 
 ##### Algorithm: effective method-set computation
 
-Given a type `T` with `satisfies T1, T2, ..., Tn`, the compiler computes
-`T`'s *effective method set* and checks for collisions:
+Given a type `T` whose conformance set is `T1, T2, ..., Tn` (every trait it
+fulfills, explicitly or auto-satisfied), the compiler computes `T`'s
+*effective method set* and checks for collisions:
 
 1. Initialize the effective set as empty.
-2. For each directly-satisfied trait `Ti`, compute the closure of `Ti` under
+2. For each trait `Ti` in the conformance set — explicitly fulfilled or
+   auto-satisfied — compute the closure of `Ti` under
    the `requires` relation: `Ti` itself plus every trait reachable through
    any chain of `requires` clauses.
 3. Union the method declarations of all traits in the closure for all `Ti`s
@@ -1779,8 +1802,8 @@ cannot arise. Call-site name resolution always finds at most one
 parent-trait source for a given (type, method-name) pair. This no-overlap
 check ranges over the type's **effective fulfilled-trait set** — directly
 satisfied traits, auto-satisfied traits (§3.3.5), and their `requires`
-closures — so it also covers auto-satisfied traits, which never appear in a
-written `satisfies` set. Within a
+closures — so it also covers auto-satisfied traits, which appear in no
+written `fulfill`. Within a
 parent-trait source, multiple generic instantiations may match; these
 are disambiguated by inference per §3.4.1.1.
 
@@ -1832,10 +1855,15 @@ The syntax (grammar addition):
 
 ```
 FulfillItem  := 'fulfill' TypeExpr 'for' TypeExpr WhereClause? FulfillBody
-FulfillBody  := NEWLINE INDENT FulfillBodyItem+ DEDENT
+FulfillBody  := ( NEWLINE INDENT FulfillBodyItem+ DEDENT ) | NEWLINE
 FulfillBodyItem := Annotation* DocComment? (FnDecl | AssocTypeBinding)
 AssocTypeBinding := 'type' Ident '=' TypeExpr NEWLINE
 ```
+
+The `NEWLINE` alternative is the bodiless `fulfill` — no colon, no body. The
+head's optional `where` clause still applies, which is how conditional marker
+conformance is written (`fulfill Copy for Pair[T] where T: Copy`); its roles
+are catalogued in §3.2.
 
 `fulfill` is a reserved keyword.
 
@@ -1971,14 +1999,11 @@ required traits. A `Result[i32, string]` implements `Display` because both
 closure types typically do not implement `Display`. The compiler verifies
 the conditions at every call site that requires the implementation.
 
-The `satisfies`↔`fulfill` pairing (§3.2) is satisfied by a plain
-unconditional `satisfies Display` in `Result`'s body. For a trait with
-methods — which always has a `fulfill` — the where-clause on the `fulfill`
-is the sole carrier of the availability condition: the `satisfies` clause
-states the contract unconditionally and the `where` narrows where the
-implementation is available. The sole exception is a methodless marker
-trait, which has no `fulfill`; it carries its condition on a conditional
-`satisfies … where` instead (§3.2, §11.4.1).
+The `fulfill` is itself the conformance declaration (§3.2); the where-clause
+on the `fulfill` is the sole carrier of the availability condition, narrowing
+where the implementation is available. For a methodless marker trait the same
+where-clause rides its bodiless `fulfill` (`fulfill Copy for Pair[T] where T:
+Copy`, §11.4.1).
 
 The same `where` clause carries **const-generic value bounds** (§2.5.6)
 in addition to trait bounds, and the two may be mixed in one
@@ -1993,17 +2018,25 @@ A trait that declares no methods and no associated types — only `requires`
 clauses — is a pure-requirement trait. Examples are the umbrella traits from
 §3.6 (`Numeric`, `Integer`, `Float`, `Signed`, `Unsigned`).
 
-A trait is **automatically satisfied** — no explicit `satisfies` clause on
-the type and no `fulfill` block for the trait itself are needed — when all of
-the following hold: all of its `requires` are satisfied, *every method, declared directly or
-inherited from its required traits, has a default body* (§3.1.3, i.e. it has no
-*abstract* method — a method with no default body), *and every associated type it declares has a
-default* (§3.3.2). Pure-requirement traits are the sub-case where the method
-set is empty; a trait whose every method carries a default body auto-satisfies
-on the same footing, because each default body supplies the implementation. A
-trait with one or more abstract methods — or an undefaulted associated type,
-which has no binder under auto-satisfaction — still requires explicit
-`satisfies` + `fulfill` per §3.2.
+A trait is **automatically satisfied** — conformance holds with no `fulfill`
+block for the trait itself — when all of the following hold: all of its
+`requires` are satisfied, *every method, declared directly or inherited from
+its required traits, has a default body* (§3.1.3, i.e. it has no *abstract*
+method — a method with no default body), *and every associated type it
+declares has a default* (§3.3.2). Pure-requirement traits are the sub-case
+where the method set is empty; a trait whose every method carries a default
+body auto-satisfies on the same footing, because each default body supplies
+the implementation. A trait with one or more abstract methods — or an
+undefaulted associated type, which has no binder under auto-satisfaction —
+still requires an explicit `fulfill` per §3.2.
+
+Auto-satisfaction must be grounded: it applies only to a trait that gives the
+compiler at least one satisfied requirement or defaulted member to check. A
+completely empty trait — no methods, no associated types, and no `requires`
+clauses — never auto-satisfies; its conformance always takes an explicit
+bodiless `fulfill` claim, which is what makes a marker claim load-bearing
+rather than redundant. A pure-requirement trait — empty of members but
+carrying `requires` clauses — auto-satisfies when its requirements hold.
 
 One further condition applies to traits carrying effect-kind methods
 (§3.1.1.1). When an effect-kind method declares an `observed:` contract,
@@ -2014,13 +2047,11 @@ nothing for a fulfillment to back, and the trait auto-satisfies; a
 default body that leaves any contract cell unexposed bars
 auto-satisfaction — with no `fulfill` block anywhere, no site would
 supply those cells — and such a trait requires an explicit `fulfill`
-block per §3.2; its `satisfies` clause remains subject to the
-fulfill-without-satisfies waiver (below), which observed cells never
-block.
+block per §3.2.
 
-For an auto-satisfied trait, no `fulfill` block is needed; no `satisfies`
-clause is needed on the type (though it may be included for documentation).
-The trait is *structurally* satisfied — via the satisfaction of its
+For an auto-satisfied trait, no `fulfill` block is needed; an optional
+bodiless `fulfill` pin may still be written — never required, useful as an
+evolution guard. The trait is *structurally* satisfied — via the satisfaction of its
 requirements and the presence of default bodies for any methods it declares —
 but it remains *nominally* present in the trait system: generic constraints
 `T: Numeric` are checked against the trait's name, and the compiler verifies
@@ -2032,30 +2063,8 @@ applies only to traits with no abstract methods (no methods at all, or only
 methods with default bodies), no undefaulted associated types, and no
 effect-method `observed:` contract left uncovered by its default body. Any
 trait with one or more abstract method signatures — or an undefaulted
-associated type — requires explicit `satisfies` + `fulfill` per §3.2; a
-trait with an uncovered observed contract requires an explicit `fulfill`,
-its `satisfies` subject to the fulfill-without-satisfies waiver below.
-
-**The `fulfill`-without-`satisfies` waiver (distinct from auto-satisfaction).**
-Auto-satisfaction (above) is about a type gaining a trait with *no*
-`fulfill` block at all. A separate, narrower rule governs traits carrying
-effect-kind methods (§3.1.1.1): a trait in which **every** method —
-declared directly or inherited from its required traits, including every
-effect-kind method — has a default body **and** which
-declares **no required cells** — no required node/connection members per
-§3.1.7 (required `attr`, `const`, `derived`, `recurrent`, and `stream`
-declarations and required endpoints) — permits a `fulfill` block
-**without** a matching `satisfies` clause. An effect-kind method's
-`observed:` contract cells do **not** count as required cells here and
-never block the waiver: the waiver keeps the `fulfill` block, which is
-exactly where observed cells are exposed and checked. This is not
-auto-satisfaction — a `fulfill` block is still
-written, e.g. to override a default effect body — it only waives the
-`satisfies` declaration. `satisfies` remains **mandatory** for any trait
-with an abstract method or with required cells. Keeping this waiver
-separate from auto-satisfaction is deliberate: the two rules govern
-different things (no-`fulfill` presence vs. no-`satisfies` fulfillment)
-and must not be conflated.
+associated type — requires an explicit `fulfill` per §3.2; a trait with an
+uncovered observed contract likewise requires an explicit `fulfill`.
 
 #### 3.3.6 Visibility of `fulfill` blocks
 
@@ -2133,8 +2142,8 @@ resolution algorithm prioritizes trait implementations over free functions:
    one parent-trait entry.
 4. **At most one parent-trait candidate after collapse.** Per §3.2.1, no
    type may satisfy two traits with *different* parent identities that
-   declare overlapping method names — the type's `satisfies` declaration
-   would have been rejected. Therefore the trait-impl search yields either
+   declare overlapping method names — the type's conformance would have been
+   rejected. Therefore the trait-impl search yields either
    zero or one parent-trait candidate.
 5. **One parent-trait candidate matches → resolve to it.** The trait impl
    wins over any same-named free function. A free function with the same
@@ -2652,9 +2661,11 @@ define a new trait of the same name and reuse the privileged behavior.
 The category has two sub-kinds, distinguished by how a type acquires
 membership.
 
-**Opt-in markers.** A type acquires membership *explicitly*, via the usual
-`satisfies` clause or via `@derive` (these markers are `@derive`-eligible;
-see §3.8.1). The members are:
+**Opt-in markers.** A type acquires membership *explicitly*, via a bodiless
+`fulfill` claim or via `@derive` (these markers are `@derive`-eligible;
+see §3.8.1). The claim is load-bearing: an empty marker trait has nothing for
+auto-satisfaction to check, so it never auto-satisfies — membership exists
+exactly where claimed (§3.3.5). The members are:
 
 - `Copy` (§11.4) — flags a type whose values are duplicated implicitly
   at every use site. The compiler enforces the auto-derivation rules
@@ -2665,7 +2676,7 @@ see §3.8.1). The members are:
 
 **Intrinsic markers.** Membership is *automatic and universal* for a kind
 of declaration: every declaration of that kind satisfies the marker by
-construction, with no `satisfies` clause and no `@derive`. These markers
+construction, with no `fulfill` claim and no `@derive`. These markers
 are correspondingly *not* `@derive`-eligible (there is nothing to opt
 into) and cannot be opted out of. The members are:
 
@@ -2700,7 +2711,7 @@ This category is distinct from two superficially similar things:
   pattern — empty traits whose only purpose is to act as a nominal tag.
   Such user-defined empty traits are perfectly valid, but they are not
   members of the language-defined marker traits category and do not
-  receive any compiler privilege beyond the usual `satisfies` check.
+  receive any compiler privilege beyond the usual conformance check.
 
 Adding a new member to either sub-kind is a language-level change, not
 a user-extensible mechanism.
@@ -2714,7 +2725,6 @@ newtype, then implement the foreign trait for the local newtype:
 ```
 type MyVec[T]:
   wraps Vec[T]
-  satisfies SomeForeignTrait
 
 fulfill SomeForeignTrait for MyVec[T]:
   ...
@@ -2734,16 +2744,11 @@ bound, in a `where` clause, and in method dispatch. Sealing restricts one
 thing only: *fulfillment*. A fulfillment claim for a sealed trait is
 legal only inside the trait's own declaring module.
 
-Sealing bars both doors through which a type can acquire a trait:
-
-- A `fulfill Trait for Type` block outside the declaring module.
-- A bare `satisfies Trait` marker claim outside the declaring module.
-
-Both are the same compile error, diagnostic class
-`sealed_trait_fulfillment_outside_module`. The marker-claim door is
-listed explicitly because a marker trait (§3.7.4) can otherwise be
-claimed with a bare `satisfies` clause and no `fulfill` block; sealing
-closes that path too.
+Sealing restricts fulfillment claims — `fulfill` blocks, bodiless marker
+claims included — to the trait's own declaring module. There is one door,
+and passing through it from outside is a single compile error, diagnostic
+class `sealed_trait_fulfillment_outside_module`. A bodiless marker claim is
+itself a fulfillment claim, so sealing covers it too.
 
 ```
 sealed trait ColorSpace          // any module may declare one
@@ -2753,7 +2758,7 @@ fulfill ColorSpace for Rgb       // ✓ same module as the trait
 
 // elsewhere:
 fulfill ColorSpace for MyThing   // ✗ sealed_trait_fulfillment_outside_module
-type T2: satisfies ColorSpace    // ✗ same error — bare marker claims are the second door
+fulfill ColorSpace for T2        // ✗ same error — bodiless marker claims are fulfillment claims
 ```
 
 Relation to the orphan rule (§3.7.1). The orphan rule permits a
@@ -2765,8 +2770,35 @@ the orphan rule uses (§10.2): a Ductus module is a folder of `.duc`
 files, and Ductus module semantics differ from e.g. JavaScript's
 per-file modules, so read §10.2 for what "the declaring module" denotes.
 
-`sealed` is a reserved word used on the trait declaration; its assignment
-to a keyword class is deferred to the keyword-class taxonomy.
+**Sealed types (the mirror image).** A type is open to foreign conformance
+by default: the orphan rule's trait-arm lets a trait's own module write a
+`fulfill` for a type declared elsewhere. Writing `sealed type` mirrors
+`sealed trait` — only the type's own declaring module may conform it to
+traits. A foreign `fulfill` for a sealed type is a compile error, diagnostic
+class `sealed_type_fulfillment_outside_module` (naming symmetric with the
+trait-side class). The two checks compose: a `fulfill` must pass both the
+trait-side seal and the type-side seal.
+
+The modifier is uniform across every nominal conformable declaration kind —
+`sealed type`, `sealed enum`, `sealed node`, `sealed connection` — with a
+newtype sealing through its `type` head. The structural carve-outs — tuples
+and closure types — have no declaration to modify and no declaring module to
+protect, so they cannot be sealed, though a tuple remains conformable through
+element coverage under the orphan rule.
+
+```
+sealed type Song:                // only Song's module decides what Song conforms to
+  ...
+
+// in Song's module:
+fulfill Display for Song         // ✓ the type's own module
+
+// elsewhere, in the module that declares trait Playable:
+fulfill Playable for Song        // ✗ sealed_type_fulfillment_outside_module
+```
+
+`sealed` is a reserved word used on trait and type declarations; its
+assignment to a keyword class is deferred to the keyword-class taxonomy.
 
 The language seals its own traits through this very mechanism, with
 nothing behind it. `Into` and `TryInto` (§7.2) and `StreamPolicy`
@@ -2800,7 +2832,8 @@ The traits eligible for automatic derivation are:
   rule: every member of the *opt-in* marker sub-kind is `@derive`-eligible.
   Derivation performs whatever structural check the marker requires (none
   for Circularity; Copy-eligibility for Copy) and emits the satisfies-flag
-  with no method body. The *intrinsic* marker sub-kind (`Node`,
+  (so named because it records that the type *satisfies* the trait) with no
+  method body. The *intrinsic* marker sub-kind (`Node`,
   `Connection`, `Effect`, §3.7.4) is **not** `@derive`-eligible: membership
   is automatic at declaration, so there is nothing to derive.
 
@@ -4936,21 +4969,11 @@ parameter, trait object, or compound. A record may declare generic
 parameters in the standard `[T, U, ...]` form; each generic parameter is
 in scope within the field declarations.
 
-A record body may include a `satisfies` clause listing the traits the type
-promises to implement (§3.2):
-
-```
-type Person:
-  satisfies Display, Hash, Eq
-  first_name: string
-  last_name: string
-  age: i32
-```
-
-The `satisfies` clause may appear once per record, conventionally at the
-top of the body. Per §3.2, every trait listed must have a matching `fulfill`
-block reachable through the module graph; pure-requirement umbrella traits
-per §3.3.5 are satisfied automatically when their requirements are.
+A record body carries field declarations only; trait conformance is not
+declared in the body. The traits a record conforms to are declared by
+`fulfill` blocks (§3.2), reachable through the module graph; pure-requirement
+umbrella traits per §3.3.5 are satisfied automatically when their
+requirements are.
 
 Records do not declare methods. Functions operating on record instances are
 free functions defined elsewhere or trait-method
@@ -5322,22 +5345,20 @@ declarations.
 
 #### 6.2.2 Conformance
 
-An enum may include a `satisfies` clause listing the traits the type
-implements, parallel to records:
+An enum's trait conformance is declared by `fulfill` blocks (§3.2),
+parallel to records:
 
 ```
 enum Color:
-  satisfies Display, Eq, Hash
   Red
   Green
   Blue
   Custom(r: u8, g: u8, b: u8)
 ```
 
-Per §3.2, `satisfies` requires matching `fulfill` blocks. The conformance
-applies to the *enum as a whole*, not per-variant. A trait implementation
-for an enum handles all variants — typically via a `match` expression on
-the input — and produces a uniform result type:
+The conformance applies to the *enum as a whole*, not per-variant. A trait
+implementation for an enum handles all variants — typically via a `match`
+expression on the input — and produces a uniform result type:
 
 ```
 fulfill Display for Color:
@@ -5604,11 +5625,12 @@ type MyVec[T]:
 The signature line matches ordinary record and enum declarations
 (`type Name[generics]:`) for uniformity. The `wraps` clause inside the
 body identifies the declaration as a newtype and names its underlying
-type. The body may include other clauses — `satisfies` clauses or
-metadata declarations — but it may not contain field declarations. A
-`wraps` body and a field-declaration body are mutually exclusive: a
-newtype wraps one underlying value; a record declares its own fields.
-The compiler rejects bodies that mix `wraps` with field declarations.
+type. The body may include metadata declarations but no field
+declarations and no conformance items — trait conformance is declared by
+`fulfill` blocks (§3.2). A `wraps` body and a field-declaration body are
+mutually exclusive: a newtype wraps one underlying value; a record
+declares its own fields. The compiler rejects bodies that mix `wraps`
+with field declarations.
 
 The contrast with `alias type` from §4.2:
 
@@ -5623,13 +5645,12 @@ type UserId:                 // newtype; UserId is distinct from i64
 identity. The two forms are syntactically distinct and serve opposite
 purposes.
 
-A newtype body may include one `satisfies` clause (listing one or more
-traits) for explicitly implemented traits per §3.2, like records and enums:
+A newtype declares trait conformance with `fulfill` blocks (§3.2), like
+records and enums:
 
 ```
 type Email:
   wraps string
-  satisfies TryFrom[string]
 
 fulfill TryFrom[string] for Email:
   type Error is ValidationError
@@ -5640,7 +5661,7 @@ fulfill TryFrom[string] for Email:
       Err(ValidationError::Invalid)
 ```
 
-The same `satisfies`/`fulfill` discipline from §3.2 applies. The
+The same `fulfill` discipline from §3.2 applies. The
 `@derive` annotation per §3.8 is the shorthand for the common case where
 trait conformance is structural over the underlying type.
 
@@ -5746,14 +5767,13 @@ Distance(2.0)` to dispatch to `f64`'s `Add::add`, producing
 
 Operators across different newtype identities require explicit
 implementation: `Distance + i32` is a compile error unless the user
-writes a `fulfill Add[i32] for Distance` block manually (with a matching
-`satisfies Add[i32]` in `Distance`'s body). The orphan rule (§3.7)
-permits this in the newtype's defining module.
+writes a `fulfill Add[i32] for Distance` block manually. The orphan rule
+(§3.7) permits this in the newtype's defining module.
 
-The `@derive` annotation implicitly declares `satisfies` for the listed
-traits — the user does not write `satisfies Eq, Hash, Display` separately
-when using `@derive(Eq, Hash, Display)`. Manual `fulfill` blocks still
-require their corresponding `satisfies` clauses in the body per §3.2.
+The `@derive` annotation establishes the conformance directly for the
+listed traits — the user does not write a separate conformance declaration
+when using `@derive(Eq, Hash, Display)`. A manual `fulfill` block is itself
+the conformance declaration; nothing accompanies it in the type body.
 
 Derivation fails (compile error) if the underlying type does not satisfy
 the trait being derived — `@derive(Display)` on a newtype wrapping a
@@ -5770,7 +5790,6 @@ independently controllable from its type visibility:
 ```
 public(private) type Email:
   wraps string
-  satisfies TryFrom[string]
 ```
 
 This is the smart-constructor pattern: the type name `Email` is visible
@@ -5794,7 +5813,6 @@ type is permitted:
 // In user module:
 type MyVec[T]:
   wraps Vec[T]
-  satisfies SomeForeignTrait
 
 fulfill SomeForeignTrait for MyVec[T]:
   ...
@@ -5957,10 +5975,10 @@ follows automatically.
 
 The `From`/`TryFrom` impls are the user's written contract; the
 `Into`/`TryInto` impls are the language's mechanical counterparts.
-Neither auto-derived impl requires a `satisfies` declaration on its
-source type: the impl is structural (mechanically derived from
-`From`/`TryFrom`), not a separate trait obligation the user must
-declare.
+Neither auto-derived impl requires any declaration on its source type:
+the impl is structural (mechanically derived from `From`/`TryFrom`), and
+the language provides it outright — not a separate trait obligation the
+user must declare.
 
 ### 7.3 Identity Conversion
 
@@ -8885,7 +8903,7 @@ No methods. No associated types. The trait's only purpose is to flag a
 type as having implicit-duplication semantics.
 
 Non-primitive types opt into `Copy` either via `@derive(Copy)` (idiomatic
-shorthand) or via explicit `satisfies Copy` in the type's body. Both
+shorthand) or via an explicit bodiless `fulfill Copy for Type`. Both
 forms are valid and have identical semantics: the compiler verifies the
 structural requirement that every field's type is itself `Copy`, then
 enables implicit-duplication semantics for values of the type. The
@@ -8908,20 +8926,22 @@ The following types automatically implement `Copy`:
 - Closure types (§11.10.6) — they capture only `Copy` values.
 
 A generic type opts into `Copy` *conditionally* by attaching a `where` clause
-to a `satisfies Copy` clause — the same conditional pattern the stdlib uses for
-`Range[T]` above. Because `Copy` is a methodless marker (§11.4), no `fulfill`
-block is written; the `satisfies` clause alone carries the condition:
+to a bodiless `fulfill Copy for Type` — the same conditional pattern the stdlib
+uses for `Range[T]` above. Because `Copy` is a methodless marker (§11.4), the
+bodiless `fulfill` needs no body; its `where` clause alone carries the
+condition:
 
 ```
 type Pair[T]:
-  satisfies Copy where T: Copy
   first: T
   second: T
+
+fulfill Copy for Pair[T] where T: Copy
 ```
 
 `Pair[i32]` is `Copy` (its parameter is `Copy`); `Pair[Buffer]` for a
-non-`Copy` `Buffer` is not. The conditional `satisfies` form is available for
-any methodless marker trait, not only `Copy` (§3.2).
+non-`Copy` `Buffer` is not. The conditional bodiless `fulfill` form is
+available for any methodless marker trait, not only `Copy` (§3.2).
 
 #### 11.4.2 Opt-in via `@derive(Copy)`
 
@@ -12491,14 +12511,16 @@ every instance of the type and is fixed at compile time.
 trait Action
 
 node Log:
-  satisfies Action
   const kind: string = "@action/log"
   default attr message: string
 
+fulfill Action for Log
+
 node Delay:
-  satisfies Action
   const kind: string = "@action/delay"
   default attr time: duration
+
+fulfill Action for Delay
 ```
 
 ##### 13.2.5.1 Properties
@@ -13163,9 +13185,10 @@ node ItemHost:
       item_type | post=p           // place the supplied type, setting its input
 
 node PostItem:
-  satisfies RendersPost
   attr post: Post
   // … exposes its rendering of `post` …
+
+fulfill RendersPost for PostItem
 
 ItemHost host | item_type=PostItem, posts=all_posts   // supply the TYPE PostItem
 ```
@@ -13485,7 +13508,6 @@ runtime.
 
 ```
 node TypeName[GenericParams]?:
-  satisfies Trait1, Trait2                            // optional trait conformance
   children:                                           // optional acceptance of placed children (§13.3.3)
     name: Selector <cardinality>                      // one named acceptance entry per line
   incoming:                                           // optional acceptance of incoming connections
@@ -13504,6 +13526,8 @@ node TypeName[GenericParams]?:
     source |> effect
   expose:                                             // structural output (§13.3.7) — always last
     name                                              // a declared view, named acceptance entry, or named child
+
+fulfill Trait1 for TypeName                           // optional trait conformance (§13.3.2)
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
@@ -13513,20 +13537,24 @@ in free order; `effects:` follows the members and `expose:` is last
 
 ```
 node Driver:
-  satisfies Drivable
   outgoing:
     drives: Drives
   attr expertise_level: i32 = 5
   attr risk_tolerance: f32 = 0.5
   derived is_aggressive: bool = risk_tolerance > 0.7
+
+fulfill Drivable for Driver
 ```
 
-#### 13.3.2 `satisfies` clause
+#### 13.3.2 Trait conformance (`fulfill`)
 
-A node may declare trait conformance via `satisfies` (§3.2). Trait
-methods are implemented via `fulfill` blocks (§3.3); node bodies
-themselves do not contain `fn` declarations. Functions on node
-instances are free functions taking the node type as a parameter,
+A node declares trait conformance with a `fulfill` block (§3.2), e.g.
+`fulfill Drivable for MyNode`. A trait's required cells (`attr`, `const`,
+`derived`, and the rest) stay declared in the node body; the `fulfill`
+claims the trait, and the compiler checks that the body supplies every
+required member. Trait methods are implemented in the `fulfill` block
+(§3.3); node bodies themselves do not contain `fn` declarations. Functions
+on node instances are free functions taking the node type as a parameter,
 callable via uniform call syntax (§3.4).
 
 ```
@@ -13534,7 +13562,6 @@ trait Displayable:
   fn display(value: Subject) -> string
 
 node Driver:
-  satisfies Displayable
   attr expertise_level: i32
   attr risk_tolerance: f32
 
@@ -14372,8 +14399,9 @@ connection Drives:
   to: Drivable
 
 node Axle:
-  satisfies Drivable
   dynamic incoming drives: Drives*    // membership varies with the handles — §13.3.4
+
+fulfill Drivable for Axle
 
 node Driver:
   attr wheel: Handle[Drivable]        // configured per instance at placement
@@ -14815,7 +14843,6 @@ node's content.
 
 ```
 node TypeName:
-  satisfies SomeTrait
   children:
     a: SomeA
     b: SomeB
@@ -14829,15 +14856,17 @@ node TypeName:
   expose:
     a
     b
+
+fulfill SomeTrait for TypeName
 ```
 
 Node-body members — cells, standalone selection-only `view`/`dynamic view`
 declarations, the acceptance clauses `children:` / `incoming:` /
-`outgoing:`, `satisfies`, and `when:` — appear in **free
-order**; the only positional constraints are that `effects:` (§13.3.8)
-comes after the members and `expose:` comes last. `satisfies`, `when:`,
-`effects:`, `expose:`, and `default attr` each appear at most once. An
-acceptance clause is a header keyword followed by `:` and an indented block
+`outgoing:`, and `when:` — appear in **free order**; the only positional
+constraints are that `effects:` (§13.3.8) comes after the members and
+`expose:` comes last. `when:`, `effects:`, `expose:`, and `default attr`
+each appear at most once. An acceptance clause is a header keyword followed
+by `:` and an indented block
 of named entries, one entry per line; each named entry joins the body-wide
 namespace. A standalone `view` or `dynamic view` declaration is
 pure selection over already-accepted children and never widens
@@ -16281,7 +16310,6 @@ appear exactly once, and at most one `default attr` (§13.2.2.1).
 
 ```
 connection TypeName[GenericParams]?:
-  satisfies Trait1, Trait2                            // optional trait conformance
   from: SourceType                                    // required, exactly once
   to: DestType                                        // required, exactly once
   when: predicate                                     // optional activation predicate (§13.9)
@@ -16291,6 +16319,8 @@ connection TypeName[GenericParams]?:
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
+
+fulfill Trait1 for TypeName                           // optional trait conformance (§3.2)
 ```
 
 A connection type may declare a `default attr` per §13.2.2.1. At
@@ -16530,9 +16560,10 @@ in the node graph (§13.11.2).
 trait Circularity                          // marker trait, no methods
 
 connection MyDelayed:
-  satisfies Circularity
   from: Clip
   to: Clip
+
+fulfill Circularity for MyDelayed
 ```
 
 The compiler enforces a static rule: every topology cycle in the
@@ -17276,16 +17307,18 @@ trait DriveLink:                       // §3.1.7 — a connection contract
   to: Drivable
 
 connection Drives:
-  satisfies DriveLink
   from: Driver
   to: Drivable
   attr aggressiveness: f32 = 0.5
 
+fulfill DriveLink for Drives
+
 connection Tows:
-  satisfies DriveLink
   from: Driver
   to: Drivable
   attr aggressiveness: f32 = 0.2
+
+fulfill DriveLink for Tows
 
 node Driver[C: DriveLink]:             // C: a connection type satisfying DriveLink
   attr link_kind: Type[C]              // which DriveLink kind this driver establishes
