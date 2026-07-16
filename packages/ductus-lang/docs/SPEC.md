@@ -7338,10 +7338,12 @@ let m: usize = dyn_slice.count     // runtime for T[..]
 ```
 
 The accessor is the full word `count`, not `len()` or `length`. This is
-the uniform element-tally name shared by arrays, slices, bundles, `Map`,
-`Vec`, `HashSet`, `yielded` groups, and dynamic views (§13.3.3.4).
-Strings are exempt — they use `byte_len` / `char_count` (§9.1) — and
-stream metrics keep their specialized `pending_count`-style names.
+the uniform element-tally name shared by arrays, slices, `Map`, `Vec`,
+`HashSet`, `yielded` groups, and dynamic views (§13.3.3.4). Bundles
+share the bare `count` spelling but report the **row** count — the one
+intentional exception to the element tally (§13.3.3.5). Strings are
+exempt — they use `byte_len` / `char_count` (§9.1) — and stream metrics
+keep their specialized `pending_count`-style names.
 
 ### 9.4 Time Types: `duration` and `instant`
 
@@ -7607,6 +7609,10 @@ qualify are:
 - `char`.
 - `string`.
 - `duration` and `instant`.
+
+This list is exactly the canonical `StringifiableKey` set (§13.5.4.1):
+one shared enumeration bounds both `Map[K, V]`'s built-in keys and
+`repeat` scope keys.
 
 Float types (`f32`, `f64`) **do not** satisfy `Hash` — `NaN ≠ NaN`
 violates the `Eq → Hash` equal-implies-equal-hash law — so
@@ -14054,7 +14060,9 @@ chords[0].count                       // number of elements in bundle 0
 
 An **empty bundle literal `[]`** is legal and has type
 `Bundle[T]` for any `T` the context can infer. The bundle has zero
-elements; its offset table has length 1 (a single zero-length row).
+elements and zero rows; its offsets table has length 1, encoding zero
+rows (offsets length = rows + 1). `[].count == 0`, and `for row in []`
+runs zero times.
 
 ##### Access via `Index`
 
@@ -14066,8 +14074,9 @@ Bundle access goes through the `Index` trait (§4.9.5). Indexing follows the
   statically equal, or the row is a single element), `Handle[T][..]`
   when the row length is only known at runtime.
 - `bundle[g][i]` returns `Handle[T]` — the indexed element of row `g`.
-- `bundle.count` returns the row count; `bundle[g].count` returns the
-  row's element count.
+- `bundle.count` returns the **row** count — an intentional exception to
+  the unified element-tally reading of `.count` (§9.3.8); `bundle[g].count`
+  returns the row's element count.
 
 Direct index `bundle[g]` is legal iff `g < outer_min_cardinality`; direct
 `bundle[g][i]` is additionally legal iff `i < inner_min_cardinality`. For
@@ -14089,7 +14098,9 @@ User code always sees a `Handle[T][..N]` or `Handle[T][..]` slice from
 `bundle[g]`; single-element rows are length-1 slices, uniform with the
 other forms (no collapse to a bare `Handle[T]`). The empty bundle
 literal `[]` is a legal `Bundle[T]` for any inferable `T`; its offsets
-table has length 1 (one zero-length row).
+table has length 1, encoding zero rows. The offsets invariant: **offsets
+length = rows + 1** — row `g` is delimited by `offsets[g]..offsets[g+1]`,
+so a table of length 1 delimits zero rows.
 
 As an internal optimization, when every row's inner cardinality is
 statically equal the compiler MAY use a flat-array representation; this
@@ -14271,7 +14282,7 @@ node Driver:
 set as a *static fact* when both its presence and its destination are fixed at
 compile time. Membership stops being a static fact in exactly two ways: the
 connection is materialized per `repeat` key (its *existence* varies, §13.5.4),
-or its destination is a reactive reference or `Handle` (its *target* varies,
+or its destination is a reactive reference or `WeakHandle` (its *target* varies,
 §13.6.2). The rule:
 
 - An **unmarked (static)** `incoming` view admits only connections whose
@@ -14404,7 +14415,7 @@ node Axle:
 fulfill Drivable for Axle
 
 node Driver:
-  attr wheel: Handle[Drivable]        // configured per instance at placement
+  attr wheel: WeakHandle[Drivable]    // configured per instance at placement
   view pedals: Pedal+
   expose:
     pedals
@@ -14440,7 +14451,7 @@ instance of the source type contributes one connection to the target's
 incoming accounting, by §13.3.4's rule: contributions that are static facts
 (statically placed source instances, static destinations) count toward a
 static `incoming` view's exact arithmetic; any contribution that is not a
-static fact — source instances materialized by `repeat`, or a `Handle`
+static fact — source instances materialized by `repeat`, or a `WeakHandle`
 destination — requires the target to declare a `dynamic incoming`
 connection-view for that type, with the error naming both sites.
 
@@ -14716,18 +14727,20 @@ the chain. A `Handle[T]` (statically placed) needs no elimination —
 the statically-placed binding declared one paragraph above).
 
 **Liveness and the generation guard.** A handle is, concretely, a graph slot
-plus a **generation** stamp. Resolution compares the stamp: if the slot was
-dismounted and later reused by a different entity, the old handle's generation no
-longer matches and it resolves to `None` — never to the wrong entity. This ABA
-guard is what makes handle resolution sound across mount churn. Because mount and
-dismount flip a handle's resolution, a handle read is a *dynamic* dependency
-(§13.10.5).
+plus a **generation** stamp. A `WeakHandle[T]` resolution compares the stamp: if
+the slot was dismounted and later reused by a different entity, the old handle's
+generation no longer matches and it resolves to `None` — never to the wrong
+entity. This ABA guard is what makes weak-handle resolution sound across mount
+churn. Because mount and dismount flip a `WeakHandle[T]`'s resolution, a
+weak-handle resolution read is a *dynamic* dependency (§13.10.5). A `Handle[T]`
+resolution never flips: its referent is statically placed for the handle's
+lifetime.
 
-**Identity across remount.** A handle obtained by key from a `repeat` view
-(§13.5.4.9) designates the *keyed scope*, not one particular mount. By the
+**Identity across remount.** A `WeakHandle[T]` obtained by key from a `repeat`
+view (§13.5.4.9) designates the *keyed scope*, not one particular mount. By the
 identity rule of §13.5.4.8, the same key reappearing in the source remounts the
-*same* scope, so a key-addressed handle that had resolved `None` resolves `Some`
-again when its key returns.
+*same* scope, so a key-addressed weak handle that had resolved `None` resolves
+`Some` again when its key returns.
 
 ##### 13.3.6.3 Storable references to plain values: the `Portal[…]` type
 
@@ -14818,17 +14831,20 @@ tracking layered on top for validity across reload.
 **`Portal[Handle[T]]` does not collapse.** A `Portal[T]` designates a
 slot identity by generation stamp; its lifetime is the lifetime of the
 slot's owner. A `Handle[T]` value sitting in that slot designates a graph
-entity (§13.3.6.2); its lifetime is the entity's mount lifetime. These
-are two independent lifetimes. The slot can drop — the containing record
-drops, the field is reassigned — while the graph entity is still mounted;
-the graph entity can dismount while the slot is still live and holds a
-now-stale handle. A `Portal[Handle[T]]` resolution is therefore a
-two-step presence check: outer `Option[&Handle[T]]` from the portal's
-generation guard, then the handle's own liveness from the inner read.
-Collapsing `Portal[Handle[T]]` to `Handle[T]` would conflate these two
-distinct presence checks into one. `Portal[Portal[T]]` still collapses
-to `Portal[T]`: both layers track the same kind of slot lifetime, so
-nesting them adds no extra check.
+entity (§13.3.6.2) whose referent is statically placed for the handle's
+lifetime. These are still two independent lifetimes: the slot can drop —
+the containing record drops, the field is reassigned — while the graph
+entity is still mounted. A `Portal[Handle[T]]` resolution therefore keeps
+the portal's presence check: outer `Option[&Handle[T]]` from the portal's
+generation guard, then the handle's ordinary auto-deref to `&T` beneath
+it — a `Handle[T]` needs no liveness read of its own. With a
+`WeakHandle[T]` in the slot, `Portal[WeakHandle[T]]` is a genuine
+two-step presence check: the entity can dismount while the slot is still
+live and holds a now-stale weak handle, so the inner read is the weak
+handle's own `Option[&T]` resolution. Collapsing `Portal[Handle[T]]` to
+`Handle[T]` would erase the slot-lifetime guard. `Portal[Portal[T]]`
+still collapses to `Portal[T]`: both layers track the same kind of slot
+lifetime, so nesting them adds no extra check.
 
 #### 13.3.7 Exposition (the `expose:` clause)
 
@@ -15070,7 +15086,7 @@ node Section:
   // …
 
 node Verse:
-  attr next: Handle[Section]      // configured at placement
+  attr next: WeakHandle[Section]  // configured at placement
   expose:
     Note/'A4'
     Note/'G4'
@@ -15751,8 +15767,10 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   the first applicable path:
   1. **Explicit `keyed by <key-expr>`** — if supplied, `<key-expr>`
      is evaluated with the bind in scope. The result must be a
-     `StringifiableKey` (`i8`–`i64`, `u8`–`u64`, `bool`, `char`,
-     `string`). Explicit always wins when present.
+     `StringifiableKey` (`i8`–`i128`, `u8`–`u128`, `isize`, `usize`,
+     `bool`, `char`, `string`, `duration`, `instant`) — the canonical
+     key set, one enumeration shared with `Map[K, V]`'s built-in key
+     bound (§9.5.3). Explicit always wins when present.
   2. **Carried key** — when the source is a `dynamic` collection cell
      (a `dynamic` view or connection-view, §13.3.3.4), each
      element arrives with the key its supplier derived for it
@@ -17240,10 +17258,10 @@ exempt from the `outgoing` connection-views — but not from endpoint typing.
 
 The destination is supplied in the connection placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
-reference (possibly reactive), or a `Handle[N]` (read as `Option[&N]`,
+reference (possibly reactive), or a `WeakHandle[N]` (read as `Option[&N]`,
 §13.3.6.2) selecting one of
 the candidate nodes (the connection freezes while that selection resolves to
-`None`, §13.9.7). A reactive or `Handle` destination makes membership at the
+`None`, §13.9.7). A reactive or `WeakHandle` destination makes membership at the
 destination a runtime fact: every node type in the reference's candidate
 envelope must declare a `dynamic incoming` connection-view of that type
 (§13.3.4). The `/expr`
@@ -17395,7 +17413,7 @@ reference* is admissible, including a function return. A connection does not
 own its destination (§13.8.4.1); the endpoint is a borrow, which is exactly
 what such an expression provides (§13.3.6.1). A borrow cannot be stored in a
 cell (§11.9.1), so a destination that must persist or re-point across time is
-supplied as a `Handle[N]` (§13.3.6.2) — the storable designation, whose read
+supplied as a `WeakHandle[N]` (§13.3.6.2) — the storable designation, whose read
 is `Option[&N]`. The connection points at the contained node while that
 resolution is `Some` and **freezes** while it is `None` (§13.9.7).
 

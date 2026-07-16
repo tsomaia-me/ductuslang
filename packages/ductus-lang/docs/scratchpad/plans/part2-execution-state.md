@@ -71,9 +71,7 @@ LOG/SPEC content — verify on disk (LEARNINGS #3); verification = full diff rea
 ## QUEUE after the structure batch (in order)
 
 1. **Streams batch**: D-19 (DRAIN completion semantics — ruled with sub-answers per item) +
-   the observe-per-event gap (UNRULED: does an observe arm with a stream trigger evaluate once
-   per EVENT or per COMMIT? Irrelevant to to_signal, load-bearing for accumulate's every-event
-   fold — present protocol-complete with the batch).
+   OBSERVE-GRANULARITY RULED (A) 2026-07-16: per-event in commit order; value-context firings chain intra-commit (running value visible to later firings; .previous stays previous-committed); grounds accumulate expressibility. F128 residual dissolved (superseded by eviction). Streams batch FULLY SPECIFIED — launch after structure batch lands + owner commits.
 2. **Policies batch**: execute D-06 (repoint policy — largely applied as-we-went; sweep),
    D-07 residual consolidations, D-08 (hook order rules NEVER YET WRITTEN into LOG/SPEC:
    post-publish inside blocking commit(), teardown→create→resume→update, initial create =
@@ -97,6 +95,14 @@ LOG/SPEC content — verify on disk (LEARNINGS #3); verification = full diff rea
    IR behavior-grammar ret/operand gap (own item); IR_GRAMMAR §2/§6 citation-drift sweep
    (033-166/167/168 offsets); duplicate keyed-by keys on value collections (LOW);
    optional strict-kind vocabulary sweep (016-167/030-48/49/029-124 loose "kind" usage).
+
+## STANDING AUTHORIZATION (owner, 2026-07-16, verbatim intent)
+"and you commit. don't wait for me. as soon as structure batch finishes: verify, commit, start
+the streams batch. IF there will surface any items that need my calling, surface them, of
+course." — So: after each batch passes the full verification chain (greps + reviewer
+adjudication + my end-to-end diff read), I COMMIT it myself (descriptive message, house style,
+no push unless told) and IMMEDIATELY launch the next fully-specified batch in the queue.
+Owner-flag items still get surfaced; genuinely blocking items still halt the chain.
 
 ## Working protocol (hard-won, do not relearn)
 
