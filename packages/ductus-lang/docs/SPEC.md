@@ -1277,11 +1277,13 @@ trait Renderable:
   through the trait sees only the contract cells.
 - Effect-kind methods may carry **default bodies**, exactly as `fn`
   methods may (§3.1.3).
-- **Collision namespace.** Effect-method names join the ordinary
+- **Collision namespace only.** Effect-method names join the ordinary
   method-name collision namespace — a trait's effect-method name collides
   with an `fn` method of the same name under the disjoint-names rule
-  (§3.2.1), and effective-set entries sharing a name resolve by the same
-  rules as any other method.
+  (§3.2.1), and effective-set entries sharing a name collide by the same
+  rules as any other method. Membership is collision-namespace membership
+  only: an effect-kind method is never an ordinary dispatch candidate
+  (§3.4.1).
 - **Effect-specific.** An effect-kind trait method is effect-specific: it
   is invoked as an effect (in `effects:`, bootstrapped via `|>`, §13.19),
   not as an ordinary function call. A trait carrying effect-kind methods
@@ -1635,19 +1637,24 @@ methods:
   block; four kinds require none and are exempt: (1) marker traits (§3.1),
   (2) methodless marker traits, (3) pure-requirement umbrella traits (§3.3.5),
   and (4) a trait all of whose methods — direct and inherited — have default
-  bodies.
+  bodies and whose effect-kind methods' `observed:` contracts, if any, are
+  fully exposed by those default bodies (§3.3.5).
 - `fulfill Trait for Type` without a corresponding `satisfies Trait` in
   `Type`'s body is a compile error: the implementation has no declared
-  contract.
+  contract. The sole exception is the fulfill-without-satisfies waiver
+  (§3.3.5) for a trait whose every method — direct and inherited — has a
+  default body and that declares no required node/connection members; an
+  effect-kind method's `observed:` contract cells never block this waiver.
 
 The exception is traits with no abstract methods, direct or inherited — those
 with no methods at all, and those all of whose methods — declared directly or
 inherited from required traits — have default bodies (§3.3.5; the term
 "pure-requirement" is reserved there for the
 stricter no-methods-and-no-associated-types sense): these are automatically satisfied when all required
-traits are satisfied; no `satisfies` clause is
-needed on the type and no `fulfill` block is needed for the auto-satisfied
-trait.
+traits are satisfied and, for a trait carrying effect-kind methods, every
+`observed:` contract is fully exposed by its method's own default body
+(§3.3.5); no `satisfies` clause is needed on the type and no `fulfill` block
+is needed for the auto-satisfied trait.
 
 A methodless marker may make its conformance *conditional* on the type's
 parameters by attaching a `where` clause to its `satisfies` clause:
@@ -1741,6 +1748,11 @@ Given a type `T` with `satisfies T1, T2, ..., Tn`, the compiler computes
    the same trait-method declaration are not in conflict — they are the
    same method, just reachable via multiple inheritance paths. This is the
    "diamond" case (well-defined in nominal trait systems) and is permitted.
+
+Effect-kind method declarations (§3.1.1.1) enter the effective set and
+this collision check exactly as value methods do. Their membership is
+collision-namespace membership only: an effect-kind method never becomes
+an ordinary dispatch candidate (§3.4.1).
 
 The §3.1.4 rule (traits cannot redeclare methods from required traits)
 guarantees that step 6's "same trait-method declaration reached multiple
@@ -1993,6 +2005,19 @@ trait with one or more abstract methods — or an undefaulted associated type,
 which has no binder under auto-satisfaction — still requires explicit
 `satisfies` + `fulfill` per §3.2.
 
+One further condition applies to traits carrying effect-kind methods
+(§3.1.1.1). When an effect-kind method declares an `observed:` contract,
+the method's default body must itself expose every contract cell. The
+compiler check is a single question: does the default body cover the
+contract? A default body that supplies the full observed block leaves
+nothing for a fulfillment to back, and the trait auto-satisfies; a
+default body that leaves any contract cell unexposed bars
+auto-satisfaction — with no `fulfill` block anywhere, no site would
+supply those cells — and such a trait requires an explicit `fulfill`
+block per §3.2; its `satisfies` clause remains subject to the
+fulfill-without-satisfies waiver (below), which observed cells never
+block.
+
 For an auto-satisfied trait, no `fulfill` block is needed; no `satisfies`
 clause is needed on the type (though it may be included for documentation).
 The trait is *structurally* satisfied — via the satisfaction of its
@@ -2004,9 +2029,12 @@ that `T`'s satisfied trait set includes everything `Numeric` requires.
 This carves out the only point of structural satisfaction in the language's
 otherwise-nominal trait system, and it is bounded: the structural rule
 applies only to traits with no abstract methods (no methods at all, or only
-methods with default bodies) and no undefaulted associated types. Any trait
-with one or more abstract method signatures — or an undefaulted associated
-type — requires explicit `satisfies` + `fulfill` per §3.2.
+methods with default bodies), no undefaulted associated types, and no
+effect-method `observed:` contract left uncovered by its default body. Any
+trait with one or more abstract method signatures — or an undefaulted
+associated type — requires explicit `satisfies` + `fulfill` per §3.2; a
+trait with an uncovered observed contract requires an explicit `fulfill`,
+its `satisfies` subject to the fulfill-without-satisfies waiver below.
 
 **The `fulfill`-without-`satisfies` waiver (distinct from auto-satisfaction).**
 Auto-satisfaction (above) is about a type gaining a trait with *no*
@@ -2014,10 +2042,14 @@ Auto-satisfaction (above) is about a type gaining a trait with *no*
 effect-kind methods (§3.1.1.1): a trait in which **every** method —
 declared directly or inherited from its required traits, including every
 effect-kind method — has a default body **and** which
-declares **no required cells** (no `observed:` contract cells that a
-fulfillment must supply, and no required node/connection members per
-§3.1.7) permits a `fulfill` block **without** a matching `satisfies`
-clause. This is not auto-satisfaction — a `fulfill` block is still
+declares **no required cells** — no required node/connection members per
+§3.1.7 (required `attr`, `const`, `derived`, `recurrent`, and `stream`
+declarations and required endpoints) — permits a `fulfill` block
+**without** a matching `satisfies` clause. An effect-kind method's
+`observed:` contract cells do **not** count as required cells here and
+never block the waiver: the waiver keeps the `fulfill` block, which is
+exactly where observed cells are exposed and checked. This is not
+auto-satisfaction — a `fulfill` block is still
 written, e.g. to override a default effect body — it only waives the
 `satisfies` declaration. `satisfies` remains **mandatory** for any trait
 with an abstract method or with required cells. Keeping this waiver
@@ -2041,8 +2073,11 @@ error at a site where the method clearly should exist.
 ### 3.4 Trait Method Dispatch
 
 The language uses uniform function call syntax: a function whose first
-parameter is of type `T` is callable in three equivalent forms. Trait methods
-participate in this uniformly. Given a `fulfill Display for Person` block
+parameter is of type `T` is callable in three equivalent forms. Value
+(`fn`) trait methods participate in this uniformly; the three forms apply
+to value methods only. An effect-kind method (§3.1.1.1) is not callable
+through any of them — it is invoked in `effects:` clauses or via the `|>`
+bootstrap (§13.19). Given a `fulfill Display for Person` block
 containing `fn display(value: Person) -> string`, any of the following are
 valid calls (and equivalent):
 
@@ -2081,7 +2116,13 @@ resolution algorithm prioritizes trait implementations over free functions:
    declares a method named `f`, collect the trait-impl candidate
    `T::f(x, ...)`. The function bodies live inside the corresponding `fulfill
    T for X` blocks.
-2. **Collapse candidates from the same parent trait.** Per §3.2.1, multiple
+2. **Exclude effect-kind candidates.** Drop from the candidate set every
+   candidate whose trait method is effect-kind (§3.1.1.1): an effect-kind
+   method is invoked only as an effect — in an `effects:` clause or
+   bootstrapped via `|>` (§13.19) — never as an ordinary bare-name or
+   method call. Dropped candidates are remembered for diagnostics
+   (step 9).
+3. **Collapse candidates from the same parent trait.** Per §3.2.1, multiple
    candidates may arise when a type satisfies several generic instantiations
    of the same parent trait (e.g., `From[i32]` and `From[i64]` both
    declaring `from`). The compiler treats these as one logical method
@@ -2090,12 +2131,12 @@ resolution algorithm prioritizes trait implementations over free functions:
    explicit turbofish — exactly as for any other generic function dispatch
    per §2.2.5. The set of candidates after this collapse contains at most
    one parent-trait entry.
-3. **At most one parent-trait candidate after collapse.** Per §3.2.1, no
+4. **At most one parent-trait candidate after collapse.** Per §3.2.1, no
    type may satisfy two traits with *different* parent identities that
    declare overlapping method names — the type's `satisfies` declaration
    would have been rejected. Therefore the trait-impl search yields either
    zero or one parent-trait candidate.
-4. **One parent-trait candidate matches → resolve to it.** The trait impl
+5. **One parent-trait candidate matches → resolve to it.** The trait impl
    wins over any same-named free function. A free function with the same
    name in scope is *shadowed* at this call site; it remains callable only
    via path qualification (e.g., `some_module::f(x, ...)`). Within the
@@ -2103,20 +2144,26 @@ resolution algorithm prioritizes trait implementations over free functions:
    reachable, the compiler resolves to a specific instantiation by
    inference per §2.2.5; failure to resolve to one is a compile error at
    the call site asking for explicit disambiguation.
-5. **No trait-impl candidate matches → fall back to free-function search.**
+6. **No trait-impl candidate matches → fall back to free-function search.**
    The compiler looks in the current scope's free-function namespace for a
    function `f` whose first parameter type matches `x`'s type (or is reachable
    via implicit widening per §4.5).
-6. **One free function matches → resolve to it.** Standard free-function
+7. **One free function matches → resolve to it.** Standard free-function
    dispatch.
-7. **Multiple free functions in scope under the same local name are
+8. **Multiple free functions in scope under the same local name are
    impossible.** Free functions are uniquely named within their module per
    §10; only one can be in scope under any
    given local name. Cross-module conflicts are resolved at import time, not
    at call time.
-8. **Nothing matches → unknown method error.** The diagnostic includes the
+9. **Nothing matches → unknown method error.** The diagnostic includes the
    receiver's type, the unmatched name, and any near-matches the compiler
-   identified.
+   identified. When step 2 dropped effect-kind candidates and nothing else
+   matched, the diagnostic instead names the method as an effect-kind
+   method and directs the caller to the effect invocation forms — an
+   `effects:` clause or the `|>` bootstrap (§13.19): `song.render()`,
+   where `render` is an effect-kind method of a fulfilled trait, is
+   rejected with an error of the form "`render` is an effect; invoke it
+   in an `effects:` clause or via `|>`".
 
 The algorithm is deterministic: §3.2.1's parent-trait collision rule —
 over the type's effective fulfilled-trait set, including auto-satisfied
@@ -2167,10 +2214,10 @@ dispatch by choosing which traits to import.
 Disambiguation forms:
 
 - `Trait::f(x, ...)` — explicit trait selection. While trait-vs-trait
-  ambiguity cannot arise per step 3, the explicit form makes the trait
+  ambiguity cannot arise per step 4, the explicit form makes the trait
   source visible at the call site, which aids readability.
 - `some_module::f(x, ...)` — explicitly select a free function (used when a
-  free function would otherwise be shadowed by a trait impl per step 4).
+  free function would otherwise be shadowed by a trait impl per step 5).
 - `x.f::[T]()` is *not* a disambiguation form; the turbofish (§2.2.5)
   specifies generic type arguments, not the receiving trait.
 
