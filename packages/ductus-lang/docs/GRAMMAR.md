@@ -1820,7 +1820,7 @@ ParenExpr         ::= '(' Expr ')'
 // `subject` (lowercase) is the instance-value keyword (§2.4, 002-8); it
 //  appears in `PrimaryExpr` position via its `Path` segment.
 
-### 5.2 Postfix forms (`.field`, `.NUMERIC` for tuples, `[idx]`, `(args)`, `?`)
+### 5.2 Postfix forms (`.field`, `.NUMERIC` for tuples, `[idx]`, `(args)`, `?`, `->name`)
 
 ```
 PostfixExpr       ::= PrimaryExpr Postfix*
@@ -1836,6 +1836,7 @@ Postfix           ::= FieldAccess
                     | OptChainIndex                            // §5.3
                     | OptChainCall                             // §5.3
                     | CastPolicySuffix                         // §5.6
+                    | ArrowAccess                              // crossing postfix (§13.18.9)
                     ;  (§4.4.7, 007-74)
 
 FieldAccess       ::= '.' IDENT                                // bare field projection; no turbofish
@@ -1860,6 +1861,12 @@ CallSuffix        ::= '(' CallArgList? ')'
 
 TryPostfix        ::= '?'
                     ;  (§8.4, 011-40)
+
+ArrowAccess       ::= '->' CrossingName CallSuffix?            // minting-access crossing
+                    ;  (§13.18.9, 030-271)
+
+CrossingName      ::= 'changes' | 'latest'                     // closed list; NOT reserved words
+                    ;  (§13.18.9, 030-273)
 ```
 
 // `FieldAccess` and `TupleIndex` share the `.` token; the parser
@@ -1890,6 +1897,25 @@ TryPostfix        ::= '?'
 //  when the head is a type name immediately followed by `?(` per §5.6.
 // All `Postfix` forms bind at tier 14 of Appendix A — they are
 //  left-associative and chain freely: `x.f().g[i].h`.
+// **Third disjoint role of `->` (per §13.18.9).** In expression-postfix
+//  position `->` is the minting-access operator: `expr->changes`,
+//  `expr->latest(fallback)`. Its other two roles — the return-type arrow
+//  (`FnType`, `OperatorType`, `FnReturn`, `OperatorDecl`) and the `pairs:`
+//  entry arrow (`PairEntry`, §9.4) — occupy disjoint grammatical
+//  positions; there is no parse ambiguity among the three. Those
+//  productions are unchanged.
+// **`CrossingName` is a closed list, not reserved (per §13.18.9).**
+//  Exactly the `DirectiveName` precedent (§12): `changes` and `latest`
+//  are recognised only in the position after a postfix `->`; both remain
+//  fully legal as ordinary identifiers and binding names everywhere else.
+//  The keyword inventory of §2.4 is unchanged — nothing is reserved.
+// **Call suffix per crossing (per §13.18.9).** `->changes` takes no
+//  argument list; `->latest` requires exactly one argument (the
+//  fallback). The grammar admits `CallSuffix?` uniformly; the
+//  per-crossing arity is a post-parse semantic check.
+// **Spacing.** Ordinary operator spacing is allowed (`expr -> changes`
+//  parses the same); the parser disambiguates the role by position, not
+//  whitespace.
 
 ### 5.3 Optional chaining (`?.`, `?[]`, `?()`)
 
@@ -2616,26 +2642,31 @@ MatchArm          ::= Pattern ':' IfArmBody
 
 ```
 ObserveExpr       ::= 'observe' ':' INDENT OnArm+ DefaultArm? DEDENT
-                    ;  (§13.2.11, 016-240)
+                    ;  (§13.2.11, 016-243)
 
-OnArm             ::= 'on' OnTarget ObserveArmWhereFilter? ':' IfArmBody
-                    ;  (§13.2.11.1, 016-241)
+OnArm             ::= 'on' OnTarget ObserveArmWhereFilter? ( 'as' AsBinder )? ':' IfArmBody
+                    ;  (§13.2.11.1, 016-244)
 
-OnTarget          ::= Path                                     // single trigger cell
-                    | '(' Path ( ',' Path )+ ','? ')'          // multi-cell trigger set, n >= 2
-                    ;  (§13.2.11.4, 016-256)
+OnTarget          ::= Path ArrowAccess?                        // single trigger cell; ArrowAccess crossing (§5.2)
+                    | '(' Path ArrowAccess? ( ',' Path ArrowAccess? )+ ','? ')'  // multi-cell trigger set, n >= 2
+                    ;  (§13.2.11.4, 016-259)
 
 ObserveArmWhereFilter ::= 'where' Expr                         // boolean predicate per §13.18.10
-                    ;  (§13.2.11.1, 016-241)
+                    ;  (§13.2.11.1, 016-244)
+
+AsBinder          ::= IDENT                                    // bare binder: `as e`, `as events`
+                    | '(' IDENT ( ',' IDENT )* ')'             // tuple binder: `as (e1, e2)`
+                    ;  (§13.2.11.1, 016-244)
 
 DefaultArm        ::= 'default' ':' IfArmBody                  // must be last (encoded in ObserveExpr)
-                    ;  (§13.2.11.5, 016-242)
+                    ;  (§13.2.11.5, 016-261)
 ```
 
 // **Arm shape (per §13.2.11.1).** Each arm is either an `on`-clause
-//  arm with one or more trigger cells (optional `where` filter), or a
-//  `default:` arm with no trigger. Arms are indented under the
-//  `observe:` head — always-indented body shape (§2.2).
+//  arm with one or more trigger cells (optional `where` filter,
+//  optional `as` binder), or a `default:` arm with no trigger. Arms
+//  are indented under the `observe:` head — always-indented body
+//  shape (§2.2).
 // **Multi-cell trigger sets are parenthesised (per §13.2.11.4).** A
 //  multi-cell `on` clause uses a parenthesised comma list
 //  `on (T1, T2, T3):`. The parens are mandatory for n ≥ 2; a single
@@ -2646,6 +2677,24 @@ DefaultArm        ::= 'default' ':' IfArmBody                  // must be last (
 //  filter of §5.23 — here `where` attaches to an `on` clause as part
 //  of an observe arm; in §5.23 it is a binary operator over an
 //  expression.
+// **`as` binder slot (per §13.2.11.1, 016-244).** After the optional
+//  `where` filter an arm may bind the post-filter firing value:
+//  `on <trigger> [where C] [as <binder>]:`. `AsBinder` is a bare
+//  IDENT — `as e`, or a single tuple identifier `as events` accessed
+//  `.0`/`.1` — or a parenthesised identifier list `as (e1, e2)`. It
+//  names the triggering signal's committed value (value-kind) or the
+//  pending event(s) (stream-kind).
+// **Triggers are kind-homogeneous (per §13.2.11.6, 016-292).** Every
+//  trigger across all arms is a signal, or every trigger is a stream;
+//  a set mixing signal and stream triggers — within one arm's
+//  parenthesised set or across arms — is a compile error, enforced by
+//  a post-parse check, not by the grammar.
+// **Signal-to-stream crossing composition (per §13.2.11.6, 016-294).**
+//  A value-kind observe never binds a stream context; to observe
+//  events derived from a signal, cross explicitly with `->changes`
+//  and observe the resulting stream — `on sig->changes as e:` parses
+//  via the `OnTarget` `Path ArrowAccess?` alternative (the ArrowAccess
+//  postfix of §5.2), making the trigger stream-kind.
 // **`default:` must be the last arm (per §13.2.11.5).** A `default:`
 //  arm appearing before any `on` arm is a compile error (post-parse
 //  semantic check). It supplies the observe's value before the first

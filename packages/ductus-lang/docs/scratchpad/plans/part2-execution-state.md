@@ -45,58 +45,68 @@ LOG/SPEC content — verify on disk (LEARNINGS #3); verification = full diff rea
    but NOT sealable — no declaration); `sealed_type_fulfillment_outside_module`; the
    clause/verb razor (backticked `satisfies` = clause = retired; unbackticked verb survives).
    Plan doc: satisfies-retirement-plan.md. Section 005 now 246 rules.
+9. **Structure batch (D-09/D-14/D-16, D-24 gate)** — committed fd3cf60. WeakHandle in every
+   dynamic-handle context; StringifiableKey = the canonical key set shared with Map; bundle
+   empty-literal zero rows + offsets=rows+1 + count-is-row-count carve-out.
+10. **Streams batch (D-19 DRAIN + granularity)** — committed 69caff7 (commit MESSAGE says
+    barrel plan; CONTENT is the streams batch — mismatch disclosed and recorded).
+11. **Streams-rework amendment (kind-homogeneous observe + arrow crossings)** — committed
+    (this commit). §016 → 295 Rules: observe's kind = its triggers' kind (016-247 rework);
+    mixed signal+stream trigger sets = compile error (016-292); banned quadrants spelled
+    (016-293 stream→value = ->latest only; 016-294 signal→stream = `on sig->changes as e:`);
+    value-kind lockstep, no chaining (016-289/290); stream-kind per-event in commit order
+    (016-287); sampling law (016-295). §030 → 273 Rules: crossings as language forms
+    (030-269..273) — `sig->changes` / `stream->latest(fallback)`; razor "dot projects, arrow
+    mints"; `->` third positionally-disjoint role; CrossingName closed list, NOT reserved.
+    to_signal + member-.changes RETIRED everywhere (16+13 sites); accumulate/event_count/
+    any/all = scan+`->latest` compositions, zero privileged operators. GRAMMAR: §5.2
+    ArrowAccess/CrossingName; §5.20 observe productions conformed (OnTarget gains
+    ArrowAccess?, missing as-binder slot added, stale citations refreshed to
+    016-243/244/259/261 + 292/294 — all verified on disk). Executed defaults disclosed:
+    multi-trigger set elements each admit a crossing (`on (a->changes, b->changes)` parses;
+    homogeneity is post-parse) — no entry restricts crossings to single-trigger arms;
+    030-266 one-bullet respell per plan §3.B. Pre-existing nit: §13.19.2-area
+    `ws.inbound |> count` should be event_count (NOT fixed — out of scope, flag standing).
 
 ## IN FLIGHT at time of writing
 
-**Structure batch launching now** (owner: "proceed with this batch", 2026-07-16). Scope:
-- D-09 Model A relabels (Handle→WeakHandle in every dynamic context) + BOTH defaults confirmed
-  (P020 mislabel reading: 017-111/017-147/SPEC §13.3.4; P021 relabel: 017-136 third form).
-  Sites (stale lines, locate by content): SPEC §13.8.4, §13.8.5.1, §13.6.2 area, §13.3.4,
-  §13.3.4.2 wheel example; LOG 019-49, 021-57. Class floor: any Handle with
-  Option-read/freeze/re-point/dynamize behavior → WeakHandle.
-- D-14 Model A: 018-64 widens StringifiableKey to i8–i128,u8–u128,isize,usize,bool,char,string,
-  duration,instant; defined as THE SAME canonical set as the Map key bound (one list, both
-  reference it; reconcile 012-100); SPEC §13.5.4.1 enumeration + §9.5.3 cross-ref; verify-reads
-  018-63/69/71/42/44/58/127/142/83; NO coercion rule added.
-- D-16 Model A: 017-89 (zero rows; offsets length = rows + 1 invariant pinned), 017-90 +
-  012-90 (bundle.count = ROW count, intentional element-tally exception); SPEC §13.3.3.5.
-- D-24 as a GATE only (grep: no package-worded orphan phrasing survives).
-- NOT included (owner never nodded despite two asks): the two riders — SPEC §3.3
-  AssocTypeBinding `'='`→`'is'` (LOG 005-92 + GRAMMAR say 'is'); SPEC §13.3.7 at-most-once
-  list missing the acceptance clauses 017-226 lists. STILL QUEUED, ask again.
-- Owner Q&A recorded: handle stays a bracket TYPE (storable value; razor's positive case; the
-  `handle`/`handle!` keywords are the guarded acquisition operations — named-place-only, no
-  constructor, 017-187 proof for handle!). No `handle T` kind exists or is wanted.
+**Policies batch launching now** (standing authorization; queue item 1 below). Structure,
+streams, and streams-rework batches all landed and committed. Riders still un-nodded after
+two asks (STILL QUEUED, ask again): SPEC §3.3 AssocTypeBinding `'='`→`'is'` (LOG 005-92 +
+GRAMMAR say 'is'); SPEC §13.3.7 at-most-once list missing the acceptance clauses 017-226
+lists. Standing owner Q&A: handle stays a bracket TYPE (storable value; razor's positive
+case; `handle`/`handle!` keywords are guarded acquisition operations); no `handle T` kind.
 
-## QUEUE after the structure batch (in order)
+## QUEUE (in order)
 
-1. **Streams batch**: D-19 (DRAIN completion semantics — ruled with sub-answers per item) +
-   OBSERVE-GRANULARITY RULED (A) 2026-07-16: per-event in commit order; value-context firings chain intra-commit (running value visible to later firings; .previous stays previous-committed); grounds accumulate expressibility. F128 residual dissolved (superseded by eviction). Streams batch FULLY SPECIFIED — launch after structure batch lands + owner commits.
-2. **Policies batch**: execute D-06 (repoint policy — largely applied as-we-went; sweep),
+1. **Policies batch**: execute D-06 (repoint policy — largely applied as-we-went; sweep),
    D-07 residual consolidations, D-08 (hook order rules NEVER YET WRITTEN into LOG/SPEC:
    post-publish inside blocking commit(), teardown→create→resume→update, initial create =
    first post-first-commit pass, reload fires the tail; exec block at plan line ~485),
    D-10 (Model 2 live membership), D-11 (fence tags: text/ductus-ir/ebnf/rust), D-28
-   (immutability scoped to within-the-program), D-29 (std::vec::new()). PLUS the D-05
-   residual rulings as the FIRST CONSENT-LIST (keyword classes for own/move/public/private;
-   `cell` reserved?; sweep scope; `sealed` class; freed `satisfies`+`main` identifiers).
-3. **Barrel-visibility amendment** (owner-settled 2026-07-16, "that settles it"): plan doc =
+   (immutability scoped to within-the-program), D-29 (std::vec::new()). PLUS the six
+   APPROVED D-05 items (consent-list DISPOSED — see ledger): ownership class own/move; kind
+   class with cell; declaration-modifier class with sealed; Model-A keyword assignments
+   (enum/requires/wraps/effects/given/observe) + SPEC keyword-paragraph re-sync; FULL sweep
+   reconciling LOG keyword classes with GRAMMAR §2.4 as ONE taxonomy; satisfies+main freed
+   silently (zero-mention verify). Visibility-class item stays PARKED to the barrel batch.
+2. **Barrel-visibility amendment** (owner-settled 2026-07-16, "that settles it"): plan doc =
    barrel-visibility-plan.md, ALL rulings locked (in-source public+shared retire; private sole
    in-source keyword; public.duc barrel at package root with `export` entries, no glob;
    no-barrel = nothing public; leak rule = compile error; member model (i); one barrel per
    package; `type(private) Email:` hosts constructor visibility; `export` reserved, never
    `expose`). Runs AFTER the policies batch. D-05's visibility-class item resolves here.
-4. **Main-removal amendment**: plan doc main-removal-plan.md parked on EIGHT confirms
+3. **Main-removal amendment**: plan doc main-removal-plan.md parked on EIGHT confirms
    (§3.1-3.8) + Phase-0 fold decision + two additions from later discussions: the
    reference-reachability closure pin (does a live-code reference pull a dead placement into
    the root closure?) and the unwired-instance ownership note (typecheck is liveness-blind;
    ownership rule fires textually).
-5. **Part 3 re-anchor survey** (owner-agreed protocol): classify all ~80 items of
+4. **Part 3 re-anchor survey** (owner-agreed protocol): classify all ~80 items of
    audit-plan-3-individual-decisions.md as DISSOLVED (killed by Part-2 rulings — Cell[T],
    stream types, main, satisfies, view-Iterable all gone) / EXECUTED / STALE / LIVE; then
    LIVE items in themed consent-lists (one-liners: problem → recommendation → why; owner
    approves wholesale, strikes to escalate; only struck items get full treatment).
-6. **Small standing flags**: proposed 001 philosophy entry ("privileged in performance,
+5. **Small standing flags**: proposed 001 philosophy entry ("privileged in performance,
    never in capability") awaiting nod; satisfies-flag name kept (verb-derived, noted);
    IR behavior-grammar ret/operand gap (own item); IR_GRAMMAR §2/§6 citation-drift sweep
    (033-166/167/168 offsets); duplicate keyed-by keys on value collections (LOW);

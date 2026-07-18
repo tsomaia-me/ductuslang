@@ -12754,7 +12754,7 @@ the distinct kinds `derived T` and `recurrent[N] T`.
   annotated `cell T`, binding to any value cell at instantiation and allocating
   internal state tied to it. A `stream T` does not bind to a `cell T` parameter
   at all — the signature itself excludes it; a stream argument requires the
-  explicit conversion `to_signal(<stream>, <fallback>)` or a `stream T`-annotated
+  explicit crossing `<stream>->latest(<fallback>)` or a `stream T`-annotated
   parameter.
 - **Operator return kinds** — an operator's value output is a computed
   `derived T`; the return annotation names the concrete produced kind
@@ -13270,6 +13270,11 @@ per-trigger logic, used inside `recurrent` (§13.2.4.7), inside
 `derived` declarations, as the source of `stream` declarations
 (§13.18), or anywhere else a reactive expression appears.
 
+An observe's kind is fixed by its triggers: signal triggers make it
+**value-kind** (producing a value cell); stream triggers make it
+**stream-kind** (producing a `stream T`). A trigger set mixing signal
+and stream triggers is a compile error (§13.2.11.6).
+
 ##### 13.2.11.1 Form
 
 ```
@@ -13285,19 +13290,21 @@ observe:
   optional **`as` binder**, and a colon followed by the **arm
   expression**. The full arm grammar is
   `on <trigger> [where C] [as <binder>]:`.
-- The **`as` binder** binds the *post-filter* event value so the arm
-  body can name it. A single stream trigger binds the bare event
-  value (`as e` where `e: E`). A multi-trigger set binds either a
-  tuple (`as (e1, e2)`) or a single tuple identifier (`as events`,
-  accessed `.0`/`.1`); each stream slot is typed `Option[E]` — `Some`
-  for the slot whose trigger's event the firing processes, `None` for
-  the other stream slots (same-commit events of different triggers
-  are separate firings, processed in commit order, §13.2.11.9) —
-  while signal slots bind plainly. In every context the arm fires
-  once per pending event and the binder binds each event in turn
-  (§13.2.11.9): in a stream context each firing emits one output
-  event; in a value-cell context the firings chain within the commit
-  and the cell commits the final value. Inside the `where` filter `C`, the bare
+- The **`as` binder** binds the *post-filter* firing value so the arm
+  body can name it. In a **value-kind** observe (signal triggers) the
+  binder names the triggering signal's committed value; a multi-signal
+  trigger set binds a plain tuple of the committed values. In a
+  **stream-kind** observe (stream triggers) a single stream trigger
+  binds the bare event value (`as e` where `e: E`), while a
+  multi-trigger stream set binds either a tuple (`as (e1, e2)`) or a
+  single tuple identifier (`as events`, accessed `.0`/`.1`) with each
+  slot typed `Option[E]` — `Some` for the slot whose event the firing
+  processes, `None` for the others (same-commit events of different
+  triggers are separate firings, processed in commit order,
+  §13.2.11.9). A **stream-kind** arm fires once per pending event,
+  each firing emitting one output event; a **value-kind** arm fires at
+  most once per commit, the firing's value committing at the commit
+  boundary (§13.2.11.9). Inside the `where` filter `C`, the bare
   stream name keeps its event meaning (§13.18.10); in the arm **body**
   only the binder denotes the event — a bare stream name in the body
   never denotes an event value.
@@ -13305,9 +13312,10 @@ observe:
   observe's value when no `on` arm has yet activated.
 - All arm expressions must produce the same type T (like `match`
   expressions, §6.2.4).
-- The observe expression's value is a `cell T`; its concrete
-  reactive kind (a value cell or a `stream T`) is determined by the
-  context where the observe is used.
+- The observe expression's kind is determined by its triggers: signal
+  triggers make it value-kind (a value cell); stream triggers make it
+  stream-kind (a `stream T`). The use context must agree with the
+  trigger-determined kind (§13.2.11.6).
 - `combineLatest`-style auto-emit-on-any is **not** available in
   observe arms — it lives in stream expressions (§13.18); an arm fires
   on its own trigger set only.
@@ -13325,33 +13333,37 @@ requirement that governs `when`/attribute/`/expr` operands in placements
 
 ##### 13.2.11.2 Trigger sets and arm selection
 
-An arm's trigger set is the cells listed in its `on` clause. When
-any cell in the trigger set commits a new value (signal) or emits
-an event (stream), the arm becomes a candidate for selection. The
-candidate set is filtered by the arm's `where` clause if present
-(§13.18.10).
+An arm's trigger set is the cells listed in its `on` clause. A trigger
+fires when it commits a new value — a signal, in a value-kind observe —
+or emits an event — a stream, in a stream-kind observe; when a trigger
+fires the arm becomes a candidate for selection. The candidate set is
+filtered by the arm's `where` clause if present (§13.18.10).
 
-When multiple arms become candidates at the same moment —
-simultaneous signal commits, or a single emission whose cell is
-listed in several arms' trigger sets — **arm selection follows
-declaration order**: the first such arm in declaration order whose
-`where` filter (if any) passes wins. This mirrors `match` semantics
-(§6.2.4). Same-commit stream events at distinct commit-order
-positions are not simultaneous: they are processed as separate
-firings, in commit order, selection applied per firing (§13.2.11.9).
+In a **value-kind** observe a trigger is a candidate at most once per
+commit. When multiple arms become candidates at the same moment —
+simultaneous signal commits — **arm selection follows declaration
+order**: the first such arm in declaration order whose `where` filter
+(if any) passes wins. This mirrors `match` semantics (§6.2.4).
+
+In a **stream-kind** observe, same-commit stream events at distinct
+commit-order positions are not simultaneous: they are processed as
+separate firings, in commit order, selection applied per firing
+(§13.2.11.9). Within one firing, an emission whose cell is listed in
+several arms' trigger sets selects by declaration order, `where`
+filters applying.
 
 The selected arm becomes the **active arm** of the observe expression.
 A subsequent firing in which a different arm is selected — in a later
-commit, or later in the same commit's event sequence — changes the
-active arm.
+commit, or (stream-kind) later in the same commit's event sequence —
+changes the active arm.
 
 ##### 13.2.11.3 Reactive-arm semantics
 
-While an arm is active, the arm's expression is fully reactive: any
-cell referenced in that expression (signal, stream, recurrent self-
-history, etc.) participates in dependency tracking, and a change to
-any of those cells re-evaluates the arm's expression. The observe's
-value updates accordingly — without requiring the arm's `on`
+**Value-kind observe.** While an arm is active, the arm's expression
+is fully reactive: any cell referenced in that expression (signal,
+recurrent self-history, etc.) participates in dependency tracking, and
+a change to any of those cells re-evaluates the arm's expression. The
+observe's value updates accordingly — without requiring the arm's `on`
 trigger to re-fire.
 
 The `on` clause's role is **arm selection**, not exclusive re-
@@ -13362,11 +13374,17 @@ the `on` trigger also re-evaluates the active arm).
 When a different arm activates, the previous arm's references are
 no longer tracked; the new arm's references become active.
 
-This means an observe expression's value can change without any
+This means a value-kind observe's value can change without any
 `on` clause trigger firing — the active arm's other references
 continue to drive re-evaluation while the arm is in scope. This is
 intentional: arm-selection and intra-arm reactivity are independent
 concerns.
+
+**Stream-kind observe.** There is no intra-arm reactivity: an arm's
+body evaluates once per firing, and signals read in the body are
+sampled at that moment and never drive. They contribute no firings and
+no re-evaluation between events — a signal never implicitly converts
+to a stream (§13.18.7.1's sampling law).
 
 ##### 13.2.11.4 Multi-cell trigger sets
 
@@ -13377,8 +13395,11 @@ on (T1, T2, T3): expr
 ```
 
 The arm activates when ANY listed cell fires (logical OR over the
-trigger set). All listed cells are also reactive references of the
-arm while it is active.
+trigger set). In a value-kind observe, all listed cells are also
+reactive references of the arm while it is active. The trigger set —
+like the whole observe's trigger set — is kind-homogeneous: mixing
+signal and stream cells in one parenthesized set is a compile error
+(§13.2.11.6).
 
 ##### 13.2.11.5 The `default:` arm
 
@@ -13393,43 +13414,60 @@ catch-all arms in `match` expressions (§6.2.4) and reinforces that
 `default:` is a fallback for the no-prior-activation state, not a
 candidate competing with `on` arms.
 
-**When required.** The `default:` arm is required when, in a signal
-context, every `on` arm's trigger set consists entirely of stream
-cells. Stream cells begin empty (no first emission until events
-arrive), so without a `default:` arm the observe would have no value
-at startup, violating the signal invariant (§13.9.7 cell-value
-reads).
+**No stream-triggered value cell.** A `default:` arm never makes a
+stream-triggered observe bindable in a value-cell context. An observe
+whose triggers are streams is stream-kind regardless of any `default:`
+arm, and a value-cell context rejects it. The stream-to-value crossing
+is `->latest(fallback)` on a stream, not an observe form (§13.2.11.6).
 
-**When optional.** The `default:` arm is optional when at least one
-`on` arm has a signal in its trigger set. Signal initial values
-count as their first emission (per §13.2.6 startup pass and
-§13.18.7.2), so at least one signal-triggered arm is selectable from
-commit zero. The first signal-triggered arm in declaration order
-activates at startup and supplies the observe's value.
+**Value-kind: always optional.** In a value-kind observe every trigger
+is a signal, so the `default:` arm is always optional. A signal's
+initial value counts as its first emission (per §13.2.6 startup pass
+and §13.18.7.2), so every arm is selectable from commit zero. At
+startup the first arm in declaration order activates and supplies the
+observe's value.
 
-In a stream context, the `default:` arm is optional — streams
-may begin empty and emit their first event when the first arm
-activates.
+In a stream-kind observe the `default:` arm is always optional — the
+output stream may begin empty and emit its first event when the first
+arm activates.
 
 ##### 13.2.11.6 Output type
 
-An observe expression produces a `cell T` (§13.18.5) whose concrete
-kind is determined by the surrounding context:
+An observe expression's kind is determined by its triggers, not by the
+surrounding context (§13.2.11.1):
 
-- Assigned to a `signal`/`derived`/`recurrent` binding, or used in a
-  value-cell context: produces the matching value-cell kind
-  (`signal T`, `derived T`, or `recurrent[N] T`).
-- Assigned to a `stream` declaration, or used in a context expecting
-  `stream T`: produces the concrete stream kind (`stream ring[N] T`
-  or `stream gate[N] T`) per the stream context's policy/capacity.
+- **Signal triggers → value-kind.** Bound to a
+  `signal`/`derived`/`recurrent` binding, the observe produces the
+  matching value-cell kind (`signal T`, `derived T`, or
+  `recurrent[N] T`).
+- **Stream triggers → stream-kind.** Bound to a `stream` declaration,
+  the observe produces the concrete stream kind (`stream ring[N] T` or
+  `stream gate[N] T`) per the receiving stream context's
+  policy/capacity.
 
-All arms' expressions must produce values of the same type T,
-matched against the surrounding context. The `as` binder's slot type
-is coherent with the arm expressions: a single stream trigger binds
-`E` (one event per firing, §13.2.11.9), a value-cell trigger binds
-the value it committed, and a multi-trigger set
-binds `Option[E]` per stream slot / plain per signal slot (§13.2.11.1).
-Type mismatch across arms is a compile error.
+**Trigger sets are kind-homogeneous.** Every trigger, across all
+arms — within one arm's parenthesized set and across arms — must be
+the same kind. Mixing a signal trigger and a stream trigger anywhere
+in the observe is a **compile error**.
+
+**The use context must agree with the trigger-determined kind.** Two
+crossings are therefore banned as observe forms:
+
+- A **stream-kind** observe never binds to a value-cell context. The
+  stream-to-value crossing is `->latest(fallback)`, spelled on the
+  stream, not an observe form.
+- A **value-kind** observe never binds to a stream context — a signal
+  never drives a stream implicitly. Spell the signal-to-stream
+  crossing `on sig->changes as e:`.
+
+All arms' expressions must produce values of the same type T. The `as`
+binder's slot type is coherent with the arm expressions: in a
+value-kind observe a single signal trigger binds the value it
+committed and a multi-signal set binds a plain tuple of committed
+values; in a stream-kind observe a single stream trigger binds `E`
+(one event per firing, §13.2.11.9) and a multi-trigger stream set
+binds `Option[E]` per slot (§13.2.11.1). Type mismatch across arms is
+a compile error.
 
 ##### 13.2.11.7 Use sites
 
@@ -13438,11 +13476,14 @@ expression of compatible type is expected:
 
 - As the RHS of a `derived T`, `signal T`, `recurrent[N] T`,
   `recurrent[H] stream ring[N] T`, or `stream ring[N] T` /
-  `stream gate[N] T` declaration. (The binder binds per event
-  in every RHS kind — each pending event in turn, a value-cell RHS
-  chaining its firings to a single committed value (§13.2.11.9);
-  multi-trigger sets bind
-  `Option[E]` per stream slot — §13.2.11.1.)
+  `stream gate[N] T` declaration. The declaration kind must agree with
+  the observe's trigger-determined kind (§13.2.11.6): a value-cell
+  declaration takes a value-kind observe, a stream declaration a
+  stream-kind observe. The binder names the committed value
+  (value-kind) or each pending event in turn (stream-kind); a stream
+  RHS emits one event per firing, a value RHS commits its firing's
+  value at the commit boundary (§13.2.11.9). Multi-trigger stream sets
+  bind `Option[E]` per slot (§13.2.11.1).
 - As a sub-expression inside a larger reactive expression.
 - As an argument to a function call (functions are reactive-
   transparent per §13.12.2; the observe's reactive dependencies
@@ -13469,26 +13510,29 @@ The `where` clause uses the general `where` stream filter
 (§13.18.10), producing a filtered trigger `T where C`. From the
 arm's perspective, this is just an ordinary trigger cell — the arm
 does not distinguish between a bare `T` and a filtered `T where C`;
-both are reactive cells whose emissions cause the arm to be a
+both are reactive cells whose firings cause the arm to be a
 candidate for selection.
 
-**Per-LHS-event filter semantics** (§13.18.10.2): the filtered
-trigger `T where C` emits only when `T` itself fires AND `C`
-evaluates to true at that moment, sampling any cells `C`
-references at their current values. A `C`-cell change between `T`
-emissions does NOT cause the filtered trigger to emit; the arm
-becomes a candidate only when `T` actually emits with `C` passing.
+**Per-firing filter semantics** (§13.18.10.2): the filtered trigger
+`T where C` fires only when `T` itself fires — a signal committing, a
+stream emitting — AND `C` evaluates to true at that moment, sampling
+any cells `C` references at their current values. A `C`-cell change
+between `T` firings does NOT cause the filtered trigger to fire; the
+arm becomes a candidate only when `T` actually fires with `C` passing.
+This holds for both kinds: the filter applies per firing — per signal
+commit in a value-kind observe, per stream event in a stream-kind
+observe.
 
-**Active arm + falsy `where` does not deactivate.** When arm A is
-the currently-active arm and A's `where` later evaluates to false
-(without any other arm activating), A stays active. The `where`
-clause gates arm SELECTION at moments of `T` emission, not the
-continued activeness of an already-selected arm. A's body remains
-reactive to its references. A is supplanted only when a different
-arm's filtered trigger emits and that arm becomes the new active
-arm per declaration-order selection.
+**Active arm + falsy `where` does not deactivate (value-kind).** When
+arm A is the currently-active arm and A's `where` later evaluates to
+false (without any other arm activating), A stays active. The `where`
+clause gates arm SELECTION at moments of `T` firing, not the continued
+activeness of an already-selected arm. A's body remains reactive to
+its references. A is supplanted only when a different arm's filtered
+trigger fires and that arm becomes the new active arm per
+declaration-order selection.
 
-##### 13.2.11.9 Firing granularity: per event, in commit order
+##### 13.2.11.9 Firing granularity: per kind
 
 ```
 stream ring clicks: Click = ...
@@ -13499,45 +13543,35 @@ stream ring positions: Point = observe:
   on clicks as e: e.position
 ```
 
-An observe arm whose trigger is a stream fires **once per pending
-event** of that trigger, in commit order; the `as` binder binds each
-event in turn. Granularity is per event, never per commit — a commit
-delivering three events produces three firings, so no event is
-silently unobserved.
+In a **stream-kind** observe an arm whose trigger is a stream fires
+**once per pending event** of that trigger, in commit order; the `as`
+binder binds each event in turn. Granularity is per event, never per
+commit — a commit delivering three events produces three firings, so
+no event is silently unobserved. Each firing emits one output event —
+one output event per input event, the same per-event law that governs
+stream-containing reactive expressions (§13.18.7.1).
 
-What the firings produce depends on the observe's concrete kind
-(§13.2.11.6):
+In a **value-kind** observe firing is lockstep: at most one firing per
+commit. Simultaneous signal commits produce one firing, selected by
+declaration order, and the cell commits that firing's value at the
+commit boundary. There is no chaining of firings, no running value,
+and no per-event firing in a value-kind observe. `.previous(fallback)`
+keeps meaning the previous committed value.
 
-- **Stream context.** Each firing emits one output event — one
-  output event per input event, the same per-event law that governs
-  stream-containing reactive expressions (§13.18.7.1).
-- **Value-cell context.** The firings *chain* within the commit: the
-  second and later firings observe the running result of the
-  preceding firing, and the cell commits the **final** value once,
-  at the commit boundary. Intermediate results never commit and are
-  never observable downstream.
-
-**Self-reference within a chain.** Within one commit, a
-self-reference in the second and later firings reads the *running*
-(uncommitted) value of the chain, so a per-event fold advances once
-per event even though only the final value commits. Across commits,
-`.previous(fallback)` keeps meaning the previous *committed* value,
-unchanged: a chain's running value is seeded from the value the cell
-last committed.
-
-**Several triggers, several arms.** When multiple stream triggers
-have pending events in one commit — listed in one arm's trigger set
-or spread across arms — the events are processed as separate firings
-in commit order. Each firing selects its arm per the ordinary
-selection rules (§13.2.11.2): the arms whose trigger emitted the
-event are the candidates, `where` filters apply, and declaration
+**Several triggers, several arms (stream-kind).** When multiple stream
+triggers have pending events in one commit — listed in one arm's
+trigger set or spread across arms — the events are processed as
+separate firings in commit order. Each firing selects its arm per the
+ordinary selection rules (§13.2.11.2): the arms whose trigger emitted
+the event are the candidates, `where` filters apply, and declaration
 order decides among candidates for the same event. No new selection
 rule is introduced; selection is applied per firing.
 
-This per-event granularity is what makes the stream-to-value
-operator family — `accumulate`, `event_count`, `any`, `all`, and
-`to_signal` as the latest-event case — expressible as ordinary
-library code over `observe` (§13.18.9).
+The per-event law is what grounds the stream transformation family
+(`scan`, `pairwise`) as plain stdlib code in stream land, while the
+stream-to-value family (`accumulate`, `event_count`, `any`, `all`) is
+ordinary composition over `scan` and the `->latest(fallback)` crossing
+(§13.18.9) — no privileged operators.
 
 ### 13.3 Nodes
 
@@ -20235,7 +20269,7 @@ alike):
   reference passed to a `cell T` parameter is bound as-is; no wrapping,
   no synthesis. A stream reference does not bind to a `cell T` parameter —
   it binds only to a `stream T`(-family) parameter, and entering a value
-  position requires the explicit conversion `to_signal(<stream>, <fallback>)`.
+  position requires the explicit crossing `<stream>->latest(<fallback>)`.
 - **A static expression is constant-wrapped.** A literal, `const`, or
   compile-time-constant expression is wrapped as a degenerate `derived T`
   cell (a constant is a nullary computation — there is no host-write
@@ -20368,7 +20402,7 @@ operator edge_events[T](source: cell T) -> stream T:
   ...
 ```
 
-(The synthesized `.changes` member (§13.18.9) already gives the
+(The `->changes` crossing (§13.18.9) already gives the
 "one event per committed change" behavior directly; `edge_events`
 stands only as an illustration of a stream-producing operator.)
 
@@ -20943,34 +20977,34 @@ stream policy[capacity]? name: Type? = source
     is a *separate* allocation on the second stream axis (a `Ring[B]` /
     `Gate[B]` policy stream carrying history depth `N` — buffer `B`
     beside history `N`, §13.18.3), not added to the buffer (§13.18.8.4).
-  - In all other cases (e.g., a bare `.changes` member without
+  - In all other cases (e.g., a bare `->changes` crossing without
     surrounding context that pins it), capacity defaults to `1024`.
 - **`name`** is a snake_case identifier naming the stream.
 - **`Type`** is the element type of the stream. Optional when
   inferable from the source expression's element type.
 - **`source`** is a reactive expression producing events, and must
   contain **at least one stream input** (§13.18.7.4). Valid source forms:
-  - A stream-producing operator chain (e.g., `signal.changes |> ...`).
+  - A stream-producing operator chain (e.g., `signal->changes |> ...`).
   - A reference to another stream (direct forwarding).
   - A reactive expression involving one or more streams (§13.18.7).
     Streams contribute events; signals are *sampled* at each stream
     event (they do not become events themselves).
-  - A signal converted explicitly via its synthesized `.changes` member:
-    `signal_expr.changes` (§13.18.7.4). A bare signal — no stream, no
-    explicit `.changes` — is **not** a stream source; there is no
+  - A signal crossed explicitly via the `->changes` form:
+    `signal_expr->changes` (§13.18.7.4). A bare signal — no stream, no
+    explicit `->changes` — is **not** a stream source; there is no
     implicit `signal`→`stream` conversion.
 
 Examples:
 
 ```
-// Signal source via .changes (button_press is a signal → explicit conversion)
-stream ring[2048] user_clicks: ClickEvent = button_press.changes
+// Signal source via ->changes (button_press is a signal → explicit crossing)
+stream ring[2048] user_clicks: ClickEvent = button_press->changes
 
 // Type inferred from source (pending_writes is a stream)
 stream gate[256] db_writes = pending_writes
 
 // Default capacity (1024) + inferred type + operator chain
-stream ring url_changes: Url = current_url.changes |> skip_first
+stream ring url_changes: Url = current_url->changes |> skip_first
 
 // Reactive expression: one stream (price_in_usd) + a sampled signal
 stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
@@ -20978,8 +21012,8 @@ stream ring price_in_eur: f32 = price_in_usd * usd_to_eur_rate
 // Multi-stream expression (combine_latest)
 stream ring sum: i32 = stream_a + stream_b
 
-// Signal converted explicitly — a bare signal is not a stream source
-stream ring url_events: Url = current_url.changes
+// Signal crossed explicitly — a bare signal is not a stream source
+stream ring url_events: Url = current_url->changes
 ```
 
 **Where streams may be declared.** Streams are reactive declarations.
@@ -21054,7 +21088,7 @@ concrete stream is implicitly usable wherever `stream T` is expected.
 Widening is zero-cost — only the type-system view changes; there is no
 value subtyping behind it. Use it in a signature that accepts any stream
 of `T` regardless of policy and does not thread the policy through to its
-result — e.g. `to_signal`, `event_count`, `accumulate`:
+result — e.g. `event_count`, `accumulate`:
 
 ```
 operator event_count[T](source: stream T) -> derived i64:
@@ -21123,15 +21157,15 @@ of the umbrella; nor is a `yielded T` group. Streams remain reactive
 cells in the broad sense — a stream declares an event-sequence-shaped
 reactive cell — but they are not `cell T` members and do not bind to a
 `cell T` parameter. The bridge between the stream class and the value
-cells is explicit conversion: `to_signal(<stream>, <fallback>)` turns a
-stream into a value cell, and `.changes` turns a value cell into a
+cells is the pair of explicit crossings: `<stream>->latest(<fallback>)` turns a
+stream into a value cell, and `<signal>->changes` turns a value cell into a
 stream. `cell T` is used in operator and function signatures that accept
 any value cell carrying `T`, without constraining which value-cell kind:
 
 ```
 operator monitor[T](source: cell T) -> derived bool:
   // works with any value cell carrying T; a stream does not bind here —
-  // pass to_signal(<stream>, <fallback>), or annotate the parameter `stream T`
+  // cross via <stream>->latest(<fallback>), or annotate the parameter `stream T`
   ...
 ```
 
@@ -21152,7 +21186,7 @@ umbrella, reached through the stream kinds' own surface.)
 **Use in generic signatures.** A value-reading operator parameter is
 annotated `cell T` (§13.2.8); a `stream T` does not bind to a `cell T`
 parameter at all — the signature itself excludes it — and a stream
-argument requires the explicit conversion `to_signal(<stream>, <fallback>)`
+argument requires the explicit crossing `<stream>->latest(<fallback>)`
 or a `stream T`-annotated parameter. Operators returning a value cell
 declare the concrete kind through their return annotation — typically
 `derived T` for a computed output, `stream T` for a stream, or `cell T`
@@ -21227,14 +21261,14 @@ A reactive input to an expression participates uniformly:
 - **A signal** is *sampled*, not converted: at each event produced by
   the expression's driving stream(s), the signal's current value is
   read. A signal does not itself produce events — there is no implicit
-  `to_stream`. To make a signal an event source, convert it explicitly
-  via its synthesized `.changes` member (§13.18.9).
+  `to_stream`. To make a signal an event source, cross it explicitly
+  via the `->changes` form (§13.18.9).
 
 The expression is recomputed whenever *any* of its reactive inputs
 emit. The output stream emits the freshly-computed value as its
-next event. An `observe` expression whose triggers include streams
-follows the same per-event granularity — one firing per pending
-event, in commit order (§13.2.11.9).
+next event. An `observe` expression whose triggers are streams — a
+stream-kind observe — follows the same per-event granularity: one firing
+per pending event, in commit order (§13.2.11.9).
 
 ##### 13.18.7.2 Combine semantics
 
@@ -21311,24 +21345,24 @@ An expression's reactive-output type is determined by its inputs:
 
 The rule follows from input types alone; there is no type-directed
 dispatch on the binding's LHS context. An expression containing
-streams cannot be coerced into a signal silently — explicit
-projection via `to_signal(fallback)` (§13.18.9) is required.
+streams cannot be coerced into a signal silently — the explicit
+`->latest(fallback)` crossing (§13.18.9) is required.
 
 ##### 13.18.7.4 Assignment rules
 
 | Binding form | RHS expression | Behavior |
 |---|---|---|
 | `derived X = expr` | Zero streams | Standard derived signal (§13.2.3). |
-| `derived X = expr` | Has streams | Compile error — use `to_signal(fallback)`. |
+| `derived X = expr` | Has streams | Compile error — cross via `->latest(fallback)`. |
 | `stream policy X = expr` | Has ≥1 stream | Output stream; per-event evaluation (signals in the expression are sampled). |
-| `stream policy X = expr` | Zero streams (signals only) | **Compile error** — a signal expression is not a stream; convert a signal explicitly via its `.changes` member, or bind it in a value-cell context (§13.18.7.3). |
+| `stream policy X = expr` | Zero streams (signals only) | **Compile error** — a signal expression is not a stream; cross a signal explicitly via `->changes`, or bind it in a value-cell context (§13.18.7.3). |
 | `stream policy X = expr` | No reactive inputs | Compile error — a stream needs at least one stream input. |
 
 A `stream policy X = signal_expr` over signals only is **rejected**:
 there is no implicit `signal`→`stream` conversion. Convert a signal
-into an event source explicitly via its `.changes` member (§13.18.9),
+into an event source explicitly via the `->changes` crossing (§13.18.9),
 then build the stream expression from that — e.g.
-`stream ring X = s.changes ...`.
+`stream ring X = s->changes ...`.
 
 ##### 13.18.7.5 Worked examples
 
@@ -21340,9 +21374,9 @@ allowed and overrides the default.
 
 ```
 signal current_url: Url = "https://example.com"
-stream ring url_events: Url = current_url.changes
-// A bare signal is not a stream source — convert it explicitly via .changes.
-// Default capacity: 1024 (the .changes default).
+stream ring url_events: Url = current_url->changes
+// A bare signal is not a stream source — cross it explicitly via ->changes.
+// Default capacity: 1024 (the ->changes default).
 // Emits "https://example.com" during startup, then each subsequent
 // commit of current_url.
 ```
@@ -21387,8 +21421,8 @@ error: cannot assign stream-valued expression to derived `count_signal`
   --> derived count_signal: i32 = some_stream * 2
                                   ^^^^^^^^^^^^^^^
   hint: a stream-valued expression cannot be coerced to a signal
-        silently. Project to a signal via `to_signal`:
-        `derived count_signal: i32 = (some_stream * 2) |> to_signal(0)`
+        silently. Cross via `->latest`:
+        `derived count_signal: i32 = (some_stream * 2)->latest(0)`
 ```
 
 ##### 13.18.7.7 Why the sampling rule, not emit-on-either
@@ -21416,7 +21450,7 @@ signal's commits into output events), is rejected for three reasons:
   the same inputs (§13.2.3): a `derived` recomputes on any input commit.
   If a consumer genuinely wants an every-input-change value, it reads
   the derived, not a stream. To turn *that* into events (e.g. to buffer
-  them) it takes the derived's own `.changes` member (§13.18.9). Nothing
+  them) it takes the derived's own `->changes` crossing (§13.18.9). Nothing
   is lost; the every-change behavior lives where it belongs (the value
   track) and reaches the event track only through an explicit
   conversion.
@@ -21424,7 +21458,7 @@ signal's commits into output events), is rejected for three reasons:
 - **Per-operand control is retained.** Under the sampling rule the
   author chooses, per operand, whether a reactive input paces the
   output (make it a stream — reference it directly, or convert a signal
-  via `.changes`) or merely conditions it (leave it a signal — it is
+  via `->changes`) or merely conditions it (leave it a signal — it is
   sampled). Emit-on-either erases that distinction: every operand would
   pace the output identically, and the author could no longer say "emit
   on price ticks, sampling the current rate" versus "emit on either."
@@ -21596,37 +21630,37 @@ Operators that produce, transform, or consume streams are stdlib
 primitives. All use the standard operator-application syntax
 (`|>` chains or function-call form per §13.17.6).
 
-**Signal-to-stream bridge — `sig.changes`.** Converting a signal to a
+**Signal-to-stream bridge — `sig->changes`.** Converting a signal to a
 stream is **explicit** — there is no implicit `signal`→`stream`
 conversion. A signal carries only its latest value while a stream
 carries discrete events; that lossiness must never be hidden
 (§13.18.7.4). The bridge is not a pair of constructor operators; it is
-the synthesized member `.changes` on any value cell:
+the language form `->changes`, a postfix arrow access on any value cell
+(a language form, not a member and not an operator):
 
 ```
-sig.changes        // a stream of sig's committed changes, one event per change
+sig->changes       // a stream of sig's committed changes, one event per change
 ```
 
-`.changes` is a **synthesized per-use-site stream member** (the
-synthesized-member precedent of §13.18.6): each textual occurrence of
-`sig.changes` names its *own* stream member on the cell, with its own
-buffer — two textual `sig.changes` sites are two distinct streams. It
-is not a stored field on the cell; the compiler materializes one stream
-member per use site.
+`->changes` is **synthesized per use site** (the synthesized-member
+precedent of §13.18.6): each textual occurrence of `sig->changes` names
+its *own* stream, with its own buffer — two textual `sig->changes` sites
+are two distinct streams. It is not a stored field on the cell; the
+compiler materializes one stream per use site.
 
-The semantics: at the moment the member is materialized, the source
+The semantics: at the moment the stream is materialized, the source
 signal's current value is emitted as event 0; thereafter, each commit
 of a new value by the source (per the commit cycle) appends an event.
 Same-value commits do not emit (per the value-change semantics of
 §13.2.4.4).
 
-**Policy and capacity resolve like placeholders.** `.changes` does not
+**Policy and capacity resolve like placeholders.** `->changes` does not
 name a policy or capacity of its own; both resolve at the use site the
 way a placeholder resolves (the use-site resolution list of §4.4):
 
-- If the `.changes` feeds a stream declaration, it *materializes as*
+- If the `->changes` feeds a stream declaration, it *materializes as*
   that declared stream — one buffer, the declared policy and capacity:
-  `stream ring[2048] s: Url = current_url.changes` gives a
+  `stream ring[2048] s: Url = current_url->changes` gives a
   `ring`-policy, capacity-2048 stream.
 - If it flows into a parameter or return position of known stream kind,
   that kind pins the policy and capacity.
@@ -21635,34 +21669,49 @@ way a placeholder resolves (the use-site resolution list of §4.4):
   (§13.18.3).
 
 ```
-stream ring[2048] s: Url          = current_url.changes   // ring, capacity 2048
-stream gate[256]  g: Url          = other_url.changes      // gate, capacity 256
-let  x                             = some_signal.changes    // erased stream T until pinned
+stream ring[2048] s: Url          = current_url->changes  // ring, capacity 2048
+stream gate[256]  g: Url          = other_url->changes     // gate, capacity 256
+let  x                             = some_signal->changes   // erased stream T until pinned
 ```
 
-**Stream-to-signal bridge — an ordinary user-written operator.**
-`to_signal` is not a language primitive; it is an ordinary
-user-written operator, expressible with `observe` plus a default arm
-(the R5 observe grammar, §13.2.11, makes this writable in-language):
+**Stream-to-value crossing — `stream->latest(fallback)`.** The dual
+language form is `->latest`: a postfix arrow access on any stream,
+producing a `derived T` that holds the latest observed event, `fallback`
+before the first one arrives:
 
 ```
-operator to_signal[T](source: stream T, fallback: T) -> derived T:
-  // one observe arm binds each event; the default arm supplies `fallback`
-  // until the first event is observed.
-  observe:
-    on source as e:
-      e
-    default:
-      fallback
+deposits->latest(0)   // derived: latest deposit, 0 before the first event
 ```
 
-It returns a `derived T` whose value is the latest observed event, or
-`fallback` if no event has been observed yet. The fallback is required
-because value cells must always have a defined value (§13.2.6 initial
-value rules; §13.9.7 cell-value reads); the returned cell updates on
-each new event. Because it is user-written, `to_signal` carries no
-special language privilege — any program may write an equivalent
-stream-to-value operator the same way.
+The `fallback` is required because value cells must always hold a
+defined value (§13.2.6 initial value rules; §13.9.7 cell-value reads);
+the returned derived updates on each new event. This is the only
+stream-to-value crossing — no operator and no member spelling exists.
+
+**Dot projects, arrow mints.** Dot access projects existing state — the
+observation cells (§13.18.6), `.previous`, `.past` — reading state that
+already exists. Arrow access mints new wiring: `->changes` mints a stream
+from a value cell, `->latest(fallback)` mints a derived from a stream. In
+this postfix position `->` is the minting-access operator — the token's
+third positionally-disjoint role, alongside function/operator return
+types and `pairs:` entries. The three positions are disjoint, so there is
+no parse ambiguity among them.
+
+The crossing names `changes` and `latest` are **not reserved words**:
+like directive names they form a closed list recognized only after the
+postfix arrow, and both stay fully legal as ordinary identifiers and
+binding names everywhere else (`derived latest = …` remains legal).
+
+The stream-to-value stdlib family is ordinary composition over `scan`
+and this crossing — no privileged machinery:
+
+```
+accumulate(src, init, f)   =   (src |> scan(init, f))->latest(init)
+```
+
+`event_count`, `any`, and `all` compose the same way: a `scan` produces
+the running value, and `->latest` takes the structural initial as its
+fallback.
 
 **Skip / take family:**
 
@@ -21702,10 +21751,11 @@ buffer state, not a cursor state, and not a reactive-graph state:
 - **`merge` emits until all arms complete.** A completed arm simply
   contributes nothing further; the surviving arms keep emitting, and
   the merged output is complete only when every arm is complete.
-- **Value-cell consumers see nothing special.** `event_count`,
-  `to_signal`, `any`, `all`, `accumulate` built over a completed
-  source simply receive no further events; their last committed
-  values persist. There is no completion flag and no frozen state.
+- **Value-cell consumers see nothing special.** The `->latest(fallback)`
+  crossing and the stdlib compositions over it (`event_count`, `any`,
+  `all`, `accumulate`) built over a completed source simply receive no
+  further events; their last committed values persist. There is no
+  completion flag and no frozen state.
 - **Observation cells never surface completion.** `pending_count`,
   `pressure`, `is_full`, `dropped_total`, `rejected_total`, and
   `last_overflow_at` carry no completion reading — completion is not
@@ -21717,10 +21767,10 @@ backlog; a completed consumer never resumes — and never stops
 advancing.
 
 The most common use of `skip_first` is to drop the initial-value
-event emitted by `.changes`, leaving only true post-initial changes:
+event emitted by `->changes`, leaving only true post-initial changes:
 
 ```
-stream ring url_changes: Url = current_url.changes |> skip_first
+stream ring url_changes: Url = current_url->changes |> skip_first
 ```
 
 **Projection operators** (Stream → Derived):
@@ -21743,10 +21793,10 @@ The stream projection formerly named `count` is `event_count` (the
 bare `count` name is reserved for the element-tally rule, §9.3.8); the
 stream projection formerly named `fold` is `accumulate` (it pairs with
 `scan`, and the bare name `fold` names the language fold form,
-§13.21). These produce value cells (deriveds) from streams without
-requiring a default value because the predicate or accumulator
-establishes the initial value structurally (`0` for `event_count`,
-`init` for `accumulate`, `false` for `any`, `true` for `all`).
+§13.21). These are ordinary compositions over `scan` and the
+`->latest(fallback)` crossing — the structural initial (`0` for
+`event_count`, `init` for `accumulate`, `false` for `any`, `true` for
+`all`) is the `->latest` fallback; no privileged machinery.
 
 **Transformation operators** (Stream → Stream):
 
@@ -21830,8 +21880,8 @@ straightforward arithmetic and conditional history use; `scan` and
 `where` is a stream-filter expression at the expression level. It
 takes a **stream** and a boolean predicate; it produces a new stream
 emitting only those events of the input whose predicate evaluates
-to true. A signal is not a `where` source — convert it to a stream
-explicitly first via its `.changes` member (`signal.changes`, §13.18.9).
+to true. A signal is not a `where` source — cross it to a stream
+explicitly first via `->changes` (`signal->changes`, §13.18.9).
 
 ##### 13.18.10.1 Form
 
@@ -21855,9 +21905,9 @@ stream ring relevant = events where (events.priority is high and active_signal)
 A signal must be converted to a stream before filtering:
 
 ```
-stream ring sensor_events = sensor_signal.changes
+stream ring sensor_events = sensor_signal->changes
 stream ring above_threshold = sensor_events where sensor_events > 100
-// or in one expression: sensor_signal.changes |> filter(fn(s): s > 100)
+// or in one expression: sensor_signal->changes |> filter(fn(s): s > 100)
 ```
 
 ##### 13.18.10.2 References inside `C` and per-LHS-event semantics
@@ -22000,7 +22050,7 @@ makes several arms candidates, the first in declaration order wins.
 - **Output is always a stream.** A filter may emit zero events per
   input, so signal semantics (always-defined value) don't fit.
   Assigning a `where` expression to a `derived` binding is a
-  compile error; project explicitly via `to_signal(fallback)` if a
+  compile error; cross explicitly via `->latest(fallback)` if a
   signal-typed result is needed.
 
 #### 13.18.11 Policy as type
@@ -22326,8 +22376,8 @@ to the base stream reload rules above:
   feeds into an operator that emits a stream.
 - **A stream's `source` must include at least one stream.** The
   source expression must contain at least one stream input — a real
-  stream, or a signal converted explicitly via its `.changes` member
-  (`signal.changes`). A pure-value or signals-only expression cannot
+  stream, or a signal crossed explicitly via `->changes`
+  (`signal->changes`). A pure-value or signals-only expression cannot
   be a stream source: there is no implicit `signal`→`stream`
   conversion (§13.18.7.4); signals in a stream expression are sampled,
   not emitted.
@@ -22355,7 +22405,7 @@ to the base stream reload rules above:
   cannot hold that many past events.
 - **Stream-valued expressions cannot be assigned to signal-typed
   bindings.** `derived X = stream_expr` and `signal X = stream_expr`
-  are compile errors; use `to_signal(fallback)` to project explicitly
+  are compile errors; use the `->latest(fallback)` crossing explicitly
   (§13.18.7.3).
 
 #### 13.18.16 Diagnostics
@@ -22385,8 +22435,8 @@ it explicitly:
 error: cannot pass a `signal T` where a `stream T` is required
   --> persist(my_signal)
               ^^^^^^^^^ expected a stream
-  hint: `persist`'s parameter requires a stream. Convert the signal
-        explicitly via its `.changes` member: `persist(my_signal.changes)`.
+  hint: `persist`'s parameter requires a stream. Cross the signal
+        explicitly via `->changes`: `persist(my_signal->changes)`.
 ```
 
 **Stream-valued expression assigned to a signal binding:**
@@ -22396,8 +22446,8 @@ error: cannot assign stream-valued expression to signal binding
   --> derived latest: Event = some_stream * 2
                               ^^^^^^^^^^^^^^^
   hint: a stream-valued expression cannot be coerced to a signal
-        silently. Project explicitly via `to_signal(fallback)`:
-        `derived latest: Event = (some_stream * 2) |> to_signal(default_event)`
+        silently. Cross explicitly via `->latest(fallback)`:
+        `derived latest: Event = (some_stream * 2)->latest(default_event)`
 ```
 
 **Stream read as a value (no expression context):**
@@ -22406,9 +22456,9 @@ error: cannot assign stream-valued expression to signal binding
 error: cannot read a `stream T` as a value
   --> derived latest: Event = events
                               ^^^^^^ this is a stream, not a value cell
-  hint: streams have no current value. Project to a signal via
-        `to_signal`, or fold the stream:
-        `derived latest = events |> to_signal(default_event)`
+  hint: streams have no current value. Cross to a value cell via
+        the `->latest(fallback)` crossing, or fold the stream:
+        `derived latest = events->latest(default_event)`
 ```
 
 **Policy mismatch in pipe chain:**
@@ -22804,7 +22854,7 @@ buffer:
 ```
 desired:
   stream ring[1024] outbound: Message = outgoing
-  stream gate[256] outgoing_writes: PendingWrite = pending.changes
+  stream gate[256] outgoing_writes: PendingWrite = pending->changes
 ```
 
 The declaration shape matches a regular `stream` declaration (§13.18.2)
@@ -22941,8 +22991,8 @@ an observed cell, place the `repeat` in the enclosing node's `expose:` block or 
 `desired:` block, consuming the observed cell as the source; to gate
 structure on an observed value, do the same with a `when`/`given` block.
 
-The stream begins empty. Consumers in program code project the stream
-to a signal via `to_signal`, or fold/count/filter/etc. via the
+The stream begins empty. Consumers in program code cross the stream
+to a value cell via `->latest(fallback)`, or fold/count/filter/etc. via the
 standard stream operators.
 
 **Cell name uniqueness.** Within a single `observed:` block, cell
@@ -23066,7 +23116,7 @@ reads:
 ```
 effects:
   ws = current_url |> websocket
-derived latest: Message = ws.inbound |> to_signal(empty_message)  // project to signal
+derived latest: Message = ws.inbound->latest(empty_message)  // cross to value cell
 derived total: u64 = ws.inbound |> count                          // running count
 stream ring[64] recent_text: Message = ws.inbound |> filter(is_text)
 ```
@@ -23333,7 +23383,7 @@ operators (§13.18.9):
 ```
 effects:
   ws = current_url |> websocket
-derived latest: Message = ws.inbound |> to_signal(empty_message)
+derived latest: Message = ws.inbound->latest(empty_message)
 derived messages_per_second: f32 = ws.inbound |> count |> rate_per_second
 ```
 
@@ -23821,7 +23871,7 @@ member values). Where reading the current state would **drop
 information**, no implicit read exists: a `stream`'s events have no
 lossless current-state snapshot — a single "current value" cannot stand
 for a sequence of events — so a stream becomes a value cell only through
-the explicit conversion `to_signal(<stream>, <fallback>)` (§13.18).
+the explicit crossing `<stream>->latest(<fallback>)` (§13.18).
 
 ##### 13.20.4.3 IR lowering
 
