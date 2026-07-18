@@ -80,17 +80,23 @@ LOG/SPEC content — verify on disk (LEARNINGS #3); verification = full diff rea
    (immutability scoped to within-the-program), D-29 (std::vec::new()). PLUS the D-05
    residual rulings as the FIRST CONSENT-LIST (keyword classes for own/move/public/private;
    `cell` reserved?; sweep scope; `sealed` class; freed `satisfies`+`main` identifiers).
-3. **Main-removal amendment**: plan doc main-removal-plan.md parked on EIGHT confirms
+3. **Barrel-visibility amendment** (owner-settled 2026-07-16, "that settles it"): plan doc =
+   barrel-visibility-plan.md, ALL rulings locked (in-source public+shared retire; private sole
+   in-source keyword; public.duc barrel at package root with `export` entries, no glob;
+   no-barrel = nothing public; leak rule = compile error; member model (i); one barrel per
+   package; `type(private) Email:` hosts constructor visibility; `export` reserved, never
+   `expose`). Runs AFTER the policies batch. D-05's visibility-class item resolves here.
+4. **Main-removal amendment**: plan doc main-removal-plan.md parked on EIGHT confirms
    (§3.1-3.8) + Phase-0 fold decision + two additions from later discussions: the
    reference-reachability closure pin (does a live-code reference pull a dead placement into
    the root closure?) and the unwired-instance ownership note (typecheck is liveness-blind;
    ownership rule fires textually).
-4. **Part 3 re-anchor survey** (owner-agreed protocol): classify all ~80 items of
+5. **Part 3 re-anchor survey** (owner-agreed protocol): classify all ~80 items of
    audit-plan-3-individual-decisions.md as DISSOLVED (killed by Part-2 rulings — Cell[T],
    stream types, main, satisfies, view-Iterable all gone) / EXECUTED / STALE / LIVE; then
    LIVE items in themed consent-lists (one-liners: problem → recommendation → why; owner
    approves wholesale, strikes to escalate; only struck items get full treatment).
-5. **Small standing flags**: proposed 001 philosophy entry ("privileged in performance,
+6. **Small standing flags**: proposed 001 philosophy entry ("privileged in performance,
    never in capability") awaiting nod; satisfies-flag name kept (verb-derived, noted);
    IR behavior-grammar ret/operand gap (own item); IR_GRAMMAR §2/§6 citation-drift sweep
    (033-166/167/168 offsets); duplicate keyed-by keys on value collections (LOW);

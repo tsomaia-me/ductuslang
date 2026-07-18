@@ -13290,10 +13290,14 @@ observe:
   value (`as e` where `e: E`). A multi-trigger set binds either a
   tuple (`as (e1, e2)`) or a single tuple identifier (`as events`,
   accessed `.0`/`.1`); each stream slot is typed `Option[E]` — `Some`
-  iff that trigger fired this activation, so a co-firing binds both
-  `Some` — while signal slots bind plainly. In a value-cell context
-  the binder is the *latest event of the commit*; in a stream context
-  the arm evaluates per event. Inside the `where` filter `C`, the bare
+  for the slot whose trigger's event the firing processes, `None` for
+  the other stream slots (same-commit events of different triggers
+  are separate firings, processed in commit order, §13.2.11.9) —
+  while signal slots bind plainly. In every context the arm fires
+  once per pending event and the binder binds each event in turn
+  (§13.2.11.9): in a stream context each firing emits one output
+  event; in a value-cell context the firings chain within the commit
+  and the cell commits the final value. Inside the `where` filter `C`, the bare
   stream name keeps its event meaning (§13.18.10); in the arm **body**
   only the binder denotes the event — a bare stream name in the body
   never denotes an event value.
@@ -13327,13 +13331,18 @@ an event (stream), the arm becomes a candidate for selection. The
 candidate set is filtered by the arm's `where` clause if present
 (§13.18.10).
 
-When multiple arms become candidates in the same commit, **arm
-selection follows declaration order**: the first arm in declaration
-order whose trigger set fired and whose `where` filter (if any)
-passes wins. This mirrors `match` semantics (§6.2.4).
+When multiple arms become candidates at the same moment —
+simultaneous signal commits, or a single emission whose cell is
+listed in several arms' trigger sets — **arm selection follows
+declaration order**: the first such arm in declaration order whose
+`where` filter (if any) passes wins. This mirrors `match` semantics
+(§6.2.4). Same-commit stream events at distinct commit-order
+positions are not simultaneous: they are processed as separate
+firings, in commit order, selection applied per firing (§13.2.11.9).
 
 The selected arm becomes the **active arm** of the observe expression.
-A subsequent commit in which a different arm fires changes the
+A subsequent firing in which a different arm is selected — in a later
+commit, or later in the same commit's event sequence — changes the
 active arm.
 
 ##### 13.2.11.3 Reactive-arm semantics
@@ -13416,8 +13425,9 @@ kind is determined by the surrounding context:
 
 All arms' expressions must produce values of the same type T,
 matched against the surrounding context. The `as` binder's slot type
-is coherent with the arm expressions: a single stream binds `E`, a
-value cell binds the latest committed event, and a multi-trigger set
+is coherent with the arm expressions: a single stream trigger binds
+`E` (one event per firing, §13.2.11.9), a value-cell trigger binds
+the value it committed, and a multi-trigger set
 binds `Option[E]` per stream slot / plain per signal slot (§13.2.11.1).
 Type mismatch across arms is a compile error.
 
@@ -13428,9 +13438,10 @@ expression of compatible type is expected:
 
 - As the RHS of a `derived T`, `signal T`, `recurrent[N] T`,
   `recurrent[H] stream ring[N] T`, or `stream ring[N] T` /
-  `stream gate[N] T` declaration. (The binder's slot typing follows
-  the RHS kind coherently: value-cell RHS binds the latest committed
-  event; stream RHS binds per event; multi-trigger sets bind
+  `stream gate[N] T` declaration. (The binder binds per event
+  in every RHS kind — each pending event in turn, a value-cell RHS
+  chaining its firings to a single committed value (§13.2.11.9);
+  multi-trigger sets bind
   `Option[E]` per stream slot — §13.2.11.1.)
 - As a sub-expression inside a larger reactive expression.
 - As an argument to a function call (functions are reactive-
@@ -13476,6 +13487,57 @@ continued activeness of an already-selected arm. A's body remains
 reactive to its references. A is supplanted only when a different
 arm's filtered trigger emits and that arm becomes the new active
 arm per declaration-order selection.
+
+##### 13.2.11.9 Firing granularity: per event, in commit order
+
+```
+stream ring clicks: Click = ...
+
+// three clicks pending in one commit: the arm fires three times,
+// emitting three output events — one per pending event
+stream ring positions: Point = observe:
+  on clicks as e: e.position
+```
+
+An observe arm whose trigger is a stream fires **once per pending
+event** of that trigger, in commit order; the `as` binder binds each
+event in turn. Granularity is per event, never per commit — a commit
+delivering three events produces three firings, so no event is
+silently unobserved.
+
+What the firings produce depends on the observe's concrete kind
+(§13.2.11.6):
+
+- **Stream context.** Each firing emits one output event — one
+  output event per input event, the same per-event law that governs
+  stream-containing reactive expressions (§13.18.7.1).
+- **Value-cell context.** The firings *chain* within the commit: the
+  second and later firings observe the running result of the
+  preceding firing, and the cell commits the **final** value once,
+  at the commit boundary. Intermediate results never commit and are
+  never observable downstream.
+
+**Self-reference within a chain.** Within one commit, a
+self-reference in the second and later firings reads the *running*
+(uncommitted) value of the chain, so a per-event fold advances once
+per event even though only the final value commits. Across commits,
+`.previous(fallback)` keeps meaning the previous *committed* value,
+unchanged: a chain's running value is seeded from the value the cell
+last committed.
+
+**Several triggers, several arms.** When multiple stream triggers
+have pending events in one commit — listed in one arm's trigger set
+or spread across arms — the events are processed as separate firings
+in commit order. Each firing selects its arm per the ordinary
+selection rules (§13.2.11.2): the arms whose trigger emitted the
+event are the candidates, `where` filters apply, and declaration
+order decides among candidates for the same event. No new selection
+rule is introduced; selection is applied per firing.
+
+This per-event granularity is what makes the stream-to-value
+operator family — `accumulate`, `event_count`, `any`, `all`, and
+`to_signal` as the latest-event case — expressible as ordinary
+library code over `observe` (§13.18.9).
 
 ### 13.3 Nodes
 
@@ -21170,7 +21232,9 @@ A reactive input to an expression participates uniformly:
 
 The expression is recomputed whenever *any* of its reactive inputs
 emit. The output stream emits the freshly-computed value as its
-next event.
+next event. An `observe` expression whose triggers include streams
+follows the same per-event granularity — one firing per pending
+event, in commit order (§13.2.11.9).
 
 ##### 13.18.7.2 Combine semantics
 
@@ -21611,7 +21675,8 @@ operator skip_first[T, P: StreamPolicy](source: stream[P] T) -> stream[P] T:
 
 operator take[T, P: StreamPolicy](source: stream[P] T, n: i32) -> stream[P] T:
   // emits the first `n` events observed from source, then emits no
-  // more (the output stream is complete after n events)
+  // more (the output stream is complete after n events — a
+  // downstream-emission fact only; see "Stream completion" below)
 
 operator take_first[T, P: StreamPolicy](source: stream[P] T) -> stream[P] T:
   // equivalent to take(1)
@@ -21620,6 +21685,36 @@ operator take_first[T, P: StreamPolicy](source: stream[P] T) -> stream[P] T:
 `skip` and `take` are duals: `skip(n)` discards the first n events
 and passes the rest; `take(n)` passes the first n events and
 discards the rest. Both preserve the source's policy and capacity by threading `P`.
+
+**Stream completion — a downstream-emission property only.** `take`
+introduces the one completion state in the stream model: after `n`
+events its output stream is *complete* — it emits no further events,
+ever. That is the whole meaning; the same applies to any operator
+that stops emitting while its source lives. Completion is not a
+buffer state, not a cursor state, and not a reactive-graph state:
+
+- **The completed consumer keeps draining.** A completed consumer's
+  cursor on its source keeps advancing past the events it no longer
+  emits, releasing slowest-cursor retention automatically and
+  permanently (§13.18.12). A completed `take(3)` on a gate stream
+  never becomes the permanent slowest cursor: `rejected_total` does
+  not climb on its account and `is_full` does not stick true.
+- **`merge` emits until all arms complete.** A completed arm simply
+  contributes nothing further; the surviving arms keep emitting, and
+  the merged output is complete only when every arm is complete.
+- **Value-cell consumers see nothing special.** `event_count`,
+  `to_signal`, `any`, `all`, `accumulate` built over a completed
+  source simply receive no further events; their last committed
+  values persist. There is no completion flag and no frozen state.
+- **Observation cells never surface completion.** `pending_count`,
+  `pressure`, `is_full`, `dropped_total`, `rejected_total`, and
+  `last_overflow_at` carry no completion reading — completion is not
+  a buffer-pressure fact (§13.18.6).
+
+Completion is distinct from gate-off freeze-and-backlog (§13.18.12):
+a gated-off consumer's cursor stops and it later resumes to drain its
+backlog; a completed consumer never resumes — and never stops
+advancing.
 
 The most common use of `skip_first` is to drop the initial-value
 event emitted by `.changes`, leaving only true post-initial changes:
@@ -21673,7 +21768,10 @@ operator merge[
 ) -> stream[Ring[N]] T:
   // interleaves events from both sources in commit order;
   // default capacity is the sum of input capacities, ensuring no
-  // overflow if both inputs fill simultaneously
+  // overflow if both inputs fill simultaneously.
+  // A completed input arm contributes nothing further; the merged
+  // output completes only when all arms are complete ("Stream
+  // completion" above).
 
 operator throttle[T, P: StreamPolicy](source: stream[P] T, window: duration, clock: cell u64) -> stream[P] T:
   // rate-limits events to at most one per window. `clock` ticks are
@@ -21887,8 +21985,9 @@ When the `observe` block is the body of a recurrent, the arm
 expressions may reference the recurrent's self-history via
 `.previous(fallback)` and `.past(k, fallback)` (§13.2.4.3).
 
-The arm-selection rules of §13.2.11 apply uniformly: the first arm
-whose filtered trigger emits in the current commit wins.
+The arm-selection rules of §13.2.11 apply uniformly: selection is
+applied per firing, in commit order (§13.2.11.9); when one emission
+makes several arms candidates, the first in declaration order wins.
 
 ##### 13.18.10.6 Restrictions
 
@@ -22051,6 +22150,23 @@ same as for recurrent history (§13.2.4): preserve by default, reset on
 opt-in. This consumer-side reset is governed by the consumer's own gate,
 distinct from a recurrent stream producer's reopen reset of its own output
 history and buffer (§13.18.8).
+
+**Completed consumers drain.** Logical completion (`take`'s output
+after `n` events, and any operator that stops emitting while its
+source lives — §13.18.9) is the other way a consumer stops emitting,
+and it is the opposite of gate-off on the cursor side: a completed
+consumer's cursor *keeps advancing* past the events it no longer
+emits, releasing its slowest-cursor retention hold — automatically
+and permanently. This is the `@reset_on_reopen` gate release made
+automatic for the one case where the consumer is provably done. The
+two triggers must not be conflated: a gated-off consumer's cursor
+stops because the consumer is expected to *resume and drain its
+backlog*; a completed consumer *never resumes*, so freezing its
+cursor would let one finished `take(3)` silently and permanently pin
+a shared gate buffer (`rejected_total` climbing forever, `is_full`
+stuck true) with no live consumer to blame. Each stopping mode
+releases or holds retention per its own rule: gate-off holds (unless
+`@reset_on_reopen` releases), completion always releases.
 
 **No cursor rewind.** Cursors only advance. There is no operation
 to rewind a cursor to an earlier position; the buffer's events are

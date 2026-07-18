@@ -1864,7 +1864,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
 
-## 016. Reactive Declarations (Cells) — 286 Rules
+## 016. Reactive Declarations (Cells) — 291 Rules
 
 016-1. There are exactly seven declaration kinds — the leading-keyword forms `signal`, `attr`, `recurrent`, `derived`, `stream`, `const`, and `yielded` — distinguished by who controls the value and how (or whether) it changes; `signal`, `attr`, `recurrent`, `derived`, and `stream` are reactive, `const` is not, and `yielded` declares a reactive group. `yielded` declares a named group as `yielded <name>: <MemberType> = collect:` with an indented body, and is legal only inside bodies, never at module top level. The corpus must keep four distinct taxonomies apart: (1) these seven declaration keywords; (2) the value-cell kinds spanned by the `cell T` umbrella — `signal T`, `attr`-as-`signal T`, `derived T`, `recurrent[N] T`; (3) the stream kind class — `stream ring[N] T`, `stream gate[N] T`, erased `stream T`, `recurrent[N] stream …` — which sits outside the `cell T` umbrella; and (4) the group kind class — `yielded T` — which also sits outside it. `const` is a declaration kind but a cell of no kind. (§13.2)
 016-2. `signal`, `attr`, `recurrent`, and `derived` declare value-shaped reactive cells. (§13.2)
@@ -2118,8 +2118,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-250. An `observe` used as a sub-expression or call argument must be parenthesized — `f((observe: …))` — its `observe:`-introduced block being open-ended; the parentheses fix its extent, as for placement open operands that are not self-delimiting (§13.8.10). (§13.2.11.1)
 016-251. An arm becomes a selection candidate when any cell in its `on` trigger set commits a new value (signal) or emits an event (stream). (§13.2.11.2)
 016-252. An arm's candidacy is filtered by its `where` clause when present. (§13.2.11.2)
-016-253. When multiple arms are candidates in the same commit, the first candidate in declaration order wins, mirroring `match` semantics. (§13.2.11.2)
-016-254. The winning arm becomes the active arm; a subsequent commit selecting a different arm changes the active arm. (§13.2.11.2)
+016-253. When multiple arms become candidates at the same moment — simultaneous signal commits, or one emission whose cell is listed in several arms' trigger sets — the first candidate in declaration order wins, mirroring `match` semantics; same-commit stream events at distinct commit-order positions are not simultaneous, and are processed as separate firings in commit order. (§13.2.11.2)
+016-254. The winning arm becomes the active arm; a subsequent firing selecting a different arm — in a later commit, or later in the same commit's event sequence — changes the active arm. (§13.2.11.2)
 016-255. While an arm is active, its expression is fully reactive: any referenced cell is dependency-tracked and re-evaluates the arm — without requiring the `on` trigger to re-fire. (§13.2.11.3)
 016-256. An active arm's `on` trigger is also one of its reactive references, so re-firing the trigger re-evaluates the arm. (§13.2.11.3)
 016-257. When a different arm activates, the previous arm's references stop being tracked and the new arm's references become active. (§13.2.11.3)
@@ -2135,7 +2135,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-267. In a value-cell context — a `signal`, `derived`, or `recurrent` binding — an observe produces the matching value-cell kind (`signal T`, `derived T`, or `recurrent[N] T`). (§13.2.11.6)
 016-268. In a stream context, an observe produces the concrete stream kind, `stream ring[N] T` or `stream gate[N] T`, per the stream context's policy and capacity. (§13.2.11.6)
 016-269. Type mismatch across observe arms is a compile error. (§13.2.11.6)
-016-270. `observe` may be the RHS of a `derived`, `signal`, `recurrent`, `recurrent[N] stream`, or `stream` declaration; an arm's `as` binder is typed by the RHS context — in a value-cell RHS (`derived`/`signal`/`recurrent`) the binder holds the latest event of the commit, while in a stream RHS (`stream`/`recurrent[N] stream`) it binds per event. (§13.2.11.7)
+016-270. `observe` may be the RHS of a `derived`, `signal`, `recurrent`, `recurrent[N] stream`, or `stream` declaration; in every RHS context an arm's `as` binder binds per event — each pending event of the firing trigger in turn — the contexts differing only in what the firings produce: a stream RHS emits one output event per firing, while a value-cell RHS commits a single final value at the commit boundary (§13.2.11.9). (§13.2.11.7)
 016-271. `observe` may appear as a sub-expression inside a larger reactive expression, and anywhere a `cell T` is valid. (§13.2.11.7)
 016-272. `observe` may be a function-call argument; its reactive dependencies propagate through the reactive-transparent call site. (§13.2.11.7)
 016-273. Inside a recurrent declaration, observe arm expressions may access the enclosing recurrent's self-history via `.previous(fallback)` / `.past(k, fallback)`. (§13.2.11.7)
@@ -2152,6 +2152,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-284. Value-reading operator and function parameters are annotated `cell T` (the umbrella spanning the value cells only — `signal T`, `attr`-as-`signal T`, `derived T`, `recurrent[N] T`); a `stream T` does not bind to a `cell T` parameter at all — the signature itself excludes it — and a stream argument requires the explicit conversion `to_signal(<stream>, <fallback>)` or a `stream T`-annotated parameter. (§13.2.8)
 016-285. The host has no write API for `attr` cells; the runtime provides no `write_attr` verb. An attr's value changes only at placement-time instantiation per §13.8.2.1's category-B/C rules, and after instantiation tracks its placement RHS for the instance's lifetime. (§13.2.2)
 016-286. The host-program write surface comprises exactly two channels: `runtime.write_signal` for module-level signals and per-effect-instance `observed:` signals, and `runtime.push_stream` for per-effect-instance `observed:` streams. There is no third channel; a computed `observed:` output (a `derived` or value-`recurrent`) is program-written rather than host-written, so it opens no channel and the host-write count stays two. (§13.14.2)
+016-287. An observe arm whose trigger is a stream fires once per pending event of that trigger, in commit order; the arm's `as` binder binds each event in turn. (§13.2.11.9)
+016-288. In a stream context, each firing of an observe arm emits one output event — one output event per input event, the same per-event law that governs stream-containing reactive expressions. (§13.2.11.9)
+016-289. In a value-cell context, an observe arm's firings chain within the commit: the second and later firings observe the running result of the preceding firing, and the cell commits the final value once, at the commit boundary. (§13.2.11.9)
+016-290. Within one commit, a self-reference in an observe arm's second and later firings reads the running (uncommitted) value of the chain; across commits `.previous(fallback)` keeps meaning the previous committed value, unchanged. (§13.2.11.9)
+016-291. When several stream triggers have pending events in one commit — in one arm's trigger list or across arms — the events are processed as separate firings in commit order; each firing selects its arm by the trigger that emitted the event, `where`-filtered, with declaration order deciding when one event makes several arms candidates. (§13.2.11.9)
 
 ## 017. Nodes & Views — 326 Rules
 
@@ -3520,7 +3525,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 029-123. A carried operator composes in `|>` chains at the point it is instantiated, identically to a named operator. (§13.17.13)
 029-124. A value-reading operator or function parameter is annotated `cell T`, the umbrella kind spanning the value cells only — `signal T`, `attr`-as-`signal T`, `derived T`, and `recurrent[N] T`; an operator's computed value output is a `derived T`. A `stream T` has no current value and does not bind to a `cell T` parameter at all — the signature itself excludes it; a stream argument requires the explicit conversion `to_signal(<stream>, <fallback>)` or a `stream T`-annotated parameter. (§13.17.3)
 
-## 030. Streams — 261 Rules
+## 030. Streams — 268 Rules
 
 030-1. A stream is a reactive primitive for append-only event sequences governed by a buffering policy. (§13.18)
 030-2. Streams are first-class reactive cells participating in the commit cycle, in cell identity for hot reload, and in the graph specification. (§13.18)
@@ -3655,7 +3660,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-131. `to_signal`'s `fallback` argument is required; the signal holds `fallback` until the first event is observed. (§13.18.9)
 030-132. `skip[T, P: StreamPolicy](source: stream[P] T, n: i32) -> stream[P] T` drops the first `n` observed events and passes the rest. (§13.18.9)
 030-133. `skip_first` is equivalent to `skip(1)`: `current_url.changes |> skip_first` drops the initial-value event. (§13.18.9)
-030-134. `take[T, P: StreamPolicy](source: stream[P] T, n: i32) -> stream[P] T` emits the first `n` events, after which the output stream is complete and emits no more. (§13.18.9)
+030-134. `take[T, P: StreamPolicy](source: stream[P] T, n: i32) -> stream[P] T` emits the first `n` events, after which the output stream is complete and emits no more — completion is a downstream-emission property only, and the completed consumer's cursor on the source keeps draining (§13.18.12). (§13.18.9)
 030-135. `take_first` is equivalent to `take(1)`. (§13.18.9)
 030-136. `skip` and `take` both preserve the source's policy and capacity by threading the policy parameter `P`. (§13.18.9)
 030-137. `event_count[T](source: stream T) -> derived i64` is the running count of observed events, starting at `0`; the `event_` prefix marks this as a specialized tally under the tally-accessor naming rule (§9.3.8), so it is exempt from the bare-`count` element-tally unification. (§13.18.9)
@@ -3783,6 +3788,13 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-259. Each policy type carries its own buffer parameters: `Ring[const N: usize]`/`Gate[const N: usize]` carry capacity; the self-history depth is an orthogonal stream parameter (default `0`), never a policy parameter. (§13.18.3)
 030-260. An operator that requires a specific policy, or whose output policy is not its input's, names the policy concretely in its return type; there is no policy/capacity inheritance rule. (§13.18.3)
 030-261. The two-axis model mints no alias types: the language-provided word forms `stream ring[N] T` / `stream gate[N] T` are idiomatic sugar for the bracket forms `stream[Ring[N]] T` / `stream[Gate[N]] T` — the same wiring type by direct substitution, not new names. The self-history depth is an orthogonal stream parameter, not a policy, and has no sugar of its own. (§13.18.3)
+030-262. Stream completion — introduced by `take`, and by any operator that stops emitting while its source lives — is a downstream-emission property only: a complete stream emits no further events, and completion has no other observable effect on the source buffer, on other consumers, or on the reactive graph. (§13.18.9)
+030-263. A logically-completed consumer keeps draining: its cursor on the source continues to advance past events it no longer emits, releasing slowest-cursor retention automatically and permanently, so a completed consumer on a gate stream never becomes the permanent slowest cursor, never permanently rejects producers, and never holds `is_full` true. (§13.18.12)
+030-264. Completion is distinct from gate-off freeze-and-backlog: a gated-off consumer's cursor stops because the consumer is expected to resume and drain its backlog, while a completed consumer never resumes and its cursor never stops advancing; gate-off holds retention (unless the consumer opts out via `@reset_on_reopen`), completion always releases it. (§13.18.12)
+030-265. `merge` emits until all of its input arms are complete: a completed arm contributes nothing further, the surviving arms keep emitting, and the merged output is complete only when every arm is complete. (§13.18.9)
+030-266. Value-cell consumers built over a stream (`event_count`, `to_signal`, `any`, `all`, `accumulate`) see nothing special when the source completes: a completed source simply delivers no further events, so the consumer's last committed value persists; there is no completion flag or frozen state. (§13.18.9)
+030-267. Completion is never surfaced through a stream's observation cells: `pending_count`, `pressure`, `is_full`, `dropped_total`, `rejected_total`, and `last_overflow_at` carry no completion reading — completion is not a buffer-pressure fact. (§13.18.9)
+030-268. An `observe` expression whose triggers include streams follows the same per-event law as stream-containing reactive expressions: in a stream context it fires once per pending input event, in commit order, emitting one output event per firing. (§13.18.7.1)
 
 ## 031. Effects — 158 Rules
 
