@@ -226,23 +226,14 @@ UnicodeDigit      ::= any character with Unicode `Decimal_Number` property
 
 Keywords are reserved in every position; no keyword spelling may be used as an ordinary identifier (002-27). All keyword spellings are lowercase (002-2). The complete inventory follows.
 
-**Declaration keywords** (002-3; `use` per 003-50, `wraps` per 007-11, `alias` per 009-102, `sealed` per 005-241):
+**Declaration keywords** (002-3):
 
 ```
-'node'  'connection'  'trait'  'type'  'fn'  'operator'  'effect'
+'node'  'connection'  'trait'  'type'  'enum'  'fn'  'operator'  'effect'
 'signal'  'attr'  'recurrent'  'derived'  'stream'  'yielded'  'view'
-'const'  'let'  'mut'  'repeat'  'main'  'collect'
-'use'  'wraps'  'alias'  'sealed'
+'const'  'let'  'mut'  'repeat'  'collect'
+'use'  'alias'
 ```
-
-// `sealed` is a trait- and nominal-type-declaration modifier (trait,
-//  type, enum, node, connection; §3.7.6,
-//  005-239, 005-243): it restricts fulfillment claims to the trait's or
-//  the subject's declaring module respectively. It is a reserved word in
-//  every position (005-241, 002-27).
-//  Its listing in this box is inventory only — the keyword-class
-//  assignment is deferred to the keyword-class taxonomy (005-241); it
-//  is not thereby fixed as a declaration keyword.
 
 // `yielded` is the seventh declaration keyword (016-1); it heads a
 //  body-only named group declaration (`yielded <name>: <MemberType> =
@@ -256,36 +247,80 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 //  fulfill body is introduced by the `fulfill` clause attached to a
 //  `trait` head (§7.12).
 
+**Declaration-modifier keywords** (002-33, 005-241):
+
+```
+'sealed'
+```
+
+// `sealed` is a trait- and nominal-type-declaration modifier (trait,
+//  type, enum, node, connection; §3.7.6,
+//  005-239, 005-243): it restricts fulfillment claims to the trait's or
+//  the subject's declaring module respectively. It is a reserved word in
+//  every position (005-241, 002-27); its keyword class is the
+//  declaration-modifier class (002-33).
+
 **Visibility keywords** (002-3):
 
 ```
 'public'  'shared'  'private'
 ```
 
-**Ownership / coercion keywords** (`own`/`move` per 001-18; `dyn` per 004-47, 008-7):
+**Ownership keywords** (002-31; semantics per 001-18):
 
 ```
-'own'  'move'  'dyn'
+'own'  'move'
 ```
+
+**Reserved word `dyn`** (002-34):
+
+```
+'dyn'
+```
+
+// `dyn` is reserved in every position; its keyword-class assignment is
+//  deferred to the keyword-class taxonomy (002-34). Its grammatical
+//  position is the trait-object marker (004-47, 008-7). Inventory only.
+
+**Kind keywords** (002-32):
+
+```
+'cell'
+```
+
+// `cell` is the umbrella value-cell kind head (002-32, 016-62); it has
+//  no declaration form of its own and appears only in annotation
+//  positions. The reactive declaration keywords double as kind heads in
+//  annotation positions and are not re-listed in this class (002-32).
 
 **Clause keywords** (002-4):
 
 ```
 'children'  'incoming'  'outgoing'  'expose'  'when'
 'fulfill'  'default'  'otherwise'
-'from'  'to'  'pairs'  'on'  'where'  'desired'  'observed'
-'ring'  'gate'  'keyed'  'at'  'dynamic'
+'from'  'to'  'pairs'  'on'  'where'  'requires'  'wraps'  'effects'
+'ring'  'gate'  'keyed'  'at'  'dynamic'  'desired'  'observed'
+'by'  'else'
 ```
 
 // `from`, `to` also serve as reserved instance-field names — see the
 //  `ReservedInstanceField` production below. `incoming` / `outgoing` head
 //  node-body acceptance clauses; they are clause keywords only (002-5).
+// `requires` heads a trait's super-trait clause; `wraps` heads the
+//  newtype underlying-type clause; `effects` heads a node body's
+//  effect-instantiation clause (002-4). `by` and `else` head the fold
+//  form's two arms; `else` also appears in the control-flow box below —
+//  one spelling, two roles per the else-senses rule (002-6).
 
-**Control-flow keywords** (002-6):
+**Control-flow / selector keywords** (002-6):
 
 ```
 'if'  'else'  'match'  'for'  'in'  'while'  'break'  'continue'  'return'  'yield'
+'given'  'observe'
 ```
+
+// `given` and `observe` head selector blocks (002-6): `given` gates arms
+//  by variant; `observe` heads a trigger-arm block.
 
 **Scope-anchor namespace keywords** (002-7):
 
@@ -336,8 +371,9 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 ```
 // Keyword: the lexeme set is the union of all spellings in the boxes
-// above (declaration / visibility / ownership / clause / control-flow /
-// scope-anchor / instance-value / naming-alias / operator-context).
+// above (declaration / declaration-modifier / visibility / ownership /
+// kind / clause / control-flow-selector / scope-anchor / instance-value /
+// naming-alias / operator-context, plus the reserved word `dyn`).
 // There is no separate concrete production — the lexer matches each
 // spelling individually after the longest-match IDENT scan (§2.3).
 //                                                 ;  (§1.4, 002-3)

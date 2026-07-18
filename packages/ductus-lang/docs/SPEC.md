@@ -48,8 +48,10 @@ the user wants to pin a choice deliberately.
 
 **Immutability by default; isolated local mutation as escape hatch.**
 External state — module-level declarations, type definitions, signals,
-function parameters, record fields as a property of types — is always
-immutable. There is no module-level `mut`, no globally-mutable state.
+function parameters, record fields as a property of types — is immutable
+within the boundaries of the Ductus program: no source form assigns to
+any of it, and a signal's value changes only through the host API at the
+program boundary (§13.14). There is no module-level `mut`, no globally-mutable state.
 Inside function bodies, controlled local mutation is available through
 `mut` bindings (§11). Mutation is bounded to the function body that
 declared it; callers never observe a function's internal mutations
@@ -65,7 +67,10 @@ via `own` in the signature and `move` at the call site (§11.7, §11.8).
 Returning transfers ownership to the caller when the result is a real owner or the signature opts into `-> own T`; a default return rooted in a borrowed input is itself borrow-equivalent (§11.3.6). There is no
 garbage collector, no reference counting at the language level (the
 runtime may use refcounting internally for specific types like
-`string` per §11.6), and no shared mutable state.
+`string` per §11.6), and — within the boundaries of the Ductus program —
+no shared mutable state: the reactive-cell store, host-written and
+runtime-coordinated (§13.14), is the single sanctioned mutable channel,
+and it sits at the program's boundary, not inside it.
 
 **First-class citizenship, distinct from value-semantics.** A *first-class
 citizen* is a value that can be named in a binding, passed to and returned
@@ -117,7 +122,7 @@ propagation). The choice is made at the operation site, not retroactively.
 
 ### 1.4 Conventions
 
-Code examples use Ductus syntax. Type-name case conventions:
+Code examples use Ductus syntax. Fenced code blocks follow a tagging convention: a bare fence (no info string) holds Ductus source, while a fence with a non-empty info string — `text` for diagnostics and other non-code content, `ductus-ir` for the IR text form, `ebnf` for grammar productions, `rust` for host-side pseudocode — is not Ductus and is excluded from Ductus lexing rules, including the rule that a `;` in Ductus source is a lex error. Type-name case conventions:
 
 - Concrete primitive types: lowercase (`i32`, `f64`, `bool`, `char`, `string`, `never`).
 - Built-in placeholder keywords: lowercase (`numeric`, `integer`, `float`, `signed`, `unsigned`).
@@ -127,17 +132,29 @@ Code examples use Ductus syntax. Type-name case conventions:
 
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `connection`, `trait`,
-`type`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`, `main`), all clause
-keywords (`incoming`, `outgoing`, `expose`, `when`,
-`fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`,
-`where`, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`,
-`dynamic` — the supply-mode marker, §13.3.3.1), the reserved
-instance-field names (`pair`, `exposition` — §13.7.5; the
-remaining fields `from`, `to`, `incoming`, `outgoing` double as
-the clause keywords above), all control-flow keywords (`if`, `else`,
-`match`, `for`, `in`, `while`, `break`, `continue`, `return`), the
-scope-anchor namespaces (`here`, `module`), the instance value
+`type`, `enum`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
+`derived`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`,
+`collect` — heading the collect block expression, standalone or as a
+`yielded` declaration's right-hand side — `use`, and `alias`; `fold` is a
+keyword too, heading an expression form rather than a declaration), all
+clause keywords (`children`, `incoming`, `outgoing`, `expose`, `when`,
+`fulfill`, `default`, `otherwise`, `from`, `to`, `pairs`, `on`, `where`,
+`requires` — the super-trait clause head, `wraps` — the newtype
+underlying-type clause head, `effects` — the effect-instantiation clause
+head, `desired`, `observed`, `ring`, `gate`, `keyed`, `at`, `dynamic` —
+the supply-mode marker, §13.3.3.1 — and the fold-form arm heads `by` and
+`else`), the reserved instance-field names (`pair`, `exposition` —
+§13.7.5; the remaining fields `from`, `to`, `incoming`, `outgoing` double
+as the clause keywords above), all control-flow and selector keywords
+(`if`, `else`, `match`, `for`, `in`, `while`, `break`, `continue`,
+`return`, `yield`, and the selector-block heads `given` and `observe`),
+the ownership keywords (`own`, `move`), the kind keywords (`cell` — the
+umbrella value-cell kind head, appearing only in annotation positions;
+the reactive declaration keywords double as kind heads without being
+re-listed), the declaration-modifier keywords (`sealed`), the reserved
+word `dyn` (the trait-object marker; its keyword-class assignment is
+deferred to the keyword-class taxonomy), the scope-anchor keywords
+(`here`, `module`, and the path bases `root`, `std`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
 `or`, `not`, `handle` — graph-entity reference, dynamically-placed type form (`WeakHandle[T]`), §13.3.6.2; `handle!` — graph-entity reference, statically-placed type form (`Handle[T]`), §13.3.6.2; `portal` — non-graph slot reference, §13.3.6.3; `delete` — Map / Deletable trait deletion, §4.9.5). `as` is **not** a cast operator; explicit conversion uses
@@ -1127,7 +1144,7 @@ alongside the declared bounds. A matching `where k <= N` does not change
 *whether* the definition compiles; it documents the contract and yields a
 clearer, earlier instantiation error when violated.
 
-```
+```text
 let w = window::[K = 4](buf16)     // buf16: stream[Ring[16]] Event → N=16, K=4 → 4 <= 16 ✓
 let w = window::[K = 32](buf16)    // ✗
 
@@ -7157,9 +7174,12 @@ operator is provided.
 #### 9.3.6 Fixed-Size Arrays; Dynamic Collections Are Stdlib
 
 The dynamic-sized vector type (heap-allocated, growable) is a standard
-library concern, not a language-level type. Its name and syntax (`Vec[T]`,
-`Vector[T]`, or whatever stdlib chooses) is outside this specification.
-Only fixed-size arrays receive dedicated language syntax. Stdlib's
+library concern, not a language-level type. This specification pins its
+name so that normative text may reference it: `Vec[T]`, in the stdlib
+module `std::vec`, constructed by the module-path free function
+`std::vec::new()` (§10.2.3); the API surface beyond the members this
+specification references is stdlib-owned. Only fixed-size arrays receive
+dedicated language syntax. Stdlib's
 dynamic collections are ordinary generic types per §2.
 
 Stdlib collections receive no special powers. Their mutating operations
@@ -7841,7 +7861,7 @@ modules. A subfolder of a path-segment folder is a module if it
 itself contains `.duc` files; its module path is constructed by
 traversing the path segments and the parent's module path normally.
 
-```
+```text
 root/
 ├── main.duc                  // root module (has .duc directly)
 ├── audio/                    // path segment only (no direct .duc)
@@ -7878,7 +7898,7 @@ system is the module (the folder); files inside are purely
 organizational means of splitting source across multiple physical
 files.
 
-```
+```text
 <package_root>/
 ├── main.duc           // part of root module; sees signals.duc declarations directly
 ├── signals.duc        // part of root module
@@ -9919,7 +9939,7 @@ are no associated types. Every closure type is therefore object-safe,
 with no exceptions, so `dyn fn(P) -> R` is always well-formed.
 
 ```
-mut handlers: Vec[dyn fn(Event) -> ()] = Vec::new()   // heterogeneous, erased
+mut handlers: Vec[dyn fn(Event) -> ()] = std::vec::new()   // heterogeneous, erased
 ```
 
 So a closure type is used directly (`fn(P) -> R`) wherever it can stay
@@ -10055,7 +10075,7 @@ statically decidable (§11.3), so the in-place compilation is
 deterministic.
 
 ```
-mut v = Vec::new()
+mut v = std::vec::new()
 v = (move v).push(move x)     // reuses v's storage; in place
 ```
 
@@ -10098,7 +10118,7 @@ ownership rules: an `own` non-Copy argument still requires an explicit
 `move` (category A, §11.8.5); Copy arguments need nothing.
 
 ```
-mut v = Vec::new()
+mut v = std::vec::new()
 v.push(move item)    // item: non-Copy → explicit move on the argument
 v.push(3)            // 3: Copy → no move
 ```
@@ -11338,7 +11358,7 @@ it to consuming functions, store it elsewhere — anything an owned
 value supports.
 
 ```
-mut destinations = Vec::new()
+mut destinations = std::vec::new()
 let records: Vec[Record] = make_records()
 for own r in records:                            // `for own`; r: Record (real owner)
   if r.is_valid():                                // predicate borrows r (default
@@ -11474,7 +11494,7 @@ loop entry. Each iteration variable is owned `T`. After the loop, the
 array is no longer usable.
 
 ```
-mut destinations = Vec::new()
+mut destinations = std::vec::new()
 let records: Record[16] = make_records()
 for own r in records:              // r: Record (real owner); records consumed
   destinations = (move destinations).push(move r)
@@ -11844,7 +11864,7 @@ Display d1 | label="Main"
 
 The host drives the program via:
 
-```
+```rust
 loop {
   runtime.write_signal(tick_id, next_tick_value);   // accumulate dirty bits
   runtime.commit();                                 // evaluate + publish snapshot
@@ -14025,7 +14045,7 @@ node Posts:
     items
 
 node Feed:
-  attr posts: Vec[PostData] = Vec::new()
+  attr posts: Vec[PostData] = std::vec::new()
   expose:
     Posts:
       repeat post in posts keyed by post.id:
@@ -15310,7 +15330,7 @@ match entry:
 
 - The bound binder `name: Bound` is scoped to entry matches; it is not a
   general pattern shape and does not appear in ordinary `match` over
-  records (trait-headed record match stays banned, §6.2.4).
+  records (trait-headed record match over ordinary records stays banned).
 - A **bounded arm is a filter**: it never counts toward exhaustiveness.
   Each variant still needs either an unbounded arm (`Node(_)` / `Node(n)`)
   or the match a final `_`, or the match fails exhaustiveness.
@@ -15961,7 +15981,7 @@ reallocates no scopes.
 
 ```
 node Query:
-  attr current_rows: Vec[Row] = Vec::new()
+  attr current_rows: Vec[Row] = std::vec::new()
   effects:
     repeat row in current_rows keyed by row.id:
       render_row(data: row)
@@ -15976,7 +15996,7 @@ and tear down with the key (§13.5.4.7). Each instance's cells live at path
 
 ```
 node VoiceMixer:
-  attr active_voices: Vec[VoiceConfig] = Vec::new()
+  attr active_voices: Vec[VoiceConfig] = std::vec::new()
   expose:
     repeat cfg in active_voices keyed by cfg.voice_id:
       Voice | params=cfg
@@ -15999,7 +16019,7 @@ requirement, with `Vec` supplying the iterator inside the `signal`.
 
 ```
 node UserPanel:
-  attr active_user_ids: Vec[u64] = Vec::new()
+  attr active_user_ids: Vec[u64] = std::vec::new()
   expose:
     repeat user_id in active_user_ids:
       UserCard | id=user_id
@@ -16034,7 +16054,7 @@ fulfill Keyed for DbRow:
     r.id
 
 node DbRowList:
-  attr rows: Vec[DbRow] = Vec::new()
+  attr rows: Vec[DbRow] = std::vec::new()
   expose:
     repeat row in rows:                  // implicit via DbRow's Keyed
       RowComponent | data=row
@@ -16220,7 +16240,7 @@ for cross-commit reference (see below).
 
 ```
 node Feed:
-  attr posts: Vec[Post] = Vec::new()
+  attr posts: Vec[Post] = std::vec::new()
   attr selected: PostId
 
   // posts_view : cell Map[PostId, posts_view::entry]
@@ -16848,7 +16868,7 @@ collision, where silent shadowing would be a refactoring hazard.)
 
 Diagnostic class:
 
-```
+```text
 error: ambiguous name `gain` — declared as both an instance member and a module-level cell
   --> derived a: f32 = gain
                        ^^^^
@@ -18453,7 +18473,7 @@ listed here are normative.
 
 **Non-bool predicate.** The predicate's inferred type is not `bool`.
 
-```
+```text
 error: `when` predicate must be of type `bool`
   --> connection Foo: when: weight
                             ^^^^^^ expression has type `f32`
@@ -18462,7 +18482,7 @@ error: `when` predicate must be of type `bool`
 
 **Multiple `when:` clauses in a single type body.** Per §13.9.2.
 
-```
+```text
 error: multiple `when:` clauses in connection body
   --> connection Foo
         first  declared at line 5
@@ -18472,7 +18492,7 @@ error: multiple `when:` clauses in connection body
 
 **`when:` in a trait declaration.** Per §13.9.2.
 
-```
+```text
 error: `when:` is not permitted in a trait declaration
   --> trait Drivable: when: ...
   hint: gates are per-type structural metadata, not part of trait contracts
@@ -18481,7 +18501,7 @@ error: `when:` is not permitted in a trait declaration
 **Unresolved reference in predicate.** Standard name-resolution
 failure, surfaced in `when`-clause context.
 
-```
+```text
 error: unknown identifier `frobnicate` in `when` predicate
   --> node Foo: when: frobnicate
   hint: did you mean `activate`?
@@ -18490,7 +18510,7 @@ error: unknown identifier `frobnicate` in `when` predicate
 **Cycle through `when` provenance.** Per §13.11.2; gate predicates
 participate in cycle detection identically to deriveds.
 
-```
+```text
 error: instantaneous cycle in reactive expressions
   derived `a.x` depends on `b`'s `when` predicate
   `when` predicate of `b` depends on `a.x`
@@ -18668,7 +18688,7 @@ value equal to the previous-committed value produces no dirty bit
 and fires no triggers — regardless of intermediate values during
 the accumulation.
 
-```
+```rust
 // Outside or inside a transaction, identical semantics:
 runtime.write_signal(x_id, 1);   // staged value now 1
 runtime.write_signal(x_id, 0);   // staged value back to 0
@@ -18790,7 +18810,7 @@ value.
 The host may opt into transactional batching of multiple writes
 that should commit as one logical change:
 
-```
+```rust
 runtime.transaction(|tx| {
   tx.write_signal(a_id, new_a);
   tx.write_signal(b_id, new_b);
@@ -18907,7 +18927,7 @@ a single commit, derived `a` reading derived `b` while derived
 This is a mathematical impossibility, not a design choice. The
 compiler rejects such cycles:
 
-```
+```text
 error: instantaneous cycle in reactive expressions
   derived `a.x` depends on `b.y`
   derived `b.y` depends on `a.x`
@@ -19030,7 +19050,7 @@ types adds an edge for each, so such a connection will typically have to satisfy
 `Circularity` itself — the correct requirement, since a freely re-pointing
 connection is exactly the kind that can close a runtime loop.
 
-```
+```text
 error: topology cycle with no Circularity-satisfying connection
   instance `a` connects to `b` via `MyConn`
   instance `b` connects to `a` via `MyConn`
@@ -19492,10 +19512,17 @@ The runtime's lifecycle proceeds in phases:
    determines the order.
 4. Perform the first commit, publishing the initial snapshot.
    Observers' subsequent `acquire_snapshot` calls return real data.
+   The reconciler-hook pass that follows this first commit runs
+   `create` for every effect instance live at startup — the initial
+   cohort's `create` fires as the first post-first-commit hook pass
+   (§13.14.9); no hook fires before the first commit publishes.
 
 The runtime is "constructing" through steps 1–3; "live" after step
 4 completes. Observer reads before step 4 return a sentinel (or block,
 per implementation choice).
+
+Each interpretation root's renders mount once at startup, at stable
+paths within the entry-point's transitive closure (step 3).
 
 **Steady-state operation:**
 
@@ -19525,7 +19552,7 @@ per implementation choice).
 
 A single overloaded call, dispatched by arity:
 
-```
+```rust
 runtime.write_signal(signal_id, value)                      // module-level signal
 runtime.write_signal(instance_id, signal_id, value)         // effect observed: signal (per effect instance)
 ```
@@ -19561,14 +19588,16 @@ signal and each placement has a stable id per §15.4.1.1).
 
 #### 13.14.4 `runtime.commit`
 
-```
+```rust
 runtime.commit()
 ```
 
 Performs the complete commit operation specified in §13.10.2: settles all
 dirty deriveds and recurrent expressions glitch-free in topological order,
-advances recurrents, fires `suspend`/`resume` for effects whose effective
-activation changed, and publishes a new consistent snapshot for observers.
+advances recurrents, and publishes a new consistent snapshot for
+observers; it then fires the reconciler hooks — among them
+`suspend`/`resume` for effects whose effective activation changed —
+inside the same `commit()` call, after the snapshot publishes (§13.14.9).
 This is the sole point at which staged writes become observable.
 
 Synchronous; runs on the driving context; returns when the commit
@@ -19583,7 +19612,7 @@ frame, per event; the runtime imposes none.
 
 #### 13.14.5 `runtime.transaction`
 
-```
+```rust
 runtime.transaction(|tx| {
   tx.write_signal(a_id, new_a);
   tx.write_signal(b_id, new_b);
@@ -19602,7 +19631,7 @@ staged-vs-previous-committed comparison) and publishes them.
 
 #### 13.14.6 `runtime.acquire_snapshot`
 
-```
+```rust
 runtime.acquire_snapshot() -> Snapshot
 ```
 
@@ -19618,7 +19647,7 @@ blocks a `commit`.
 
 #### 13.14.7 `runtime.register_reconciler`
 
-```
+```rust
 runtime.register_reconciler(effect_type_name, reconciler)
 ```
 
@@ -19688,7 +19717,7 @@ runtime does not enter the live state.
 
 #### 13.14.8 `runtime.push_stream`
 
-```
+```rust
 runtime.push_stream(instance_id, stream_id, value)             // per-instance stream cell
 runtime.push_stream(stream_id, value)                          // module-level stream cell
 ```
@@ -19754,7 +19783,17 @@ to an instance that is leaving scope.
 **Hook timing.**
 
 Hooks fire at the commit boundary, after the commit publishes its snapshot
-(§13.10.2) and before the next commit begins. They run on the runtime's
+(§13.10.2) and before the next commit begins. All five hooks — `create`,
+`update`, `teardown`, `suspend`, `resume` — fire inside the blocking
+`commit()` call: `commit()` returns only after every hook it fired has
+returned, and no hook ever fires outside a commit boundary. When several
+hooks are eligible for one effect instance at one commit boundary, they
+fire in a fixed per-instance order — `teardown`, then `create`, then
+`resume`, then `update` — so a just-created instance's `create` precedes
+any same-boundary `update` for it (the instance state `update` consumes
+exists), and a just-reopened instance's `resume` precedes any
+same-boundary `update` for it (the resource is re-acquired before it is
+reconciled). They run on the runtime's
 driving context; the reconciler implementation must not block long-running
 operations there (long operations should be dispatched to host-managed
 worker threads, with results written back via the interface on completion).
@@ -19928,7 +19967,11 @@ in the following order:
    from old to new), recompute its initial value from current
    inputs. For deriveds whose body is unchanged, the value
    persists.
-9. Commit the reloaded state.
+9. Commit the reloaded state. This commit fires the ordinary
+   reconciler-hook tail: the runtime enumerates the effect instances the
+   reload dirtied and invokes their reconcilers before the reload
+   completes — a completed reload means external reality has been
+   reconciled.
 10. Release the reload lock. Resume signal/attr writes; apply any
     queued writes to the new state.
 
@@ -20586,7 +20629,7 @@ let bar = 0.0 |> some_fn       // ✗ error: `|>` requires an operator or effect
 ```
 
 Diagnostic class:
-```
+```text
 error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
                      ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
@@ -20745,7 +20788,7 @@ Normative diagnostic classes for operator usage:
 
 **`|>` applied to a non-operator/non-effect:**
 
-```
+```text
 error: `|>` requires an operator or effect on the right-hand side
   --> let bar = 0.0 |> some_fn
                      ^^^^^^^^ `some_fn` is a `fn`, not an operator or effect
@@ -20764,7 +20807,7 @@ dispatch and is diagnosed accordingly.
 
 **Operator missing first positional parameter:**
 
-```
+```text
 error: operator `smooth` has no positional parameter to bind from `|>`
   --> derived bar: f32 = source |> smooth(rate: 0.1)
                                    ^^^^^^ no positional parameter declared
@@ -20774,7 +20817,7 @@ error: operator `smooth` has no positional parameter to bind from `|>`
 
 **`cell T` parameter passed a non-cell, non-literal value:**
 
-```
+```text
 error: cannot pass value of type `f32` to `cell f32` parameter
   --> smooth(source: some_value, rate: 0.1, clock: tick)
                      ^^^^^^^^^^ expected `cell f32`, found `f32`
@@ -20785,7 +20828,7 @@ error: cannot pass value of type `f32` to `cell f32` parameter
 
 **`attr` declared inside an operator body:**
 
-```
+```text
 error: `attr` declarations are not permitted inside operator bodies
   --> operator foo(source: cell f32) -> derived f32:
         attr rate: f32 = 0.1
@@ -20796,7 +20839,7 @@ error: `attr` declarations are not permitted inside operator bodies
 
 **Final expression type mismatch with declared return type:**
 
-```
+```text
 error: operator body returns `i32` but declared return type is `derived f32`
   --> operator bad(source: cell f32) -> derived f32:
         ...
@@ -20844,7 +20887,7 @@ that must be static (§13.1), an operator may take **operator-** and
 parameter**: a function body is a non-reactive runtime computation that can
 neither instantiate an operator nor carry one.
 
-```
+```text
 error: a function parameter may not be operator-typed
   --> fn run(k: operator(cell f32) -> f32):
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ operators carry reactive
@@ -21416,7 +21459,7 @@ stream ring filtered: i32 = (count * 2) |> filter(is_positive)
 
 ##### 13.18.7.6 Compile-error examples
 
-```
+```text
 error: cannot assign stream-valued expression to derived `count_signal`
   --> derived count_signal: i32 = some_stream * 2
                                   ^^^^^^^^^^^^^^^
@@ -22092,7 +22135,7 @@ operator emit_telemetry[T: Telemetry, const N: usize](events: stream[Ring[N]] T)
 
 Passing the wrong policy stream is a compile error:
 
-```
+```text
 error: cannot pass a `stream ring[1024] Write` to a `stream gate[_] Write` parameter
   --> writes |> persist
               ^^^^^^^^^
@@ -22414,7 +22457,7 @@ Normative diagnostic classes for stream usage.
 
 **Missing policy in stream declaration:**
 
-```
+```text
 error: stream declaration requires a policy — the `ring`/`gate` word form or the bracket form `stream[Ring[N]]`
   --> stream my_events: Event = source
              ^^^^^^^^^^ no policy specified
@@ -22431,7 +22474,7 @@ neither a `stream X = signal_expr` binding nor an operator/effect
 parameter of stream kind (`stream T`) accepts a bare signal. Convert
 it explicitly:
 
-```
+```text
 error: cannot pass a `signal T` where a `stream T` is required
   --> persist(my_signal)
               ^^^^^^^^^ expected a stream
@@ -22441,7 +22484,7 @@ error: cannot pass a `signal T` where a `stream T` is required
 
 **Stream-valued expression assigned to a signal binding:**
 
-```
+```text
 error: cannot assign stream-valued expression to signal binding
   --> derived latest: Event = some_stream * 2
                               ^^^^^^^^^^^^^^^
@@ -22452,7 +22495,7 @@ error: cannot assign stream-valued expression to signal binding
 
 **Stream read as a value (no expression context):**
 
-```
+```text
 error: cannot read a `stream T` as a value
   --> derived latest: Event = events
                               ^^^^^^ this is a stream, not a value cell
@@ -22463,7 +22506,7 @@ error: cannot read a `stream T` as a value
 
 **Policy mismatch in pipe chain:**
 
-```
+```text
 error: cannot pass a `stream ring[1024] Write` to a `stream gate[_] Write` parameter
   --> writes |> persist
                 ^^^^^^^
@@ -22475,7 +22518,7 @@ error: cannot pass a `stream ring[1024] Write` to a `stream gate[_] Write` param
 
 **Stream declaration inside a function body:**
 
-```
+```text
 error: `stream` declarations are not permitted inside function bodies
   --> fn helper():
         stream ring[1024] events: Event = source
@@ -22488,7 +22531,7 @@ error: `stream` declarations are not permitted inside function bodies
 
 **`.past` or `.previous` outside a recurrent's producing context:**
 
-```
+```text
 error: `.past` and `.previous` are only valid in a recurrent's producing context
   --> stream ring filtered = if count % 2 is 0: count else: count.previous(0)
                                                                   ^^^^^^^^^^^
@@ -22499,7 +22542,7 @@ error: `.past` and `.previous` are only valid in a recurrent's producing context
 
 **Output `.past(k, ...)` exceeds declared `[N]`:**
 
-```
+```text
 error: lookback k=5 exceeds declared output history capacity [N=3]
   --> recurrent[3] stream ring x = x.past(5, 0)
                                      ^^^^^^^^^^
@@ -22510,7 +22553,7 @@ error: lookback k=5 exceeds declared output history capacity [N=3]
 
 **Non-compile-time `n` in `.past(n, fallback)`:**
 
-```
+```text
 error: lookback index in `.past(n, fallback)` must be compile-time-known
   --> recurrent stream ring x = source.past(some_variable, 0)
                                             ^^^^^^^^^^^^^
@@ -23002,7 +23045,7 @@ with cells in the same effect's `desired:` block (§13.19.6).
 **Program writes are forbidden.** Writing to an observed cell from
 program code is a compile error:
 
-```
+```text
 error: cannot assign to cell `response` on effect instance
   --> f.response = Some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -23028,7 +23071,7 @@ The identifiers `desired` and `observed` are reserved as block
 introducers inside `effect` declarations. Cell declarations inside
 either block cannot use these names:
 
-```
+```text
 error: cell name `desired` is reserved inside an effect's blocks
   --> effect example():
         desired:
@@ -23046,7 +23089,7 @@ observed-cell blocks.
 **Cross-block name collision.** An effect cannot declare cells with
 the same name in both `desired:` and `observed:`:
 
-```
+```text
 error: cell name `target` appears in both `desired:` and `observed:` of effect `example`
   --> effect example():
         desired:
@@ -23085,7 +23128,7 @@ from program code: there are no program-side writes to effect cells.
 Writing to any effect cell — signal, stream, or derived — via
 assignment is a compile error:
 
-```
+```text
 error: cannot assign to cell `response` on effect instance
   --> f.response = Some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -23407,10 +23450,16 @@ mirrors the effect's declaration:
   false), and resume (when the gate turns on / effective activation
   becomes true).
 
+When several of these hooks are eligible for one instance at one commit
+boundary, they fire in the fixed per-instance order `teardown`, `create`,
+`resume`, `update` (§13.14.9): `resume` strictly precedes any
+same-boundary `update` for a just-reopened instance, and `create`
+strictly precedes any same-boundary `update` for a just-created one.
+
 The runtime invokes the reconciler at well-defined points in the
 commit cycle:
 
-1. After commit, the runtime enumerates effect instances
+1. After commit, the runtime enumerates existing effect instances
    whose parameters or desired cells became dirty during the commit.
 2. For each such instance, the runtime invokes the registered
    reconciler with the instance ID. The reconciler reads the new
@@ -23489,7 +23538,7 @@ Normative diagnostic classes for effect usage.
 
 **Cell name is reserved inside an effect's blocks:**
 
-```
+```text
 error: cell name `desired` is reserved inside an effect's blocks
   --> effect example():
         desired:
@@ -23502,7 +23551,7 @@ error: cell name `desired` is reserved inside an effect's blocks
 
 **Cross-block cell name collision:**
 
-```
+```text
 error: cell name `target` appears in both `desired:` and `observed:` of effect `example`
   --> effect example():
         desired:
@@ -23517,7 +23566,7 @@ error: cell name `target` appears in both `desired:` and `observed:` of effect `
 
 **Write to effect cell from program code:**
 
-```
+```text
 error: cannot assign to cell `response` on effect instance
   --> f.response = Some(custom_response)
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -23532,7 +23581,7 @@ error: cannot assign to cell `response` on effect instance
 
 **Effect type with no registered reconciler:**
 
-```
+```text
 error: effect type `fetch` has no registered reconciler
   --> at runtime startup
   hint: reconciler registration is required if and only if the effect's
@@ -23549,7 +23598,7 @@ error: effect type `fetch` has no registered reconciler
 
 **Effect instantiation inside a function body:**
 
-```
+```text
 error: effect instantiations are not permitted inside function bodies
   --> fn helper(x: i32):
         let f = some_url |> fetch
@@ -23561,7 +23610,7 @@ error: effect instantiations are not permitted inside function bodies
 
 **Effect instantiation inside another effect's body:**
 
-```
+```text
 error: effect instantiation inside another effect's body is not permitted
   --> effect outer(input: cell T):
         desired:
@@ -23576,7 +23625,7 @@ error: effect instantiation inside another effect's body is not permitted
 
 **Disallowed declaration inside an effect's blocks:**
 
-```
+```text
 error: only role-keyword declarations are permitted inside effect blocks
   --> effect example():
         desired:
@@ -23591,7 +23640,7 @@ error: only role-keyword declarations are permitted inside effect blocks
 
 **Effect appearing in node-placement position:**
 
-```
+```text
 error: effects cannot be placed via node-style placement syntax
   --> Fetcher f1                       // ✗ effect type used as placement
       ^^^^^^^^^^
@@ -23602,7 +23651,7 @@ error: effects cannot be placed via node-style placement syntax
 
 **Effect in `expose:`:**
 
-```
+```text
 error: effects are not exposition
   --> expose:
         url |> fetch
@@ -23613,7 +23662,7 @@ error: effects are not exposition
 
 **Effect at module level:**
 
-```
+```text
 error: effects cannot be instantiated at module level
   --> let f = some_url |> fetch        // ✗ top-level effect
               ^^^^^^^^^^^^^^^^^
@@ -23624,7 +23673,7 @@ error: effects cannot be instantiated at module level
 
 **Effect in an operator body:**
 
-```
+```text
 error: effects cannot be instantiated in an operator body
   --> operator cached_fetch(url: cell Url) -> derived Response:
         f = url |> fetch
@@ -23636,7 +23685,7 @@ error: effects cannot be instantiated in an operator body
 
 **Effect outside the `effects:` clause in a node body:**
 
-```
+```text
 error: effects must be instantiated in the `effects:` clause
   --> node App:
         derived f = url |> fetch        // ✗ effect outside effects:
@@ -23745,7 +23794,7 @@ When the condition/scrutinee is **reactive/runtime**, the `yield` is a
 selects a value, not a membership); a runtime membership choice must be
 expressed structurally. The diagnostic offers two remedies:
 
-```
+```text
 error: `yield` under a runtime `if` cannot vary group membership
   --> collect:
         if is_active:            // is_active is a reactive cell
@@ -24644,7 +24693,8 @@ file changes:
    its initial value from current inputs. Deriveds whose body is
    unchanged retain their values.
 
-7. **Commit the reloaded state.**
+7. **Commit the reloaded state.** This commit fires the ordinary
+   reconciler-hook tail against the instances the reload dirtied.
 
 8. **Release the reload lock.** Resume signal/attr writes; apply any
    queued writes to the new state.
@@ -24845,7 +24895,7 @@ a future alternative) is implemented against it.
 
 An IR **module** has three parts over a shared type table:
 
-```
+```ductus-ir
 module <name> {
   types     { … }   // %TypeId -> layout (size, align, field/variant order)
   graph     { … }   // the reactive wiring — six primitives (§15.4.1)
@@ -25225,7 +25275,7 @@ The behavior IR is:
 `p: T` (borrow-default — read, not consumed) or `own p: T` (consumed), where
 `T` is a `type_tag` per §15.4.6.
 
-```
+```ductus-ir
 behavior B@aa10 (x: i32, flag: bool) -> i32 {
 bb0:
   %0 = const.i32 2
@@ -25307,7 +25357,7 @@ the graph holds no logic.
 **Text grammar.** Every nonterminal below has a defining production; the
 grammar uses `type_tag` (§15.4.6) uniformly — the bare name `type` does not
 appear.
-```
+```ebnf
 behavior     ::= 'behavior' BID '(' params ')' '->' type_tag '{' block+ '}'
 params       ::= (('own')? NAME ':' type_tag) (',' ('own')? NAME ':' type_tag)*
 block        ::= LABEL ('(' params ')')? ':' instr* terminator
@@ -25375,7 +25425,7 @@ node App:
 
 — lowers to:
 
-```
+```ductus-ir
 module App {
   types { %Request = record { text: str }  size 8 align 8 }
 
@@ -25443,7 +25493,7 @@ and graph** grammar — the normative text form of §15.4.1's data model. `NAME`
 (§15.4.1.1); `BID` is a behavior handle (§15.4.4); `type_tag` is the type-erased
 graph tag (§15.4.3).
 
-```
+```ebnf
 module        ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
 
 types_section ::= 'types' '{' type_def* '}'
@@ -25526,7 +25576,7 @@ ids (`pending_count`, `pressure`, `is_full`, `dropped_total`,
 `recurrent[N] stream`; and `lookback` is the `input_lookback_map` (input
 cell id → maximum lookback `k`). For example:
 
-```
+```ductus-ir
 stream app.events : %LogEntry policy ring capacity 1024 source_deps [app.source] observes [app.events.pending_count, app.events.pressure, app.events.is_full, app.events.dropped_total, app.events.rejected_total, app.events.last_overflow_at]
 ```
 
