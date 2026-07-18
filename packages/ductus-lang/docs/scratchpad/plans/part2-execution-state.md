@@ -70,12 +70,17 @@ LOG/SPEC content — verify on disk (LEARNINGS #3); verification = full diff rea
 
 ## IN FLIGHT at time of writing
 
-**Policies batch launching now** (standing authorization; queue item 1 below). Structure,
-streams, and streams-rework batches all landed and committed. Riders still un-nodded after
-two asks (STILL QUEUED, ask again): SPEC §3.3 AssocTypeBinding `'='`→`'is'` (LOG 005-92 +
-GRAMMAR say 'is'); SPEC §13.3.7 at-most-once list missing the acceptance clauses 017-226
-lists. Standing owner Q&A: handle stays a bracket TYPE (storable value; razor's positive
-case; `handle`/`handle!` keywords are guarded acquisition operations); no `handle T` kind.
+**Barrel-visibility batch launching now** (plan APPROVED by owner 2026-07-18; standing
+authorization). Policies batch landed + committed (D-05 six items, D-06/07/08/10/11/28/29;
+new entries 002-31..35, 027-121..123, 031-159; open flags from its report: suspend unplaced
+in hook order — protocol-complete question OUT to owner; 'policy keyword' 3 pre-existing LOG
+hits 030-19/030-244/031-32 — owner to rule; GRAMMAR/IR_GRAMMAR fences left bare, SPEC-scoped
+convention — owner to rule; dyn class deferred in 002-34 — one ruling away). Riders
+elaborated protocol-complete 2026-07-18 (SPEC §3.3 AssocTypeBinding '=' is the lone deviation,
+LOG 005-92 + GRAMMAR §7.12 + all worked examples say 'is'; SPEC §13.3.7 at-most-once list has
+4 members vs 017-226's 7 — children:/incoming:/outgoing: missing) + 001 philosophy entry
+(next free 001-39; principle verified absent from corpus; nearest kin 005-22/005-172).
+Standing owner Q&A: handle stays a bracket TYPE; no `handle T` kind.
 
 ## QUEUE (in order)
 
