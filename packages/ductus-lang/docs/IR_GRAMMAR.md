@@ -182,7 +182,7 @@ scope            ::= 'scope' PATH 'exposes' path_set 'effects' path_set
 // the bare flag on the 'cell' production and the bare flag on the 'stream'
 // production. All three spellings are normative (033-215).
 
-entry            ::= cell | gate | connection | effect | stream
+entry            ::= cell | gate | wire | effect | stream
                    ;  (§15.4.6, 033-168)
 
 cell             ::= cell_kind PATH ':' type_tag
@@ -244,7 +244,7 @@ gate             ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
                      ('gate_parent' PATH)?
                    ;  (§15.4.6, 033-168 / 033-65)
 
-connection       ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
+wire             ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
                      ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
                    ;  (§15.4.6, 033-168 / 033-86 / 033-87 / 033-88 / 033-89)
 
@@ -589,7 +589,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `member` | §15.4.6 | 033-81 |
 | `member_driver` | §15.4.6 | 033-81 |
 | `gate` | §15.4.6 | 033-168 / 033-65 |
-| `connection` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 |
+| `wire` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 |
 | `effect` | §15.4.6 | 033-168 / 033-119 / 033-120 / 033-121 / 033-122 / 033-123 |
 | `stream` | §15.4.6 | 033-106 / 033-107 / 033-108 / 033-109 / 033-110 / 033-111 / 033-112 / 033-114 / 033-115 / 033-117 |
 | `behaviors_section` | §15.4.6 | 033-168 |

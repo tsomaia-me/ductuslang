@@ -163,3 +163,9 @@ codeberg.org/Azorlogh/leat; GitHub user squatted; PyPI free; search clean).
 Candidates offered: Runnel, Runlet (run+let!), Millrace, Swale, Adit, Anabranch, Rhei
 (panta rhei), Qanat, Swash, Thalweg, Ductor, Rheon, Alvea, Arkhi (არხი — Georgian for
 channel; owner is Georgian). Owner liked leat; sweep of favorites on request.
+
+## COMPLETION (2026-07-19)
+
+Wire-rename + channel-vocabulary amendment EXECUTED and verified: DECISION_LOG / SPEC / GRAMMAR / IR_GRAMMAR fully conformed (connection=0 everywhere except SPEC's one classified English survivor "opening a connection, playing audio"; wiring-type formal vocabulary = 0; §019 = "Wires — 79 Rules"; six primitives cell/wire/gate/stream/effect/scope; GRAMMAR Conn*→Wire* production map; IR `wire` primitive; channel definition single-homed at 016-178 + SPEC §13.2.8.1 with value/event flavors; crossings razor respelled; §13.20.4.1 channel positions conformed to 034-13/16; 029-65 + SPEC §13.17.7 `|>` = generic "coupling"). Full gate suite green; three blind reviewers adjudicated; entire 5,704-line diff read end-to-end by the main session. Executed defaults J1–J7 flagged in the final Part 2 report for owner veto.
+
+**Part 2 is COMPLETE.** Queue empty. Next: Part 3 widened re-anchor survey (~80 items + Part-2 residue: duplicate-keyed-by, strict-kind vocabulary sweep, Portal[WeakHandle[T]] mirror, LOG 033-207/208/209 vs IR InstrSep, GRAMMAR 005-30 stale cites, mixed own-line+inline directive stacks).

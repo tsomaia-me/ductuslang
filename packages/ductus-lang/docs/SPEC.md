@@ -76,7 +76,7 @@ and it sits at the program's boundary, not inside it.
 citizen* is a value that can be named in a binding, passed to and returned
 from functions, and used in expression position. *Value-semantics* — the
 implicit ability to relocate, copy, or structurally compare a value — is an
-orthogonal capability a type may or may not have. Node, connection, and
+orthogonal capability a type may or may not have. Node, wire, and
 effect instances are first-class citizens: nameable, passable, returnable
 graph members. A binding to one is a borrow, and a borrow is unstorable
 (§13.3.6.1), so an instance is held only by borrow, never placed in cells
@@ -100,7 +100,7 @@ bindings together mean that any expression not involving a signal or external
 input is compile-time evaluable. The language uses this aggressively for
 type-level computation, value-fits-type checking, and dependent-ish typing.
 
-**Nominal types.** Records, enums, traits, nodes, and connections are nominal —
+**Nominal types.** Records, enums, traits, nodes, and wires are nominal —
 identity is by name, not structure. Tuples, closure types, and
 trait-constraint intersections are explicit structural carve-outs with
 clear semantics.
@@ -131,7 +131,7 @@ Code examples use Ductus syntax. Fenced code blocks follow a tagging convention:
 - Identifiers (functions, variables, fields): snake_case (`full_name`, `first_name`).
 
 **Keywords are always lowercase.** No keyword has a capitalized form.
-This includes all declaration keywords (`node`, `connection`, `trait`,
+This includes all declaration keywords (`node`, `wire`, `trait`,
 `type`, `enum`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
 `derived`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`,
 `collect` — heading the collect block expression, standalone or as a
@@ -168,7 +168,7 @@ import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context
 `T(value)` call syntax (§4.7). The rule is normative and takes precedence over any
 conflicting grammar. The two-character sequence `handle!` is a single lexer token: the lexer recognizes it as one keyword, distinct from `handle` followed by a separate token.
 
-Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the connection slots `from`/`to`/`pairs`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
+Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the wire slots `from`/`to`/`pairs`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
 
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
@@ -218,7 +218,7 @@ Aside from `#`, an identifier begins with a Unicode letter (any character with t
 
 **Layout is significant.** Indentation structures the program; the unit of indentation is the ASCII space, and a tab in the leading whitespace of a non-empty line is a lex error. An increase in indentation opens a nested block and a decrease closes one. Blank lines and comment-only lines do not affect indentation. Inside paired delimiters — `(...)` and `[...]` — and inside string literals, layout is suspended, so multi-line argument lists, generic lists, tuples, and string contents may span lines freely. Header continuations `else` and `else if` attach to their owning `if` header by column-alignment: they sit at the `if`'s indentation, never deeper inside the prior arm body (§6.4). In-block terminal arms — `otherwise:` in a `when` block (§13.9.12), `default:` in a `given` block (§13.9.13) or `observe` expression (§13.2.11), the catch-all arm in `match` (§6.2.4) — are arms of their own block and sit at arm indent like every other arm, governed by their construct's own arm-layout rules.
 
-**Declaration bodies versus inline bodies.** The body of a `trait`, `type`, `enum`, `node`, or `connection` is always an indented block — its members are never written inline after the `:`. A function body and the arms of `if`/`else` and `match` may be written either as an indented block or as a single expression inline after the `:` (`fn double(x: i32) -> i32: x * 2`; `if a > 0: a else: -a`) — see §6.4 for the full `if` grammar.
+**Declaration bodies versus inline bodies.** The body of a `trait`, `type`, `enum`, `node`, or `wire` is always an indented block — its members are never written inline after the `:`. A function body and the arms of `if`/`else` and `match` may be written either as an indented block or as a single expression inline after the `:` (`fn double(x: i32) -> i32: x * 2`; `if a > 0: a else: -a`) — see §6.4 for the full `if` grammar.
 
 "The compiler" refers to the implementation's static analysis phase. "Runtime"
 refers to execution. "Codegen" refers to the boundary at which all types must
@@ -777,7 +777,7 @@ clear error identifying the offending type.
 - Inside function bodies — for local compile-time-only values used in
   type-level positions (e.g., array sizes computed from arguments to a
   generic function).
-- Inside type, trait, node, and connection bodies — for type-associated
+- Inside type, trait, node, and wire bodies — for type-associated
   constants accessible via path syntax (`Vec3::ZERO`, `Color::WHITE`).
 
 `const` declarations follow the same visibility model as other declarations
@@ -1254,8 +1254,8 @@ MethodSig        := 'fn' Ident GenericParams? '(' Params? ')' ('->' TypeExpr)? (
 
 The `Annotation*` position covers `@default(T)`. `RequiredCell` coverage spans
 §3.1.7. An empty `TraitBody` yields a marker trait (no methods, no associated
-types). Connection-trait endpoints (`from:`, `to:`) are admitted only when the
-trait will be satisfied by connection types.
+types). Wire-trait endpoints (`from:`, `to:`) are admitted only when the
+trait will be satisfied by wire types.
 
 #### 3.1.1 Method signatures
 
@@ -1277,7 +1277,7 @@ no implicit receiver. The first parameter's type is conventionally `Subject`
 for methods that operate on instances, but trait methods may have any parameter
 list — including no `Subject` parameter at all (for "associated functions" like
 constructors). The instance value `subject` (§13.7.7) is reserved for reactive
-context inside node and connection bodies (§13) and is not bound here.
+context inside node and wire bodies (§13) and is not bound here.
 
 **Ownership conventions in trait method signatures.** Trait method
 signatures may declare any parameter with the `own` keyword (§11.7.4)
@@ -1530,17 +1530,17 @@ instance, the user supplies explicit type arguments: `Add[i64]`,
 The defaulting happens at name-resolution time; at code-generation
 time, every reference has a fully-specified trait instance.
 
-#### 3.1.7 Required node/connection members (cells, consts, and endpoints)
+#### 3.1.7 Required node/wire members (cells, consts, and endpoints)
 
 Traits may declare *required members* that implementing types must
 provide: required `attr`, `const`, `derived`, `recurrent`, and
-`stream` declarations and — for connection types — required `from` and
+`stream` declarations and — for wire types — required `from` and
 `to` endpoints. These requirements are reactive-graph structure, so they
-apply only to node and connection types (see §13 for the reactive system);
+apply only to node and wire types (see §13 for the reactive system);
 they are not applicable to records, enums, newtypes, or primitive types.
 
 A trait that declares any such member is a *kind-specific* trait — a *node
-trait* or, when it declares endpoints, a *connection trait*. A trait that
+trait* or, when it declares endpoints, a *wire trait*. A trait that
 declares only methods and associated types is *kind-agnostic* and may be
 satisfied by any kind. The compiler enforces the kind restriction at the
 `fulfill` site (the gating rules below). These required members are also
@@ -1560,8 +1560,8 @@ trait Identifiable:
 The forms `attr Name: Type [= Default]?` and `const Name: Type [=
 Default]?` inside a trait body declare requirements, as do the other
 reactive-cell forms — `derived`, `recurrent`, and `stream` —
-written with the same syntax they use in a node or connection body (§13).
-A connection trait may additionally declare required endpoints with
+written with the same syntax they use in a node or wire body (§13).
+A wire trait may additionally declare required endpoints with
 `from: Type` and `to: Type`. Defaults are optional in trait declarations:
 
 - **Without a default** — implementing types must supply the
@@ -1574,7 +1574,7 @@ Override semantics parallel default method bodies (§3.1.3): the
 trait declares the contract; the implementing type may accept the
 default or override at its declaration site.
 
-A node or connection type satisfies a trait with required attrs
+A node or wire type satisfies a trait with required attrs
 and consts only if every required declaration is present (or
 defaulted) in the type's body with a matching name and type:
 
@@ -1598,18 +1598,18 @@ node Delay:
 fulfill Action for Delay
 ```
 
-A connection trait additionally constrains endpoints and may require
+A wire trait additionally constrains endpoints and may require
 reactive cells that describe the relationship:
 
 ```
 trait DriveLink:
-  requires Connection                     // intrinsic marker (§3.7.4)
+  requires Wire                           // intrinsic marker (§3.7.4)
   from: Driver                            // required source endpoint
   to: Drivable                            // required destination endpoint
   attr aggressiveness: f32 = 0.5          // required relationship cell
   derived effective_speed: f32            // abstract: implementor supplies the body
 
-connection Drives:
+wire Drives:
   from: Driver
   to: Drivable
   attr aggressiveness: f32 = 0.5
@@ -1619,10 +1619,10 @@ connection Drives:
 fulfill DriveLink for Drives             // body supplies endpoints and cells
 ```
 
-An implementing connection satisfies `DriveLink` only if its `from`/`to`
+An implementing wire satisfies `DriveLink` only if its `from`/`to`
 endpoints satisfy the required endpoint types and every required cell is
 present (or defaulted). A trait carrying `from`/`to` makes the trait — and
-any `Type[…]` bounded by it — a connection contract the compiler can check
+any `Type[…]` bounded by it — a wire contract the compiler can check
 at placement (§5.7.5, §13.8.4).
 
 Restrictions and kind gating:
@@ -1633,21 +1633,21 @@ Restrictions and kind gating:
   or primitive** — those types lack the reactive-graph machinery. The
   compiler rejects the `fulfill` on such a type if the trait declares any
   such member.
-- **A trait that declares a `from` or `to` endpoint is a connection trait
-  and cannot be satisfied by a node** — only connections have endpoints.
+- **A trait that declares a `from` or `to` endpoint is a wire trait
+  and cannot be satisfied by a node** — only wires have endpoints.
   The compiler rejects the `fulfill` on a node type if the trait declares
   `from` or `to`. (Required cells without endpoints are satisfiable by
-  either nodes or connections.)
+  either nodes or wires.)
 - The same name/type matching rules as method signatures apply: an
   implementing declaration must match the trait's required name and type
-  exactly. For `from`/`to`, the implementing connection's endpoint type
+  exactly. For `from`/`to`, the implementing wire's endpoint type
   must satisfy the required endpoint type.
 
 ### 3.2 Conformance Declarations (`fulfill`)
 
 A type's conformance to a trait is declared by a `fulfill` block. There is
 no body-level conformance item of any kind: the type body carries fields
-(and, for nodes and connections, reactive cells and endpoints), never a
+(and, for nodes and wires, reactive cells and endpoints), never a
 conformance clause. One mechanism, one door — the same `fulfill` serves
 local and foreign types alike. Who may write one is gated by the orphan
 rule (§3.7) and by sealing (§3.7.6).
@@ -1950,7 +1950,7 @@ valid; the choice is stylistic.
 The receiver parameter name (`a`, `value`, `result`, `left`, etc.) is always
 the implementer's choice. There is no implicit receiver for trait methods —
 the instance value `subject` is reserved for reactive context inside node and
-connection bodies (§13, §13.7.7). Explicit parameter naming is the
+wire bodies (§13, §13.7.7). Explicit parameter naming is the
 language's general principle under uniform function call syntax: every
 parameter has a chosen name, not an implicit one. A `fulfill`'s parameter
 names are local to its body; for a trait method's *named-call* interface,
@@ -2703,7 +2703,7 @@ exactly where claimed (§3.3.5). The members are:
 - `Copy` (§11.4) — flags a type whose values are duplicated implicitly
   at every use site. The compiler enforces the auto-derivation rules
   and the use-site duplication semantics.
-- `Circularity` (§13.6.5) — flags a connection type that may participate
+- `Circularity` (§13.6.5) — flags a wire type that may participate
   in topology cycles in the node graph. The compiler enforces the static
   cycle rule against this flag.
 
@@ -2714,18 +2714,18 @@ are correspondingly *not* `@derive`-eligible (there is nothing to opt
 into) and cannot be opted out of. The members are:
 
 - `Node` (§13.3) — satisfied by every `node` type. Names "is a node."
-- `Connection` (§13.6) — satisfied by every `connection` type. Names
-  "is a connection."
+- `Wire` (§13.6) — satisfied by every `wire` type. Names
+  "is a wire."
 - `Effect` (§13.19) — satisfied by every `effect` type. Names "is an
   effect."
 
-The intrinsic markers exist so that "any node," "any connection," or "any
+The intrinsic markers exist so that "any node," "any wire," or "any
 effect" is expressible as a generic bound (`[T: Node]`), in `&`
 composition (`Node & Drivable`), and as a super-trait requirement
 (`trait Drivable: requires Node`, §3.1.4 — after which `[T: Drivable]`
-alone implies node-ness). A node/connection/effect *type* used in value
+alone implies node-ness). A node/wire/effect *type* used in value
 position is carried by the `Type[…]` meta-type (§5.7); a
-node/connection/effect *instance* referenced through one of these bounds
+node/wire/effect *instance* referenced through one of these bounds
 is a borrow and obeys ordinary borrow semantics (§11.9, §13.3.6.1).
 
 Like any trait, a language-defined marker trait may be used as a generic
@@ -2813,7 +2813,7 @@ trait-side class). The two checks compose: a `fulfill` must pass both the
 trait-side seal and the type-side seal.
 
 The modifier is uniform across every nominal conformable declaration kind —
-`sealed type`, `sealed enum`, `sealed node`, `sealed connection` — with a
+`sealed type`, `sealed enum`, `sealed node`, `sealed wire` — with a
 newtype sealing through its `type` head. The structural carve-outs — tuples
 and closure types — have no declaration to modify and no declaring module to
 protect, so they cannot be sealed, though a tuple remains conformable through
@@ -2867,7 +2867,7 @@ The traits eligible for automatic derivation are:
   for Circularity; Copy-eligibility for Copy) and emits the satisfies-flag
   (so named because it records that the type *satisfies* the trait) with no
   method body. The *intrinsic* marker sub-kind (`Node`,
-  `Connection`, `Effect`, §3.7.4) is **not** `@derive`-eligible: membership
+  `Wire`, `Effect`, §3.7.4) is **not** `@derive`-eligible: membership
   is automatic at declaration, so there is nothing to derive.
 
 The set is fixed in the language: the six structural-derivation traits
@@ -2906,7 +2906,7 @@ any future opt-in markers per §3.7.4): derivation performs the marker's
 structural check (Copy-eligibility for `Copy`; none for `Circularity`) and
 emits the satisfies-flag — no method body is generated. The marker-trait
 derivation is purely a structural opt-in. The *intrinsic* markers (`Node`,
-`Connection`, `Effect`) are satisfied automatically at declaration and are
+`Wire`, `Effect`) are satisfied automatically at declaration and are
 not derivable.
 
 Derivation requires every field's (or payload's) type to itself satisfy the
@@ -4871,7 +4871,7 @@ implementing type), `Type[…]` lifts a constraint to value position as the
 *type itself*. The two are complementary: `dyn Drivable` is "some Drivable
 value"; `Type[Drivable]` is "some Drivable *type*."
 
-Its primary use is to carry a node, connection, or effect **type** as a
+Its primary use is to carry a node, wire, or effect **type** as a
 value — a template or slot that defers *which kind* is placed — given that
 the corresponding *instances* are held only by borrow and so are not
 storable (§13.3.6.1). For storing an instance reference, the corresponding
@@ -4942,22 +4942,22 @@ is why type values never require erasure.
 Because a type value is compile-time data — not a borrow of any instance —
 it may be **stored in persistent slots** (record fields, attrs, cells).
 This is unlike an *instance* reference, which is always a borrow and may
-not be stored (§11.9.1). It is the mechanism by which a node or connection
+not be stored (§11.9.1). It is the mechanism by which a node or wire
 *kind* is held as an attr (a template slot) even though a node or
-connection *instance* cannot be (§13.3.6.1).
+wire *instance* cannot be (§13.3.6.1).
 
 #### 5.7.5 The constraint is the instantiation contract
 
 A receiver holding a `Type[C]` value knows only what `C` guarantees, and a
 generic body is checked at its definition against `C` alone (§2.2.2), not
 per concrete type. So whatever the receiver does with the type value —
-construct it, place it (§13.8 for nodes/connections) — must be justified by
+construct it, place it (§13.8 for nodes/wires) — must be justified by
 `C`. A bare `Type[Node]` (§3.7.4) admits any node type but guarantees only
 "is a node," so it can be held, passed, stored, and returned but **not
 placed**: placement requires the node's input contract, which the bare
 marker does not carry. To place, `C` must be a trait that declares the
 instantiation interface — required attrs/consts/cells and, for
-connections, endpoints (§3.1.7).
+wires, endpoints (§3.1.7).
 
 ---
 
@@ -5567,7 +5567,7 @@ mistake).
 arm, evaluates that arm to a value, and discards the rest. It is used
 everywhere a value is produced — function bodies and reactive `derived`/
 `recurrent` expressions alike. It is *not* used to gate reactive
-*structure*: selecting which node/connection subtree is exposed and kept
+*structure*: selecting which node/wire subtree is exposed and kept
 live is the role of the `given` block (§13.9.13), the structure-level
 counterpart that builds all arms and freezes the unselected ones rather
 than discarding them. The two share arm shape and this exhaustiveness
@@ -7994,7 +7994,7 @@ bases. There is no relative-path "current module" reference *for
 imports*; `use` statements between modules always go through `root`
 or an external dependency name.
 
-Within a node or connection body, the `module::` qualifier (§13.7.3)
+Within a node or wire body, the `module::` qualifier (§13.7.3)
 does reach the *current* module's top-level scope — but it is a
 name-resolution anchor for disambiguating a member-vs-module
 collision, not an import mechanism. It resolves only the enclosing
@@ -8046,7 +8046,7 @@ declaration's own section and summarized below:
 - **Reactive declarations** (§13.2.1, §13.2.3, §13.2.4): module-level
   `signal`, `derived`, and `recurrent` accept the `private` specifier
   on the same line as the declaration.
-- **Node and connection types** (§13.3, §13.6): visibility specifier
+- **Node and wire types** (§13.3, §13.6): visibility specifier
   on the type declaration.
 - **Instantiations**: any top-level placement (`Foo bar:`,
   `signal x = ...`, `let y = ...`) accepts the `private` specifier.
@@ -8188,8 +8188,8 @@ identifies the cycle's members.
 - **Type-reference cycles between sibling files are permitted.**
   Files inside the same module share scope and are compiled as a
   single unit, so mutually-referencing type declarations (e.g.,
-  one file's `node` declares an `outgoing` connection-view of a connection type defined in
-  a sibling file, and the sibling's `connection` declares `from:`
+  one file's `node` declares an `outgoing` wire-view of a wire type defined in
+  a sibling file, and the sibling's `wire` declares `from:`
   the first file's node) are resolved in one pass. This is the
   normal case for any non-trivial module split across files.
 - **Initializer-reference cycles between sibling files are
@@ -8218,7 +8218,7 @@ dependency level and have their own rules.
 #### 10.4.5 Cross-module initialization order
 
 Top-level declarations with initializers — `const`, `signal`, and
-the placement-time-evaluated portions of node/connection bodies —
+the placement-time-evaluated portions of node/wire bodies —
 are initialized in **topological order** of the cross-module
 reference graph. If module A's initializers reference items from
 module B, B is initialized before A. Because circular module
@@ -8540,7 +8540,7 @@ value is consumed into the storage slot. This consumption is *implicit*
 a transfer into the slot and the marker would add no information.
 
 **C. Reactive wiring** (placement attribute assignment with a reactive
-RHS, connection arguments, references to attrs/derived in reactive
+RHS, wire arguments, references to attrs/derived in reactive
 expressions). The binding names a *cell* rather than a stack-owned
 value. Multiple aliases to the same cell may coexist. This category is
 governed by the reactive-binding exception below; it is not a §11
@@ -8629,7 +8629,7 @@ assignment, field assignment, or whole-value reassignment), and the
 binding lives only within the function body where it is declared.
 
 `mut` is **forbidden at module top level**, **forbidden inside type, trait,
-node, and connection bodies**, and **forbidden on function parameters**.
+node, and wire bodies**, and **forbidden on function parameters**.
 Only function bodies (and nested block scopes within function bodies) may
 contain `mut` declarations. The syntax and the type checker both enforce
 this; a `mut` declaration outside a function body is a compile error at
@@ -10352,7 +10352,7 @@ principles, recorded here for forward-compatibility:
   into the cell's storage. Like category B (§11.11), this consumption
   is implicit; the user does not write `move`. The cell's identity at
   the LHS communicates the destination. Reactive **wiring** (category
-  C) — placement attribute assignment from a reactive RHS, connection
+  C) — placement attribute assignment from a reactive RHS, wire
   arguments referencing attrs or signals — is governed by §11.1's
   reactive-binding exception and does **not** consume; it produces
   multiple aliases to the same cell. The category-B/C/D distinction at
@@ -11806,7 +11806,7 @@ externally-driven sequences; iterators are for collection traversal.
 This section specifies the language's reactive composition layer: the
 declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
 `stream`, `yielded`), the reactive expression forms (`observe`, `where`), the
-composition constructs (`node`, `connection`, `operator`,
+composition constructs (`node`, `wire`, `operator`,
 `effect`), the rules governing reactive expression evaluation, and
 the host API through which external code drives and observes the
 reactive graph.
@@ -11824,13 +11824,13 @@ when they change" without manually wiring update propagation.
 The reactive system is built on seven load-bearing principles.
 
 **Declarative composition.** A reactive graph is built declaratively
-from signal, attr, recurrent, derived, node, and connection
+from signal, attr, recurrent, derived, node, and wire
 declarations. Placement syntax (§13.8) constructs instances.
 Composition is structural — the graph's shape is known at compile
 time.
 
 **Static instance set, dynamic topology.** The *set of instances* —
-signals, attrs, recurrents, nodes, connections — is fixed for the lifetime
+signals, attrs, recurrents, nodes, wires — is fixed for the lifetime
 of the runtime instance: instances are created at startup and not added or
 removed at runtime, except by hot reload (§13.15), which replaces the
 program source and applies a diff atomically, and by `repeat` (§13.5.4), the
@@ -11841,8 +11841,8 @@ instances: a gated instance is constructed unconditionally and merely
 *existence* is `repeat`'s domain; gates govern only *activation*.
 
 What may change at runtime is *topology* — the wiring among existing
-instances. A connection's destination (`to`) may be a reactive node
-reference that re-points over time (§13.6.2, §13.8.5.1): the connection
+instances. A wire's destination (`to`) may be a reactive node
+reference that re-points over time (§13.6.2, §13.8.5.1): the wire
 instance persists and merely moves which existing node it points at. No
 instance is created or destroyed by re-pointing, so the static instance set
 is untouched — only the wiring moves. Because every node reference resolves
@@ -11873,11 +11873,11 @@ handled at the cell level: derived↔derived cycles are forbidden
 (no temporal break possible); recurrent self-reference and
 cross-reference are allowed because lockstep treats recurrent
 reads as previous-committed values. Topology cycles between nodes
-via connections are handled separately via the `Circularity` trait
+via wires are handled separately via the `Circularity` trait
 (§13.6, §13.11): a topology cycle is valid only if it traverses at
-least one connection type satisfying `Circularity`.
+least one wire type satisfying `Circularity`.
 
-**Reactive composition uses nodes and connections.**
+**Reactive composition uses nodes and wires.**
 Reactive cells (signal, attr, recurrent, derived) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
@@ -11896,7 +11896,7 @@ role:
 - `fn` (§11) — pure compute. Reactive-transparent.
 - `operator` (§13.17) — stateful reactive transform from cells to
   cells. Pure with respect to outside reality.
-- `node` and `connection` (§13.3, §13.6) — topology. Composable
+- `node` and `wire` (§13.3, §13.6) — topology. Composable
   graph structure traversed by the runtime via `expose:` (§13.3.7).
 - `stream` (§13.18) — append-only reactive primitive for event-
   shaped flows.
@@ -11906,8 +11906,8 @@ role:
   by child effects (interior), or both.
 
 Topology and outside-world alignment are distinct concerns. Topology
-— the node-and-connection graph the runtime traverses — has its own
-discipline: structural identity, child placement, connection
+— the node-and-wire graph the runtime traverses — has its own
+discipline: structural identity, child placement, wire
 endpoints, exposition. Outside-world alignment — sending a request,
 opening a connection, playing audio — has a different shape:
 request/response, long-lived resources, event streams, bidirectional
@@ -11938,7 +11938,7 @@ traversed node types (e.g., DSP graph evaluation).
 #### 13.1.1 A small example
 
 A complete reactive program that counts ticks of a host-driven
-signal and exposes the count through a connection to a Display.
+signal and exposes the count through a wire to a Display.
 The signal named `tick` in this example is *user-defined* — it is
 not a language built-in. Ductus has no built-in clock or tick
 primitive; hosts that need a clock declare their own signal and
@@ -11956,22 +11956,22 @@ node Counter:
                                         // `count.previous`: self-history (scope 2)
   outgoing shows: ShowsCount
 
-// Display reads the count through its incoming connection.
+// Display reads the count through its incoming wire.
 node Display:
   attr label: string = "Unnamed"
   incoming shows: ShowsCount
   derived shown: string = "{label}: {shows[0].count}"
                           // `label`, `shows`: body-scope members (bare; §13.7)
 
-// Connection from Counter to Display carries a derived count.
-connection ShowsCount:
+// Wire from Counter to Display carries a derived count.
+wire ShowsCount:
   from: Counter
   to: Display
   derived count: i32 = from.count
 
 // Placements (instances).
 Counter c1:
-  ShowsCount: d1                // outgoing connection to d1
+  ShowsCount: d1                // outgoing wire to d1
 
 Display d1 | label="Main"
 ```
@@ -11997,9 +11997,9 @@ Each `commit()`:
    observers.
 
 This example demonstrates every reactive declaration kind (signal,
-attr, recurrent, derived), composition through nodes and connections,
+attr, recurrent, derived), composition through nodes and wires,
 cardinality (`[=1]`), placement with overrides, indexed access
-through the connection-view (`shows[0].count`), bare
+through the wire-view (`shows[0].count`), bare
 body-scope member access (§13.7), and the commit-driven evaluation
 cycle.
 
@@ -12015,7 +12015,7 @@ constant (const); and one declares a membership-varying reactive
 group (`yielded`, full treatment in §13.20). A `yielded` group is
 declared as `yielded <name>: <MemberType> = collect:` with an
 indented body; that declaration form is **body-only** — legal inside
-node and connection bodies, never at module top level.
+node and wire bodies, never at module top level.
 
 #### 13.2.1 `signal`
 
@@ -12037,7 +12037,7 @@ A `signal` may be declared only at a **host boundary** — one of the two
 places the host (runtime or application) feeds values into the program:
 
 **Module-level signals** — declared at module top level (outside
-any node or connection body). One value shared across the program;
+any node or wire body). One value shared across the program;
 host writes it; all references read the same cell. Useful for
 program-wide inputs: a global clock, a user-input axis, a master
 volume signal.
@@ -12053,7 +12053,7 @@ block (§13.19.5). The host writes the observed cell, per effect
 instance, as the inbound half of the effect's reconciliation — for
 example a fetch effect's `response`.
 
-A `signal` may **not** be declared inside a node body, a connection
+A `signal` may **not** be declared inside a node body, a wire
 body, a `repeat` template, or an operator body. A composition unit
 receives its inputs from its placer as `attr`s (§13.2.2), never as
 host-written cells injected at depth: the host reaches the program only
@@ -12079,7 +12079,7 @@ attr name: Type                 // no default — placement must supply
 ```
 
 An `attr` declares a *per-instance reactive slot* on its enclosing node
-or connection type — a property each instance carries. What sits in the
+or wire type — a property each instance carries. What sits in the
 slot is determined at placement: a compile-time/value expression is
 consumed into the slot's storage (§13.8.2.1 Category B), while a
 reactive expression creates an implicit-derived bridge that wires the
@@ -12125,7 +12125,7 @@ node Endpoint:
 The `default` expression, when present, provides the initial value
 used when an instance is constructed without an explicit value for
 that attr. Defaults may reference previously-declared attrs of the
-same enclosing node or connection type (declaration order is significant;
+same enclosing node or wire type (declaration order is significant;
 see §13.2.6).
 
 The default may be a constant expression, an expression involving
@@ -12154,14 +12154,14 @@ that point on, exactly as if the value were a default.
 
 ##### 13.2.2.1 `default attr`
 
-A node or connection type may designate one of its attrs as the
+A node or wire type may designate one of its attrs as the
 *positional default* by prefixing the declaration with `default`:
 
 ```
 node Log:
   default attr message: string
 
-connection Drives:
+wire Drives:
   from: Driver
   to: Drivable
   default attr aggressiveness: f32 = 0.5
@@ -12182,7 +12182,7 @@ is an additional, optional positional shortcut:
 Log /"Hello World"                          // /expr sets default attr `message`
 Log | message="Hello World"                 // equivalent attribute-clause form
 
-// Connection (assuming Drives declares `default attr aggressiveness: f32 = 0.5`):
+// Wire (assuming Drives declares `default attr aggressiveness: f32 = 0.5`):
 Drives/0.8: some_car                        // /expr sets default attr `aggressiveness`
 Drives | aggressiveness=0.8: some_car       // equivalent attribute-clause form
 ```
@@ -12194,10 +12194,10 @@ Rules:
 - The `default attr` marker applies only to `attr` declarations.
   `recurrent`, `derived`, `const`, and `signal` cannot be marked
   `default`.
-- The mechanism is uniform across nodes and connections: at placement
+- The mechanism is uniform across nodes and wires: at placement
   time, `/expr` binds the type's default attr regardless of whether
-  the placed type is a node (§13.8.5.2) or a connection (§13.8.5.1).
-  Connections supply their destination separately, in the placement's
+  the placed type is a node (§13.8.5.2) or a wire (§13.8.5.1).
+  Wires supply their destination separately, in the placement's
   body (§13.8.5.1); the destination is not an attr and is not
   targeted by `/expr`.
 
@@ -12247,12 +12247,12 @@ derived becomes dirty and is recomputed at the next commit.
 A `derived` may be declared at three scopes:
 
 - **Module-level** — declared at module top level (outside any node
-  or connection body). One cell shared across the program. References
+  or wire body). One cell shared across the program. References
   to module-level deriveds use the bare name (no `here::` prefix).
 - **Node-level** — declared inside a node body. Per-instance: each
   placement of the node creates its own cell.
-- **Connection-level** — declared inside a connection body.
-  Per-instance per-connection: each placement of the connection
+- **Wire-level** — declared inside a wire body.
+  Per-instance per-wire: each placement of the wire
   creates its own cell.
 
 Module-level deriveds are useful for global computed values that
@@ -12526,8 +12526,8 @@ A `recurrent` may be declared at three scopes, paralleling
   prefix). Useful for global stateful counters, accumulators, or
   state machines whose inputs are module-scope reactive cells.
 - **Node-level** — declared inside a node body. Per-instance.
-- **Connection-level** — declared inside a connection body.
-  Per-instance per-connection.
+- **Wire-level** — declared inside a wire body.
+  Per-instance per-wire.
 
 ##### 13.2.4.6 Tuple-coupled recurrents
 
@@ -12642,7 +12642,7 @@ const name: Type = value
 ```
 
 A `const` declares a compile-time constant value associated with a
-node or connection type. Unlike `attr`, `recurrent`, and `derived`,
+node or wire type. Unlike `attr`, `recurrent`, and `derived`,
 a `const` is not reactive and not per-instance in the runtime
 sense — it is a type-level property whose value is the same for
 every instance of the type and is fixed at compile time.
@@ -12688,7 +12688,7 @@ fulfill Action for Delay
 A const is accessible through three syntactic forms:
 
 - **Instance-level (bare `<const>`, or `here::<const>` to anchor)** —
-  inside the declaring node or connection's reactive expressions.
+  inside the declaring node or wire's reactive expressions.
   Resolves to the same value as the type-level access.
 - **Through an instance (`<instance>.<const>`)** — from function
   bodies or other instances' bodies that hold a reference to an
@@ -12709,7 +12709,7 @@ fn tag_for[T: Action](_: T) -> string:
 
 ##### 13.2.5.3 Declaration order
 
-Within a node or connection body, a const's value expression may
+Within a node or wire body, a const's value expression may
 reference previously-declared consts of the same body (in
 declaration order). Referencing a later-declared const is a
 compile error.
@@ -12727,7 +12727,7 @@ serialized steps for signals, attrs, recurrents, and deriveds.
 1. **Top-level consts** are resolved in declaration order. Values
    are embedded in the compiled artifact; no runtime computation
    is needed.
-2. **Per-type consts** declared inside node/connection bodies are
+2. **Per-type consts** declared inside node/wire bodies are
    similarly resolved at compile time. They are not allocated
    reactive cells.
 
@@ -12843,9 +12843,9 @@ imperatively modify it from within.
 The value cells carry a current value of type `T` and come in three annotation
 kinds: `signal T`, `derived T`, and `recurrent[N] T` (`attr` annotates as
 `signal T`). The keyword `cell` alone is a **kind** — and a keyword — not a
-type or a trait. The applied annotation `cell T` *is* a type: a **wiring
-type**, a member of the type system in its own class, unstorable by nature and
-expressing wiring rather than a value — never a value type, and not a trait
+type or a trait. The applied annotation `cell T` *is* a type: a **channel**, a member of the
+type system in its own class, unstorable by nature: a mechanism that delivers
+values reactively, never a value — never a value type, and not a trait
 (§13.2.8.1). `cell T` is the umbrella designator spanning *exactly* these
 value-cell kinds and nothing else.
 Streams (`stream ring[N] T`, `stream gate[N] T`, erased `stream T`,
@@ -12907,7 +12907,7 @@ The cell may still be written by the host (`signal`), the runtime
 (`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
 
-**`cell T` is the umbrella wiring type; `cell` is its kind.** Cell-kind
+**`cell T` is the umbrella channel; `cell` is its kind.** Cell-kind
 bindings typically appear in
 parameter positions, return positions, and compiler-minted internal bindings
 (`cell Map[…]` for `repeat … as` views per §13.5.4.9, `dynamic view V` for
@@ -12917,7 +12917,7 @@ the cell kinds the umbrella spans; `stream` and `yielded` are their own kind
 classes outside it. There is no `Cell[T]` type and no `Cell` trait to fulfill.
 Cross-instance references to reactive state keep bracket **storable** types —
 `Handle[T]` / `WeakHandle[T]` for graph entities (§13.3.6.2), `Portal[T]` for
-non-graph slots (§13.3.6.3) — or connections for typed wiring (§13.6). Kind
+non-graph slots (§13.3.6.3) — or wires for typed linkage (§13.6). Kind
 annotations never carry inline bounds: a bound on the value type is written in
 the generic parameter list or a `where` clause, not inside the kind
 (e.g. `operator f[T: Numeric](x: cell T)`, not a bracketed bound on `cell`).
@@ -12971,12 +12971,12 @@ Ductus annotations fall into two families. **Cell kinds** are lowercase
 keyword designators for reactive binding machinery, and two levels sit
 here. The keyword alone (`cell`, `signal`, `stream`, ...) is a **kind**.
 The applied annotation (`cell T`, `signal T`, `stream[P] T`, ...) *is* a
-type — a **wiring type**, a type-system member in its own class,
-unstorable by nature and expressing wiring rather than a value. A wiring
-type never spells its value type inside a bracket constructor — the
+type — a **channel**, a type-system member in its own class,
+unstorable by nature: a mechanism that delivers values reactively, never a
+value. A channel never spells its value type inside a bracket constructor — the
 bracket a kind keyword may carry (`recurrent[N]`, `stream[P]`) holds
 only that kind's parameters, per the admitted direction below, never the
-element type. A wiring type takes no inline bounds and never appears
+element type. A channel takes no inline bounds and never appears
 inside a value-type constructor. **Storables**
 keep bracket type syntax because they name values that can be stored,
 passed, and held. The consolidated table:
@@ -12989,12 +12989,14 @@ passed, and held. The consolidated table:
 | Event cell | `stream ring[N] T` / `stream gate[N] T` | erased form `stream T` when policy/capacity unresolved |
 | Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (default 0) |
 | Membership cell | `yielded T` / `yielded f32[128]` | ordered membership-varying group (§13.20.4) |
-| Cell umbrella (wiring type) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`); streams and `yielded` are outside it; its keyword `cell` is the kind; a wiring type, not a value type, not a trait |
+| Cell umbrella (channel) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`); streams and `yielded` are outside it; its keyword `cell` is the kind; a channel, not a value type, not a trait |
 | Dynamic view | `dynamic view V` | replaces `Cell[DynamicView[WeakHandle[V]]]` (§13.3.3.4) |
-| Storable — compile-time type | `Type[C]` | node/connection type slot |
+| Storable — compile-time type | `Type[C]` | node/wire type slot |
 | Storable — graph handle | `Handle[T]` / `WeakHandle[T]` | cross-instance references |
 | Storable — non-graph slot | `Portal[T]` | identity-as-data; `Portal[cell T]` is the sanctioned cell-identity carrier |
 | Storable — values | `T`, `T[N]`, `T[..]` | plain values, arrays, slices |
+
+Channels come in two flavors: **value channels** (the cell umbrella) deliver the latest committed value and are snapshot-readable; **event channels** (streams) deliver each event once per cursor. `yielded T` is a membership channel; `dynamic view X` is a reference channel.
 
 Rationale (the **storability razor**): a designator that names something
 storable keeps brackets; a designator that names reactive binding
@@ -13003,16 +13005,16 @@ their members are `Handle[T]` arrays/slices. Bounds on a kind's value
 type go in the generic parameter list or a `where` clause, never inside
 the kind annotation.
 
-A wiring-type annotation (`cell T`, `signal T`, `derived T`,
+A channel annotation (`cell T`, `signal T`, `derived T`,
 `recurrent[N] T`, `stream[P] T`, and the other applied kinds) is legal
 only at the **outermost** position of a declaration, a parameter, or a
-return type. A wiring type never appears inside a value-type
+return type. A channel never appears inside a value-type
 constructor — no container, generic argument, or other bracketed value
 type holds one. That is the banned direction. The *admitted* direction is
 the reverse and stays legal: a kind's own brackets admit parameters —
 const integers (`recurrent[N]`, buffer capacities) and StreamPolicy-bounded
 policy types (`stream[P]`). What a kind bracket carries is a const-generic
-argument or a policy type, never a wiring type nested inside a value
+argument or a policy type, never a channel nested inside a value
 constructor. The sole exception is `Portal[cell T]`, and there the bracket
 argument is a cell *designation* (which cell's identity the portal
 carries), not a nested value type.
@@ -13063,7 +13065,7 @@ derived t = (signal_a, 15, signal_b)
 derived arr: f32[4] = [signal_a, signal_b, 0.0, signal_c]
 ```
 
-The same forms apply in `attr` declarations on node and connection
+The same forms apply in `attr` declarations on node and wire
 instances. Use in `signal` and `recurrent` declarations is
 constrained by their host-write and expression-evaluation semantics
 respectively; see §13.2.1, §13.2.4 for the underlying constraints.
@@ -13268,10 +13270,10 @@ static — depends on the **binding form**, not the RHS syntax alone:
 ##### 13.2.9.9 Distinction from nodes
 
 Reactive composites are data-only. They have no placement, no
-participation in node/connection topology, no lifecycle beyond the
+participation in node/wire topology, no lifecycle beyond the
 declaration that introduces them, and no `recurrent` or behavioral
 content. Nodes (§13.3) provide the full instance machinery —
-hierarchical placement, connections, hot-reload identity at the
+hierarchical placement, wires, hot-reload identity at the
 instance level — and remain the appropriate construct when behavior
 or topology is needed.
 
@@ -13297,17 +13299,17 @@ type signature; transparency flows through (§13.12.2). The
 distinction between live and snapshotted access is determined by
 the caller's context, not by the function's signature.
 
-#### 13.2.10 Node and connection type slots (`Type[…]`)
+#### 13.2.10 Node and wire type slots (`Type[…]`)
 
-A node or connection **type** can be carried as a value via the `Type[…]`
+A node or wire **type** can be carried as a value via the `Type[…]`
 meta-type (§5.7) — the mechanism for an attr "template slot" that defers
 *which kind* a receiving node places. The corresponding *instances* are
 first-class citizens held only by borrow (§13.3.6.1), so the type value is
 the storable stand-in.
 
-A `Type[…]` slot is filled by naming a node (or connection) type in value
+A `Type[…]` slot is filled by naming a node (or wire) type in value
 position; the receiving node later **places** it (§13.8 — §13.8.4.2 covers
-the connection case). The slot's constraint is an ordinary trait bound, and
+the wire case). The slot's constraint is an ordinary trait bound, and
 — per §5.7.5 — it is also the *instantiation contract*: the receiver may
 feed exactly the inputs the bound's trait declares as required members
 (§3.1.7).
@@ -13342,12 +13344,12 @@ type value itself carries no partial application.
 
 ##### 13.2.10.1 What can fill a `Type[C]` slot
 
-Any node (or connection) type satisfying the constraint `C` is a valid
+Any node (or wire) type satisfying the constraint `C` is a valid
 value for a `Type[C]` slot (§5.7.1). The constraint governs both
 acceptance and what the receiver may do with the value: a bare `Type[Node]`
 admits any node type but is not placeable (it carries no input contract,
 §5.7.5); a `Type[SomeTrait]` whose trait declares required attrs/cells
-(and, for connections, endpoints) is placeable against exactly that
+(and, for wires, endpoints) is placeable against exactly that
 contract (§3.1.7).
 
 The `default attr` (§13.2.2.1) plays no special role here — it is ordinary
@@ -13713,7 +13715,7 @@ ordinary composition over `scan` and the `->latest(fallback)` crossing
 
 A node is a reactive entity — a composable unit that holds values
 (attrs, recurrents), computes values (deriveds), and communicates
-with other nodes through typed connections. Each node type is a
+with other nodes through typed wires. Each node type is a
 nominal type with a body declaring its members. Each placement of
 a node type creates an instance with its own cells.
 
@@ -13723,12 +13725,12 @@ Composition takes two forms:
   *children* (§13.4). The parent owns the children; their lifetimes are
   bound to the parent's.
 - *Communication* — nodes communicate with each other through
-  *connections* (§13.6). Connections are typed directed links
+  *wires* (§13.6). Wires are typed directed links
   carrying their own reactive content; they are not passive
   pointers.
 
 The reactive graph is the running structure of all node instances
-and the connections between them. Once constructed, the graph's
+and the wires between them. Once constructed, the graph's
 shape is fixed (§13.1, "Static graph").
 
 Nodes are distinct from records (§6), but the line is *placement and
@@ -13737,7 +13739,7 @@ reactive composite (§13.2.9) — so "reactive vs. plain data" is not what
 separates them. The distinction is this: a record is a value that can
 exist anywhere in a program, whereas a node exists only as a placed
 instance in the graph, with its own graph identity, topology (children and
-connections), lifecycle, and per-instance reactive cells managed by the
+wires), lifecycle, and per-instance reactive cells managed by the
 runtime.
 
 #### 13.3.1 Declaration
@@ -13746,10 +13748,10 @@ runtime.
 node TypeName[GenericParams]?:
   children:                                           // optional acceptance of placed children (§13.3.3)
     name: Selector <cardinality>                      // one named acceptance entry per line
-  incoming:                                           // optional acceptance of incoming connections
-    name: ConnType <card>
-  outgoing:                                           // optional acceptance of outgoing connections
-    name: ConnType <card>
+  incoming:                                           // optional acceptance of incoming wires
+    name: WireType <card>
+  outgoing:                                           // optional acceptance of outgoing wires
+    name: WireType <card>
   view name: Selector <cardinality>                   // optional standalone selection (§13.3.3)
   when: predicate                                     // optional activation predicate (§13.9)
   const name: Type = value                            // per-type compile-time constants
@@ -13767,7 +13769,7 @@ fulfill Trait1 for TypeName                           // optional trait conforma
 ```
 
 All body items are optional. A node with no attrs, no deriveds, no
-children, and no connections is legal but typically unused. Members appear
+children, and no wires is legal but typically unused. Members appear
 in free order; `effects:` follows the members and `expose:` is last
 (§13.3.7).
 
@@ -13830,7 +13832,7 @@ node Synthesizer:
   attr master_volume: f32 = 1.0
 ```
 
-The same clause-with-entries model governs caller-facing connection
+The same clause-with-entries model governs caller-facing wire
 acceptance via the **`incoming:`** and **`outgoing:`** clauses (§13.3.4).
 
 - **Acceptance entries overlap rather than partition the supplied set.**
@@ -13844,7 +13846,7 @@ acceptance via the **`incoming:`** and **`outgoing:`** clauses (§13.3.4).
   Both entries reference the same supplied set; `cars` narrows the
   selection but does not change what the node accepts.
 - **No `children:` clause means no children.** A node with no
-  `children:` clause accepts nothing; a `Node` (or `Connection`) catch-all
+  `children:` clause accepts nothing; a `Node` (or `Wire`) catch-all
   entry opens the clause fully.
 - **Homogeneous.** Each entry yields children that all satisfy its one
   selector; homogeneous co-placement (a co-tied bracket at placement) uses
@@ -13963,7 +13965,7 @@ checked maximum, and runtime cardinality checks do not exist in the
 language. An unmarked view is *static*: supplied by explicitly written
 placements only, with the count known per placement site at compile time. A
 `dynamic` view may additionally be fed by a caller's `repeat` (§13.3.3.4).
-The same marker applies identically to `incoming`/`outgoing` connection-views
+The same marker applies identically to `incoming`/`outgoing` wire-views
 (§13.3.4).
 
 ##### 13.3.3.2 Access from inside the node body
@@ -14013,7 +14015,7 @@ A node type may emit child instances *directly* via a compile-time
 output is emitted in exactly one place, the exposition. The loop's body
 is an indented **placement-body block** following the same syntax as
 §13.8.3's child-placement body — any number of placements (children and/or
-connections) per iteration, with the ordinary clause ordering of
+wires) per iteration, with the ordinary clause ordering of
 §13.8.9 and the whitespace-separation / self-delimiting rules of
 §13.8.10. The iteration is compile-time-unrolled per §12.3.7. The
 unrolled placements become **children of the type itself**: every
@@ -14086,12 +14088,12 @@ written placements do. Use the type form when
 multiplicity and per-child configuration are properties of the
 **type**; use the placement form when they may differ per instance.
 
-**Connections from a type-emitted for.** The `for` may also place
-connections (§13.6) whose source is the enclosing node instance and
+**Wires from a type-emitted for.** The `for` may also place
+wires (§13.6) whose source is the enclosing node instance and
 whose destinations are determined by the unrolled iteration. These are
-**self-sourced** connections (§13.3.4.2): exempt from the type's
-`outgoing` connection-views, subject to endpoint typing, and **positional** like
-any other connection placement — each engages at its written position
+**self-sourced** wires (§13.3.4.2): exempt from the type's
+`outgoing` wire-views, subject to endpoint typing, and **positional** like
+any other wire placement — each engages at its written position
 in the unrolled exposition sequence (§13.3.7.5, §13.3.7.6). The same
 clause-ordering and self-delimiting rules of §13.8.9 / §13.8.10 apply
 to the loop body's placement.
@@ -14238,7 +14240,7 @@ implementation choice; the developer writes against the dynamic
 contract regardless, because the *type* admits dynamic supply.
 
 The same marker, cell model, and consumption rules apply to
-`incoming`/`outgoing` connection-views (§13.3.4.1).
+`incoming`/`outgoing` wire-views (§13.3.4.1).
 
 **The `dynamic view T` kind.** The cell for a dynamic view is a
 language-level **structural kind** `dynamic view T` (D0-8; it replaces the
@@ -14376,7 +14378,7 @@ Forbidden inside a bundle bracket:
 - `repeat` — a runtime-varying membership inside a static pre-tied
   bracket contradicts the bundle nature. Dynamic bundles use the
   reactive `cell` form below.
-- Connections — bundling is node-only.
+- Wires — bundling is node-only.
 
 ##### `[...]` is an open delimiter
 
@@ -14462,11 +14464,11 @@ The compiler derives `Eq`, `Ord`, `Hash`, `Clone`, `Display`, and
 when `Handle[T]: Ord`. Derivation walks the offsets-table layout row by
 row, element by element within each row.
 
-#### 13.3.4 Connection-views (`incoming:` and `outgoing:`)
+#### 13.3.4 Wire-views (`incoming:` and `outgoing:`)
 
 ```
 outgoing:                                          // node is the `from` endpoint
-  <name>: [dynamic] Type <cardinality>             // named — connection-view binding
+  <name>: [dynamic] Type <cardinality>             // named — wire-view binding
   [dynamic] Type <cardinality>                     // unnamed — accept-only
 
 incoming:                                          // node is the `to` endpoint
@@ -14474,23 +14476,23 @@ incoming:                                          // node is the `to` endpoint
   [dynamic] Type <cardinality>                     // unnamed
 ```
 
-Connections a node participates in are declared via the **`outgoing:`** and
-**`incoming:`** clauses — the connection-side counterpart to `children:`
+Wires a node participates in are declared via the **`outgoing:`** and
+**`incoming:`** clauses — the wire-side counterpart to `children:`
 (§13.3.3). Each clause body lists *acceptance entries*: a named entry
-(`<name>: Type <card>`) provides a connection-view selection binding into the
+(`<name>: Type <card>`) provides a wire-view selection binding into the
 body namespace (§13.7.1); an unnamed entry is accept-only. See §13.6 for
-connection declarations and §13.8.4 for connection placement.
+wire declarations and §13.8.4 for wire placement.
 
-Like `children:`, the connection-acceptance clauses are the node's
-**caller-facing signature**: they bound the connections a *caller* may wire
+Like `children:`, the wire-acceptance clauses are the node's
+**caller-facing signature**: they bound the wires a *caller* may wire
 to or from the node. An `outgoing:` entry bounds what a caller placing this
 node may originate *from* it (a local-supply bound); an `incoming:` entry
 bounds what may be directed *at* it, aggregated across all sources. They do
-**not** bound the node's own internal wiring — self-sourced connection
+**not** bound the node's own internal wiring — self-sourced wire
 placements (§13.3.4.2) are its private realization, checked by endpoint
 typing and topology (§13.11.5) but never counted against any
-connection-view. When such internal wiring targets one of the node's own
-children, the node acts as the **caller of that child**, and the connection
+wire-view. When such internal wiring targets one of the node's own
+children, the node acts as the **caller of that child**, and the wire
 counts against the *child's* incoming budget (§13.3.4.2).
 
 Cardinality uses the same specifiers as `children:` entries (§13.3.3.1)
@@ -14508,51 +14510,51 @@ node Driver:
     sponsors:    SponsoredBy [..=3]
 ```
 
-**Static and dynamic membership.** A connection belongs to a node's incoming
+**Static and dynamic membership.** A wire belongs to a node's incoming
 set as a *static fact* when both its presence and its destination are fixed at
 compile time. Membership stops being a static fact in exactly two ways: the
-connection is materialized per `repeat` key (its *existence* varies, §13.5.4),
+wire is materialized per `repeat` key (its *existence* varies, §13.5.4),
 or its destination is a reactive reference or `WeakHandle` (its *target* varies,
 §13.6.2). The rule:
 
-- An **unmarked (static)** `incoming` view admits only connections whose
+- An **unmarked (static)** `incoming` view admits only wires whose
   membership is a static fact. Its cardinality is checked by **exact local
   arithmetic**: the compiler counts, per instance, the statically present
-  connections directed at it — caller-placed static-destination connections
-  *and* self-sourced static-destination connections (a self-sourced connection
+  wires directed at it — caller-placed static-destination wires
+  *and* self-sourced static-destination wires (a self-sourced wire
   into an own child counts at the child, and being always present, it satisfies
   the child's lower bound). Indexed access `name[i]` for `i <` the guaranteed
   minimum is backed by exactly these.
-- Any connection whose membership is **not** a static fact requires a
-  **`dynamic incoming`** connection-view of that type on **every node type in
+- Any wire whose membership is **not** a static fact requires a
+  **`dynamic incoming`** wire-view of that type on **every node type in
   its candidate envelope** (§13.11.5 — for a dynamic destination, every type
-  the reference's static type admits; for a repeat-materialized connection,
-  its destination's type). The check runs at the connection placement site
-  and names both sites on failure. A `dynamic` connection-view carries the `*`
+  the reference's static type admits; for a repeat-materialized wire,
+  its destination's type). The check runs at the wire placement site
+  and names both sites on failure. A `dynamic` wire-view carries the `*`
   specifier (§13.3.3.1), so there is no bound to check — the membership is
   runtime data by declaration, tracked reactively (§13.3.4.1).
 
-`outgoing` is symmetric: a caller may write a `repeat` that places connections
+`outgoing` is symmetric: a caller may write a `repeat` that places wires
 sourced from the placed instance (fan-out — e.g. `repeat s in sessions:
-Send: s.target` in its placement body), and such caller-supplied connections
-require a `dynamic outgoing` connection-view (e.g. `dynamic outgoing sends:
+Send: s.target` in its placement body), and such caller-supplied wires
+require a `dynamic outgoing` wire-view (e.g. `dynamic outgoing sends:
 Send*`) on the instance's type, since their count at the source is not a static
 fact. A merely *re-pointing* destination does not dynamize the source side: the
-connection statically exists at its source; only its target moves. Self-sourced
-placements remain outside the `outgoing` connection-views entirely (the
+wire statically exists at its source; only its target moves. Self-sourced
+placements remain outside the `outgoing` wire-views entirely (the
 signature is caller-facing).
 
 ##### 13.3.4.1 Access from inside the node body
 
-A connection-view is accessed by its **name**, under the same rules as
-node-view access (§13.3.3.2): a bare (cardinality-one) connection-view
+A wire-view is accessed by its **name**, under the same rules as
+node-view access (§13.3.3.2): a bare (cardinality-one) wire-view
 reads as a single `Handle[C]`; a multi-valued one has a static face and a
 dynamic face.
 
-For a **static** (unmarked) connection-view, the name is a read-only
-**array of `Handle[C]`s** — `C` the connection-type selector — with
+For a **static** (unmarked) wire-view, the name is a read-only
+**array of `Handle[C]`s** — `C` the wire-type selector — with
 const-generic length bounded by the declared cardinality, exactly as
-§13.3.3.2 specifies for node views. Static connection-view membership is
+§13.3.3.2 specifies for node views. Static wire-view membership is
 statically provable, so each element is the statically-placed `Handle[C]`
 type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
 
@@ -14561,15 +14563,15 @@ type (§13.3.6.2) and reads through it auto-deref to `&C` directly:
   is legal.
 - Iteration: `for c in name: ...` always works, unrolling per §12.3.7.
 
-For a **`dynamic`** connection-view, the name is a reactive cell of kind
+For a **`dynamic`** wire-view, the name is a reactive cell of kind
 `dynamic view C` whose members are the current
-member connections, with the consumption rules of §13.3.3.4
+member wires, with the consumption rules of §13.3.3.4
 — `repeat` for structure, a `collect` block bridging members into a
 `yielded` group for values, nothing else. This is
 the fan-in idiom:
 
 ```
-connection Send:
+wire Send:
   from: Session
   to: Mixer
   attr gain: f32 = 1.0
@@ -14581,7 +14583,7 @@ node Mixer:
   derived mix: f32 = sum(contributions)
   expose:
     repeat c in sends:
-      Ack: c.from                 // a back-connection per current Send
+      Ack: c.from                 // a back-wire per current Send
 ```
 
 `contributions` is a `yielded` group (§13.20) whose membership tracks the
@@ -14593,24 +14595,24 @@ incremental alternative to the `sum` snapshot.) The `repeat` arm shows
 the structural side: one `Ack` per currently incoming `Send`, mounting and
 dismounting with it. Markers fall on both sides by the rules of §13.3.4: the
 `Ack`s exist per `repeat` key, so `Session` declares a
-`dynamic incoming` connection-view of `Ack`; the `Ack`s are self-sourced by
-`Mixer`'s own exposition, so `Mixer` needs no `outgoing` connection-view for them.
+`dynamic incoming` wire-view of `Ack`; the `Ack`s are self-sourced by
+`Mixer`'s own exposition, so `Mixer` needs no `outgoing` wire-view for them.
 
-##### 13.3.4.2 Self-sourced connections and the signature/internals model
+##### 13.3.4.2 Self-sourced wires and the signature/internals model
 
-Connection-views declare which connections a node *participates in* as an
-endpoint; they do not *establish* any. A node type establishes connections
-**sourced from itself** — connections every instance of the type brings into
+Wire-views declare which wires a node *participates in* as an
+endpoint; they do not *establish* any. A node type establishes wires
+**sourced from itself** — wires every instance of the type brings into
 being, with the instance as the `from` endpoint — by placing them **inline in
 its structural sequence**: as exposition entries (§13.3.7.5), directly or
 within an exposition-level `for` (§13.3.3.3) or `repeat` (§13.5.4), in every
-case at the position where each connection engages (§13.3.7.6). There is no
-separate clause for them, deliberately: a connection placement carries
-*topological* meaning — *where* in the node's structure the connection takes
+case at the position where each wire engages (§13.3.7.6). There is no
+separate clause for them, deliberately: a wire placement carries
+*topological* meaning — *where* in the node's structure the wire takes
 effect — and a position-free list would erase exactly that information
 (§13.3.7.5).
 
-A self-sourced connection placement uses the ordinary placement syntax of
+A self-sourced wire placement uses the ordinary placement syntax of
 §13.8.4, fixed by the *type* rather than supplied by a caller. The source is
 always the enclosing instance.
 
@@ -14625,17 +14627,17 @@ are admissible:
   connects to, such as a global bus or clock. Also static.
 - A **`WeakHandle[T]`-typed attr** of the node (scope 2) — per-instance
   parameterized wiring. The instance is configured at placement with a handle
-  (§13.3.6.2), and its self-sourced connection drives whatever that handle
+  (§13.3.6.2), and its self-sourced wire drives whatever that handle
   resolves to. This is the payoff of the dynamically-placed `to`: *every
-  instance drives whatever it is told to at placement*, and the connection
+  instance drives whatever it is told to at placement*, and the wire
   freezes while the handle resolves to `None` (§13.9.7). Membership at the
   destination is not a static fact, so every node type the handle's type
-  admits must declare a `dynamic incoming` connection-view of that type
+  admits must declare a `dynamic incoming` wire-view of that type
   (§13.3.4). A statically-placed `Handle[T]` attr destination does not
   freeze — its referent is fixed for the handle's lifetime.
 
 ```
-connection Drives:
+wire Drives:
   from: Driver
   to: Drivable
 
@@ -14656,42 +14658,42 @@ Garage g:
   Driver | wheel=rear_axle            // this one drives rear_axle
 ```
 
-(`Driver` needs no `outgoing` connection-view for `Drives` — a self-sourced
-connection is not caller-placed; see below.)
+(`Driver` needs no `outgoing` wire-view for `Drives` — a self-sourced
+wire is not caller-placed; see below.)
 
-**Signature vs. internals.** Self-sourced connections are the concrete case of a
-general rule. A node type's views and connection-views are its
+**Signature vs. internals.** Self-sourced wires are the concrete case of a
+general rule. A node type's views and wire-views are its
 **caller-facing signature**: they bound what a *caller* may place into, or wire
 to and from, an instance. A node's **internals** are **every placement the type
-itself makes** — self-sourced connections, type-emitted `for` children
+itself makes** — self-sourced wires, type-emitted `for` children
 (§13.3.3.3), `repeat` placements (§13.5.4), wrapper placements (§13.3.7) — its
 private realization. Internals are **not** bound by the signature and never
-appear in it; they are checked only by connection endpoint typing (§13.8.4) and
+appear in it; they are checked only by wire endpoint typing (§13.8.4) and
 topology-cycle analysis (§13.11.5).
 
 One consequence is recursive: when a node's internal wiring (a self-sourced
-connection, or a wrapper) terminates at one of the node's **own children**, the
-node is acting as that child's **caller**, and the connection counts against the
+wire, or a wrapper) terminates at one of the node's **own children**, the
+node is acting as that child's **caller**, and the wire counts against the
 *child's* incoming budget — the same budget a caller placing the child would
 draw from. A node is the caller of its own children.
 
-The same accounting applies at any destination: a self-sourced connection is
+The same accounting applies at any destination: a self-sourced wire is
 exempt at its *source* only. At a **module-level destination**, every placed
-instance of the source type contributes one connection to the target's
+instance of the source type contributes one wire to the target's
 incoming accounting, by §13.3.4's rule: contributions that are static facts
 (statically placed source instances, static destinations) count toward a
 static `incoming` view's exact arithmetic; any contribution that is not a
 static fact — source instances materialized by `repeat`, or a `WeakHandle`
 destination — requires the target to declare a `dynamic incoming`
-connection-view for that type, with the error naming both sites.
+wire-view for that type, with the error naming both sites.
 
-A self-sourced connection is therefore exempt from the source node's
-`outgoing` connection-views (which govern caller-originated connections only), but it is
+A self-sourced wire is therefore exempt from the source node's
+`outgoing` wire-views (which govern caller-originated wires only), but it is
 **not** exempt from endpoint typing: the `from`/`to` types must still match the
-connection's declaration (§13.6.1).
+wire's declaration (§13.6.1).
 
-Self-sourced connections are a **node-type** concept. Connection bodies remain
-minimal glue (§13.6.4) and have no exposition of their own; a connection that
+Self-sourced wires are a **node-type** concept. Wire bodies remain
+minimal glue (§13.6.4) and have no exposition of their own; a wire that
 needs to establish further structure is modeled with nodes.
 
 The compiler-checked *total* cardinality of a node — caller-placed plus internal
@@ -14705,7 +14707,7 @@ specified now.
 
 A node may declare generic parameters in the standard `[T, U, ...]`
 form. Generic parameters are in scope within the body's attr,
-recurrent, derived, const, view, and connection declarations:
+recurrent, derived, const, view, and wire declarations:
 
 ```
 node Buffer[T: Numeric]:
@@ -14754,12 +14756,12 @@ with no node-specific rule:
   and a function never owns a node (placement is a declaration-only form,
   unavailable in a function body). A function may *take* and *return* node
   references (borrows), and a returned reference is useful for reading the
-  node's cells and for serving as a connection endpoint (§13.6, §13.8.5.1)
+  node's cells and for serving as a wire endpoint (§13.6, §13.8.5.1)
   — but never for placing.
 - **A node reference cannot be stored.** A borrow may not be put in a cell,
   record field, enum payload, or tuple (§11.9.1). The storable, non-owning way
   to *designate* a node instance for later is a **`Handle[…]`** (§13.3.6.2); a
-  persistent *wiring* between instances is a **connection** (§13.6); a node
+  persistent linkage between instances is a **wire** (§13.6); a node
   *type* held as a value is `Type[…]` (§5.7).
 
 The intent behind keeping creation and placement out of functions:
@@ -14774,7 +14776,7 @@ parameterize the *type* via const-generics or generics
 definition; the placement happens in a context that owns a graph path. To
 defer *which* node type is placed, pass a `Type[…]` value (§5.7).
 
-The same ownership rule applies to **connections** and **effects**: an
+The same ownership rule applies to **wires** and **effects**: an
 *instance* is a graph member, brought in only by the language's placement
 and instantiation syntax (§13.8, §13.19) and otherwise held only by borrow;
 their *types* travel as values via `Type[…]` (§5.7). **Operators** are
@@ -14787,7 +14789,7 @@ conformant compilers enforce it at type-check time.
 
 §13.3.6.1 forbids storing a node reference: a borrow may not live in a cell,
 field, payload, or tuple. Yet some constructs must *remember* a graph entity
-across time and across re-evaluation — a connection whose destination re-points
+across time and across re-evaluation — a wire whose destination re-points
 (§13.8.5.1), a node body that addresses a dynamically-mounted child by key
 (§13.5.4.9). The storable form of such a designation is a **`Handle[T]`**.
 
@@ -14832,8 +14834,8 @@ Narrowing `WeakHandle[T]` → `Handle[T]` is never implicit; it requires
 `handle!` or an explicit `match` / `?` arm.
 
 **Kind-scoped.** For both `Handle[T]` and `WeakHandle[T]`, `T` is a
-graph-entity type — a node, connection, or effect type, or a trait that
-`requires` one of the `Node` / `Connection` / `Effect` markers (§3.7.4).
+graph-entity type — a node, wire, or effect type, or a trait that
+`requires` one of the `Node` / `Wire` / `Effect` markers (§3.7.4).
 `Handle[T]` and `WeakHandle[T]` are distinct types, not variants of a
 single generic: `Handle[T]` designates a statically-placed referent,
 `WeakHandle[T]` a dynamically-placed one. For a reference to a record,
@@ -14974,7 +14976,7 @@ identity rule of §13.5.4.8, the same key reappearing in the source remounts the
 
 ##### 13.3.6.3 Storable references to plain values: the `Portal[…]` type
 
-§13.3.6.2 introduces `Handle[T]` for graph entities — node, connection, and
+§13.3.6.2 introduces `Handle[T]` for graph entities — node, wire, and
 effect instances whose mount/dismount lifecycle the runtime tracks. The
 parallel form for **non-graph** data — record fields, tuple components,
 array elements, `mut` bindings, cell contents, pool entries — is a
@@ -14991,7 +14993,7 @@ outlive its slot, and then resolves to "absent".
 
 **Kind-scoped.** `T` ranges over non-graph types: primitives, records,
 enums, newtypes, tuples, arrays. For a reference to a graph entity — a
-node, connection, or effect — use `Handle[T]` (§13.3.6.2).
+node, wire, or effect — use `Handle[T]` (§13.3.6.2).
 
 **Resolution is transparent and type-directed**, exactly as for handles:
 
@@ -15047,7 +15049,7 @@ the sanctioned identity-as-data carrier for a cell: the portal resolves
 to `Option[&cell T]`, and the inner cell read remains
 reactive by auto-deref (§13.17.3.1). The dynamic-dependency machinery
 (§13.10.5) handles the portal flipping to `None` the same way it handles a
-connection re-pointing.
+wire re-pointing.
 
 **Hot reload.** A portal preserves across reload only when its targeted
 slot's identity AND generation are preserved. The portal carries
@@ -15081,9 +15083,9 @@ lifetime, so nesting them adds no extra check.
 The `expose:` clause declares the node type's **structural output**
 — the **ordered** list of placements the runtime traverses when it
 encounters an instance of this type. Entries are node placements and
-connection placements (§13.3.7.5), and their order is semantic: it is the
+wire placements (§13.3.7.5), and their order is semantic: it is the
 order in which the runtime walks the node's content and engages its
-connections (§13.3.7.6). The clause is the node's "return value" in the structural
+wires (§13.3.7.6). The clause is the node's "return value" in the structural
 sense: it determines what an external reader (and the runtime) sees as the
 node's content.
 
@@ -15151,25 +15153,25 @@ reference:
   declared (in stdlib or user code) and accept children via their
   own `view` declarations.
 - The **`@content` directive** (§13.3.7.2), which exposes everything the
-  node accepts — caller-supplied children and outgoing connections — in
+  node accepts — caller-supplied children and outgoing wires — in
   the caller's original order.
 
-**Connection entries** place self-sourced connections (§13.3.4.2,
+**Wire entries** place self-sourced wires (§13.3.4.2,
 §13.3.7.5) at their position in the sequence, with the full placement
-syntax of §13.8.4 — `ConnType: dest`, optional `/expr`, attribute clause,
-and inline `when` modifier. The entry's position is where the connection
+syntax of §13.8.4 — `WireType: dest`, optional `/expr`, attribute clause,
+and inline `when` modifier. The entry's position is where the wire
 *engages* during traversal (§13.3.7.6).
 
-**Connection-view entries** position *caller-supplied* (outgoing) connections:
-naming an `outgoing` connection-view in `expose:` engages the connections
+**Wire-view entries** position *caller-supplied* (outgoing) wires:
+naming an `outgoing` wire-view in `expose:` engages the wires
 supplied to it at that position, in placement order within the view. A
-connection-view the type never names in `expose:` still participates (presence
+wire-view the type never names in `expose:` still participates (presence
 is participation) but is never engaged — the same as an unexposed node view
-(§13.3.7.4). A bare **`incoming`** connection-view name as an entry is a
+(§13.3.7.4). A bare **`incoming`** wire-view name as an entry is a
 **compile error**: engagement order belongs to the *source's* traversal
-(§13.3.7.6), and a destination cannot reposition another node's connection
+(§13.3.7.6), and a destination cannot reposition another node's wire
 within that node's structure. The error points at the expression-position
-idioms instead — `name[i].from` as a back-connection destination, or
+idioms instead — `name[i].from` as a back-wire destination, or
 `repeat c in name: …` (§13.3.4.1).
 
 **Iteration entries** emit type-internal structure in place:
@@ -15178,15 +15180,15 @@ position; a `repeat` (§13.5.4) mounts its keyed scopes there. Both are
 lowercase-keyword forms, so they never collide with `Name:` entries
 (§1.4's naming rule is normative).
 
-**Entry-kind disambiguation.** Node and connection entries share the
+**Entry-kind disambiguation.** Node and wire entries share the
 `Name: …` shape (`SomeInternalWrapper:` + children vs. `Plays: chorus`).
-The entry kind is directed by what `Name` resolves to: a **connection
-type** makes the entry a connection placement (what follows is the
+The entry kind is directed by what `Name` resolves to: a **wire
+type** makes the entry a wire placement (what follows is the
 destination), a **node type** makes it a node/wrapper placement (what
 follows is its body), and a **`Type[…]`-typed binding** (§13.2.10,
-§13.8.4.2) follows its constraint's kind — a `Type[C]` over a connection
-constraint places a connection, over a node constraint a node. A single
-name never denotes both a node type and a connection type in one scope —
+§13.8.4.2) follows its constraint's kind — a `Type[C]` over a wire
+constraint places a wire, over a node constraint a node. A single
+name never denotes both a node type and a wire type in one scope —
 type declarations of every kind share one namespace per scope, and this
 rule is normative here — so the resolution is never ambiguous.
 
@@ -15212,10 +15214,10 @@ Two forms apply inside `expose:`:
 
 These reuse the gate constructs that apply elsewhere — no exposition-only
 control-flow syntax is introduced. Arm labels do not collide with
-`Name: dest` connection entries, in either block form: the position
+`Name: dest` wire entries, in either block form: the position
 directly under a block header is **arm position** — it admits only the
 scrutinee's variant labels (`given`, §13.9.13) or boolean guard
-expressions (`when:`, §13.9.12) — and connection entries appear *inside*
+expressions (`when:`, §13.9.12) — and wire entries appear *inside*
 arm bodies as ordinary indented exposition entries.
 
 ##### 13.3.7.2 `@content` and the absence of `expose:`
@@ -15224,11 +15226,11 @@ A node with no `expose:` clause has **no structural output** — its
 exposition is empty. Caller-supplied content becomes output only by being
 named in `expose:` (a view name or a named child, §13.4.1) or through the
 `@content` directive. A node without `expose:` exists only for its state
-and connections.
+and wires.
 
 `@content` is a **standalone directive** (§1.4) used as an `expose:`
 entry. It exposes **everything the node accepts** — its caller-supplied
-children and outgoing connections — in the caller's original, interleaved
+children and outgoing wires — in the caller's original, interleaved
 order:
 
 ```
@@ -15236,21 +15238,21 @@ node Frame:
   children:
     rest: Node*
   outgoing:
-    wires: Connection*
+    wires: Wire*
   expose:
-    @content              // children + outgoing connections, in caller order
+    @content              // children + outgoing wires, in caller order
 ```
 
 `@content` is not a named declaration and has no expression access; typed
 access to supplied content goes through views (§13.4.1). It covers
-caller-supplied children and outgoing connections only — never incoming
-connections, which are not body-supplied (§13.3.4).
+caller-supplied children and outgoing wires only — never incoming
+wires, which are not body-supplied (§13.3.4).
 
 `@content` does not widen acceptance: a node accepts only what its
 `children:` and `outgoing:` clause entries name (§13.3.3.1, §13.3.4). A
 container that takes arbitrary content declares explicit catch-all entries
 in those clauses (e.g. `children: rest: Node*` and `outgoing: wires:
-Connection*`); there is no "content accepts anything" shortcut.
+Wire*`); there is no "content accepts anything" shortcut.
 
 `@content` is **wrappable** — placed inside a wrapper body it tucks the
 whole supplied body into that wrapper:
@@ -15267,7 +15269,7 @@ At most one `@content` appears per `expose:` scope.
 
 The exposed list is readable from outside the node via the reserved
 `.exposition` field: `instance.exposition` returns the ordered list of
-placements — node and connection entries alike (§13.3.7.5) — the
+placements — node and wire entries alike (§13.3.7.5) — the
 instance currently exposes. This is the same content the runtime
 traverses; external readers and the runtime see identical output.
 
@@ -15291,22 +15293,22 @@ directly. Views and `expose:` are two halves of one mechanism:
   structural output: which of those children (and/or wrapping internal
   nodes containing them) the runtime traverses, where the node's own
   emissions (`for`/`repeat` entries, §13.3.7.1) appear, and where its
-  self-sourced connections engage among them (§13.3.7.5).
+  self-sourced wires engage among them (§13.3.7.5).
 
 An explicit `expose:` may arrange *or select a subset of* the
 caller-supplied children: a view it omits has no structural output (not a
 compile error). A node with no `expose:` exposes nothing (§13.3.7.2).
 
 Traversal proceeds **in entry order**: node entries by structural
-descent, connection entries by engagement (§13.3.7.6).
+descent, wire entries by engagement (§13.3.7.6).
 
-##### 13.3.7.5 Connections in exposition
+##### 13.3.7.5 Wires in exposition
 
-Connections (§13.6) are part of exposition: a connection placement is an
+Wires (§13.6) are part of exposition: a wire placement is an
 exposition entry, positioned in the ordered sequence alongside node
 entries (§13.3.7.1). The position is not formatting — it is topology. A
-connection placement says not merely *that* this node connects to a
-target, but *where in this node's structure* the connection takes effect:
+wire placement says not merely *that* this node connects to a
+target, but *where in this node's structure* the wire takes effect:
 it **engages** when traversal reaches its position (§13.3.7.6), after the
 entries before it.
 
@@ -15327,18 +15329,18 @@ node Verse:
 Hoisting `Plays: next` into a position-free list would flatten it to the
 mere adjacency fact "a Verse plays some Section" — erasing exactly the
 information that distinguishes a transition after the chord from one
-before the first note. The same connection at a different position is a
+before the first note. The same wire at a different position is a
 different program.
 
-Like wires on a circuit schematic, a **directly-written** connection
+Like wires on a circuit schematic, a **directly-written** wire
 entry is always present on the schema: it exists from construction, and
 what may change at runtime is only where a dynamic destination points
-(§13.6.2), never whether the connection exists. A repeat-materialized
-connection placement (§13.3.4, §13.5.4) is the exception — it mounts and
+(§13.6.2), never whether the wire exists. A repeat-materialized
+wire placement (§13.3.4, §13.5.4) is the exception — it mounts and
 dismounts with its keyed scope, appearing in `.exposition` only while
 mounted. What the position orders is *engagement* — when traversal first
 reaches the entry (§13.3.7.6). And, like a powered circuit, presence is
-participation: an exposition entry's connection is reactively live
+participation: an exposition entry's wire is reactively live
 whether or not traversal has reached it (§13.3.7.6).
 
 Effects (§13.19) are **not** exposition. `expose:` describes
@@ -15350,32 +15352,32 @@ clause (§13.3.8), never in `expose:`.
 
 Traversal (§13.3.7.4) walks the exposition in order. A node entry is
 traversed by **structural descent** — the runtime enters the placement
-and walks *its* exposition. A connection entry is **engaged** — the
-runtime takes up the connection and begins interpreting the connected
+and walks *its* exposition. A wire entry is **engaged** — the
+runtime takes up the wire and begins interpreting the connected
 subgraph.
 
 What engagement *means* is domain semantics, carried by the specific
-Connection type and interpreted by the runtime/host or by an in-language
+Wire type and interpreted by the runtime/host or by an in-language
 interpreter — it is not a language keyword, and the language and IR
-deliberately carry no sequencing flag for it. Connection-engagement
-meaning stays **extrinsic**: the connection type itself fixes only
+deliberately carry no sequencing flag for it. Wire-engagement
+meaning stays **extrinsic**: the wire type itself fixes only
 acceptance, never what engaging it does. An interpreter — a host
 reconciler or an effect-kind trait method walking `.exposition`
-(§13.3.7.7) — recognizes the connection types of its domain and
+(§13.3.7.7) — recognizes the wire types of its domain and
 interprets each by type, exactly as it interprets the node types it
-traverses. One connection type may carry await-like meaning
+traverses. One wire type may carry await-like meaning
 (the originating node's traversal does not continue until the connected
 node and its dependencies are finished); another may carry parallel
 meaning (the target's traversal starts while the originating node's
 continues). The language fixes only what is common to all of them: **a
-connection first engages when its turn comes in the structural order of
+wire first engages when its turn comes in the structural order of
 the exposition.** ("Structural order" here is entry order — distinct
 from the per-commit topological evaluation order of §13.10.3.)
 
 **Engagement is orthogonal to reactive liveness.** The graph is always
 present and always reactive — like a spreadsheet, every cell updates
 when its dependencies change, whether or not any traversal is looking at
-it (§13.10, §13.14). An unengaged connection, an already-passed one, and
+it (§13.10, §13.14). An unengaged wire, an already-passed one, and
 everything downstream of them keep computing: deriveds update,
 recurrents advance. Traversal *interprets* the graph; it does not power
 it. Freezing comes only from the explicit declared conditions —
@@ -15384,7 +15386,7 @@ it. Freezing comes only from the explicit declared conditions —
 wants a region dormant until traversal arrives expresses that with an
 explicit gate.
 
-The two axes meet at exactly one point: a connection entry that is
+The two axes meet at exactly one point: a wire entry that is
 *frozen* — gated off (§13.9.7) or with an unresolved destination
 (§13.6.2) — is not engaged; traversal passes over it, consistent with
 Model B (a gated-off exposition entry is not exposed). Freezing removes
@@ -15392,7 +15394,7 @@ an entry from engagement; engagement never affects freezing.
 
 Terminology: **activation** refers to gate-state (§13.9.1) and is
 unchanged; **engagement** refers to traversal reaching an entry. A
-connection can be live yet unengaged (computing, not yet reached) or
+wire can be live yet unengaged (computing, not yet reached) or
 frozen and therefore unengageable.
 
 ##### 13.3.7.7 The entry sum: walking `.exposition`
@@ -15406,7 +15408,7 @@ are:
 | Variant | What it carries |
 |---|---|
 | `Node` | a node placement (a child, wrapper, or own placement) |
-| `Connection` | a connection placement engaged at this position (§13.3.7.5) |
+| `Wire` | a wire placement engaged at this position (§13.3.7.5) |
 | `Bundle` | a homogeneous co-placement row (§13.3.3.5) |
 | `DynamicView` | a runtime-varying membership view (§13.3.3.4) |
 | `Gated` | a `when`/`given` block's arm sequence (§13.9) |
@@ -15423,7 +15425,7 @@ by iterating it and matching each entry:
 for entry in subject.exposition:
   match entry:
     Node(n):            interpret_node(n)
-    Connection(c):      engage(c)
+    Wire(c):      engage(c)
     Bundle(b):          for row in b: interpret_node(row)
     DynamicView(v):     for m in v: interpret_node(m)
     Gated(arms):        for arm in arms: walk(arm)
@@ -15459,7 +15461,7 @@ match entry:
 
 **Participation/skip report.** Because the envelope is closed and the
 walk is monomorphized, the compiler can emit, per interpretation root, a
-report of which node/connection types participate in the walk and which
+report of which node/wire types participate in the walk and which
 are skipped (no matching arm) — a static coverage aid, not a runtime
 artifact.
 
@@ -15471,7 +15473,7 @@ top-level construct; effect-kind trait methods (§3.1) carry the walk.
 The `effects:` clause is the node's **side-effect zone**: the place
 where the node declares the effects (§13.19) it runs against the
 outside world. It is the **sole** site at which an effect may be
-instantiated — module level, operator bodies, connection bodies, and
+instantiated — module level, operator bodies, wire bodies, and
 function bodies are all illegal hosts (§13.19.15). Reading a node's
 `effects:` clause therefore tells you exactly what that node does to
 the outside world; there is nowhere else to look.
@@ -15573,7 +15575,7 @@ distinction matters for ownership, hot-reload diffing, and addressing — both
 kinds of instances have reactive cells that participate in dependency
 graphs, but a child's cells are reachable through the parent's views,
 whereas a top-level instance is reachable only by its module-scope name or
-through connections.
+through wires.
 
 Use children when:
 
@@ -15585,7 +15587,7 @@ Use children when:
   (the Form's fields define the Form).
 
 Use top-level placements when the instance stands on its own and
-participates in the graph through connections rather than
+participates in the graph through wires rather than
 containment.
 
 The parent declares the children it accepts via `view` declarations
@@ -15866,7 +15868,7 @@ across all live keys.
 
 The `repeat` keyword declares one reactive scope per element of a
 runtime reactive source. Each scope is a template of placements (child nodes
-and connections) that the runtime materializes per element via §13.5.1's
+and wires) that the runtime materializes per element via §13.5.1's
 operations: `scope_obtain` on key emergence, `scope_drop` on key
 disappearance, `scope_evaluate` per active key per commit.
 
@@ -15903,7 +15905,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 - **`<source>`** is one of three categories: a reactive collection
   cell — `signal I` for some `I: Iterable` (§12.8); a **`dynamic`
   collection cell** of the enclosing node (a `dynamic` view or
-  connection-view, §13.3.3.4), whose value is a language-provided
+  wire-view, §13.3.3.4), whose value is a language-provided
   keyed, ordered membership that `repeat` walks structurally, with no
   trait fulfillment involved; or a **`yielded T` group** (§13.20.4),
   which `repeat` walks structurally in walk order — one scope per live
@@ -15949,7 +15951,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   to a real owner without copying or violating §11.1's single-writer
   invariant.
 
-  *Why repeat needs this.* The body's placements (attrs, connection
+  *Why repeat needs this.* The body's placements (attrs, wire
   arguments, child placements) consume their RHS values into structural
   storage per categories B/D in §11.1. Storage sites require real
   owners; cluster members cannot be stored (§11.3.4). Without
@@ -15970,13 +15972,13 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
   commit. Persisting a non-`Copy` bind into category B/D therefore
   materializes a copy at that point — the same materialization the
   boundaries of §13.2.9.7 perform — precisely because the source
-  snapshot is immutable and re-read. Attrs, connection arguments, and
+  snapshot is immutable and re-read. Attrs, wire arguments, and
   other placement targets in the body see owned types —
   borrow-equivalent aliases do not leak into attribute or argument
   positions through `repeat`.
 - **`<body>`** is an indented **placement-body block** following §13.8.3's
-  grammar — any number of placements per key: nodes, connections, nested
-  structure, or a body of connections only, with the ordinary clause
+  grammar — any number of placements per key: nodes, wires, nested
+  structure, or a body of wires only, with the ordinary clause
   ordering of §13.8.9 and the whitespace-separation / self-delimiting rules
   of §13.8.10. Each scope's placements join the enclosing structural
   sequence at the `repeat`'s written position, in source order. There is no
@@ -16002,7 +16004,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
      key set, one enumeration shared with `Map[K, V]`'s built-in key
      bound (§9.5.3). Explicit always wins when present.
   2. **Carried key** — when the source is a `dynamic` collection cell
-     (a `dynamic` view or connection-view, §13.3.3.4), each
+     (a `dynamic` view or wire-view, §13.3.3.4), each
      element arrives with the key its supplier derived for it
      (placement-site keys for statically written elements), and that
      key is used.
@@ -16046,7 +16048,7 @@ Whenever `<source>` is dirty, the runtime:
 1. For a value-collection source, reads the current value of
    `<source>` from the signal's current committed snapshot (§13.14)
    and iterates it via `Iterable::iterator` (§12.8), enumerating each
-   element; for a `dynamic` view or connection-view source, walks the
+   element; for a `dynamic` view or wire-view source, walks the
    current membership structurally in view order, with no trait
    protocol involved; for a `yielded` group source, walks the current
    live membership structurally in walk order, likewise with no trait
@@ -16272,10 +16274,10 @@ template-scope machinery; the cost model is "pay for what you iterate."
 - **Placement bodies** (§13.8.3) — scopes become children of this
   specific placement. This is **caller supply**: node placements feed
   the receiving type's `dynamic` views (§13.3.3.4), and
-  connection placements sourced from the placed instance require
-  a `dynamic outgoing` connection-view on its type (§13.3.4).
+  wire placements sourced from the placed instance require
+  a `dynamic outgoing` wire-view on its type (§13.3.4).
 - **`effects:` clauses** (§13.3.8) — each scope materializes one
-  effect-bearing instance per element (e.g., one connection per active
+  effect-bearing instance per element (e.g., one wire per active
   session); the per-element effects suspend/resume and tear down with
   the element key.
 
@@ -16291,7 +16293,7 @@ template-scope machinery; the cost model is "pay for what you iterate."
 - **Operator bodies** (§13.17.4) — operators are reactive-transparent
   transforms with fixed-shape state; dynamic-scope materialization is
   not in scope for v1.
-- **Connection bodies** (§13.6) — connections are minimal glue between
+- **Wire bodies** (§13.6) — wires are minimal glue between
   source and destination; dynamic-scope structure belongs in node
   bodies, placement bodies, or `effects:` clauses.
 - **Trait and `fulfill` blocks** — these declare behavior, not graph
@@ -16470,72 +16472,72 @@ dyn:
   members produce **no scope** (there is no body for them) and imply **no
   exhaustiveness** obligation. Each matching candidate is monomorphized as
   under a generic parameter constraint.
-- **Legal only over dynamic views / connection-views** — entity
+- **Legal only over dynamic views / wire-views** — entity
   references over closed candidate envelopes (§13.3.3.4). It is **not**
   legal over value collections: a bound over values would be a record
   type-case, which is banned (§6.2.4). Value collections keep bare or
   tuple binders only (§13.5.4.1).
 
-### 13.6 Connections
+### 13.6 Wires
 
 #### 13.6.0 Concept
 
-A connection is a directional, typed link between two node
-instances. Connections are first-class entities — they have identity,
+A wire is a directional, typed link between two node
+instances. Wires are first-class entities — they have identity,
 reactive content (attrs, recurrents, deriveds), and may implement
-traits. They are not passive references; they are active channels
+traits. They are not passive references; they are active couplings
 through which nodes communicate.
 
-Why first-class types: connections carry reactive state *about the
+Why first-class types: wires carry reactive state *about the
 relationship* rather than about either endpoint. A `Drives`
-connection between a Driver and a Vehicle holds attrs like
+wire between a Driver and a Vehicle holds attrs like
 `aggressiveness` that belong to neither node individually but to
-the act of driving. Connections also satisfy traits (like
+the act of driving. Wires also satisfy traits (like
 `Circularity`, §13.6.5) that govern static graph properties.
 
-Communication direction: every connection has a *source* (the
+Communication direction: every wire has a *source* (the
 `from` endpoint) and a *destination* (the `to` endpoint). A
-**caller-placed** connection participates in the source node's outgoing
-surface (declared via its `outgoing` connection-views, with the `dynamic`
+**caller-placed** wire participates in the source node's outgoing
+surface (declared via its `outgoing` wire-views, with the `dynamic`
 marker when the caller may supply varying counts); a **self-sourced** one
 (§13.3.4.2) sits outside it. Both count at the destination node's incoming
-surface (declared via its `incoming` connection-views, per §13.3.4's
+surface (declared via its `incoming` wire-views, per §13.3.4's
 static-or-`dynamic` membership rules).
 
 Source and destination differ in how they are fixed. The `from` endpoint is
-the enclosing instance — structural, determined by *where* the connection is
+the enclosing instance — structural, determined by *where* the wire is
 placed (§13.8.4) — and does not vary at runtime. The `to` endpoint is a node
 *reference*, which may be a reactive value that re-points among existing
-nodes at runtime (§13.6.2, §13.8.5.1). When `to` re-points, the connection
+nodes at runtime (§13.6.2, §13.8.5.1). When `to` re-points, the wire
 instance persists and its per-relationship state is retained; only its
-target moves. No node is created or dropped by re-pointing — a connection
+target moves. No node is created or dropped by re-pointing — a wire
 never owns its endpoints (§13.8.4.1) — so this is rewiring within the static
 instance set, not a change to it (§13.1).
 
-A node declares which connections callers may wire to and from it via its
-`incoming`/`outgoing` connection-views (§13.3.4), with optional cardinality and
-the `dynamic` supply-mode marker; its own self-sourced connections sit outside
-those connection-views (§13.3.4.2). The actual connection
+A node declares which wires callers may wire to and from it via its
+`incoming`/`outgoing` wire-views (§13.3.4), with optional cardinality and
+the `dynamic` supply-mode marker; its own self-sourced wires sit outside
+those wire-views (§13.3.4.2). The actual wire
 instances appear at placement (§13.8.4).
 
-**Connections and exposition.** A connection placement is an exposition
+**Wires and exposition.** A wire placement is an exposition
 entry (§13.3.7.5): it sits at a position in its source's ordered
-structural sequence, and that position is where the connection **engages**
+structural sequence, and that position is where the wire **engages**
 during traversal (§13.3.7.6). Like wires on a circuit schematic,
-connections are always present on the schema — the instance set is
-static (§13.1) and every statically placed connection exists from
+wires are always present on the schema — the instance set is
+static (§13.1) and every statically placed wire exists from
 construction; only a dynamic destination's target may move (§13.6.2) —
 and always reactively live regardless of traversal position (gates and an
 unresolved destination are the only switches on this liveness, §13.6.2);
-what the position orders is their engagement. A connection is still owned by no single endpoint (§13.8.4.1):
-the entry belongs to the *source's* exposition, but the connection links
+what the position orders is their engagement. A wire is still owned by no single endpoint (§13.8.4.1):
+the entry belongs to the *source's* exposition, but the wire links
 two instances at the graph level.
 
-Connection vs. node-typed attr: a node **cannot** store a direct reference
+Wire vs. node-typed attr: a node **cannot** store a direct reference
 to another node instance (`attr target: SomeNode` is rejected). A
 node-instance reference is a borrow, and a borrow may not be stored in a
-cell (§11.9.1). Use a **connection** for a persistent link between two
-instances — and a connection is the right tool regardless, because it also
+cell (§11.9.1). Use a **wire** for a persistent link between two
+instances — and a wire is the right tool regardless, because it also
 carries per-relationship state, gives the type system structural
 information for compile-time graph analysis, and integrates with traits
 (e.g. `Circularity`), none of which a bare reference would. (To store a
@@ -16544,8 +16546,8 @@ node *type* rather than an instance — a template slot — use `Type[…]`,
 
 #### 13.6.1 Declaration
 
-A connection declares its endpoint types in one of three forms:
-single, cartesian, or pairs. A connection uses exactly one form;
+A wire declares its endpoint types in one of three forms:
+single, cartesian, or pairs. A wire uses exactly one form;
 mixing forms (e.g., `pairs:` alongside `from:`+`to:`) is a compile
 error.
 
@@ -16557,7 +16559,7 @@ appear exactly once, and at most one `default attr` (§13.2.2.1).
 ##### 13.6.1.1 Single form (one from-type, one to-type)
 
 ```
-connection TypeName[GenericParams]?:
+wire TypeName[GenericParams]?:
   from: SourceType                                    // required, exactly once
   to: DestType                                        // required, exactly once
   when: predicate                                     // optional activation predicate (§13.9)
@@ -16571,15 +16573,15 @@ connection TypeName[GenericParams]?:
 fulfill Trait1 for TypeName                           // optional trait conformance (§3.2)
 ```
 
-A connection type may declare a `default attr` per §13.2.2.1. At
-placement, `/expr` targets the connection's default attr (§13.8.5.1);
+A wire type may declare a `default attr` per §13.2.2.1. At
+placement, `/expr` targets the wire's default attr (§13.8.5.1);
 the destination endpoint is supplied separately in the placement's
 body, not via `/expr`.
 
 Example:
 
 ```
-connection Drives:
+wire Drives:
   from: Driver
   to: Drivable
   attr enhanced_handling: bool = false
@@ -16589,7 +16591,7 @@ connection Drives:
 ```
 
 `from` and `to` are not attributes — they are endpoint slots,
-first-class structural elements of every connection. Attribute
+first-class structural elements of every wire. Attribute
 syntax (placement-time `name=value` settings via the attribute
 clause, flags) does not target them.
 
@@ -16599,14 +16601,14 @@ instances directly (their concrete types).
 ##### 13.6.1.2 Cartesian form (multiple from-types and/or to-types)
 
 ```
-connection TypeName:
+wire TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
   // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
-placements. The connection body is **specialized per from×to
+placements. The wire body is **specialized per from×to
 combination**: the required `match` (below) supplies a body per
 combination, resolved statically, and the exhaustiveness requirement
 is a compile-time check over the statically-known combinations. Within
@@ -16616,7 +16618,7 @@ is no combined runtime value and no new type former.
 Example:
 
 ```
-connection Owns:
+wire Owns:
   from: Person, Company
   to: Vehicle, Property
   attr acquired_at: i64
@@ -16633,7 +16635,7 @@ product (4 combinations in this example).
 ##### 13.6.1.3 Pairs form (constrained from-to combinations)
 
 ```
-connection TypeName:
+wire TypeName:
   pairs:
     FromType1 -> ToType1
     FromType2 -> ToType2
@@ -16648,7 +16650,7 @@ pair — one concretely-typed `(from, to)` combination per arm.
 Example:
 
 ```
-connection Drives:
+wire Drives:
   pairs:
     Driver -> Vehicle
     Racer -> Boat
@@ -16661,7 +16663,7 @@ connection Drives:
 In pairs form, `from` and `to` are not independently
 accessible — endpoints must be extracted via `pair` and
 pattern matching. This reflects the semantic coupling: pair-form
-connections enforce that specific from-types pair with specific
+wires enforce that specific from-types pair with specific
 to-types.
 
 Rules for pairs form:
@@ -16673,17 +16675,17 @@ Rules for pairs form:
   `A -> Y`, and `B -> Y` is legal (A can go to X or Y; B only to Y).
 - All attrs/deriveds in the body are uniform across pairs; the body
   cannot vary its content by pair. When different content per pair is
-  needed, declare a separate connection type per pair.
+  needed, declare a separate wire type per pair.
 - A `match pair:` in the body must be **exhaustive** over the declared
   pairs (or carry a `default:` arm), exactly as any `match` (§6.2.5) and as
   the cartesian form's exhaustiveness requirement (§13.6.1.2).
 
-A connection body does not contain `fn` declarations, paralleling
+A wire body does not contain `fn` declarations, paralleling
 node bodies (§13.3.6).
 
 #### 13.6.2 `from`, `to`, and `pair` references in expressions
 
-The endpoint access inside a connection body depends on the form
+The endpoint access inside a wire body depends on the form
 of its declaration (§13.6.1):
 
 - **Single form** (`from: X / to: Y`): `from` is typed as `X`
@@ -16699,9 +16701,9 @@ of its declaration (§13.6.1):
   pair. `from` and `to` are not
   independently available in pairs form.
 
-`from`, `to`, and `pair` are bound at the connection's *placement* time:
+`from`, `to`, and `pair` are bound at the wire's *placement* time:
 each placement specifies its source (the enclosing instance) and
-destination (§13.8.5.1). The `from` binding is fixed for the connection's
+destination (§13.8.5.1). The `from` binding is fixed for the wire's
 lifetime. The `to` binding tracks the destination: when the destination is a
 reactive selection or a `WeakHandle` (§13.8.5.1), `to` follows whichever node it
 currently resolves to, and the body's reads of `to.*` re-evaluate when it
@@ -16710,104 +16712,104 @@ re-points — a *dynamic dependency* on the current target (§13.10.5, §13.12.1
 Inside the body, `from` and `to` are **never `Option`** — they are the
 endpoint instances directly. A destination supplied as a `WeakHandle` (whose
 read is `Option[&N]`, §13.3.6.2) is unwrapped at the boundary: while it resolves to
-`Some`, the connection is active and the body sees the contained node as `to`;
-while it resolves to `None`, the connection **freezes** (§13.9.7) and the body
+`Some`, the wire is active and the body sees the contained node as `to`;
+while it resolves to `None`, the wire **freezes** (§13.9.7) and the body
 does not run at all. The freeze *is* the unwrap, so body code never handles
 absence. Gates (§13.9) and this unresolved-destination condition are the
-**only** switches on a connection's reactive liveness — traversal position
-never is: an unengaged or already-passed connection keeps computing
+**only** switches on a wire's reactive liveness — traversal position
+never is: an unengaged or already-passed wire keeps computing
 (§13.3.7.6).
 
-`from` and `to` are **body-internal**: visible only inside the connection
-type's own body, with no external `some_conn.to` access. A connection does not
+`from` and `to` are **body-internal**: visible only inside the wire
+type's own body, with no external `some_conn.to` access. A wire does not
 surface its endpoints or its activation as readable fields (§13.9.1); an outside
-observer instead reads the connection's own cells (attrs, deriveds), which hold
-their last committed value even while the connection is frozen (§13.9.7).
+observer instead reads the wire's own cells (attrs, deriveds), which hold
+their last committed value even while the wire is frozen (§13.9.7).
 Presence-awareness *about* a node is the job of a `WeakHandle` (§13.3.6.2), not of a
-connection's surface.
+wire's surface.
 
-**Endpoint-derived carve-out (opt-in).** A connection MAY *opt in* to
+**Endpoint-derived carve-out (opt-in).** A wire MAY *opt in* to
 surfacing endpoint data by declaring its **own derived** whose value is a
 storable handle to an endpoint:
 
 ```
-connection Plays:
+wire Plays:
   from: Verse
   to: Clip
   derived target: WeakHandle[Clip] = handle to      // opt-in endpoint surface
 ```
 
 This is the sanctioned way for an interpreter to reach through a
-connection ("wire-following", §13.19): the connection publishes a
+wire ("wire-following", §13.19): the wire publishes a
 `WeakHandle`/`Portal` of its own, rather than exposing `to` directly. The
 body-internal rule above is unchanged — `to` itself is still not externally
-readable; only the connection's declared deriveds are. A connection that
+readable; only the wire's declared deriveds are. A wire that
 declares no such derived surfaces nothing about its endpoints.
 
-**Named incoming connection-view reads.** An interpreter reads a target
-node's *declared incoming connection-views* by **name** through the node
+**Named incoming wire-view reads.** An interpreter reads a target
+node's *declared incoming wire-views* by **name** through the node
 reference — `value.mods` where `mods` is the incoming view's name on the
 target's type (§13.3.4). The view name disambiguates when a node declares
 several incoming views; multi-view same-type ambiguity is therefore moot.
 Reading an incoming view this way is a wire-following read of what connects
 *to* the target, distinct from the target's own outgoing surface.
 
-**Acceptance intrinsic, meaning extrinsic.** What a connection type
+**Acceptance intrinsic, meaning extrinsic.** What a wire type
 *accepts* — its endpoint constraints and any trait selectors for openness
 — is **intrinsic** to the type and meaning-free. What engaging the
-connection *means* is **extrinsic**: carried by the interpreter (host
+wire *means* is **extrinsic**: carried by the interpreter (host
 reconciler or in-language effect-kind method, §13.3.7.7), never by the
-connection type itself. Connection ownership asymmetry (a connection never
+wire type itself. Wire ownership asymmetry (a wire never
 owns its endpoints) is preserved.
 
-#### 13.6.3 Generic connections
+#### 13.6.3 Generic wires
 
-Connections may declare generic parameters:
+Wires may declare generic parameters:
 
 ```
-connection Holds[T]:
+wire Holds[T]:
   from: Container[T]
   to: T
   attr index: usize = 0
 ```
 
-Generic parameters scope over the connection's `from`, `to`, attrs,
+Generic parameters scope over the wire's `from`, `to`, attrs,
 recurrents, and deriveds. Each unique instantiation produces a
-distinct connection type per §2.3.
+distinct wire type per §2.3.
 
-At placement, a generic connection carries its type arguments inline on the
+At placement, a generic wire carries its type arguments inline on the
 type name, like any generic instantiation (§9.3.2): `Holds[i32]: item`. The
 arguments may be omitted when the endpoint types determine them by inference.
 
-#### 13.6.4 Behavior lives outside the connection body
+#### 13.6.4 Behavior lives outside the wire body
 
-A connection body does not contain `fn` declarations. Functions on
-connections are free functions taking the connection type, dispatched
+A wire body does not contain `fn` declarations. Functions on
+wires are free functions taking the wire type, dispatched
 via uniform call syntax. Trait methods are implemented in `fulfill`
 blocks. Same rule as nodes (§13.3.6).
 
-A connection body also does not contain `repeat` declarations (§13.5.4).
-Connections are minimal glue between source and destination instances;
+A wire body also does not contain `repeat` declarations (§13.5.4).
+Wires are minimal glue between source and destination instances;
 dynamic-scope structure belongs in `expose:` blocks, placement bodies, or
 effect `desired:` blocks.
 
-A connection body likewise hosts no effect instantiations. Effects are
-instantiated only in a node's `effects:` clause (§13.3.8); connection
-bodies are not among the admitted scopes. A connection therefore holds
-no outside-world resource of its own — which is why a gated connection
+A wire body likewise hosts no effect instantiations. Effects are
+instantiated only in a node's `effects:` clause (§13.3.8); wire
+bodies are not among the admitted scopes. A wire therefore holds
+no outside-world resource of its own — which is why a gated wire
 simply stops delivering and needs no `suspend`/`resume` (§13.9.7).
 
 #### 13.6.5 The `Circularity` trait
 
-A connection type may declare conformance to the `Circularity` trait
+A wire type may declare conformance to the `Circularity` trait
 — a language-defined marker trait (§3.7.4) — to indicate that
-placements of this connection type may participate in topology cycles
+placements of this wire type may participate in topology cycles
 in the node graph (§13.11.2).
 
 ```
 trait Circularity                          // marker trait, no methods
 
-connection MyDelayed:
+wire MyDelayed:
   from: Clip
   to: Clip
 
@@ -16815,27 +16817,27 @@ fulfill Circularity for MyDelayed
 ```
 
 The compiler enforces a static rule: every topology cycle in the
-construction-time node graph must traverse at least one connection
+construction-time node graph must traverse at least one wire
 whose type satisfies `Circularity`. Cycles consisting only of
-non-`Circularity` connections are compile errors.
+non-`Circularity` wires are compile errors.
 
-Its sole purpose is to opt a connection type into participation in
+Its sole purpose is to opt a wire type into participation in
 cycles.
 
-The decision of which connection types satisfy `Circularity` is
-domain-defined. A connection type whose runtime semantics introduce
-a temporal break between source and destination (e.g., a connection
+The decision of which wire types satisfy `Circularity` is
+domain-defined. A wire type whose runtime semantics introduce
+a temporal break between source and destination (e.g., a wire
 that says "destination plays after source finishes") may safely
-satisfy `Circularity`, since cycles through such connections cannot
-loop instantaneously. A connection type whose semantics imply
+satisfy `Circularity`, since cycles through such wires cannot
+loop instantaneously. A wire type whose semantics imply
 simultaneity (e.g., "destination plays alongside source") should
-*not* satisfy `Circularity`, since cycles through such connections
+*not* satisfy `Circularity`, since cycles through such wires
 would imply infinite simultaneous activation.
 
-### 13.7 Name Resolution in Node and Connection Scopes
+### 13.7 Name Resolution in Node and Wire Scopes
 
 Name resolution in Ductus proceeds outward through enclosing scopes,
-inner-most first — standard lexical scoping. A node or connection
+inner-most first — standard lexical scoping. A node or wire
 body is a scope like any other; its members are in scope within the
 body's reactive expressions. There is no special "receiver" concept:
 a bare name binds to the nearest enclosing scope that declares it.
@@ -16844,7 +16846,7 @@ Two explicit *scope anchors* disambiguate when a name is declared in
 more than one reachable scope:
 
 - **`here::x`** resolves `x` in the current (innermost) scope —
-  inside a node/connection body, the instance body scope.
+  inside a node/wire body, the instance body scope.
 - **`module::x`** resolves `x` in the module top-level scope.
 
 Both are scope resolution: `here` and `module` are *namespaces*, not
@@ -16861,14 +16863,14 @@ member access. Routine member access uses a bare name or `here::`
 
 #### 13.7.1 The scope chain
 
-Within a node or connection body, the scope chain from inner-most
+Within a node or wire body, the scope chain from inner-most
 to outer-most is:
 
 1. **Local bindings** — `let` bindings and `for`-loop variables
    inside a reactive expression.
-2. **The instance body scope** — the node's or connection's members:
+2. **The instance body scope** — the node's or wire's members:
    `attr`, `recurrent`, `derived`, `stream` cells; `view` and
-   connection-view declarations; placement `as`-names; and the reserved
+   wire-view declarations; placement `as`-names; and the reserved
    endpoint/structure fields (`from`, `to`, `pair`,
    `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
@@ -16908,15 +16910,15 @@ value; only the *names* of structural declarations hoist.
 #### 13.7.2 The `here::` anchor
 
 `here::x` explicitly resolves `x` in the current scope — inside a
-node or connection body, the instance body scope (scope 2) —
+node or wire body, the instance body scope (scope 2) —
 bypassing inner local bindings and ignoring any module-level
 declaration of the same name. `here` is a namespace anchor, not a
 value; it names *which scope* to resolve in.
 
 `here::` is meaningful in any scope (function body, operator body,
-trait body, node/connection body): it always means "the binding
+trait body, node/wire body): it always means "the binding
 named `x` in this very scope, not an outer one." Inside a
-node/connection body it reaches the instance members. Type-level
+node/wire body it reaches the instance members. Type-level
 positions (trait declarations, `fulfill` blocks) use the `Subject`
 alias (§13.7.7) for the subject type.
 
@@ -16992,8 +16994,8 @@ error: ambiguous name `gain` — declared as both an instance member and a modul
 
 #### 13.7.5 Reserved-field access
 
-The reserved fields of a node or connection instance — `from`, `to`
-(connection endpoints, §13.6), `pair` (§13.6.1.3), and `exposition`
+The reserved fields of a node or wire instance — `from`, `to`
+(wire endpoints, §13.6), `pair` (§13.6.1.3), and `exposition`
 (§13.3.7) — occupy
 field position on the instance and resolve by bare name in
 expression-operand position by the same rule as user-defined members,
@@ -17001,7 +17003,7 @@ but they are reserved keywords used in field context (§1.4), not
 user-definable members:
 
 ```
-connection Drives:
+wire Drives:
   from: Driver
   to: Drivable
   derived speed: f32 = f32(from.expertise_level) * to.top_speed
@@ -17049,7 +17051,7 @@ Four reserved identifiers, reflecting two distinct kinds of thing —
 *values* (used in expression positions) and *namespaces* (used as the
 left side of `::`):
 
-- **`subject`** — the instance *value*, available in node/connection
+- **`subject`** — the instance *value*, available in node/wire
   bodies. It is the whole instance, suitable for passing to a function
   that operates on the type: `total_output(subject)`. It is not an OOP
   receiver — the "methods" of a type are ordinary scoped functions
@@ -17058,7 +17060,7 @@ left side of `::`):
   first argument, `subject.some_method()` and `some_method(subject)`
   are the same call written two ways; the dot is sugar, not a receiver
   binding. There is no implicit receiver anywhere — the instance is
-  always explicit, as `subject` inside a node/connection body or as a
+  always explicit, as `subject` inside a node/wire body or as a
   named parameter in a `fulfill`-block function.
 - **`Subject`** — the *type-level* alias for the implementing/subject
   type, usable only in type positions in trait declarations and
@@ -17078,7 +17080,7 @@ usable only as the left side of `::`. They never overlap.
 ### 13.8 Placement
 
 *Placement* is the syntax for instantiating nodes and
-connections into a concrete reactive graph. It is distinct from
+wires into a concrete reactive graph. It is distinct from
 value construction of records (which uses constructor syntax per
 §6.1.3).
 
@@ -17146,11 +17148,11 @@ run" condition (§13.14.1).
 **Reachability and the live graph.** For each root, the compiler
 computes the **root closure** — the set of instances reachable from
 that root. A root's closure comprises the root's own subtree, its
-connection destinations, its `Handle`/`WeakHandle`-reachable
+wire destinations, its `Handle`/`WeakHandle`-reachable
 module-level instances, node references bound as effect arguments
 (reached as borrows, not cell stores), and the wire-candidate
-envelopes of its connections. (The subtree is the placements declared
-in the root's body, recursively, §13.8.3; connection placement,
+envelopes of its wires. (The subtree is the placements declared
+in the root's body, recursively, §13.8.3; wire placement,
 §13.8.4; handles, §13.3.6.2; effect-argument node references,
 §13.17.7; wire-candidate envelopes, §13.11.5.) The **live graph** is
 the union of all root closures, statically computable: only instances
@@ -17316,8 +17318,8 @@ reactive bindings apply to neither.
 
 A type's `default attr` (§13.2.2.1) — when declared — is
 additionally settable via the positional `/expr` form (§13.8.5). The
-rule is uniform across nodes and connections: `/expr` targets the
-`default attr`. Connection destinations are supplied in the
+rule is uniform across nodes and wires: `/expr` targets the
+`default attr`. Wire destinations are supplied in the
 placement's body, not via `/expr` (§13.8.5.1).
 
 The attribute clause and flags do *not* target consts. Consts
@@ -17347,7 +17349,7 @@ applies. Consts always have their type-declared value.
 #### 13.8.3 Child placements
 
 The body of a placement (the indented block introduced by `:`) is
-reserved exclusively for child placements — child nodes and connections.
+reserved exclusively for child placements — child nodes and wires.
 Attribute settings on the enclosing instance do not appear in the
 body; they live on the placement's main line via inline attribute
 syntax (§13.8.7) or aligned multi-line continuation (§13.8.2).
@@ -17461,9 +17463,9 @@ children — declare them in the node body via §13.3.3.3 instead. The
 placement-body form covered here is for the case where the loop is
 intrinsic to a specific placement.
 
-#### 13.8.4 Connections
+#### 13.8.4 Wires
 
-A connection placement creates a directional connection from a source
+A wire placement creates a directional wire from a source
 instance to a destination instance. The placement is written inside
 the source instance's body. **The source is always the immediately
 enclosing instance** — the instance whose body directly contains the
@@ -17486,41 +17488,41 @@ App my_app:
 its source is `my_app`. `Cascade: next_filter` and
 `WiresTo | gain=0.5: monitor` are placed in `filter`'s body, so
 their source is `filter`. The rule is uniform across nesting depth;
-the depth at which the connection appears does not change how the
+the depth at which the wire appears does not change how the
 source is determined.
 
-**Position is topology.** A *self-sourced* connection's position among its
+**Position is topology.** A *self-sourced* wire's position among its
 sibling placements is its **engagement position** (§13.3.7.6): it engages when
 traversal reaches that point in the type's exposition, after the siblings
 written before it (including exposition-level `for` and `repeat` bodies,
 §13.3.3.3/§13.5.4).
 
-A *caller-supplied* (outgoing) connection does **not** carry its own engagement
-position into the type. Instead, the **type** positions it: the connection
-engages where the type names its `outgoing` connection-view in `expose:`
-(§13.3.7.1), in placement order within that view. A connection-view the type
+A *caller-supplied* (outgoing) wire does **not** carry its own engagement
+position into the type. Instead, the **type** positions it: the wire
+engages where the type names its `outgoing` wire-view in `expose:`
+(§13.3.7.1), in placement order within that view. A wire-view the type
 never names in `expose:` still participates but is never engaged (§13.3.7.4).
 
-A **caller-placed** connection's type must match one of the source instance's
-`outgoing` connection-views (or its traits' contributions). A *self-sourced*
-connection placed in the source type's own exposition (§13.3.4.2, §13.3.7.5) is
-exempt from the `outgoing` connection-views — but not from endpoint typing.
+A **caller-placed** wire's type must match one of the source instance's
+`outgoing` wire-views (or its traits' contributions). A *self-sourced*
+wire placed in the source type's own exposition (§13.3.4.2, §13.3.7.5) is
+exempt from the `outgoing` wire-views — but not from endpoint typing.
 
-The destination is supplied in the connection placement's body as a node
+The destination is supplied in the wire placement's body as a node
 reference (§13.8.5.1) — a bare identifier, any expression yielding a node
 reference (possibly reactive), or a `WeakHandle[N]` (read as `Option[&N]`,
 §13.3.6.2) selecting one of
-the candidate nodes (the connection freezes while that selection resolves to
+the candidate nodes (the wire freezes while that selection resolves to
 `None`, §13.9.7). A reactive or `WeakHandle` destination makes membership at the
 destination a runtime fact: every node type in the reference's candidate
-envelope must declare a `dynamic incoming` connection-view of that type
+envelope must declare a `dynamic incoming` wire-view of that type
 (§13.3.4). The `/expr`
-slot, when present, sets the connection's
+slot, when present, sets the wire's
 `default attr` (§13.2.2.1); the attribute clause (`| name=value …`) sets named
 attrs. None of these target the destination.
 
 A placement-level `when` modifier may be attached to gate the
-connection instance (§13.9). The modifier appears in the inline-element
+wire instance (§13.9). The modifier appears in the inline-element
 ordering between `/Expr` and the attribute clause (§13.8.9), before
 the body's `:`:
 
@@ -17536,9 +17538,9 @@ App my_app:
 
 **Scope of placement-level `when`.** The `when` predicate evaluates
 in the scope of the enclosing source instance, not the
-connection-being-placed. The connection has not yet been constructed;
-its own scope is unavailable. To reference the connection's own attrs in
-a gate, use a type-level `when:` clause inside the connection type's
+wire-being-placed. The wire has not yet been constructed;
+its own scope is unavailable. To reference the wire's own attrs in
+a gate, use a type-level `when:` clause inside the wire type's
 body (§13.6.1.1) instead.
 
 The predicate names the enclosing source instance directly. In
@@ -17549,48 +17551,48 @@ body), `filter.signal_active` is the source filter's attr. In
 
 ##### 13.8.4.1 Terminology
 
-Connections are not "owned" by either endpoint. A connection runs
+Wires are not "owned" by either endpoint. A wire runs
 *between* two instances: it is *initiated from* its source (the
 enclosing instance whose body contains the placement) and
 *terminated at* its destination (the node reference in the placement's
 body). "Source" and "destination" are the canonical terms; "owner" is not.
 Because neither endpoint is owned, re-pointing the destination reference
-(§13.6.2) moves the connection's target without affecting either node's
+(§13.6.2) moves the wire's target without affecting either node's
 lifetime.
 
-##### 13.8.4.2 Placing a connection type value
+##### 13.8.4.2 Placing a wire type value
 
-A connection *type* can be supplied as a value (`Type[…]`, §5.7) and placed,
-exactly as a node type can (§13.2.10). A connection placement fixes its
+A wire *type* can be supplied as a value (`Type[…]`, §5.7) and placed,
+exactly as a node type can (§13.2.10). A wire placement fixes its
 source from the enclosing instance and takes its destination at the
-placement site, so a node placing a supplied connection type binds the
-connection's `from` to itself and supplies the `to` where it places it. The
+placement site, so a node placing a supplied wire type binds the
+wire's `from` to itself and supplies the `to` where it places it. The
 type is constrained by a trait that carries its endpoints (§3.1.7), so the
 compiler checks both endpoints before the concrete type is known:
 
 ```
-trait DriveLink:                       // §3.1.7 — a connection contract
-  requires Connection
+trait DriveLink:                       // §3.1.7 — a wire contract
+  requires Wire
   from: Driver
   to: Drivable
 
-connection Drives:
+wire Drives:
   from: Driver
   to: Drivable
   attr aggressiveness: f32 = 0.5
 
 fulfill DriveLink for Drives
 
-connection Tows:
+wire Tows:
   from: Driver
   to: Drivable
   attr aggressiveness: f32 = 0.2
 
 fulfill DriveLink for Tows
 
-node Driver[C: DriveLink]:             // C: a connection type satisfying DriveLink
+node Driver[C: DriveLink]:             // C: a wire type satisfying DriveLink
   attr link_kind: Type[C]              // which DriveLink kind this driver establishes
-  outgoing link: C                     // admits exactly the supplied connection type
+  outgoing link: C                     // admits exactly the supplied wire type
   // …
 
 // alice and bob differ only in which DriveLink kind they establish:
@@ -17604,14 +17606,14 @@ Garage:
 ```
 
 In `link_kind: the_car`, `link_kind` resolves to alice's `Type[C]` attr, so
-the line places *that* connection type with alice as the `from` (the
+the line places *that* wire type with alice as the `from` (the
 enclosing source, §13.8.4) and the sibling `the_car` as the `to`. The
 compiler checks the endpoints against `C: DriveLink`: `from` must be a
 `Driver` (alice is one) and `to` must be a `Drivable` (so `the_car` must
 resolve to one) — both verifiable before `C` is monomorphized to `Drives`
 (for alice) or `Tows` (for bob). The `outgoing link: C` view admits the placed type
 (§13.8.4); per-type attrs such as `aggressiveness` are set with the
-attribute clause, exactly as for a named connection. As with any
+attribute clause, exactly as for a named wire. As with any
 destination, `the_car` may instead be a reactive reference, making the
 destination dynamic (§13.8.5.1).
 
@@ -17622,7 +17624,7 @@ flags, and the optional `as` name, and before the attribute clause
 (§13.8.7) — per the clause order of §13.8.9. The expression after `/`
 is the *positional argument* of the placement: it targets the placed
 type's `default attr` (§13.2.2.1), whether the placed type is a node or
-a connection. Using `/expr` on a type without a declared `default attr`
+a wire. Using `/expr` on a type without a declared `default attr`
 is a compile error.
 
 **An unparenthesized `/expr` is restricted to a single atom** — a
@@ -17637,15 +17639,15 @@ Whitespace around the `/` is insignificant: `Drives/0.8`, `Drives /0.8`, and
 `Drives / 0.8` are equivalent. It is the single-atom restriction above, not
 adjacency, that keeps a space-separated placement self-delimiting.
 
-##### 13.8.5.1 For connection placements
+##### 13.8.5.1 For wire placements
 
-For a connection placement, `/expr` sets the connection type's
+For a wire placement, `/expr` sets the wire type's
 `default attr` (when declared); the destination endpoint is supplied in the
-placement's body as a node *reference* whose type satisfies the connection's
+placement's body as a node *reference* whose type satisfies the wire's
 `to:` clause (§13.6.1.1).
 
 ```
-// connection Drives: from: Driver; to: Drivable; default attr aggressiveness: f32 = 0.5
+// wire Drives: from: Driver; to: Drivable; default attr aggressiveness: f32 = 0.5
 
 Drives: some_car                          // no /expr; destination only
 Drives/0.8: some_car                      // /expr sets default attr; destination in body
@@ -17659,25 +17661,25 @@ The destination is a **reference** to an existing node, not a placement: an
 inline placement spec is not a valid destination — place the target first,
 then point at it. The simplest reference is a bare identifier naming an
 instance in scope (`some_car`), but any expression that *yields a node
-reference* is admissible, including a function return. A connection does not
+reference* is admissible, including a function return. A wire does not
 own its destination (§13.8.4.1); the endpoint is a borrow, which is exactly
 what such an expression provides (§13.3.6.1). A borrow cannot be stored in a
 cell (§11.9.1), so a destination that must persist or re-point across time is
 supplied as a `WeakHandle[N]` (§13.3.6.2) — the storable designation, whose read
-is `Option[&N]`. The connection points at the contained node while that
+is `Option[&N]`. The wire points at the contained node while that
 resolution is `Some` and **freezes** while it is `None` (§13.9.7).
 
-A destination that varies at runtime makes the connection's `to` endpoint
-**dynamic**: the connection re-points among existing nodes as the reference
+A destination that varies at runtime makes the wire's `to` endpoint
+**dynamic**: the wire re-points among existing nodes as the reference
 changes (§13.6.2). Every node the reference could yield belongs to the
 statically-known instance set — a function or cell cannot create a node
 (§13.3.6.1) — so the destination always resolves within that set. The
 compiler checks the `to:` constraint against the reference's *type* (so
 every possible target is well-typed), topology-cycle analysis (§13.11.5)
 ranges over the node *types* that reference type admits, and each of those
-types must declare a `dynamic incoming` connection-view of that type (§13.3.4)
+types must declare a `dynamic incoming` wire-view of that type (§13.3.4)
 — in the `pick(mode, some_car, other_car)` example above, the destination types
-of `some_car` and `other_car` both declare a `dynamic incoming` connection-view
+of `some_car` and `other_car` both declare a `dynamic incoming` wire-view
 of `Drives`. A
 *reactive* selection is what makes the destination move; a
 compile-time-fixed selection resolves to one node and the membership is a
@@ -17716,23 +17718,23 @@ attr` is a compile error.
 The `/expr` form is positional shorthand for the type's `default
 attr` (§13.2.2.1):
 
-- On both nodes and connections, `/expr` targets the type's
+- On both nodes and wires, `/expr` targets the type's
   `default attr` (when declared).
-- Connection placements additionally supply the destination as a
+- Wire placements additionally supply the destination as a
   single node reference (a bare identifier or a reference-yielding
   expression) in the placement body, introduced by `:` (§13.8.5.1).
 
 #### 13.8.6 Disambiguation summary
 
-Both node and connection placements may have a body, but the body's
+Both node and wire placements may have a body, but the body's
 content differs by placement kind:
 
 - **Node placement body** — the indented block after `:` on a node
-  placement line — contains child placements: child nodes and connections
+  placement line — contains child placements: child nodes and wires
   (§13.8.3, §13.8.4). Multiple children allowed; same-line
   multi-placement is whitespace-separated per §13.8.10.
-- **Connection placement body** — the indented block (or inline
-  single-line form) after `:` on a connection placement line —
+- **Wire placement body** — the indented block (or inline
+  single-line form) after `:` on a wire placement line —
   contains exactly *one* node reference: the destination (§13.8.5.1).
   No child placements, no inline placement specs, no attr settings,
   no multiple values.
@@ -17743,8 +17745,8 @@ attribute clause (`| name=value …`, §13.8.7) or aligned multi-line
 continuation per §13.8.2.
 
 The identifiers `to` and `from` are reserved as endpoint slots inside
-connection *type* bodies (§13.6.1.1); they cannot be used as attr
-names on connections, and they do not appear in connection
+wire *type* bodies (§13.6.1.1); they cannot be used as attr
+names on wires, and they do not appear in wire
 *placement* bodies.
 
 A single line of a node placement body may contain multiple child
@@ -17825,14 +17827,14 @@ reactive binding, however, applies only to the `name=value` form
 A *flag* is a single non-letter character appearing adjacent to a
 placed type's `TypeRef` (no intervening whitespace), aliasing a
 boolean attribute of the type. **Flags apply uniformly to node and
-connection placements** — any boolean attr on a node or connection
+wire placements** — any boolean attr on a node or wire
 type may be annotated with `@flag` and set via the flag form at
 placement.
 
 ```
 Pin' p1                                // ' is a flag on Pin (node placement)
 Component?* c1                         // two flags: ? and *
-WiresTo'! as my_wire: chip_b.in1       // two flags on a connection placement
+WiresTo'! as my_wire: chip_b.in1       // two flags on a wire placement
 ```
 
 Flags are declared on attr declarations via the `@flag('c')`
@@ -17846,7 +17848,7 @@ node Pin:
   @flag('\'')
   attr is_power: bool = false
 
-connection WiresTo:
+wire WiresTo:
   from: Component
   to: Pin
   @flag('\'')
@@ -17944,7 +17946,7 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
   top level the `as` may be omitted (the bare declaration form,
   §13.8.1); in nested placements it is required (§13.8.3).
 - The `/Expr` default-arg slot follows the name. For both node and
-  connection placements, `/Expr` sets the type's `default attr`
+  wire placements, `/Expr` sets the type's `default attr`
   (§13.2.2.1). Permitted only when the placed type declares a
   `default attr`.
 - The optional `when` clause follows next. It gates the placement
@@ -17962,14 +17964,14 @@ TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenC
   by attribute settings — follows next.
 - The optional body — introduced by `:` — comes last. For node
   placements, the body holds zero or more child placements (child nodes
-  and connections, §13.8.3, §13.8.4). For connection placements,
+  and wires, §13.8.3, §13.8.4). For wire placements,
   the body holds exactly one node reference to the destination
   (§13.8.5.1, §13.8.6). A `when` predicate
   containing an unparenthesized `:` must be parenthesized to avoid
   colliding with the body-introducer `:`; common predicates are
   flat boolean expressions and do not require parens.
 
-Example (connection placement, default attr + flags + destination):
+Example (wire placement, default attr + flags + destination):
 
 ```
 Drives'! as my_drive / 0.8 | enhanced_handling: some_car
@@ -17989,7 +17991,7 @@ Log / "Hello World" | level="info"
                       ^^^^^^^^^^^^^^^^    // attribute clause (sets attr `level`)
 ```
 
-Example (gated connection placement with `when` + body):
+Example (gated wire placement with `when` + body):
 
 ```
 Debugger as d1 / "trace" when verbose | level=2: target
@@ -18011,7 +18013,7 @@ Logger when debug_enabled
 
 The `/Expr` form requires the placed type to have a declared
 `default attr` (§13.2.2.1) — the same rule for both node and
-connection placements. Using `/Expr` on a type without a `default
+wire placements. Using `/Expr` on a type without a `default
 attr` is a compile error.
 
 #### 13.8.10 Same-line multi-placement
@@ -18092,7 +18094,7 @@ parenthesize-or-newline rule above is the prevention.
 ### 13.9 Conditional Activation
 
 A *gate* is a predicate or discriminant that conditions whether a node
-instance, a connection instance, or an exposed subtree is *active*.
+instance, a wire instance, or an exposed subtree is *active*.
 Gates are the **structural** conditional layer, distinct from the
 **value** conditionals `if`/`else` (§6.4) and `match` (§6.2.4). The distinction is
 operational, not stylistic: a value conditional evaluates its scrutinee,
@@ -18149,9 +18151,9 @@ not through a readable activation value.
 
 "Activation" in this section always means **gate-state** — whether a
 gate currently lets a construct propagate. It is distinct from
-**engagement** (§13.3.7.6), which is traversal reaching a connection's
+**engagement** (§13.3.7.6), which is traversal reaching a wire's
 position in the exposition order. The two interact at exactly one point:
-a gated-off (frozen) connection entry is not engageable (§13.3.7.6);
+a gated-off (frozen) wire entry is not engageable (§13.3.7.6);
 otherwise gate-state and traversal are independent axes.
 
 It evaluates in the scope of the construct it modifies: inside a
@@ -18160,7 +18162,7 @@ visible at the type's declaration scope; inside a placement it sees
 the full placement scope.
 
 ```
-connection Pulse:
+wire Pulse:
   from: Driver
   to: Listener
   when: from.is_emitting                       // type-level gate
@@ -18184,15 +18186,15 @@ Two design moves justify the clause:
 
 **Gates vs. dynamic re-pointing.** A gate decides *whether* a constructed
 edge (or subtree) propagates — every alternative is built and kept warm, and
-the gate switches which is live (§13.9.7). A connection with a dynamic
+the gate switches which is live (§13.9.7). A wire with a dynamic
 destination (§13.6.2) instead changes *which existing node* a single
-connection points at. The two are complementary: reach for a gate to turn
-structure on and off; reach for a dynamic `to` to move a connection among
+wire points at. The two are complementary: reach for a gate to turn
+structure on and off; reach for a dynamic `to` to move a wire among
 nodes that all already exist.
 
 #### 13.9.2 Type-level `when:`
 
-A node or connection body may declare a single `when:` predicate as
+A node or wire body may declare a single `when:` predicate as
 a schema member. It uses colon form, consistent with other body
 fields (`from:`, `to:`, `attr name:`, `recurrent name:`, etc.):
 
@@ -18206,7 +18208,7 @@ node OneShot:
     default: false
   when: not fired                              // one-shot latch: fires once, then stays closed
 
-connection ActiveLink:
+wire ActiveLink:
   from: Source
   to: Sink
   attr weight: f32 = 1.0
@@ -18281,13 +18283,13 @@ Otherwise, a `when` predicate follows normal expression scope
 rules — no special restrictions.
 
 - **Type level:** the predicate may reference the type's own cells
-  by bare name (and, for connections, `from` / `to` / `pair`),
+  by bare name (and, for wires, `from` / `to` / `pair`),
   plus anything visible at the type's declaration scope under
   normal visibility rules (module-level signals, consts, imports).
 - **Placement level:** the predicate may reference the full
   placement scope — siblings, parent attrs, top-level cells, and
   any other identifier resolvable at that point. It does **not**
-  grant `from`/`to`/`pair`: those are connection-private to the
+  grant `from`/`to`/`pair`: those are wire-private to the
   type-level predicate. At a placement the author already has direct
   access to the from- and to-scopes and names those cells directly
   (the placed source instance, e.g. `d1`, not `from`).
@@ -18304,7 +18306,7 @@ specific instance. The two predicates are not conjoined and not
 stacked — replacement is total:
 
 ```
-connection Pulse:
+wire Pulse:
   from: Driver
   to: Listener
   when: from.is_emitting
@@ -18342,7 +18344,7 @@ propagation event scheduled within the commit that flips the
 predicate (per §13.9.7's snap-on-gate-open rule).
 
 ```
-connection WeightedLink:
+wire WeightedLink:
   from: Node
   to: Node
   attr weight: f32 = 1.0
@@ -18370,7 +18372,7 @@ permanently-gated node is the cost of evaluating its `when`
 predicate.
 
 **Freeze triggers.** A construct freezes under exactly two conditions: a
-gate evaluating false (this section), and — for a connection — a dynamic
+gate evaluating false (this section), and — for a wire — a dynamic
 destination resolving to `None` (§13.6.2). The second follows Model B
 identically: the unresolved state behaves as gate-false (the freeze
 semantics below), and resolution returning `Some` behaves as the
@@ -18382,14 +18384,14 @@ traversal position never does (§13.3.7.6).
 
 - A *gate-true* edge propagates normally.
 - A *gate-false* edge on a gated *node* does not propagate to the
-  destination's output-affecting state, but incoming connections
+  destination's output-affecting state, but incoming wires
   still deliver to the gated node's input cells, so the node's own
   `when` predicate can re-evaluate.
 
 **Behavior on a gated node** (its `when` predicate is currently
 false):
 
-- **Input cells:** stay live. Connections delivering into the
+- **Input cells:** stay live. Wires delivering into the
   gated node still write their values into the destination's input
   cells. This is necessary so a node whose `when` references its
   inputs can wake up.
@@ -18414,13 +18416,13 @@ false):
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
   level.) This describes the *steady gated state*.
-- **Outputs:** do not propagate. Outgoing connections from the
+- **Outputs:** do not propagate. Outgoing wires from the
   gated node do not deliver to their destinations.
 
-**Behavior on a gated connection** (the connection's own `when` is
-false): a gated connection does not propagate at all — its
-destination receives nothing through this connection. Note this
-differs from a gated *node*, whose incoming connections still deliver
+**Behavior on a gated wire** (the wire's own `when` is
+false): a gated wire does not propagate at all — its
+destination receives nothing through this wire. Note this
+differs from a gated *node*, whose incoming wires still deliver
 to its input cells (the node's own `when` re-evaluates against those
 inputs).
 
@@ -18452,17 +18454,17 @@ outward consequence of closing concerns **effects**: the runtime fires the
 `suspend` reconciler hook (§13.14.9) for every effect in the now-frozen
 subtree, at the commit boundary, so the host can release those effects'
 external resources while their instance state is preserved. Pure nodes
-and connections have nothing to release; for them freezing alone is the
+and wires have nothing to release; for them freezing alone is the
 complete, correct behavior.
 
-**Only effects need close-time handling.** Nodes and connections are pure
+**Only effects need close-time handling.** Nodes and wires are pure
 reactive structure (§13.3.6, §13.6.4): freezing them holds their cells
 and suspends evaluation, which is already complete — there is no external
 operation to tear down. Effects (§13.19) are the sole construct holding
 outside-world state, so the `suspend`/`resume` protocol (§13.14.9)
-concerns effects exclusively. A gated *connection* therefore simply stops
+concerns effects exclusively. A gated *wire* therefore simply stops
 delivering (above) and has no suspend, because effects cannot be
-instantiated in connection bodies (§13.6.4). An effect gated directly by
+instantiated in wire bodies (§13.6.4). An effect gated directly by
 a `when`/`given` block inside an `effects:` clause (§13.3.8) is just
 another instance on the gated path — it freezes and receives `suspend`
 (and `resume` on reopen) by this same protocol; no new mechanism.
@@ -18488,10 +18490,10 @@ defined value of type T (no `Option[T]`), because:
   §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
-- All connection-level deriveds compute against `from` which
+- All wire-level deriveds compute against `from` which
   always has defined cells.
 
-On a gated node or connection, reads return frozen values: the
+On a gated node or wire, reads return frozen values: the
 last committed value during an active period, or the initial value
 if the instance has never been active.
 
@@ -18499,9 +18501,9 @@ if the instance has never been active.
 falls into exactly four read-paths, and in none of them is the gate
 predicate itself ever surfaced to a reader:
 
-1. **No-deliver (connections).** A gated-off connection delivers
-   nothing to its destination through that connection (above; a gated
-   connection simply stops propagating).
+1. **No-deliver (wires).** A gated-off wire delivers
+   nothing to its destination through that wire (above; a gated
+   wire simply stops propagating).
 2. **Defined-value (cell reads).** A cell read on a gated subgraph
    always returns a defined value of type T (never `Option[T]`) — the
    frozen last-committed or initial value (the "Cell-value reads on
@@ -18558,7 +18560,7 @@ effects transitively.
 #### 13.9.9 Interaction with `Circularity`
 
 Gates do not relax the `Circularity` rule (§13.11.5). Every
-topology cycle must traverse at least one connection type that
+topology cycle must traverse at least one wire type that
 satisfies `Circularity`, regardless of whether any edge in the
 cycle is gated. A gated edge is structurally still an edge; gate
 state can change at runtime, and the cycle constraint must hold
@@ -18575,7 +18577,7 @@ leaving an instantaneous cycle live. Runtime-varying *node existence* is
 `repeat` territory (§13.5.4), which carries its own construction-time
 guarantees; gates do not change it.
 
-A connection with a *dynamic* destination (§13.6.2) does vary topology at
+A wire with a *dynamic* destination (§13.6.2) does vary topology at
 runtime, but it stays inside the same compile-time check: its candidate
 edges are a statically-known set (§13.11.5), so "every reachable
 configuration" simply includes each candidate target, and the `Circularity`
@@ -18584,7 +18586,7 @@ instance set; unlike `repeat`, it creates and drops nothing.
 
 ```
 // Forbidden even if Link has a `when` clause that will be false at runtime
-connection Link:
+wire Link:
   from: A
   to: B
   when: false                                    // always closed
@@ -18613,7 +18615,7 @@ listed here are normative.
 
 ```text
 error: `when` predicate must be of type `bool`
-  --> connection Foo: when: weight
+  --> wire Foo: when: weight
                             ^^^^^^ expression has type `f32`
   hint: introduce a comparison (e.g., `weight > 0.0`)
 ```
@@ -18621,8 +18623,8 @@ error: `when` predicate must be of type `bool`
 **Multiple `when:` clauses in a single type body.** Per §13.9.2.
 
 ```text
-error: multiple `when:` clauses in connection body
-  --> connection Foo
+error: multiple `when:` clauses in wire body
+  --> wire Foo
         first  declared at line 5
         second declared at line 8
   hint: at most one `when:` per type; combine predicates with `and`/`or`
@@ -18697,7 +18699,7 @@ header takes a list of `guard: body` arms plus an optional `otherwise:`
 arm. Arms are tried in declaration order; the first whose boolean guard
 holds is the active arm, the rest frozen. As in a `given` block
 (§13.9.13), every line at the arm indent is an arm — a guard expression,
-never a connection entry (§13.3.7.1); connection placements appear only
+never a wire entry (§13.3.7.1); wire placements appear only
 inside arm bodies:
 
 ```
@@ -18760,7 +18762,7 @@ arms, written exactly as value-`match` arms (§6.2.4) — bare
 `Pattern: body`, no per-arm keyword. The dedicated header is what
 disambiguates: inside a `given` block every line at the arm indent is an
 arm, so an arm such as `Realtime: RealtimeChain` is never confused with a
-connection placement `Name: dest`. Connection entries are admitted in
+wire placement `Name: dest`. Wire entries are admitted in
 exposition (§13.3.7.5), but inside a `given` block they appear only
 within arm bodies — never at arm position (§13.3.7.1). Each arm body is
 itself a list of placements, indented under the arm.
@@ -18797,7 +18799,7 @@ must be the **last** arm; a non-last `default:` is a compile error (as for
 `when`/`otherwise:`, §13.9.12).
 
 **Distinction from value-selecting a `Type[…]`.** Selecting a single
-node/connection *type value* with `match` (§13.2.10) and gating structure
+node/wire *type value* with `match` (§13.2.10) and gating structure
 with `given` are different operations, both legal: `match` chooses one
 type, which is then placed once; `given` builds every arm's subtree and
 switches which is live, freezing the others. Use `match`→`Type[C]` when
@@ -18996,22 +18998,22 @@ mount, and dismount, and both are handled by the same two-part mechanism
 below. The statically-placed `Handle[T]` type carries no dynamic
 dependency: its
 referent is fixed for the handle's lifetime, so reads behave as ordinary
-static references. The canonical dynamic case is a reactive connection
-target (§13.6.2): a connection whose `to` is a reactive selection or a
+static references. The canonical dynamic case is a reactive wire
+target (§13.6.2): a wire whose `to` is a reactive selection or a
 `WeakHandle[T]` reads `to.*` against whichever node it currently
 designates, so the identity of the cells in the dependency changes when
 the target re-points. The runtime handles this in two parts:
 
 - **The target reference is itself a dependency.** The cell or expression
-  that produces the `to` reference is part of the connection body's
-  provenance. When it re-points, the connection's deriveds that read `to.*`
+  that produces the `to` reference is part of the wire body's
+  provenance. When it re-points, the wire's deriveds that read `to.*`
   are marked dirty and re-evaluate in the next commit (§13.10.2), now
   reading the new target's cells.
 - **The current target's cells are dependencies only while selected.** While
-  `to` designates a particular node, the connection's reads declare dependency edges into
+  `to` designates a particular node, the wire's reads declare dependency edges into
   that node's cells; on re-point, the dependency edges are re-established against
   the new target, and a write to the *old* target no longer dirties the
-  connection.
+  wire.
 
 The same two-part mechanism covers every `WeakHandle[T]` read — a
 node-body derived reading a `repeat`-view handle (§13.5.4.9) declares
@@ -19019,7 +19021,7 @@ a dependency edge into the handle's resolution and, while resolved, into the ref
 a dismount flips the resolution to `None` and drops the referent
 dependency edge. The **dynamic namespace cells** (§13.3.3.4) are the
 collective form of the same mechanism: a `collect` block bridging a dynamic
-connection-view into a `yielded` group declares a dependency edge into the membership (the cell itself) and, per
+wire-view into a `yielded` group declares a dependency edge into the membership (the cell itself) and, per
 current member, into the cells its per-member `yield` expression reads — a mount or
 dismount re-establishes the member dependency edges exactly as a re-point
 does. `WeakHandle[T]` resolution (for graph entities) and `Portal[T]`
@@ -19037,7 +19039,7 @@ topology-cycle analysis a compile-time check (§13.11.5).
 Cycles in Ductus's reactive graph are handled at two distinct
 layers: **reactive expression cycles** between reactive cells
 within and across nodes, and **topology cycles** between node
-instances via connection placements. Each has its own rules.
+instances via wire placements. Each has its own rules.
 
 #### 13.11.1 The reactive dependency graph
 
@@ -19143,9 +19145,9 @@ cycle in the *topology graph*, analyzed at compile time over every
 possible wiring (§13.1).
 
 > **Topology graph.** Nodes correspond to placed instances; for each
-> placed connection, a directed edge runs from the connection's
+> placed wire, a directed edge runs from the wire's
 > `from`-endpoint instance to its `to`-endpoint instance, labeled with
-> the connection type. When a connection's destination is a *dynamic*
+> the wire type. When a wire's destination is a *dynamic*
 > reference (§13.8.5.1), the graph carries *candidate* edges to each node
 > *type* the reference's static type admits — a concrete type to itself, a
 > trait to every type satisfying it, the bare `Node` bound to all. The
@@ -19155,20 +19157,20 @@ possible wiring (§13.1).
 A topology cycle is a sequence of distinct directed edges
 returning to its starting node.
 
-Example: instance A has a connection to B; B has a connection back
+Example: instance A has a wire to B; B has a wire back
 to A. The edges A→B and B→A form a topology cycle.
 
 Topology cycles are governed by the `Circularity` trait (§13.6.5):
 
 > Every topology cycle in the construction-time node graph must
-> traverse at least one connection whose type satisfies
+> traverse at least one wire whose type satisfies
 > `Circularity`.
 
 The compiler walks the topology graph, identifies cycles, and verifies each
-cycle has at least one `Circularity`-satisfying connection. Cycles
-consisting only of non-`Circularity` connections are compile errors.
+cycle has at least one `Circularity`-satisfying wire. Cycles
+consisting only of non-`Circularity` wires are compile errors.
 
-**Dynamic destinations.** A connection whose `to` is a reactive reference
+**Dynamic destinations.** A wire whose `to` is a reactive reference
 (§13.6.2) contributes candidate edges to each node *type* its reference's
 static type admits. The compiler infers this candidate set comprehensively
 from that type — a concrete node type contributes itself; a trait contributes
@@ -19177,29 +19179,29 @@ every node type that satisfies it (including via a supertrait); the bare
 only ever resolve to an already-placed node of one of those types (§13.3.6.1).
 This **candidate envelope** serves two checks: the cycle analysis below, and
 the membership-marker rule of §13.3.4 (every type in the envelope must declare
-a `dynamic incoming` connection-view for the connection type).
+a `dynamic incoming` wire-view for the wire type).
 The cycle check stays a compile-time analysis: the compiler verifies that
-*every* cycle in the candidate graph traverses a `Circularity` connection, i.e.
+*every* cycle in the candidate graph traverses a `Circularity` wire, i.e.
 that no reachable wiring can form a non-`Circularity` cycle. The analysis is
 sound but conservative in proportion to how wide the candidate set is. A
 narrowly typed destination (e.g. a concrete type with one placed instance) adds
 few candidate edges; a destination typed broadly enough to admit many node
-types adds an edge for each, so such a connection will typically have to satisfy
+types adds an edge for each, so such a wire will typically have to satisfy
 `Circularity` itself — the correct requirement, since a freely re-pointing
-connection is exactly the kind that can close a runtime loop.
+wire is exactly the kind that can close a runtime loop.
 
 ```text
-error: topology cycle with no Circularity-satisfying connection
+error: topology cycle with no Circularity-satisfying wire
   instance `a` connects to `b` via `MyConn`
   instance `b` connects to `a` via `MyConn`
-  hint: at least one connection on this cycle must use a
-        connection type that satisfies `Circularity`
+  hint: at least one wire on this cycle must use a
+        wire type that satisfies `Circularity`
 ```
 
 The `Circularity` trait is a marker — its semantic effect is
-domain-defined (typically: connections that introduce a temporal
+domain-defined (typically: wires that introduce a temporal
 break between source and destination, so cycles through them
-cannot loop instantaneously at runtime). Connection types that
+cannot loop instantaneously at runtime). Wire types that
 imply simultaneous source-destination activation should not
 satisfy `Circularity`.
 
@@ -19207,7 +19209,7 @@ Topology cycles and reactive expression cycles are independent
 concerns: a topology cycle can exist with no reactive expression
 cycle (the nodes don't read each other's cells), and reactive
 expression cycles can exist within a single node with no
-involvement of connections. Each cycle layer has its own
+involvement of wires. Each cycle layer has its own
 validation pass.
 
 ### 13.12 The Reactivity Boundary
@@ -19239,7 +19241,7 @@ exception is a read through **`WeakHandle[T]` resolution** (§13.3.6.2,
 resolution re-points, mounts, or dismounts. A statically-placed
 `Handle[T]` carries no such exception — its referent is fixed, so its
 read contributes its referent's cells to the provenance like any static
-reference. The canonical dynamic case is a connection body reading `to.*`
+reference. The canonical dynamic case is a wire body reading `to.*`
 against a reactive destination (§13.6.2); a node-body read through a
 `repeat`-view handle (§13.5.4.9) is the same mechanism, and a `collect`
 block bridging a dynamic namespace cell (§13.3.3.4) into a `yielded` group
@@ -19681,7 +19683,7 @@ error. The `ductus run` CLI surfaces the condition to the user
 
 1. Stop accepting new signal/attr writes.
 2. Drain any in-flight commit (the current commit, if running, completes).
-3. Drop reactive cells in reverse-of-construction order: connections
+3. Drop reactive cells in reverse-of-construction order: wires
    drop before their endpoint instances; within each instance,
    attrs, recurrents, and deriveds drop in reverse declaration
    order (per §14.7 Drop rules); each live effect receives reconciler
@@ -20098,7 +20100,7 @@ in the following order:
 5. For added cells: allocate cell storage
    and initialize per the new source.
 6. For removed cells: invoke their Drop per §14.7, in
-   reverse-declaration order. Connections drop before endpoint
+   reverse-declaration order. Wires drop before endpoint
    instances; within each instance, attrs, recurrents, and
    deriveds drop in reverse declaration order.
 7. Update the behavior table (§14.6.3): register behaviors with
@@ -20412,7 +20414,7 @@ kinds are distinguished by declared type:
   thresholds, modes, etc.
 
 **Group-bound parameters** (`name: yielded T`):
-- Bind a `yielded` group as wiring at instantiation — no materialization
+- Bind a `yielded` group as a channel at instantiation — no materialization
   at the binding.
 - Inside the body the group is consumed per the group-consumption rules
   (§13.20.4.1): walked in walk order, fed to a `fold`, or auto-materialized
@@ -20675,7 +20677,7 @@ the same scope; the binding name has no role.
 ##### 13.17.6.2 Graph specification
 
 Operator instances contribute to the runtime's graph specification
-(§15.4) the same way node placements and connection placements do.
+(§15.4) the same way node placements and wire placements do.
 Each instance's internal cells (recurrents, deriveds, synthesized
 cells from the operator body and from `let` bindings) are counted
 against the runtime's cell-storage allocation and against any
@@ -20688,9 +20690,9 @@ instances is bounded and known.
 
 #### 13.17.7 The `|>` operator
 
-`|>` is the pipe-application token. It expresses a connection from
+`|>` is the pipe-application token. It expresses a coupling from
 a source cell on the left to a destination on the right. The kind
-of connection — apply-and-bind or forward-into — is determined by
+of coupling — apply-and-bind or forward-into — is determined by
 the RHS's kind.
 
 **Three dispatch cases**, distinguished by the RHS (and, in the third
@@ -21001,7 +21003,7 @@ operator(P1, P2, …) -> U
 
 — the parameter types in order, then the return type `U` (any type; §13.17.2,
 §13.17.5). This is the operator analog of a function type. Unlike the
-nominal node/connection/effect kinds — carried by the nominal `Type[…]`
+nominal node/wire/effect kinds — carried by the nominal `Type[…]`
 meta-type (§5.7) — operators are carried *structurally*, by signature.
 
 The type expression appears in value position (an operator parameter,
@@ -21146,7 +21148,7 @@ stream policy[capacity]? name: Type? = source
 - **`policy`** is mandatory; the declaration has no default policy.
   It may be spelled either as the `ring`/`gate` word form or as the
   bracket-policy form (`stream[Ring[N]] T`) — both are the same
-  wiring type (§13.18.3).
+  channel (§13.18.3).
 - **`[capacity]`** is an optional compile-time-known positive `usize`
   (a literal, a `const`, or a const-generic parameter — §2.5)
   specifying the buffer's slot count. When omitted:
@@ -21204,7 +21206,7 @@ stream ring url_events: Url = current_url->changes
 
 **Where streams may be declared.** Streams are reactive declarations.
 They may appear in the same scopes as other reactive declarations
-(§13.2): at module level, inside node bodies, inside connection
+(§13.2): at module level, inside node bodies, inside wire
 bodies, inside operator bodies, inside effect bodies (§13.19). They
 may not appear inside function bodies (§13.12.2 — functions are
 reactive-transparent).
@@ -21212,7 +21214,7 @@ reactive-transparent).
 **Visibility.** Module-level streams follow the standard visibility
 model (§10): unmarked is package-visible, `private` is module-only,
 and a stream reaches dependent packages only via the package barrel
-(§10.11). Streams inside node, connection, operator, or effect bodies
+(§10.11). Streams inside node, wire, operator, or effect bodies
 inherit the enclosing declaration's visibility.
 
 #### 13.18.3 Stream types
@@ -21262,7 +21264,7 @@ it defaults to 0 and the stream is an ordinary non-recurrent stream.
 
 **The word form is sugar.** The word forms `stream ring[N] T` and
 `stream gate[N] T` are the idiomatic sugar for the bracket forms
-`stream[Ring[N]] T` and `stream[Gate[N]] T` — the same wiring type by
+`stream[Ring[N]] T` and `stream[Gate[N]] T` — the same channel by
 direct substitution, `Ring[N]` / `Gate[N]` dropped into the `[P]` slot.
 The bracket form is legal in any concrete position; neither form is a
 distinct alias type — there are no alias types here. The history-depth
@@ -21270,7 +21272,7 @@ axis has no sugar of its own: a recurrent stream spells the depth axis on
 a ring or gate stream (§13.18.8), not with a distinct spelling.
 
 **The erased form `stream T`.** `stream T` (element type only, policy
-erased) is the policy-erased wiring type every `stream[P] T` widens to; a
+erased) is the policy-erased channel every `stream[P] T` widens to; a
 concrete stream is implicitly usable wherever `stream T` is expected.
 Widening is zero-cost — only the type-system view changes; there is no
 value subtyping behind it. Use it in a signature that accepts any stream
@@ -21314,14 +21316,14 @@ named policy otherwise.
 
 `cell T` is the umbrella over the *value cells* that carry values of type
 `T`. The keyword `cell` alone is the **kind**; the applied annotation
-`cell T` is a **wiring type** — a type-system member, not a value type and
+`cell T` is a **channel** — a type-system member, not a value type and
 not a trait (§13.2.8, §13.2.8.1). `cell` is a lowercase keyword kind
 occupying an annotation position, exactly like `signal`, `derived`, and
 `recurrent`. Its members are exactly the value-cell kinds — `signal T`,
 `derived T`, and `recurrent[N] T`:
 
 ```
-cell T                        // umbrella wiring type — any value cell carrying values of type T
+cell T                        // umbrella channel — any value cell carrying values of type T
   signal T                    // host/placement-written value cell; `attr` annotates as `signal T` (§13.2.8)
   derived T                   // computed value cell, no history (§13.2.8)
   recurrent[N] T              // computed value cell, N-deep self-history (§13.2.8)
@@ -21359,12 +21361,12 @@ operator monitor[T](source: cell T) -> derived bool:
 **Why a kind, not a trait or a union type.** The keyword `cell` is a
 KIND, not a trait: it does not implement or require methods, and there is
 no `cell T` *value* type over which one dispatches. The applied annotation
-`cell T` is a wiring type, but a wiring type is not a value type and is
+`cell T` is a channel, but a channel is not a value type and is
 not dispatched over. This resolves the older type-vs-trait framing —
 `cell T` was described in some passages as an umbrella *value type* and in
 others as a marker *trait*; neither the value-type nor the trait reading
 is correct. The umbrella keyword is a kind in annotation position; the
-annotation it forms is a wiring type. Concrete behavior —
+annotation it forms is a channel. Concrete behavior —
 current-value reads — is specific to each value-cell kind and is reached
 through that kind's own methods and operators, not through any umbrella
 method set. (Event observation belongs to the stream class outside the
@@ -21877,8 +21879,9 @@ stream-to-value crossing — no operator and no member spelling exists.
 
 **Dot projects, arrow mints.** Dot access projects existing state — the
 observation cells (§13.18.6), `.previous`, `.past` — reading state that
-already exists. Arrow access mints new wiring: `->changes` mints a stream
-from a value cell, `->latest(fallback)` mints a derived from a stream. In
+already exists. Arrow access mints a new channel between channel shapes:
+`->changes` mints a stream — an event channel — from a value channel,
+`->latest(fallback)` mints a derived — a value channel — from a stream. In
 this postfix position `->` is the minting-access operator — the token's
 third positionally-disjoint role, alongside function/operator return
 types and `pairs:` entries. The three positions are disjoint, so there is
@@ -22725,7 +22728,7 @@ Effects are distinct from `node`, `operator`, and `fn`:
 - `operator` is a stateful reactive transform from cells to cells
   (§13.17), pure with respect to outside reality.
 - `node` is a topological participant in the reactive graph
-  (§13.3), composed via children and connections.
+  (§13.3), composed via children and wires.
 - `effect` describes outside-world alignment — a *reconciliation
   contract* between program state and external reality, fulfilled by a
   host reconciler (a leaf effect), by child effects placed in the
@@ -22738,7 +22741,7 @@ Every effect type intrinsically satisfies the `Effect` marker trait
 effect declaration named `fetch` introduces both a type `fetch` and a
 constructor `fetch`; an instance has addressable cells and is referenced in
 expression position (e.g. `|>` chains, §13.19.13). Like nodes and
-connections, an effect *instance* is a graph member — instantiated only in
+wires, an effect *instance* is a graph member — instantiated only in
 a node's `effects:` clause and held only by borrow (§13.3.6.1); an effect
 *type* is carried as a value by `Type[…]` (§5.7).
 
@@ -23507,7 +23510,7 @@ only scope death does. Gating is transitive: closing any ancestor gate
 suspends every contained effect, regardless of the effects' own gates
 (§13.9.7).
 
-**Only effects need this.** Pure nodes and connections hold no
+**Only effects need this.** Pure nodes and wires hold no
 outside-world state; freezing them (Model B) is complete and they have
 no `suspend`/`resume`. Effects are the sole construct the suspend/resume
 protocol concerns. The runtime guarantees the `suspend` signal on
@@ -23642,7 +23645,7 @@ value track (§8).
 - **Effects are instantiated only in a node's `effects:` clause**
   (§13.3.8) — the single, exclusive host. Effects may not be
   instantiated at module level, in operator bodies (§13.17), in
-  connection bodies (§13.6.4), or in function bodies (below). Within a
+  wire bodies (§13.6.4), or in function bodies (below). Within a
   node, a free `f = url |> fetch` or `derived x = url |> effect` outside
   `effects:` is a compile error (§13.19.16).
 - **Effects compose only via top-of-body child placements.** An effect
@@ -23800,7 +23803,7 @@ error: effects are not exposition
   --> expose:
         url |> fetch
         ^^^^^^^^^^^^ effect instantiation in expose:
-  hint: `expose:` declares topology (child nodes and connections).
+  hint: `expose:` declares topology (child nodes and wires).
         Effects belong in the node's `effects:` clause (§13.3.8).
 ```
 
@@ -24006,11 +24009,11 @@ ordinals (§13.15.2).
 
 ##### 13.20.4.1 Consumption
 
-A `yielded` group is consumed in two families of position: **wiring
-positions**, where it passes as wiring with no materialization, and
+A `yielded` group is consumed in two families of position: **channel
+positions**, where it passes as a channel with no materialization, and
 **value positions**, where it auto-materializes to a snapshot.
 
-**Wiring positions** — the group passes as wiring; nothing is
+**Channel positions** — the group passes as a channel; nothing is
 materialized:
 
 - **The fold form** (§13.21) — the primary consumer: a `fold` over a
@@ -24021,7 +24024,7 @@ materialized:
   member, each per-member scope keyed by the member's structural
   coordinate (§13.5.4.1).
 
-In every wiring position the group has **no positional index operator**
+In every channel position the group has **no positional index operator**
 (its membership is not a stable array), and a **compile-time / structural
 `for` over the group itself is a compile error** (its extent is a runtime
 membership, not a compile-time-fixed sequence).
@@ -24055,7 +24058,7 @@ in walk order, and any user code consumes that snapshot with an ordinary
 runtime `for`. The snapshot is a value, not the group; the consumer
 re-evaluates whenever the group changes (membership or member value).
 
-**The loss law (normative).** An implicit wiring-to-value read exists
+**The loss law (normative).** An implicit channel-to-value read exists
 **exactly** where the value form is a *lossless snapshot of current
 state*, and nowhere else. Two cases qualify: a value cell's current value
 (the cell holds exactly one current value), and a `yielded` group's
@@ -24549,8 +24552,8 @@ keeps current across commits (the runtime stores them, §14.3).
 Specifically, the values held by:
 
 - `signal` declarations.
-- `attr` declarations on node and connection instances.
-- `recurrent` declarations on node and connection instances.
+- `attr` declarations on node and wire instances.
+- `recurrent` declarations on node and wire instances.
 - `derived` declarations (the cached computed value).
 - `stream` declarations (head pointer, metadata, and synthesized
   observation cells per §13.18.6; the buffer slot array itself
@@ -24786,7 +24789,7 @@ inconsistent state.
 
 #### 14.7.5 Drop on reactive cells
 
-The runtime manages drop for reactive cells. When a node or connection
+The runtime manages drop for reactive cells. When a node or wire
 instance is removed (removal mechanics are specified in §13.15), all of its
 cells — attr, recurrent, derived, and stream metadata — are dropped per their
 types' `Drop` impls (consistent with §14.8.1 step 3b).
@@ -24882,7 +24885,7 @@ Changes unsafe for in-place hot reload fall into two classes per
 
 All other changes — including cell removal (which the new source's
 compile gate verifies is unreferenced), cell type changes (handled
-via remove + add per §13.15.2), and connection topology changes
+via remove + add per §13.15.2), and wire topology changes
 (handled via remove + add per §13.15.2) — are reload-safe and need
 no restart.
 
@@ -25080,20 +25083,20 @@ in memory across the frontend→backend boundary is conforming.
 
 #### 15.4.1 Graph IR
 
-The graph is built from **six primitives** — `cell`, `connection`, `gate`,
+The graph is built from **six primitives** — `cell`, `wire`, `gate`,
 `stream`, `effect`, and `scope` — each referencing behaviors by id and
 identified by a stable path (§15.4.1.1). All surface reactive constructs
 desugar into these six: signal/attr/derived/recurrent/const → `cell`;
 node (top-level or child) → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
-connection / topological `|>` → `connection` (an *effect-position* `|>`
+wire / topological `|>` → `wire` (an *effect-position* `|>`
 instead lowers to the effect entry's `parameter_bindings`, **not** a
-`connection`); operator → a `scope` with ports; stream → `stream`; effect →
+`wire`); operator → a `scope` with ports; stream → `stream`; effect →
 `effect`.
 
 A **`scope`** is the structural container (a node or operator instance,
 or a `repeat`'s per-element instance). It carries an `exposes` list — the
 **ordered** placements the runtime traverses: child scopes and references
-to the scope's connection entries, in exposition order (engagement
+to the scope's wire entries, in exposition order (engagement
 positions, §13.3.7.6) — and a separate
 `effects` set — the effects hosted there per §13.3.8, never in `exposes`.
 A `dynamic` scope additionally carries a `keyed_by` identity for `repeat`
@@ -25111,7 +25114,7 @@ pure structural container with no per-instance state of its own, walked
 like any other scope but unnamed. This is the IR shape a `Bundle[T]`
 (§13.3.3.5) lowers to: the bundle's row count becomes the grouping
 scope's child count, and each child slot is an indexed entry into the
-row. The grouping scope contributes no cells, connections, gates, or
+row. The grouping scope contributes no cells, wires, gates, or
 effects — only the ordered child list and the indexed addressing.
 
 The graph is a structured record with the following entries.
@@ -25153,19 +25156,19 @@ member's guarding gate's effective activation (§13.9.7); it stores no
 liveness state. A group consumed by a `fold` is instead absorbed into
 that fold cell as its member edges and produces no separate entry.
 
-**Connections.** A list of connection entries. Each:
+**Wires.** A list of wire entries. Each:
 
 - `from`: source instance's fully-qualified path.
 - `to`: destination instance's fully-qualified path (or `null` for
-  sink-side connections).
-- `connection_type`: the connection's declared type.
+  sink-side wires).
+- `wire_type`: the wire's declared type.
 - `attrs`: ordered list of `(name, value, placement_binding_kind)`
   triples (§13.8.4). The `placement_binding_kind` is `static` (the
   value is a compile-time / value expression consumed into the attr's
   storage slot at instantiation) or `reactive` (the value references
   reactive cells and the runtime must allocate an implicit-derived
   bridge from those source cells to the attr, per §13.8.2.1).
-- `gate` (optional): the `id` of the gate guarding this connection (the
+- `gate` (optional): the `id` of the gate guarding this wire (the
   gate objects of `when`-gates below), or absent if ungated.
 
 **Derived dependency edges.** A list of `(derived_cell_id,
@@ -25196,7 +25199,7 @@ gate carries: a stable `id`; its predicate in compiled form (behavior
 handle per §14.6.3 plus the input cell IDs the predicate reads); a `guards`
 list naming the gated instances it controls (each by path); and a
 `gate_parent` — the `id` of the nearest enclosing gate, or `null` if none.
-Every gated instance — cell, connection, or effect — references its gate by
+Every gated instance — cell, wire, or effect — references its gate by
 `id` (a `gate` field); the `guards` list is the materialized inverse. The
 runtime composes a gate's predicate with its `gate_parent` chain to obtain
 the *effective* activation (§13.9.7) of the instances it guards, which
@@ -25655,7 +25658,7 @@ variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
 graph_section ::= 'graph' '{' scope+ '}'
 scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                   ('reset_on_reopen' reopen_set)? '{' entry* '}'
-entry         ::= cell | gate | connection | effect | stream
+entry         ::= cell | gate | wire | effect | stream
 cell          ::= cell_kind PATH ':' type_tag
                   ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
                   ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
@@ -25665,7 +25668,7 @@ member_set    ::= '[' (member (',' member)*)? ']'
 member        ::= PATH ':' member_driver
 member_driver ::= 'permanent' | 'keyed-template' | 'gate-guarded'
 gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
-connection    ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
+wire          ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
                   ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
 effect        ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
                   ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
@@ -25709,7 +25712,7 @@ membership-descriptor cell (the lowering of a standalone `yielded`
 group, §13.20.4.3) renders as a `derived` line typed `yielded<T>`
 carrying a `members` set and no `uses`/`inputs`; `yielded<T>` is an
 ABI-only type-vocabulary entry and never a user-facing value type. A `gate` carries its predicate behavior (`pred`), `inputs`, the `guards`
-it controls, and an optional `gate_parent`; a `cell`, `connection`, or `effect`
+it controls, and an optional `gate_parent`; a `cell`, `wire`, or `effect`
 names the gate that guards it via `gate` (§15.4.1). An aggregate-valued cell — a
 record, enum, or tuple — is typed `pool_index<%TypeId>` (§14.3.3), never an inline
 `%TypeId`. A `stream` line serializes the stream primitive (§15.4.1's
@@ -25737,7 +25740,7 @@ in three grammar positions with different arities — a bare flag on `cell`
 (no payload), a bare flag on `stream` (no payload), and
 `reset_on_reopen reopen_set` on `scope` (carrying the `(consumer : stream)`
 pairs); all three spellings are normative. A `binding` (in an effect's `params`
-or a connection's `attrs`) may carry an optional `@`-suffixed
+or a wire's `attrs`) may carry an optional `@`-suffixed
 **provenance** marker — `bound`, `constant_wrap`, or `bridge` — recording
 how the cell argument was materialized under the uniform cell-argument
 rule (§13.17.3); the marker is metadata on the binding, not a distinct
@@ -25782,12 +25785,12 @@ not need to re-parse source.
 #### 15.6.2 Diff result format
 
 The diff produces a **reload plan**: a sequenced list of (cell
-add/remove/change, connection add/remove/change, behavior
+add/remove/change, wire add/remove/change, behavior
 add/remove) operations the runtime applies in topological order.
 
 The plan format is implementation-defined but must preserve the
 ordering constraints of §14.7 (drop reverse-declaration order;
-connections before endpoint instances; etc.) and §14.8.
+wires before endpoint instances; etc.) and §14.8.
 
 ### 15.7 Conformance
 

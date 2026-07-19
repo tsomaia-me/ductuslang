@@ -185,7 +185,7 @@ Body              ::= ':' INDENT BlockBody DEDENT
                     ;  (§1.4, 002-25)
 
 // "always-indented" constructs (only the first alternative is legal):
-//   trait, type, enum, node, connection bodies (002-25).
+//   trait, type, enum, node, wire bodies (002-25).
 // "may-be-inline" constructs (either alternative is legal):
 //   fn bodies, if/else arms, match arms (002-26).
 // The lexer emits the same token sequence for both — the parser dispatches
@@ -229,7 +229,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 **Declaration keywords** (002-3):
 
 ```ebnf
-'node'  'connection'  'trait'  'type'  'enum'  'fn'  'operator'  'effect'
+'node'  'wire'  'trait'  'type'  'enum'  'fn'  'operator'  'effect'
 'signal'  'attr'  'recurrent'  'derived'  'stream'  'yielded'  'view'
 'const'  'let'  'mut'  'repeat'  'collect'
 'use'  'alias'
@@ -254,7 +254,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 ```
 
 // `sealed` is a trait- and nominal-type-declaration modifier (trait,
-//  type, enum, node, connection; §3.7.6,
+//  type, enum, node, wire; §3.7.6,
 //  005-239, 005-243): it restricts fulfillment claims to the trait's or
 //  the subject's declaring module respectively. It is a reserved word in
 //  every position (005-241, 002-27); its keyword class is the
@@ -397,7 +397,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Reserved instance-field names** — spellings that the lexer emits as ordinary
 `IDENT` tokens but which the parser / resolver treats as compiler-assigned
-field names in connection / node body contexts:
+field names in wire / node body contexts:
 
 ```ebnf
 ReservedInstanceField ::= 'from' | 'to' | 'pair' | 'exposition'
@@ -417,7 +417,7 @@ ReservedInstanceField ::= 'from' | 'to' | 'pair' | 'exposition'
 //  (002-5).
 // `pair` and `exposition` are *not* clause keywords; they exist only as
 //  reserved instance-field names with compiler-assigned meaning in
-//  connection / node body contexts (002-5, 002-28).
+//  wire / node body contexts (002-5, 002-28).
 // `incoming` and `outgoing` are clause keywords only — they head node-body
 //  acceptance clauses whose named entries join the instance-body namespace
 //  shared with cells, views, and placement `as`-names (002-5). They are
@@ -1268,7 +1268,7 @@ AssocPath         ::= TypePath ( '.' IDENT )+
 //  `AssocTypeEqualityPredicate` checked at resolution) is post-parse
 //  semantic.
 // A `where` clause attaches to a generic-bearing declaration (`fn`,
-//  `operator`, `type`, `trait`, `fulfill`, `node`, `connection`) and
+//  `operator`, `type`, `trait`, `fulfill`, `node`, `wire`) and
 //  appears between the signature head and the body's `':'`; the precise
 //  attachment grammar is given with each declaration kind in §7 / §8 / §9.
 
@@ -1315,13 +1315,13 @@ A **kind annotation** designates a reactive binding form. It works on
 two levels. The kind *keyword* alone (`cell`, `stream`, `derived`, …)
 is a **kind** and a keyword — not a type. An *applied* annotation
 (`stream T`, `stream[P] T`, `cell T`) IS a type: a member of the type
-system in a distinct class, the **wiring types** — unstorable by
-nature, expressing wiring rather than a value, and never itself a value
+system in a distinct class, the **channels** — unstorable by
+nature, delivering values reactively rather than being a value, and never itself a value
 type (§13.2.8.1). Kind brackets *admit* parameters: const-generic
 arguments (`recurrent[N]`, capacities — `ConstGenericArg` per §3.2)
 and, on `stream`, a policy-type argument bounded by `StreamPolicy`
 (`stream[P]`, `stream[Ring[64]]`). That is the legal direction; the
-banned direction — a wiring type nested inside a value-type constructor
+banned direction — a channel nested inside a value-type constructor
 — never occurs. A kind is legal only in the *outermost* annotation slot
 of a declaration, a parameter, or a return — never nested inside a type
 constructor (§13.2.8, 016-180). The value type `T` that follows a kind
@@ -2832,7 +2832,7 @@ DefaultGivenArm   ::= 'default' ':' IfArmBody                  // must be last
 //  a list of variant-pattern arms whose shape is *exactly* `MatchArm`
 //  (per §5.19): bare `Pattern: body`, no per-arm keyword. The
 //  dedicated `given` header is what disambiguates an arm such as
-//  `Realtime: RealtimeChain` from a connection placement
+//  `Realtime: RealtimeChain` from a wire placement
 //  `Name: dest` (per §13.3.7.1) — inside a `given` block every line
 //  at the arm indent is an arm.
 // **Exhaustive over the scrutinee's variants (per §13.9.13).** A
@@ -3091,7 +3091,7 @@ ConstStmt         ::= 'const' IDENT ( ':' TypeExpr )? '=' Expr
 //  surrounding-context check enforced by the parser / resolver rejects a
 //  `MutStmt` whose owning block is not a function body (or a nested block
 //  scope inside one): `mut` is forbidden at module top level, inside
-//  type / trait / node / connection bodies, and on function parameters.
+//  type / trait / node / wire bodies, and on function parameters.
 //  This is a *post-parse* check in the sense that the same token sequence
 //  can be parsed in either context; the surrounding-construct kind decides
 //  legality (§11.2).
@@ -3263,7 +3263,7 @@ TopLevelDecl      ::= AnnotatedDecl                            // see §12.3
                     | EffectDecl
                     | ModuleReactiveDecl
                     | NodeDecl
-                    | ConnectionDecl
+                    | WireDecl
                     | TopLevelConstDecl
                     | TopLevelPlacement
                     ;  (§10.3, 003-34)
@@ -3278,7 +3278,7 @@ TopLevelConstDecl ::= Visibility? 'const' IDENT ( ':' TypeExpr )? '=' Expr
 //  `TopLevelConstDecl`. The two share their RHS shape; the wrapping
 //  difference is the admissibility of a visibility prefix.
 
-// `NodeDecl` is specified in §8; `ConnectionDecl` is specified in §9.
+// `NodeDecl` is specified in §8; `WireDecl` is specified in §9.
 //  `ConstStmt` is the `Stmt`-form of §6.1 — a `const` declaration is
 //  admissible both inside a function body and at module top level
 //  (003-34). `ModuleReactiveDecl` covers the four module-level reactive
@@ -3287,7 +3287,7 @@ TopLevelConstDecl ::= Visibility? 'const' IDENT ( ':' TypeExpr )? '=' Expr
 //  visibility prefix (optional, §7.1) followed by its keyword head
 //  (`use`, `alias`, `fn`, `type`, `enum`, `trait`, `fulfill`, `operator`,
 //  `effect`, `signal`/`derived`/`recurrent`/`stream`, `node`,
-//  `connection`, `const`) or — for `TopLevelPlacement` — by an
+//  `wire`, `const`) or — for `TopLevelPlacement` — by an
 //  optional inline `RootDirective` (`@root`, preceding any visibility
 //  prefix, §11.2) followed by a `TypeRef` head. The parser selects the
 //  alternative on the lookahead after any directive and visibility
@@ -3309,7 +3309,7 @@ Visibility        ::= 'private'
 // The `Visibility` prefix is admissible on every named top-level
 //  declaration enumerated in §10.3 — records, enums, newtypes,
 //  alias types, traits, free fns, operators, effects, consts,
-//  module-level reactive declarations, node / connection types, and
+//  module-level reactive declarations, node / wire types, and
 //  top-level placements (003-34). `fulfill` blocks do *not* carry a
 //  visibility prefix; their reachability is derived from the trait's
 //  and the type's joint reach (§10.3 final bullet).
@@ -3520,7 +3520,7 @@ FnBody            ::= ':' INDENT BlockBody DEDENT
 //  forms. The clause is purely optional (013-124); a default `-> T`
 //  with no `from` leaves rootedness body-inferred. The `'from'`
 //  keyword here is the same lexeme as the clause keyword used in
-//  `connection` declarations (§2.4) — disambiguated by position
+//  `wire` declarations (§2.4) — disambiguated by position
 //  (immediately following `FnReturn`).
 // **`WhereClause?` follows `FnFromClause?` (per §11.7.5, 013-124).**
 //  When both are present the order is fixed: `-> T from v where T: Clone`.
@@ -3807,7 +3807,7 @@ RequiredCellKind  ::= 'attr'
                     | 'derived'
                     | 'recurrent' ( '[' ConstGenericArg ']' )?
                     | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']'
-                    | 'stream' '[' TypeExpr ']'      // bracket-policy head (mirrors KindAnnotation §3.15); same wiring type as the word form (§13.18.3)
+                    | 'stream' '[' TypeExpr ']'      // bracket-policy head (mirrors KindAnnotation §3.15); same channel as the word form (§13.18.3)
                     ;  (§3.1.7, 005-30)
 
 EndpointDecl      ::= ( 'from' | 'to' ) ':' TypeExpr
@@ -3854,7 +3854,7 @@ TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind sl
 //  `EndpointDecl`) is a kind-specific trait per §3.1.7 — the
 //  kind-specificity is a semantic property, not a grammar one.
 // **`EndpointDecl`'s `'from'` / `'to'` keywords (per §3.1.7).** The
-//  same `'from'` / `'to'` clause keywords used in connection
+//  same `'from'` / `'to'` clause keywords used in wire
 //  declarations (§9) appear here as endpoint-requirement
 //  introducers. Their position inside a `TraitBodyItem` is what the
 //  parser uses to recognise the `EndpointDecl` alternative.
@@ -4026,7 +4026,7 @@ DesiredCellDecl   ::= 'derived' IDENT ( ':' TypeExpr )? '=' Expr
                           ( '[' ConstGenericArg ']' )? IDENT ( ':' TypeExpr )? '=' Expr
                     | 'recurrent' RecurrentDepth? 'stream' '[' TypeExpr ']'
                           IDENT ( ':' TypeExpr )? '=' Expr
-                          // bracket-policy declaration heads (mirror KindAnnotation §3.15); each spells the same wiring type as its word-form sibling — the word form is the idiomatic sugar (§13.18.3)
+                          // bracket-policy declaration heads (mirror KindAnnotation §3.15); each spells the same channel as its word-form sibling — the word form is the idiomatic sugar (§13.18.3)
                     | WhenBlockDecl                              // cell-bearing variant of §5.21 (per §13.9.12)
                     | GivenBlockDecl                             // cell-bearing variant of §5.22 (per §13.9.13)
                     ;  (§13.19.4, 029-93)
@@ -4034,7 +4034,7 @@ DesiredCellDecl   ::= 'derived' IDENT ( ':' TypeExpr )? '=' Expr
 ObservedCellDecl  ::= 'signal' IDENT ':' TypeExpr '=' Expr
                     | 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )? IDENT ':' TypeExpr
                     | 'stream' '[' TypeExpr ']' IDENT ':' TypeExpr
-                      // bracket-policy declaration head (mirrors KindAnnotation §3.15); same wiring type as the word form — the word form is the idiomatic sugar (§13.18.3)
+                      // bracket-policy declaration head (mirrors KindAnnotation §3.15); same channel as the word form — the word form is the idiomatic sugar (§13.18.3)
                     ;  (§13.19.5, 029-93)
 
 WhenBlockDecl     ::= 'when' Expr ':' INDENT DesiredCellDecl+ DEDENT OtherwiseDeclArm?
@@ -4140,7 +4140,7 @@ RecurrentDecl     ::= 'recurrent' RecurrentDepth? RecurrentBind ( ':' TypeExpr )
                           ( '[' ConstGenericArg ']' )? IDENT ( ':' TypeExpr )? '=' Expr
                     | 'recurrent' RecurrentDepth? 'stream' '[' TypeExpr ']'
                           IDENT ( ':' TypeExpr )? '=' Expr
-                          // bracket-policy declaration head (mirrors KindAnnotation §3.15); both spell the same wiring type — the word form is the idiomatic sugar (§13.18.3)
+                          // bracket-policy declaration head (mirrors KindAnnotation §3.15); both spell the same channel — the word form is the idiomatic sugar (§13.18.3)
                     ;  (§13.2.4, 016-49)
 
 RecurrentDepth    ::= '[' ConstGenericArg ']'
@@ -4154,7 +4154,7 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
                       IDENT ( ':' TypeExpr )? '=' Expr
                     | 'stream' '[' TypeExpr ']'
                       IDENT ( ':' TypeExpr )? '=' Expr
-                      // bracket-policy declaration head (mirrors KindAnnotation §3.15); both spell the same wiring type — the word form is the idiomatic sugar (§13.18.3)
+                      // bracket-policy declaration head (mirrors KindAnnotation §3.15); both spell the same channel — the word form is the idiomatic sugar (§13.18.3)
                     ;  (§13.18.2, 003-31)
 ```
 
@@ -4198,7 +4198,7 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  must name its policy — there is no policy-erased (`stream T`)
 //  declaration form. The policy may be spelled either as the `'ring'` /
 //  `'gate'` word form or as the `'[' TypeExpr ']'` bracket-policy form
-//  (`stream[Ring[64]]`, §13.18.3); the two spell the same wiring type.
+//  (`stream[Ring[64]]`, §13.18.3); the two spell the same channel.
 //  On the word form, the optional `'[' ConstGenericArg ']'` is the
 //  buffer capacity, defaulting to 1024 (§13.18.2) when absent.
 // **`'=' Expr` source is mandatory at module level (per §13.18.2).**
@@ -4217,7 +4217,7 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  outer `recurrent[N]` is the output history depth, the inner
 //  `stream <policy>[M]` is the buffer policy and capacity.
 // **No `attr` at module level (per §13.2.2).** `attr` declarations
-//  appear only inside node and connection bodies and trait
+//  appear only inside node and wire bodies and trait
 //  `RequiredCell` declarations — never at module top level. The
 //  `ModuleReactiveDecl` production has no `'attr'` alternative.
 // **`ModuleReactiveDecl` reused in operator and effect bodies.**
@@ -4238,11 +4238,11 @@ a navigational stub.
 See §11.2 for the canonical production; this section carries no
 production block of its own.
 
-// **No bare top-level connection placement (per §13.8 / §9).**
+// **No bare top-level wire placement (per §13.8 / §9).**
 //  `TopLevelPlacement` instantiates node types only (the production
-//  references `TypeRef` resolving to a node type); connection
+//  references `TypeRef` resolving to a node type); wire
 //  placements live inside placement bodies as a `BlockBody`
-//  item, not at module top level. The connection-vs-node distinction
+//  item, not at module top level. The wire-vs-node distinction
 //  is a post-parse semantic check; the parser cannot syntactically
 //  tell the two apart from the placement surface alone.
 
@@ -4331,7 +4331,7 @@ NodeBodyMember    ::= ChildrenClause                             // §8.3
 
 // **Clauses only — no bare placements (per §13.3.1, LEARNINGS #19).**
 //  A `NodeBodyMember` is exclusively a clause or cell declaration;
-//  bare node / connection placements are *not* admissible as direct
+//  bare node / wire placements are *not* admissible as direct
 //  body members. Placements the type itself emits live inside the
 //  `expose:` clause (as `for`/`repeat`/wrapper entries — §8.10) or
 //  inside the `effects:` clause (as effect entries — §8.11); no
@@ -4413,7 +4413,7 @@ Selector          ::= TypeExpr                                   // node-typed; 
 //  `dynamic` is admissible **only on `NamedAcceptance`** inside a
 //  `children:` clause (a dynamic supply requires a body-side name
 //  binding); `UnnamedAcceptance` does not admit the prefix.
-//  Connection-view acceptance (§8.4) admits `dynamic` on both
+//  Wire-view acceptance (§8.4) admits `dynamic` on both
 //  named and unnamed entries per SPEC §13.3.4.
 // **No `children:` clause means no children accepted (per
 //  §13.3.3).** A node body lacking the clause accepts no children
@@ -4424,55 +4424,55 @@ Selector          ::= TypeExpr                                   // node-typed; 
 //  node-typed `TypeExpr` (concrete node type, trait whose
 //  `requires` includes `Node`, or the `Node` marker), and the
 //  `BundleViewSelector` form `[...]` of §10.1. The kind constraint
-//  (node-typed only — connection-typed selectors are rejected) is
+//  (node-typed only — wire-typed selectors are rejected) is
 //  a post-parse semantic check; the grammar admits any `TypeExpr`.
 
-### 8.4 `incoming:` / `outgoing:` connection-view acceptance clauses
+### 8.4 `incoming:` / `outgoing:` wire-view acceptance clauses
 
 ```ebnf
-IncomingClause    ::= 'incoming' ':' INDENT ConnAcceptanceEntry+ DEDENT
+IncomingClause    ::= 'incoming' ':' INDENT WireAcceptanceEntry+ DEDENT
                     ;  (§13.3.4, 017-21)
 
-OutgoingClause    ::= 'outgoing' ':' INDENT ConnAcceptanceEntry+ DEDENT
+OutgoingClause    ::= 'outgoing' ':' INDENT WireAcceptanceEntry+ DEDENT
                     ;  (§13.3.4, 017-21)
 
-ConnAcceptanceEntry ::= ConnNamedAcceptance
-                      | ConnUnnamedAcceptance
+WireAcceptanceEntry ::= WireNamedAcceptance
+                      | WireUnnamedAcceptance
                     ;  (§13.3.4, 017-21)
 
-ConnNamedAcceptance ::= 'dynamic'? IDENT ':' TypeExpr Cardinality?
+WireNamedAcceptance ::= 'dynamic'? IDENT ':' TypeExpr Cardinality?
                     ;  (§13.3.4, 017-21)
 
-ConnUnnamedAcceptance ::= 'dynamic'? TypeExpr Cardinality?
+WireUnnamedAcceptance ::= 'dynamic'? TypeExpr Cardinality?
                     ;  (§13.3.4, 017-21)
 ```
 
 // **Same two-form pattern as `ChildrenClause` (per §13.3.4, 017-21).**
 //  Each acceptance entry is either named (joining the body-scope
-//  namespace as a connection-view binding per §13.3.4.1) or unnamed
-//  (accept-only — widens the caller-facing connection contract but
+//  namespace as a wire-view binding per §13.3.4.1) or unnamed
+//  (accept-only — widens the caller-facing wire contract but
 //  produces no body binding). The two forms parallel
 //  `NamedAcceptance` / `UnnamedAcceptance` in §8.3.
-// **Connection-typed selectors only (per §13.3.4).** The `TypeExpr`
-//  in a `ConnAcceptanceEntry` must resolve to a connection type, a
-//  trait whose `requires` includes `Connection`, or the
-//  `Connection` marker. The kind check is post-parse.
+// **Wire-typed selectors only (per §13.3.4).** The `TypeExpr`
+//  in a `WireAcceptanceEntry` must resolve to a wire type, a
+//  trait whose `requires` includes `Wire`, or the
+//  `Wire` marker. The kind check is post-parse.
 // **`incoming:` vs `outgoing:` (per §13.3.4).** The two clauses
 //  have identical surface shape; the keyword selects which endpoint
-//  the node plays. An `outgoing:` entry bounds connections the
+//  the node plays. An `outgoing:` entry bounds wires the
 //  caller may originate *from* the node; an `incoming:` entry
-//  bounds connections directed *at* the node (aggregated across
+//  bounds wires directed *at* the node (aggregated across
 //  sources). The semantic difference is post-parse — the grammar's
 //  productions are parallel.
 // **`dynamic` marker (per §13.3.4 final paragraph, §8.6).** The
-//  `'dynamic'` prefix applies to connection-view entries on the
+//  `'dynamic'` prefix applies to wire-view entries on the
 //  same terms as `ChildrenClause` entries: it marks runtime-varying
 //  membership and demands the bare `'*'` cardinality (see §8.6).
 //  Either clause's entries may be marked `dynamic`.
 // **`Selector` does *not* appear here — only `TypeExpr`.** A
-//  connection-view's contract is a single connection type
+//  wire-view's contract is a single wire type
 //  (concrete or trait); `BundleViewSelector` is not admissible (bundles
-//  bundle *nodes*, not connections — §10.4). The grammar restricts
+//  bundle *nodes*, not wires — §10.4). The grammar restricts
 //  this branch accordingly.
 
 ### 8.5 Standalone `view` declarations
@@ -4515,7 +4515,7 @@ DynamicMarker     ::= 'dynamic'                                  // attaches to 
 // **The `dynamic` keyword is a prefix on three forms (per §13.3.3.1):**
 //  - on a `NamedAcceptance` / `UnnamedAcceptance` inside
 //    `ChildrenClause` (§8.3);
-//  - on a `ConnNamedAcceptance` / `ConnUnnamedAcceptance` inside
+//  - on a `WireNamedAcceptance` / `WireUnnamedAcceptance` inside
 //    `IncomingClause` / `OutgoingClause` (§8.4);
 //  - on a `StandaloneView` (§8.5).
 //  It is not a standalone clause and does not appear elsewhere.
@@ -4582,7 +4582,7 @@ TypeLevelWhenClause ::= 'when' ':' Expr
                     ;  (§13.9.2, 022-3)
 ```
 
-// **Single predicate (per §13.9.2).** A node or connection body may
+// **Single predicate (per §13.9.2).** A node or wire body may
 //  declare *one* `when:` predicate as a body member; it is the
 //  type-level activation gate inherited by every placement. Multiple
 //  `when:` clauses in one body are a post-parse semantic error.
@@ -4638,7 +4638,7 @@ DefaultAttrDecl   ::= 'default' 'attr' IDENT ':' TypeExpr ( '=' Expr )?
 //  restricts which alternatives are semantically legal. All four
 //  are admissible inside a node body.
 // **`AttrDecl` introduced here (per §13.2.2).** Unlike the
-//  module-level reactive set, `attr` is a node-and-connection-body
+//  module-level reactive set, `attr` is a node-and-wire-body
 //  declaration; it has no module-level form (see §7.15 disambiguator
 //  on "no `attr` at module level"). The default-value clause
 //  `'=' Expr` is optional; when absent, the caller must supply the
@@ -4659,7 +4659,7 @@ DefaultAttrDecl   ::= 'default' 'attr' IDENT ':' TypeExpr ( '=' Expr )?
 //  `stream` declaration follows §7.15's `StreamDecl` shape: the
 //  policy is mandatory — spelled as the `'ring'` / `'gate'` word
 //  form or the `'[' TypeExpr ']'` bracket-policy form (§13.18.3),
-//  both the same wiring type — the bracketed capacity on the word
+//  both the same channel — the bracketed capacity on the word
 //  form is optional (defaults to 1024 per §13.18.2), and the
 //  `'=' Expr` source is optional only for host-fed streams
 //  (post-parse semantic).
@@ -4674,7 +4674,7 @@ A `yielded` declaration binds a *named* membership-varying group of
 cells (§13.20.4). Its right-hand side is a `collect:` block whose
 indented body contributes member-cells via `yield`. `yielded` is a
 **body-only** declaration — it is wired into node bodies (§8.1) and
-connection bodies (§9.1); it is *not* a module-top-level declaration
+wire bodies (§9.1); it is *not* a module-top-level declaration
 (§7.15 has no `yielded` alternative). The declaration form is the only
 way to *name* a group (034-1).
 
@@ -4755,7 +4755,7 @@ YieldDefaultArm   ::= 'default' ':' INDENT CollectBody DEDENT
 //  through `KindAnnotation` because the declaration spells the kind
 //  keyword inline.
 
-### 8.10 `expose:` clause entries (view-name, named-child, wrapper, connection, `@content`, type-internal `for`/`repeat`, `when`/`given` blocks)
+### 8.10 `expose:` clause entries (view-name, named-child, wrapper, wire, `@content`, type-internal `for`/`repeat`, `when`/`given` blocks)
 
 ```ebnf
 ExposeClause      ::= 'expose' ':' INDENT ExposeEntry+ DEDENT
@@ -4764,7 +4764,7 @@ ExposeClause      ::= 'expose' ':' INDENT ExposeEntry+ DEDENT
 ExposeEntry       ::= ViewNameEntry
                     | NamedChildEntry
                     | WrapperPlacement
-                    | ConnectionPlacement                        // see §11.4
+                    | WirePlacement                              // see §11.4
                     | StandaloneDirective                        // see §12 head; @content per §12.2
                     | ExposeForEntry
                     | ExposeRepeatEntry
@@ -4831,8 +4831,8 @@ ExposeRepeatEntry ::= 'repeat' RepeatBind RepeatIndex? 'in' Expr
 //  "Entry-kind disambiguation").** A `WrapperPlacement` headed by
 //  a node-typed `TypeRef` followed by `':' BodyIntro` is a
 //  wrapper placement (the body is a list of further exposition
-//  entries); a `ConnectionPlacement` headed by a connection-typed
-//  `TypeRef` followed by `':' <destination>` is a connection
+//  entries); a `WirePlacement` headed by a wire-typed
+//  `TypeRef` followed by `':' <destination>` is a wire
 //  placement (the body is the destination reference — see §11.4).
 //  Both share the `Name: …` surface; the kind follows from the
 //  name's resolution. A `Type[…]`-typed binding follows its
@@ -4840,7 +4840,7 @@ ExposeRepeatEntry ::= 'repeat' RepeatBind RepeatIndex? 'in' Expr
 // **`@content` is the standalone-directive entry (per §13.3.7.2,
 //  §12.2).** A `ContentDirective` entry is the `@content` form;
 //  at most one per `ExposeClause` (post-parse). It exposes
-//  caller-supplied children and outgoing connections in caller
+//  caller-supplied children and outgoing wires in caller
 //  order. The full directive production is in §12.2.
 // **`ExposeForEntry` = type-emitted children via compile-time `for`
 //  (per §13.3.3.3, §13.3.7.1 "Iteration entries").** The body is a
@@ -4865,9 +4865,9 @@ ExposeRepeatEntry ::= 'repeat' RepeatBind RepeatIndex? 'in' Expr
 //  are admissible as exposition entries; each arm's body is itself
 //  a list of `ExposeEntry`s. Arm-position discrimination (variant
 //  labels in `given`, boolean guards in `when:`) keeps the arm-head
-//  shape distinct from a `ConnectionPlacement` `Name: dest` line —
+//  shape distinct from a `WirePlacement` `Name: dest` line —
 //  per §13.3.7.1 final paragraph.
-// **Bare `incoming` connection-view name forbidden as an entry (per
+// **Bare `incoming` wire-view name forbidden as an entry (per
 //  §13.3.7.1).** Naming an `IncomingClause` view in `expose:` is a
 //  post-parse semantic error — engagement order belongs to the
 //  source's traversal, not the destination's. The grammar admits
@@ -4917,7 +4917,7 @@ EffectsGivenBlock ::= GivenBlockExpr                             // arm bodies h
 
 // **Sole effect-instantiation site (per §13.3.8, §13.19.15).** An
 //  effect may be instantiated *only* inside an `EffectsClause`;
-//  module level, operator bodies, connection bodies, function
+//  module level, operator bodies, wire bodies, function
 //  bodies, and the `ExposeClause` are all rejected hosts. The
 //  grammar enforces partitioning by *not* admitting `EffectEntry`
 //  forms in any other clause's production.
@@ -4958,32 +4958,32 @@ EffectsGivenBlock ::= GivenBlockExpr                             // arm bodies h
 //  effect-acceptance clause and no effect-parameter form on any
 //  declaration head.
 
-## 9. Connection declarations
+## 9. Wire declarations
 
-Productions for `connection` declarations: shell, single / cartesian / pairs forms, body references, when, circularity.
+Productions for `wire` declarations: shell, single / cartesian / pairs forms, body references, when, circularity.
 
 ### 9.1 Common shell
 
 ```ebnf
-ConnectionDecl    ::= Visibility? 'sealed'? 'connection' IDENT GenericParamList?
-                      WhereClause? ConnectionBody
+WireDecl          ::= Visibility? 'sealed'? 'wire' IDENT GenericParamList?
+                      WhereClause? WireBody
                     ;  (§13.6.1, 017-21)
 // Directive decoration attaches via the §12.3 `AnnotatedDecl` wrapper
-//  (Phase D, D4) — `ConnectionDecl` carries no inline `Annotation*` head.
+//  (Phase D, D4) — `WireDecl` carries no inline `Annotation*` head.
 
-ConnectionBody    ::= ':' INDENT ConnectionBodyMember+ DEDENT
+WireBody          ::= ':' INDENT WireBodyMember+ DEDENT
                     ;  (§13.6.1, 017-21)
 
-ConnectionBodyMember ::= FromDecl                                // §9.2
+WireBodyMember       ::= FromDecl                                // §9.2
                     | ToDecl                                     // §9.2
                     | FromMultiDecl                              // §9.3
                     | ToMultiDecl                                // §9.3
                     | PairsClause                                // §9.4
                     | TypeLevelWhenClause                        // §8.8 / §9.6
-                    | ConnectionBodyCellDecl                     // §9.1 (cells)
+                    | WireBodyCellDecl                           // §9.1 (cells)
                     ;  (§13.6.1, 017-21)
 
-ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
+WireBodyCellDecl       ::= AttrDecl                              // §8.9
                     | DefaultAttrDecl                            // §8.9
                     | DerivedDecl                                // §7.15
                     | RecurrentDecl                              // §7.15
@@ -4993,8 +4993,8 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
                     ;  (§13.6.1.1, 017-21)
 ```
 
-// **Connection body is a clauses-and-cells set (per §13.6.1).** A
-//  `ConnectionBodyMember` is exclusively a clause, an endpoint
+// **Wire body is a clauses-and-cells set (per §13.6.1).** A
+//  `WireBodyMember` is exclusively a clause, an endpoint
 //  declaration, or a cell declaration. Bare placements, `fn`
 //  declarations, `repeat` declarations, and effect entries are *not*
 //  admissible as direct members — per §13.6.4. The grammar enforces
@@ -5011,7 +5011,7 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
 //  (so `from:` and `to:` may be separated by other clauses); the
 //  at-most-once, exactly-once, and form-exclusivity rules are
 //  post-parse semantic checks.
-// **Exactly one endpoint form (per §13.6.1).** A connection uses
+// **Exactly one endpoint form (per §13.6.1).** A wire uses
 //  *one* of the three endpoint forms — single, cartesian, or pairs.
 //  Mixing forms (e.g. `pairs:` alongside `from:`+`to:`) is a
 //  compile-time error. The grammar admits the endpoint-member
@@ -5021,31 +5021,31 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
 //  single-vs-cartesian classification (see §9.2 / §9.3
 //  disambiguators) are post-parse.
 // **Trait conformance via `fulfill` blocks (per §13.6.5).** A
-//  connection declares trait conformance through `fulfill` blocks
+//  wire declares trait conformance through `fulfill` blocks
 //  (§7.12), never in its body — including language-defined marker
 //  traits like `Circularity` (§9.7), claimed by a bodiless `fulfill`.
 // **Cell forms mirror node body cells (per §13.6.1.1, §13.3.1).**
 //  `AttrDecl`, `DefaultAttrDecl`, `DerivedDecl`, `RecurrentDecl`,
 //  `StreamDecl`, and `ConstStmt` are the same productions used in
-//  node bodies (§8.9) and at module top level (§7.15). A connection
+//  node bodies (§8.9) and at module top level (§7.15). A wire
 //  body admits *at most one* `DefaultAttrDecl` per §13.2.2.1 — the
 //  positional default attr — checked post-parse.
-// **No `fn` / `repeat` / `effects:` (per §13.6.4).** A connection
+// **No `fn` / `repeat` / `effects:` (per §13.6.4).** A wire
 //  body never contains `FnDecl`, `RepeatDecl` (no `expose:` either,
-//  see below), or `EffectsClause`. Behavior on connections lives in
+//  see below), or `EffectsClause`. Behavior on wires lives in
 //  free functions (UFCS) and `fulfill` blocks. Dynamic-scope
 //  structure belongs in node `expose:` blocks or placement bodies.
-// **No `expose:` clause (per §13.6.1, §13.6.4).** A connection
+// **No `expose:` clause (per §13.6.1, §13.6.4).** A wire
 //  surfaces its endpoints only body-internally (§13.6.2 / §9.5) and
 //  has no exposition entries. The grammar admits no `ExposeClause`
-//  alternative in `ConnectionBodyMember`.
+//  alternative in `WireBodyMember`.
 // **No `children:` / `incoming:` / `outgoing:` (per §13.6 vs §13.3).**
-//  Acceptance clauses are node-only; a connection neither admits
+//  Acceptance clauses are node-only; a wire neither admits
 //  children nor accepts inbound or outbound wiring beyond its two
 //  endpoints. The grammar enumerates no acceptance-clause
 //  alternative here.
 // **`sealed` modifier (per §3.7.6, 005-243).** The optional `sealed`
-//  restricts conformance to the connection's declaring module — a
+//  restricts conformance to the wire's declaring module — a
 //  foreign `fulfill` is diagnostic
 //  `sealed_type_fulfillment_outside_module`.
 
@@ -5060,14 +5060,14 @@ ToDecl            ::= 'to' ':' TypeExpr
 ```
 
 // **Each of `from:` / `to:` required, exactly once (per §13.6.1.1
-//  / §13.6.1 lead paragraph).** A single-form connection must
+//  / §13.6.1 lead paragraph).** A single-form wire must
 //  declare both a `FromDecl` and a `ToDecl`, each appearing
 //  *exactly once* in the body. `FromDecl` and `ToDecl` are
-//  admitted as independent `ConnectionBodyMember` alternatives
+//  admitted as independent `WireBodyMember` alternatives
 //  (§9.1), so they may appear in either order and may be
 //  separated by other body members (e.g. `attr`, `when`); the
 //  exactly-once-each rule is a post-parse semantic
-//  check across the whole `ConnectionBody`, not enforced by the
+//  check across the whole `WireBody`, not enforced by the
 //  local production.
 // **`TypeExpr` is a node type or trait (per §13.6.1.1).** Each
 //  endpoint's `TypeExpr` resolves to a node type — concrete or, via
@@ -5100,7 +5100,7 @@ ToMultiDecl       ::= 'to' ':' TypeExpr ( ',' TypeExpr )+ ','?
 //  Either or both endpoints may be multi-typed; the mixed cases
 //  (single on one side, multi on the other) are still cartesian.
 //  `FromMultiDecl` and `ToMultiDecl` are admitted as independent
-//  `ConnectionBodyMember` alternatives (§9.1) alongside the
+//  `WireBodyMember` alternatives (§9.1) alongside the
 //  single-arity `FromDecl` / `ToDecl`, so any combination —
 //  `FromMultiDecl` + `ToMultiDecl`, `FromMultiDecl` + `ToDecl`,
 //  or `FromDecl` + `ToMultiDecl` — is admitted by the body.
@@ -5110,7 +5110,7 @@ ToMultiDecl       ::= 'to' ':' TypeExpr ( ',' TypeExpr )+ ','?
 //  grammar disambiguates `FromDecl` from `FromMultiDecl` (resp.
 //  `ToDecl` from `ToMultiDecl`) by the presence of `','` after
 //  the first `TypeExpr` — purely local lookahead. The overall
-//  *form* of the connection (single vs. cartesian) is then a
+//  *form* of the wire (single vs. cartesian) is then a
 //  post-parse classification over the pair of endpoint members:
 //  the form is **single** iff both endpoints parsed as the
 //  single-arity production (`FromDecl` + `ToDecl`), and
@@ -5187,7 +5187,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 //  All `attr` / `derived` declarations in a pairs-form body apply
 //  uniformly to every declared pair; the body cannot vary its
 //  *shape* by pair. When per-pair shape is needed, declare a
-//  separate connection type per pair. The grammar enforces this by
+//  separate wire type per pair. The grammar enforces this by
 //  not admitting any per-pair body-shape selector — pairs are
 //  selected only inside `match pair:` arms.
 
@@ -5196,14 +5196,14 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 ```ebnf
 // No new production: `from`, `to`, and `pair` are reserved
 // instance-field names resolved by name resolution inside a
-// connection body. Their surface in expressions is the standard
+// wire body. Their surface in expressions is the standard
 // `IDENT` of §5.1 (primary expression), with member access via
 // `from.<field>` / `to.<field>` per the postfix forms of §5.2.
 //                                                  ;  (§13.6.2, 002-5)
 ```
 
 // **Three reserved instance-field names (per §13.6.2, 002-5).**
-//  Inside a connection body, the bare identifiers `from`, `to`, and
+//  Inside a wire body, the bare identifiers `from`, `to`, and
 //  `pair` are *reserved instance-field names* — the
 //  contextual-keyword set of §13.4 (per DECISION_LOG 002-5). They
 //  resolve at parse-shape time to endpoint-reference values
@@ -5229,9 +5229,9 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 //  primary-and-postfix shape.
 // **Body-internal scope only (per §13.6.2 final paragraph).**
 //  `from`, `to`, and `pair` are visible *only inside the
-//  connection type's own body*. No external `some_conn.to` access
+//  wire type's own body*. No external `some_conn.to` access
 //  is admitted — the grammar's `PathExpr` / postfix forms simply
-//  do not bind these names outside the connection body's scope.
+//  do not bind these names outside the wire body's scope.
 //  This is a name-resolution rule, not a separate grammar form.
 // **Reactive re-evaluation on `to` re-point (per §13.6.2).** The
 //  `to` binding tracks the destination supplied at placement time;
@@ -5240,7 +5240,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 //  grammar one; the grammar admits the bare `to` / postfix access
 //  identically regardless of dynamism.
 
-### 9.6 Connection-declaration-level `when:` clause
+### 9.6 Wire-declaration-level `when:` clause
 
 ```ebnf
 // Reuses §8.8: `TypeLevelWhenClause ::= 'when' ':' Expr`
@@ -5248,31 +5248,31 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 // Reuse-note source pointer (per §0 conventions). The pointer carries
 //  two SPEC sections: §13.9.2 is the primary normative source for the
 //  `when:` clause shape; §13.6.1.1 is the reuse-origin (where a
-//  connection body admits this clause). This is a documented reuse
+//  wire body admits this clause). This is a documented reuse
 //  note, not a second source pointer on a new production.
 ```
 
 // **Reuses node-body `when:` shape (per §13.9.2, §13.6.1.1).** A
-//  connection body admits the same `TypeLevelWhenClause` as a node
+//  wire body admits the same `TypeLevelWhenClause` as a node
 //  body (§8.8). The clause form is `'when' ':' Expr` — colon-form,
 //  consistent with other body fields (`from:`, `to:`, `attr name:`)
 //  and distinct from the placement-level inline `when` modifier of
 //  §11.8 (no colon).
-// **At most one per connection body (per §13.9.2).** A second
-//  `when:` clause in the same `ConnectionBody` is a post-parse
+// **At most one per wire body (per §13.9.2).** A second
+//  `when:` clause in the same `WireBody` is a post-parse
 //  semantic error; the grammar admits multiple via the `+` body
 //  repetition, with the at-most-once rule enforced semantically.
 // **Same gate-and-freeze semantics as on a node (per §13.9.7,
 //  §13.6.2).** When the predicate evaluates to false, the
-//  connection *freezes*: cells retain their last committed value
+//  wire *freezes*: cells retain their last committed value
 //  and the body does not re-evaluate. The freeze condition combines
 //  with the unresolved-destination freeze of §13.6.2 (a `WeakHandle`
 //  destination resolving to `None`); these two are the only
-//  switches on a connection's reactive liveness. The grammar
+//  switches on a wire's reactive liveness. The grammar
 //  admits the `Expr` unrestricted; the bool-typed reactive-predicate
 //  rule is post-parse.
 // **Predicate is a reactive `Expr` (per §13.9.4).** The predicate
-//  joins the connection's provenance and re-evaluates when its
+//  joins the wire's provenance and re-evaluates when its
 //  references change. Endpoint references inside the predicate
 //  follow the same form-conditioned availability rules of §9.5
 //  (`from` / `to` in single / cartesian forms; `pair` in pairs
@@ -5284,13 +5284,13 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 ```ebnf
 // No new production: `Circularity` is a language-defined marker
 // trait (§3.7.4) claimed by a bodiless `fulfill Circularity for C`
-// block (§7.12) on a `ConnectionDecl` `C`. The grammar surface is
+// block (§7.12) on a `WireDecl` `C`. The grammar surface is
 // the standard `FulfillItem` of §7.12 — no special trait-name form.
 //                                                  ;  (§13.6.5, 019-75)
 ```
 
 // **Surface = bodiless `fulfill Circularity for C` (per §13.6.5).** A
-//  connection type opts into participation in topology cycles by a
+//  wire type opts into participation in topology cycles by a
 //  bodiless `fulfill Circularity for C` claim (§7.12). No special
 //  grammar form attaches; the `FulfillItem` is the same as for any
 //  other trait (per §3.1 / §7.12). The parser does not special-case
@@ -5302,9 +5302,9 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 //  fact follows from the trait's language-defined declaration.
 // **Static cycle rule is post-parse (per §13.6.5).** The
 //  compiler enforces that every topology cycle in the
-//  construction-time node graph traverses at least one connection
+//  construction-time node graph traverses at least one wire
 //  satisfying `Circularity`; cycles consisting only of
-//  non-`Circularity` connections are compile-time errors. This is
+//  non-`Circularity` wires are compile-time errors. This is
 //  a graph-analysis rule across many declarations, not a
 //  per-declaration grammar form, and lives entirely outside the
 //  scope of the grammar.
@@ -5386,7 +5386,7 @@ CompileTimeFor    ::= 'for' Pattern 'in' Expr ':' BundleMember ( BundleMember )*
 //  post-parse (§12.3.7 / §13.5.4), not a grammar rule.
 // **Forbidden inside `[...]` (per 017-96 / §13.3.3.5).** `repeat` is
 //  rejected (dynamic bundles use the reactive `Cell` form, §13.3.3.5);
-//  connection placements are rejected (bundling is node-only). The
+//  wire placements are rejected (bundling is node-only). The
 //  rejections are post-parse — the grammar admits the same brackets and
 //  the resolver / type-checker reports the diagnostic at the inner
 //  construct's site.
@@ -5488,7 +5488,7 @@ and carry attrs, children, and `when`-gating.
 ## 11. Placements
 
 Productions for placement syntax: the inline element order (§13.8.9),
-the top-level / child / connection placement variants (§13.8.1 /
+the top-level / child / wire placement variants (§13.8.1 /
 §13.8.3 / §13.8.4), the attribute clause (§13.8.7), the flag run
 (§13.8.8), the `/expr` default-attr targeting (§13.8.5), the inline
 `when` modifier (§13.9), the `repeat … as` and `for … as` view
@@ -5508,7 +5508,7 @@ most once and in the order shown. Quoting the SPEC line verbatim
 Placement         ::= TypeRefPlacement
                     | NamedBundlePlacement                      // see §10.3
                     | BundlePlacement                           // see §10.2
-                    | ConnectionPlacement                       // see §11.4
+                    | WirePlacement                             // see §11.4
                     ;  (§13.8.9, 021-123)
 
 TypeRefPlacement  ::= TypeRef FlagsRun? NameClause? DefaultArgPart? WhenClause? AttrClause? BodyIntro?
@@ -5533,7 +5533,7 @@ BodyIntro         ::= ':' INDENT PlacementBody DEDENT
 PlacementBody     ::= PlacementBodyItem ( NEWLINE PlacementBodyItem )* NEWLINE?
                     ;  (§13.8.9, 021-92)
 
-PlacementBodyItem ::= Placement                                 // nested child / connection / bundle placement
+PlacementBodyItem ::= Placement                                 // nested child / wire / bundle placement
                     | BlockItem                                 // ordinary statement-shape (let / for / while / Expr …)
                     ;  (§13.8.9, 021-92)
 
@@ -5544,10 +5544,10 @@ InlineBody        ::= SelfDelimitingPlacement ( SelfDelimitingPlacement )*
 // **`PlacementBody` reaches nested placements (per §13.8.9, §11.2 /
 //  §11.3 / §11.4).** Inside the indented body of a `TypeRefPlacement`
 //  or `TopLevelPlacement`, the parser admits any `Placement` (nested
-//  child / connection / bundle / wrapper) as a body item in addition
+//  child / wire / bundle / wrapper) as a body item in addition
 //  to ordinary `BlockItem` statement shapes. The discrimination
 //  between `Placement` and `BlockItem` is by the head token: a
-//  `TypeRef` head (a `TypePath` that names a node / connection /
+//  `TypeRef` head (a `TypePath` that names a node / wire /
 //  bundle type) selects `Placement`; `let` / `mut` / `const` / `for`
 //  / `while` / `return` / `break` / `continue` and bare-expression
 //  shapes select `BlockItem`. This wires the §11 placement productions
@@ -5555,7 +5555,7 @@ InlineBody        ::= SelfDelimitingPlacement ( SelfDelimitingPlacement )*
 
 // **Order is normative (per §13.8.9, 021-123).** Re-ordering elements
 //  (e.g., `as` after `|`) is a parse error. The order is the same for
-//  node and connection placements.
+//  node and wire placements.
 // **Flags adjacency (per §13.8.8.4, 021-119).** The `FlagsRun`, when
 //  present, sits **adjacent to `TypeRef`** with no intervening
 //  whitespace — see §11.6.
@@ -5652,25 +5652,25 @@ ChildPlacement    ::= Placement                                 // see §11.1
 //  between one named child and two anonymous ones.
 // **Children body content (per 021-33 / §13.8.3).** A node
 //  placement's `BodyIntro:` body contains zero or more child
-//  placements (child nodes and connections). No attribute settings
+//  placements (child nodes and wires). No attribute settings
 //  appear in the body; they live on the placement's main line via
 //  the attribute clause (§11.5) or aligned multi-line continuation
 //  (§11.5).
 
-### 11.4 Connection placement (body = destination reference)
+### 11.4 Wire placement (body = destination reference)
 
-A connection placement creates a directional connection from a source
+A wire placement creates a directional wire from a source
 instance to a destination instance (021-51). The source is the
 immediately enclosing instance, determined positionally (021-52); the
 destination is supplied in the placement body as a **node reference**
 (021-56).
 
 ```ebnf
-ConnectionPlacement ::= TypeRef FlagsRun? NameClause? DefaultArgPart?
-                        WhenClause? AttrClause? ConnectionDestBody
+WirePlacement       ::= TypeRef FlagsRun? NameClause? DefaultArgPart?
+                        WhenClause? AttrClause? WireDestBody
                     ;  (§13.8.4, 021-51)
 
-ConnectionDestBody ::= ':' INDENT NodeRef DEDENT
+WireDestBody       ::= ':' INDENT NodeRef DEDENT
                     | ':' NodeRef                              // inline; NEWLINE termination follows §2.1.1 addendum
                     ;  (§13.8.6, 021-93)
 
@@ -5679,17 +5679,17 @@ NodeRef           ::= Expr                                      // see disambigu
 ```
 
 // **Same inline-element surface as the generic `Placement` (per
-//  §11.1).** A `ConnectionPlacement` reuses the §11.1 clause sequence
+//  §11.1).** A `WirePlacement` reuses the §11.1 clause sequence
 //  (`FlagsRun`, `NameClause`, `DefaultArgPart`, `WhenClause`,
 //  `AttrClause`) verbatim; only the body differs — the generic
 //  `Placement`'s `BodyIntro` admits child placements
 //  (`SelfDelimitingPlacement+` or `BlockBody`), whereas
-//  `ConnectionDestBody` holds a single node-yielding `NodeRef`
+//  `WireDestBody` holds a single node-yielding `NodeRef`
 //  (021-93). The discrimination between a `Placement` body and a
-//  `ConnectionDestBody` is **by placement kind**, which is post-parse —
+//  `WireDestBody` is **by placement kind**, which is post-parse —
 //  the resolver classifies the `TypeRef` as a node type (then the body
-//  holds children, parsed as `BodyIntro`) or a connection type (then
-//  the body holds the destination, parsed as `ConnectionDestBody`).
+//  holds children, parsed as `BodyIntro`) or a wire type (then
+//  the body holds the destination, parsed as `WireDestBody`).
 //  The parser uses the same surface up to `':' `; the body production
 //  is selected by what follows.
 // **NodeRef shape (per 021-56).** A bare identifier naming an
@@ -5698,13 +5698,13 @@ NodeRef           ::= Expr                                      // see disambigu
 //  per §13.3.6.2). The grammar admits any `Expr`; the
 //  reference-yielding constraint is post-parse (021-79).
 // **No child placements, attr settings, or multi-value bodies (per
-//  021-93).** A connection-placement body that contains anything
+//  021-93).** A wire-placement body that contains anything
 //  other than exactly one `NodeRef` is a compile error — semantic,
 //  post-parse.
-// **`from` / `to` do not appear in connection placement bodies (per
+// **`from` / `to` do not appear in wire placement bodies (per
 //  021-94 / 021-95).** They are reserved as endpoint slots inside
-//  connection type bodies (§9.2); using them as attr names on a
-//  connection is a compile error.
+//  wire type bodies (§9.2); using them as attr names on a
+//  wire is a compile error.
 
 ### 11.5 Attribute clause `| name=value name !name` (incl. multi-line continuation)
 
@@ -5829,7 +5829,7 @@ AtomicExpr        ::= Literal
 // **`/expr` requires a declared `default attr` (per 021-74).** Using
 //  `/expr` on a type without one is a compile error — semantic,
 //  post-parse.
-// **Connection placements use `/expr` for `default attr`; the
+// **Wire placements use `/expr` for `default attr`; the
 //  destination remains in the body (per 021-78 / §13.8.5.1).**
 //  Neither `/expr` nor the attribute clause targets the destination.
 
@@ -5848,9 +5848,9 @@ before the `AttrClause` / `BodyIntro`.
 //  021-124).** The grammar admits any `Expr`; the `bool`-typedness is
 //  post-parse.
 // **Predicate evaluation scope is the enclosing source instance for
-//  connection placements (per 021-60), not the connection's own
-//  scope.** To gate on the connection's own attrs, use a type-level
-//  `when:` clause inside the connection type's body (per 021-61).
+//  wire placements (per 021-60), not the wire's own
+//  scope.** To gate on the wire's own attrs, use a type-level
+//  `when:` clause inside the wire type's body (per 021-61).
 //  Both rules are semantic.
 // **Unparenthesized `:` in the predicate must be parenthesized (per
 //  021-127).** A predicate containing a bare `:` collides with the
@@ -6069,7 +6069,7 @@ line (§12.3). The applied set, with declaration sites:
 Annotation            ::= AppliedDirective
                         ;  (§3.1, 002-13)
 // Alias used by `TraitBodyItem`, `FulfillBodyItem`, `NodeDecl`,
-//  `ConnectionDecl`, and other productions mirroring SPEC BNF that
+//  `WireDecl`, and other productions mirroring SPEC BNF that
 //  spells the slot `Annotation`.
 
 DeriveDirective       ::= '@' 'derive' '(' TypePath ( ',' TypePath )* ')'
@@ -6165,7 +6165,7 @@ AnnotatedDecl     ::= ( AppliedDirective NEWLINE? )* Decl
 
 Decl              ::= TopLevelDecl
                     | NodeBodyDecl
-                    | ConnectionBodyDecl
+                    | WireBodyDecl
                     | EffectBodyDecl                          // wrapped via AnnotatedDesiredCellDecl / AnnotatedObservedCellDecl (§7.14)
                     | TraitBodyItem                           // §7.11
                     | FulfillBodyItem                         // §7.12
@@ -6183,7 +6183,7 @@ TopLevelDecl      ::= FnDecl
                     | TopLevelConstDecl
                     | UseStmt
                     | NodeDecl
-                    | ConnectionDecl
+                    | WireDecl
                     | ModuleReactiveDecl                      // signal / derived / recurrent / stream at module scope
                     | TopLevelPlacement
                     ;  (§1.4, 002-14)
@@ -6196,7 +6196,7 @@ NodeBodyDecl      ::= AttrDecl                                // §8.9
                     | TopLevelConstDecl                       // §8.9 admits module-style const inside node body
                     ;  (§1.4, 002-14)
 
-ConnectionBodyDecl ::= AttrDecl                               // §9 inherits §8.9 cell shapes
+WireBodyDecl       ::= AttrDecl                               // §9 inherits §8.9 cell shapes
                     | DefaultAttrDecl
                     | DerivedDecl
                     | RecurrentDecl
@@ -6210,7 +6210,7 @@ EffectBodyDecl    ::= DesiredCellDecl                         // §7.14 (wrapped
 
 // **Wrapper-only attachment site (per Phase D, D4).** `AnnotatedDecl`
 //  is the *sole* directive-attachment production. Individual decl
-//  productions (`FnDecl`, `RecordDecl`, `NodeDecl`, `ConnectionDecl`,
+//  productions (`FnDecl`, `RecordDecl`, `NodeDecl`, `WireDecl`,
 //  `TraitDecl`, etc.) do **not** carry an inline `Annotation*` head —
 //  the directive-decoration parse path goes through this wrapper
 //  uniformly. One spelled-out exception: `TopLevelPlacement` (§11.2)
@@ -6286,7 +6286,7 @@ SubjectTypeRef    ::= 'Subject'
 ### 13.2 `subject`
 
 `subject` is the **instance value**, available in expression position
-inside a node or connection body. It denotes the whole instance
+inside a node or wire body. It denotes the whole instance
 currently being declared, suitable for passing to a function that
 takes the instance type (`total_output(subject)`).
 
@@ -6298,7 +6298,7 @@ SubjectValueRef   ::= 'subject'
 // **Value position only (per §13.7.7).** `subject` is a value, not a
 //  namespace; it has no `::` form. It appears wherever the grammar
 //  admits an `IDENT` in expression position, but only inside a node
-//  or connection body (semantic check, post-parse).
+//  or wire body (semantic check, post-parse).
 // **No implicit receiver (per §13.7.7).** `some_method(subject)` and
 //  `subject.some_method()` are the same call written two ways; the
 //  dot is sugar, not a receiver binding. The grammar does not
@@ -6336,7 +6336,7 @@ AnchorSuffix      ::= IDENT
 //  via the anchor's single resolved name and then continue with
 //  ordinary path navigation through that bound identifier if needed.
 // **Scope semantics (per §13.7.2 / §13.7.3).** `here::x` resolves in
-//  the current (innermost) scope — inside a node/connection body, the
+//  the current (innermost) scope — inside a node/wire body, the
 //  instance body scope. `module::x` resolves in the enclosing
 //  module's top-level scope. Both bypass collision-disambiguation
 //  rules of §13.7.4 (semantic, post-parse).
@@ -6352,9 +6352,9 @@ position:
 
 | Name         | Declaration-position role                            | Expression-position role                                 | Source       |
 |--------------|------------------------------------------------------|----------------------------------------------------------|--------------|
-| `from`       | endpoint clause head on connection types (§9.2)      | instance field of a connection (the `from` endpoint)     | §13.6, §13.7.5 |
-| `to`         | endpoint clause head on connection types (§9.2)      | instance field of a connection (the `to` endpoint)       | §13.6, §13.7.5 |
-| `pair`       | pairs-form body matcher head (§9.4)                  | instance field on pairs-form connection instances        | §13.6.1.3, §13.7.5 |
+| `from`       | endpoint clause head on wire types (§9.2)            | instance field of a wire (the `from` endpoint)           | §13.6, §13.7.5 |
+| `to`         | endpoint clause head on wire types (§9.2)            | instance field of a wire (the `to` endpoint)             | §13.6, §13.7.5 |
+| `pair`       | pairs-form body matcher head (§9.4)                  | instance field on pairs-form wire instances              | §13.6.1.3, §13.7.5 |
 | `exposition` | (no declaration-position role)                       | instance field of any node — the exposed list (§13.3.7.3) | §13.3.7.3, §13.7.5 |
 | `desired`    | effect clause head (`desired:` sub-block, §7.14)     | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
 | `observed`   | effect clause head (`observed:` sub-block, §7.14)    | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
@@ -6461,7 +6461,7 @@ instantiations `TypePath '[' GenericArgs ']'` per §3.2; the parser does
 not special-case them.
 
 There are no stream bracket types and no stream alias types: a stream
-is wiring, not a value. The stream annotation is the wiring type
+is a channel, not a value. The stream annotation is the channel
 `stream[P] T` (a `KindAnnotation`, §3.15) with word-form sugar
 `stream ring[N] T` / `stream gate[N] T` for `stream[Ring[N]] T` /
 `stream[Gate[N]] T`. A recurrent stream carries the orthogonal
@@ -6475,14 +6475,14 @@ lowercase KINDS.** There is no `Cell[T]`, `Signal[T]`, `Derived[T]`, or
 lowercase **kinds** written in annotation position — see the
 `KindAnnotation` production (§3.15). Two levels: the keyword alone
 (`cell`, `stream`, `signal`, …) is a **kind**; the applied annotation
-is a **wiring type** — a type-system member, unstorable, never a value
-type (§13.2.8.1). The wiring types are the value-cell umbrella `cell T`
+is a **channel** — a type-system member, unstorable, never a value
+type (§13.2.8.1). The channels are the value-cell umbrella `cell T`
 (spanning the value cells `signal T`, `attr`-as-`signal T`, `derived
 T`, `recurrent[N] T`), the stream kind class (erased `stream T`, the
 policy-generic `stream[P] T`, its word-form sugar `stream ring[N] T` /
 `stream gate[N] T`, and the history-bearing `recurrent[N] stream …`),
 the group kind class (`yielded T`), and `dynamic view T` (§13.3.3.4). A
-wiring type never appears inside a value-type constructor; the sole
+channel never appears inside a value-type constructor; the sole
 exception is `Portal[cell T]`, whose bracket carries a cell
 designation, not a nested value type (§13.2.8, 016-180).
 
