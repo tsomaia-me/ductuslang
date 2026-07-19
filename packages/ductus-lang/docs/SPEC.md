@@ -158,9 +158,9 @@ parenthesized constructor specifier on a `type` head; `public` —
 legal only in member position, marking a member of a barrel-exported
 type's exported surface; `export` — heading the entries of the
 package barrel file `public.duc` and grammatically legal only there,
-§10.11), the reserved
-word `dyn` (the trait-object marker; its keyword-class assignment is
-deferred to the keyword-class taxonomy), the scope-anchor keywords
+§10.11), the type-expression keywords
+(`dyn` — the trait-object marker; the class holds keywords legal only
+inside type expressions, and `dyn` is its first member), the scope-anchor keywords
 (`here`, `module`, and the path bases `root`, `std`), the instance value
 (`subject`), the naming/alias keyword (`as` — placement names §13.8.1,
 import aliases §10.2, `repeat` view names §13.5.4.9), and all operator-context keywords (`is`, `and`,
@@ -1207,7 +1207,7 @@ trait Display:
   fn display(value: Subject) -> string
 
 trait Add[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn add(a: Subject, b: Rhs) -> Output
 
 trait Producer:
@@ -1237,7 +1237,7 @@ TraitBodyItem := Annotation* DocComment? (RequiresClause
                               | EndpointDecl
                               | MethodSig)
 RequiresClause   := 'requires' TypePath (',' TypePath)*
-AssocTypeDecl    := 'type' Ident ('is' TypeExpr)?
+AssocTypeDecl    := 'type' Ident ('=' TypeExpr)?
 RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']' | 'stream' '[' TypeExpr ']')
                     Ident ':' TypeExpr ('=' Expr)?
 EndpointDecl     := ('from' | 'to') ':' TypeExpr
@@ -1332,13 +1332,13 @@ An associated type may declare a default value:
 
 ```
 trait Add[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn add(a: Subject, b: Rhs) -> Output
 ```
 
 When an implementation does not bind `Output` explicitly, the default applies.
 
-Implementations bind associated types via the `type Name is Concrete` form
+Implementations bind associated types via the `type Name = Concrete` form
 inside `fulfill` blocks (§3.3.2).
 
 Bounds on associated types in generic constraints use where-clauses with the
@@ -1350,22 +1350,22 @@ fn sum[P: Producer](p: P) -> P.Item where P.Item: Numeric:
   ...
 ```
 
-A where-clause may also **equate** an associated type to a specific type with the `is` keyword: `where Path.Assoc is ConcreteType` constrains `Path.Assoc` to be exactly that type (as opposed to `Path.Assoc: Trait`, which bounds it). The `is` keyword — rather than `=` — keeps the assoc-type equality syntactically distinct from value-level assignment, and mirrors the value-level equality keyword (`Eq::is`/`is`). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter.Source is Subject`.
+A where-clause may also **equate** an associated type to a specific type with the `is` keyword: `where Path.Assoc is ConcreteType` constrains `Path.Assoc` to be exactly that type (as opposed to `Path.Assoc: Trait`, which bounds it). The predicate spells `is` — the comparison keyword — while the declaration and fulfill binder spells `=`: `=` declares or binds an associated type, `is` constrains one by comparison, mirroring the value-level equality keyword (`Eq::is`/`is`). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter.Source is Subject`.
 
 **Borrow-default convention on associated-type slots.** Associated
 types follow the same borrow-default convention as function parameter
-slots (§11.7). When an implementation declares `type Name is T`, the
+slots (§11.7). When an implementation declares `type Name = T`, the
 type `T` is treated under the default convention: appearances of
 `Name` in the trait's method signatures (parameters and returns) are
 borrow-equivalent. To opt in to owned semantics, the implementation
-writes `type Name is own T`; appearances of `Name` then carry owned
+writes `type Name = own T`; appearances of `Name` then carry owned
 semantics. The same mechanism applies uniformly to user-defined traits
 and stdlib traits — there is no language-privileged path that bypasses
 this convention.
 
 Example: `Iterator::Item` (§12.7) defaults to borrow-equivalent.
-Writing `type Item is Record` yields borrow-equivalent records (rooted
-in the iterator's `Source` cluster); writing `type Item is own Record`
+Writing `type Item = Record` yields borrow-equivalent records (rooted
+in the iterator's `Source` cluster); writing `type Item = own Record`
 yields owned records (consumed out of the source).
 
 #### 3.1.3 Default method bodies
@@ -1481,7 +1481,7 @@ trait From[T]:
   fn convert(value: T) -> Subject
 
 trait Add[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn add(a: Subject, b: Rhs) -> Output
 ```
 
@@ -1924,7 +1924,7 @@ signature shorter:
 
 ```
 fulfill Add for Vec3:
-  type Output is Vec3
+  type Output = Vec3
   fn add(left: Vec3, right: Vec3) -> Vec3:     // explicit
     Vec3(x: left.x + right.x, y: left.y + right.y, z: left.z + right.z)
 
@@ -1961,12 +1961,12 @@ Concrete` form:
 
 ```
 fulfill Add for i32:
-  type Output is i32
+  type Output = i32
   fn add(left: i32, right: i32) -> i32:
     ...                              // built-in integer addition
 ```
 
-Note: with the §4.9.1 default `type Output is Subject`, the `type Output is
+Note: with the §4.9.1 default `type Output = Subject`, the `type Output =
 i32` binding shown here is explicit but optional. It could be omitted;
 the default applies. Explicit binding is shown for clarity in examples
 and remains valid where the implementer wants to make the choice
@@ -2498,15 +2498,15 @@ group of methods, defining a single capability:
 
 ```
 trait Add[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn add(a: Subject, b: Rhs) -> Output
 
 trait Sub[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn sub(a: Subject, b: Rhs) -> Output
 
 trait Mul[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn mul(a: Subject, b: Rhs) -> Output
 
 trait Neg:
@@ -2823,7 +2823,7 @@ fulfill Playable for Song        // ✗ sealed_type_fulfillment_outside_module
 ```
 
 `sealed` is a reserved word used on trait and type declarations; its
-assignment to a keyword class is deferred to the keyword-class taxonomy.
+keyword class is the declaration-modifier class (§1.4).
 
 The language seals its own traits through this very mechanism, with
 nothing behind it. `Into` and `TryInto` (§7.2) and `StreamPolicy`
@@ -4087,22 +4087,22 @@ the conventional operator name:
 
 ```
 trait Add[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn add(a: Subject, b: Rhs) -> Output
 trait Sub[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn sub(a: Subject, b: Rhs) -> Output
 trait Mul[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn mul(a: Subject, b: Rhs) -> Output
 trait Div:
   fn div(a: Subject, b: Subject) -> Subject      // on Float umbrella only
   see §4.4.1.1 for widening
 trait IntDiv[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn intdiv(a: Subject, b: Rhs) -> Output
 trait Rem[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn rem(a: Subject, b: Rhs) -> Output
 trait Neg:
   fn neg(value: Subject) -> Subject
@@ -4121,58 +4121,58 @@ trait Shr:
   fn shr(value: Subject, n: u32) -> Subject
 
 trait WrappingAdd[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn wrapping_add(a: Subject, b: Rhs) -> Output
 trait WrappingSub[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn wrapping_sub(a: Subject, b: Rhs) -> Output
 trait WrappingMul[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn wrapping_mul(a: Subject, b: Rhs) -> Output
 trait WrappingIntDiv[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn wrapping_intdiv(a: Subject, b: Rhs) -> Output
 trait WrappingRem[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn wrapping_rem(a: Subject, b: Rhs) -> Output
 trait WrappingNeg:
   fn wrapping_neg(value: Subject) -> Subject
 
 trait SaturatingAdd[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn saturating_add(a: Subject, b: Rhs) -> Output
 trait SaturatingSub[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn saturating_sub(a: Subject, b: Rhs) -> Output
 trait SaturatingMul[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn saturating_mul(a: Subject, b: Rhs) -> Output
 trait SaturatingIntDiv[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn saturating_intdiv(a: Subject, b: Rhs) -> Output
 trait SaturatingRem[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn saturating_rem(a: Subject, b: Rhs) -> Output
 trait SaturatingNeg:
   fn saturating_neg(value: Subject) -> Subject
 
 trait CheckedAdd[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn checked_add(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedSub[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn checked_sub(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedMul[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn checked_mul(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedDiv[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn checked_div(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedIntDiv[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn checked_intdiv(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedRem[Rhs = Subject]:
-  type Output is Subject
+  type Output = Subject
   fn checked_rem(a: Subject, b: Rhs) -> Option[Output]
 trait CheckedNeg:
   fn checked_neg(value: Subject) -> Option[Subject]
@@ -4519,7 +4519,7 @@ The three contexts:
 |----------------------------------------|----------------------|----------------------------|
 | Generic bound                          | Traits               | `fn pick[T: A & B](...)`   |
 | Value-position trait object            | Traits, behind `dyn` | `let x: dyn (A & B) = ...` |
-| Record intersection at type definition | Records              | `type X is A & B`           |
+| Record intersection at type definition | Records              | `type X = A & B`           |
 
 ### 5.1 Trait Conjunction in Generic Bounds
 
@@ -4725,7 +4725,7 @@ type Insured:
   policy_number: string
   premium: f64
 
-type InsuredCar is Car & Insured
+type InsuredCar = Car & Insured
 
 // Equivalent declaration:
 type InsuredCar:
@@ -4773,7 +4773,7 @@ operand types' implementations:
 
 ```
 @derive(Display, Hash)
-type InsuredCar is Car & Insured
+type InsuredCar = Car & Insured
 ```
 
 Derivation succeeds only when exactly one operand implements the derived
@@ -4806,7 +4806,7 @@ side evaluates to:
   time. Record intersection creates a new nominal type with combined
   fields; that creation requires `type`, not `alias type`. Without new
   identity, the intersection has no meaning in the nominal type system.
-  The compile error directs the user to write `type X is A & B` instead.
+  The compile error directs the user to write `type X = A & B` instead.
 
 The asymmetry between trait intersection (aliasable) and record
 intersection (not aliasable) reflects a deeper asymmetry: trait
@@ -5680,7 +5680,7 @@ type Email:
   wraps string
 
 fulfill TryFrom[string] for Email:
-  type Error is ValidationError
+  type Error = ValidationError
   fn try_from(s: string) -> Result[Email, Error]:
     if is_valid_email(s):
       Ok(Email(s))
@@ -10557,7 +10557,7 @@ The iteration source expression is evaluated once at loop entry.
    duration. There is no source to hold separately — the iterator
    owns the consumed data.
 3. Each iteration step calls `Iterator::next(iter, ())`, supplying
-   unit as the source (per IntoIterable's constraint `Iter.Source =
+   unit as the source (per IntoIterable's constraint `Iter.Source is
    ()`). The yielded `Item` is an owned value moved out of the
    iterator's storage (§12.9.2).
 4. The internal binding is reassigned to `NewIter`.
@@ -11158,7 +11158,7 @@ values on demand:
 ```
 trait Iterator:
   type Item
-  type Source is ()
+  type Source = ()
   fn next(own iter: Subject, source: Source) -> (Option[Item], Subject)
 ```
 
@@ -11170,10 +11170,10 @@ caller binds the returned iterator for the next call.
 
 **Item and Source as associated-type slots.** Both `Item` and `Source`
 default to borrow-equivalent under §3.1.2's associated-type slot
-convention: when an implementation declares `type Item is T` or `type
+convention: when an implementation declares `type Item = T` or `type
 Source = T`, `T` is treated as borrow-equivalent unless the
-implementation opts in to consuming semantics via `type Item is own T`
-or `type Source is own T`. (Which iterators may declare `own Item` is
+implementation opts in to consuming semantics via `type Item = own T`
+or `type Source = own T`. (Which iterators may declare `own Item` is
 constrained by the dispatch path — only the consuming `for own` /
 `IntoIterable` path admits it; see §12.7.4.) This is uniform: any trait
 declaring associated types follows the same convention; stdlib types get
@@ -11183,7 +11183,7 @@ no special treatment.
 from on each `next` call. Two patterns arise:
 
 - **Self-contained iterators** (Range, Counter, infinite generators) —
-  the iterator holds all state internally. `type Source is ()` (the
+  the iterator holds all state internally. `type Source = ()` (the
   default); each `next` call receives a unit value that the
   implementation ignores. No external value is needed across calls.
 - **Source-bearing iterators** (Vec, Map, user-defined
@@ -11247,7 +11247,7 @@ storage-reuse guarantee (§11.11.2).
 #### 12.7.3 Implementing `Iterator` (self-contained)
 
 A self-contained iterator holds its full state internally; no external
-source is needed. The implementation declares `type Source is ()` (or
+source is needed. The implementation declares `type Source = ()` (or
 omits it to use the default) and the `next` method ignores its source
 parameter:
 
@@ -11257,8 +11257,8 @@ type SquareIter:
   limit: i32
 
 fulfill Iterator for SquareIter:
-  type Item is i32
-  // type Source is () inherited from default
+  type Item = i32
+  // type Source = () inherited from default
   fn next(own iter: SquareIter, source: ()) -> (Option[i32], SquareIter):
     mut local = iter
     if local.next_value >= local.limit:
@@ -11278,7 +11278,7 @@ unused.
 
 A source-bearing iterator holds only cursor/position state and reads
 from the external source supplied on each `next` call. The
-implementation declares `type Source is TheCollection` and reads
+implementation declares `type Source = TheCollection` and reads
 through the `source` parameter:
 
 ```
@@ -11290,8 +11290,8 @@ type MyVecIter[T]:
   cursor: isize
 
 fulfill Iterator for MyVecIter[Record]:
-  type Item is Record               // borrow-default rooted in source
-  type Source is MyVec[Record]      // collection passed each call
+  type Item = Record               // borrow-default rooted in source
+  type Source = MyVec[Record]      // collection passed each call
   fn next(own iter: MyVecIter[Record], source: MyVec[Record])
     -> (Option[Record], MyVecIter[Record]):
     mut local = iter
@@ -11326,7 +11326,7 @@ source argument.
 Opting into owned items (consuming each element out of the collection)
 is exclusive to the consuming path: only an `IntoIterable` iterator
 (whose `Source` is `()`, reached via `for own`, §12.9) may declare
-`type Item is own Record`. A source-bearing `Iterable` iterator may not —
+`type Item = own Record`. A source-bearing `Iterable` iterator may not —
 it cannot move elements out of its borrow-equivalent `source` (above),
 and its collection must survive the loop (§12.3.1). The `Iterable` versus
 `IntoIterable` choice (§12.8, §12.9) thus also determines whether the
@@ -11391,8 +11391,8 @@ type DataPointsIter:
   cursor: isize
 
 fulfill Iterator for DataPointsIter:
-  type Item is f32                  // f32 is Copy; borrow vs own indistinguishable
-  type Source is DataPoints         // supplied each next() call
+  type Item = f32                  // f32 is Copy; borrow vs own indistinguishable
+  type Source = DataPoints         // supplied each next() call
   fn next(own iter: DataPointsIter, source: DataPoints)
     -> (Option[f32], DataPointsIter):
     mut local = iter
@@ -11404,7 +11404,7 @@ fulfill Iterator for DataPointsIter:
       (Some(v), local)
 
 fulfill Iterable for DataPoints:
-  type Iter is DataPointsIter
+  type Iter = DataPointsIter
   // Iter.Source is DataPoints satisfied by the where-clause
   fn iterator(d: DataPoints) -> DataPointsIter:
     DataPointsIter(cursor: 0)
@@ -11502,15 +11502,15 @@ type DataStreamIntoIter:
   cursor: isize
 
 fulfill Iterator for DataStreamIntoIter:
-  type Item is own Event            // owned items (consumed out of pending)
-  type Source is ()                 // no external source needed
+  type Item = own Event            // owned items (consumed out of pending)
+  type Source = ()                 // no external source needed
   fn next(own iter: DataStreamIntoIter, source: ())
     -> (Option[Event], DataStreamIntoIter):
     // read/move from iter.pending; source is unused
     ...
 
 fulfill IntoIterable for DataStream:
-  type Iter is DataStreamIntoIter
+  type Iter = DataStreamIntoIter
   // Iter.Source is () satisfied by the where-clause
   fn consuming_iterator(own s: DataStream) -> DataStreamIntoIter:
     DataStreamIntoIter(pending: s.pending, cursor: 0)
@@ -15102,8 +15102,8 @@ Node-body members — cells, standalone selection-only `view`/`dynamic view`
 declarations, the acceptance clauses `children:` / `incoming:` /
 `outgoing:`, and `when:` — appear in **free order**; the only positional
 constraints are that `effects:` (§13.3.8) comes after the members and
-`expose:` comes last. `when:`, `effects:`, `expose:`, and `default attr`
-each appear at most once. An acceptance clause is a header keyword followed
+`expose:` comes last. `when:`, `effects:`, `expose:`, `children:`,
+`incoming:`, `outgoing:`, and `default attr` each appear at most once. An acceptance clause is a header keyword followed
 by `:` and an indented block
 of named entries, one entry per line; each named entry joins the body-wide
 namespace. A standalone `view` or `dynamic view` declaration is
@@ -15925,7 +15925,7 @@ The clause order is fixed: `<bind>`, then optional `at <index>`, then
 - **Bind ownership.** `<bind>` is typed as the iterator's element type
   after **move-promotion**: a real owner rather than the
   borrow-equivalent alias that `Iterable::iterator` yields under the
-  default `type Item is T` slot convention (§3.1.2, §12.7).
+  default `type Item = T` slot convention (§3.1.2, §12.7).
   Move-promotion converts the cluster-member alias into a real owner
   scoped to one `scope_evaluate` invocation; it is the per-scope
   counterpart of §12.7.2's linear-ownership optimization applied to
@@ -16155,7 +16155,7 @@ type DbRow:
   payload: Payload
 
 fulfill Keyed for DbRow:
-  type Key is u64
+  type Key = u64
   fn key(r: DbRow) -> u64:
     r.id
 
@@ -19899,7 +19899,7 @@ fire in a fixed per-instance order — `teardown`, then `create`, then
 any same-boundary `update` for it (the instance state `update` consumes
 exists), and a just-reopened instance's `resume` precedes any
 same-boundary `update` for it (the resource is re-acquired before it is
-reconciled). They run on the runtime's
+reconciled). At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit. They run on the runtime's
 driving context; the reconciler implementation must not block long-running
 operations there (long operations should be dispatched to host-managed
 worker threads, with results written back via the interface on completion).
@@ -23266,7 +23266,7 @@ reads:
 effects:
   ws = current_url |> websocket
 derived latest: Message = ws.inbound->latest(empty_message)  // cross to value cell
-derived total: u64 = ws.inbound |> count                          // running count
+derived total: u64 = ws.inbound |> event_count                    // running count
 stream ring[64] recent_text: Message = ws.inbound |> filter(is_text)
 ```
 
@@ -23534,7 +23534,7 @@ operators (§13.18.9):
 effects:
   ws = current_url |> websocket
 derived latest: Message = ws.inbound->latest(empty_message)
-derived messages_per_second: f32 = ws.inbound |> count |> rate_per_second
+derived messages_per_second: f32 = ws.inbound |> event_count |> rate_per_second
 ```
 
 #### 13.19.14 Host integration
@@ -23561,7 +23561,7 @@ When several of these hooks are eligible for one instance at one commit
 boundary, they fire in the fixed per-instance order `teardown`, `create`,
 `resume`, `update` (§13.14.9): `resume` strictly precedes any
 same-boundary `update` for a just-reopened instance, and `create`
-strictly precedes any same-boundary `update` for a just-created one.
+strictly precedes any same-boundary `update` for a just-created one. At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit.
 
 The runtime invokes the reconciler at well-defined points in the
 commit cycle:
@@ -25477,7 +25477,7 @@ operand      ::= '%'NAME | 'move' '%'NAME | literal
 terminator   ::= 'br' LABEL paren_args?
                | 'cond_br' '%'NAME ',' LABEL paren_args? ',' LABEL paren_args?
                | 'switch' '%'NAME switch_table
-               | 'ret' '%'NAME
+               | 'ret' operand
                | 'trap' STRING
 paren_args   ::= '(' operand (',' operand)* ')'
 switch_table ::= '[' switch_case (',' switch_case)* ',' 'default' ':' LABEL ']'

@@ -51,7 +51,7 @@ The EBNF flavor matches `GRAMMAR.md` §1:
 
 ### Production-block format
 
-```
+```ebnf
 Nonterminal      ::= Alternative1
                    | Alternative2
                    ;  (§<spec-ref>, <log-ref>)
@@ -70,46 +70,46 @@ IR text is line-oriented but not layout-sensitive: indentation is purely cosmeti
 
 The IR text form's terminals. `NAME`, `INT`, `FLOAT`, `STRING`, and `HEX` are the **obvious lexemes** (per SPEC §15.4.6): identifier, decimal integer literal, floating-point literal, double-quoted string literal, and hexadecimal digit sequence respectively. Their concrete syntax is the conventional one; the IR loader is expected to match the standard forms. The remaining lexemes — `PATH`, `BID`, `type_tag`, and `PRIM` — are defined formally below.
 
-```
+```ebnf
 NAME             ::= /* identifier — letters, digits, '_'; not starting with a digit */
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 INT              ::= /* decimal integer literal */
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 FLOAT            ::= /* floating-point literal (used in behavior IR literals only) */
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-212)
 
 STRING           ::= /* double-quoted string literal */
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 HEX              ::= /* one or more hexadecimal digits [0-9a-fA-F] */
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-167)
 ```
 
 A **PATH** is a cell or instance fully-qualified declaration path: a dot-separated sequence of identifiers naming the lexical nesting from module root through enclosing instances to the cell or instance name. Anonymous or duplicated sibling placements append an ordinal suffix `':' INT` (zero-based, declaration-order index among siblings of the same type at the same nesting depth).
 
-```
+```ebnf
 PATH             ::= PathSegment ('.' PathSegment)*
-                   ;  (§15.4.1.1, 033-166)
+                   ;  (§15.4.1.1, 033-130)
 
 PathSegment      ::= NAME (':' INT)?
-                   ;  (§15.4.1.1, 033-167)
+                   ;  (§15.4.1.1, 033-133)
 
 // The ordinal suffix `:' INT` may attach to ANY path segment, not just
 // the tail — e.g. 'App.print:0.text' has the ordinal on the middle
-// component naming an anonymous effect instance. See 033-167/033-168.
+// component naming an anonymous effect instance. See 033-130 / 033-133.
 // e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.text'
 ```
 
 A **BID** is a behavior handle — the behavior's `u32` handle (§14.6.3) rendered in hexadecimal, prefixed by `'B@'`. It is the compact runtime reference; the behavior's wide content-addressed identity is not spelled in the text form.
 
-```
+```ebnf
 BID              ::= 'B@' HexU32
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-167)
 
 HexU32           ::= /* 1..8 hexadecimal digits — encodes a u32 behavior handle */
-                   ;  (§14.6.3, 033-203)
+                   ;  (§14.6.3, 033-167)
 
 // e.g. 'B@d1', 'B@aa10'. The hex run is bounded to ≤ 8 digits
 // because the handle is a u32.
@@ -117,18 +117,18 @@ HexU32           ::= /* 1..8 hexadecimal digits — encodes a u32 behavior handl
 
 **PRIM** is the closed set of primitive type tags. These are the type-erased primitives the runtime understands directly (§4.1); aggregates and closures are built on top via `type_tag`.
 
-```
+```ebnf
 PRIM             ::= 'i8'  | 'i16' | 'i32' | 'i64' | 'i128'
                    | 'u8'  | 'u16' | 'u32' | 'u64' | 'u128'
                    | 'isize' | 'usize'
                    | 'f32' | 'f64'
                    | 'bool' | 'str'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-43)
 ```
 
 **`type_tag`** is the unified type-tag nonterminal used throughout both the module and behavior grammars. It encodes a primitive, a named record/enum/tuple layout from the module's `types` section (`'%'NAME`), a pool-indexed aggregate (`pool_index<%TypeId>`), a tuple structural type, a fixed-size array, or a closure environment type.
 
-```
+```ebnf
 type_tag         ::= PRIM
                    | '%' NAME
                    | 'pool_index' '<' '%' NAME '>'
@@ -136,7 +136,7 @@ type_tag         ::= PRIM
                    | '(' type_tag (',' type_tag)* ')'
                    | '[' type_tag ';' INT ']'
                    | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-43 / 033-79)
 
 // An aggregate-valued cell — a record, enum, or tuple — is typed
 // 'pool_index<%TypeId>' (§14.3.3), never an inline '%TypeId'.
@@ -149,50 +149,50 @@ type_tag         ::= PRIM
 
 The normative text form of the module-level IR (§15.4.1's abstract data model). Lifted verbatim from SPEC §15.4.6. `NAME`, `INT`, `FLOAT`, `STRING`, and `HEX` are the obvious lexemes from §2; `PATH` is the cell/instance path (§15.4.1.1); `BID` is the behavior handle (§15.4.4); `type_tag` is the type-erased graph tag (§15.4.3).
 
-```
+```ebnf
 module           ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 types_section    ::= 'types' '{' type_def* '}'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 type_def         ::= '%' NAME '=' layout 'size' INT 'align' INT
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 layout           ::= 'record' '{' field_list '}'
                    | 'enum'   '{' variant (',' variant)* '}'
                    | 'tuple'  '(' type_tag (',' type_tag)* ')'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 field_list       ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 variant          ::= '#' NAME ('(' type_tag (',' type_tag)* ')')?
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 graph_section    ::= 'graph' '{' scope+ '}'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 scope            ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                      ('reset_on_reopen' reopen_set)? '{' entry* '}'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168 / 033-75)
 
 // 'reset_on_reopen' on a scope carries a reopen_set of (consumer : stream)
 // pairs; this is one of three grammar positions for the keyword — see also
 // the bare flag on the 'cell' production and the bare flag on the 'stream'
-// production. All three spellings are normative (033-240).
+// production. All three spellings are normative (033-215).
 
 entry            ::= cell | gate | connection | effect | stream
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 cell             ::= cell_kind PATH ':' type_tag
                      ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
                      ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
                      ('combiner' BID)? ('else' value)? ('members' member_set)?
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-169 / 033-215 / 033-81)
 
 // 'reset_on_reopen' on a cell is a bare flag (no payload) — one of three
-// grammar positions for the keyword (033-240): the bare flag here on
+// grammar positions for the keyword (033-215): the bare flag here on
 // 'cell', the bare flag on 'stream', and the 'reopen_set' payload on
 // 'scope'. 'depth' applies only to
 // 'recurrent' cells; 'uses' / 'inputs' apply to 'derived' / 'recurrent';
@@ -210,7 +210,7 @@ cell             ::= cell_kind PATH ':' type_tag
 // to the cell-kind constraints above) and appears at most once.
 
 cell_kind        ::= 'input' | 'derived' | 'recurrent' | 'fold'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-80)
 
 // The four cell-kind tags are closed (033-80): 'fold' is a cell KIND,
 // not a seventh graph primitive, and no 'yielded' tag exists — a
@@ -242,21 +242,21 @@ member_driver    ::= 'permanent' | 'keyed-template' | 'gate-guarded'
 
 gate             ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
                      ('gate_parent' PATH)?
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168 / 033-65)
 
 connection       ::= 'connection' PATH 'from' PATH 'to' (PATH | 'null')
                      ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168 / 033-86 / 033-87 / 033-88 / 033-89)
 
 effect           ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
                      ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168 / 033-119 / 033-120 / 033-121 / 033-122 / 033-123)
 
 stream           ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capacity' INT
                      ('source_deps' path_set)? ('observes' path_set)?
                      ('reset_on_reload')? ('reset_on_reopen')?
                      ('history' INT)? ('lookback' lookback_map)?
-                   ;  (§15.4.6, 033-106)
+                   ;  (§15.4.6, 033-106 / 033-107 / 033-108 / 033-109 / 033-110 / 033-111 / 033-112 / 033-114 / 033-115 / 033-117)
 
 // A 'stream' line serializes the stream primitive (§15.4.1's Stream
 // cells) with its ten data-model fields: PATH is the stream's id;
@@ -267,12 +267,12 @@ stream           ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capa
 // bare flags 'reset_on_reload' and 'reset_on_reopen' mark the matching
 // @-annotations ('reset_on_reopen' here is the third grammar position of
 // the keyword — a bare flag on 'stream', alongside the bare flag on
-// 'cell' and the reopen_set on 'scope', 033-240); 'history' is
+// 'cell' and the reopen_set on 'scope', 033-215); 'history' is
 // output_history_size (present only on a recurrent[N] stream); and
 // 'lookback' is the input_lookback_map (input cell id → max lookback k).
 
 behaviors_section ::= 'behaviors' '{' behavior* '}'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 // 'behavior' production defined in §4 (per SPEC §15.4.4).
 // **Module-resolvability constraint.** An empty `behaviors {}` is
@@ -284,13 +284,13 @@ behaviors_section ::= 'behaviors' '{' behavior* '}'
 // `behavior B@xx { … }` is rejected at module load.
 
 path_set         ::= '[' (PATH (',' PATH)*)? ']'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 binding_set      ::= '[' (binding (',' binding)*)? ']'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 reopen_set       ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-75)
 
 // reopen_set elements are (consumer_id : stream_id) pairs naming the
 // consuming operator/derived instance and the consumed stream whose
@@ -316,10 +316,10 @@ lookback_map     ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
 // `.past` on inputs (033-118).
 
 binding          ::= NAME ':' (PATH | value)
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168)
 
 value            ::= INT | FLOAT | 'true' | 'false' | STRING
-                   ;  (§15.4.6, 033-166)
+                   ;  (§15.4.6, 033-168 / 033-212)
 
 // value is a compile-time literal (the placement_binding_kind is either
 // 'static' (value literal) or 'reactive' (PATH referencing source cells);
@@ -330,12 +330,12 @@ value            ::= INT | FLOAT | 'true' | 'false' | STRING
 
 The text grammar for the per-behavior body — a pure, typed, SSA-with-block-arguments compute that the runtime invokes via `BID`. Lifted verbatim from SPEC §15.4.4 (post Phase-B formalization: every nonterminal below has a defining production; `type_tag` is used uniformly — the bare name `type` does not appear; `terminator`, `op`, `literal`, and `LABEL` are explicit productions).
 
-```
+```ebnf
 behavior         ::= 'behavior' BID '(' params ')' '->' type_tag '{' block+ '}'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-205)
 
 params           ::= (('own')? NAME ':' type_tag) (',' ('own')? NAME ':' type_tag)*
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-206 / 033-203)
 
 // A param without 'own' is a borrow (read, not consumed); 'own' marks
 // it as consumed. The entry block's parameters are the behavior's
@@ -343,10 +343,10 @@ params           ::= (('own')? NAME ':' type_tag) (',' ('own')? NAME ':' type_ta
 // (this replaces phi).
 
 block            ::= LABEL ('(' params ')')? ':' ( instr InstrSep )* terminator
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-207)
 
 InstrSep         ::= ';' | NEWLINE                            // intra-block separator
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-207)
 
 // Multiple instructions on one line are separated by `;`; one
 // instruction per line uses an implicit NEWLINE. The two are
@@ -356,7 +356,7 @@ InstrSep         ::= ';' | NEWLINE                            // intra-block sep
 
 instr            ::= '%' NAME '=' instr_rhs (':' type_tag)?  // typed-result form
                    | instr_rhs                                // void/effect-result form
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-208)
 
 instr_rhs        ::= op_application
                    | call_rhs                                 // 'call' f(args), 'call.dyn' obj #method(args)
@@ -365,69 +365,69 @@ instr_rhs        ::= op_application
                    | array_make_rhs                           // 'array.make' '[' operand_list? ']'
                    | record_make_rhs                          // 'record.make' %T '{' field_inits? '}'
                    | raw_alloc_rhs                            // 'raw_alloc' '<' type_tag '>' '(' operand ')'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 op_application   ::= op ( operand (',' operand)* )?           // comma-separated operands
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 call_rhs         ::= 'call' callee '(' operand_list? ')'
                    | 'call.dyn' '%' NAME '#' NAME '(' operand_list? ')'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 callee           ::= NAME                                    // direct call by behavior NAME (frontend-resolved)
                    | BID                                     // direct call by BID
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 closure_rhs      ::= 'closure.make' BID 'captures' '{' capture_list? '}'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 capture_list     ::= NAME ':' operand (',' NAME ':' operand)*
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 enum_make_rhs    ::= 'enum.make' '%' NAME '#' NAME ( '(' operand_list? ')' )?
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 array_make_rhs   ::= 'array.make' '[' operand_list? ']'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 record_make_rhs  ::= 'record.make' '%' NAME '{' field_init_list? '}'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 field_init_list  ::= NAME ':' operand (',' NAME ':' operand)*
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 raw_alloc_rhs    ::= 'raw_alloc' '<' type_tag '>' '(' operand ')'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 operand_list     ::= operand (',' operand)*
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 operand          ::= '%' NAME                                // SSA result reference
                    | NAME                                    // bare param name (entry-block parameter)
                    | 'move' '%' NAME
                    | 'move' NAME                             // move of a bare param
                    | literal
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-209)
 
 terminator       ::= 'br' LABEL paren_args?
                    | 'cond_br' '%' NAME ',' LABEL paren_args? ',' LABEL paren_args?
                    | 'switch' '%' NAME switch_table
-                   | 'ret' '%' NAME
+                   | 'ret' operand
                    | 'trap' STRING
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-210)
 
 // Every block ends in exactly one terminator. 'match' lowers to
 // 'enum.tag' + 'switch'. 'trap' is the only non-'ret' exit
 // (§13.13.1).
 
 paren_args       ::= '(' operand (',' operand)* ')'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-183 / 033-184)
 
 switch_table     ::= '[' switch_case (',' switch_case)* ',' 'default' ':' LABEL ']'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-185)
 
 switch_case      ::= INT ':' LABEL
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-185)
 
 op               ::= ArithOp '.' PRIM                          // e.g. add.i32, mul.i64
                    | LogicOp '.' PRIM                          // e.g. and.bool, xor.u8
@@ -440,16 +440,16 @@ op               ::= ArithOp '.' PRIM                          // e.g. add.i32, 
                    | 'call.closure'
                    | 'clone' | 'drop'
                    | 'raw_free' | 'raw_read' | 'raw_write'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 ArithOp          ::= 'add' | 'sub' | 'mul' | 'div' | 'rem' | 'neg'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 LogicOp          ::= 'and' | 'or' | 'xor' | 'shl' | 'shr' | 'not'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 CompareOp        ::= 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-211)
 
 // All arithmetic / logical / comparison ops are PRIM-suffixed at the
 // instruction site (`add.i32`, `not.bool`); a bare mnemonic with no
@@ -461,13 +461,13 @@ CompareOp        ::= 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
 // `op` enumeration here.
 
 literal          ::= INT | FLOAT | 'true' | 'false' | STRING
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-212)
 
 // 'literal' matches the same lexemes as the module grammar's 'value',
 // with FLOAT additionally permitted for floating-point constants.
 
 LABEL            ::= 'bb' INT
-                   ;  (§15.4.4, 033-203)
+                   ;  (§15.4.4, 033-213)
 
 // e.g. 'bb0', 'bb1', 'bb42'.
 //
@@ -508,7 +508,7 @@ node App:
 
 lowers to:
 
-```
+```ductus-ir
 module App {
   types { %Request = record { text: str }  size 8 align 8 }
 
@@ -560,59 +560,59 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 
 | Production | SPEC § | LOG |
 |------------|--------|-----|
-| `NAME` | §15.4.6 | 033-166 |
-| `INT` | §15.4.6 | 033-166 |
-| `FLOAT` | §15.4.4 | 033-203 |
-| `STRING` | §15.4.6 | 033-166 |
-| `HEX` | §15.4.4 | 033-203 |
-| `PATH` | §15.4.1.1 | 033-166 / 033-167 / 033-168 (mid-path ordinal for anonymous effect instances; see worked example `App.print:0.text`) |
-| `BID` | §15.4.4 | 033-203 |
-| `PRIM` | §15.4.6 | 033-166 |
-| `type_tag` | §15.4.6 | 033-166 / 033-79 |
+| `NAME` | §15.4.6 | 033-168 |
+| `INT` | §15.4.6 | 033-168 |
+| `FLOAT` | §15.4.4 | 033-212 |
+| `STRING` | §15.4.6 | 033-168 |
+| `HEX` | §15.4.4 | 033-167 |
+| `PATH` | §15.4.1.1 | 033-130 / 033-133 (mid-path ordinal for anonymous effect instances; see worked example `App.print:0.text`) |
+| `BID` | §15.4.4 | 033-167 |
+| `PRIM` | §15.4.6 | 033-43 |
+| `type_tag` | §15.4.6 | 033-43 / 033-79 |
 
 ### §3 — Module text grammar
 
 | Production | SPEC § | LOG |
 |------------|--------|-----|
-| `module` | §15.4.6 | 033-166 |
-| `types_section` | §15.4.6 | 033-166 |
-| `type_def` | §15.4.6 | 033-166 |
-| `layout` | §15.4.6 | 033-166 |
-| `field_list` | §15.4.6 | 033-166 |
-| `variant` | §15.4.6 | 033-166 |
-| `graph_section` | §15.4.6 | 033-166 |
-| `scope` | §15.4.6 | 033-166 / 033-240 |
-| `entry` | §15.4.6 | 033-166 |
-| `cell` | §15.4.6 | 033-166 / 033-240 / 033-81 |
-| `cell_kind` | §15.4.6 | 033-166 / 033-80 |
+| `module` | §15.4.6 | 033-168 |
+| `types_section` | §15.4.6 | 033-168 |
+| `type_def` | §15.4.6 | 033-168 |
+| `layout` | §15.4.6 | 033-168 |
+| `field_list` | §15.4.6 | 033-168 |
+| `variant` | §15.4.6 | 033-168 |
+| `graph_section` | §15.4.6 | 033-168 |
+| `scope` | §15.4.6 | 033-168 / 033-75 |
+| `entry` | §15.4.6 | 033-168 |
+| `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 |
+| `cell_kind` | §15.4.6 | 033-80 |
 | `member_set` | §15.4.6 | 033-81 |
 | `member` | §15.4.6 | 033-81 |
 | `member_driver` | §15.4.6 | 033-81 |
-| `gate` | §15.4.6 | 033-166 |
-| `connection` | §15.4.6 | 033-166 |
-| `effect` | §15.4.6 | 033-166 |
-| `stream` | §15.4.6 | 033-106 |
-| `behaviors_section` | §15.4.6 | 033-166 |
-| `path_set` | §15.4.6 | 033-166 |
-| `binding_set` | §15.4.6 | 033-166 |
-| `reopen_set` | §15.4.6 | 033-166 |
+| `gate` | §15.4.6 | 033-168 / 033-65 |
+| `connection` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 |
+| `effect` | §15.4.6 | 033-168 / 033-119 / 033-120 / 033-121 / 033-122 / 033-123 |
+| `stream` | §15.4.6 | 033-106 / 033-107 / 033-108 / 033-109 / 033-110 / 033-111 / 033-112 / 033-114 / 033-115 / 033-117 |
+| `behaviors_section` | §15.4.6 | 033-168 |
+| `path_set` | §15.4.6 | 033-168 |
+| `binding_set` | §15.4.6 | 033-168 |
+| `reopen_set` | §15.4.6 | 033-75 |
 | `lookback_map` | §15.4.6 | 033-117 |
-| `binding` | §15.4.6 | 033-166 |
-| `value` | §15.4.6 | 033-166 |
+| `binding` | §15.4.6 | 033-168 |
+| `value` | §15.4.6 | 033-168 / 033-212 |
 
 ### §4 — Behavior IR text grammar
 
 | Production | SPEC § | LOG |
 |------------|--------|-----|
-| `behavior` | §15.4.4 | 033-203 |
-| `params` | §15.4.4 | 033-203 |
-| `block` | §15.4.4 | 033-203 |
-| `instr` | §15.4.4 | 033-203 |
-| `operand` | §15.4.4 | 033-203 |
-| `terminator` | §15.4.4 | 033-203 |
-| `paren_args` | §15.4.4 | 033-203 |
-| `switch_table` | §15.4.4 | 033-203 |
-| `switch_case` | §15.4.4 | 033-203 |
-| `op` | §15.4.4 | 033-203 |
-| `literal` | §15.4.4 | 033-203 |
-| `LABEL` | §15.4.4 | 033-203 |
+| `behavior` | §15.4.4 | 033-205 |
+| `params` | §15.4.4 | 033-206 / 033-203 |
+| `block` | §15.4.4 | 033-207 |
+| `instr` | §15.4.4 | 033-208 |
+| `operand` | §15.4.4 | 033-209 |
+| `terminator` | §15.4.4 | 033-210 |
+| `paren_args` | §15.4.4 | 033-183 / 033-184 |
+| `switch_table` | §15.4.4 | 033-185 |
+| `switch_case` | §15.4.4 | 033-185 |
+| `op` | §15.4.4 | 033-211 |
+| `literal` | §15.4.4 | 033-212 |
+| `LABEL` | §15.4.4 | 033-213 |

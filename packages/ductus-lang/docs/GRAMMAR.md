@@ -58,7 +58,7 @@ Productions use a conventional EBNF flavor:
 
 ### Production-block format
 
-```
+```ebnf
 Nonterminal      ::= Alternative1
                    | Alternative2
                    | Alternative3
@@ -100,7 +100,7 @@ Ductus is a layout-sensitive language: indentation opens and closes blocks. The 
 
 **Algorithm (normative).**
 
-```
+```text
 on EOF:
   emit NEWLINE                   # close last open logical line, if any
   while top(S) > 0:
@@ -179,7 +179,7 @@ production's use at top-line bracket depth zero.
 
 The colon `:` opens a body. Two body shapes exist; which is admissible depends on the *owning construct*, not on the lexer:
 
-```
+```ebnf
 Body              ::= ':' INDENT BlockBody DEDENT
                     | ':' InlineExpr
                     ;  (§1.4, 002-25)
@@ -195,7 +195,7 @@ Body              ::= ':' INDENT BlockBody DEDENT
 
 ### 2.3 Identifiers and `#`
 
-```
+```ebnf
 IDENT             ::= IdentStart IdentCont*
                     ;  (§1.4, 002-21)
 
@@ -228,7 +228,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Declaration keywords** (002-3):
 
-```
+```ebnf
 'node'  'connection'  'trait'  'type'  'enum'  'fn'  'operator'  'effect'
 'signal'  'attr'  'recurrent'  'derived'  'stream'  'yielded'  'view'
 'const'  'let'  'mut'  'repeat'  'collect'
@@ -249,7 +249,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Declaration-modifier keywords** (002-33, 005-241):
 
-```
+```ebnf
 'sealed'
 ```
 
@@ -262,7 +262,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Visibility keywords** (002-36):
 
-```
+```ebnf
 'private'  'public'  'export'
 ```
 
@@ -278,23 +278,24 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Ownership keywords** (002-31; semantics per 001-18):
 
-```
+```ebnf
 'own'  'move'
 ```
 
-**Reserved word `dyn`** (002-34):
+**Type-expression keywords** (002-34):
 
-```
+```ebnf
 'dyn'
 ```
 
-// `dyn` is reserved in every position; its keyword-class assignment is
-//  deferred to the keyword-class taxonomy (002-34). Its grammatical
-//  position is the trait-object marker (004-47, 008-7). Inventory only.
+// The type-expression keywords are legal only inside type expressions;
+//  `dyn` is the class's first member (002-34). `dyn` is reserved in every
+//  position; its grammatical position is the trait-object marker
+//  (004-47, 008-7). Inventory only.
 
 **Kind keywords** (002-32):
 
-```
+```ebnf
 'cell'
 ```
 
@@ -305,7 +306,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Clause keywords** (002-4):
 
-```
+```ebnf
 'children'  'incoming'  'outgoing'  'expose'  'when'
 'fulfill'  'default'  'otherwise'
 'from'  'to'  'pairs'  'on'  'where'  'requires'  'wraps'  'effects'
@@ -324,7 +325,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Control-flow / selector keywords** (002-6):
 
-```
+```ebnf
 'if'  'else'  'match'  'for'  'in'  'while'  'break'  'continue'  'return'  'yield'
 'given'  'observe'
 ```
@@ -334,7 +335,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Scope-anchor namespace keywords** (002-7):
 
-```
+```ebnf
 'here'  'module'  'root'  'std'
 ```
 
@@ -346,13 +347,13 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Instance-value keyword** (002-8):
 
-```
+```ebnf
 'subject'
 ```
 
 **Naming/alias keyword** (002-9, 002-10):
 
-```
+```ebnf
 'as'
 ```
 
@@ -360,7 +361,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 **Operator-context keywords** (002-11):
 
-```
+```ebnf
 'is'  'and'  'or'  'not'  'handle'  'handle!'  'portal'  'delete'
 ```
 
@@ -379,11 +380,11 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 //  `handle` immediately followed by `!` is recognised as one keyword;
 //  there is no separate `handle` `!` parse.
 
-```
+```ebnf
 // Keyword: the lexeme set is the union of all spellings in the boxes
 // above (declaration / declaration-modifier / visibility / ownership /
 // kind / clause / control-flow-selector / scope-anchor / instance-value /
-// naming-alias / operator-context, plus the reserved word `dyn`).
+// naming-alias / operator-context / type-expression).
 // There is no separate concrete production — the lexer matches each
 // spelling individually after the longest-match IDENT scan (§2.3).
 //                                                 ;  (§1.4, 002-3)
@@ -398,7 +399,7 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 `IDENT` tokens but which the parser / resolver treats as compiler-assigned
 field names in connection / node body contexts:
 
-```
+```ebnf
 ReservedInstanceField ::= 'from' | 'to' | 'pair' | 'exposition'
                         | 'desired' | 'observed'
                         ;  (§1.4, 002-5, 002-28)
@@ -426,7 +427,7 @@ ReservedInstanceField ::= 'from' | 'to' | 'pair' | 'exposition'
 
 ### 2.5 Comments
 
-```
+```ebnf
 LineComment       ::= '//' ( any character except '\n' )* ( '\n' | EOF )
                     ;  (§1.4, 002-19)
 ```
@@ -438,7 +439,7 @@ LineComment       ::= '//' ( any character except '\n' )* ( '\n' | EOF )
 
 ### 2.6 Integer literals
 
-```
+```ebnf
 IntLit            ::= DecIntLit
                     | HexIntLit
                     | OctIntLit
@@ -474,7 +475,7 @@ BinDigit          ::= '0' | '1'
 
 ### 2.7 Float literals (incl. formal Exponent production)
 
-```
+```ebnf
 FloatLit          ::= DecIntLit '.' DecIntLit Exponent?
                     | DecIntLit Exponent
                     ;  (§4.3.2, 007-25)
@@ -494,7 +495,7 @@ Exponent          ::= ( 'e' | 'E' ) ( '+' | '-' )? Digit+
 
 ### 2.8 Bool, char, byte literals
 
-```
+```ebnf
 BoolLit           ::= 'true' | 'false'
                     ;  (§4.3.4, 007-37)
 
@@ -552,7 +553,7 @@ ByteEscapeSeq     ::= '\\n' | '\\r' | '\\t' | '\\0'
 
 String literal lexing requires a small mode-switching machine: inside a string the lexer is in **STR** mode, where most characters become string content; an unescaped `{` enters **EXPR** mode (an interpolated expression); the matching `}` returns to **STR** mode.
 
-```
+```ebnf
 StringLit         ::= '"' StrChunk* '"'
                     ;  (§9.1.3, 012-19)
 
@@ -568,7 +569,7 @@ StrText           ::= any sequence of characters except '"', '\\', '{'
 
 **Lexer mode automaton (normative).**
 
-```
+```text
 state STR (inside a string, depth d ≥ 1):
   on '"'   : emit STR_END, exit STR, return to outer mode
   on '\\{' : emit STR_TEXT "{", stay in STR
@@ -609,7 +610,7 @@ state EXPR (inside an interpolation, paired with STR depth d):
 
 A literal suffix is the suffix name appended directly to the literal with no separator. The lexer's treatment depends on whether the suffix is *built-in* or *user-defined*.
 
-```
+```ebnf
 SuffixedIntLit    ::= IntLit IntBuiltinSuffix           // single token; integer-typed
                     ;  (§4.3.3, 007-31)
 
@@ -660,7 +661,7 @@ DurationSuffix    ::= 'ns' | 'us' | 'μs' | 'ms' | 's' | 'min' | 'h' | 'd'
 
 ### 2.11 Negative-literal token rule (`-N` as one signed literal)
 
-```
+```ebnf
 SignedIntLit      ::= '-' ( IntLit | SuffixedIntLit )       // see disambiguator
                     ;  (§2.4.5, 004-100)
 
@@ -685,7 +686,7 @@ SignedFloatLit    ::= '-' ( FloatLit | SuffixedFloatLit )
 
 The lexer recognises the following operator and punctuation tokens. Longest-match applies — `<<` is a single token, `<` `<` two tokens; `->`, `=>`, `..`, `::`, `?.`, `?[`, `?(`, `|>`, `<=`, `>=`, `<<`, `>>`, `\` (single backslash, integer division), etc. are each one token.
 
-```
+```ebnf
 PunctOrOp         ::= '(' | ')' | '[' | ']' | '{' | '}'
                     | ',' | ':' | '.' | '..'
                     | '->' | '=>' | '::'
@@ -743,7 +744,7 @@ PunctOrOp         ::= '(' | ')' | '[' | ']' | '{' | '}'
 
 ### 2.13 Reserved-but-unused tokens (`==`, `!=`, `>>>`) — lexer rejects
 
-```
+```ebnf
 ReservedToken     ::= '==' | '!=' | '>>>'
                     ;  (§4.4.4, 007-86)
 ```
@@ -762,7 +763,7 @@ ReservedToken     ::= '==' | '!=' | '>>>'
 
 ### 2.14 Forbidden tokens (`;`) — lex error
 
-```
+```ebnf
 ForbiddenToken    ::= ';'
                     ;  (§1.4, 002-16)
 ```
@@ -782,7 +783,7 @@ Productions for the surface syntax of type expressions: primaries, instantiation
 
 `TypeExpr` is the entry-point nonterminal for a type expression in any type-position context (binding annotation, parameter type, return type, field type, generic argument, etc.). It is built from a `TypePrimary` extended with the postfix `[…]` instantiation / array / slice forms, with the prefix `dyn` form for trait objects, and with `&` for intersections in the positions where intersection is admitted.
 
-```
+```ebnf
 TypeExpr          ::= DynType
                     | IntersectionType
                     | PostfixType
@@ -820,7 +821,7 @@ TypeAssocAccess   ::= '.' IDENT                                // navigates a tr
 
 ### 3.1 Type primary (path, primitive, wildcard `_`)
 
-```
+```ebnf
 TypePrimary       ::= TypePath
                     | PrimitiveTypeName
                     | TypeWildcard
@@ -882,7 +883,7 @@ TypeWildcard      ::= '_'
 
 ### 3.2 Generic instantiation `T[args]` (incl. kind-of-T disambiguator)
 
-```
+```ebnf
 GenericArgList    ::= PositionalArgList
                     | NamedArgList
                     ;  (§2.2.5, 004-31)
@@ -934,7 +935,7 @@ ConstGenericArg   ::= Expr                                      // restricted po
 
 ### 3.3 Function/closure type `fn(P, ...) -> R`
 
-```
+```ebnf
 FnType            ::= 'fn' '(' FnTypeParamList? ')' ( '->' 'own'? TypeExpr )?
                     ;  (§11.10.6, 013-79)
 
@@ -963,7 +964,7 @@ FnTypeParam       ::= 'own'? TypeExpr
 
 ### 3.4 Operator structural type `operator(P, ...) -> U`
 
-```
+```ebnf
 OperatorType      ::= 'operator' '(' OperatorTypeParamList? ')' '->' TypeExpr
                     ;  (§13.17.13, 029-65)
 
@@ -991,7 +992,7 @@ OperatorTypeParamList ::= TypeExpr ( ',' TypeExpr )* ','?
 
 ### 3.5 Tuple types (incl. unit `()` and 1-tuple `(T,)`)
 
-```
+```ebnf
 TupleType         ::= '(' ')'                                   // unit
                     | '(' TypeExpr ',' ')'                      // 1-tuple
                     | '(' TypeExpr ( ',' TypeExpr )+ ','? ')'   // n-tuple, n >= 2
@@ -1025,7 +1026,7 @@ the kind of `T` and the shape of the argument list. The arrangement is
 made explicit here for documentation; it does not introduce a new
 parser branch.
 
-```
+```ebnf
 ArrayType         ::= TypePrimary '[' ConstGenericArg ']'       // see §3.2
                     ;  (§9.3.1, 009-115)
 ```
@@ -1048,7 +1049,7 @@ The slice type surface `T[..N]` / `T[..]` is the *third* interpretation
 of the `TypePrimary '[' … ']'` production from §3.2 — selected when the
 bracket content begins with `..`.
 
-```
+```ebnf
 SliceType         ::= TypePrimary '[' '..' ConstGenericArg? ']'
                     ;  (§9.3.7, 009-115)
 ```
@@ -1069,7 +1070,7 @@ SliceType         ::= TypePrimary '[' '..' ConstGenericArg? ']'
 
 ### 3.8 `dyn` trait objects (parens-required for intersection)
 
-```
+```ebnf
 DynType           ::= 'dyn' DynTrait
                     ;  (§5.2.1, 005-44)
 
@@ -1106,7 +1107,7 @@ type, or a `&`-intersection of traits per §5.7.1). The identifier
 `Type` is an ordinary `IDENT`; no keyword status, no special parser
 branch.
 
-```
+```ebnf
 // Type[C] : no production; parses as PostfixType per §3.2.
 //                                                 ;  (§5.7, 005-90)
 ```
@@ -1117,7 +1118,7 @@ branch.
 
 ### 3.10 Trait intersection `&` in bounds
 
-```
+```ebnf
 IntersectionType  ::= PostfixType ( '&' PostfixType )+
                     ;  (§5.1, 005-43)
 ```
@@ -1160,7 +1161,7 @@ alias RHS; the legality of record-intersection under `alias type`
 
 ### 3.12 Generic parameter list (with const-generics + defaults)
 
-```
+```ebnf
 GenericParamList  ::= '[' GenericParam ( ',' GenericParam )* ','? ']'
                     ;  (§2.5, 004-44)
 
@@ -1206,7 +1207,7 @@ TraitBound        ::= PostfixType ( '&' PostfixType )*       // one or more trai
 
 ### 3.13 `where` clauses
 
-```
+```ebnf
 WhereClause       ::= 'where' WherePredicate ( ',' WherePredicate )* ','?
                     ;  (§3.3.4, 005-122)
 
@@ -1239,8 +1240,9 @@ AssocPath         ::= TypePath ( '.' IDENT )+
 //  predicate operator is the keyword `is`, parallel to the value-level
 //  equality `is` (§5.7). This frees `=` for generic-parameter defaults
 //  and named-generic-argument introduction inside the same generic
-//  bracket without ambiguity. See also §7.12 `FulfillItem` which uses
-//  `is` for associated-type bindings.
+//  bracket without ambiguity. The same `=` also serves the
+//  associated-type binder at §7.12 `FulfillItem` (`AssocTypeBinding`):
+//  `=` declares/binds, `is` compares.
 // **Mixed predicate kinds (per §3.3.4, 005-122).** A single `where`
 //  clause may hold any mix of trait bounds (`T: Numeric`), value bounds
 //  (`N >= 1`, `N % 2 is 0`), and associated-type equality predicates
@@ -1272,7 +1274,7 @@ AssocPath         ::= TypePath ( '.' IDENT )+
 
 ### 3.14 Turbofish `::[args]` (positional + named forms)
 
-```
+```ebnf
 Turbofish         ::= '::' '[' GenericArgList ']'
                     ;  (§2.2.5, 004-26)
 ```
@@ -1325,7 +1327,7 @@ of a declaration, a parameter, or a return — never nested inside a type
 constructor (§13.2.8, 016-180). The value type `T` that follows a kind
 keyword is an ordinary `TypeExpr`.
 
-```
+```ebnf
 KindAnnotation    ::= 'cell' TypeExpr
                     | 'signal' TypeExpr
                     | 'derived' TypeExpr
@@ -1397,7 +1399,7 @@ Productions for the surface syntax of patterns used in `let`, `for`, `match`, `r
 
 `Pattern` is the entry-point nonterminal for any pattern-position context (binding LHS, match arm head, for-loop iteration variable, repeat-bind, variant payload sub-pattern, tuple component sub-pattern, record field sub-pattern). Patterns are built compositionally: a `Pattern` is one of the primary forms below, optionally a *binding* (identifier), or a destructuring shape (variant / tuple / record / newtype) whose sub-positions are themselves `Pattern`s — yielding arbitrary nesting (§4.6).
 
-```
+```ebnf
 Pattern           ::= PatternPrimary
                     | VariantPattern
                     | TuplePattern
@@ -1423,7 +1425,7 @@ Pattern           ::= PatternPrimary
 
 ### 4.1 Pattern primary (wildcard, catch-all, literal, binding)
 
-```
+```ebnf
 PatternPrimary    ::= Wildcard
                     | Binding
                     | LiteralPattern
@@ -1467,7 +1469,7 @@ LiteralPattern    ::= IntLit | SignedIntLit | SuffixedIntLit
 
 ### 4.2 Variant patterns (positional / named / trailing `...`)
 
-```
+```ebnf
 VariantPattern    ::= VariantHead ( '(' VariantPayload? ')' )?  // parens optional for unit variants
                     ;  (§6.2.4, 006-32)
 
@@ -1523,7 +1525,7 @@ RestToken         ::= '...'
 
 ### 4.3 Tuple patterns (positional, trailing `...`)
 
-```
+```ebnf
 TuplePattern      ::= '(' ')'                                   // unit pattern (see §4.1)
                     | '(' Pattern ',' ')'                       // 1-tuple
                     | '(' Pattern ( ',' Pattern )+ ( ',' RestToken )? ','? ')'
@@ -1559,7 +1561,7 @@ TuplePattern      ::= '(' ')'                                   // unit pattern 
 
 ### 4.4 Record patterns (named, trailing `...`)
 
-```
+```ebnf
 RecordPattern     ::= RecordHead '(' RecordPatternFieldList? ')'
                     ;  (§6.2.4, 006-31)
 
@@ -1610,7 +1612,7 @@ RecordPatternField ::= IDENT ( ':' Pattern )?                   // shorthand: `f
 
 ### 4.5 Newtype patterns
 
-```
+```ebnf
 NewtypePattern    ::= NewtypeHead '(' Pattern ')'
                     ;  (§6.3.2, 006-31)
 
@@ -1640,7 +1642,7 @@ Patterns nest to arbitrary depth. Every sub-position of a `VariantPattern`,
 `TuplePattern`, `RecordPattern`, and `NewtypePattern` is itself a full
 `Pattern` and may take any of the §4.1–§4.5 forms.
 
-```
+```ebnf
 NestedPattern     ::= Pattern                                   // applies in every sub-position
                     ;  (§9.2.2, 009-86)
 ```
@@ -1713,7 +1715,7 @@ Productions for the surface syntax of expressions: primaries, postfix and prefix
 
 `Expr` is the entry-point nonterminal for an expression in any value-position context. The grammar is layered: binary operators (§5.7) sit above `UnaryExpr` (the prefix-operator layer, §5.4), which sits above `PostfixExpr` (the postfix-operator layer, §5.2), which sits above `PrimaryExpr` (the atom layer, §5.1). Special forms — `with` (§5.13), `if` (§5.18), `match` (§5.19), `observe` (§5.20), `when` block (§5.21), `given` block (§5.22), pipe `|>` (§5.25) — are productions at the binary or top layer, sequenced into `Expr` per their precedence in Appendix A.
 
-```
+```ebnf
 Expr              ::= AssignExpr
                     | WithExpr
                     ;  (§4.4.7, 007-74)
@@ -1794,7 +1796,7 @@ MultiplicativeExpr ::= UnaryExpr ( MultiplicativeOp UnaryExpr )* // tier 12
 
 ### 5.1 Primary expressions (literal, ident, path, parenthesized)
 
-```
+```ebnf
 PrimaryExpr       ::= Literal
                     | Path
                     | ParenExpr
@@ -1868,7 +1870,7 @@ ParenExpr         ::= '(' Expr ')'
 
 ### 5.2 Postfix forms (`.field`, `.NUMERIC` for tuples, `[idx]`, `(args)`, `?`, `->name`)
 
-```
+```ebnf
 PostfixExpr       ::= PrimaryExpr Postfix*
                     ;  (§4.4.7, 007-74)
 
@@ -1965,7 +1967,7 @@ CrossingName      ::= 'changes' | 'latest'                     // closed list; N
 
 ### 5.3 Optional chaining (`?.`, `?[]`, `?()`)
 
-```
+```ebnf
 OptChainField     ::= '?.' IDENT                               // bare field projection
                     | '?.' IDENT Turbofish CallSuffix          // method invocation with explicit generics
                     ;  (§4.4.7, 007-74)
@@ -1992,7 +1994,7 @@ OptChainCall      ::= '?(' CallArgList? ')'
 
 ### 5.4 Prefix forms (`-`, `~`, `not`, `handle`, `handle!`, `portal`, `dyn`, `move`)
 
-```
+```ebnf
 UnaryExpr         ::= PrefixOp UnaryExpr
                     | PostfixExpr
                     ;  (§4.4.7, 007-74)
@@ -2065,7 +2067,7 @@ ArithPolicyPrefixOp ::= '-%' | '-|' | '-?'
 
 ### 5.5 Call expressions
 
-```
+```ebnf
 CallArgList       ::= PositionalCallArgs
                     | NamedCallArgs
                     ;  (§3.5, 006-1)
@@ -2114,7 +2116,7 @@ MoveArg           ::= 'move' IDENT
 
 ### 5.6 Cast forms `T(x)`, `T%(x)`, `T|(x)`, `T?(x)`
 
-```
+```ebnf
 CastExpr          ::= TypePath CastPolicyMarker? '(' Expr ')'  // documentation-only overlay; canonical path is Path + CastPolicySuffix? + CallSuffix via PostfixExpr (§5.1, §5.2)
                     ;  (§4.7.1, 007-91)
 
@@ -2170,7 +2172,7 @@ CastPolicySuffix  ::= CastPolicyMarker '(' Expr ')'            // tail per §5.2
 
 The per-tier nonterminals that realize the binary operator tower (`OrExpr`, `AndExpr`, `BitOrExpr`, `BitXorExpr`, `BitAndExpr`, `RangeExprTier`, `CompareExpr`, `ShiftExpr`, `AdditiveExpr`, `MultiplicativeExpr`) are defined at the top of §5 immediately under the `Expr` production. They encode the precedence and associativity of Appendix A directly — a recursive-descent parser walks the tower without consulting the table. The operator-token productions below define the per-tier operator vocabulary.
 
-```
+```ebnf
 OrOp              ::= 'or'                                                 ;  (§4.4.7, 007-74)
 AndOp             ::= 'and'                                                ;  (§4.4.7, 007-74)
 BitOrOp           ::= '|'                                                  ;  (§4.4.2, 007-73)
@@ -2240,7 +2242,7 @@ tower without further consultation.
 
 ### 5.8 Range `a..b` (non-associative)
 
-```
+```ebnf
 RangeExpr         ::= Expr '..' Expr                          // documentation-only overlay; canonical path is BinaryExpr via RangeOp at tier 8
                     ;  (§4.4.7, 007-74)
 ```
@@ -2267,7 +2269,7 @@ RangeExpr         ::= Expr '..' Expr                          // documentation-o
 
 ### 5.9 `^k` from-end indexing
 
-```
+```ebnf
 FromEndIndex      ::= '^' UnaryExpr                            // inside IndexAccess only
                     ;  (§9.3.7, 012-87)
 ```
@@ -2288,7 +2290,7 @@ FromEndIndex      ::= '^' UnaryExpr                            // inside IndexAc
 
 ### 5.10 Slicing (`arr[2..5]`, open-ended `[..n]` / `[k..]` / `[..]`)
 
-```
+```ebnf
 RangeIndex        ::= IndexHead? '..' IndexHead?              // inside IndexAccess only
                     ;  (§9.3.7, 012-86)
 
@@ -2328,7 +2330,7 @@ IndexHead         ::= Expr | FromEndIndex
 
 ### 5.11 Delete `delete m[k]` (mandatory keyed index target)
 
-```
+```ebnf
 DeleteExpr        ::= 'delete' DeleteTarget
                     ;  (§9.5.6, 007-239)
 
@@ -2368,7 +2370,7 @@ DeleteKeyTail     ::= '[' Expr ']'                             // mandatory sing
 
 ### 5.12 String interpolation expression (`{expr}` inside string literal)
 
-```
+```ebnf
 StringInterpExpr  ::= StringLit                                // see §2.9 for lexer-mode rules
                     ;  (§9.1.9, 012-42)
 
@@ -2400,7 +2402,7 @@ InterpExpr        ::= Expr                                     // inside a STR_I
 and binds *outside* every binary operator (per §6.1.5). The `WithSuffix`
 forms below are the surface inline and block variants.
 
-```
+```ebnf
 WithSuffix        ::= WithInline
                     | WithBlock
                     ;  (§6.1.5, 009-26)
@@ -2460,7 +2462,7 @@ MergeSource       ::= Expr
 
 ### 5.14 Array literals + comprehensions + repeat form
 
-```
+```ebnf
 ArrayExpr         ::= ArrayLiteral
                     | ArrayComprehension
                     | ArrayRepeat
@@ -2509,7 +2511,7 @@ ArrayRepeat       ::= '[' 'for' Expr ':' Expr ']'
 
 ### 5.15 Map literals (incl. empty `{}` requires type annotation)
 
-```
+```ebnf
 MapExpr           ::= '{' ( MapEntry ( ',' MapEntry )* ','? )? '}'
                     ;  (§9.5.1, 012-97)
 
@@ -2551,7 +2553,7 @@ BracketKeyEntry   ::= '[' Expr ']' ':' Expr                    // const-keyed co
 
 ### 5.16 Tuple literals (trailing comma rule)
 
-```
+```ebnf
 TupleExpr         ::= '(' ')'                                  // unit value
                     | '(' Expr ',' ')'                         // 1-tuple
                     | '(' Expr ( ',' Expr )+ ','? ')'          // n-tuple, n >= 2
@@ -2574,7 +2576,7 @@ TupleExpr         ::= '(' ')'                                  // unit value
 
 ### 5.17 Block expressions
 
-```
+```ebnf
 BlockExpr         ::= ColonBody
                     ;  (§1.4, 002-25)
 
@@ -2613,7 +2615,7 @@ InlineExpr        ::= Expr
 
 ### 5.18 If/else-if/else expression (mandatory final else)
 
-```
+```ebnf
 IfExpr            ::= 'if' Expr ':' IfArmBody ElseIfClause* ElseClause
                     ;  (§6.4, 009-123)
 
@@ -2654,7 +2656,7 @@ IfArmBody         ::= InlineExpr
 
 ### 5.19 Match expression
 
-```
+```ebnf
 MatchExpr         ::= 'match' Expr ':' INDENT MatchArm+ DEDENT
                     ;  (§6.2.4, 009-86)
 
@@ -2686,7 +2688,7 @@ MatchArm          ::= Pattern ':' IfArmBody
 
 ### 5.20 Reactive `observe` expression (`on` / `where` / `default` arms)
 
-```
+```ebnf
 ObserveExpr       ::= 'observe' ':' INDENT OnArm+ DefaultArm? DEDENT
                     ;  (§13.2.11, 016-243)
 
@@ -2758,7 +2760,7 @@ DefaultArm        ::= 'default' ':' IfArmBody                  // must be last (
 
 ### 5.21 `when` block expression (simple + multi-way)
 
-```
+```ebnf
 WhenBlockExpr     ::= WhenSimple
                     | WhenMultiWay
                     ;  (§13.9.12, 022-88)
@@ -2815,7 +2817,7 @@ WhenBody          ::= BlockBody                                // context-depend
 
 ### 5.22 `given` block expression (variant arms)
 
-```
+```ebnf
 GivenBlockExpr    ::= 'given' Expr ':' INDENT GivenArm+ DefaultGivenArm? DEDENT
                     ;  (§13.9.13, 022-106)
 
@@ -2894,7 +2896,7 @@ operands and any chained applications are full `PipeExpr` heads.
 
 ### 5.24 `.previous(fb)` / `.past(k, fb)` accessor forms
 
-```
+```ebnf
 PreviousCall      ::= '.' 'previous' '(' Expr ')'              // sugar for .past(1, fb)
                     ;  (§13.2.4.3, 016-75)
 
@@ -2931,7 +2933,7 @@ PastCall          ::= '.' 'past' '(' Expr ',' Expr ')'         // k, fallback
 `PipeExpr` is defined at the top of §5 as
 `OrExpr ( '|>' PipeRhs )*`. The RHS form is defined here.
 
-```
+```ebnf
 PipeRhs           ::= Path CallSuffix?                         // operator or effect call
                     ;  (§13.17.7, 029-66)
 ```
@@ -2961,7 +2963,7 @@ PipeRhs           ::= Path CallSuffix?                         // operator or ef
 
 ### 5.26 Place-assignment LHS path (`r.a.b = x`, `arr[i].field = y`)
 
-```
+```ebnf
 AssignStmt        ::= AssignExpr                               // statement form per §6.1; AssignExpr defined at top of §5
                     ;  (§11.11, 013-204)
 
@@ -3010,7 +3012,7 @@ PlaceSegment      ::= '.' IDENT                                // field projecti
 
 ### 5.27 `panic(msg)` form
 
-```
+```ebnf
 PanicExpr         ::= 'panic' '(' Expr ')'                    // documentation-only overlay; canonical path is Path + CallSuffix via PostfixExpr (§5.1, §5.2)
                     ;  (§8.2.1, 011-13)
 ```
@@ -3047,7 +3049,7 @@ authoritative statement-shape nonterminal is `BlockItem` (§5.17), which
 enumerates every form admissible inside a block body. The individual
 production blocks below define each form.
 
-```
+```ebnf
 BlockItem         ::= LetStmt | MutStmt | ConstStmt            // §6.1
                     | AssignStmt                               // §5.26
                     | ForStmt | WhileStmt | BreakStmt          // §6.2–§6.4
@@ -3069,7 +3071,7 @@ BlockItem         ::= LetStmt | MutStmt | ConstStmt            // §6.1
 
 ### 6.1 `let` / `mut` / `const` bindings (incl. shadowing)
 
-```
+```ebnf
 LetStmt           ::= 'let' Pattern ( ':' TypeExpr )? '=' Expr
                     ;  (§11.2, 013-30)
 
@@ -3116,7 +3118,7 @@ ConstStmt         ::= 'const' IDENT ( ':' TypeExpr )? '=' Expr
 
 ### 6.2 `for` loop (incl. `for own`, iteration-variable pattern)
 
-```
+```ebnf
 ForStmt           ::= 'for' 'own'? Pattern 'in' Expr Body LoopElseClause?
                     ;  (§12.3, 014-23)
 
@@ -3157,7 +3159,7 @@ LoopElseClause    ::= 'else' ColonBody                          // body shape sh
 
 ### 6.3 `while` loop
 
-```
+```ebnf
 WhileStmt         ::= 'while' Expr Body LoopElseClause?         // LoopElseClause defined in §6.2
                     ;  (§12.4, 014-73)
 ```
@@ -3179,7 +3181,7 @@ WhileStmt         ::= 'while' Expr Body LoopElseClause?         // LoopElseClaus
 
 ### 6.4 `break` / `continue` / `break <value>` / loop `else:` clause
 
-```
+```ebnf
 BreakStmt         ::= 'break' Expr?
                     ;  (§12.5, 014-78)
 
@@ -3219,7 +3221,7 @@ ContinueStmt      ::= 'continue'
 
 ### 6.5 `return`
 
-```
+```ebnf
 ReturnStmt        ::= 'return' Expr?
                     ;  (§11.3.6, 013-30)
 ```
@@ -3247,7 +3249,7 @@ A top-level declaration is one of the alternatives below. The
 `TopLevelDecl` entry-point gathers them; a Ductus source file is a
 sequence of `TopLevelDecl`s separated by `NEWLINE` per §2.1.
 
-```
+```ebnf
 TopLevelDecl      ::= AnnotatedDecl                            // see §12.3
                     | UseStmt
                     | AliasTypeDecl
@@ -3292,7 +3294,7 @@ TopLevelConstDecl ::= Visibility? 'const' IDENT ( ':' TypeExpr )? '=' Expr
 
 ### 7.1 Visibility prefix (`private`)
 
-```
+```ebnf
 Visibility        ::= 'private'
                     ;  (§10.1, 003-3)
 ```
@@ -3316,7 +3318,7 @@ Visibility        ::= 'private'
 
 ### 7.2 Constructor visibility `type(private)`
 
-```
+```ebnf
 ConstructorVis    ::= '(' 'private' ')'
                     ;  (§10.5, 003-63)
 ```
@@ -3340,7 +3342,7 @@ ConstructorVis    ::= '(' 'private' ')'
 
 ### 7.3 Field visibility
 
-```
+```ebnf
 FieldVisibility   ::= 'public' | 'private'
                     ;  (§10.7, 003-68)
 ```
@@ -3361,7 +3363,7 @@ FieldVisibility   ::= 'public' | 'private'
 
 ### 7.4 `use` statements (path bases, selection lists incl. nesting, glob, aliases)
 
-```
+```ebnf
 UseStmt           ::= 'use' UsePath
                     ;  (§10.4, 003-35)
 
@@ -3424,7 +3426,7 @@ UseAlias          ::= 'as' IDENT
 
 ### 7.5 `alias type` declarations
 
-```
+```ebnf
 AliasTypeDecl     ::= Visibility? 'alias' 'type' IDENT GenericParamList? '=' TypeExpr
                     ;  (§4.2, 003-34)
 ```
@@ -3449,7 +3451,7 @@ AliasTypeDecl     ::= Visibility? 'alias' 'type' IDENT GenericParamList? '=' Typ
 
 ### 7.6 Free function declarations (generics, defaults, `own`, `where`, `-> T from v`)
 
-```
+```ebnf
 FnDecl            ::= Visibility? 'fn' IDENT GenericParamList? '(' FnParamList? ')'
                       FnReturnWithFrom? WhereClause? FnBody
                     ;  (§11.7, 003-34)
@@ -3533,7 +3535,7 @@ FnBody            ::= ':' INDENT BlockBody DEDENT
 
 ### 7.7 Closure literals (anonymous fn expressions; type-position closure types live in §3.3)
 
-```
+```ebnf
 ClosureLit        ::= 'fn' '(' ClosureParamList? ')' FnReturn? FnBody
                     ;  (§11.10, 022-118)
 
@@ -3577,7 +3579,7 @@ ClosureParam      ::= 'own'? IDENT ( ':' TypeExpr )?
 
 ### 7.8 Record (`type Name: <fields>`) declarations
 
-```
+```ebnf
 RecordDecl        ::= Visibility? 'sealed'? 'type' ConstructorVis? IDENT GenericParamList? WhereClause? RecordBody
                     ;  (§6.1, 009-1)
 
@@ -3633,7 +3635,7 @@ FieldDecl         ::= FieldVisibility? IDENT ':' TypeExpr
 
 ### 7.9 Newtype declarations (`wraps`)
 
-```
+```ebnf
 NewtypeDecl       ::= Visibility? 'sealed'? 'type' ConstructorVis? IDENT GenericParamList? WhereClause? NewtypeBody
                     ;  (§6.3, 009-1)
 
@@ -3677,7 +3679,7 @@ WrapsClause       ::= 'wraps' TypeExpr
 
 ### 7.10 Enum declarations
 
-```
+```ebnf
 EnumDecl          ::= Visibility? 'sealed'? 'enum' IDENT GenericParamList? WhereClause? EnumBody
                     ;  (§6.2, 009-1)
 
@@ -3763,7 +3765,7 @@ abstract-body `NEWLINE` alternative (semantically equivalent to SPEC
 `WhereClause` appears on the trait `MethodSig` itself — both are
 omitted, matching SPEC §3.1's BNF text.
 
-```
+```ebnf
 TraitDecl         ::= Visibility? 'sealed'? 'trait' IDENT GenericParamList? TraitBody
                     ;  (§3.1, 005-30)
 // Directive decoration attaches via the §12.3 AnnotatedDecl wrapper
@@ -3793,8 +3795,8 @@ TraitBodyItem     ::= Annotation*
 RequiresClause    ::= 'requires' TypePath ( ',' TypePath )*
                     ;  (§3.1.4, 005-30)
 
-AssocTypeDecl     ::= 'type' IDENT ( 'is' TypeExpr )?
-                    ;  (§3.1.2, 005-19)
+AssocTypeDecl     ::= 'type' IDENT ( '=' TypeExpr )?
+                    ;  (§3.1.2, 005-15, 005-17)
 
 RequiredCell      ::= RequiredCellKind IDENT ':' TypeExpr ( '=' Expr )?
                     ;  (§3.1.7, 005-30)
@@ -3824,7 +3826,7 @@ TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind sl
 // **TraitBody two-alternative shape (per §3.1).** An empty trait
 //  body (`trait Marker`) is the second alternative — a single
 //  `NEWLINE` with no `INDENT` / body items. The marker-trait form
-//  yields a methodless trait per §3.1 (003-1 final paragraph).
+//  yields a methodless trait per §3.1 (005-5).
 // **`Annotation*` covers `@default(T)` (per §3.1.5).** The trait's
 //  default-concrete-type directive `@default(<TypePath>)` attaches at
 //  the `Annotation*` position before the `'trait'` keyword. The
@@ -3865,7 +3867,7 @@ TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind sl
 The fulfill-block grammar is fixed in SPEC §3.3 and is mirrored
 here verbatim.
 
-```
+```ebnf
 FulfillItem       ::= 'fulfill' TypeExpr 'for' TypeExpr WhereClause? FulfillBody
                     ;  (§3.3, 005-30)
 
@@ -3880,8 +3882,8 @@ FulfillBodyItem   ::= Annotation* ( FnDecl | AssocTypeBinding )
 //  (§2.5 line-comment-only rule). When SPEC adopts one, attach the
 //  optional slot here.
 
-AssocTypeBinding  ::= 'type' IDENT 'is' TypeExpr NEWLINE
-                    ;  (§3.3.2, 005-93)
+AssocTypeBinding  ::= 'type' IDENT '=' TypeExpr NEWLINE
+                    ;  (§3.3.2, 005-92)
 ```
 
 // **Bodiless `fulfill` (per §3.2, 005-67).** The `NEWLINE` alternative
@@ -3908,11 +3910,12 @@ AssocTypeBinding  ::= 'type' IDENT 'is' TypeExpr NEWLINE
 //  are checked at every call site post-parse.
 // **`AssocTypeBinding` shape (per §3.3.2; Phase D).** An
 //  `AssocTypeBinding` is the implementation-side binder for a trait's
-//  `AssocTypeDecl`. The binder uses the keyword `is` (parallel to the
-//  where-clause `AssocTypeEqualityPredicate` of §3.13) — never `=`.
-//  The `'is' TypeExpr` is mandatory here (unlike `AssocTypeDecl`,
-//  where the initial-value clause is optional and represents a
-//  trait-level default).
+//  `AssocTypeDecl`. The binder uses the keyword `=` — parallel to
+//  generic-parameter defaults and the dyn-bracket binding
+//  `dyn Iterator[Item = i32]` — never `is`. `is` is the comparison
+//  keyword, reserved to the where-clause `AssocTypeEqualityPredicate`
+//  of §3.13, which KEEPS `is`. The `'=' TypeExpr` is mandatory here
+//  (unlike `AssocTypeDecl`, where it is the optional default).
 // **`MethodSig`-without-body vs `FnDecl`-with-body (per §3.3).** A
 //  `FulfillBodyItem` requires a *concrete* body on each `FnDecl` —
 //  the abstract `FnBody` `NEWLINE` form is not legal at a fulfill
@@ -3924,7 +3927,7 @@ AssocTypeBinding  ::= 'type' IDENT 'is' TypeExpr NEWLINE
 
 ### 7.13 Reactive `operator` declarations
 
-```
+```ebnf
 OperatorDecl      ::= Visibility? 'operator' IDENT GenericParamList?
                       '(' OperatorParamList? ')' '->' ( KindAnnotation | TypeExpr ) WhereClause? OperatorBody  // kind slot per §3.15
                     ;  (§13.17.2, 029-93)
@@ -3984,7 +3987,7 @@ OperatorBodyItem  ::= ModuleReactiveDecl                        // recurrent / d
 
 ### 7.14 Effect declarations (with `desired:` / `observed:` block sub-grammar)
 
-```
+```ebnf
 EffectDecl        ::= Visibility? 'effect' IDENT GenericParamList?
                       '(' EffectParamList? ')' WhereClause? EffectBody
                     ;  (§13.19.2, 029-93)
@@ -4118,7 +4121,7 @@ DefaultDeclArm    ::= 'default' ':' INDENT DesiredCellDecl+ DEDENT
 
 ### 7.15 Module-level reactive declarations (`signal`, `derived`, `recurrent`, `stream`)
 
-```
+```ebnf
 ModuleReactiveDecl ::= Visibility? SignalDecl
                     | Visibility? DerivedDecl
                     | Visibility? RecurrentDecl
@@ -4244,7 +4247,7 @@ production block of its own.
 
 ### 7.17 Barrel file (`public.duc`) — `export` entries
 
-```
+```ebnf
 BarrelFile        ::= ExportEntry*
                     ;  (§10.11, 003-78)
 
@@ -4304,7 +4307,7 @@ Productions for `node` declarations: body skeleton, children/incoming/outgoing a
 
 ### 8.1 Node body skeleton (clauses only; no bare placements)
 
-```
+```ebnf
 NodeDecl          ::= Visibility? 'sealed'? 'node' IDENT GenericParamList?
                       WhereClause? NodeBody
                     ;  (§13.3.1, 017-8)
@@ -4367,7 +4370,7 @@ NodeBodyMember    ::= ChildrenClause                             // §8.3
 
 ### 8.3 `children:` acceptance clause (named vs unnamed entries)
 
-```
+```ebnf
 ChildrenClause    ::= 'children' ':' INDENT AcceptanceEntry+ DEDENT
                     ;  (§13.3.3, 017-21)
 
@@ -4425,7 +4428,7 @@ Selector          ::= TypeExpr                                   // node-typed; 
 
 ### 8.4 `incoming:` / `outgoing:` connection-view acceptance clauses
 
-```
+```ebnf
 IncomingClause    ::= 'incoming' ':' INDENT ConnAcceptanceEntry+ DEDENT
                     ;  (§13.3.4, 017-21)
 
@@ -4473,7 +4476,7 @@ ConnUnnamedAcceptance ::= 'dynamic'? TypeExpr Cardinality?
 
 ### 8.5 Standalone `view` declarations
 
-```
+```ebnf
 StandaloneView    ::= 'dynamic'? 'view' IDENT ':' Selector Cardinality?
                     ;  (§13.3.3, 017-19)
 ```
@@ -4503,7 +4506,7 @@ StandaloneView    ::= 'dynamic'? 'view' IDENT ':' Selector Cardinality?
 
 ### 8.6 `dynamic` marker (requires `*`)
 
-```
+```ebnf
 DynamicMarker     ::= 'dynamic'                                  // attaches to acceptance entry or view
                     ;  (§13.3.3.1, 017-40)
 ```
@@ -4531,7 +4534,7 @@ DynamicMarker     ::= 'dynamic'                                  // attaches to 
 
 ### 8.7 Cardinality forms (bare, `?`, `+`, `*`, `[=N]`, `[N..=M]`, `[N..]`, `[..=M]`)
 
-```
+```ebnf
 Cardinality       ::= '?'                                        // 0..=1
                     | '+'                                        // 1..
                     | '*'                                        // 0..
@@ -4573,7 +4576,7 @@ CardinalityBracket ::= '=' ConstGenericArg                       // [=N]      �
 
 ### 8.8 Type-level `when:` clause
 
-```
+```ebnf
 TypeLevelWhenClause ::= 'when' ':' Expr
                     ;  (§13.9.2, 022-3)
 ```
@@ -4601,7 +4604,7 @@ TypeLevelWhenClause ::= 'when' ':' Expr
 
 ### 8.9 Node body cells (attr / default attr / derived / recurrent / stream / const)
 
-```
+```ebnf
 NodeBodyCellDecl  ::= AnnotatedNodeBodyCellDecl                  // wrapper attaches Annotation* per Phase D, D4
                     ;  (§13.3.1, 017-21)
 
@@ -4674,7 +4677,7 @@ connection bodies (§9.1); it is *not* a module-top-level declaration
 (§7.15 has no `yielded` alternative). The declaration form is the only
 way to *name* a group (034-1).
 
-```
+```ebnf
 YieldedDecl       ::= 'yielded' IDENT ':' TypeExpr '=' 'collect' ':' INDENT CollectBody DEDENT
                     ;  (§13.20.4, 034-1)
 
@@ -4753,7 +4756,7 @@ YieldDefaultArm   ::= 'default' ':' INDENT CollectBody DEDENT
 
 ### 8.10 `expose:` clause entries (view-name, named-child, wrapper, connection, `@content`, type-internal `for`/`repeat`, `when`/`given` blocks)
 
-```
+```ebnf
 ExposeClause      ::= 'expose' ':' INDENT ExposeEntry+ DEDENT
                     ;  (§13.3.7, 017-21)
 
@@ -4877,7 +4880,7 @@ ExposeRepeatEntry ::= 'repeat' RepeatBind RepeatIndex? 'in' Expr
 
 ### 8.11 `effects:` clause entries
 
-```
+```ebnf
 EffectsClause     ::= 'effects' ':' INDENT EffectEntry+ DEDENT
                     ;  (§13.3.8, 031-131)
 
@@ -4960,7 +4963,7 @@ Productions for `connection` declarations: shell, single / cartesian / pairs for
 
 ### 9.1 Common shell
 
-```
+```ebnf
 ConnectionDecl    ::= Visibility? 'sealed'? 'connection' IDENT GenericParamList?
                       WhereClause? ConnectionBody
                     ;  (§13.6.1, 017-21)
@@ -5047,7 +5050,7 @@ ConnectionBodyCellDecl ::= AttrDecl                              // §8.9
 
 ### 9.2 Single form (`from: T` / `to: U`)
 
-```
+```ebnf
 FromDecl          ::= 'from' ':' TypeExpr
                     ;  (§13.6.1.1, 017-21)
 
@@ -5082,7 +5085,7 @@ ToDecl            ::= 'to' ':' TypeExpr
 
 ### 9.3 Cartesian form (multiple types + body's `match (from, to):`)
 
-```
+```ebnf
 FromMultiDecl     ::= 'from' ':' TypeExpr ( ',' TypeExpr )+ ','?
                     ;  (§13.6.1.2, 017-21)
 
@@ -5138,7 +5141,7 @@ ToMultiDecl       ::= 'to' ':' TypeExpr ( ',' TypeExpr )+ ','?
 
 ### 9.4 Pairs form (`pairs:` listing + body's `match pair:`)
 
-```
+```ebnf
 PairsClause       ::= 'pairs' ':' INDENT PairEntry+ DEDENT
                     ;  (§13.6.1.3, 017-21)
 
@@ -5189,7 +5192,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 
 ### 9.5 `from` / `to` / `pair` body references (instance-field reserved names)
 
-```
+```ebnf
 // No new production: `from`, `to`, and `pair` are reserved
 // instance-field names resolved by name resolution inside a
 // connection body. Their surface in expressions is the standard
@@ -5238,7 +5241,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 
 ### 9.6 Connection-declaration-level `when:` clause
 
-```
+```ebnf
 // Reuses §8.8: `TypeLevelWhenClause ::= 'when' ':' Expr`
 //                                                  ;  (§13.9.2, §13.6.1.1, 022-3)
 // Reuse-note source pointer (per §0 conventions). The pointer carries
@@ -5277,7 +5280,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 
 ### 9.7 `Circularity` marker note
 
-```
+```ebnf
 // No new production: `Circularity` is a language-defined marker
 // trait (§3.7.4) claimed by a bodiless `fulfill Circularity for C`
 // block (§7.12) on a `ConnectionDecl` `C`. The grammar surface is
@@ -5323,7 +5326,7 @@ selector with its own inner cardinality; outside the brackets sits the
 match predicate (a filter), outer cardinality is the count constraint
 (017-93).
 
-```
+```ebnf
 BundleViewSelector ::= '[' BundleViewInner ']' Cardinality?    // bare outer = exactly one
                     ;  (§13.3.3.5, 017-94)
 
@@ -5354,7 +5357,7 @@ The brackets are part of the surface and survive in the structural
 output (§13.3.3.5). Only an explicit `[...]` is a bundle — a bare
 placement is **not** a bundle (017-94).
 
-```
+```ebnf
 BundlePlacement   ::= '[' BundleMember ( BundleMember )* ']'   // members are self-delimiting under suspended layout (§10.5)
                     | '[' ']'                                  // empty bundle (§13.3.3.5)
                     ;  (§13.3.3.5, 017-94)
@@ -5397,7 +5400,7 @@ other placement (§11). The bound name is the **row-slice** (a borrow of
 the row), not a bare `Handle[T]` (017-97). The bind position is the
 same `NameClause` slot as for non-bundle placements per §11.1.
 
-```
+```ebnf
 NamedBundlePlacement ::= BundlePlacement 'as' IDENT
                     ;  (§13.3.3.5, 017-97)
 ```
@@ -5424,7 +5427,7 @@ Bundles are exactly one nesting level (017-101). The surface form
 `[[T]]` — a bundle whose member is itself a bundle selector — is
 **rejected**. Deeper structure uses nested node bodies.
 
-```
+```ebnf
 //  Rejected at the bundle-view selector level (per 017-101):
 //    [[Note]]+                   ✗
 //    [[Note[=2]]+]+              ✗
@@ -5500,7 +5503,7 @@ most once and in the order shown. Quoting the SPEC line verbatim
 
 > `TypeRef [FlagsRun]? [NameClause (`as` Name)]? [DefaultArgPart (`/Expr`)]? [WhenClause (`when` Pred)]? [AttrClause]? [BodyIntro (`:` Body)]?`
 
-```
+```ebnf
 Placement         ::= TypeRefPlacement
                     | NamedBundlePlacement                      // see §10.3
                     | BundlePlacement                           // see §10.2
@@ -5584,7 +5587,7 @@ A top-level placement creates a named instance of a node type at
 module scope. The optional `main` prefix designates the program's
 entry point (021-138).
 
-```
+```ebnf
 TopLevelPlacement ::= Visibility? 'main'? TypeRef TopLevelName
                       FlagsRun? DefaultArgPart? WhenClause? AttrClause? BodyIntro?
                     ;  (§13.8.1, 021-6)
@@ -5629,7 +5632,7 @@ views (021-34). The child placement may be anonymous (bare
 `TypeRef`); to give it a placement-time name, `as` is **required**
 (021-35).
 
-```
+```ebnf
 ChildPlacement    ::= Placement                                 // see §11.1
                     ;  (§13.8.3, 021-33)
 ```
@@ -5658,7 +5661,7 @@ immediately enclosing instance, determined positionally (021-52); the
 destination is supplied in the placement body as a **node reference**
 (021-56).
 
-```
+```ebnf
 ConnectionPlacement ::= TypeRef FlagsRun? NameClause? DefaultArgPart?
                         WhenClause? AttrClause? ConnectionDestBody
                     ;  (§13.8.4, 021-51)
@@ -5707,7 +5710,7 @@ introduced by **exactly one leading `|`** (021-97). After the leading
 `|`, attributes are whitespace-separated; intermediate `|` characters
 between attributes are not permitted (021-98).
 
-```
+```ebnf
 AttrClause        ::= '|' AttrEntry ( AttrEntry )*
                     ;  (§13.8.7, 021-97)
 
@@ -5755,7 +5758,7 @@ the placed type's `TypeRef` (no intervening whitespace), aliasing a
 boolean attribute (021-119). One or more flags form a **flag run**
 written directly after the `TypeRef`.
 
-```
+```ebnf
 FlagsRun          ::= FlagChar+
                     ;  (§13.8.8, 021-119)
 
@@ -5797,7 +5800,7 @@ FlagChar          ::= "'" | '!' | '?' | '*' | '+' | '^' | '~' | '@' | '$'
 placed type's `default attr` (021-73). Whitespace around the `/` is
 insignificant (021-76).
 
-```
+```ebnf
 DefaultArgExpr    ::= AtomicExpr
                     | '(' Expr ')'
                     ;  (§13.8.5, 021-75)
@@ -5832,7 +5835,7 @@ An inline `when` clause gates the placement (021-124). It sits in the
 fixed `WhenClause` slot of §11.1 — after the optional `/Expr` and
 before the `AttrClause` / `BodyIntro`.
 
-```
+```ebnf
 // WhenClause defined in §11.1 (`'when' Expr`); not redefined here.
 // (See §11.1 for the production block embedding `WhenClause`.)
 ```
@@ -5861,7 +5864,7 @@ its named placements out of the per-iteration body and binds them
 collectively to `<view>` (§13.5.4.9). The placement-level clause
 order is fixed (§13.5.4.1).
 
-```
+```ebnf
 RepeatPlacement   ::= 'repeat' RepeatBind RepeatIndex? 'in' Expr RepeatViewName? RepeatKeyed? ':'
                       ( INDENT BlockBody DEDENT
                       | InlineBody )                            // per §13.8.3, 021-137: inline same-line children admissible
@@ -5905,7 +5908,7 @@ A compile-time `for` in a node body or placement body may carry an
 `as <name>` clause that hoists its loop-scoped named placements and
 binds them collectively to `<name>` in the enclosing scope (§13.3.3.3).
 
-```
+```ebnf
 ForAsPlacement    ::= 'for' Pattern 'in' Expr ForAsName? ':' INDENT BlockBody DEDENT
                     ;  (§13.3.3.3, 017-68)
 
@@ -5946,7 +5949,7 @@ Multiple placements may appear on a single line, separated by
 its end must be determinable without lookahead into the next
 placement.
 
-```
+```ebnf
 SameLinePlacement ::= SelfDelimitingPlacement ( SelfDelimitingPlacement )+
                     ;  (§13.8.10, 021-128)
 
@@ -6007,7 +6010,7 @@ or **standalone** — a construct in its own right. In placement position,
 `@` is instead a flag-run character (§11.6, §13.8.8.4); the
 disambiguation is positional.
 
-```
+```ebnf
 Directive         ::= AppliedDirective
                     | StandaloneDirective
                     ;  (§1.4, 002-13)
@@ -6054,7 +6057,7 @@ Applied directives sit on their own line directly above the
 declaration they modify (§12.3). The applied set, with declaration
 sites:
 
-```
+```ebnf
 Annotation            ::= AppliedDirective
                         ;  (§3.1, 002-13)
 // Alias used by `TraitBodyItem`, `FulfillBodyItem`, `NodeDecl`,
@@ -6112,7 +6115,7 @@ canonical `StandaloneDirective` production (§12 head). The
 `ExposeEntry` alternative cross-references this directive via
 `StandaloneDirective` rather than a separately-named production.
 
-```
+```ebnf
 // ContentDirective: alias for StandaloneDirective per §12 head; no
 //  separate production. ExposeEntry references StandaloneDirective.
 //                                                  ;  (§13.3.7.2, 017-228)
@@ -6136,7 +6139,7 @@ declaration it modifies, aligned to the declaration's indentation
 column. Multiple applied directives stack vertically, each on its own
 line, in source order, all above the declaration.
 
-```
+```ebnf
 AnnotatedDecl     ::= AppliedDirective+ NEWLINE Decl
                     | Decl
                     ;  (§1.4, 002-14)
@@ -6237,7 +6240,7 @@ It names the *type-level alias* for the implementing/subject type and
 is usable only in type positions inside `trait` declarations and
 `fulfill` blocks (§3.1.1, §13.7.7).
 
-```
+```ebnf
 SubjectTypeRef    ::= 'Subject'
                     ;  (§13.7.7, 002-12)
 ```
@@ -6261,7 +6264,7 @@ inside a node or connection body. It denotes the whole instance
 currently being declared, suitable for passing to a function that
 takes the instance type (`total_output(subject)`).
 
-```
+```ebnf
 SubjectValueRef   ::= 'subject'
                     ;  (§13.7.7, 002-8)
 ```
@@ -6284,7 +6287,7 @@ SubjectValueRef   ::= 'subject'
 **only** as the left side of `::` (§13.7.2, §13.7.3). They name *which
 scope* to resolve a name in.
 
-```
+```ebnf
 NamespaceAnchorPath ::= 'here'   '::' AnchorSuffix
                       | 'module' '::' AnchorSuffix
                       ;  (§13.7.2, 002-7)
@@ -6330,7 +6333,7 @@ position:
 | `desired`    | effect clause head (`desired:` sub-block, §7.14)     | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
 | `observed`   | effect clause head (`observed:` sub-block, §7.14)    | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
 
-```
+```ebnf
 ReservedInstanceField ::= 'pair' | 'exposition' | 'from' | 'to'
                         | 'desired' | 'observed'
                         ;  (§13.7.5, 002-5, 002-28)

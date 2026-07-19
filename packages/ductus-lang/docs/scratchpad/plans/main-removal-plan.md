@@ -1,8 +1,11 @@
 # Main-Removal Amendment Plan — `main` retires, `@root` arrives
 
-*2026-07-11 · Executes the ROOT-DESIGNATION ruling (owner, LOCKED). Companion to the BACKLOG
-entry "Main-removal redesign" and the rulings ledger in the master-decisions audit plan.
-Status: DRAFT — awaiting owner confirmation of the decisions in section 3, then approval.*
+*2026-07-11, updated 2026-07-19 · Executes the ROOT-DESIGNATION ruling and the MAIN-REMOVAL
+CONFIRMS ledger entries (owner, 2026-07-18/19 — ALL decisions ruled; see §2a). Status:
+awaiting owner approval of this updated plan. Site lists and line numbers are the 2026-07-11
+survey — ALL stale; the launch-time survey refreshes every site by content/entry-id after the
+cleanup micro-batch lands (streams/policies/barrel/cleanup all reshaped the corpus since).
+Sequencing: runs after the cleanup micro-batch; followed by the wire-rename amendment.*
 
 ---
 
@@ -52,13 +55,50 @@ After:
   Drives | enhanced_handling=true: some_car
 ```
 
-The defaults below (multiplicity, lint shape, misapplication, zero roots) are recommended
-positions awaiting confirmation — they are not yet part of the locked ruling.
+## 2a. Resolutions (owner, 2026-07-18/19 — ledger is the authority; this is the mapping)
 
-## 3. Decisions to confirm
+- **§3.1 multiplicity — RULED: allowed.** Any number of `@root` placements; live graph =
+  union of root closures; no counting error class.
+- **§3.2 dead code — CONFIRMED:** new suppressible lint `dead_top_level_instance`;
+  `unreachable_top_level_instance` retires.
+- **§3.3 misapplication — CONFIRMED:** compile error.
+- **§3.4 zero roots — CONFIRMED:** legal (library); runtime declines gracefully ("nothing
+  to run"); no lint fires in a rootless module.
+- **§3.5 layout — SUPERSEDED by a GENERAL ruling:** ALL applied directives may be written
+  INLINE before their target entity — no `@root`-specific carve-out. The own-line layout
+  law amends corpus-wide (new/amended 002 entry + SPEC §1.4 + GRAMMAR directive notes).
+  Defaults pending veto at approval: both layouts stay legal (own-line AND inline); inline
+  stacking (`@root @derive(Eq) App app:`) follows.
+- **§3.6 order — CONFIRMED:** `@root` precedes the visibility word (post-barrel, only
+  `private` survives in-source).
+- **§3.7 IR — CONFIRMED:** `@root` is compile-time-only; no IR field; the pruned module
+  holds only live instances; the runtime stays root-blind.
+- **§3.8 freed word — CONFIRMED:** `main` freed silently (already ruled via D-05 item 7 +
+  the razor confirmation; zero reservation/migration notes).
+- **ADDITION 1 (reference-reachability) — RULED:** liveness is TOPOLOGICAL ONLY; the
+  reach-edges are exhaustive. The batch survey VERIFIES every instance-reference form is a
+  reach-edge (expected: vacuously true — pin the one-sentence lemma). If a non-edge
+  reference form surfaces, execution STOPS on that point and it returns to the owner as its
+  own design question — no default applies.
+- **ADDITION 2 (liveness-blind compile-time rules) — CONFIRMED:** types, ownership,
+  uniqueness, orphan, and visibility rules fire textually on dead placements; liveness
+  governs only runtime existence and the dead-code lint. One new entry (021 tail).
+- **PHASE 0 — resolved (default, veto window at approval):** FOLD — D-17's closure
+  vocabulary and D-23's five-member closure conform ride this amendment. Disk state
+  verified 2026-07-18: D-23 is HALF-landed (LOG five-member enumeration in 021-140/141;
+  SPEC §13.8.1 still three-member — a standing LOG↔SPEC divergence this amendment closes);
+  D-17's unification never executed ("transitive closure" vs "containment/interpretation
+  closure" coexist). Canonical vocabulary (default, veto at approval): the @root concept is
+  the **root closure** (per-root; live graph = union of root closures); 017-271's
+  "interpretation closure"/"containment closure" remain distinct defined terms for the
+  interpretation-root concept — different roots, not drift.
 
-Each item: the question, the recommended default, one line of why. Nothing in this section
-executes until the owner confirms or overrides it.
+The §3 prose below is retained as background and rationale for these rulings.
+
+## 3. The decisions — all ruled (see §2a); prose kept as background
+
+Each item below: the question as originally posed and the rationale. The rulings in §2a
+govern; where the prose below disagrees with §2a, §2a wins.
 
 ### 3.1 Multiplicity — may a module carry more than one `@root`?
 
@@ -203,6 +243,10 @@ count change.
 
 - The declaration-keyword entry drops `main` from its list.
 - The directive-taxonomy entry adds `@root` to the applied-directive list.
+- The GENERAL inline-directive rule lands (per §2a's §3.5 ruling): an applied directive may
+  be written inline before its target entity; own-line placement remains legal; stacking
+  follows. Amend the directive entry in place or append one new 002 entry (survey decides
+  by current content; count header updates if appended).
 
 Consequence to word carefully: keywords are reserved in every position, so removing `main`
 un-reserves it (see the freed-word item above). The keyword entry needs no replacement text
@@ -235,7 +279,17 @@ Invariant check: each rewritten entry must stay atomic and self-contained (no en
 citations inside entries). The multiplicity entry restates "root closure" locally rather
 than pointing at the closure entry.
 
-Renumbering impact: **none** (pure in-place rewrites).
+- NEW entries appended at the 021 tail (count 142 grows accordingly): the ADDITION-2
+  liveness-blind entry (compile-time rules fire textually on dead placements); the
+  reference-reachability LEMMA entry if the survey verifies it (reach-edges are exhaustive;
+  anything live code can name is live by construction) — if the survey instead finds a
+  non-edge reference form, STOP and present to the owner.
+- 2026-07-18 content check: the current split is 021-138 (designation form), 021-139
+  (exactly-one + error classes), 021-140 (unreachable error + the five-member closure
+  enumeration), 021-141 (closure-defines-live-graph + renders-mount sentence) — the rewrite
+  mapping adjusts to this actual split; locate by content.
+
+Renumbering impact: **tail-appends only; no renumbering of existing ids.**
 
 ### Phase C — LOG, runtime and tooling layers (sections 027 and 032)
 
@@ -262,8 +316,13 @@ increments by one if the new entry lands.
 Rewrites, in document order:
 
 - The lexical chapter: drop `main` from the keyword list; add `@root` to the applied-
-  directive list with a pointer to the placement chapter; extend the directive-versus-flag
-  positional note for the inline placement prefix (item 3.5).
+  directive list with a pointer to the placement chapter; the directive layout prose takes
+  the GENERAL inline rule (per §2a), and the directive-versus-flag note extends for the
+  inline placement prefix.
+- §13.8.1's closure enumeration conforms 3 → 5 members (closing the standing D-23
+  divergence) and the chapter's vocabulary goes root-based ("root closure"; per-root
+  closures; union liveness); §13.14.1's just-landed renders-mount sentence respells its
+  "entry-point's transitive closure" wording to the root-closure vocabulary.
 - The panic-trace example naming a `main` frame: respell the frame name (item 3.8).
 - The placement chapter's "Entry-point designation" block becomes "Root designation":
   `@root` form, multiplicity, per-root closure (five members if Phase 0 folds), union
@@ -414,14 +473,12 @@ python3 lint_nnm.py DECISION_LOG.md SPEC.md          # expect: clean
 grep -n '^## 021\.\|^## 027\.' DECISION_LOG.md       # counts: 142; 120 (121 if new entry)
 ```
 
-## 7. Open items for the owner (summary)
+## 7. At approval — remaining veto window (everything else is ruled)
 
-1. Confirm defaults 3.1–3.8 (multiplicity, lint name/shape, misapplication error, zero
-   roots + graceful decline, inline layout carve-out, visibility order, no root marker in
-   IR, `main` freed as identifier).
-2. Confirm Phase 0 sequencing: fold the D-17 vocabulary and D-23 five-member membership
-   into these rewrites, or land them first.
-3. Note the directive-layout carve-out (3.5): the locked example `@root App app:` is the
-   first inline applied directive; the own-line law gets a stated exception.
-4. Note D-31 (grammar-doc status) is still open; Phase E proceeds on the D-01 precedent
-   unless gated.
+All decisions are ruled (§2a). Three defaults were never spoken in the owner's own words
+and stand unless vetoed with the approval:
+1. PHASE-0 FOLD (D-17 vocabulary + D-23 five-member conform ride this amendment).
+2. Canonical term "root closure" for the @root concept; interpretation/containment closure
+   stay distinct.
+3. Both directive layouts legal (own-line AND inline) + inline stacking.
+Resolved since the draft: D-31 is ruled (GRAMMAR non-normative; Phase E ungated).
