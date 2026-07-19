@@ -180,9 +180,17 @@ fixed, language-provided set; there are no user-defined directives. A
 directive is either *applied*, attached to a declaration or value to modify
 it (the everyday "annotation") — `@derive` (§3.8), `@literal_suffix`
 (§3.9.1), `@flag` (§13.8.8), `@reset_on_reopen` (§13.2.4), `@reset_on_reload`
-(§13.18.14), and a trait's `@default` (§3.1.5) — or *standalone*, a construct
-in its own right: `@content` (§13.3.7). In placement position `@` is instead a
-flag-run character; the positional disambiguation is in §13.8.8.4.
+(§13.18.14), `@root` (§13.8.1), and a trait's `@default` (§3.1.5) — or
+*standalone*, a construct in its own right: `@content` (§13.3.7). An applied
+directive may be written on its own line directly above its target
+declaration, or inline as a prefix at the head of the target's own line,
+before everything else on that line; both layouts are legal, and directives
+stack in source order in either layout. In placement position an `@`
+immediately adjacent to a type path (no intervening whitespace) is instead
+a flag-run character, while a line-initial `@name` followed by whitespace
+opens a directive — what follows may be the declaration head, a
+visibility word, or a further inline directive; the positional
+disambiguation is in §13.8.8.4.
 
 Identifier character set: identifiers may contain `#` as a leading,
 infix, or terminating character — for example `#default`,
@@ -1956,7 +1964,7 @@ the concrete type bound to them.
 
 #### 3.3.2 Associated type bindings
 
-A `fulfill` block binds the trait's associated types via the `type Name is
+A `fulfill` block binds the trait's associated types via the `type Name =
 Concrete` form:
 
 ```
@@ -6362,7 +6370,7 @@ where the runtime has access to them:
 ```
 panic: integer overflow: 2147483647 + 1
   at compute_total, src/billing.duc:42:8
-  called from main, src/main.duc:7:3
+  called from run_billing, src/main.duc:7:3
 ```
 
 For user-triggered `panic` calls, the diagnostic includes the
@@ -17111,37 +17119,57 @@ Instance names are unique within their declaring scope. Two
 top-level placements with the same name in the same module is a
 compile error.
 
-**Entry-point designation.** A top-level placement may be prefixed
-with the `main` keyword to designate it as the program's entry point.
-The `main` prefix appears before the type name and applies to the
-declaration as a whole; attribute settings and child bodies follow
-the usual syntax:
+**Root designation.** A top-level placement may be prefixed with the
+`@root` directive to designate it as a *traversal root* — a node
+instance from which the compiler's liveness traversal begins. Like
+any applied directive (§1.4), `@root` may sit on its own line above
+the placement or inline as a prefix on the placement line; inline, it
+precedes the visibility word when one is present. Attribute settings
+and child bodies follow the usual syntax:
 
 ```
-main Driver john_doe | expertise_level=10:
+@root Driver john_doe | expertise_level=10:
   Drives | enhanced_handling=true: some_car
 ```
 
-Normatively, a program must contain **exactly one** `main`-prefixed
-top-level placement. Zero `main` placements is a compile error of
-class `no_entry_point`; two or more `main` placements is a compile
-error of class `multiple_entry_points`.
+`@root` attaches to top-level placements only; applying it to
+anything else — a nested child placement, a declaration, or a value —
+is a compile error.
 
-**Reachability and initialization scope.** From the unique `main`
-placement, the compiler computes the transitive closure of
-*reachable* top-level instances. The closure includes: (a) the
-`main` instance's own child subtree (placements declared in its
-body, recursively); (b) the destinations of every connection
-placement within that subtree (§13.8.4); and (c) every module-level
-top-level instance reachable through a `Handle` or `WeakHandle`
-(§13.3.6.2) held by any cell in the closure. The transitive closure
-is the program's *initialization scope*: only reachable instances
-are instantiated and wired into the runtime graph.
+**Multiplicity.** A module may carry any number of `@root`
+placements, including zero. Each `@root` placement roots its own
+closure. A module with zero roots is a library module: compilation
+succeeds, and there is simply no live graph to build — the runtime,
+handed such a module, declines gracefully with a clean "nothing to
+run" condition (§13.14.1).
 
-A top-level placement that is not in the transitive closure of
-`main` is a compile error of class `unreachable_top_level_instance`.
-Module-level instances exist to be referenced (directly as children,
-as connection destinations, or via Handle), not to sit unused.
+**Reachability and the live graph.** For each root, the compiler
+computes the **root closure** — the set of instances reachable from
+that root. A root's closure comprises the root's own subtree, its
+connection destinations, its `Handle`/`WeakHandle`-reachable
+module-level instances, node references bound as effect arguments
+(reached as borrows, not cell stores), and the wire-candidate
+envelopes of its connections. (The subtree is the placements declared
+in the root's body, recursively, §13.8.3; connection placement,
+§13.8.4; handles, §13.3.6.2; effect-argument node references,
+§13.17.7; wire-candidate envelopes, §13.11.5.) The **live graph** is
+the union of all root closures, statically computable: only instances
+in the live graph are instantiated and wired into the runtime graph.
+
+**Dead code.** A top-level node instance outside every root closure
+is dead code: it is absent from the live graph, and the compiler
+surfaces it with the suppressible lint `dead_top_level_instance` —
+never a compile error. In a module with zero roots no such lint
+fires: every instance there is library surface, not dead code.
+
+Compile-time rules are liveness-blind: type checking, ownership, name
+uniqueness, the orphan rule, and visibility all fire textually on
+every placement, dead or live; liveness governs only runtime
+existence and the dead-code lint. Liveness is topological only, and
+the reach-edges above are exhaustive — every form by which code
+references an instance is itself a reach-edge, so any instance live
+code can reference is live by construction, and a dead placement
+cannot be referenced by live code.
 
 #### 13.8.2 Setting attrs at placement
 
@@ -17876,6 +17904,10 @@ Disambiguation is positional: in placement position, a non-letter
 character immediately following the `TypeRef` path (no intervening
 whitespace) is a flag-run opener. In any other position
 (expression context, annotation context, etc.) it is the operator.
+A line-initial `@name` followed by whitespace — the inline
+applied-directive prefix (`@root Driver john_doe`, `@root private
+Driver root_driver`) — is a directive, not a flag run: the flag
+reading requires adjacency to the `TypeRef` path.
 
 ```
 Pin' p1                            // flag run after TypeRef (placement context)
@@ -19594,28 +19626,27 @@ The runtime's lifecycle proceeds in phases:
 
 1. Load the IR (per §15.4).
 2. Allocate cell storage (§14.3).
-3. Locate the entry-point node instance (the `main` placement,
-   §13.8.1) and compute its **transitive closure**: the entry-point's
-   own subtree plus everything reachable through connections and
-   through module-level `Handle`/`WeakHandle` references. Initialize
-   only the reactive cells (signals, attrs, recurrents, deriveds,
-   streams) within that closure, and evaluate all `when` predicates
-   for those cells in topological order over their init-time read
-   dependencies, per §13.2.6's startup pass rules. Signal cells
-   receive declared initial values; attr cells receive declared
-   defaults (or placement-supplied values); recurrent cells evaluate
-   their expressions for the first time (`.previous`/`.past` calls
-   return their fallback values since no history exists yet); derived
-   cells are computed by evaluating their expression bodies;
-   stream cells begin empty; `when` predicates are evaluated to
-   determine each instance's initial gate state.
-   Placement-level `when` predicates (§13.9.3) are evaluated
-   alongside type-level `when:` predicates in the same topological
-   pass; placement-level overrides type-level per §13.9.5 with the
-   placement's predicate evaluating in its placement scope rather
-   than the type's own scope. The runtime does not separate this
-   work into per-declaration-kind phases; the topological sort
-   determines the order.
+3. Initialize the reactive cells (signals, attrs, recurrents,
+   deriveds, streams) of the loaded graph. The loaded module is
+   already pruned at compile time to the **live graph** — the union
+   of the root closures (§13.8.1) — so every loaded cell is live; the
+   runtime is root-blind and performs no reachability traversal of
+   its own. Evaluate all `when` predicates for those cells in
+   topological order over their init-time read dependencies, per
+   §13.2.6's startup pass rules. Signal cells receive declared
+   initial values; attr cells receive declared defaults (or
+   placement-supplied values); recurrent cells evaluate their
+   expressions for the first time (`.previous`/`.past` calls return
+   their fallback values since no history exists yet); derived cells
+   are computed by evaluating their expression bodies; stream cells
+   begin empty; `when` predicates are evaluated to determine each
+   instance's initial gate state. Placement-level `when` predicates
+   (§13.9.3) are evaluated alongside type-level `when:` predicates in
+   the same topological pass; placement-level overrides type-level
+   per §13.9.5 with the placement's predicate evaluating in its
+   placement scope rather than the type's own scope. The runtime does
+   not separate this work into per-declaration-kind phases; the
+   topological sort determines the order.
 4. Perform the first commit, publishing the initial snapshot.
    Observers' subsequent `acquire_snapshot` calls return real data.
    The reconciler-hook pass that follows this first commit runs
@@ -19628,7 +19659,13 @@ The runtime is "constructing" through steps 1–3; "live" after step
 per implementation choice).
 
 Each interpretation root's renders mount once at startup, at stable
-paths within the entry-point's transitive closure (step 3).
+paths within the live graph (step 3).
+
+If the loaded module's live graph is empty — a library module with no
+roots — the runtime declines gracefully: startup reports a clean
+"nothing to run" condition and exits; this is neither a crash nor an
+error. The `ductus run` CLI surfaces the condition to the user
+(§14.2.1).
 
 **Steady-state operation:**
 
@@ -20701,7 +20738,7 @@ by the Subject type, not a free effect constructor, and the LHS is a
 *node reference* (a graph member held by borrow, §13.3.6.1), not an
 arbitrary reactive cell. Dispatch keys off both operands — a
 node-reference LHS with an effect-kind-trait-method RHS. The node
-reference joins the interpretation-reachability closure as a borrow
+reference joins the root closure (§13.8.1) as a borrow
 (not a cell store), and the effect is still hosted in the enclosing
 node's `effects:` clause.
 
@@ -24367,9 +24404,9 @@ module whose top-level declarations form the program's top-level
 scope) and any external dependencies; the format of the manifest is
 implementation-specific. The root module declared in the manifest is
 the compilation root for loading and name resolution; the
-**entry-point node instance** — where runtime initialization begins —
-is declared separately in source via the `main` keyword on a top-level
-placement (§13.8.1) and is independent of the manifest's root-module
+**traversal roots** — where runtime initialization begins — are
+declared separately in source via the `@root` directive on top-level
+placements (§13.8.1) and are independent of the manifest's root-module
 specification. A package that exposes an API to dependent packages
 additionally carries its barrel file `public.duc` at the package root
 (§10.11); the manifest declares dependencies, while the barrel —

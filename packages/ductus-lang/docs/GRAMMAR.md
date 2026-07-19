@@ -3287,10 +3287,11 @@ TopLevelConstDecl ::= Visibility? 'const' IDENT ( ':' TypeExpr )? '=' Expr
 //  visibility prefix (optional, §7.1) followed by its keyword head
 //  (`use`, `alias`, `fn`, `type`, `enum`, `trait`, `fulfill`, `operator`,
 //  `effect`, `signal`/`derived`/`recurrent`/`stream`, `node`,
-//  `connection`, `const`) or — for `TopLevelPlacement` — by the
-//  optional `'main'` keyword followed by a `TypeRef` head. The parser
-//  selects the alternative on the lookahead after any visibility
-//  prefix.
+//  `connection`, `const`) or — for `TopLevelPlacement` — by an
+//  optional inline `RootDirective` (`@root`, preceding any visibility
+//  prefix, §11.2) followed by a `TypeRef` head. The parser selects the
+//  alternative on the lookahead after any directive and visibility
+//  prefixes.
 
 ### 7.1 Visibility prefix (`private`)
 
@@ -4227,7 +4228,7 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  surrounding-construct kind restricts which alternatives are
 //  semantically legal.
 
-### 7.16 Module-level placements (top-level placement, incl. `main` prefix)
+### 7.16 Module-level placements (top-level placement, incl. `@root` prefix)
 
 The `TopLevelPlacement` production is defined canonically in §11.2
 alongside the rest of the placement grammar. See §11.2 for the
@@ -5581,14 +5582,14 @@ InlineBody        ::= SelfDelimitingPlacement ( SelfDelimitingPlacement )*
 //  inline-element modifiers; they appear as standalone entries at
 //  `expose:` / body level and do not participate in this ordering.
 
-### 11.2 Top-level placement (incl. `main` prefix, optional `as`)
+### 11.2 Top-level placement (incl. `@root` prefix, optional `as`)
 
 A top-level placement creates a named instance of a node type at
-module scope. The optional `main` prefix designates the program's
-entry point (021-138).
+module scope. The optional inline `@root` directive prefix designates
+the placement as a traversal root (021-138).
 
 ```ebnf
-TopLevelPlacement ::= Visibility? 'main'? TypeRef TopLevelName
+TopLevelPlacement ::= RootDirective? Visibility? TypeRef TopLevelName
                       FlagsRun? DefaultArgPart? WhenClause? AttrClause? BodyIntro?
                     ;  (§13.8.1, 021-6)
 
@@ -5599,19 +5600,22 @@ TopLevelName      ::= IDENT                                     // bare declarat
 
 // **Visibility prefix (per §10.3, 003-33).** A top-level placement
 //  accepts a visibility specifier governing the cross-module
-//  reachability of the instance name. The `Visibility?` head precedes
-//  the optional `'main'` keyword; the order is fixed
-//  (e.g., `private main Driver root_driver`).
+//  reachability of the instance name. The optional `RootDirective`
+//  precedes the `Visibility?` head; the order is fixed
+//  (e.g., `@root private Driver root_driver`).
 // **Top-level name is mandatory (per 021-6); `as` is optional (per
 //  021-7).** The bare form `Driver john_doe` and the explicit form
 //  `Driver as john_doe` have identical meaning. By convention,
 //  top-level placements omit `as`. The `as` marker is required only
 //  in nested positions (§11.3).
-// **`main` prefix (per 021-138 / §13.8.1).** The `main` keyword
-//  prefixes a single top-level placement to mark it as the entry
-//  point. Exactly one `main` placement is required per program
-//  (021-139); zero is `no_entry_point`, two-or-more is
-//  `multiple_entry_points` — semantic, post-parse.
+// **`@root` prefix (per 021-138 / §13.8.1).** The inline `RootDirective`
+//  prefix designates the placement as a traversal root. A module may
+//  carry any number of `@root` placements, including zero (021-139);
+//  an instance outside every root closure draws the suppressible
+//  dead-code lint `dead_top_level_instance` (021-140) — a lint,
+//  never an error; semantic, post-parse. `@root` may also sit on its
+//  own line above the placement, per the general applied-directive
+//  layout (§12.3).
 // **Element order matches §11.1 with the name in the first optional
 //  slot (positional).** The `TopLevelName` slot is the top-level
 //  equivalent of `NameClause` in §11.1; subsequent clauses follow the
@@ -6024,6 +6028,7 @@ DirectiveName     ::= 'derive'
                     | 'default'
                     | 'reset_on_reopen'
                     | 'reset_on_reload'
+                    | 'root'
                     ;  (§1.4, 002-14)
 
 DirectiveArgs     ::= DirectiveArg ( ',' DirectiveArg )*
@@ -6039,23 +6044,26 @@ StandaloneDirective ::= '@' 'content'
                     ;  (§13.3.7.2, 017-228)
 ```
 
-// **Directive set is closed (per §1.4).** The six applied names
+// **Directive set is closed (per §1.4).** The seven applied names
 //  (`derive`, `literal_suffix`, `flag`, `default`, `reset_on_reopen`,
-//  `reset_on_reload`) plus the one standalone name (`content`) form
-//  the complete inventory. Any other identifier following `@` in
+//  `reset_on_reload`, `root`) plus the one standalone name (`content`)
+//  form the complete inventory. Any other identifier following `@` in
 //  directive position is a parse error. Users cannot register new
 //  directives.
-// **Directive vs flag-run disambiguation (per §13.8.8.4).** `@` opens
-//  a directive only in declaration / annotation context. In placement
-//  context — immediately adjacent to a `TypeRef` path with no
-//  intervening whitespace (§11.6) — `@` is a flag character. The
+// **Directive vs flag-run disambiguation (per §13.8.8.4).** A
+//  line-initial `@name` followed by whitespace — the inline
+//  applied-directive prefix (`@root Driver john_doe`,
+//  `@root private Driver root_driver`) — is a directive, as is `@` in
+//  declaration / annotation context. In
+//  placement context, `@` immediately adjacent to a `TypeRef` path
+//  with no intervening whitespace (§11.6) is a flag character. The
 //  parser resolves by position.
 
 ### 12.1 Applied directives
 
 Applied directives sit on their own line directly above the
-declaration they modify (§12.3). The applied set, with declaration
-sites:
+declaration they modify, or inline as a prefix at the head of its
+line (§12.3). The applied set, with declaration sites:
 
 ```ebnf
 Annotation            ::= AppliedDirective
@@ -6081,6 +6089,9 @@ ResetOnReopenDirective ::= '@' 'reset_on_reopen'
 
 ResetOnReloadDirective ::= '@' 'reset_on_reload'
                         ;  (§13.18.14, 030-46)
+
+RootDirective         ::= '@' 'root'
+                        ;  (§13.8.1, 021-138)
 ```
 
 // **`@derive` attaches to type declarations (per §3.8).** Applied
@@ -6106,6 +6117,12 @@ ResetOnReloadDirective ::= '@' 'reset_on_reload'
 // **`@reset_on_reload` attaches to `stream` declarations (per
 //  §13.18.14).** Zero-arg form; opts the stream out of cross-reload
 //  buffer preservation. Semantic effect is post-parse.
+// **`@root` attaches to top-level placements (per §13.8.1).**
+//  Zero-arg form; designates the placement a traversal root. Written
+//  inline as the placement-line prefix preceding `Visibility` (§11.2)
+//  or on its own line above the placement. Applying it to anything
+//  other than a top-level placement is a compile error — semantic,
+//  post-parse.
 
 ### 12.2 Standalone directive `@content`
 
@@ -6136,13 +6153,15 @@ canonical `StandaloneDirective` production (§12 head). The
 
 An applied directive sits on its **own line, directly above** the
 declaration it modifies, aligned to the declaration's indentation
-column. Multiple applied directives stack vertically, each on its own
-line, in source order, all above the declaration.
+column, or **inline** as a prefix at the head of the declaration's
+own line, before everything else on it (002-37). Both layouts are
+legal. Directives stack in source order in either layout: own-line
+directives stack vertically above the declaration; inline directives
+stack left-to-right before the declaration head.
 
 ```ebnf
-AnnotatedDecl     ::= AppliedDirective+ NEWLINE Decl
-                    | Decl
-                    ;  (§1.4, 002-14)
+AnnotatedDecl     ::= ( AppliedDirective NEWLINE? )* Decl
+                    ;  (§1.4, 002-14, 002-37)
 
 Decl              ::= TopLevelDecl
                     | NodeBodyDecl
@@ -6194,7 +6213,12 @@ EffectBodyDecl    ::= DesiredCellDecl                         // §7.14 (wrapped
 //  productions (`FnDecl`, `RecordDecl`, `NodeDecl`, `ConnectionDecl`,
 //  `TraitDecl`, etc.) do **not** carry an inline `Annotation*` head —
 //  the directive-decoration parse path goes through this wrapper
-//  uniformly. Where a decl form is reachable only inside a body (e.g.
+//  uniformly. One spelled-out exception: `TopLevelPlacement` (§11.2)
+//  carries an explicit `RootDirective?` slot inlining `@root`'s
+//  placement-line prefix; a derivation through that slot and one
+//  through this wrapper's inline form describe the same surface, and
+//  the slot is the canonical parse for `@root` on a placement. Where
+//  a decl form is reachable only inside a body (e.g.
 //  `DesiredCellDecl` inside an effect's `desired:` block), the local
 //  wrapper production (e.g. `AnnotatedDesiredCellDecl` of §7.14)
 //  attaches the same `Annotation*` run in that scope.
@@ -6210,17 +6234,19 @@ EffectBodyDecl    ::= DesiredCellDecl                         // §7.14 (wrapped
 //  alternative; it carries no visibility prefix and is not
 //  directive-decoratable.
 
-// **Own-line placement (per §1.4 / §3.8 / §3.9 / §13.8.8).** A
-//  directive may not share its line with the declaration it modifies
-//  (no `@derive(Eq) type Point:` form). The line terminator after the
-//  directive line is structural; it does not introduce an indent.
+// **Layout (per §1.4, 002-37).** A directive may sit on its own line
+//  directly above the declaration it modifies, or inline before the
+//  declaration head on the same line (`@derive(Eq) type Point:` is
+//  legal). After an own-line directive the line terminator is
+//  structural; it does not introduce an indent.
 // **Stacking order is source order (per §3.8.1 / §3.9.1).** Multiple
 //  `@derive(...)` directives may stack; multiple `@literal_suffix(...)`
-//  directives may stack — each on its own line above the type. The
+//  directives may stack — each on its own line above the type, or left-to-right inline. The
 //  semantic interpretation is per directive (e.g., union of derived
 //  traits, set of registered suffixes).
-// **Column alignment (per §1.4 layout rules).** The directive line is
-//  written at the declaration's own indentation column, not deeper.
+// **Column alignment (per §1.4 layout rules).** An own-line directive
+//  line is written at the declaration's own indentation column, not
+//  deeper.
 //  Continuation across multiple physical lines uses ordinary
 //  paren/bracket layout-suspension (§2.1) within the directive's
 //  argument list.

@@ -67,7 +67,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 001-37. Recoverable conditions are expressed as `Option`/`Result` values with `?` propagation. (§1.3)
 001-38. The failure track (bug vs recoverable) is chosen at the operation site, not retroactively. (§1.3)
 
-## 002. Source Form & Lexical Rules — 36 Rules
+## 002. Source Form & Lexical Rules — 37 Rules
 
 002-1. Naming conventions: concrete primitive types (`i32`, `bool`) and built-in placeholder keywords (`numeric`, `integer`, `float`, `signed`, `unsigned`) are lowercase; trait and user-defined type names are PascalCase; functions, variables, and fields are snake_case. (§1.4)
 002-2. Keywords are always lowercase with no capitalized form; this rule is normative and takes precedence over any conflicting grammar. (§1.4)
@@ -82,7 +82,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 002-11. The operator-context keywords are `is`, `and`, `or`, `not`, `handle`, `handle!`, `portal`, and `delete`. `handle!` is a single lexer token. (§1.4)
 002-12. The sole reserved type identifier is `Subject`, the subject-type alias usable in trait and `fulfill` type positions; it is a capitalized type alias, not a keyword. (§1.4)
 002-13. The `@` sigil introduces a **directive**: a member of a fixed, language-provided set; there are no user-defined directives. (§1.4)
-002-14. A directive is either **applied** — attached to a declaration or value to modify it, the everyday "annotation" (`@derive`, `@literal_suffix`, `@flag`, `@reset_on_reopen`, `@reset_on_reload`, and a trait's `@default`) — or **standalone**, a construct in its own right (`@content`). (§1.4)
+002-14. A directive is either **applied** — attached to a declaration or value to modify it, the everyday "annotation" (`@derive`, `@literal_suffix`, `@flag`, `@reset_on_reopen`, `@reset_on_reload`, `@root`, and a trait's `@default`) — or **standalone**, a construct in its own right (`@content`). (§1.4)
 002-15. Identifiers may contain `#` as a leading, infix, or terminating character, and `#` behaves like a letter in every position — normative, taking precedence over any conflicting grammar: `#default`, `audio#main`, `note#`. (§1.4)
 002-16. The semicolon `;` is not a token; a `;` anywhere in Ductus source is a lex error. (§1.4)
 002-17. Ductus delimits with newlines and indentation; there is no statement separator. (§1.4)
@@ -105,6 +105,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 002-34. `dyn` is a reserved word; its grammatical position is the trait-object marker wrapping a trait at value position, and its keyword class is the type-expression keywords — the class of keywords legal only inside type expressions, whose first member is `dyn`. (§1.4)
 002-35. In the documentation corpus's fenced code blocks, a bare fence (no info string) holds Ductus source; a non-empty info string marks a non-Ductus block — `text` for diagnostics and other non-code content, `ductus-ir` for the IR text form, `ebnf` for grammar productions, `rust` for host-side pseudocode — and such a block is excluded from Ductus lexing rules, including the rule that a semicolon anywhere in Ductus source is a lex error. (§1.4)
 002-36. The visibility keywords are a distinct keyword class: `private`, `public`, and `export`. `private` is the sole in-source visibility keyword on declaration heads — absence denotes the package-visible default — and also serves as the member-position restriction marker and as the parenthesized constructor specifier on a `type` head; `public` is legal only in member position, marking a member as part of a barrel-exported type's exported surface; `export` heads the entries of the package barrel file `public.duc` and is grammatically legal only there. All three are reserved words in every position. (§1.4)
+002-37. An applied directive may be written on its own line directly above its target declaration, or inline as a prefix at the head of the target's own line, before everything else on that line; both layouts are legal, and directives stack in source order in either layout — own-line directives stack vertically, inline directives stack left-to-right: `@derive(Eq) @derive(Hash) type Point:` ≡ the two-line stacked form. (§1.4)
 
 ## 003. Modules, Packages & Visibility — 88 Rules
 
@@ -1951,7 +1952,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-66. A recurrent whose expression contains only self-references evaluates once and freezes; this is valid behavior, not an error. (§13.2.4)
 016-67. A trigger that contributes no value to the expression (e.g., a pure clock signal) requires an explicit `observe` arm. (§13.2.4)
 016-68. Explicit triggers are written by making the recurrent's expression an `observe` block. (§13.2.4)
-016-69. `@reset_on_reopen` is a decorator written on its own line directly above the `recurrent` declaration it modifies. (§13.2.4)
+016-69. `@reset_on_reopen` is an applied directive attached to the `recurrent` declaration it modifies. (§13.2.4)
 016-70. Recurrents re-evaluating in one commit advance in lockstep: each triggered recurrent's expression reads the previous-committed values of all recurrent cells, including other triggered ones. (§13.2.4.1)
 016-71. All recurrents advanced in a pass commit together at the end of the pass; none sees another's just-advanced value within the pass. (§13.2.4.1)
 016-72. A recurrent's own `.previous`/`.past` always return previously-committed values; the value being computed in the current commit is never visible through them. (§13.2.4.1)
@@ -2779,13 +2780,13 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 020-37. Every named identifier in an instance body scope — cells of all kinds (`const`/`attr`/`recurrent`/`derived`/`stream`/`yielded`), `yielded` group names, standalone `view` declarations, named entries inside `children:`/`incoming:`/`outgoing:` acceptance clauses, and placement `as`-names — shares one namespace; no two may share a name regardless of kind, and there is no shadowing across them. This holds uniformly for node and connection bodies. (§13.7.1)
 020-38. View names and exposed placement `as`-names are hoisted — visible body-wide regardless of textual order; cell values still follow initialization order, so an attr's default or a recurrent's expression may reference only previously-declared cells of the same body. (§13.7.1)
 
-## 021. Placement — 142 Rules
+## 021. Placement — 144 Rules
 
 021-1. Placement is the syntax for instantiating nodes and connections into a concrete reactive graph. (§13.8)
 021-2. Placement is distinct from value construction of records, which uses constructor syntax. (§13.8)
-021-3. A top-level placement creates a named instance of a node type at module scope: `Driver john_doe`. A top-level placement may be prefixed with the `main` keyword to designate it as the program's entry-point. (§13.8.1)
-021-4. A top-level placement line is optionally prefixed with `main`, then the type name, then the instance name, then optional attribute settings, then an optional `:` introducing a body of child placements: `Driver john_doe | expertise_level=10:` for an auxiliary instance, `main Driver john_doe | expertise_level=10:` for the entry-point. (§13.8.1)
-021-5. A top-level placement is a declaration that names its subject positionally — optionally prefixed with `main`, then type then name, with no marker between type and name. (§13.8.1)
+021-3. A top-level placement creates a named instance of a node type at module scope: `Driver john_doe`. A top-level placement may be prefixed with the `@root` directive to designate it as a traversal root. (§13.8.1)
+021-4. A top-level placement line is optionally prefixed with the inline `@root` directive, then the type name, then the instance name, then optional attribute settings, then an optional `:` introducing a body of child placements: `Driver john_doe | expertise_level=10:` for an ordinary instance, `@root Driver john_doe | expertise_level=10:` for a traversal root. (§13.8.1)
+021-5. A top-level placement is a declaration that names its subject positionally — optionally prefixed with the `@root` directive, then type then name, with no marker between type and name. (§13.8.1)
 021-6. A top-level placement is mandatorily named. (§13.8.1)
 021-7. The `as` name marker is optional in a top-level placement; `Driver john_doe` and `Driver as john_doe` have identical meaning. (§13.8.1)
 021-8. Instance names are unique within their declaring scope; two top-level placements with the same name in one module is a compile error. (§13.8.1)
@@ -2918,11 +2919,13 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 021-135. Naming via `as` never requires parentheses in same-line multi-placement; parenthesizing a named placement is a readability convention, not a rule. (§13.8.10)
 021-136. A placement introducing its own children body via `:` owns the rest of its line and the following indented block; it cannot share its line with sibling placements. (§13.8.10)
 021-137. A `:`-bearing placement may carry inline children on its own line when no sibling placements share the line: `SomePart: Child1 Child2 Child3`. (§13.8.10)
-021-138. The `main` keyword prefixes a top-level placement to designate it as the program's entry-point — the node instance from which startup traversal begins. Form: `main TypeName instance_name [attribute_clause] [: body]`. (§13.8.1)
-021-139. Every program declares exactly one `main` top-level placement. A program with zero `main` placements is a compile error of class `no_entry_point`; a program with two or more `main` placements is a compile error of class `multiple_entry_points`. (§13.8.1)
-021-140. A top-level node instance that is not the entry-point and is not reachable from the entry-point's transitive closure is a compile error of class `unreachable_top_level_instance`. The transitive closure comprises the entry-point's own subtree, its connection destinations, its `Handle`/`WeakHandle`-reachable module-level instances, node references bound as effect arguments (reached as borrows, not cell stores), and the wire-candidate envelopes of its connections. (§13.8.1)
-021-141. The entry-point's transitive closure — the entry-point's own subtree, its connection destinations, its `Handle`/`WeakHandle`-reachable module-level instances, node references bound as effect arguments (reached as borrows), and its connections' wire-candidate envelopes — defines the live graph: cells are allocated, instances are mounted, connections are engaged, and effects are reconciled for the entry-point and every reachable instance — and only those; each interpretation root's renders mount once at startup at stable paths within this closure. (§13.8.1, §13.14.1)
+021-138. The `@root` directive designates a top-level placement as a traversal root — a node instance from which the compiler's liveness traversal begins. Like any applied directive it may sit on its own line above the placement or inline as a prefix on the placement line, before the visibility word when one is present: `@root TypeName instance_name [attribute_clause] [: body]`; `@root private TypeName instance_name`. `@root` attaches to top-level placements only; applying it to anything else — a nested child placement, a declaration, or a value — is a compile error. (§13.8.1)
+021-139. A module may carry any number of `@root` placements, including zero: each `@root` placement roots its own closure, and a module with zero roots is a library module — compilation succeeds, and there is simply no live graph to build. (§13.8.1)
+021-140. A top-level node instance that lies outside every root closure is dead code: it is absent from the live graph, and the compiler surfaces it with the suppressible lint `dead_top_level_instance` — never a compile error. A root's closure comprises the root's own subtree, its connection destinations, its `Handle`/`WeakHandle`-reachable module-level instances, node references bound as effect arguments (reached as borrows, not cell stores), and the wire-candidate envelopes of its connections. In a module with zero roots no such lint fires — every instance is library surface, not dead code. (§13.8.1)
+021-141. A root closure — the root's own subtree, its connection destinations, its `Handle`/`WeakHandle`-reachable module-level instances, node references bound as effect arguments (reached as borrows), and its connections' wire-candidate envelopes — is computed per root, and the live graph is the union of all root closures, statically computable: cells are allocated, instances are mounted, connections are engaged, and effects are reconciled for every instance in that union — and only those; each interpretation root's renders mount once at startup at stable paths within the live graph. (§13.8.1, §13.14.1)
 021-142. The static-vs-reactive distinction at placement is a normative per-placement choice (not per-attr-declaration): a single attr type may have multiple placements with different RHS shapes — some static (no reactive machinery instantiated), some reactive (an implicit derived bridge built) — and each placement's choice is determined independently from its own RHS provenance. (§13.8.2.1)
+021-143. Compile-time rules are liveness-blind: type checking, ownership, name uniqueness, the orphan rule, and visibility all fire textually on every placement, dead or live; liveness governs only runtime existence — whether an instance is mounted — and the dead-code lint. (§13.8.1)
+021-144. Liveness is topological only, and the reach-edges are exhaustive: every form by which code references an instance — placing a child, naming a connection destination (a connection's source is structurally its enclosing instance, and a connection is live exactly when its source is), acquiring or storing a `Handle`/`WeakHandle`, binding a node reference as an effect argument, or admitting a node type into a wire-candidate envelope — is itself a reach-edge, so any instance live code can reference is in the live graph by construction; a dead placement cannot be referenced by live code. (§13.8.1)
 
 ## 022. Conditional Activation (Gates) — 121 Rules
 
@@ -3218,7 +3221,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 026-9. The reactive evaluation context does not modify trap semantics: a behavior that traps aborts the process, the same as a free-function trap; a fold form's `else:` arm and its `by:` combiner are behaviors, so a trap in either aborts the process. (§13.13.3)
 026-10. The language provides no hidden recovery mechanism in reactive contexts; graceful handling requires value-track errors. (§13.13.3)
 
-## 027. Runtime Interface — 123 Rules
+## 027. Runtime Interface — 124 Rules
 
 027-1. The runtime interface is the normative contract every backend must satisfy — the abstract counterpart to the IR the compiler emits. (§13.14)
 027-2. The shape of the runtime interface is normative; the host-language binding is implementation-defined. (§13.14)
@@ -3237,7 +3240,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-15. A runtime need only honor the verbs' observable contract; the mechanism is its own choice. (§13.14)
 027-16. Startup step 1 loads the IR (per §15.4). (§13.14.1)
 027-17. Startup step 2 allocates cell storage (per §14.3). (§13.14.1)
-027-18. Startup initializes the entry-point's transitive-closure reactive cells (the entry-point's own subtree plus connection-reachable instances plus `Handle`/`WeakHandle`-reachable module-level instances) and evaluates all `when` predicates in topological order over their init-time read dependencies, per §13.2.6's startup pass rules. (§13.14.1)
+027-18. Startup initializes every reactive cell in the live graph — the union of the root closures — and evaluates all `when` predicates in topological order over their init-time read dependencies, per §13.2.6's startup pass rules. (§13.14.1)
 027-19. At startup, signal cells receive their declared initial values. (§13.14.1)
 027-20. At startup, attr cells receive their declared defaults or placement-supplied values. (§13.14.1)
 027-21. At startup, recurrent cells evaluate their expressions for the first time, with `.previous`/`.past` returning their fallback values since no history exists. (§13.14.1)
@@ -3339,10 +3342,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-117. The persistence capability lets the runtime serialize and restore live graph state across runs. (§13.14.11)
 027-118. The real-time bounds capability provides bounded, non-blocking observation for cells on real-time paths; the timing classification is implementation-defined. (§13.14.11)
 027-119. How a runtime classifies cells for cross-thread observation and real-time timing is implementation-defined, not driven by normative IR fields. (§13.14.11)
-027-120. Startup traverses the graph beginning at the program's `main` entry-point; reachable instances are mounted in topological order of their cell dependencies; unreachable top-level instances are absent from the live graph (caught at compile time by class `unreachable_top_level_instance`). (§13.14.1)
+027-120. Startup mounts the loaded graph — already pruned at compile time to the union of the root closures — in topological order of the instances' cell dependencies; the runtime is root-blind and performs no reachability traversal of its own; instances outside every root closure were pruned at compile time and surfaced by the dead-code lint `dead_top_level_instance`. (§13.14.1)
 027-121. All five reconciler hooks — `create`, `update`, `teardown`, `suspend`, `resume` — fire after the commit publishes its snapshot and inside the blocking `commit()` call: `commit()` returns only after every hook it fired has returned, and no hook ever fires outside a commit boundary. (§13.14.9)
 027-122. When several hooks are eligible for one effect instance at one commit boundary, they fire in a fixed per-instance order: `teardown`, then `create`, then `resume`, then `update` — a just-created instance's `create` precedes any same-boundary `update` for it, so the instance state `update` consumes exists, and a just-reopened instance's `resume` precedes any same-boundary `update` for it, so the resource is re-acquired before it is reconciled. At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit. (§13.14.9)
 027-123. The initial cohort's `create` hooks — for the effect instances live at startup — fire as the first post-first-commit hook pass: startup's final step performs the first commit, and the reconciler-hook pass following that commit runs `create` for every live effect instance before any other hook work. (§13.14.1)
+027-124. A runtime handed a module whose live graph is empty — a library module with no roots — declines gracefully: it reports a clean "nothing to run" condition and exits; this is neither a crash nor an error, and the `ductus run` CLI surfaces the condition to the user. (§13.14.1)
 
 ## 028. Hot Reload — 75 Rules
 
@@ -4025,7 +4029,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-34. Native-toolchain build output is suppressed in normal operation and surfaced only when a compilation failure prevents Ductus's output from being produced. (§14.2.2)
 032-35. A Ductus project is a directory tree containing `.duc` source files. (§14.2.3)
 032-36. No manifest file is required for single-file programs: `ductus run file.duc` works on a lone file. (§14.2.3)
-032-37. Multi-file projects use a manifest file specifying the entry point and any external dependencies. (§14.2.3)
+032-37. Multi-file projects use a manifest file specifying the root module and any external dependencies. (§14.2.3)
 032-38. The manifest file format is implementation-specific. (§14.2.3)
 032-39. The runtime holds the value of every reactive cell and keeps it current. (§14.3)
 032-40. How cells are stored is a backend concern; every backend must preserve the per-cell value semantics. (§14.3)
