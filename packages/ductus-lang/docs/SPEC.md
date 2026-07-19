@@ -151,7 +151,14 @@ as the clause keywords above), all control-flow and selector keywords
 the ownership keywords (`own`, `move`), the kind keywords (`cell` — the
 umbrella value-cell kind head, appearing only in annotation positions;
 the reactive declaration keywords double as kind heads without being
-re-listed), the declaration-modifier keywords (`sealed`), the reserved
+re-listed), the declaration-modifier keywords (`sealed`), the visibility keywords
+(`private` — the sole in-source visibility specifier on declaration
+heads, doubling as the member-position restriction marker and as the
+parenthesized constructor specifier on a `type` head; `public` —
+legal only in member position, marking a member of a barrel-exported
+type's exported surface; `export` — heading the entries of the
+package barrel file `public.duc` and grammatically legal only there,
+§10.11), the reserved
 word `dyn` (the trait-object marker; its keyword-class assignment is
 deferred to the keyword-class taxonomy), the scope-anchor keywords
 (`here`, `module`, and the path bases `root`, `std`), the instance value
@@ -758,7 +765,7 @@ clear error identifying the offending type.
 
 `const` is permitted at:
 
-- Module top level — for shared constants and configuration values.
+- Module top level — for package-wide constants and configuration values.
 - Inside function bodies — for local compile-time-only values used in
   type-level positions (e.g., array sizes computed from arguments to a
   generic function).
@@ -766,8 +773,9 @@ clear error identifying the offending type.
   constants accessible via path syntax (`Vec3::ZERO`, `Color::WHITE`).
 
 `const` declarations follow the same visibility model as other declarations
-(§10): `public const TAU = ...`, `private const INTERNAL_THRESHOLD = ...`,
-default `shared`.
+(§10): unmarked is package-visible, `private const INTERNAL_THRESHOLD = ...`
+is module-only, and a `const` reaches dependent packages only via the
+package barrel (§10.11).
 
 #### 2.4.1.5 Relationship between `const` and `let`
 
@@ -5156,49 +5164,51 @@ arguments are.
 
 #### 6.1.6 Field visibility
 
-Each field carries an independent visibility specifier per §10:
+Each field independently accepts a member visibility marker per §10.7:
 
 ```
 type Account:
-  public id: i64                  // readable anywhere the type is visible
-  email: string                   // shared (default) — readable within package
+  public id: i64                  // exported-surface member (§10.11.5)
+  email: string                   // package-visible (default)
   private password_hash: string   // readable only within this module
 ```
 
-Field visibility is independent from the enclosing type's visibility and
-from the constructor's visibility (§6.1.7). A field's visibility never
-exceeds the enclosing type's visibility — declaring a `public` field on a
-`private` type is a compile error, because no caller outside the type's
-visibility scope could observe the field.
+Field visibility is independent from the enclosing type's visibility
+and from the constructor specifier (§6.1.7). An unmarked field is
+package-visible; `private` restricts the field to the declaring
+module. The `public` marker places the field on the enclosing type's
+exported surface and has effect only when that type is barrel-exported
+(§10.11.5); on a type that is not barrel-exported the marker is inert,
+not an error.
 
 A field accessed from outside its visibility scope produces a compile
 error. The error is at the access site, not at the record's declaration.
 
 #### 6.1.7 Constructor visibility
 
-The constructor's visibility is independently controllable from the type's
-visibility per §10's `public(constructor_vis)` mechanism:
+The constructor's visibility is independently controllable from the
+type's visibility via §10.5's `type(private)` specifier:
 
 ```
-public type Email:                            // both public
+type Email:                                   // constructor follows the type's reach
   wraps string
 
-public(private) type Email:                   // type public, constructor private
+type(private) Email:                          // constructor module-only
   wraps string                                // (smart-constructor pattern)
 
-shared(private) type SecretConfig:            // type shared, constructor private
+type(private) SecretConfig:                   // record; constructor module-only
   api_key: string
   endpoint: string
 ```
 
-When the constructor is private, the type's name is visible but the
-construction syntax `TypeName(...)` is unreachable from outside the
-constructor's scope. The pattern enables types whose values can only be
-created through controlled paths — typically via a `From` impl or a
-factory function (§7).
+When the constructor is private, the type's name remains usable across
+the type's full reach but the construction syntax `TypeName(...)` is
+unreachable outside the declaring module. The pattern enables types
+whose values can only be created through controlled paths — typically
+via a `From` impl or a factory function (§7).
 
-Constructor visibility never exceeds type visibility; an inner specifier
-more permissive than the outer is a compile error.
+The only legal inner specifier is `private`; when it is omitted,
+construction follows the type's full reach (§10.5).
 
 #### 6.1.8 Trait auto-derivation
 
@@ -5575,8 +5585,8 @@ exclusively the `given` block's operation (§13.9.13, §13.9.7).
 Visibility per §10 applies to the enum as a whole, not per-variant:
 
 ```
-public enum Direction:
-  North
+enum Direction:                 // package-visible; barrel export
+  North                         //   exports all variants (§10.6)
   South
   East
   West
@@ -5805,19 +5815,20 @@ Like records (§6.1.7), a newtype's constructor visibility is
 independently controllable from its type visibility:
 
 ```
-public(private) type Email:
+type(private) Email:
   wraps string
 ```
 
-This is the smart-constructor pattern: the type name `Email` is visible
-publicly (so other modules can use `Email` in signatures), but
-construction `Email(...)` is restricted (so only the defining module can
-produce `Email` values, typically via a validating `From[string]` or
-`TryFrom[string]` impl that enforces invariants).
+This is the smart-constructor pattern: the type name `Email` is usable
+across the type's full reach — up to dependent packages when `Email`
+is barrel-exported (§10.11) — so other modules can use `Email` in
+signatures, but construction `Email(...)` is restricted to the
+defining module (typically exercised via a validating `From[string]`
+or `TryFrom[string]` impl that enforces invariants).
 
 The pattern is the language's mechanism for enforcing invariants at
-construction time: any path that produces an `Email` value passes through
-the constructor's visibility scope, which can enforce arbitrary checks.
+construction time: any path that produces an `Email` value passes
+through the defining module, which can enforce arbitrary checks.
 
 #### 6.3.5 Newtypes and the orphan rule
 
@@ -7805,29 +7816,37 @@ implementation-defined; programs see only the language-level surface
 
 ## 10. Visibility and Modules
 
-The language uses a three-level visibility model — `public`, `shared`,
-and `private` — and a folder-as-module structure for organizing code
-within and across packages. This section is the authoritative
-specification for both. Earlier sections cross-reference here for
-declaration-specific behavior.
+In source, visibility is two-level — the unmarked package-visible
+default and `private` — and a package's public API is declared in a
+single barrel file, `public.duc`, at the package root (§10.11). Code
+is organized by a folder-as-module structure within and across
+packages. This section is the authoritative specification for all of
+it. Earlier sections cross-reference here for declaration-specific
+behavior.
 
-### 10.1 The Three Levels
+### 10.1 The Visibility Model
 
-Visibility is three-level. Each level denotes a distinct scope:
+In-source visibility has exactly two levels:
 
-| Level     | Scope                                                                    | Default? |
-|-----------|--------------------------------------------------------------------------|----------|
-| `public`  | Across package boundaries — exported to dependent packages               | no       |
-| `shared`  | Within the same package (the module tree rooted at the package root)     | **yes**  |
-| `private` | Within the declaring module only (the folder containing the declaration) | no       |
+| Level      | Scope                                                                    | Default? |
+|------------|--------------------------------------------------------------------------|----------|
+| (unmarked) | Within the same package (the module tree rooted at the package root)     | **yes**  |
+| `private`  | Within the declaring module only (the folder containing the declaration) | no       |
 
-`shared` is the default; no keyword is required. `public` and `private`
-are explicit keywords.
+The unmarked default has no keyword spelling; `private` is the sole
+in-source visibility keyword. Every declaration is either unmarked —
+package-visible — or marked `private`.
 
-The three levels are linearly ordered by permissiveness:
-`private < shared < public`. A declaration's visibility level determines
-the maximum reach of any reference to it; references from outside that
-reach produce compile errors at the reference site.
+Cross-package reach is not an in-source level: a declaration reaches
+dependent packages only by being exported from the package's barrel
+file (§10.11). No in-source keyword grants cross-package visibility.
+
+The two in-source levels are ordered by permissiveness: `private`
+(module) below the unmarked package-visible default; barrel export
+extends an unmarked declaration's reach to dependent packages. A
+declaration's reach determines the maximum reach of any reference to
+it; references from outside that reach produce compile errors at the
+reference site.
 
 The unit of `private` is the *module* (the folder), not the file
 within it. Files inside the same folder are organizational; they
@@ -7919,26 +7938,26 @@ the source of truth.
 
 #### 10.2.2 Visibility reach
 
-The three visibility levels translate to declaration reach as follows:
+Declaration reach is as follows:
 
 - A `private` declaration is reachable from any file inside its
   *module* (the folder it is declared in). Sibling files in the same
   folder see it. Files in any other module — any other folder of the
   same package, or any external package — cannot reference it.
-- A `shared` declaration is reachable from any file within the same
+- An unmarked declaration is reachable from any file within the same
   package, including the declaring module's siblings and files in any
   other module of the same package. Cross-module access within the
   package requires either a `use` statement (§10.4) or a path-qualified
   reference.
-- A `public` declaration is reachable from any file within the same
-  package (as for `shared`), plus any file in any package that depends
-  on the source package. Cross-package references use the importing
-  package's external dependency path base; see §10.2.3.
+- A barrel-exported declaration is additionally reachable from any
+  file in any package that depends on the source package, under the
+  name the barrel publishes (§10.11.1). Cross-package references use
+  the importing package's external dependency path base; see §10.2.3.
 
-Within a single module, all three levels behave identically — every
-declaration is visible to every sibling file regardless of its
-visibility specifier. The visibility level only matters for
-references *outside* the declaring module.
+Within a single module, marked and unmarked declarations behave
+identically — every declaration is visible to every sibling file
+regardless of its visibility specifier. The visibility level only
+matters for references *outside* the declaring module.
 
 Cross-module access always requires explicit reference, either via
 `use` (§10.4) or via path qualification.
@@ -7958,8 +7977,9 @@ points for absolute paths:
 
 For example, `root::audio::Synthesizer` resolves an absolute path
 through the current package; `tone_lib::Oscillator` resolves into the
-`tone_lib` dependency's public surface; `std::vec::Vec` resolves into
-the standard library.
+`tone_lib` dependency's exported surface — the flat namespace its
+barrel publishes (§10.11.1); `std::vec::Vec` resolves into the
+standard library.
 
 All `use` statements use absolute paths starting from one of these
 bases. There is no relative-path "current module" reference *for
@@ -7975,18 +7995,20 @@ modules (those still require an absolute `use` path).
 
 ### 10.3 Visibility Specifiers on Declarations
 
-Every declaration position that admits a visibility specifier
-accepts one of: `public`, `shared`, `private`, or *absence* (which
-denotes `shared` by default). There is no `pub` keyword; this
-three-level model is the only visibility vocabulary, covering every
-visibility-bearing declaration.
+Every declaration position that admits a visibility specifier accepts
+`private` or *absence*, which denotes the package-visible default.
+There is no `pub` keyword and no cross-package keyword; this
+two-level model is the only in-source visibility vocabulary, covering
+every visibility-bearing declaration. (Member position is the one
+place a second marker exists: fields and other named members
+additionally accept `public`, the exported-surface marker — §10.7,
+§10.11.5.)
 
 ```
-public fn render_frame(...): ...           // exported across packages
-fn compute_delta(...): ...                 // shared (default)
+fn compute_delta(...): ...                 // unmarked (package-visible)
 private fn internal_helper(...): ...       // module-local
 
-public type Synthesizer:                   // type public
+type Synthesizer:                          // package-visible type
   ...
 
 private const SECRET_KEY: u64 = 0xDEADBEEF // module-local constant
@@ -7996,11 +8018,13 @@ Specific visibility rules for each declaration kind are specified in the
 declaration's own section and summarized below:
 
 - **Records** (§6.1): type visibility (§6.1.7), independent field
-  visibility (§6.1.6), independent constructor visibility (§6.1.7).
+  visibility (§6.1.6), independent constructor visibility via the
+  `type(private)` specifier (§6.1.7, §10.5).
 - **Enums** (§6.2): type visibility applies uniformly to all variants
   (§6.2.6); no per-variant visibility.
 - **Newtypes** (§6.3): type visibility (§6.3.1), independent
-  constructor visibility (§6.3.4).
+  constructor visibility via the `type(private)` specifier (§6.3.4,
+  §10.5).
 - **Alias types** (§4.2, §10.4.2): visibility specifier on the
   `alias type` declaration.
 - **Traits** (§3.1): type visibility. Visibility of methods within a
@@ -8012,21 +8036,22 @@ declaration's own section and summarized below:
 - **Constants** (§2.4.1.1): visibility specifier on the `const`
   declaration.
 - **Reactive declarations** (§13.2.1, §13.2.3, §13.2.4): module-level
-  `signal`, `derived`, and `recurrent` accept visibility specifiers
+  `signal`, `derived`, and `recurrent` accept the `private` specifier
   on the same line as the declaration.
 - **Node and connection types** (§13.3, §13.6): visibility specifier
   on the type declaration.
 - **Instantiations**: any top-level placement (`Foo bar:`,
-  `signal x = ...`, `let y = ...`) accepts a visibility specifier.
+  `signal x = ...`, `let y = ...`) accepts the `private` specifier.
   An instantiation is conceptually `let-binds-an-instance`;
   visibility controls cross-module reachability of the instance
   name.
 - **Fulfill blocks** (§10.8): no separate visibility specifier —
-  reachability derived from trait and type visibility jointly.
+  reachability derived from trait and type reach jointly.
 
 Visibility specifiers attach to any *named declaration*. The unifying
 rule: if a name is introduced into a scope, the declaration may carry
-a visibility specifier governing that name's cross-scope reach.
+the `private` specifier restricting that name's reach to the
+declaring module.
 
 ### 10.4 `use` Statements
 
@@ -8071,10 +8096,10 @@ declaration in the original module, just with a shorter local reference.
 The visibility of the imported declaration governs whether the `use` is
 permitted at all. Importing a `private` declaration from a different
 module is a compile error (the source isn't visible from outside its
-module). Importing a `shared` declaration from within the same package
-works; importing it from another package does not. Importing a
-`public` declaration works from any package that depends on the
-source's package.
+module). Importing an unmarked declaration works from anywhere within
+the same package; a dependent package imports a name only if the
+source package's barrel exports it, and addresses it under the
+exported name (§10.11.1).
 
 A `use` statement targets the module path of the declaration's
 *module* (folder), not the file within it. From the importer's
@@ -8101,29 +8126,29 @@ Selection lists may nest to arbitrary depth: `use root::a::(b, c::(d, e))` is pe
 
 #### 10.4.2 Re-exporting a name
 
-To make a declaration accessible from another module under a different
-path, write an explicit re-declaration rather than a re-exporting
-`use`. Common forms:
+There is no re-exporting `use`. Within a package, exposing a
+declaration under another path requires an explicit re-declaration.
+Common forms:
 
 ```
 // In root::facade.duc:
-public alias type Synthesizer = root::audio::internal::Synthesizer
+alias type Synthesizer = root::audio::internal::Synthesizer
                                        // alias type form (§4.2)
 
-public fn build_default() -> Synthesizer:
+fn build_default() -> Synthesizer:
   root::audio::internal::build_default_with_params(...)
                                        // wrapper function
 ```
 
-These are ordinary declarations with their own visibility specifiers,
-distinct from `use` imports. The language's `use` machinery is solely
-about bringing names into the current file's scope; cross-module
-exposure of names is the job of declarations.
+These are ordinary declarations with their own visibility, distinct
+from `use` imports. The language's `use` machinery is solely about
+bringing names into the current file's scope; within-package exposure
+of names under new paths is the job of declarations, and
+cross-package exposure is solely the barrel file's job (§10.11).
 
-Visibility specifiers (`public`, `shared`, `private`) are permitted on
-`alias type` declarations and follow the same rules as other declarations
-per §10.3 (which enumerates `alias type` among the visibility-bearing
-forms).
+The `private` specifier is permitted on `alias type` declarations and
+follows the same rules as other declarations per §10.3 (which
+enumerates `alias type` among the visibility-bearing forms).
 
 #### 10.4.3 `use` is file-scope only
 
@@ -8213,59 +8238,58 @@ runtime initialization follows this fixed order. A program never
 observes initialization in any order other than the topologically-
 determined one.
 
-### 10.5 Type Visibility and Constructor Visibility
+### 10.5 Constructor Visibility
 
-Records (§6.1.7) and newtypes (§6.3.4) carry an independent constructor
-visibility specifier alongside the type visibility. The syntax uses a
-parenthesized modifier on the type visibility keyword:
+Records (§6.1.7) and newtypes (§6.3.4) carry an independent
+constructor visibility as a parenthesized specifier on the `type`
+keyword:
 
 ```
-public type Email:                        // newtype; type public, constructor public (default)
+type Email:                               // constructor follows the type's reach
   wraps string
 
-public(shared) type Email:                // newtype; type public, constructor shared
-  wraps string
-
-public(private) type Email:               // newtype; type public, constructor private
-  wraps string                            //   — the smart-constructor pattern
-
-shared(private) type SecretConfig:        // record; type shared, constructor private
-  api_key: string
+type(private) Email:                      // construction restricted to the
+  wraps string                            //   declaring module — the
+                                          //   smart-constructor pattern
 ```
 
-The outer keyword is type visibility; the parenthesized inner keyword is
-constructor visibility. When the inner specifier is omitted, constructor
-visibility defaults to match the type's visibility.
+When the parenthesized specifier is omitted, construction follows the
+type's full reach: constructing a barrel-exported type is legal
+wherever the type is visible, including dependent packages.
 
-**Inner ≤ outer.** The inner specifier may never be *more* permissive
-than the outer. `private(public)` is a compile error — the inner
-specifier claims wider reach than the enclosing type permits. The
-constructor's effective reach is capped at the type's reach; declaring
-a broader constructor visibility produces no additional access and is
-rejected to surface the inconsistency at the declaration site.
+The only legal inner specifier is `private`; `type(private)`
+restricts construction to the declaring module. There is no
+package-only constructor specifier — a constructor wider than the
+module but narrower than the type's full reach is deliberately
+unsupported. The pattern for it is a private constructor plus a
+package-visible factory.
 
 #### 10.5.1 The smart-constructor pattern
 
-The `public(private)` and `shared(private)` configurations are the
-canonical smart-constructor pattern: the type's name is visible across
-its visibility scope (so callers can use it in signatures, annotations,
-and field types), but construction `TypeName(...)` is unreachable from
-outside the constructor's scope.
+The `type(private)` configuration is the canonical smart-constructor
+pattern: the type's name is usable across the type's full reach — up
+to dependent packages when the type is barrel-exported — so callers
+can use it in signatures, annotations, and field types, but
+construction `TypeName(...)` is unreachable outside the declaring
+module.
 
 This is the language's mechanism for enforcing invariants at
-construction time. Any path that produces a value of the type must pass
-through the constructor's visibility scope, where validating logic — a
-`From` impl, a `TryFrom` impl, a factory function — can be defined.
-Callers receive values of the type that have passed the invariants;
-they cannot manufacture invalid values directly.
+construction time. Any path that produces a value of the type must
+pass through the declaring module, where validating logic — a `From`
+impl, a `TryFrom` impl, a factory function — can be defined. Callers
+receive values of the type that have passed the invariants; they
+cannot manufacture invalid values directly.
 
 ### 10.6 Enum Visibility
 
-Enum visibility applies uniformly to the enum type and all its variants
-(§6.2.6). There is no per-variant visibility specifier.
+Enum visibility applies uniformly to the enum type and all its
+variants (§6.2.6). An unmarked enum is package-visible as a whole, a
+`private` enum is module-only as a whole, and a barrel-exported enum
+exports all its variants. There is no per-variant visibility
+specifier.
 
 ```
-public enum Color:                        // all variants public
+enum Color:                               // package-visible, all variants
   Red
   Green
   Blue
@@ -8285,45 +8309,43 @@ grammar and module-resolution rules for narrow benefit.
 ### 10.7 Field Visibility
 
 Records carry independent visibility per field (§6.1.6). Each field
-declares its own visibility:
+independently accepts a member visibility marker, `public` or
+`private`:
 
 ```
-public type Account:
-  public id: i64                  // readable anywhere the type is visible
-  email: string                   // shared (default)
+type Account:
+  public id: i64                  // exported-surface member (§10.11.5)
+  email: string                   // package-visible (default)
   private password_hash: string   // readable only within this module
 ```
 
-A field's visibility never exceeds the enclosing type's visibility —
-declaring a `public` field on a `private` type is a compile error,
-because no caller outside the type's visibility scope could observe the
-field.
+An unmarked field is package-visible; `private` restricts the field
+to the declaring module. The member marker `public` marks the field
+as part of the enclosing type's exported surface: when the type is
+barrel-exported (§10.11), a `public` field is readable from dependent
+packages. On a type that is not barrel-exported the marker is inert —
+not an error (§10.11.5).
 
-Access from outside a field's visibility scope is a compile error at
-the access site.
+Access to a field from outside its visibility scope is a compile
+error at the access site.
 
 ### 10.8 Trait `fulfill` Block Visibility
 
-`fulfill` blocks (§3.3) have *no separate visibility specifier*. The
-implementation's effective visibility is:
-
-```
-impl_visibility = min(trait_visibility, type_visibility)
-```
-
-where the visibility levels are ordered `private < shared < public`.
-An implementation is callable wherever both the trait and the type are
-visible — the intersection of their reachability.
+`fulfill` blocks (§3.3) have *no separate visibility specifier*. An
+implementation's effective reach is the intersection of the trait's
+reach and the type's reach: it is callable wherever both the trait
+and the type are visible, and it reaches dependent packages only when
+both are barrel-exported.
 
 Concrete cases:
 
-| Trait visibility | Type visibility | Impl visibility                        |
-|------------------|-----------------|----------------------------------------|
-| `public`         | `public`        | `public` (anywhere both are visible)   |
-| `public`         | `shared`        | `shared` (package-internal)            |
-| `shared`         | `public`        | `shared` (package-internal)            |
-| `private`        | `public`        | `private` (only in the trait's module) |
-| `private`        | `private`       | only if both declared in same module   |
+| Trait reach     | Type reach      | Implementation callable…                            |
+|-----------------|-----------------|-----------------------------------------------------|
+| barrel-exported | barrel-exported | anywhere both are visible, incl. dependent packages |
+| barrel-exported | unmarked        | within the declaring package                        |
+| unmarked        | barrel-exported | within the declaring package                        |
+| `private`       | barrel-exported | only in the trait's module                          |
+| `private`       | `private`       | only if both declared in the same module            |
 
 The intersection rule reflects the practical observation: if a caller
 can't name both the trait and the type, the implementation is
@@ -8361,11 +8383,12 @@ the call site:
 
 - A `private` function is reachable only from within its declaring
   module.
-- A `shared` function is reachable from any file within the same package
-  via a `use` statement bringing it into scope, or via path
+- An unmarked function is reachable from any file within the same
+  package via a `use` statement bringing it into scope, or via path
   qualification.
-- A `public` function is reachable as for `shared`, plus from any file
-  in any package depending on the source package.
+- A barrel-exported function is additionally reachable from any file
+  in any package depending on the source package, under its exported
+  name (§10.11.1).
 
 In all cross-module cases — same-package or cross-package — the
 reference is explicit: either the name is brought into scope via
@@ -8378,8 +8401,91 @@ The resolution algorithm per §3.4.1 searches in-module declarations
 and imported names in the current file; visibility filters which
 names can be successfully brought into scope or referenced via path.
 Trait-method calls follow the same rule, with the additional reach
-constraint from §10.8 — the implementation's effective visibility is
-the minimum of the trait's and type's visibility.
+constraint from §10.8 — the implementation is callable only where
+both the trait and the type are visible.
+
+### 10.11 The Package Barrel: `public.duc`
+
+A package's public API is declared in a single *barrel file* named
+`public.duc` at the package root. Each of its entries begins with the
+keyword `export` and publishes one declaration to dependent packages.
+The barrel file holds export entries and comments only — no other
+declaration form is legal in it.
+
+```
+// public.duc — the package's entire public API
+export audio::Mixer
+export audio::Mixer as Desk
+export audio::(Mixer as Desk, Filter, Compressor as Comp)
+export Mixer                              // a root-module declaration
+```
+
+`export` is a reserved word in every position — never an identifier
+anywhere in Ductus source; its sole grammatical position is heading a
+barrel-file entry (§10.11.3).
+
+#### 10.11.1 Export entries
+
+An export entry's path mirrors the `use` selection grammar (§10.4.1):
+multi-segment paths, `as` renames, parenthesized selection lists, and
+nesting to arbitrary depth. Two differences:
+
+- Paths resolve from the package root with **no path-base keyword** —
+  `export audio::Mixer`, not `export root::audio::Mixer`; a bare
+  `export Mixer` names a root-module declaration.
+- **There is no glob export.** `export audio::*` is a compile error.
+  The barrel is a curated contract; every exported name is written
+  explicitly. (Glob *imports* on `use` remain legal — §10.4.1.)
+
+Each export entry publishes one name into the package's **flat export
+namespace** — the leaf name, or the `as` rename when present. A
+dependent package addresses an exported declaration as
+`<package>::<exported_name>` regardless of which module inside the
+exporting package declares it. Two export entries publishing the same
+name are a compile error at the entry that introduces the collision.
+
+An export entry must name an unmarked, package-visible declaration;
+exporting a `private` declaration is a compile error at the entry.
+
+#### 10.11.2 No barrel, nothing public
+
+A package with no barrel file exports nothing — no declaration is
+visible outside the package. A barrel is needed only by packages
+meant to be depended on; an application package typically has none.
+
+#### 10.11.3 One barrel per package
+
+A package has exactly one barrel position: `public.duc` at the
+package root. The filename is special only there; `export` entries
+are legal only in that file, and an `export` anywhere else — any
+other file, any module — is a compile error. Cross-package visibility
+concerns exactly one boundary, the package boundary; deep
+declarations are exported by path from the root barrel.
+
+#### 10.11.4 The leak rule
+
+The exported surface must be closed over exports: whatever the
+surface shows — an exported function's signature, an exported type's
+`public` members, an exported constructor's parameters — may
+reference only exported or built-in types. A reference to a
+non-exported type from the exported surface is a compile error. The
+check applies member-wise: members outside the exported surface may
+reference anything.
+
+#### 10.11.5 Member visibility and the exported surface
+
+A type's named members carry member visibility independent of the
+enclosing type: `private` is module-only, unmarked is
+package-visible, and `public` places the member on the enclosing
+type's exported surface when that type is barrel-exported. Barrel
+export of a type by itself publishes the type name and its `public`
+members only.
+
+The `public` marker has effect only when the enclosing type is
+barrel-exported; on a type that is not, the marker is inert — not an
+error. There is no action at a distance: whether a member is
+consumer-facing is written at the member, and the barrel decides
+whether a consumer exists.
 
 ---
 
@@ -10157,7 +10263,7 @@ fields.
 
 #### 11.12.1 Smart constructors and `mut`
 
-The `public(private)` constructor pattern (§6.1.7, §6.3.4) restricts
+The `type(private)` constructor pattern (§6.1.7, §6.3.4) restricts
 construction to the type's defining module. This restriction interacts
 naturally with `mut`: any code holding a `mut` binding to such a type can
 still mutate its fields (subject to field visibility per §10.7); the
@@ -18156,8 +18262,8 @@ rules — no special restrictions.
 
 Coupling concerns (a type-level predicate referencing external
 state binds the type to that state) are style, not correctness.
-The visibility system (`public`, `shared`, `private` — §10.1) is
-the mechanism that controls how far that coupling can leak.
+The visibility system (§10.1) is the mechanism that controls how far
+that coupling can leak.
 
 #### 13.9.5 Override semantics
 
@@ -20239,8 +20345,7 @@ operator name[GenericParams]?(params...) -> T:
 - The body is a sequence of reactive declarations (recurrents,
   deriveds) followed by a final expression that becomes the output.
 
-Operators may carry visibility modifiers (`public`, `shared`,
-`private`) per §10.
+Operators may carry the `private` visibility specifier per §10.
 
 #### 13.17.3 Parameters
 
@@ -20669,12 +20774,13 @@ inference is ambiguous.
 
 #### 13.17.9 Visibility
 
-Operators carry the standard three-level visibility (§10): `public`,
-`shared` (default), `private`. Module-private operators are not
-reachable from other modules; public operators may be re-exported.
+Operators follow the standard visibility model (§10): unmarked is
+package-visible, `private` is module-only. Module-private operators
+are not reachable from other modules; an operator reaches dependent
+packages only via the package barrel (§10.11).
 
 ```
-public operator smooth(source: cell f32, rate: f32 = 0.1, clock: cell u64) -> derived f32:
+operator smooth(source: cell f32, rate: f32 = 0.1, clock: cell u64) -> derived f32:
   ...
 
 private operator internal_helper(source: cell i32) -> derived i32:
@@ -21066,10 +21172,11 @@ bodies, inside operator bodies, inside effect bodies (§13.19). They
 may not appear inside function bodies (§13.12.2 — functions are
 reactive-transparent).
 
-**Visibility.** Module-level streams carry the standard three-level
-visibility (§10): `public`, `shared` (default), `private`. Streams
-inside node, connection, operator, or effect bodies inherit the
-enclosing declaration's visibility.
+**Visibility.** Module-level streams follow the standard visibility
+model (§10): unmarked is package-visible, `private` is module-only,
+and a stream reaches dependent packages only via the package barrel
+(§10.11). Streams inside node, connection, operator, or effect bodies
+inherit the enclosing declaration's visibility.
 
 #### 13.18.3 Stream types
 
@@ -22701,8 +22808,7 @@ either order; the canonical order is `desired:` first, `observed:`
 second. When child placements are present, body order is fixed (see
 above): child placements → `desired:` → `observed:`.
 
-Effects carry visibility modifiers (§13.19.10): `public`, `shared`,
-`private`.
+Effects may carry the `private` visibility specifier (§13.19.10).
 
 Effects do not return a value in the operator sense. They evaluate
 to themselves — the instance value, accessed through the binding name
@@ -23248,12 +23354,13 @@ the host to dispatch on the resolved types.
 
 #### 13.19.10 Visibility
 
-Effects carry the standard three-level visibility (§10): `public`,
-`shared` (default), `private`. Module-private effects are not
-reachable from other modules; public effects may be re-exported.
+Effects follow the standard visibility model (§10): unmarked is
+package-visible, `private` is module-only. Module-private effects are
+not reachable from other modules; an effect reaches dependent
+packages only via the package barrel (§10.11).
 
 ```
-public effect fetch(url: cell Url):
+effect fetch(url: cell Url):
   ...
 
 private effect internal_health_check():
@@ -24263,7 +24370,11 @@ the compilation root for loading and name resolution; the
 **entry-point node instance** — where runtime initialization begins —
 is declared separately in source via the `main` keyword on a top-level
 placement (§13.8.1) and is independent of the manifest's root-module
-specification.
+specification. A package that exposes an API to dependent packages
+additionally carries its barrel file `public.duc` at the package root
+(§10.11); the manifest declares dependencies, while the barrel —
+ordinary source, not manifest — declares the package's exported
+surface.
 
 ### 14.3 Reactive Cell Storage
 

@@ -260,11 +260,21 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 //  every position (005-241, 002-27); its keyword class is the
 //  declaration-modifier class (002-33).
 
-**Visibility keywords** (002-3):
+**Visibility keywords** (002-36):
 
 ```
-'public'  'shared'  'private'
+'private'  'public'  'export'
 ```
+
+// `private` is the sole in-source visibility keyword on declaration
+//  heads (absence denotes the package-visible default); it doubles as
+//  the member-position restriction marker (§7.3) and as the
+//  parenthesized constructor specifier on a `type` head (§7.2).
+//  `public` is legal only in member position, marking a member of a
+//  barrel-exported type's exported surface (§7.3). `export` heads the
+//  entries of the package barrel file `public.duc` and is
+//  grammatically legal only there (§7.17). All three are reserved
+//  words in every position (002-36, 002-27).
 
 **Ownership keywords** (002-31; semantics per 001-18):
 
@@ -3280,69 +3290,69 @@ TopLevelConstDecl ::= Visibility? 'const' IDENT ( ':' TypeExpr )? '=' Expr
 //  selects the alternative on the lookahead after any visibility
 //  prefix.
 
-### 7.1 Visibility prefix (public / shared / private)
+### 7.1 Visibility prefix (`private`)
 
 ```
-Visibility        ::= 'public' ConstructorVis?
-                    | 'shared' ConstructorVis?
-                    | 'private'
-                    ;  (§10.1, 003-1)
+Visibility        ::= 'private'
+                    ;  (§10.1, 003-3)
 ```
 
-// `shared` is the default — absence of a `Visibility` prefix means
-//  `shared` (003-3). `private` and `public` are explicit; `shared`
-//  may also be written explicitly. There is no `pub` keyword
-//  (003-3).
+// Absence of a `Visibility` prefix denotes the package-visible
+//  default, which has no keyword spelling (003-2, 003-26). There is
+//  no `pub` keyword (003-27). Cross-package reach is not spelled in
+//  source at all: a declaration reaches dependent packages only by
+//  being exported from the package's barrel file `public.duc`
+//  (003-1); see §7.17.
 // The `Visibility` prefix is admissible on every named top-level
 //  declaration enumerated in §10.3 — records, enums, newtypes,
 //  alias types, traits, free fns, operators, effects, consts,
 //  module-level reactive declarations, node / connection types, and
 //  top-level placements (003-34). `fulfill` blocks do *not* carry a
 //  visibility prefix; their reachability is derived from the trait's
-//  and the type's joint visibility (§10.3 final bullet).
+//  and the type's joint reach (§10.3 final bullet).
 // `use` statements do *not* carry a visibility prefix (003-39); a
 //  `use` controls how the current file refers to other names, not
 //  how other files refer to the current file.
-// The `ConstructorVis` suffix is admitted only on `'public'` and
-//  `'shared'`; see §7.2.
 
-### 7.2 Constructor visibility `public(private)`
+### 7.2 Constructor visibility `type(private)`
 
 ```
-ConstructorVis    ::= '(' ConstructorVisInner ')'
-                    ;  (§10.5, 003-1)
-
-ConstructorVisInner ::= 'public' | 'shared' | 'private'
-                    ;  (§10.5, 003-1)
+ConstructorVis    ::= '(' 'private' ')'
+                    ;  (§10.5, 003-63)
 ```
 
-// **Inner-≤-outer rule (per §10.5, post-parse).** The inner specifier
-//  may never be more permissive than the outer: `private(public)` and
-//  `shared(public)` are rejected post-parse. The grammar admits any
-//  outer/inner combination; the cap is a semantic check.
-// `ConstructorVis` attaches *only* to record and newtype `type`
-//  declarations (§7.8, §7.9) — the constructor-bearing nominal forms.
-//  Enums, traits, effects, operators, alias types, and free fns do not
-//  admit a `ConstructorVis` suffix; the parser rejects the `(…)` form
-//  on those declarations as a parse error (the outer keyword would
-//  bind a parenthesised-expression-shaped following construct that
-//  has no production at the start of a declaration head).
-// Omission of `ConstructorVis` defaults the constructor's visibility
-//  to match the type's visibility (§10.5 lead paragraph).
+// `ConstructorVis` is a parenthesized specifier on the `'type'`
+//  keyword itself — `type(private) Email:` — admitted *only* on
+//  record and newtype `type` declarations (§7.8, §7.9), the
+//  constructor-bearing nominal forms. Enums, traits, effects,
+//  operators, alias types, and free fns do not admit it; the parser
+//  rejects the `(…)` form on those declaration heads as a parse
+//  error.
+// The only legal inner specifier is `'private'` (003-65): it
+//  restricts construction to the declaring module. There is no
+//  package-only constructor specifier; the pattern for a constructor
+//  wider than the module but narrower than the type's full reach is
+//  a private constructor plus a package-visible factory (003-65).
+// Omission of `ConstructorVis` makes construction follow the type's
+//  full reach — constructing a barrel-exported type is legal
+//  wherever the type is visible, including dependent packages
+//  (003-64).
 
 ### 7.3 Field visibility
 
 ```
-FieldVisibility   ::= 'public' | 'shared' | 'private'
-                    ;  (§10.7, 003-1)
+FieldVisibility   ::= 'public' | 'private'
+                    ;  (§10.7, 003-68)
 ```
 
-// `FieldVisibility` is the prefix on a record field declaration
-//  (§7.8). It is *independent* of the enclosing record's type
-//  visibility and of the constructor's visibility (SPEC §6.1.6). The
-//  grammar admits the same three spellings as `Visibility`, with one
-//  semantic restriction: a field's visibility may not exceed the
-//  enclosing type's visibility (post-parse check per §10.7).
+// `FieldVisibility` is the member visibility marker prefixing a
+//  record field declaration (§7.8), independent of the enclosing
+//  record's visibility and of the constructor specifier (SPEC
+//  §6.1.6). An unmarked field is package-visible; `'private'`
+//  restricts the field to the declaring module; `'public'` marks the
+//  field as part of the enclosing type's exported surface — it has
+//  effect only when that type is barrel-exported, and is inert (not
+//  an error) otherwise (003-69, post-parse semantics).
 // `FieldVisibility` does not admit a `ConstructorVis`-style suffix —
 //  fields have no constructor. The form is the bare keyword.
 // Field visibility on a newtype's wrapped value is not a concept;
@@ -3361,7 +3371,7 @@ UsePath           ::= UsePathBase ( '::' UsePathSegment )*
 UsePathBase       ::= 'root'                                    // current package
                     | 'std'                                     // standard library
                     | IDENT                                     // external dependency
-                    ;  (§10.2.3, 003-1)
+                    ;  (§10.2.3, 003-22)
 
 UsePathSegment    ::= IDENT UseAlias?                           // single name (leaf or intermediate)
                     | '*'                                       // glob (terminal only)
@@ -3568,7 +3578,7 @@ ClosureParam      ::= 'own'? IDENT ( ':' TypeExpr )?
 ### 7.8 Record (`type Name: <fields>`) declarations
 
 ```
-RecordDecl        ::= Visibility? 'sealed'? 'type' IDENT GenericParamList? WhereClause? RecordBody
+RecordDecl        ::= Visibility? 'sealed'? 'type' ConstructorVis? IDENT GenericParamList? WhereClause? RecordBody
                     ;  (§6.1, 009-1)
 
 RecordBody        ::= ':' INDENT RecordBodyItem+ DEDENT
@@ -3602,7 +3612,7 @@ FieldDecl         ::= FieldVisibility? IDENT ':' TypeExpr
 // **Discrimination from `NewtypeDecl` (per §6.3.1).** The discriminating
 //  surface token is the presence of a `'wraps'` clause inside the
 //  body. A `RecordDecl` and a `NewtypeDecl` share the same header
-//  (`Visibility? 'sealed'? 'type' IDENT GenericParamList? WhereClause?`
+//  (`Visibility? 'sealed'? 'type' ConstructorVis? IDENT GenericParamList? WhereClause?`
 //  and the body's leading `':'` token); the parser commits to one or
 //  the other based on whether the first body item is `'wraps'` or
 //  a `FieldDecl`. The `NewtypeDecl` production
@@ -3624,7 +3634,7 @@ FieldDecl         ::= FieldVisibility? IDENT ':' TypeExpr
 ### 7.9 Newtype declarations (`wraps`)
 
 ```
-NewtypeDecl       ::= Visibility? 'sealed'? 'type' IDENT GenericParamList? WhereClause? NewtypeBody
+NewtypeDecl       ::= Visibility? 'sealed'? 'type' ConstructorVis? IDENT GenericParamList? WhereClause? NewtypeBody
                     ;  (§6.3, 009-1)
 
 NewtypeBody       ::= ':' INDENT NewtypeBodyItem+ DEDENT
@@ -3660,10 +3670,10 @@ WrapsClause       ::= 'wraps' TypeExpr
 //  distinguish a newtype construction from a function call or a
 //  cast (§5.6). The discrimination is post-parse via name
 //  resolution.
-// **`ConstructorVis` admissible (per §10.5, §6.3.4).** The
-//  `Visibility?` head of a `NewtypeDecl` admits the `ConstructorVis`
-//  suffix per §7.2 — `public(private) type Email: wraps string` is
-//  the smart-constructor pattern.
+// **`ConstructorVis` admissible (per §10.5, §6.3.4).** The `'type'`
+//  keyword of a `NewtypeDecl` admits the `ConstructorVis` specifier
+//  per §7.2 — `type(private) Email: wraps string` is the
+//  smart-constructor pattern.
 
 ### 7.10 Enum declarations
 
@@ -4231,6 +4241,62 @@ production block of its own.
 //  item, not at module top level. The connection-vs-node distinction
 //  is a post-parse semantic check; the parser cannot syntactically
 //  tell the two apart from the placement surface alone.
+
+### 7.17 Barrel file (`public.duc`) — `export` entries
+
+```
+BarrelFile        ::= ExportEntry*
+                    ;  (§10.11, 003-78)
+
+ExportEntry       ::= 'export' ExportPath
+                    ;  (§10.11.1, 003-79)
+
+ExportPath        ::= ExportPathHead ( '::' ExportPathSegment )*
+                    ;  (§10.11.1, 003-79)
+
+ExportPathHead    ::= IDENT ExportAlias?                        // resolved from the package root; no path-base keyword
+                    ;  (§10.11.1, 003-79)
+
+ExportPathSegment ::= IDENT ExportAlias?                        // single name (leaf or intermediate)
+                    | '(' ExportSelectionList ')'               // selection list (terminal only)
+                    ;  (§10.11.1, 003-79)
+
+ExportSelectionList ::= ExportSelectionItem ( ',' ExportSelectionItem )* ','?
+                    ;  (§10.11.1, 003-79)
+
+ExportSelectionItem ::= IDENT ( '::' ExportPathSegment )* ExportAlias?
+                    ;  (§10.11.1, 003-79)
+
+ExportAlias       ::= 'as' IDENT
+                    ;  (§10.11.1, 003-79)
+```
+
+// **The barrel file's grammar replaces `TopLevelDecl` for that one
+//  file (per §10.11).** A package's single barrel file `public.duc`
+//  at the package root is a sequence of `ExportEntry` lines and
+//  comments only — no other declaration form is legal in it
+//  (003-78). An `'export'` anywhere else — any other file, any
+//  module — is a compile error (003-85). `export` is a reserved
+//  word in every position (003-88, 002-36).
+// **Mirror of the `use` selection grammar minus glob (per
+//  §10.11.1).** `ExportPath` mirrors §7.4's `UsePath` shape —
+//  multi-segment paths, `'as'` renames, parenthesized selection
+//  lists, nesting to arbitrary depth — with two differences
+//  (003-79, 003-80): there is *no path-base keyword* (paths resolve
+//  from the package root; a bare `export Mixer` names a root-module
+//  declaration), and there is *no glob* — the productions admit no
+//  `'*'` alternative, and `export audio::*` is rejected at parse
+//  (the barrel is a curated contract; every exported name is
+//  written explicitly).
+// **`ExportAlias` attaches to a single-name leaf (per §10.11.1).**
+//  As with `UseAlias` (§7.4), the `'as' IDENT` rename is admissible
+//  on the final IDENT segment of a path or selection item; the
+//  published name is the leaf name or the rename when present
+//  (003-81). Post-parse checks: two entries publishing the same
+//  name collide at the entry introducing the collision (003-82);
+//  an entry must name an unmarked, package-visible declaration —
+//  exporting a `'private'` declaration is a compile error at the
+//  entry (003-83).
 
 ## 8. Node declarations
 
@@ -5532,7 +5598,7 @@ TopLevelName      ::= IDENT                                     // bare declarat
 //  accepts a visibility specifier governing the cross-module
 //  reachability of the instance name. The `Visibility?` head precedes
 //  the optional `'main'` keyword; the order is fixed
-//  (e.g., `public main Driver root_driver`).
+//  (e.g., `private main Driver root_driver`).
 // **Top-level name is mandatory (per 021-6); `as` is optional (per
 //  021-7).** The bare form `Driver john_doe` and the explicit form
 //  `Driver as john_doe` have identical meaning. By convention,

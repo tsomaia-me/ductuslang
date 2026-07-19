@@ -106,7 +106,18 @@ Standing owner Q&A: handle stays a bracket TYPE; no `handle T` kind.
    reference-reachability closure pin (does a live-code reference pull a dead placement into
    the root closure?) and the unwired-instance ownership note (typecheck is liveness-blind;
    ownership rule fires textually).
-4. **Part 3 re-anchor survey** (owner-agreed protocol): classify all ~80 items of
+3b. **Wire-rename + channel-vocabulary amendment** (RULED; see ledger CONNECTION-RENAME,
+   NAME RULED, and CHANNEL VOCABULARY entries): (i) connection → wire (keyword, Wire marker
+   trait, IR primitive, wire-views; Link stays a free identifier); (ii) "wiring type" class
+   term → CHANNELS (prose-only, not a keyword): value channels (cell umbrella) vs event
+   channels (streams); yielded = membership channel, dynamic view = reference channel;
+   016-286's two host-write channels promoted to instances; crossings razor respells as
+   minting between channel shapes; informal "wiring" prose audited site-by-site. Runs AFTER
+   main-removal, BEFORE the Part 3 survey. Full protocol: survey → plan doc → "approved" →
+   execution → verify chain.
+4. **Part 3 re-anchor survey** (owner-agreed protocol; SCOPE WIDENED 2026-07-19 to include
+   the Part-2 residue — duplicate-keyed-by residue, optional strict-kind vocabulary sweep,
+   Portal[WeakHandle[T]] LOG-mirror nicety — one sweep, one consent-list): classify all ~80 items of
    audit-plan-3-individual-decisions.md as DISSOLVED (killed by Part-2 rulings — Cell[T],
    stream types, main, satisfies, view-Iterable all gone) / EXECUTED / STALE / LIVE; then
    LIVE items in themed consent-lists (one-liners: problem → recommendation → why; owner
