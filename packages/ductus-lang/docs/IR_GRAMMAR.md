@@ -328,7 +328,7 @@ value            ::= INT | FLOAT | 'true' | 'false' | STRING
 
 ## 4. Behavior IR text grammar
 
-The text grammar for the per-behavior body — a pure, typed, SSA-with-block-arguments compute that the runtime invokes via `BID`. Lifted verbatim from SPEC §15.4.4 (post Phase-B formalization: every nonterminal below has a defining production; `type_tag` is used uniformly — the bare name `type` does not appear; `terminator`, `op`, `literal`, and `LABEL` are explicit productions).
+The text grammar for the per-behavior body — a pure, typed, SSA-with-block-arguments compute that the runtime invokes via `BID`. This block is normative for the behavior-IR text grammar; SPEC §15.4.4 carries a prose-style mirror that conforms to it (post Phase-B formalization: every nonterminal below has a defining production; `type_tag` is used uniformly — the bare name `type` does not appear; `terminator`, `op`, `literal`, and `LABEL` are explicit productions).
 
 ```ebnf
 behavior         ::= 'behavior' BID '(' params ')' '->' type_tag '{' block+ '}'

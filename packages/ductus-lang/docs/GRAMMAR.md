@@ -567,7 +567,7 @@ StrText           ::= any sequence of characters except '"', '\\', '{'
                     ;  (§9.1.3, 012-22)
 ```
 
-**Lexer mode automaton (normative).**
+**Lexer mode automaton (mirror of SPEC §9.1.9; normative home is there).**
 
 ```text
 state STR (inside a string, depth d ≥ 1):
@@ -1170,7 +1170,7 @@ GenericParam      ::= TypeParam
                     ;  (§2.5, 004-44)
 
 TypeParam         ::= IDENT ( ':' TraitBound )? ( '=' TypeExpr )?
-                    ;  (§3.1.6, 005-30)
+                    ;  (§3.1.6, 005-39, 005-43)
 
 ConstGenericParam ::= 'const' IDENT ':' TypeExpr ( '=' ConstGenericArg )?
                     ;  (§2.5, 004-44)
@@ -2503,7 +2503,7 @@ ArrayRepeat       ::= '[' 'for' Expr ':' Expr ']'
 //  `if` / `where` tail inside an `ArrayComprehension`.
 // **Compile-time-known iterable / count.** The `Expr` in
 //  `ArrayComprehension` (the iterable) and `ArrayRepeat` (the count
-//  `N`) must be compile-time evaluable — a post-parse semantic check,
+//  `N`) must be compile-time known — a post-parse semantic check,
 //  not a grammar restriction.
 // **Inside `[...]` layout is suspended (per §2.1).** Newlines inside
 //  the bracket are treated as whitespace; multi-line array literals
@@ -3096,7 +3096,7 @@ ConstStmt         ::= 'const' IDENT ( ':' TypeExpr )? '=' Expr
 //  can be parsed in either context; the surrounding-construct kind decides
 //  legality (§11.2).
 // **`ConstStmt` RHS is compile-time-only (per §2.4.1.2, 004-75).** A
-//  `ConstStmt`'s RHS must be compile-time-evaluable; reactive / signal /
+//  `ConstStmt`'s RHS must be compile-time known; reactive / signal /
 //  derived / external-input expressions are rejected post-parse. The
 //  grammar admits any `Expr` here; the const-evaluability rule is a
 //  semantic check, not a syntactic one.
@@ -3768,7 +3768,7 @@ omitted, matching SPEC §3.1's BNF text.
 
 ```ebnf
 TraitDecl         ::= Visibility? 'sealed'? 'trait' IDENT GenericParamList? TraitBody
-                    ;  (§3.1, 005-30)
+                    ;  (§3.1, 005-4)
 // Directive decoration attaches via the §12.3 AnnotatedDecl wrapper
 //  (Phase D, D4) — TraitDecl itself carries no inline Annotation* head.
 // The optional `sealed` modifier (§3.7.6, 005-239) restricts
@@ -3779,7 +3779,7 @@ TraitDecl         ::= Visibility? 'sealed'? 'trait' IDENT GenericParamList? Trai
 
 TraitBody         ::= NEWLINE INDENT TraitBodyItem+ DEDENT
                     | NEWLINE
-                    ;  (§3.1, 005-30)
+                    ;  (§3.1, 005-4, 005-5)
 
 TraitBodyItem     ::= Annotation*
                       ( RequiresClause
@@ -3787,20 +3787,20 @@ TraitBodyItem     ::= Annotation*
                       | RequiredCell
                       | EndpointDecl
                       | MethodSig )
-                    ;  (§3.1, 005-30)
+                    ;  (§3.1, 005-4, 005-49)
 
 // Reserved-but-undefined: a doc-comment form is not yet specified
 //  (§2.5 line-comment-only rule). When SPEC adopts one, attach the
 //  optional slot here.
 
 RequiresClause    ::= 'requires' TypePath ( ',' TypePath )*
-                    ;  (§3.1.4, 005-30)
+                    ;  (§3.1.4, 005-25, 005-31)
 
 AssocTypeDecl     ::= 'type' IDENT ( '=' TypeExpr )?
                     ;  (§3.1.2, 005-15, 005-17)
 
 RequiredCell      ::= RequiredCellKind IDENT ':' TypeExpr ( '=' Expr )?
-                    ;  (§3.1.7, 005-30)
+                    ;  (§3.1.7, 005-49, 005-53)
 
 RequiredCellKind  ::= 'attr'
                     | 'const'
@@ -3808,20 +3808,20 @@ RequiredCellKind  ::= 'attr'
                     | 'recurrent' ( '[' ConstGenericArg ']' )?
                     | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']'
                     | 'stream' '[' TypeExpr ']'      // bracket-policy head (mirrors KindAnnotation §3.15); same channel as the word form (§13.18.3)
-                    ;  (§3.1.7, 005-30)
+                    ;  (§3.1.7, 005-49)
 
 EndpointDecl      ::= ( 'from' | 'to' ) ':' TypeExpr
-                    ;  (§3.1.7, 005-30)
+                    ;  (§3.1.7, 005-49, 005-54)
 
 MethodSig         ::= 'fn' IDENT GenericParamList? '(' TraitFnParamList? ')'
                       FnReturn? FnBody
-                    ;  (§3.1.1, 005-30)
+                    ;  (§3.1.1, 005-7)
 
 TraitFnParamList  ::= TraitFnParam ( ',' TraitFnParam )* ','?
-                    ;  (§3.1.1, 005-30)
+                    ;  (§3.1.1, 005-10)
 
 TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind slot per §3.15; no default-value `'=' Expr` per SPEC §3.1
-                    ;  (§3.1.1, 005-30)
+                    ;  (§3.1.1, 005-9, 005-12)
 ```
 
 // **TraitBody two-alternative shape (per §3.1).** An empty trait
@@ -3833,7 +3833,7 @@ TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind sl
 //  the `Annotation*` position before the `'trait'` keyword. The
 //  grammar treats it as one annotation in the `Annotation*` run
 //  (see §12.1).
-// **`MethodSig` mirrors SPEC §3.1 (per §3.1.1, 005-30).** The trait
+// **`MethodSig` mirrors SPEC §3.1 (per §3.1.1, 005-7).** The trait
 //  `MethodSig` mirrors SPEC §3.1's BNF with the same `FnReturn` /
 //  `FnBody` factoring used by `FnDecl` in §7.6: `FnReturn` embeds the
 //  `'own'?` return qualifier (§11.3.6, admitted in trait methods per
@@ -3870,14 +3870,14 @@ here verbatim.
 
 ```ebnf
 FulfillItem       ::= 'fulfill' TypeExpr 'for' TypeExpr WhereClause? FulfillBody
-                    ;  (§3.3, 005-30)
+                    ;  (§3.3, 005-85, 005-91)
 
 FulfillBody       ::= ( NEWLINE INDENT FulfillBodyItem+ DEDENT )
                     | NEWLINE
-                    ;  (§3.3, 005-30, 005-245)
+                    ;  (§3.3, 005-92, 005-245)
 
 FulfillBodyItem   ::= Annotation* ( FnDecl | AssocTypeBinding )
-                    ;  (§3.3, 005-30)
+                    ;  (§3.3, 005-92)
 
 // Reserved-but-undefined: a doc-comment form is not yet specified
 //  (§2.5 line-comment-only rule). When SPEC adopts one, attach the
@@ -5771,9 +5771,9 @@ FlagChar          ::= "'" | '!' | '?' | '*' | '+' | '^' | '~' | '@' | '$'
 ```
 
 // **Adjacency-to-TypeRef is the disambiguator (per §13.8.8.4 /
-//  021-119).** A non-letter character immediately following the
-//  `TypeRef` path with no intervening whitespace is a flag-run
-//  opener. Any of the flag characters is admitted only at this
+//  021-119).** One of the nine flag characters (`FlagChar`) immediately
+//  following the `TypeRef` path with no intervening whitespace is a
+//  flag-run opener. Any of the flag characters is admitted only at this
 //  position. The same characters in non-placement positions are
 //  parsed as their other-context tokens — `'` opens a `CharLit`
 //  (§2.8); `?` is postfix Try / cast-policy / optional-chaining /

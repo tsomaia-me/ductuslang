@@ -97,7 +97,7 @@ computation is pure-by-contract.
 
 **Compile-time evaluation where possible.** Pure functions and immutable
 bindings together mean that any expression not involving a signal or external
-input is compile-time evaluable. The language uses this aggressively for
+input is compile-time known. The language uses this aggressively for
 type-level computation, value-fits-type checking, and dependent-ish typing.
 
 **Nominal types.** Records, enums, traits, nodes, and wires are nominal —
@@ -674,8 +674,8 @@ not an optimization: the language's design relies on it.
 
 #### 2.4.1 Compile-time-known values
 
-A value is *compile-time known* if its defining expression is compile-time
-evaluable. The propagation rule is mechanical:
+A value is *compile-time known* if its defining expression can be
+evaluated at compile time. The propagation rule is mechanical:
 
 - Literals are compile-time known.
 - Constructions over compile-time-known operands are compile-time known.
@@ -860,14 +860,14 @@ Compile-time-known values can serve as type-level arguments. A
 a type:
 
 ```
-fn fill(arr: i32[fib(10) + 1])             // array size: fib(10) + 1 is compile-time evaluable
+fn fill(arr: i32[fib(10) + 1])             // array size: fib(10) + 1 is compile-time known
 type Buffer[T, const N: usize = 1024]:
   data: T[N]
 ```
 
 This is dependent-typing-lite: types can depend on compile-time-known values
 without requiring full dependent type theory. The mechanism is uniform —
-anything compile-time evaluable can appear in a type position requiring a
+anything compile-time-known can appear in a type position requiring a
 value. §2.5 specifies const-generic parameters and expressions in full:
 which expressions are admitted, how const-generic types are compared for
 identity, and how parameters are inferred, bounded, and supplied.
@@ -3585,7 +3585,7 @@ operators on one row share precedence.
 | 12   | `+`, `-`                                                  | left            |
 | 13   | `*`, `/`, `\`, `%`                                        | left            |
 | 14   | `-`, `~`, `handle`, `handle!`, `portal`, `delete` (prefix) | right           |
-| 15   | `?`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts     | left           |
+| 15   | `?`, `?.`, `?[]`, `?()`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts | left            |
 | 16   | `::`                                                      | left            |
 
 - `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
@@ -3597,6 +3597,7 @@ operators on one row share precedence.
 - `as` is **not** in this table: it is a naming keyword, not a value operator (§4.7); explicit conversion uses the call forms `T()`/`T%()`/`T|()`/`T?()`, which bind at the postfix tier.
 - The cast-policy forms `u8%(x)`/`u8|(x)`/`u8?(x)` are call-like (the `(` disambiguates, §4.7.1), binding at the postfix tier, not as infix operators.
 - Type-level `&` (intersection, §5.1) and `dyn` binding (§5.2.1) are governed separately from this value-expression table.
+- The postfix `->` crossing — the minting-access operator `->changes`/`->latest` (§13.18.9) — is deliberately absent from this table: it is position-disambiguated, legal only where no precedence question arises, so it carries no tier. Its absence is intentional, not an omission.
 
 ### 4.5 Implicit Widening
 
@@ -4435,7 +4436,8 @@ Language-level fulfillments:
   `Index[Range[isize]]` → `Output = T[..]` (slice).
 - **Slices `T[..N]` / `T[..]`**: same shape.
 - **Bundles `Bundle[T]`** (§13.3.3.5): `Index[isize]` →
-  `Output = Handle[T][..]` (a row slice).
+  `Output = Handle[T][..N]` when the row length is statically derivable,
+  `Handle[T][..]` when it is known only at runtime (a row slice).
 - **Maps `Map[K, V]`** (§9.5): `Index[K]` → `Output = V`. `Map` does NOT
   fulfill `Index[Range[K]]`: even though a Map iterates in insertion
   order (§9.5.8), its keys are not positions — a key range describes no
@@ -6838,6 +6840,18 @@ Interpolation expressions are arbitrary expressions, including method
 calls, arithmetic, and field access. They are not limited to bare
 identifiers.
 
+**Closing-brace scan (normative).** Because the interpolated expression
+is an arbitrary expression, the lexer does not close the hole on the
+first `}` it meets. Entering the hole `{expr}`, it opens a bracket-depth
+counter at zero for that interpolation and, running the ordinary lexer
+rules over the expression, pushes on each `(`, `[`, and `{` and pops on
+each `)`, `]`, and `}`. Only a `}` seen at this interpolation's own
+bracket-depth zero closes the hole; a `}` that merely closes an inner
+bracket does not. A string literal opened inside the expression re-enters
+string mode on a fresh mode-stack level, so holes and strings may nest to
+arbitrary depth with no lexer-imposed limit. GRAMMAR §2.9 mirrors this
+scan as a lexer-mode automaton.
+
 A literal brace is written `\{`, which produces `{` and disables interpolation at that position. There is no `{{`/`}}` brace-doubling form — `\{` is the sole literal-brace escape.
 
 There is no in-interpolation format-specifier mini-language: `{expr}` always formats via `Display`. Width, precision, padding, and similar are produced by calling methods or stdlib formatting helpers inside the expression itself — `"{price.round(2)}"`, `"{pad(name, 8)}"` — keeping the interpolation grammar to just `{` arbitrary-expression `}`.
@@ -7804,6 +7818,9 @@ trait. `Eq` and `Hash` are insensitive to insertion order: two maps are
 equal iff they hold the same key→value set, and their hash agrees
 accordingly.
 
+`Clone` preserves insertion order: the cloned map iterates its keys and
+`(K, V)` pairs in the same order as the source (§9.5.8).
+
 `Ord` is **not** derived: although `Map` iterates in insertion order
 (§9.5.8), keys are not positions — insertion order reflects write
 history, not any canonical comparison order over key→value content, so
@@ -8116,7 +8133,7 @@ irrelevant — only its module's path matters.
 
 #### 10.4.1 Selective and glob imports
 
-Per §6.2.3, selection lists on `use` paths use parentheses; a glob
+Selection lists on `use` paths use parentheses; a glob
 imports every visible name from the source:
 
 ```
@@ -8124,9 +8141,18 @@ use root::ops::(add, sub, mul)        // specific names
 use root::variants::*                 // glob: every visible name
 ```
 
-Glob imports are subject to the import-time conflict rules per §6.2.3:
-two glob imports that bring colliding names into the same scope produce
-a compile error at the `use` site that introduces the second collision.
+The parentheses follow the language's uniform use of `()` for grouping —
+function and generic arguments, tuple construction, expression grouping,
+trait intersection — and path selection takes the same convention; context
+disambiguates the two uses, so after `::` the parentheses are a selection
+list, while after a value expression they are a call (see §6.2.3).
+
+Glob imports are subject to the import-time conflict rule: two glob imports
+that bring colliding names into the same scope produce a compile error at
+the `use` site that introduces the second collision. The conflict is
+surfaced at the import that introduces it, not deferred to a later use of
+the name, and is resolved by importing selectively or keeping one source
+path-qualified (see §6.2.3).
 
 A selection-list item may itself be a multi-segment path, carry its own `as` alias, or be a `*` glob, so one `use` may group several reaches: `use root::audio::(synth::Oscillator, Filter as Filt, fx::*)`.
 
@@ -12130,7 +12156,7 @@ see §13.2.6).
 
 The default may be a constant expression, an expression involving
 other declared attrs, an expression involving signals visible in
-scope, or any other compile-time-evaluable expression. Defaults are
+scope, or any other compile-time-known expression. Defaults are
 evaluated at instance construction (§13.2.6), not restricted to
 compile-time constants.
 
@@ -12338,7 +12364,7 @@ current inputs instead of blending in stale pre-gap state. It fires
 *only* on the gate false→true transition; a recurrent that merely
 receives no triggers for a while is correctly holding its value.
 
-It is the reactivation counterpart to `@reset_on_reload` (§13.15.5):
+It is the reactivation counterpart to `@reset_on_reload` (§13.18.14):
 both reset accumulated state on a lifecycle event — `@reset_on_reload`
 across a hot reload, `@reset_on_reopen` across a gate gap. What counts as
 accumulated state is per kind:
@@ -12665,9 +12691,9 @@ fulfill Action for Delay
 
 ##### 13.2.5.1 Properties
 
-- **Compile-time value.** The right-hand side must be evaluable at
+- **Compile-time value.** The right-hand side must be known at
   compile time. It may reference other consts (of the same type or
-  top-level), literal values, and any compile-time-evaluable
+  top-level), literal values, and any compile-time-known
   expression. It may not reference reactive cells (signals, attrs,
   recurrents, deriveds), since those are runtime values.
 - **Not reactive.** A const value never changes during the runtime's
@@ -12791,7 +12817,7 @@ For each cell:
   may reference same-instance cells (by bare name, or `here::X` to
   anchor), same-type
   consts, module-level cells (signals, deriveds, recurrents,
-  consts), and compile-time-evaluable expressions. Cross-instance
+  consts), and compile-time-known expressions. Cross-instance
   references are resolved only at placement time, not at type
   declaration. A recurrent's self-history fallbacks
   (`.previous(fallback)`, `.past(k, fallback)`) follow the same
@@ -13228,6 +13254,14 @@ boundaries force materialization to a concrete value:
 
 Within Ductus source code outside these boundaries, reactive
 composites remain live.
+
+These three are consumption-into-storage boundaries — the points
+where a reactive value is consumed into a concrete stored form.
+Reading a `yielded` group's current members as a concrete snapshot
+in a value position (§13.20) is a read path, not a fourth
+materialization boundary: the snapshot is re-read on each group
+change rather than stored, so it does not count among these
+boundaries.
 
 ##### 13.2.9.8 The `with` expression in reactive contexts
 
@@ -13957,7 +13991,7 @@ mode*: whether the set of supplied children is a static fact or may vary at
 runtime. The `dynamic` keyword prefixes a **named acceptance entry** inside
 a `children:` clause (`dynamic voices: Voice*`), marking the second mode. A
 `dynamic` view takes **exactly the `*` specifier** — its inherent
-zero-or-more; the bounded specifiers `?`/`+`/`[=N]`/`[N..M]` are forbidden
+zero-or-more; the bounded specifiers `?`/`+`/`[=N]`/`[N..=M]` are forbidden
 on `dynamic`, and there is no single dynamic view (`dynamic voice: Voice`
 ✗, `dynamic voices: Voice+` ✗) — because a runtime-varying set can
 guarantee no minimum and admit no
@@ -14380,6 +14414,15 @@ Forbidden inside a bundle bracket:
   reactive `cell` form below.
 - Wires — bundling is node-only.
 
+The bundle/`repeat` rejection is symmetric: just as a `repeat` cannot
+appear inside a bundle bracket, a bundle bracket cannot appear inside a
+`repeat` body — runtime structure inside a static pre-tied bracket
+contradicts the static-bundle nature in both directions. Both violations
+raise the same normative diagnostic class, `bundle_in_repeat_rejected`
+(targetable by user tooling), emitted at parse time at the offending
+site. The restriction lifts at the boundary: a bundle bracket *outside* a
+`repeat` body, or a `repeat` *outside* a bundle bracket, are both legal.
+
 ##### `[...]` is an open delimiter
 
 Layout suspends inside `[...]` (parallel to `(...)` and string literals,
@@ -14759,7 +14802,7 @@ with no node-specific rule:
   node's cells and for serving as a wire endpoint (§13.6, §13.8.5.1)
   — but never for placing.
 - **A node reference cannot be stored.** A borrow may not be put in a cell,
-  record field, enum payload, or tuple (§11.9.1). The storable, non-owning way
+  record field, enum payload, tuple, or indexed slot (§11.9.1). The storable, non-owning way
   to *designate* a node instance for later is a **`Handle[…]`** (§13.3.6.2); a
   persistent linkage between instances is a **wire** (§13.6); a node
   *type* held as a value is `Type[…]` (§5.7).
@@ -15269,8 +15312,8 @@ At most one `@content` appears per `expose:` scope.
 
 The exposed list is readable from outside the node via the reserved
 `.exposition` field: `instance.exposition` returns the ordered list of
-placements — node and wire entries alike (§13.3.7.5) — the
-instance currently exposes. This is the same content the runtime
+placements — `Node`, `Wire`, `Bundle`, `DynamicView`, and `Gated`
+entries (§13.3.7.7) — the instance currently exposes. This is the same content the runtime
 traverses; external readers and the runtime see identical output.
 
 Inside the node body, the bare `exposition` field is the same list. The
@@ -15396,6 +15439,20 @@ Terminology: **activation** refers to gate-state (§13.9.1) and is
 unchanged; **engagement** refers to traversal reaching an entry. A
 wire can be live yet unengaged (computing, not yet reached) or
 frozen and therefore unengageable.
+
+**The wake gate.** The orthogonality extends to activation on the
+target side of a wire. A render reached by wires can be *mounted yet
+inactive*: the compiler synthesizes one **wake gate** per wire-following
+target — a render (target instance) that incoming wires resolve to —
+whose predicate is *some live wire currently resolves to me OR my
+containment parent is active*. The wake gate stays closed, holding the
+render inactive, until some live wire resolves to it or its containment
+parent is active; so wires **activate** their target, never instantiate
+it. The wake gate lowers to the existing gate objects of §13.9, adding
+no new IR construct (§15.4.1); its reads of the incoming wire-views are
+compiler-internal, not a user-visible surface. Because it can sit on a
+wire-following cycle, the wake gate reads prior-commit values
+(§13.9.6, §13.11.5).
 
 ##### 13.3.7.7 The entry sum: walking `.exposition`
 
@@ -16077,8 +16134,9 @@ Whenever `<source>` is dirty, the runtime:
 **Duplicate keys.** If two distinct elements in one evaluation derive
 the same key, the first in iterator order wins the scope and the
 `<bind>`; later duplicates are dropped. The runtime raises a non-fatal
-warning — a non-unique `keyed by` derivation is almost always a bug —
-and continues; a duplicate key never halts the program.
+warning of the normative diagnostic class `duplicate_scope_key` — a
+non-unique `keyed by` derivation is almost always a bug — and
+continues; a duplicate key never halts the program.
 
 Reordering elements in `<source>` without changing the key set performs
 no scope allocations or drops; only the iteration order changes (and, with
@@ -16677,7 +16735,7 @@ Rules for pairs form:
   cannot vary its content by pair. When different content per pair is
   needed, declare a separate wire type per pair.
 - A `match pair:` in the body must be **exhaustive** over the declared
-  pairs (or carry a `default:` arm), exactly as any `match` (§6.2.5) and as
+  pairs (or carry a `_:` arm), exactly as any `match` (§6.2.5) and as
   the cartesian form's exhaustiveness requirement (§13.6.1.2).
 
 A wire body does not contain `fn` declarations, paralleling
@@ -16845,7 +16903,7 @@ a bare name binds to the nearest enclosing scope that declares it.
 Two explicit *scope anchors* disambiguate when a name is declared in
 more than one reachable scope:
 
-- **`here::x`** resolves `x` in the current (innermost) scope —
+- **`here::x`** resolves `x` in the current scope —
   inside a node/wire body, the instance body scope.
 - **`module::x`** resolves `x` in the module top-level scope.
 
@@ -17065,7 +17123,7 @@ left side of `::`):
 - **`Subject`** — the *type-level* alias for the implementing/subject
   type, usable only in type positions in trait declarations and
   `fulfill` blocks (§3.1.1).
-- **`here`** — the current (innermost) scope as a *namespace*. Scope
+- **`here`** — the current scope as a *namespace*. Scope
   resolution uses `::`: `here::x` resolves `x` in the current scope,
   bypassing any shadowing from inner blocks. `here` is not a value and
   has no `.` form (§13.7.2).
@@ -17228,7 +17286,7 @@ rules).
 The right-hand side of an attribute setting at placement may be:
 
 - A **compile-time / value expression** — a literal, a `const`
-  reference, a compile-time-evaluable computation, or any other
+  reference, a compile-time-known computation, or any other
   expression whose provenance contains no reactive cell. The value
   is consumed into the attr's storage slot at instantiation
   (§11.1 category B; implicit move; no `move` keyword required).
@@ -17902,8 +17960,9 @@ elsewhere in the language:
 - `!` is both a flag and the leading marker of the `!name`
   attribute-false form (§13.8.7).
 
-Disambiguation is positional: in placement position, a non-letter
-character immediately following the `TypeRef` path (no intervening
+Disambiguation is positional: in placement position, one of the nine
+flag characters — `'`, `!`, `?`, `*`, `+`, `^`, `~`, `@`, `$` —
+immediately following the `TypeRef` path (no intervening
 whitespace) is a flag-run opener. In any other position
 (expression context, annotation context, etc.) it is the operator.
 A line-initial `@name` followed by whitespace — the inline
@@ -18341,7 +18400,10 @@ committed values; cyclic self-reference is well-defined: the gate
 predicate evaluates against the gated cell's *previously-committed*
 values from the prior commit. The gate-open transition is itself a
 propagation event scheduled within the commit that flips the
-predicate (per §13.9.7's snap-on-gate-open rule).
+predicate (per §13.9.7's snap-on-gate-open rule). A
+compiler-synthesized **wake gate** (§13.3.7.6) inherits this rule: it
+reads prior-commit values, so a wire-following cycle resolves as a
+one-commit-delay fixpoint.
 
 ```
 wire WeightedLink:
@@ -19170,6 +19232,12 @@ The compiler walks the topology graph, identifies cycles, and verifies each
 cycle has at least one `Circularity`-satisfying wire. Cycles
 consisting only of non-`Circularity` wires are compile errors.
 
+Compiler-synthesized **wake gates** (§13.3.7.6) form such cycles, which
+resolve by the prior-commit, one-commit-delay fixpoint (§13.9.6) only
+when the cycle is guarded by a `Circularity` wire; a wire type that
+implies simultaneous source-destination activation should therefore not
+satisfy `Circularity`.
+
 **Dynamic destinations.** A wire whose `to` is a reactive reference
 (§13.6.2) contributes candidate edges to each node *type* its reference's
 static type admits. The compiler infers this candidate set comprehensively
@@ -19235,10 +19303,11 @@ The compiler uses provenance to:
 - Reject use of reactive values in positions where compile-time-
   known values are required (§2.4.2).
 
-A provenance set is normally *static* — fixed for the expression. The one
-exception is a read through **`WeakHandle[T]` resolution** (§13.3.6.2,
-§13.10.5): the *identity* of the depended-on cells changes when the
-resolution re-points, mounts, or dismounts. A statically-placed
+A provenance set is normally *static* — fixed for the expression. The two
+exceptions are the dynamic-dependency sources — a read through
+**`WeakHandle[T]` resolution** (§13.3.6.2, §13.10.5) and a read through
+**`Portal[T]` resolution**: the *identity* of the depended-on cells changes
+on re-point, mount, dismount, or slot rebind. A statically-placed
 `Handle[T]` carries no such exception — its referent is fixed, so its
 read contributes its referent's cells to the provenance like any static
 reference. The canonical dynamic case is a wire body reading `to.*`
@@ -19547,6 +19616,13 @@ type as `Result[T, E]` (or `Option[T]`), have the expression
 produce `Err(...)` (or `None`) explicitly for failure cases via
 checked arithmetic operators (§4.6.4) or pattern matching, and
 propagate through `?` or `match` in downstream expressions.
+
+A `derived` or `recurrent` expression whose declared type is
+`Result[T, E]` (or `Option[T]`) plays the enclosing-function role that
+`?` early-returns from (§8.4.1): a `?` applied to a failing operand
+short-circuits that evaluation of the body, and the `From`-converted
+failure — `Err(From::convert(...))`, or `None` for an `Option`-typed
+body — becomes the body's value for that evaluation.
 
 ```
 node Divider:
@@ -20173,58 +20249,17 @@ occurred.
 
 #### 13.15.5 Hot reload of streams
 
-Stream cell identity across reloads follows the same fully-qualified
-declaration path rule as other reactive cells (§13.15.2). Two
-additional rules apply specific to streams:
+Across a reload a stream keeps its cell identity by the same
+declaration-path rule as other reactive cells (§13.15.2). Its buffered
+events, its consumers' cursors, and its observation cells are preserved
+when the stream's shape is unchanged, and reset when that shape changes
+or when the stream opts into a reset; recurrent streams carry their
+history across reload under the same conditions.
 
-**Buffer preservation rule.** A stream's buffer is preserved
-across reload iff the stream's *type signature* is byte-identical
-between old and new code:
-
-- Element type `T` (structurally identical, not just same-named).
-- Policy (`ring` or `gate`).
-- Capacity (the integer literal `N`).
-
-When all three match, the buffer's contents survive. When any
-differs, the buffer is reset to empty and all consumer cursors
-restart at the empty position.
-
-**Source expression changes are reload-safe.** The `= source`
-portion of a stream declaration may change freely without affecting
-buffer preservation. Producers that change their emission logic
-across reload continue to push into the same buffer; existing
-buffered events from prior emissions remain available to consumers
-until overwritten by the policy.
-
-**`@reset_on_reload` annotation.** A stream declaration carrying the
-`@reset_on_reload` annotation always resets its buffer across
-reload, regardless of type-signature match:
-
-```
-@reset_on_reload
-stream ring[1024] events: LogEntry = source
-```
-
-This is appropriate when buffered events from the prior program
-version would be misinterpreted by the new version's consumers. Its
-reactivation sibling, `@reset_on_reopen` (§13.2.4), resets accumulated
-state when a gate reopens rather than on reload — a gated recurrent's
-self/input history, or a gated stream consumer's cursor (skip-to-head on
-resume, releasing the gate-stream buffer hold during the freeze). The
-two form a decorator family — *reset accumulated state on a lifecycle
-event* — differing in the triggering event (hot reload vs. gate gap).
-
-**Cursor identity across reload.** A consumer's cursor is preserved
-when the consuming operator (or derived) instance is preserved per
-its own identity rule (§13.17.10). A new consumer added in the new
-source starts at the current head — it observes only events arriving
-after the reload. A removed consumer's cursor is dropped.
-
-**Observation cell continuity.** The synthesized observation cells
-(`pending_count`, `pressure`, `is_full`, `dropped_total`,
-`rejected_total`, `last_overflow_at` — see §13.18.6) survive reload
-along with the buffer when type signature matches; they reset when
-the buffer resets.
+The full normative rules — buffer preservation, source-change safety,
+the `@reset_on_reload` annotation, cursor identity, observation-cell
+continuity, and recurrent-stream history — are owned by §13.18.14. This
+section does not restate them; see §13.18.14.
 
 #### 13.15.6 Hot reload of effects
 
@@ -20253,7 +20288,7 @@ instance is preserved across reload, the cells declared in its
 - `signal T` cells: preserved when type matches; reset to initial
   value if type changes (per §13.15.2).
 - `stream T` cells: preserved per stream reload rules
-  (§13.15.5).
+  (§13.18.14).
 
 **Reload-safe effect changes** preserve the instance and most cells:
 
@@ -21845,7 +21880,7 @@ Same-value commits do not emit (per the value-change semantics of
 
 **Policy and capacity resolve like placeholders.** `->changes` does not
 name a policy or capacity of its own; both resolve at the use site the
-way a placeholder resolves (the use-site resolution list of §4.4):
+way a placeholder resolves (the use-site resolution list of §2.1.2):
 
 - If the `->changes` feeds a stream declaration, it *materializes as*
   that declared stream — one buffer, the declared policy and capacity:
@@ -22408,6 +22443,20 @@ stuck true) with no live consumer to blame. Each stopping mode
 releases or holds retention per its own rule: gate-off holds (unless
 `@reset_on_reopen` releases), completion always releases.
 
+**Cursor drop at scope teardown.** A consumer instantiated inside a
+`repeat` scope holds its cursor in that scope's per-instance state
+(§13.18.13). When the scope is dropped (§13.5.1's `scope_drop`,
+§13.5.4.7), the consumer is torn down along with the per-element effects
+that tear down with the element key (§13.5.4.7), releasing its cursor.
+When that cursor was on a **gate** stream declared *outside* the dropped
+scope — an outer stream that survives the drop — the outer stream's
+slowest-cursor retention recomputes without the released cursor: buffer
+entries are retained only for the remaining consumers, and a gate buffer
+the departed consumer was pinning (`rejected_total` / `is_full`) can
+evict and accept producer pushes again. This is the scope-drop
+counterpart of reload's removed-consumer cursor drop (§13.18.14) — the
+same cursor release under a different trigger.
+
 **No cursor rewind.** Cursors only advance. There is no operation
 to rewind a cursor to an earlier position; the buffer's events are
 not persistently stored beyond the buffer's lifetime, and
@@ -22468,6 +22517,9 @@ allocated at runtime.
 
 #### 13.18.14 Hot reload
 
+Stream cell identity across reloads follows the same fully-qualified
+declaration path rule as other reactive cells (§13.15.2).
+
 Stream hot reload preserves the buffer iff the stream's
 *type signature* is byte-identical between old and new code. The
 type signature comprises:
@@ -22481,7 +22533,10 @@ The cursors of consumers preserved by their own identity rules
 (§13.17.10 for operator instances) continue from their previous
 positions. The source expression (the `= source` part of the
 declaration) may change freely; only the type signature gates
-preservation.
+preservation. Producers that change their emission logic across
+reload continue to push into the same buffer; existing buffered
+events from prior emissions remain available to consumers until
+overwritten by the policy.
 
 When any of the three differs, the old buffer is discarded and a new
 empty buffer is allocated. All cursors reset to the empty position
@@ -22499,7 +22554,11 @@ stream ring[1024] events: LogEntry = source
 After any reload affecting this stream's declaration site, the
 buffer is reset to empty. This is appropriate when buffered events
 from the prior program version would be misinterpreted by the new
-version's consumers.
+version's consumers. Its reactivation sibling `@reset_on_reopen`
+(§13.2.4) resets accumulated state when a gate reopens rather than on
+reload; the two form a decorator family — *reset accumulated state on
+a lifecycle event* — differing in the triggering event (hot reload
+vs. gate gap).
 
 **Annotation changes between reloads apply prospectively.** Adding
 `@reset_on_reload` to a stream declaration that previously did not
@@ -22518,6 +22577,12 @@ its own identity rule. When the consumer is added (a new
 instantiation appears in the new source), its cursor starts at the
 current head — it observes only events arriving after the reload.
 When the consumer is removed, its cursor is dropped.
+
+**Observation cell continuity.** The synthesized observation cells
+(`pending_count`, `pressure`, `is_full`, `dropped_total`,
+`rejected_total`, `last_overflow_at` — see §13.18.6) survive reload
+along with the buffer when type signature matches; they reset when
+the buffer resets.
 
 **Reload-unsafe stream changes** require per-instance restart or
 full-runtime restart per §13.15.4:
@@ -22833,12 +22898,17 @@ declarations:
   from its parameters or `observed:` cells via `= source` (§13.19.4).
 - `signal` (in `observed:`) — host-written value cell (§13.19.5).
 - `stream` (in `observed:`) — host-written event sequence (§13.19.5).
+- `derived` / value-`recurrent` (in `observed:`) — lifted computed
+  outputs the effect evaluates itself, alongside the host-written
+  channels (§13.19.5).
 
-No other declaration kinds are permitted inside the blocks. `recurrent`
-is allowed only in `desired:` (a host-fed `observed:` cell has no
-expression body for `.past` to read). `attr` and top-level `signal`
-cannot appear inside an effect's body; stateful behavior that wraps
-multiple effects is expressed via wrapping operators (§13.19.15).
+No other declaration kinds are permitted inside the blocks. A value
+`recurrent` is allowed in both `desired:` and `observed:` (in
+`observed:` as a lifted computed output, §13.19.5); a host-fed
+`recurrent[N] stream` is forbidden in `observed:`, because a host-fed
+cell has no expression body for `.past` to read. `attr` and top-level
+`signal` cannot appear inside an effect's body; stateful behavior that
+wraps multiple effects is expressed via wrapping operators (§13.19.15).
 
 At least one of `desired:`, `observed:`, or a child-effect placement
 must be present (an effect with none of these would have no surface at
@@ -23028,8 +23098,10 @@ cannot write to them.
 **`recurrent` cells** — desired values with self-history. A `desired:`
 value may depend on its own past via `.previous`/`.past`, e.g. an
 exponential backoff `recurrent backoff: Duration = min(backoff.previous(1s) * 2, 60s)`.
-(`recurrent` is allowed only in `desired:`, never in `observed:`, whose
-host-fed cells have no expression body — §13.19.5.) A `desired:`
+(A value `recurrent` may also appear in `observed:` as a lifted computed
+output — §13.19.5; only a host-fed `recurrent[N] stream` is forbidden
+there, its host-fed cell having no expression body for `.past` to read.)
+A `desired:`
 `recurrent` or recurrent stream may carry `@reset_on_reopen` (§13.2.4);
 when the effect's enclosing subtree is gated, it resets its accumulated
 state on the effect's gate reopen — the reactivation sibling of
@@ -23779,10 +23851,11 @@ error: only role-keyword declarations are permitted inside effect blocks
           attr count: i32 = 0
           ^^^^^^^^^^^^^^^^^^^
   hint: effect blocks accept only `derived`, `recurrent`, `stream` (in
-        `desired:`) and `signal`, `stream` (in `observed:`). `recurrent`
-        in `observed:` is rejected (host-fed cells have no expression
-        body); for state that wraps multiple effects, use a wrapping
-        operator (§13.17).
+        `desired:`) and `signal`, `stream` plus lifted `derived` /
+        value-`recurrent` computed outputs (in `observed:`). A host-fed
+        `recurrent[N] stream` in `observed:` is rejected (host-fed cells
+        have no expression body); for state that wraps multiple effects,
+        use a wrapping operator (§13.17).
 ```
 
 **Effect appearing in node-placement position:**
@@ -23953,6 +24026,14 @@ error: `yield` under a runtime `if` cannot vary group membership
         instead choose the member's *value* (keeping it always present),
         yield a conditional value: `yield if is_active: voice else: muted`.
 ```
+
+An `if`/`match` that begins on the same line immediately after `yield` —
+the `yield if …` form — is always parsed as the yield's
+**operand-expression** (a value conditional selecting the member's value),
+never as a statement-position `if`/`match` the `yield` is nested under.
+The `YieldStmt` grammar (`'yield' Expr`) admits no statement reading in
+that position, so the runtime-condition rule above governs only the
+*nested* form, never a same-line conditional operand.
 
 #### 13.20.4 The `yielded` kind
 
@@ -24181,8 +24262,8 @@ composite's declared slot order. One term, one referent per source.
 #### 13.21.5 Cost rule (normative)
 
 `fold` maintains its result incrementally. The normative cost rule (a
-member of the same incremental-cost family as the loop/collection cost
-rules §12, §9): **O(log n) combines** per member value-change, join, or
+member of the same incremental-cost family as the collection cost
+rules §9): **O(log n) combines** per member value-change, join, or
 leave, where *n* is the current member count. The compiler builds a
 **deterministic combine tree** from member order; when one member's value
 changes (or a member joins/leaves), only the O(log n) combines on the path
@@ -24641,13 +24722,17 @@ backend-independent obligations on behaviors.
 #### 14.6.1 Statelessness
 
 Behaviors are **stateless** at the runtime level. All state lives in
-reactive cells (attrs, signals, derived results). Behaviors are pure
-transformations: read inputs from cells, compute, write outputs.
+reactive cells (attrs, signals, derived results). A compiled behavior
+is a pure function of its parameters that returns a value; the runtime
+reads the cells to supply the parameter values and writes the returned
+value back to the target cell. The behavior body itself performs no
+cell reads or writes.
 
 A "stateful" computation (filter with sample history, oscillator with
 phase, accumulator) is structured as a record whose attrs hold the
-state, plus a behavior that reads the state-attrs, computes new
-state, and writes back to the state-attrs.
+state, plus a behavior that receives the state-attr values as
+parameters, computes new state, and returns it for the runtime to
+write back to the state-attrs.
 
 Local mutation within a behavior (`mut` bindings, indexed assignment,
 iterator state) is permitted per §§11–12. These mutations are visible
@@ -24748,7 +24833,7 @@ The compiler inserts drop calls at:
 - On assignment to an existing binding, the binding's **previous** value is
   dropped at the assignment point.
 - The end of a function for un-returned locals.
-- The point of `break` for non-yielded iterator elements (§12.9.3).
+- The point of `break` (or of an enclosing function return) for non-yielded iterator elements (§12.9.3).
 
 Compound values (records, enums) drop in **reverse declaration
 order** of their fields: the last-declared field drops first.
@@ -25212,7 +25297,10 @@ compiler encodes declaration-order priority and exhaustiveness into the
 arm predicates so they are mutually exclusive by construction (e.g. arm
 *i*'s effective predicate conjoins the negations of all earlier arms'
 guards); the predicates themselves still evaluate against runtime cell
-values each commit.
+values each commit. Compiler-synthesized **wake gates** (§13.3.7.6) —
+one per wire-following target render, whose predicate is that some live
+wire currently resolves to it or its containment parent is active — lower
+to these same gate objects; no new IR construct is introduced for them.
 
 **Behavior table.** A list of `(handle, debug_name,
 input_cell_ids, output_cell_id?)` entries, indexed by each behavior's
@@ -25511,9 +25599,24 @@ appear.
 ```ebnf
 behavior     ::= 'behavior' BID '(' params ')' '->' type_tag '{' block+ '}'
 params       ::= (('own')? NAME ':' type_tag) (',' ('own')? NAME ':' type_tag)*
-block        ::= LABEL ('(' params ')')? ':' instr* terminator
-instr        ::= '%'NAME '=' op operand* (':' type_tag)?  |  op operand*
-operand      ::= '%'NAME | 'move' '%'NAME | literal
+block        ::= LABEL ('(' params ')')? ':' ( instr InstrSep )* terminator
+InstrSep     ::= ';' | NEWLINE                  // multiple per line: ';'; one per line: NEWLINE
+instr        ::= '%'NAME '=' instr_rhs (':' type_tag)?   |  instr_rhs
+instr_rhs    ::= op_application | call_rhs | closure_rhs | enum_make_rhs
+               | array_make_rhs | record_make_rhs | raw_alloc_rhs
+op_application  ::= op ( operand (',' operand)* )?
+call_rhs     ::= 'call' callee '(' operand_list? ')'
+               | 'call.dyn' '%'NAME '#' NAME '(' operand_list? ')'
+callee       ::= NAME | BID
+closure_rhs  ::= 'closure.make' BID 'captures' '{' capture_list? '}'
+capture_list ::= NAME ':' operand (',' NAME ':' operand)*
+enum_make_rhs   ::= 'enum.make' '%'NAME '#' NAME ( '(' operand_list? ')' )?
+array_make_rhs  ::= 'array.make' '[' operand_list? ']'
+record_make_rhs ::= 'record.make' '%'NAME '{' field_init_list? '}'
+field_init_list ::= NAME ':' operand (',' NAME ':' operand)*
+raw_alloc_rhs   ::= 'raw_alloc' '<' type_tag '>' '(' operand ')'
+operand_list ::= operand (',' operand)*
+operand      ::= '%'NAME | NAME | 'move' '%'NAME | 'move' NAME | literal
 terminator   ::= 'br' LABEL paren_args?
                | 'cond_br' '%'NAME ',' LABEL paren_args? ',' LABEL paren_args?
                | 'switch' '%'NAME switch_table
@@ -25528,19 +25631,21 @@ op           ::= 'const.' PRIM
                | 'eq'  | 'ne'  | 'lt'  | 'le'  | 'gt'  | 'ge'
                | 'cast.' PRIM '.' PRIM
                | 'tuple.make'  | 'tuple.get'
-               | 'record.make' | 'field.get'
-               | 'enum.make'   | 'enum.tag' | 'enum.payload'
-               | 'array.make'
-               | 'call' | 'call.dyn' | 'call.closure' | 'closure.make'
+               | 'field.get'
+               | 'enum.tag'    | 'enum.payload'
+               | 'call.closure'
                | 'clone' | 'drop'
-               | 'raw_alloc' | 'raw_free' | 'raw_read' | 'raw_write'
+               | 'raw_free' | 'raw_read' | 'raw_write'
 literal      ::= INT | FLOAT | 'true' | 'false' | STRING
 LABEL        ::= 'bb' INT                       // e.g. bb0, bb1, bb42
 BID          ::= 'B@' HEX+                      // the behavior's u32 handle (§14.6.3), in hex
 ```
-The `op` mnemonics above are the enumerated instruction set; typed variants
-(`add.i32`, `const.f64`, `cast.i32.i64`, …) are formed by suffixing the
-relevant `PRIM` per the prose above. `PRIM` and `type_tag` are defined by the
+The `op` mnemonics above are the simple-op instruction set (the composite
+forms — `call`, `call.dyn`, `closure.make`, `enum.make`, `array.make`,
+`record.make`, `raw_alloc` — are the `instr_rhs` alternatives above, each
+carrying its own operand syntax); typed variants (`add.i32`, `const.f64`,
+`cast.i32.i64`, …) are formed by suffixing the relevant `PRIM` per the prose
+above. `PRIM` and `type_tag` are defined by the
 module grammar (§15.4.6); `literal` matches the same lexemes as the module
 grammar's `value` (with `FLOAT` additionally permitted for floating-point
 constants).

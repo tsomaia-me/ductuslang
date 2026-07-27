@@ -1,0 +1,25 @@
+# Part 3 — Ruling Record
+
+*Authority for Part 3 ruling-queue executions. Consent batch authority: part3-consent-approved.md. Evidence: part3-survey-report.md.*
+
+## Batch 1 — Piping, Interpretation & Dispatch (owner, 2026-07-20)
+
+- **I-01: Option A.** The interpretation bootstrap is a plain call — `render(song)` — the effect-kind method on the LEFT, dispatching on the Subject-typed argument. `|>`'s third dispatch case RETIRES: two dispatch cases remain (operator call, effect call); node-reference LHS is illegal. Sites: 029-65 (third case removed), 029-106 (third alternative removed), SPEC §13.17.7 Case 3 (rewritten to a short illegality note + call-form pointer), the garbled Case-3 comment (dies), 005-114/120/121 "`|>` bootstrap" phrasing → effects:-clause call form, 017-273 example stands as-is. Liveness unaffected (node-as-effect-argument is already a reach-edge).
+- **I-24: Subject-less effect-kind methods ALLOWED** (owner overrules the mandatory recommendation): an effect-kind method may take a Subject-typed first parameter (interpretation obligation — the interpreter pattern) or omit it (trait-associated effect). Emerging design questions (satisfaction gate, invocation form, effects-local boundary) to be pinned before execution — presented as Q1–Q3.
+- **I-24 rider: α.** 005-51 conforms to SPEC practice: "effect-specific" means invocation form (invoked as an effect, never a value call), NOT satisfied-only-by-effect-kinds. The replacement satisfaction gate is Q1's answer. (Disclosure on record: 005-51 vs SPEC §3.1.1.1 + `fulfill Renderable for Song` was a live LOG↔SPEC contradiction found during Batch 1.)
+- **I-57: REJECT** — containment-acyclicity law: a type's transitive type-emitted containment may not include itself; compile error, named diagnostic class (default `type_emission_cycle`), catching direct and transitive cycles. Loops live in topology (Circularity wires), not containment.
+- **I-57 rider: ADOPTED** — `subject` becomes the fourth admissible self-sourced wire destination form (own child / module-level instance / WeakHandle attr / subject): static, counts against the type's own incoming budget, self-edge subject to the Circularity cycle check. Makes self-loop wires type-intrinsic (`Loops/500ms: subject`).
+- **DP-13: (a)** — a runtime `match` in `Type[…]` position is legal iff every arm resolves to one concrete type; otherwise compile error directing to `given` (or a compile-time scrutinee). No runtime type tags; no-erasure stands.
+
+## Batch 1 design completion — Q rulings (owner, 2026-07-20)
+
+- **Q2: (i)** — Subject-less effect-kind methods invoke ONLY as path-qualified effects:-clause entries: `<TypePath>::<method>(args)` where TypePath is a concrete type or in-scope generic parameter; bare-name and trait-path-alone forms rejected. Subject-ful methods invoke as `method(subject_arg, ...)` per I-01-A, dispatching on the argument.
+- **Q3: PINNED** — new entry: selecting which effect type a node instantiates via a generic parameter or a `Type[C]` slot does not violate effects-are-local; instantiation site, lifecycle, and ownership remain the local `effects:` clause. Both routes admitted.
+- **Q4: confirmed** — observed:-contract projection is form-independent (contract cells only, both method forms).
+- **Q5: confirmed** — fulfill mechanics unchanged for Subject-less bodies (default bodies, auto-satisfaction verbatim; only the Subject parameter absent).
+- **Q1: CLOSED via Pins A+B** (owner-proposed design, confirmed 2026-07-20; executes as recorded unless vetoed):
+  - **Pin A** — `Subject` in effect-kind methods ranges over ANY nominal type; NO fulfiller kind gate exists. The body's capabilities typecheck against the subject's actual kind (a node subject walks `.exposition`; a record subject reads fields; a `fulfill` whose body uses capabilities the subject's kind lacks fails ordinary type checking). Supersedes the i-open/i-graph fork; this is 005-51's replacement law. Subject-ful methods on records = trait-polymorphic effects over values; subject binds per standard effect-parameter rules.
+  - **Pin B** — invocation closure: call form `method(subject_expr, …)` for all subjects (dispatch on the argument's type, per I-01-A); `x |> method` admissible exactly when `x` is a reactive cell — i.e. value subjects only, as ordinary Case 2 with trait-resolved callee (graph references are not cells, so graph subjects are call-form only; no third dispatch case returns); Subject-less methods are path-qualified effects:-entries per Q2-(i).
+- **effects:-clause challenge (owner stress test): RETAINED, settled for now** — the clause survives as the discriminator for the body's only keywordless entry family AND the enforced world-boundary inventory; the per-entry-keyword rival was examined and rejected (spends the inventory guarantee to buy adjacency).
+
+Execution note: Batch 1 executes as ONE batch (I-01 + I-24/α + Pins A/B + Q2/Q3 entries + I-57 both halves + DP-13), QUEUED BEHIND the consent batch (same files; orchestrators never run concurrently on the corpus).
