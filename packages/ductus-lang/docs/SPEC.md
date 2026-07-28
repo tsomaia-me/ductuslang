@@ -1274,9 +1274,11 @@ Eq for i32` block, `Subject` resolves to `i32`, so the method's signature become
 
 Trait method signatures name their receiver parameter explicitly; there is
 no implicit receiver. The first parameter's type is conventionally `Subject`
-for methods that operate on instances, but trait methods may have any parameter
-list — including no `Subject` parameter at all (for "associated functions" like
-constructors). The instance value `subject` (§13.7.7) is reserved for reactive
+for methods that operate on instances, but value (`fn`) trait methods may have
+any parameter list — including no `Subject` parameter at all (for "associated
+functions" like constructors). Effect-kind methods (§3.1.1.1) are narrower:
+exactly two forms exist — a `Subject`-typed first parameter, or no `Subject`
+parameter at all. The instance value `subject` (§13.7.7) is reserved for reactive
 context inside node and wire bodies (§13) and is not bound here.
 
 **Ownership conventions in trait method signatures.** Trait method
@@ -1302,8 +1304,27 @@ trait Renderable:
 ```
 
 - An effect-kind method's body is an effect body (§13.19): it may place
-  child effects and declare `desired:` / `observed:` blocks. Its first
-  parameter is conventionally `Subject`-typed (the interpreted value).
+  child effects and declare `desired:` / `observed:` blocks.
+- **Two forms.** An effect-kind method either takes a **`Subject`-typed
+  first parameter** — an interpretation obligation over a subject of any
+  nominal kind — or omits the `Subject` parameter entirely — a
+  **trait-associated effect**.
+- **Invocation.** A Subject-ful method is invoked as a *call* in an
+  `effects:` clause — `render(song)` — dispatching on the argument's
+  type. When the subject is a value held in a reactive cell, `x |>
+  method` is additionally admissible: an ordinary effect call (§13.17.7)
+  whose callee is trait-resolved on the LHS's value type. A graph
+  subject — a node or wire reference — is call-form only: graph
+  references are not cells and never stand as a `|>` left-hand side. A
+  Subject-less method is invoked only as a path-qualified entry
+  `<TypePath>::<method>(args)`, where `<TypePath>` names a concrete type
+  or an in-scope generic parameter; a bare-name entry and a trait-path
+  entry are rejected.
+- **No fulfiller kind gate.** The subject may be of any nominal kind.
+  The method body's capability uses typecheck against the subject's
+  *actual* kind: a node subject walks `.exposition` (§13.3.7.7), a
+  record subject reads fields, and a `fulfill` whose body needs
+  capabilities the subject's kind lacks fails ordinary type checking.
 - An **`observed:` contract block** on the method lists the output cells
   the method's fulfillments must expose. The contract is a **minimum**: a
   fulfillment may expose *more* cells, but a consumer that projects
@@ -1317,10 +1338,10 @@ trait Renderable:
   rules as any other method. Membership is collision-namespace membership
   only: an effect-kind method is never an ordinary dispatch candidate
   (§3.4.1).
-- **Effect-specific.** An effect-kind trait method is effect-specific: it
-  is invoked as an effect (in `effects:`, bootstrapped via `|>`, §13.19),
-  not as an ordinary function call. A trait carrying effect-kind methods
-  is not thereby a general-purpose value trait.
+- **Effect-specific.** An effect-kind trait method is effect-specific in
+  *invocation form*: it is invoked as an effect in `effects:` clauses
+  (§13.19), never as an ordinary value call. A trait carrying
+  effect-kind methods is not thereby a general-purpose value trait.
 
 #### 3.1.2 Associated types
 
@@ -2118,8 +2139,8 @@ The language uses uniform function call syntax: a function whose first
 parameter is of type `T` is callable in three equivalent forms. Value
 (`fn`) trait methods participate in this uniformly; the three forms apply
 to value methods only. An effect-kind method (§3.1.1.1) is not callable
-through any of them — it is invoked in `effects:` clauses or via the `|>`
-bootstrap (§13.19). Given a `fulfill Display for Person` block
+through any of them — it is invoked as an effect in `effects:` clauses
+(§13.19). Given a `fulfill Display for Person` block
 containing `fn display(value: Person) -> string`, any of the following are
 valid calls (and equivalent):
 
@@ -2160,10 +2181,9 @@ resolution algorithm prioritizes trait implementations over free functions:
    T for X` blocks.
 2. **Exclude effect-kind candidates.** Drop from the candidate set every
    candidate whose trait method is effect-kind (§3.1.1.1): an effect-kind
-   method is invoked only as an effect — in an `effects:` clause or
-   bootstrapped via `|>` (§13.19) — never as an ordinary bare-name or
-   method call. Dropped candidates are remembered for diagnostics
-   (step 9).
+   method is invoked only as an effect in an `effects:` clause (§13.19),
+   never as an ordinary bare-name or method call. Dropped candidates are
+   remembered for diagnostics (step 9).
 3. **Collapse candidates from the same parent trait.** Per §3.2.1, multiple
    candidates may arise when a type satisfies several generic instantiations
    of the same parent trait (e.g., `From[i32]` and `From[i64]` both
@@ -2201,11 +2221,11 @@ resolution algorithm prioritizes trait implementations over free functions:
    receiver's type, the unmatched name, and any near-matches the compiler
    identified. When step 2 dropped effect-kind candidates and nothing else
    matched, the diagnostic instead names the method as an effect-kind
-   method and directs the caller to the effect invocation forms — an
-   `effects:` clause or the `|>` bootstrap (§13.19): `song.render()`,
-   where `render` is an effect-kind method of a fulfilled trait, is
-   rejected with an error of the form "`render` is an effect; invoke it
-   in an `effects:` clause or via `|>`".
+   method and directs the caller to effect invocation in an `effects:`
+   clause (§13.19): `song.render()`, where `render` is an effect-kind
+   method of a fulfilled trait, is rejected with an error of the form
+   "`render` is an effect; invoke it in an `effects:` clause (e.g.
+   `render(song)`)".
 
 The algorithm is deterministic: §3.2.1's parent-trait collision rule —
 over the type's effective fulfilled-trait set, including auto-satisfied
@@ -4079,7 +4099,7 @@ grained-plus-umbrella pattern from §3.6 for the numeric domain.
 > names three unrelated things in Ductus; they never conflict but are worth
 > distinguishing once:
 > - **Operator application** — the `|>` pipe operator (§13.17) that applies
->   a reactive transform or bootstraps an interpretation (§13.19). This is an
+>   a reactive transform or an effect (§13.19). This is an
 >   *application* form.
 > - **Operator traits** — the fine-grained traits below (`Add::add`,
 >   `Sub::sub`, …, §4.9.1) that back the *arithmetic/comparison operator
@@ -4934,10 +4954,15 @@ for it (`ListView | item=PostCard` infers `~F = PostCard`). Two anonymous
 hold different types; sharing requires a named parameter (`[T: Drivable]`
 with `Type[T]` in two places forces them equal).
 
-Selecting among type values of the *same* slot type at runtime is allowed
-(`match …` yielding a `Type[C]` picks one). Selecting among *different*
-node structures at runtime is `given` (§13.9.13), not a type value — which
-is why type values never require erasure.
+A `match` over a *runtime* scrutinee in `Type[…]` position is legal iff
+every arm resolves to the **same concrete type** — the arms unify to one
+type, so the `match` selects nothing at runtime. Arms resolving to
+different concrete types are a compile error, diagnostic class
+`divergent_runtime_type_arms`, whose message directs to `given`
+(§13.9.13) — the construct for selecting among different node structures
+at runtime — or to a compile-time scrutinee (where per-arm resolution to
+different types is ordinary monomorphization). This is why type values
+never require erasure: no runtime value ever carries a type choice.
 
 #### 5.7.4 Storage
 
@@ -13422,14 +13447,17 @@ value slot.
 - Generic constraints on the slot behave as standard generic bounds
   (§3.1, §5.1, §5.7).
 
-A `Type[…]` value is a *value*, so a value conditional may select among
-type values of the same slot type: `match scrutinee: …` yielding a
-`Type[C]` chooses *one* type, which the receiving node then places once.
-This is distinct from the `given` block (§13.9.13), which gates *structure*:
-`given` builds every arm's subtree and switches which is live, freezing the
-others. Use `match`→`Type[C]` when exactly one of several types should ever
-be placed; use `given` when all alternatives should be built and kept warm,
-switching by discriminant.
+A `Type[…]` value is a *value*, so a value conditional may appear in
+`Type[…]` position — under the unification rule of §5.7.3: with a
+runtime scrutinee, every arm must resolve to the *same* concrete type
+(arms resolving to different concrete types are a compile error, class
+`divergent_runtime_type_arms`, directing to `given` or to a compile-time
+scrutinee). Genuine runtime selection among alternatives is the `given`
+block (§13.9.13), which gates *structure*: `given` builds every arm's
+subtree and switches which is live, freezing the others. Use a
+compile-time-scrutinee `match`→`Type[C]` when exactly one of several
+types should ever be placed; use `given` when all alternatives should be
+built and kept warm, switching by discriminant.
 
 #### 13.2.11 The `observe` expression
 
@@ -14101,6 +14129,24 @@ contains its own internal structure. The type reaches its emitted children
 the way it reaches any written structure: by having written it (and, where
 needed, by the names it gives them).
 
+**Containment acyclicity.** A type's transitive *type-emitted*
+containment may not include the type itself. If `A`'s exposition emits
+an instance of `B`, `B`'s an instance of `C`, and any such chain
+returns to `A` — including the direct `A`-emits-`A` case — the program
+is rejected at compile time with diagnostic class
+`type_emission_cycle`; the check runs over the static type-emission
+graph and catches direct and transitive cycles. This is what
+guarantees type-emitted expansion terminates: the explicit-act
+argument that bounds caller-supplied self-recursion (§13.3.3 — each
+placement is an explicit user act, so the compiler walks finite
+placement trees) does not apply here, because a type-emitted
+self-instance would expand unconditionally at every elaboration step
+with no user act per level. Termination on the caller-recursion side
+keeps its explicit-act justification; termination on the type-emission
+side is guaranteed by this acyclicity rule. Self-loops in the reactive
+graph are expressed in topology — wires, cycle-checked per §13.11.5 —
+never in containment.
+
 **Hot reload.** When the iterable's compile-time value changes across
 a reload (e.g., a `const N` rises from 8 to 16, or the const-generic
 argument at a placement site changes), §13.15.2's path-based
@@ -14659,7 +14705,7 @@ A self-sourced wire placement uses the ordinary placement syntax of
 §13.8.4, fixed by the *type* rather than supplied by a caller. The source is
 always the enclosing instance.
 
-**Destinations must be nameable from the type's scope** (§13.7.1). Three forms
+**Destinations must be nameable from the type's scope** (§13.7.1). Four forms
 are admissible:
 
 - A **child of the node** (scope 2) — a named child instance, or a view element
@@ -14678,6 +14724,18 @@ are admissible:
   admits must declare a `dynamic incoming` wire-view of that type
   (§13.3.4). A statically-placed `Handle[T]` attr destination does not
   freeze — its referent is fixed for the handle's lifetime.
+- **`subject`** (§13.7.7) — the enclosing instance itself: a
+  **self-edge**, the wire looping the instance back onto itself.
+
+  ```
+  Loops/500ms: subject
+  ```
+
+  Static — the destination always points — and it counts against the
+  type's **own** incoming budget: the wire contributes to the type's
+  `incoming` accounting for its wire type exactly as a wire placed by
+  any caller would (§13.3.4). The self-edge enters topology-cycle
+  analysis (§13.11.5) like any other edge.
 
 ```
 wire Drives:
@@ -15539,8 +15597,9 @@ It is parallel to, but distinct from, `expose:` (§13.3.7): `expose:`
 declares **topology** (what the node *is*), `effects:` declares
 **side effects** (what the node *does*). The two never mix.
 
-**Entries.** Each entry instantiates an effect via a `|>` pipe chain
-(Case 2, §13.17.7). An entry may be **named** or **anonymous**:
+**Entries.** Each entry instantiates an effect — via a `|>` pipe chain
+(Case 2, §13.17.7) or the constructor-call form (§13.19.8). An entry
+may be **named** or **anonymous**:
 
 ```
 node App:
@@ -15562,6 +15621,23 @@ elsewhere by flat access `name.field` (§13.19.7):
   effects:
     f = url |> fetch
 ```
+
+**Interpretation bootstrap.** An interpretation root is an ordinary
+entry here: an effect-kind trait method (§3.1.1.1) invoked as a call,
+dispatching on its Subject-typed argument:
+
+```
+  effects:
+    audio = render(song).audio |> audio_out
+```
+
+`render(song)` is the effect call — `song`'s type selects the
+fulfillment whose `render` runs, and the walk of `song`'s
+`.exposition` (§13.3.7.7) starts there; `.audio` projects an observed
+cell (§13.19.7); `|> audio_out` pipes it into a downstream effect
+(§13.17.7). Projection is written explicitly; there is no new
+top-level construct. A node reference never stands on the left of `|>`
+(§13.17.7).
 
 **`when` / `given` / `repeat`.** The clause admits the same structural
 constructs as `expose:`, with effect entries in place of node
@@ -15589,7 +15665,11 @@ passed into a node from outside — there are no effect children and no
 effect parameters. A caller influences a node's effects only through
 **data in** (signals/attrs/streams supplied as parameters) and
 **streams out** (the child exposes an outgoing stream that the parent
-consumes in the parent's *own* `effects:`).
+consumes in the parent's *own* `effects:`). Selecting *which* effect
+type a node instantiates through a generic type parameter or a
+`Type[C]`-typed slot (§5.7, §13.19.9) does not breach this locality:
+the caller supplies a *type*, never an effect instance; the
+instantiation site, lifecycle, and ownership remain this clause.
 
 **Effect-to-effect data flow.** One named effect may take another's
 *observed* cell as its piped input — ordinary data flow:
@@ -17212,7 +17292,7 @@ module-level instances, node references bound as effect arguments
 envelopes of its wires. (The subtree is the placements declared
 in the root's body, recursively, §13.8.3; wire placement,
 §13.8.4; handles, §13.3.6.2; effect-argument node references,
-§13.17.7; wire-candidate envelopes, §13.11.5.) The **live graph** is
+§13.3.8; wire-candidate envelopes, §13.11.5.) The **live graph** is
 the union of all root closures, statically computable: only instances
 in the live graph are instantiated and wired into the runtime graph.
 
@@ -18862,11 +18942,15 @@ must be the **last** arm; a non-last `default:` is a compile error (as for
 
 **Distinction from value-selecting a `Type[…]`.** Selecting a single
 node/wire *type value* with `match` (§13.2.10) and gating structure
-with `given` are different operations, both legal: `match` chooses one
-type, which is then placed once; `given` builds every arm's subtree and
-switches which is live, freezing the others. Use `match`→`Type[C]` when
-exactly one of several types should ever be placed; use `given` when all
-alternatives should be built and kept warm, switching by discriminant.
+with `given` are different operations, both legal: a `match` in
+`Type[…]` position resolves to one type — under §5.7.3's unification
+rule, a runtime scrutinee requires every arm to resolve to the same
+concrete type, so only a compile-time scrutinee selects among
+different types — which is then placed once; `given` builds every
+arm's subtree and switches which is live, freezing the others. Use a
+compile-time-scrutinee `match`→`Type[C]` when exactly one of several
+types should ever be placed; use `given` when all alternatives should
+be built and kept warm, switching by discriminant.
 
 ### 13.10 Reactive Evaluation
 
@@ -20730,8 +20814,7 @@ a source cell on the left to a destination on the right. The kind
 of coupling — apply-and-bind or forward-into — is determined by
 the RHS's kind.
 
-**Three dispatch cases**, distinguished by the RHS (and, in the third
-case, by the LHS):
+**Two dispatch cases**, distinguished by the RHS:
 
 **Case 1: RHS is an operator call** (§13.17). The operator is
 instantiated; the LHS is bound to its first positional parameter.
@@ -20752,34 +20835,22 @@ effects:
   f = current_url |> fetch
 ```
 
-**Case 3: LHS is a node reference and RHS is an effect-kind trait
-method** whose first (Subject-typed) parameter accepts that node
-(§3.1.1.1, effect-kind trait methods). This is the *interpretation
-bootstrap* form: an interpretation root is expressed by piping a node
-reference into an effect-kind trait method that walks the node's
-`.exposition` (§13.3.7). The method is dispatched on the Subject type
-of the node reference; the LHS node reference binds to the method's
-Subject-typed first parameter. The result is the effect instance
-value the method evaluates to, accessed per §13.19.7:
-
-```
-effects:
-  audio = render(song).audio |> audio_out
-  // render(song): a node reference of Subject type Song is piped into
-  // an effect-kind trait method that interprets it. Projection of the
-  // walked result is written explicitly (here `render(song).audio`).
-```
-
-This case is distinct from Case 2: the RHS is a *trait method* selected
-by the Subject type, not a free effect constructor, and the LHS is a
-*node reference* (a graph member held by borrow, §13.3.6.1), not an
-arbitrary reactive cell. Dispatch keys off both operands — a
-node-reference LHS with an effect-kind-trait-method RHS. The node
-reference joins the root closure (§13.8.1) as a borrow
-(not a cell store), and the effect is still hosted in the enclosing
+**No third case — node references do not pipe.** A node reference (a
+graph member held by borrow, §13.3.6.1) is illegal as the `|>`
+left-hand side: graph references are not reactive cells (§13.17.12 for
+the diagnostic). Interpretation is bootstrapped by *calling* an
+effect-kind trait method (§3.1.1.1) in an `effects:` clause —
+`render(song)` — an ordinary effect call dispatching on the
+Subject-typed argument's type (§13.3.8); projection of the result is
+written explicitly (`render(song).audio |> audio_out`). An effect-call
+RHS may itself name an effect-kind trait method: when the LHS is a
+reactive cell, the callee is trait-resolved on the LHS's *value type*
+and the entry is an ordinary Case-2 effect call. The node reference
+bound as the call's argument joins the root closure (§13.8.1) as a
+borrow (not a cell store), and the effect is hosted in the enclosing
 node's `effects:` clause.
 
-LHS rules common to Cases 1 and 2:
+LHS rules, common to both cases:
 
 - LHS must be an expression of a reactive cell kind — a value cell
   (`signal T`, `derived T`, `recurrent[N] T`, i.e. any `cell T` per
@@ -20975,15 +21046,23 @@ error: `|>` requires an operator or effect on the right-hand side
   hint: use function call syntax: `some_fn(0.0)`
 ```
 
-The `|>` RHS admits three dispatch targets (§13.17.7): an operator call
-(Case 1), an effect call (Case 2), and — when the LHS is a node
-reference — an effect-kind trait method (Case 3, the interpretation
-bootstrap). A `fn` RHS is none of these and remains the error above. The
-Case-3 target is only in scope when the LHS is a node reference and the
-RHS names an effect-kind trait method (§3.1.1.1) with a Subject-typed
-first parameter accepting that node; an effect-kind trait method piped a
-non-node reactive cell falls back to the ordinary operator/effect
-dispatch and is diagnosed accordingly.
+The `|>` RHS admits two dispatch targets (§13.17.7): an operator call
+(Case 1) and an effect call (Case 2). A `fn` RHS is neither and remains
+the error above.
+
+**Node-reference LHS:**
+
+```text
+error: a node reference cannot be piped with `|>`
+  --> audio = song |> render
+              ^^^^ `song` is a node reference, not a reactive cell
+  hint: invoke the effect-kind method as a call in an `effects:` clause:
+        `render(song)`
+```
+
+A node reference is not a reactive cell (§13.3.6.1) and never stands as
+a `|>` left-hand side; interpretation is bootstrapped by the call form
+(§13.17.7, §13.3.8).
 
 **Operator missing first positional parameter:**
 
@@ -23464,6 +23543,14 @@ type-parameter-instantiation: a generic effect produces a distinct
 reconciler-registration key per concrete instantiation, allowing
 the host to dispatch on the resolved types.
 
+The effect *type* itself may be selected by the instantiating node's
+parameters: a generic type parameter or a `Type[C]`-typed slot (§5.7,
+§13.2.10) may carry which effect type an `effects:` entry
+instantiates. This does not breach effect locality (§13.3.8): the
+caller supplies a *type*, never an effect instance; the instantiation
+site, lifecycle, and ownership remain the local `effects:` clause of
+the instantiating node.
+
 #### 13.19.10 Visibility
 
 Effects follow the standard visibility model (§10): unmarked is
@@ -25421,9 +25508,9 @@ siblings of the same type at the same nesting depth (zero-based).
 
 **Interpreter-placed effect paths.** An effect that an interpretation
 places while walking a node's `.exposition` (the interpretation-bootstrap
-form, §13.17.7 Case 3) is path-identified exactly like a node-placed
+call form, §13.3.8) is path-identified exactly like a node-placed
 effect: its path is rooted at the *interpretation site* (the enclosing
-node's `effects:` clause where the bootstrap `|>` appears) and extends
+node's `effects:` clause entry where the bootstrap call appears) and extends
 through the walked instances, mirroring the node-placement path rules
 above. The same `:N` ordinal suffix applies to anonymous interpreter
 placements. This gives interpreter-placed effects stable hot-reload

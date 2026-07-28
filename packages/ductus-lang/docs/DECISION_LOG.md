@@ -358,7 +358,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 004-155. A const-generic default is used when the argument is neither supplied nor inferred and may itself be an expression referencing earlier parameters: `const N: usize = A + B`. (§2.5.7)
 004-156. A const-generic default expression obeys the const-generic expression rules: symbolic where it references unbound parameters, concrete once they are known. (§2.5.7)
 
-## 005. Traits — 246 Rules
+## 005. Traits — 247 Rules
 
 005-1. A trait declares an interface — method signatures, associated types, and requirements — that types explicitly conform to and provide implementations for. (§3)
 005-2. The trait system is nominal throughout: a type satisfies a trait only via an explicit conformance declaration, never by accidental structural match. (§3)
@@ -410,7 +410,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-48. Default type parameters are applied at name-resolution time; by code generation every reference is a fully-specified trait instance. (§3.1.6.1)
 005-49. Traits may declare required members that implementing types must provide: `attr`, `const`, `derived`, `recurrent`, and `stream` declarations, and — for wire types — `from` and `to` endpoints. (§3.1.7)
 005-50. A trait that declares any required cell or endpoint is kind-specific: a node trait, or a wire trait when it declares endpoints. (§3.1.7)
-005-51. A trait that declares an effect-kind method is effect-specific and may be satisfied only by an effect kind; kind-agnosticism holds only for traits with no effect-kind methods — a trait declaring only value methods and associated types is kind-agnostic and may be satisfied by any kind. (§3.1.7)
+005-51. A trait that declares an effect-kind method is effect-specific in invocation form only: the method is invoked as an effect in `effects:` clauses, never as a value call. There is no fulfiller kind gate — the subject may be of any nominal kind, and the method body's capability uses typecheck against the subject's actual kind: a node subject walks `.exposition`, a record subject reads fields, and a `fulfill` whose body needs capabilities the subject's kind lacks fails ordinary type checking. (§3.1.1.1)
 005-52. A kind-specific trait is usable as the instantiation contract of a `Type[…]` value: the receiver of a `Type[ThatTrait]` may rely on exactly the members the trait declares. (§3.1.7)
 005-53. Required cells in a trait body are written with the same syntax they use in a node or wire body, with optional defaults: `attr enabled: bool = true`. (§3.1.7)
 005-54. A wire trait may declare required endpoints with `from: Type` and `to: Type`: `from: Driver`. (§3.1.7)
@@ -427,7 +427,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-65. A trait that leaves no obligation for a `fulfill` body to discharge — no abstract method, no undefaulted associated type, no uncovered `observed:` contract — and declares no required cell or endpoint needs no `fulfill` block: it auto-satisfies once its requirements are met. A marker trait is claimed explicitly via a bodiless `fulfill`. (§3.2)
 005-66. At most one `fulfill` block exists per (trait, type) pair program-wide. Its legal sites are exactly the modules the orphan rule admits — a module declaring the trait, a module declaring the type's head constructor, or a module covering the pair through one of its own local types appearing as a generic argument or tuple element of the fulfilled type; if more than one admissible module writes a `fulfill` for the same pair, it is a compile error naming every offending site. (§3.2)
 005-67. A bodiless `fulfill Trait for Type` — no colon, no body, an optional `where` clause permitted — is legal. It is the marker-trait claim form, the conditional-marker carrier (`fulfill Copy for Pair[T] where T: Copy`), the nothing-to-override form for a trait whose every method has a default body, and an optional explicit pin for an auto-satisfied trait. (§3.2)
-005-68. A trait may declare an effect-kind method with the form `effect name(params):` whose first parameter is `Subject`-typed; an effect-kind method declares an interpretation obligation that a fulfilling type discharges. (§3.1.1)
+005-68. A trait may declare an effect-kind method, written `effect name(params):`, in exactly one of two forms: a `Subject`-typed first parameter — an interpretation obligation over a subject of any nominal kind, discharged by a fulfilling type — or no `Subject` parameter at all — a trait-associated effect. (§3.1.1)
 005-69. An effect-kind trait method may declare an `observed:` contract block listing the required output cells it exposes; the contract is a MINIMUM — a fulfill may expose more cells than the contract lists. (§3.1.1)
 005-70. A consumer projecting through an effect-kind trait sees only the cells named in the trait's `observed:` contract, never the additional cells a fulfill may expose. (§3.1.1)
 005-71. A `fulfill` block with a non-empty body is required exactly where the trait leaves an obligation only a fulfill can discharge: any abstract method, direct or inherited (a method lacking a default body), any undefaulted associated type, or any effect-kind method whose `observed:` contract is not fully exposed by its own default body. A trait declaring any required cell or endpoint never auto-satisfies: its conformance always takes an explicit `fulfill` claim — bodiless when nothing else is owed — and the claim triggers the compiler's check that the implementing body supplies every required member. (§3.2)
@@ -473,14 +473,14 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-111. Auto-satisfied traits remain nominal in constraint checking: a bound like `T: Numeric` is checked against the trait's name, verifying `T`'s satisfied set includes everything the trait requires. (§3.3.5)
 005-112. Auto-satisfaction is the only point of structural satisfaction in the trait system; any trait with one or more abstract methods requires an explicit `fulfill`. (§3.3.5)
 005-113. `fulfill` blocks have no visibility specifier; an implementation is visible exactly where the trait and the type are jointly visible — the intersection of their visibility scopes. (§3.3.6)
-005-114. Under uniform function call syntax, a value (`fn`) trait method is callable in three equivalent forms: `person.display()`, `display(person)`, `Display::display(person)`; the three forms apply to value methods only — an effect-kind method is invoked in `effects:` clauses or via the `|>` bootstrap, never through these forms. (§3.4)
+005-114. Under uniform function call syntax, a value (`fn`) trait method is callable in three equivalent forms: `person.display()`, `display(person)`, `Display::display(person)`; the three forms apply to value methods only — an effect-kind method is invoked as an effect in `effects:` clauses, never as a value call through these forms. (§3.4)
 005-115. The conventional call form requires the function name to be in scope: `display(person)` needs `display` in scope. (§3.4)
 005-116. Operator application uses the `|>` token and is not a function-call form. (§3.4)
 005-117. `>>` is bitwise right shift only. (§3.4)
 005-118. The trait-path form `Trait::method` requires no `use` import; the path itself satisfies the in-scope requirement for dispatch. (§3.4)
 005-119. The trait-path form does not override visibility: the trait must still be visible at the call site under module visibility rules. (§3.4)
 005-120. Resolution of a bare-name call `f(x)` or method-call `x.f()` prioritizes trait implementations over free functions; effect-kind methods are excluded from both call forms as an explicit resolution step — they are never ordinary dispatch candidates. (§3.4.1)
-005-121. The trait-impl search collects a candidate `T::f` for every trait `T` reachable in the current scope (imported or accessible by path) such that the receiver's type fulfills `T` and `T` declares a method named `f`; candidates that are effect-kind methods are dropped, and when the search dropped only effect-kind candidates and nothing else matches, the error names the method as an effect and directs the caller to `effects:` clauses or `|>` bootstrap invocation. (§3.4.1)
+005-121. The trait-impl search collects a candidate `T::f` for every trait `T` reachable in the current scope (imported or accessible by path) such that the receiver's type fulfills `T` and `T` declares a method named `f`; candidates that are effect-kind methods are dropped, and when the search dropped only effect-kind candidates and nothing else matches, the error names the method as an effect and directs the caller to effect invocation in `effects:` clauses. (§3.4.1)
 005-122. Candidates from the same parent trait collapse into one logical method parameterized by the trait's generic arguments. (§3.4.1)
 005-123. Disambiguation among generic instantiations of one parent trait uses call-site context — argument types, expected return type, explicit turbofish — exactly as for generic function dispatch. (§3.4.1)
 005-124. A matching trait-impl candidate wins over a same-named in-scope free function, which is shadowed at that call site and callable only via path qualification: `some_module::f(x)`. (§3.4.1)
@@ -606,6 +606,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-244. Sealing composes as two independent checks: sealing a trait restricts fulfillment to the trait's module; sealing a type restricts conformance to the type's module; a `fulfill` block must pass both. (§3.7.6)
 005-245. Grammar: `FulfillBody := ( NEWLINE INDENT FulfillBodyItem+ DEDENT ) | NEWLINE` — the `NEWLINE` alternative is the bodiless `fulfill`, which may carry a `where` clause on its head. (§3.3)
 005-246. Auto-satisfaction must be grounded: it applies only to a trait with at least one satisfied requirement or defaulted member for the compiler to check. A completely empty trait — no methods, no associated types, and no `requires` clauses — never auto-satisfies; its conformance always takes an explicit bodiless `fulfill` claim, which is what makes a marker claim load-bearing rather than redundant. A pure-requirement trait — empty of members but carrying `requires` clauses — auto-satisfies when its requirements hold. (§3.3.5)
+005-247. An effect-kind method with no `Subject` parameter is invoked only as a path-qualified `effects:`-clause entry `<TypePath>::<method>(args)`, where `<TypePath>` names a concrete type or an in-scope generic parameter; a bare-name entry and a trait-path entry are rejected. (§3.1.1.1)
 
 ## 006. Calls & Argument Forms — 34 Rules
 
@@ -956,7 +957,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 008-66. Each supply site picks a concrete type and monomorphizes the enclosing type for it: `ListView | item=PostCard` infers `~F = PostCard`. (§5.7.3)
 008-67. Two anonymous `Type[C]` slots desugar to two independent parameters and may hold different types. (§5.7.3)
 008-68. Forcing two type-value slots to hold the same type requires a named parameter used in both: `[T: Drivable]` with `Type[T]` in two places. (§5.7.3)
-008-69. Runtime selection among type values of the same slot type is allowed: a `match` may yield a `Type[C]`. (§5.7.3)
+008-69. A `match` over a runtime scrutinee in a `Type[…]` position is legal iff every arm resolves to the same concrete type; arms resolving to different concrete types are a compile error, diagnostic class `divergent_runtime_type_arms`, whose message directs to `given` or to a compile-time scrutinee. (§5.7.3)
 008-70. Runtime selection among different node structures is the role of `given` (§13.9.13), not of type values. (§5.7.3)
 008-71. A type value may be stored in persistent slots: record fields, attrs, and cells. (§5.7.4)
 008-72. Whatever a receiver does with a `Type[C]` value — construct it, place it — must be justified by what `C` guarantees. (§5.7.5)
@@ -2126,7 +2127,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-239. References a placed type captures (e.g., to the receiver's exposed attrs via its placement name) are bound by reference and re-read on per-commit re-evaluation. (§13.2.10.3)
 016-240. Cell allocation for a placed type happens once at placement, preserving the static node set of the static-graph rule. (§13.2.10.3)
 016-241. Generic constraints on a `Type[…]` slot behave as standard generic bounds. (§13.2.10.3)
-016-242. A value conditional may select among `Type[C]` values of the same slot type — `match` yielding a `Type[C]` chooses one type, which the receiver places once, unlike `given`, which builds every arm's subtree. (§13.2.10.3)
+016-242. A value conditional in `Type[C]` position obeys the runtime-arm unification rule — with a runtime scrutinee every arm must resolve to the same concrete type, so a `match` never selects among types at runtime; `given` is the construct that builds every arm's subtree and switches which is live, and a compile-time scrutinee is the route to placing exactly one of several types. (§13.2.10.3)
 016-243. `observe` is a reactive expression form that selects an active arm by which trigger most recently fired and evaluates that arm's expression reactively. (§13.2.11)
 016-244. An observe arm is an `on` clause listing one or more trigger cells, an optional `where` filter, an optional `as` binder, and a colon followed by the arm expression: `on T3 where C: expr_filtered`. (§13.2.11.1)
 016-245. A `default:` arm has no `on` clause; its expression supplies the observe's value while no `on` arm has yet activated. (§13.2.11.1)
@@ -2181,7 +2182,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-294. A value-kind observe never binds to a stream context — a signal never drives a stream implicitly; to derive events from a signal, cross explicitly and observe the resulting stream: `on sig->changes as e:`. (§13.2.11.6)
 016-295. In a stream-kind observe, a signal read inside an arm body is sampled at the moment of each firing and never drives: it contributes no firings and no re-evaluation between events — there is no implicit signal-to-stream conversion. (§13.2.11.3)
 
-## 017. Nodes & Views — 327 Rules
+## 017. Nodes & Views — 328 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed wires. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2318,7 +2319,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-133. A node type establishes self-sourced wires — every instance the `from` endpoint — by placing them inline in its structural sequence as exposition entries, directly or within an exposition-level `for` or `repeat`. (§13.3.4.2)
 017-134. There is no separate clause for self-sourced wires; each is written at the position where it engages. (§13.3.4.2)
 017-135. A self-sourced placement uses ordinary wire placement syntax; the source is always the enclosing instance. (§13.3.4.2)
-017-136. Self-sourced destinations must be nameable from the type's scope; exactly three forms are admissible: an own child, a module-level instance, or a `WeakHandle`-typed attr. (§13.3.4.2)
+017-136. Self-sourced destinations must be nameable from the type's scope; exactly four forms are admissible: an own child, a module-level instance, a `WeakHandle`-typed attr, or `subject` — the enclosing instance itself. A `subject` destination is static, counts against the type's own incoming budget, and the self-edge it creates is subject to the Circularity cycle check like any other edge. (§13.3.4.2)
 017-137. An own-child destination — a named child or a view element `name[i]` within the guaranteed minimum — is static: it counts as static supply at the child and can satisfy the child's incoming lower bounds. (§13.3.4.2)
 017-138. A module-level-instance destination is a fixed shared target and is static. (§13.3.4.2)
 017-139. A `WeakHandle`-typed attr destination gives per-instance parameterized wiring, configured at placement: `attr wheel: WeakHandle[Drivable]` with entry `Drives: wheel`. (§13.3.4.2)
@@ -2510,6 +2511,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-325. Operators and `repeat` are the only consumers of a `dynamic` view. (§13.4.4)
 017-326. View and named individual access coexist on the same instance: `c.oscs[0]` (indexed, legal under `+`) and `c.filters[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 017-327. `Portal[WeakHandle[T]]` resolves through a genuine two-step presence check, because the slot lifetime and the graph-entity lifetime are independent: the outer step is the portal's generation-guarded resolution to `Option[&WeakHandle[T]]`, yielding `None` when the slot has dropped or its stamped generation no longer matches; the inner step is the weak handle's own `Option[&T]` resolution, yielding `None` when the entity has dismounted while the slot is still live and holds a now-stale weak handle. Neither step subsumes the other, so the composed dynamic read cannot collapse to a single check. (§13.3.6.3)
+017-328. A type's transitive type-emitted containment may not include the type itself: an exposition that emits, directly or through any chain of type-emitted children, an instance of the emitting type is a compile error, diagnostic class `type_emission_cycle`; the check catches direct and transitive cycles. (§13.3.3.3)
 
 ## 018. Keyed Scopes & `repeat` — 145 Rules
 
@@ -3428,7 +3430,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 028-74. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-75. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
 
-## 029. Operators — 124 Rules
+## 029. Operators — 125 Rules
 
 029-1. An operator is a reusable, cell-allocating reactive transformation declared with the `operator` keyword. (§13.17)
 029-2. An operator takes `cell T` inputs, optionally plus non-reactive value parameters, and produces an output of any type, exposed to callers as a reactive cell. (§13.17)
@@ -3494,7 +3496,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 029-62. Each instance's internal cells, including synthesized cells from the body and `let` bindings, count against the runtime's cell-storage allocation and per-type pool sizing for dynamic-size cells. (§13.17.6.2)
 029-63. Recursion through operators is forbidden: an operator may not transitively instantiate itself. (§13.17.6.2)
 029-64. The compiler enumerates operator call sites at compile time, so the static operator-instance count is bounded and known. (§13.17.6.2)
-029-65. `|>` connects a source on the left to a destination on the right; the coupling kind dispatches on the RHS kind across three cases: an operator call, an effect call, or an effect-kind trait method whose first parameter is Subject-typed and whose LHS is a node reference. (§13.17.7)
+029-65. `|>` connects a source on the left to a destination on the right; the coupling kind dispatches on the RHS kind across exactly two cases: an operator call or an effect call. A node reference is illegal as the `|>` left-hand side. An effect-call RHS may name an effect-kind trait method: with a reactive-cell LHS the callee resolves by trait dispatch on the LHS's value type, and the entry is an ordinary effect call. (§13.17.7)
 029-66. With an operator-call RHS, `|>` instantiates the operator, binds the LHS to its first positional parameter, and yields the operator's declared output cell. (§13.17.7)
 029-67. With an effect-call RHS, `|>` instantiates the effect, binds the LHS to its first positional parameter, and yields the effect instance value. (§13.17.7)
 029-68. Effect instantiation via `|>` lives in a node's `effects:` clause: `f = current_url |> fetch`. (§13.17.7)
@@ -3535,7 +3537,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 029-103. Operators share the composition surface — `|>` pipe form, instance identity, parameter rules, generics, visibility — with effects. (§13.17.11)
 029-104. Operators produce or consume streams via the standard stream operators. (§13.17.11)
 029-105. Operators perform pure reactive transforms with no outside-world side effects; effects align program state with external reality. (§13.17.11)
-029-106. A normative diagnostic class rejects `|>` with a right-hand side that is neither an operator call, an effect call, nor an effect-kind trait method (with a Subject-typed first parameter and a node-reference left-hand side). (§13.17.12)
+029-106. A normative diagnostic class rejects `|>` with a right-hand side that is neither an operator call nor an effect call; a node-reference left-hand side is likewise rejected by a normative diagnostic class directing to the call form — invoke the effect-kind method as a call in an `effects:` clause with the node reference as its argument. (§13.17.12)
 029-107. A normative diagnostic class rejects piping into an operator that declares no positional parameter to bind. (§13.17.12)
 029-108. A normative diagnostic class rejects `attr` declarations inside an operator body. (§13.17.12)
 029-109. A normative diagnostic class rejects a final expression whose value type mismatches the operator's declared return value type. (§13.17.12)
@@ -3554,6 +3556,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 029-122. A carried operator may be generic, its type written with the generic parameters bound at the use site: `operator(cell T) -> derived T`. (§13.17.13)
 029-123. A carried operator composes in `|>` chains at the point it is instantiated, identically to a named operator. (§13.17.13)
 029-124. A value-reading operator or function parameter is annotated `cell T`, the umbrella channel spanning the value cells only — `signal T`, `attr`-as-`signal T`, `derived T`, and `recurrent[N] T`; an operator's computed value output is a `derived T`. A `stream T` has no current value and does not bind to a `cell T` parameter at all — the signature itself excludes it; a stream argument requires the explicit crossing `<stream>->latest(<fallback>)` or a `stream T`-annotated parameter. (§13.17.3)
+029-125. An effect-kind trait method with a `Subject`-typed first parameter is invoked as a call `method(subject_expr, …)` for a subject of any admissible kind, dispatching on the argument's type; when the subject is a value held in a reactive cell, `x |> method` is additionally admissible as an ordinary effect call whose callee is trait-resolved on the LHS's value type. A graph subject — a node or wire reference — is call-form only: graph references are not cells and never stand as a `|>` left-hand side. (§13.17.7)
 
 ## 030. Streams — 274 Rules
 
@@ -3832,7 +3835,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-273. The crossing names `changes` and `latest` form a closed grammar list, not reserved words: like directive names they are recognized only in postfix-arrow position, and both remain fully legal as ordinary identifiers and binding names everywhere else. (§13.18.9)
 030-274. When a `repeat` scope is dropped, a consumer instantiated inside that scope holding a cursor on a gate stream declared outside the scope releases that cursor as part of the same teardown that tears its per-element effects down with the element key; the outer gate stream's slowest-cursor retention then recomputes without the released cursor, with buffer entries retained only for the remaining cursors, so a gate buffer the departed consumer was pinning can evict and accept producer pushes again. This is the scope-drop parallel of the reload-time removed-consumer cursor drop — the same cursor release under a different trigger. (§13.18.12)
 
-## 031. Effects — 159 Rules
+## 031. Effects — 160 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -3993,6 +3996,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 031-157. An effect may mix top-of-body child-effect placements with host-written `observed:` channels; reconciler registration is required if and only if the effect's `observed:` block declares host-written channels (`signal`/`stream`); an interior effect whose contract is fulfilled entirely by child effects requires no reconciler. (§13.19.14)
 031-158. Every effect is a reconciliation contract, fulfilled by a host reconciler when it is a leaf effect, by child effects when it is an interior effect, or by both. (§13.19)
 031-159. When several lifecycle hooks are eligible for one effect instance at one commit boundary, they fire in the fixed per-instance order `teardown`, `create`, `resume`, `update`: `resume` strictly precedes any same-boundary `update` for a just-reopened instance, and `create` strictly precedes any same-boundary `update` for a just-created one. At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit. (§13.19.14)
+031-160. Selecting which effect type a node instantiates through a generic type parameter or a `Type[C]`-typed slot does not breach effect locality: the caller supplies a type, never an effect instance; the instantiation site, lifecycle, and ownership remain the local `effects:` clause of the instantiating node. (§13.19.9)
 
 ## 032. Implementation Model — 179 Rules
 

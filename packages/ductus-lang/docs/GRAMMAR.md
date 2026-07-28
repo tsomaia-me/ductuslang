@@ -4893,10 +4893,10 @@ EffectEntry       ::= NamedEffectEntry
                     | EffectsGivenBlock
                     ;  (§13.3.8, 031-114)
 
-NamedEffectEntry  ::= IDENT '=' Expr                             // RHS is a `|>` pipe chain
+NamedEffectEntry  ::= IDENT '=' Expr                             // RHS: `|>` pipe chain or effect call form
                     ;  (§13.3.8, 031-69)
 
-AnonEffectEntry   ::= Expr                                       // bare `<source> |> <effect>`
+AnonEffectEntry   ::= Expr                                       // bare `<source> |> <effect>` or effect call form
                     ;  (§13.3.8, 031-114)
 
 EffectsForEntry   ::= 'for' Pattern 'in' Expr NameClause? ':'
@@ -4927,12 +4927,15 @@ EffectsGivenBlock ::= GivenBlockExpr                             // arm bodies h
 //  side effect only and binds nothing. The two are syntactically
 //  distinguished by the presence of `IDENT '='` at the head of the
 //  line.
-// **RHS must be a `|>` pipe chain (per §13.3.8, §13.17.7).** The
+// **Entry-expression shape (per §13.3.8, §13.17.7, §13.19.8).** The
 //  expression on either entry's RHS is, in practice, a `PipeExpr`
 //  of §5.25 ending with an operator or effect call (`<source> |>
-//  <op> |> <effect>`). The grammar admits any `Expr`; the
-//  pipe-chain shape and the operator-or-effect terminator are
-//  post-parse semantic checks per §13.17.7.
+//  <op> |> <effect>`) or an effect constructor-call form
+//  (`fetch(current_url)`, `render(song)`,
+//  `<TypePath>::<method>(args)` — §13.19.8, §3.1.1.1). The grammar
+//  admits any `Expr`; the pipe-chain / call shape and the
+//  operator-or-effect requirement are post-parse semantic checks
+//  per §13.17.7, §13.3.8.
 // **Arm headers `':'` vs named entries `'='` never collide (per
 //  §13.3.8 "`when` / `given` / `repeat`").** A `WhenSimple` or
 //  `GivenArm` header uses `':'` (`Variant:`, `when cond:`); a
