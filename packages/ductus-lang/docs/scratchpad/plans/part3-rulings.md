@@ -31,6 +31,21 @@ Execution note: Batch 1 executes as ONE batch (I-01 + I-24/α + Pins A/B + Q2/Q3
 - **I-07: (B)** — dynamic-view membership is ACTIVATION-DRIVEN: a gated-off feeder (static or repeat-born) leaves the dynamic view's membership while effectively inactive and rejoins on gate-open (the same law as fold membership); static views keep counting frozen members (017-105 unchanged for static views). The line: static views count structure; dynamic membership follows activation.
 - **I-06 residual: full anchor + sentence, §023 as owner** — the repeat iterate/diff/scope_obtain/scope_evaluate/scope_drop sequence is anchored to the numbered commit steps in the commit chapter (§023 family / SPEC §13.10.2), and the snapshot-visibility law is pinned: a scope dropped during a commit is absent from that commit's published snapshot; its final values are never published.
 
+## Batch 1 ratifications + riders (owner, 2026-07-20)
+
+- The four Batch-1 executed defaults are RATIFIED as landed: `divergent_runtime_type_arms`; the two `|>` rejection classes inside amended 029-106; §13.3.8's "pipe chain or constructor-call form" widening; the two extra DP-13 sites (016-242, §13.9.13).
+- **Effect-method grammar gap: AUTHORIZED as a rider** on the next execution batch — SPEC §3.1 TraitBody BNF + §3.3 FulfillBody BNF + GRAMMAR §7.11/§7.12 gain the effect-kind method production (`EffectMethodSig`: `effect name(params):` with effect body; fulfill bodies may supply effect-kind method bodies), a mechanical conform to landed law (two forms per the Batch-1 amendments).
+
+## Batch 5 — Placement/Lexing, Streams/Effects Surface, Groups/Folds (owner, 2026-07-20)
+
+- **I-22: (A)** (owner rationale verbatim: "views are just for selection. children defines what is accepted and not and how much") — standalone-view cardinality is receiver-side selection, checked for satisfiability at compile time; caller obligations come from acceptance entries alone; the unscoped enforcement entries get scoped to acceptance-entry views.
+- **I-34: (a)** — a letter glued onto a flag run (`Pin'!x`) is a LEX ERROR ("insert a space"); no whitespace-free instance naming.
+- **I-11: (i)** — source-derived capacity inheritance governs desired:-block streams; the standalone 1024 leaves the effect-block sentence; §13.18.2's full defaulting rule is the single owner.
+- **I-56: (B)** — 016-157 conforms to its SPEC anchor's scope: host-driven SIGNAL-CELL writes occur only through write_signal (directly or batched in a transaction); 016-286 remains the whole-surface two-channel law.
+- **I-75: (a) with the addition** — error channels are author-opt-in, stated as law; the sanctioned place to MANDATE them is an effect-kind trait's observed: contract block (domain policy over language mechanism), stated alongside.
+- **I-12: (1)** — one LOG equivalence sentence bridges the vocabularies pairwise (permanent=permanent, key-driven=keyed-template, activation-driven=gate-guarded); surface names for semantic prose, IR names for entry fields; neither renamed.
+- **DP-17: (B)** (owner overrules the reference-only recommendation, rationale verbatim: "fold accepts something of type, not 'reference'... that's like asking what does 'fn' parameter accept — just variable references or inline values?") — the fold `<members>` slot is TYPED, not syntactically enumerated: it admits any expression of membership-structure type, including a name reference and an anonymous inline `collect:` block. Execution lands the header self-delimiting/parenthesization rule for the colon-bearing operand (cf. observe's parenthesize-or-newline convention); if that rule turns out gnarly, it comes back as a sub-ruling, never an invented default.
+
 ## Batch 2 — Wires & Endpoints (owner, 2026-07-20)
 
 - **I-05: (A)+(A2a)** — a handle-typed endpoint derived (`derived target: WeakHandle[X] = handle to`) on a wire that has never been active holds a WeakHandle resolving `None` (the None-pin completes the always-defined-read law). (A2a): on a wire type whose destination can be unresolved from construction (WeakHandle destination), a NON-handle-typed derived reading `to`/`pair` is rejected at compile time — no lawful pre-activation value exists — with the diagnostic pointing at the handle form.

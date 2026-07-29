@@ -87,19 +87,41 @@ HEX              ::= /* one or more hexadecimal digits [0-9a-fA-F] */
                    ;  (§15.4.4, 033-167)
 ```
 
-A **PATH** is a cell or instance fully-qualified declaration path: a dot-separated sequence of identifiers naming the lexical nesting from module root through enclosing instances to the cell or instance name. Anonymous or duplicated sibling placements append an ordinal suffix `':' INT` (zero-based, declaration-order index among siblings of the same type at the same nesting depth).
+A **PATH** is a cell or instance fully-qualified declaration path: a dot-separated sequence of segments naming the lexical nesting from module root through enclosing instances to the cell or instance name. Segments are lexical identifiers; a `repeat` scope contributes a keyed multiplicity segment — the scope key's stringified `StringifiableKey` form, bare or single-quoted per §15.4.1.1's canonical-quoting rule. Anonymous or duplicated sibling placements append an ordinal suffix `':' INT` (zero-based, declaration-order index among siblings of the same type at the same nesting depth).
 
 ```ebnf
 PATH             ::= PathSegment ('.' PathSegment)*
                    ;  (§15.4.1.1, 033-130)
 
 PathSegment      ::= NAME (':' INT)?
-                   ;  (§15.4.1.1, 033-133)
+                   | KeySegment
+                   ;  (§15.4.1.1, 033-133 / 033-243)
+
+KeySegment       ::= BareKey | QuotedKey
+                   ;  (§15.4.1.1, 033-243)
+
+BareKey          ::= /* nonempty run of characters excluding '.', ':',
+                        single-quote, backslash, and whitespace */
+                   ;  (§15.4.1.1, 033-243)
+
+QuotedKey        ::= /* single-quote, then any characters with \'
+                        and \\ escapes, then single-quote */
+                   ;  (§15.4.1.1, 033-243)
 
 // The ordinal suffix `:' INT` may attach to ANY path segment, not just
 // the tail — e.g. 'App.print:0.text' has the ordinal on the middle
 // component naming an anonymous effect instance. See 033-130 / 033-133.
-// e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.text'
+// A KeySegment is a repeat scope key's stringified StringifiableKey
+// form (033-243): bare when nonempty and free of '.', ':',
+// single-quote, backslash, and whitespace; single-quoted otherwise.
+// Quoting is canonical — producers emit bare whenever bare is
+// available. A BareKey that also lexes as NAME is indistinguishable
+// from a name segment in isolation; the graph structure decides which
+// path positions are keyed-scope positions, so the loader needs no
+// distinction. A KeySegment carries no ordinal suffix.
+// e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.text',
+// 'App.rows.42.render_row', and — quoted key spelled without the
+// surrounding example quotes — App.rows.'us-east.1'.render_row
 ```
 
 A **BID** is a behavior handle — the behavior's `u32` handle (§14.6.3) rendered in hexadecimal, prefixed by `'B@'`. It is the compact runtime reference; the behavior's wide content-addressed identity is not spelled in the text form.
@@ -565,7 +587,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `FLOAT` | §15.4.4 | 033-212 |
 | `STRING` | §15.4.6 | 033-168 |
 | `HEX` | §15.4.4 | 033-167 |
-| `PATH` | §15.4.1.1 | 033-130 / 033-133 (mid-path ordinal for anonymous effect instances; see worked example `App.print:0.text`) |
+| `PATH` | §15.4.1.1 | 033-130 / 033-133 / 033-243 (mid-path ordinal for anonymous effect instances, see worked example `App.print:0.text`; keyed-scope multiplicity segment, bare or single-quoted) |
 | `BID` | §15.4.4 | 033-167 |
 | `PRIM` | §15.4.6 | 033-43 |
 | `type_tag` | §15.4.6 | 033-43 / 033-79 |

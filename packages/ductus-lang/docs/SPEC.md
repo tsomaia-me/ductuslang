@@ -14256,8 +14256,14 @@ per-site compile-time fact, and a `repeat` cannot provide one.
 `dynamic view T` whose members are the current
 supplied-child `WeakHandle[T]`s — keyed and in source order
 (the written
-interleaving, with each feeding `repeat`'s scopes expanded in place). The
-cell updates when children mount or dismount. The membership is
+interleaving, with each feeding `repeat`'s scopes expanded in place).
+The cell updates when children mount or dismount, and its membership
+is **activation-driven** (§13.9.7): a feeding member that is
+effectively inactive — its own gate or any ancestor gate closed —
+leaves the membership (and the `.count` tally) and rejoins in the
+commit of the gate-open, the same law that governs fold membership; a
+*static* view instead keeps gated-off members present as frozen
+members (§13.9.7's read-path 3). The membership is
 consume-only: it cannot be bound, stored, or returned as a value — a
 dynamic view cannot satisfy `Iterable` or `IntoIterable`, and it has no
 snapshot form (its members are instance references, not values). It is
@@ -15995,7 +16001,8 @@ instance — the node, placement, or effect that contains the
 scope-managing construct. Keys are required to be stringifiable
 primitives (§13.5.4 specifies the bound for the `repeat` construct,
 via the `StringifiableKey` trait). The key value serves as the path
-component.
+component; its wire-format rendering — bare or single-quoted per the
+keyed-segment rule — is §15.4.1.1's.
 
 Hot-reload changes to the template's body follow the standard
 reload-safe / reload-unsafe rules of §13.15.4, applied uniformly
@@ -16211,6 +16218,15 @@ Whenever `<source>` is dirty, the runtime:
    `at <index>` bind, when present, to the element's 0-based position — and
    calls `scope_evaluate(key)`.
 
+Within a commit, this sequence anchors to §13.10.2's numbered steps:
+steps 1–3 here — iterate, key, diff, with `scope_drop`/`scope_obtain`
+applied — happen during commit step 1, before evaluation-order
+computation, so the per-commit DAG is built over the post-diff scope
+set; step 4's `scope_evaluate` calls run as commit step 3's ordinary
+topological evaluation. A scope dropped during a commit is absent from
+that commit's published snapshot — its final values are never
+published.
+
 **Duplicate keys.** If two distinct elements in one evaluation derive
 the same key, the first in iterator order wins the scope and the
 `<bind>`; later duplicates are dropped. The runtime raises a non-fatal
@@ -16355,7 +16371,7 @@ and their attrs) apply uniformly to all existing scopes.
 
 Changes to the key derivation — either the `keyed by` expression or
 the body of a `Keyed::key` implementation the construct depends on —
-are **reload-safe** per the general rule of §13.15.3 step 8: function
+are **reload-safe** per the general rule of §13.15.3 step 9: function
 and method bodies are recomputed against current inputs without a
 restart. The runtime runs the new key derivation on the next commit,
 diffs against the previously-known key set, and drops or obtains
@@ -16879,10 +16895,23 @@ wire Plays:
 
 This is the sanctioned way for an interpreter to reach through a
 wire ("wire-following", §13.19): the wire publishes a
-`WeakHandle`/`Portal` of its own, rather than exposing `to` directly. The
+`WeakHandle` of its own, rather than exposing `to` directly. The
 body-internal rule above is unchanged — `to` itself is still not externally
 readable; only the wire's declared deriveds are. A wire that
 declares no such derived surfaces nothing about its endpoints.
+
+**Pre-activation reads.** An endpoint derived in the handle form is
+always defined: on a wire that has never been active — a `WeakHandle`
+destination still unresolved since construction — the derived holds a
+`WeakHandle` resolving `None`; once the wire has been active, it holds
+the last committed handle per the frozen-read rule (§13.9.7). On a wire
+type whose destination can be unresolved from construction (a
+`WeakHandle` destination), a **non-handle-typed** derived reading `to`
+or `pair` is rejected at compile time — no lawful pre-activation value
+exists for it. Diagnostic class `endpoint_read_requires_handle_form`;
+the diagnostic points at the handle form above. A statically-placed
+`Handle` destination is exempt: such a wire is unconditionally active,
+so its deriveds compute from construction.
 
 **Named incoming wire-view reads.** An interpreter reads a target
 node's *declared incoming wire-views* by **name** through the node
@@ -16960,7 +16989,10 @@ whose type satisfies `Circularity`. Cycles consisting only of
 non-`Circularity` wires are compile errors.
 
 Its sole purpose is to opt a wire type into participation in
-cycles.
+cycles — and, with that opt-in, to license the temporal-break
+semantics cycles through the wire rely on: a compiler-synthesized
+wake-gate cycle (§13.3.7.6) resolves by the prior-commit,
+one-commit-delay fixpoint (§13.9.6) only when so guarded (§13.11.5).
 
 The decision of which wire types satisfy `Circularity` is
 domain-defined. A wire type whose runtime semantics introduce
@@ -18570,8 +18602,13 @@ inputs).
 
 **Snap on gate-open.** When a `when` predicate transitions from
 false to true, the runtime treats this as a propagation event
-scheduled within the commit that flips the predicate (§13.9.6, §13.9.8). The frozen cells re-evaluate against current
-upstream state in topological order. Any value that would have
+scheduled within the commit that flips the predicate (§13.9.6,
+§13.9.8). The frozen cells re-evaluate against current upstream
+state in topological order — the opening subtree's output-affecting
+deriveds join this same commit's DAG, evaluated after the flip
+(§13.9.8); the gate predicate itself keeps reading prior-commit
+values, so the snap cannot re-trigger the flip within the commit.
+Any value that would have
 propagated during the gated period is re-computed *as of now* (not
 replayed); downstream sees the activation as a single jump from
 the frozen value to the current value.
@@ -18632,8 +18669,14 @@ defined value of type T (no `Option[T]`), because:
   §13.2.4).
 - All signals have initial values (mandatory — §13.2.6).
 - All deriveds compute against always-defined inputs.
-- All wire-level deriveds compute against `from` which
-  always has defined cells.
+- All wire-level deriveds compute against `from`, which always has
+  defined cells; on a wire type whose destination can be unresolved
+  from construction, a derived over `to`/`pair` is handle-typed
+  (§13.6.2) and holds a `WeakHandle` resolving `None` while its wire
+  has never been active — non-handle-typed `to`/`pair` deriveds are
+  rejected at compile time on such wire types (§13.6.2). A
+  statically-placed `Handle` destination is unconditionally active,
+  so its deriveds compute from construction.
 
 On a gated node or wire, reads return frozen values: the
 last committed value during an active period, or the initial value
@@ -18655,7 +18698,7 @@ predicate itself ever surfaced to a reader:
    view's membership (membership is static), and a read of a frozen
    member returns its frozen value. Gating changes the value-state, not
    the membership.
-4. **Activation-driven fold membership (new).** When a value
+4. **Activation-driven membership (folds and dynamic views).** When a value
    contribution flows into a `fold` or `collect` group from inside a
    gated arm, its membership is **activation-driven**: the member is
    present in the group iff its arm is *effectively active* (own gate
@@ -18670,6 +18713,13 @@ predicate itself ever surfaced to a reader:
    takes effect in the commit of the gate transition, in both
    directions: gate-open adds the member and gate-close removes it
    within that same commit (§13.9.8).
+   The same law governs a `dynamic` view's membership (§13.3.3.4) —
+   and, by the same-rules transfer of §13.3.3.4, a dynamic
+   wire-view's (§13.3.4.1): a feeder — statically placed or
+   repeat-born — leaves the view's membership (and its `.count`
+   tally) while effectively inactive and rejoins in the commit of the
+   gate-open. Frozen presence under gating (path 3) is the static
+   view's read-path only.
 
 #### 13.9.8 Interaction with the per-commit DAG
 
@@ -18685,15 +18735,18 @@ subgraph supporting its `when` predicate, which stays current (§13.9.7).
 
 A single delegating note in §13.10.2 records this: edges whose gate
 predicate evaluates false do not propagate to destination outputs, and
-the gate-open transition is itself a propagation event scheduled within
-the commit that flips the predicate (the open snap, §13.9.7). Gate-close
-adds no DAG work for the frozen subtree itself, with one exception: a
-gate transition — open or close — is a dirty root for every fold cell
-(§13.21.7) and membership-descriptor cell (§13.20.4.3) with a member
-guarded by that gate. The member leaves the group in the closing
-commit — symmetric with the gate-open snap — and the fold recomputes
-that same commit without it. Beyond that, gate-close's only consequence
-is that the runtime fires `suspend`
+a gate transition — open or close — is itself a **dirty root**. On
+gate-open, the opening subtree's output-affecting deriveds join the
+same commit's DAG and evaluate after the flip in topological order
+(the open snap, §13.9.7); the gate predicate itself keeps reading
+prior-commit values, so the flip is decided once per commit and the
+after-flip evaluation cannot re-trigger it. The fold-cell (§13.21.7)
+and membership-descriptor-cell (§13.20.4.3) dirty roots for members
+guarded by the gate are instances of this same rule, not a separate
+carve-out: the member leaves the group in the closing commit —
+symmetric with the gate-open snap — and the fold recomputes that same
+commit without it. Beyond membership and the open snap, gate-close's
+only consequence is that the runtime fires `suspend`
 for effects in the newly-frozen subtree at the commit boundary (§13.9.7,
 §13.14.9). The runtime uses *effective* activation (own gate conjoined
 with all ancestor gates) so that closing an ancestor suspends descendant
@@ -19003,7 +19056,11 @@ operation:
    likewise a dirty root computed in this step, named by its cause —
    a gate transition on a gate-guarded member, or the `repeat` re-key
    diff on keyed members — and it dirties the owning cell exactly as
-   an input value change would. Dirty propagation extends to all
+   an input value change would. The `repeat` structural consequence
+   applies with this diff: `scope_drop` for departed keys and
+   `scope_obtain` for arrived keys run before step 2, so the
+   evaluation order is computed over the post-diff scope set
+   (§13.5.4.2). Dirty propagation extends to all
    derived cells transitively dependent
    on dirty roots, and to all recurrents whose triggers fired this
    commit. No new dirty bits are added during the rest of the
@@ -19028,13 +19085,19 @@ operation:
    edges within this commit. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
-   gate-open snap, the suspension of contained effects on gate-close,
-   and the membership dirty root a gate transition contributes to
-   folds and membership descriptors with a gate-guarded member.
+   gate-open snap — a gate transition, open or close, is a dirty
+   root; the opening subtree's output-affecting deriveds join this
+   commit's DAG and evaluate after the flip, while the predicate
+   keeps reading prior-commit values — the suspension of contained
+   effects on gate-close, and the membership dirty root a gate
+   transition contributes to folds and membership descriptors with a
+   gate-guarded member (an instance of the same dirty-root rule).
 3. **Evaluate in topological order.** For each node in topo order,
    invoke its behavior (per §14.6's ABI); a membership-descriptor
    node (§13.20.4.3) has no behavior — its evaluation re-derives its
-   live member list structurally. Reads resolve as follows:
+   live member list structurally. `scope_evaluate` for each active
+   `repeat` key runs here, as ordinary topological evaluation of the
+   scope's cells (§13.5.4.2). Reads resolve as follows:
     - Signal and attr reads → current staged values
       (most recent writes since the previous commit).
     - Derived reads → this-commit computed values for deriveds
@@ -19063,7 +19126,9 @@ operation:
    their newly-advanced values.
 5. **Publish the snapshot.** The runtime atomically makes the
    just-committed values the visible snapshot; observers' subsequent
-   reads return the new state.
+   reads return the new state. A scope dropped during this commit is
+   absent from the published snapshot; its final values are never
+   published.
 6. **Clear dirty bits.** Ready for the next commit.
 
 Writes during a commit are forbidden (the driving context is busy in
@@ -19076,15 +19141,20 @@ evaluate in topological order over the per-commit DAG.
 Topological order ensures that each node's dependencies have stable
 values when the node itself is evaluated.
 
-When two nodes are at the same level (neither depends on the
-other), the compiler chooses a deterministic tiebreaker:
-**source declaration order**. The cell declared earlier in source
-evaluates first. Since the two are not dependency-related, the
-choice does not affect correctness — but determinism matters for
+When two nodes at the same level (neither depends on the other)
+belong to the same node instance, the compiler chooses a
+deterministic tiebreaker: **source declaration order**. The cell
+declared earlier in source evaluates first; this rule governs
+same-instance pairs only. Since the two are not dependency-related,
+the choice does not affect correctness — but determinism matters for
 reproducibility (same program, same inputs, same output trace).
 
 For cells across different node instances at the same level, the
-placement order at construction time is the tiebreaker.
+placement order at construction time is the tiebreaker; cross-instance
+pairs are governed by this rule alone. The composed same-level total
+order is **instance placement order, then intra-instance declaration
+order** — every same-level pair matches exactly one rule, and the
+deterministic output trace is defined by this composed order.
 
 Recurrent expressions across multiple recurrent cells evaluate in
 lockstep (§13.2.4.1); no internal ordering between them is
@@ -19690,7 +19760,10 @@ trap-track semantics of §4.6.1: the process aborts.
 The runtime does not isolate traps within behavior invocations. There
 is no "errored cell" sentinel state at the runtime level, no
 `catch_unwind` boundary, no continuation past a trap. A trap is a
-bug, and bugs end the program.
+bug, and bugs end the program. The sole sanctioned machinery-level
+exception is a hot reload's pre-live first-evaluation phase
+(§13.15.3): a trap there abandons the reload — the old version keeps
+running — rather than aborting the process.
 
 #### 13.13.2 Recoverable failures via value-track errors
 
@@ -19959,9 +20032,16 @@ runtime.register_reconciler(effect_type_name, reconciler)
 Registers a host-side reconciler for a specific effect type (§13.19).
 Must be called during a pre-live window — before the runtime first
 transitions to the live state (§13.14.1 step 4), or during a hot
-reload's pre-live phase before the reload reaches the live state
-(§13.15.6). Registrations once live and outside a reload window are
-rejected.
+reload's registration window, reload step 5 (§13.15.3), before the
+reload reaches the live state. Registrations once live and outside a
+reload window are rejected. A reload whose required reconcilers are
+still missing when the window closes is rejected and the old version
+keeps running (§13.15.3); at startup, a missing required reconciler
+still refuses the live transition (below).
+
+Source visibility does not cross the host boundary: a `private`
+effect registers by type name exactly as an unmarked one does
+(§13.19.10).
 
 The `effect_type_name` is a string identifier matching the name of
 an `effect` declaration in the loaded source. The `reconciler` is a
@@ -20223,7 +20303,11 @@ siblings of the same type at the same nesting depth (zero-based).
 
 When a cell with the same fully-qualified path exists in both old
 and new source AND has the same type, it is treated as the *same
-cell*. Its value is preserved across reload.
+cell*. Its value is preserved across reload. For a value recurrent
+this preservation covers both the current value and the `.past`
+history buffer; a changed recurrent body is not retroactive — the
+next evaluation runs the new body over the preserved history
+(§13.15.3).
 
 When a cell exists in old but not in new, it is a *removal* — the
 cell is dropped during reload.
@@ -20257,28 +20341,56 @@ in the following order:
 4. Compute the diff between old and new graphs: which cells are
    surviving (same path, same type), which are added, which are
    removed.
-5. For added cells: allocate cell storage
+5. Open the reconciler-registration window: the runtime calls the
+   host with the set of reconciler names the new program requires
+   that are not yet registered (§13.14.7), and the host may register
+   them during this window — the reload's pre-live phase. If any
+   required reconciler is still missing when the window closes, the
+   reload is rejected: the lock is released, writes resume, and the
+   runtime keeps running the old version, parallel to a
+   compile-failure rejection (§13.15.1). Startup's abort-on-missing
+   rule (§13.14.7) is unchanged.
+6. For added cells: allocate cell storage
    and initialize per the new source.
-6. For removed cells: invoke their Drop per §14.7, in
+7. For removed cells: invoke their Drop per §14.7, in
    reverse-declaration order. Wires drop before endpoint
    instances; within each instance, attrs, recurrents, and
    deriveds drop in reverse declaration order.
-7. Update the behavior table (§14.6.3): register behaviors with
+8. Update the behavior table (§14.6.3): register behaviors with
    new content-addressed IDs; deregister behaviors no longer
    present. Behaviors with unchanged content-addressed IDs are
    carried over.
-8. Run a re-initialization evaluation pass: for each derived
+9. Run a re-initialization evaluation pass: for each derived
    whose behavior body changed (different content-addressed ID
    from old to new), recompute its initial value from current
    inputs. For deriveds whose body is unchanged, the value
-   persists.
-9. Commit the reloaded state. This commit fires the ordinary
-   reconciler-hook tail: the runtime enumerates the effect instances the
-   reload dirtied and invokes their reconcilers before the reload
-   completes — a completed reload means external reality has been
-   reconciled.
-10. Release the reload lock. Resume signal/attr writes; apply any
-    queued writes to the new state.
+   persists. Value recurrents are never recomputed in this pass: a
+   value recurrent whose path and type match preserves both its
+   current value and its `.past` history buffer, and a changed
+   recurrent body is not retroactive — the next evaluation runs the
+   new body over the preserved history.
+10. Commit the reloaded state. This commit fires the ordinary
+    reconciler-hook tail: the runtime enumerates the effect instances
+    the reload dirtied and invokes their reconcilers before the reload
+    completes — a completed reload means external reality has been
+    reconciled.
+11. Release the reload lock. Resume signal/attr writes; apply any
+    queued writes to the new state, validating each at apply time: a
+    queued write whose target path no longer exists after the reload
+    — or after a restart's teardown — is dropped, never applied to a
+    wrong or dead target, and counted under the runtime diagnostic
+    class `stale_write_dropped`.
+
+**Traps during the pre-live phase.** A trap during the reload's
+pre-live first evaluations — added-cell initialization (step 6) or
+the re-initialization pass (step 9) — abandons the reload: added
+cells are discarded, the runtime keeps running the previous version,
+and the trap surfaces as a reload-failure diagnostic. This makes the
+pre-live first-evaluation phase a sanctioned machinery-level
+containment boundary for traps — a deliberate carve-out from the
+no-continuation-past-a-trap law (§13.13.1, §14.6.2), which otherwise
+stands: startup first-evaluation traps still abort the process
+(§13.2.6).
 
 Changes to `when` predicates (added, removed, or modified — §13.9)
 are reload-safe. The predicate is structural metadata, not cell
@@ -20326,10 +20438,12 @@ restart — either full-runtime or per-instance, depending on the change:
   restart** suffices; the host's reconciler receives a teardown
   call for the affected instances.
 
-Implementations detect these cases during the diff phase and either
-reject the reload or schedule the appropriate restart (full-runtime
-or per-instance). The runtime diagnoses which class of change
-occurred.
+Implementations detect these cases during the diff phase. The
+change's **class** names which restart it would require —
+full-runtime or per-instance; the **disposition** — reject the
+reload (the runtime keeps running the old version) or schedule that
+restart — is implementation-defined for either class. The runtime
+diagnoses which class of change occurred.
 
 #### 13.15.5 Hot reload of streams
 
@@ -23569,6 +23683,13 @@ private effect internal_health_check():
 Visibility applies to the effect's type and constructor uniformly
 (they share a name).
 
+Visibility is a source-language concept and does not cross the host
+boundary: the host API (§13.14.7) addresses an effect type by name
+regardless of its visibility — a `private` effect's reconciler
+registers exactly as an unmarked one's — and the IR carries no
+visibility field (§15.4), so no name-mangling or omission derives
+from visibility.
+
 #### 13.19.11 Hot reload of effects
 
 An effect instance is a scoped reload boundary, like an operator
@@ -24833,7 +24954,10 @@ division by zero, out-of-range indices, explicit `panic`) abort the
 process; recoverable conditions are expressed as value-track
 `Option`/`Result` values flowing through the type system. The
 runtime does not isolate behavior traps — there is no `catch_unwind`
-boundary, no errored-cell sentinel, no continuation past a trap.
+boundary, no errored-cell sentinel, no continuation past a trap,
+with one machinery-level exception: a behavior trap during a hot
+reload's pre-live first evaluations is contained by the reload
+machinery, which abandons the reload (§13.15.3).
 See §13.13.1 for full rules and worked examples; the same semantics
 apply uniformly to all behaviors the runtime invokes.
 
@@ -25045,8 +25169,9 @@ Changes safe to hot reload:
   bodies).
 - Adding new signals, attrs, derived declarations.
 
-Changes unsafe for in-place hot reload fall into two classes per
-§13.15.4:
+Changes unsafe for in-place hot reload are classified on two axes
+per §13.15.4. The **class** axis names which restart the change
+would require:
 
 - **Full-runtime restart** is required for changes to the reactive
   state buffer layout that would require relocating live cells.
@@ -25056,15 +25181,17 @@ Changes unsafe for in-place hot reload fall into two classes per
   recreated, not the whole runtime.
 
 All other changes — including cell removal (which the new source's
-compile gate verifies is unreferenced), cell type changes (handled
-via remove + add per §13.15.2), and wire topology changes
-(handled via remove + add per §13.15.2) — are reload-safe and need
-no restart.
+compile gate verifies is unreferenced), cell type changes outside
+operator bodies (handled via remove + add per §13.15.2), and wire
+topology changes (handled via remove + add per §13.15.2) — are
+reload-safe and need no restart; an operator-internal cell type
+change is a per-instance-restart case per §13.17.10 (above).
 
-The implementation diagnoses unsafe changes at reload time and
-either rejects them (runtime keeps running old version) or applies
-the appropriate restart — full-runtime or per-instance per §13.15.4
-— cleanly. The choice is implementation-defined.
+The **disposition** axis is what the implementation does: it
+diagnoses unsafe changes at reload time and either rejects them
+(runtime keeps running the old version) or cleanly applies the
+restart the class names — full-runtime or per-instance per §13.15.4.
+The disposition is implementation-defined for either class.
 
 #### 14.8.4 Reload failure
 
@@ -25072,6 +25199,13 @@ If the new source fails to compile (parse error, type error,
 ownership error), the reload is abandoned. The runtime keeps running
 the previous version. The CLI surfaces the compilation error to the
 user.
+
+A trap during the reload's pre-live first evaluations abandons the
+reload the same way: added cells are discarded, the previous version
+keeps running, and the trap surfaces as a reload-failure diagnostic
+(§13.15.3). A reload whose required reconcilers are still missing
+when the registration window closes is likewise rejected (§13.15.3
+step 5).
 
 Hot reload never produces a runtime in an inconsistent state. Either
 the old version continues running, or the new version is fully
@@ -25505,6 +25639,20 @@ For anonymous or duplicated sibling placements (rare; the language
 encourages explicit naming per §13.8), the compiler appends an
 ordinal suffix `:N` where N is the declaration-order index among
 siblings of the same type at the same nesting depth (zero-based).
+
+**Keyed-scope multiplicity segments.** A cell inside a `repeat`
+scope (§13.5.3) carries the scope key as its own path segment —
+`<enclosing_path>.<key>.<template_field>` — rendered as the key's
+stringified `StringifiableKey` form (§13.5.4.1). The `.<key>.`
+segment is a first-class multiplicity device of this grammar,
+alongside lexical name segments and the `:N` ordinal suffix. A
+stringified key renders **bare** iff it is nonempty and contains
+none of `.`, `:`, `'`, `\`, or whitespace; any other stringified
+form (a string key containing a dot, a `.` char key, the empty
+string, …) renders as a **single-quoted** segment in which `'` and
+`\` are escaped as `\'` and `\\`. Quoting is canonical — a
+producer uses the bare form whenever it is available — so equal keys
+render byte-identical cell IDs.
 
 **Interpreter-placed effect paths.** An effect that an interpretation
 places while walking a node's `.exposition` (the interpretation-bootstrap

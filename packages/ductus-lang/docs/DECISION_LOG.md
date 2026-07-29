@@ -2038,7 +2038,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-150. At type-declaration time, attr defaults and recurrent expressions may reference same-instance cells (bare name or `here::X`), same-type consts, module-level cells, and compile-time-known expressions. (§13.2.6)
 016-151. Cross-instance references are resolved only at placement time, never at type declaration. (§13.2.6)
 016-152. A recurrent's self-history fallback expressions (`.previous(fallback)`, `.past(k, fallback)`) are evaluated in the same reference context as the recurrent's own expression. (§13.2.6)
-016-153. A trap during any initial evaluation (signal initializer, attr default, first recurrent commit, initial derived evaluation) aborts the process; startup traps have no recovery path. (§13.2.6)
+016-153. A trap during any startup initial evaluation (signal initializer, attr default, first recurrent commit, initial derived evaluation) aborts the process; startup traps have no recovery path. A reload's pre-live first evaluations are governed instead by the reload-abandonment rule (§13.15.3). (§13.2.6)
 016-154. An initial value referencing a cell on another instance adds cross-instance edges to the init dependency graph. (§13.2.6)
 016-155. Init cycles spanning instances are compile errors at the same severity as within-instance init cycles, identifying the participating instances and cells. (§13.2.6)
 016-156. Ductus source has no syntactic form for assigning to a `signal`, `attr`, `recurrent`, `derived`, `stream`, or `const` after declaration; source expressions only read them. (§13.2.7)
@@ -2182,7 +2182,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-294. A value-kind observe never binds to a stream context — a signal never drives a stream implicitly; to derive events from a signal, cross explicitly and observe the resulting stream: `on sig->changes as e:`. (§13.2.11.6)
 016-295. In a stream-kind observe, a signal read inside an arm body is sampled at the moment of each firing and never drives: it contributes no firings and no re-evaluation between events — there is no implicit signal-to-stream conversion. (§13.2.11.3)
 
-## 017. Nodes & Views — 328 Rules
+## 017. Nodes & Views — 329 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed wires. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2288,7 +2288,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-102. A dynamic (repeat-fed) bundle stays a reactive `cell` whose value is consume-only — positional indexing into a keyed, changing set is rejected; slice-indexing access does not apply. The slice surface is only for caller-written static brackets. (§13.3.3.5)
 017-103. Bundles are 2D — exactly one nesting level. No `[[T]]` nested-nested bundles; deeper structure uses nested node bodies. (§13.3.3.5)
 017-104. In `expose:`, a bundle entry preserves its bracket structure exactly as the caller wrote it — the runtime sees a two-level structure (rows containing elements), not a flattened list. A compile-time `for` inside the `[...]` unrolls at compile time into one child placement per iteration, so the exposed structure contains the unrolled members, not the `for` itself. This parallels `@content`'s order-preservation applied to a named bundle view. (§13.3.7.2)
-017-105. Views count gated-but-frozen children and reads return their frozen values — gates freeze propagation rather than remove existence — distinct from `dynamic`/`repeat`, which change a view's membership. (§13.3.3)
+017-105. A static view counts gated-but-frozen children and reads return their frozen values — gates freeze propagation rather than remove existence — distinct from `dynamic`/`repeat`, which change a view's membership. (§13.3.3)
 017-106. Wires a node participates in are declared via the `incoming:` and `outgoing:` clauses; each entry has the form `<selector> <cardinality>` (unnamed, accept-only) or `<name>: <selector> <cardinality>` (named, also a wire-view selection binding). `outgoing:` entries place the node as the `from` endpoint; `incoming:` entries place it as the `to` endpoint. The selector is a wire type, a trait, a parameterized trait (e.g., `Forwarding[Event]`), or the `Wire` marker. (§13.3.4)
 017-107. `incoming` wires target the node (it is the `to` endpoint); `outgoing` wires originate from it (it is the `from` endpoint). (§13.3.4)
 017-108. An `outgoing` view bounds the wires a caller placing the node may originate from it (a local-supply bound); an `incoming` view bounds the wires that may target it, aggregated across all sources — caller-placed and self-sourced. (§13.3.4)
@@ -2512,6 +2512,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-326. View and named individual access coexist on the same instance: `c.oscs[0]` (indexed, legal under `+`) and `c.filters[0]` (legal under `[=1]`) alongside named `c.osc_a`. (§13.4.5)
 017-327. `Portal[WeakHandle[T]]` resolves through a genuine two-step presence check, because the slot lifetime and the graph-entity lifetime are independent: the outer step is the portal's generation-guarded resolution to `Option[&WeakHandle[T]]`, yielding `None` when the slot has dropped or its stamped generation no longer matches; the inner step is the weak handle's own `Option[&T]` resolution, yielding `None` when the entity has dismounted while the slot is still live and holds a now-stale weak handle. Neither step subsumes the other, so the composed dynamic read cannot collapse to a single check. (§13.3.6.3)
 017-328. A type's transitive type-emitted containment may not include the type itself: an exposition that emits, directly or through any chain of type-emitted children, an instance of the emitting type is a compile error, diagnostic class `type_emission_cycle`; the check catches direct and transitive cycles. (§13.3.3.3)
+017-329. A `dynamic` view's membership is activation-driven: a feeder — statically placed or repeat-born — leaves the view's membership while it is effectively inactive (its own gate or any ancestor gate closed) and rejoins on gate-open, in the transition's commit, the same law that governs fold membership; a static view instead keeps gated-off members present as frozen members. Static views count structure; dynamic membership follows activation. (§13.3.3.4, §13.9.7)
 
 ## 018. Keyed Scopes & `repeat` — 145 Rules
 
@@ -2661,7 +2662,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 018-144. A written `keyed by` on a `yielded` group source is a compile error, the normative diagnostic class `keyed_by_on_yielded_group_rejected`: group member identity is structural — each member's key is its structural coordinate — so a written key expression has nothing to key. (§13.5.4.1)
 018-145. A group member's scope path nests: under the group's path, the member's yield-site index — its `yield` site's declaration-order index within the `collect` body, following the anonymous-placement ordinal convention — is its own path level, and for a repeat-born member the producing repetition key sits under that level as an ordinary key component: `mixer.parts.1` (the permanent member from yield-site 1), `mixer.parts.2.voice_7` (the repeat-born member: site 2, key `voice_7`). Each component is a simple stringifiable value, so the existing scope-key rules hold unchanged; inserting a `yield` site above shifts later site indices across a reload, exactly as anonymous placement ordinals shift. (§13.5.4.4, §13.20.4)
 
-## 019. Wires — 79 Rules
+## 019. Wires — 81 Rules
 
 019-1. A wire is a directional, typed link between two node instances. (§13.6.0)
 019-2. Wires are first-class entities: each has its own identity. (§13.6.0)
@@ -2740,8 +2741,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 019-75. A wire type opts into participating in topology cycles by a bodiless `fulfill Circularity for TheWireType` claim. (§13.6.5)
 019-76. Every topology cycle in the construction-time node graph must traverse at least one wire whose type satisfies `Circularity`. (§13.6.5)
 019-77. A cycle consisting only of non-`Circularity` wires is a compile error. (§13.6.5)
-019-78. Satisfying `Circularity` has no effect beyond opting the wire type into cycle participation. (§13.6.5)
+019-78. Satisfying `Circularity` has no effect beyond opting the wire type into cycle participation — and, with that opt-in, licensing the temporal-break semantics that cycles through the wire rely on: a compiler-synthesized wake-gate cycle resolves by the prior-commit, one-commit-delay fixpoint (§13.3.7.6, §13.9.6) only when so guarded (§13.11.5). (§13.6.5)
 019-79. Which wire types satisfy `Circularity` is domain-defined. (§13.6.5)
+019-80. A handle-carrying endpoint derived — `derived target: WeakHandle[Clip] = handle to` — is always defined for outside readers: on a wire that has never been active it holds a `WeakHandle` resolving `None`; once the wire has been active it holds the last committed handle, per the frozen-read rule. (§13.6.2, §13.9.7)
+019-81. On a wire type whose destination can be unresolved from construction — a `WeakHandle` destination — a non-handle-typed derived reading `to` or `pair` is rejected at compile time: no lawful pre-activation value exists for it. Diagnostic class `endpoint_read_requires_handle_form`; the diagnostic points at the handle-carrying endpoint-derived form (`derived target: WeakHandle[X] = handle to`). A statically-placed `Handle` destination is exempt — such a wire is unconditionally active. (§13.6.2)
 
 ## 020. Name Resolution in Reactive Bodies — 38 Rules
 
@@ -2931,7 +2934,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 021-143. Compile-time rules are liveness-blind: type checking, ownership, name uniqueness, the orphan rule, and visibility all fire textually on every placement, dead or live; liveness governs only runtime existence — whether an instance is mounted — and the dead-code lint. (§13.8.1)
 021-144. Liveness is topological only, and the reach-edges are exhaustive: every form by which code references an instance — placing a child, naming a wire destination (a wire's source is structurally its enclosing instance, and a wire is live exactly when its source is), acquiring or storing a `Handle`/`WeakHandle`, binding a node reference as an effect argument, or admitting a node type into a wire-candidate envelope — is itself a reach-edge, so any instance live code can reference is in the live graph by construction; a dead placement cannot be referenced by live code. (§13.8.1)
 
-## 022. Conditional Activation (Gates) — 121 Rules
+## 022. Conditional Activation (Gates) — 122 Rules
 
 022-1. A gate is a predicate or discriminant that conditions whether a node instance, a wire instance, or an exposed subtree is active. (§13.9)
 022-2. Gates are the structural conditional layer, distinct from the value conditionals `if`/`else`/`match`. (§13.9)
@@ -3054,8 +3057,9 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 022-119. A `given` block is a closed selector: it must be exhaustive over the scrutinee's variants, checked by the `match` exhaustiveness rules. (§13.9.13)
 022-120. A `default:` arm in `given` is permitted only as an explicit catch-all that suppresses the exhaustiveness obligation, as in value `match`. (§13.9.13)
 022-121. Selecting a type value with `match` over `Type[…]` and gating structure with `given` are both legal: `match` chooses one type placed once; `given` builds every arm and switches which is live. (§13.9.13)
+022-122. The activation-driven membership read-path covers `dynamic` views and wire-views as it covers folds: a gated-off feeder of a `dynamic` view is absent from the membership — and from `.count` — while effectively inactive, and rejoins in the commit of the gate-open; frozen presence under gating is the static view's read-path only. (§13.9.7)
 
-## 023. Reactive Evaluation & Commit — 56 Rules
+## 023. Reactive Evaluation & Commit — 59 Rules
 
 023-1. The reactive runtime exposes exactly two host-level state operations: signal writes (via `runtime.write_signal`), which stage new values without evaluation, and commit, which evaluates and atomically publishes a new consistent snapshot. (§13.10)
 023-2. A write call (`runtime.write_signal` or any write inside `runtime.transaction`) stages the new value; the staged value is not yet visible to observers. (§13.10.1)
@@ -3089,8 +3093,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 023-30. Commit step 5 atomically publishes the just-committed values as the visible snapshot, so observers' subsequent reads return the new state. (§13.10.2)
 023-31. Commit step 6 clears the dirty bits. (§13.10.2)
 023-32. Writes during a commit are forbidden. (§13.10.2)
-023-33. When two same-level DAG nodes have no dependency between them, the tiebreaker is deterministic source declaration order: the cell declared earlier evaluates first. (§13.10.3)
-023-34. For same-level cells across different node instances, the tiebreaker is placement order at construction time. (§13.10.3)
+023-33. When two same-level DAG nodes within the same node instance have no dependency between them, the tiebreaker is deterministic source declaration order: the cell declared earlier evaluates first; this rule governs same-instance pairs only. (§13.10.3)
+023-34. For same-level cells across different node instances, the tiebreaker is placement order at construction time; cross-instance pairs are governed by this rule alone. The composed same-level total order is instance placement order first, then intra-instance declaration order, so every same-level pair matches exactly one tiebreaker. (§13.10.3)
 023-35. Recurrent expressions across multiple recurrent cells evaluate in lockstep, with no observable internal ordering between them. (§13.10.3)
 023-36. `runtime.transaction` batches multiple writes into one logical change: `runtime.transaction(|tx| { tx.write_signal(a_id, new_a) })`. (§13.10.4)
 023-37. Writes within a transaction accumulate as staged values applied atomically at transaction close. (§13.10.4)
@@ -3113,6 +3117,9 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 023-54. A mount or dismount re-establishes dynamic-namespace member dependency edges exactly as a re-point does. (§13.10.5)
 023-55. Dynamic dependencies do not alter per-commit evaluation order: within any one commit every handle resolution is fixed. (§13.10.5)
 023-56. The candidate set of possible handle targets is statically known. (§13.10.5)
+023-57. A gate transition — open or close — is a dirty root. On gate-open, the opening subtree's output-affecting deriveds join the same commit's DAG and evaluate after the flip in topological order; the gate predicate itself keeps reading prior-commit values, so the flip is decided once per commit and the after-flip evaluation cannot re-trigger it. The fold-cell and membership-descriptor dirty roots on gate-guarded members are instances of this rule, not a separate carve-out. (§13.9.8, §13.10.2)
+023-58. The `repeat` sequence anchors to the numbered commit steps: re-iterating the dirty source, deriving keys, and diffing the key set happen in step 1 — the re-key diff is a dirty root computed there — and the structural consequence applies with the diff, `scope_drop` for departed keys and `scope_obtain` for arrived keys, before evaluation-order computation, so the per-commit DAG of step 2 is built over the post-diff scope set; `scope_evaluate` for each active key runs as ordinary step-3 topological evaluation. (§13.10.2, §13.5.4.2)
+023-59. A scope dropped during a commit is absent from that commit's published snapshot: its final values are never published, and no reader of the published snapshot observes a departed scope's cells. (§13.10.2, §13.5.4.2)
 
 ## 024. Cycle Handling — 27 Rules
 
@@ -3218,7 +3225,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 026-2. A derived or recurrent expression that traps during evaluation — arithmetic overflow under default operators, division by zero, out-of-range array index, or explicit `panic` — aborts the process; the same holds for a trap raised while evaluating a fold form's `by:` combiner or a `collect`/`yield` member expression. (§13.13.1)
 026-3. The runtime does not isolate traps within behavior invocations. (§13.13.1)
 026-4. There is no errored-cell sentinel state at the runtime level. (§13.13.1)
-026-5. There is no `catch_unwind` boundary and no continuation past a trap. (§13.13.1)
+026-5. There is no `catch_unwind` boundary and no continuation past a trap; the sole sanctioned machinery-level exception is a hot reload's pre-live first-evaluation phase, whose traps abandon the reload rather than the process (§13.15.3). (§13.13.1)
 026-6. Recoverable failures in reactive code use value-track errors: declare the derived's type as `Result[T, E]` or `Option[T]` and produce `Err(...)` or `None` explicitly for failure cases. (§13.13.2)
 026-7. Downstream reactive expressions propagate value-track errors through `?` or `match`. In a reactive body — a `derived` or `recurrent` expression — whose declared type is `Result[T, E]` or `Option[T]`, that body plays the enclosing-function role `?` early-returns from: a `?` on a failing operand short-circuits that evaluation of the body, and the `From`-converted failure (`Err(From::convert(...))`, or `None` for an `Option`-typed body) becomes the body's value for that evaluation. (§13.13.2)
 026-8. Arithmetic that may overflow but should fail recoverably uses the checked operator variants (`+?`, `-?`, ...), whose `Option[T]` results flow through the type system. (§13.13.2)
@@ -3352,7 +3359,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-123. The initial cohort's `create` hooks — for the effect instances live at startup — fire as the first post-first-commit hook pass: startup's final step performs the first commit, and the reconciler-hook pass following that commit runs `create` for every live effect instance before any other hook work. (§13.14.1)
 027-124. A runtime handed a module whose live graph is empty — a library module with no roots — declines gracefully: it reports a clean "nothing to run" condition and exits; this is neither a crash nor an error, and the `ductus run` CLI surfaces the condition to the user. (§13.14.1)
 
-## 028. Hot Reload — 75 Rules
+## 028. Hot Reload — 78 Rules
 
 028-1. The runtime supports hot reload of the reactive graph when the host provides updated source code (per §14.8). (§13.15)
 028-2. Before any runtime-side reload action, the new source must compile under the full type system and reactive-system rules. (§13.15.1)
@@ -3371,13 +3378,13 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 028-15. Reload step 2 acquires a reload lock and pauses acceptance of new signal writes; host requests queue. (§13.15.3)
 028-16. Reload step 3 lets any in-flight commit complete, ensuring a between-commits state. (§13.15.3)
 028-17. Reload step 4 computes the old/new graph diff: surviving cells (same path, same type), additions, removals. (§13.15.3)
-028-18. Reload step 5 allocates and initializes added cells per the new source. (§13.15.3)
-028-19. Reload step 6 invokes Drop on removed cells in reverse-declaration order: wires before endpoint instances; within an instance, attrs, recurrents, and deriveds in reverse declaration order. (§13.15.3)
-028-20. Reload step 7 updates the behavior table: new content-addressed IDs registered, absent behaviors deregistered, unchanged IDs carried over. (§13.15.3)
-028-21. Reload step 8 recomputes the value of each derived whose behavior body changed (different content-addressed ID) from current inputs. (§13.15.3)
+028-18. Reload step 6 allocates and initializes added cells per the new source. (§13.15.3)
+028-19. Reload step 7 invokes Drop on removed cells in reverse-declaration order: wires before endpoint instances; within an instance, attrs, recurrents, and deriveds in reverse declaration order. (§13.15.3)
+028-20. Reload step 8 updates the behavior table: new content-addressed IDs registered, absent behaviors deregistered, unchanged IDs carried over. (§13.15.3)
+028-21. Reload step 9 recomputes the value of each derived whose behavior body changed (different content-addressed ID) from current inputs; value recurrents are never recomputed in this pass — value and `.past` history persist, and a changed recurrent body takes effect at the next evaluation, running over the preserved history. (§13.15.3)
 028-22. A derived whose body is unchanged keeps its value across reload. (§13.15.3)
-028-23. Reload step 9 commits the reloaded state, and that commit fires the ordinary reconciler-hook tail: the runtime enumerates the effect instances the reload dirtied and invokes their reconcilers before the reload completes, so a completed reload means external reality has been reconciled. (§13.15.3)
-028-24. Reload step 10 releases the reload lock, resumes signal/attr writes, and applies queued writes to the new state. (§13.15.3)
+028-23. Reload step 10 commits the reloaded state, and that commit fires the ordinary reconciler-hook tail: the runtime enumerates the effect instances the reload dirtied and invokes their reconcilers before the reload completes, so a completed reload means external reality has been reconciled. (§13.15.3)
+028-24. Reload step 11 releases the reload lock, resumes signal/attr writes, and applies queued writes to the new state, validating each at apply time: a queued write whose target path no longer exists after the reload — or after a restart's teardown — is dropped, never applied to a wrong or dead target, and counted under the runtime diagnostic class `stale_write_dropped`. (§13.15.3)
 028-25. Changes to `when` predicates — added, removed, or modified — are reload-safe; the predicate is structural metadata, not cell identity, and cells retain their values across the reload. (§13.15.3)
 028-26. A changed `when` predicate takes effect prospectively at the next commit; historical gate state is not recomputed. (§13.15.3)
 028-27. Cell-storage layout changes that would relocate live cells are not hot-reloadable and require a full-runtime restart. (§13.15.4)
@@ -3429,6 +3436,9 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 028-73. Host-registered reconcilers are dispatched at the commit boundary; `suspend`/`resume` fire there on gate-close/gate-open of an effect's enclosing subtree, driven by the runtime's internally-computed effective activation. (§13.16)
 028-74. The IR carries the structural information the runtime needs: cells and dependency edges, gates, streams, effects, and behavior references. (§13.16)
 028-75. Source-level hot reload applies an IR diff to the live runtime: cells matched by path with state preserved, changed behaviors swapped by content-hash, added/removed nodes mounted/unmounted. (§13.16)
+028-76. Reload step 5 opens the reconciler-registration window: the runtime calls the host with the set of reconciler names the new program requires that are not yet registered, and the host may register them during this window — the reload's pre-live phase; if any required reconciler is still missing when the window closes, the reload is rejected — the lock is released, writes resume, and the runtime keeps running the old version, parallel to a compile-failure rejection. Startup's abort-on-missing rule is unchanged. (§13.15.3, §13.14.7)
+028-77. A value recurrent whose fully-qualified path and type match across reload preserves both its current value and its `.past` history buffer; a behavior-body change is not retroactive — no historical value is recomputed, and the next evaluation runs the new body over the preserved history. (§13.15.2, §13.15.3)
+028-78. A trap during a reload's pre-live first evaluations — added-cell initialization or the re-initialization pass — abandons the reload: added cells are discarded, the runtime keeps running the previous version, and the trap surfaces as a reload-failure diagnostic. The pre-live first-evaluation phase is thereby a sanctioned machinery-level containment boundary for traps — a deliberate carve-out from the no-continuation-past-a-trap law, which otherwise stands: startup first-evaluation traps still abort the process. (§13.15.3, §13.13.1)
 
 ## 029. Operators — 125 Rules
 
@@ -3835,7 +3845,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-273. The crossing names `changes` and `latest` form a closed grammar list, not reserved words: like directive names they are recognized only in postfix-arrow position, and both remain fully legal as ordinary identifiers and binding names everywhere else. (§13.18.9)
 030-274. When a `repeat` scope is dropped, a consumer instantiated inside that scope holding a cursor on a gate stream declared outside the scope releases that cursor as part of the same teardown that tears its per-element effects down with the element key; the outer gate stream's slowest-cursor retention then recomputes without the released cursor, with buffer entries retained only for the remaining cursors, so a gate buffer the departed consumer was pinning can evict and accept producer pushes again. This is the scope-drop parallel of the reload-time removed-consumer cursor drop — the same cursor release under a different trigger. (§13.18.12)
 
-## 031. Effects — 160 Rules
+## 031. Effects — 161 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -3997,6 +4007,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 031-158. Every effect is a reconciliation contract, fulfilled by a host reconciler when it is a leaf effect, by child effects when it is an interior effect, or by both. (§13.19)
 031-159. When several lifecycle hooks are eligible for one effect instance at one commit boundary, they fire in the fixed per-instance order `teardown`, `create`, `resume`, `update`: `resume` strictly precedes any same-boundary `update` for a just-reopened instance, and `create` strictly precedes any same-boundary `update` for a just-created one. At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit. (§13.19.14)
 031-160. Selecting which effect type a node instantiates through a generic type parameter or a `Type[C]`-typed slot does not breach effect locality: the caller supplies a type, never an effect instance; the instantiation site, lifecycle, and ownership remain the local `effects:` clause of the instantiating node. (§13.19.9)
+031-161. Visibility is a source-language concept and does not cross the host boundary: the host API addresses an effect type by name regardless of the effect's source visibility — a `private` effect's reconciler registers exactly as an unmarked one's — and the IR carries no visibility field, so no name-mangling or omission derives from visibility. (§13.19.10, §13.14.7)
 
 ## 032. Implementation Model — 179 Rules
 
@@ -4112,7 +4123,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-110. Local mutation within a behavior — `mut` bindings, indexed assignment, iterator state — is permitted per §§11–12 but visible only within that invocation; it does not escape. (§14.6.1)
 032-111. Behaviors follow the two-track failure model uniformly: trap-track failures (overflow under default operators, division by zero, out-of-range indices, explicit `panic`) abort the process. (§14.6.2)
 032-112. Recoverable conditions in behaviors are expressed as value-track `Option`/`Result` values flowing through the type system. (§14.6.2)
-032-113. The runtime does not isolate behavior traps: no `catch_unwind` boundary, no errored-cell sentinel, no continuation past a trap. (§14.6.2)
+032-113. The runtime does not isolate behavior traps: no `catch_unwind` boundary, no errored-cell sentinel, no continuation past a trap — with one machinery-level exception: a behavior trap during a hot reload's pre-live first evaluations is contained by the reload machinery, which abandons the reload (§13.15.3). (§14.6.2)
 032-114. A behavior's identity is content-addressed: a stable hash — wide enough to be collision-free (≥128 bits, implementation-defined) — of the canonicalized typed IR of its body, assigned at compile time. (§14.6.3)
 032-115. Canonicalization before hashing alpha-renames locals, sorts declaration order where order is irrelevant, and strips position information. (§14.6.3)
 032-116. Cosmetic changes — added whitespace, reordered independent declarations, renamed local bindings — do not perturb a behavior's ID. (§14.6.3)
@@ -4165,10 +4176,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-163. Matched operator instances preserve their internal cell state across reload by the operator-instance-identity scheme of §13.17.10, via the same cell-identity mechanism (§13.15.2) used for top-level cells. (§14.8.2)
 032-164. Changing the body of an existing behavior (same signature, different implementation) is reload-safe. (§14.8.3)
 032-165. Adding new behaviors, signals, attrs, or derived declarations is reload-safe. (§14.8.3)
-032-166. Reload-unsafe changes fall into two classes per §13.15.4: those requiring full-runtime restart and those needing only per-instance restart. (§14.8.3)
+032-166. Reload-unsafe changes are classified on two axes per §13.15.4: the class axis names which restart the change would require — full-runtime or per-instance; the disposition axis — restart or reject — is implementation-defined for either class. (§14.8.3)
 032-167. Changes to the reactive state buffer layout that would relocate live cells require a full-runtime restart. (§14.8.3)
 032-168. Operator-specific changes (operator signature changes, internal cell type changes per §13.17.10) need only per-instance restart: only the affected operator instances are recreated. (§14.8.3)
-032-169. All other changes — cell removal (compile-gate-verified unreferenced), cell type changes (remove + add per §13.15.2), wire topology changes (remove + add per §13.15.2) — are reload-safe and need no restart. (§14.8.3)
+032-169. All other changes — cell removal (compile-gate-verified unreferenced), cell type changes outside operator bodies (remove + add per §13.15.2), wire topology changes (remove + add per §13.15.2) — are reload-safe and need no restart; an operator-internal cell type change is per-instance-restart territory per §13.17.10. (§14.8.3)
 032-170. The implementation diagnoses unsafe changes at reload time and either rejects them — the runtime keeps running the old version — or cleanly applies the appropriate restart, full-runtime or per-instance per §13.15.4. (§14.8.3)
 032-171. Whether an unsafe change is rejected or handled by restart is implementation-defined. (§14.8.3)
 032-172. If the new source fails to compile (parse, type, or ownership error), the reload is abandoned and the runtime keeps running the previous version. (§14.8.4)
@@ -4180,7 +4191,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-178. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-179. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 242 Rules
+## 033. Compilation Model & IR — 243 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4424,6 +4435,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-240. The spec prescribes no reference test suite. (§15.7.4)
 033-241. Implementations may publish conformance suites; passing such a suite is not a normative requirement. (§15.7.4)
 033-242. The IR representation of an attr placement encodes its provenance category (B static / C reactive) per placement on the wire or scope entry's attr list, enabling per-placement optimization at runtime/codegen: static-RHS placements skip implicit-derived allocation; reactive-RHS placements instantiate the bridge. (§15.4.1)
+033-243. The cell-ID grammar's multiplicity device for keyed scopes is the `.<key>.` segment: a `repeat` scope key appears in the path as its own segment, rendered as the key's stringified `StringifiableKey` form — `<enclosing_path>.<key>.<template_field>` — first-class alongside lexical name segments and the `:N` ordinal suffix. A stringified key renders bare iff it is nonempty and contains none of `.`, `:`, `'`, `\`, or whitespace; any other stringified form renders as a single-quoted segment with `\'` and `\\` escapes. Quoting is canonical — bare whenever bare is available — so equal keys render byte-identical cell IDs. (§15.4.1.1, §13.5.3)
 
 ## 034. Collect / Yield / Yielded — 19 Rules
 
