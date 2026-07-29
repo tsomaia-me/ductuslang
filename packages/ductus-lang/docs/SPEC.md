@@ -88,7 +88,9 @@ storable stand-in for *which kind* to place is the type value `Type[…]`
 **Effectively pure functions.** From a caller's perspective, every
 user-defined function is referentially transparent: same inputs produce
 the same outputs, with no externally observable side effects on the
-caller's bindings beyond the function's declared return value. A
+caller's bindings beyond the function's declared return value. A call's
+*inputs* are its arguments together with its provenance set — the
+reactive cells the call transitively reads (§13.12.2.1). A
 function may use `mut` bindings, indexed assignment, and `while`/`for`
 loops *internally* (§11, §12), but these are implementation details
 invisible at the call site. The reactive system provides the controlled
@@ -101,9 +103,9 @@ input is compile-time known. The language uses this aggressively for
 type-level computation, value-fits-type checking, and dependent-ish typing.
 
 **Nominal types.** Records, enums, traits, nodes, and wires are nominal —
-identity is by name, not structure. Tuples, closure types, and
-trait-constraint intersections are explicit structural carve-outs with
-clear semantics.
+identity is by name, not structure. Tuples, closure types,
+trait-constraint intersections, and `Map[K, V]` are the explicit
+structural carve-outs, with clear semantics.
 
 **Traits as the abstraction mechanism.** Behavior abstraction uses nominal
 traits with explicit `fulfill` declarations. Coherence is enforced
@@ -269,6 +271,12 @@ type. Use sites include:
 - An operand to an operator whose other operand is concretely typed.
 - A field assignment in a record where the field type is concrete.
 - A return value of a function with a concrete return type.
+- A bare variant construction (`Ok(42)`; §6.2.3). The bare variant name
+  is a *variant placeholder*: the use sites listed here resolve it to a
+  concrete enum — the construction-side mirror of pattern position,
+  where the scrutinee's enum resolves bare variants. Where no expected
+  type exists, the bare form is a compile error directing to an
+  annotation or qualification.
 
 Each use site resolves the placeholder independently. The same placeholder-
 bearing value used at two different use sites can resolve to two different
@@ -1387,15 +1395,15 @@ Implementations bind associated types via the `type Name = Concrete` form
 inside `fulfill` blocks (§3.3.2).
 
 Bounds on associated types in generic constraints use where-clauses with the
-`.` member-access notation (§3.3.4 for where-clauses; §3.1.6 for generic
+`::` path notation (§3.3.4 for where-clauses; §3.1.6 for generic
 trait parameters):
 
 ```
-fn sum[P: Producer](p: P) -> P.Item where P.Item: Numeric:
+fn sum[P: Producer](p: P) -> P::Item where P::Item: Numeric:
   ...
 ```
 
-A where-clause may also **equate** an associated type to a specific type with the `is` keyword: `where Path.Assoc is ConcreteType` constrains `Path.Assoc` to be exactly that type (as opposed to `Path.Assoc: Trait`, which bounds it). The predicate spells `is` — the comparison keyword — while the declaration and fulfill binder spells `=`: `=` declares or binds an associated type, `is` constrains one by comparison, mirroring the value-level equality keyword (`Eq::is`/`is`). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter.Source is Subject`.
+A where-clause may also **equate** an associated type to a specific type with the `is` keyword: `where Path::Assoc is ConcreteType` constrains `Path::Assoc` to be exactly that type (as opposed to `Path::Assoc: Trait`, which bounds it). The predicate spells `is` — the comparison keyword — while the declaration and fulfill binder spells `=`: `=` declares or binds an associated type, `is` constrains one by comparison, mirroring the value-level equality keyword (`Eq::is`/`is`). This is the form used by `Iterable`/`IntoIterable` (§12.8, §12.9) — e.g. `where Iter::Source is Subject`.
 
 **Borrow-default convention on associated-type slots.** Associated
 types follow the same borrow-default convention as function parameter
@@ -1579,7 +1587,12 @@ they are not applicable to records, enums, newtypes, or primitive types.
 A trait that declares any such member is a *kind-specific* trait — a *node
 trait* or, when it declares endpoints, a *wire trait*. A trait that
 declares only methods and associated types is *kind-agnostic* and may be
-satisfied by any kind. The compiler enforces the kind restriction at the
+satisfied by any kind. The fulfiller gate is the *conjunction* of each
+member's own requirement: every required cell demands a node or wire
+fulfiller, every required endpoint demands a wire fulfiller, and
+effect-kind methods (§3.1.1.1) demand nothing — a trait mixing member
+kinds is satisfiable exactly by the kinds that meet all of its members'
+requirements. The compiler enforces the kind restriction at the
 `fulfill` site (the gating rules below). These required members are also
 what make a kind-specific trait usable as the instantiation contract of a
 `Type[…]` value (§5.7.5): the receiver of a `Type[ThatTrait]` may rely on
@@ -1715,8 +1728,10 @@ four roles:
   Copy` (§11.4.1) conforms exactly those instantiations whose parameters
   meet the bounds.
 - **Nothing to override.** A trait all of whose methods have default bodies
-  needs no body: `fulfill Renderable for Song` claims the trait and accepts
-  every default.
+  needs no body: `fulfill Describable for Song` claims the trait and accepts
+  every default (here `Describable` declares only defaulted `fn` methods —
+  contrast `Renderable` above, whose effect-kind method carries an
+  `observed:` contract and so requires a body).
 - **Optional pin for an auto-satisfied trait.** When a trait auto-satisfies
   (§3.3.5), no `fulfill` is required at all; a bodiless `fulfill` may still
   be written as an explicit pin, but it is never required.
@@ -2086,7 +2101,7 @@ in addition to trait bounds, and the two may be mixed in one
 comma-separated list: `where T: Numeric, N >= 1`. Trait bounds are
 checked where the implementation or call is resolved; const-generic
 value bounds are checked at instantiation against concrete values
-(§2.5.6). A `where` clause may also carry associated-type **equality** constraints (`Path.Assoc is ConcreteType`, §3.1.2).
+(§2.5.6). A `where` clause may also carry associated-type **equality** constraints (`Path::Assoc is ConcreteType`, §3.1.2).
 
 #### 3.3.5 Pure-requirement traits and automatic satisfaction
 
@@ -2223,7 +2238,9 @@ resolution algorithm prioritizes trait implementations over free functions:
 5. **One parent-trait candidate matches → resolve to it.** The trait impl
    wins over any same-named free function. A free function with the same
    name in scope is *shadowed* at this call site; it remains callable only
-   via path qualification (e.g., `some_module::f(x, ...)`). Within the
+   via path qualification (e.g., `some_module::f(x, ...)`). The shadowing
+   raises a warning, diagnostic class `trait_impl_shadows_free_function`;
+   path-qualifying the call silences it. Within the
    parent-trait candidate, if multiple generic instantiations are
    reachable, the compiler resolves to a specific instantiation by
    inference per §2.2.5; failure to resolve to one is a compile error at
@@ -2247,7 +2264,11 @@ resolution algorithm prioritizes trait implementations over free functions:
    clause (§13.19): `song.render()`, where `render` is an effect-kind
    method of a fulfilled trait, is rejected with an error of the form
    "`render` is an effect; invoke it in an `effects:` clause (e.g.
-   `render(song)`)".
+   `render(song)`)". When the unmatched name names a closure-typed field
+   of the receiver — `r.handler()` where `handler: fn(...) -> ...` — the
+   diagnostic instead hints at the parenthesized invocation form:
+   "`handler` is a closure-typed field; invoke it as `(r.handler)(...)`"
+   (§11.10.1).
 
 The algorithm is deterministic: §3.2.1's parent-trait collision rule —
 over the type's effective fulfilled-trait set, including auto-satisfied
@@ -2856,7 +2877,8 @@ trait-side seal and the type-side seal.
 
 The modifier is uniform across every nominal conformable declaration kind —
 `sealed type`, `sealed enum`, `sealed node`, `sealed wire` — with a
-newtype sealing through its `type` head. The structural carve-outs — tuples
+newtype sealing through its `type` head. The declaration-less structural
+carve-outs — tuples
 and closure types — have no declaration to modify and no declaring module to
 protect, so they cannot be sealed, though a tuple remains conformable through
 element coverage under the orphan rule.
@@ -3485,6 +3507,10 @@ extending). The compiler dispatches on the type via the `Shr` trait impl.
 No separate `>>>` operator exists. `>>` has no other meaning at the value
 level.
 
+A shift count greater than or equal to the left operand's bit width
+traps at runtime; when the count is compile-time-known, the
+out-of-width shift is a compile error instead.
+
 #### 4.4.3 Comparison operators
 
 | Operator | Operand Trait | Result |
@@ -3621,19 +3647,21 @@ operators on one row share precedence.
 | 6    | `\|` (bitwise or)                                         | left            |
 | 7    | `^` (bitwise xor)                                         | left            |
 | 8    | `&` (bitwise and)                                         | left            |
-| 9    | `..` (range)                                              | non-associative |
-| 10   | `is`, `is not`, `<`, `<=`, `>`, `>=`                      | non-associative |
-| 11   | `<<`, `>>` (shifts)                                       | left            |
-| 12   | `+`, `-`                                                  | left            |
-| 13   | `*`, `/`, `\`, `%`                                        | left            |
-| 14   | `-`, `~`, `handle`, `handle!`, `portal`, `delete` (prefix) | right           |
-| 15   | `?`, `?.`, `?[]`, `?()`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts | left            |
-| 16   | `::`                                                      | left            |
+| 9    | `in` (membership)                                         | non-associative |
+| 10   | `..` (range)                                              | non-associative |
+| 11   | `is`, `is not`, `<`, `<=`, `>`, `>=`                      | non-associative |
+| 12   | `<<`, `>>` (shifts)                                       | left            |
+| 13   | `+`, `-`                                                  | left            |
+| 14   | `*`, `/`, `\`, `%`                                        | left            |
+| 15   | `-`, `~`, `handle`, `handle!`, `portal`, `delete` (prefix) | right           |
+| 16   | `?`, `?.`, `?[]`, `?()`, `.`, `[]`, `()`, and `T%()`/`T\|()`/`T?()` casts | left            |
+| 17   | `::`                                                      | left            |
 
 - `|>` is the loosest-binding operator; every other operator binds tighter, so `a + b |> op` is `(a + b) |> op`.
 - Bitwise operators bind tighter than the logical operators (`and`/`or`/`not`) but looser than comparison — the C convention — so `a & b is c` parses as `a & (b is c)`; parenthesize when the other grouping is meant.
 - `not` binds looser than comparison and negates the whole comparison: `not a is b` is `not (a is b)`.
 - `..` binds looser than arithmetic, so `0..n + 1` is `0..(n + 1)`.
+- `in` holds its own tier between the bitwise tiers and the range tier: `x in 0..n` is `x in (0..n)` (range binds tighter), and `not k in s` is `not (k in s)` (`not` binds looser).
 - Comparison does not chain: `a < b < c` is rejected (§4.4.3).
 - Each arithmetic policy variant — wrapping `…%`, saturating `…|`, checked `…?` — binds at its base operator's tier: `+%`/`+|`/`+?` are additive, `*%`/`*|`/`*?`/`/?`/`\?`/`%?` multiplicative, and unary `-%`/`-|`/`-?` prefix.
 - `as` is **not** in this table: it is a naming keyword, not a value operator (§4.7); explicit conversion uses the call forms `T()`/`T%()`/`T|()`/`T?()`, which bind at the postfix tier.
@@ -3852,21 +3880,24 @@ and `\|` per §4.6.2 and §4.6.3.
 
 #### 4.6.5 Compile-time constant overflow
 
-Compile-time constant overflow is always a compile error, regardless of
-which operator variant is used. The compiler evaluates constant expressions
-per §2.4 and rejects programs where a constant value provably doesn't fit
-its declared or inferred type:
+Compile-time constant evaluation mirrors each operator's defined
+runtime semantics (§2.4). A variant whose defined result exists
+const-folds to that result: wrapping variants fold to the wrapped
+value, saturating variants to the saturated bound, checked variants to
+the `Option` value. Only an operation whose defined runtime behavior
+is a trap — overflow of an unsuffixed trapping variant — is rejected
+at compile time when its operands are compile-time-known:
 
 ```
-const x: u8 = 200u8 + 100u8                 // compile error: 300 doesn't fit u8
-const x: u8 = 200u8 +% 100u8                // compile error: still doesn't fit
+const x: u8 = 200u8 + 100u8                 // compile error: trapping variant; 300 doesn't fit u8
+const y: u8 = 200u8 +% 100u8                // ✓ folds to 44u8 — wrapping semantics
+const z: u8 = 200u8 +| 100u8                // ✓ folds to 255u8 — saturating semantics
+const w: Option[u8] = 200u8 +? 100u8        // ✓ folds to None — checked semantics
 fn f(arr: i32[some_large_compile_time_value])  // compile error if value doesn't fit isize
 ```
 
-This applies to `+%`, `+|`, `+?` and other variants too: the compile-time
-analysis happens before the runtime semantics of each variant matters.
-Compile-time-known overflow is a programmer error to be fixed in code, not
-a runtime condition to be handled.
+Compile-time-known overflow of a trapping operator is a programmer
+error to be fixed in code, not a runtime condition to be handled.
 
 #### 4.6.6 Float overflow
 
@@ -4497,9 +4528,11 @@ trait Contains[K]:
 
 `k in s` desugars to `Contains::contains(s, k)`. The `in` keyword
 serves both as the `for`-loop separator (§13.7.5) and as the membership
-operator; the parser disambiguates by syntactic position. `not k in s`
-parses as `not (k in s)` — `not` binds looser than the membership
-operator and negates the whole comparison.
+operator; the parser disambiguates by syntactic position. The
+membership operator holds its own precedence tier (§4.4.7): `not k in s`
+parses as `not (k in s)` — `not` binds looser than `in`
+and negates the whole membership test — while the range operator binds
+tighter, so `x in 0..n` is `x in (0..n)`.
 
 Maps fulfill `Contains[K]`; stdlib collections do too — there is no
 language-privileged dispatch.
@@ -5484,10 +5517,17 @@ the variant's enum unambiguous at every use site.
 This requirement governs **open value positions**, where no enum is fixed by
 context. In **pattern position** (`match` arms) and in constructions whose
 **expected type is a known enum** (an annotated binding, a typed parameter, a
-return slot), variant names resolve against that enum directly — no `use`, no
+return slot, a record-field or attr position), variant names resolve against
+that enum directly — no `use`, no
 path: a `match` arm `Circle(r):` against a `Shape` scrutinee, and
 `let r: Result[T, E] = Ok(v)`, need no import, because the scrutinee's or
-expected type fixes the enum.
+expected type fixes the enum. The bare variant name is a *variant
+placeholder* resolved by §2.1.2's use-site machinery — the
+construction-side mirror of pattern position. Where no expected type
+exists, a bare variant is a compile error directing to an annotation or
+qualification. No scope injection is at work: importing a type never
+injects its variant names into bare scope, so adding a variant to a
+library enum is never a downstream breaking change.
 
 Unqualified variant names are not available by default. To bring variants
 into scope unqualified, the user explicitly imports them via `use`:
@@ -6673,14 +6713,12 @@ accepts either signature; users choose based on what callers need.
 
 ### 8.9 Error Handling in the Reactive Context
 
-The reactive system (specified in §13.13 for error handling in
-reactive contexts) uses the same two-track failure model. A trap inside a `derived` expression's
-computation propagates as a normal trap — the reactive system does not
-catch traps. A `derived` declaration whose expression has type
-`Result[T, E]` or `Option[T]` produces a reactive value of that type;
-consumers of the derived value handle the failure case using standard
-`match` or `?` propagation. The reactive layer adds no special error
-mechanism beyond what already exists in the type system.
+The reactive system uses the same two-track failure model: traps
+propagate uncaught, and `Result`/`Option`-typed reactive values are
+consumed with standard `match` or `?`. The reactive layer adds no
+special error mechanism beyond what already exists in the type system.
+§13.13 is the single owner of error handling in reactive contexts,
+including the full list of covered constructs.
 
 ---
 
@@ -6816,7 +6854,7 @@ measurement visible at every call site:
   Iterable in O(n) total traversal, because UTF-8 decoding must run
   byte-by-byte (§9.1.4) — there is no O(1) random char access in a
   variable-width encoding. The exact return type is a stdlib concern.
-- `s.byte_len() -> isize` — length in bytes. O(1).
+- `s.byte_count() -> isize` — length in bytes. O(1).
 - `s.char_count() -> isize` — number of Unicode scalars. O(n).
 
 Each name describes both the operation and its complexity-relevant unit.
@@ -6840,7 +6878,9 @@ Slicing uses explicit methods rather than range syntax:
 
 Both methods return a new string value. Invalid boundaries
 (mid-codepoint byte index, out-of-range positions) trap at runtime per
-§4.6.1's trap-on-error philosophy.
+§4.6.1's trap-on-error philosophy. Reversed bounds — `start >= end` —
+are not a failure mode: they yield the empty string, per the range
+convention (§12.2.3).
 
 #### 9.1.8 Immutability and operations
 
@@ -6855,8 +6895,10 @@ let replaced = s.replace(old, new)
 let combined = a + b
 ```
 
-The runtime is free to share immutable backing storage between values,
-but this is an implementation detail invisible to the user.
+String values share immutable backing storage through reference
+counting — the normative realization of string `Copy` semantics
+(§11.6), making duplication O(1); the sharing is semantically
+invisible to the user.
 
 The `+` operator concatenates strings per §4.4's operator framework.
 The stdlib provides an `Add` implementation for `string` with both
@@ -6905,9 +6947,11 @@ There is no in-interpolation format-specifier mini-language: `{expr}` always for
 
 ### 9.2 Tuples
 
-Tuples are *structurally typed* — one of the two structural-typing
-carve-outs in an otherwise nominal type system (the other is closure
-types, §11.10.6). Two tuples with the same component types in the same
+Tuples are *structurally typed* — one of the two declaration-less
+structural-typing carve-outs in an otherwise nominal type system (the
+other is closure types, §11.10.6; trait-constraint intersections and
+`Map[K, V]` complete the structural-exception set, §1.3). Two tuples
+with the same component types in the same
 order are the same type:
 
 ```
@@ -7160,7 +7204,10 @@ of type `T[N]`:
 ```
 
 In both forms `N` must be a compile-time-known non-negative integer, since the
-array's length is part of its type.
+array's length is part of its type. The repeat form requires
+`T: Clone`: `v` is evaluated exactly once when `N >= 1` and the single
+evaluation is cloned `N - 1` times; when `N = 0`, `v` is not evaluated
+at all.
 
 #### 9.3.2 Disambiguation of `T[args]` in type position
 
@@ -7433,8 +7480,8 @@ stdlib collector, etc.).
 #### 9.3.8 The element tally
 
 ```
-let n: usize = arr.count           // compile-time-known for T[N], T[..N]
-let m: usize = dyn_slice.count     // runtime for T[..]
+let n: isize = arr.count           // compile-time-known for T[N], T[..N]
+let m: isize = dyn_slice.count     // runtime for T[..]
 ```
 
 The accessor is the full word `count`, not `len()` or `length`. This is
@@ -7442,7 +7489,7 @@ the uniform element-tally name shared by arrays, slices, `Map`, `Vec`,
 `HashSet`, `yielded` groups, and dynamic views (§13.3.3.4). Bundles
 share the bare `count` spelling but report the **row** count — the one
 intentional exception to the element tally (§13.3.3.5). Strings are
-exempt — they use `byte_len` / `char_count` (§9.1) — and stream metrics
+exempt — they use `byte_count` / `char_count` (§9.1) — and stream metrics
 keep their specialized `pending_count`-style names.
 
 ### 9.4 Time Types: `duration` and `instant`
@@ -7845,8 +7892,10 @@ derived report: Map[string, cell f32] = {
 }
 ```
 
-The map's reactive-composite paths are `<binding>.<key>` (parallel to
-record fields, §13.2.9.4). Keys must be compile-time-known for the
+The map's reactive-composite paths are `<binding>['<key>']` — a map
+key is a map key, spelled in bracket form whether plain or composite
+(parallel to `<binding>[<index>]` for arrays, §13.2.9.4). Keys must be
+compile-time-known for the
 slot path to be static.
 
 A map whose keys are **runtime values** cannot be a composite — there
@@ -8056,7 +8105,10 @@ standard library.
 All `use` statements use absolute paths starting from one of these
 bases. There is no relative-path "current module" reference *for
 imports*; `use` statements between modules always go through `root`
-or an external dependency name.
+or an external dependency name. The one sanctioned exception is the
+bare-type-rooted variant import (§6.2.3): when an enum type is itself
+in scope, `use Result::(Ok, Err)` roots at the type rather than a
+path base.
 
 Within a node or wire body, the `module::` qualifier (§13.7.3)
 does reach the *current* module's top-level scope — but it is a
@@ -8155,7 +8207,8 @@ mechanism to share imports across sibling files.
 
 All `use` paths are absolute, starting from a path base
 (`root` or an external dependency name; see §10.2.3). There is no
-relative-path form.
+relative-path form; the bare-type-rooted variant import (§6.2.3,
+§10.2.3) is the one sanctioned exception.
 
 A `use` may bind the imported name under a local alias with `as`: `use root::audio::Synthesizer as Synth` makes `Synth` the file-local name for the imported declaration. The alias is file-scoped like the `use` itself; `as` here is the same naming keyword used for placement names and `repeat` view names (§1.4).
 
@@ -8200,6 +8253,15 @@ the `use` site that introduces the second collision. The conflict is
 surfaced at the import that introduces it, not deferred to a later use of
 the name, and is resolved by importing selectively or keeping one source
 path-qualified (see §6.2.3).
+
+The symmetric glob-vs-glob case is the *only* import collision that
+errors; asymmetric collisions resolve by specificity, with no error:
+
+- A **selectively imported** name colliding with a glob-imported name
+  resolves to the selective import — the explicit selection wins over
+  the glob.
+- A **locally declared** name colliding with a glob-imported name
+  resolves to the local declaration — local beats glob.
 
 A selection-list item may itself be a multi-segment path, carry its own `as` alias, or be a `*` glob, so one `use` may group several reaches: `use root::audio::(synth::Oscillator, Filter as Filt, fx::*)`.
 
@@ -8825,8 +8887,8 @@ Consuming includes:
 - Return statements: `return r` for a real-owner local (category A;
   a cluster-member return is anchored only under `-> own T`, otherwise
   it propagates as a borrow-equivalent alias per §11.3.6).
-- Storing in a record field, tuple component, or enum payload —
-  category B; implicit move per §11.11.
+- Storing in a record field, tuple component, enum payload, or indexed
+  slot — category B; implicit move per §11.11.
 - Writing into a reactive cell: `signal.write(r)`, `stream.emit(r)`,
   attr reassignment from a recurrent advance — category D; implicit
   move per §13.
@@ -9808,7 +9870,11 @@ A `Handle[T]` (§13.3.6.2) is `Copy`; a `WeakHandle[T]`
 values are not aliases under §11.9 — they may be stored in a cell,
 record field, enum payload, or tuple like any other `Copy` value. No
 exemption is at work: storability follows from `Copy` semantics, and
-the categories above govern alias-bearing values only.
+the categories above govern alias-bearing values only. Closures are
+the one carve-out: a closure value, though `Copy`, may not be stored
+in a reactive cell — no cell type admits a closure (§11.10.6,
+§13.12.4); fields, tuple components, indexed slots, and enum payloads
+remain legal.
 
 The *resolution* `Option[&T]`, by contrast, contains a borrow (here
 `&T` is elaborated-form notation per §11.9, not surface-writable) and
@@ -9973,6 +10039,14 @@ duration of the closure invocation. Closures that need to consume a
 non-`Copy` argument declare it `own`: `let closure = fn(own b: Vec[f32]):
 into_sorted(move b)`.
 
+**Field- and index-held closures.** A closure stored in a record field
+or indexed slot is invoked by parenthesizing the access —
+`(r.handler)(args)`, `(v[i])(args)` — the ordinary call postfix applied
+to the field or index read. The bare form `r.handler(args)` is
+method-dispatch syntax (§3.4.1): it resolves through the dispatch
+algorithm, matches nothing, and fails with the unknown-method error,
+whose diagnostic hints at the parenthesized form.
+
 #### 11.10.2 Capture granularity
 
 The compiler captures the minimal set of subvalues the closure body
@@ -10080,7 +10154,8 @@ let d: fn(i32) -> i32 = double          // a free function inhabits the type
 parameter types (with their ownership conventions) and return type. Any
 callable whose signature matches inhabits it: closure literals and free
 functions alike (a free function is a closure that captures nothing).
-This is the second structural carve-out in the otherwise-nominal type
+This is the second declaration-less structural carve-out in the
+otherwise-nominal type
 system, after tuples (§9.2); a closure type is not declared and has no
 nominal identity. The `fn` prefix is what keeps `(P)` unambiguous: a bare
 `(T1, T2)` is a tuple type, while `fn(T1, T2) -> R` is a two-parameter
@@ -10431,9 +10506,11 @@ principles, recorded here for forward-compatibility:
   multiple aliases to the same cell. The category-B/C/D distinction at
   placement attribute assignment is type-directed: a reactive-typed
   RHS produces wiring; a value-typed RHS produces a category-B/D
-  consume into the attr's slot.
+  consume into the attr's slot — implicitly, with no `move` marker,
+  including when the RHS is an `own` function parameter.
 
-Function parameters flowing into reactive declarations follow `own`/
+Function parameters flowing into reactive declarations at
+call-argument positions follow `own`/
 `move` like any other category A consumption (§11.7, §11.8).
 
 The reactive boundary is one of the "global" scopes referenced in
@@ -10638,7 +10715,7 @@ The iteration source expression is evaluated once at loop entry.
    duration. There is no source to hold separately — the iterator
    owns the consumed data.
 3. Each iteration step calls `Iterator::next(iter, ())`, supplying
-   unit as the source (per IntoIterable's constraint `Iter.Source is
+   unit as the source (per IntoIterable's constraint `Iter::Source is
    ()`). The yielded `Item` is an owned value moved out of the
    iterator's storage (§12.9.2).
 4. The internal binding is reassigned to `NewIter`.
@@ -11422,11 +11499,11 @@ without consuming the source:
 trait Iterable:
   type Iter: Iterator
   fn iterator(value: Subject) -> Iter
-  where Iter.Source is Subject
+  where Iter::Source is Subject
 ```
 
 The associated type `Iter` is the iterator type produced; it must
-itself implement `Iterator`. The `where Iter.Source is Subject`
+itself implement `Iterator`. The `where Iter::Source is Subject`
 constraint binds the iterator's `Source` to the iterable's own type,
 so the for-loop machinery (§12.3.1) supplies the original value as
 the source on each `next` call.
@@ -11486,7 +11563,7 @@ fulfill Iterator for DataPointsIter:
 
 fulfill Iterable for DataPoints:
   type Iter = DataPointsIter
-  // Iter.Source is DataPoints satisfied by the where-clause
+  // Iter::Source is DataPoints satisfied by the where-clause
   fn iterator(d: DataPoints) -> DataPointsIter:
     DataPointsIter(cursor: 0)
 ```
@@ -11505,7 +11582,7 @@ elements are yielded as owned values.
 trait IntoIterable:
   type Iter: Iterator
   fn consuming_iterator(own value: Subject) -> Iter
-  where Iter.Source is ()
+  where Iter::Source is ()
 ```
 
 The associated type `Iter` is the iterator produced; it must itself
@@ -11513,7 +11590,7 @@ implement `Iterator`. The method `consuming_iterator` declares its
 parameter `own`: the source is consumed at the call. The returned
 iterator owns the source's storage.
 
-The `where Iter.Source is ()` constraint binds the iterator's `Source`
+The `where Iter::Source is ()` constraint binds the iterator's `Source`
 to unit: the source value has been consumed into the iterator at
 construction, so the for-loop machinery (§12.3.1) supplies `()` as the
 source on each `next` call. The iterator reads from its own internal
@@ -11592,7 +11669,7 @@ fulfill Iterator for DataStreamIntoIter:
 
 fulfill IntoIterable for DataStream:
   type Iter = DataStreamIntoIter
-  // Iter.Source is () satisfied by the where-clause
+  // Iter::Source is () satisfied by the where-clause
   fn consuming_iterator(own s: DataStream) -> DataStreamIntoIter:
     DataStreamIntoIter(pending: s.pending, cursor: 0)
                                    // takes ownership of s's pending events
@@ -11801,11 +11878,11 @@ A generic function body containing a loop is type-checked at definition
 per §2.2.2. The loop's iterable expression's type must satisfy
 `Iterable` (for the default form) or `IntoIterable` (for the `for own`
 form) at the call site for each monomorphization. Associated-type
-constraints use `.` member-access notation per §3.1.2:
+constraints use `::` path notation per §3.1.2:
 
 ```
-fn total[T: Iterable](source: T) -> T.Iter.Item where T.Iter.Item: Numeric:
-  mut sum = T.Iter.Item::zero()
+fn total[T: Iterable](source: T) -> T::Iter::Item where T::Iter::Item: Numeric:
+  mut sum = T::Iter::Item::zero()
   for sample in source:
     sum = sum + sample
   sum
@@ -14320,7 +14397,7 @@ into a `yielded` group (for values), and `repeat` for structure:
   ```
   yielded titles: string = collect:
     repeat p in items: yield p.title            // yielded group of string
-  derived n: usize = items.count                // element tally (§13.2.8.1)
+  derived n: isize = items.count                // element tally (§13.2.8.1)
   ```
 
   The per-member `yield` expression receives each member reference
@@ -17094,8 +17171,10 @@ to outer-most is:
 A bare name resolves to the nearest scope in this chain that
 declares it. Inside a node body, a bare reference to a member
 resolves to that member (scope 2) without needing `here::`; a bare
-reference to a module-level name not shadowed by a member resolves
-to the module-level declaration (scope 3).
+reference to a module-level name not also declared as a member resolves
+to the module-level declaration (scope 3). A member never silently
+shadows a module-level name — a name declared in both scopes is
+ambiguous and errors (§13.7.4).
 
 ```
 signal master_gain: f32 = 1.0          // module-level
@@ -19698,6 +19777,11 @@ from the type's size and shape:
 | `Map[K, V]`                                     | pool (variable)                                            |
 | Fixed-size array `T[N]` with N×sizeof(T) ≤ word | direct                                                     |
 | Fixed-size array `T[N]` with N×sizeof(T) > word | pool                                                       |
+
+For a dynamically sized element type, the array stores one word-size
+pool index per element, so sizeof(T) is one word for the fit rule:
+`T[N]` with a dynamic-size `T` has footprint N × word and follows the
+same direct-versus-pool split.
 
 Sizes shown are value widths. Storage is in atomic-word-width cells (one
 i64 = 8 bytes on a typical 64-bit platform):
@@ -25478,7 +25562,8 @@ flat-array representation as an internal compiler optimization when
 every row's inner cardinality is statically equal), records and enums as
 `%TypeId` (layout in the `types` table), `pool_index<%PoolId>` for
 dynamic-size values, `(slot_path, generation)` pairs for `Handle[T]` and
-`Portal[T]` (§13.3.6.2–.3), and `closure<(T,…)->R>`. Behaviors are fully
+`Portal[T]` (§13.3.6.2–.3) under the `handle<T>`/`portal<T>` tags, the
+ABI-only `yielded<T>` (§13.20.4.3), and `closure<(T,…)->R>`. Behaviors are fully
 typed; the graph is **type-erased** to tag + size/align — the runtime
 moves bits and never needs nominal types (§15.4.3).
 
@@ -26128,6 +26213,7 @@ binding       ::= NAME ':' (PATH | value) ('@' provenance)?
 provenance    ::= 'bound' | 'constant_wrap' | 'bridge'
 type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
                 | 'yielded' '<' type_tag '>'
+                | 'handle' '<' type_tag '>' | 'portal' '<' type_tag '>'
                 | '(' type_tag (',' type_tag)* ')' | '[' type_tag ';' INT ']'
                 | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
 PRIM          ::= 'i8'|'i16'|'i32'|'i64'|'i128'|'u8'|'u16'|'u32'|'u64'|'u128'

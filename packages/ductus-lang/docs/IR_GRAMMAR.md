@@ -148,13 +148,15 @@ PRIM             ::= 'i8'  | 'i16' | 'i32' | 'i64' | 'i128'
                    ;  (§15.4.6, 033-43)
 ```
 
-**`type_tag`** is the unified type-tag nonterminal used throughout both the module and behavior grammars. It encodes a primitive, a named record/enum/tuple layout from the module's `types` section (`'%'NAME`), a pool-indexed aggregate (`pool_index<%TypeId>`), a tuple structural type, a fixed-size array, or a closure environment type.
+**`type_tag`** is the unified type-tag nonterminal used throughout both the module and behavior grammars. It encodes a primitive, a named record/enum/tuple layout from the module's `types` section (`'%'NAME`), a pool-indexed aggregate (`pool_index<%TypeId>`), a `handle<T>`/`portal<T>` reference pair (inline `(slot_path, generation)` representation, §15.4.1), a tuple structural type, a fixed-size array, or a closure environment type.
 
 ```ebnf
 type_tag         ::= PRIM
                    | '%' NAME
                    | 'pool_index' '<' '%' NAME '>'
                    | 'yielded' '<' type_tag '>'
+                   | 'handle' '<' type_tag '>'
+                   | 'portal' '<' type_tag '>'
                    | '(' type_tag (',' type_tag)* ')'
                    | '[' type_tag ';' INT ']'
                    | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'

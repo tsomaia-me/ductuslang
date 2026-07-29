@@ -793,20 +793,21 @@ PostfixType       ::= TypePrimary TypePostfix*
                     ;  (§9.3.2, 005-44)
 
 TypePostfix       ::= '[' GenericArgList ']'                  // generic-inst | array | slice
-                    | TypeAssocAccess                          // associated-type projection T.Item
+                    | TypeAssocAccess                          // associated-type projection T::Item
                     ;  (§9.3.2, 005-44)
 
-TypeAssocAccess   ::= '.' IDENT                                // navigates a trait's associated type
-                    ;  (§5.6, 005-128)
+TypeAssocAccess   ::= '::' IDENT                               // navigates a trait's associated type
+                    ;  (§12.12.3, 014-157)
 ```
 
-// **Associated-type access (per §5.6, 005-128).** A `TypeExpr` may
-//  carry `.IDENT` chains in type position to navigate associated
-//  types — e.g. `P.Item`, `T.Iter.Item`. The leading head `P`/`T` is
+// **Associated-type access (per §12.12.3, 014-157).** A `TypeExpr` may
+//  carry `::IDENT` chains in type position to navigate associated
+//  types — e.g. `P::Item`, `T::Iter::Item`. The leading head `P`/`T` is
 //  typically a generic parameter; resolution against the trait's
-//  associated-type bindings is a post-parse semantic step. The same
-//  `.` token serves field projection in expression position (§5.2);
-//  the type-vs-value context discriminates.
+//  associated-type bindings is a post-parse semantic step. `.` never
+//  appears in type position — it is value member access only (§5.2);
+//  `::` reaches through types and namespaces, serving item paths in
+//  expression position (§10.2) under the same spelling.
 
 // `TypeExpr` is a single uniform nonterminal even though several distinct
 //  type-system constructs (records, traits, enums, primitives, tuples, etc.)
@@ -1225,16 +1226,16 @@ ValueBoundPredicate    ::= Expr                                 // boolean predi
 AssocTypeEqualityPredicate ::= AssocPath 'is' TypeExpr
                     ;  (§3.1.2, 005-19)
 
-AssocPath         ::= TypePath ( '.' IDENT )+
+AssocPath         ::= TypePath ( '::' IDENT )+
                     ;  (§3.1.2, 005-19)
 ```
 
-// **`AssocPath` requires `+1` `.IDENT` tail (per §3.1.2).** The LHS
+// **`AssocPath` requires `+1` `::IDENT` tail (per §3.1.2).** The LHS
 //  of an `AssocTypeEqualityPredicate` is restricted to an `AssocPath`
-//  — a `TypePath` followed by at least one `'.' IDENT` step — so the
+//  — a `TypePath` followed by at least one `'::' IDENT` step — so the
 //  predicate-position parse does not collide with the `TypePostfix`
 //  `TypeAssocAccess` fall-through (§3). A bare `TypeExpr is TypeExpr`
-//  has no `.IDENT` step on the LHS and so cannot be misread as an
+//  has no `::IDENT` step on the LHS and so cannot be misread as an
 //  associated-type equality.
 // **`is` (not `=`) for assoc-type equality (per Phase D, 030-N).** The
 //  predicate operator is the keyword `is`, parallel to the value-level
@@ -1246,14 +1247,14 @@ AssocPath         ::= TypePath ( '.' IDENT )+
 // **Mixed predicate kinds (per §3.3.4, 005-122).** A single `where`
 //  clause may hold any mix of trait bounds (`T: Numeric`), value bounds
 //  (`N >= 1`, `N % 2 is 0`), and associated-type equality predicates
-//  (`I.Item is i32`). The parser admits each alternative independently
+//  (`I::Item is i32`). The parser admits each alternative independently
 //  and the comma separator is uniform.
 // **Predicate-form discrimination (parser priority).** The three
 //  alternatives are distinguished by their syntactic shape; the parser
 //  tries them in this order to avoid ambiguity:
 //   1. `AssocTypeEqualityPredicate` — `AssocPath 'is' TypeExpr`. The
-//      parser commits when it sees `<head> . IDENT ... is` in a where-
-//      predicate position. The mandatory `.IDENT` tail distinguishes
+//      parser commits when it sees `<head> :: IDENT ... is` in a where-
+//      predicate position. The mandatory `::IDENT` tail distinguishes
 //      from a `ValueBoundPredicate` that uses `is` at the value level.
 //   2. `TraitBoundPredicate` — `TypeExpr ':' TraitBound`. The parser
 //      commits on `<head> :` (the `:` immediately after the head
@@ -1744,25 +1745,28 @@ BitOrExpr         ::= BitXorExpr ( '|' BitXorExpr )*             // tier 5
 BitXorExpr        ::= BitAndExpr ( '^' BitAndExpr )*             // tier 6
                     ;  (§4.4.2, 007-73)
 
-BitAndExpr        ::= RangeExprTier ( '&' RangeExprTier )*       // tier 7
+BitAndExpr        ::= InExpr ( '&' InExpr )*                     // tier 7
                     ;  (§4.4.2, 007-73)
 
-RangeExprTier     ::= CompareExpr ( '..' CompareExpr )?          // tier 8, non-associative (single application)
+InExpr            ::= RangeExprTier ( 'in' RangeExprTier )?      // tier 8, non-associative (single application)
+                    ;  (§4.4.7, 007-240)
+
+RangeExprTier     ::= CompareExpr ( '..' CompareExpr )?          // tier 9, non-associative (single application)
                     ;  (§4.4.7, 007-74)
 
-CompareExpr       ::= ShiftExpr ( CompareOp ShiftExpr )?         // tier 9, non-associative (single application)
+CompareExpr       ::= ShiftExpr ( CompareOp ShiftExpr )?         // tier 10, non-associative (single application)
                     ;  (§4.4.7, 007-74)
 
 CompareOp         ::= EqualityOp | OrderingOp
                     ;  (§4.4.7, 007-74)
 
-ShiftExpr         ::= AdditiveExpr ( ShiftOp AdditiveExpr )*     // tier 10
+ShiftExpr         ::= AdditiveExpr ( ShiftOp AdditiveExpr )*     // tier 11
                     ;  (§4.4.7, 007-74)
 
-AdditiveExpr      ::= MultiplicativeExpr ( AdditiveOp MultiplicativeExpr )*  // tier 11
+AdditiveExpr      ::= MultiplicativeExpr ( AdditiveOp MultiplicativeExpr )*  // tier 12
                     ;  (§4.4.7, 007-74)
 
-MultiplicativeExpr ::= UnaryExpr ( MultiplicativeOp UnaryExpr )* // tier 12
+MultiplicativeExpr ::= UnaryExpr ( MultiplicativeOp UnaryExpr )* // tier 13
                     ;  (§4.4.7, 007-74)
 ```
 
@@ -1789,10 +1793,10 @@ MultiplicativeExpr ::= UnaryExpr ( MultiplicativeOp UnaryExpr )* // tier 12
 //  `AndExpr` realize tiers 2 and 3 of Appendix A. The per-tier nonterminal
 //  decomposition (rather than a single flat `BinaryExpr`) makes the
 //  precedence directly mechanical for a recursive-descent implementer.
-// `RangeExprTier` and `CompareExpr` use single-application
-//  (`x ( op y )?`) rather than `*` repetition because tiers 8 and 9 are
-//  non-associative per §4.4.7. `a..b..c` and `a < b < c` both fail at
-//  parse time at the second operator.
+// `InExpr`, `RangeExprTier`, and `CompareExpr` use single-application
+//  (`x ( op y )?`) rather than `*` repetition because tiers 8, 9, and 10
+//  are non-associative per §4.4.7. `a in b in c`, `a..b..c`, and
+//  `a < b < c` all fail at parse time at the second operator.
 
 ### 5.1 Primary expressions (literal, ident, path, parenthesized)
 
@@ -1943,7 +1947,7 @@ CrossingName      ::= 'changes' | 'latest'                     // closed list; N
 //  position. In `PostfixExpr` position, `?` is `TryPostfix` (or the leader
 //  of an optional-chaining token); the cast-policy reading applies only
 //  when the head is a type name immediately followed by `?(` per §5.6.
-// All `Postfix` forms bind at tier 14 of Appendix A — they are
+// All `Postfix` forms bind at tier 15 of Appendix A — they are
 //  left-associative and chain freely: `x.f().g[i].h`.
 // **Third disjoint role of `->` (per §13.18.9).** In expression-postfix
 //  position `->` is the minting-access operator: `expr->changes`,
@@ -1980,7 +1984,7 @@ OptChainCall      ::= '?(' CallArgList? ')'
 ```
 
 // `?.`, `?[`, `?(` are single tokens emitted by the lexer (§2.12). They
-//  attach as `Postfix` alternatives at tier 14 of Appendix A — the same
+//  attach as `Postfix` alternatives at tier 15 of Appendix A — the same
 //  precedence as their non-optional counterparts `.`, `[`, `(`. The
 //  optional forms short-circuit on a `None` / `Err` receiver, propagating
 //  the empty case through the remaining chain.
@@ -1999,15 +2003,15 @@ UnaryExpr         ::= PrefixOp UnaryExpr
                     | PostfixExpr
                     ;  (§4.4.7, 007-74)
 
-PrefixOp          ::= '-'                                      // unary minus (tier 13)
-                    | '~'                                      // bitwise not  (tier 13)
+PrefixOp          ::= '-'                                      // unary minus (tier 14)
+                    | '~'                                      // bitwise not  (tier 14)
                     | 'not'                                    // logical not  (tier 4)
-                    | 'handle'                                 // handle borrow (tier 13)
-                    | 'handle!'                                // strong handle (tier 13)
-                    | 'portal'                                 // portal handle (tier 13)
-                    | 'dyn'                                    // dyn value-coercion (tier 13)
+                    | 'handle'                                 // handle borrow (tier 14)
+                    | 'handle!'                                // strong handle (tier 14)
+                    | 'portal'                                 // portal handle (tier 14)
+                    | 'dyn'                                    // dyn value-coercion (tier 14)
                     | 'move'                                   // move (call-arg position only)
-                    | ArithPolicyPrefixOp                      // -%, -|, -? (tier 13)
+                    | ArithPolicyPrefixOp                      // -%, -|, -? (tier 14)
                     ;  (§4.4.7, 007-74)
 
 ArithPolicyPrefixOp ::= '-%' | '-|' | '-?'
@@ -2015,7 +2019,7 @@ ArithPolicyPrefixOp ::= '-%' | '-|' | '-?'
 ```
 
 // **Prefix operator precedence.** All prefixes except `not` bind at tier
-//  13 (the unary-prefix tier of Appendix A) — they associate right and
+//  14 (the unary-prefix tier of Appendix A) — they associate right and
 //  bind tighter than every binary operator except postfix and path
 //  resolution. `not` binds at tier 4 (looser than comparison) and so
 //  negates a whole comparison: `not a is b` parses as `not (a is b)` per
@@ -2155,7 +2159,7 @@ CastPolicySuffix  ::= CastPolicyMarker '(' Expr ')'            // tail per §5.2
 //  expression operands), and `<type-name> '?' '(' ...` cannot be the Try
 //  postfix (which would need an expression head and no `(` follow).
 // **Cast-policy suffix at the postfix tier (per Appendix A).** The
-//  cast-policy forms `T%(x)` / `T|(x)` / `T?(x)` bind at tier 14, the
+//  cast-policy forms `T%(x)` / `T|(x)` / `T?(x)` bind at tier 15, the
 //  same tier as a call suffix. The reason for the separate `Postfix`
 //  alternative `CastPolicySuffix` is that the policy marker may attach
 //  directly to any `PostfixExpr` whose head is a type — the form lifts
@@ -2191,7 +2195,7 @@ MultiplicativeOp  ::= '*' | '/' | '\\' | '%'
 
 **Operator precedence table.** The canonical, complete precedence
 table — including tiers 0a (`with`), 0b (`where`), the prefix `dyn` /
-`move` admissions at tier 13, and the bare `T(x)` cast at tier 14 —
+`move` admissions at tier 14, and the bare `T(x)` cast at tier 15 —
 is **Appendix A** of this document. Appendix A annotates each tier
 with the §5 production that realises it. The per-tier nonterminal
 tower at the top of §5 (`OrExpr` … `MultiplicativeExpr`) plus
@@ -2206,20 +2210,20 @@ tower without further consultation.
 //  expected after a `UnaryExpr` head) and sees the token sequence
 //  `'is' 'not'`, it consumes both tokens as a single `EqualityOp`
 //  meaning "is not". `a is not b` desugars to `not (a is b)` per 007-197;
-//  the grammar treats it as one operator at tier 9. Outside the
+//  the grammar treats it as one operator at tier 10. Outside the
 //  infix-completion position, `not` is parsed as the prefix operator of
 //  tier 4.
 // **`not` is *prefix only*, never infix.** The §4.4.7 entry "tier 4: `not`
 //  (prefix)" lifts to the `UnaryExpr` alternative of §5.4 with a
 //  precedence-aware parser that applies prefix `not` at tier 4 — bound to
 //  the entire comparison that follows.
-// **Comparison does not chain (per §4.4.3).** Tier 9 is *non-associative*:
+// **Comparison does not chain (per §4.4.3).** Tier 10 is *non-associative*:
 //  `a < b < c` does parse (the grammar admits the production via two
-//  tier-9 applications) but the type system rejects it because the
+//  tier-10 applications) but the type system rejects it because the
 //  intermediate `<` produces a `bool` that does not order against the
 //  third operand. This is a post-parse semantic check, surfaced as a
 //  type error rather than a parse error.
-// **Range `..` does not chain (per §4.4.7).** Tier 8 is *non-associative*:
+// **Range `..` does not chain (per §4.4.7).** Tier 9 is *non-associative*:
 //  `a..b..c` is rejected by the parser because the production admits
 //  only one `RangeOp` application at the head and `..` does not
 //  re-enter at its own tier.
@@ -2232,7 +2236,7 @@ tower without further consultation.
 //  lexer level; `|>` binds at tier 1 (§5.25), `|` at tier 5.
 // **Cast-policy forms are postfix, not infix.** Despite their `%` / `|` /
 //  `?` lexeme overlap with arithmetic-policy operators, the call-like
-//  forms `T%(x)` / `T|(x)` / `T?(x)` (§5.6) bind at the postfix tier 14;
+//  forms `T%(x)` / `T|(x)` / `T?(x)` (§5.6) bind at the postfix tier 15;
 //  the parser's discrimination is the `<type-name> <marker> '('` shape
 //  preceding the marker.
 // **`as` is not in the precedence table.** `as` is a naming / aliasing
@@ -2243,21 +2247,21 @@ tower without further consultation.
 ### 5.8 Range `a..b` (non-associative)
 
 ```ebnf
-RangeExpr         ::= Expr '..' Expr                          // documentation-only overlay; canonical path is BinaryExpr via RangeOp at tier 8
+RangeExpr         ::= Expr '..' Expr                          // documentation-only overlay; canonical path is BinaryExpr via RangeOp at tier 9
                     ;  (§4.4.7, 007-74)
 ```
 
 // **Documentation-only overlay.** `RangeExpr` is not referenced from any
 //  other production; the canonical parse path for `a..b` is `BinaryExpr`
-//  with `BinaryOp ::= RangeOp` at tier 8 (§5.7). The named production is
+//  with `BinaryOp ::= RangeOp` at tier 9 (§5.7). The named production is
 //  retained here as a documentation shape for the reader; a parser
 //  implementer wires range through the precedence machinery of §5.7
 //  alone.
 // **Non-associative (per §4.4.7).** `a..b..c` is a parse error because
-//  tier 8 admits at most one `..` application at its tier. To form a
+//  tier 9 admits at most one `..` application at its tier. To form a
 //  range whose endpoint is itself a range, parenthesize.
 // **Binds looser than arithmetic (per §4.4.7).** `0..n + 1` parses as
-//  `0..(n + 1)` because tier 11 (additive) binds tighter than tier 8.
+//  `0..(n + 1)` because tier 12 (additive) binds tighter than tier 9.
 // **Open-ended forms admissible only inside `[…]` slice context (per
 //  §9.3.7 / §5.10).** A bare `let r = k..` is a parse error; `k..` is
 //  admitted only inside the bracket of an `IndexAccess` per §5.10. The
@@ -4058,8 +4062,11 @@ EffectParamList   ::= EffectParam ( ',' EffectParam )* ','?
 EffectParam       ::= IDENT ':' ( KindAnnotation | TypeExpr ) ( '=' Expr )?  // kind slot per §3.15
                     ;  (§13.19.3, 029-93)
 
-EffectBody        ::= ':' INDENT EffectBlock+ DEDENT
+EffectBody        ::= ':' INDENT EffectChildPlacement* EffectBlock* DEDENT
                     ;  (§13.19.2, 029-93)
+
+EffectChildPlacement ::= IDENT '=' Expr                        // top-of-body child-effect instantiation, before the blocks
+                    ;  (§13.19.15, 031-154)
 
 EffectBlock       ::= DesiredBlock
                     | ObservedBlock
@@ -4094,6 +4101,10 @@ ObservedCellDecl  ::= 'signal' IDENT ':' TypeExpr '=' Expr
                     | 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )? IDENT ':' TypeExpr
                     | 'stream' '[' TypeExpr ']' IDENT ':' TypeExpr
                       // bracket-policy declaration head (mirrors KindAnnotation §3.15); same channel as the word form — the word form is the idiomatic sugar (§13.18.3)
+                    | 'derived' IDENT ( ':' TypeExpr )? '=' Expr
+                      // lifted computed output (§13.19.5)
+                    | 'recurrent' RecurrentDepth? RecurrentBind ( ':' TypeExpr )? '=' Expr
+                      // lifted value-recurrent computed output; the recurrent-stream forms stay desired:-only (§13.19.5)
                     ;  (§13.19.5, 029-93)
 
 WhenBlockDecl     ::= 'when' Expr ':' INDENT DesiredCellDecl+ DEDENT OtherwiseDeclArm?
@@ -4127,19 +4138,22 @@ DefaultDeclArm    ::= 'default' ':' INDENT DesiredCellDecl+ DEDENT
 //  — and their `given` analogues are kept separate because each arm-body
 //  grammar differs.
 
-// **Effect-body block-only shape (per §13.19.2).** The `EffectBody`
-//  contains *only* `DesiredBlock` and `ObservedBlock` entries — no
-//  bare cell declarations directly in the effect body, no other
-//  clauses, no nested `EffectDecl`. At least one of the two blocks
-//  must be present; both may appear in either order (canonical is
-//  `desired:` first). The `+` on `EffectBlock` admits one-or-more;
-//  the at-least-one-of-each-kind constraint is a post-parse check.
-// **`recurrent` allowed in `desired:` only (per §13.19.4 /
-//  §13.19.5).** `DesiredCellDecl` admits `recurrent` and
-//  `recurrent[N] stream`; `ObservedCellDecl` admits *neither* — a
-//  host-fed observed cell has no expression body for `.past` to
-//  read. The grammar enforces this by branching: the `ObservedCellDecl`
-//  production has no `recurrent` alternative.
+// **Effect-body shape (per §13.19.2, §13.19.3.1).** The `EffectBody`
+//  contains optional top-of-body `EffectChildPlacement` items (child-
+//  effect instantiations `x = effect_expr`, graph placements rather
+//  than cell expressions) followed by `DesiredBlock` and
+//  `ObservedBlock` entries — no bare cell declarations directly in
+//  the effect body, no other clauses, no nested `EffectDecl`. The
+//  canonical body order is child placements → `desired:` →
+//  `observed:`; the older either-order latitude for the two blocks is
+//  superseded whenever child placements are present.
+// **`recurrent` in `observed:` is the lifted value form only (per
+//  §13.19.4 / §13.19.5).** `DesiredCellDecl` admits `recurrent` and
+//  `recurrent[N] stream`; `ObservedCellDecl` admits the value
+//  `derived` / `recurrent` computed-output forms (each carrying a
+//  reactive expression body, lifted into the public surface) but
+//  *not* the host-fed `recurrent[N] stream` — that stays a
+//  `desired:`-only form.
 // **`stream` `= source` forbidden in `observed:` (per §13.19.5).**
 //  `ObservedCellDecl`'s `stream` alternative has *no* `'=' Expr`
 //  source — the host's reconciler pushes events via the runtime API
@@ -6321,6 +6335,13 @@ EffectBodyDecl    ::= DesiredCellDecl                         // §7.14 (wrapped
 //  directives may stack — each on its own line above the type, or left-to-right inline. The
 //  semantic interpretation is per directive (e.g., union of derived
 //  traits, set of registered suffixes).
+// **Mixed stacks are legal (per §1.4, 002-37).** Own-line directives
+//  above a head line that itself carries inline directives combine into
+//  one stack; source order governs — the own-line directives apply
+//  top-to-bottom, then the inline directives left-to-right. The
+//  production's `( AppliedDirective NEWLINE? )*` derives exactly this:
+//  each directive either ends its line (own-line) or is followed
+//  directly by the next element (inline).
 // **Column alignment (per §1.4 layout rules).** An own-line directive
 //  line is written at the declaration's own indentation column, not
 //  deeper.
@@ -6476,8 +6497,8 @@ The precedence table below derives from SPEC §4.4.7, with grammar-
 specific extensions: tiers **0a (`with`)** and **0b (`where`)** are
 the looser-than-`|>` postfix-update and stream-filter binders
 (SPEC §6.1.5 / §13.18.10; LOG 030-168 / 030-169); the prefix tier
-13 enumerates `dyn` and `move` alongside the SPEC-listed prefixes;
-and tier 14 enumerates the bare `T(x)` call/cast surface. Operators
+14 enumerates `dyn` and `move` alongside the SPEC-listed prefixes;
+and tier 15 enumerates the bare `T(x)` call/cast surface. Operators
 are listed loosest-binding (top) to tightest-binding (bottom);
 operators on one row share precedence. Annotations on the right
 map each tier to the production(s) in §5 that realize it.
@@ -6493,14 +6514,15 @@ map each tier to the production(s) in §5 that realize it.
 | 5    | `\|` (bitwise or)                                               | left            | `BitOrExpr` (§5.7)                           |
 | 6    | `^` (bitwise xor)                                               | left            | `BitXorExpr` (§5.7)                          |
 | 7    | `&` (bitwise and)                                               | left            | `BitAndExpr` (§5.7)                          |
-| 8    | `..` (range)                                                    | non-associative | `RangeExprTier` (§5.7)                       |
-| 9    | `is`, `is not`, `<`, `<=`, `>`, `>=`                            | non-associative | `CompareExpr` (§5.7)                         |
-| 10   | `<<`, `>>` (shifts)                                             | left            | `ShiftExpr` (§5.7)                           |
-| 11   | `+`, `-`                                                        | left            | `AdditiveExpr` (§5.7)                        |
-| 12   | `*`, `/`, `\`, `%`                                              | left            | `MultiplicativeExpr` (§5.7)                  |
-| 13   | `-`, `~`, `handle`, `handle!`, `portal`, `dyn`, `move` (prefix) | right           | `UnaryExpr` / `PrefixOp` (§5.4)              |
-| 14   | `?`, `.`, `[]`, `()`, `T(x)`, and `T%()`/`T\|()`/`T?()` casts   | left            | `PostfixExpr` (§5.2), `CastPolicySuffix` (§5.6) |
-| 15   | `::`                                                            | left            | `Path` (§5.1)                                |
+| 8    | `in` (membership)                                               | non-associative | `InExpr` (§5.7)                              |
+| 9    | `..` (range)                                                    | non-associative | `RangeExprTier` (§5.7)                       |
+| 10   | `is`, `is not`, `<`, `<=`, `>`, `>=`                            | non-associative | `CompareExpr` (§5.7)                         |
+| 11   | `<<`, `>>` (shifts)                                             | left            | `ShiftExpr` (§5.7)                           |
+| 12   | `+`, `-`                                                        | left            | `AdditiveExpr` (§5.7)                        |
+| 13   | `*`, `/`, `\`, `%`                                              | left            | `MultiplicativeExpr` (§5.7)                  |
+| 14   | `-`, `~`, `handle`, `handle!`, `portal`, `dyn`, `move` (prefix) | right           | `UnaryExpr` / `PrefixOp` (§5.4)              |
+| 15   | `?`, `.`, `[]`, `()`, `T(x)`, and `T%()`/`T\|()`/`T?()` casts   | left            | `PostfixExpr` (§5.2), `CastPolicySuffix` (§5.6) |
+| 16   | `::`                                                            | left            | `Path` (§5.1)                                |
 
 Notes (verbatim from §4.4.7):
 
@@ -6508,6 +6530,7 @@ Notes (verbatim from §4.4.7):
 - Bitwise operators bind tighter than the logical operators (`and`/`or`/`not`) but looser than comparison — the C convention — so `a & b is c` parses as `a & (b is c)`; parenthesize when the other grouping is meant.
 - `not` binds looser than comparison and negates the whole comparison: `not a is b` is `not (a is b)`.
 - `..` binds looser than arithmetic, so `0..n + 1` is `0..(n + 1)`.
+- `in` holds its own tier between the bitwise tiers and the range tier: `x in 0..n` is `x in (0..n)` (range binds tighter), and `not k in s` is `not (k in s)` (`not` binds looser).
 - Comparison does not chain: `a < b < c` is rejected (§4.4.3).
 - Each arithmetic policy variant — wrapping `…%`, saturating `…|`, checked `…?` — binds at its base operator's tier: `+%`/`+|`/`+?` are additive, `*%`/`*|`/`*?`/`\?`/`%?` multiplicative, and unary `-%`/`-|`/`-?` prefix.
 - `as` is **not** in this table: it is a naming keyword, not a value operator (§4.7); explicit conversion uses the call forms `T()`/`T%()`/`T|()`/`T?()`, which bind at the postfix tier.

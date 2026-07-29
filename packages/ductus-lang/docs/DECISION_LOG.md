@@ -53,11 +53,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 001-23. A first-class citizen is a value that can be named in a binding, passed to and returned from functions, and used in expression position. (§1.3)
 001-24. Value-semantics — the implicit ability to relocate, copy, or structurally compare a value — is a capability orthogonal to citizenship: a type may be a first-class citizen yet lack value-semantics. (§1.3)
 001-25. Node, wire, and effect instances are first-class citizens; a binding to one is a borrow, and a borrow cannot be stored in a record field, tuple component, enum payload, indexed slot, or reactive cell (§13.3.6.1). (§1.3)
-001-26. From the caller's perspective every user-defined function is referentially transparent: same inputs produce the same outputs with no externally observable side effects beyond the declared return value. (§1.3)
+001-26. From the caller's perspective every user-defined function is referentially transparent: same inputs produce the same outputs with no externally observable side effects beyond the declared return value — where a call's inputs are its arguments together with its provenance set, the reactive cells the call transitively reads. (§1.3)
 001-27. A function may use `mut` bindings, indexed assignment, and `while`/`for` loops internally; these are invisible at the call site. (§1.3)
 001-28. Any expression not involving a signal or external input is compile-time known. (§1.3)
 001-29. Records, enums, traits, nodes, and wires are nominal: identity is by name, not structure. (§1.3)
-001-30. Tuples, closure types, and trait-constraint intersections are explicit structural exceptions to nominal typing. (§1.3)
+001-30. Tuples, closure types, trait-constraint intersections, and `Map` are the explicit structural exceptions to nominal typing. (§1.3)
 001-31. Behavior abstraction uses nominal traits with explicit `fulfill` declarations. (§1.3)
 001-32. Trait coherence is enforced structurally via orphan rules. (§1.3)
 001-33. Methods and free functions are interchangeable syntactic forms for the same operation: `f(x, y)` may equivalently be called as `x.f(y)`. (§1.3)
@@ -105,10 +105,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 002-34. `dyn` is a reserved word; its grammatical position is the trait-object marker wrapping a trait at value position, and its keyword class is the type-expression keywords — the class of keywords legal only inside type expressions, whose first member is `dyn`. (§1.4)
 002-35. In the documentation corpus's fenced code blocks, a bare fence (no info string) holds Ductus source; a non-empty info string marks a non-Ductus block — `text` for diagnostics and other non-code content, `ductus-ir` for the IR text form, `ebnf` for grammar productions, `rust` for host-side pseudocode — and such a block is excluded from Ductus lexing rules, including the rule that a semicolon anywhere in Ductus source is a lex error. (§1.4)
 002-36. The visibility keywords are a distinct keyword class: `private`, `public`, and `export`. `private` is the sole in-source visibility keyword on declaration heads — absence denotes the package-visible default — and also serves as the member-position restriction marker and as the parenthesized constructor specifier on a `type` head; `public` is legal only in member position, marking a member as part of a barrel-exported type's exported surface; `export` heads the entries of the package barrel file `public.duc` and is grammatically legal only there. All three are reserved words in every position. (§1.4)
-002-37. An applied directive may be written on its own line directly above its target declaration, or inline as a prefix at the head of the target's own line, before everything else on that line; both layouts are legal, and directives stack in source order in either layout — own-line directives stack vertically, inline directives stack left-to-right: `@derive(Eq) @derive(Hash) type Point:` ≡ the two-line stacked form. (§1.4)
+002-37. An applied directive may be written on its own line directly above its target declaration, or inline as a prefix at the head of the target's own line, before everything else on that line; both layouts are legal, and directives stack in source order in either layout — own-line directives stack vertically, inline directives stack left-to-right: `@derive(Eq) @derive(Hash) type Point:` ≡ the two-line stacked form. Mixed stacks — own-line directives above a head line that also carries inline directives — are legal, with source order governing: the own-line directives apply top-to-bottom, then the inline directives left-to-right. (§1.4)
 002-38. The lexer locates the closing `}` of an interpolation hole `{expr}` by a balanced scan, not a first-`}` match: entering the hole it opens a bracket-depth counter at zero for that interpolation and, running the ordinary lexer rules over the expression, pushes on each `(`, `[`, and `{` and pops on each `)`, `]`, and `}`; only a `}` encountered at this interpolation's own bracket-depth zero closes the hole, while a `}` that closes an inner bracket does not. A string literal opened inside the expression re-enters string mode on a fresh mode-stack level, so holes and strings may nest to arbitrary depth with no lexer-imposed limit. (§9.1.9)
 
-## 003. Modules, Packages & Visibility — 88 Rules
+## 003. Modules, Packages & Visibility — 90 Rules
 
 003-1. A declaration reaches dependent packages only by being exported from the package's barrel file; no in-source keyword grants cross-package visibility. (§10.1)
 003-2. The unmarked default visibility reaches any file within the declaring package; the default level has no keyword spelling. (§10.1)
@@ -133,7 +133,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 003-21. Within a single module, marked and unmarked declarations behave identically; visibility matters only for references outside the declaring module. (§10.2.2)
 003-22. Absolute path bases are `root` (current package root module), a bare name matching a manifest-declared external dependency, and `std` (the standard library root). (§10.2.3)
 003-23. The `std` path base is built-in and implicitly available to every package without manifest declaration: `std::vec::Vec`. (§10.2.3)
-003-24. All `use` statements use absolute paths starting from a path base; there is no relative-path "current module" form for imports. (§10.2.3)
+003-24. All `use` statements use absolute paths starting from a path base; there is no relative-path "current module" form for imports. The one sanctioned exception is the bare-type-rooted variant import: when an enum type is itself in scope, `use Result::(Ok, Err)` roots at the type rather than a path base. (§10.2.3)
 003-25. The `module::` qualifier inside node or wire bodies resolves only the enclosing module's own top-level declarations as a disambiguation anchor; it is not an import mechanism and cannot reach other modules. (§10.2.3)
 003-26. Every visibility-bearing grammar position accepts `private` or absence, which denotes the package-visible default. (§10.3)
 003-27. There is no `pub` keyword; in-source visibility is spelled `private` or left unmarked. (§10.3)
@@ -156,7 +156,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 003-44. A `use` may rename the imported name with `as`: `use root::audio::Synthesizer as Synth`. (§10.4)
 003-45. Selection lists on `use` paths use parentheses: `use root::ops::(add, sub, mul)`. (§10.4.1)
 003-46. A glob import brings in every visible name from the source: `use root::variants::*`. (§10.4.1)
-003-47. Two glob imports bringing colliding names into the same scope are a compile error at the `use` site that introduces the second collision. (§10.4.1)
+003-47. Two glob imports bringing colliding names into the same scope are a compile error at the `use` site that introduces the second collision — the only import-collision case that errors; asymmetric collisions resolve by specificity. (§10.4.1)
 003-48. A `use` selection-list item may be a multi-segment path, carry its own `as` alias, or be a `*` glob: `use root::audio::(synth::Oscillator, Filter as Filt, fx::*)`. Selection lists may nest to arbitrary depth: `use a::(b, c::(d, e))` is permitted. (§10.4.1)
 003-49. There is no re-exporting `use`; within a package, exposing a declaration under another path requires an explicit re-declaration such as an `alias type` or a wrapper function, and cross-package exposure is solely the barrel file's job. (§10.4.2)
 003-50. `alias type` declarations accept the `private` specifier under the same rules as other declarations: `alias type Synthesizer = root::audio::internal::Synthesizer`. (§10.4.2)
@@ -198,6 +198,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 003-86. The exported surface must be closed over exports: whatever the surface shows — an exported function's signature, an exported type's `public` members, an exported constructor's parameters — may reference only exported or built-in types, and a reference to a non-exported type from the exported surface is a compile error. The check applies member-wise: members outside the exported surface may reference anything. (§10.11.4)
 003-87. A type's named members carry member visibility independent of the enclosing type: `private` is module-only, unmarked is package-visible, and `public` places the member on the enclosing type's exported surface when that type is barrel-exported. Barrel export of a type by itself publishes the type name and its `public` members only. (§10.11.5)
 003-88. `export` is a reserved word in every position — never an identifier anywhere in Ductus source; its sole grammatical position is heading a barrel-file entry. (§10.11)
+
+003-89. A selectively imported name colliding with a glob-imported name in the same scope resolves to the selective import — the explicit selection wins over the glob, with no error. (§10.4.1)
+
+003-90. A locally declared name colliding with a glob-imported name resolves to the local declaration — local beats glob, with no error. (§10.4.1)
 
 ## 004. Type System Core — 156 Rules
 
@@ -358,7 +362,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 004-155. A const-generic default is used when the argument is neither supplied nor inferred and may itself be an expression referencing earlier parameters: `const N: usize = A + B`. (§2.5.7)
 004-156. A const-generic default expression obeys the const-generic expression rules: symbolic where it references unbound parameters, concrete once they are known. (§2.5.7)
 
-## 005. Traits — 247 Rules
+## 005. Traits — 249 Rules
 
 005-1. A trait declares an interface — method signatures, associated types, and requirements — that types explicitly conform to and provide implementations for. (§3)
 005-2. The trait system is nominal throughout: a type satisfies a trait only via an explicit conformance declaration, never by accidental structural match. (§3)
@@ -377,8 +381,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-15. A trait may declare associated types with the `type` keyword in its body; each implementation binds the concrete value: `type Item`. (§3.1.2)
 005-16. Associated types may be referenced in the trait's method signatures and in other associated-type expressions. (§3.1.2)
 005-17. An associated type may declare a default value, which applies when an implementation does not bind it explicitly: `type Output = Subject`. (§3.1.2)
-005-18. Bounds on associated types in generic constraints use where-clauses with `.` member-access notation: `where P.Item: Numeric`. (§3.1.2)
-005-19. A where-clause may equate an associated type to a specific type, constraining it to be exactly that type: `where Iter.Source is Subject`. (§3.1.2)
+005-18. Bounds on associated types in generic constraints use where-clauses with `::` path notation: `where P::Item: Numeric`. (§3.1.2)
+005-19. A where-clause may equate an associated type to a specific type, constraining it to be exactly that type: `where Iter::Source is Subject`. (§3.1.2)
 005-20. Associated-type slots follow the borrow-default convention: under `type Name = T`, appearances of `Name` in the trait's method signatures are borrow-equivalent. (§3.1.2)
 005-21. An implementation opts an associated type into owned semantics by writing `type Name = own T`; appearances of `Name` then carry owned semantics. (§3.1.2)
 005-22. The associated-type borrow/own convention applies uniformly to user-defined and stdlib traits; no language-privileged path bypasses it. (§3.1.2)
@@ -465,7 +469,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-103. The compiler verifies a conditional implementation's where-clause conditions at every call site that requires the implementation. (§3.3.4)
 005-104. A `where` clause may mix trait bounds and const-generic value bounds in one comma-separated list: `where T: Numeric, N >= 1`. (§3.3.4)
 005-105. Trait bounds are checked where the implementation or call is resolved; const-generic value bounds are checked at instantiation against concrete values. (§3.3.4)
-005-106. A `where` clause may carry associated-type equality constraints of the form `Path.Assoc is ConcreteType`. (§3.3.4)
+005-106. A `where` clause may carry associated-type equality constraints of the form `Path::Assoc is ConcreteType`. (§3.3.4)
 005-107. A conditional `fulfill … where …` is itself the conformance declaration; the where-clause on the `fulfill` is the sole carrier of the availability condition: `fulfill Display for Result[T, E] where T: Display, E: Display` conforms `Result[T, E]` to `Display` exactly where the bounds hold. For a methodless marker trait the carrier is the same where-clause on its bodiless `fulfill`. (§3.3.4)
 005-108. A trait declaring no methods and no associated types — only `requires` clauses — is a pure-requirement trait. (§3.3.5)
 005-109. A trait is automatically satisfied when all of its `requires` are satisfied, every method, declared directly or inherited from its required traits — including every effect-kind method — has a default body, every associated type it declares has a default, and every `observed:` contract declared by an effect-kind method is fully exposed by that method's own default body — one compiler check: does the default body cover the contract? A default body supplying the full observed block auto-satisfies; an observed contract any of whose cells the default body leaves unexposed bars auto-satisfaction — such a trait requires an explicit `fulfill` block. A trait with an undefaulted associated type likewise requires an explicit `fulfill`. (§3.3.5)
@@ -595,18 +599,22 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 005-233. The literal value is passed to the constructor; the call's return value is the literal expression's value. (§3.9.3)
 005-234. Suffix resolution is entirely compile-time; no runtime dispatch is involved. (§3.9.3)
 005-235. The built-in `duration` suffixes are `ns`, `us`, `μs`, `ms`, `s`, `min`, `h`, `d`. (§3.9.4)
-005-236. Built-in duration suffixes are reserved and may not be re-registered for another type in the same scope. (§3.9.4)
+005-236. Built-in duration suffixes are reserved and may not be re-registered for another type in any scope. (§3.9.4)
 005-237. `@literal_suffix` registrations follow normal name-visibility rules: visible in the defining module and to importers. (§3.9.5)
 005-238. The built-in `duration` suffixes are globally visible. (§3.9.5)
 005-239. A trait declaration may carry the `sealed` modifier (`sealed trait ColorSpace`), available to any module — no language privilege. A sealed trait is usable in trait bounds and method dispatch everywhere, but fulfillment claims are legal only in the trait's own declaring module: a `fulfill Trait for Type` block — bodiless marker claims included — outside that module is a compile error, diagnostic class `sealed_trait_fulfillment_outside_module`. (§3.7.6)
 005-240. Sealing disables the orphan rule's type-ownership arm for the sealed trait: a fulfillment is legal only in the trait's declaring module, never justified by ownership of the type; the module unit is the same module unit the orphan rule uses. (§3.7.6)
 005-241. `sealed` is a reserved word; its grammatical positions are the trait-declaration and the nominal type-declaration modifiers (`sealed trait`, `sealed type`, `sealed enum`, `sealed node`, `sealed wire`); its keyword class is the declaration-modifier class. (§3.7.6)
 005-242. Types are open to foreign conformance by default: a module that declares a trait may `fulfill` it for a type it does not declare, gated by the orphan rule's trait arm. (§3.7.6)
-005-243. Every nominal conformable declaration kind may carry the `sealed` modifier — `sealed type`, `sealed enum`, `sealed node`, `sealed wire` (a newtype seals through its `type` head) — the mirror image of the sealed trait: only the declaration's own module may conform it to traits, and a `fulfill` block for a sealed subject outside that module is a compile error, diagnostic class `sealed_type_fulfillment_outside_module`. The structural carve-outs — tuples and closure types — have no declaration to modify and no declaring module to protect, so they cannot be sealed, though tuples remain conformable through element coverage under the orphan rule. (§3.7.6)
+005-243. Every nominal conformable declaration kind may carry the `sealed` modifier — `sealed type`, `sealed enum`, `sealed node`, `sealed wire` (a newtype seals through its `type` head) — the mirror image of the sealed trait: only the declaration's own module may conform it to traits, and a `fulfill` block for a sealed subject outside that module is a compile error, diagnostic class `sealed_type_fulfillment_outside_module`. The declaration-less structural carve-outs — tuples and closure types — have no declaration to modify and no declaring module to protect, so they cannot be sealed, though tuples remain conformable through element coverage under the orphan rule. (§3.7.6)
 005-244. Sealing composes as two independent checks: sealing a trait restricts fulfillment to the trait's module; sealing a type restricts conformance to the type's module; a `fulfill` block must pass both. (§3.7.6)
 005-245. Grammar: `FulfillBody := ( NEWLINE INDENT FulfillBodyItem+ DEDENT ) | NEWLINE` — the `NEWLINE` alternative is the bodiless `fulfill`, which may carry a `where` clause on its head. (§3.3)
 005-246. Auto-satisfaction must be grounded: it applies only to a trait with at least one satisfied requirement or defaulted member for the compiler to check. A completely empty trait — no methods, no associated types, and no `requires` clauses — never auto-satisfies; its conformance always takes an explicit bodiless `fulfill` claim, which is what makes a marker claim load-bearing rather than redundant. A pure-requirement trait — empty of members but carrying `requires` clauses — auto-satisfies when its requirements hold. (§3.3.5)
 005-247. An effect-kind method with no `Subject` parameter is invoked only as a path-qualified `effects:`-clause entry `<TypePath>::<method>(args)`, where `<TypePath>` names a concrete type or an in-scope generic parameter; a bare-name entry and a trait-path entry are rejected. (§3.1.1.1)
+
+005-248. A trait's fulfiller gate is the conjunction of each member's own requirement: every required cell demands a node or wire fulfiller, every required endpoint demands a wire fulfiller, and effect-kind methods demand nothing — a trait mixing member kinds is satisfiable exactly by the kinds that meet all of its members' requirements. (§3.1.7)
+
+005-249. A bare call that resolves to a trait-implementation candidate while a same-named free function is in scope — the free function shadowed at that call site — raises a warning, diagnostic class `trait_impl_shadows_free_function`; path-qualifying the call silences it. (§3.4.1)
 
 ## 006. Calls & Argument Forms — 34 Rules
 
@@ -645,7 +653,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 006-33. A record pattern field-binding may use shorthand `field` when the binding name matches the field name; the long form `field: bound_name` is required when renaming or destructuring deeper. Forms may mix in one pattern: `BigRec(a, b: renamed_b, c, ...)` is equivalent to `BigRec(a: a, b: renamed_b, c: c, ...)`. The same shorthand is admitted for named variant payload patterns of named-declared variants. (§3.5.7)
 006-34. In a trait-method named call the argument names are the trait's declared parameter names, not the implementing `fulfill`'s: a `fulfill` may give its parameters different body-local names, but `v1.add(b: v2)` uses trait `Add`'s `b` even where the impl wrote `right`. Named form thus works uniformly at generic (`T: Add`) and concrete sites, and the checker does not require `fulfill` parameter-name equality. (§3.5.5)
 
-## 007. Numerics — 239 Rules
+## 007. Numerics — 241 Rules
 
 007-1. The built-in numeric primitive type set is fixed at fourteen types. (§4.1)
 007-2. The signed integer types are `i8`, `i16`, `i32`, `i64`, `i128`, and `isize`. (§4.1)
@@ -720,7 +728,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 007-71. Bitwise `|` and operator-application `|>` are distinct tokens; `|>` is the loosest-binding operator while bitwise operators bind tighter than the logical operators, per the §4.4.7 precedence table. (§4.4.2)
 007-72. `>>` shifts arithmetically (sign-extending) on signed types and logically (zero-extending) on unsigned types, dispatched via the type's `Shr` impl. (§4.4.2)
 007-73. No `>>>` operator exists; `>>` has no other value-level meaning. (§4.4.2)
-007-74. Operator precedence, loosest to tightest: `|>`; `or`; `and`; `not`; bitwise `|`/`^`/`&`; `..`; comparison; shifts `<<`/`>>`; additive; multiplicative; prefix `-`/`~`/`handle`/`handle!`/`portal`/`delete`; postfix `?`/`?.`/`?[]`/`?()`/`.`/`[]`/`()`; `::`. (§4.4.7)
+007-74. Operator precedence, loosest to tightest: `|>`; `or`; `and`; `not`; bitwise `|`/`^`/`&`; `in`; `..`; comparison; shifts `<<`/`>>`; additive; multiplicative; prefix `-`/`~`/`handle`/`handle!`/`portal`/`delete`; postfix `?`/`?.`/`?[]`/`?()`/`.`/`[]`/`()`; `::`. (§4.4.7)
 007-75. Bitwise operators bind tighter than the logical operators but looser than comparison: `a & b is c` parses as `a & (b is c)`. (§4.4.7)
 007-76. The range operator `..` binds looser than arithmetic: `0..n + 1` parses as `0..(n + 1)`. (§4.4.7)
 007-77. `not` binds looser than comparison and negates the whole comparison: `not a is b` parses as `not (a is b)`. (§4.4.7)
@@ -783,7 +791,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 007-134. `%?` returns `None` on overflow or a zero divisor. (§4.6.4)
 007-135. `/?` widens integer operands per §4.4.1.1 and dispatches `CheckedDiv` on the float type, returning `Option[Float]`. (§4.6.4)
 007-136. On float operands `/?` returns `None` when IEEE 754 would produce NaN or ±Infinity, e.g. `0.0/0.0`. (§4.6.4)
-007-137. Compile-time constant overflow is a compile error regardless of operator variant: `const x: u8 = 200u8 +% 100u8` ✗. (§4.6.5)
+007-137. Compile-time constant evaluation mirrors each operator's defined semantics: a variant whose defined result exists const-folds to it — wrapping variants fold to the wrapped value, saturating variants to the saturated bound, checked variants to the `Option` value — while overflow of a trapping variant is a compile error: `const x: u8 = 200u8 + 100u8` ✗; `const y: u8 = 200u8 +% 100u8` folds to `44u8`. (§4.6.5)
 007-138. Float overflow produces signed infinity (`f64::INFINITY`/`f64::NEG_INFINITY`). (§4.6.6)
 007-139. Float underflow may produce subnormals or signed zero. (§4.6.6)
 007-140. NaN propagates through float operations involving NaN operands. (§4.6.6)
@@ -877,7 +885,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 007-228. The `Index[K]` trait dispatches the `[]` element-access operator: `s[k]` desugars to `Index::index(s, k)`. The trait declares `type Output` (the result of indexing, determined by `(Self, K)`) and `fn index(s: Subject, k: K) -> Output`. (§4.9.5)
 007-229. `Index[K]` is part of trait identity (the type parameter `K` distinguishes trait instances) — `Index[isize]` and `Index[Range[isize]]` are distinct trait instances on the same type. (§4.9.5)
 007-230. Built-in `Index` fulfillments: arrays `T[N]` and slices `T[..N]`/`T[..]` fulfill `Index[isize]` (Output = T) and `Index[Range[isize]]` (Output = slice); Bundles (§13.3.3.5) fulfill `Index[isize]` returning a row slice; `Map[K, V]` fulfills `Index[K]` returning `V`. (§4.9.5)
-007-231. The `Contains[K]` trait dispatches the `in` membership operator: `k in s` desugars to `Contains::contains(s, k)`. The trait declares `fn contains(s: Subject, k: K) -> bool`. `not k in s` parses as `not (k in s)` since `not` binds looser than comparison. (§4.9.5)
+007-231. The `Contains[K]` trait dispatches the `in` membership operator: `k in s` desugars to `Contains::contains(s, k)`. The trait declares `fn contains(s: Subject, k: K) -> bool`. `not k in s` parses as `not (k in s)` since `not` binds looser than `in`. (§4.9.5)
 007-232. The `Deletable[K]` trait dispatches the `delete` keyword: `delete s[k]` desugars to a consume-and-produce call to `Deletable::delete(own s, k)` returning the modified subject. The trait declares `fn delete(s: own Subject, k: K) -> Subject`. Deleting an absent key is a no-op (idempotent). (§4.9.5)
 007-233. `Index`, `Contains`, and `Deletable` are language-defined fine-grained operator traits whose method names match the operator name; the trait set is language-fixed and not user-redeclarable, but user types can `fulfill` them. (§4.9.5)
 007-234. All integer types (`i8`–`i128`, `u8`–`u128`, `isize`, `usize`) auto-implement `Hash`, joining their existing auto-implemented trait conformance list. (§4.9.5)
@@ -886,6 +894,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 007-237. Float types (`f32`, `f64`) do NOT implement `Hash`. Any expression demanding `Hash` on a float type is a compile error at the bound. (§4.9.5)
 007-238. `Map[K, V]` does not fulfill `Index[Range[K]]`. `m[k]` (single-key access via the built-in `Map` `Index[K]` fulfillment returning `V`) and `m[k..k']`-style range queries are distinct surfaces; only the former applies to `Map`. A range expression in a `Map` index position is a compile error. (§4.9.5, §9.5)
 007-239. The `delete` keyword uses prefix-operator syntax with a mandatory keyed indexing target: `delete <expr>[<key>]` is the only legal form. A bare `delete <expr>` without indexing is a parse error. The grammar guarantees `delete` always targets a `Deletable[K]` dispatch site, never a bare binding. (§4.9.5)
+
+007-240. The membership operator `in` occupies a dedicated precedence tier immediately looser than the range tier, non-associative: `in` binds looser than `..` and tighter than the bitwise tiers, with `not` looser still — `x in 0..n` is `x in (0..n)` and `not k in s` is `not (k in s)`. (§4.4.7)
+
+007-241. A shift count greater than or equal to the left operand's bit width traps; when the count is compile-time-known, the out-of-width shift is a compile error instead. (§4.4.2)
 
 ## 008. Type Composition: `&`, `dyn`, `Type[…]` — 74 Rules
 
@@ -964,7 +976,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 008-73. A bare `Type[Node]` admits any node type but can only be held, passed, stored, and returned — not placed. (§5.7.5)
 008-74. Placing a type value requires its constraint to be a trait declaring the instantiation interface: required attrs/consts/cells and, for wires, endpoints. (§5.7.5)
 
-## 009. Records, Enums & Newtypes — 128 Rules
+## 009. Records, Enums & Newtypes — 129 Rules
 
 009-1. Records (product types), enums (sum types), and newtypes (wrapper types) are the three user-defined nominal compound types, with identity by name rather than structure. (§6)
 009-2. All three compound kinds participate uniformly in the trait system. (§6)
@@ -1095,6 +1107,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 009-127. All arm bodies of an `if` chain must unify to a single type, by the same unification rule that applies to `match` arms (§6.2.4). (§6.4)
 009-128. `if` is exclusively an expression; there is no statement-only form. A unit-typed chain still requires `else: ()` (or its inline equivalent). (§6.4)
 
+009-129. Bare variant construction resolves from the expected type: a bare variant name in construction position is a variant placeholder resolved by the use-site machinery — the construction-side mirror of pattern position, where the scrutinee's enum resolves bare variants. `Ok(value)` is legal wherever the expected type is a known enum (return positions, annotated bindings, field and attr positions), with zero imports; where no expected type exists, the bare form is a compile error directing to an annotation or qualification; qualified `Enum::Variant(...)` always works, and variant imports remain available. Importing a type never injects variant names into bare scope — adding a variant to a library enum is never a downstream breaking change. (§2.1.2, §6.2.3)
+
 ## 010. Conversions — 45 Rules
 
 010-1. Infallible user-defined conversions use the `From`/`Into` trait pair. (§7)
@@ -1223,11 +1237,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 011-76. Convention: use `Option[T]` when failure carries no information beyond occurrence and `Result[T, E]` when callers may inspect failure information. (§8.8)
 011-77. Convention: when in doubt between `Option` and `Result`, prefer `Result`. (§8.8)
 011-78. The reactive system uses the same two-track failure model as the rest of the language. (§8.9)
-011-79. A trap inside a `derived` expression's computation propagates as a normal trap; the reactive system does not catch traps. (§8.9)
-011-80. A `derived` whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`. (§8.9)
+011-79. A trap inside a reactive expression's computation propagates as a normal trap; the reactive system does not catch traps — the reactive-context error chapter owns the full list of covered constructs. (§13.13)
+011-80. A reactive declaration whose expression has type `Result[T, E]` or `Option[T]` produces a reactive value of that type, consumed with standard `match` or `?`; the reactive-context error chapter owns the full list of covered constructs. (§13.13)
 011-81. The reactive layer adds no error mechanism beyond the existing type system. (§8.9)
 
-## 012. Strings, Tuples, Arrays & Time — 187 Rules
+## 012. Strings, Tuples, Arrays & Time — 188 Rules
 
 012-1. `string`, tuples, fixed-size arrays `T[N]`, slices `T[..N]` / `T[..]`, maps `Map[K, V]`, and bundles `Bundle[T]` are language-level compound types with dedicated syntax and language-specified behavior, not user-defined types. (§9)
 012-2. `string` is a built-in primitive type at the same level as `i32` or `bool`, not a stdlib type with privileged literal syntax. (§9.1)
@@ -1256,7 +1270,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-25. Strings are not indexable — there is no `s[i]` operator; content access requires explicit view methods. (§9.1.5)
 012-26. `s.bytes()` returns a sequence of raw `u8` values, indexable in O(1); the exact return type is a stdlib concern. (§9.1.6)
 012-27. `s.chars()` returns a sequence of `char` values, iterable in O(n) total traversal; the exact return type is a stdlib concern. (§9.1.6)
-012-28. `s.byte_len() -> isize` returns the length in bytes in O(1). (§9.1.6)
+012-28. `s.byte_count() -> isize` returns the length in bytes in O(1). (§9.1.6)
 012-29. `s.char_count() -> isize` returns the number of Unicode scalars in O(n). (§9.1.6)
 012-30. `s.slice(start: isize, end: isize) -> string` slices at validated character positions with cost O(end). (§9.1.7)
 012-31. `s.byte_slice(start: isize, end: isize) -> string` slices at byte positions with O(1) cost per boundary. (§9.1.7)
@@ -1264,7 +1278,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-33. Both slicing methods return a new string value. (§9.1.7)
 012-34. Invalid slice boundaries — a mid-codepoint byte index or an out-of-range position — trap at runtime. (§9.1.7)
 012-35. Strings are immutable with no in-place mutation; every content-modifying operation returns a new string value: `let upper = s.to_upper()`. (§9.1.8)
-012-36. The runtime may share immutable backing storage between string values; sharing is an implementation detail invisible to the user. (§9.1.8)
+012-36. String values share immutable backing storage through reference counting — the normative realization of string `Copy` semantics — making duplication O(1); the sharing is semantically invisible to the user. (§9.1.8)
 012-37. `+` concatenates strings via a stdlib `Add` implementation with both operands and result typed `string`: `"hello" + " " + "world"`. (§9.1.8)
 012-38. The orphan rule prevents users from declaring their own `Add` for `string`. (§9.1.8)
 012-39. Interpolation `{expr}` evaluates the expression and converts the result to `string` via the `Display` trait. (§9.1.9)
@@ -1273,7 +1287,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-42. A literal brace is written `\{`, which yields `{` and suppresses interpolation there. (§9.1.9)
 012-43. Interpolation `{expr}` formats only via `Display`; there is no in-brace format-specifier mini-language (width/precision/padding come from method or stdlib calls inside the expression), and no `{{`/`}}` brace-doubling — the `\{` escape (which yields a literal `{` and suppresses interpolation there) is the sole literal-brace escape. (§9.1.9)
 012-44. Tuples are structurally typed: two tuples with the same component types in the same order are the same type: `(1, 2)` and `(3, 4)` are both `(i32, i32)`. (§9.2)
-012-45. Tuples and closure types are the only two structural-typing carve-outs in the otherwise nominal type system. (§9.2)
+012-45. Tuples and closure types are the two conformable-but-declaration-less structural carve-outs in the otherwise nominal type system; the full structural-exception set also counts trait-constraint intersections and `Map`. (§9.2)
 012-46. The type expression `(T1, T2, ...)` denotes a tuple type directly; no type declaration is required. (§9.2)
 012-47. Tuple field access uses zero-based numeric postfix syntax: `t.0`. (§9.2.1)
 012-48. Tuple field indices must be integer literals; runtime indexing with a variable expression (`t.i`) is not permitted. (§9.2.1)
@@ -1309,7 +1323,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-78. An array is constructed with a bracketed element list `[e1, …, eK]`, producing a `T[K]` value of the unified element type: `[1, 2, 3]` is an `i32[3]`. (§9.3.1)
 012-79. An empty array literal `[]` has size 0 and takes its element type from context: `let xs: i32[0] = []`. (§9.3.1)
 012-80. Beyond the bracketed element-list literal, an array may be built by a bracketed comprehension `[for i in <iterable>: expr]`: `expr` is evaluated once per element of a compile-time-known iterable (typically a constant range `0..N`, §12.2, which is materialized — the lazy range is unchanged), binding `i` to each value, yielding `T[N]` where `T` is `expr`'s type and `N` the iterable's extent. The body is a pure 1:1 map; there is no `if`-filter form (filtered/dynamic construction is a stdlib `Vec` concern). (§9.3.1)
-012-81. The array comprehension's degenerate form `[for N: v]` — a bare compile-time-known count `N`, with no binding and no `in` — produces `N` copies of `v`, of type `T[N]`. (§9.3.1)
+012-81. The array comprehension's degenerate form `[for N: v]` — a bare compile-time-known count `N`, with no binding and no `in` — produces `N` copies of `v`, of type `T[N]`, requiring `T: Clone`: `v` is evaluated exactly once when `N >= 1` and cloned `N - 1` times; when `N = 0`, `v` is not evaluated at all. (§9.3.1)
 012-82. `T[..N]` and `T[..]` are slice types — borrows of a contiguous sub-range of a value. `T[..N]` has compile-time-known length `N`; `T[..]` has runtime length. Both are language-level types distinct from the owned fixed-size array `T[N]`. (§9.3.7)
 012-83. A slice obeys the ordinary borrow rules of §11.9: it is a cluster member, unstorable in fields/tuples/payloads/indexed slots, cannot outlive its source, and returning a slice extends the cluster across the call boundary. The sole ownership-level addition is that a borrow may now span a sub-range of its source value, not only the whole value (extending §11.3.4). (§9.3.7, §11.3.4)
 012-84. The `arr[range]` operator slices any array, slice, or stdlib indexed sequence: `arr[i]` is element access, `arr[2..5]` is slice access producing a length-3 window over the source's elements. (§9.3.7)
@@ -1318,8 +1332,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-87. The prefix `^k` inside a slice index means `arr.count - k`: `arr[^1]` last, `arr[^2..]` last two, `arr[..^1]` all-but-last, `arr[^3..^1]` a window from third-from-end to second-from-end. The `^` is position-disambiguated from bitwise xor by positional context; no new keyword. (§9.3.7)
 012-88. Plain or computed negative indices on `arr[i]` continue to trap at runtime; `^k` is the only form for from-the-end addressing. (§9.3.7)
 012-89. A slice is a zero-copy window onto its source: `arr[2..5]` allocates nothing and reads through to the source's elements. An owned copy is an explicit operation, not the slice operator's default. (§9.3.7)
-012-90. `.count` is the unified element-tally accessor across arrays, slices, `Map[K, V]`, `Vec[T]`, `HashSet[T]`, `yielded T`, and dynamic views — it reports the number of elements — compile-time-known where the extent is static (`T[N]`, `T[..N]`) and runtime where it is not (`T[..]`, `Map`, `Vec`, `HashSet`, `yielded`, dynamic views). Bundles are the intentional exception: `bundle.count` reports the row count, not an element tally (§13.3.3.5). (§9.3.8)
-012-91. The tally-accessor naming rule: a bare `count` names the element tally that unifies across every element-bearing type — bundles being the one intentional exception, their bare `count` reporting the row count (§13.3.3.5) — while a prefixed `x_count` names a specialized tally that is exempt from that unification — `byte_len` and `char_count` on `string` report byte and Unicode-scalar counts rather than an element tally, and stream metrics such as `pending_count` report queue occupancy rather than an element tally. A prefixed tally is never spelled bare `count`. (§9.3.8)
+012-90. `.count` is the unified element-tally accessor across arrays, slices, `Map[K, V]`, `Vec[T]`, `HashSet[T]`, `yielded T`, and dynamic views — it reports the number of elements and returns `isize`, family-consistent with lengths and indices — compile-time-known where the extent is static (`T[N]`, `T[..N]`) and runtime where it is not (`T[..]`, `Map`, `Vec`, `HashSet`, `yielded`, dynamic views). Bundles are the intentional exception: `bundle.count` reports the row count, not an element tally (§13.3.3.5). (§9.3.8)
+012-91. The tally-accessor naming rule: a bare `count` names the element tally that unifies across every element-bearing type — bundles being the one intentional exception, their bare `count` reporting the row count (§13.3.3.5) — while a prefixed `x_count` names a specialized tally that is exempt from that unification — `byte_count` and `char_count` on `string` report byte and Unicode-scalar counts rather than an element tally, and stream metrics such as `pending_count` report queue occupancy rather than an element tally. A prefixed tally is never spelled bare `count`. (§9.3.8)
 012-92. Slices are read-only: no mutable slice form exists; mutation of a sub-range goes through the owning `mut` binding's indexed assignment (`arr[i] = v`). (§9.3.7)
 012-93. While any slice into a value is live, the source value cannot be moved or mutated as a whole (matching the cluster rule that a root with any live alias member cannot be moved, returned, or reassigned); element-by-element assignment via the owner's indexed assignment is also blocked while a slice exists. (§9.3.7, §11.3.4)
 012-94. `T[..N]` and `T[..]` implement `Iterable` and `IntoIterable` with the source-bearing pattern of §12.7.4, paralleling arrays which implement both forms with the user picking at the call site. (§9.3.7, §12.10.1)
@@ -1331,7 +1345,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-100. Keys must satisfy `K: Eq + Hash`. The built-in types that qualify are exactly the canonical `StringifiableKey` set (§13.5.4.1) — one shared enumeration for Map keys and scope keys; floats (`f32`/`f64`) do not qualify, so `Map[f32, V]` is a compile error at the `Hash` bound. (§9.5)
 012-101. `m[k]` returns `V` and **traps on a missing key** — the same trap-on-out-of-bounds model as `arr[i]`. (§9.5)
 012-102. `m.get(k)` returns `Option[V]` — the safe form, joining the `.get` family of safe-access methods across arrays, slices, and Maps. (§9.5)
-012-103. Membership uses the `in` operator: `k in m` is `bool`, dispatching to the language-defined `Contains` trait; `not k in m` is the negation, with `not` binding looser than the comparison. (§9.5)
+012-103. Membership uses the `in` operator: `k in m` is `bool`, dispatching to the language-defined `Contains` trait; `not k in m` is the negation, with `not` binding looser than `in`. (§9.5)
 012-104. Deletion uses the `delete` keyword: `delete m['k']` dispatches to the language-defined `Deletable` trait; deleting an absent key is a no-op (idempotent). (§9.5)
 012-105. Maps merge with `+`: `x + y` produces a new Map where right-hand keys win on collision (mirroring left-to-right field overrides on record merge, where later assignments win). The result is insertion-ordered: it holds the left operand's keys in the left operand's order, then each right-operand key not already present, in the right operand's order; a key present in both keeps the LEFT position and takes the RIGHT value (update-keeps-position). Duplicate keys within a single literal are a compile error (mirroring the duplicate-field compile error at record construction and the duplicate-attribute-set error on placements). (§9.5)
 012-106. Map iteration is **insertion-ordered** at the language level — keys and `(K, V)` pairs are yielded in the order their keys were first inserted, following JS map semantics: updating an existing key's value keeps that key's position, and deleting then reinserting a key appends it at the end. `HashSet[T]` is unaffected and stays unordered; only `Map` carries the insertion-order commitment. (§9.5)
@@ -1417,7 +1431,9 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 012-186. `Option`/`Result` wrappings of `duration`/`instant` store directly in a reactive cell when discriminant plus payload fits the platform atomic word, and otherwise use index-based pool storage. (§9.4.3)
 012-187. The compiler chooses the cell-storage strategy; the source-level wrapped type is permitted on all platforms. (§9.4.3)
 
-## 013. Ownership & Mutability — 250 Rules
+012-188. Reversed slice bounds — `start >= end` — yield the empty string for both `slice` and `byte_slice`, per the range convention; reversed bounds are not a failure mode and do not trap. (§9.1.7)
+
+## 013. Ownership & Mutability — 251 Rules
 
 013-1. Category A (value ownership: function call, function return, let-rebinding, for-loop iteration variable) defaults to borrow-equivalent: the callee or new binding gets read-only access and the source binding survives. (§11.1)
 013-2. Category A consumption is opt-in, requiring `own` in the signature and `move` at the call site. (§11.1)
@@ -1460,7 +1476,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 013-39. Rebinding moves no storage at runtime; renames are compile-time bookkeeping only. (§11.3)
 013-40. Any binding, real owner or borrow-equivalent alias, may read its value without consuming it; reading needs no keyword and leaves ownership and cluster membership unchanged. (§11.3.1)
 013-41. Reading comprises field access, indexed access, read-only pattern matching, built-in operator inspection (`is`, `<`), borrow-default method calls, and passing to borrow-default parameters. (§11.3.1)
-013-42. Consuming comprises passing to an `own` parameter with explicit call-site `move`, returning a real-owner local, storing into a record field, tuple component, or enum payload (implicit move), and writing into a reactive cell (implicit move): `consume(move r)`. (§11.3.1)
+013-42. Consuming comprises passing to an `own` parameter with explicit call-site `move`, returning a real-owner local, storing into a record field, tuple component, enum payload, or indexed slot (implicit move), and writing into a reactive cell (implicit move): `consume(move r)`. (§11.3.1)
 013-43. Reassigning a `mut` binding is whole-value assignment: the new value is consumed implicitly (category B, no `move`) and the old value is dropped: `buf = make_other_buffer()`. (§11.3.2)
 013-44. Reassignment is not shadowing: it modifies the existing binding rather than introducing a new one. (§11.3.2)
 013-45. A binding going out of scope drops its value only if it is the cluster's current real owner; borrow-equivalent aliases never drop the underlying value. (§11.3.3)
@@ -1571,7 +1587,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 013-150. Aliases may appear only in: default function parameters, `let`/`mut` rebindings of an alias source, default for-loop iteration variables, default-convention function returns, and borrow-default trait associated-type slots. (§11.9.1)
 013-151. A default-parameter alias's lifetime is bounded by the call expression. (§11.9.1)
 013-152. Alias lifetimes extend per site: let-rebind to the binding's scope, for-loop variable to the loop body, function return to the caller's scope (rooted in the inputs), associated-type slot to its use-site's scope. (§11.9.1)
-013-153. `Handle[T]` is `Copy`; `Copy` values aren't aliases under §11.9 — they can be stored in cells, fields, payloads, or tuples like any other `Copy` value. (§11.9.1)
+013-153. `Handle[T]` is `Copy`; `Copy` values aren't aliases under §11.9 — they can be stored in cells, fields, payloads, or tuples like any other `Copy` value. Closures are the exception: a closure value, though `Copy`, is storable in fields, tuple components, indexed slots, and enum payloads but never in a reactive cell — no cell type admits a closure. (§11.9.1)
 013-154. A `Handle[T]` reads as `&T` directly (statically placed, §13.3.6.2); a `WeakHandle[T]` reads as `Option[&T]`. Either resolution form contains a borrow and is subject to storage categories B and D like any alias-bearing value. (§11.9.1)
 013-155. While a cluster has any alias member, the root may not be moved — passed to an `own` parameter, returned, or reassigned into a different slot. (§11.9.2)
 013-156. While a cluster has any alias member, the root may not be mutated — reassigned through `mut`, or assigned by index or field. (§11.9.2)
@@ -1596,7 +1612,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 013-175. Capturing a non-`Copy` value is a compile error: `fn(): sum(buf)` ✗ for `buf: Vec[f32]`. (§11.10.1)
 013-176. Non-`Copy` values flow through closures as parameters under the default borrow-equivalent convention: `fn(b: Vec[f32]): sum(b)`. (§11.10.1)
 013-177. A closure that consumes a non-`Copy` argument declares the parameter `own`: `fn(own b: Vec[f32]): into_sorted(move b)`. (§11.10.1)
-013-178. A closure value is invoked with ordinary call syntax on its binding: `let total = closure(buf)`. (§11.10.1)
+013-178. A closure value is invoked with ordinary call syntax on its binding: `let total = closure(buf)`. A closure held in a record field or indexed slot is invoked by parenthesizing the access — `(r.handler)(args)`, `(v[i])(args)` — the ordinary call postfix applied to the field or index read. (§11.10.1)
 013-179. The compiler captures the minimal set of subvalues the closure body references: `fn(): contact.age + 1` captures only `contact.age`. (§11.10.2)
 013-180. The `Copy` constraint applies to the captured subvalue's type, not the root binding's type. (§11.10.2)
 013-181. Closures may capture from `let` bindings: `fn(): stable + 1` ✓. (§11.10.3)
@@ -1605,7 +1621,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 013-184. An escaping closure cannot capture borrow-equivalent aliases: cluster members are not `Copy` and an escaping closure may outlive the cluster root. (§11.10.5)
 013-185. A closure escapes when it is stored, returned, or captured by another escaping closure; the compiler distinguishes escaping from non-escaping by closure-flow analysis. (§11.10.5)
 013-186. A closure type is written `fn(P1, P2, …) -> R` and is inhabited by closure literals and free functions alike: `let d: fn(i32) -> i32 = double`. (§11.10.6)
-013-187. Closure types are structural — defined by signature alone, with no declaration and no nominal identity — the second structural carve-out after tuples. (§11.10.6)
+013-187. Closure types are structural — defined by signature alone, with no declaration and no nominal identity — the second declaration-less structural carve-out after tuples. (§11.10.6)
 013-188. A bare parenthesized list `(T1, T2)` is a tuple type; only the `fn` prefix forms a function type. (§11.10.6)
 013-189. `fn((T1, T2)) -> R` is a one-parameter function type taking a tuple, distinct from the two-parameter `fn(T1, T2) -> R`. (§11.10.6)
 013-190. Parameter and return ownership conventions are part of a closure type: `fn(own T) -> own R` consumes its parameter and returns an owned value. (§11.10.6)
@@ -1666,9 +1682,10 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 013-245. Reactive values are updated only through the reactive system's defined update mechanisms, never through `mut` assignment. (§11.14)
 013-246. Reactive cell writes — `signal.write(v)`, `stream.emit(v)`, attr reassignment from a recurrent advance — are category D: the RHS is consumed implicitly, with no `move` written. (§11.14)
 013-247. Reactive wiring (category C) — placement attribute assignment from a reactive RHS, wire arguments referencing attrs or signals — does not consume and produces multiple aliases to the same cell. (§11.14)
-013-248. The category-B/C distinction at placement attribute assignment is type-directed: a reactive-typed RHS produces wiring; a value-typed RHS is consumed into the attr's slot. Category D applies to recurrent advance, not placement. (§11.14)
-013-249. Function parameters flowing into reactive declarations follow `own`/`move` like any other category A consumption. (§11.14)
+013-248. The category-B/C distinction at placement attribute assignment is type-directed: a reactive-typed RHS produces wiring; a value-typed RHS — including an `own` function parameter — is consumed into the attr's slot implicitly, with no `move` marker. Category D applies to recurrent advance, not placement. (§11.14)
+013-249. Function parameters flowing into reactive declarations at call-argument positions follow `own`/`move` like any other category A consumption. (§11.14)
 013-250. The reactive boundary is one of the "global" scopes referenced by §11.1's principles; value crossing is fully specified in §13.12. (§11.14)
+013-251. A bare `r.handler()` where `handler` is a closure-typed field resolves through method dispatch, matches nothing, and is an unknown-method error; the diagnostic hints at the parenthesized invocation form `(r.handler)()`. (§3.4.1, §11.10.1)
 
 ## 014. Iteration & Loops — 167 Rules
 
@@ -1707,7 +1724,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 014-33. When a default-form loop exits — natural completion, `break`, or enclosing function return — the iterator is dropped and the cluster's iteration alias collapses. (§12.3.1)
 014-34. After a default-form loop, the source is unchanged and remains owned by its original binding. (§12.3.1)
 014-35. The `for own` form invokes `IntoIterable::consuming_iterator(move v)`, consuming the binding and moving the underlying value into the iterator. (§12.3.1)
-014-36. Each `for own` iteration step calls `Iterator::next(iter, ())`, supplying unit as the source per the `Iter.Source is ()` constraint. (§12.3.1)
+014-36. Each `for own` iteration step calls `Iterator::next(iter, ())`, supplying unit as the source per the `Iter::Source is ()` constraint. (§12.3.1)
 014-37. Under `for own`, each yielded `Item` is an owned value moved out of the iterator's storage, and the iteration variable is a real owner. (§12.3.1)
 014-38. When a `for own` loop exits, the iterator is dropped and elements not yet yielded are dropped per their `Drop` semantics. (§12.3.1)
 014-39. The iteration variable is bound fresh on each iteration as an immutable `let`-style binding of the iterated `Item` type; reassigning it in the body is a compile error. (§12.3.2)
@@ -1791,15 +1808,15 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 014-117. An iterator cannot hold a borrow-equivalent reference to its collection; a source-bearing iterator carries only a cursor. (§12.7.4)
 014-118. The `source` parameter of `next` aliases the caller's collection borrow-equivalently for the duration of one call. (§12.7.4)
 014-119. An iterator reached through `Iterable` dispatch (source-bearing, default form) may not declare `type Item = own T`; owned items are exclusive to the consuming `IntoIterable` path (`Source = ()`, `for own`). (§12.7.4)
-014-120. The stdlib `Iterable` trait declares `type Iter: Iterator` and `fn iterator(value: Subject) -> Iter` with `where Iter.Source is Subject`. (§12.8)
-014-121. The `where Iter.Source is Subject` constraint binds the iterator's source type to the iterable itself. (§12.8)
+014-120. The stdlib `Iterable` trait declares `type Iter: Iterator` and `fn iterator(value: Subject) -> Iter` with `where Iter::Source is Subject`. (§12.8)
+014-121. The `where Iter::Source is Subject` constraint binds the iterator's source type to the iterable itself. (§12.8)
 014-122. `Iterable::iterator` takes its parameter by the default borrow-equivalent convention; the returned iterator is rooted in the value's cluster. (§12.8)
 014-123. The `Iterable` construction method is named `iterator`, not `iter`, per the full-name convention. (§12.8.1)
 014-124. The iterator returned by `Iterable::iterator` has a lifetime bounded by the for-loop expression. (§12.8.2)
 014-125. A type implements `Iterable` by declaring `type Iter` and an `iterator` method; `for x in d:` then dispatches to the implementation automatically. (§12.8.3)
-014-126. The stdlib `IntoIterable` trait declares `type Iter: Iterator` and `fn consuming_iterator(own value: Subject) -> Iter` with `where Iter.Source is ()`. (§12.9)
+014-126. The stdlib `IntoIterable` trait declares `type Iter: Iterator` and `fn consuming_iterator(own value: Subject) -> Iter` with `where Iter::Source is ()`. (§12.9)
 014-127. `IntoIterable::consuming_iterator` declares its parameter `own`: the source is consumed at the call and the returned iterator owns the source's storage. (§12.9)
-014-128. The `where Iter.Source is ()` constraint binds the iterator's source to unit; the iterator reads from its own internal state, not an external parameter. (§12.9)
+014-128. The `where Iter::Source is ()` constraint binds the iterator's source to unit; the iterator reads from its own internal state, not an external parameter. (§12.9)
 014-129. The `IntoIterable` construction method is named `consuming_iterator`, signalling ownership transfer per the full-name convention. (§12.9.1)
 014-130. Under `IntoIterable`, each `next` call on a non-`Copy` `Item` physically moves one element out of the iterator's internal storage. (§12.9.2)
 014-131. Under `IntoIterable`, each `next` call on a `Copy` `Item` yields a copy of the element. (§12.9.2)
@@ -1828,7 +1845,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 014-154. Trait method bodies, including default bodies in trait declarations (§3.1.3), may contain loops under the standard mutation and ownership rules. (§12.12.2)
 014-155. A generic function body containing a loop is type-checked at definition per §2.2.2. (§12.12.3)
 014-156. A generic loop's iterable type must satisfy `Iterable` (default form) or `IntoIterable` (`for own` form) at the call site for each monomorphization. (§12.12.3)
-014-157. Associated-type constraints use `.` member-access notation: `fn total[T: Iterable](source: T) -> T.Iter.Item`. (§12.12.3)
+014-157. Associated-type access uses `::` path notation at type level: `fn total[T: Iterable](source: T) -> T::Iter::Item`. `.` is value member access only; `::` reaches through types and namespaces. (§12.12.3)
 014-158. A `derived` expression's body may contain loops; each evaluation of the derived runs the loop fresh. (§12.13)
 014-159. A loop's local mutations inside a derived body are not observable outside the evaluation; only the derived's final value enters the reactive graph. (§12.13)
 014-160. The collection or range iterated in a derived body may itself be reactive; each update of that value re-evaluates the derived and re-runs the loop. (§12.13)
@@ -2751,14 +2768,14 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 
 020-1. Name resolution proceeds outward through enclosing scopes, innermost first. (§13.7)
 020-2. A node or wire body is an ordinary scope; its members are in scope within the body's reactive expressions. (§13.7)
-020-3. There is no receiver concept: a bare name binds to the nearest enclosing scope that declares it. (§13.7)
+020-3. There is no receiver concept: a bare name binds to the nearest enclosing scope that declares it — except that a name declared in both the instance body scope and the module top-level scope is ambiguous and errors. (§13.7)
 020-4. Two explicit scope anchors exist: `here::x` resolves in the current scope, `module::x` in the module top level. (§13.7)
 020-5. Routine member access uses a bare name or `here::`; `subject` is reserved for the value role. (§13.7)
 020-6. Within a node or wire body, the scope chain innermost-first is: local bindings, the instance body scope, the module top-level scope. (§13.7.1)
 020-7. Local bindings comprise `let` bindings and `for`-loop variables inside a reactive expression. (§13.7.1)
 020-8. The instance body scope comprises cells (`const`/`attr`/`recurrent`/`derived`/`stream`/`yielded`), `yielded` groups, `view` declarations, named acceptance entries inside `children:`/`incoming:`/`outgoing:` clauses, placement `as`-names, and the reserved fields `from`, `to`, `pair`, `exposition`. (§13.7.1)
 020-9. The module top-level scope comprises module-level `signal`, `derived`, `recurrent`, `stream`, and `const` declarations. (§13.7.1)
-020-10. A bare name resolves to the nearest scope in the chain that declares it: `local_gain * master_gain` reads a member and a module cell anchor-free. (§13.7.1)
+020-10. A bare name resolves to the nearest scope in the chain that declares it: `local_gain * master_gain` reads a member and a module cell anchor-free — except that a name declared in both the instance body scope and the module top-level scope is ambiguous and errors. (§13.7.1)
 020-11. `here::x` resolves `x` in the current scope, bypassing inner local bindings and ignoring same-named module-level declarations. (§13.7.2)
 020-12. `here::` is meaningful in any scope (function, operator, trait, node/wire body), always denoting the binding in that very scope rather than an outer one. (§13.7.2)
 020-13. Type-level positions (trait declarations, `fulfill` blocks) use the `Subject` alias for the subject type, not `here::`. (§13.7.2)
@@ -3153,7 +3170,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 024-26. Wire types that imply simultaneous source-destination activation should not satisfy `Circularity`; this guidance is load-bearing because compiler-synthesized wake gates form cycles that resolve by the prior-commit, one-commit-delay fixpoint only when guarded by a `Circularity` wire. (§13.11.5)
 024-27. Topology-cycle validation and reactive-expression-cycle validation are independent passes; either kind of cycle can exist without the other. (§13.11.5)
 
-## 025. Reactivity Boundary & Cell Storage — 65 Rules
+## 025. Reactivity Boundary & Cell Storage — 66 Rules
 
 025-1. The reactivity boundary determines which expressions become reactive and which remain ordinary computation. (§13.12)
 025-2. The compiler computes for each expression a provenance set: the reactive cells (signals, attrs, recurrents, derived results) it reads, including transitively through function calls and field accesses. (§13.12.1)
@@ -3220,6 +3237,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 025-63. A reactive array size is a compile error: `i32[some_signal]` ✗. (§13.12.5)
 025-64. A reactive value flowing into a const-generic argument position is a compile error: `Buffer[some_signal]` ✗. (§13.12.5)
 025-65. A `const` declaration whose right-hand side is reactive is a compile error. (§13.12.5)
+
+025-66. A fixed-extent array cell whose element type is dynamically sized stores one word-size pool index per element; for the fit rule the element size is one word, so `T[N]` with a dynamic-size `T` has footprint `N` × word and follows the ordinary direct-versus-pool split. (§13.12.4)
 
 ## 026. Reactive Error Handling — 10 Rules
 
@@ -4194,7 +4213,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-178. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-179. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 243 Rules
+## 033. Compilation Model & IR — 244 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4238,7 +4257,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-40. The behavior IR is the pure compute that each derived, gate, or effect-`desired` runs. (§15.4)
 033-41. Graph and behaviors meet only through the behavior ABI: the graph names a behavior by id and the runtime invokes it. (§15.4)
 033-42. Both IR parts speak one monomorphic type vocabulary; the frontend has specialized all generics before emission. (§15.4)
-033-43. The IR type vocabulary is the §4.1 primitives plus `str`, tuples `(T,…)`, arrays `[T;N]`, record/enum `%TypeId`s, `pool_index<%PoolId>`, and `closure<(T,…)->R>`. (§15.4)
+033-43. The IR type vocabulary opens from a base — the §4.1 primitives plus `str`, tuples `(T,…)`, arrays `[T;N]`, record/enum `%TypeId`s, `pool_index<%PoolId>`, and `closure<(T,…)->R>` — and grows by explicit later admission; the members admitted so far are the slice borrow types `T[..N]`/`T[..]` (behavior parameter and return positions only), the reference pairs `Handle[T]` and `Portal[T]`, and the ABI-only `yielded<T>`. (§15.4)
 033-44. IR `str` is a pooled-string index. (§15.4)
 033-45. Records and enums appear in the IR as `%TypeId` references whose layout lives in the `types` table. (§15.4)
 033-46. `pool_index<%PoolId>` is the IR type for dynamic-size values. (§15.4)
@@ -4274,7 +4293,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-76. `repeat` is the only mount/unmount construct; gates merely freeze. (§15.4.1)
 033-77. Scope hierarchy is encoded in the entries' fully-qualified paths. (§15.4.1)
 033-78. A cell entry's `id` is the cell's fully-qualified declaration path. (§15.4.1)
-033-79. A cell entry's `type` is a primitive type tag per §4.1, extended with the string-pool-index and dynamic-pool-index types and with `yielded<T>` — an ABI-only type carried by synthesized membership-descriptor cells and `yielded T` parameters, never a user-facing value type. (§15.4.1)
+033-79. A cell entry's `type` is a primitive type tag per §4.1, extended with the string-pool-index and dynamic-pool-index types, with fixed-size arrays, with the inline reference-pair tags `handle<T>` and `portal<T>`, and with `yielded<T>` — an ABI-only type carried by synthesized membership-descriptor cells and `yielded T` parameters, never a user-facing value type. (§15.4.1)
 033-80. A cell entry carries a `kind` — `input` (a stored, externally-written cell), `derived`, `recurrent`, or `fold` — classifying it; the kind leads the cell's text-form declaration. (§15.4.1)
 033-81. A `fold`-kind cell entry carries a combiner behavior id (a `fn(T, T) -> T` handle), an else value (the empty-membership result), and member edges listed in member order; each member edge is tagged with its membership driver — `permanent`, `keyed-template`, or `gate-guarded`. (§15.4.1)
 033-82. A `fold`-kind cell's surface is unchanged: its result lives in a `derived` declaration and consumers see `derived T`; its member edges feed the ordinary derived dependency-edge list and the fold cell is scheduled as a derived DAG node, so membership changes on its member edges — dirty-rooted at the gate transition or the `repeat` re-key diff — propagate dirt exactly as member value changes do. (§15.4.1)
@@ -4439,6 +4458,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-241. Implementations may publish conformance suites; passing such a suite is not a normative requirement. (§15.7.4)
 033-242. The IR representation of an attr placement encodes its provenance category (B static / C reactive) per placement on the wire or scope entry's attr list, enabling per-placement optimization at runtime/codegen: static-RHS placements skip implicit-derived allocation; reactive-RHS placements instantiate the bridge. (§15.4.1)
 033-243. The cell-ID grammar's multiplicity device for keyed scopes is the `.<key>.` segment: a `repeat` scope key appears in the path as its own segment, rendered as the key's stringified `StringifiableKey` form — `<enclosing_path>.<key>.<template_field>` — first-class alongside lexical name segments and the `:N` ordinal suffix. A stringified key renders bare iff it is nonempty and contains none of `.`, `:`, `'`, `\`, or whitespace; any other stringified form renders as a single-quoted segment with `\'` and `\\` escapes. Quoting is canonical — bare whenever bare is available — so equal keys render byte-identical cell IDs. (§15.4.1.1, §13.5.3)
+
+033-244. `Handle[T]` values belong to the IR type vocabulary as inline `(slot_path, generation)` pairs — the representation the portal pair parallels — `Copy`, cell-storable, rendered by the `handle<T>` type tag. (§15.4.1)
 
 ## 034. Collect / Yield / Yielded — 20 Rules
 
