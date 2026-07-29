@@ -1243,19 +1243,35 @@ TraitBodyItem := Annotation* DocComment? (RequiresClause
                               | AssocTypeDecl
                               | RequiredCell
                               | EndpointDecl
-                              | MethodSig)
+                              | MethodSig
+                              | EffectMethodSig)
 RequiresClause   := 'requires' TypePath (',' TypePath)*
 AssocTypeDecl    := 'type' Ident ('=' TypeExpr)?
 RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']' | 'stream' '[' TypeExpr ']')
                     Ident ':' TypeExpr ('=' Expr)?
 EndpointDecl     := ('from' | 'to') ':' TypeExpr
 MethodSig        := 'fn' Ident GenericParams? '(' Params? ')' ('->' TypeExpr)? (':' FnBody)?
+EffectMethodSig       := 'effect' Ident '(' Params? ')' EffectMethodBody?
+EffectMethodBody      := ':' INDENT ObservedContractBlock? EffectBlock* DEDENT
+ObservedContractBlock := 'observed' ':' INDENT ObservedContractEntry+ DEDENT
+ObservedContractEntry := Ident ':' ('signal' TypeExpr | 'stream' ('ring' | 'gate') '[' ConstExpr ']' TypeExpr | 'stream' '[' TypeExpr ']' TypeExpr)
 ```
 
 The `Annotation*` position covers `@default(T)`. `RequiredCell` coverage spans
 §3.1.7. An empty `TraitBody` yields a marker trait (no methods, no associated
 types). Wire-trait endpoints (`from:`, `to:`) are admitted only when the
 trait will be satisfied by wire types.
+
+An `EffectMethodSig` is the effect-kind method of §3.1.1.1: its `Params` take
+one of the two landed forms — a `Subject`-typed first parameter or no
+`Subject` parameter — and the head carries no generic-parameter list of its
+own. A colon-bearing `EffectMethodBody` holds the `observed:` contract block
+and/or default-body effect blocks (§13.19); a bodiless head is the abstract,
+contract-less form, and at least one block must follow a written colon (a
+post-parse check). The contract block is discriminated from a default body's
+own `observed:` declaration block by entry shape: contract entries are
+name-first (`audio: stream ring[256] Sample`), declaration entries are
+kind-keyword-first.
 
 #### 3.1.1 Method signatures
 
@@ -1910,14 +1926,20 @@ The syntax (grammar addition):
 ```
 FulfillItem  := 'fulfill' TypeExpr 'for' TypeExpr WhereClause? FulfillBody
 FulfillBody  := ( NEWLINE INDENT FulfillBodyItem+ DEDENT ) | NEWLINE
-FulfillBodyItem := Annotation* DocComment? (FnDecl | AssocTypeBinding)
+FulfillBodyItem := Annotation* DocComment? (FnDecl | AssocTypeBinding | EffectMethodDecl)
 AssocTypeBinding := 'type' Ident '=' TypeExpr NEWLINE
+EffectMethodDecl := 'effect' Ident '(' Params? ')' EffectBody
 ```
 
 The `NEWLINE` alternative is the bodiless `fulfill` — no colon, no body. The
 head's optional `where` clause still applies, which is how conditional marker
 conformance is written (`fulfill Copy for Pair[T] where T: Copy`); its roles
 are catalogued in §3.2.
+
+An `EffectMethodDecl` at a fulfill site supplies a concrete effect body
+(§13.19): the body is mandatory here, and the trait-side `observed:` contract
+block never appears at a fulfill site — contracts live on the trait
+(§3.1.1.1).
 
 `fulfill` is a reserved keyword.
 
@@ -13947,11 +13969,30 @@ projection that the `children:` clause did not name:
 node Processor:
   children:
     all: Node*                       // accepts any node
-  view drivables: Drivable+          // projection — selects the Drivable subset
+  view drivables: Drivable*          // projection — selects the Drivable subset
+
+node Convoy:
+  children:
+    cars: Car[=2]                    // accepts exactly 2 Cars (Car ⊆ Drivable)
+  view drivables: Drivable[2..]      // underwritten: the 2 Cars guarantee ≥ 2 Drivables
 ```
 
 The standalone `view` form is purely receiver-side: it never widens
 acceptance, only narrows the selection.
+
+The standalone view's cardinality is part of the *selection*, not a
+caller obligation. It is checked once, at the type declaration: the
+acceptance entries' bounds must **underwrite** it along the trait/marker
+subset lattice — the same static machinery as the conjunction and
+unsatisfiability check of §13.3.3.1. Above, `Drivable*` (min 0) is
+underwritten by `Node*` (min 0), and `Drivable[2..]` (min 2) is
+underwritten by `Car[=2]` because Car ⊆ Drivable forces at least 2
+Drivables; a standalone `view drivables: Drivable+` over only `all:
+Node*` would be a declaration error, because `Node*` guarantees no
+Drivable at all. This underwriting is what makes the body's indexing
+guarantees (§13.3.3.2) sound at every placement site. A placement site is
+never diagnosed against a standalone view — a caller's obligations come
+from the acceptance entries alone.
 
 ##### Catch-all and self-recursion
 
@@ -13995,10 +14036,10 @@ the selector with no intervening whitespace: `Reverb?`, `Channel+`,
 `Voice*`. Bracket forms may optionally have a space before the bracket:
 `Filter[=1]` and `Filter [=1]` are both valid.
 
-**Conjunction.** Each view's cardinality constrains the count of supplied
-children matching its selector, and all of a node's views hold
-**simultaneously** — there is no precedence or resolution among them.
-Because views overlap, a child counts toward every view it matches:
+**Conjunction.** Each acceptance entry's cardinality constrains the count of
+supplied children matching its selector, and all of a node's acceptance
+entries hold **simultaneously** — there is no precedence or resolution among
+them. Because entries overlap, a child counts toward every entry it matches:
 
 ```
 node Fleet:
@@ -14009,10 +14050,14 @@ node Fleet:
 
 The only conflict is **unsatisfiability**, diagnosed by a cheap subset-edge
 static check along the known trait/marker subset lattice plus placement-time
-counting — there is no general feasibility solver. A view whose selector is
+counting — there is no general feasibility solver. An entry whose selector is
 a subset of another's but whose bound cannot be reconciled with it is a
 static error: a `children:` clause whose entries are `all: Node[=3]` and
 `drivables: Drivable[=5]` cannot be satisfied (Drivable ⊆ Node, 5 > 3).
+
+A standalone `view`'s cardinality enters this same static check as the
+*underwritten* side (§13.3.3, Selection views): the acceptance entries'
+bounds must entail it, never as a placement-site constraint.
 
 **Supply mode — the `dynamic` prefix.** Orthogonal to *count* is *supply
 mode*: whether the set of supplied children is a static fact or may vary at
@@ -14162,9 +14207,9 @@ unroll by the same §12.3.7 rule but sit on opposite sides of the
 signature. A type-emitted `for` expands once at type elaboration,
 applies uniformly to every instance, and produces **internals**
 (above). A placement-body `for` expands at each placement site and is
-**caller supply**: its placements count against the receiving type's view
-cardinality and appear in the matching view, exactly as individually
-written placements do. Use the type form when
+**caller supply**: its placements count against the receiving type's
+acceptance-entry cardinality and appear in the matching views, exactly as
+individually written placements do. Use the type form when
 multiplicity and per-child configuration are properties of the
 **type**; use the placement form when they may differ per instance.
 
@@ -15733,9 +15778,9 @@ Use top-level placements when the instance stands on its own and
 participates in the graph through wires rather than
 containment.
 
-The parent declares the children it accepts via `view` declarations
-(§13.3.3) with cardinality; the specific instances appear via placement
-(§13.8.3).
+The parent declares the children it accepts via acceptance entries
+(§13.3.3) with cardinality (a named entry doubling as a view); the specific
+instances appear via placement (§13.8.3).
 
 **Runtime traversal goes through `expose:`, not through the views
 directly.** A view is the constraint-and-access mechanism — declared
@@ -15850,7 +15895,7 @@ function calls.
 
 - Children are bound to placement-time names. A node may contain at most
   one child of each name; multiple children of the same type with different
-  names are permitted (subject to the declared view cardinality).
+  names are permitted (subject to the declared acceptance-entry cardinality).
 - Statically supplied children are not added or removed at runtime (except
   via hot reload). Children of a `dynamic` view mount and dismount with
   their feeding `repeat`'s key set (§13.3.3.4).
@@ -17560,9 +17605,11 @@ inside the parent's own type body (the type declaration doesn't know what
 placements will exist) — within the parent type, use a view (`viewname[i]`
 or iteration over it) instead.
 
-Cardinality declared in the parent's views (§13.3.3.1) is enforced at
-placement: the number of placed children matching each view must satisfy its
-declared cardinality. Violations are compile errors at the placement site.
+Cardinality declared in the parent's acceptance entries (§13.3.3.1) is
+enforced at placement: the number of placed children matching each acceptance
+entry must satisfy its declared cardinality. Violations are compile errors at
+the placement site. A standalone `view` declaration's cardinality is
+receiver-side selection (§13.3.3) and is never checked at the placement site.
 
 ##### 13.8.3.1 Parametric topology via compile-time `for`
 
@@ -17573,8 +17620,9 @@ producing one child placement per iteration. The static-graph principle
 
 The two iteration constructs split a placement body by supply mode:
 **`for` is static supply** — its unrolled placements count against the
-receiving type's view cardinality and appear in the matching view, exactly
-like individually written placements — and **`repeat` is dynamic supply**
+receiving type's acceptance-entry cardinality and appear in the matching
+views, exactly like individually written placements — and **`repeat` is
+dynamic supply**
 (§13.5.4), legal only against the receiver's `dynamic` views (§13.3.3.4).
 
 A `for` in a placement body whose iterable is *not* compile-time-known
@@ -17590,8 +17638,8 @@ parent instance, and via the view name from inside the parent's type body
 (§13.4.2).
 
 **Example.** A synthesizer whose voice count is fixed at module scope
-via a `const`, used both in the type's view cardinality and in the
-placement's body loop:
+via a `const`, used both in the type's acceptance-entry cardinality and
+in the placement's body loop:
 
 ```
 const VOICE_COUNT: usize = 8
@@ -17601,7 +17649,8 @@ node Oscillator:
   derived output: f32 = synthesize(freq)
 
 node Synthesizer:
-  view oscillators: Oscillator [=VOICE_COUNT]
+  children:
+    oscillators: Oscillator [=VOICE_COUNT]
   derived total: f32 = total_output(subject)
 
 Synthesizer synth:                 // top-level declaration form (§13.8.1)
@@ -17613,8 +17662,8 @@ Synthesizer synth:                 // top-level declaration form (§13.8.1)
 compile-time known — `VOICE_COUNT` is a `const`), so the `for` in the
 placement body unrolls into eight anonymous `Oscillator` child
 placements with statically-determined `freq` attrs. The cardinality
-`Oscillator [=VOICE_COUNT]` declared by the type is satisfied at compile
-time by the unrolled placements. The children are accessible via the
+`Oscillator [=VOICE_COUNT]` declared by the type's named acceptance
+entry is satisfied at compile time by the unrolled placements. The children are accessible via the
 indexed view form `synth.oscillators[i]` (§13.4.1), and the parent type's
 own iteration uses `for o in oscillators:` (§13.4.2).
 
@@ -18088,6 +18137,21 @@ let c: char = '\''                 // char literal in expression context
 let r = some_fallible()?           // postfix Try in expression context
 @derive(Eq) type Point:            // directive prefix in declaration context
   ...
+```
+
+The run's trailing edge is whitespace-mandatory. An
+identifier-start character — a letter, `_`, or other non-digit
+identifier character — glued directly onto
+the last flag character is a lex error of the normative diagnostic
+class `glued_flag_run_boundary`. The lexer does not silently end the
+run and begin a name token, and there is no whitespace-free instance
+naming; the fix is to insert a space after the run.
+
+```text
+error: identifier character glued to a flag run
+  --> Pin'!x
+           ^ letter `x` abuts the flag run's last flag
+  hint: insert a space — `Pin'! x` — there is no whitespace-free instance naming
 ```
 
 ##### 13.8.8.5 Each boolean attr is set by one form per placement
@@ -18926,10 +18990,10 @@ not a control-flow branch.
 **Placement and cardinality.** Because every arm is constructed and only
 propagation is gated, placements inside *all* arms of a `when` or `given`
 block used in a node or placement body count toward the enclosing type's
-view cardinality — the same rule as children placed by a type-body `for`
-(§13.3.3.3). A two-arm block each placing one `Oscillator` constructs two,
-so `view osc: Oscillator` (exactly one) would be violated; size the cardinality
-for the sum across arms. (At `expose:` level this does not arise:
+acceptance-entry cardinality — the same rule as children placed by a type-body
+`for` (§13.3.3.3). A two-arm block each placing one `Oscillator` constructs
+two, so the acceptance entry `osc: Oscillator` (exactly one) would be
+violated; size the cardinality for the sum across arms. (At `expose:` level this does not arise:
 exposition references already-placed children and constructs only wrapper
 placements, not cardinality-constrained children — §13.3.7.1.) A block, like
 any `:`-introduced construct, owns an indented body and therefore
@@ -23313,8 +23377,8 @@ desired:
 
 The declaration shape matches a regular `stream` declaration (§13.18.2)
 — policy (the `ring`/`gate` word form or the bracket form, §13.18.3),
-optional capacity (defaulting to
-1024), name, element type, and a `= source`. The effect feeds the
+optional capacity (an omitted capacity defaults per §13.18.2's
+source-derived rules), name, element type, and a `= source`. The effect feeds the
 source internally; there is no external program-side wiring into it.
 A desired cell's expression or `= source` (whether `derived`,
 `recurrent`, or `stream`) may read the effect's own `observed:` cells
@@ -23915,8 +23979,12 @@ need no registration.
 
 **Reconciler error reporting.** Reconciler errors (network failure,
 resource exhaustion, etc.) are reported to the program through the
-effect's `observed:` cells (typically a `signal error: Option[E] =
-None` cell). The reconciler does not panic the runtime;
+effect's `observed:` cells. An error channel is author-opt-in: no
+language rule requires an effect to declare one — `signal error:
+Option[E] = None` is the convention, not a mandate. A domain that
+wants error channels mandatory states them in an effect-kind trait's
+`observed:` contract block (§3.1.1.1): domain policy expressed over
+the language mechanism. The reconciler does not panic the runtime;
 reconciler-internal errors are domain errors expressed through the
 value track (§8).
 
@@ -24192,18 +24260,23 @@ member-cell's provenance follows the uniform cell-argument rule
 
 A `yield`'s **membership driver** is determined by its lexical position
 inside the `collect` block — the same three drivers the IR records
-(§15.4.1):
+(§15.4.1), one vocabulary in two registers: surface **permanent** = IR
+`permanent`, surface **key-driven** = IR `keyed-template`, surface
+**activation-driven** = IR `gate-guarded`. Surface names serve semantic
+prose, IR names serve IR entry fields; neither register renames the
+other. The three:
 
-- **Permanent** — a `yield` at a static position (directly under
-  `collect`, or under a compile-time-unrolled construct). The member is
-  present for the group's whole lifetime.
-- **Key-driven** — a `yield` inside a `repeat` (§13.5.4) over a dynamic
-  view. One member per live key; members join and leave as keys do.
-- **Activation-driven** — a `yield` inside a gated arm (`when`/`given`,
-  a `Gated` exposition arm §13.3.7.7). The member is present iff its arm
-  is *effectively active* (§13.9.7); a gated-off contribution is *absent*
-  from the group, not a frozen present member (the fourth gate read-path,
-  §13.9.7).
+- **Permanent** (IR: `permanent`) — a `yield` at a static position
+  (directly under `collect`, or under a compile-time-unrolled construct).
+  The member is present for the group's whole lifetime.
+- **Key-driven** (IR: `keyed-template`) — a `yield` inside a `repeat`
+  (§13.5.4) over a dynamic view. One member per live key; members join
+  and leave as keys do.
+- **Activation-driven** (IR: `gate-guarded`) — a `yield` inside a gated
+  arm (`when`/`given`, a `Gated` exposition arm §13.3.7.7). The member is
+  present iff its arm is *effectively active* (§13.9.7); a gated-off
+  contribution is *absent* from the group, not a frozen present member
+  (the fourth gate read-path, §13.9.7).
 
 `collect` evaluates **once** and builds the living membership structure;
 membership then varies at runtime per the drivers above without
@@ -24411,15 +24484,43 @@ fold <members>:
   else: <T expression>
 ```
 
-- The `fold` header names the `<members>` — a `yielded` group (§13.20) or
-  a reactive composite with a uniform slot type (§13.21.4).
+- The `fold` header takes a `<members>` **operand** — any expression of
+  membership-structure type: a `yielded` group (§13.20) or a reactive
+  composite with a uniform slot type (§13.21.4), written as a name
+  reference or as an anonymous inline `collect:` block (below) alike. The
+  slot is **typed, not syntactically enumerated** — as with an `fn`
+  parameter, admissibility is the type rule alone.
 - **`by:`** and **`else:`** are newline-separated arms — **no comma** —
   and **both are mandatory**. `else:` comes **last**.
 
 ```
 derived total: f32 = fold voices:
-  by: (a, b) => a + b
+  by: fn(a, b): a + b
   else: 0.0
+```
+
+**Inline `collect:` operands — layout.** When the members operand is an
+anonymous inline `collect:` block, the fold takes a **fixed block
+layout**. The single written colon after `collect` opens the
+**collect body**, indented one level beyond the line carrying the fold
+header. The `by:` and `else:` arms then follow **at the fold header
+line's own indent**: the dedent out of the collect body closes the
+operand, and because `by:` is **mandatory-next** the parse is
+deterministic (`by` cannot begin a statement). The header writes **no
+second colon** — with a self-delimiting operand such as a name the
+header's colon opens the arm block and arms sit one level under the
+header line (as above), so the colon always opens exactly one indented
+block; which block it opens depends on the operand form. The
+inline-collect fold has **no inline single-line form** — it forces the
+block layout, parallel to the way a `fold` inside an operator body forces
+the operator's indented block form (§13.21.6).
+
+```
+derived total: f32 = fold collect:
+  yield mixer_a.gain
+  yield mixer_b.gain
+by: fn(a, b): a + b
+else: 0.0
 ```
 
 #### 13.21.2 The `by:` combiner (semigroup)

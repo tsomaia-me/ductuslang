@@ -3786,7 +3786,8 @@ TraitBodyItem     ::= Annotation*
                       | AssocTypeDecl
                       | RequiredCell
                       | EndpointDecl
-                      | MethodSig )
+                      | MethodSig
+                      | EffectMethodSig )
                     ;  (§3.1, 005-4, 005-49)
 
 // Reserved-but-undefined: a doc-comment form is not yet specified
@@ -3822,6 +3823,20 @@ TraitFnParamList  ::= TraitFnParam ( ',' TraitFnParam )* ','?
 
 TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind slot per §3.15; no default-value `'=' Expr` per SPEC §3.1
                     ;  (§3.1.1, 005-9, 005-12)
+
+EffectMethodSig   ::= 'effect' IDENT '(' TraitFnParamList? ')' EffectMethodBody?
+                    ;  (§3.1.1.1, 005-68)
+
+EffectMethodBody  ::= ':' INDENT ObservedContractBlock? EffectBlock* DEDENT
+                    ;  (§3.1.1.1, 005-69)
+
+ObservedContractBlock ::= 'observed' ':' INDENT ObservedContractEntry+ DEDENT
+                    ;  (§3.1.1.1, 005-69)
+
+ObservedContractEntry ::= IDENT ':' ( 'signal' TypeExpr
+                      | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']' TypeExpr
+                      | 'stream' '[' TypeExpr ']' TypeExpr )
+                    ;  (§3.1.1.1, 005-69)
 ```
 
 // **TraitBody two-alternative shape (per §3.1).** An empty trait
@@ -3862,6 +3877,40 @@ TraitFnParam      ::= 'own'? IDENT ':' ( KindAnnotation | TypeExpr )  // kind sl
 //  `'type'` keyword that heads a `RecordDecl` / `NewtypeDecl` at
 //  module level appears inside a `TraitBody` as an associated-type
 //  declarator. Position discriminates.
+// **`EffectMethodSig` is the effect-kind trait method (per §3.1.1.1,
+//  005-68).** It heads with `'effect'` rather than `'fn'`. Its
+//  `TraitFnParamList?` takes one of the two landed forms — a
+//  `Subject`-typed first parameter (an interpretation obligation over a
+//  subject) or no `Subject` parameter (a trait-associated effect) — and
+//  the head carries no `GenericParamList` of its own. If an effect-kind
+//  method ever needs generics, the enhancement must be upstreamed to
+//  SPEC §3.1.1.1 first and then mirrored here — this grammar does not
+//  deviate.
+// **At-least-one-block-after-colon (per §3.1.1.1, 005-69).** When an
+//  `EffectMethodBody` is present (a written `':'`), at least one block —
+//  the `ObservedContractBlock` and/or an `EffectBlock` — must follow.
+//  The `ObservedContractBlock? EffectBlock*` shape admits the empty
+//  match at the grammar level; the non-empty requirement is a post-parse
+//  check.
+// **Contract-block vs `observed:` declaration-block discrimination (per
+//  §3.1.1.1, 005-69).** Both block flavors open `observed ':'`. The
+//  first token past the block's `INDENT` discriminates: an `IDENT` heads
+//  a name-first `ObservedContractEntry` (`audio: stream ring[256]
+//  Sample` — the minimum output-cell contract), whereas a kind keyword
+//  (`signal` / `stream`) heads an `ObservedCellDecl` declaration entry
+//  (§7.14 `ObservedBlock`). The contract flavor is the one admitted at an
+//  `EffectMethodBody`'s leading slot; the declaration flavor appears only
+//  inside an `EffectBlock` (§7.14).
+// **Default bodies and coexistence (per §3.1.1.1, 005-69; §3.3.5).** A
+//  head whose `EffectMethodBody` carries `EffectBlock`s is the
+//  default-body form (parallel to the `fn` default body of §3.1.3). A
+//  contract block and a default body may coexist under one head — the
+//  §3.3.5 cover check reads the default body's own `observed:` block
+//  against the contract.
+// **Bodiless head = abstract effect method (per §3.1.1.1, 005-68).** An
+//  `EffectMethodSig` with no `EffectMethodBody` (the trailing `?`
+//  absent) is the abstract, contract-less effect method — an obligation
+//  carrying no default body, to be supplied at a fulfill site (§7.12).
 
 ### 7.12 Fulfill blocks (FulfillItem BNF — already in SPEC §3.3, mirror exactly)
 
@@ -3876,7 +3925,7 @@ FulfillBody       ::= ( NEWLINE INDENT FulfillBodyItem+ DEDENT )
                     | NEWLINE
                     ;  (§3.3, 005-92, 005-245)
 
-FulfillBodyItem   ::= Annotation* ( FnDecl | AssocTypeBinding )
+FulfillBodyItem   ::= Annotation* ( FnDecl | AssocTypeBinding | EffectMethodDecl )
                     ;  (§3.3, 005-92)
 
 // Reserved-but-undefined: a doc-comment form is not yet specified
@@ -3885,6 +3934,9 @@ FulfillBodyItem   ::= Annotation* ( FnDecl | AssocTypeBinding )
 
 AssocTypeBinding  ::= 'type' IDENT '=' TypeExpr NEWLINE
                     ;  (§3.3.2, 005-92)
+
+EffectMethodDecl  ::= 'effect' IDENT '(' TraitFnParamList? ')' EffectBody
+                    ;  (§3.3, §13.19.2, 005-71)
 ```
 
 // **Bodiless `fulfill` (per §3.2, 005-67).** The `NEWLINE` alternative
@@ -3925,6 +3977,13 @@ AssocTypeBinding  ::= 'type' IDENT '=' TypeExpr NEWLINE
 //  (abstract methods inherit the trait's default body per §3.1.3 by
 //  omission — the method does not appear in the `FulfillBody` at all,
 //  rather than appearing without a body).
+// **`EffectMethodDecl` at a fulfill site (per §3.3, §13.19.2, 005-71).**
+//  A fulfill-site effect-kind method supplies a concrete effect body
+//  (`EffectBody` per §7.14 / SPEC §13.19); the body is mandatory here —
+//  there is no bodiless form. The trait-side `ObservedContractBlock`
+//  never appears at a fulfill site — contracts live on the trait
+//  (§7.11 / §3.1.1.1). The parameter list uses `TraitFnParamList`:
+//  concrete types or `Subject`, per §3.3.1 substitution.
 
 ### 7.13 Reactive `operator` declarations
 
@@ -4200,7 +4259,8 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  `'gate'` word form or as the `'[' TypeExpr ']'` bracket-policy form
 //  (`stream[Ring[64]]`, §13.18.3); the two spell the same channel.
 //  On the word form, the optional `'[' ConstGenericArg ']'` is the
-//  buffer capacity, defaulting to 1024 (§13.18.2) when absent.
+//  buffer capacity, defaulting per §13.18.2's source-derived rules
+//  when absent.
 // **`'=' Expr` source is mandatory at module level (per §13.18.2).**
 //  SPEC §13.18.2's declaration BNF (`stream policy[capacity]? name:
 //  Type? = source`) has no optionality marker on `= source`, and every
@@ -4660,7 +4720,7 @@ DefaultAttrDecl   ::= 'default' 'attr' IDENT ':' TypeExpr ( '=' Expr )?
 //  policy is mandatory — spelled as the `'ring'` / `'gate'` word
 //  form or the `'[' TypeExpr ']'` bracket-policy form (§13.18.3),
 //  both the same channel — the bracketed capacity on the word
-//  form is optional (defaults to 1024 per §13.18.2), and the
+//  form is optional (defaulting per §13.18.2's source-derived rules), and the
 //  `'=' Expr` source is optional only for host-fed streams
 //  (post-parse semantic).
 // **`ConstStmt` is `const` from §6.1 (per §13.3.1).** A node body
@@ -4722,13 +4782,18 @@ YieldDefaultArm   ::= 'default' ':' INDENT CollectBody DEDENT
 //  §13.20.1, 034-1).** A group is named ONLY by the `YieldedDecl` form
 //  `yielded <name>: <MemberType> = collect:`. There is no
 //  `collect:` … `as <name>:` naming statement. The anonymous
-//  `collect:` block-expression form (a
-//  `yielded T` value consumed in place — e.g. a `fold` members operand
-//  §13.21, or a `yielded T`-typed argument §13.20.4.1) is an
-//  *expression*, not a declaration; it is admitted wherever a value of
-//  its kind is accepted. That anonymous expression form is part of the
-//  wider `collect` / `fold` expression grammar this document does not
-//  yet reformulate (gap).
+//  `collect:` block-expression form is a `yielded T` *expression*, not a
+//  declaration, admitted **by type** wherever a membership-structure
+//  value is accepted — a `fold` members operand (§13.21.1) or a
+//  `yielded T`-typed argument (§13.20.4.1). The fold members slot is
+//  **typed, not syntactically enumerated** (035-13), so a name reference
+//  and this anonymous block are admitted alike. When such a block stands
+//  as a fold members operand, the fold takes the fixed inline-collect
+//  block layout: the collect body indents one level beyond the fold
+//  header's line, and the `by:` / `else:` arms sit at the header line's
+//  own indent (035-14, SPEC §13.21.1). The full `collect` / `fold`
+//  expression productions are spelled in SPEC §13.21.1; productions not
+//  yet mirrored here.
 // **`yield` is legal only inside a `collect` body (per §13.20.2,
 //  034-4).** `YieldStmt` appears only within a `CollectBody` — directly
 //  (permanent member), inside a `YieldRepeat` (one key-driven member
@@ -5783,6 +5848,15 @@ FlagChar          ::= "'" | '!' | '?' | '*' | '+' | '^' | '~' | '@' | '$'
 //  cardinality marker (§5.2, §5.3, §5.6, §8.7); `@` is the
 //  directive prefix (§12); `!` is the inline attribute-false marker
 //  (§11.5). The grammar resolves by position (021-120).
+// **Trailing boundary is whitespace-mandatory (per §13.8.8.4 /
+//  021-145).** An identifier-start character (a letter, `_`, or other
+//  non-digit identifier character) glued
+//  directly onto the run's last flag character (`Pin'!x`) is a lex
+//  error `glued_flag_run_boundary` with an insert-a-space hint — the
+//  lexer never silently ends the run at such a character. The
+//  `FlagChar+` repetition is terminated only by whitespace or a
+//  non-identifier, non-flag token boundary; there is no
+//  whitespace-free instance naming.
 // **Flag character set (per 021-113 / §13.8.8.1).** Exactly the
 //  nine listed characters. `#` is excluded (it is a valid identifier
 //  character per §2.3, 002-15).
@@ -6360,7 +6434,7 @@ position:
 | `pair`       | pairs-form body matcher head (§9.4)                  | instance field on pairs-form wire instances              | §13.6.1.3, §13.7.5 |
 | `exposition` | (no declaration-position role)                       | instance field of any node — the exposed list (§13.3.7.3) | §13.3.7.3, §13.7.5 |
 | `desired`    | effect clause head (`desired:` sub-block, §7.14)     | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
-| `observed`   | effect clause head (`observed:` sub-block, §7.14)    | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
+| `observed`   | effect clause head (`observed:` sub-block, §7.14) and trait-side effect-method contract-block head (§7.11) | (sub-block name; not an expression-position reference)   | §13.19, 002-5 |
 
 ```ebnf
 ReservedInstanceField ::= 'pair' | 'exposition' | 'from' | 'to'

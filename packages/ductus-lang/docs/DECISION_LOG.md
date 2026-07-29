@@ -2042,7 +2042,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-154. An initial value referencing a cell on another instance adds cross-instance edges to the init dependency graph. (§13.2.6)
 016-155. Init cycles spanning instances are compile errors at the same severity as within-instance init cycles, identifying the participating instances and cells. (§13.2.6)
 016-156. Ductus source has no syntactic form for assigning to a `signal`, `attr`, `recurrent`, `derived`, `stream`, or `const` after declaration; source expressions only read them. (§13.2.7)
-016-157. Host-driven writes occur only through `runtime.write_signal` and `runtime.transaction`. (§13.2.7)
+016-157. Host-driven signal-cell writes occur only through `runtime.write_signal` — directly, or batched within a `runtime.transaction`. (§13.2.7)
 016-158. The host cannot directly write recurrents, deriveds, or consts at runtime; influence is indirect via signals and attrs. (§13.2.7)
 016-159. Placement-time initial values may set attrs and recurrents; consts are not settable at placement. (§13.2.7)
 016-160. The runtime itself writes a derived's output cell when it evaluates the derived's expression. (§13.2.7)
@@ -2182,7 +2182,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 016-294. A value-kind observe never binds to a stream context — a signal never drives a stream implicitly; to derive events from a signal, cross explicitly and observe the resulting stream: `on sig->changes as e:`. (§13.2.11.6)
 016-295. In a stream-kind observe, a signal read inside an arm body is sampled at the moment of each firing and never drives: it contributes no firings and no re-evaluation between events — there is no implicit signal-to-stream conversion. (§13.2.11.3)
 
-## 017. Nodes & Views — 329 Rules
+## 017. Nodes & Views — 330 Rules
 
 017-1. A node is a reactive entity: it holds values (attrs, recurrents), computes values (deriveds), and communicates with other nodes through typed wires. (§13.3.0)
 017-2. Each node type is a nominal type whose body declares its members; each placement of a node type creates an instance with its own cells. (§13.3.0)
@@ -2247,7 +2247,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-61. Type-emitted children are internals: never counted by any view. (§13.3.3.3)
 017-62. Across hot reload, a changed compile-time iterable follows path-based cell identity: unchanged fully-qualified paths keep state, new loop indices allocate fresh, dropped indices are released per the standard removal rule. (§13.3.3.3)
 017-63. A type-emitted `for` expands once at type elaboration and applies uniformly to every instance. (§13.3.3.3)
-017-64. A placement-body `for` expands at each placement site and is caller supply: its placements count against the receiving type's views and appear in the matching view(s). (§13.3.3.3)
+017-64. A placement-body `for` expands at each placement site and is caller supply: its placements count against the receiving type's acceptance entries and appear in the matching view(s). (§13.3.3.3)
 017-65. A type-emitted `for` may place wires sourced from the enclosing instance; they are self-sourced — exempt from the `outgoing` wire-views, subject to endpoint typing, and engaging at their written position in the unrolled sequence. (§13.3.3.3)
 017-66. A compile-time `for` in a node body or placement body may carry an `as <name>` clause: `for i in 0..N as bank: Oscillator as osc | freq=f(i)`. The `as <name>` hoists the loop-scoped named placements out of the per-iteration body and binds them collectively to `<name>` in the enclosing scope. (§13.3.3.3)
 017-67. `for … as <name>` binds `<name>` to `[<name>::entry; N]`, a fixed-extent array of compiler-minted nominal records. `<name>::entry` is path-derived, synthetic, and not nameable in user code as a parameter type. Its fields are named after the `as <field>` placements inside the loop body; the field type is `Handle[T]` (statically placed — the for-loop is compile-time unrolled, no dismount possible), so `<name>[i].<field>` auto-derefs to `&T` in read position. Access is `<name>[i].<field>`; whole-row access is `<name>[i]`. The placement binding `<field>` itself stays a borrow obeying ordinary borrow semantics; the entry field is the storable representation the compiler mints for body-wide access. (§13.3.3.3)
@@ -2270,7 +2270,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-84. A view referenced in `expose:` carries its dynamic children like static ones: each feeding `repeat`'s scopes appear at the repeat's written position, mounting and dismounting under Model B. (§13.3.3.4)
 017-85. When every supplier at a placement site is provably static, the compiler may unroll that site's `repeat` and operator applications; the developer still writes against the dynamic contract. (§13.3.3.4)
 017-86. The same marker, cell model, and consumption rules apply to `dynamic` wire-views (`incoming`/`outgoing`). (§13.3.3.4)
-017-87. Each view's cardinality constrains the count of children matching its selector over the whole supply, and all views' constraints hold simultaneously (conjunction) with no precedence; overlap is fine — a child is counted in every view it matches. (§13.3.3.1)
+017-87. Each acceptance entry's cardinality constrains the count of children matching its selector over the whole supply, and all acceptance entries' constraints hold simultaneously (conjunction) with no precedence; overlap is fine — a child is counted in every entry it matches. (§13.3.3.1)
 017-88. The only cardinality conflict is unsatisfiability: `children:` with both named acceptance entries `all: Node[=3]` and `ds: Drivable[=5]` is a static error (Drivable ⊆ Node, 5 > 3). (§13.3.3.1)
 017-89. A `Bundle[T]` is a homogeneous co-placement of children written `[...]` at placement — a distinct kind from a view; only an explicit `[...]` constructs a bundle, a bare placement is not. The empty bundle literal `[]` is allowed and produces a `Bundle[T]` value for any inferable `T`, with an empty offsets table of length 1, encoding zero rows — the invariant is offsets length = rows + 1, so `[].count == 0` and `for row in []` runs zero times. (§13.3.3.5)
 017-90. Bundle access goes through the `Index` trait (§4.9.5): `bundle[g]` returns a row slice (`Handle[T][..N]` or `Handle[T][..]`), `bundle[g][i]` returns `Handle[T]`, and `bundle.count` returns the row count — an intentional exception to the unified element-tally reading of `.count` (§9.3.8). Indexing follows the index-to-min-cardinality rule (`viewname[i]` legal iff `i < min_cardinality`) at each level — outer `[g]` to-min produces the slice, inner `[i]` to-min into it. (§13.3.3.5)
@@ -2476,7 +2476,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-290. A node placed at module top level is an independent instance, reachable only by its module-scope name or through wires. (§13.4.0)
 017-291. Guidance: a child is placed inside a parent when the parent conceptually owns it, when the parent’s reactive expressions aggregate over the child instances, or when the compositional structure is part of the parent’s identity. (§13.4.0)
 017-292. Guidance: an instance is placed at top level when it stands on its own and participates in the graph through wires rather than containment. (§13.4.0)
-017-293. A parent declares the children it accepts via `view` declarations with cardinality; the specific instances appear via placement. (§13.4.0)
+017-293. A parent declares the children it accepts via acceptance entries with cardinality (a named entry doubling as a view); the specific instances appear via placement. (§13.4.0)
 017-294. Runtime structural traversal goes through the `expose:` clause, not through the views directly. (§13.4.0)
 017-295. Children the exposition does not include are not traversed by the runtime and do not contribute to structural descent. (§13.4.0)
 017-296. Non-exposed children remain queryable via the host API and addressable within the parent's own reactive expressions. (§13.4.0)
@@ -2513,6 +2513,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 017-327. `Portal[WeakHandle[T]]` resolves through a genuine two-step presence check, because the slot lifetime and the graph-entity lifetime are independent: the outer step is the portal's generation-guarded resolution to `Option[&WeakHandle[T]]`, yielding `None` when the slot has dropped or its stamped generation no longer matches; the inner step is the weak handle's own `Option[&T]` resolution, yielding `None` when the entity has dismounted while the slot is still live and holds a now-stale weak handle. Neither step subsumes the other, so the composed dynamic read cannot collapse to a single check. (§13.3.6.3)
 017-328. A type's transitive type-emitted containment may not include the type itself: an exposition that emits, directly or through any chain of type-emitted children, an instance of the emitting type is a compile error, diagnostic class `type_emission_cycle`; the check catches direct and transitive cycles. (§13.3.3.3)
 017-329. A `dynamic` view's membership is activation-driven: a feeder — statically placed or repeat-born — leaves the view's membership while it is effectively inactive (its own gate or any ancestor gate closed) and rejoins on gate-open, in the transition's commit, the same law that governs fold membership; a static view instead keeps gated-off members present as frozen members. Static views count structure; dynamic membership follows activation. (§13.3.3.4, §13.9.7)
+017-330. A standalone `view` / `dynamic view` declaration's cardinality is receiver-side selection, never a caller obligation: the compiler checks it once, at the type declaration, requiring the acceptance entries' bounds to underwrite it along the trait/marker subset lattice — the same static machinery as the acceptance-entry unsatisfiability check — so the body's indexing and iteration guarantees hold at every placement site while a caller's obligations come from acceptance entries alone. (§13.3.3, §13.8.3)
 
 ## 018. Keyed Scopes & `repeat` — 145 Rules
 
@@ -2787,7 +2788,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 020-37. Every named identifier in an instance body scope — cells of all kinds (`const`/`attr`/`recurrent`/`derived`/`stream`/`yielded`), `yielded` group names, standalone `view` declarations, named entries inside `children:`/`incoming:`/`outgoing:` acceptance clauses, and placement `as`-names — shares one namespace; no two may share a name regardless of kind, and there is no shadowing across them. This holds uniformly for node and wire bodies. (§13.7.1)
 020-38. View names and exposed placement `as`-names are hoisted — visible body-wide regardless of textual order; cell values still follow initialization order, so an attr's default or a recurrent's expression may reference only previously-declared cells of the same body. (§13.7.1)
 
-## 021. Placement — 144 Rules
+## 021. Placement — 145 Rules
 
 021-1. Placement is the syntax for instantiating nodes and wires into a concrete reactive graph. (§13.8)
 021-2. Placement is distinct from value construction of records, which uses constructor syntax. (§13.8)
@@ -2822,17 +2823,17 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 021-31. An attr not set at placement takes its declared default. (§13.8.2.2)
 021-32. Consts always have their type-declared value. (§13.8.2.2)
 021-33. The body of a placement — the indented block introduced by `:` — is reserved exclusively for child placements: child nodes and wires. (§13.8.3)
-021-34. A child placement naming a node type admitted by one of the parent's views creates an instance of that type as a child of the parent. (§13.8.3)
+021-34. A child placement naming a node type admitted by one of the parent's acceptance entries creates an instance of that type as a child of the parent. (§13.8.3)
 021-35. A nested placement is named with the `as` marker, which is required in nested position: `Pin as out1`. (§13.8.3)
 021-36. A nested child may be anonymous: bare `Pin` is a valid unnamed child placement. (§13.8.3)
 021-37. A child's placement-time name is visible by bare name to other placements in the same placement body regardless of order, including ones written earlier or later: a sibling wire can reference `out1`. (§13.8.3)
 021-38. A named child is accessible outside the parent type, in function bodies receiving the parent instance, as `chip_b.out1` — in parallel with the view form `chip_b.pins[i]`. (§13.8.3)
 021-39. A named child is accessible by qualified path from other instances' placement bodies that reference the parent instance: `chip_b.out1`. (§13.8.3)
 021-40. Placement-time child names are not available inside the parent's own type body; there, a view name is used (`viewname[i]` or iteration over the view). (§13.8.3)
-021-41. Cardinality declared in the parent's views is enforced at placement; violations are compile errors at the placement site. (§13.8.3)
+021-41. Cardinality declared in the parent's acceptance entries (`children:` / `incoming:` / `outgoing:`, named or unnamed) is enforced at placement; violations are compile errors at the placement site. A standalone `view` / `dynamic view` declaration's cardinality imposes no obligation at the placement site. (§13.8.3)
 021-42. A placement body may contain a `for` loop over a compile-time-known iterable; it unrolls at compile time into one child placement per iteration: `for i in 0..VOICE_COUNT:` with body `Oscillator | freq=base_freq(i)`. (§13.8.3.1)
 021-43. Placement-body `for` preserves the static-graph principle. (§13.8.3.1)
-021-44. `for` in a placement body is static supply: its unrolled placements count against the receiving type's view cardinality and appear in the matching view, exactly like individually written placements. (§13.8.3.1)
+021-44. `for` in a placement body is static supply: its unrolled placements count against the receiving type's acceptance-entry cardinality and appear in the matching views, exactly like individually written placements. (§13.8.3.1)
 021-45. `repeat` in a placement body is dynamic supply, legal only against the receiver's `dynamic`-marked types. (§13.8.3.1)
 021-46. A placement-body `for` whose iterable is not compile-time-known is a compile error pointing at the iterable; no new diagnostic class is introduced. (§13.8.3.1)
 021-47. The non-compile-time-iterable diagnostic identifies the iterable and cites the runtime source via reactivity-provenance machinery when the runtime-ness flows from a reactive value. (§13.8.3.1)
@@ -2933,6 +2934,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 021-142. The static-vs-reactive distinction at placement is a normative per-placement choice (not per-attr-declaration): a single attr type may have multiple placements with different RHS shapes — some static (no reactive machinery instantiated), some reactive (an implicit derived bridge built) — and each placement's choice is determined independently from its own RHS provenance. (§13.8.2.1)
 021-143. Compile-time rules are liveness-blind: type checking, ownership, name uniqueness, the orphan rule, and visibility all fire textually on every placement, dead or live; liveness governs only runtime existence — whether an instance is mounted — and the dead-code lint. (§13.8.1)
 021-144. Liveness is topological only, and the reach-edges are exhaustive: every form by which code references an instance — placing a child, naming a wire destination (a wire's source is structurally its enclosing instance, and a wire is live exactly when its source is), acquiring or storing a `Handle`/`WeakHandle`, binding a node reference as an effect argument, or admitting a node type into a wire-candidate envelope — is itself a reach-edge, so any instance live code can reference is in the live graph by construction; a dead placement cannot be referenced by live code. (§13.8.1)
+021-145. An identifier-start character — a letter, `_`, or other non-digit identifier character — glued to the end of a flag run with no intervening whitespace (`Pin'!x`) is a lex error of the normative diagnostic class `glued_flag_run_boundary`, hinting to insert a space after the run; the lexer never silently terminates a flag run at such a character, and there is no whitespace-free instance naming. (§13.8.8.4)
 
 ## 022. Conditional Activation (Gates) — 122 Rules
 
@@ -3039,8 +3041,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 022-101. A `when:` block is an open selector that is never exhaustiveness-checked; its `otherwise:` fallback is optional — if no guard holds and there is no `otherwise:`, no arm is live. (§13.9.12)
 022-102. In a `when:` or `given` block the fallback arm — `otherwise:` for `when:`, `default:` for `given:` — must be the last arm; a non-last fallback is a compile error. (§13.9.12)
 022-103. Switching the active arm of a `when` block runs the close pass on the deactivating arm and the open snap on the activating arm. (§13.9.12)
-022-104. Placements in all arms of a `when`/`given` block in a node or placement body count toward view cardinality: two arms each placing one `Oscillator` violates `view osc: Oscillator` (exactly one). (§13.9.12)
-022-105. At `expose:` level, block arms do not consume view cardinality: exposition references already-placed children and constructs only wrapper placements. (§13.9.12)
+022-104. Placements in all arms of a `when`/`given` block in a node or placement body count toward acceptance cardinality: two arms each placing one `Oscillator` violates the acceptance entry `osc: Oscillator` (exactly one). (§13.9.12)
+022-105. At `expose:` level, block arms do not consume acceptance cardinality: exposition references already-placed children and constructs only wrapper placements. (§13.9.12)
 022-106. A `when`/`given` block owns its indented body and occupies its own lines; it cannot share a line with sibling placements. (§13.9.12)
 022-107. `given` gates among constructed arms by the current variant of a sum-typed scrutinee: `given mode:` with arm `Realtime: RealtimeChain`. (§13.9.13)
 022-108. `given` is the structural counterpart of value `match`: same arm shape, but `given` builds all arms and freezes the inactive ones instead of discarding. (§13.9.13)
@@ -3845,7 +3847,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-273. The crossing names `changes` and `latest` form a closed grammar list, not reserved words: like directive names they are recognized only in postfix-arrow position, and both remain fully legal as ordinary identifiers and binding names everywhere else. (§13.18.9)
 030-274. When a `repeat` scope is dropped, a consumer instantiated inside that scope holding a cursor on a gate stream declared outside the scope releases that cursor as part of the same teardown that tears its per-element effects down with the element key; the outer gate stream's slowest-cursor retention then recomputes without the released cursor, with buffer entries retained only for the remaining cursors, so a gate buffer the departed consumer was pinning can evict and accept producer pushes again. This is the scope-drop parallel of the reload-time removed-consumer cursor drop — the same cursor release under a different trigger. (§13.18.12)
 
-## 031. Effects — 161 Rules
+## 031. Effects — 162 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -3878,7 +3880,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 031-29. A `derived` cell in `desired:` is a parameter-tracking pure reactive expression over parameters and in-scope cells, recomputed when any input changes: `derived request: Request = Request(method: method, target: url)`. (§13.19.4)
 031-30. Program code may read a `desired:` `derived` cell via the standard access path but cannot write it: `f.request`. (§13.19.4)
 031-31. A `desired:` event-output cell is declared with `stream` (reusing the keyword): `stream ring[1024] outbound: Message = source`; the effect feeds the source from its own parameters or `observed:` cells, and the host's reconciler drains the buffer. (§13.19.4)
-031-32. A desired-block event-output stream comprises a policy keyword (`ring` or `gate`), an optional bracketed capacity defaulting to 1024, a name, an element type, and a `= source` expression. (§13.19.4)
+031-32. A desired-block event-output stream comprises a policy keyword (`ring` or `gate`), an optional bracketed capacity, a name, an element type, and a `= source` expression; an omitted capacity defaults by the regular stream defaulting rules — source-derived inheritance, with 1024 only as the residual default. (§13.19.4, §13.18.2)
 031-33. A desired-block event-output stream's `= source` is fed internally by the effect (from parameters or `observed:` cells); there is no external program-side wiring into it. (§13.19.4)
 031-34. Cell names within a single `desired:` block must be distinct. (§13.19.4)
 031-35. The reconciler reads `desired:` `derived` cells on each invocation where any of them is dirty. (§13.19.4)
@@ -4008,6 +4010,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 031-159. When several lifecycle hooks are eligible for one effect instance at one commit boundary, they fire in the fixed per-instance order `teardown`, `create`, `resume`, `update`: `resume` strictly precedes any same-boundary `update` for a just-reopened instance, and `create` strictly precedes any same-boundary `update` for a just-created one. At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit. (§13.19.14)
 031-160. Selecting which effect type a node instantiates through a generic type parameter or a `Type[C]`-typed slot does not breach effect locality: the caller supplies a type, never an effect instance; the instantiation site, lifecycle, and ownership remain the local `effects:` clause of the instantiating node. (§13.19.9)
 031-161. Visibility is a source-language concept and does not cross the host boundary: the host API addresses an effect type by name regardless of the effect's source visibility — a `private` effect's reconciler registers exactly as an unmarked one's — and the IR carries no visibility field, so no name-mangling or omission derives from visibility. (§13.19.10, §13.14.7)
+031-162. Reconciler-failure error channels are author-opt-in: no language rule requires an effect to declare an `observed:` error cell, and reconciler errors reach the program only through whatever `observed:` cells the author declared; a domain that wants error channels mandatory states them in an effect-kind trait's `observed:` contract block — domain policy over language mechanism. (§13.19.14, §3.1.1.1)
 
 ## 032. Implementation Model — 179 Rules
 
@@ -4437,7 +4440,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-242. The IR representation of an attr placement encodes its provenance category (B static / C reactive) per placement on the wire or scope entry's attr list, enabling per-placement optimization at runtime/codegen: static-RHS placements skip implicit-derived allocation; reactive-RHS placements instantiate the bridge. (§15.4.1)
 033-243. The cell-ID grammar's multiplicity device for keyed scopes is the `.<key>.` segment: a `repeat` scope key appears in the path as its own segment, rendered as the key's stringified `StringifiableKey` form — `<enclosing_path>.<key>.<template_field>` — first-class alongside lexical name segments and the `:N` ordinal suffix. A stringified key renders bare iff it is nonempty and contains none of `.`, `:`, `'`, `\`, or whitespace; any other stringified form renders as a single-quoted segment with `\'` and `\\` escapes. Quoting is canonical — bare whenever bare is available — so equal keys render byte-identical cell IDs. (§15.4.1.1, §13.5.3)
 
-## 034. Collect / Yield / Yielded — 19 Rules
+## 034. Collect / Yield / Yielded — 20 Rules
 
 034-1. `collect:` is a block expression that evaluates its body and produces a `yielded T` group; a named group is declared as `yielded <name>: <MemberType> = collect:` with an indented body — the declaration form is the only way to name a group. (§13.20)
 034-2. A `yield <expr>` form contributes exactly one member-cell to the enclosing `collect`, carrying a single invariant meaning: the value is a member of the group for as long as this syntactic position is live. (§13.20)
@@ -4458,11 +4461,12 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 034-17. A snapshot consumer re-evaluates over all n current members of the group, O(n) per re-evaluation; the fold form is the O(log n) incremental expression of the same reduction semantics, so reductions that must scale ride `fold` while snapshot reads stay for small or infrequent consumption. (§13.21)
 034-18. Walk order is the per-commit sequence over a `yielded` group's live members: `yield` sites in lexical/structural order, with `repeat`-born members interleaved in their producing key order at their site's position; it is the order a fold's combine tree is fixed by and the order a value-position snapshot presents. Walk order is distinct from exposition entry order — the placement-tree traversal order of a node's exposition entries (§13.3.7.4) — the two arise from different structures and are never equated. (§13.20.4)
 034-19. A group member's identity is its structural coordinate, fixed at birth: the `yield` site that produced it plus, for a member born under a `repeat`, the producing repetition key. A member's flat position in the walk-order sequence is not an identity — it shifts when an earlier member joins or leaves, and keying scopes by it would remount unchanged members; order and identity are separate: walk order is the sequence consumers combine and snapshot in, the structural coordinate is what keying and scope preservation go by. (§13.20.4)
+034-20. The surface and IR membership-driver vocabularies are one vocabulary, pairwise: a permanent member is a `permanent` edge, a key-driven member is a `keyed-template` edge, and an activation-driven member is a `gate-guarded` edge; surface names serve semantic prose, IR names serve IR entry fields, and neither register renames the other. (§13.20.3, §15.4.1)
 
-## 035. The Fold Form — 12 Rules
+## 035. The Fold Form — 14 Rules
 
 035-1. `fold` is a language EXPRESSION form — not an operator and not a method, because behaviors are opaque and cannot expose folding as a call. (§13.21)
-035-2. A fold has the block shape `fold <members>:` followed by a `by: <expr>` arm and an `else: <expr>` arm, with newline-separated arms, no comma between them, both arms mandatory, and `else` written last. (§13.21)
+035-2. A fold has the block shape `fold <members>:` followed by a `by: <expr>` arm and an `else: <expr>` arm, with newline-separated arms, no comma between them, both arms mandatory, and `else` written last; with a self-delimiting members operand the header's colon opens the arm block, and an inline `collect:` operand instead takes the inline-collect block layout. (§13.21)
 035-3. The `by:` arm takes a combiner expression of type `fn(T, T) -> T`; associativity of that combiner is asserted by using the fold form, and commutativity is not required. (§13.21)
 035-4. The `else:` arm is the empty-membership result and is never combined into a non-empty result: the fold is a semigroup with a default rather than a monoid, there is no identity element, and Monoid does not exist in the design. (§13.21)
 035-5. The fold cost is normative, in the family of the collection cost rules: O(log n) combines per member value-change, join, or leave, over a deterministic combine tree fixed by member order. (§13.21)
@@ -4473,3 +4477,5 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 035-10. A fold-kind cell carries a combiner behavior id, an else value, and member edges in member order, each edge tagged with its membership driver — permanent, keyed-template, or gate-guarded — while its surface remains a `derived T` declaration seen by consumers. (§13.21)
 035-11. A fold cell is scheduled as a derived DAG node: its member edges join the ordinary derived dependency-edge list, a member join or leave dirties the fold exactly as an input value change does — the dirty root is the gate transition or the `repeat` re-key diff, computed in the commit's dirty-set step — and a gate-close that removes a gate-guarded member recomputes the fold in that same commit without the departed member, symmetric with the gate-open snap. (§13.21)
 035-12. Member order — the order a fold's combine tree is fixed by — has one definition per source: for a `yielded` group source it is the group's walk order, and for a reactive composite source it is the composite's declared slot order. (§13.21.4)
+035-13. The fold `<members>` slot is typed, not syntactically enumerated: it admits any expression of membership-structure type — a name reference and an anonymous inline `collect:` block equally — exactly as a function parameter admits any expression of its type; admissibility is the membership-structure type rule alone. (§13.21.1)
+035-14. A fold whose members operand is an anonymous inline `collect:` block takes a fixed block layout: the single written colon opens the collect body, indented one level beyond the fold header's line; the `by:` and `else:` arms follow at the fold header line's own indent, the dedent closing the operand; no second colon is written, and the inline single-line form is unavailable — the operand forces the block layout, as a fold inside an operator body forces the operator's indented block form. (§13.21.1)

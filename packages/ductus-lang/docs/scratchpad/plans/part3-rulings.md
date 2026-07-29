@@ -46,6 +46,8 @@ Execution note: Batch 1 executes as ONE batch (I-01 + I-24/α + Pins A/B + Q2/Q3
 - **I-12: (1)** — one LOG equivalence sentence bridges the vocabularies pairwise (permanent=permanent, key-driven=keyed-template, activation-driven=gate-guarded); surface names for semantic prose, IR names for entry fields; neither renamed.
 - **DP-17: (B)** (owner overrules the reference-only recommendation, rationale verbatim: "fold accepts something of type, not 'reference'... that's like asking what does 'fn' parameter accept — just variable references or inline values?") — the fold `<members>` slot is TYPED, not syntactically enumerated: it admits any expression of membership-structure type, including a name reference and an anonymous inline `collect:` block. Execution lands the header self-delimiting/parenthesization rule for the colon-bearing operand (cf. observe's parenthesize-or-newline convention); if that rule turns out gnarly, it comes back as a sub-ruling, never an invented default.
 
+## Batches 2–4 ratification (owner, 2026-07-20): "no vetoes" — all seven executed defaults RATIFIED as landed (endpoint_read_requires_handle_form, stale_write_dropped, the canonical key-encoding rule, F1 wire-view inclusion, F2 verbatim prior-commit predicate scope, the I-51 riders, the window/step placements).
+
 ## Batch 2 — Wires & Endpoints (owner, 2026-07-20)
 
 - **I-05: (A)+(A2a)** — a handle-typed endpoint derived (`derived target: WeakHandle[X] = handle to`) on a wire that has never been active holds a WeakHandle resolving `None` (the None-pin completes the always-defined-read law). (A2a): on a wire type whose destination can be unresolved from construction (WeakHandle destination), a NON-handle-typed derived reading `to`/`pair` is rejected at compile time — no lawful pre-activation value exists — with the diagnostic pointing at the handle form.
@@ -62,3 +64,41 @@ Execution note: Batch 1 executes as ONE batch (I-01 + I-24/α + Pins A/B + Q2/Q3
 - **I-79: (a)** — per-instance restart governs operator-internal cell type changes; the reload-safe remove+add entry is scoped to non-operator-internal cells (LOG conforms to SPEC; no behavior change).
 - **I-80: two-axis framing** (owner verbatim): class = which restart the change would require; disposition = restart-or-reject, implementation-defined for either class.
 - **I-74 residual: (a)** — visibility is a source-language concept and does not cross the host boundary; one-line note at the host-API surface. No IR name-mangling.
+
+## Batch 6 — Traits & Types, Ownership (owner, 2026-07-20)
+
+- **I-23: pin the conjunction sentence** — a trait's fulfiller gate is the conjunction of each member's own requirement (required cells → node/wire; endpoints → wire; effect-kind methods → none). New 005-family entry; the old empty-intersection finding dissolved via Pin A.
+- **I-28: (B), owner verbatim: "'::' period. T::Item must be the access, not T.Item. non-negotiable request regardless of how big of a change this is."** — associated-type access is `::` EVERYWHERE at type level: `T::Item`, `T::Iter::Item`, `Iterator::Item`; where-clause predicates respell (`where Iter::Source is Subject` — the rider-1 `is` boundary untouched, only the projection spelling flips; rider-1's exec sites re-swept per the superseding-ruling rule). 014-157 inverts; GRAMMAR AssocPath `('.' IDENT)+` → `('::' IDENT)+`; corpus-wide survey-then-sweep classifying type-level projections (flip) vs value member access (stays). Resulting razor: `.` is VALUE member access only; `::` reaches through types/namespaces. Executed as its own orchestrated sweep inside the Batch 6 execution (owner: "you have the workflow, use it").
+- **I-30: any-scope** — suffix-family reservation binds in any scope; 005-236 conforms to its own cited section.
+- **I-38: (a)** — the §1.3 referential-transparency floor defines inputs = arguments + provenance set (the cells the call transitively reads).
+- **I-53: (i)** — canonical structural-exception enumeration: tuples, closure types, trait-constraint intersections, Map; narrower claims scope-qualified to their actual dimension (e.g. conformable-but-declaration-less = tuples + closures).
+- **I-77: (b)** — normative warning-class lint when a bare call resolves to a trait impl while a same-named free function is in scope; path-qualification silences; coin the class name (flag as default).
+- **DP-08: (B)** — `(r.handler)()` is THE invocation form for field/index-held closures (ordinary call postfix on a field read); bare `r.handler()` stays unknown-method with a hint pointing at the parenthesized form.
+- **I-64: qualify both** — 013-153 AND SPEC §11.9.1 blanket Copy-storability statements gain the closure exception (no cell type admits a closure; fields/tuples/payloads stay legal).
+- **I-29: add** — "indexed slot" joins 013-42's closed consuming enumeration.
+- **I-68: (a)** — placement-attr positions consume an own-param RHS implicitly (category B); the category-A own/move law is scoped to call-argument positions.
+
+## Batch 7 — Collections/Numerics, Modules/Scopes, IR, Directives (owner, 2026-07-20)
+
+- **I-10: per-element pool index** — a fixed-extent array cell of a dynamic-size element type stores one word-size pool index per element; N×word satisfies the fit rule.
+- **I-25: empty string** — reversed slice bounds yield the empty string per the range convention (start >= end → empty).
+- **I-27: isize** — `.count` returns `isize`, family-consistent; all divergent example sites (usize/u32/i32) conform.
+- **I-47: bracket** (owner verbatim: "a map key is a map key, regardless of whether its plain or composite value") — composite-map slot paths spell `<binding>['<key>']`; the SPEC dot-form site conforms.
+- **I-48:** `v` evaluates once iff N ≥ 1; requires `T: Clone`; clones N−1 times; N=0 evaluates zero times.
+- **I-54: normative** — string backing sharing is refcounted-shared as law; O(1) duplication binds.
+- **I-67: rename** — `byte_len` → `byte_count`, conforming to the x_count naming law.
+- **I-41: dedicated tier below the range tier** — `in` binds looser than `..`, tighter than `not`; both justification texts conform.
+- **I-62: trap + const compile error** — shift count ≥ bit width traps; compile-time-known counts are compile errors.
+- **I-63: each operator's defined semantics** — const evaluation mirrors each operator's runtime law; wrapping/saturating/checked results const-fold; only trapping-operator overflow rejects.
+- **I-44: specificity wins** — selective import beats glob; local declaration beats glob; only symmetric glob-vs-glob errors.
+- **I-55: declare the exception** — bare-type-rooted variant imports are the sanctioned exception to the absolute-path law (type itself in scope). EXTENSION QUESTION OPENED by owner (bare variant construction without variant imports) — under discussion, recorded when ruled.
+- **I-65: defer** — §8.9 points at §13.13 as the single owner of the trap-construct list.
+- **I-78: exception clause + phrase fix** — nearest-wins entries gain the body/module ambiguity-error exception; the "shadowed by a member" trap phrase is corrected (that case errors).
+- **I-18: (B)** — open-base-plus-extensions copula at 033-43; a Handle-enumerating entry; grammar conformed including `yielded<T>` (Portal/arrays already landed via consent I-19).
+- **R-6: (a)** — mixed own-line + inline directive stacks are legal; source order governs (own-line top-to-bottom, then inline left-to-right).
+
+## I-55 extension — bare variant construction (owner, 2026-07-20): (β), (α) REJECTED on the evolution trap
+
+Bare variant construction resolves from the EXPECTED TYPE — a variant placeholder resolved by §2.1's use-site machinery, exactly as pattern position already resolves bare variants from the scrutinee: `Ok(value)` legal wherever the expected type is a known enum (return positions, annotated bindings, field/attr positions), zero imports required; no expected type → compile error directing to annotation or qualification; qualified `Enum::Variant(...)` always works; variant imports remain for the no-expected-type minority. NO scope injection: importing a type never injects variant names into bare scope — adding a variant to a library enum is never a downstream breaking change. New law: 009-family entry + §2.1/§6.2 mirrors.
+
+**THE PART 3 RULING QUEUE IS CLOSED.** Remaining work is execution only: Batch 5 + grammar rider (in flight) → Batch 6 (incl. the `::` associated-type sweep) + Batch 7 + I-55β as the final execution wave → verification chains → commits → consolidated Part 3 final report.
