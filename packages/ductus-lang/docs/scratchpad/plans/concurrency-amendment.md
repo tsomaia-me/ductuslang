@@ -29,3 +29,12 @@ LOG first, SPEC conforms, GRAMMAR (DeferredDecl) last; new entries take next fre
 - Discussion artifacts worth preserving for the SPEC's rationale prose: the combineLatest equivalence (each consumer = combineLatest over its provenance; the frame makes every subset-combineLatest glitch-free; auto-split islands = the Rx glitch reborn — plausible-world-by-dice vs the diamond's false world); the movie law (same inputs → same frames in the same order; timing is the machine's, content and order are the program's); the eviction principle (the slow formula is not accommodated in-frame — it is evicted to deferred/compute; the frame never tears).
 
 STATUS: the deferred discussion is closed pending the owner's explicit "closed"; all seven pins now have settled content. Execution note: the previously-stopped orchestrator left partial uncommitted work on disk (pins 1-4/6/7 partially landed + pre-halt deferred fragments); the next orchestrator run reconciles the tree to THIS record from baseline a8babc8 state.
+
+## CLOSED (owner, 2026-07-20: "clear. and settled. execute")
+
+Additional settled details from the closing discussion, binding on execution:
+- Staged-work law: a completed deferred evaluation is staged work; the runtime surfaces staged-work presence to the host through the same surface as queued writes, so event-driven hosts can schedule the next commit on readiness. Metronomic hosts need nothing — the result lands at the next tick.
+- Gate interplay: a gate closing over a deferred cell cancels its in-flight run (no publication, no barrier); the gate-open snap DISPATCHES a fresh deferred run (landing at +N) rather than evaluating synchronously — the frozen value serves until it lands.
+- The value-cell umbrella enumerations ("EXACTLY signal/attr-as-signal/derived/recurrent") ALL gain `deferred T` — it is a value channel inside the cell T umbrella.
+- Rationale prose to preserve in SPEC: kinds carry temporal semantics, brackets carry depth (recurrent = feedback element; deferred = scheduled-arrival element); the three-rung ladder (in-commit / deferred / compute) presented once; N counts commits, never wall time — the host owns beat duration.
+- The web/cadence discussion produced no corpus law (host cadence was already host-owned); implementation notes live in STRATEGY.md only.

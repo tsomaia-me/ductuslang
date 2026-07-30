@@ -230,12 +230,12 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 
 ```ebnf
 'node'  'wire'  'trait'  'type'  'enum'  'fn'  'operator'  'effect'
-'signal'  'attr'  'recurrent'  'derived'  'stream'  'yielded'  'view'
+'signal'  'attr'  'recurrent'  'derived'  'deferred'  'stream'  'yielded'  'view'
 'const'  'let'  'mut'  'repeat'  'collect'
 'use'  'alias'
 ```
 
-// `yielded` is the seventh declaration keyword (016-1); it heads a
+// `yielded` is the eighth declaration keyword (016-1); it heads a
 //  body-only named group declaration (`yielded <name>: <MemberType> =
 //  collect:`, §8.9.1). `collect` heads the collect block expression —
 //  written standalone or as the right-hand side of a `yielded`
@@ -1310,7 +1310,7 @@ Turbofish         ::= '::' '[' GenericArgList ']'
 //     a generic-argument list for the method, not a trait
 //     disambiguator (per §3.4.1.1, 005-130).
 
-### 3.15 Kind annotations (`cell` / `signal` / `derived` / `recurrent` / `stream` / `yielded` / `dynamic view`)
+### 3.15 Kind annotations (`cell` / `signal` / `derived` / `recurrent` / `deferred` / `stream` / `yielded` / `dynamic view`)
 
 A **kind annotation** designates a reactive binding form. It works on
 two levels. The kind *keyword* alone (`cell`, `stream`, `derived`, …)
@@ -1333,6 +1333,7 @@ KindAnnotation    ::= 'cell' TypeExpr
                     | 'signal' TypeExpr
                     | 'derived' TypeExpr
                     | 'recurrent' '[' ConstGenericArg ']' TypeExpr
+                    | 'deferred' '[' ConstGenericArg ']' TypeExpr
                     | 'stream' '[' TypeExpr ']' TypeExpr
                     | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']' TypeExpr
                     | 'stream' TypeExpr
@@ -1362,13 +1363,14 @@ KindAnnotation    ::= 'cell' TypeExpr
 //  TypeExpr )`: `FnParam` / `FnReturn` (§7.6), `TraitFnParam` (§7.11),
 //  `OperatorParam` and the `OperatorDecl` return (§7.13), `EffectParam`
 //  (§7.14). Reactive *declaration* forms (`signal` / `derived` /
-//  `recurrent` / `stream` at §7.15, `yielded` at §8.9.1) spell their
+//  `deferred` / `recurrent` / `stream` at §7.15, `yielded` at §8.9.1) spell their
 //  own kind head inline and do not route through this production.
 // **Value cells and the `cell` umbrella (per §13.2.8, 016-178).**
-//  `signal T`, `derived T`, and `recurrent[N] T` are the value-cell
+//  `signal T`, `derived T`, `recurrent[N] T`, and `deferred[N] T` are the value-cell
 //  kinds and `cell T` is the umbrella spanning exactly those (`attr`
 //  annotates as `signal T`). The bracketed `[N]` on `recurrent` is a
-//  history depth; the declaration form (§7.15) may omit it (defaulting
+//  history depth and on `deferred` a latency depth (§13.2.12); the
+//  declaration form (§7.15) may omit it (defaulting
 //  to `[1]`), whereas this annotation form names it explicitly.
 // **Stream kinds (per §13.18.3).** The policy-generic spelling is
 //  `stream[P] T` with `P: StreamPolicy`; the bracket holds a policy
@@ -3285,12 +3287,12 @@ TopLevelConstDecl ::= Visibility? 'const' IDENT ( ':' TypeExpr )? '=' Expr
 // `NodeDecl` is specified in §8; `WireDecl` is specified in §9.
 //  `ConstStmt` is the `Stmt`-form of §6.1 — a `const` declaration is
 //  admissible both inside a function body and at module top level
-//  (003-34). `ModuleReactiveDecl` covers the four module-level reactive
+//  (003-34). `ModuleReactiveDecl` covers the five module-level reactive
 //  declaration forms enumerated in §7.15.
 // Each `TopLevelDecl` alternative is distinguished by its leading
 //  visibility prefix (optional, §7.1) followed by its keyword head
 //  (`use`, `alias`, `fn`, `type`, `enum`, `trait`, `fulfill`, `operator`,
-//  `effect`, `signal`/`derived`/`recurrent`/`stream`, `node`,
+//  `effect`, `signal`/`derived`/`deferred`/`recurrent`/`stream`, `node`,
 //  `wire`, `const`) or — for `TopLevelPlacement` — by an
 //  optional inline `RootDirective` (`@root`, preceding any visibility
 //  prefix, §11.2) followed by a `TypeRef` head. The parser selects the
@@ -3810,6 +3812,7 @@ RequiredCell      ::= RequiredCellKind IDENT ':' TypeExpr ( '=' Expr )?
 RequiredCellKind  ::= 'attr'
                     | 'const'
                     | 'derived'
+                    | 'deferred' ( '[' ConstGenericArg ']' )?
                     | 'recurrent' ( '[' ConstGenericArg ']' )?
                     | 'stream' ( 'ring' | 'gate' ) '[' ConstGenericArg ']'
                     | 'stream' '[' TypeExpr ']'      // bracket-policy head (mirrors KindAnnotation §3.15); same channel as the word form (§13.18.3)
@@ -3867,7 +3870,7 @@ ObservedContractEntry ::= IDENT ':' ( 'signal' TypeExpr
 //  clause or `from` clause, the enhancement must be upstreamed to SPEC
 //  §3.1 first and then mirrored here — this grammar does not deviate.
 // **`RequiredCellKind` mirrors node-body cell forms (per §3.1.7).**
-//  The `recurrent[N]` and `stream <policy>[N]` bracketed forms are
+//  The `recurrent[N]`, `deferred[N]`, and `stream <policy>[N]` bracketed forms are
 //  the same lexical shape as the corresponding node-body
 //  declarations of §8.9. A trait declaring any `RequiredCell` (or
 //  `EndpointDecl`) is a kind-specific trait per §3.1.7 — the
@@ -4006,7 +4009,7 @@ OperatorBody      ::= ':' INDENT OperatorBodyItem+ DEDENT
                     | ':' InlineExpr
                     ;  (§13.17.4, 029-93)
 
-OperatorBodyItem  ::= ModuleReactiveDecl                        // recurrent / derived / stream
+OperatorBodyItem  ::= ModuleReactiveDecl                        // recurrent / derived / deferred / stream
                     | LetStmt
                     | Expr                                      // including final-expression position
                     ;  (§13.17.4, 029-93)
@@ -4025,7 +4028,7 @@ OperatorBodyItem  ::= ModuleReactiveDecl                        // recurrent / d
 // **Inline-vs-block body (per §13.17.4).** An `OperatorBody` whose
 //  only content is the final expression may be written inline after
 //  the colon (`operator double(source: cell f32) -> derived f32: source * 2`);
-//  a body holding any `recurrent`, `derived`, `stream`, or `let`
+//  a body holding any `recurrent`, `derived`, `deferred`, `stream`, or `let`
 //  declarations uses the indented block form.
 // **No `own` on operator parameters (per §13.17.3).** Operators take
 //  cell-bound (`cell T`) or value (`T`) parameters; ownership-consume
@@ -4035,7 +4038,7 @@ OperatorBodyItem  ::= ModuleReactiveDecl                        // recurrent / d
 //  restriction (§13.17.3) is a post-parse check.
 // **No `attr` declarations in body (per §13.17.4).** The
 //  `OperatorBodyItem` production admits `ModuleReactiveDecl` — which
-//  covers `signal`, `derived`, `recurrent`, and `stream` (§7.15) — but
+//  covers `signal`, `derived`, `deferred`, `recurrent`, and `stream` (§7.15) — but
 //  the `'attr'` form is rejected post-parse inside an `OperatorBody`.
 //  Per-instance configuration is expressed via parameters, not
 //  internal `attr`s.
@@ -4193,11 +4196,12 @@ DefaultDeclArm    ::= 'default' ':' INDENT DesiredCellDecl+ DEDENT
 //  and function-call form). The grammar makes no syntactic
 //  distinction; both roles parse against the same name.
 
-### 7.15 Module-level reactive declarations (`signal`, `derived`, `recurrent`, `stream`)
+### 7.15 Module-level reactive declarations (`signal`, `derived`, `deferred`, `recurrent`, `stream`)
 
 ```ebnf
 ModuleReactiveDecl ::= Visibility? SignalDecl
                     | Visibility? DerivedDecl
+                    | Visibility? DeferredDecl
                     | Visibility? RecurrentDecl
                     | Visibility? StreamDecl
                     ;  (§13.2, 003-31)
@@ -4207,6 +4211,12 @@ SignalDecl        ::= 'signal' IDENT ':' TypeExpr '=' Expr
 
 DerivedDecl       ::= 'derived' IDENT ( ':' TypeExpr )? '=' Expr
                     ;  (§13.2.3, 016-32)
+
+DeferredDecl      ::= 'deferred' DeferredDepth? IDENT ( ':' TypeExpr )? '=' Expr
+                    ;  (§13.2.12, 016-296)
+
+DeferredDepth     ::= '[' ConstGenericArg ']'
+                    ;  (§13.2.12, 016-296)
 
 RecurrentDecl     ::= 'recurrent' RecurrentDepth? RecurrentBind ( ':' TypeExpr )? '=' Expr
                     | 'recurrent' RecurrentDepth? 'stream' ( 'ring' | 'gate' )
@@ -4238,10 +4248,11 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  body via §8.9's body decoration. The decl productions themselves
 //  carry no inline `Annotation*` head.
 
-// **Type annotation optional on `derived`, `recurrent`, `stream`
-//  (per SPEC §13.2.3 / LOG 016-32; SPEC §13.2.4 / LOG 016-49;
-//  SPEC §13.18.2).** The `':' TypeExpr` is optional in all three
-//  forms; when omitted, the type is inferred from the RHS.
+// **Type annotation optional on `derived`, `deferred`, `recurrent`, `stream`
+//  (per SPEC §13.2.3 / LOG 016-32; SPEC §13.2.12 / LOG 016-296;
+//  SPEC §13.2.4 / LOG 016-49; SPEC §13.18.2).** The `':' TypeExpr`
+//  is optional in all four forms; when omitted, the type is inferred
+//  from the RHS.
 //  Canonical un-annotated example (SPEC §13.18.2):
 //  `stream gate[256] db_writes = pending_writes`.
 // **Tuple-coupled recurrent form (per SPEC §13.2.4.6 / LOG 016-94..102).**
@@ -4253,14 +4264,23 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  semantic check; the grammar admits any `TypeExpr` here.
 
 // **Visibility prefix (per §10.3, 003-31).** Module-level `signal`,
-//  `derived`, and `recurrent` declarations accept visibility specifiers
+//  `derived`, `deferred`, and `recurrent` declarations accept visibility specifiers
 //  on the declaration line (003-31). Module-level `stream`
 //  declarations follow the same rule (the §10 enumeration covers
 //  reactive declarations as a class).
-// **`signal` / `derived` / `recurrent` `'=' Expr` is mandatory (per
-//  §13.2.1, §13.2.3, §13.2.4).** Every reactive declaration carries
+// **`signal` / `derived` / `deferred` / `recurrent` `'=' Expr` is mandatory (per
+//  §13.2.1, §13.2.3, §13.2.12, §13.2.4).** Every reactive declaration carries
 //  an initial-value / body expression; there is no uninitialised
 //  reactive cell. The `'=' Expr` is required.
+// **`deferred[N]` latency depth (per §13.2.12, 016-296/016-297).** The
+//  optional `DeferredDepth` bracket carries the publication latency in
+//  commits: a run dispatched at one commit publishes at exactly `N`
+//  commits later. Bare `deferred` ≡ `deferred[1]`; `deferred[0]`
+//  degenerates to `derived T`. The bracket mirrors `RecurrentDepth`
+//  in shape; the two depths differ in meaning — memory depth versus
+//  latency depth (016-297). `deferred` composes with no other kind:
+//  there is no `deferred stream` and no deferred-recurrent compound
+//  form (016-300); `DeferredDecl` has no stream alternatives.
 // **`recurrent[N]` history depth (per §13.2.4).** The optional
 //  `'[' ConstGenericArg ']'` after `'recurrent'` declares the
 //  output-history capacity; absent it defaults per §13.2.4. The
@@ -4296,11 +4316,14 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 //  `ModuleReactiveDecl` production has no `'attr'` alternative.
 // **`ModuleReactiveDecl` reused in operator and effect bodies.**
 //  Per §7.13 (`OperatorBodyItem`) and §7.14 (`DesiredCellDecl`
-//  shapes), the `signal` / `derived` / `recurrent` / `stream`
+//  shapes), the `signal` / `derived` / `deferred` / `recurrent` / `stream`
 //  productions are the same shape inside operator bodies and
 //  effect `desired:` blocks as at module top level; the
 //  surrounding-construct kind restricts which alternatives are
-//  semantically legal.
+//  semantically legal. `deferred` never appears among the effect-block
+//  productions (`DesiredCellDecl`/`ObservedCellDecl`) — its rejection
+//  there is grammatical, surfaced under the named diagnostic class
+//  (§13.2.12, 016-299).
 
 ### 7.16 Module-level placements (top-level placement, incl. `@root` prefix)
 
@@ -4677,7 +4700,7 @@ TypeLevelWhenClause ::= 'when' ':' Expr
 //  production of §7.11 has no `'when'` alternative; a `when:`
 //  clause inside a trait body is a parse error.
 
-### 8.9 Node body cells (attr / default attr / derived / recurrent / stream / const)
+### 8.9 Node body cells (attr / default attr / derived / deferred / recurrent / stream / const)
 
 ```ebnf
 NodeBodyCellDecl  ::= AnnotatedNodeBodyCellDecl                  // wrapper attaches Annotation* per Phase D, D4
@@ -4686,6 +4709,7 @@ NodeBodyCellDecl  ::= AnnotatedNodeBodyCellDecl                  // wrapper atta
 AnnotatedNodeBodyCellDecl ::= Annotation* ( AttrDecl
                                           | DefaultAttrDecl
                                           | DerivedDecl                  // see §7.15
+                                          | DeferredDecl                 // see §7.15
                                           | RecurrentDecl                // see §7.15
                                           | StreamDecl                   // see §7.15
                                           | TopLevelConstDecl            // module-style const inside node body
@@ -4701,15 +4725,15 @@ DefaultAttrDecl   ::= 'default' 'attr' IDENT ':' TypeExpr ( '=' Expr )?
 
 // **Annotation attaches via wrapper (Phase D, D4).** The decl
 //  productions `AttrDecl` / `DefaultAttrDecl` / `DerivedDecl` /
-//  `RecurrentDecl` / `StreamDecl` / `TopLevelConstDecl` carry no
+//  `DeferredDecl` / `RecurrentDecl` / `StreamDecl` / `TopLevelConstDecl` carry no
 //  inline `Annotation*` head; the `AnnotatedNodeBodyCellDecl`
 //  wrapper attaches them uniformly inside a node body.
 
 // **Reuses module-level reactive productions (per §7.15).**
-//  `DerivedDecl`, `RecurrentDecl`, `StreamDecl`, and `ConstStmt`
+//  `DerivedDecl`, `DeferredDecl`, `RecurrentDecl`, `StreamDecl`, and `ConstStmt`
 //  are the same productions used at module top level and inside
 //  operator bodies; the surrounding-construct kind (node body)
-//  restricts which alternatives are semantically legal. All four
+//  restricts which alternatives are semantically legal. All five
 //  are admissible inside a node body.
 // **`AttrDecl` introduced here (per §13.2.2).** Unlike the
 //  module-level reactive set, `attr` is a node-and-wire-body
@@ -5068,6 +5092,7 @@ WireBodyMember       ::= FromDecl                                // §9.2
 WireBodyCellDecl       ::= AttrDecl                              // §8.9
                     | DefaultAttrDecl                            // §8.9
                     | DerivedDecl                                // §7.15
+                    | DeferredDecl                               // §7.15
                     | RecurrentDecl                              // §7.15
                     | StreamDecl                                 // §7.15
                     | ConstStmt                                  // §6.1
@@ -5107,7 +5132,7 @@ WireBodyCellDecl       ::= AttrDecl                              // §8.9
 //  (§7.12), never in its body — including language-defined marker
 //  traits like `Circularity` (§9.7), claimed by a bodiless `fulfill`.
 // **Cell forms mirror node body cells (per §13.6.1.1, §13.3.1).**
-//  `AttrDecl`, `DefaultAttrDecl`, `DerivedDecl`, `RecurrentDecl`,
+//  `AttrDecl`, `DefaultAttrDecl`, `DerivedDecl`, `DeferredDecl`, `RecurrentDecl`,
 //  `StreamDecl`, and `ConstStmt` are the same productions used in
 //  node bodies (§8.9) and at module top level (§7.15). A wire
 //  body admits *at most one* `DefaultAttrDecl` per §13.2.2.1 — the
@@ -5266,7 +5291,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 //  (§9.3). The grammar admits any `MatchExpr`; the exhaustiveness
 //  check is post-parse.
 // **Body is uniform across pairs (per §13.6.1.3 third bullet).**
-//  All `attr` / `derived` declarations in a pairs-form body apply
+//  All `attr` / `derived` / `deferred` declarations in a pairs-form body apply
 //  uniformly to every declared pair; the body cannot vary its
 //  *shape* by pair. When per-pair shape is needed, declare a
 //  separate wire type per pair. The grammar enforces this by
@@ -5305,7 +5330,7 @@ PairEntry         ::= TypeExpr '->' TypeExpr
 //     or `to` in a pairs-form body is a post-parse name-resolution
 //     error.
 // **Postfix access via `.` (per §13.6.2 first bullet, §5.2).**
-//  Endpoint attrs and deriveds are read with the standard
+//  Endpoint attrs, deriveds, and deferreds are read with the standard
 //  postfix-`.` form of §5.2: `from.expertise_level`, `to.top_speed`.
 //  The grammar introduces no special accessor; reuses the
 //  primary-and-postfix shape.
@@ -6275,13 +6300,14 @@ TopLevelDecl      ::= FnDecl
                     | UseStmt
                     | NodeDecl
                     | WireDecl
-                    | ModuleReactiveDecl                      // signal / derived / recurrent / stream at module scope
+                    | ModuleReactiveDecl                      // signal / derived / deferred / recurrent / stream at module scope
                     | TopLevelPlacement
                     ;  (§1.4, 002-14)
 
 NodeBodyDecl      ::= AttrDecl                                // §8.9
                     | DefaultAttrDecl                         // §8.9
                     | DerivedDecl                             // §8.9 / §7.15
+                    | DeferredDecl                            // §8.9 / §7.15
                     | RecurrentDecl                           // §8.9 / §7.15
                     | StreamDecl                              // §8.9 / §7.15
                     | TopLevelConstDecl                       // §8.9 admits module-style const inside node body
@@ -6290,6 +6316,7 @@ NodeBodyDecl      ::= AttrDecl                                // §8.9
 WireBodyDecl       ::= AttrDecl                               // §9 inherits §8.9 cell shapes
                     | DefaultAttrDecl
                     | DerivedDecl
+                    | DeferredDecl
                     | RecurrentDecl
                     | StreamDecl
                     ;  (§1.4, 002-14)
@@ -6578,7 +6605,7 @@ lowercase **kinds** written in annotation position — see the
 is a **channel** — a type-system member, unstorable, never a value
 type (§13.2.8.1). The channels are the value-cell umbrella `cell T`
 (spanning the value cells `signal T`, `attr`-as-`signal T`, `derived
-T`, `recurrent[N] T`), the stream kind class (erased `stream T`, the
+T`, `recurrent[N] T`, `deferred[N] T`), the stream kind class (erased `stream T`, the
 policy-generic `stream[P] T`, its word-form sugar `stream ring[N] T` /
 `stream gate[N] T`, and the history-bearing `recurrent[N] stream …`),
 the group kind class (`yielded T`), and `dynamic view T` (§13.3.3.4). A

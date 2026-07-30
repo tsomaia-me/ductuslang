@@ -218,8 +218,10 @@ cell             ::= cell_kind PATH ':' type_tag
 // 'reset_on_reopen' on a cell is a bare flag (no payload) — one of three
 // grammar positions for the keyword (033-215): the bare flag here on
 // 'cell', the bare flag on 'stream', and the 'reopen_set' payload on
-// 'scope'. 'depth' applies only to
-// 'recurrent' cells; 'uses' / 'inputs' apply to 'derived' / 'recurrent';
+// 'scope'. 'depth' applies to
+// 'recurrent' cells (history depth) and 'deferred' cells (latency
+// depth in commits, 033-245); 'uses' / 'inputs' apply to 'derived' /
+// 'recurrent' / 'deferred';
 // 'init' applies to 'input' and 'recurrent'. 'combiner' and 'else'
 // apply only to 'fold' cells (033-81): 'combiner' names the 'by:'
 // combiner's behavior handle and 'else' the empty-membership result.
@@ -233,10 +235,10 @@ cell             ::= cell_kind PATH ':' type_tag
 // each clause is optional (subject
 // to the cell-kind constraints above) and appears at most once.
 
-cell_kind        ::= 'input' | 'derived' | 'recurrent' | 'fold'
+cell_kind        ::= 'input' | 'derived' | 'recurrent' | 'deferred' | 'fold'
                    ;  (§15.4.6, 033-80)
 
-// The four cell-kind tags are closed (033-80): 'fold' is a cell KIND,
+// The five cell-kind tags are closed (033-80): 'fold' is a cell KIND,
 // not a seventh graph primitive, and no 'yielded' tag exists — a
 // standalone 'yielded' group lowers to a membership-descriptor
 // 'derived' cell (above), and a folded group is absorbed into its
@@ -301,7 +303,7 @@ behaviors_section ::= 'behaviors' '{' behavior* '}'
 // 'behavior' production defined in §4 (per SPEC §15.4.4).
 // **Module-resolvability constraint.** An empty `behaviors {}` is
 // syntactically well-formed but renders any non-empty `graph_section`
-// unresolvable — every `derived`/`recurrent` cell's `uses BID` and
+// unresolvable — every `derived`/`recurrent`/`deferred` cell's `uses BID` and
 // every `gate`'s `pred BID` reference a `behavior` by handle. The
 // match is a load-time semantic check (post-parse), not a grammar
 // rule; a module with `derived … uses B@xx` and no defining
@@ -607,7 +609,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `graph_section` | §15.4.6 | 033-168 |
 | `scope` | §15.4.6 | 033-168 / 033-75 |
 | `entry` | §15.4.6 | 033-168 |
-| `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 |
+| `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 / 033-245 |
 | `cell_kind` | §15.4.6 | 033-80 |
 | `member_set` | §15.4.6 | 033-81 |
 | `member` | §15.4.6 | 033-81 |

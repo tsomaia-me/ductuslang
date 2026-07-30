@@ -30,8 +30,10 @@ implementation model (§14), and compilation (§15). Where the document
 stops short, it does so by stating an explicit boundary — work delegated
 to the standard library, or behavior left implementation-defined — not by
 deferring a decision. The word "deferred" appears only in that
-boundary-setting sense and in runtime-timing descriptions (e.g. lazy
-evaluation), never to mark an open question.
+boundary-setting sense, in evaluation-timing descriptions (e.g. lazy
+evaluation, checks deferred to monomorphization), and as the
+`deferred` cell kind's keyword (§13.2.12),
+never to mark an open question.
 
 ### 1.3 Design Philosophy
 
@@ -135,7 +137,7 @@ Code examples use Ductus syntax. Fenced code blocks follow a tagging convention:
 **Keywords are always lowercase.** No keyword has a capitalized form.
 This includes all declaration keywords (`node`, `wire`, `trait`,
 `type`, `enum`, `fn`, `operator`, `effect`, `signal`, `attr`, `recurrent`,
-`derived`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`,
+`derived`, `deferred`, `stream`, `yielded`, `view`, `const`, `let`, `mut`, `repeat`,
 `collect` — heading the collect block expression, standalone or as a
 `yielded` declaration's right-hand side — `use`, and `alias`; `fold` is a
 keyword too, heading an expression form rather than a declaration), all
@@ -1255,7 +1257,7 @@ TraitBodyItem := Annotation* DocComment? (RequiresClause
                               | EffectMethodSig)
 RequiresClause   := 'requires' TypePath (',' TypePath)*
 AssocTypeDecl    := 'type' Ident ('=' TypeExpr)?
-RequiredCell     := ('attr' | 'const' | 'derived' | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']' | 'stream' '[' TypeExpr ']')
+RequiredCell     := ('attr' | 'const' | 'derived' | 'deferred' ('[' ConstExpr ']')? | 'recurrent' ('[' ConstExpr ']')? | 'stream' ('ring' | 'gate') '[' ConstExpr ']' | 'stream' '[' TypeExpr ']')
                     Ident ':' TypeExpr ('=' Expr)?
 EndpointDecl     := ('from' | 'to') ':' TypeExpr
 MethodSig        := 'fn' Ident GenericParams? '(' Params? ')' ('->' TypeExpr)? (':' FnBody)?
@@ -1578,7 +1580,7 @@ time, every reference has a fully-specified trait instance.
 #### 3.1.7 Required node/wire members (cells, consts, and endpoints)
 
 Traits may declare *required members* that implementing types must
-provide: required `attr`, `const`, `derived`, `recurrent`, and
+provide: required `attr`, `const`, `derived`, `deferred`, `recurrent`, and
 `stream` declarations and — for wire types — required `from` and
 `to` endpoints. These requirements are reactive-graph structure, so they
 apply only to node and wire types (see §13 for the reactive system);
@@ -1609,7 +1611,7 @@ trait Identifiable:
 
 The forms `attr Name: Type [= Default]?` and `const Name: Type [=
 Default]?` inside a trait body declare requirements, as do the other
-reactive-cell forms — `derived`, `recurrent`, and `stream` —
+reactive-cell forms — `derived`, `deferred`, `recurrent`, and `stream` —
 written with the same syntax they use in a node or wire body (§13).
 A wire trait may additionally declare required endpoints with
 `from: Type` and `to: Type`. Defaults are optional in trait declarations:
@@ -1678,7 +1680,7 @@ at placement (§5.7.5, §13.8.4).
 Restrictions and kind gating:
 
 - **A trait that declares any required cell (`attr`, `const`,
-  `derived`, `recurrent`, `stream`) or endpoint (`from`, `to`) is a
+  `derived`, `deferred`, `recurrent`, `stream`) or endpoint (`from`, `to`) is a
   kind-specific trait and cannot be satisfied by a record, enum, newtype,
   or primitive** — those types lack the reactive-graph machinery. The
   compiler rejects the `fulfill` on such a type if the trait declares any
@@ -6733,7 +6735,7 @@ language-level treatment; their behaviors are specified here rather than
 emerging from the trait system alone. `Map` joins this family as a
 first-class primitive: every position usable by any other
 compound type — function parameters and returns, record fields,
-attr/derived/recurrent declarations, generic-bound positions, and
+attr/derived/deferred/recurrent declarations, generic-bound positions, and
 reactive cell payloads — accepts `Map` uniformly.
 
 ### 9.1 Strings
@@ -7681,7 +7683,7 @@ is a stdlib concern.
 
 Both `duration` and `instant` are i64-sized values and satisfy the
 direct in-cell storage criteria of §13.12.4. They may appear directly
-as the type of `signal`, `attr`, `recurrent`, and `derived`
+as the type of `signal`, `attr`, `recurrent`, `derived`, and `deferred`
 declarations.
 
 Wrapping in `Result[duration, E]`, `Option[duration]`,
@@ -8159,8 +8161,8 @@ declaration's own section and summarized below:
   declaration; same rules as functions.
 - **Constants** (§2.4.1.1): visibility specifier on the `const`
   declaration.
-- **Reactive declarations** (§13.2.1, §13.2.3, §13.2.4): module-level
-  `signal`, `derived`, and `recurrent` accept the `private` specifier
+- **Reactive declarations** (§13.2.1, §13.2.3, §13.2.4, §13.2.12): module-level
+  `signal`, `derived`, `deferred`, and `recurrent` accept the `private` specifier
   on the same line as the declaration.
 - **Node and wire types** (§13.3, §13.6): visibility specifier
   on the type declaration.
@@ -8776,7 +8778,7 @@ asserts compile-time-only and immutable; `mut` is necessarily runtime and
 mutable.
 
 **Module scope.** `let` is a function-body construct only. Module
-scope contains `const`, `signal`, `derived`, `recurrent`, and `stream`
+scope contains `const`, `signal`, `derived`, `deferred`, `recurrent`, and `stream`
 declarations (per their respective sections in §13); it does **not**
 contain `let` bindings. The ownership rules of §11.3–§11.9 apply to
 function bodies (and to function parameter / return wiring at the
@@ -10210,7 +10212,7 @@ wherever a uniform stored representation is required (§5.2.5 governs the
 coercion to the erased form).
 
 **Not a reactive cell type.** A closure cannot be the value type of a
-`signal`, `attr`, `recurrent`, or `derived` cell (§13.12.4): it carries
+`signal`, `attr`, `recurrent`, `derived`, or `deferred` cell (§13.12.4): it carries
 code identity the reactive cell model does not store.
 
 ### 11.11 Indexed and Field Assignment
@@ -11954,7 +11956,7 @@ externally-driven sequences; iterators are for collection traversal.
 ## 13. Reactive System
 
 This section specifies the language's reactive composition layer: the
-declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `const`,
+declaration kinds (`signal`, `attr`, `recurrent`, `derived`, `deferred`, `const`,
 `stream`, `yielded`), the reactive expression forms (`observe`, `where`), the
 composition constructs (`node`, `wire`, `operator`,
 `effect`), the rules governing reactive expression evaluation, and
@@ -11974,7 +11976,7 @@ when they change" without manually wiring update propagation.
 The reactive system is built on eight load-bearing principles.
 
 **Declarative composition.** A reactive graph is built declaratively
-from signal, attr, recurrent, derived, node, and wire
+from signal, attr, recurrent, derived, deferred, node, and wire
 declarations. Placement syntax (§13.8) constructs instances.
 Composition is structural — the graph's shape is known at compile
 time.
@@ -12003,9 +12005,10 @@ construction-time guarantees — endpoint typing and topology-cycle analysis
 types a `to` could resolve to), not a single frozen wiring.
 
 **Pure evaluation surface.** Reactive expressions (`derived`
-declarations, attr default expressions, recurrent expressions)
-are pure expressions over signal, attr, recurrent, and derived
-values. They contain no `mut` bindings, no loops, no
+declarations, `deferred` declarations, attr default expressions,
+recurrent expressions)
+are pure expressions over signal, attr, recurrent, derived, and
+deferred values. They contain no `mut` bindings, no loops, no
 statement-level imperative constructs. When imperative work is
 needed, the reactive expression calls a pure function (per §11),
 which may use `mut` internally.
@@ -12028,7 +12031,7 @@ via wires are handled separately via the `Circularity` trait
 least one wire type satisfying `Circularity`.
 
 **Reactive composition uses nodes and wires.**
-Reactive cells (signal, attr, recurrent, derived) may hold values
+Reactive cells (signal, attr, recurrent, derived, deferred) may hold values
 of any type; the runtime chooses a storage strategy from §13.12.4:
 direct in-cell storage for values fitting the platform atomic
 word, or index-based pool storage for larger or dynamically-sized
@@ -12081,7 +12084,9 @@ Adding a new effect type is achieved by declaring a new `effect`.
 Reconciler registration is required if and only if the effect's
 `observed:` block declares host-written channels (`signal`/`stream`);
 an interior effect whose contract is fulfilled entirely by child
-effects requires no reconciler. Adding a new topological participant
+effects requires no reconciler, and the builtin `compute` — its
+host-written channels intrinsically fulfilled by the runtime itself —
+is the sole registration-free exception (§13.19.17). Adding a new topological participant
 is achieved by declaring a new `node`; the host extends its
 interpreter — or an in-language interpreter gains a match arm — for
 traversed node types (e.g., DSP graph evaluation).
@@ -12095,7 +12100,10 @@ whomever serves the contract: a host reconciler, child effects, or
 the runtime itself. Concurrency-of-waiting — many outstanding
 alignments in flight at once — is what the effect system already is;
 there is nothing to add. Parallelism of evaluation is invisible
-backend latitude (§13.10.3), never a source-level concern.
+backend latitude (§13.10.3), never a source-level concern; where a
+program schedules work off the frame it does so through value-level
+kinds and effects — `deferred` (§13.2.12) and `compute` (§13.19.17) —
+never through an execution-resource construct.
 
 #### 13.1.1 A small example
 
@@ -12158,7 +12166,7 @@ Each `commit()`:
 4. Advances recurrents and atomically publishes the new snapshot for
    observers.
 
-This example demonstrates every reactive declaration kind (signal,
+This example demonstrates the core value-cell declaration kinds (signal,
 attr, recurrent, derived), composition through nodes and wires,
 cardinality (`[=1]`), placement with overrides, indexed access
 through the wire-view (`shows[0].count`), bare
@@ -12167,10 +12175,10 @@ cycle.
 
 ### 13.2 Reactive Declarations
 
-The reactive system has seven declaration kinds, distinguished by
+The reactive system has eight declaration kinds, distinguished by
 who controls the value and how (or whether) it changes over time.
-Four declare value-shaped reactive cells (signal, attr, recurrent,
-derived); one declares an event-sequence-shaped reactive cell
+Five declare value-shaped reactive cells (signal, attr, recurrent,
+derived, deferred); one declares an event-sequence-shaped reactive cell
 (stream, full treatment in §13.18, with the history-aware
 `recurrent[N] stream` variant in §13.18.8); one is a compile-time
 constant (const); and one declares a membership-varying reactive
@@ -12354,7 +12362,7 @@ Rules:
 - At most one `default attr` per type. Declaring two is a compile
   error.
 - The `default attr` marker applies only to `attr` declarations.
-  `recurrent`, `derived`, `const`, and `signal` cannot be marked
+  `recurrent`, `derived`, `deferred`, `const`, and `signal` cannot be marked
   `default`.
 - The mechanism is uniform across nodes and wires: at placement
   time, `/expr` binds the type's default attr regardless of whether
@@ -12371,10 +12379,10 @@ derived name: Type? = expression
 
 A `derived` declares a *read-only* reactive value defined by an
 expression. The runtime maintains the value consistent with its
-inputs: when any signal, attr, recurrent, or other derived that
+inputs: when any signal, attr, recurrent, deferred, or other derived that
 the expression reads changes, the expression re-evaluates (under
 the lazy-batched rules of §13.10). The type annotation is optional when
-inferable from the expression, paralleling `recurrent` (§13.2.4) and
+inferable from the expression, paralleling `deferred` (§13.2.12), `recurrent` (§13.2.4), and
 `stream` (§13.18.2).
 
 ```
@@ -12390,8 +12398,8 @@ no statements. It may include:
 
 - Arithmetic and comparison operations on reactive and non-reactive
   values.
-- Reads of signals, attrs, recurrents, and other deriveds (these
-  create reactive dependencies).
+- Reads of signals, attrs, recurrents, deferreds, and other deriveds
+  (these create reactive dependencies).
 - Field accesses and indexed reads.
 - Function calls (functions are reactive-transparent; §13.12.2).
 - Pattern matching (`match` expressions).
@@ -12669,7 +12677,8 @@ same value to a signal does not fire its dependents. This is
 standard reactive semantics — only meaningful changes propagate.
 
 The rule applies uniformly across signal commits, attr writes,
-recurrent advancements, and derived re-evaluations. A recurrent
+recurrent advancements, derived re-evaluations, and deferred
+dispatches and publications (§13.2.12). A recurrent
 whose expression re-evaluates and produces the same value as the
 previous-committed value does not propagate a change downstream.
 
@@ -12804,7 +12813,7 @@ const name: Type = value
 ```
 
 A `const` declares a compile-time constant value associated with a
-node or wire type. Unlike `attr`, `recurrent`, and `derived`,
+node or wire type. Unlike `attr`, `recurrent`, `derived`, and `deferred`,
 a `const` is not reactive and not per-instance in the runtime
 sense — it is a type-level property whose value is the same for
 every instance of the type and is fixed at compile time.
@@ -12831,7 +12840,7 @@ fulfill Action for Delay
   compile time. It may reference other consts (of the same type or
   top-level), literal values, and any compile-time-known
   expression. It may not reference reactive cells (signals, attrs,
-  recurrents, deriveds), since those are runtime values.
+  recurrents, deriveds, deferreds), since those are runtime values.
 - **Not reactive.** A const value never changes during the runtime's
   lifetime. It does not occupy a reactive cell
   and does not participate in dirty propagation.
@@ -12882,7 +12891,8 @@ Initialization happens in two phases: compile-time resolution
 (consts) and a startup pass (reactive cells). Within the startup
 pass, all reactive cells are initialized in **topological order
 over their init-time read dependencies** — there are no separate
-serialized steps for signals, attrs, recurrents, and deriveds.
+serialized steps for signals, attrs, recurrents, deriveds, and
+deferreds.
 
 **Compile-time resolution (during compilation):**
 
@@ -12896,7 +12906,7 @@ serialized steps for signals, attrs, recurrents, and deriveds.
 **Startup pass (during runtime initialization):**
 
 The runtime constructs an *init-time dependency graph*: each
-reactive cell (signal, attr, recurrent, derived) is a node;
+reactive cell (signal, attr, recurrent, derived, deferred) is a node;
 edges run from each cell to the cells its initial-value
 expression reads. The runtime then evaluates initial values in
 topological order over this graph.
@@ -12926,6 +12936,10 @@ For each cell:
   snapshot-at-startup semantic applies to attrs and signals whose
   expressions read other reactive cells.
 - **Deriveds** evaluate their expression body.
+- **Deferreds** evaluate their expression body synchronously during
+  the startup pass, exactly as deriveds do — deferral applies to
+  post-startup re-evaluations only (§13.2.12). The cell begins live
+  holding a real value; there is no empty beat.
 - **`when` predicates** (§13.9) are evaluated alongside deriveds
   in the topological order. Each instance's initial gate state is
   established here. An instance whose `when` evaluates to false at
@@ -12952,7 +12966,7 @@ For each cell:
 - At type-declaration time, attr defaults and recurrent expressions
   may reference same-instance cells (by bare name, or `here::X` to
   anchor), same-type
-  consts, module-level cells (signals, deriveds, recurrents,
+  consts, module-level cells (signals, deriveds, deferreds, recurrents,
   consts), and compile-time-known expressions. Cross-instance
   references are resolved only at placement time, not at type
   declaration. A recurrent's self-history fallbacks
@@ -12960,8 +12974,8 @@ For each cell:
   rules — fallback expressions are evaluated in the same context.
 
 Traps during initial evaluation (signal initializers, attr defaults,
-recurrent expressions on first commit, or initial derived
-evaluation) follow
+recurrent expressions on first commit, or initial derived or
+deferred evaluation) follow
 §13.13.1 — the process aborts. There is no recovery path for traps
 encountered during startup.
 
@@ -12974,7 +12988,7 @@ init cycles, identifying the participating instances and cells.
 #### 13.2.7 Cell mutation is runtime-only (host/runtime-driven)
 
 Ductus source has no syntactic form for assigning to a signal,
-attr, recurrent, derived, or const after declaration. Source-level
+attr, recurrent, derived, deferred, or const after declaration. Source-level
 expressions read reactive cells and consts; they do not write to
 them.
 
@@ -12983,28 +12997,30 @@ Writes occur only through:
 - The host API (`runtime.write_signal`, `runtime.transaction`) per
   §13.14 for signal cells. Attrs are written only at placement time
   (§13.8.2) by the placing parent. The host cannot directly write to
-  attrs, recurrents, deriveds, or consts at runtime; influence is
+  attrs, recurrents, deriveds, deferreds, or consts at runtime; influence is
   indirect via module-level signals and per-effect-instance
   `observed:` signal cells.
 - Placement-time initial values for attrs and recurrents
   (per §13.8.2). Consts are *not* settable at placement.
 - The runtime's own evaluation of `derived` expressions, which
   writes the derived's output cell with the newly computed value.
+- The runtime's own evaluation of `deferred` expressions, which
+  publishes the computed value at the run's due commit (§13.2.12).
 - The runtime's own evaluation of `recurrent` expressions, which
   commits the computed value at the end of the commit cycle (per
   §13.2.4.1 and §13.10.2).
 
 Consts are immutable for the runtime's lifetime: their values are
 fixed at compile time and never change. The "no source-level
-write" rule applies to all seven declaration kinds uniformly.
+write" rule applies to all eight declaration kinds uniformly.
 Ductus programs describe the reactive graph; they do not
 imperatively modify it from within.
 
 #### 13.2.8 Value-cell kinds
 
-The value cells carry a current value of type `T` and come in three annotation
-kinds: `signal T`, `derived T`, and `recurrent[N] T` (`attr` annotates as
-`signal T`). The keyword `cell` alone is a **kind** — and a keyword — not a
+The value cells carry a current value of type `T` and come in four annotation
+kinds: `signal T`, `derived T`, `recurrent[N] T`, and `deferred[N] T` (`attr`
+annotates as `signal T`). The keyword `cell` alone is a **kind** — and a keyword — not a
 type or a trait. The applied annotation `cell T` *is* a type: a **channel**, a member of the
 type system in its own class, unstorable by nature: a mechanism that delivers
 values reactively, never a value — never a value type, and not a trait
@@ -13019,7 +13035,7 @@ appears only as a lowercase kind keyword in annotation positions. Each
 value-cell kind is first-class, usable in parameter positions, return
 positions, and generic arguments.
 
-**The three value-cell kinds.** Four reactive declaration keywords produce value
+**The four value-cell kinds.** Five reactive declaration keywords produce value
 cells:
 
 - `signal X = init` — a host-writable `signal T`. Host pushes
@@ -13035,14 +13051,20 @@ cells:
   accessible via `.previous(fallback)` and `.past(k, fallback)`. The runtime
   re-evaluates the expression when any non-self reference commits (§13.2.4).
   `derived T` is the degenerate zero-history case (`N = 0`).
+- `deferred[N]? X: T = expression` — a `deferred[N] T` (with `N` omitted
+  meaning `[1]`): a reactive computation evaluated off the driving
+  context, dispatching when its inputs change and publishing at exactly
+  dispatch+N commits (§13.2.12). No self-history, no self-reference;
+  `derived T` is the degenerate in-commit case (`N = 0`).
 
 A reactive value expression combining one or more reactive cells always
 produces a `derived T`.
 
 The keyword `signal` names the host-writable value cell (writable via
 `runtime.write_signal`); an `attr` is also a `signal T` but placement-written
-only and host-unreachable post-construction. `derived` and `recurrent` produce
-the distinct kinds `derived T` and `recurrent[N] T`.
+only and host-unreachable post-construction. `derived`, `recurrent`, and
+`deferred` produce the distinct kinds `derived T`, `recurrent[N] T`, and
+`deferred[N] T`.
 
 **Where value-cell kinds are used:**
 
@@ -13066,7 +13088,7 @@ the distinct kinds `derived T` and `recurrent[N] T`.
 A `cell T` is read-only when received as a parameter. There is no source-level
 form for writing to a reactive cell (the no-mutation rule of §13.2.7 applies).
 The cell may still be written by the host (`signal`), the runtime
-(`derived`/`recurrent`), or the placing parent at placement (`attr`), but not
+(`derived`/`recurrent`/`deferred`), or the placing parent at placement (`attr`), but not
 through the cell reference itself.
 
 **`cell T` is the umbrella channel; `cell` is its kind.** Cell-kind
@@ -13074,7 +13096,8 @@ bindings typically appear in
 parameter positions, return positions, and compiler-minted internal bindings
 (`cell Map[…]` for `repeat … as` views per §13.5.4.9, `dynamic view V` for
 dynamic views per §13.3.3.4). Membership is a KIND relation, not a subtype or
-trait relation: `signal`, `attr`-as-`signal`, `derived`, and `recurrent` are
+trait relation: `signal`, `attr`-as-`signal`, `derived`, `recurrent`, and
+`deferred` are
 the cell kinds the umbrella spans; `stream` and `yielded` are their own kind
 classes outside it. There is no `Cell[T]` type and no `Cell` trait to fulfill.
 Cross-instance references to reactive state keep bracket **storable** types —
@@ -13136,7 +13159,7 @@ The applied annotation (`cell T`, `signal T`, `stream[P] T`, ...) *is* a
 type — a **channel**, a type-system member in its own class,
 unstorable by nature: a mechanism that delivers values reactively, never a
 value. A channel never spells its value type inside a bracket constructor — the
-bracket a kind keyword may carry (`recurrent[N]`, `stream[P]`) holds
+bracket a kind keyword may carry (`recurrent[N]`, `deferred[N]`, `stream[P]`) holds
 only that kind's parameters, per the admitted direction below, never the
 element type. A channel takes no inline bounds and never appears
 inside a value-type constructor. **Storables**
@@ -13148,10 +13171,11 @@ passed, and held. The consolidated table:
 | Value cell (host-written) | `signal T` | `attr` also produces `signal T` (placement-written) |
 | Value cell (computed) | `derived T` | zero-history reactive computation |
 | Value cell (self-history) | `recurrent[N] T` | `N` omitted = `[1]`; `[0]` degenerates to `derived T` |
+| Value cell (deferred) | `deferred[N] T` | `N` omitted = `[1]`; publishes at dispatch+N commits (§13.2.12); `[0]` degenerates to `derived T` |
 | Event cell | `stream ring[N] T` / `stream gate[N] T` | erased form `stream T` when policy/capacity unresolved |
 | Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (default 0) |
 | Membership cell | `yielded T` / `yielded f32[128]` | ordered membership-varying group (§13.20.4) |
-| Cell umbrella (channel) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`); streams and `yielded` are outside it; its keyword `cell` is the kind; a channel, not a value type, not a trait |
+| Cell umbrella (channel) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`, `deferred[N] T`); streams and `yielded` are outside it; its keyword `cell` is the kind; a channel, not a value type, not a trait |
 | Dynamic view | `dynamic view V` | replaces `Cell[DynamicView[WeakHandle[V]]]` (§13.3.3.4) |
 | Storable — compile-time type | `Type[C]` | node/wire type slot |
 | Storable — graph handle | `Handle[T]` / `WeakHandle[T]` | cross-instance references |
@@ -13168,7 +13192,7 @@ type go in the generic parameter list or a `where` clause, never inside
 the kind annotation.
 
 A channel annotation (`cell T`, `signal T`, `derived T`,
-`recurrent[N] T`, `stream[P] T`, and the other applied kinds) is legal
+`recurrent[N] T`, `deferred[N] T`, `stream[P] T`, and the other applied kinds) is legal
 only at the **outermost** position of a declaration, a parameter, or a
 return type. A channel never appears inside a value-type
 constructor — no container, generic argument, or other bracketed value
@@ -13254,7 +13278,7 @@ reactive status:
 
 | RHS form                                  | Field becomes                       |
 |-------------------------------------------|-------------------------------------|
-| Bare reactive name (signal/attr/derived/recurrent) | Alias to that cell — no new cell |
+| Bare reactive name (signal/attr/derived/recurrent/deferred) | Alias to that cell — no new cell |
 | Reactive expression                       | Implicit derived cell (§13.2.9.4)   |
 | Literal or compile-time constant          | Static field — no cell, embedded constant |
 | Non-reactive value expression             | Static field — evaluated once at startup |
@@ -13882,6 +13906,133 @@ stream-to-value family (`accumulate`, `event_count`, `any`, `all`) is
 ordinary composition over `scan` and the `->latest(fallback)` crossing
 (§13.18.9) — no privileged operators.
 
+#### 13.2.12 `deferred`
+
+```
+deferred name: Type? = expression
+deferred[N] name: Type? = expression
+```
+
+A `deferred` declares a *read-only* reactive value, like a `derived`,
+whose post-startup re-evaluations run **off the driving context** and
+publish on a structural delay: a run dispatched at one commit
+publishes at exactly `N` commits later. Bare `deferred` ≡
+`deferred[1]`; `deferred[0]` degenerates to `derived T`. The
+declaration is legal wherever `derived` declares outside effect
+contract blocks — module level, node and wire bodies, operator
+bodies, trait required cells — and consumers read the cell as an
+ordinary value cell inside the `cell T` umbrella (§13.2.8).
+
+```
+node Analyzer:
+  attr samples: f32[1024]
+
+  deferred spectrum: f32[512] = fft(samples)
+  derived dc_bin: f32 = spectrum[0]
+```
+
+Here `fft` is too heavy to run inside the frame. `spectrum` holds the
+FFT of the samples one commit behind: full-rate output, one-commit
+latency, and the frame never tears.
+
+**The three-rung ladder.** A heavy pure computation has exactly three
+homes, ordered by what they promise: **in-commit** (`derived`) — the
+result lands in the same frame, and the frame waits for it;
+**deferred** — the result lands a fixed number of frames later,
+deterministically, and the pipeline keeps every frame full; **offload**
+(`compute`, §13.19.17) — the result lands whenever it lands, entering
+as a nondeterministically-timed runtime write. The slow formula is not
+accommodated in-frame — it is evicted to `deferred` or `compute`; the
+frame never tears.
+
+**Kinds carry temporal semantics; brackets carry depth.** `recurrent`
+is the feedback element — the self-edge — and `deferred` the
+scheduled-arrival element; `recurrent[N]` is memory depth,
+`deferred[N]` latency depth in commits. `N` counts commits (frames),
+never wall time: the host owns beat duration; the language promises
+order. No directive alters a read's freshness contract — temporal
+semantics are kinds.
+
+**Dispatch.** A deferred cell dispatches at a commit where its
+provenance is dirty, under ordinary value-change semantics (§13.2.4.4)
+— unchanged inputs dispatch nothing. The dispatched run's inputs are
+snapshotted from the dispatching commit's committed values — the
+dispatch happens at the commit's end, over the values that commit
+publishes, so the snapshot is never torn; the run
+evaluates the cell's one behavior off the driving context.
+
+**Publication.** The run's result publishes at exactly dispatch+N
+commits. The landing is a dirty root of the publishing commit:
+consumers read the new value in that same commit, and downstream
+deriveds settle over it in ordinary topological order (§13.10.2).
+Publication follows value-change semantics — a result equal to the
+cell's current value propagates nothing.
+
+**Pipeline and barrier.** Up to `N` runs of the one behavior may be in
+flight at once — a pipeline: with inputs dirty at consecutive commits,
+the cell publishes at every commit, `N` commits behind. The run due at
+a commit **barriers** that commit if unfinished: the commit waits for
+it at the step-1 fold-in, so publication never precedes the landing
+and the commit publishes only with the landed value. A
+deferred cell therefore trades latency for frame time; it never trades
+away consistency.
+
+**Determinism.** The deferred cell's value stream is the sequential
+evaluation's stream **shifted structurally**: same inputs, same
+frames, in the same order, on every machine. It is kin to the
+recurrent delay element (§13.11.4) — where the recurrent delays
+through its self-edge, the deferred delays through its evaluation
+schedule; neither introduces timing nondeterminism. This is the
+dividing line between `deferred` and `compute`: `compute` results are
+runtime-write-class inputs with nondeterministic commit timing
+(§13.19.17); a deferred publication is part of the program's
+deterministic frame sequence.
+
+**Initial value.** A deferred cell's initial value is its ordinary
+synchronous startup evaluation (§13.2.6), in topological order with
+every other cell: deferral applies to post-startup re-evaluations
+only. The cell is typed `T` — never `Option[T]` — and has no empty
+beats; the pipeline drains into the startup value.
+
+**Gating.** A gate closing over a deferred cell cancels its in-flight
+runs — no publication, no barrier — and the frozen cell serves its
+last-published value per the standard gating model (§13.9.7). The
+gate-open snap **dispatches** a fresh run rather than evaluating
+synchronously: it lands at +N, with the frozen value serving until it
+lands. Instance teardown — scope drop included — likewise cancels a
+deferred cell's in-flight runs.
+
+**Staged work.** A completed deferred evaluation is staged work: the
+runtime surfaces staged-work presence to the host through the same
+surface as queued writes (§13.14.2), so an event-driven host can
+schedule the next commit on readiness. A metronomic host needs
+nothing — the result lands at the next tick.
+
+**Hot reload.** A deferred cell whose fully-qualified path and type
+match preserves its value across reload (§13.15.2); a behavior-body
+change swaps the behavior by content hash and discards any in-flight
+runs — nothing is recomputed at reload time, and the next dispatch
+runs the new body (§13.15.3).
+
+**Traps.** A trap in a deferred run is an ordinary evaluation trap of
+the commit its result publishes in (§13.13.1): it surfaces at the due
+commit, never between commits. A run cancelled before its due commit —
+gate-close, teardown, or reload discard — surfaces nothing: with no
+publishing commit there is no trap to surface.
+
+**Restrictions.**
+
+- No self-history and no self-reference: `.previous`/`.past` do not
+  exist on a deferred cell, and its expression may not read the cell
+  it declares.
+- Deferral composes with no other kind: there is no deferred
+  `recurrent`, deferred `stream`, or deferred gate, and a `when`
+  predicate and a fold's `by:` combiner are never deferred. Reading a
+  deferred cell from any of those positions is ordinary.
+- `deferred` is rejected inside an effect's `desired:` and `observed:`
+  blocks — a compile error under the diagnostic class
+  `deferred_in_effect_contract` (§13.19.16).
+
 ### 13.3 Nodes
 
 #### 13.3.0 Concept
@@ -13932,6 +14083,7 @@ node TypeName[GenericParams]?:
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
+  deferred[N]? name: Type = expr                      // per-instance deferred values (§13.2.12)
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
   effects:                                            // side-effect zone (§13.3.8) — the sole host for effects
     source |> effect
@@ -16856,6 +17008,7 @@ wire TypeName[GenericParams]?:
   default attr name: Type = default                   // positional default attr (at most one; §13.2.2.1)
   recurrent[N]? name: Type = expression          // per-instance memory cells (§13.2.4)
   derived name: Type = expr                           // per-instance reactive values
+  deferred[N]? name: Type = expr                      // per-instance deferred values (§13.2.12)
   stream policy[N] name: Type = source                // per-instance event sequences (§13.18)
 
 fulfill Trait1 for TypeName                           // optional trait conformance (§3.2)
@@ -16892,7 +17045,7 @@ instances directly (their concrete types).
 wire TypeName:
   from: TypeA, TypeB, ...
   to: TypeX, TypeY, ...
-  // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
+  // body declarations (when, const, attr, recurrent, derived, deferred, stream) per §13.6.1.1
 ```
 
 All cartesian combinations of from-types × to-types are valid
@@ -16928,7 +17081,7 @@ wire TypeName:
     FromType1 -> ToType1
     FromType2 -> ToType2
     ...
-  // body declarations (when, const, attr, recurrent, derived, stream) per §13.6.1.1
+  // body declarations (when, const, attr, recurrent, derived, deferred, stream) per §13.6.1.1
 ```
 
 Only the listed pair combinations are valid placements. Inside the
@@ -16961,7 +17114,7 @@ Rules for pairs form:
 - Asymmetric pair counts are allowed; pair uniqueness, not type
   count, is what matters. A `pairs:` block listing `A -> X`,
   `A -> Y`, and `B -> Y` is legal (A can go to X or Y; B only to Y).
-- All attrs/deriveds in the body are uniform across pairs; the body
+- All attrs/deriveds/deferreds in the body are uniform across pairs; the body
   cannot vary its content by pair. When different content per pair is
   needed, declare a separate wire type per pair.
 - A `match pair:` in the body must be **exhaustive** over the declared
@@ -16977,8 +17130,8 @@ The endpoint access inside a wire body depends on the form
 of its declaration (§13.6.1):
 
 - **Single form** (`from: X / to: Y`): `from` is typed as `X`
-  directly; `to` is typed as `Y` directly. Attrs and deriveds
-  of the endpoints are accessible via `from.attr_name`,
+  directly; `to` is typed as `Y` directly. Attrs, deriveds, and
+  deferreds of the endpoints are accessible via `from.attr_name`,
   `to.attr_name`, etc.
 - **Cartesian form** (`from: X, Y / to: A, B`): the body is
   specialized per `from`×`to` combination; a `match` (typically on the
@@ -17075,7 +17228,7 @@ wire Holds[T]:
 ```
 
 Generic parameters scope over the wire's `from`, `to`, attrs,
-recurrents, and deriveds. Each unique instantiation produces a
+recurrents, deriveds, and deferreds. Each unique instantiation produces a
 distinct wire type per §2.3.
 
 At placement, a generic wire carries its type arguments inline on the
@@ -17173,12 +17326,12 @@ to outer-most is:
 1. **Local bindings** — `let` bindings and `for`-loop variables
    inside a reactive expression.
 2. **The instance body scope** — the node's or wire's members:
-   `attr`, `recurrent`, `derived`, `stream` cells; `view` and
+   `attr`, `recurrent`, `derived`, `deferred`, `stream` cells; `view` and
    wire-view declarations; placement `as`-names; and the reserved
    endpoint/structure fields (`from`, `to`, `pair`,
    `exposition` — §13.7.5).
 3. **The module top-level scope** — module-level `signal`, `derived`,
-   `recurrent`, `stream`, and `const` declarations.
+   `deferred`, `recurrent`, `stream`, and `const` declarations.
 
 A bare name resolves to the nearest scope in this chain that
 declares it. Inside a node body, a bare reference to a member
@@ -17209,7 +17362,7 @@ body-wide regardless of textual order. These names refer to **structural
 declarations** (which children a view selects, which placement is bound
 by an `as`-name) — facts the compiler resolves before any cell evaluates,
 independent of init order. **Cell values** (`attr`, `derived`,
-`recurrent`, `stream`) still follow the topological initialization order
+`deferred`, `recurrent`, `stream`) still follow the topological initialization order
 of §13.12, since a cell's value can depend on another cell's initial
 value; only the *names* of structural declarations hoist.
 
@@ -17522,7 +17675,7 @@ Driver john_doe | expertise_level=10 risk_tolerance=0.8:
 
 The named cell must be declared on the placed type as an `attr`.
 Setting any other identifier — including `signal`, `recurrent`,
-`derived`, or `const` declarations — is a compile error.
+`derived`, `deferred`, or `const` declarations — is a compile error.
 Recurrents in particular are not settable at placement: a
 recurrent's value is fully defined by its expression and
 self-history fallbacks (§13.2.4, §13.8.2.2). The value's type must
@@ -17541,7 +17694,7 @@ The right-hand side of an attribute setting at placement may be:
   This is structurally parallel to record construction: the attr
   slot on the node instance is filled at construction time.
 - A **reactive expression** — references reactive cells (signals,
-  attrs, recurrents, deriveds) visible at the placement scope:
+  attrs, recurrents, deriveds, deferreds) visible at the placement scope:
   sibling child instances by name, top-level signals or consts, or
   any cell reachable through visible names (a `const` is visible but
   contributes no reactivity — a const-only RHS is a category-B value
@@ -18117,7 +18270,7 @@ duplicate-set).
 
 Attribute settings target *attrs* declared on the placed type
 (directly or inherited via satisfied traits). They do not target
-recurrent, derived, signal, or const declarations — targeting a
+recurrent, derived, deferred, signal, or const declarations — targeting a
 non-attr identifier is a compile error. The expression in
 `name=value` must match the attr's type subject to standard widening
 rules. The boolean-true (`name`) and boolean-false (`!name`) forms
@@ -18745,6 +18898,11 @@ false):
   minimum subgraph needed for predicate evaluation live. This is
   an implementation concern of §14, transparent at the language
   level.) This describes the *steady gated state*.
+- **Deferreds:** do not dispatch; gate-close cancels any in-flight
+  runs — no publication, no barrier — and the frozen cell serves
+  its last-published value. On gate-open the snap dispatches a
+  fresh run rather than evaluating synchronously; it lands at +N
+  with the frozen value serving until it lands (§13.2.12).
 - **Outputs:** do not propagate. Outgoing wires from the
   gated node do not deliver to their destinations.
 
@@ -19171,9 +19329,9 @@ publishes a new consistent snapshot so observers see the new state.
 
 A write call (`runtime.write_signal` or any
 write inside `runtime.transaction`) stages the new value; it is not
-yet visible to observers. **No derived recomputation or recurrent
-advancement happens at write time.** Staged writes accumulate until
-the next `runtime.commit()`.
+yet visible to observers. **No derived recomputation, recurrent
+advancement, or deferred dispatch happens at write time.** Staged
+writes accumulate until the next `runtime.commit()`.
 
 Dirty bits are determined at commit time, not per write
 (§13.10.2 step 1). This makes value-change semantics correct under
@@ -19236,7 +19394,7 @@ operation:
    Edges are dependencies; recurrent self-history reads
    (`.previous`/`.past`) are treated as inputs at their previous-
    committed values, which breaks reactive cycles. Reads of
-   deriveds, signals, attrs, and streams follow normal dependency
+   deriveds, deferreds, signals, attrs, and streams follow normal dependency
    edges within this commit. Edges whose gate predicate evaluates
    false do not propagate to destination outputs; see §13.9
    (Conditional Activation) for the full semantics, including the
@@ -19285,6 +19443,20 @@ operation:
    absent from the published snapshot; its final values are never
    published.
 6. **Clear dirty bits.** Ready for the next commit.
+
+**Deferred cells in the commit (§13.2.12).** A `deferred` cell
+touches the commit at two points and evaluates in it at neither. In
+step 1, a deferred run **landing** this commit (dispatched `N`
+commits ago) is a dirty root: the landed value is folded in, and
+consumers evaluate over it in steps 2–3 exactly as over a changed
+signal; if the run due at this commit is unfinished, the commit
+waits for it at this fold-in before proceeding — the publication
+barrier. At the commit's end — after evaluation has settled, so the
+values being published are known — a deferred cell whose provenance
+is dirty this commit **dispatches**: its inputs are snapshotted from
+this commit's newly committed values and its behavior is scheduled
+off the driving context. The cell's own body is never a step-2 DAG
+node. Both landing and dispatch follow value-change semantics.
 
 Writes during a commit are forbidden (the driving context is busy in
 the commit call). Writes between commits accumulate as usual.
@@ -19435,11 +19607,12 @@ instances via wire placements. Each has its own rules.
 #### 13.11.1 The reactive dependency graph
 
 The compiler constructs the reactive dependency graph by walking
-every `derived` expression's body, every recurrent expression's
+every `derived` expression's body, every `deferred` expression's
+body, every recurrent expression's
 body, and every `fold` form's member set and `by:` combiner body,
 recording for each the set of reactive cells it
 reads. Edges go from each read cell to the reading expression's
-output cell. Signal, attr, derived, and recurrent reads all
+output cell. Signal, attr, derived, deferred, and recurrent reads all
 contribute edges; a fold's member reads and combiner reads are
 walked exactly as derived reads — edges run from each member cell
 and combiner-read cell into the fold's cell — and reads of a fold
@@ -19528,6 +19701,13 @@ commit to observe.
 The behavior is fully specified at the language
 level; the runtime requires no per-implementation convention beyond
 the `recurrent` declaration.
+
+The `deferred` cell (§13.2.12) is this element's kin: where the
+recurrent delays through its self-edge, the deferred delays through
+its evaluation schedule — a structural N-commit shift with the same
+deterministic character. A deferred cell is not, however, a cycle
+device: its expression may not read the cell it declares, and cycle
+breaking remains the recurrent's role.
 
 #### 13.11.5 Topology cycles
 
@@ -19618,7 +19798,7 @@ and which remain ordinary computation.
 
 The compiler computes, for each expression, its *provenance set*:
 the set of reactive cells (signals, attrs, recurrents, derived
-results) the expression reads, including transitively through
+results, deferred results) the expression reads, including transitively through
 function calls and field accesses. An expression is *reactive* iff
 its provenance set is non-empty.
 
@@ -19740,7 +19920,7 @@ are for live reactive semantics.
 
 #### 13.12.4 Reactive cell types and storage
 
-Reactive cells (signal, attr, recurrent, derived values) accept
+Reactive cells (signal, attr, recurrent, derived, deferred values) accept
 **any type**. The compiler determines the cell's storage strategy
 from the type's size and shape:
 
@@ -19931,11 +20111,14 @@ reactive contexts.
 
 #### 13.13.1 Traps abort the process
 
-A reactive expression — derived expression or recurrent expression
+A reactive expression — derived expression, deferred expression, or
+recurrent expression
 — that traps during evaluation, from arithmetic
 overflow under default operators (§4.6.1), division by zero, an
 out-of-range array index, or explicit `panic`, follows the
-trap-track semantics of §4.6.1: the process aborts.
+trap-track semantics of §4.6.1: the process aborts. A deferred run's
+trap surfaces at the commit its result publishes in; a run cancelled
+before its due commit surfaces nothing (§13.2.12).
 
 The runtime does not isolate traps within behavior invocations. There
 is no "errored cell" sentinel state at the runtime level, no
@@ -19954,7 +20137,7 @@ produce `Err(...)` (or `None`) explicitly for failure cases via
 checked arithmetic operators (§4.6.4) or pattern matching, and
 propagate through `?` or `match` in downstream expressions.
 
-A `derived` or `recurrent` expression whose declared type is
+A `derived`, `deferred`, or `recurrent` expression whose declared type is
 `Result[T, E]` (or `Option[T]`) plays the enclosing-function role that
 `?` early-returns from (§8.4.1): a `?` applied to a failing operand
 short-circuits that evaluation of the body, and the `From`-converted
@@ -20042,7 +20225,7 @@ The runtime's lifecycle proceeds in phases:
 1. Load the IR (per §15.4).
 2. Allocate cell storage (§14.3).
 3. Initialize the reactive cells (signals, attrs, recurrents,
-   deriveds, streams) of the loaded graph. The loaded module is
+   deriveds, deferreds, streams) of the loaded graph. The loaded module is
    already pruned at compile time to the **live graph** — the union
    of the root closures (§13.8.1) — so every loaded cell is live; the
    runtime is root-blind and performs no reachability traversal of
@@ -20098,7 +20281,7 @@ error. The `ductus run` CLI surfaces the condition to the user
 2. Drain any in-flight commit (the current commit, if running, completes).
 3. Drop reactive cells in reverse-of-construction order: wires
    drop before their endpoint instances; within each instance,
-   attrs, recurrents, and deriveds drop in reverse declaration
+   attrs, recurrents, deriveds, and deferreds drop in reverse declaration
    order (per §14.7 Drop rules); each live effect receives reconciler
    `teardown`.
 4. Drop top-level signals.
@@ -20144,6 +20327,11 @@ backend latitude only where the observable outcome is unchanged —
 concurrent as-if evaluation (§13.10.3); the driving context remains the
 sole observable evaluator.
 
+A completed `deferred` evaluation is **staged work**, surfaced to the
+host through the same surface as queued writes so an event-driven
+host can schedule the next commit on readiness; the staged-work law's
+home is §13.2.12.
+
 Signal IDs and instance IDs are obtained at compile time from the IR (each
 signal and each placement has a stable id per §15.4.1.1).
 
@@ -20153,9 +20341,11 @@ signal and each placement has a stable id per §15.4.1.1).
 runtime.commit()
 ```
 
-Performs the complete commit operation specified in §13.10.2: settles all
+Performs the complete commit operation specified in §13.10.2: folds in due
+`deferred` results as dirty roots (§13.2.12), settles all
 dirty deriveds and recurrent expressions glitch-free in topological order,
-advances recurrents, and publishes a new consistent snapshot for
+advances recurrents, dispatches at the commit's end the `deferred` runs the
+commit's changes call for, and publishes a new consistent snapshot for
 observers; it then fires the reconciler hooks — among them
 `suspend`/`resume` for effects whose effective activation changed —
 inside the same `commit()` call, after the snapshot publishes (§13.14.9).
@@ -20163,7 +20353,8 @@ This is the sole point at which staged writes become observable.
 
 Synchronous; runs on the driving context; returns when the commit
 completes. The work of settling is bounded by the dirty set (deriveds and
-recurrents with fired triggers); the cost of making the new snapshot visible
+recurrents with fired triggers, plus due `deferred` landings — a deferred
+body's own evaluation runs off the commit, §13.2.12); the cost of making the new snapshot visible
 is backend-defined and not asserted here to be constant. Observers see the
 new state on their next `acquire_snapshot`. A commit with no dirty cells is
 idempotent — a fresh snapshot is published but its values are identical.
@@ -20287,7 +20478,8 @@ The `compute` builtin effect (§13.19.17) requires no host
 registration: the runtime itself intrinsically provides its
 reconciler, so the missing-reconciler startup refusal does not
 apply to it. A host may override `compute`'s intrinsic fulfillment
-per capability advertisement (§13.14.11).
+through ordinary reconciler registration: a reconciler the host
+registers for `compute` takes precedence over the intrinsic one.
 
 #### 13.14.8 `runtime.push_stream`
 
@@ -20417,10 +20609,11 @@ instance's observed error cell if such a cell is declared).
 #### 13.14.10 Behavior ABI and `runtime.teardown`
 
 **Behavior ABI.** Beyond the host-facing verbs above, the runtime calls
-*behaviors* (§15.4.4) — the pure compute of each derived, recurrent, gate predicate,
+*behaviors* (§15.4.4) — the pure compute of each derived, deferred, recurrent, gate predicate,
 and effect `desired:` builder. It invokes a behavior by its
 content-addressed id with the current values of that behavior's input
-cells, and receives the output; it never reaches inside. Inputs are passed
+cells — a `deferred` body instead receives its dispatch-commit
+snapshot (§13.2.12) — and receives the output; it never reaches inside. Inputs are passed
 per the behavior's declared ownership modes, and the per-role input/output
 shapes are given in §15.4.4. This callback — together with the reconciler
 hooks (§13.14.7) — is the whole of what the runtime calls back into.
@@ -20508,7 +20701,7 @@ type.
 
 Reactive cells are identified across reloads by their *fully-
 qualified declaration path*: the dotted sequence of module path,
-instance name, and attribute/recurrent/signal/derived name. For
+instance name, and attribute/recurrent/signal/derived/deferred name. For
 example, `audio.synth_a.osc_1.frequency`. The wire-format syntax for
 declaration paths is specified in §15.4.1.1.
 
@@ -20523,7 +20716,12 @@ cell*. Its value is preserved across reload. For a value recurrent
 this preservation covers both the current value and the `.past`
 history buffer; a changed recurrent body is not retroactive — the
 next evaluation runs the new body over the preserved history
-(§13.15.3).
+(§13.15.3). A `deferred` cell preserves its value under the same
+path-and-type rule; a changed deferred body swaps by content hash
+and discards any in-flight runs — nothing is recomputed at reload
+time, and the next dispatch runs the new body — while an unchanged
+deferred's in-flight runs survive the reload and land at their due
+commits (§13.2.12, §13.15.3).
 
 When a cell exists in old but not in new, it is a *removal* — the
 cell is dropped during reload.
@@ -20570,8 +20768,8 @@ in the following order:
    and initialize per the new source.
 7. For removed cells: invoke their Drop per §14.7, in
    reverse-declaration order. Wires drop before endpoint
-   instances; within each instance, attrs, recurrents, and
-   deriveds drop in reverse declaration order.
+   instances; within each instance, attrs, recurrents, deriveds,
+   and deferreds drop in reverse declaration order.
 8. Update the behavior table (§14.6.3): register behaviors with
    new content-addressed IDs; deregister behaviors no longer
    present. Behaviors with unchanged content-addressed IDs are
@@ -20584,7 +20782,11 @@ in the following order:
    value recurrent whose path and type match preserves both its
    current value and its `.past` history buffer, and a changed
    recurrent body is not retroactive — the next evaluation runs the
-   new body over the preserved history.
+   new body over the preserved history. Deferred cells are likewise
+   never recomputed in this pass: the preserved value stands, a
+   changed deferred behavior swaps by content hash with any
+   in-flight runs discarded, and the next dispatch runs the new
+   body (§13.2.12).
 10. Commit the reloaded state. This commit fires the ordinary
     reconciler-hook tail: the runtime enumerates the effect instances
     the reload dirtied and invokes their reconcilers before the reload
@@ -20747,7 +20949,7 @@ which the compiler emits, and the **runtime interface** (§13.14), which a
 runtime implements. The map below names the abstract contract for each §13
 construct, not a mechanism.
 
-- Reactive cells (signal, attr, recurrent, derived) are graph-IR cells
+- Reactive cells (signal, attr, recurrent, derived, deferred) are graph-IR cells
   (§15.4.1); the runtime stores their values (§14.3) and keeps them current
   across commits.
 - Stream cells (§13.18) are graph-IR `stream` primitives (§15.4.1) carrying
@@ -20758,13 +20960,17 @@ construct, not a mechanism.
   groupings of standard cells plus a reconciler reference; per-instance
   reconciler state is host-managed, outside reactive state.
 - Reactive evaluation is the **commit** (§13.10.2, §13.14.4): the runtime
-  applies staged writes, settles deriveds and recurrents glitch-free in
-  topological order, fires reconciler hooks, and publishes a consistent
+  applies staged writes, folds in due deferred results (§13.2.12), settles
+  deriveds and recurrents glitch-free in
+  topological order, dispatches at the commit's end the deferred runs the
+  commit's changes call for, fires reconciler hooks, and publishes a consistent
   snapshot that observers read (§13.14.6). Which thread(s) do this, and how
   the snapshot is published, are backend concerns.
 - Behaviors invoked during commit — derived, recurrent, gate, and
   effect-`desired` bodies — conform to the behavior ABI (§15.4.4): invoked
-  by content-addressed id with input-cell values; pure and stateless.
+  by content-addressed id with input-cell values; pure and stateless. A
+  `deferred` body, invoked off the commit with snapshot inputs (§13.2.12),
+  conforms to the same ABI.
 - Host-registered reconcilers (§13.19.14) are dispatched at the commit
   boundary (§13.14.7, §13.14.9); `suspend`/`resume` fire there on
   gate-close / gate-open of an effect's enclosing subtree (§13.9.7), driven
@@ -20781,7 +20987,7 @@ construct, not a mechanism.
 An *operator* is a reusable, cell-allocating reactive transformation
 declared with the `operator` keyword. Operators take `cell T`
 inputs (and optionally non-reactive value parameters), allocate
-internal reactive cells (recurrents and/or deriveds) per
+internal reactive cells (recurrents, deriveds, and/or deferreds) per
 instantiation, and produce an output of any type, exposed to callers as
 a reactive cell (typically `derived T`, or `stream T` for event
 operators — §13.17.5). They are
@@ -20829,9 +21035,9 @@ operator name[GenericParams]?(params...) -> T:
 - `GenericParams` are optional type parameters with optional trait
   bounds (§3, §5).
 - `params` is a comma-separated parameter list (§13.17.3).
-- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `cell` kind (`signal T`/`derived T`/`recurrent[N] T`/`stream T`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
+- The return type may be **any type** `T` — a value type, a record/tuple (plain or with cell fields), or an explicit `cell` kind (`signal T`/`derived T`/`recurrent[N] T`/`deferred[N] T`/`stream T`). Whatever the body returns is exposed to callers as a reactive cell (§13.17.5, §13.18.5).
 - The body is a sequence of reactive declarations (recurrents,
-  deriveds) followed by a final expression that becomes the output.
+  deriveds, deferreds) followed by a final expression that becomes the output.
 
 Operators may carry the `private` visibility specifier per §10.
 
@@ -20901,7 +21107,7 @@ argument is materialized. This is the uniform cell-argument rule (it
 governs operator args, effect args, placement attrs, and the `|>` LHS
 alike):
 
-- **A bare cell binds directly.** A `signal`/`derived`/`recurrent`
+- **A bare cell binds directly.** A `signal`/`derived`/`recurrent`/`deferred`
   reference passed to a `cell T` parameter is bound as-is; no wrapping,
   no synthesis. A stream reference does not bind to a `cell T` parameter —
   it binds only to a `stream T`(-family) parameter, and entering a value
@@ -20932,8 +21138,8 @@ bridged.
 ##### 13.17.3.1 Value-cell auto-deref in expression contexts
 
 When an expression context requires a value of type `T` and the
-supplied expression is a value cell (`signal T`, `derived T`, or
-`recurrent[N] T`), the compiler implicitly inserts a read of the cell
+supplied expression is a value cell (`signal T`, `derived T`,
+`recurrent[N] T`, or `deferred[N] T`), the compiler implicitly inserts a read of the cell
 — it is dereferenced to its current value. The provenance tracking
 (§13.12.1) records the cell read as a dependency, so the surrounding
 expression becomes reactive on changes to that cell.
@@ -20947,7 +21153,7 @@ operator example(s: cell f32) -> derived f32:
 The implicit deref applies wherever a value cell flows into a
 position expecting `T`: arithmetic operands, function-call arguments
 typed `T`, attribute initial-value expressions, derived bodies,
-recurrent expressions. It does NOT apply when the context expects
+deferred bodies, recurrent expressions. It does NOT apply when the context expects
 `cell T` directly (operator parameters, function parameters annotated
 `cell T`, pipe-form `|>` LHS) — in those cases the cell reference
 is bound without dereferencing.
@@ -20966,6 +21172,7 @@ body items:
 
 - `recurrent` declarations (with all extensions per §13.2.4).
 - `derived` declarations.
+- `deferred` declarations (§13.2.12).
 - `stream` declarations (§13.18) — operators are stream transformers
   and may hold internal stream state.
 - `let` bindings for intermediate values, including
@@ -21005,7 +21212,7 @@ record/tuple), the compiler synthesizes a cell holding the value and
 exposes that cell as the operator instance's output — the `cell T`≅`T`
 wrap (§13.2.8), so a `-> f32` return is carried as `derived f32`, never a
 non-reactive snapshot. If the final expression is already a cell (a
-named recurrent, derived, or stream in the body), that cell is the output
+named recurrent, derived, deferred, or stream in the body), that cell is the output
 directly — no synthesis needed. A record whose fields are cells (form 2)
 is wrapped likewise; its inner cells are part of its fixed compile-time
 shape, so static memory is preserved and the outer wrap is an inert
@@ -21127,7 +21334,7 @@ the same scope; the binding name has no role.
 
 Operator instances contribute to the runtime's graph specification
 (§15.4) the same way node placements and wire placements do.
-Each instance's internal cells (recurrents, deriveds, synthesized
+Each instance's internal cells (recurrents, deriveds, deferreds, synthesized
 cells from the operator body and from `let` bindings) are counted
 against the runtime's cell-storage allocation and against any
 per-type pool sizing for dynamic-size cells (§14.3.3).
@@ -21183,7 +21390,7 @@ node's `effects:` clause.
 LHS rules, common to both cases:
 
 - LHS must be an expression of a reactive cell kind — a value cell
-  (`signal T`, `derived T`, `recurrent[N] T`, i.e. any `cell T` per
+  (`signal T`, `derived T`, `recurrent[N] T`, `deferred[N] T`, i.e. any `cell T` per
   §13.18.5) or a stream (`stream T`) — or an expression convertible to
   one. A static value (literal, `const`, or compile-time constant
   expression) is wrapped as a degenerate `derived T` cell automatically.
@@ -21273,7 +21480,7 @@ operator body.
 
 - Changes to the body of recurrent expressions, `where`
   guards, or final-expression bodies — same as plain
-  recurrent/derived reload safety.
+  recurrent/derived/deferred reload safety.
 - Adding a new internal cell — new cells are initialized fresh.
 
 **Reload-unsafe changes** are handled per §13.15.4: operator-specific
@@ -21412,7 +21619,7 @@ error: cannot pass value of type `f32` to `cell f32` parameter
                      ^^^^^^^^^^ expected `cell f32`, found `f32`
   hint: static values (literals, `const`s, compile-time constants) are wrapped
         as degenerate `derived T` cells automatically; this expression
-        cannot be wrapped — use a `signal`, `derived`, or `recurrent` declaration
+        cannot be wrapped — use a `signal`, `derived`, `deferred`, or `recurrent` declaration
 ```
 
 **`attr` declared inside an operator body:**
@@ -21536,7 +21743,7 @@ admit `own` per §11.3.6; this restriction is operator-specific.
 
 A *stream* is a reactive primitive for append-only event sequences with
 a buffering policy. Streams complement the value-cell primitives
-(signal, attr, recurrent, derived) by expressing event-shaped flows that
+(signal, attr, recurrent, derived, deferred) by expressing event-shaped flows that
 those primitives cannot represent cleanly: discrete sequences of values
 arriving over time, possibly faster than consumers can process them,
 where consumers care about each event rather than the latest value.
@@ -21577,7 +21784,7 @@ as events arrive.
 
 Streams are distinct from value cells:
 
-- A value cell (`signal T`/`derived T`/`recurrent[N] T`) has a single
+- A value cell (`signal T`/`derived T`/`recurrent[N] T`/`deferred[N] T`) has a single
   current value, always defined (§13.2.6).
 - `stream T` has zero or more pending events, each consumed
   independently. There is no "current value" of a stream; consumers
@@ -21764,13 +21971,14 @@ named policy otherwise.
 not a trait (§13.2.8, §13.2.8.1). `cell` is a lowercase keyword kind
 occupying an annotation position, exactly like `signal`, `derived`, and
 `recurrent`. Its members are exactly the value-cell kinds — `signal T`,
-`derived T`, and `recurrent[N] T`:
+`derived T`, `recurrent[N] T`, and `deferred[N] T`:
 
 ```
 cell T                        // umbrella channel — any value cell carrying values of type T
   signal T                    // host/placement-written value cell; `attr` annotates as `signal T` (§13.2.8)
   derived T                   // computed value cell, no history (§13.2.8)
   recurrent[N] T              // computed value cell, N-deep self-history (§13.2.8)
+  deferred[N] T               // computed value cell, N-commit publication latency (§13.2.12)
 ```
 
 Streams and groups sit *outside* the umbrella, each forming its own kind
@@ -21970,7 +22178,7 @@ An expression's reactive-output type is determined by its inputs:
 
 - **Zero streams** in the expression → result is a signal. The
   surrounding declaration must be a binding context that produces
-  a signal-typed cell (`derived`, `attr` default expression,
+  a signal-typed cell (`derived`, `deferred`, `attr` default expression,
   `recurrent`'s expression).
 - **One or more streams** in the expression → result is a stream.
   The surrounding declaration must be a `stream` declaration
@@ -23235,7 +23443,7 @@ with external reality. A contract is fulfilled in one of three ways:
 - **Both** — an effect may place child effects *and* declare host-
   written channels; the two are orthogonal and may be mixed freely.
 
-One builtin is the sole fourth case: `compute` (§13.19.17), whose
+One builtin stands outside the three: `compute` (§13.19.17), whose
 contract is fulfilled by the runtime itself.
 
 An effect declaration consists of optional child-effect placements
@@ -24032,6 +24240,11 @@ effects:
 The LHS of `|>` binds to the effect's first positional parameter.
 The pipe's *value* is the effect instance — the composite of cells
 in `desired:` and `observed:`, accessed via the rules in §13.19.7.
+The builtin `compute` is the sole stated exception to the binding
+rule: its pipe LHS fills the builtin input slot and a written
+argument binds its dedicated function parameter, so
+`samples |> compute(fft)` carries no positional collision
+(§13.19.17).
 
 **No implicit projection.** An effect instance does not auto-project
 to a single cell when used in pipe-out position. Operators downstream
@@ -24289,6 +24502,21 @@ error: only role-keyword declarations are permitted inside effect blocks
         use a wrapping operator (§13.17).
 ```
 
+**`deferred` inside an effect's blocks** — its own class,
+`deferred_in_effect_contract` (§13.2.12):
+
+```text
+error: `deferred` declarations are not permitted inside effect blocks [deferred_in_effect_contract]
+  --> effect example():
+        desired:
+          deferred target: f32[512] = fft(samples)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  hint: a `desired:` entry states a target the reconciler aligns to at
+        this commit, and an `observed:` computed output is a lifted
+        `derived` or value-`recurrent`. Declare the deferred cell
+        outside the effect and read it from the block instead.
+```
+
 **Effect appearing in node-placement position:**
 
 ```text
@@ -24371,11 +24599,16 @@ per-instance write channel (§13.14.2):
 - `signal in_flight: bool = false` — whether a dispatched run has
   not yet delivered.
 
-`compute`'s signature is builtin: it accepts piped inputs of any
-arity as its bound `desired:` inputs, and the pure-function argument
-is an ordinary value parameter (a function value). No user-declarable
-effect signature expresses this arity-generic shape; the builtin is
-its own declaration.
+`compute`'s signature is builtin. The piped input is one cell —
+several values enter as a tuple or composite through the standard
+implicit-derived bridge (§13.17.3) — and it fills `compute`'s input
+slot; the pure-function argument is an ordinary value parameter (a
+function value) occupying its own dedicated builtin parameter, so
+the two never compete for a slot — the sole stated exception to the
+first-positional pipe-binding rule (§13.19.13). The function
+argument is compile-time-known, bound at instantiation, and stored
+in no cell. No user-declarable effect
+signature expresses this shape; the builtin is its own declaration.
 
 ```
 fn fft(samples: f32[1024]) -> f32[512]: ...
@@ -24399,8 +24632,9 @@ runtime owns. A completed run's result reaches the driving context
 like any off-context producer's writes — enqueued for that context
 to apply (§13.14.2). No host registration is required, and the
 missing-reconciler startup refusal (§13.14.7) never applies to
-`compute`. A host may override the intrinsic fulfillment per
-capability advertisement (§13.14.11).
+`compute`. A host may override the intrinsic fulfillment through
+ordinary reconciler registration (§13.14.7): a reconciler the host
+registers for `compute` takes precedence over the intrinsic one.
 
 **Lifecycle.** `compute` rides the standard effect hooks
 (§13.19.14): gate-off suspends the instance and cancels any
@@ -24416,7 +24650,8 @@ ordinary value-change semantics.
 enter the program as ordinary runtime-write-class inputs: their
 timing relative to commits is nondeterministic, the same accepted
 class as any effect's observed writes (§13.14.9). If the trace must
-be deterministic, do not offload through `compute` — stay in-commit.
+be deterministic, do not offload through `compute` — use `deferred`
+(§13.2.12) or stay in-commit.
 
 ### 13.20 Collect and Yield
 
@@ -24660,7 +24895,7 @@ the explicit crossing `<stream>->latest(<fallback>)` (§13.18).
 ##### 13.20.4.3 IR lowering
 
 A `yielded` group has no cell-kind tag of its own in the IR: the
-cell-`kind` enum stays `input | derived | recurrent | fold` (§15.4.1).
+cell-`kind` enum stays `input | derived | recurrent | deferred | fold` (§15.4.1).
 A group lowers to existing IR machinery, by consumption:
 
 - **Folded** — a group consumed by a `fold` (§13.21) is absorbed into
@@ -24833,7 +25068,7 @@ consumers never see a distinct "fold" surface type.
 
 A `fold` expression lowers to the `fold` cell kind in the graph IR
 (§15.4.1). The `fold` cell kind is one of the IR cell-`kind` enum's
-members — `input | derived | recurrent | fold`. **`fold` is a cell kind,
+members — `input | derived | recurrent | deferred | fold`. **`fold` is a cell kind,
 not a seventh graph primitive**: the graph's six-primitives count
 (§15.4.1) is **unchanged**.
 
@@ -25171,6 +25406,7 @@ Specifically, the values held by:
 - `attr` declarations on node and wire instances.
 - `recurrent` declarations on node and wire instances.
 - `derived` declarations (the cached computed value).
+- `deferred` declarations (the cached last-published value; §13.2.12).
 - `stream` declarations (head pointer, metadata, and synthesized
   observation cells per §13.18.6; the buffer slot array itself
   lives in the per-`(T, N)` pool per §14.3.3).
@@ -25186,7 +25422,7 @@ non-reactive data — are **not** reactive state. They are ordinary values
 in stack or heap memory, governed by the ownership and borrow rules of §11.
 
 A record type may appear in both contexts in the same program. As the
-value of a signal/attr/recurrent/derived declaration, it is reactive state.
+value of a signal/attr/recurrent/derived/deferred declaration, it is reactive state.
 As a local value, parameter, or non-reactive field, it is an ordinary
 value. The Ductus compiler determines which based on the declaration site,
 not the type.
@@ -25428,7 +25664,7 @@ inconsistent state.
 
 The runtime manages drop for reactive cells. When a node or wire
 instance is removed (removal mechanics are specified in §13.15), all of its
-cells — attr, recurrent, derived, and stream metadata — are dropped per their
+cells — attr, recurrent, derived, deferred, and stream metadata — are dropped per their
 types' `Drop` impls (consistent with §14.8.1 step 3b).
 Initial declarations (signals declared at program startup) live for the
 program's lifetime; their cells are dropped at program shutdown.
@@ -25479,7 +25715,8 @@ file changes:
 6. **Run re-initialization evaluation pass.** For each derived whose
    behavior body changed (different content-addressed ID), recompute
    its initial value from current inputs. Deriveds whose body is
-   unchanged retain their values.
+   unchanged retain their values. Value recurrents and deferreds are
+   never recomputed in this pass (§13.15.3).
 
 7. **Commit the reloaded state.** This commit fires the ordinary
    reconciler-hook tail against the instances the reload dirtied.
@@ -25490,7 +25727,7 @@ file changes:
 #### 14.8.2 State preservation
 
 Reactive cell values persist across hot reload. Signal values, attr
-values, and derived cached values are unchanged unless the source
+values, and derived and deferred cached values are unchanged unless the source
 explicitly changes them. The graph topology persists.
 
 Operator instance state is preserved across reload by the
@@ -25506,9 +25743,9 @@ Changes safe to hot reload:
 
 - Body of an existing behavior (same signature, different
   implementation).
-- Adding new behaviors (new derived expressions, new recurrent expression
-  bodies).
-- Adding new signals, attrs, derived declarations.
+- Adding new behaviors (new derived expressions, new deferred expressions,
+  new recurrent expression bodies).
+- Adding new signals, attrs, derived or deferred declarations.
 
 Changes unsafe for in-place hot reload are classified on two axes
 per §13.15.4. The **class** axis names which restart the change
@@ -25734,7 +25971,7 @@ in memory across the frontend→backend boundary is conforming.
 The graph is built from **six primitives** — `cell`, `wire`, `gate`,
 `stream`, `effect`, and `scope` — each referencing behaviors by id and
 identified by a stable path (§15.4.1.1). All surface reactive constructs
-desugar into these six: signal/attr/derived/recurrent/const → `cell`;
+desugar into these six: signal/attr/derived/deferred/recurrent/const → `cell`;
 node (top-level or child) → `scope`; `repeat` → a dynamic `scope`; `when`/`given` → `gate`;
 wire / topological `|>` → `wire` (an *effect-position* `|>`
 instead lowers to the effect entry's `parameter_bindings`, **not** a
@@ -25771,8 +26008,11 @@ The graph is a structured record with the following entries.
 
 - `id`: the cell's fully-qualified declaration path (§15.4.1.1).
 - `kind`: `input` (a stored, externally-written cell), `derived`,
-  `recurrent`, or `fold` — the cell's classification, leading its
-  text-form line (§15.4.6). The `fold` kind is the IR lowering of the
+  `recurrent`, `deferred`, or `fold` — the cell's classification, leading its
+  text-form line (§15.4.6). A `deferred`-kind cell carries its latency
+  depth in the `depth` field — the commits between dispatch and
+  publication (§13.2.12) — exactly as a recurrent carries its history
+  depth there. The `fold` kind is the IR lowering of the
   language fold form (§13.21); it is a cell KIND, not a seventh graph
   primitive — the six-primitives count (above) is unchanged.
 - `type`: the cell's primitive type tag, per §4.1, plus the
@@ -26155,6 +26395,7 @@ and receives outputs; it never reaches inside. Inputs per role:
 | role | inputs | output |
 |------|--------|--------|
 | derived | the cell's input cells (current snapshot values) | new value |
+| deferred | the cell's input cells (dispatch-commit snapshot values, §13.2.12) | new value |
 | recurrent | input cells, self-history slots (`name.past(k,d)` → a `pastK` param), and input-history slots (`input.past(k)` → an `<input>_pastK` param) | new value |
 | gate predicate | the gate's input cells | `bool` (or a tag, for a `given` selector) |
 
@@ -26345,7 +26586,7 @@ cell          ::= cell_kind PATH ':' type_tag
                   ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
                   ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
                   ('combiner' BID)? ('else' value)? ('members' member_set)?
-cell_kind     ::= 'input' | 'derived' | 'recurrent' | 'fold'
+cell_kind     ::= 'input' | 'derived' | 'recurrent' | 'deferred' | 'fold'
 member_set    ::= '[' (member (',' member)*)? ']'
 member        ::= PATH ':' member_driver
 member_driver ::= 'permanent' | 'keyed-template' | 'gate-guarded'
@@ -26381,9 +26622,10 @@ The module's three sections appear in order. The `types` table lists the
 record/enum/tuple layouts referenced by `%TypeId` tags, each with its
 `size`/`align`; these are derived from `type` and the target, so a `cell`'s
 `type_tag` does not repeat them. A cell is **kind-led** — `input` (a stored
-attr/signal), `derived`, `recurrent`, or `fold` leads the line, parallel to
-`behavior`/`gate`/`effect`; a derived or recurrent cell's `uses` names its
-behavior handle and `inputs` its input cells, `recurrent` adds `depth`, and a
+attr/signal), `derived`, `recurrent`, `deferred`, or `fold` leads the line, parallel to
+`behavior`/`gate`/`effect`; a derived, recurrent, or deferred cell's `uses` names its
+behavior handle and `inputs` its input cells, `recurrent` and `deferred` add `depth`
+(history depth and latency depth respectively, §13.2.12), and a
 stored or recurrent cell an `init`. A `fold` cell (the lowering of the
 language fold form, §13.21) instead carries its `combiner` behavior
 handle (the `by:` combiner), its `else` empty-membership value, and its
