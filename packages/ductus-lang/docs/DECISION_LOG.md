@@ -1857,7 +1857,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 014-166. Iterators must not perform externally observable I/O. (§12.14.3)
 014-167. Externally-driven sequences belong to the reactive system's signals (§13); iterators are for collection traversal. (§12.14.3)
 
-## 015. Reactive Model & Principles — 41 Rules
+## 015. Reactive Model & Principles — 42 Rules
 
 015-1. Ordinary computation is pure and immutable; change is confined to two contexts: local mutation within a function body and the reactive system. (§13)
 015-2. The reactive expression forms are `observe` and `where`. (§13)
@@ -1900,6 +1900,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 015-39. A new effect type is added by declaring an `effect`; reconciler registration is required if and only if the effect's `observed:` block declares host-written channels (`signal`/`stream`); an interior effect whose contract is fulfilled entirely by child effects requires no reconciler. (§13.1)
 015-40. A new topological participant is added by declaring a `node`; the host extends its interpreter for traversed node types. (§13.1)
 015-41. There is no built-in clock or tick primitive; hosts declare their own signal and write it at their own cadence: `signal tick: i64 = 0`. (§13.1.1)
+015-42. No execution-resource construct — thread, task, future, goroutine, or any other — exists in Ductus source, ever. Execution resources are backend concerns, invisible behind the two doors: behaviors — pure compute, schedulable anywhere — and effects — the world boundary, fulfilled by whomever serves the contract: a host reconciler, child effects, or the runtime itself. Concurrency-of-waiting is the effect system; there is nothing to add. (§13.1)
 
 ## 016. Reactive Declarations (Cells) — 295 Rules
 
@@ -3078,7 +3079,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 022-121. Selecting a type value with `match` over `Type[…]` and gating structure with `given` are both legal: `match` chooses one type placed once; `given` builds every arm and switches which is live. (§13.9.13)
 022-122. The activation-driven membership read-path covers `dynamic` views and wire-views as it covers folds: a gated-off feeder of a `dynamic` view is absent from the membership — and from `.count` — while effectively inactive, and rejoins in the commit of the gate-open; frozen presence under gating is the static view's read-path only. (§13.9.7)
 
-## 023. Reactive Evaluation & Commit — 59 Rules
+## 023. Reactive Evaluation & Commit — 61 Rules
 
 023-1. The reactive runtime exposes exactly two host-level state operations: signal writes (via `runtime.write_signal`), which stage new values without evaluation, and commit, which evaluates and atomically publishes a new consistent snapshot. (§13.10)
 023-2. A write call (`runtime.write_signal` or any write inside `runtime.transaction`) stages the new value; the staged value is not yet visible to observers. (§13.10.1)
@@ -3139,6 +3140,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 023-57. A gate transition — open or close — is a dirty root. On gate-open, the opening subtree's output-affecting deriveds join the same commit's DAG and evaluate after the flip in topological order; the gate predicate itself keeps reading prior-commit values, so the flip is decided once per commit and the after-flip evaluation cannot re-trigger it. The fold-cell and membership-descriptor dirty roots on gate-guarded members are instances of this rule, not a separate carve-out. (§13.9.8, §13.10.2)
 023-58. The `repeat` sequence anchors to the numbered commit steps: re-iterating the dirty source, deriving keys, and diffing the key set happen in step 1 — the re-key diff is a dirty root computed there — and the structural consequence applies with the diff, `scope_drop` for departed keys and `scope_obtain` for arrived keys, before evaluation-order computation, so the per-commit DAG of step 2 is built over the post-diff scope set; `scope_evaluate` for each active key runs as ordinary step-3 topological evaluation. (§13.10.2, §13.5.4.2)
 023-59. A scope dropped during a commit is absent from that commit's published snapshot: its final values are never published, and no reader of the published snapshot observes a departed scope's cells. (§13.10.2, §13.5.4.2)
+023-60. A backend may evaluate dependency-independent per-commit DAG nodes concurrently, provided the observable outcome — cell values, output trace, and reconciler-hook order — is identical to sequential evaluation in the committed total order: instance placement order, then intra-instance declaration order. This is pure law, not a capability: the capability-advertisement surface exists for observable powers, and invisible parallelism has nothing to negotiate; the driving context remains the single context that observably writes, evaluates, and commits (§13.14.2). (§13.10.3, §14.6.4)
+023-61. A behavior's internal evaluation strategy — including data-parallel execution of a pure body and parallel reduction of a fold's combine tree, log-depth over independent subtrees — is implementation latitude with no observable surface; parallelism-by-purity is available to every backend out of the box and is not an open design question. (§13.10.3, §14.6.1)
 
 ## 024. Cycle Handling — 27 Rules
 
@@ -3253,7 +3256,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 026-9. The reactive evaluation context does not modify trap semantics: a behavior that traps aborts the process, the same as a free-function trap; a fold form's `else:` arm and its `by:` combiner are behaviors, so a trap in either aborts the process. (§13.13.3)
 026-10. The language provides no hidden recovery mechanism in reactive contexts; graceful handling requires value-track errors. (§13.13.3)
 
-## 027. Runtime Interface — 124 Rules
+## 027. Runtime Interface — 127 Rules
 
 027-1. The runtime interface is the normative contract every backend must satisfy — the abstract counterpart to the IR the compiler emits. (§13.14)
 027-2. The shape of the runtime interface is normative; the host-language binding is implementation-defined. (§13.14)
@@ -3300,7 +3303,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-43. No evaluation runs at `write_signal` time; evaluation happens at the next `commit`. (§13.14.2)
 027-44. The module-level `write_signal` form targets a module-scope signal, for which one cell exists for the entire program. (§13.14.2)
 027-45. The per-instance `write_signal` form targets one of an effect's host-written `observed:` channels on one effect instance; each effect instance has its own host-written observed cells and the write targets that one cell. Computed `observed:` outputs (`derived`/value `recurrent`) are not written through this channel. (§13.14.2)
-027-46. Both `write_signal` arities must be called from the runtime's driving context — the single context permitted to write, evaluate, and commit. (§13.14.2)
+027-46. Both `write_signal` arities must be called from the runtime's driving context — the single context permitted to write, evaluate, and commit. Physically distributing evaluation off it is backend latitude only where the observable outcome is unchanged — concurrent as-if evaluation (§13.10.3); the driving context remains the sole observable evaluator. (§13.14.2)
 027-47. Other threads write only indirectly, by enqueueing requests for the driving context to apply. (§13.14.2)
 027-48. Signal IDs and instance IDs are stable, assigned at compile time, and obtained from the IR. (§13.14.2)
 027-49. `runtime.commit()` performs the complete commit operation of §13.10.2: it settles all dirty deriveds and recurrent expressions glitch-free in topological order and advances recurrents. (§13.14.4)
@@ -3379,6 +3382,9 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 027-122. When several hooks are eligible for one effect instance at one commit boundary, they fire in a fixed per-instance order: `teardown`, then `create`, then `resume`, then `update` — a just-created instance's `create` precedes any same-boundary `update` for it, so the instance state `update` consumes exists, and a just-reopened instance's `resume` precedes any same-boundary `update` for it, so the resource is re-acquired before it is reconciled. At a gate-closing boundary `suspend` fires and any same-boundary `update` for that instance is skipped — a suspended instance does not reconcile; on reopen the gate-open desired re-snap followed by `resume`-then-`update` covers reconciliation. One instance never both suspends and resumes at one boundary, because a gate commits one value per commit. (§13.14.9)
 027-123. The initial cohort's `create` hooks — for the effect instances live at startup — fire as the first post-first-commit hook pass: startup's final step performs the first commit, and the reconciler-hook pass following that commit runs `create` for every live effect instance before any other hook work. (§13.14.1)
 027-124. A runtime handed a module whose live graph is empty — a library module with no roots — declines gracefully: it reports a clean "nothing to run" condition and exits; this is neither a crash nor an error, and the `ductus run` CLI surfaces the condition to the user. (§13.14.1)
+027-125. One driving context per graph, always: composing multiple reactive graphs in one process never means shared memory — each graph keeps its own driving context, its own cell store, and its own commit cadence. (§13.14.12)
+027-126. Cross-graph communication is value-only: any value crossing a graph boundary is materialized per the FFI-handoff materialization boundary (§13.2.9.7), and no handle of any form — `Handle`, `WeakHandle`, `Portal` — ever crosses a graph boundary. (§13.14.12)
+027-127. Any future cross-graph bridge is effect-shaped: an effect, never a new construct class. (§13.14.12)
 
 ## 028. Hot Reload — 78 Rules
 
@@ -3866,7 +3872,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 030-273. The crossing names `changes` and `latest` form a closed grammar list, not reserved words: like directive names they are recognized only in postfix-arrow position, and both remain fully legal as ordinary identifiers and binding names everywhere else. (§13.18.9)
 030-274. When a `repeat` scope is dropped, a consumer instantiated inside that scope holding a cursor on a gate stream declared outside the scope releases that cursor as part of the same teardown that tears its per-element effects down with the element key; the outer gate stream's slowest-cursor retention then recomputes without the released cursor, with buffer entries retained only for the remaining cursors, so a gate buffer the departed consumer was pinning can evict and accept producer pushes again. This is the scope-drop parallel of the reload-time removed-consumer cursor drop — the same cursor release under a different trigger. (§13.18.12)
 
-## 031. Effects — 162 Rules
+## 031. Effects — 167 Rules
 
 031-1. An effect is a reusable, cell-allocating reactive construct describing a desired alignment between program state and external reality, declared with the `effect` keyword. (§13.19)
 031-2. Effects are the mechanism by which programs interact with the outside world: network requests, persistent storage, long-lived resources, and event subscriptions. (§13.19)
@@ -4030,6 +4036,11 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 031-160. Selecting which effect type a node instantiates through a generic type parameter or a `Type[C]`-typed slot does not breach effect locality: the caller supplies a type, never an effect instance; the instantiation site, lifecycle, and ownership remain the local `effects:` clause of the instantiating node. (§13.19.9)
 031-161. Visibility is a source-language concept and does not cross the host boundary: the host API addresses an effect type by name regardless of the effect's source visibility — a `private` effect's reconciler registers exactly as an unmarked one's — and the IR carries no visibility field, so no name-mangling or omission derives from visibility. (§13.19.10, §13.14.7)
 031-162. Reconciler-failure error channels are author-opt-in: no language rule requires an effect to declare an `observed:` error cell, and reconciler errors reach the program only through whatever `observed:` cells the author declared; a domain that wants error channels mandatory states them in an effect-kind trait's `observed:` contract block — domain policy over language mechanism. (§13.19.14, §3.1.1.1)
+031-163. `compute` is a language-level builtin effect for offloading heavy pure computation, instantiated like any effect in an `effects:` clause: `r = args |> compute(pure_fn)` binds the piped inputs and a pure function over them. Its `desired:` cells are the bound inputs, following the uniform cell-argument rule (§13.17.3); its `observed:` cells are host-written channels, `signal result: Option[Out] = None` — `None` until a run completes — and `signal in_flight: bool = false`, written by its intrinsic fulfiller through the ordinary per-instance write channel. (§13.19.17)
+031-164. `compute` is fulfilled by the runtime itself: the runtime intrinsically provides its reconciler — the outside world the contract reconciles against is a worker pool the runtime owns — so no host registration is required and the missing-reconciler startup refusal never applies to it. A host may override the intrinsic fulfillment per capability advertisement (§13.14.11). (§13.19.17, §13.14.7)
+031-165. `compute`'s lifecycle rides the standard effect hooks: gate-off suspends the instance and cancels any in-flight run; an input change updates it — the stale run is cancelled and a fresh run dispatched; teardown cancels any in-flight run. (§13.19.17)
+031-166. `compute` coalesces latest-wins: a stale run's result is never delivered after a newer dispatch; `result` publication follows ordinary value-change semantics. (§13.19.17)
+031-167. `compute` results enter the program as ordinary runtime-write-class inputs: their timing relative to commits is nondeterministic — the same accepted class as any effect's observed writes. The rule of thumb: if the trace must be deterministic, do not offload — stay in-commit. (§13.19.17)
 
 ## 032. Implementation Model — 179 Rules
 

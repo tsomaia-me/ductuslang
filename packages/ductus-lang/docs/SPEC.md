@@ -11971,7 +11971,7 @@ when they change" without manually wiring update propagation.
 
 ### 13.1 Design Principles
 
-The reactive system is built on seven load-bearing principles.
+The reactive system is built on eight load-bearing principles.
 
 **Declarative composition.** A reactive graph is built declaratively
 from signal, attr, recurrent, derived, node, and wire
@@ -12053,7 +12053,8 @@ role:
 - `effect` (§13.19) — outside-world alignment via the
   reconciliation model. A reconciliation contract between program
   state and external reality — fulfilled by a host reconciler (leaf),
-  by child effects (interior), or both.
+  by child effects (interior), or both — and, uniquely, the builtin
+  `compute` is fulfilled by the runtime itself (§13.19.17).
 
 Topology and outside-world alignment are distinct concerns. Topology
 — the node-and-wire graph the runtime traverses — has its own
@@ -12084,6 +12085,17 @@ effects requires no reconciler. Adding a new topological participant
 is achieved by declaring a new `node`; the host extends its
 interpreter — or an in-language interpreter gains a match arm — for
 traversed node types (e.g., DSP graph evaluation).
+
+**No execution constructs.** No execution-resource construct —
+thread, task, future, goroutine, or any other — exists in Ductus
+source, ever. Execution resources are backend concerns, invisible
+behind the two doors: behaviors (§14.6) — pure compute, schedulable
+anywhere — and effects (§13.19) — the world boundary, fulfilled by
+whomever serves the contract: a host reconciler, child effects, or
+the runtime itself. Concurrency-of-waiting — many outstanding
+alignments in flight at once — is what the effect system already is;
+there is nothing to add. Parallelism of evaluation is invisible
+backend latitude (§13.10.3), never a source-level concern.
 
 #### 13.1.1 A small example
 
@@ -19304,6 +19316,26 @@ lockstep (§13.2.4.1); no internal ordering between them is
 observable, because none of them sees another's just-advanced
 value.
 
+The composed total order defines what must be *observable*, not what
+must be *physical*. A backend may evaluate dependency-independent
+per-commit DAG nodes concurrently, provided the observable outcome —
+cell values, output trace, and reconciler-hook order — is identical to
+sequential evaluation in the committed total order. This is pure law,
+not an advertised capability: the capability surface (§13.14.11)
+exists for observable powers, and invisible parallelism has nothing to
+negotiate. The driving-context law (§13.14.2) is untouched — the
+driving context remains the single context that observably writes,
+evaluates, and commits; physically concurrent evaluation is merely how
+a backend discharges that context's work.
+
+The same latitude reaches inside a single evaluation: a behavior's
+internal evaluation strategy — including data-parallel execution of a
+pure body and parallel reduction of a fold's combine tree (log-depth,
+over independent subtrees; §13.21.5) — is implementation latitude
+with no observable surface (§14.6.1). Parallelism-by-purity is
+available to every backend out of the box; it is not an open design
+question.
+
 #### 13.10.4 Transactions
 
 The host may opt into transactional batching of multiple writes
@@ -20107,7 +20139,10 @@ specific cell.
 Both arities must be called from the runtime's driving context (the single
 context permitted to write/evaluate/commit). Other threads write indirectly
 by enqueueing requests for that context to apply — a host-application
-concern.
+concern. Physically distributing evaluation off the driving context is
+backend latitude only where the observable outcome is unchanged —
+concurrent as-if evaluation (§13.10.3); the driving context remains the
+sole observable evaluator.
 
 Signal IDs and instance IDs are obtained at compile time from the IR (each
 signal and each placement has a stable id per §15.4.1.1).
@@ -20247,6 +20282,12 @@ loaded program declares an effect type that *does* require a reconciler
 (its `observed:` block has host-written channels) but no reconciler is
 registered, startup fails with a diagnostic naming the effect type. The
 runtime does not enter the live state.
+
+The `compute` builtin effect (§13.19.17) requires no host
+registration: the runtime itself intrinsically provides its
+reconciler, so the missing-reconciler startup refusal does not
+apply to it. A host may override `compute`'s intrinsic fulfillment
+per capability advertisement (§13.14.11).
 
 #### 13.14.8 `runtime.push_stream`
 
@@ -20416,6 +20457,33 @@ How a runtime classifies cells for cross-thread observation and real-time
 timing — to select storage that honors each, or reject a graph it cannot
 serve — is implementation-defined (§15.4.1.2–.3), not driven by normative
 IR fields.
+
+#### 13.14.12 Multi-graph composition
+
+A process may host more than one reactive graph. Three laws govern
+the composition:
+
+- **One driving context per graph, always.** Multi-graph
+  composition never means shared memory: each graph keeps its own
+  driving context (§13.14.2), its own cell store, and its own
+  commit cadence.
+- **Cross-graph communication is value-only.** Any value crossing a
+  graph boundary is materialized per the
+  FFI-handoff materialization boundary (§13.2.9.7); no handle of any
+  form — `Handle`, `WeakHandle`, `Portal` — ever crosses a graph
+  boundary.
+- **Any future cross-graph bridge is effect-shaped.** An effect,
+  never a new construct class.
+
+**Non-normative — anticipated capability.** The anticipated bridge
+shape is an effect pair — `bridge_out("topic")` /
+`bridge_in("topic")` — with streams as the inter-cadence carrier
+and gate-policy backpressure (§13.18) on the receiving side.
+Location transparency is the aim: in-process, IPC, or network
+delivery is backend capability, with program text identical across
+the three. Discovery, delivery guarantees, and cross-reload schema
+evolution are deliberately open questions, left to the host era.
+This note records direction; it mints no law.
 
 ### 13.15 Hot Reload of the Reactive Graph
 
@@ -23167,6 +23235,9 @@ with external reality. A contract is fulfilled in one of three ways:
 - **Both** — an effect may place child effects *and* declare host-
   written channels; the two are orthogonal and may be mixed freely.
 
+One builtin is the sole fourth case: `compute` (§13.19.17), whose
+contract is fulfilled by the runtime itself.
+
 An effect declaration consists of optional child-effect placements
 followed by two record-shaped blocks:
 
@@ -24276,6 +24347,77 @@ error: effects must be instantiated in the `effects:` clause
         `derived spinner: bool = f.in_flight`.
 ```
 
+#### 13.19.17 The `compute` builtin effect
+
+`compute` is a language-level builtin effect for offloading heavy
+pure computation. Like `Map[K, V]`, it is provided by the language
+itself, not by any library; unlike every other effect, its
+fulfillment ships with the runtime.
+
+```
+effects:
+  c = samples |> compute(fft)
+```
+
+`compute` binds the piped inputs and a pure function over them. Its
+`desired:` cells are the bound inputs, following the uniform
+cell-argument rule (§13.17.3); its `observed:` cells are host-written
+channels, written by its intrinsic fulfiller through the ordinary
+per-instance write channel (§13.14.2):
+
+- `signal result: Option[Out] = None` — `None` until a run
+  completes, then the pure function's return value; `Out` is that
+  return type.
+- `signal in_flight: bool = false` — whether a dispatched run has
+  not yet delivered.
+
+`compute`'s signature is builtin: it accepts piped inputs of any
+arity as its bound `desired:` inputs, and the pure-function argument
+is an ordinary value parameter (a function value). No user-declarable
+effect signature expresses this arity-generic shape; the builtin is
+its own declaration.
+
+```
+fn fft(samples: f32[1024]) -> f32[512]: ...
+
+node SpectrumView:
+  attr samples: f32[1024]
+
+  effects:
+    c = samples |> compute(fft)
+
+  derived dc_bin: f32 = match c.result:
+    Some(spectrum): spectrum[0]
+    None: 0.0
+  derived analyzing: bool = c.in_flight
+```
+
+**Runtime-fulfilled.** `compute` is fulfilled by the runtime
+itself: the runtime intrinsically provides its reconciler — the
+outside world the contract reconciles against is a worker pool the
+runtime owns. A completed run's result reaches the driving context
+like any off-context producer's writes — enqueued for that context
+to apply (§13.14.2). No host registration is required, and the
+missing-reconciler startup refusal (§13.14.7) never applies to
+`compute`. A host may override the intrinsic fulfillment per
+capability advertisement (§13.14.11).
+
+**Lifecycle.** `compute` rides the standard effect hooks
+(§13.19.14): gate-off suspends the instance and cancels any
+in-flight run; an input change updates it — the stale run is
+cancelled and a fresh run dispatched over the new values; teardown
+cancels any in-flight run.
+
+**Coalescing.** Latest-wins: a stale run's result is never
+delivered after a newer dispatch; `result` publication follows
+ordinary value-change semantics.
+
+**Nondeterministic timing — the rule of thumb.** `compute` results
+enter the program as ordinary runtime-write-class inputs: their
+timing relative to commits is nondeterministic, the same accepted
+class as any effect's observed writes (§13.14.9). If the trace must
+be deterministic, do not offload through `compute` — stay in-commit.
+
 ### 13.20 Collect and Yield
 
 `collect:` is a **block expression** that builds a *living membership
@@ -25131,6 +25273,13 @@ Local mutation within a behavior (`mut` bindings, indexed assignment,
 iterator state) is permitted per §§11–12. These mutations are visible
 only within the behavior's invocation; they do not escape.
 
+Statelessness and purity also grant the backend internal-parallelism
+latitude: how a behavior's body is evaluated — sequentially or
+data-parallel — and how a fold's fixed combine tree (§13.21.5) is
+reduced over its independent subtrees are the implementation's
+choice, with no observable surface (§13.10.3). A behavior body
+cannot observe or depend on its own evaluation strategy.
+
 #### 14.6.2 Error handling
 
 Behaviors follow Ductus's two-track failure model per §13.13:
@@ -25189,6 +25338,13 @@ Ductus source code does not encounter cross-thread concerns:
 behaviors are thread-safe by construction (no shared mutable state
 outside reactive cells, which are coordinated by the runtime per
 §14.3).
+
+Concurrent invocation across behaviors is likewise a backend concern,
+governed by the as-if law of §13.10.3: the runtime may invoke
+dependency-independent behaviors of one commit concurrently, provided
+the observable outcome — cell values, output trace, and
+reconciler-hook order — is identical to sequential evaluation in the
+committed total order.
 
 ### 14.7 Drop Semantics
 
