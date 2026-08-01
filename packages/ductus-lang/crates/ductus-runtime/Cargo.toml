@@ -1,0 +1,11 @@
+[package]
+name = "ductus-runtime"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+ductus-ir = { path = "../ductus-ir" }

@@ -28,6 +28,17 @@ Always disclose and ask judgement calls. Never uniliterally make judgment calls.
 12. Maintain LEARNINGS.md as described below in the "Mandatory Learnings Protocol" section.
 13. Strictly follow "Mandatory Memory Refresher" as described below in the respective section.
 14. any deviation from what we agreed without discussing with me further is a systematic failure on your side.
+15. Decision-item preflight (mechanical, applies to EVERY message that presents decisions): label each item RULED
+    (cite the ruling id from the active plan doc) or UNRULED. UNRULED items may be presented ONLY as
+    protocol-complete design rounds (background / problem / options with code / recommendation), maximum 3 per
+    message. Presenting unruled items as one-liner lists, veto-lists, or "approve wholesale" consent-lists is a
+    protocol violation — veto-lists are reserved for already-ruled defaults and mechanical findings. Urgency,
+    quota pressure, or session handoff NEVER relaxes this rule; pressure changes who finishes the rounds, not
+    their form.
+16. Execution gate (structural): before any tool call that writes under packages/ductus-lang/crates/** or
+    corpus/**, docs/implementation/GATE.md must read `phase: build` for the current increment. Phase transitions
+    happen only on my literal instruction and are recorded in GATE.md's authorization log with my quoted words.
+    This rule is additionally enforced by a harness hook; the hook's absence never suspends the rule.
 
 # Definition Of Done
 

@@ -1,0 +1,15 @@
+[package]
+name = "ductus-conformance"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+ductus-ir = { path = "../ductus-ir" }
+ductus-runtime = { path = "../ductus-runtime" }
+
+[dev-dependencies]
+proptest.workspace = true
