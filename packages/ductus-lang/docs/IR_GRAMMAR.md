@@ -8,7 +8,7 @@ This document specifies the **text form of the Ductus IR** — the intermediate 
 
 - **Module text** — top-level module / type / graph IR (SPEC §15.4.6)
 - **Behavior IR** — the per-behavior IR body (SPEC §15.4.4), with all productions defined and no ellipses
-- **Lexeme definitions** — `NAME`, `INT`, `STRING`, `HEX`, `PATH`, `BID`, `type_tag`, `PRIM`
+- **Lexeme definitions** — `NAME`, `INT`, `FLOAT`, `STRING`, `HexU32`, `PATH`, `BID`, `type_tag`, `PRIM`
 
 **Out of scope.** Runtime semantics live in `SPEC.md` §§13.14 / 14 / 15:
 
@@ -64,27 +64,66 @@ Each block carries a single source pointer of the form `;  (§N.M, NNN-MM)` citi
 
 ### Lexeme conventions
 
-IR text is line-oriented but not layout-sensitive: indentation is purely cosmetic and does not synthesize tokens. Tokens are separated by whitespace; line breaks separate top-level statements. **Within a behavior block** (`behavior B@… { … }`), instructions may be separated either by physical line breaks *or* by an explicit `;` separator — both forms are normative (see `InstrSep` in §4). The two are interchangeable; the `;` form lets a single physical line hold multiple instructions (as the worked example in §5 demonstrates). All `NAME`, `INT`, `FLOAT`, `STRING`, `HEX`, `PATH`, `BID`, `PRIM`, and `type_tag` lexemes are defined in §2.
+IR text is line-oriented but not layout-sensitive: indentation is purely cosmetic and does not synthesize tokens. Tokens are separated by whitespace; line breaks separate top-level statements. **Within a behavior block** (`behavior B@… { … }`), instructions may be separated either by physical line breaks *or* by an explicit `;` separator — both forms are normative (see `InstrSep` in §4). The two are interchangeable; the `;` form lets a single physical line hold multiple instructions (as the worked example in §5 demonstrates). All `NAME`, `INT`, `FLOAT`, `STRING`, `HexU32`, `PATH`, `BID`, `PRIM`, and `type_tag` lexemes are defined in §2.
 
 ## 2. Lexeme definitions
 
-The IR text form's terminals. `NAME`, `INT`, `FLOAT`, `STRING`, and `HEX` are the **obvious lexemes** (per SPEC §15.4.6): identifier, decimal integer literal, floating-point literal, double-quoted string literal, and hexadecimal digit sequence respectively. Their concrete syntax is the conventional one; the IR loader is expected to match the standard forms. The remaining lexemes — `PATH`, `BID`, `type_tag`, and `PRIM` — are defined formally below.
+The IR text form's terminals. `NAME`, `INT`, `FLOAT`, and `STRING` are the primitive lexemes (per SPEC §15.4.6); each is pinned to an exact character rule below — none of them is left to "the conventional form". The remaining lexemes — `PATH`, `BID`, `HexU32`, `type_tag`, and `PRIM` — are defined formally further below.
+
+**No comments.** The text form admits no comment syntax of any kind — no line comment, no block comment, no ignorable-text production. Every byte of a `.duir` file belongs to the grammar (033-246). The `//` lines in this document are EBNF metalanguage, not `.duir` syntax; explanatory prose about a module lives outside the module, beside its witness test.
+
+**Dot ownership (lexer vs parser).** The lexer never composes a dotted lexeme: it emits `Ident`, `Dot`, and `Int` tokens, and both dotted `PATH`s (`App.count`) and dotted op mnemonics (`add.i32`, `const.i32`, `cast.i64.i32`, `tuple.make`) are composed by the parser (033-253). Position always disambiguates the two: a mnemonic heads an `instr_rhs`, a `PATH` never does. So the "one token or three" question has one answer — three tokens, always, composed above the lexer.
 
 ```ebnf
 NAME             ::= /* identifier — letters, digits, '_'; not starting with a digit */
                    ;  (§15.4.6, 033-168)
 
-INT              ::= /* decimal integer literal */
-                   ;  (§15.4.6, 033-168)
+INT              ::= /* optionally signed decimal integer literal — the sign,
+                        when present, is a leading '-' INSIDE the lexeme */
+                   ;  (§15.4.6, 033-247)
 
-FLOAT            ::= /* floating-point literal (used in behavior IR literals only) */
-                   ;  (§15.4.4, 033-212)
+FLOAT            ::= '-'? Digit+ '.' Digit+
+                   ;  (§15.4.6, 033-248)
 
-STRING           ::= /* double-quoted string literal */
-                   ;  (§15.4.6, 033-168)
+Digit            ::= /* '0'..'9' */
+                   ;  (§15.4.6, 033-248)
 
-HEX              ::= /* one or more hexadecimal digits [0-9a-fA-F] */
-                   ;  (§15.4.4, 033-167)
+STRING           ::= '"' (Raw | Escape)* '"'
+                   ;  (§15.4.6, 033-249)
+
+Raw              ::= /* any Unicode scalar except '"' and '\' — raw newlines
+                        and raw tabs ARE legal */
+                   ;  (§15.4.6, 033-249)
+
+Escape           ::= '\"' | '\\' | '\n' | '\r' | '\t'
+                   | '\u{' HexScalar '}'
+                   ;  (§15.4.6, 033-249)
+
+HexScalar        ::= /* 1..6 hexadecimal digits [0-9a-fA-F] naming a
+                        Unicode scalar */
+                   ;  (§15.4.6, 033-249)
+
+// The text form has no unary-minus production and no expression
+// machinery: a negative `init`, a negative fold `else`, and a negative
+// behavior-body constant are all spelled inside the lexeme —
+// `init -5`, `else -1`, `const.i32 -5` (033-247).
+//
+// FLOAT carries decimal digits on BOTH sides of a mandatory dot and has
+// NO exponent form; it is valid wherever a `value` (§3) or a `literal`
+// (§4) is admitted — not in behavior literals alone. A float-typed
+// position additionally admits the three spellings 'nan', 'inf', and
+// '-inf', so every float value has a text form. The canonical emitter
+// output (shortest round-trip decimal, never exponent form) always fits
+// the FLOAT lexeme (033-248).
+//
+// **STRING canonical emission.** Raw wherever raw is legal, with four
+// exceptions: '"' emits '\"', '\' emits '\\', a carriage return emits
+// '\r' (a raw CR would not survive file-level newline normalization),
+// and a control scalar other than newline and tab emits '\u{…}';
+// newline and tab emit RAW. Every str value is therefore spellable
+// (totality) and has exactly one canonical spelling (uniqueness). A
+// non-canonical spelling parses but is not what the emitter writes —
+// exactly as with non-canonical key quoting (033-249).
 ```
 
 A **PATH** is a cell or instance fully-qualified declaration path: a dot-separated sequence of segments naming the lexical nesting from module root through enclosing instances to the cell or instance name. Segments are lexical identifiers; a `repeat` scope contributes a keyed multiplicity segment — the scope key's stringified `StringifiableKey` form, bare or single-quoted per §15.4.1.1's canonical-quoting rule. Anonymous or duplicated sibling placements append an ordinal suffix `':' INT` (zero-based, declaration-order index among siblings of the same type at the same nesting depth).
@@ -100,8 +139,9 @@ PathSegment      ::= NAME (':' INT)?
 KeySegment       ::= BareKey | QuotedKey
                    ;  (§15.4.1.1, 033-243)
 
-BareKey          ::= /* nonempty run of characters excluding '.', ':',
-                        single-quote, backslash, and whitespace */
+BareKey          ::= /* a nonempty identifier-shaped run — letters, digits,
+                        '_'; not starting with a digit. Any other key
+                        renders as a QuotedKey. */
                    ;  (§15.4.1.1, 033-243)
 
 QuotedKey        ::= /* single-quote, then any characters with \'
@@ -112,16 +152,17 @@ QuotedKey        ::= /* single-quote, then any characters with \'
 // the tail — e.g. 'App.print:0.text' has the ordinal on the middle
 // component naming an anonymous effect instance. See 033-130 / 033-133.
 // A KeySegment is a repeat scope key's stringified StringifiableKey
-// form (033-243): bare when nonempty and free of '.', ':',
-// single-quote, backslash, and whitespace; single-quoted otherwise.
+// form (033-243): bare iff it is identifier-shaped — the NAME charset
+// exactly, nothing more and nothing less — single-quoted otherwise.
 // Quoting is canonical — producers emit bare whenever bare is
-// available. A BareKey that also lexes as NAME is indistinguishable
-// from a name segment in isolation; the graph structure decides which
-// path positions are keyed-scope positions, so the loader needs no
-// distinction. A KeySegment carries no ordinal suffix.
+// available. A BareKey therefore always lexes as NAME and is
+// indistinguishable from a name segment in isolation; the graph
+// structure decides which path positions are keyed-scope positions, so
+// the loader needs no distinction. A KeySegment carries no ordinal
+// suffix. A purely numeric key is NOT identifier-shaped and so quotes.
 // e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.text',
-// 'App.rows.42.render_row', and — quoted key spelled without the
-// surrounding example quotes — App.rows.'us-east.1'.render_row
+// and — quoted keys spelled without the surrounding example quotes —
+// App.rows.'42'.render_row, App.rows.'us-east.1'.render_row
 ```
 
 A **BID** is a behavior handle — the behavior's `u32` handle (§14.6.3) rendered in hexadecimal, prefixed by `'B@'`. It is the compact runtime reference; the behavior's wide content-addressed identity is not spelled in the text form.
@@ -130,7 +171,8 @@ A **BID** is a behavior handle — the behavior's `u32` handle (§14.6.3) render
 BID              ::= 'B@' HexU32
                    ;  (§15.4.4, 033-167)
 
-HexU32           ::= /* 1..8 hexadecimal digits — encodes a u32 behavior handle */
+HexU32           ::= /* 1..8 hexadecimal digits [0-9a-fA-F] — encodes a u32
+                        behavior handle */
                    ;  (§14.6.3, 033-167)
 
 // e.g. 'B@d1', 'B@aa10'. The hex run is bounded to ≤ 8 digits
@@ -171,7 +213,9 @@ type_tag         ::= PRIM
 
 ## 3. Module text grammar
 
-The normative text form of the module-level IR (§15.4.1's abstract data model). Lifted verbatim from SPEC §15.4.6. `NAME`, `INT`, `FLOAT`, `STRING`, and `HEX` are the obvious lexemes from §2; `PATH` is the cell/instance path (§15.4.1.1); `BID` is the behavior handle (§15.4.4); `type_tag` is the type-erased graph tag (§15.4.3).
+The normative text form of the module-level IR (§15.4.1's abstract data model). Lifted verbatim from SPEC §15.4.6. `NAME`, `INT`, `FLOAT`, and `STRING` are the lexemes pinned in §2; `PATH` is the cell/instance path (§15.4.1.1); `BID` is the behavior handle (§15.4.4); `type_tag` is the type-erased graph tag (§15.4.3).
+
+**Entry termination (normative).** In the `types`, `graph`, and `behaviors` sections a NEWLINE terminates an entry — one `type_def`, one `entry`, one `behavior` per line (033-250). Consecutive NEWLINEs collapse, so blank lines between entries are insignificant. No other entry separator is admitted at these levels: `;` is admitted only *inside* a behavior block, where it separates instructions sharing one physical line (`InstrSep`, §4). The terminator is what makes an entry's optional trailing clauses unambiguous — a `cell` line's trailing `gate PATH` clause cannot swallow the `gate` entry on the next line. The NEWLINE is omitted from the productions below only to keep every line readable; it is normative wherever this paragraph names it, exactly as if each `type_def`, `entry`, and `behavior` were written `… NEWLINE`.
 
 ```ebnf
 module           ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
@@ -250,15 +294,16 @@ member_set       ::= '[' (member (',' member)*)? ']'
 member           ::= PATH ':' member_driver
                    ;  (§15.4.6, 033-81)
 
-member_driver    ::= 'permanent' | 'keyed-template' | 'gate-guarded'
+member_driver    ::= 'permanent' | 'keyed_template' | 'gate_guarded'
                    ;  (§15.4.6, 033-81)
 
 // A 'members' set lists the member edges in member order (walk order
 // for a membership-descriptor cell), each PATH naming the member cell
 // and each tag naming its membership driver — 'permanent' (a static
-// position), 'keyed-template' (a repeat-driven position, present per
-// key), or 'gate-guarded' (a gated-arm position, present iff its gate
-// is effectively active).
+// position), 'keyed_template' (a repeat-driven position, present per
+// key), or 'gate_guarded' (a gated-arm position, present iff its gate
+// is effectively active). The three tags are snake_case keywords in the
+// NAME charset; no driver tag contains a hyphen (033-81).
 //
 // **Boundary ambiguity note.** A 'member' pair separator is ':' and a
 // PATH segment may itself end with a "(':' INT)?" ordinal suffix. The
@@ -340,16 +385,40 @@ lookback_map     ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
 // maximum lookback k, driving per-input history allocation. Empty for a
 // non-recurrent stream and for a recurrent stream whose body calls no
 // `.past` on inputs (033-118).
+//
+// **Scope of the colon-ordinal disambiguator.** The "next token is INT →
+// ordinal; NAME → pair separator" rule stated under reopen_set applies
+// to reopen_set ONLY. It cannot apply here, where BOTH sides of a pair's
+// colon-INT are integers: in a lookback_map entry the LAST ':' INT of
+// the entry is the lookback value, and any earlier ':' INT belongs to
+// the key PATH. An ordinal-suffixed lookback key therefore stays
+// expressible — 'App.print:0 : 3' is the cell 'App.print:0' at
+// lookback 3.
 
-binding          ::= NAME ':' (PATH | value)
-                   ;  (§15.4.6, 033-168)
+binding          ::= NAME ':' (PATH | value) ('@' provenance)?
+                   ;  (§15.4.6, 033-252)
+
+provenance       ::= 'bound' | 'constant_wrap' | 'bridge'
+                   ;  (§15.4.6, 033-252)
+
+// The '@'-suffixed provenance marker on an effect's 'params' binding (or
+// a wire's 'attrs' binding) records how the cell argument was
+// materialized under the uniform cell-argument rule (§13.17.3). It is
+// part of the normative text form — the '@' token belongs to the text
+// form's inventory — and is optional metadata on the binding, never a
+// distinct binding case (033-252).
+// e.g. 'params [message: App.label@bound]'.
 
 value            ::= INT | FLOAT | 'true' | 'false' | STRING
-                   ;  (§15.4.6, 033-168 / 033-212)
+                   | 'nan' | 'inf' | '-inf'
+                   ;  (§15.4.6, 033-168 / 033-212 / 033-248)
 
 // value is a compile-time literal (the placement_binding_kind is either
 // 'static' (value literal) or 'reactive' (PATH referencing source cells);
-// per §13.8.4 / §15.4.1).
+// per §13.8.4 / §15.4.1). The three alternatives 'nan', 'inf', and
+// '-inf' are TYPE-GATED: they are admitted only where the position's
+// type is a float ('f32'/'f64'), and rejected elsewhere by the
+// load-time type check, not by the grammar (033-248).
 ```
 
 ## 4. Behavior IR text grammar
@@ -380,9 +449,19 @@ InstrSep         ::= ';' | NEWLINE                            // intra-block sep
 // physical line terminator (the IR text form is line-oriented, but
 // `;` overrides the line shape).
 
-instr            ::= '%' NAME '=' instr_rhs (':' type_tag)?  // typed-result form
+instr            ::= '%' (NAME | INT) '=' instr_rhs (':' type_tag)?
+                                                              // typed-result form
                    | instr_rhs                                // void/effect-result form
-                   ;  (§15.4.4, 033-208)
+                   ;  (§15.4.4, 033-208 / 033-251)
+
+// An SSA temporary is named '%' (NAME | INT): digit-named temporaries
+// like '%0', '%1', '%42' are first-class alongside identifier-named
+// ones, and the form holds at EVERY SSA reference position — the
+// instruction result here, 'operand', a 'move' operand, 'call.dyn''s
+// receiver, and a 'cond_br' or 'switch' scrutinee (033-251). The '%'
+// prefixing a TYPE id ('%TypeId' in 'type_tag', 'enum.make',
+// 'record.make') is a different, unrelated use of the sigil and always
+// takes a NAME.
 
 instr_rhs        ::= op_application
                    | call_rhs                                 // 'call' f(args), 'call.dyn' obj #method(args)
@@ -397,8 +476,8 @@ op_application   ::= op ( operand (',' operand)* )?           // comma-separated
                    ;  (§15.4.4, 033-211)
 
 call_rhs         ::= 'call' callee '(' operand_list? ')'
-                   | 'call.dyn' '%' NAME '#' NAME '(' operand_list? ')'
-                   ;  (§15.4.4, 033-211)
+                   | 'call.dyn' '%' (NAME | INT) '#' NAME '(' operand_list? ')'
+                   ;  (§15.4.4, 033-211 / 033-251)
 
 callee           ::= NAME                                    // direct call by behavior NAME (frontend-resolved)
                    | BID                                     // direct call by BID
@@ -428,19 +507,19 @@ raw_alloc_rhs    ::= 'raw_alloc' '<' type_tag '>' '(' operand ')'
 operand_list     ::= operand (',' operand)*
                    ;  (§15.4.4, 033-211)
 
-operand          ::= '%' NAME                                // SSA result reference
+operand          ::= '%' (NAME | INT)                        // SSA result reference
                    | NAME                                    // bare param name (entry-block parameter)
-                   | 'move' '%' NAME
+                   | 'move' '%' (NAME | INT)
                    | 'move' NAME                             // move of a bare param
                    | literal
-                   ;  (§15.4.4, 033-209)
+                   ;  (§15.4.4, 033-209 / 033-251)
 
 terminator       ::= 'br' LABEL paren_args?
-                   | 'cond_br' '%' NAME ',' LABEL paren_args? ',' LABEL paren_args?
-                   | 'switch' '%' NAME switch_table
+                   | 'cond_br' '%' (NAME | INT) ',' LABEL paren_args? ',' LABEL paren_args?
+                   | 'switch' '%' (NAME | INT) switch_table
                    | 'ret' operand
                    | 'trap' STRING
-                   ;  (§15.4.4, 033-210)
+                   ;  (§15.4.4, 033-210 / 033-251)
 
 // Every block ends in exactly one terminator. 'match' lowers to
 // 'enum.tag' + 'switch'. 'trap' is the only non-'ret' exit
@@ -487,10 +566,17 @@ CompareOp        ::= 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
 // `op` enumeration here.
 
 literal          ::= INT | FLOAT | 'true' | 'false' | STRING
-                   ;  (§15.4.4, 033-212)
+                   | 'nan' | 'inf' | '-inf'
+                   ;  (§15.4.4, 033-212 / 033-248)
 
-// 'literal' matches the same lexemes as the module grammar's 'value',
-// with FLOAT additionally permitted for floating-point constants.
+// 'literal' matches exactly the same lexemes as the module grammar's
+// 'value' — the two productions are identical, FLOAT included; 'value'
+// is not the INT-only subset an earlier note implied. The three float
+// spellings 'nan', 'inf', and '-inf' are type-gated in both: admitted
+// only in a float-typed position, rejected elsewhere by the load-time
+// type check rather than by the grammar (033-248). Signs live inside
+// the INT and FLOAT lexemes, so 'const.i32 -5' is one operand, not a
+// negation (033-247).
 
 LABEL            ::= 'bb' INT
                    ;  (§15.4.4, 033-213)
@@ -505,7 +591,7 @@ LABEL            ::= 'bb' INT
 // statement (after a NEWLINE / EOF / `}`), while an `instr`'s `:`
 // follows an `instr_rhs` (after operands, never at statement start).
 // Implementers should not need lookahead: the leading token (`LABEL`
-// vs `'%' NAME` / op keyword) disambiguates.
+// vs `'%' (NAME | INT)` / op keyword) disambiguates.
 ```
 
 ## 5. Worked example
@@ -587,14 +673,24 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | Production | SPEC § | LOG |
 |------------|--------|-----|
 | `NAME` | §15.4.6 | 033-168 |
-| `INT` | §15.4.6 | 033-168 |
-| `FLOAT` | §15.4.4 | 033-212 |
-| `STRING` | §15.4.6 | 033-168 |
-| `HEX` | §15.4.4 | 033-167 |
-| `PATH` | §15.4.1.1 | 033-130 / 033-133 / 033-243 (mid-path ordinal for anonymous effect instances, see worked example `App.print:0.text`; keyed-scope multiplicity segment, bare or single-quoted) |
+| `INT` | §15.4.6 | 033-168 / 033-247 (sign inside the lexeme) |
+| `FLOAT` | §15.4.6 | 033-248 (`-? digits '.' digits`, no exponent; `nan`/`inf`/`-inf` spellings) |
+| `STRING` | §15.4.6 | 033-249 (raw scalars incl. newline/tab; six escapes; canonical emission) |
+| `Digit` | §15.4.6 | 033-248 |
+| `Raw` | §15.4.6 | 033-249 |
+| `Escape` | §15.4.6 | 033-249 |
+| `HexScalar` | §15.4.6 | 033-249 |
+| `PATH` | §15.4.1.1 | 033-130 / 033-133 / 033-243 (mid-path ordinal for anonymous effect instances, see worked example `App.print:0.text`; keyed-scope multiplicity segment, bare iff identifier-shaped, single-quoted otherwise) |
+| `PathSegment` | §15.4.1.1 | 033-133 / 033-243 |
+| `KeySegment` | §15.4.1.1 | 033-243 |
+| `BareKey` | §15.4.1.1 | 033-243 (identifier charset exactly) |
+| `QuotedKey` | §15.4.1.1 | 033-243 |
 | `BID` | §15.4.4 | 033-167 |
+| `HexU32` | §14.6.3 | 033-167 |
 | `PRIM` | §15.4.6 | 033-43 |
 | `type_tag` | §15.4.6 | 033-43 / 033-79 |
+
+The lexical laws that constrain no single production — **no comments** (033-246) and **lexer/parser dot ownership** (033-253) — are stated in §2's preamble.
 
 ### §3 — Module text grammar
 
@@ -622,9 +718,12 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `path_set` | §15.4.6 | 033-168 |
 | `binding_set` | §15.4.6 | 033-168 |
 | `reopen_set` | §15.4.6 | 033-75 |
-| `lookback_map` | §15.4.6 | 033-117 |
-| `binding` | §15.4.6 | 033-168 |
-| `value` | §15.4.6 | 033-168 / 033-212 |
+| `lookback_map` | §15.4.6 | 033-117 (last `':' INT` of an entry is the lookback value) |
+| `binding` | §15.4.6 | 033-168 / 033-252 (optional `'@' provenance` clause) |
+| `provenance` | §15.4.6 | 033-252 |
+| `value` | §15.4.6 | 033-168 / 033-212 / 033-248 |
+
+Entry termination in the `types`/`graph`/`behaviors` sections is NEWLINE (033-250), stated normatively in §3's preamble rather than repeated on every production.
 
 ### §4 — Behavior IR text grammar
 
@@ -633,12 +732,12 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `behavior` | §15.4.4 | 033-205 |
 | `params` | §15.4.4 | 033-206 / 033-203 |
 | `block` | §15.4.4 | 033-207 |
-| `instr` | §15.4.4 | 033-208 |
-| `operand` | §15.4.4 | 033-209 |
-| `terminator` | §15.4.4 | 033-210 |
+| `instr` | §15.4.4 | 033-208 / 033-251 (`'%' (NAME \| INT)`) |
+| `operand` | §15.4.4 | 033-209 / 033-251 |
+| `terminator` | §15.4.4 | 033-210 / 033-251 |
 | `paren_args` | §15.4.4 | 033-183 / 033-184 |
 | `switch_table` | §15.4.4 | 033-185 |
 | `switch_case` | §15.4.4 | 033-185 |
-| `op` | §15.4.4 | 033-211 |
-| `literal` | §15.4.4 | 033-212 |
+| `op` | §15.4.4 | 033-211 / 033-253 (dotted mnemonics composed by the parser) |
+| `literal` | §15.4.4 | 033-212 / 033-248 |
 | `LABEL` | §15.4.4 | 033-213 |

@@ -5,8 +5,8 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: 2 (ductus-ir core types: value/path/diag)
-phase: review
+increment: 3 (text foundations: token vocabulary, lexer skeleton, parser/emitter drivers)
+phase: planning
 
 ## State notes
 - Hook ENFORCING this file since 2026-08-01 (R12a): .claude/settings.json → .claude/hooks/
@@ -40,3 +40,8 @@ phase: review
   doc/plan" + rulings F-A(i)/F-B(i)/F-C + R30/R31 style law → STYLE.md created,
   R30–R34 recorded; phase: build for remediation (mechanical fixes + R30/R31
   restructure).
+- 2026-08-02 — "approved, committed and merged. continue." → increment 2 CLOSED (owner
+  commit d5aa03e). Gate moves to increment 3 (text foundations), phase: planning.
+- 2026-08-02 — "proceed." → FND execution batch authorized (R35–R45 into
+  DECISION_LOG/IR_GRAMMAR/SPEC, LOG-first; docs are ungated — logged here for the
+  audit trail). Lexer increment plan follows the batch.
