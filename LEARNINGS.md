@@ -8,7 +8,7 @@ Accumulated, granular preferences and working rules for this project. One atomic
 
 3. Don't trust memory across the large spec: With ~4185 decisions in DECISION_LOG.md and a huge SPEC.md, do not cite IDs or "the spec says X" from recall — verify, and delegate exhaustive sweeps to read-only subagents so my context stays lean. Example: I mis-cited "017-219" for the "never a value" parallel; the real ones were 017-139 and 031-5, found by a blast-radius pass.
 
-4. Approval is literal: Only "approve"/"approved" counts as approval. "yes do it", "resume", etc. do not authorize implementation. Gather all required answers first, then wait for explicit approval.
+4. Approval is literal: Only "approve"/"approved" counts as approval. "yes do it", "resume", etc. do not authorize implementation. Gather all required answers first, then wait for explicit approval. Vocabulary extension (owner, 2026-08-02): "confirmed"/"confirm" ON A DECISION ITEM means approval of the RECOMMENDED option for that item; it is not implementation approval.
 
 5. Edit protocol is DECISION_LOG-first: For any spec change, amend DECISION_LOG.md first, then conform the referenced SPEC.md section. Never renumber or reuse IDs; new decisions take the next free integer (confirmed at edit time, not from memory), placed by topic. Divergence between log and spec is a defect.
 

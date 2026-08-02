@@ -5,6 +5,7 @@
 pub mod behaviors;
 pub mod diag;
 pub mod graph;
+pub mod module;
 pub mod path;
 pub mod text;
 pub mod types;

@@ -146,3 +146,22 @@ any scalar except quote/backslash" (CR included as written). A future implemente
 the corpus builds a different lexer. Recommendation: amend the STRING law's raw-scalar
 clause (lone CR excluded from raw; CRLF normalizes) and add the intake paragraph (BOM,
 whitespace set) to IR_GRAMMAR §1/§2 + SPEC mirror, LOG-first.
+
+## FND-16 — graph_section arity: `scope+` vs the empty module. OPEN (ruling due before row 7)
+IR_GRAMMAR §3's `graph_section ::= 'graph' '{' scope+ '}'` requires at least one scope,
+so the minimal module `module App { types {} graph {} behaviors {} }` — increment 4's
+round-trip witness — is outside the grammar as written. Options: (a) parser enforces
+`scope+` (the minimal witness gains a dummy scope; empty graphs unrepresentable);
+(b) relax the production to `scope*` (empty graph legal; the loader may still reject
+empty modules as it sees fit); (c) keep `scope+` in the grammar, move arity to the
+loader under F4 (parser over-admits by design). Due at increment 7 (scope row) planning.
+
+## FND-17 — IR_GRAMMAR §5's worked example is not R54-canonical. OPEN (ruling due BEFORE row 5)
+§5 uses column alignment (`input     App.count   : i32  init 0`), double spaces before
+clauses, blank lines between entry groups, and a one-line non-empty `types { … }`; R54's
+canon is two-space indent, one entry per line, single spaces. `emit(parse(§5)) == §5`
+cannot hold. Options: (a) re-canonicalize §5 to machine canon (doc loses its aligned
+readability); (b) emitter adopts alignment as canon (complex, fragile); (c) §5 stays a
+pretty, PARSEABLE documentation example — the canonical-form oracle moves to corpus
+witness files, and R54's "§5 is the oracle" clause is struck. Recommendation: (c) — docs
+serve human reading, corpus witnesses serve the byte gate; degrading the doc buys nothing.

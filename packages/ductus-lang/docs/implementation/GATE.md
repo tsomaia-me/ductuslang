@@ -5,7 +5,7 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: 3 (the complete .duir lexer: text/token + text/lexer)
+increment: 4 (parser + emitter foundations; the module-header vertical)
 phase: review
 
 ## State notes
@@ -61,3 +61,13 @@ phase: review
   with one recognizer per file + folder-private chars/payload/test_support; 79 tests
   held; four gates green; orchestrator verified tree + seam files). phase: review —
   beat 4 re-runs.
+- 2026-08-02 — "approved. committed and pushed. continue." → increment 3 CLOSED (owner
+  commit; first HARD REJECT survived — R52 rework accepted on second review). Gate moves
+  to increment 4, phase: planning.
+- 2026-08-02 — "confirmed." → increment 4 plan confirmed (R53/R54/R55 + stated details:
+  expect_word soft-keyword helpers, module-level newline tolerance, `types {}` empty-form
+  canon, one trailing \n, no behavior-body parsing in M0). phase: build.
+- 2026-08-02 — increment 4 build + 2-reviewer pass + 15-fix remediation complete (98
+  tests, four gates; first corpus witness module_header.duir + conformance test; parse
+  takes Vec<Token> moving payloads; covering() hardened; property test live). FND-16/17
+  filed. phase: review — beat 4: owner hand review + "approved" → commit.

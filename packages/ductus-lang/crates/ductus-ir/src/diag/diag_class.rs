@@ -41,6 +41,11 @@ pub enum DiagClass {
     InvalidBid,
     /// A carriage return stands alone — not the `\r` of a `\r\n` pair.
     LoneCarriageReturn,
+    /// A token is not what the grammar admits at its position.
+    ///
+    /// The single parse-error class — semantic legality classes belong to the
+    /// loader (F4).
+    UnexpectedToken,
 }
 
 impl DiagClass {
@@ -62,6 +67,7 @@ impl DiagClass {
             DiagClass::InvalidCharacter => "invalid_character",
             DiagClass::InvalidBid => "invalid_bid",
             DiagClass::LoneCarriageReturn => "lone_carriage_return",
+            DiagClass::UnexpectedToken => "unexpected_token",
         }
     }
 }
@@ -92,6 +98,7 @@ mod tests {
         assert_eq!(DiagClass::InvalidCharacter.id(), "invalid_character");
         assert_eq!(DiagClass::InvalidBid.id(), "invalid_bid");
         assert_eq!(DiagClass::LoneCarriageReturn.id(), "lone_carriage_return");
+        assert_eq!(DiagClass::UnexpectedToken.id(), "unexpected_token");
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a
