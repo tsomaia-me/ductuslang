@@ -215,7 +215,7 @@ type_tag         ::= PRIM
 
 The normative text form of the module-level IR (§15.4.1's abstract data model). Lifted verbatim from SPEC §15.4.6. `NAME`, `INT`, `FLOAT`, and `STRING` are the lexemes pinned in §2; `PATH` is the cell/instance path (§15.4.1.1); `BID` is the behavior handle (§15.4.4); `type_tag` is the type-erased graph tag (§15.4.3).
 
-**Entry termination (normative).** In the `types`, `graph`, and `behaviors` sections a NEWLINE terminates an entry — one `type_def`, one `entry`, one `behavior` per line (033-250). Consecutive NEWLINEs collapse, so blank lines between entries are insignificant. No other entry separator is admitted at these levels: `;` is admitted only *inside* a behavior block, where it separates instructions sharing one physical line (`InstrSep`, §4). The terminator is what makes an entry's optional trailing clauses unambiguous — a `cell` line's trailing `gate PATH` clause cannot swallow the `gate` entry on the next line. The NEWLINE is omitted from the productions below only to keep every line readable; it is normative wherever this paragraph names it, exactly as if each `type_def`, `entry`, and `behavior` were written `… NEWLINE`.
+**Entry termination (normative).** In the `types`, `graph`, and `behaviors` sections a NEWLINE terminates an entry — one `type_def`, one `entry`, one `behavior` per line (033-250). Consecutive NEWLINEs collapse, so blank lines between entries are insignificant. No other entry separator is admitted at these levels; the enclosing section's closing `}` also terminates a final entry that shares its line, as in the one-line `types { %Request = … align 8 }` of §5. An entry carrying a **braced body** — a `scope`, a `behavior` — is terminated by the NEWLINE after its closing `}` and may span physical lines between its braces, where the body's own rules govern: inside a behavior block a NEWLINE is an instruction separator, not an entry terminator, and `;` is admitted there and nowhere else (`InstrSep`, §4). The terminator is what makes a brace-less entry's optional trailing clauses unambiguous — a `cell` line's trailing `gate PATH` clause cannot swallow the `gate` entry on the next line. The NEWLINE is omitted from the productions below only to keep every line readable; it is normative wherever this paragraph names it, exactly as if each `type_def`, `entry`, and `behavior` were written `… NEWLINE`.
 
 ```ebnf
 module           ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
@@ -571,7 +571,7 @@ literal          ::= INT | FLOAT | 'true' | 'false' | STRING
 
 // 'literal' matches exactly the same lexemes as the module grammar's
 // 'value' — the two productions are identical, FLOAT included; 'value'
-// is not the INT-only subset an earlier note implied. The three float
+// does not omit FLOAT, as an earlier note implied. The three float
 // spellings 'nan', 'inf', and '-inf' are type-gated in both: admitted
 // only in a float-typed position, rejected elsewhere by the load-time
 // type check rather than by the grammar (033-248). Signs live inside
@@ -636,8 +636,7 @@ module App {
 
       derived   App.print:0.text    : str                  uses B@d5 inputs [App.label]
       derived   App.print:0.request : pool_index<%Request> uses B@d6 inputs [App.label]
-      effect App.print:0  reconciler "print"  params [message: App.label]
-                          desired [App.print:0.text, App.print:0.request]  gate App.g0
+      effect App.print:0  reconciler "print"  params [message: App.label]  desired [App.print:0.text, App.print:0.request]  gate App.g0
     }
   }
 

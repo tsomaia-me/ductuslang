@@ -45,3 +45,6 @@ phase: planning
 - 2026-08-02 — "proceed." → FND execution batch authorized (R35–R45 into
   DECISION_LOG/IR_GRAMMAR/SPEC, LOG-first; docs are ungated — logged here for the
   audit trail). Lexer increment plan follows the batch.
+- 2026-08-02 — "confirmed." → D2 NEWLINE scoping confirmed (braced-body entries terminate
+  after their closing brace; section-final same-line entry legal); FND batch cleared for
+  commit. Next: the lexer increment plan (beat 2) for increment 3.

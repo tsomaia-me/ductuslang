@@ -19367,7 +19367,7 @@ operation:
    ≠ previous-commit value." A membership change of a fold cell's or
    membership-descriptor cell's member set (§13.21.7, §13.20.4.3) is
    likewise a dirty root computed in this step, named by its cause —
-   a gate transition on a gate-guarded member, or the `repeat` re-key
+   a gate transition on a gate_guarded member, or the `repeat` re-key
    diff on keyed members — and it dirties the owning cell exactly as
    an input value change would. The `repeat` structural consequence
    applies with this diff: `scope_drop` for departed keys and
@@ -19404,7 +19404,7 @@ operation:
    keeps reading prior-commit values — the suspension of contained
    effects on gate-close, and the membership dirty root a gate
    transition contributes to folds and membership descriptors with a
-   gate-guarded member (an instance of the same dirty-root rule).
+   gate_guarded member (an instance of the same dirty-root rule).
 3. **Evaluate in topological order.** For each node in topo order,
    invoke its behavior (per §14.6's ABI); a membership-descriptor
    node (§13.20.4.3) has no behavior — its evaluation re-derives its
@@ -24722,18 +24722,18 @@ member-cell's provenance follows the uniform cell-argument rule
 A `yield`'s **membership driver** is determined by its lexical position
 inside the `collect` block — the same three drivers the IR records
 (§15.4.1), one vocabulary in two registers: surface **permanent** = IR
-`permanent`, surface **key-driven** = IR `keyed-template`, surface
-**activation-driven** = IR `gate-guarded`. Surface names serve semantic
+`permanent`, surface **key-driven** = IR `keyed_template`, surface
+**activation-driven** = IR `gate_guarded`. Surface names serve semantic
 prose, IR names serve IR entry fields; neither register renames the
 other. The three:
 
 - **Permanent** (IR: `permanent`) — a `yield` at a static position
   (directly under `collect`, or under a compile-time-unrolled construct).
   The member is present for the group's whole lifetime.
-- **Key-driven** (IR: `keyed-template`) — a `yield` inside a `repeat`
+- **Key-driven** (IR: `keyed_template`) — a `yield` inside a `repeat`
   (§13.5.4) over a dynamic view. One member per live key; members join
   and leave as keys do.
-- **Activation-driven** (IR: `gate-guarded`) — a `yield` inside a gated
+- **Activation-driven** (IR: `gate_guarded`) — a `yield` inside a gated
   arm (`when`/`given`, a `Gated` exposition arm §13.3.7.7). The member is
   present iff its arm is *effectively active* (§13.9.7); a gated-off
   contribution is *absent* from the group, not a frozen present member
@@ -24906,7 +24906,7 @@ A group lowers to existing IR machinery, by consumption:
   **membership-descriptor cell**: a `derived`-kind graph cell with no
   behavior of its own, carrying the group's member edges in walk
   order, each edge tagged with its membership driver — `permanent`,
-  `keyed-template`, or `gate-guarded` (§15.4.1). The descriptor is
+  `keyed_template`, or `gate_guarded` (§15.4.1). The descriptor is
   typed `yielded<T>`, an ABI-only entry in the IR type vocabulary
   (§15.4.6): it gives a `yielded T` parameter its ABI signature and is
   never a user-facing value type. Member presence is derived per
@@ -24925,8 +24925,8 @@ change — dirty-rooted at the gate transition or the `repeat` re-key
 diff (§13.10.2) — dirties it exactly as an input value change would.
 Its evaluation is structural: the node re-derives its current live
 member list from its member edges' drivers — gate effective
-activation for gate-guarded members, the current key set for
-keyed-template members — and invokes no behavior; the descriptor has
+activation for gate_guarded members, the current key set for
+keyed_template members — and invokes no behavior; the descriptor has
 none.
 
 ### 13.21 The Fold Form
@@ -25075,8 +25075,8 @@ not a seventh graph primitive**: the graph's six-primitives count
 A fold-kind cell carries: the **combiner behavior id** (the `by:`
 combiner, a behavior handle §14.6.3); the **else value** (the
 empty-membership result); and the **member edges in member order**, each
-tagged with its **membership driver** — `permanent`, `keyed-template`, or
-`gate-guarded` (§15.4.1). The surface type is that of the enclosing
+tagged with its **membership driver** — `permanent`, `keyed_template`, or
+`gate_guarded` (§15.4.1). The surface type is that of the enclosing
 `derived` declaration.
 
 **Scheduling — a fold rides the derived machinery.** A fold cell is
@@ -25085,10 +25085,10 @@ derived dependency-edge list (§15.4.1), and it enters the per-commit
 DAG (§13.10.2) whenever a member value is dirty or its membership
 changes. A member join or leave dirties the fold exactly as an input
 value change does; the dirty root is named — the gate transition (for
-a gate-guarded member) or the `repeat` re-key diff (for keyed-template
+a gate_guarded member) or the `repeat` re-key diff (for keyed_template
 members), computed in the commit's dirty-set step (§13.10.2), so no
 new dirty bits arise after step 1. A gate-close that removes a
-gate-guarded member recomputes the fold **in that same commit**
+gate_guarded member recomputes the fold **in that same commit**
 without the departed member — symmetric with the gate-open snap
 (§13.9.8) and within the cost rule's O(log n) combine path
 (§13.21.5). In the reactive dependency graph (§13.11.1), a fold's
@@ -26029,8 +26029,8 @@ The graph is a structured record with the following entries.
   function, a behavior handle per §14.6.3); the **else value** (the
   empty-membership result, §13.21); and the **member edges** in member
   order, each tagged with its **membership driver** — `permanent` (a
-  static position), `keyed-template` (a `repeat`-driven position, present
-  per key), or `gate-guarded` (a gated-arm position, present iff its gate
+  static position), `keyed_template` (a `repeat`-driven position, present
+  per key), or `gate_guarded` (a gated-arm position, present iff its gate
   is effectively active, §13.9.7). The surface remains a `derived T`: the
   fold's result lives in a `derived` declaration and consumers see
   `derived T` (§13.21).
@@ -26228,13 +26228,16 @@ scope (§13.5.3) carries the scope key as its own path segment —
 stringified `StringifiableKey` form (§13.5.4.1). The `.<key>.`
 segment is a first-class multiplicity device of this grammar,
 alongside lexical name segments and the `:N` ordinal suffix. A
-stringified key renders **bare** iff it is nonempty and contains
-none of `.`, `:`, `'`, `\`, or whitespace; any other stringified
-form (a string key containing a dot, a `.` char key, the empty
-string, …) renders as a **single-quoted** segment in which `'` and
-`\` are escaped as `\'` and `\\`. Quoting is canonical — a
-producer uses the bare form whenever it is available — so equal keys
-render byte-identical cell IDs.
+stringified key renders **bare** iff it is **identifier-shaped** —
+letters, digits, and `_`, not starting with a digit, the identifier
+charset exactly, nothing more and nothing less; any other stringified
+form (a string key containing a dot or a space, a `.` char key, a
+purely numeric key such as `42`, the empty string, …) renders as a
+**single-quoted** segment in which `'` and `\` are escaped as `\'`
+and `\\`. Quoting is canonical — a producer uses the bare form
+whenever it is available — so equal keys render byte-identical cell
+IDs. A numeric `repeat` key therefore renders quoted:
+`App.rows.'42'.render_row`.
 
 **Interpreter-placed effect paths.** An effect that an interpretation
 places while walking a node's `.exposition` (the interpretation-bootstrap
@@ -26419,12 +26422,12 @@ behavior     ::= 'behavior' BID '(' params ')' '->' type_tag '{' block+ '}'
 params       ::= (('own')? NAME ':' type_tag) (',' ('own')? NAME ':' type_tag)*
 block        ::= LABEL ('(' params ')')? ':' ( instr InstrSep )* terminator
 InstrSep     ::= ';' | NEWLINE                  // multiple per line: ';'; one per line: NEWLINE
-instr        ::= '%'NAME '=' instr_rhs (':' type_tag)?   |  instr_rhs
+instr        ::= '%'(NAME|INT) '=' instr_rhs (':' type_tag)?  |  instr_rhs
 instr_rhs    ::= op_application | call_rhs | closure_rhs | enum_make_rhs
                | array_make_rhs | record_make_rhs | raw_alloc_rhs
 op_application  ::= op ( operand (',' operand)* )?
 call_rhs     ::= 'call' callee '(' operand_list? ')'
-               | 'call.dyn' '%'NAME '#' NAME '(' operand_list? ')'
+               | 'call.dyn' '%'(NAME|INT) '#' NAME '(' operand_list? ')'
 callee       ::= NAME | BID
 closure_rhs  ::= 'closure.make' BID 'captures' '{' capture_list? '}'
 capture_list ::= NAME ':' operand (',' NAME ':' operand)*
@@ -26434,10 +26437,11 @@ record_make_rhs ::= 'record.make' '%'NAME '{' field_init_list? '}'
 field_init_list ::= NAME ':' operand (',' NAME ':' operand)*
 raw_alloc_rhs   ::= 'raw_alloc' '<' type_tag '>' '(' operand ')'
 operand_list ::= operand (',' operand)*
-operand      ::= '%'NAME | NAME | 'move' '%'NAME | 'move' NAME | literal
+operand      ::= '%'(NAME|INT) | NAME | 'move' '%'(NAME|INT) | 'move' NAME
+               | literal
 terminator   ::= 'br' LABEL paren_args?
-               | 'cond_br' '%'NAME ',' LABEL paren_args? ',' LABEL paren_args?
-               | 'switch' '%'NAME switch_table
+               | 'cond_br' '%'(NAME|INT) ',' LABEL paren_args? ',' LABEL paren_args?
+               | 'switch' '%'(NAME|INT) switch_table
                | 'ret' operand
                | 'trap' STRING
 paren_args   ::= '(' operand (',' operand)* ')'
@@ -26455,6 +26459,7 @@ op           ::= 'const.' PRIM
                | 'clone' | 'drop'
                | 'raw_free' | 'raw_read' | 'raw_write'
 literal      ::= INT | FLOAT | 'true' | 'false' | STRING
+               | 'nan' | 'inf' | '-inf'         // float-typed positions only
 LABEL        ::= 'bb' INT                       // e.g. bb0, bb1, bb42
 BID          ::= 'B@' HEX+                      // the behavior's u32 handle (§14.6.3), in hex
 ```
@@ -26464,9 +26469,20 @@ forms — `call`, `call.dyn`, `closure.make`, `enum.make`, `array.make`,
 carrying its own operand syntax); typed variants (`add.i32`, `const.f64`,
 `cast.i32.i64`, …) are formed by suffixing the relevant `PRIM` per the prose
 above. `PRIM` and `type_tag` are defined by the
-module grammar (§15.4.6); `literal` matches the same lexemes as the module
-grammar's `value` (with `FLOAT` additionally permitted for floating-point
-constants).
+module grammar (§15.4.6); `literal` matches exactly the same lexemes as the
+module grammar's `value` — the two productions are identical, `FLOAT`
+included; `value` does not omit `FLOAT`. The three float
+spellings `nan`, `inf`, and `-inf` are type-gated in both: admitted only in
+a float-typed position, rejected elsewhere by the load-time type check
+rather than by the grammar (§15.4.6).
+
+An SSA temporary is named `'%'(NAME|INT)`: digit-named temporaries such as
+`%0`, `%1`, `%42` are first-class alongside identifier-named ones, and the
+form holds at every SSA reference position — the instruction result, an
+`operand`, a `move` operand, `call.dyn`'s receiver, and a `cond_br` or
+`switch` scrutinee. The `'%'` prefixing a *type* id (`'%'NAME` in
+`type_tag`, `enum.make`, `record.make`) is an unrelated use of the sigil
+and always takes a `NAME`.
 
 A `BID` renders the behavior's `u32` handle (§14.6.3) in hexadecimal — e.g.
 `B@d1`, `B@aa10`. It is the compact runtime reference; the behavior's wide
@@ -26515,8 +26531,7 @@ module App {
 
       derived   App.print:0.text    : str                  uses B@d5 inputs [App.label]
       derived   App.print:0.request : pool_index<%Request> uses B@d6 inputs [App.label]
-      effect App.print:0  reconciler "print"  params [message: App.label]
-                          desired [App.print:0.text, App.print:0.request]  gate App.g0
+      effect App.print:0  reconciler "print"  params [message: App.label]  desired [App.print:0.text, App.print:0.request]  gate App.g0
     }
   }
 
@@ -26562,10 +26577,73 @@ effect's suspend/resume gate.
 #### 15.4.6 IR module text grammar
 
 §15.4.4 gives the `behavior` grammar; this section gives the **module, type-table,
-and graph** grammar — the normative text form of §15.4.1's data model. `NAME`,
-`INT`, `FLOAT`, `STRING`, and `HEX` are the obvious lexemes; `PATH` is a cell/instance path
-(§15.4.1.1); `BID` is a behavior handle (§15.4.4); `type_tag` is the type-erased
-graph tag (§15.4.3).
+and graph** grammar — the normative text form of §15.4.1's data model. `PATH` is a
+cell/instance path (§15.4.1.1); `BID` is a behavior handle (§15.4.4); `type_tag` is
+the type-erased graph tag (§15.4.3). The primitive lexemes are pinned, not left to
+the conventional form:
+
+```ebnf
+NAME          ::= /* identifier — letters, digits, '_'; not starting with a digit */
+INT           ::= /* optionally signed decimal integer literal — the sign, when
+                     present, is a leading '-' INSIDE the lexeme */
+FLOAT         ::= '-'? Digit+ '.' Digit+
+Digit         ::= /* '0'..'9' */
+STRING        ::= '"' (Raw | Escape)* '"'
+Raw           ::= /* any Unicode scalar except '"' and '\' — raw newlines and
+                     raw tabs ARE legal */
+Escape        ::= '\"' | '\\' | '\n' | '\r' | '\t' | '\u{' HexScalar '}'
+HexScalar     ::= /* 1..6 hexadecimal digits [0-9a-fA-F] naming a Unicode scalar */
+HEX           ::= /* one or more hexadecimal digits [0-9a-fA-F]; a BID's run is
+                     bounded to 8, the width of a u32 handle */
+```
+
+The sign lives inside the `INT` and `FLOAT` lexemes: the text form has **no
+unary-minus production** and no expression machinery, so a negative initial
+value, a negative `else` value, and a negative behavior-body constant are all
+spelled by the lexeme — `init -5`, `else -1`, `const.i32 -5`. `FLOAT` carries
+decimal digits on both sides of a mandatory dot and has **no exponent form**; it
+is valid wherever a `value` (below) or a behavior-body `literal` (§15.4.4) is
+admitted, and a float-typed position additionally admits the spellings `nan`,
+`inf`, and `-inf`, so every float value has a text form. The canonical emitter
+output — shortest round-trip decimal, never exponent form — always fits the
+`FLOAT` lexeme.
+
+A `STRING`'s **canonical emission** is raw wherever raw is legal, with four
+exceptions: `"` emits `\"`, `\` emits `\\`, a carriage return emits `\r` (a raw
+CR would not survive file-level newline normalization), and a control scalar
+other than newline and tab emits `\u{…}`; newline and tab emit raw. Every `str`
+value is therefore spellable (totality) and has exactly one canonical spelling
+(uniqueness) — a non-canonical spelling parses but is not what the emitter
+writes, exactly as with non-canonical key quoting (§15.4.1.1).
+
+**No comments.** The text form admits no comment syntax of any kind — no line
+comment, no block comment, no ignorable-text production. Every byte of the file
+belongs to the grammar, because this is a serialization and not a human
+document; explanatory prose about a module lives outside the module, beside its
+witness test. (The `//` notes in this section's grammar blocks are EBNF
+metalanguage, not text-form syntax.)
+
+**Entry termination.** In the `types`, `graph`, and `behaviors` sections a
+NEWLINE terminates an entry — one `type_def`, one `entry`, one `behavior` per
+line. Consecutive NEWLINEs collapse, so blank lines between entries are
+insignificant, and no other entry separator is admitted at these levels; the
+enclosing section's closing `}` also terminates a final entry that shares its
+line, as in the one-line `types { … }` of §15.4.5. An entry carrying a
+**braced body** — a `scope`, a `behavior` — is terminated by
+the NEWLINE after its closing `}` and may span physical lines between its
+braces, where the body's own rules govern: inside a behavior block a NEWLINE is
+an instruction separator, not an entry terminator, and `;` is admitted there and
+nowhere else (§15.4.4's `InstrSep`). The terminator is what makes a brace-less
+entry's optional trailing clauses unambiguous — a `cell` line's trailing `gate
+PATH` clause cannot swallow the `gate` entry on the next line. It is omitted
+from the productions below only to keep them readable; it is normative
+regardless.
+
+**Dot ownership.** The lexer never composes a dotted lexeme: it emits
+identifier, dot, and integer tokens, and both dotted `PATH`s (`App.count`) and
+dotted op mnemonics (`add.i32`, `const.i32`, `cast.i64.i32`, `tuple.make`) are
+composed by the parser. Position always disambiguates the two — a mnemonic heads
+an instruction's right-hand side, a `PATH` never does.
 
 ```ebnf
 module        ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
@@ -26589,7 +26667,7 @@ cell          ::= cell_kind PATH ':' type_tag
 cell_kind     ::= 'input' | 'derived' | 'recurrent' | 'deferred' | 'fold'
 member_set    ::= '[' (member (',' member)*)? ']'
 member        ::= PATH ':' member_driver
-member_driver ::= 'permanent' | 'keyed-template' | 'gate-guarded'
+member_driver ::= 'permanent' | 'keyed_template' | 'gate_guarded'
 gate          ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set ('gate_parent' PATH)?
 wire          ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
                   ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
@@ -26616,6 +26694,7 @@ type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
 PRIM          ::= 'i8'|'i16'|'i32'|'i64'|'i128'|'u8'|'u16'|'u32'|'u64'|'u128'
                 | 'isize'|'usize'|'f32'|'f64'|'bool'|'str'
 value         ::= INT | FLOAT | 'true' | 'false' | STRING     // a compile-time literal
+                | 'nan' | 'inf' | '-inf'                      // float-typed positions only
 ```
 
 The module's three sections appear in order. The `types` table lists the
@@ -26630,7 +26709,7 @@ stored or recurrent cell an `init`. A `fold` cell (the lowering of the
 language fold form, §13.21) instead carries its `combiner` behavior
 handle (the `by:` combiner), its `else` empty-membership value, and its
 `members` set — the member cells in member order, each tagged with its
-membership driver (`permanent`, `keyed-template`, or `gate-guarded`); its
+membership driver (`permanent`, `keyed_template`, or `gate_guarded`); its
 surface type is that of the enclosing `derived` declaration. `fold` is a
 cell kind, not a seventh graph primitive (§15.4.1). A
 membership-descriptor cell (the lowering of a standalone `yielded`
@@ -26669,7 +26748,10 @@ or a wire's `attrs`) may carry an optional `@`-suffixed
 **provenance** marker — `bound`, `constant_wrap`, or `bridge` — recording
 how the cell argument was materialized under the uniform cell-argument
 rule (§13.17.3); the marker is metadata on the binding, not a distinct
-binding case (§15.4.1).
+binding case (§15.4.1). The clause is part of the normative text form,
+not prose commentary: `@` belongs to the text form's token inventory,
+and `bound`, `constant_wrap`, and `bridge` are keywords of it — e.g.
+`params [message: App.label@bound]`.
 
 ### 15.5 Compilation Modes
 
