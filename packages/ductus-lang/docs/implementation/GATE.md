@@ -5,7 +5,7 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: 1 (workspace scaffold)
+increment: 2 (ductus-ir core types: value/path/diag)
 phase: review
 
 ## State notes
@@ -29,3 +29,14 @@ phase: review
 - 2026-08-01 — remediation complete (10 fixes, orchestrator-verified, four gates green);
   phase back to review (mechanical transition). Awaiting owner hand review + "approved"
   for the commit.
+- 2026-08-01 — "reviewed. approved." → increment 1 COMMITTED as 1308a5f and CLOSED
+  (full loop: plan → confirm → build → reviewers → remediation → re-verify → owner hand
+  review → commit). Gate moves to increment 2 (ir core types), phase: planning.
+- 2026-08-01 — "confirm." → increment 2 plan confirmed (R27–R29 + Value/PartialEq
+  disclosure); phase: build.
+- 2026-08-01 — build done; reviewers + orchestrator read done; phase: review for the
+  findings report (mechanical transition).
+- 2026-08-01 — "no continuation until these issues gets resolved and ALSO locked in
+  doc/plan" + rulings F-A(i)/F-B(i)/F-C + R30/R31 style law → STYLE.md created,
+  R30–R34 recorded; phase: build for remediation (mechanical fixes + R30/R31
+  restructure).
