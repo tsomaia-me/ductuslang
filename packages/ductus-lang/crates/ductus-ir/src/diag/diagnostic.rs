@@ -1,6 +1,6 @@
 //! The `Diagnostic` struct: the single failure carrier every stage returns.
 
-use super::class::DiagClass;
+use super::diag_class::DiagClass;
 use super::span::Span;
 use crate::path::CellPath;
 

@@ -5,8 +5,8 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: 3 (text foundations: token vocabulary, lexer skeleton, parser/emitter drivers)
-phase: planning
+increment: 3 (the complete .duir lexer: text/token + text/lexer)
+phase: review
 
 ## State notes
 - Hook ENFORCING this file since 2026-08-01 (R12a): .claude/settings.json → .claude/hooks/
@@ -48,3 +48,16 @@ phase: planning
 - 2026-08-02 — "confirmed." → D2 NEWLINE scoping confirmed (braced-body entries terminate
   after their closing brace; section-final same-line entry legal); FND batch cleared for
   commit. Next: the lexer increment plan (beat 2) for increment 3.
+- 2026-08-02 — "confirmed" → increment 3 plan confirmed (R46–R48 + TokenKind/raw-payload/
+  -inf/CRLF details as presented); scope adjusted per soft-keyword ruling: complete lexer,
+  no parser/emitter content. phase: build.
+- 2026-08-02 — increment 3 build + review + remediation complete (79 tests, four gates,
+  2 reviewers, FND-13/14/15 ruled → corpus rider 033-249-amended + 033-254; orchestrator
+  end-to-end read done). phase: review — awaiting owner hand review + "approved" → commit.
+- 2026-08-02 — "Verdict: HARD REJECT." (file-name≠entity-name; multiple public functions
+  per file) → R52 file-naming law recorded, STYLE.md S1 rewritten; phase: build for the
+  same-increment rework (renames + scan/ split). Beat 4 re-runs after.
+- 2026-08-02 — R52 rework complete (diag_class.rs, token_kind.rs, lex.rs, scan/ folder
+  with one recognizer per file + folder-private chars/payload/test_support; 79 tests
+  held; four gates green; orchestrator verified tree + seam files). phase: review —
+  beat 4 re-runs.

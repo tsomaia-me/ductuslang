@@ -26486,7 +26486,15 @@ and always takes a `NAME`.
 
 A `BID` renders the behavior's `u32` handle (§14.6.3) in hexadecimal — e.g.
 `B@d1`, `B@aa10`. It is the compact runtime reference; the behavior's wide
-content-addressed identity is not spelled in the text form.
+content-addressed identity is not spelled in the text form. The prefix is
+**case-sensitive** — exactly `B@`; lowercase `b@d1` opens no handle and lexes
+as ordinary tokens. The hex run must end at a **non-identifier byte**: a
+nonempty run that continues into identifier characters is not a handle at all,
+so `B@d1x` is the three ordinary tokens `B`, `@`, `d1x` rather than a
+malformed handle — which is what keeps an `@`-provenance clause after a path
+segment named `B` spellable (`App.B@bound`). A run of more than 8 hex digits
+ending at a non-identifier byte, and a `B@` with no hex digit at all, are both
+malformed handles rather than a fallback to ordinary tokens.
 
 #### 15.4.5 The IR module — a worked example
 
@@ -26589,8 +26597,8 @@ INT           ::= /* optionally signed decimal integer literal — the sign, whe
 FLOAT         ::= '-'? Digit+ '.' Digit+
 Digit         ::= /* '0'..'9' */
 STRING        ::= '"' (Raw | Escape)* '"'
-Raw           ::= /* any Unicode scalar except '"' and '\' — raw newlines and
-                     raw tabs ARE legal */
+Raw           ::= /* any Unicode scalar except '"', '\', and a lone carriage
+                     return — raw newlines and raw tabs ARE legal */
 Escape        ::= '\"' | '\\' | '\n' | '\r' | '\t' | '\u{' HexScalar '}'
 HexScalar     ::= /* 1..6 hexadecimal digits [0-9a-fA-F] naming a Unicode scalar */
 HEX           ::= /* one or more hexadecimal digits [0-9a-fA-F]; a BID's run is
@@ -26614,7 +26622,19 @@ CR would not survive file-level newline normalization), and a control scalar
 other than newline and tab emits `\u{…}`; newline and tab emit raw. Every `str`
 value is therefore spellable (totality) and has exactly one canonical spelling
 (uniqueness) — a non-canonical spelling parses but is not what the emitter
-writes, exactly as with non-canonical key quoting (§15.4.1.1).
+writes, exactly as with non-canonical key quoting (§15.4.1.1). A lone carriage
+return is **not** a `Raw` scalar: it is a lexical error everywhere, inside a
+`STRING` or a quoted key exactly as outside one. A `\r\n` pair inside a
+`STRING` or a quoted-key payload normalizes to a newline — file-level
+line-ending normalization cannot be selective — so a payload wanting a literal
+carriage return spells `\r`, which is exactly its canonical form.
+
+**File intake.** A byte-order mark is stripped at offset 0 and nowhere else; a
+BOM at any other offset is a lexical error. Inter-token whitespace is exactly
+space, tab, and the line terminators: a `\r\n` pair normalizes to a newline
+before tokenization, and a lone carriage return is a lexical error. Form feed,
+vertical tab, and non-breaking space are not whitespace — outside string
+content they are lexical errors.
 
 **No comments.** The text form admits no comment syntax of any kind — no line
 comment, no block comment, no ignorable-text production. Every byte of the file

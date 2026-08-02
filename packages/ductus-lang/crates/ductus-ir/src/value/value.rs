@@ -42,8 +42,10 @@ impl Value {
     /// what Rust happens to do.
     ///
     /// Whether the `.duir` emitter writes this same text is a separate,
-    /// still-open question — the `.duir` grammar has no `NaN` or infinity
-    /// lexemes — and it is settled at the emitter's increment.
+    /// still-open question, settled at the emitter's increment. The `.duir`
+    /// counterpart spellings are `nan`, `inf`, and `-inf` (033-248), admitted
+    /// only in a float-typed position; the open question is whether the emitter
+    /// writes this trace-canonical text or those spellings.
     ///
     /// Renderings are type-erased: `F64(1.0)` and `I64(1)` both render `1`, so
     /// a rendering never carries its type. The per-cell static type is what

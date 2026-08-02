@@ -112,3 +112,37 @@ looks intentional — effect-param provenance matters to the loader); LOG-first 
 - `HEX` lexeme (86) dangling (HexU32 is the used one) — cosmetic corpus cleanup, ride
   any FND batch execution.
 - `value`/`literal` doc note at 492–493 self-contradiction — cosmetic, same ride.
+
+## FND-12 — NAME's alphabet is unruled (Unicode vs ASCII). OPEN (queued; recommendation: defer to frontend milestone, IR stays ASCII as explicit ruling)
+IR_GRAMMAR §2 pins NAME as "letters, digits, '_', not starting with a digit" without
+naming the alphabet. The lexer implements ASCII letters (documented in scan.rs as
+pending this ruling); a non-ASCII letter is currently invalid_character. Frontend-era
+Ductus identifiers will force the question anyway. Options: (a) ASCII forever (IR is
+machine-written; frontend mangles); (b) Unicode XID (Rust-style) in both. Recommendation:
+defer to the frontend milestone's identifier ruling and keep IR ASCII until then — but as
+an explicit ruling, not an accident.
+
+## FND-13 — BID case-sensitivity unstated. RULED — case-sensitive 'B@' exactly, as implemented (owner, 2026-08-02; single-path item, veto-list class per LEARNINGS #26 refinement)
+Grammar says 'B@'; lowercase b@d1 currently lexes as Ident("b") At Ident("d1") — to the
+letter. Emitters only ever write 'B@', so this is likely correct; flagging so it is law
+by choice. Recommendation: case-sensitive 'B@' exactly (accept as implemented).
+
+## FND-14 — B@ maximal munch swallows provenance after a segment named `B`. RULED (a) — boundary rule: a Bid's hex run must end at a non-identifier byte (owner, 2026-08-02)
+Confirmed breaking input: `params [m: App.B@bound]` lexes as `… Dot Bid(0xb) Ident("ound")`
+— the provenance clause of 033-252 is unspellable when a path tail is the legal NAME `B`,
+because the Bid scanner commits on `B@` and eats the hex-letter prefix of
+bound/bridge/constant_wrap. Grammar-level ambiguity, not a scanner bug. Options:
+(a) boundary rule — a Bid's hex run must end at a non-identifier byte; otherwise the
+scanner yields `Ident("B") At …` (so `B@bound` provenance works, `B@d1` stays a Bid, and
+`B@d1x` is no Bid — parse error in BID position); (b) forbid NAME `B`… (rejects legal
+programs — out). Recommendation: (a), pinned in IR_GRAMMAR §2's Bid prose.
+
+## FND-15 — file-intake laws live only in Rust doc comments. RULED — implemented rules become law: amend the STRING raw clause (lone CR excluded; CRLF normalizes incl. payload interiors) + intake paragraph (BOM at offset 0 only, whitespace set) in IR_GRAMMAR/SPEC, LOG-first (owner, 2026-08-02)
+Three normative lexical behaviors exist in code docs but not in the corpus: (i) BOM
+stripped at offset 0 only, elsewhere invalid; (ii) whitespace = space/tab/LF/CR-of-CRLF
+(FF, VT, NBSP invalid); (iii) CRLF→LF normalization applies inside STRING/QuotedKey
+payloads and a LONE CR is a lex error EVERYWHERE — which narrows 033-249's written "raw =
+any scalar except quote/backslash" (CR included as written). A future implementer reading
+the corpus builds a different lexer. Recommendation: amend the STRING law's raw-scalar
+clause (lone CR excluded from raw; CRLF normalizes) and add the intake paragraph (BOM,
+whitespace set) to IR_GRAMMAR §1/§2 + SPEC mirror, LOG-first.

@@ -4,10 +4,10 @@
 //! `Span` lives here because diagnostics are its universal consumer; the text
 //! layer's tokens carry this same type rather than defining their own (R32).
 
-pub mod class;
+pub mod diag_class;
 pub mod diagnostic;
 pub mod span;
 
-pub use self::class::DiagClass;
+pub use self::diag_class::DiagClass;
 pub use self::diagnostic::Diagnostic;
 pub use self::span::Span;

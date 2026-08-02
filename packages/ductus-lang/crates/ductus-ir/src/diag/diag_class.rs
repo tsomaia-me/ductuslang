@@ -29,6 +29,18 @@ pub enum DiagClass {
     WriteDuringCommit,
     /// A host write carries a value of the wrong type for its cell.
     TypeMismatchedWrite,
+    /// A `"` string reaches end of input with no closing quote.
+    UnterminatedString,
+    /// A `'` path key reaches end of input with no closing quote.
+    UnterminatedQuotedKey,
+    /// A backslash escape names no escape the position admits.
+    InvalidEscape,
+    /// A character begins no token of the `.duir` inventory.
+    InvalidCharacter,
+    /// A `B@` handle's hexadecimal run is outside 1–8 digits.
+    InvalidBid,
+    /// A carriage return stands alone — not the `\r` of a `\r\n` pair.
+    LoneCarriageReturn,
 }
 
 impl DiagClass {
@@ -44,6 +56,12 @@ impl DiagClass {
             DiagClass::WriteToNonInput => "write_to_non_input",
             DiagClass::WriteDuringCommit => "write_during_commit",
             DiagClass::TypeMismatchedWrite => "type_mismatched_write",
+            DiagClass::UnterminatedString => "unterminated_string",
+            DiagClass::UnterminatedQuotedKey => "unterminated_quoted_key",
+            DiagClass::InvalidEscape => "invalid_escape",
+            DiagClass::InvalidCharacter => "invalid_character",
+            DiagClass::InvalidBid => "invalid_bid",
+            DiagClass::LoneCarriageReturn => "lone_carriage_return",
         }
     }
 }
@@ -65,6 +83,15 @@ mod tests {
         assert_eq!(DiagClass::WriteToNonInput.id(), "write_to_non_input");
         assert_eq!(DiagClass::WriteDuringCommit.id(), "write_during_commit");
         assert_eq!(DiagClass::TypeMismatchedWrite.id(), "type_mismatched_write");
+        assert_eq!(DiagClass::UnterminatedString.id(), "unterminated_string");
+        assert_eq!(
+            DiagClass::UnterminatedQuotedKey.id(),
+            "unterminated_quoted_key"
+        );
+        assert_eq!(DiagClass::InvalidEscape.id(), "invalid_escape");
+        assert_eq!(DiagClass::InvalidCharacter.id(), "invalid_character");
+        assert_eq!(DiagClass::InvalidBid.id(), "invalid_bid");
+        assert_eq!(DiagClass::LoneCarriageReturn.id(), "lone_carriage_return");
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a

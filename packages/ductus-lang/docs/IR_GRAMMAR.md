@@ -70,6 +70,8 @@ IR text is line-oriented but not layout-sensitive: indentation is purely cosmeti
 
 The IR text form's terminals. `NAME`, `INT`, `FLOAT`, and `STRING` are the primitive lexemes (per SPEC §15.4.6); each is pinned to an exact character rule below — none of them is left to "the conventional form". The remaining lexemes — `PATH`, `BID`, `HexU32`, `type_tag`, and `PRIM` — are defined formally further below.
 
+**File intake.** A byte-order mark is stripped at offset 0 and nowhere else; a BOM at any other offset is a lexical error (033-254). Inter-token whitespace is exactly space, tab, and the line terminators: a `\r\n` pair normalizes to a newline before tokenization, and a lone carriage return is a lexical error — outside a lexeme and inside a `STRING` or `QuotedKey` payload alike. Form feed, vertical tab, and non-breaking space are not whitespace: outside string content they are lexical errors.
+
 **No comments.** The text form admits no comment syntax of any kind — no line comment, no block comment, no ignorable-text production. Every byte of a `.duir` file belongs to the grammar (033-246). The `//` lines in this document are EBNF metalanguage, not `.duir` syntax; explanatory prose about a module lives outside the module, beside its witness test.
 
 **Dot ownership (lexer vs parser).** The lexer never composes a dotted lexeme: it emits `Ident`, `Dot`, and `Int` tokens, and both dotted `PATH`s (`App.count`) and dotted op mnemonics (`add.i32`, `const.i32`, `cast.i64.i32`, `tuple.make`) are composed by the parser (033-253). Position always disambiguates the two: a mnemonic heads an `instr_rhs`, a `PATH` never does. So the "one token or three" question has one answer — three tokens, always, composed above the lexer.
@@ -91,8 +93,9 @@ Digit            ::= /* '0'..'9' */
 STRING           ::= '"' (Raw | Escape)* '"'
                    ;  (§15.4.6, 033-249)
 
-Raw              ::= /* any Unicode scalar except '"' and '\' — raw newlines
-                        and raw tabs ARE legal */
+Raw              ::= /* any Unicode scalar except '"', '\', and a lone
+                        carriage return — raw newlines and raw tabs ARE
+                        legal */
                    ;  (§15.4.6, 033-249)
 
 Escape           ::= '\"' | '\\' | '\n' | '\r' | '\t'
@@ -124,6 +127,13 @@ HexScalar        ::= /* 1..6 hexadecimal digits [0-9a-fA-F] naming a
 // (totality) and has exactly one canonical spelling (uniqueness). A
 // non-canonical spelling parses but is not what the emitter writes —
 // exactly as with non-canonical key quoting (033-249).
+//
+// A lone carriage return is NOT a Raw scalar: it is a lexical error
+// everywhere, inside a STRING or a QuotedKey exactly as outside one. A
+// '\r\n' pair inside a STRING or QuotedKey payload normalizes to a
+// newline — file-level line-ending normalization cannot be selective —
+// so a payload wanting a literal carriage return spells '\r', which is
+// exactly its canonical form (033-249).
 ```
 
 A **PATH** is a cell or instance fully-qualified declaration path: a dot-separated sequence of segments naming the lexical nesting from module root through enclosing instances to the cell or instance name. Segments are lexical identifiers; a `repeat` scope contributes a keyed multiplicity segment — the scope key's stringified `StringifiableKey` form, bare or single-quoted per §15.4.1.1's canonical-quoting rule. Anonymous or duplicated sibling placements append an ordinal suffix `':' INT` (zero-based, declaration-order index among siblings of the same type at the same nesting depth).
@@ -177,6 +187,22 @@ HexU32           ::= /* 1..8 hexadecimal digits [0-9a-fA-F] — encodes a u32
 
 // e.g. 'B@d1', 'B@aa10'. The hex run is bounded to ≤ 8 digits
 // because the handle is a u32.
+//
+// The prefix is CASE-SENSITIVE — exactly 'B@'. Lowercase 'b@d1' opens no
+// handle: it lexes as the ordinary tokens Ident('b'), At, Ident('d1')
+// (033-254).
+//
+// BOUNDARY RULE: the hex run must end at a NON-identifier byte. A
+// NONEMPTY run that continues into identifier characters is not a
+// handle at all — 'B@d1x' is Ident('B'), At, Ident('d1x'), not a
+// malformed BID — which is what keeps an '@'-provenance clause after a
+// path segment named 'B' spellable: 'App.B@bound' lexes Ident, Dot,
+// Ident, At, Ident (033-254). So: 1..8 hex digits ending at a
+// non-identifier byte is a BID; MORE than 8 hex digits ending at a
+// non-identifier byte is a malformed BID, never a fallback to ordinary
+// tokens; and NO hex digit at all ('B@', 'B@ d1', 'B@xyz') is a
+// malformed BID too — the boundary rule speaks only of a run that
+// exists.
 ```
 
 **PRIM** is the closed set of primitive type tags. These are the type-erased primitives the runtime understands directly (§4.1); aggregates and closures are built on top via `type_tag`.
@@ -684,12 +710,12 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `KeySegment` | §15.4.1.1 | 033-243 |
 | `BareKey` | §15.4.1.1 | 033-243 (identifier charset exactly) |
 | `QuotedKey` | §15.4.1.1 | 033-243 |
-| `BID` | §15.4.4 | 033-167 |
+| `BID` | §15.4.4 | 033-167 / 033-254 (case-sensitive `B@` prefix; hex-run boundary rule) |
 | `HexU32` | §14.6.3 | 033-167 |
 | `PRIM` | §15.4.6 | 033-43 |
 | `type_tag` | §15.4.6 | 033-43 / 033-79 |
 
-The lexical laws that constrain no single production — **no comments** (033-246) and **lexer/parser dot ownership** (033-253) — are stated in §2's preamble.
+The lexical laws that constrain no single production — **file intake** (033-254), **no comments** (033-246), and **lexer/parser dot ownership** (033-253) — are stated in §2's preamble.
 
 ### §3 — Module text grammar
 

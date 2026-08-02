@@ -3,26 +3,41 @@
 *Owner-ruled 2026-08-01 (M0.md R30/R31). Every implementer brief cites this file; reviewers
 verify against it. rustfmt does NOT enforce these — review does.*
 
-## S1. File organization: one pub entity per file; mod.rs is a barrel (R30)
+## S1. File organization: one public entity per file, file named after it; mod.rs is a barrel (R30, sharpened by R52 — owner HARD REJECT of increment 3's first build, 2026-08-02)
 
-- A file holds ONE primary `pub` entity — the type/enum/trait, its `impl`s, and its
-  `#[cfg(test)]` tests. Small PRIVATE helpers used only by that entity live with it.
-- Similar entities group under a folder (separation of concerns — a folder scan tells you
-  what lives where). Do not nest deeper than the concern needs; current depth
-  (`crate/src/<concern>/<entity>.rs`) is the model.
-- `mod.rs` contains ONLY module declarations and re-exports (barrel entries) — zero code,
-  zero declarations. The module doc comment (`//!`) stays in the mod.rs.
+- A file holds ONE public entity — a type/enum/trait OR a file-level function — with its
+  `impl`s and its `#[cfg(test)]` tests. This binds functions exactly as it binds types:
+  a file with several public file-level functions is the same violation as one with
+  several public types. No exceptions — except PRIVATE functions and entities, which live
+  with their user (or, when shared by sibling files, in a folder-private support file).
+- THE FILE NAME IS THE ENTITY NAME, lower_snake_cased, otherwise identical: `DiagClass` →
+  `diag_class.rs`, `TokenKind` → `token_kind.rs`, `fn lex` → `lex.rs`. Never a role name
+  (`driver.rs`, `class.rs`, `kind.rs` are all violations — owner: "I hate when file name
+  is different than entity name").
+- Same-concern files group under a folder module. Do not nest deeper than the concern
+  needs. `mod.rs` contains ONLY module declarations and re-exports (barrel entries) plus
+  the `//!` doc — zero code.
+- Stutter (`value/value.rs`, `token/token.rs`) is accepted where the entity IS the
+  concern, with the `#[expect(clippy::module_inception)]` pattern.
+- Stated reading of the private-exception (owner may strike): "private" means not visible
+  outside the concern folder — module-private and `pub(super)`-within-the-folder plumbing
+  is exempt and may share a support file; anything visible beyond the folder follows the
+  one-entity-one-file law.
 
 ```
 src/diag/
-  mod.rs         // //! doc + pub mod span; pub mod class; pub mod diagnostic; + pub use …
-  span.rs        // pub struct Span + impl + tests
-  class.rs       // pub enum DiagClass + impl + tests
-  diagnostic.rs  // pub struct Diagnostic + tests
+  mod.rs          // //! doc + pub mod …; + pub use …
+  span.rs         // pub struct Span
+  diag_class.rs   // pub enum DiagClass
+  diagnostic.rs   // pub struct Diagnostic
+src/text/lexer/scan/
+  mod.rs          // barrel
+  ident.rs        // pub(crate) fn ident
+  number.rs       // pub(crate) fn number  … one public recognizer per file
 ```
 
 Rationale (owner): many pub entities in one file get harder to read, reason about, and
-refactor as they grow.
+refactor as they grow; a file name that differs from its entity name defeats scanning.
 
 ## S2. Blank lines around block statements (R31)
 
