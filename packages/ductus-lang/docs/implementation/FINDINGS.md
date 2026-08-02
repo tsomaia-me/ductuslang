@@ -156,7 +156,7 @@ round-trip witness — is outside the grammar as written. Options: (a) parser en
 empty modules as it sees fit); (c) keep `scope+` in the grammar, move arity to the
 loader under F4 (parser over-admits by design). Due at increment 7 (scope row) planning.
 
-## FND-17 — IR_GRAMMAR §5's worked example is not R54-canonical. OPEN (ruling due BEFORE row 5)
+## FND-17 — IR_GRAMMAR §5's worked example is not R54-canonical. RULED (c) — §5 stays pretty parseable documentation; the canonical oracle is the corpus witness set; R54's §5-oracle clause struck (owner, 2026-08-02)
 §5 uses column alignment (`input     App.count   : i32  init 0`), double spaces before
 clauses, blank lines between entry groups, and a one-line non-empty `types { … }`; R54's
 canon is two-space indent, one entry per line, single spaces. `emit(parse(§5)) == §5`
@@ -165,3 +165,17 @@ readability); (b) emitter adopts alignment as canon (complex, fragile); (c) §5 
 pretty, PARSEABLE documentation example — the canonical-form oracle moves to corpus
 witness files, and R54's "§5 is the oracle" clause is struck. Recommendation: (c) — docs
 serve human reading, corpus witnesses serve the byte gate; degrading the doc buys nothing.
+
+## FND-18 — type_tag nesting is unbounded; a 2 KB legal file aborts the process. RULED (a) — normative cap 64, nesting_too_deep class, LOG-first (owner, 2026-08-02)
+`type_tag` is recursive and IR_GRAMMAR imposes no nesting bound, so `portal<portal<…>>`
+~210 deep (a 1,780-byte file) stack-overflows the parser — SIGABRT, not a Diagnostic;
+no catch_unwind contains it; the fail-fast contract (T6/R53) gains a third outcome.
+Measured: ~210 levels on 2 MiB test threads, ~840 on the 8 MiB main thread; emit and
+drop glue survive deeper, so the parser is the binding constraint. Options: (a) a
+normative nesting cap as corpus law (new DiagClass `nesting_too_deep` at the token that
+exceeds it; cap pinned in IR_GRAMMAR §2 prose) — recommend cap 64: real type nesting is
+<10, 64 is safe on 2 MiB threads with margin for emit/drop/loader; (b) accept the abort
+as a documented limitation (violates fail-fast; hostile to hosts embedding the loader);
+(c) rewrite type_tag parsing with an explicit heap stack (no cap, no abort, permanently
+more complex code in the hottest grammar path, and the loader/emitter still need THEIR
+answer for hand-built trees). Recommendation: (a) — LOG-first, the cap is format law.

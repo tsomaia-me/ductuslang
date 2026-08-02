@@ -82,8 +82,9 @@ pub enum TokenKind {
     /// A line break. A run of them collapses to ONE token (R48, 033-250), so
     /// blank lines between entries are insignificant to the parser.
     Newline,
-    /// End of input. Always the last token, and a normative entry terminator —
-    /// a final entry needs no trailing newline.
+    /// End of input. Always the last token; the module's closing `}` is what
+    /// terminates the final entry (033-250), and an unclosed section at `Eof`
+    /// is an error.
     Eof,
 }
 

@@ -5,18 +5,20 @@ use std::mem;
 
 use crate::diag::{DiagClass, Diagnostic, Span};
 use crate::module::{BehaviorsSection, GraphSection, Module, TypesSection};
+use crate::text::keywords::{
+    ALIGN, BEHAVIORS, CLOSURE, ENUM, GRAPH, HANDLE, MODULE, POOL_INDEX, PORTAL, RECORD, SIZE,
+    TUPLE, TYPES, YIELDED,
+};
 use crate::text::token::{Token, TokenKind};
+use crate::types::{Field, Layout, Prim, TypeDef, TypeTag, Variant};
 
-/// The soft keywords the module-level productions classify against (R46).
+/// How deep a `type_tag` may nest: 64 bracketed constructors (033-255, R59).
 ///
-/// Every word-shaped token arrives as `Ident`, so these are compared as TEXT at
-/// the position that expects them — a cell legally named `graph` stays a name
-/// everywhere a keyword is not called for. Each spelling lives in exactly one
-/// place, and a typo in one fails every parse test on real `.duir` text.
-const MODULE: &str = "module";
-const TYPES: &str = "types";
-const GRAPH: &str = "graph";
-const BEHAVIORS: &str = "behaviors";
+/// FORMAT LAW, not implementation latitude — every conforming reader accepts
+/// every tag within the bound and rejects every tag beyond it, identically. It
+/// is therefore written here as a grammar constant rather than tuned to a stack
+/// budget: a reader with more stack must still reject the 65th level.
+const TYPE_TAG_DEPTH_LIMIT: usize = 64;
 
 /// Parse a `.duir` token stream into its [`Module`] (IR_GRAMMAR §3, §15.4.6).
 ///
@@ -31,32 +33,49 @@ const BEHAVIORS: &str = "behaviors";
 /// The parser is a pure grammar machine (R21). It answers "is this the text
 /// form?" and nothing else; duplicate paths, unknown references and slice
 /// checks are the loader's (F4), so a `Module` that parses may still be an
-/// illegal program.
+/// illegal program. A `types` table may define the same name twice, a field tag
+/// may reference a type nobody declares, and a `size` may contradict its
+/// layout — all three parse.
+///
+/// It has two other diagnostic classes, and only two. A STRUCTURAL number that
+/// names no `u64` is `int_out_of_range` (R57): not a grammar failure — the
+/// token IS an `INT` — but the position's type is known here, so the conversion
+/// happens here and so does its failure. A `type_tag` nesting past 64 bracketed
+/// constructors is `nesting_too_deep` (033-255, R59): that one IS a grammar
+/// failure, since the bound is part of the format rather than a budget of this
+/// implementation.
 ///
 /// **The stream is consumed, not borrowed.** R18 gives tokens OWNED payloads so
 /// nothing downstream carries a lifetime; taking the `Vec` by value lets those
-/// payloads MOVE lexer → parser → AST. A module's name is taken out of its
-/// token rather than cloned out of it, and every construct row from increment 5
-/// on inherits that shape — the text of a `.duir` file is allocated once.
+/// payloads MOVE lexer → parser → AST. A type's name is taken out of its token
+/// rather than cloned out of it, and every construct row from here on inherits
+/// that shape — the text of a `.duir` file is allocated once.
 ///
-/// **Newlines are optional at module level, and legal only BETWEEN
-/// constructs.** 033-250 makes NEWLINE an entry terminator INSIDE the `types`,
-/// `graph` and `behaviors` sections, and those entries arrive at increments
-/// 5–7. Between the module-level brackets there is no entry to terminate, so a
-/// newline is accepted at exactly these positions, and required at none of
-/// them: before `module`, after the module's `{`, between sections, inside a
-/// section's braces, before the module's `}`, and after it.
+/// **Newlines are optional at module level, and required between entries.**
+/// Between the module-level brackets there is no entry to terminate, so a
+/// newline is accepted at exactly these positions and required at none: before
+/// `module`, after the module's `{`, between sections, inside a section's
+/// braces, before the module's `}`, and after it.
+///
+/// INSIDE a section, 033-250 makes NEWLINE a normative entry terminator: one
+/// `type_def` per line, blank lines insignificant, and the section's own `}`
+/// terminating a final entry that shares its line. Two entries written on one
+/// line are rejected at the second entry's first token.
 ///
 /// Everywhere else a newline is an `unexpected_token` — inside the module
-/// header (`module\nApp`, `module App\n{`) and between a section keyword and
-/// its brace (`types\n{`). Nothing skips newlines at those positions, and
-/// nothing should: a construct's own first line is not a place to break.
+/// header (`module\nApp`), between a section keyword and its brace (`types\n{`),
+/// and inside a `type_def`, whose braces are not a braced BODY in 033-250's
+/// sense (that paragraph names `scope` and `behavior`). A type row is one line.
 ///
-/// **Every section is empty in this increment.** `types {}`, `graph {}` and
-/// `behaviors {}` parse; anything else between a section's braces is an
-/// `unexpected_token` until that section's row admits its entries.
+/// **`graph` and `behaviors` are still empty.** `graph {}` and `behaviors {}`
+/// parse; anything else between their braces is an `unexpected_token` until
+/// their rows admit entries.
 pub fn parse(tokens: Vec<Token>) -> Result<Module, Diagnostic> {
-    let mut parser = Parser { tokens, cursor: 0 };
+    let mut parser = Parser {
+        tokens,
+        cursor: 0,
+        depth: 0,
+    };
     let module = parser.module()?;
 
     // The module is the whole file: past its closing brace only a line ending
@@ -72,6 +91,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Module, Diagnostic> {
 struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
+    /// How many bracketed `type_tag` constructors are open at the cursor
+    /// (033-255). Raised and lowered in [`type_tag`](Parser::type_tag) alone.
+    depth: usize,
 }
 
 impl Parser {
@@ -100,20 +122,269 @@ impl Parser {
     }
 
     // types_section ::= 'types' '{' type_def* '}'
+    //
+    // The `*` is an ENTRY LOOP under 033-250, not a run of tokens to skip: each
+    // `type_def` is terminated by a NEWLINE, and the section's `}` terminates a
+    // final entry that shares its line. The loop head tests for that `}` and
+    // [`entry_terminator`](Parser::entry_terminator) enforces the rest, so two
+    // entries on one line fail at the second one's first token.
     fn types_section(&mut self) -> Result<TypesSection, Diagnostic> {
         self.skip_newlines();
 
         let start = self.expect_word(TYPES)?;
         self.expect(&TokenKind::LBrace, "`{`")?;
+        // The line ending after the opening brace terminates no entry, so it is
+        // optional the way the ones between entries are not.
         self.skip_newlines();
-        let end = self.expect(
-            &TokenKind::RBrace,
-            "`}` (the `types` section admits no entries yet)",
-        )?;
+
+        let mut type_defs = Vec::new();
+
+        while self.peek_kind() != Some(&TokenKind::RBrace) {
+            type_defs.push(self.type_def()?);
+            self.entry_terminator()?;
+        }
+
+        let end = self.expect(&TokenKind::RBrace, "`}`")?;
 
         Ok(TypesSection {
             span: covering(start, end),
+            type_defs,
         })
+    }
+
+    // type_def ::= '%' NAME '=' layout 'size' INT 'align' INT
+    //
+    // `size` and `align` are STRUCTURAL numbers: converted here, under the
+    // position's type, rather than carried to the loader as text (R57).
+    fn type_def(&mut self) -> Result<TypeDef, Diagnostic> {
+        let start = self.expect(&TokenKind::Percent, "`%`")?;
+        let id = self.name("a type name")?;
+        self.expect(&TokenKind::Eq, "`=`")?;
+        let layout = self.layout()?;
+
+        self.expect_word(SIZE)?;
+        let (size, _) = self.structural_int("a size")?;
+
+        self.expect_word(ALIGN)?;
+        let (align, end) = self.structural_int("an alignment")?;
+
+        Ok(TypeDef {
+            id,
+            span: covering(start, end),
+            layout,
+            size,
+            align,
+        })
+    }
+
+    // layout ::= 'record' '{' field_list '}'
+    //          | 'enum'   '{' variant (',' variant)* '}'
+    //          | 'tuple'  '(' type_tag (',' type_tag)* ')'
+    //
+    // The arities differ and the code shows it: a `record`'s field list is
+    // optional, so `record {}` is legal; an `enum` and a `tuple` each require at
+    // least one element, so neither empty form parses.
+    fn layout(&mut self) -> Result<Layout, Diagnostic> {
+        if self.at_word(RECORD) {
+            self.advance();
+            self.expect(&TokenKind::LBrace, "`{`")?;
+            let fields = self.field_list()?;
+            self.expect(&TokenKind::RBrace, "`}`")?;
+
+            return Ok(Layout::Record(fields));
+        }
+
+        if self.at_word(ENUM) {
+            self.advance();
+            self.expect(&TokenKind::LBrace, "`{`")?;
+            let mut variants = vec![self.variant()?];
+
+            while self.peek_kind() == Some(&TokenKind::Comma) {
+                self.advance();
+                variants.push(self.variant()?);
+            }
+
+            self.expect(&TokenKind::RBrace, "`}`")?;
+
+            return Ok(Layout::Enum(variants));
+        }
+
+        if self.at_word(TUPLE) {
+            self.advance();
+            self.expect(&TokenKind::LParen, "`(`")?;
+            let elements = self.tag_sequence()?;
+            self.expect(&TokenKind::RParen, "`)`")?;
+
+            return Ok(Layout::Tuple(elements));
+        }
+
+        Err(self.unexpected(&format!("`{RECORD}`, `{ENUM}` or `{TUPLE}`")))
+    }
+
+    // field_list ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
+    //
+    // The whole list is optional, and the only thing that can stand where a
+    // first field would is the record's closing `}` — so that is what the empty
+    // case tests for.
+    fn field_list(&mut self) -> Result<Vec<Field>, Diagnostic> {
+        let mut fields = Vec::new();
+
+        if self.peek_kind() == Some(&TokenKind::RBrace) {
+            return Ok(fields);
+        }
+
+        fields.push(self.field()?);
+
+        while self.peek_kind() == Some(&TokenKind::Comma) {
+            self.advance();
+            fields.push(self.field()?);
+        }
+
+        Ok(fields)
+    }
+
+    // variant ::= '#' NAME ('(' type_tag (',' type_tag)* ')')?
+    //
+    // The payload's optionality is carried by EMPTINESS, not by an `Option`:
+    // the grammar admits no `#None()`, so an empty parenthesis pair is not a
+    // state a parsed variant can be in.
+    fn variant(&mut self) -> Result<Variant, Diagnostic> {
+        self.expect(&TokenKind::Hash, "`#`")?;
+        let name = self.name("a variant name")?;
+        let mut payload = Vec::new();
+
+        if self.peek_kind() == Some(&TokenKind::LParen) {
+            self.advance();
+            payload = self.tag_sequence()?;
+            self.expect(&TokenKind::RParen, "`)`")?;
+        }
+
+        Ok(Variant { name, payload })
+    }
+
+    // type_tag ::= PRIM
+    //            | '%' NAME
+    //            | 'pool_index' '<' '%' NAME '>'
+    //            | 'yielded' '<' type_tag '>'
+    //            | 'handle' '<' type_tag '>'
+    //            | 'portal' '<' type_tag '>'
+    //            | '(' type_tag (',' type_tag)* ')'
+    //            | '[' type_tag ';' INT ']'
+    //            | 'closure' '<' '(' (type_tag (',' type_tag)*)? ')' '->' type_tag '>'
+    //
+    // Ordinary recursive descent: every alternative is distinguished by its
+    // FIRST token, so there is no backtracking and no lookahead beyond the
+    // cursor. The two vocabularies a type position classifies against — the
+    // wrapper keywords and `PRIM` — are disjoint (`text::keywords` pins that),
+    // so the order the alternatives are tested in is readability, not
+    // correctness.
+    //
+    // `>` is one token, always (R19): `handle<portal<i32>>` closes with two of
+    // them, and each nesting level consumes its own.
+    //
+    // NESTING (033-255, R59). A tag nests at most `TYPE_TAG_DEPTH_LIMIT`
+    // BRACKETED CONSTRUCTORS deep. That is what the law counts, so it is what
+    // this counts: the two LEAF alternatives — `PRIM` and `'%' NAME` — open no
+    // bracket, cost no level, and are taken first, before the counter is
+    // touched. Everything else opens `<…>`, `(…)` or `[…]` and costs one. The
+    // check runs BEFORE the constructor's keyword is consumed, so the
+    // diagnostic lands on the constructor that exceeds the bound rather than
+    // somewhere inside it — and the parser never recurses past the bound, which
+    // is what keeps a hostile tag from running the stack out.
+    fn type_tag(&mut self) -> Result<TypeTag, Diagnostic> {
+        if self.peek_kind() == Some(&TokenKind::Percent) {
+            self.advance();
+
+            return Ok(TypeTag::TypeId(self.name("a type name")?));
+        }
+
+        if let Some(prim) = self.peek_prim() {
+            self.advance();
+
+            return Ok(TypeTag::Prim(prim));
+        }
+
+        if self.depth >= TYPE_TAG_DEPTH_LIMIT {
+            return Err(self.too_deep());
+        }
+
+        self.depth += 1;
+        let tag = self.bracketed_tag();
+        self.depth -= 1;
+
+        tag
+    }
+
+    // The bracketed `type_tag` alternatives — every one that opens `<…>`, `(…)`
+    // or `[…]`, and so every one that costs a nesting level. Split out of
+    // [`type_tag`](Parser::type_tag) so the level is counted in exactly one
+    // place; the leaf alternatives never reach here.
+    fn bracketed_tag(&mut self) -> Result<TypeTag, Diagnostic> {
+        if self.at_word(POOL_INDEX) {
+            self.advance();
+            self.expect(&TokenKind::Lt, "`<`")?;
+            self.expect(&TokenKind::Percent, "`%`")?;
+            let id = self.name("a type name")?;
+            self.expect(&TokenKind::Gt, "`>`")?;
+
+            return Ok(TypeTag::PoolIndex(id));
+        }
+
+        if self.at_word(YIELDED) {
+            self.advance();
+
+            return Ok(TypeTag::Yielded(self.angled_tag()?));
+        }
+
+        if self.at_word(HANDLE) {
+            self.advance();
+
+            return Ok(TypeTag::Handle(self.angled_tag()?));
+        }
+
+        if self.at_word(PORTAL) {
+            self.advance();
+
+            return Ok(TypeTag::Portal(self.angled_tag()?));
+        }
+
+        if self.at_word(CLOSURE) {
+            self.advance();
+            self.expect(&TokenKind::Lt, "`<`")?;
+            self.expect(&TokenKind::LParen, "`(`")?;
+            let mut params = Vec::new();
+
+            if self.peek_kind() != Some(&TokenKind::RParen) {
+                params = self.tag_sequence()?;
+            }
+
+            self.expect(&TokenKind::RParen, "`)`")?;
+            self.expect(&TokenKind::Arrow, "`->`")?;
+            let ret = Box::new(self.type_tag()?);
+            self.expect(&TokenKind::Gt, "`>`")?;
+
+            return Ok(TypeTag::Closure { params, ret });
+        }
+
+        if self.peek_kind() == Some(&TokenKind::LParen) {
+            self.advance();
+            let elements = self.tag_sequence()?;
+            self.expect(&TokenKind::RParen, "`)`")?;
+
+            return Ok(TypeTag::Tuple(elements));
+        }
+
+        if self.peek_kind() == Some(&TokenKind::LBracket) {
+            self.advance();
+            let element = Box::new(self.type_tag()?);
+            self.expect(&TokenKind::Semicolon, "`;`")?;
+            let (length, _) = self.structural_int("an array length")?;
+            self.expect(&TokenKind::RBracket, "`]`")?;
+
+            return Ok(TypeTag::Array(element, length));
+        }
+
+        Err(self.unexpected("a type tag"))
     }
 
     // graph_section ::= 'graph' '{' scope+ '}'
@@ -129,7 +400,7 @@ impl Parser {
         self.skip_newlines();
         let end = self.expect(
             &TokenKind::RBrace,
-            "`}` (the `graph` section admits no scopes yet)",
+            &format!("`}}` (the `{GRAPH}` section admits no scopes yet)"),
         )?;
 
         Ok(GraphSection {
@@ -146,12 +417,129 @@ impl Parser {
         self.skip_newlines();
         let end = self.expect(
             &TokenKind::RBrace,
-            "`}` (the `behaviors` section admits no behaviors yet)",
+            &format!("`}}` (the `{BEHAVIORS}` section admits no behaviors yet)"),
         )?;
 
         Ok(BehaviorsSection {
             span: covering(start, end),
         })
+    }
+
+    // The entry terminator, normative per 033-250: a NEWLINE ends an entry, and
+    // the enclosing section's `}` ends a final entry sharing its line. NOTHING
+    // else stands between two entries, which is what will keep a later `cell`
+    // line's trailing `gate PATH` clause from swallowing the `gate` entry
+    // written under it.
+    //
+    // Blank lines are insignificant: the lexer already collapses a newline run
+    // to one token, and the trailing skip covers a hand-built stream too.
+    //
+    // Shared on purpose — `graph`'s rows and `behaviors`' rows are terminated by
+    // the same law and will call this same helper.
+    fn entry_terminator(&mut self) -> Result<(), Diagnostic> {
+        if self.peek_kind() == Some(&TokenKind::RBrace) {
+            return Ok(());
+        }
+
+        self.expect(&TokenKind::Newline, "a line ending or `}` after an entry")?;
+        self.skip_newlines();
+
+        Ok(())
+    }
+
+    // `NAME ':' type_tag` — one element of a `field_list`. The grammar spells
+    // the pair out twice inside that production rather than naming it; the
+    // parser names it because writing it twice is what invites the two copies
+    // to drift.
+    fn field(&mut self) -> Result<Field, Diagnostic> {
+        let name = self.name("a field name")?;
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let tag = self.type_tag()?;
+
+        Ok(Field { name, tag })
+    }
+
+    // `type_tag (',' type_tag)*` — the non-empty tag run three productions
+    // share: a `tuple` layout's elements, a variant's payload, and the tuple
+    // tag's elements. A closure's parameter list is the same run made optional,
+    // and calls this after testing for the empty case.
+    fn tag_sequence(&mut self) -> Result<Vec<TypeTag>, Diagnostic> {
+        let mut tags = vec![self.type_tag()?];
+
+        while self.peek_kind() == Some(&TokenKind::Comma) {
+            self.advance();
+            tags.push(self.type_tag()?);
+        }
+
+        Ok(tags)
+    }
+
+    // `'<' type_tag '>'` — the wrapper body `yielded`, `handle` and `portal`
+    // share. The keyword is already consumed when this is called.
+    fn angled_tag(&mut self) -> Result<Box<TypeTag>, Diagnostic> {
+        self.expect(&TokenKind::Lt, "`<`")?;
+        let tag = self.type_tag()?;
+        self.expect(&TokenKind::Gt, "`>`")?;
+
+        Ok(Box::new(tag))
+    }
+
+    // A STRUCTURAL number (R57): an `INT` lexeme converted to `u64` right here,
+    // because the POSITION fixes the type — a `size`, an `align`, an array
+    // length. A signed or oversized spelling is `int_out_of_range` at the
+    // literal's own span; it is not an `unexpected_token`, because the token is
+    // exactly the lexeme the grammar asked for and only its VALUE is wrong.
+    //
+    // TYPED values (`init`, `else`) get the opposite treatment and stay raw
+    // text until the loader converts them under the cell's type, which is the
+    // only place that type is known.
+    //
+    // Conversion is by VALUE, not by spelling: `007` and `7` are the same
+    // number, and since the emitter writes the `u64` rather than the text it
+    // came from, a leading-zero spelling round-trips as the canonical `7`. That
+    // is the same normalization the emitter performs everywhere else, not a
+    // special case.
+    //
+    // One spelling `u64::from_str` admits that the `INT` lexeme does not is a
+    // leading `+` (033-247 puts only a `-` inside the lexeme). `lex` can never
+    // produce one — `+` begins no token of the inventory — so it can only
+    // arrive from a hand-built stream, and it is rejected explicitly rather
+    // than accepted by the standard library's more generous reading.
+    //
+    // The span comes back with the value so a caller can end a construct's span
+    // at the literal it just read.
+    fn structural_int(&mut self, expected: &str) -> Result<(u64, Span), Diagnostic> {
+        let span = self.span();
+
+        let text = match self.tokens.get_mut(self.cursor) {
+            Some(Token {
+                kind: TokenKind::Int(text),
+                ..
+            }) => mem::take(text),
+            _ => return Err(self.unexpected(expected)),
+        };
+
+        self.advance();
+
+        let converted = if text.starts_with('+') {
+            None
+        } else {
+            text.parse::<u64>().ok()
+        };
+
+        let Some(value) = converted else {
+            return Err(Diagnostic {
+                class: DiagClass::IntOutOfRange,
+                span: Some(span),
+                path: None,
+                message: format!(
+                    "{expected} is a whole number 0..={}, found `{text}`",
+                    u64::MAX
+                ),
+            });
+        };
+
+        Ok((value, span))
     }
 
     // What the token at the cursor IS, or `None` past the end of the stream.
@@ -160,6 +548,23 @@ impl Parser {
     // that reports `unexpected_token`.
     fn peek_kind(&self) -> Option<&TokenKind> {
         self.tokens.get(self.cursor).map(|token| &token.kind)
+    }
+
+    // Whether the cursor sits on the word `word` — soft-keyword classification
+    // without consuming it (R46). The comparison reads the payload in place and
+    // allocates nothing.
+    fn at_word(&self, word: &str) -> bool {
+        matches!(self.peek_kind(), Some(TokenKind::Ident(text)) if text == word)
+    }
+
+    // The primitive the word at the cursor names, if it names one. `Prim` is
+    // `Copy`, so this hands back a value rather than a borrow and the caller is
+    // free to advance.
+    fn peek_prim(&self) -> Option<Prim> {
+        match self.peek_kind() {
+            Some(TokenKind::Ident(text)) => Prim::from_word(text),
+            _ => None,
+        }
     }
 
     // Where a diagnostic about the cursor points: the token's own span, or —
@@ -185,9 +590,8 @@ impl Parser {
     // Soft-keyword classification (R46): the token must be an `Ident` whose
     // text is exactly `word`. The lexer knows no keywords, so this — a
     // position expecting a spelling — is the only place a word becomes one.
-    // The comparison reads the payload in place and allocates nothing.
     fn expect_word(&mut self, word: &str) -> Result<Span, Diagnostic> {
-        if matches!(self.peek_kind(), Some(TokenKind::Ident(text)) if text == word) {
+        if self.at_word(word) {
             return Ok(self.advance());
         }
 
@@ -232,13 +636,12 @@ impl Parser {
     // A run of newlines collapses to one token in the lexer (R48), so the loop
     // runs at most once on a lexed stream and stays correct on any other.
     //
-    // WARNING — increment 5's entry loops must NOT copy this leading-skip
-    // convention. 033-250 makes NEWLINE a REQUIRED entry terminator inside the
-    // `types`, `graph` and `behaviors` sections; a loop that opens by skipping
-    // newlines silently accepts two entries written on one line. The required-
-    // terminator helper is a different helper and lands with the entries it
-    // binds, at increment 5. Module level may skip freely for one reason only:
-    // between the module-level brackets there is no entry to terminate.
+    // This is the MODULE-LEVEL tolerance and nothing else. An entry loop must
+    // never open by skipping newlines — that silently accepts two entries
+    // written on one line, which 033-250 forbids. Entries are terminated by
+    // `entry_terminator`, which requires what this one tolerates. Module level
+    // may skip freely for one reason only: between the module-level brackets
+    // there is no entry to terminate.
     fn skip_newlines(&mut self) {
         while self.peek_kind() == Some(&TokenKind::Newline) {
             self.advance();
@@ -253,6 +656,22 @@ impl Parser {
             span: Some(self.span()),
             path: None,
             message: format!("expected {expected}, found {}", describe(self.peek_kind())),
+        }
+    }
+
+    // The nesting bound, reported at the constructor that exceeds it (033-255).
+    // Same cursor rule as `unexpected`: the offending token is the one the
+    // parser is sitting on, un-consumed.
+    fn too_deep(&self) -> Diagnostic {
+        Diagnostic {
+            class: DiagClass::NestingTooDeep,
+            span: Some(self.span()),
+            path: None,
+            message: format!(
+                "a type tag nests at most {TYPE_TAG_DEPTH_LIMIT} levels deep, found {} at level {}",
+                describe(self.peek_kind()),
+                self.depth + 1
+            ),
         }
     }
 }
@@ -315,24 +734,8 @@ mod tests {
     use super::*;
     use crate::text::emitter::emit;
     use crate::text::lexer::lex;
-
-    // Byte offsets, counted by hand: `module` 0..6, `App` 7..10, `{` 11,
-    // `types` 15..20, `{}` 21..23, `graph` 26..31, `{}` 32..34,
-    // `behaviors` 37..46, `{}` 47..49, `}` 50, trailing newline 51, end 52.
-    const CANONICAL: &str = "module App {\n  types {}\n  graph {}\n  behaviors {}\n}\n";
-
-    // The same module with no newline anywhere, not even a trailing one.
-    const ONE_LINE: &str = "module App { types {} graph {} behaviors {} }";
-
-    // The same module again, blank lines everywhere they are legal.
-    const BLANK_LINES: &str =
-        "\n\nmodule App {\n\n  types {}\n\n\n  graph {}\n\n  behaviors {}\n\n}\n\n";
-
-    fn parsed(source: &str) -> Module {
-        let tokens = lex(source).expect("source lexes");
-
-        parse(tokens).expect("source parses")
-    }
+    use crate::text::test_support::{BLANK_LINES, CANONICAL, ENTRY, ONE_LINE, WITH_TYPES};
+    use crate::text::test_support::{parsed, with_types};
 
     // Class and span only — never the message (F3).
     fn failure(source: &str) -> (&'static str, Span) {
@@ -357,6 +760,7 @@ mod tests {
         // `module` through the final `}`, trailing newline excluded.
         assert_eq!(module.span, Span::new(0, 51));
         assert_eq!(module.types.span, Span::new(15, 8));
+        assert!(module.types.type_defs.is_empty());
         assert_eq!(module.graph.span, Span::new(26, 8));
         assert_eq!(module.behaviors.span, Span::new(37, 12));
     }
@@ -413,7 +817,7 @@ mod tests {
     // name position are different positions.
     #[test]
     fn a_section_keyword_is_a_legal_module_name() {
-        for name in [TYPES, GRAPH, BEHAVIORS, MODULE] {
+        for name in [TYPES, GRAPH, BEHAVIORS, MODULE, RECORD, SIZE, POOL_INDEX] {
             let module = parsed(&format!(
                 "module {name} {{ types {{}} graph {{}} behaviors {{}} }}"
             ));
@@ -511,11 +915,7 @@ mod tests {
     }
 
     #[test]
-    fn no_section_admits_a_body_yet() {
-        assert_eq!(
-            failure("module App {\n  types { x }\n  graph {}\n  behaviors {}\n}\n"),
-            ("unexpected_token", Span::new(23, 1))
-        );
+    fn graph_and_behaviors_admit_no_body_yet() {
         assert_eq!(
             failure("module App {\n  types {}\n  graph { x }\n  behaviors {}\n}\n"),
             ("unexpected_token", Span::new(34, 1))
@@ -523,6 +923,391 @@ mod tests {
         assert_eq!(
             failure("module App {\n  types {}\n  graph {}\n  behaviors { x }\n}\n"),
             ("unexpected_token", Span::new(49, 1))
+        );
+    }
+
+    // ---- types table ----
+
+    #[test]
+    fn a_type_def_parses_with_hand_counted_spans() {
+        assert_eq!(WITH_TYPES.len(), 106);
+        // The two anchors every span below is written against: the fixture is
+        // what `with_types` builds, and an entry's first byte is `ENTRY`.
+        assert_eq!(
+            with_types("%Request = record { text: str } size 8 align 8"),
+            WITH_TYPES
+        );
+        assert_eq!(WITH_TYPES.find('%'), Some(ENTRY));
+
+        let module = parsed(WITH_TYPES);
+
+        // `module` through the final `}` at 104.
+        assert_eq!(module.span, Span::new(0, 105));
+        // `types` at 15 through the section's `}` at 76.
+        assert_eq!(module.types.span, Span::new(15, 62));
+        assert_eq!(module.graph.span, Span::new(80, 8));
+        assert_eq!(module.behaviors.span, Span::new(91, 12));
+
+        let [type_def] = module.types.type_defs.as_slice() else {
+            panic!("the section holds exactly one row");
+        };
+
+        assert_eq!(type_def.id, "Request");
+        // `%` at 27 through the `align` literal at 72.
+        assert_eq!(type_def.span, Span::new(ENTRY, 46));
+        assert_eq!(type_def.size, 8);
+        assert_eq!(type_def.align, 8);
+
+        let Layout::Record(fields) = &type_def.layout else {
+            panic!("the layout is a record");
+        };
+
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "text");
+        assert!(matches!(fields[0].tag, TypeTag::Prim(Prim::Str)));
+    }
+
+    #[test]
+    fn each_layout_parses_and_round_trips() {
+        for entry in [
+            "%R = record { text: str, count: i32 } size 16 align 8",
+            "%E = enum { #Some(i32), #None } size 8 align 4",
+            "%T = tuple(i32, f64) size 16 align 8",
+            "%Empty = record {} size 0 align 1",
+        ] {
+            let source = with_types(entry);
+
+            assert_eq!(emit(&parsed(&source)), source);
+        }
+    }
+
+    #[test]
+    fn an_empty_record_parses_to_no_fields() {
+        let module = parsed(&with_types("%Empty = record {} size 0 align 1"));
+
+        let Layout::Record(fields) = &module.types.type_defs[0].layout else {
+            panic!("the layout is a record");
+        };
+
+        assert!(fields.is_empty());
+        assert_eq!(module.types.type_defs[0].size, 0);
+        assert_eq!(module.types.type_defs[0].align, 1);
+    }
+
+    // A variant with a payload and one without, in the same enum: the two
+    // states `Variant::payload` can be in.
+    #[test]
+    fn a_variant_carries_its_payload_by_emptiness() {
+        let module = parsed(&with_types(
+            "%E = enum { #Some(i32, str), #None } size 24 align 8",
+        ));
+
+        let Layout::Enum(variants) = &module.types.type_defs[0].layout else {
+            panic!("the layout is an enum");
+        };
+
+        assert_eq!(variants.len(), 2);
+        assert_eq!(variants[0].name, "Some");
+        assert_eq!(variants[0].payload.len(), 2);
+        assert_eq!(variants[1].name, "None");
+        assert!(variants[1].payload.is_empty());
+    }
+
+    // Every alternative of the `type_tag` production, in one entry, in the
+    // production's own order. Round-tripping the entry proves both directions.
+    #[test]
+    fn every_type_tag_form_parses_and_round_trips() {
+        let source = with_types(concat!(
+            "%All = record { ",
+            "a: i32, ",
+            "b: %Request, ",
+            "c: pool_index<%Request>, ",
+            "d: yielded<i32>, ",
+            "e: handle<i32>, ",
+            "f: portal<i32>, ",
+            "g: (i32, str), ",
+            "h: [i32; 4], ",
+            "i: closure<(i32) -> str>, ",
+            "j: closure<() -> str>",
+            " } size 0 align 1"
+        ));
+        let module = parsed(&source);
+
+        let Layout::Record(fields) = &module.types.type_defs[0].layout else {
+            panic!("the layout is a record");
+        };
+
+        assert_eq!(fields.len(), 10);
+        assert!(matches!(fields[0].tag, TypeTag::Prim(Prim::I32)));
+        assert!(matches!(&fields[1].tag, TypeTag::TypeId(id) if id == "Request"));
+        assert!(matches!(&fields[2].tag, TypeTag::PoolIndex(id) if id == "Request"));
+        assert!(matches!(fields[3].tag, TypeTag::Yielded(_)));
+        assert!(matches!(fields[4].tag, TypeTag::Handle(_)));
+        assert!(matches!(fields[5].tag, TypeTag::Portal(_)));
+        assert!(matches!(&fields[6].tag, TypeTag::Tuple(elements) if elements.len() == 2));
+        assert!(matches!(fields[7].tag, TypeTag::Array(_, 4)));
+        assert!(matches!(&fields[8].tag, TypeTag::Closure { params, .. } if params.len() == 1));
+        assert!(matches!(&fields[9].tag, TypeTag::Closure { params, .. } if params.is_empty()));
+        assert_eq!(emit(&module), source);
+    }
+
+    // `>` is one token, so every nesting level closes with its own. Nothing
+    // munches `>>` into a shift. These are shallow on purpose — the bound
+    // itself is the next test's subject.
+    #[test]
+    fn nested_tags_round_trip() {
+        for entry in [
+            "%N = record { deep: handle<portal<handle<portal<i32>>>> } size 8 align 8",
+            "%N = record { deep: [[[i32; 2]; 3]; 4] } size 8 align 8",
+            "%N = record { deep: (i32, (bool, (f32, str))) } size 8 align 8",
+            "%N = record { deep: closure<(closure<() -> i32>, [%N; 2]) -> (bool, str)> } size 8 align 8",
+            "%N = tuple(pool_index<%N>, yielded<handle<%N>>) size 8 align 8",
+        ] {
+            let source = with_types(entry);
+
+            assert_eq!(emit(&parsed(&source)), source);
+        }
+    }
+
+    // 033-255's nesting bound, both sides of it. What the law counts is
+    // BRACKETED CONSTRUCTORS, so 64 `portal<` wrappers around a leaf is exactly
+    // the bound and the 65th is one too many.
+    //
+    // 64 levels of recursive descent is a few kilobytes of stack — comfortable
+    // on the 2 MiB a test thread gets — and the parser never goes deeper than
+    // that, because the check fires before the offending constructor's own
+    // recursion begins.
+    #[test]
+    fn a_type_tag_nests_at_most_sixty_four_levels() {
+        let at_bound = with_types(&format!(
+            "%N = record {{ deep: {} }} size 8 align 8",
+            portals(TYPE_TAG_DEPTH_LIMIT)
+        ));
+
+        assert_eq!(emit(&parsed(&at_bound)), at_bound);
+
+        // The tag starts 20 bytes into the entry (`%N = record { deep: `), and
+        // each accepted `portal<` is 7 bytes — so the 65th `portal` keyword,
+        // 6 bytes long, begins after 64 of them.
+        assert_eq!(
+            failure(&with_types(&format!(
+                "%N = record {{ deep: {} }} size 8 align 8",
+                portals(TYPE_TAG_DEPTH_LIMIT + 1)
+            ))),
+            (
+                "nesting_too_deep",
+                Span::new(ENTRY + 20 + TYPE_TAG_DEPTH_LIMIT * 7, 6)
+            )
+        );
+    }
+
+    // `portal<…>` wrapped `levels` deep around an `i32` leaf. The leaf opens no
+    // bracket, so it costs no level.
+    fn portals(levels: usize) -> String {
+        format!("{}i32{}", "portal<".repeat(levels), ">".repeat(levels))
+    }
+
+    // Every primitive is a type tag, and only those sixteen words are. `i7` is
+    // not a narrower integer — it is not a primitive.
+    #[test]
+    fn every_primitive_word_parses_in_a_type_position() {
+        for word in [
+            "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize",
+            "f32", "f64", "bool", "str",
+        ] {
+            let source = with_types(&format!("%P = record {{ v: {word} }} size 0 align 1"));
+
+            assert_eq!(emit(&parsed(&source)), source);
+        }
+
+        // `i7` at offset 17 of the entry, two bytes long.
+        assert_eq!(
+            failure(&with_types("%P = record { v: i7 } size 0 align 1")),
+            ("unexpected_token", Span::new(ENTRY + 17, 2))
+        );
+    }
+
+    // 033-250's entry-termination law, both halves. A NEWLINE ends an entry;
+    // the section's `}` ends a final entry sharing its line; nothing else
+    // stands between two entries.
+    #[test]
+    fn two_entries_on_one_line_are_rejected_at_the_second_one() {
+        // The second `%` is 30 bytes into the entry line.
+        assert_eq!(
+            failure(&with_types(
+                "%A = record {} size 0 align 1 %B = record {} size 0 align 1"
+            )),
+            ("unexpected_token", Span::new(ENTRY + 30, 1))
+        );
+    }
+
+    #[test]
+    fn a_final_entry_may_share_the_sections_closing_brace() {
+        let one_line =
+            "module App { types { %A = record {} size 0 align 1 } graph {} behaviors {} }";
+        let canonical = with_types("%A = record {} size 0 align 1");
+
+        assert_eq!(emit(&parsed(one_line)), canonical);
+        // And the §5 spelling of the same idea, extra spaces included.
+        assert_eq!(
+            emit(&parsed(
+                "module App {\n  types { %Request = record { text: str }  size 8 align 8 }\n  graph {}\n  behaviors {}\n}\n"
+            )),
+            WITH_TYPES
+        );
+    }
+
+    #[test]
+    fn blank_lines_between_entries_are_insignificant() {
+        let spaced = "module App {\n  types {\n\n    %A = record {} size 0 align 1\n\n\n    %B = record {} size 0 align 1\n\n  }\n  graph {}\n  behaviors {}\n}\n";
+        let module = parsed(spaced);
+
+        assert_eq!(module.types.type_defs.len(), 2);
+        assert_eq!(
+            emit(&module),
+            "module App {\n  types {\n    %A = record {} size 0 align 1\n    %B = record {} size 0 align 1\n  }\n  graph {}\n  behaviors {}\n}\n"
+        );
+    }
+
+    // A `type_def` is one line. 033-250's braced-body latitude names `scope`
+    // and `behavior`; a record's braces are not a body in that sense, so a
+    // newline inside one is an ordinary unexpected token.
+    #[test]
+    fn a_newline_inside_a_type_def_is_rejected() {
+        // The newline closing `record {` sits at byte 40.
+        assert_eq!(
+            failure(
+                "module App {\n  types {\n    %A = record {\n      x: i32\n    } size 0 align 1\n  }\n  graph {}\n  behaviors {}\n}\n"
+            ),
+            ("unexpected_token", Span::new(40, 1))
+        );
+    }
+
+    // R57: a structural number is converted here, and a spelling that names no
+    // `u64` fails at the literal — not as an `unexpected_token`, because the
+    // token is exactly the `INT` the grammar asked for.
+    #[test]
+    fn a_structural_number_must_name_a_u64() {
+        // The `size` literal starts 20 bytes into the entry; the overflowing
+        // one is 20 digits long, the signed one 2 bytes (the `-` is inside the
+        // lexeme, 033-247).
+        assert_eq!(
+            failure(&with_types(
+                "%A = record {} size 99999999999999999999 align 8"
+            )),
+            ("int_out_of_range", Span::new(ENTRY + 20, 20))
+        );
+        assert_eq!(
+            failure(&with_types("%A = record {} size -8 align 8")),
+            ("int_out_of_range", Span::new(ENTRY + 20, 2))
+        );
+        // `align` is converted by the same helper and fails the same way — the
+        // literal starts 28 bytes into the entry.
+        assert_eq!(
+            failure(&with_types(
+                "%A = record {} size 8 align 99999999999999999999"
+            )),
+            ("int_out_of_range", Span::new(ENTRY + 28, 20))
+        );
+        // An array length is structural too — `[i32; -1]` puts the literal 23
+        // bytes in, 2 bytes long.
+        assert_eq!(
+            failure(&with_types("%A = record { v: [i32; -1] } size 0 align 1")),
+            ("int_out_of_range", Span::new(ENTRY + 23, 2))
+        );
+        // The boundary itself parses.
+        let module = parsed(&with_types(
+            "%A = record {} size 18446744073709551615 align 1",
+        ));
+
+        assert_eq!(module.types.type_defs[0].size, u64::MAX);
+    }
+
+    // Leading zeros are a SPELLING, not a value. The parser converts, the
+    // emitter writes the number back, and the canonical digits are what comes
+    // out — the same normalization non-canonical spacing gets.
+    #[test]
+    fn a_leading_zero_spelling_converts_and_emits_canonically() {
+        let module = parsed(&with_types(
+            "%A = record { v: [i32; 007] } size 0064 align 08",
+        ));
+
+        assert_eq!(module.types.type_defs[0].size, 64);
+        assert_eq!(module.types.type_defs[0].align, 8);
+
+        let Layout::Record(fields) = &module.types.type_defs[0].layout else {
+            panic!("the layout is a record");
+        };
+
+        let TypeTag::Array(_, length) = &fields[0].tag else {
+            panic!("the field's tag is an array");
+        };
+
+        assert_eq!(*length, 7);
+        assert_eq!(
+            emit(&module),
+            with_types("%A = record { v: [i32; 7] } size 64 align 8")
+        );
+    }
+
+    // `u64::from_str` admits a leading `+`; the `INT` lexeme does not (033-247
+    // puts only a `-` inside the lexeme). No lexer output can carry one, since
+    // `+` begins no token of the inventory — so the stream is patched by hand,
+    // which is exactly the case the explicit guard exists for.
+    #[test]
+    fn a_plus_signed_structural_number_is_out_of_range() {
+        let mut tokens = lex(&with_types("%A = record {} size 7 align 1")).expect("source lexes");
+
+        for token in &mut tokens {
+            if token.kind == TokenKind::Int("7".to_string()) {
+                token.kind = TokenKind::Int("+7".to_string());
+            }
+        }
+
+        let diagnostic = parse(tokens).expect_err("a `+`-signed literal fails to parse");
+
+        assert_eq!(diagnostic.class.id(), "int_out_of_range");
+        // The `size` literal, at its original span.
+        assert_eq!(diagnostic.span, Some(Span::new(ENTRY + 20, 1)));
+    }
+
+    #[test]
+    fn a_malformed_type_def_reports_at_the_offending_token() {
+        // Missing `=`: `record` stands where it belongs, 9 bytes in.
+        assert_eq!(
+            failure(&with_types("%Request record { text: str } size 8 align 8")),
+            ("unexpected_token", Span::new(ENTRY + 9, 6))
+        );
+        // Missing `size`: `align` turns up in its place, 32 bytes in.
+        assert_eq!(
+            failure(&with_types("%Request = record { text: str } align 8")),
+            ("unexpected_token", Span::new(ENTRY + 32, 5))
+        );
+        // A layout keyword that is not one of the three, 11 bytes in.
+        assert_eq!(
+            failure(&with_types(
+                "%Request = struct { text: str } size 8 align 8"
+            )),
+            ("unexpected_token", Span::new(ENTRY + 11, 6))
+        );
+        // An unclosed `<`: the record's `}` arrives where `>` belongs, 46 bytes
+        // in.
+        assert_eq!(
+            failure(&with_types(
+                "%Request = record { body: pool_index<%Payload } size 8 align 8"
+            )),
+            ("unexpected_token", Span::new(ENTRY + 46, 1))
+        );
+        // An enum needs at least one variant: its `}` is 17 bytes in.
+        assert_eq!(
+            failure(&with_types("%Request = enum {} size 8 align 8")),
+            ("unexpected_token", Span::new(ENTRY + 17, 1))
+        );
+        // And a variant needs a payload inside parentheses if it opens them:
+        // the `)` is 24 bytes in.
+        assert_eq!(
+            failure(&with_types("%Request = enum { #None() } size 8 align 8")),
+            ("unexpected_token", Span::new(ENTRY + 24, 1))
         );
     }
 }

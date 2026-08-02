@@ -51,6 +51,7 @@ mod tests {
             span: Span::new(0, 51),
             types: TypesSection {
                 span: Span::new(15, 8),
+                type_defs: Vec::new(),
             },
             graph: GraphSection {
                 span: Span::new(26, 8),

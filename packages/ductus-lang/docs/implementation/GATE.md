@@ -5,7 +5,7 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: 4 (parser + emitter foundations; the module-header vertical)
+increment: 5 (the types-table vertical)
 phase: review
 
 ## State notes
@@ -71,3 +71,14 @@ phase: review
   tests, four gates; first corpus witness module_header.duir + conformance test; parse
   takes Vec<Token> moving payloads; covering() hardened; property test live). FND-16/17
   filed. phase: review — beat 4: owner hand review + "approved" → commit.
+- 2026-08-02 — "approved, committed and pushed. FND-17: (c)" → increment 4 CLOSED (owner
+  commit); FND-17 ruled (c), R54's §5-oracle clause struck in M0.md. Gate moves to
+  increment 5 (types-table vertical), phase: planning.
+- 2026-08-02 — "confirm." → increment 5 plan confirmed (R56/R57/R58 + terminator helper,
+  canon details, types_table witness). phase: build.
+- 2026-08-02 — increment 5 build + 2-reviewer pass (~70 adversarial probes) + remediation
+  complete: FND-18 ruled (a) → 033-255 nesting bound in all three corpus docs + depth
+  guard with the law's own counting (leaves free, bracketed constructors cost); producer
+  contract extended to every name/arity position; emitter renders into the sink; shared
+  test fixtures; 127 tests, four gates; types_table.duir witness; orchestrator e2e read
+  done. phase: review — beat 4: owner hand review + "approved" → commit.

@@ -17,6 +17,13 @@ const MODULE_HEADER: &str = concat!(
     "/../../corpus/duir/m0/module_header.duir"
 );
 
+/// Resolved against the CRATE MANIFEST, never the process cwd
+/// (corpus/README.md).
+const TYPES_TABLE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/duir/m0/types_table.duir"
+);
+
 /// The minimal module: a header, three empty sections, one trailing newline.
 ///
 /// The trace format arrives at increment 12, so this witness carries its
@@ -29,6 +36,23 @@ const MODULE_HEADER: &str = concat!(
 #[test]
 fn module_header() {
     let source = fs::read_to_string(MODULE_HEADER).expect("the witness file is readable");
+    let tokens = lex(&source).expect("the witness lexes");
+    let module = parse(tokens).expect("the witness parses");
+
+    assert_eq!(emit(&module), source);
+}
+
+/// The `types` table: every `layout` and every `type_tag` alternative the
+/// grammar admits, in one module.
+///
+/// The empty `graph {}` and `behaviors {}` are the same latitude the minimal
+/// witness takes (FND-16 is open until the scope row), so this file exercises
+/// the type table alone. Byte equality is again the claim that the file is
+/// CANONICAL — a hand-written row that spaces a tag differently from the
+/// emitter fails here rather than teaching a second spelling.
+#[test]
+fn types_table() {
+    let source = fs::read_to_string(TYPES_TABLE).expect("the witness file is readable");
     let tokens = lex(&source).expect("the witness lexes");
     let module = parse(tokens).expect("the witness parses");
 

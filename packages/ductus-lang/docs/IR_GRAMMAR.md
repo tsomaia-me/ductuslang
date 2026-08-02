@@ -235,6 +235,15 @@ type_tag         ::= PRIM
 // 'yielded<T>' is the ABI-only membership-descriptor type (§15.4.1,
 // 033-79): it types synthesized membership-descriptor cells and
 // 'yielded T' parameters, and is never a user-facing value type.
+//
+// NESTING BOUND (033-255). A type_tag nests at most 64 levels deep.
+// Each bracketed constructor is ONE level: a 'pool_index', 'yielded',
+// 'handle', or 'portal' wrapper, a tuple position, an array element,
+// and a 'closure' parameter or return. A tag that exceeds the bound is
+// a grammar error surfaced at the token that exceeds it, under its own
+// diagnostic class. The bound is format law, not implementation
+// latitude: every conforming reader accepts every tag within it and
+// rejects every tag beyond it, identically.
 ```
 
 ## 3. Module text grammar
@@ -713,7 +722,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `BID` | §15.4.4 | 033-167 / 033-254 (case-sensitive `B@` prefix; hex-run boundary rule) |
 | `HexU32` | §14.6.3 | 033-167 |
 | `PRIM` | §15.4.6 | 033-43 |
-| `type_tag` | §15.4.6 | 033-43 / 033-79 |
+| `type_tag` | §15.4.6 | 033-43 / 033-79 / 033-255 (nesting bounded at 64 levels, one per bracketed constructor) |
 
 The lexical laws that constrain no single production — **file intake** (033-254), **no comments** (033-246), and **lexer/parser dot ownership** (033-253) — are stated in §2's preamble.
 

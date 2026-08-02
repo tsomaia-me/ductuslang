@@ -46,6 +46,25 @@ pub enum DiagClass {
     /// The single parse-error class — semantic legality classes belong to the
     /// loader (F4).
     UnexpectedToken,
+    /// A STRUCTURAL integer literal does not fit the `u64` its position needs.
+    ///
+    /// Structural numbers — a type's `size` and `align`, an array's length,
+    /// later a cell's `depth` and a stream's `capacity` — are converted at parse
+    /// time, because their type is known from the position alone (R57). A
+    /// negative or oversized spelling therefore fails HERE, at the literal,
+    /// rather than surviving to the loader as text. TYPED values (`init`,
+    /// `else`) are the other case and stay raw.
+    IntOutOfRange,
+    /// A type tag nests past the format's bound of 64 levels (033-255).
+    ///
+    /// Each bracketed constructor — a `pool_index`, `yielded`, `handle` or
+    /// `portal` wrapper, a tuple position, an array element, a closure
+    /// parameter or return — is one level. The bound is FORMAT LAW rather than
+    /// implementation latitude: every conforming reader accepts every tag
+    /// within it and rejects every tag beyond it, identically. So this is not a
+    /// resource diagnostic that a larger stack would retire — it is a grammar
+    /// error, reported at the constructor that exceeds the bound.
+    NestingTooDeep,
 }
 
 impl DiagClass {
@@ -68,6 +87,8 @@ impl DiagClass {
             DiagClass::InvalidBid => "invalid_bid",
             DiagClass::LoneCarriageReturn => "lone_carriage_return",
             DiagClass::UnexpectedToken => "unexpected_token",
+            DiagClass::IntOutOfRange => "int_out_of_range",
+            DiagClass::NestingTooDeep => "nesting_too_deep",
         }
     }
 }
@@ -99,6 +120,8 @@ mod tests {
         assert_eq!(DiagClass::InvalidBid.id(), "invalid_bid");
         assert_eq!(DiagClass::LoneCarriageReturn.id(), "lone_carriage_return");
         assert_eq!(DiagClass::UnexpectedToken.id(), "unexpected_token");
+        assert_eq!(DiagClass::IntOutOfRange.id(), "int_out_of_range");
+        assert_eq!(DiagClass::NestingTooDeep.id(), "nesting_too_deep");
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a

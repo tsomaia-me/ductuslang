@@ -26665,6 +26665,14 @@ dotted op mnemonics (`add.i32`, `const.i32`, `cast.i64.i32`, `tuple.make`) are
 composed by the parser. Position always disambiguates the two — a mnemonic heads
 an instruction's right-hand side, a `PATH` never does.
 
+**Type-tag nesting bound.** A `type_tag` (§15.4.3) nests at most **64** levels
+deep. Each bracketed constructor is one level: a `pool_index`, `yielded`,
+`handle`, or `portal` wrapper, a tuple position, an array element, and a
+`closure` parameter or return. A tag that exceeds the bound is a grammar error
+surfaced at the token that exceeds it, under its own diagnostic class. The bound
+is format law, not implementation latitude — every conforming reader accepts
+every tag within it and rejects every tag beyond it, identically.
+
 ```ebnf
 module        ::= 'module' NAME '{' types_section graph_section behaviors_section '}'
 

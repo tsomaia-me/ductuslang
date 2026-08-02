@@ -4236,7 +4236,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-178. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-179. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 254 Rules
+## 033. Compilation Model & IR — 255 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4502,6 +4502,8 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 033-253. The text-form lexer never composes a dotted lexeme: it emits identifier, dot, and integer tokens, and both dotted paths and dotted op mnemonics are composed by the parser. Position always disambiguates the two — a mnemonic heads an instruction's right-hand side, a path never does — so the one-token-or-three question has a single answer: three tokens always, composed above the lexer. (§15.4.6)
 
 033-254. The `.duir` reader's file intake is pinned: a byte-order mark is stripped at offset 0 only — a BOM anywhere else is a lexical error; inter-token whitespace is exactly space, tab, and the line terminators (a CRLF pair normalizes to a newline before tokenization; a lone carriage return is a lexical error); form feed, vertical tab, and non-breaking space are not whitespace and are lexical errors outside string content. The behavior-handle prefix is case-sensitive — exactly `B@` — and the handle's hexadecimal run must end at a non-identifier byte: a run that continues into identifier characters is not a handle, and the reader yields the letter, the `@`, and what follows as ordinary tokens, which is what keeps an `@`-provenance clause after a path segment named `B` spellable. (§15.4.6)
+
+033-255. The type-tag grammar's nesting depth is bounded at 64: each bracketed constructor — a `pool_index`, `yielded`, `handle`, or `portal` wrapper, a tuple position, an array element, a `closure` parameter or return — is one level, and a tag exceeding the bound is a grammar error surfaced at the token that exceeds it, under its own diagnostic class. The bound is format law, not implementation latitude: every conforming reader accepts every tag within it and rejects every tag beyond it, identically. (§15.4.6)
 
 ## 034. Collect / Yield / Yielded — 20 Rules
 

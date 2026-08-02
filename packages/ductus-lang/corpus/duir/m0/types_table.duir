@@ -1,0 +1,12 @@
+module App {
+  types {
+    %Payload = record {} size 0 align 1
+    %Request = record { text: str, body: pool_index<%Payload>, tags: [u8; 4] } size 32 align 8
+    %Status = enum { #Ok(i32, str), #Pending, #Failed(%Request) } size 24 align 8
+    %Pair = tuple(i32, f64) size 16 align 8
+    %Port = record { slot: handle<portal<i32>>, apply: closure<(i32, str) -> bool> } size 24 align 8
+    %View = record { rows: [%Status; 8], empty: closure<() -> str>, nested: (bool, (f32, i128)) } size 40 align 8
+  }
+  graph {}
+  behaviors {}
+}
