@@ -1,0 +1,14 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [App.count] effects [App.print:0] reset_on_reopen [App.mixer.tap: App.events] {
+      input App.count : i32 init 0
+      derived App.doubled : i32 uses B@d1 inputs [App.count]
+    }
+    scope App.mixer exposes [] effects [] {
+      input App.mixer.gain : f64 init 1.0
+    }
+    scope App.panel exposes [] effects [] {}
+  }
+  behaviors {}
+}

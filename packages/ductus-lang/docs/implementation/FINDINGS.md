@@ -147,7 +147,7 @@ the corpus builds a different lexer. Recommendation: amend the STRING law's raw-
 clause (lone CR excluded from raw; CRLF normalizes) and add the intake paragraph (BOM,
 whitespace set) to IR_GRAMMAR §1/§2 + SPEC mirror, LOG-first.
 
-## FND-16 — graph_section arity: `scope+` vs the empty module. OPEN (ruling due before row 7)
+## FND-16 — graph_section arity: `scope+` vs the empty module. RULED (b) — relax to `scope*`; EXECUTED (Chunk A, 2026-08-22; owner veto window per LEARNINGS #35, authorized by "proceed and take it from here")
 IR_GRAMMAR §3's `graph_section ::= 'graph' '{' scope+ '}'` requires at least one scope,
 so the minimal module `module App { types {} graph {} behaviors {} }` — increment 4's
 round-trip witness — is outside the grammar as written. Options: (a) parser enforces
@@ -155,6 +155,9 @@ round-trip witness — is outside the grammar as written. Options: (a) parser en
 (b) relax the production to `scope*` (empty graph legal; the loader may still reject
 empty modules as it sees fit); (c) keep `scope+` in the grammar, move arity to the
 loader under F4 (parser over-admits by design). Due at increment 7 (scope row) planning.
+EXECUTED as (b): DECISION_LOG 033-256, IR_GRAMMAR §3's `graph_section` production and
+note, SPEC §15.4.6's copy and its **Empty graph** paragraph. The two existing witnesses
+(`module_header.duir`, `types_table.duir`) are inside the grammar again with no edit.
 
 ## FND-17 — IR_GRAMMAR §5's worked example is not R54-canonical. RULED (c) — §5 stays pretty parseable documentation; the canonical oracle is the corpus witness set; R54's §5-oracle clause struck (owner, 2026-08-02)
 §5 uses column alignment (`input     App.count   : i32  init 0`), double spaces before
@@ -179,3 +182,69 @@ as a documented limitation (violates fail-fast; hostile to hosts embedding the l
 (c) rewrite type_tag parsing with an explicit heap stack (no cap, no abort, permanently
 more complex code in the hottest grammar path, and the loader/emitter still need THEIR
 answer for hand-built trees). Recommendation: (a) — LOG-first, the cap is format law.
+
+## FND-19 — typed-value literals need a canonical digit spelling. RULED-BY-CADENCE (clear winner; veto standing) — textual, value-safe normalization (Chunk A, 2026-08-22)
+Canonical uniqueness (already law for `STRING` content and for key quoting) fails for
+`value` if `init 7` and `init 007` are both stable: two spellings of one value both
+survive a round trip, so the corpus byte gate accepts two canonical forms. Structural
+numbers do not have the problem — the parser converts them to `u64` and the emitter
+writes the number back (R57) — but typed values cannot be converted at parse: the
+loader owns their type. So canonicalization for them is TEXTUAL and must be value-safe
+under every type the position may later take: an INT strips leading zeros to at least
+one digit and `-0` canonicalizes to `0`; a FLOAT preserves its sign (`-0.0` is
+meaningful and is not `0.0`), strips integer-part leading zeros to at least one digit
+and fraction trailing zeros to at least one digit; `nan`, `inf` and `-inf` are their own
+spellings. Each rewrite names the same real number, so no reading under any width can
+change. EXECUTED: DECISION_LOG 033-257, the canon note beside IR_GRAMMAR §3's `value`
+production, SPEC §15.4.6's **Canonical digit spelling** paragraph, and
+`ValueLiteral::int` / `ValueLiteral::float` in `ductus-ir`.
+
+## FND-20 — value/wire-to keywords shadow bare one-segment paths. RULED-BY-CADENCE (clear winner; veto standing) — EXECUTED (Chunk A wave 2, 2026-08-22)
+In a wire's `to` position and in `value` positions, the soft keywords `null` / `true` /
+`false` / `nan` / `inf` win over a bare ONE-SEGMENT path of the same name, decided by
+one-token lookahead: `null.x` and `true:0` still parse as paths; only the bare single
+segment is shadowed. This is the grammar's own ambiguity; the lookahead reading is the
+only one that keeps every multi-segment path spellable while the keywords stay parseable.
+A cell named bare `null` referenced from a wire-to is unspellable — pathological by
+construction, and the loader's slice rejects nothing here (parse-level only). Pinned in
+IR_GRAMMAR prose at the wire/value productions in the wave-2 rider.
+EXECUTED: DECISION_LOG 033-258, the **Keyword-over-path shadowing** notes beside
+IR_GRAMMAR §3's `wire` and `value` productions (plus their §6 rows), and SPEC §15.4.6's
+**Keyword-over-path shadowing** paragraph. The law is scoped to the two positions that
+admit BOTH a path and a literal — a wire's destination and a `binding`'s right-hand
+side; a lone `value` position (`init`, `else`) admits no path, so nothing is shadowed
+there and the finding's wider "in value positions" phrasing is narrowed accordingly.
+SUPERSEDED BY FND-21 (owner ruling, 2026-08-02; executed Chunk A wave 3): the
+lookahead this finding designed is retired. With `null`/`true`/`false`/`nan`/`inf`
+reserved language-wide, no `NAME` segment may bear one, so no `PATH` competes with
+the literal at either position and no disambiguation is needed. 033-258 is amended
+in place to record the collapse; 033-259 states the `.duir` half. Nothing here is
+"shadowed" any more — `null.x` is now a `reserved_word` rejection, not a path —
+and the finding's unreachable-cell consequence is gone with it: a cell so named is
+unspellable everywhere, not merely from two positions.
+
+## FND-21 — quoted-key spellings of shadowed words silently change meaning; Key has a CR totality hole. RULED (owner, 2026-08-02): (1) LANGUAGE-WIDE reservation — null/nan/inf join true/false as reserved spellings at the Ductus surface and are never NAME segments in .duir (dissolves the shadowing; 033-258's lookahead collapses into the reservation); a KEY whose content is one of the five renders QUOTED (data stays spellable, meaning stable); (2) half two RULED (A) — QuotedKey escapes extend to the STRING family with the same canonical rule
+Two related defects in the quoted-key/canonical-quoting family, found by both reviewers:
+(1) `wire … to 'null'` parses as a PATH (a cell literally named null), but the emitter's
+canonical rendering unquotes NAME-shaped keys (bare-iff-NAME-shaped), so round 2 reads
+bare `null` = the KEYWORD — a fixpoint-stable, meaning-changing canonicalization; same at
+binding-RHS with 'true'/'false'/'nan'/'inf'. (2) `Segment::Key` content admits any string
+but QuotedKey's closed escape set {\', \\} cannot spell a carriage return — Key("a\r")
+emits unlexable text and Key("a\r\n") silently corrupts to "a\n". Options are in the
+in-session round; both amend 033-243/033-258-family law.
+EXECUTED (Chunk A wave 3, 2026-08-22). Half one, the language-wide reservation:
+DECISION_LOG 002-39 (the surface law, §1.4) with the family header bumped 38→39,
+GRAMMAR.md's new `ReservedLiteralSpelling` production in §2.4 plus the §2.3 and
+§2.8 notes, and SPEC §1.4's **Reserved literal spellings** paragraph. Its `.duir`
+rider: DECISION_LOG 033-259 (033 header 258→259), 033-258 amended in place to
+record the lookahead's collapse, IR_GRAMMAR §2's **Reserved spellings** preamble
+law + the `NAME`/`BareKey`/`PathSegment` productions + both §3 notes + the §6 rows,
+and SPEC §15.4.6's **Reserved spellings** paragraph replacing the shadowing one.
+Half two, the escape family: 033-243 amended (bare iff identifier-shaped AND not
+reserved; the quoted form's escape set and canonical emission are the string
+form's), IR_GRAMMAR's `QuotedKey`/`KeyRaw`/`KeyEscape` productions and key
+canonical-emission note, SPEC §15.4.1.1's **Quoted-key payload and its canonical
+emission** paragraph. Code: `DiagClass::ReservedWord` (`reserved_word`), the
+parser's reservation check at every `NAME` position with the lookahead removed,
+the lexer's key escapes extended to the six, and one canonical quoting routine
+shared by the `STRING` and `QuotedKey` emitters.

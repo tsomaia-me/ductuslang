@@ -1,22 +1,22 @@
 //! The string recognizer: `STRING` (033-249).
 
-use super::chars::hex_run;
-use super::payload::{
-    PAYLOAD_START, escaped_character, invalid_escape, push_line_ending, raw_run, take_raw_run,
-};
+use super::payload::{PAYLOAD_START, push_escape, push_line_ending, raw_run, take_raw_run};
 use crate::diag::DiagClass;
 use crate::text::lexer::scan_error::ScanError;
 use crate::text::token::TokenKind;
 
-/// A Unicode scalar escape is at most 6 hex digits (033-249).
-const MAX_SCALAR_DIGITS: usize = 6;
+/// The `STRING` delimiter (§2).
+const DELIMITER: char = '"';
 
 /// A `STRING` lexeme (033-249), escapes already processed.
 ///
 /// Raw content is any scalar but `"`, `\`, and a lone carriage return — raw
 /// newlines and raw tabs ARE legal, and so is a raw control scalar, which only
 /// the emitter prefers to spell `\u{…}`. Escapes are `\"`, `\\`, `\n`, `\r`,
-/// `\t` and `\u{1..6 hex}`.
+/// `\t` and `\u{1..6 hex}` — the shared payload grammar at the `"` delimiter,
+/// which [`quoted_key`](fn@super::quoted_key) runs at `'` (R63). `\'` is
+/// therefore NOT an escape here: a single quote is ordinary Raw content inside
+/// a string and needs none.
 ///
 /// A raw `\r\n` inside a string normalizes to a lone `\n`, exactly as it does
 /// outside one — file-level line-ending normalization cannot be selective — and
@@ -30,7 +30,7 @@ const MAX_SCALAR_DIGITS: usize = 6;
 /// escape — including an escape the end of input cuts short, which is a
 /// malformed escape first and a missing quote second.
 pub(crate) fn string(input: &str) -> Option<Result<(usize, TokenKind), ScanError>> {
-    if !input.starts_with('"') {
+    if !input.starts_with(DELIMITER) {
         return None;
     }
 
@@ -38,15 +38,15 @@ pub(crate) fn string(input: &str) -> Option<Result<(usize, TokenKind), ScanError
 }
 
 fn scan_string(input: &str) -> Result<(usize, TokenKind), ScanError> {
-    let mut value = String::with_capacity(raw_run(input, PAYLOAD_START, '"'));
+    let mut value = String::with_capacity(raw_run(input, PAYLOAD_START, DELIMITER));
     let mut cursor = PAYLOAD_START;
 
     loop {
-        cursor = take_raw_run(input, cursor, '"', &mut value);
+        cursor = take_raw_run(input, cursor, DELIMITER, &mut value);
 
         cursor = match input[cursor..].chars().next() {
-            Some('"') => return Ok((cursor + 1, TokenKind::Str(value))),
-            Some('\\') => push_string_escape(input, cursor, &mut value)?,
+            Some(DELIMITER) => return Ok((cursor + 1, TokenKind::Str(value))),
+            Some('\\') => push_escape(input, cursor, DELIMITER, &mut value)?,
             Some('\r') => push_line_ending(input, cursor, &mut value)?,
             _ => {
                 return Err(ScanError::new(
@@ -58,58 +58,6 @@ fn scan_string(input: &str) -> Result<(usize, TokenKind), ScanError> {
             }
         };
     }
-}
-
-fn push_string_escape(input: &str, cursor: usize, value: &mut String) -> Result<usize, ScanError> {
-    let escaped = escaped_character(input, cursor)?;
-
-    let character = match escaped {
-        '"' => '"',
-        '\\' => '\\',
-        'n' => '\n',
-        'r' => '\r',
-        't' => '\t',
-        'u' => return push_scalar_escape(input, cursor, value),
-        _ => {
-            return Err(invalid_escape(
-                input,
-                cursor,
-                cursor + 1 + escaped.len_utf8(),
-            ));
-        }
-    };
-
-    value.push(character);
-
-    Ok(cursor + 2)
-}
-
-// `\u{H…H}` — 1 to 6 hex digits naming a Unicode scalar. A surrogate or a value
-// above 0x10FFFF names no scalar and is rejected here rather than passed on.
-fn push_scalar_escape(input: &str, cursor: usize, value: &mut String) -> Result<usize, ScanError> {
-    let bytes = input.as_bytes();
-    let open = cursor + 2;
-
-    if bytes.get(open) != Some(&b'{') {
-        return Err(invalid_escape(input, cursor, open + 1));
-    }
-
-    let digits_start = open + 1;
-    let digits = hex_run(&bytes[digits_start..]);
-    let close = digits_start + digits;
-
-    if !(1..=MAX_SCALAR_DIGITS).contains(&digits) || bytes.get(close) != Some(&b'}') {
-        return Err(invalid_escape(input, cursor, close + 1));
-    }
-
-    let scalar = u32::from_str_radix(&input[digits_start..close], 16)
-        .ok()
-        .and_then(char::from_u32)
-        .ok_or_else(|| invalid_escape(input, cursor, close + 1))?;
-
-    value.push(scalar);
-
-    Ok(close + 1)
 }
 
 #[cfg(test)]

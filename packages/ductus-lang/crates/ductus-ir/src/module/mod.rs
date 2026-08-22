@@ -1,7 +1,7 @@
 //! The module AST — the structural mirror of a `.duir` module's text form (T1):
 //! a [`Module`] holds the three sections in grammar order. Section CONTENTS
-//! land at their component rows: `type_def`s at increment 5, behaviors at
-//! increment 6, scopes and their entries at increment 7.
+//! land at their component rows: `type_def`s and scopes are here; the
+//! `behaviors` table stays an empty shell through M0.
 //!
 //! The concern is the MODULE, so it owns the module header and the three
 //! section shells only (R55). `graph/` owns the graph section's entries —

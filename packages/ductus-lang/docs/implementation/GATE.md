@@ -5,8 +5,8 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: 5 (the types-table vertical)
-phase: review
+increment: Chunk B (the runtime kernel: loader, store, engine, trace_sink, witness corpus + goldens)
+phase: build
 
 ## State notes
 - Hook ENFORCING this file since 2026-08-01 (R12a): .claude/settings.json → .claude/hooks/
@@ -82,3 +82,26 @@ phase: review
   contract extended to every name/arity position; emitter renders into the sink; shared
   test fixtures; 127 tests, four gates; types_table.duir witness; orchestrator e2e read
   done. phase: review — beat 4: owner hand review + "approved" → commit.
+- 2026-08-02 — "approved" → increment 5 CLOSED (owner commit a7c7122). Rows 6+7 merged
+  per R61; gate moves to the scope vertical, phase: planning. FND-16 due in this round.
+- 2026-08-02 — "proceed and take it from here" → Chunk A (complete .duir text form)
+  authorized under the LEARNINGS #35 cadence: clear-winner calls autonomous with
+  end-of-milestone disclosure; genuine direction/architecture forks still owner-ruled.
+  FND-16 executes (b) unless struck. phase: build.
+- 2026-08-22 — Chunk A COMPLETE: two build waves + 2-reviewer pass + remediation +
+  FND-21 execution (owner-ruled mid-chunk: R62 language-wide reservation, R63 key
+  escapes = STRING family). 221 tests, six gates green (rustdoc gate added).
+  Orchestrator end-to-end read done: both captured diffs in full, all 26 untracked
+  files direct, plus the six meta-file diffs neither capture held (LEARNINGS,
+  Cargo.toml, FINDINGS/GATE/M0/STYLE). phase: review (mechanical transition) —
+  beat 4: disclosure report + owner hand review + "approved" → commit.
+- 2026-08-22 — "Approved here and in the future EXCEPT genuine design decisions:
+  unless they block continuation - proceed and raise them when finished, only
+  interrupt if you are genuinely blocked by design call required from me. Proceed."
+  → Chunk A APPROVED and committed (this commit); STANDING approval recorded as
+  LEARNINGS #36 (per-chunk approval gates end; genuine non-blocking design calls
+  proceed on best-grounded defaults and are raised at finish, veto standing;
+  interrupt only on genuine blockage). Gate moves to Chunk B (runtime kernel),
+  phase: build. R20's probe-#1 ruling beat is superseded by the standing
+  instruction: corpus verified on disk first, then the near-single-path answer
+  executes with a FINDINGS entry and veto standing, raised at finish.

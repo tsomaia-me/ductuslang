@@ -65,6 +65,19 @@ pub enum DiagClass {
     /// resource diagnostic that a larger stack would retire — it is a grammar
     /// error, reported at the constructor that exceeds the bound.
     NestingTooDeep,
+    /// One of the five reserved spellings stands where a `NAME` is required
+    /// (002-39, 033-259).
+    ///
+    /// `null`, `true`, `false`, `nan` and `inf` are reserved language-wide, so
+    /// no declaration of any kind may bear one as its name — a module name, a
+    /// type id, a field name, a variant name, a binding name and a path's name
+    /// segment all reject them. Its own class rather than `UnexpectedToken`
+    /// because the token IS word-shaped and the position DOES want a word: what
+    /// is wrong is the spelling, and the message a reader needs says so.
+    ///
+    /// A quoted KEY segment is untouched — `App.rows.'null'.render_row` is data
+    /// and stays legal (033-243).
+    ReservedWord,
 }
 
 impl DiagClass {
@@ -89,6 +102,7 @@ impl DiagClass {
             DiagClass::UnexpectedToken => "unexpected_token",
             DiagClass::IntOutOfRange => "int_out_of_range",
             DiagClass::NestingTooDeep => "nesting_too_deep",
+            DiagClass::ReservedWord => "reserved_word",
         }
     }
 }
@@ -122,6 +136,7 @@ mod tests {
         assert_eq!(DiagClass::UnexpectedToken.id(), "unexpected_token");
         assert_eq!(DiagClass::IntOutOfRange.id(), "int_out_of_range");
         assert_eq!(DiagClass::NestingTooDeep.id(), "nesting_too_deep");
+        assert_eq!(DiagClass::ReservedWord.id(), "reserved_word");
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a

@@ -55,6 +55,7 @@ mod tests {
             },
             graph: GraphSection {
                 span: Span::new(26, 8),
+                scopes: Vec::new(),
             },
             behaviors: BehaviorsSection {
                 span: Span::new(37, 12),

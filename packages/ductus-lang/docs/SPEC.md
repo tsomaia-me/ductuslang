@@ -174,6 +174,21 @@ conflicting grammar. The two-character sequence `handle!` is a single lexer toke
 
 Every keyword is reserved in every position and can never be used as an ordinary identifier; reservedness is global, not per-class or contextual. A keyword that appears in a field-like position — the wire slots `from`/`to`/`pairs`, the reserved instance fields `pair`/`exposition`, and the effect blocks `desired`/`observed` — is the keyword itself, used in that syntactic context where the compiler assigns it meaning (much as `this`/`super` are keywords used in value position in other languages), not a user-definable field; no declaration may introduce an identifier of a keyword's spelling.
 
+**Reserved literal spellings.** Five spellings are reserved language-wide
+without being keywords of any class above: `true`, `false`, `null`, `nan`, and
+`inf`. None of the five may be an identifier, and no declaration of any kind
+may bear one as its name — so no cell, node, wire, stream, or member name ever
+collides with a literal spelling. `true` and `false` are the two `bool`
+literals (§4.3.4); `nan` and `inf` are the float non-finite spellings; and
+`null` names nothing — it is reserved precisely so that nothing may bear the
+name. Reservation is global in the same sense keyword reservation is: it holds
+in every position, in every class of declaration, and in every text form the
+language serializes to, including the IR text form, where the five are never a
+`NAME` and a reader rejects one in any name position (§15.4.6). Of the three
+that are not `bool` literals, none has a literal production in the surface
+grammar today: the float literal forms of §4.3.2 admit digits only, and there
+is no null literal at all. Reservation is what holds the spellings available.
+
 The sole reserved *type* identifier is `Subject` (§13.7.7), the
 subject-type alias used in trait and `fulfill` type positions. Being a
 type alias rather than a keyword, it is capitalized by the type-naming
@@ -26230,14 +26245,32 @@ segment is a first-class multiplicity device of this grammar,
 alongside lexical name segments and the `:N` ordinal suffix. A
 stringified key renders **bare** iff it is **identifier-shaped** —
 letters, digits, and `_`, not starting with a digit, the identifier
-charset exactly, nothing more and nothing less; any other stringified
-form (a string key containing a dot or a space, a `.` char key, a
-purely numeric key such as `42`, the empty string, …) renders as a
-**single-quoted** segment in which `'` and `\` are escaped as `\'`
-and `\\`. Quoting is canonical — a producer uses the bare form
-whenever it is available — so equal keys render byte-identical cell
-IDs. A numeric `repeat` key therefore renders quoted:
-`App.rows.'42'.render_row`.
+charset exactly, nothing more and nothing less — **and** is not one of
+the five reserved spellings `true`, `false`, `null`, `nan`, `inf`
+(§1.4), which a bare rendering would turn into a keyword. Any other
+stringified form (a string key containing a dot or a space, a `.` char
+key, a purely numeric key such as `42`, the empty string, a key spelled
+`null`, …) renders as a **single-quoted** segment. Quoting is canonical
+— a producer uses the bare form whenever it is available — so equal keys
+render byte-identical cell IDs. A numeric `repeat` key therefore renders
+quoted: `App.rows.'42'.render_row`, and so does a key spelled by a
+reserved word: `App.rows.'null'.render_row`.
+
+**Quoted-key payload and its canonical emission.** A single-quoted
+segment's payload is the `STRING` payload of §15.4.6 with `'` in place of
+`"`: raw content is any Unicode scalar except `'`, `\`, and a lone
+carriage return — raw newlines and raw tabs are legal — and the escapes
+are `\'`, `\\`, `\n`, `\r`, `\t`, and `\u{H…H}` (one to six hexadecimal
+digits naming a scalar). Canonical emission follows the same rule with
+the same substitution: raw wherever raw is legal, with four exceptions —
+`'` emits `\'`, `\` emits `\\`, a carriage return emits `\r` (a raw CR
+would not survive file-level newline normalization), and a control
+scalar other than newline and tab emits `\u{…}`; newline and tab emit
+raw. Every key content is therefore spellable (totality) and has exactly
+one canonical spelling (uniqueness), exactly as every `str` value does.
+The reserved-spelling exclusion above is what makes that uniqueness
+meaning-safe as well: a key spelled `null` stays quoted, so it reads back
+as the key it is rather than as the keyword.
 
 **Interpreter-placed effect paths.** An effect that an interpretation
 places while walking a node's `.exposition` (the interpretation-bootstrap
@@ -26591,7 +26624,9 @@ the type-erased graph tag (§15.4.3). The primitive lexemes are pinned, not left
 the conventional form:
 
 ```ebnf
-NAME          ::= /* identifier — letters, digits, '_'; not starting with a digit */
+NAME          ::= /* identifier — letters, digits, '_'; not starting with a digit;
+                     never one of the five reserved spellings 'null', 'true',
+                     'false', 'nan', 'inf' */
 INT           ::= /* optionally signed decimal integer literal — the sign, when
                      present, is a leading '-' INSIDE the lexeme */
 FLOAT         ::= '-'? Digit+ '.' Digit+
@@ -26684,7 +26719,7 @@ layout        ::= 'record' '{' field_list '}'
 field_list    ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
 variant       ::= '#'NAME ('(' type_tag (',' type_tag)* ')')?
 
-graph_section ::= 'graph' '{' scope+ '}'
+graph_section ::= 'graph' '{' scope* '}'          // an empty graph is legal
 scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                   ('reset_on_reopen' reopen_set)? '{' entry* '}'
 entry         ::= cell | gate | wire | effect | stream
@@ -26724,6 +26759,51 @@ PRIM          ::= 'i8'|'i16'|'i32'|'i64'|'i128'|'u8'|'u16'|'u32'|'u64'|'u128'
 value         ::= INT | FLOAT | 'true' | 'false' | STRING     // a compile-time literal
                 | 'nan' | 'inf' | '-inf'                      // float-typed positions only
 ```
+
+**Empty graph.** The `graph` section admits zero scopes: `graph {}` is
+structurally legal — a module of pure types — and any minimum-content
+requirement is a load-time semantic rule rather than a grammar one.
+
+**Canonical digit spelling.** A typed value literal has exactly one canonical
+spelling, and canonicalization is **textual**: a typed value is not converted
+when it is read — the loader owns its type — so the reader normalizes the
+spelling and never the number. An `INT` strips leading zeros down to at least
+one digit, and `-0` canonicalizes to `0`. A `FLOAT` keeps its sign (`-0.0`
+being a value of its own); it strips integer-part leading zeros down to at
+least one digit and fraction trailing zeros down to at least one digit — `007`
+→ `7`, `1.50` → `1.5`, `00.0` → `0.0`. The spellings `nan`, `inf`, and `-inf`
+are canonical as written. Every rewrite is value-preserving under every type
+the position may later take, so canonical uniqueness holds for typed values
+exactly as it does for `STRING` content (above) and for key quoting
+(§15.4.1.1): a non-canonical spelling parses but is not what the emitter
+writes.
+
+**Reserved spellings.** The five spellings reserved language-wide — `null`,
+`true`, `false`, `nan`, and `inf` (§1.4) — are never a `NAME` in this text
+form. A module name, a `type_def` id, a field name, a variant name, a binding
+name, and a `PATH`'s name segment all reject them: a reader that meets one in
+any of those positions reports it under its own diagnostic class rather than
+reading it as an identifier.
+
+Two consequences follow, and both are load-bearing. First, **keyword over path,
+by reservation**: two positions admit both a `PATH` and a literal — a `wire`'s
+destination and a `binding`'s right-hand side — and there a word spelling one
+of the literals is the literal, outright. `to null` is the null destination and
+`flag: true` is the boolean, with no lookahead deciding it, because no `PATH`
+can begin with a reserved spelling in the first place. `to null.x` is not a
+path either: the reader takes `null` as the complete destination, and the `.`
+that follows is simply the next token, unexpected where the entry has ended.
+(The reserved-spelling diagnostic belongs to the name positions; at these two
+the word is not in a name position at all.) Nothing is shadowed and nothing
+becomes unreachable — the earlier one-token-lookahead rule is retired by the
+reservation. Where a `value` stands alone — a cell's `init`, a `fold` cell's
+`else` — no path is admitted, so the question never arises.
+
+Second, a **key** is untouched. A `KeySegment` whose stringified content is one
+of the five is data, stays legal, and renders single-quoted per §15.4.1.1 —
+`App.rows.'null'.render_row` — because the bare rendering is reserved for the
+keyword reading. So the reservation costs no expressiveness: every key content
+remains spellable, and its meaning survives every round trip.
 
 The module's three sections appear in order. The `types` table lists the
 record/enum/tuple layouts referenced by `%TypeId` tags, each with its

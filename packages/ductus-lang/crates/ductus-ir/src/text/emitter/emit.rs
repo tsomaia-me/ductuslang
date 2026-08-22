@@ -3,11 +3,20 @@
 
 use std::fmt::{Arguments, Write};
 
-use crate::module::{Module, TypesSection};
-use crate::text::keywords::{
-    ALIGN, BEHAVIORS, CLOSURE, ENUM, GRAPH, HANDLE, MODULE, POOL_INDEX, PORTAL, RECORD, SIZE,
-    TUPLE, TYPES, YIELDED,
+use crate::graph::{
+    Binding, BindingTarget, Cell, Effect, Entry, Gate, LookbackEntry, Member, ReopenPair, Scope,
+    Stream, ValueLiteral, Wire, WireTo,
 };
+use crate::module::{GraphSection, Module, TypesSection};
+use crate::path::CellPath;
+use crate::text::keywords::{
+    ALIGN, ATTRS, BEHAVIORS, CAPACITY, CLOSURE, COMBINER, DEPTH, DESIRED, EFFECT, EFFECTS, ELSE,
+    ENUM, EXPOSES, FALSE, FROM, GATE, GATE_PARENT, GRAPH, GUARDS, HANDLE, HISTORY, INF, INIT,
+    INPUTS, LOOKBACK, MEMBERS, MODULE, NAN, NULL, OBSERVED, OBSERVES, PARAMS, POLICY, POOL_INDEX,
+    PORTAL, PRED, RECONCILER, RECORD, RESET_ON_RELOAD, RESET_ON_REOPEN, SCOPE, SIZE, SOURCE_DEPS,
+    STREAM, TO, TRUE, TUPLE, TYPE, TYPES, USES, WIRE, YIELDED,
+};
+use crate::text::{is_name_shaped, is_reserved_word, quote};
 use crate::types::{Field, Layout, TypeDef, TypeTag, Variant};
 
 /// One level of indentation: two spaces (R54).
@@ -16,6 +25,19 @@ const INDENT: &str = "  ";
 /// The one list separator: comma, space. Written once so no caller can invent a
 /// second spelling of it.
 const SEPARATOR: &str = ", ";
+
+/// The one PAIR separator: colon, space. A `field`, a `binding`, a `member`, a
+/// `reopen_set` pair and a `lookback_map` entry all join their two halves with
+/// it.
+///
+/// A `cell`'s and a `stream`'s `PATH ':' type_tag` is NOT one of these: it is
+/// spaced on both sides (`input App.count : i32`), which is what tells a
+/// declaration's colon from a pair's at a glance.
+const PAIR: &str = ": ";
+
+/// The `BID` prefix (§2), case-sensitive. Not a keyword — the keyword table
+/// holds word-shaped spellings only — so it is written here, once.
+const BID_PREFIX: &str = "B@";
 
 /// Render `module` as canonical `.duir` text (IR_GRAMMAR §3, §15.4.6).
 ///
@@ -64,11 +86,27 @@ const SEPARATOR: &str = ", ";
 /// The guard covers every NAME position and every ARITY position:
 ///
 /// - every NAME — a module name, a `type_def` id, a field name, a variant name,
-///   and the id inside a `%NAME` or `pool_index<%NAME>` tag — is NAME-shaped;
+///   a binding name, and the id inside a `%NAME` or `pool_index<%NAME>` tag —
+///   is NAME-shaped AND is not one of the five reserved spellings (002-39,
+///   033-259). Both conjuncts are one law: what the lexer hands a NAME position
+///   is charset-legal and never `null`, `true`, `false`, `nan` or `inf`, so a
+///   guard checking the charset alone would pass `module null { … }` — text
+///   the parser rejects as `reserved_word`. A PATH is exempt because it guards
+///   itself: `CellPath::new` asserts both claims on every segment it is built
+///   from, so a path reaching here has already been checked;
 /// - every ARITY the grammar makes non-empty — an `enum` layout's variants, a
 ///   `tuple` layout's elements, a tuple TAG's elements — is non-empty. (A
 ///   `record`'s field list and a `closure`'s parameter list are optional in the
 ///   grammar, so neither is asserted.)
+///
+/// There used to be a third family: a path written where a literal WORD is also
+/// admitted, guarded against being that bare word. The RESERVATION retired it
+/// (002-39, 033-259) — `null`, `true`, `false`, `nan` and `inf` are never a
+/// `NAME`, so `CellPath::new` rejects such a segment before any path reaches
+/// here, and the guard would be a second check of a claim already made. A
+/// quoted KEY spelled by one of the five is a different thing entirely: it is
+/// data, and [`CellPath::render`](crate::path::CellPath::render) keeps it
+/// quoted so it reads back as the key.
 ///
 /// It does NOT check the third grammar constraint, the 64-level `type_tag`
 /// nesting bound (033-255): the emitter recurses per level exactly as the
@@ -105,14 +143,14 @@ impl Emitter {
     fn module(&mut self, module: &Module) {
         // The producer contract, checked where the name reaches the output.
         debug_assert!(
-            is_name_shaped(&module.name),
-            "a module name is NAME-shaped: {}",
+            is_name_shaped(&module.name) && !is_reserved_word(&module.name),
+            "a module name is NAME-shaped and never reserved: {}",
             module.name
         );
 
         self.block(format_args!("{MODULE} {}", module.name), |emitter| {
             emitter.types_section(&module.types);
-            emitter.graph_section();
+            emitter.graph_section(&module.graph);
             emitter.behaviors_section();
         });
     }
@@ -148,8 +186,8 @@ impl Emitter {
     fn type_def(&mut self, type_def: &TypeDef) {
         // The producer contract, checked where the id reaches the output.
         debug_assert!(
-            is_name_shaped(&type_def.id),
-            "a type id is NAME-shaped: {}",
+            is_name_shaped(&type_def.id) && !is_reserved_word(&type_def.id),
+            "a type id is NAME-shaped and never reserved: {}",
             type_def.id
         );
 
@@ -163,9 +201,218 @@ impl Emitter {
         );
     }
 
-    // graph_section ::= 'graph' '{' scope+ '}'
-    fn graph_section(&mut self) {
-        self.line(&format!("{GRAPH} {{}}"));
+    // graph_section ::= 'graph' '{' scope* '}'
+    //
+    // Empty is one line — `graph {}` — the same rule the other two sections
+    // follow, and the form 033-256 makes legal rather than tolerated. A
+    // non-empty section opens a block holding one scope per line-group.
+    fn graph_section(&mut self, graph: &GraphSection) {
+        if graph.scopes.is_empty() {
+            self.line(&format!("{GRAPH} {{}}"));
+
+            return;
+        }
+
+        self.block(format_args!("{GRAPH}"), |emitter| {
+            for scope in &graph.scopes {
+                emitter.scope(scope);
+            }
+        });
+    }
+
+    // scope ::= 'scope' PATH 'exposes' path_set 'effects' path_set
+    //           ('reset_on_reopen' reopen_set)? '{' entry* '}'
+    //
+    // `exposes` and `effects` are MANDATORY, so an empty one renders as a
+    // written `[]`; `reset_on_reopen` is optional, so an empty one renders as
+    // nothing at all. That is the whole difference between the two kinds of set
+    // clause, and it is decided here rather than inside the set renderer.
+    //
+    // A scope with no entries closes on its own line — `scope … {}` — for the
+    // same reason an empty section does: an opened block with nothing in it is
+    // two lines spelling what one spells.
+    fn scope(&mut self, scope: &Scope) {
+        let mut header = String::new();
+
+        header.push_str(SCOPE);
+        header.push(' ');
+        path(&mut header, &scope.path);
+        clause(&mut header, EXPOSES);
+        path_set(&mut header, &scope.exposes);
+        clause(&mut header, EFFECTS);
+        path_set(&mut header, &scope.effects);
+        optional_set(
+            &mut header,
+            RESET_ON_REOPEN,
+            &scope.reset_on_reopen,
+            reopen_set,
+        );
+
+        if scope.entries.is_empty() {
+            // The closed-up form, written straight into the sink: `header` is
+            // already a `String`, and formatting it into a second one only to
+            // copy that into the output is one allocation and one copy too
+            // many. Same shape as `block`'s opening line.
+            self.indentation();
+            let _ = writeln!(self.out, "{header} {{}}");
+
+            return;
+        }
+
+        self.block(format_args!("{header}"), |emitter| {
+            for entry in &scope.entries {
+                emitter.entry(entry);
+            }
+        });
+    }
+
+    // entry ::= cell | gate | wire | effect | stream
+    //
+    // One entry, one line — 033-250's terminator on the writing side. The
+    // indentation and the line ending are written HERE, so the five renderers
+    // below write a line BODY and none of them can forget either half.
+    fn entry(&mut self, entry: &Entry) {
+        self.indentation();
+
+        match entry {
+            Entry::Cell(cell) => self.cell(cell),
+            Entry::Gate(gate) => self.gate(gate),
+            Entry::Wire(wire) => self.wire(wire),
+            Entry::Effect(effect) => self.effect(effect),
+            Entry::Stream(stream) => self.stream(stream),
+        }
+
+        self.out.push('\n');
+    }
+
+    // cell ::= cell_kind PATH ':' type_tag
+    //          ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
+    //          ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+    //          ('combiner' BID)? ('else' value)? ('members' member_set)?
+    //
+    // The clauses are written in the production's order, which is the order the
+    // parser reads them in — a clause written anywhere else would not parse
+    // back. Each optional SET clause is omitted when empty, because an absent
+    // clause and a written `[]` are one state on a cell and omission is that
+    // state's canonical rendering.
+    //
+    // Which clauses a KIND admits is not the emitter's question either (F4,
+    // R21): a hand-built `input` cell carrying a `combiner` renders it, and the
+    // loader is what rejects the module.
+    fn cell(&mut self, cell: &Cell) {
+        let out = &mut self.out;
+
+        out.push_str(cell.kind.as_str());
+        out.push(' ');
+        path(out, &cell.path);
+        out.push_str(" : ");
+        type_tag(out, &cell.tag);
+        optional_bid(out, USES, cell.uses);
+        optional_set(out, INPUTS, &cell.inputs, path_set);
+        optional_int(out, DEPTH, cell.depth);
+        flag(out, RESET_ON_REOPEN, cell.reset_on_reopen);
+        optional_value(out, INIT, cell.init.as_ref());
+        optional_path(out, GATE, cell.gate.as_ref());
+        optional_bid(out, COMBINER, cell.combiner);
+        optional_value(out, ELSE, cell.else_value.as_ref());
+        optional_set(out, MEMBERS, &cell.members, member_set);
+    }
+
+    // gate ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
+    //          ('gate_parent' PATH)?
+    //
+    // `inputs` and `guards` are MANDATORY here, unlike a cell's `inputs`: an
+    // empty one is written `[]` rather than omitted. What the grammar requires
+    // is always written.
+    fn gate(&mut self, gate: &Gate) {
+        let out = &mut self.out;
+
+        out.push_str(GATE);
+        out.push(' ');
+        path(out, &gate.path);
+        clause(out, PRED);
+        bid(out, gate.pred);
+        clause(out, INPUTS);
+        path_set(out, &gate.inputs);
+        clause(out, GUARDS);
+        path_set(out, &gate.guards);
+        optional_path(out, GATE_PARENT, gate.gate_parent.as_ref());
+    }
+
+    // wire ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
+    //          ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
+    fn wire(&mut self, wire: &Wire) {
+        let out = &mut self.out;
+
+        out.push_str(WIRE);
+        out.push(' ');
+        path(out, &wire.path);
+        clause(out, FROM);
+        path(out, &wire.from);
+        clause(out, TO);
+
+        // No guard on the PATH arm: `null` is reserved, so `CellPath::new` has
+        // already rejected a segment spelled that way and no path reaching here
+        // can render as the literal (002-39, 033-258).
+        match &wire.to {
+            WireTo::Path(destination) => path(out, destination),
+            WireTo::Null => out.push_str(NULL),
+        }
+
+        if let Some(tag) = &wire.tag {
+            clause(out, TYPE);
+            type_tag(out, tag);
+        }
+
+        optional_set(out, ATTRS, &wire.attrs, binding_set);
+        optional_path(out, GATE, wire.gate.as_ref());
+    }
+
+    // effect ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
+    //            ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
+    //
+    // The reconciler NAME is held as a value — escapes already processed — so
+    // its spelling is derived here, by the same canonical escaper a `str`
+    // value's is.
+    fn effect(&mut self, effect: &Effect) {
+        let out = &mut self.out;
+
+        out.push_str(EFFECT);
+        out.push(' ');
+        path(out, &effect.path);
+        clause(out, RECONCILER);
+        string(out, &effect.reconciler);
+        clause(out, PARAMS);
+        binding_set(out, &effect.params);
+        optional_set(out, DESIRED, &effect.desired, path_set);
+        optional_set(out, OBSERVED, &effect.observed, path_set);
+        optional_path(out, GATE, effect.gate.as_ref());
+    }
+
+    // stream ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capacity' INT
+    //            ('source_deps' path_set)? ('observes' path_set)?
+    //            ('reset_on_reload')? ('reset_on_reopen')?
+    //            ('history' INT)? ('lookback' lookback_map)?
+    fn stream(&mut self, stream: &Stream) {
+        let out = &mut self.out;
+
+        out.push_str(STREAM);
+        out.push(' ');
+        path(out, &stream.path);
+        out.push_str(" : ");
+        type_tag(out, &stream.tag);
+        let _ = write!(
+            out,
+            " {POLICY} {} {CAPACITY} {}",
+            stream.policy.as_str(),
+            stream.capacity
+        );
+        optional_set(out, SOURCE_DEPS, &stream.source_deps, path_set);
+        optional_set(out, OBSERVES, &stream.observes, path_set);
+        flag(out, RESET_ON_RELOAD, stream.reset_on_reload);
+        flag(out, RESET_ON_REOPEN, stream.reset_on_reopen);
+        optional_int(out, HISTORY, stream.history);
+        optional_set(out, LOOKBACK, &stream.lookback, lookback_map);
     }
 
     // behaviors_section ::= 'behaviors' '{' behavior* '}'
@@ -257,13 +504,13 @@ fn field_list(out: &mut String, fields: &[Field]) {
 fn field(out: &mut String, field: &Field) {
     // The producer contract, checked where the name reaches the output.
     debug_assert!(
-        is_name_shaped(&field.name),
-        "a field name is NAME-shaped: {}",
+        is_name_shaped(&field.name) && !is_reserved_word(&field.name),
+        "a field name is NAME-shaped and never reserved: {}",
         field.name
     );
 
     out.push_str(&field.name);
-    out.push_str(": ");
+    out.push_str(PAIR);
     type_tag(out, &field.tag);
 }
 
@@ -278,8 +525,8 @@ fn variant_list(out: &mut String, variants: &[Variant]) {
 // spelling the grammar admits, so the round trip has one form to preserve.
 fn variant(out: &mut String, variant: &Variant) {
     debug_assert!(
-        is_name_shaped(&variant.name),
-        "a variant name is NAME-shaped: {}",
+        is_name_shaped(&variant.name) && !is_reserved_word(&variant.name),
+        "a variant name is NAME-shaped and never reserved: {}",
         variant.name
     );
 
@@ -305,13 +552,19 @@ fn type_tag(out: &mut String, tag: &TypeTag) {
     match tag {
         TypeTag::Prim(prim) => out.push_str(prim.as_str()),
         TypeTag::TypeId(id) => {
-            debug_assert!(is_name_shaped(id), "a type id is NAME-shaped: {id}");
+            debug_assert!(
+                is_name_shaped(id) && !is_reserved_word(id),
+                "a type id is NAME-shaped and never reserved: {id}"
+            );
 
             out.push('%');
             out.push_str(id);
         }
         TypeTag::PoolIndex(id) => {
-            debug_assert!(is_name_shaped(id), "a type id is NAME-shaped: {id}");
+            debug_assert!(
+                is_name_shaped(id) && !is_reserved_word(id),
+                "a type id is NAME-shaped and never reserved: {id}"
+            );
 
             let _ = write!(out, "{POOL_INDEX}<%{id}>");
         }
@@ -358,6 +611,145 @@ fn tag_list(out: &mut String, tags: &[TypeTag]) {
     separated(out, tags, type_tag);
 }
 
+// member_set ::= '[' (member (',' member)*)? ']'
+fn member_set(out: &mut String, members: &[Member]) {
+    bracketed(out, members, member);
+}
+
+// member ::= PATH ':' member_driver
+//
+// The pair's colon is written CLOSED UP against the path (`App.a: permanent`),
+// which is also what keeps it readable next to an ordinal-suffixed key:
+// `App.a:0: permanent` is the cell `App.a:0` driven `permanent`.
+fn member(out: &mut String, member: &Member) {
+    path(out, &member.path);
+    out.push_str(PAIR);
+    out.push_str(member.driver.as_str());
+}
+
+// path_set ::= '[' (PATH (',' PATH)*)? ']'
+fn path_set(out: &mut String, paths: &[CellPath]) {
+    bracketed(out, paths, path);
+}
+
+// binding_set ::= '[' (binding (',' binding)*)? ']'
+fn binding_set(out: &mut String, bindings: &[Binding]) {
+    bracketed(out, bindings, binding);
+}
+
+// binding ::= NAME ':' (PATH | value) ('@' provenance)?
+//
+// The provenance marker is GLUED to the target — `message: App.label@bound` —
+// because it is metadata ON the binding rather than a clause of its own
+// (033-252). The `@` is what separates them; a space would read as two things.
+fn binding(out: &mut String, binding: &Binding) {
+    // The producer contract, checked where the name reaches the output.
+    debug_assert!(
+        is_name_shaped(&binding.name) && !is_reserved_word(&binding.name),
+        "a binding name is NAME-shaped and never reserved: {}",
+        binding.name
+    );
+
+    out.push_str(&binding.name);
+    out.push_str(PAIR);
+
+    // No guard on the PATH arm, for the reason a wire's destination has none:
+    // the four value words are reserved, so no path can be named by one
+    // (002-39, 033-258).
+    match &binding.target {
+        BindingTarget::Path(target) => path(out, target),
+        BindingTarget::Value(literal) => value(out, literal),
+    }
+
+    if let Some(provenance) = binding.provenance {
+        out.push('@');
+        out.push_str(provenance.as_str());
+    }
+}
+
+// reopen_set ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'
+fn reopen_set(out: &mut String, pairs: &[ReopenPair]) {
+    bracketed(out, pairs, reopen_pair);
+}
+
+// `PATH ':' PATH` — one `(consumer : stream)` pair of a `reopen_set`.
+fn reopen_pair(out: &mut String, pair: &ReopenPair) {
+    path(out, &pair.consumer);
+    out.push_str(PAIR);
+    path(out, &pair.stream);
+}
+
+// lookback_map ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
+fn lookback_map(out: &mut String, entries: &[LookbackEntry]) {
+    bracketed(out, entries, lookback_entry);
+}
+
+// `PATH ':' INT` — one `(input cell : k)` pair, written the way R43 reads it:
+// the entry's LAST `':' INT` is the value. `App.a: 5` re-reads as the cell
+// `App.a` at lookback 5 (the `:5` is taken back out of the key), and
+// `App.print:0: 3` as the cell `App.print:0` at lookback 3.
+fn lookback_entry(out: &mut String, entry: &LookbackEntry) {
+    path(out, &entry.cell);
+    out.push_str(PAIR);
+    let _ = write!(out, "{}", entry.k);
+}
+
+// PATH ::= PathSegment ('.' PathSegment)*
+//
+// The rendering is `CellPath`'s own and is canonical there (R41): a key is
+// bare iff it is NAME-shaped and single-quoted otherwise. It writes INTO the
+// line being built — `render_into`, not `render` — so no path costs a `String`
+// of its own on the way out, and this exists so a path can also be an ELEMENT
+// of the bracketed lists above, which take a renderer of exactly this shape.
+fn path(out: &mut String, path: &CellPath) {
+    path.render_into(out);
+}
+
+// value ::= INT | FLOAT | 'true' | 'false' | STRING | 'nan' | 'inf' | '-inf'
+//
+// The digits are already canonical when they arrive: `ValueLiteral::int` and
+// `ValueLiteral::float` normalize the spelling where the literal is BUILT
+// (033-257), so this writes the stored text as it stands and no second
+// normalization can disagree with the first. A `str` is the exception — it
+// holds the VALUE, so its one canonical spelling is derived here.
+fn value(out: &mut String, literal: &ValueLiteral) {
+    match literal {
+        ValueLiteral::Int(text) | ValueLiteral::Float(text) => out.push_str(text),
+        ValueLiteral::True => out.push_str(TRUE),
+        ValueLiteral::False => out.push_str(FALSE),
+        ValueLiteral::Str(content) => string(out, content),
+        ValueLiteral::Nan => out.push_str(NAN),
+        ValueLiteral::Inf => out.push_str(INF),
+        // `-inf` is one lexeme, not a negation — the sign lives inside it
+        // (033-247) — and it is the one float spelling that is not word-shaped.
+        ValueLiteral::NegInf => {
+            out.push('-');
+            out.push_str(INF);
+        }
+    }
+}
+
+// A `STRING`'s canonical spelling (R40, 033-249) — the `quote` law at the `"`
+// delimiter.
+//
+// The escaping itself lives at `text/` level, because the `QuotedKey` emitter
+// writes the SAME law at the `'` delimiter (033-243, R63): one payload grammar,
+// one canonical spelling of it, one implementation. This wrapper stays because
+// this file's private functions are named after the productions they write, and
+// `STRING` is a production.
+fn string(out: &mut String, content: &str) {
+    quote(out, '"', content);
+}
+
+// BID ::= 'B@' HexU32
+//
+// LOWERCASE hex with no leading zeros — `B@d1`, `B@aa10`. The handle IS the
+// `u32` and the hex is a spelling of it, so the canonical spelling is the
+// shortest run that names it; `{:x}` is exactly that.
+fn bid(out: &mut String, handle: u32) {
+    let _ = write!(out, "{BID_PREFIX}{handle:x}");
+}
+
 // `keyword { body }`, or `keyword {}` when the body is empty — the brace
 // spacing rule in the one place it is decided.
 //
@@ -380,8 +772,8 @@ fn braced(out: &mut String, keyword: &str, empty: bool, body: impl FnOnce(&mut S
     out.push_str(" }");
 }
 
-// The separator-writing loop the three list productions share: `SEPARATOR`
-// before every element but the first, then the element's own rendering.
+// The separator-writing loop every list production shares: `SEPARATOR` before
+// every element but the first, then the element's own rendering.
 fn separated<T>(out: &mut String, items: &[T], render: impl Fn(&mut String, &T)) {
     for (index, item) in items.iter().enumerate() {
         if index > 0 {
@@ -392,29 +784,113 @@ fn separated<T>(out: &mut String, items: &[T], render: impl Fn(&mut String, &T))
     }
 }
 
-// NAME (§2): ASCII letters, digits and `_`, never digit-initial, never empty —
-// the same shape `text::lexer::scan::ident` recognizes.
-fn is_name_shaped(name: &str) -> bool {
-    let mut characters = name.chars();
+// `'[' (element (',' element)*)? ']'` — the bracketed comma list that five
+// productions share: `path_set`, `binding_set`, `member_set`, `reopen_set` and
+// `lookback_map`. The brackets and the empty case are written once, exactly as
+// the parser reads them once.
+fn bracketed<T>(out: &mut String, items: &[T], render: impl Fn(&mut String, &T)) {
+    out.push('[');
+    separated(out, items, render);
+    out.push(']');
+}
 
-    let Some(first) = characters.next() else {
-        return false;
-    };
+// ` word ` — a clause's leading space, its keyword, and the space before its
+// payload. Every clause opens through this, so none of them can invent its own
+// spacing.
+fn clause(out: &mut String, word: &str) {
+    out.push(' ');
+    out.push_str(word);
+    out.push(' ');
+}
 
-    if !first.is_ascii_alphabetic() && first != '_' {
-        return false;
+// ` word`, or nothing — a BARE FLAG, which carries no payload and so takes no
+// trailing space: `reset_on_reopen` on a cell and on a stream,
+// `reset_on_reload` on a stream (033-215).
+fn flag(out: &mut String, word: &str, present: bool) {
+    if !present {
+        return;
     }
 
-    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+    out.push(' ');
+    out.push_str(word);
+}
+
+// ` word PATH`, or nothing — the optional single-path clause shared by `gate`
+// (on a cell, a wire and an effect) and `gate_parent`.
+fn optional_path(out: &mut String, word: &str, cell: Option<&CellPath>) {
+    let Some(cell) = cell else {
+        return;
+    };
+
+    clause(out, word);
+    path(out, cell);
+}
+
+// ` word INT`, or nothing, the INT being a STRUCTURAL number written back from
+// the `u64` it was converted to (R57) — `depth` and `history`. The conversion
+// is why a leading-zero spelling does not survive a round trip: the number
+// round-trips, and the canonical digits are what comes out.
+fn optional_int(out: &mut String, word: &str, number: Option<u64>) {
+    let Some(number) = number else {
+        return;
+    };
+
+    clause(out, word);
+    let _ = write!(out, "{number}");
+}
+
+// ` word BID`, or nothing — `uses` and `combiner`.
+fn optional_bid(out: &mut String, word: &str, handle: Option<u32>) {
+    let Some(handle) = handle else {
+        return;
+    };
+
+    clause(out, word);
+    bid(out, handle);
+}
+
+// ` word value`, or nothing — `init` and `else`.
+fn optional_value(out: &mut String, word: &str, literal: Option<&ValueLiteral>) {
+    let Some(literal) = literal else {
+        return;
+    };
+
+    clause(out, word);
+    value(out, literal);
+}
+
+// ` word '[' … ']'`, or nothing — every OPTIONAL set clause: a cell's `inputs`
+// and `members`, a wire's `attrs`, an effect's `desired` and `observed`, a
+// stream's `source_deps`, `observes` and `lookback`, and a scope's
+// `reset_on_reopen`.
+//
+// Empty means ABSENT for all of them, so an empty set writes nothing at all —
+// which is how `inputs []` canonicalizes to omission. The MANDATORY sets — a
+// scope's `exposes` and `effects`, a gate's `inputs` and `guards`, an effect's
+// `params` — do not come through here: they are written unconditionally, `[]`
+// included.
+//
+// `render` is the SET production's own renderer, not its element's, so a call
+// site names the production it is writing.
+fn optional_set<T>(out: &mut String, word: &str, items: &[T], render: impl Fn(&mut String, &[T])) {
+    if items.is_empty() {
+        return;
+    }
+
+    clause(out, word);
+    render(out, items);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::diag::Span;
-    use crate::module::{BehaviorsSection, GraphSection, TypesSection};
+    use crate::graph::{CellKind, MemberDriver, Provenance, StreamPolicy};
+    use crate::module::{BehaviorsSection, TypesSection};
+    use crate::path::Segment;
+    use crate::text::is_reserved_word;
     use crate::text::test_support::{BLANK_LINES, CANONICAL, ONE_LINE, WITH_TYPES};
-    use crate::text::test_support::{parsed, with_types};
+    use crate::text::test_support::{parsed, with_entry, with_types};
     use crate::types::Prim;
     use proptest::prelude::*;
 
@@ -437,6 +913,30 @@ mod tests {
 }
 ";
 
+    // A copy of the graph lines the three `corpus/duir/m0` witnesses pin —
+    // `scopes`, `cells` and `graph_entries` — packed into one module, so the
+    // canon this file pins and the canon the corpus pins are the same text.
+    // The FILES are the authority, as with `WITNESS` above.
+    const GRAPH_WITNESS: &str = "module App {
+  types {}
+  graph {
+    scope App exposes [App.count] effects [App.print:0] reset_on_reopen [App.mixer.tap: App.events] {
+      input App.count : i32 init 0
+      input App.label : str init \"say \\\"hi\\\"\"
+      derived App.doubled : i32 uses B@d1 inputs [App.count]
+      recurrent App.total : i32 uses B@d2 inputs [App.count] depth 1 reset_on_reopen init 0
+      fold App.sum : i32 gate App.g0 combiner B@aa10 else -1 members [App.a: permanent, App.rows.'42'.render_row: keyed_template, App.rows.'it\\'s'.render_row: keyed_template, App.rows.'null'.render_row: keyed_template, App.c: gate_guarded]
+      gate App.g0 pred B@d4 inputs [App.show] guards [App.print:0] gate_parent App.g1
+      wire App.w0 from App.a to null type i32 attrs [k: 1@bridge, m: App.label@bound] gate App.g0
+      effect App.print:0 reconciler \"print\" params [message: App.label@bound] desired [App.print:0.text] observed [App.print:0.ok]
+      stream App.events : f64 policy gate capacity 8 source_deps [App.source] reset_on_reload history 4 lookback [App.print:0: 3, App.a: 5]
+    }
+    scope App.panel exposes [] effects [] {}
+  }
+  behaviors {}
+}
+";
+
     // The line-interior renderers write into a sink rather than returning one,
     // so a test that asserts on one construct's text supplies the sink.
     fn rendered(render: impl FnOnce(&mut String)) -> String {
@@ -444,6 +944,104 @@ mod tests {
         render(&mut out);
 
         out
+    }
+
+    // One entry as the emitter writes it, without the indentation and the line
+    // ending `entry` wraps it in — the five renderers write a line BODY, and
+    // that body is what a canon assertion is about.
+    fn entry_line(entry: &Entry) -> String {
+        let mut emitter = Emitter {
+            out: String::new(),
+            indent: 0,
+        };
+
+        emitter.entry(entry);
+
+        emitter
+            .out
+            .strip_suffix('\n')
+            .expect("an entry ends its line")
+            .to_string()
+    }
+
+    // Spans play no part in the rendering, so a hand-built fixture carries a
+    // zero-length one: the fixture is about the TEXT and not about where a
+    // diagnostic would point.
+    fn nowhere() -> Span {
+        Span::new(0, 0)
+    }
+
+    fn name(text: &str) -> Segment {
+        Segment::Name {
+            text: text.to_string(),
+            ordinal: None,
+        }
+    }
+
+    fn cell_path(segments: &[&str]) -> CellPath {
+        CellPath::new(segments.iter().map(|text| name(text)).collect())
+    }
+
+    // `App.<text>:<index>` — the ordinal-suffixed path an anonymous instance
+    // gets.
+    fn ordinal_path(text: &str, index: u64) -> CellPath {
+        CellPath::new(vec![
+            name("App"),
+            Segment::Name {
+                text: text.to_string(),
+                ordinal: Some(index),
+            },
+        ])
+    }
+
+    // A module whose `graph` section holds exactly `scopes` and whose other two
+    // sections are empty.
+    fn with_graph(scopes: Vec<Scope>) -> Module {
+        Module {
+            name: "App".to_string(),
+            span: nowhere(),
+            types: TypesSection {
+                span: nowhere(),
+                type_defs: Vec::new(),
+            },
+            graph: GraphSection {
+                span: nowhere(),
+                scopes,
+            },
+            behaviors: BehaviorsSection { span: nowhere() },
+        }
+    }
+
+    // A scope named `path`, its mandatory sets empty, holding `entries`.
+    fn scope_of(path: CellPath, entries: Vec<Entry>) -> Scope {
+        Scope {
+            path,
+            span: nowhere(),
+            exposes: Vec::new(),
+            effects: Vec::new(),
+            reset_on_reopen: Vec::new(),
+            entries,
+        }
+    }
+
+    // An `input App.count : i32` cell with every optional clause absent — the
+    // fixture the clause tests vary one field of.
+    fn bare_cell() -> Cell {
+        Cell {
+            kind: CellKind::Input,
+            path: cell_path(&["App", "count"]),
+            span: nowhere(),
+            tag: TypeTag::Prim(Prim::I32),
+            uses: None,
+            inputs: Vec::new(),
+            depth: None,
+            reset_on_reopen: false,
+            init: None,
+            gate: None,
+            combiner: None,
+            else_value: None,
+            members: Vec::new(),
+        }
     }
 
     // Spans play no part in the rendering; these are the canonical source's,
@@ -459,6 +1057,7 @@ mod tests {
             },
             graph: GraphSection {
                 span: Span::new(26, 8),
+                scopes: Vec::new(),
             },
             behaviors: BehaviorsSection {
                 span: Span::new(37, 12),
@@ -491,6 +1090,7 @@ mod tests {
             },
             graph: GraphSection {
                 span: Span::new(80, 8),
+                scopes: Vec::new(),
             },
             behaviors: BehaviorsSection {
                 span: Span::new(91, 12),
@@ -609,6 +1209,471 @@ mod tests {
         );
     }
 
+    // The graph section's two forms and the scope's two, in one module: a
+    // section holding scopes opens a block, a scope holding entries opens a
+    // block, and a scope holding none closes up on its line.
+    #[test]
+    fn a_graph_section_renders_one_scope_per_line_group() {
+        let mut app = scope_of(cell_path(&["App"]), vec![Entry::Cell(bare_cell())]);
+        app.exposes = vec![cell_path(&["App", "count"])];
+        app.reset_on_reopen = vec![ReopenPair {
+            consumer: cell_path(&["App", "c"]),
+            stream: cell_path(&["App", "s"]),
+        }];
+
+        let module = with_graph(vec![
+            app,
+            scope_of(cell_path(&["App", "panel"]), Vec::new()),
+        ]);
+
+        assert_eq!(
+            emit(&module),
+            concat!(
+                "module App {\n",
+                "  types {}\n",
+                "  graph {\n",
+                "    scope App exposes [App.count] effects [] reset_on_reopen [App.c: App.s] {\n",
+                "      input App.count : i32\n",
+                "    }\n",
+                "    scope App.panel exposes [] effects [] {}\n",
+                "  }\n",
+                "  behaviors {}\n",
+                "}\n"
+            )
+        );
+    }
+
+    // Every clause the `cell` production admits, in the production's order —
+    // the same line `parse`'s clause test reads, asserted from the other side.
+    #[test]
+    fn a_cell_renders_every_clause_in_the_productions_order() {
+        let cell = Cell {
+            kind: CellKind::Fold,
+            path: cell_path(&["App", "total"]),
+            span: nowhere(),
+            tag: TypeTag::Prim(Prim::I32),
+            uses: Some(0xd1),
+            inputs: vec![cell_path(&["App", "a"]), cell_path(&["App", "b"])],
+            depth: Some(2),
+            reset_on_reopen: true,
+            init: Some(ValueLiteral::int("0".to_string())),
+            gate: Some(cell_path(&["App", "g0"])),
+            combiner: Some(2),
+            else_value: Some(ValueLiteral::int("-1".to_string())),
+            members: vec![
+                Member {
+                    path: cell_path(&["App", "a"]),
+                    driver: MemberDriver::Permanent,
+                },
+                Member {
+                    path: cell_path(&["App", "b"]),
+                    driver: MemberDriver::GateGuarded,
+                },
+            ],
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Cell(cell)),
+            concat!(
+                "fold App.total : i32 uses B@d1 inputs [App.a, App.b] depth 2 ",
+                "reset_on_reopen init 0 gate App.g0 combiner B@2 else -1 ",
+                "members [App.a: permanent, App.b: gate_guarded]"
+            )
+        );
+    }
+
+    // The other side of the same production: every clause absent. An empty
+    // OPTIONAL set is the clause's absence, so it writes nothing — `inputs []`
+    // is a spelling the parser accepts and the emitter never produces.
+    #[test]
+    fn a_cells_absent_clauses_and_empty_sets_write_nothing() {
+        assert_eq!(
+            entry_line(&Entry::Cell(bare_cell())),
+            "input App.count : i32"
+        );
+
+        for kind in [
+            CellKind::Input,
+            CellKind::Derived,
+            CellKind::Recurrent,
+            CellKind::Deferred,
+            CellKind::Fold,
+        ] {
+            let mut cell = bare_cell();
+            cell.kind = kind;
+
+            assert_eq!(
+                entry_line(&Entry::Cell(cell)),
+                format!("{} App.count : i32", kind.as_str())
+            );
+        }
+    }
+
+    // A gate's `inputs` and `guards` are MANDATORY, so an empty one is written
+    // `[]` — the distinction a cell's optional `inputs` does not have.
+    #[test]
+    fn a_gate_writes_its_mandatory_sets_even_when_empty() {
+        let full = Gate {
+            path: cell_path(&["App", "g0"]),
+            span: nowhere(),
+            pred: 0xd4,
+            inputs: vec![cell_path(&["App", "show"])],
+            guards: vec![ordinal_path("print", 0)],
+            gate_parent: Some(cell_path(&["App", "g1"])),
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Gate(full)),
+            "gate App.g0 pred B@d4 inputs [App.show] guards [App.print:0] gate_parent App.g1"
+        );
+
+        let empty = Gate {
+            path: cell_path(&["App", "g0"]),
+            span: nowhere(),
+            pred: 0,
+            inputs: Vec::new(),
+            guards: Vec::new(),
+            gate_parent: None,
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Gate(empty)),
+            "gate App.g0 pred B@0 inputs [] guards []"
+        );
+    }
+
+    // `null` is an alternative the text spells out, not an omitted clause, so
+    // the `to` clause is written either way.
+    #[test]
+    fn a_wire_renders_a_path_or_a_null_destination() {
+        let full = Wire {
+            path: cell_path(&["App", "w"]),
+            span: nowhere(),
+            from: cell_path(&["App", "a"]),
+            to: WireTo::Path(cell_path(&["App", "b"])),
+            tag: Some(TypeTag::Prim(Prim::I32)),
+            attrs: vec![
+                Binding {
+                    name: "k".to_string(),
+                    target: BindingTarget::Value(ValueLiteral::int("1".to_string())),
+                    provenance: Some(Provenance::Bridge),
+                },
+                Binding {
+                    name: "m".to_string(),
+                    target: BindingTarget::Path(cell_path(&["App", "label"])),
+                    provenance: None,
+                },
+            ],
+            gate: Some(cell_path(&["App", "g0"])),
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Wire(full)),
+            "wire App.w from App.a to App.b type i32 attrs [k: 1@bridge, m: App.label] gate App.g0"
+        );
+
+        let null = Wire {
+            path: cell_path(&["App", "w"]),
+            span: nowhere(),
+            from: cell_path(&["App", "a"]),
+            to: WireTo::Null,
+            tag: None,
+            attrs: Vec::new(),
+            gate: None,
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Wire(null)),
+            "wire App.w from App.a to null"
+        );
+    }
+
+    #[test]
+    fn an_effect_renders_its_reconciler_as_a_canonical_string() {
+        let full = Effect {
+            path: ordinal_path("print", 0),
+            span: nowhere(),
+            reconciler: "print".to_string(),
+            params: vec![Binding {
+                name: "message".to_string(),
+                target: BindingTarget::Path(cell_path(&["App", "label"])),
+                provenance: Some(Provenance::Bound),
+            }],
+            desired: vec![CellPath::new(vec![
+                name("App"),
+                Segment::Name {
+                    text: "print".to_string(),
+                    ordinal: Some(0),
+                },
+                name("text"),
+            ])],
+            observed: vec![cell_path(&["App", "ok"])],
+            gate: Some(cell_path(&["App", "g0"])),
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Effect(full)),
+            concat!(
+                "effect App.print:0 reconciler \"print\" ",
+                "params [message: App.label@bound] desired [App.print:0.text] ",
+                "observed [App.ok] gate App.g0"
+            )
+        );
+
+        // `params` is mandatory, so an empty one is `[]`; a reconciler name is
+        // a value, so the empty one has a spelling too.
+        let empty = Effect {
+            path: cell_path(&["App", "p"]),
+            span: nowhere(),
+            reconciler: String::new(),
+            params: Vec::new(),
+            desired: Vec::new(),
+            observed: Vec::new(),
+            gate: None,
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Effect(empty)),
+            "effect App.p reconciler \"\" params []"
+        );
+    }
+
+    #[test]
+    fn a_stream_renders_every_clause_in_the_productions_order() {
+        let full = Stream {
+            path: cell_path(&["App", "s"]),
+            span: nowhere(),
+            tag: TypeTag::Prim(Prim::I32),
+            policy: StreamPolicy::Gate,
+            capacity: 64,
+            source_deps: vec![cell_path(&["App", "a"])],
+            observes: vec![cell_path(&["App", "s", "pending_count"])],
+            reset_on_reload: true,
+            reset_on_reopen: true,
+            history: Some(4),
+            lookback: vec![LookbackEntry {
+                cell: cell_path(&["App", "a"]),
+                k: 2,
+            }],
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Stream(full)),
+            concat!(
+                "stream App.s : i32 policy gate capacity 64 source_deps [App.a] ",
+                "observes [App.s.pending_count] reset_on_reload reset_on_reopen ",
+                "history 4 lookback [App.a: 2]"
+            )
+        );
+
+        let minimal = Stream {
+            path: cell_path(&["App", "s"]),
+            span: nowhere(),
+            tag: TypeTag::Prim(Prim::I32),
+            policy: StreamPolicy::Ring,
+            capacity: 8,
+            source_deps: Vec::new(),
+            observes: Vec::new(),
+            reset_on_reload: false,
+            reset_on_reopen: false,
+            history: None,
+            lookback: Vec::new(),
+        };
+
+        assert_eq!(
+            entry_line(&Entry::Stream(minimal)),
+            "stream App.s : i32 policy ring capacity 8"
+        );
+    }
+
+    // A behavior handle is a `u32` and the hex is a spelling of it, so the
+    // canonical spelling is the shortest run that names it: lowercase, no
+    // leading zeros.
+    #[test]
+    fn a_behavior_handle_renders_in_minimal_lowercase_hex() {
+        assert_eq!(rendered(|out| bid(out, 0)), "B@0");
+        assert_eq!(rendered(|out| bid(out, 0xd1)), "B@d1");
+        assert_eq!(rendered(|out| bid(out, 0xaa10)), "B@aa10");
+        assert_eq!(rendered(|out| bid(out, u32::MAX)), "B@ffffffff");
+    }
+
+    #[test]
+    fn every_value_alternative_renders_in_canonical_form() {
+        // The digits are canonicalized where the literal is BUILT (033-257),
+        // so the emitter writes what it was given and the two cannot disagree.
+        assert_eq!(
+            rendered(|out| value(out, &ValueLiteral::int("007".to_string()))),
+            "7"
+        );
+        assert_eq!(
+            rendered(|out| value(out, &ValueLiteral::int("-0".to_string()))),
+            "0"
+        );
+        assert_eq!(
+            rendered(|out| value(out, &ValueLiteral::float("1.50".to_string()))),
+            "1.5"
+        );
+        assert_eq!(
+            rendered(|out| value(out, &ValueLiteral::float("-0.0".to_string()))),
+            "-0.0"
+        );
+        assert_eq!(rendered(|out| value(out, &ValueLiteral::True)), "true");
+        assert_eq!(rendered(|out| value(out, &ValueLiteral::False)), "false");
+        assert_eq!(rendered(|out| value(out, &ValueLiteral::Nan)), "nan");
+        assert_eq!(rendered(|out| value(out, &ValueLiteral::Inf)), "inf");
+        assert_eq!(rendered(|out| value(out, &ValueLiteral::NegInf)), "-inf");
+        assert_eq!(
+            rendered(|out| value(out, &ValueLiteral::Str("hi".to_string()))),
+            "\"hi\""
+        );
+    }
+
+    // R40's canonical emission, one assertion per rule: raw wherever raw is
+    // legal, four exceptions, and LF and TAB raw among them.
+    #[test]
+    fn a_string_renders_in_its_one_canonical_spelling() {
+        assert_eq!(rendered(|out| string(out, "print")), "\"print\"");
+        assert_eq!(rendered(|out| string(out, "")), "\"\"");
+        assert_eq!(rendered(|out| string(out, "say \"hi\"")), r#""say \"hi\"""#);
+        assert_eq!(rendered(|out| string(out, "a\\b")), r#""a\\b""#);
+        // A raw CR would not survive file-level newline normalization.
+        assert_eq!(rendered(|out| string(out, "a\rb")), r#""a\rb""#);
+        // A newline and a tab emit RAW — the readability half of the design.
+        assert_eq!(rendered(|out| string(out, "a\nb\tc")), "\"a\nb\tc\"");
+        // Every other control scalar escapes, the C1 block included.
+        assert_eq!(
+            rendered(|out| string(out, "\u{0}\u{7}\u{1f}\u{7f}\u{85}")),
+            r#""\u{0}\u{7}\u{1f}\u{7f}\u{85}""#
+        );
+        // A non-control scalar is raw whatever its width.
+        assert_eq!(rendered(|out| string(out, "é 日")), "\"é 日\"");
+    }
+
+    // TOTALITY and UNIQUENESS, executable: the canonical spelling of a value
+    // reads back AS that value, and emitting the result changes nothing.
+    #[test]
+    fn every_string_spelling_reads_back_as_its_own_value() {
+        for content in [
+            "",
+            "print",
+            "say \"hi\"",
+            "a\\b",
+            "a\rb",
+            "a\nb\tc",
+            "\u{0}\u{7f}\u{85}",
+            "é 日",
+        ] {
+            let spelled = rendered(|out| string(out, content));
+            let source = with_entry(&format!("input App.x : str init {spelled}"));
+            let module = parsed(&source);
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert!(
+                matches!(&cell.init, Some(ValueLiteral::Str(text)) if text == content),
+                "{content:?}"
+            );
+            assert_eq!(emit(&module), source, "{content:?}");
+        }
+    }
+
+    // An ordinal-bearing key in a PAIR position, where the pair's own separator
+    // is also a colon: `App.a:0: permanent` is the cell `App.a:0` driven
+    // `permanent`. The emitter writes the pair colon closed up, and the round
+    // trip is what proves that spelling reads back as the same two halves.
+    #[test]
+    fn an_ordinal_bearing_member_key_round_trips() {
+        let source =
+            with_entry("fold App.t : i32 members [App.a:0: permanent, App.b: keyed_template]");
+
+        assert_eq!(emit(&parsed(&source)), source);
+    }
+
+    // The same shape in a `reopen_set`, whose BOTH halves are paths — so an
+    // ordinal can sit on either side of the pair colon and the reading is still
+    // §3's: after a colon an INT continues the left path and a word begins the
+    // right one.
+    #[test]
+    fn an_ordinal_bearing_reopen_consumer_round_trips() {
+        let source = concat!(
+            "module App {\n",
+            "  types {}\n",
+            "  graph {\n",
+            "    scope App exposes [] effects [] reset_on_reopen [App.c:1: App.s, App.d: App.t:2] {}\n",
+            "  }\n",
+            "  behaviors {}\n",
+            "}\n"
+        );
+
+        assert_eq!(emit(&parsed(source)), source);
+    }
+
+    // `-inf` is the one float spelling that is not word-shaped (033-248), so it
+    // travels as a FLOAT lexeme and lands on its own variant. Both positions a
+    // `value` stands in get the full trip: a cell's `init` and a binding's
+    // target.
+    #[test]
+    fn negative_infinity_round_trips_in_both_value_positions() {
+        let init = with_entry("input App.x : f64 init -inf");
+
+        assert_eq!(emit(&parsed(&init)), init);
+
+        let binding = with_entry("effect App.p reconciler \"r\" params [limit: -inf]");
+
+        assert_eq!(emit(&parsed(&binding)), binding);
+    }
+
+    // One stream carrying EVERY clause the production admits, through both
+    // directions at once: the parsed shape is asserted field by field and the
+    // text it emits back is the text it came from. The clause-order tests above
+    // assert each direction against a hand-built fixture; this asserts the two
+    // agree.
+    #[test]
+    fn a_stream_carrying_every_clause_round_trips() {
+        let source = with_entry(concat!(
+            "stream App.s : i32 policy gate capacity 64 source_deps [App.a] ",
+            "observes [App.s.pending_count] reset_on_reload reset_on_reopen ",
+            "history 4 lookback [App.print:0: 3, App.a: 5]"
+        ));
+        let module = parsed(&source);
+
+        let [Entry::Stream(stream)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one stream");
+        };
+
+        assert_eq!(stream.policy, StreamPolicy::Gate);
+        assert_eq!(stream.capacity, 64);
+        assert_eq!(stream.source_deps.len(), 1);
+        assert_eq!(stream.observes.len(), 1);
+        assert!(stream.reset_on_reload);
+        assert!(stream.reset_on_reopen);
+        assert_eq!(stream.history, Some(4));
+        // R43 both ways round: a key that keeps its ordinal, and one whose
+        // trailing `:5` is taken back out of the key as the value.
+        assert_eq!(stream.lookback[0].cell.render(), "App.print:0");
+        assert_eq!(stream.lookback[0].k, 3);
+        assert_eq!(stream.lookback[1].cell.render(), "App.a");
+        assert_eq!(stream.lookback[1].k, 5);
+        assert_eq!(emit(&module), source);
+    }
+
+    // The MANDATORY positions at their smallest: a handle of zero, two empty
+    // sets that are still written `[]`, and the empty reconciler name — every
+    // one of them a spelling that exists only because the grammar requires the
+    // position to be filled.
+    #[test]
+    fn the_smallest_mandatory_spellings_round_trip() {
+        let gate = with_entry("gate App.g0 pred B@0 inputs [] guards []");
+
+        assert_eq!(emit(&parsed(&gate)), gate);
+
+        let effect = with_entry("effect App.p reconciler \"\" params []");
+
+        assert_eq!(emit(&parsed(&effect)), effect);
+    }
+
     #[test]
     fn emitting_a_parsed_module_reproduces_its_canonical_source() {
         assert_eq!(emit(&parsed(CANONICAL)), CANONICAL);
@@ -631,6 +1696,35 @@ mod tests {
         );
     }
 
+    // The same claim over a graph line, where there is more to normalize: the
+    // §5 column alignment, an uppercase leading-zero handle, a leading-zero
+    // depth, a trailing-zero float, and two OPTIONAL sets written `[]` — all
+    // of them legal, none of them what the emitter writes.
+    #[test]
+    fn a_non_canonical_graph_source_normalizes() {
+        let source = concat!(
+            "module App { types {} graph { ",
+            "scope App  exposes []  effects []  reset_on_reopen [] { ",
+            "recurrent   App.total : i32  uses B@00D1  inputs []  depth 007  init 0.50  members [] ",
+            "} } behaviors {} }"
+        );
+
+        assert_eq!(
+            emit(&parsed(source)),
+            concat!(
+                "module App {\n",
+                "  types {}\n",
+                "  graph {\n",
+                "    scope App exposes [] effects [] {\n",
+                "      recurrent App.total : i32 uses B@d1 depth 7 init 0.5\n",
+                "    }\n",
+                "  }\n",
+                "  behaviors {}\n",
+                "}\n"
+            )
+        );
+    }
+
     // Fixpoint: emitting a parsed module, then parsing and emitting THAT, is
     // the same text. Anything the emitter writes that it cannot read back — a
     // missing space, a glued `->` — shows up here.
@@ -644,7 +1738,7 @@ mod tests {
             assert_eq!(twice, once);
         }
 
-        for source in [WITH_TYPES, WITNESS] {
+        for source in [WITH_TYPES, WITNESS, GRAPH_WITNESS] {
             let once = emit(&parsed(source));
             let twice = emit(&parsed(&once));
 
@@ -677,6 +1771,22 @@ mod tests {
         let _ = emit(&module);
     }
 
+    // The guard's OTHER conjunct, and the reason it is not redundant: `null` is
+    // perfectly NAME-shaped — the charset cannot tell a reserved spelling from
+    // an ordinary word — so a shape-only guard would have emitted
+    // `module null { … }`, which the parser rejects as `reserved_word`. The
+    // module name is the representative; the same conjunct rides at every other
+    // NAME position.
+    #[test]
+    #[should_panic(expected = "a module name is NAME-shaped and never reserved")]
+    #[cfg_attr(not(debug_assertions), ignore = "debug_assert compiles out")]
+    fn a_reserved_name_trips_the_producer_contract() {
+        let mut module = parsed(CANONICAL);
+        module.name = "null".to_string();
+
+        let _ = emit(&module);
+    }
+
     // The same contract at a NESTED name position. `Module::name` is the
     // shallowest of them; a type id inside a tag is the deepest thing the guard
     // reaches, and it is the representative for the whole name family.
@@ -693,6 +1803,77 @@ mod tests {
         fields[0].tag = TypeTag::TypeId("not a name".to_string());
 
         let _ = emit(&module);
+    }
+
+    // There is no third guard family here any more. A path spelled by one of
+    // the five reserved words cannot reach the emitter at all: `CellPath::new`
+    // rejects the segment when the path is BUILT (002-39), which is one layer
+    // earlier and covers every path position rather than the two a keyword used
+    // to shadow. `path::cell_path`'s `new_rejects_a_reserved_name` is that test.
+    //
+    // What this file still owes the reservation is the EMISSION half: a key
+    // spelled by one of the five must stay quoted, or the text it writes would
+    // read back as the keyword — a fixpoint-stable, meaning-changing
+    // canonicalization (033-243).
+    #[test]
+    fn a_key_spelled_by_a_reserved_word_stays_quoted_and_round_trips() {
+        for entry in [
+            "wire App.w from App.'nan'.x to App.rows.'null'.render_row",
+            "wire App.w from App.a to 'null'",
+            "effect App.p reconciler \"r\" params [flag: App.'true', other: 'null'.x]",
+            "fold App.s : i32 combiner B@1 else 0 members [App.'inf': permanent]",
+        ] {
+            let source = with_entry(entry);
+
+            assert_eq!(emit(&parsed(&source)), source);
+        }
+
+        // And the bare/quoted decision itself, at the renderer.
+        let keyed = CellPath::new(vec![Segment::Key("null".to_string())]);
+
+        assert_eq!(keyed.render(), "'null'");
+    }
+
+    // The key half of `every_string_spelling_reads_back_as_its_own_value`, and
+    // the two contents FND-21 was filed for, pinned as FIXED. Under the old
+    // two-escape key set `{\', \\}` a carriage return had NO key spelling at
+    // all: `Key("a\rb")` emitted a raw CR, which does not lex, and
+    // `Key("a\r\nb")` emitted a raw CRLF, which intake normalizes — so the key
+    // came back as `"a\nb"`, silently corrupted. Both spell `\r` now (R63).
+    //
+    // The proptest below draws key content from `any::<char>()` and covers
+    // these in principle only; it will not draw THESE in practice, which is
+    // why the defect's own cases are enumerated rather than left to sampling.
+    #[test]
+    fn a_key_spelling_reads_back_as_its_own_content() {
+        for content in [
+            "a\rb", "a\r\nb", "\r", "a\nb\tc", "a\u{0}b", "it's", "a\\b", "",
+        ] {
+            let keyed = CellPath::new(vec![
+                Segment::Name {
+                    text: "App".to_string(),
+                    ordinal: None,
+                },
+                Segment::Key(content.to_string()),
+                Segment::Name {
+                    text: "row".to_string(),
+                    ordinal: None,
+                },
+            ]);
+            let source = with_entry(&format!("input {} : i32", keyed.render()));
+            let module = parsed(&source);
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert_eq!(
+                cell.path.segments()[1],
+                Segment::Key(content.to_string()),
+                "{content:?}"
+            );
+            assert_eq!(emit(&module), source, "{content:?}");
+        }
     }
 
     // The other family: an arity the grammar makes non-empty. An `enum` with no
@@ -763,6 +1944,90 @@ mod tests {
 
             prop_assert_eq!(&once, &canonical);
             prop_assert_eq!(&twice, &once);
+        }
+
+        // TOTALITY and UNIQUENESS over `str`, generated rather than enumerated
+        // (R40): every value — quotes, backslashes, newlines, tabs, carriage
+        // returns and control scalars included — has a spelling this emitter
+        // writes, that spelling reads back AS the value, and emitting what it
+        // read changes nothing. The unit test above pins the interesting
+        // spellings; this asserts there are no others.
+        #[test]
+        fn every_str_value_has_one_canonical_spelling(
+            content in prop::collection::vec(any::<char>(), 0..6)
+                .prop_map(|characters| characters.into_iter().collect::<String>()),
+        ) {
+            let spelled = rendered(|out| string(out, &content));
+            let source = with_entry(&format!("input App.x : str init {spelled}"));
+            let module = parsed(&source);
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            prop_assert!(matches!(&cell.init, Some(ValueLiteral::Str(text)) if text == &content));
+            prop_assert_eq!(emit(&module), source);
+        }
+
+        // The same two laws over KEY content, which R63 made total: every
+        // content — quotes, backslashes, newlines, tabs, carriage returns,
+        // control scalars, and the five reserved spellings — has a spelling
+        // this emitter writes, that spelling reads back AS the content, and
+        // emitting what it read changes nothing.
+        //
+        // The generator draws from the same alphabet the `str` property does,
+        // and the reserved spellings are drawn deliberately: `null` is
+        // NAME-shaped, so it is the one content whose bare rendering would
+        // round-trip to a DIFFERENT THING (033-243).
+        //
+        // Which VARIANT the content comes back in is not part of the claim. A
+        // bare-rendered key is indistinguishable from a name segment in
+        // isolation and parses as `Name`, which is 033-243's own reading —
+        // "the graph structure decides which positions are keyed". What must
+        // hold is that the CONTENT survives and the bytes are stable.
+        #[test]
+        fn every_key_content_has_one_canonical_spelling(
+            content in prop_oneof![
+                9 => prop::collection::vec(any::<char>(), 0..6)
+                    .prop_map(|characters| characters.into_iter().collect::<String>()),
+                1 => prop::sample::select(vec![
+                    "null".to_string(),
+                    "true".to_string(),
+                    "false".to_string(),
+                    "nan".to_string(),
+                    "inf".to_string(),
+                ]),
+            ],
+        ) {
+            let keyed = CellPath::new(vec![
+                Segment::Name { text: "App".to_string(), ordinal: None },
+                Segment::Key(content.clone()),
+                Segment::Name { text: "row".to_string(), ordinal: None },
+            ]);
+            let source = with_entry(&format!("input {} : i32", keyed.render()));
+            let module = parsed(&source);
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            // TOTALITY: the content came back, whichever segment variant the
+            // bare/quoted decision put it in.
+            let read = match &cell.path.segments()[1] {
+                Segment::Key(key) => key,
+                Segment::Name { text, ordinal: None } => text,
+                other => panic!("a middle segment carries no ordinal here: {other:?}"),
+            };
+
+            prop_assert_eq!(read, &content);
+            // And the bare/quoted decision is the canonical one, so a key that
+            // MUST quote did.
+            prop_assert_eq!(
+                matches!(&cell.path.segments()[1], Segment::Key(_)),
+                !is_name_shaped(&content) || is_reserved_word(&content)
+            );
+            // UNIQUENESS: emitting what was read changes nothing.
+            prop_assert_eq!(emit(&module), source);
         }
     }
 }

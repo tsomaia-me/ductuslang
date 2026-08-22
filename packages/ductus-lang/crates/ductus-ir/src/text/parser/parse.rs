@@ -4,10 +4,19 @@
 use std::mem;
 
 use crate::diag::{DiagClass, Diagnostic, Span};
+use crate::graph::{
+    Binding, BindingTarget, Cell, CellKind, Effect, Entry, Gate, LookbackEntry, Member,
+    MemberDriver, Provenance, ReopenPair, Scope, Stream, StreamPolicy, ValueLiteral, Wire, WireTo,
+};
 use crate::module::{BehaviorsSection, GraphSection, Module, TypesSection};
+use crate::path::{CellPath, Segment};
+use crate::text::is_reserved_word;
 use crate::text::keywords::{
-    ALIGN, BEHAVIORS, CLOSURE, ENUM, GRAPH, HANDLE, MODULE, POOL_INDEX, PORTAL, RECORD, SIZE,
-    TUPLE, TYPES, YIELDED,
+    ALIGN, ATTRS, BEHAVIORS, CAPACITY, CLOSURE, COMBINER, DEPTH, DESIRED, EFFECT, EFFECTS, ELSE,
+    ENUM, EXPOSES, FALSE, FROM, GATE, GATE_PARENT, GRAPH, GUARDS, HANDLE, HISTORY, INF, INIT,
+    INPUTS, LOOKBACK, MEMBERS, MODULE, NAN, NULL, OBSERVED, OBSERVES, PARAMS, POLICY, POOL_INDEX,
+    PORTAL, PRED, RECONCILER, RECORD, RESET_ON_RELOAD, RESET_ON_REOPEN, SCOPE, SIZE, SOURCE_DEPS,
+    STREAM, TO, TRUE, TUPLE, TYPE, TYPES, USES, WIRE, YIELDED,
 };
 use crate::text::token::{Token, TokenKind};
 use crate::types::{Field, Layout, Prim, TypeDef, TypeTag, Variant};
@@ -19,6 +28,14 @@ use crate::types::{Field, Layout, Prim, TypeDef, TypeTag, Variant};
 /// is therefore written here as a grammar constant rather than tuned to a stack
 /// budget: a reader with more stack must still reject the 65th level.
 const TYPE_TAG_DEPTH_LIMIT: usize = 64;
+
+/// What a `':' INT` inside a PATH calls itself when its value names no `u64`
+/// (R57's expected-text).
+const PATH_ORDINAL: &str = "a path ordinal";
+
+/// The same, inside a `lookback_map` entry — where a trailing `':' INT` is the
+/// lookback VALUE (R43) and not an ordinal at all.
+const LOOKBACK_VALUE: &str = "a lookback value";
 
 /// Parse a `.duir` token stream into its [`Module`] (IR_GRAMMAR §3, §15.4.6).
 ///
@@ -37,13 +54,17 @@ const TYPE_TAG_DEPTH_LIMIT: usize = 64;
 /// may reference a type nobody declares, and a `size` may contradict its
 /// layout — all three parse.
 ///
-/// It has two other diagnostic classes, and only two. A STRUCTURAL number that
-/// names no `u64` is `int_out_of_range` (R57): not a grammar failure — the
+/// It has three other diagnostic classes, and only three. A STRUCTURAL number
+/// that names no `u64` is `int_out_of_range` (R57): not a grammar failure — the
 /// token IS an `INT` — but the position's type is known here, so the conversion
 /// happens here and so does its failure. A `type_tag` nesting past 64 bracketed
 /// constructors is `nesting_too_deep` (033-255, R59): that one IS a grammar
 /// failure, since the bound is part of the format rather than a budget of this
-/// implementation.
+/// implementation. And one of the five RESERVED spellings — `null`, `true`,
+/// `false`, `nan`, `inf` — standing where a `NAME` is required is
+/// `reserved_word` (002-39, 033-259): also a grammar failure, split from
+/// `unexpected_token` because the token IS word-shaped and the position DOES
+/// want a word, so the useful message is about the spelling.
 ///
 /// **The stream is consumed, not borrowed.** R18 gives tokens OWNED payloads so
 /// nothing downstream carries a lifetime; taking the `Vec` by value lets those
@@ -67,9 +88,15 @@ const TYPE_TAG_DEPTH_LIMIT: usize = 64;
 /// and inside a `type_def`, whose braces are not a braced BODY in 033-250's
 /// sense (that paragraph names `scope` and `behavior`). A type row is one line.
 ///
-/// **`graph` and `behaviors` are still empty.** `graph {}` and `behaviors {}`
-/// parse; anything else between their braces is an `unexpected_token` until
-/// their rows admit entries.
+/// A `scope` IS such a braced body: it may span physical lines between its
+/// braces, its own entries are terminated by NEWLINE or by its closing `}`, and
+/// the scope entry itself is terminated by the NEWLINE after that `}`. The same
+/// `entry_terminator` enforces both levels.
+///
+/// **`behaviors` is still empty.** `behaviors {}` parses; anything else between
+/// its braces is an `unexpected_token` until its row admits entries. The
+/// `graph` section admits `scope*` (033-256, FND-16 (b)), so an empty
+/// `graph {}` is legal rather than tolerated.
 pub fn parse(tokens: Vec<Token>) -> Result<Module, Diagnostic> {
     let mut parser = Parser {
         tokens,
@@ -387,38 +414,664 @@ impl Parser {
         Err(self.unexpected("a type tag"))
     }
 
-    // graph_section ::= 'graph' '{' scope+ '}'
+    // graph_section ::= 'graph' '{' scope* '}'
     //
-    // The production's `scope+` arity is not enforced here: no scope form
-    // exists before increment 7, so the empty section is all this increment can
-    // admit.
+    // The arity is `scope*` (033-256): an empty graph is a module of pure
+    // types, legal by the grammar, and any minimum-content requirement is the
+    // loader's. The `*` is the same ENTRY LOOP the `types` table runs — a scope
+    // is an entry of this section, terminated by the NEWLINE after its closing
+    // brace (033-250) — so the loop and its terminator are shared verbatim.
     fn graph_section(&mut self) -> Result<GraphSection, Diagnostic> {
         self.skip_newlines();
 
         let start = self.expect_word(GRAPH)?;
         self.expect(&TokenKind::LBrace, "`{`")?;
         self.skip_newlines();
-        let end = self.expect(
-            &TokenKind::RBrace,
-            &format!("`}}` (the `{GRAPH}` section admits no scopes yet)"),
-        )?;
+
+        let mut scopes = Vec::new();
+
+        while self.peek_kind() != Some(&TokenKind::RBrace) {
+            scopes.push(self.scope()?);
+            self.entry_terminator()?;
+        }
+
+        let end = self.expect(&TokenKind::RBrace, "`}`")?;
 
         Ok(GraphSection {
             span: covering(start, end),
+            scopes,
         })
     }
 
+    // scope ::= 'scope' PATH 'exposes' path_set 'effects' path_set
+    //           ('reset_on_reopen' reopen_set)? '{' entry* '}'
+    //
+    // Scopes are FLAT under the section: a scope holds entries, never other
+    // scopes, and the nesting a program has rides each scope's PATH instead
+    // (§15.4.1.1). So `scope App.panel` is a sibling of `scope App` here and a
+    // child of it by name.
+    //
+    // `exposes` and `effects` are MANDATORY, `reset_on_reopen` optional — the
+    // first of that keyword's three grammar positions, the one that carries a
+    // payload (033-215).
+    fn scope(&mut self) -> Result<Scope, Diagnostic> {
+        let start = self.expect_word(SCOPE)?;
+        let path = self.path()?;
+
+        self.expect_word(EXPOSES)?;
+        let exposes = self.path_set()?;
+
+        self.expect_word(EFFECTS)?;
+        let effects = self.path_set()?;
+
+        let mut reset_on_reopen = Vec::new();
+
+        if self.at_word(RESET_ON_REOPEN) {
+            self.advance();
+            reset_on_reopen = self.reopen_set()?;
+        }
+
+        self.expect(&TokenKind::LBrace, "`{`")?;
+        // The line ending after the opening brace terminates no entry, so it is
+        // optional the way the ones between entries are not.
+        self.skip_newlines();
+
+        let mut entries = Vec::new();
+
+        while self.peek_kind() != Some(&TokenKind::RBrace) {
+            entries.push(self.entry()?);
+            self.entry_terminator()?;
+        }
+
+        let end = self.expect(&TokenKind::RBrace, "`}`")?;
+
+        Ok(Scope {
+            path,
+            span: covering(start, end),
+            exposes,
+            effects,
+            reset_on_reopen,
+            entries,
+        })
+    }
+
+    // entry ::= cell | gate | wire | effect | stream
+    //
+    // Every alternative is decided by its leading WORD — one of the five cell
+    // kinds, or one of the four entry heads — so there is no lookahead and no
+    // backtracking here either.
+    fn entry(&mut self) -> Result<Entry, Diagnostic> {
+        if self.peek_cell_kind().is_some() {
+            return Ok(Entry::Cell(self.cell()?));
+        }
+
+        if self.at_word(GATE) {
+            return Ok(Entry::Gate(self.gate()?));
+        }
+
+        if self.at_word(WIRE) {
+            return Ok(Entry::Wire(self.wire()?));
+        }
+
+        if self.at_word(EFFECT) {
+            return Ok(Entry::Effect(self.effect()?));
+        }
+
+        if self.at_word(STREAM) {
+            return Ok(Entry::Stream(self.stream()?));
+        }
+
+        Err(self.unexpected(&format!(
+            "a cell kind, `{GATE}`, `{WIRE}`, `{EFFECT}` or `{STREAM}`"
+        )))
+    }
+
+    // cell ::= cell_kind PATH ':' type_tag
+    //          ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
+    //          ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+    //          ('combiner' BID)? ('else' value)? ('members' member_set)?
+    //
+    // Nine optional clauses, each admitted AT MOST ONCE and only in the
+    // production's order — which is what reading them SEQUENTIALLY means: a
+    // clause written out of order, or twice, does not match at its turn, so the
+    // entry ends before it and the terminator rejects it as a second entry on
+    // one line. That is the diagnostic a clause-order violation gets, and it
+    // points at the offending clause's own word.
+    //
+    // Which clauses a KIND admits is not checked here (F4, R21): `input App.x :
+    // i32 combiner B@1` parses, and the loader rejects it under the kind's
+    // rules. `depth` is structural and converts now (R57); `init` and `else`
+    // are typed and stay text.
+    fn cell(&mut self) -> Result<Cell, Diagnostic> {
+        let (kind, start) = self.cell_kind()?;
+        let path = self.path()?;
+
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let tag = self.type_tag()?;
+
+        let uses = self.optional_bid(USES)?;
+        let inputs = self.optional_path_set(INPUTS)?;
+        let depth = self.optional_structural_int(DEPTH, "a depth")?;
+        let reset_on_reopen = self.flag(RESET_ON_REOPEN);
+        let init = self.optional_value(INIT)?;
+        let gate = self.optional_path(GATE)?;
+        let combiner = self.optional_bid(COMBINER)?;
+        let else_value = self.optional_value(ELSE)?;
+        let mut members = Vec::new();
+
+        if self.at_word(MEMBERS) {
+            self.advance();
+            members = self.member_set()?;
+        }
+
+        Ok(Cell {
+            kind,
+            path,
+            span: covering(start, self.previous_span()),
+            tag,
+            uses,
+            inputs,
+            depth,
+            reset_on_reopen,
+            init,
+            gate,
+            combiner,
+            else_value,
+            members,
+        })
+    }
+
+    // cell_kind ::= 'input' | 'derived' | 'recurrent' | 'deferred' | 'fold'
+    //
+    // The five spellings live on `CellKind` itself, the way the sixteen
+    // primitive spellings live on `Prim`: a closed set is a type, not a list of
+    // words in the keyword table.
+    fn cell_kind(&mut self) -> Result<(CellKind, Span), Diagnostic> {
+        match self.peek_cell_kind() {
+            Some(kind) => Ok((kind, self.advance())),
+            None => Err(self.unexpected("a cell kind")),
+        }
+    }
+
+    // member_set ::= '[' (member (',' member)*)? ']'
+    fn member_set(&mut self) -> Result<Vec<Member>, Diagnostic> {
+        self.bracketed(Parser::member)
+    }
+
+    // member ::= PATH ':' member_driver
+    //
+    // The pair separator is `:` and a path segment may end with a `:N` ordinal.
+    // Nothing here disambiguates them, because [`path`](Parser::path) already
+    // does: after a colon an INT continues the path and a word does not, which
+    // is §3's boundary note applied where paths are read.
+    fn member(&mut self) -> Result<Member, Diagnostic> {
+        let path = self.path()?;
+
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let driver = self.member_driver()?;
+
+        Ok(Member { path, driver })
+    }
+
+    // member_driver ::= 'permanent' | 'keyed_template' | 'gate_guarded'
+    fn member_driver(&mut self) -> Result<MemberDriver, Diagnostic> {
+        let driver = match self.peek_kind() {
+            Some(TokenKind::Ident(text)) => MemberDriver::from_word(text),
+            _ => None,
+        };
+
+        match driver {
+            Some(driver) => {
+                self.advance();
+
+                Ok(driver)
+            }
+            None => Err(self.unexpected("a member driver")),
+        }
+    }
+
+    // gate ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
+    //          ('gate_parent' PATH)?
+    //
+    // `inputs` and `guards` are MANDATORY here, unlike the `inputs` on a cell:
+    // an empty vector means the text spelled `[]`.
+    fn gate(&mut self) -> Result<Gate, Diagnostic> {
+        let start = self.expect_word(GATE)?;
+        let path = self.path()?;
+
+        self.expect_word(PRED)?;
+        let pred = self.bid("a behavior handle")?;
+
+        self.expect_word(INPUTS)?;
+        let inputs = self.path_set()?;
+
+        self.expect_word(GUARDS)?;
+        let guards = self.path_set()?;
+
+        let gate_parent = self.optional_path(GATE_PARENT)?;
+
+        Ok(Gate {
+            path,
+            span: covering(start, self.previous_span()),
+            pred,
+            inputs,
+            guards,
+            gate_parent,
+        })
+    }
+
+    // wire ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
+    //          ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
+    fn wire(&mut self) -> Result<Wire, Diagnostic> {
+        let start = self.expect_word(WIRE)?;
+        let path = self.path()?;
+
+        self.expect_word(FROM)?;
+        let from = self.path()?;
+
+        self.expect_word(TO)?;
+        let to = self.wire_to()?;
+
+        let mut tag = None;
+
+        if self.at_word(TYPE) {
+            self.advance();
+            tag = Some(self.type_tag()?);
+        }
+
+        let mut attrs = Vec::new();
+
+        if self.at_word(ATTRS) {
+            self.advance();
+            attrs = self.binding_set()?;
+        }
+
+        let gate = self.optional_path(GATE)?;
+
+        Ok(Wire {
+            path,
+            span: covering(start, self.previous_span()),
+            from,
+            to,
+            tag,
+            attrs,
+            gate,
+        })
+    }
+
+    // `(PATH | 'null')` — a wire's destination.
+    //
+    // `null` is RESERVED (002-39), so no PATH can begin with it and the word is
+    // the literal outright — no lookahead, nothing shadowed (033-258). `null.x`
+    // is not a path either: the word is taken as the whole destination and the
+    // `.` after it is the next token, unexpected where the entry has ended. The
+    // `reserved_word` class belongs to the NAME positions; here the word is not
+    // in one. A key spelled `null` remains reachable, because a KeySegment is
+    // quoted and never comes through [`name`](Parser::name).
+    fn wire_to(&mut self) -> Result<WireTo, Diagnostic> {
+        if self.at_word(NULL) {
+            self.advance();
+
+            return Ok(WireTo::Null);
+        }
+
+        Ok(WireTo::Path(self.path()?))
+    }
+
+    // effect ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
+    //            ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
+    fn effect(&mut self) -> Result<Effect, Diagnostic> {
+        let start = self.expect_word(EFFECT)?;
+        let path = self.path()?;
+
+        self.expect_word(RECONCILER)?;
+        let reconciler = self.string("a reconciler name")?;
+
+        self.expect_word(PARAMS)?;
+        let params = self.binding_set()?;
+
+        let desired = self.optional_path_set(DESIRED)?;
+        let observed = self.optional_path_set(OBSERVED)?;
+        let gate = self.optional_path(GATE)?;
+
+        Ok(Effect {
+            path,
+            span: covering(start, self.previous_span()),
+            reconciler,
+            params,
+            desired,
+            observed,
+            gate,
+        })
+    }
+
+    // stream ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capacity' INT
+    //            ('source_deps' path_set)? ('observes' path_set)?
+    //            ('reset_on_reload')? ('reset_on_reopen')?
+    //            ('history' INT)? ('lookback' lookback_map)?
+    //
+    // `capacity`, `history` and every lookback `k` are STRUCTURAL (R57). The
+    // two bare flags are the third grammar position of `reset_on_reopen`
+    // (033-215).
+    fn stream(&mut self) -> Result<Stream, Diagnostic> {
+        let start = self.expect_word(STREAM)?;
+        let path = self.path()?;
+
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let tag = self.type_tag()?;
+
+        self.expect_word(POLICY)?;
+        let policy = self.stream_policy()?;
+
+        self.expect_word(CAPACITY)?;
+        let (capacity, _) = self.structural_int("a capacity")?;
+
+        let source_deps = self.optional_path_set(SOURCE_DEPS)?;
+        let observes = self.optional_path_set(OBSERVES)?;
+        let reset_on_reload = self.flag(RESET_ON_RELOAD);
+        let reset_on_reopen = self.flag(RESET_ON_REOPEN);
+        let history = self.optional_structural_int(HISTORY, "a history size")?;
+        let mut lookback = Vec::new();
+
+        if self.at_word(LOOKBACK) {
+            self.advance();
+            lookback = self.lookback_map()?;
+        }
+
+        Ok(Stream {
+            path,
+            span: covering(start, self.previous_span()),
+            tag,
+            policy,
+            capacity,
+            source_deps,
+            observes,
+            reset_on_reload,
+            reset_on_reopen,
+            history,
+            lookback,
+        })
+    }
+
+    // `('ring' | 'gate')` — a stream's policy, spelled inline in the production
+    // and owned as a closed set by `StreamPolicy`.
+    fn stream_policy(&mut self) -> Result<StreamPolicy, Diagnostic> {
+        let policy = match self.peek_kind() {
+            Some(TokenKind::Ident(text)) => StreamPolicy::from_word(text),
+            _ => None,
+        };
+
+        match policy {
+            Some(policy) => {
+                self.advance();
+
+                Ok(policy)
+            }
+            None => Err(self.unexpected("a stream policy")),
+        }
+    }
+
+    // path_set ::= '[' (PATH (',' PATH)*)? ']'
+    fn path_set(&mut self) -> Result<Vec<CellPath>, Diagnostic> {
+        self.bracketed(Parser::path)
+    }
+
+    // binding_set ::= '[' (binding (',' binding)*)? ']'
+    fn binding_set(&mut self) -> Result<Vec<Binding>, Diagnostic> {
+        self.bracketed(Parser::binding)
+    }
+
+    // binding ::= NAME ':' (PATH | value) ('@' provenance)?
+    //
+    // The provenance clause is optional METADATA on the binding, never a third
+    // target case (033-252), so it is read after the target rather than inside
+    // it.
+    fn binding(&mut self) -> Result<Binding, Diagnostic> {
+        let name = self.name("a binding name")?;
+
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let target = self.binding_target()?;
+        let mut provenance = None;
+
+        if self.peek_kind() == Some(&TokenKind::At) {
+            self.advance();
+            provenance = Some(self.provenance()?);
+        }
+
+        Ok(Binding {
+            name,
+            target,
+            provenance,
+        })
+    }
+
+    // `(PATH | value)` — the two alternatives a binding binds to.
+    //
+    // A number, a string and the four value WORDS are values; everything else
+    // word-shaped, and every quoted key, begins a path. There is no overlap to
+    // resolve: `true`, `false`, `nan` and `inf` are RESERVED (002-39), so no
+    // path can be named by one and the word is the value outright, exactly as
+    // `null` is on a wire (033-258).
+    fn binding_target(&mut self) -> Result<BindingTarget, Diagnostic> {
+        if self.at_value_start() {
+            return Ok(BindingTarget::Value(self.value()?));
+        }
+
+        Ok(BindingTarget::Path(self.path()?))
+    }
+
+    // provenance ::= 'bound' | 'constant_wrap' | 'bridge'
+    fn provenance(&mut self) -> Result<Provenance, Diagnostic> {
+        let provenance = match self.peek_kind() {
+            Some(TokenKind::Ident(text)) => Provenance::from_word(text),
+            _ => None,
+        };
+
+        match provenance {
+            Some(provenance) => {
+                self.advance();
+
+                Ok(provenance)
+            }
+            None => Err(self.unexpected("a provenance marker")),
+        }
+    }
+
+    // reopen_set ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'
+    fn reopen_set(&mut self) -> Result<Vec<ReopenPair>, Diagnostic> {
+        self.bracketed(Parser::reopen_pair)
+    }
+
+    // `PATH ':' PATH` — one `(consumer : stream)` pair of a `reopen_set`.
+    //
+    // §3 states the disambiguator here: after a colon, an INT is the LEFT
+    // path's ordinal and a NAME begins the RIGHT path. [`path`](Parser::path)
+    // applies exactly that test, so the pair reads as two paths with a colon
+    // between them and this needs no lookahead of its own.
+    fn reopen_pair(&mut self) -> Result<ReopenPair, Diagnostic> {
+        let consumer = self.path()?;
+
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let stream = self.path()?;
+
+        Ok(ReopenPair { consumer, stream })
+    }
+
+    // lookback_map ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
+    fn lookback_map(&mut self) -> Result<Vec<LookbackEntry>, Diagnostic> {
+        self.bracketed(Parser::lookback_entry)
+    }
+
+    // `PATH ':' INT` — one `(input cell : k)` pair, under lookback_map's OWN
+    // colon rule (R43, §3's scope note).
+    //
+    // reopen_set's "an INT after a colon is an ordinal" cannot decide here:
+    // BOTH sides of this colon-INT are integers. The law is positional instead
+    // — the LAST `':' INT` of the entry is the lookback value, and any earlier
+    // one belongs to the key path. Reading the key first and then looking at
+    // what is left implements exactly that:
+    //
+    //   `App.print:0 : 3`  a colon still stands after the key, so `3` is the
+    //                      value and `:0` stays the ordinal it was read as;
+    //   `App.a : 3`        no colon is left, because `:3` was read as `a`'s
+    //                      ordinal — it is the entry's last, so it is taken
+    //                      back out of the key and becomes the value.
+    //
+    // The taken-back ordinal must sit on the LAST segment. `App.print:0.text`
+    // is not an entry whose value hides in the middle of its key: its last
+    // `':' INT` is inside the path, so the entry simply has no value, and the
+    // `:` it is missing is what the diagnostic asks for.
+    //
+    // The key is read under the LOOKBACK VALUE's expected-text rather than an
+    // ordinal's, because in this one production a trailing `':' INT` is the
+    // value: `App.a: 99999999999999999999` overflows at a literal that is the
+    // entry's value, and a diagnostic calling it "a path ordinal" would name
+    // the mechanism instead of the position. The text covers every ordinal of
+    // the key, so an earlier one — `App.print:<overflowing>: 3` — reports under
+    // it too; that spelling is the rare one, and the class and the span are
+    // right in both.
+    fn lookback_entry(&mut self) -> Result<LookbackEntry, Diagnostic> {
+        let cell = self.path_naming_ordinals(LOOKBACK_VALUE)?;
+
+        if self.peek_kind() == Some(&TokenKind::Colon) {
+            self.advance();
+            let (k, _) = self.structural_int(LOOKBACK_VALUE)?;
+
+            return Ok(LookbackEntry { cell, k });
+        }
+
+        // The path is CONSUMED rather than cloned: one segment's ordinal moves
+        // out, and nothing else about the path changes.
+        let mut segments = cell.into_segments();
+
+        let Some(Segment::Name { ordinal, .. }) = segments.last_mut() else {
+            return Err(self.unexpected("`:`"));
+        };
+
+        let Some(k) = ordinal.take() else {
+            return Err(self.unexpected("`:`"));
+        };
+
+        Ok(LookbackEntry {
+            cell: CellPath::new(segments),
+            k,
+        })
+    }
+
+    // value ::= INT | FLOAT | 'true' | 'false' | STRING | 'nan' | 'inf' | '-inf'
+    //
+    // The three float spellings are TYPE-GATED (033-248): admitted here
+    // wherever a value stands, and rejected outside a float-typed position by
+    // the loader's type check rather than by the grammar. `-inf` is not
+    // word-shaped, so it arrives as a FLOAT lexeme and `ValueLiteral::float`
+    // sorts it from the digits; bare `nan` and `inf` are words.
+    //
+    // The digits are CANONICALIZED and never converted (033-257, R57): the
+    // loader owns the position's type, so the reader normalizes the spelling —
+    // `007` to `7`, `1.50` to `1.5` — which is value-safe under every type the
+    // position may take.
+    fn value(&mut self) -> Result<ValueLiteral, Diagnostic> {
+        if let Some(literal) = self.peek_value_word() {
+            self.advance();
+
+            return Ok(literal);
+        }
+
+        let literal = match self.tokens.get_mut(self.cursor) {
+            Some(Token {
+                kind: TokenKind::Int(text),
+                ..
+            }) => ValueLiteral::int(mem::take(text)),
+            Some(Token {
+                kind: TokenKind::Float(text),
+                ..
+            }) => ValueLiteral::float(mem::take(text)),
+            Some(Token {
+                kind: TokenKind::Str(text),
+                ..
+            }) => ValueLiteral::Str(mem::take(text)),
+            _ => return Err(self.unexpected("a value")),
+        };
+
+        self.advance();
+
+        Ok(literal)
+    }
+
+    // PATH ::= PathSegment ('.' PathSegment)*
+    //
+    // The lexer composes nothing dotted (033-253): it hands over `Ident`, `Dot`,
+    // `Int` and `QuotedKey` tokens, and the path is assembled here.
+    fn path(&mut self) -> Result<CellPath, Diagnostic> {
+        self.path_naming_ordinals(PATH_ORDINAL)
+    }
+
+    // The `PATH` production, with the expected-text an OUT-OF-RANGE ordinal is
+    // reported under. Every position but one takes the default, because
+    // everywhere else a `':' INT` inside a path IS an ordinal;
+    // [`lookback_entry`](Parser::lookback_entry) is the exception and says why.
+    fn path_naming_ordinals(&mut self, ordinal: &str) -> Result<CellPath, Diagnostic> {
+        let mut segments = vec![self.path_segment(ordinal)?];
+
+        while self.peek_kind() == Some(&TokenKind::Dot) {
+            self.advance();
+            segments.push(self.path_segment(ordinal)?);
+        }
+
+        Ok(CellPath::new(segments))
+    }
+
+    // PathSegment ::= NAME (':' INT)? | KeySegment
+    //
+    // A `BareKey` is the NAME charset exactly (R41), so it lexes as a NAME and
+    // is indistinguishable from a name segment in isolation — which costs
+    // nothing, because the graph structure decides which positions are keyed
+    // (033-243). Only a `QuotedKey` token becomes a key segment here.
+    //
+    // THE COLON RULE. A colon opens an ordinal ONLY when an INT follows it.
+    // That single test settles every colon-adjacent position in the grammar: a
+    // `cell`'s and a `stream`'s `PATH ':' type_tag` (a tag never begins with an
+    // INT), a `member`'s `PATH ':' member_driver` (a driver is a word), and a
+    // `reopen_set` pair's `PATH ':' PATH` (a path begins with a word or a
+    // quoted key) — which is precisely the disambiguator §3 states for
+    // reopen_set, written once. `lookback_map` is the one position it cannot
+    // decide, and it has its own rule and its own method.
+    fn path_segment(&mut self, ordinal_expected: &str) -> Result<Segment, Diagnostic> {
+        if matches!(self.peek_kind(), Some(TokenKind::QuotedKey(_))) {
+            return Ok(Segment::Key(self.quoted_key("a path key")?));
+        }
+
+        let text = self.name("a path segment")?;
+        let mut ordinal = None;
+
+        if self.peek_kind() == Some(&TokenKind::Colon) && self.peek_int_follows() {
+            self.advance();
+            let (value, _) = self.structural_int(ordinal_expected)?;
+            ordinal = Some(value);
+        }
+
+        Ok(Segment::Name { text, ordinal })
+    }
+
     // behaviors_section ::= 'behaviors' '{' behavior* '}'
+    //
+    // The description is built INSIDE the error path, the way every other
+    // interpolated `expected` here is: a section that closes — which is every
+    // one the emitter writes — must not pay for a message nobody reads.
     fn behaviors_section(&mut self) -> Result<BehaviorsSection, Diagnostic> {
         self.skip_newlines();
 
         let start = self.expect_word(BEHAVIORS)?;
         self.expect(&TokenKind::LBrace, "`{`")?;
         self.skip_newlines();
-        let end = self.expect(
-            &TokenKind::RBrace,
-            &format!("`}}` (the `{BEHAVIORS}` section admits no behaviors yet)"),
-        )?;
+
+        if self.peek_kind() != Some(&TokenKind::RBrace) {
+            return Err(self.unexpected(&format!(
+                "`}}` (the `{BEHAVIORS}` section admits no behaviors yet)"
+            )));
+        }
+
+        let end = self.advance();
 
         Ok(BehaviorsSection {
             span: covering(start, end),
@@ -484,6 +1137,159 @@ impl Parser {
         Ok(Box::new(tag))
     }
 
+    // `'[' (element (',' element)*)? ']'` — the bracketed comma list that five
+    // productions share: `path_set`, `binding_set`, `member_set`, `reopen_set`
+    // and `lookback_map`. All five are optional-content lists whose only
+    // difference is the element reader, so the brackets, the separator and the
+    // empty case are written once.
+    fn bracketed<T>(
+        &mut self,
+        element: impl Fn(&mut Parser) -> Result<T, Diagnostic>,
+    ) -> Result<Vec<T>, Diagnostic> {
+        self.expect(&TokenKind::LBracket, "`[`")?;
+        let mut elements = Vec::new();
+
+        if self.peek_kind() != Some(&TokenKind::RBracket) {
+            elements.push(element(self)?);
+
+            while self.peek_kind() == Some(&TokenKind::Comma) {
+                self.advance();
+                elements.push(element(self)?);
+            }
+        }
+
+        self.expect(&TokenKind::RBracket, "`]`")?;
+
+        Ok(elements)
+    }
+
+    // `word PATH`, or nothing — the optional single-path clause shape shared by
+    // `gate` (on a cell, a wire and an effect) and `gate_parent`.
+    fn optional_path(&mut self, word: &str) -> Result<Option<CellPath>, Diagnostic> {
+        if !self.at_word(word) {
+            return Ok(None);
+        }
+
+        self.advance();
+
+        Ok(Some(self.path()?))
+    }
+
+    // `word path_set`, or nothing — the optional path-set clause shape shared
+    // by `inputs`, `desired`, `observed`, `source_deps` and `observes`.
+    //
+    // An absent clause and a written `[]` are ONE state (see the entry types),
+    // so both come back as an empty vector and the canonical rendering of that
+    // state omits the clause.
+    fn optional_path_set(&mut self, word: &str) -> Result<Vec<CellPath>, Diagnostic> {
+        if !self.at_word(word) {
+            return Ok(Vec::new());
+        }
+
+        self.advance();
+
+        self.path_set()
+    }
+
+    // `word BID`, or nothing — `uses` and `combiner`.
+    fn optional_bid(&mut self, word: &str) -> Result<Option<u32>, Diagnostic> {
+        if !self.at_word(word) {
+            return Ok(None);
+        }
+
+        self.advance();
+
+        Ok(Some(self.bid("a behavior handle")?))
+    }
+
+    // `word INT`, or nothing, the INT being STRUCTURAL (R57) — `depth` and
+    // `history`.
+    fn optional_structural_int(
+        &mut self,
+        word: &str,
+        expected: &str,
+    ) -> Result<Option<u64>, Diagnostic> {
+        if !self.at_word(word) {
+            return Ok(None);
+        }
+
+        self.advance();
+        let (value, _) = self.structural_int(expected)?;
+
+        Ok(Some(value))
+    }
+
+    // `word value`, or nothing — `init` and `else`.
+    fn optional_value(&mut self, word: &str) -> Result<Option<ValueLiteral>, Diagnostic> {
+        if !self.at_word(word) {
+            return Ok(None);
+        }
+
+        self.advance();
+
+        Ok(Some(self.value()?))
+    }
+
+    // A BARE FLAG: the word alone, carrying no payload — `reset_on_reopen` on a
+    // cell and on a stream, `reset_on_reload` on a stream (033-215).
+    fn flag(&mut self, word: &str) -> bool {
+        if !self.at_word(word) {
+            return false;
+        }
+
+        self.advance();
+
+        true
+    }
+
+    // A `BID` (§2): the `u32` the lexer decoded from `B@` and its hex run. The
+    // handle is `Copy`, so this reads the value out rather than moving anything.
+    fn bid(&mut self, expected: &str) -> Result<u32, Diagnostic> {
+        let Some(&TokenKind::Bid(handle)) = self.peek_kind() else {
+            return Err(self.unexpected(expected));
+        };
+
+        self.advance();
+
+        Ok(handle)
+    }
+
+    // A `STRING`'s content, TAKEN out of the token (R18) exactly as a NAME is.
+    // The payload is already unescaped by the lexer, so this is the value and
+    // not the spelling.
+    fn string(&mut self, expected: &str) -> Result<String, Diagnostic> {
+        match self.tokens.get_mut(self.cursor) {
+            Some(Token {
+                kind: TokenKind::Str(text),
+                ..
+            }) => {
+                let value = mem::take(text);
+                self.advance();
+
+                Ok(value)
+            }
+            _ => Err(self.unexpected(expected)),
+        }
+    }
+
+    // A `QuotedKey`'s content, taken the same way. Also already unescaped: the
+    // segment holds what the quotes delimited, and the canonical re-quoting
+    // happens where the path is rendered.
+    fn quoted_key(&mut self, expected: &str) -> Result<String, Diagnostic> {
+        match self.tokens.get_mut(self.cursor) {
+            Some(Token {
+                kind: TokenKind::QuotedKey(text),
+                ..
+            }) => {
+                let key = mem::take(text);
+                self.advance();
+
+                Ok(key)
+            }
+            _ => Err(self.unexpected(expected)),
+        }
+    }
+
     // A STRUCTURAL number (R57): an `INT` lexeme converted to `u64` right here,
     // because the POSITION fixes the type — a `size`, an `align`, an array
     // length. A signed or oversized spelling is `int_out_of_range` at the
@@ -547,7 +1353,68 @@ impl Parser {
     // hand-built slice — but a parser that panics on one is worse than a parser
     // that reports `unexpected_token`.
     fn peek_kind(&self) -> Option<&TokenKind> {
-        self.tokens.get(self.cursor).map(|token| &token.kind)
+        self.peek_kind_at(0)
+    }
+
+    // What the token `offset` tokens past the cursor is. Exactly one rule
+    // passes a non-zero offset, and it passes 1: the COLON rules, through
+    // [`peek_int_follows`](Parser::peek_int_follows). Nothing here looks
+    // further than one token past the cursor.
+    //
+    // There used to be a second: the keyword-shadowing lookahead of 033-258,
+    // retired when the five spellings became reserved — a path can no longer
+    // begin with one, so there is nothing left to disambiguate.
+    fn peek_kind_at(&self, offset: usize) -> Option<&TokenKind> {
+        self.tokens
+            .get(self.cursor + offset)
+            .map(|token| &token.kind)
+    }
+
+    // Whether an INT stands one token past the cursor — the whole of the
+    // colon-ordinal test (§3's boundary note), read without consuming anything.
+    fn peek_int_follows(&self) -> bool {
+        matches!(self.peek_kind_at(1), Some(TokenKind::Int(_)))
+    }
+
+    // The cell kind the word at the cursor names, if it names one. `CellKind`
+    // is `Copy`, so this hands back a value and the caller is free to advance.
+    fn peek_cell_kind(&self) -> Option<CellKind> {
+        match self.peek_kind() {
+            Some(TokenKind::Ident(text)) => CellKind::from_word(text),
+            _ => None,
+        }
+    }
+
+    // The payload-free literal the word at the cursor names, if it names one:
+    // the four word-shaped `value` alternatives. `-inf` is not among them — it
+    // is not word-shaped and arrives as a FLOAT lexeme (033-248).
+    fn peek_value_word(&self) -> Option<ValueLiteral> {
+        let Some(TokenKind::Ident(text)) = self.peek_kind() else {
+            return None;
+        };
+
+        let literal = match text.as_str() {
+            TRUE => ValueLiteral::True,
+            FALSE => ValueLiteral::False,
+            NAN => ValueLiteral::Nan,
+            INF => ValueLiteral::Inf,
+            _ => return None,
+        };
+
+        Some(literal)
+    }
+
+    // Whether a `value` stands at the cursor rather than a PATH — the one place
+    // a binding's two target alternatives are told apart. A number, a string
+    // and a value WORD are all unambiguous: the four words are RESERVED
+    // (002-39), so no path can begin with one and none of them needs a
+    // lookahead to be told from a path (033-258).
+    fn at_value_start(&self) -> bool {
+        self.peek_value_word().is_some()
+            || matches!(
+                self.peek_kind(),
+                Some(TokenKind::Int(_) | TokenKind::Float(_) | TokenKind::Str(_))
+            )
     }
 
     // Whether the cursor sits on the word `word` — soft-keyword classification
@@ -579,6 +1446,24 @@ impl Parser {
         }
     }
 
+    // The span of the token BEFORE the cursor — where an ENTRY's span ends.
+    // Every entry trails a run of optional clauses, so its last token is
+    // whatever the last clause that matched consumed; asking after the fact
+    // beats threading an end span out of every clause reader.
+    //
+    // Zero-length at offset 0 when the cursor has not moved, which only a
+    // hand-built stream reaches.
+    fn previous_span(&self) -> Span {
+        match self
+            .cursor
+            .checked_sub(1)
+            .and_then(|index| self.tokens.get(index))
+        {
+            Some(token) => token.span,
+            None => Span::new(0, 0),
+        }
+    }
+
     // Consume the token at the cursor and report its span.
     fn advance(&mut self) -> Span {
         let span = self.span();
@@ -598,23 +1483,47 @@ impl Parser {
         Err(self.unexpected(&format!("`{word}`")))
     }
 
-    // The NAME lexeme (§2): any word-shaped token, taken for its text —
-    // literally TAKEN (R18). The payload moves out of the token and into the
-    // AST; the emptied token is consumed on the next line and never read again,
-    // so the name exists in exactly one place from here on.
+    // The NAME lexeme (§2): any word-shaped token that is not a RESERVED
+    // spelling, taken for its text — literally TAKEN (R18). The payload moves
+    // out of the token and into the AST; the emptied token is consumed on the
+    // next line and never read again, so the name exists in exactly one place
+    // from here on.
+    //
+    // THE RESERVATION (002-39, 033-259) is checked HERE, once, and that is why
+    // it holds everywhere: every name position in the grammar reads its name
+    // through this method — a module name, a `type_def` id, a field name, a
+    // variant name, a binding name, and a PATH's name segment. `null`, `true`,
+    // `false`, `nan` and `inf` are rejected at all six under `reserved_word`,
+    // which is its own class because the token IS word-shaped and the position
+    // DOES want a word: what is wrong is the spelling.
+    //
+    // Two consequences ride on it. A PATH can never begin with one of the five,
+    // so the two positions admitting both a PATH and a literal need no
+    // lookahead (033-258). And a quoted KEY segment is untouched — it never
+    // comes through here — so `App.rows.'null'.render_row` stays legal data.
     fn name(&mut self, expected: &str) -> Result<String, Diagnostic> {
-        match self.tokens.get_mut(self.cursor) {
+        let span = self.span();
+
+        let name = match self.tokens.get_mut(self.cursor) {
             Some(Token {
                 kind: TokenKind::Ident(text),
                 ..
-            }) => {
-                let name = mem::take(text);
-                self.advance();
+            }) => mem::take(text),
+            _ => return Err(self.unexpected(expected)),
+        };
 
-                Ok(name)
-            }
-            _ => Err(self.unexpected(expected)),
+        self.advance();
+
+        if is_reserved_word(&name) {
+            return Err(Diagnostic {
+                class: DiagClass::ReservedWord,
+                span: Some(span),
+                path: None,
+                message: format!("`{name}` is a reserved spelling and is never a name"),
+            });
         }
+
+        Ok(name)
     }
 
     // A token of the same KIND as `kind`, payload ignored. Every caller here
@@ -734,8 +1643,10 @@ mod tests {
     use super::*;
     use crate::text::emitter::emit;
     use crate::text::lexer::lex;
-    use crate::text::test_support::{BLANK_LINES, CANONICAL, ENTRY, ONE_LINE, WITH_TYPES};
-    use crate::text::test_support::{parsed, with_types};
+    use crate::text::test_support::{
+        BLANK_LINES, CANONICAL, ENTRY, GRAPH_ENTRY, ONE_LINE, SCOPE_WORD, WITH_TYPES,
+    };
+    use crate::text::test_support::{parsed, with_entry, with_scope, with_types};
 
     // Class and span only — never the message (F3).
     fn failure(source: &str) -> (&'static str, Span) {
@@ -915,14 +1826,20 @@ mod tests {
     }
 
     #[test]
-    fn graph_and_behaviors_admit_no_body_yet() {
-        assert_eq!(
-            failure("module App {\n  types {}\n  graph { x }\n  behaviors {}\n}\n"),
-            ("unexpected_token", Span::new(34, 1))
-        );
+    fn behaviors_admits_no_body_yet() {
         assert_eq!(
             failure("module App {\n  types {}\n  graph {}\n  behaviors { x }\n}\n"),
             ("unexpected_token", Span::new(49, 1))
+        );
+    }
+
+    // The `graph` section's entry is a `scope` and nothing else, so a word that
+    // is not one fails at that word.
+    #[test]
+    fn the_graph_section_admits_scopes_and_nothing_else() {
+        assert_eq!(
+            failure("module App {\n  types {}\n  graph { x }\n  behaviors {}\n}\n"),
+            ("unexpected_token", Span::new(34, 1))
         );
     }
 
@@ -1308,6 +2225,809 @@ mod tests {
         assert_eq!(
             failure(&with_types("%Request = enum { #None() } size 8 align 8")),
             ("unexpected_token", Span::new(ENTRY + 24, 1))
+        );
+    }
+
+    // ---- graph section ----
+
+    // The two anchors every graph span below is written against, pinned the way
+    // the type fixture's are: the scope word at 38, an entry's first byte at 78.
+    #[test]
+    fn a_scope_parses_with_hand_counted_spans() {
+        let source = with_entry("input App.count : i32 init 0");
+
+        assert_eq!(source.find(SCOPE), Some(SCOPE_WORD));
+        assert_eq!(source.find("input"), Some(GRAPH_ENTRY));
+
+        let module = parsed(&source);
+        let [scope] = module.graph.scopes.as_slice() else {
+            panic!("the section holds exactly one scope");
+        };
+
+        assert_eq!(scope.path.render(), "App");
+        assert!(scope.exposes.is_empty());
+        assert!(scope.effects.is_empty());
+        assert!(scope.reset_on_reopen.is_empty());
+        // `scope` at 38 through the body's `}`: the entry is 28 bytes from 78,
+        // its newline is at 106, and the closing `    }` puts `}` at 111.
+        assert_eq!(scope.span, Span::new(SCOPE_WORD, 74));
+        assert_eq!(source.as_bytes()[111], b'}');
+
+        let [Entry::Cell(cell)] = scope.entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.path.render(), "App.count");
+        // The kind word through the `init` literal — the whole 28-byte entry,
+        // its last clause included.
+        assert_eq!(cell.span, Span::new(GRAPH_ENTRY, 28));
+        // `graph` at 26 through the section's `}` at 115.
+        assert_eq!(module.graph.span, Span::new(26, 90));
+    }
+
+    // An entry's span ends at whatever its LAST clause consumed. Three shapes
+    // that last token can take are pinned here by hand count — a closing `]`,
+    // a bare flag word, and a STRING carrying a raw newline; the pinned-span
+    // test above covers the fourth, a clause ending in a bare literal.
+    //
+    // Every count is written against `GRAPH_ENTRY`, the entry's first byte.
+    #[test]
+    fn an_entrys_span_ends_at_its_last_clauses_last_token() {
+        // A SET-final entry: the last token is the closing `]`. Counting the
+        // entry: `fold ` 0..5, `App.t ` 5..11, `: ` 11..13, `i32 ` 13..17,
+        // `members ` 17..25, `[` 25, `App.a` 26..31, `: ` 31..33,
+        // `permanent` 33..42, `]` 42 — 43 bytes.
+        let members = with_entry("fold App.t : i32 members [App.a: permanent]");
+
+        assert_eq!(members.find("fold"), Some(GRAPH_ENTRY));
+        assert_eq!(entry_span(&members), Span::new(GRAPH_ENTRY, 43));
+        assert_eq!(members.as_bytes()[GRAPH_ENTRY + 42], b']');
+
+        // A BARE-FLAG-final entry: the last token is a word carrying no
+        // payload. `recurrent ` 0..10, `App.total ` 10..20, `: ` 20..22,
+        // `i32 ` 22..26, `reset_on_reopen` 26..41 — 41 bytes.
+        let flag = with_entry("recurrent App.total : i32 reset_on_reopen");
+
+        assert_eq!(flag.find("recurrent"), Some(GRAPH_ENTRY));
+        assert_eq!(entry_span(&flag), Span::new(GRAPH_ENTRY, 41));
+
+        // The same on a stream, whose last clause may also be a flag:
+        // `stream ` 0..7, `App.s ` 7..13, `: ` 13..15, `i32 ` 15..19,
+        // `policy ` 19..26, `ring ` 26..31, `capacity ` 31..40, `8 ` 40..42,
+        // `reset_on_reload` 42..57 — 57 bytes.
+        let stream = with_entry("stream App.s : i32 policy ring capacity 8 reset_on_reload");
+
+        assert_eq!(stream.find("stream"), Some(GRAPH_ENTRY));
+        assert_eq!(entry_span(&stream), Span::new(GRAPH_ENTRY, 57));
+
+        // A STRING-payload-final entry whose payload carries a RAW newline
+        // (R40): the entry spans two physical lines, because the newline is
+        // inside the STRING lexeme and so is not the NEWLINE that terminates an
+        // entry (033-250). `input ` 0..6, `App.x ` 6..12, `: ` 12..14,
+        // `str ` 14..18, `init ` 18..23, `"a\nb"` 23..28 — 28 bytes, the
+        // closing quote included.
+        let raw = with_entry("input App.x : str init \"a\nb\"");
+
+        assert_eq!(raw.find("input"), Some(GRAPH_ENTRY));
+        assert_eq!(entry_span(&raw), Span::new(GRAPH_ENTRY, 28));
+        assert_eq!(raw.as_bytes()[GRAPH_ENTRY + 25], b'\n');
+        assert_eq!(raw.as_bytes()[GRAPH_ENTRY + 27], b'"');
+    }
+
+    // The span of the one entry a [`with_entry`] fixture's scope holds.
+    fn entry_span(source: &str) -> Span {
+        let module = parsed(source);
+
+        match module.graph.scopes[0].entries.as_slice() {
+            [Entry::Cell(cell)] => cell.span,
+            [Entry::Stream(stream)] => stream.span,
+            _ => panic!("the scope holds exactly one cell or stream"),
+        }
+    }
+
+    // 033-256 (FND-16 (b)): the arity is `scope*`, so a module of pure types is
+    // inside the grammar rather than tolerated by an unfinished parser.
+    #[test]
+    fn an_empty_graph_section_is_legal() {
+        assert!(parsed(CANONICAL).graph.scopes.is_empty());
+        assert!(parsed(ONE_LINE).graph.scopes.is_empty());
+        assert!(
+            parsed("module App {\n  types {}\n  graph {\n\n  }\n  behaviors {}\n}\n")
+                .graph
+                .scopes
+                .is_empty()
+        );
+    }
+
+    // Scopes are FLAT under the section: the nesting a program has rides each
+    // scope's PATH, so `App.panel` is a sibling here and a child by name.
+    #[test]
+    fn scopes_are_flat_and_carry_their_nesting_in_their_paths() {
+        let module = parsed(&with_scope(
+            "scope App exposes [App.count] effects [] {\n    }\n    scope App.panel exposes [] effects [App.panel.print:0] {\n    }",
+        ));
+
+        let rendered: Vec<String> = module
+            .graph
+            .scopes
+            .iter()
+            .map(|scope| scope.path.render())
+            .collect();
+
+        assert_eq!(rendered, ["App", "App.panel"]);
+        assert_eq!(module.graph.scopes[0].exposes[0].render(), "App.count");
+        assert_eq!(
+            module.graph.scopes[1].effects[0].render(),
+            "App.panel.print:0"
+        );
+        // And a scope is not an entry: one written inside a scope body fails at
+        // its own keyword.
+        assert_eq!(
+            failure(&with_entry("scope App.inner exposes [] effects [] {}")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY, 5))
+        );
+    }
+
+    // All five `entry` alternatives in one scope body, each recognized by its
+    // leading word.
+    #[test]
+    fn every_entry_kind_parses() {
+        let module = parsed(&with_scope(concat!(
+            "scope App exposes [] effects [] {\n",
+            "      input App.count : i32 init 0\n",
+            "      gate App.g0 pred B@d4 inputs [App.show] guards [App.print:0]\n",
+            "      wire App.w from App.a to App.b\n",
+            "      effect App.print:0 reconciler \"print\" params [message: App.label]\n",
+            "      stream App.s : i32 policy ring capacity 8\n",
+            "    }"
+        )));
+
+        let entries = &module.graph.scopes[0].entries;
+
+        assert_eq!(entries.len(), 5);
+        assert!(matches!(entries[0], Entry::Cell(_)));
+        assert!(matches!(entries[1], Entry::Gate(_)));
+        assert!(matches!(entries[2], Entry::Wire(_)));
+        assert!(matches!(entries[3], Entry::Effect(_)));
+        assert!(matches!(entries[4], Entry::Stream(_)));
+
+        let Entry::Gate(gate) = &entries[1] else {
+            panic!("the second entry is a gate");
+        };
+
+        assert_eq!(gate.path.render(), "App.g0");
+        assert_eq!(gate.pred, 0xd4);
+        assert_eq!(gate.inputs[0].render(), "App.show");
+        assert_eq!(gate.guards[0].render(), "App.print:0");
+        assert!(gate.gate_parent.is_none());
+
+        let Entry::Effect(effect) = &entries[3] else {
+            panic!("the fourth entry is an effect");
+        };
+
+        assert_eq!(effect.reconciler, "print");
+        assert_eq!(effect.params.len(), 1);
+        assert_eq!(effect.params[0].name, "message");
+        assert!(effect.desired.is_empty());
+    }
+
+    // Every cell kind, and every clause, in the production's order.
+    #[test]
+    fn a_cell_carries_every_clause_in_order() {
+        let module = parsed(&with_entry(concat!(
+            "fold App.total : i32 uses B@d1 inputs [App.a, App.b] depth 2 ",
+            "reset_on_reopen init 0 gate App.g0 combiner B@2 else -1 ",
+            "members [App.a: permanent, App.b: gate_guarded]"
+        )));
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.kind, CellKind::Fold);
+        assert_eq!(cell.path.render(), "App.total");
+        assert!(matches!(cell.tag, TypeTag::Prim(Prim::I32)));
+        assert_eq!(cell.uses, Some(0xd1));
+        assert_eq!(cell.inputs.len(), 2);
+        assert_eq!(cell.depth, Some(2));
+        assert!(cell.reset_on_reopen);
+        assert!(matches!(&cell.init, Some(ValueLiteral::Int(text)) if text == "0"));
+        assert_eq!(
+            cell.gate.as_ref().map(CellPath::render).as_deref(),
+            Some("App.g0")
+        );
+        assert_eq!(cell.combiner, Some(2));
+        assert!(matches!(&cell.else_value, Some(ValueLiteral::Int(text)) if text == "-1"));
+        assert_eq!(cell.members.len(), 2);
+        assert_eq!(cell.members[0].driver, MemberDriver::Permanent);
+        assert_eq!(cell.members[1].driver, MemberDriver::GateGuarded);
+    }
+
+    #[test]
+    fn every_cell_kind_leads_a_line() {
+        for (word, kind) in [
+            ("input", CellKind::Input),
+            ("derived", CellKind::Derived),
+            ("recurrent", CellKind::Recurrent),
+            ("deferred", CellKind::Deferred),
+            ("fold", CellKind::Fold),
+        ] {
+            let module = parsed(&with_entry(&format!("{word} App.x : i32")));
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert_eq!(cell.kind, kind);
+            // An absent set clause and a written empty one are one state.
+            assert!(cell.inputs.is_empty());
+            assert!(cell.members.is_empty());
+        }
+    }
+
+    // The clauses are read sequentially in the production's order, so one
+    // written out of order does not match at its turn: the entry ends before
+    // it, and the terminator rejects it as a second entry on the line.
+    #[test]
+    fn a_clause_out_of_order_is_rejected_at_that_clause() {
+        // `uses` after `inputs`, 35 bytes into the entry.
+        assert_eq!(
+            failure(&with_entry("derived App.x : i32 inputs [App.y] uses B@d1")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 35, 4))
+        );
+        // The same clause twice: the second `depth` is 28 bytes in.
+        assert_eq!(
+            failure(&with_entry("derived App.x : i32 depth 1 depth 2")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 28, 5))
+        );
+    }
+
+    // The ordinal attaches to ANY segment (033-130 / 033-133), and the colon
+    // that opens it is told from the type-tag colon by what follows: an INT
+    // continues the path, anything else does not.
+    #[test]
+    fn an_ordinal_attaches_to_any_path_segment() {
+        let module = parsed(&with_entry(
+            "derived App.print:0.text : str uses B@d5 inputs [App.print:12]",
+        ));
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.path.render(), "App.print:0.text");
+        assert_eq!(cell.inputs[0].render(), "App.print:12");
+        assert!(matches!(cell.tag, TypeTag::Prim(Prim::Str)));
+
+        // The structural conversion applies to an ordinal too (R57), so a
+        // leading-zero spelling normalizes.
+        let zeros = parsed(&with_entry("derived App.print:007 : str"));
+        let [Entry::Cell(cell)] = zeros.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.path.render(), "App.print:7");
+    }
+
+    // A quoted key is a path segment of its own (033-243), carrying its
+    // UNESCAPED content — and it renders back quoted, since a numeric key is
+    // not NAME-shaped (R41).
+    #[test]
+    fn a_quoted_key_is_a_path_segment() {
+        let module = parsed(&with_entry(
+            "derived App.rows.'42'.render_row : str inputs [App.rows.'us-east.1'.x]",
+        ));
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.path.render(), "App.rows.'42'.render_row");
+        assert_eq!(cell.inputs[0].render(), "App.rows.'us-east.1'.x");
+        assert!(matches!(cell.path.segments()[2], Segment::Key(_)));
+    }
+
+    // §3's boundary note, executable: inside a `member` pair an INT after the
+    // colon is the left path's ordinal, and a driver word closes the pair.
+    #[test]
+    fn a_member_pair_is_told_from_an_ordinal_by_what_follows_the_colon() {
+        let module = parsed(&with_entry(
+            "fold App.t : i32 members [App.a:0: permanent, App.b: keyed_template]",
+        ));
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.members[0].path.render(), "App.a:0");
+        assert_eq!(cell.members[0].driver, MemberDriver::Permanent);
+        assert_eq!(cell.members[1].path.render(), "App.b");
+        assert_eq!(cell.members[1].driver, MemberDriver::KeyedTemplate);
+        // An empty set parses; so does the absent clause, and they are one
+        // state.
+        assert!(
+            parsed(&with_entry("fold App.t : i32 members []"))
+                .graph
+                .scopes[0]
+                .entries
+                .iter()
+                .all(|entry| matches!(entry, Entry::Cell(cell) if cell.members.is_empty()))
+        );
+    }
+
+    // The same rule on a `reopen_set` pair, which is where §3 states it: after
+    // a colon an INT is the left path's ordinal and a NAME begins the right
+    // path.
+    #[test]
+    fn a_reopen_pair_is_told_from_an_ordinal_by_what_follows_the_colon() {
+        let module = parsed(&with_scope(
+            "scope App exposes [] effects [] reset_on_reopen [App.c:1: App.s, App.d: App.t] {\n    }",
+        ));
+
+        let pairs = &module.graph.scopes[0].reset_on_reopen;
+
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].consumer.render(), "App.c:1");
+        assert_eq!(pairs[0].stream.render(), "App.s");
+        assert_eq!(pairs[1].consumer.render(), "App.d");
+        assert_eq!(pairs[1].stream.render(), "App.t");
+    }
+
+    // R43: in a `lookback_map` entry the LAST `':' INT` is the lookback value,
+    // and any earlier one belongs to the key path. Both spellings of that show
+    // up here — one where a colon is left over, one where the value was first
+    // read as the key's own ordinal and has to be taken back.
+    #[test]
+    fn a_lookback_entry_takes_its_last_colon_int_as_the_value() {
+        let module = parsed(&with_entry(
+            "stream App.s : i32 policy ring capacity 8 lookback [App.print:0 : 3, App.a : 5]",
+        ));
+
+        let [Entry::Stream(stream)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one stream");
+        };
+
+        assert_eq!(stream.lookback.len(), 2);
+        assert_eq!(stream.lookback[0].cell.render(), "App.print:0");
+        assert_eq!(stream.lookback[0].k, 3);
+        assert_eq!(stream.lookback[1].cell.render(), "App.a");
+        assert_eq!(stream.lookback[1].k, 5);
+    }
+
+    // The taken-back ordinal must be on the LAST segment. `App.print:0.text` is
+    // not an entry whose value hides mid-key: its last `':' INT` is inside the
+    // path, so the entry has no value and the `:` is what is missing — reported
+    // at the `]` that arrived instead, 68 bytes into the entry.
+    #[test]
+    fn a_lookback_entry_without_a_value_is_rejected() {
+        assert_eq!(
+            failure(&with_entry(
+                "stream App.s : i32 policy ring capacity 8 lookback [App.print:0.text]"
+            )),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 68, 1))
+        );
+    }
+
+    #[test]
+    fn a_stream_carries_every_clause_in_order() {
+        let module = parsed(&with_entry(concat!(
+            "stream App.s : i32 policy gate capacity 64 source_deps [App.a] ",
+            "observes [App.s.pending_count] reset_on_reload reset_on_reopen ",
+            "history 4 lookback [App.a : 2]"
+        )));
+
+        let [Entry::Stream(stream)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one stream");
+        };
+
+        assert_eq!(stream.path.render(), "App.s");
+        assert_eq!(stream.policy, StreamPolicy::Gate);
+        assert_eq!(stream.capacity, 64);
+        assert_eq!(stream.source_deps[0].render(), "App.a");
+        assert_eq!(stream.observes[0].render(), "App.s.pending_count");
+        assert!(stream.reset_on_reload);
+        assert!(stream.reset_on_reopen);
+        assert_eq!(stream.history, Some(4));
+        assert_eq!(stream.lookback[0].k, 2);
+    }
+
+    // `null` is a literal alternative of the `to` clause, and RESERVED
+    // (002-39), so the word is the literal with no lookahead deciding it. What
+    // keeps a `null` KEY reachable is quoting, not a path reading — see
+    // `a_reserved_spelling_stays_reachable_as_a_quoted_key`.
+    #[test]
+    fn a_wire_goes_to_a_path_or_to_null() {
+        let module = parsed(&with_entry(
+            "wire App.w from App.a to null type i32 attrs [k: 1@bridge] gate App.g0",
+        ));
+
+        let [Entry::Wire(wire)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one wire");
+        };
+
+        assert!(matches!(wire.to, WireTo::Null));
+        assert_eq!(wire.from.render(), "App.a");
+        assert!(matches!(wire.tag, Some(TypeTag::Prim(Prim::I32))));
+        assert_eq!(wire.attrs[0].provenance, Some(Provenance::Bridge));
+        assert_eq!(
+            wire.gate.as_ref().map(CellPath::render).as_deref(),
+            Some("App.g0")
+        );
+
+        let path = parsed(&with_entry("wire App.w from App.a to App.b.c"));
+        let [Entry::Wire(wire)] = path.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one wire");
+        };
+
+        let WireTo::Path(destination) = &wire.to else {
+            panic!("the destination is a path");
+        };
+
+        assert_eq!(destination.render(), "App.b.c");
+    }
+
+    // The reservation costs no expressiveness: a KEY spelled by one of the five
+    // is DATA, quotes, and reads back as the key at every path position — the
+    // wire destination that admits the keyword included (033-243, 033-259).
+    #[test]
+    fn a_reserved_spelling_stays_reachable_as_a_quoted_key() {
+        let module = parsed(&with_entry(
+            "wire App.w from App.'nan'.x to App.rows.'null'.render_row",
+        ));
+
+        let [Entry::Wire(wire)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one wire");
+        };
+
+        let WireTo::Path(destination) = &wire.to else {
+            panic!("the destination is a path");
+        };
+
+        assert_eq!(destination.render(), "App.rows.'null'.render_row");
+        assert_eq!(wire.from.render(), "App.'nan'.x");
+        assert_eq!(
+            destination.segments()[2],
+            Segment::Key("null".to_string()),
+            "the segment holds the UNESCAPED key, not its spelling"
+        );
+
+        // A bare `'null'` destination is a one-segment KEY path, not the
+        // literal — the quoting is what tells the two apart.
+        let keyed = parsed(&with_entry("wire App.w from App.a to 'null'"));
+        let [Entry::Wire(wire)] = keyed.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one wire");
+        };
+
+        assert!(matches!(&wire.to, WireTo::Path(cell) if cell.render() == "'null'"));
+    }
+
+    // A binding's target is a PATH or a value, and the provenance marker is
+    // optional metadata on either (033-252).
+    #[test]
+    fn a_binding_binds_a_path_or_a_value_with_optional_provenance() {
+        let module = parsed(&with_entry(concat!(
+            "effect App.print:0 reconciler \"print\" params [",
+            "message: App.label@bound, count: 7, flag: true, ",
+            "text: \"hi\"@constant_wrap, plain: App.other]"
+        )));
+
+        let [Entry::Effect(effect)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one effect");
+        };
+
+        let [message, count, flag, text, plain] = effect.params.as_slice() else {
+            panic!("the effect has five params");
+        };
+
+        assert!(
+            matches!(&message.target, BindingTarget::Path(path) if path.render() == "App.label")
+        );
+        assert_eq!(message.provenance, Some(Provenance::Bound));
+        assert!(
+            matches!(&count.target, BindingTarget::Value(ValueLiteral::Int(text)) if text == "7")
+        );
+        assert!(matches!(
+            flag.target,
+            BindingTarget::Value(ValueLiteral::True)
+        ));
+        assert_eq!(text.provenance, Some(Provenance::ConstantWrap));
+        assert!(plain.provenance.is_none());
+    }
+
+    // 033-257: a typed value is CANONICALIZED and never converted — the loader
+    // owns the type, so the reader normalizes the spelling only.
+    #[test]
+    fn a_typed_value_is_canonicalized_but_not_converted() {
+        for (spelling, canonical) in [
+            ("007", "7"),
+            ("-0", "0"),
+            ("-007", "-7"),
+            (
+                "170141183460469231731687303715884105727",
+                "170141183460469231731687303715884105727",
+            ),
+        ] {
+            let module = parsed(&with_entry(&format!("input App.x : i32 init {spelling}")));
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert!(
+                matches!(&cell.init, Some(ValueLiteral::Int(text)) if text == canonical),
+                "{spelling}"
+            );
+        }
+
+        for (spelling, canonical) in [("1.50", "1.5"), ("00.0", "0.0"), ("-0.0", "-0.0")] {
+            let module = parsed(&with_entry(&format!("input App.x : f64 init {spelling}")));
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert!(
+                matches!(&cell.init, Some(ValueLiteral::Float(text)) if text == canonical),
+                "{spelling}"
+            );
+        }
+    }
+
+    // Every `value` alternative, including the three type-gated float
+    // spellings — admitted by the grammar wherever a value stands, and left to
+    // the loader's type check (033-248).
+    #[test]
+    fn every_value_alternative_parses() {
+        assert!(matches!(&init("5"), ValueLiteral::Int(text) if text == "5"));
+        assert!(matches!(&init("1.5"), ValueLiteral::Float(text) if text == "1.5"));
+        assert!(matches!(init("true"), ValueLiteral::True));
+        assert!(matches!(init("false"), ValueLiteral::False));
+        assert!(matches!(&init("\"hi\""), ValueLiteral::Str(text) if text == "hi"));
+        assert!(matches!(init("nan"), ValueLiteral::Nan));
+        assert!(matches!(init("inf"), ValueLiteral::Inf));
+        assert!(matches!(init("-inf"), ValueLiteral::NegInf));
+    }
+
+    // The `init` value of the one cell a fixture holds, for the assertions
+    // above — the fixture is typed `f64` so the three float spellings sit in a
+    // position that would accept them at load, though the grammar admits them
+    // anywhere and only the loader checks.
+    fn init(spelling: &str) -> ValueLiteral {
+        let module = parsed(&with_entry(&format!("input App.x : f64 init {spelling}")));
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        cell.init.clone().expect("the cell carries an init")
+    }
+
+    // R57 reaches the graph's structural positions too: a depth, a capacity, a
+    // history, an ordinal and a lookback value are all `u64` at parse time, and
+    // a spelling that names none fails at the literal.
+    #[test]
+    fn a_graph_structural_number_must_name_a_u64() {
+        // `depth -1`: the literal is 28 bytes into the entry, 2 bytes long.
+        assert_eq!(
+            failure(&with_entry("recurrent App.x : i32 depth -1")),
+            ("int_out_of_range", Span::new(GRAPH_ENTRY + 28, 2))
+        );
+        // `capacity` overflowing, 40 bytes in and 20 digits long.
+        assert_eq!(
+            failure(&with_entry(
+                "stream App.s : i32 policy ring capacity 99999999999999999999"
+            )),
+            ("int_out_of_range", Span::new(GRAPH_ENTRY + 40, 20))
+        );
+        // An ordinal is structural as well, and the sign lives INSIDE the INT
+        // lexeme (033-247) — so `App.p:-1` is a colon followed by an `Int`, the
+        // ordinal rule fires, and the failure is the value's, 12 bytes in. Not
+        // an `unexpected_token`: the token is exactly the lexeme asked for.
+        assert_eq!(
+            failure(&with_entry("input App.p:-1 : i32")),
+            ("int_out_of_range", Span::new(GRAPH_ENTRY + 12, 2))
+        );
+    }
+
+    // R59's bound is the `type_tag` production's, so it holds wherever a tag
+    // stands — a cell's type included. The tag starts 14 bytes into the entry
+    // and each accepted `portal<` is 7 bytes.
+    #[test]
+    fn the_type_tag_nesting_bound_reaches_a_cell_type() {
+        let at_bound = with_entry(&format!("input App.x : {}", portals(TYPE_TAG_DEPTH_LIMIT)));
+
+        assert!(!parsed(&at_bound).graph.scopes[0].entries.is_empty());
+        assert_eq!(
+            failure(&with_entry(&format!(
+                "input App.x : {}",
+                portals(TYPE_TAG_DEPTH_LIMIT + 1)
+            ))),
+            (
+                "nesting_too_deep",
+                Span::new(GRAPH_ENTRY + 14 + TYPE_TAG_DEPTH_LIMIT * 7, 6)
+            )
+        );
+    }
+
+    // 033-250 at both levels: a NEWLINE terminates a scope's entry, the scope's
+    // `}` terminates a final entry sharing its line, and the scope entry itself
+    // is terminated by the NEWLINE after that `}`.
+    #[test]
+    fn entries_and_scopes_are_terminated_by_newlines() {
+        // Two entries on one line: the second `input` is 18 bytes in.
+        assert_eq!(
+            failure(&with_entry("input App.a : i32 input App.b : i32")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 18, 5))
+        );
+        // Two scopes on one line, rejected at the second `scope`.
+        assert_eq!(
+            failure(&with_scope(
+                "scope App exposes [] effects [] {} scope App.b exposes [] effects [] {}"
+            )),
+            ("unexpected_token", Span::new(SCOPE_WORD + 35, 5))
+        );
+        // A final entry may share the scope's closing brace, and a scope may be
+        // written entirely on one line.
+        let one_line = parsed(&with_scope(
+            "scope App exposes [] effects [] { input App.a : i32 }",
+        ));
+
+        assert_eq!(one_line.graph.scopes[0].entries.len(), 1);
+
+        // Blank lines inside a scope body are insignificant.
+        let spaced = parsed(&with_scope(
+            "scope App exposes [] effects [] {\n\n      input App.a : i32\n\n\n      input App.b : i32\n\n    }",
+        ));
+
+        assert_eq!(spaced.graph.scopes[0].entries.len(), 2);
+    }
+
+    // Each entry kind's own error, at a hand-counted span.
+    #[test]
+    fn each_entry_kind_reports_at_the_offending_token() {
+        // A cell with no `:` before its tag: `i32` stands there, 16 bytes in.
+        assert_eq!(
+            failure(&with_entry("input App.count i32 init 0")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 16, 3))
+        );
+        // A gate whose `guards` is misspelled, 40 bytes in.
+        assert_eq!(
+            failure(&with_entry(
+                "gate App.g0 pred B@d4 inputs [App.show] guard [App.print:0]"
+            )),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 40, 5))
+        );
+        // A wire missing its mandatory `to`: the line ending arrives instead,
+        // 21 bytes in.
+        assert_eq!(
+            failure(&with_entry("wire App.w from App.a")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 21, 1))
+        );
+        // An effect whose reconciler is not a STRING, 30 bytes in.
+        assert_eq!(
+            failure(&with_entry("effect App.print:0 reconciler print params []")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 30, 5))
+        );
+        // A stream policy that is neither `ring` nor `gate`, 26 bytes in.
+        assert_eq!(
+            failure(&with_entry("stream App.s : i32 policy fifo capacity 8")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 26, 4))
+        );
+        // A word that heads no entry at all.
+        assert_eq!(
+            failure(&with_entry("banana App.x : i32")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY, 6))
+        );
+        // A provenance marker that is none of the three, 49 bytes in.
+        assert_eq!(
+            failure(&with_entry(
+                "effect App.p reconciler \"r\" params [m: App.label@guessed]"
+            )),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 49, 7))
+        );
+    }
+
+    // R46 where it bites hardest: every clause word and entry head is an
+    // ordinary NAME too, so a cell may be called `depth`, `init` or `gate` and
+    // a scope may be called `input`. The five RESERVED spellings are the
+    // exception and are tested below — soft is the rule, hard is the list.
+    #[test]
+    fn a_clause_keyword_is_a_legal_cell_name() {
+        for word in [DEPTH, INIT, GATE, USES, MEMBERS, STREAM, WIRE, SCOPE] {
+            let module = parsed(&with_entry(&format!("input App.{word} : i32")));
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert_eq!(cell.path.render(), format!("App.{word}"));
+        }
+
+        let named = parsed(&with_scope("scope input exposes [] effects [] {\n    }"));
+
+        assert_eq!(named.graph.scopes[0].path.render(), "input");
+    }
+
+    // The reservation (002-39, 033-259) at EVERY name position the grammar has.
+    // One check in `name` is what makes all six hold, so this sweeps all six
+    // rather than trusting the one.
+    //
+    // Spans are hand-counted for the three fixtures whose offsets the
+    // `test_support` header pins; the rest assert the class, which is the
+    // contract (F3).
+    #[test]
+    fn a_reserved_spelling_is_never_a_name() {
+        // A module name. `module` is 0..6 and the name follows at 7.
+        assert_eq!(
+            failure("module null { types {} graph {} behaviors {} }"),
+            ("reserved_word", Span::new(7, 4))
+        );
+
+        // A type id: the `%` sits at ENTRY, so the name starts one byte later.
+        assert_eq!(
+            failure(&with_types("%nan = record {} size 0 align 1")),
+            ("reserved_word", Span::new(ENTRY + 1, 3))
+        );
+
+        // A field name, 18 bytes into the entry.
+        assert_eq!(
+            failure(&with_types("%A = record { inf: i32 } size 0 align 1")),
+            ("reserved_word", Span::new(ENTRY + 14, 3))
+        );
+
+        // The remaining name positions, by class.
+        for (position, source) in [
+            (
+                "a variant name",
+                with_types("%A = enum { #null } size 0 align 1"),
+            ),
+            (
+                "a type id in a tag",
+                with_types("%A = record { v: %true } size 0 align 1"),
+            ),
+            (
+                "a binding name",
+                with_entry("effect App.p reconciler \"r\" params [false: 1]"),
+            ),
+            ("a path head", with_entry("input inf.x : i32")),
+            ("a path tail", with_entry("input App.null : i32")),
+            ("a mid-path segment", with_entry("input App.nan.deep : i32")),
+            (
+                "a binding's path target",
+                with_entry("effect App.p reconciler \"r\" params [m: App.inf]"),
+            ),
+            (
+                "a wire destination",
+                with_entry("wire App.w from App.a to App.false"),
+            ),
+            (
+                "a scope path",
+                with_scope("scope nan exposes [] effects [] {\n    }"),
+            ),
+        ] {
+            let (class, _) = failure(&source);
+
+            assert_eq!(class, "reserved_word", "{position}");
+        }
+    }
+
+    // The two positions that admit BOTH a path and a literal are the one place
+    // the reservation does not surface as `reserved_word`, and the reason is
+    // that the word is not in a name position there at all: it IS the literal,
+    // read with no lookahead (033-258). What follows it is then simply the next
+    // token, and an unexpected one — which is a rejection all the same, and the
+    // one a reader can act on, since `to null` was a complete destination.
+    #[test]
+    fn a_literal_word_is_taken_before_anything_that_follows_it() {
+        // The `.` after `null`, 29 bytes into the entry.
+        assert_eq!(
+            failure(&with_entry("wire App.w from App.a to null.x")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 29, 1))
+        );
+        // The `.` after `true`, 43 bytes in.
+        assert_eq!(
+            failure(&with_entry(
+                "effect App.p reconciler \"r\" params [f: true.state]"
+            )),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 43, 1))
         );
     }
 }

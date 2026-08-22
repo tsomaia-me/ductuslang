@@ -51,6 +51,39 @@ pub(super) fn with_types(entry: &str) -> String {
     format!("module App {{\n  types {{\n    {entry}\n  }}\n  graph {{}}\n  behaviors {{}}\n}}\n")
 }
 
+/// Where the `scope` keyword of a [`with_scope`] module lands.
+///
+/// Byte offsets, counted by hand: line 1 is 0..13 as above, `  types {}` runs
+/// 13..24, and `  graph {` runs 24..34 with `graph` at 26 and `{` at 32. The
+/// scope's line starts at 34 — four spaces, then `scope` at 38.
+pub(super) const SCOPE_WORD: usize = 38;
+
+/// Where a [`with_entry`] entry's first byte lands.
+///
+/// Continuing the count: the standard scope head
+/// `    scope App exposes [] effects [] {` runs 34..71 (`App` at 44, `exposes`
+/// at 48, `effects` at 59, the body's `{` at 70) with its newline at 71. The
+/// entry line starts at 72 — six spaces, then the entry at 78.
+pub(super) const GRAPH_ENTRY: usize = 78;
+
+/// A module whose `graph` section holds exactly `scope`, on its own line.
+///
+/// `scope` is the whole entry text and may span physical lines: a scope is a
+/// braced-body entry (033-250), so its body's line breaks are the body's own.
+pub(super) fn with_scope(scope: &str) -> String {
+    format!("module App {{\n  types {{}}\n  graph {{\n    {scope}\n  }}\n  behaviors {{}}\n}}\n")
+}
+
+/// A module holding one standard scope whose body holds exactly `entry`.
+///
+/// Error spans are written as `GRAPH_ENTRY + <offset within the entry>`, the
+/// same hand count with the boilerplate factored out.
+pub(super) fn with_entry(entry: &str) -> String {
+    with_scope(&format!(
+        "scope App exposes [] effects [] {{\n      {entry}\n    }}"
+    ))
+}
+
 /// `source` through the lexer and the parser, both of which must succeed.
 pub(super) fn parsed(source: &str) -> Module {
     let tokens = lex(source).expect("source lexes");

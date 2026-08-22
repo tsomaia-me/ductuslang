@@ -221,10 +221,13 @@ UnicodeDigit      ::= any character with Unicode `Decimal_Number` property
 // Longest-match: the lexer extends an `IDENT` to the longest valid character run.
 // After scanning, the lexer compares the resulting lexeme against the keyword
 //  inventory (§2.4) and reclassifies as the corresponding `KW_*` token if matched.
+// The five reserved literal spellings (§2.4's `ReservedLiteralSpelling`) are
+//  reclassified out of `IDENT` by the same comparison, so no declaration can
+//  bear one as its name (002-39).
 
 ### 2.4 Keyword inventory
 
-Keywords are reserved in every position; no keyword spelling may be used as an ordinary identifier (002-27). All keyword spellings are lowercase (002-2). The complete inventory follows.
+Keywords are reserved in every position; no keyword spelling may be used as an ordinary identifier (002-27). All keyword spellings are lowercase (002-2). Five further spellings — `true`, `false`, `null`, `nan`, `inf` — are reserved language-wide without being keywords of any class; they are listed under `ReservedLiteralSpelling` below (002-39). The complete inventory follows.
 
 **Declaration keywords** (002-3):
 
@@ -395,6 +398,27 @@ Keywords are reserved in every position; no keyword spelling may be used as an o
 // Header-continuation keywords `else` and `else if` attach to their owning `if`
 //  by column-alignment, not by indentation depth (002-30); see Appendix D.
 
+**Reserved literal spellings** — five spellings that are reserved language-wide
+without being keywords of any class above. No declaration of any kind may bear
+one as its name, so no cell, node, wire, stream, or member name ever collides
+with a literal spelling:
+
+```ebnf
+ReservedLiteralSpelling ::= 'true' | 'false' | 'null' | 'nan' | 'inf'
+                          ;  (§1.4, 002-39)
+```
+
+// `true` and `false` are the two `BoolLit` alternatives (§2.8); the lexer
+//  reclassifies them from `IDENT`. `nan` and `inf` are the float non-finite
+//  spellings, and `null` names nothing — it is reserved precisely so that
+//  nothing may bear the name. None of the three has a literal production in
+//  this grammar: the surface `FloatLit` (§2.7) admits digits only, and there
+//  is no null literal at all. Reservation is what holds the spellings, and it
+//  binds in every position exactly as keyword reservation does (002-27,
+//  002-39).
+// The reservation also governs the IR text form, where the five are never a
+//  `NAME` and a reader rejects one in any name position (§15.4.6).
+
 **Reserved instance-field names** — spellings that the lexer emits as ordinary
 `IDENT` tokens but which the parser / resolver treats as compiler-assigned
 field names in wire / node body contexts:
@@ -531,6 +555,10 @@ ByteEscapeSeq     ::= '\\n' | '\\r' | '\\t' | '\\0'
 // `true` / `false` are reserved spellings; the lexer reclassifies them from
 //  `IDENT` (§9.1.1). They are not numeric and do not participate in numeric
 //  trait dispatch.
+// `true` and `false` are two of the FIVE reserved literal spellings — see the
+//  `ReservedLiteralSpelling` production in §2.4. The other three (`null`,
+//  `nan`, `inf`) have no literal production in this grammar; they are held
+//  reserved so that no declaration may bear them as a name (002-39).
 // A `CharLit` contains exactly one Unicode scalar; multi-character literals
 //  are a lex error (§9.1.2). The `\{` escape is *not* admitted in `CharLit`
 //  — it is an interpolation escape that only appears in string literals.

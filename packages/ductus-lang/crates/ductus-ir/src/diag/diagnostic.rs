@@ -41,8 +41,14 @@ mod tests {
             class: DiagClass::DuplicateCellPath,
             span: Some(Span::new(10, 1)),
             path: Some(CellPath::new(vec![
-                Segment::Name("app".to_string()),
-                Segment::Name("gain".to_string()),
+                Segment::Name {
+                    text: "app".to_string(),
+                    ordinal: None,
+                },
+                Segment::Name {
+                    text: "gain".to_string(),
+                    ordinal: None,
+                },
             ])),
             message: "cell `app.gain` is declared twice".to_string(),
         }

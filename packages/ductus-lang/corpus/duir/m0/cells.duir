@@ -1,0 +1,15 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.count : i32 init 0
+      input App.ratio : f64 init 1.5
+      input App.label : str init "say \"hi\""
+      derived App.doubled : i32 uses B@d1 inputs [App.count]
+      recurrent App.total : i32 uses B@d2 inputs [App.count] depth 1 reset_on_reopen init 0
+      deferred App.echo : i32 uses B@d3 inputs [App.total] depth 2
+      fold App.sum : i32 gate App.g0 combiner B@aa10 else -1 members [App.a: permanent, App.rows.'42'.render_row: keyed_template, App.rows.'it\'s'.render_row: keyed_template, App.rows.'null'.render_row: keyed_template, App.c: gate_guarded]
+    }
+  }
+  behaviors {}
+}

@@ -74,11 +74,15 @@ The IR text form's terminals. `NAME`, `INT`, `FLOAT`, and `STRING` are the primi
 
 **No comments.** The text form admits no comment syntax of any kind — no line comment, no block comment, no ignorable-text production. Every byte of a `.duir` file belongs to the grammar (033-246). The `//` lines in this document are EBNF metalanguage, not `.duir` syntax; explanatory prose about a module lives outside the module, beside its witness test.
 
+**Reserved spellings.** Five spellings are reserved language-wide — `null`, `true`, `false`, `nan`, and `inf` (002-39) — and in this text form none of them is ever a `NAME`. A module name, a `type_def` id, a field name, a variant name, a binding name, and a `PATH`'s name segment all reject them: a reader that meets one in any of those positions reports it under its own diagnostic class rather than reading it as an identifier (033-259). Two consequences follow and both are load-bearing. A bare occurrence of one of the five where a `PATH` and a literal both stand — a `wire`'s destination, a `binding`'s right-hand side — is always the literal, so the reader needs no lookahead there (033-258). And a `KeySegment` is untouched: a key whose stringified content is one of the five is DATA, stays legal, and renders single-quoted, because the bare rendering is reserved for the keyword reading (033-243).
+
 **Dot ownership (lexer vs parser).** The lexer never composes a dotted lexeme: it emits `Ident`, `Dot`, and `Int` tokens, and both dotted `PATH`s (`App.count`) and dotted op mnemonics (`add.i32`, `const.i32`, `cast.i64.i32`, `tuple.make`) are composed by the parser (033-253). Position always disambiguates the two: a mnemonic heads an `instr_rhs`, a `PATH` never does. So the "one token or three" question has one answer — three tokens, always, composed above the lexer.
 
 ```ebnf
-NAME             ::= /* identifier — letters, digits, '_'; not starting with a digit */
-                   ;  (§15.4.6, 033-168)
+NAME             ::= /* identifier — letters, digits, '_'; not starting with
+                        a digit; never one of the five reserved spellings
+                        'null', 'true', 'false', 'nan', 'inf' */
+                   ;  (§15.4.6, 033-168 / 033-259)
 
 INT              ::= /* optionally signed decimal integer literal — the sign,
                         when present, is a leading '-' INSIDE the lexeme */
@@ -150,12 +154,21 @@ KeySegment       ::= BareKey | QuotedKey
                    ;  (§15.4.1.1, 033-243)
 
 BareKey          ::= /* a nonempty identifier-shaped run — letters, digits,
-                        '_'; not starting with a digit. Any other key
-                        renders as a QuotedKey. */
+                        '_'; not starting with a digit — that is not one of
+                        the five reserved spellings. Any other key renders
+                        as a QuotedKey. */
+                   ;  (§15.4.1.1, 033-243 / 033-259)
+
+QuotedKey        ::= "'" (KeyRaw | KeyEscape)* "'"
                    ;  (§15.4.1.1, 033-243)
 
-QuotedKey        ::= /* single-quote, then any characters with \'
-                        and \\ escapes, then single-quote */
+KeyRaw           ::= /* any Unicode scalar except "'", '\', and a lone
+                        carriage return — raw newlines and raw tabs ARE
+                        legal, exactly as in a STRING */
+                   ;  (§15.4.1.1, 033-243)
+
+KeyEscape        ::= "\'" | '\\' | '\n' | '\r' | '\t'
+                   | '\u{' HexScalar '}'
                    ;  (§15.4.1.1, 033-243)
 
 // The ordinal suffix `:' INT` may attach to ANY path segment, not just
@@ -163,13 +176,25 @@ QuotedKey        ::= /* single-quote, then any characters with \'
 // component naming an anonymous effect instance. See 033-130 / 033-133.
 // A KeySegment is a repeat scope key's stringified StringifiableKey
 // form (033-243): bare iff it is identifier-shaped — the NAME charset
-// exactly, nothing more and nothing less — single-quoted otherwise.
-// Quoting is canonical — producers emit bare whenever bare is
-// available. A BareKey therefore always lexes as NAME and is
-// indistinguishable from a name segment in isolation; the graph
-// structure decides which path positions are keyed-scope positions, so
-// the loader needs no distinction. A KeySegment carries no ordinal
-// suffix. A purely numeric key is NOT identifier-shaped and so quotes.
+// exactly, nothing more and nothing less — AND is not one of the five
+// reserved spellings; single-quoted otherwise. Quoting is canonical —
+// producers emit bare whenever bare is available. A BareKey therefore
+// always lexes as NAME and is indistinguishable from a name segment in
+// isolation; the graph structure decides which path positions are
+// keyed-scope positions, so the loader needs no distinction. A
+// KeySegment carries no ordinal suffix. A purely numeric key is NOT
+// identifier-shaped and so quotes.
+//
+// **Key canonical emission (033-243).** A QuotedKey's payload is the
+// STRING payload with "'" for '"', so its canonical emission is the STRING
+// rule with the same substitution: raw wherever raw is legal, with four
+// exceptions — "'" emits "\'", '\' emits '\\', a carriage return emits '\r',
+// and a control scalar other than newline and tab emits '\u{…}'; newline and
+// tab emit RAW. Every key content is therefore spellable (totality) and has
+// exactly one canonical spelling (uniqueness), exactly as every str value
+// does. The reserved-spelling exclusion is what makes uniqueness MEANING-safe
+// as well: a key spelled 'null' stays quoted, so it round-trips as the key it
+// is rather than re-reading as the keyword.
 // e.g. 'audio.synth_a.osc_1.frequency', 'App.print:0', 'App.print:0.text',
 // and — quoted keys spelled without the surrounding example quotes —
 // App.rows.'42'.render_row, App.rows.'us-east.1'.render_row
@@ -273,8 +298,12 @@ field_list       ::= (NAME ':' type_tag (',' NAME ':' type_tag)*)?
 variant          ::= '#' NAME ('(' type_tag (',' type_tag)* ')')?
                    ;  (§15.4.6, 033-168)
 
-graph_section    ::= 'graph' '{' scope+ '}'
-                   ;  (§15.4.6, 033-168)
+graph_section    ::= 'graph' '{' scope* '}'
+                   ;  (§15.4.6, 033-168 / 033-256)
+
+// The arity is `scope*`: an empty `graph {}` is structurally legal — a module
+// of pure types — and any minimum-content requirement is a load-time semantic
+// rule rather than a grammar one (033-256).
 
 scope            ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                      ('reset_on_reopen' reopen_set)? '{' entry* '}'
@@ -352,7 +381,19 @@ gate             ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
 
 wire             ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
                      ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
-                   ;  (§15.4.6, 033-168 / 033-86 / 033-87 / 033-88 / 033-89)
+                   ;  (§15.4.6, 033-168 / 033-86 / 033-87 / 033-88 / 033-89 / 033-258)
+
+// **Keyword over path, by reservation.** The 'to' clause admits both a
+// PATH and the word 'null', and the word is the literal outright: 'null'
+// is a reserved spelling, so no NAME segment may be 'null' and no PATH
+// can begin with one (033-259). No lookahead is needed and nothing is
+// shadowed (033-258). 'null.x' is therefore not a path: the reader takes
+// 'null' as the complete destination and the '.' that follows it is
+// simply the next token, unexpected where an entry has ended. (The
+// reserved-spelling diagnostic belongs to the NAME positions; here the
+// word is not in a name position at all.) A key spelled 'null' remains
+// reachable: it is a KeySegment and renders quoted. The same rule governs
+// the right-hand side of a 'binding' — see the 'value' production.
 
 effect           ::= 'effect' PATH 'reconciler' STRING 'params' binding_set
                      ('desired' path_set)? ('observed' path_set)? ('gate' PATH)?
@@ -446,8 +487,28 @@ provenance       ::= 'bound' | 'constant_wrap' | 'bridge'
 
 value            ::= INT | FLOAT | 'true' | 'false' | STRING
                    | 'nan' | 'inf' | '-inf'
-                   ;  (§15.4.6, 033-168 / 033-212 / 033-248)
+                   ;  (§15.4.6, 033-168 / 033-212 / 033-248 / 033-257 / 033-258)
 
+// **Keyword over path, by reservation.** The right-hand side of a 'binding'
+// is the one value position that also admits a PATH, and there the words
+// 'true', 'false', 'nan', and 'inf' are the literals outright — the same
+// reservation the wire destination's 'null' rests on (033-259). No lookahead
+// decides it and nothing is shadowed: 'flag: true' binds the literal, and
+// 'flag: true.state' is not a path — the reader takes 'true' as the whole
+// right-hand side and the '.' after it is an unexpected token (033-258).
+// Where a value stands ALONE — a cell's 'init', a fold cell's 'else' — no
+// path is admitted, so the question never arises.
+
+// **Canonical digit spelling (033-257).** A typed value is not converted when
+// it is read — the loader owns its type — so canonicalization here is TEXTUAL
+// and value-preserving under every type the position may later take. An INT
+// strips leading zeros to at least one digit, and '-0' canonicalizes to '0'. A
+// FLOAT keeps its sign ('-0.0' is a value of its own), strips integer-part
+// leading zeros to at least one digit and fraction trailing zeros to at least
+// one digit — '007' → '7', '1.50' → '1.5', '00.0' → '0.0'. 'nan', 'inf', and
+// '-inf' are canonical as written. A non-canonical spelling parses but is not
+// what the emitter writes, exactly as with STRING content and key quoting.
+//
 // value is a compile-time literal (the placement_binding_kind is either
 // 'static' (value literal) or 'reactive' (PATH referencing source cells);
 // per §13.8.4 / §15.4.1). The three alternatives 'nan', 'inf', and
@@ -706,7 +767,7 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 
 | Production | SPEC § | LOG |
 |------------|--------|-----|
-| `NAME` | §15.4.6 | 033-168 |
+| `NAME` | §15.4.6 | 033-168 / 033-259 (never one of the five reserved spellings) |
 | `INT` | §15.4.6 | 033-168 / 033-247 (sign inside the lexeme) |
 | `FLOAT` | §15.4.6 | 033-248 (`-? digits '.' digits`, no exponent; `nan`/`inf`/`-inf` spellings) |
 | `STRING` | §15.4.6 | 033-249 (raw scalars incl. newline/tab; six escapes; canonical emission) |
@@ -714,17 +775,19 @@ Each production in §3 and §4 mapped to its source SPEC section and DECISION_LO
 | `Raw` | §15.4.6 | 033-249 |
 | `Escape` | §15.4.6 | 033-249 |
 | `HexScalar` | §15.4.6 | 033-249 |
-| `PATH` | §15.4.1.1 | 033-130 / 033-133 / 033-243 (mid-path ordinal for anonymous effect instances, see worked example `App.print:0.text`; keyed-scope multiplicity segment, bare iff identifier-shaped, single-quoted otherwise) |
-| `PathSegment` | §15.4.1.1 | 033-133 / 033-243 |
-| `KeySegment` | §15.4.1.1 | 033-243 |
-| `BareKey` | §15.4.1.1 | 033-243 (identifier charset exactly) |
-| `QuotedKey` | §15.4.1.1 | 033-243 |
+| `PATH` | §15.4.1.1 | 033-130 / 033-133 / 033-243 / 033-259 (mid-path ordinal for anonymous effect instances, see worked example `App.print:0.text`; keyed-scope multiplicity segment, bare iff identifier-shaped and not one of the five reserved spellings, single-quoted otherwise) |
+| `PathSegment` | §15.4.1.1 | 033-133 / 033-243 / 033-259 (a name segment is never a reserved spelling) |
+| `KeySegment` | §15.4.1.1 | 033-243 / 033-259 (a key spelling one of the five is data, and quotes) |
+| `BareKey` | §15.4.1.1 | 033-243 (identifier charset exactly) / 033-259 (and not a reserved spelling) |
+| `QuotedKey` | §15.4.1.1 | 033-243 (STRING payload grammar with `'` as delimiter; same canonical emission) |
+| `KeyRaw` | §15.4.1.1 | 033-243 |
+| `KeyEscape` | §15.4.1.1 | 033-243 |
 | `BID` | §15.4.4 | 033-167 / 033-254 (case-sensitive `B@` prefix; hex-run boundary rule) |
 | `HexU32` | §14.6.3 | 033-167 |
 | `PRIM` | §15.4.6 | 033-43 |
 | `type_tag` | §15.4.6 | 033-43 / 033-79 / 033-255 (nesting bounded at 64 levels, one per bracketed constructor) |
 
-The lexical laws that constrain no single production — **file intake** (033-254), **no comments** (033-246), and **lexer/parser dot ownership** (033-253) — are stated in §2's preamble.
+The lexical laws that constrain no single production — **file intake** (033-254), **no comments** (033-246), **reserved spellings** (002-39 / 033-259), and **lexer/parser dot ownership** (033-253) — are stated in §2's preamble.
 
 ### §3 — Module text grammar
 
@@ -736,7 +799,7 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `layout` | §15.4.6 | 033-168 |
 | `field_list` | §15.4.6 | 033-168 |
 | `variant` | §15.4.6 | 033-168 |
-| `graph_section` | §15.4.6 | 033-168 |
+| `graph_section` | §15.4.6 | 033-168 / 033-256 (`scope*` — an empty graph is structurally legal) |
 | `scope` | §15.4.6 | 033-168 / 033-75 |
 | `entry` | §15.4.6 | 033-168 |
 | `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 / 033-245 |
@@ -745,7 +808,7 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `member` | §15.4.6 | 033-81 |
 | `member_driver` | §15.4.6 | 033-81 |
 | `gate` | §15.4.6 | 033-168 / 033-65 |
-| `wire` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 |
+| `wire` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 / 033-258 (a bare `null` destination is the literal, by reservation) |
 | `effect` | §15.4.6 | 033-168 / 033-119 / 033-120 / 033-121 / 033-122 / 033-123 |
 | `stream` | §15.4.6 | 033-106 / 033-107 / 033-108 / 033-109 / 033-110 / 033-111 / 033-112 / 033-114 / 033-115 / 033-117 |
 | `behaviors_section` | §15.4.6 | 033-168 |
@@ -755,7 +818,7 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `lookback_map` | §15.4.6 | 033-117 (last `':' INT` of an entry is the lookback value) |
 | `binding` | §15.4.6 | 033-168 / 033-252 (optional `'@' provenance` clause) |
 | `provenance` | §15.4.6 | 033-252 |
-| `value` | §15.4.6 | 033-168 / 033-212 / 033-248 |
+| `value` | §15.4.6 | 033-168 / 033-212 / 033-248 / 033-257 (canonical digit spelling, normalized textually) / 033-258 (a value word in a `binding`'s right-hand side is the literal, by reservation) |
 
 Entry termination in the `types`/`graph`/`behaviors` sections is NEWLINE (033-250), stated normatively in §3's preamble rather than repeated on every production.
 

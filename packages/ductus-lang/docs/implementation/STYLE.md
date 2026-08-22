@@ -67,5 +67,7 @@ them — implementers write them, reviewers check them.
   exists (C1 practice).
 - Unit tests inline in the entity's own file (`#[cfg(test)] mod tests`); witness tests in
   ductus-conformance per corpus/README.md (C2 practice, R25).
-- No `unsafe` (C3 lean; unruled as a lint, honored as practice).
+- No `unsafe` (C3): enforced as a LINT since Chunk A —
+  `[workspace.lints.rust] unsafe_code = "deny"` in the workspace manifest,
+  inherited by every crate's `[lints] workspace = true`.
 - Comment density low; no comments narrating what the next line does.

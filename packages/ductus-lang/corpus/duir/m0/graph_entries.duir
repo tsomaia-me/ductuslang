@@ -1,0 +1,15 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [App.print:0] {
+      gate App.g0 pred B@d4 inputs [App.show] guards [App.print:0] gate_parent App.g1
+      gate App.g1 pred B@d5 inputs [] guards []
+      wire App.w0 from App.a to App.b type i32 attrs [k: 1@bridge, m: App.label@bound, t: "on"@constant_wrap] gate App.g0
+      wire App.w1 from App.a to null
+      effect App.print:0 reconciler "print" params [message: App.label@bound] desired [App.print:0.text] observed [App.print:0.ok] gate App.g0
+      stream App.events : i32 policy ring capacity 1024 source_deps [App.source] observes [App.events.pending_count] reset_on_reload reset_on_reopen
+      stream App.ticks : f64 policy gate capacity 8 history 4 lookback [App.print:0: 3, App.a: 5]
+    }
+  }
+  behaviors {}
+}
