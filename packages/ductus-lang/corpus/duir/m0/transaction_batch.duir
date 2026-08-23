@@ -1,0 +1,11 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.a : i64 init 0
+      input App.b : i64 init 0
+      derived App.total : i64 uses B@d1 inputs [App.a, App.b]
+    }
+  }
+  behaviors {}
+}

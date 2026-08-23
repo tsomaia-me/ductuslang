@@ -1,0 +1,10 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.a 0 -> 1
+dirty App.b 0 -> 2
+eval App.da -> 2
+eval App.db -> 3
+publish
+commit_end

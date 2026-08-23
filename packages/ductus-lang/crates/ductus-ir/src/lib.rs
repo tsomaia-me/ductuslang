@@ -9,4 +9,3 @@ pub mod module;
 pub mod path;
 pub mod text;
 pub mod types;
-pub mod value;

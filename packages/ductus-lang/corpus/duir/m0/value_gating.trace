@@ -1,0 +1,11 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 3 -> -3
+eval App.mag -> 3
+publish
+commit_end
+commit_begin
+publish
+commit_end

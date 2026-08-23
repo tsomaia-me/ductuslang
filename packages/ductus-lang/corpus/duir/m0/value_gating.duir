@@ -1,0 +1,11 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.x : i32 init 3
+      derived App.mag : i32 uses B@d1 inputs [App.x]
+      derived App.report : i32 uses B@d2 inputs [App.mag]
+    }
+  }
+  behaviors {}
+}

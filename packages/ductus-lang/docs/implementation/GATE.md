@@ -5,8 +5,8 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: Chunk B (the runtime kernel: loader, store, engine, trace_sink, witness corpus + goldens)
-phase: build
+increment: M0 complete pending owner rulings (FND-24..27 open; Chunk B committed under standing approval)
+phase: review
 
 ## State notes
 - Hook ENFORCING this file since 2026-08-01 (R12a): .claude/settings.json → .claude/hooks/
@@ -105,3 +105,14 @@ phase: build
   phase: build. R20's probe-#1 ruling beat is superseded by the standing
   instruction: corpus verified on disk first, then the near-single-path answer
   executes with a FINDINGS entry and veto standing, raised at finish.
+- 2026-08-23 — Chunk B COMPLETE and committed under the standing approval
+  (ultracode workflow: 34 agents — engine/store, harness, 9 witnesses with
+  hand-derived goldens, property tests; 2 adversarial reviewers, 18 findings
+  → skeptic-verified: 5 mechanical fixed, 9 design questions parked as
+  FND-24..27 + riders, 4 refuted; batched remediation; final gates).
+  R64/R65 corpus riders landed (033-260 entry-order carrier, 023-67 bitwise
+  gating). 353 tests, six gates green, orchestrator e2e read done (all crate
+  files, all corpus files with goldens independently re-derived, full docs
+  diff). phase: review — owner rules FND-24..27 + reviews the landed chunk;
+  M0 exit criteria met except criterion-4 closure on the open findings and
+  the absent CI (raised in the finish report).

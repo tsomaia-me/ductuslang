@@ -299,11 +299,19 @@ variant          ::= '#' NAME ('(' type_tag (',' type_tag)* ')')?
                    ;  (§15.4.6, 033-168)
 
 graph_section    ::= 'graph' '{' scope* '}'
-                   ;  (§15.4.6, 033-168 / 033-256)
+                   ;  (§15.4.6, 033-168 / 033-256 / 033-260)
 
 // The arity is `scope*`: an empty `graph {}` is structurally legal — a module
 // of pure types — and any minimum-content requirement is a load-time semantic
 // rule rather than a grammar one (033-256).
+
+// **Entry order is semantic (normative).** The sequence of scopes in the
+// section, and of entries in each scope's body, is the carrier of the
+// composed evaluation-order tiebreak (instance placement order, then
+// intra-instance declaration order — SPEC §13.10.3): a conforming emitter
+// preserves it, a conforming loader reads entry rank as the same-level
+// tiebreak, and reordering entries is a semantic change (033-260). Blank
+// lines are insignificant; entry order is not.
 
 scope            ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                      ('reset_on_reopen' reopen_set)? '{' entry* '}'
@@ -799,7 +807,7 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `layout` | §15.4.6 | 033-168 |
 | `field_list` | §15.4.6 | 033-168 |
 | `variant` | §15.4.6 | 033-168 |
-| `graph_section` | §15.4.6 | 033-168 / 033-256 (`scope*` — an empty graph is structurally legal) |
+| `graph_section` | §15.4.6 | 033-168 / 033-256 (`scope*` — an empty graph is structurally legal) / 033-260 (entry order is semantic — the evaluation-order tiebreak's carrier) |
 | `scope` | §15.4.6 | 033-168 / 033-75 |
 | `entry` | §15.4.6 | 033-168 |
 | `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 / 033-245 |

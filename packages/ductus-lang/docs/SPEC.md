@@ -12691,6 +12691,13 @@ its value changes from its previously-committed value. Writing the
 same value to a signal does not fire its dependents. This is
 standard reactive semantics — only meaningful changes propagate.
 
+"The same value" is a bitwise judgment on the cell's stored
+representation (§13.10.2 step 1): a float that re-evaluates to an
+identical NaN bit pattern has not changed, and one that moves
+between `0.0` and `-0.0` has. IEEE equality — under which
+`NaN ≠ NaN` and `-0.0 == 0.0` — is the *source-level* comparison
+operator's law (§4.4.3) and plays no role in change detection.
+
 The rule applies uniformly across signal commits, attr writes,
 recurrent advancements, derived re-evaluations, and deferred
 dispatches and publications (§13.2.12). A recurrent
@@ -19375,7 +19382,10 @@ operation:
    attr), compare its staged value to its previously-committed
    value. Cells whose values differ are *dirty*; cells whose values
    are identical (including those that were written intermediate
-   values but reverted before commit) are *not* dirty. A reactive
+   values but reverted before commit) are *not* dirty. The
+   comparison is bitwise on the cell's stored representation — not
+   IEEE float equality: an unchanged NaN bit pattern is not dirty,
+   and a `0.0` overwritten with `-0.0` is (§13.2.4.4). A reactive
    expression (derived, recurrent, or `observe` arm trigger set)
    re-evaluates when a referenced cell is dirty — value-change
    semantics (§13.2.4.4) operationalized as "current-commit value
@@ -19497,6 +19507,11 @@ pairs are governed by this rule alone. The composed same-level total
 order is **instance placement order, then intra-instance declaration
 order** — every same-level pair matches exactly one rule, and the
 deterministic output trace is defined by this composed order.
+
+In the serialized module, the carrier of this composed order is
+the graph section's entry sequence (§15.4.6): entry order in
+`.duir` is semantic, and entry rank is the same-level tiebreak a
+loader reads.
 
 Recurrent expressions across multiple recurrent cells evaluate in
 lockstep (§13.2.4.1); no internal ordering between them is
@@ -26763,6 +26778,14 @@ value         ::= INT | FLOAT | 'true' | 'false' | STRING     // a compile-time 
 **Empty graph.** The `graph` section admits zero scopes: `graph {}` is
 structurally legal — a module of pure types — and any minimum-content
 requirement is a load-time semantic rule rather than a grammar one.
+
+**Entry order is semantic.** The graph section's entry sequence — scopes in
+section order, entries in body order — is the normative carrier of the
+composed same-level evaluation-order tiebreak (§13.10.3): instance placement
+order, then intra-instance declaration order, serialized as nothing more than
+the order entries stand in the file. A conforming emitter preserves entry
+order; a conforming loader reads entry rank as the tiebreak; reordering
+entries changes the program.
 
 **Canonical digit spelling.** A typed value literal has exactly one canonical
 spelling, and canonicalization is **textual**: a typed value is not converted

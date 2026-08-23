@@ -1,0 +1,12 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.a 0 -> 4
+dirty App.b 0 -> 6
+eval App.total -> 10
+publish
+commit_end
+commit_begin
+publish
+commit_end

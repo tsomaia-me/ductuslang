@@ -248,3 +248,106 @@ emission** paragraph. Code: `DiagClass::ReservedWord` (`reserved_word`), the
 parser's reservation check at every `NAME` position with the lookahead removed,
 the lexer's key escapes extended to the six, and one canonical quoting routine
 shared by the `STRING` and `QuotedKey` emitters.
+
+## FND-22 — declaration-order carrier into the IR is unstated. RULED-BY-CADENCE (near-single-path; veto standing) — graph entry order is the normative carrier; EXECUTED (Chunk B, 2026-08-22)
+§13.10.3 pins the composed same-level total order (instance placement order, then
+intra-instance declaration order) and makes the deterministic output trace depend on
+it, but a full-corpus sweep (SPEC, DECISION_LOG, IR_GRAMMAR) found NO statement of what
+carries that order into `.duir` — entry order was neither blessed nor denied, while the
+format's only other candidates (path-lexicographic rank, an explicit rank field)
+respectively fail the law as written and add machinery the spec never asks for. The
+`.duir` sequence is the only order the serialization even has; the §15.4.5 worked
+example already emits in declaration order; round-trip byte-stability already preserves
+it. EXECUTED: DECISION_LOG (033 family), IR_GRAMMAR §3 entry-order note, SPEC §15.4.6
+paragraph + §13.10.3 carrier sentence. The loader reads entry rank (scope-major, then
+body order) as the same-level tiebreak.
+
+## FND-23 — the dirty-set/value-change comparison is unstated for floats. RULED-BY-CADENCE (near-single-path; veto standing) — bitwise comparison; EXECUTED (Chunk B, 2026-08-22)
+§13.10.2 step 1 says 'differ'/'identical'; §13.2.4.4 says 'changes from'/'the same
+value'. Under IEEE equality a NaN-holding cell is perpetually dirty (NaN ≠ NaN) and a
+0.0→-0.0 write is clean; under bitwise both invert. The corpus already knows both
+hazards — §4.9's hash table bans float keys because 'NaN ≠ NaN violates Eq → Hash', and
+the canonical digit law keeps '-0.0 being a value of its own' — and §14.3.1 stores
+cells bit-exact, so bitwise is the only completion consistent with the corpus's own
+commitments. EXECUTED: DECISION_LOG (023 family), SPEC §13.10.2 step-1 clause +
+§13.2.4.4 paragraph. The runtime's comparison is Value::bits_eq.
+
+## FND-24 — the trap-stamping `catch_unwind` vs the corpus's literal "no `catch_unwind` boundary". OPEN (owner ruling due; raised at Chunk B finish)
+The engine's sole behavior-invocation path wraps every call in `catch_unwind` and
+re-panics immediately as `behavior trap at <path>: <payload>` — D8's ruled trap shape, a
+harness-visible panic carrying the trapping cell's path. But SPEC §13.13.1, restated at
+§14.6.2 and pinned as DECISION_LOG entries in the trap family, bans a "`catch_unwind`
+boundary" BY NAME and lists it separately from "no continuation past a trap" — while the
+isolation semantics that ban protects are preserved here: nothing runs between the catch
+and the re-panic beyond message formatting, no value is invented, no continuation
+happens. The chosen mechanism leaves observable residue: a trap prints TWO panic reports
+(the stub's own site, then the engine's re-panic site), and the surviving report
+attributes the panic to the engine's source line rather than the behavior's; under a
+`panic = "abort"` profile (nothing sets one today) the catch would never fire and the
+path-bearing shape would silently vanish. Options: (a) rule the prohibition
+ISOLATION-ONLY — keep catch-and-re-panic and amend the three corpus sites LOG-first to
+carve out an observe-and-re-panic stamp; (b) rule it LITERAL — replace the mechanism with
+a non-catching one (a `Drop` guard on a path-carrying struct checking
+`std::thread::panicking()`, or a panic hook), which also yields a single report at the
+behavior's own location; (c) accept the mechanism and park the polish (D8 already defers
+trap-diagnostics polish to M6). Recommendation: (a) for the wording, plus adopting (b)'s
+Drop-guard mechanism at a later milestone if the double-report residue bites — the
+semantics are identical under both readings; only the wording and the report shape
+differ.
+
+## FND-25 — §13.10.3's "same level" is undefined and the composed order is underdetermined; the loader silently pins greedy rank-least-ready Kahn. OPEN (owner ruling due; raised at Chunk B finish)
+§13.10.3 defines the same-level tiebreak (declaration order within an instance, placement
+order across) and says the deterministic output trace "is defined by this composed order"
+— but "level" is defined nowhere. Under the only gloss the corpus offers ("neither
+depends on the other") the pairwise constraints are UNSATISFIABLE for legal modules whose
+entry ranks interleave with derived→derived dependency edges: rank pairs demand x < z and
+z < y while an edge demands y < x. Under the alternative depth reading the law is instead
+SILENT on cross-level pairs. Forward references are legal (declarations are
+order-independent), so both shapes are reachable, and none of the landed witnesses
+discriminates the candidate readings — only the implementation pins the observable trace.
+The loader computes the lexicographically-smallest topological order by entry rank (Kahn,
+rank-least-ready-first), which provably REPRODUCES declaration order whenever declaration
+order is itself topological, and which a level-synchronous schedule would not. The
+carrier ruling (FND-22) pinned only what carries the order — entry rank — not how the
+tiebreak composes with topology. Options: (a) bless the landed rule — the composed order
+IS the rank-lexicographic minimum topological order — amending §13.10.3 and its LOG
+mirrors LOG-first and adding a rank-interleaved witness; (b) rule it level-synchronous
+(rank within topological depth waves) — change the loader, add the witness.
+Recommendation: (a) — it is the unique completion that degenerates to pure declaration
+order exactly when the text is written dependency-first, and it is what every landed
+golden already witnesses. Rider either way: the two code comments claiming the current
+rule as already-ruled law are softened to cite this finding until it is ruled.
+
+## FND-26 — scope-path legality is an unruled surface: duplicates, containment, module-root anchoring, scope/cell namespace. OPEN (owner ruling due; raised at Chunk B finish)
+The loader is the sole legality authority (R21) and it checks a scope path's SHAPE only.
+Four sub-questions, none pinned by the corpus. (1) Duplicate scope paths: `scope App {}
+scope App {}` loads silently; §15.4.1 makes every primitive "identified by a stable
+path", but the one corpus precedent for a scope-identity collision (the surface scope-key
+rule) rules FIRST-WINS with a non-fatal warning, and M0's loader has no warning channel —
+so reject-vs-tolerate is a genuine fork. (2) Cell-under-scope containment: nothing
+requires a cell's path to extend its enclosing scope's path (`scope App { input
+App.panel.x … }` loads), and the obvious "exactly one segment deeper" rule is REFUTED by
+the corpus's own worked example, which places `App.print:0.text` directly inside `scope
+App`. (3) Module-root anchoring: §15.4.1.1 pins a cell ID as the path "from module root"
+and every corpus witness obeys it, but the loader never consults the module name, so a
+module named `Foo` whose cells root at `App` loads. (4) Scope-path/cell-path collisions:
+`scope App.x` beside `input App.x` loads unchecked. Blast radius in M0 is nil — scopes
+are discarded at load — but the surface becomes load-bearing at M2 placement and at
+hot-reload identity. Options, per sub-question: reject with a new `DiagClass` id /
+tolerate and document / defer to the milestone that consumes scopes. Recommendation: rule
+the family at once before Chunk B commits, or explicitly park it to M2 with this entry as
+the record; if rejection is ruled the classes are ordinary F3 additions (e.g.
+`duplicate_scope_path`) and the checks are mechanical.
+
+## FND-27 — M0.md §4's "Writes during a commit are forbidden (assert)" has no assert and no emission site: the law is structurally unrepresentable. OPEN (owner ruling due; raised at Chunk B finish)
+`commit()` takes `&mut self` and never calls back into host code (behaviors receive only
+`&[Value]`), and a transaction closure exclusively borrows the engine — so a write during
+a commit, and a nested transaction, are both UNREPRESENTABLE in M0's sequential API. The
+plan's "(assert)" is therefore substituted by a compile-time guarantee that is
+structurally stronger; `write_during_commit` stays a registered class with no M0 emission
+site (its id is constructed and asserted in registry tests only). The vacuity is
+disclosed in the transaction type's doc comment but was never filed. Options: (a) amend
+the plan line to record structural enforcement, keeping the class registered for the
+milestone that makes it reachable (a threaded host API); (b) add a runtime in-commit flag
+plus the assert anyway, to honor the letter; (c) park. Recommendation: (a) — an assert
+that cannot fire is dead code pretending to be law.

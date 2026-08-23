@@ -11,7 +11,9 @@
 /// `Hash` and `Ord` are derived so a class can key a map (counting, grouping)
 /// and a diagnostic list can be sorted deterministically. Derived ordering is
 /// *declaration order*: it carries no severity or importance meaning, and
-/// nothing may read one into it.
+/// nothing may read one into it — which is also why new variants APPEND at the
+/// end rather than sitting beside their family: reordering would silently
+/// change every stored sort, for a grouping the order never meant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DiagClass {
     /// A behavior reference resolves to neither the module's behavior table nor
@@ -78,6 +80,18 @@ pub enum DiagClass {
     /// A quoted KEY segment is untouched — `App.rows.'null'.render_row` is data
     /// and stays legal (033-243).
     ReservedWord,
+    /// The derived dependency graph contains a cycle.
+    ///
+    /// A load error (R21) — nothing in M0 exists to break a cycle, so the
+    /// loader rejects the module, reporting the cycle's member paths in the
+    /// message.
+    DerivedCycle,
+    /// A cell's `init` literal does not convert under the cell's declared type.
+    ///
+    /// The loader converts TYPED values under the position's type (R57), and
+    /// this is that conversion's failure. The write-time sibling is
+    /// `type_mismatched_write`.
+    TypeMismatchedInit,
 }
 
 impl DiagClass {
@@ -103,6 +117,8 @@ impl DiagClass {
             DiagClass::IntOutOfRange => "int_out_of_range",
             DiagClass::NestingTooDeep => "nesting_too_deep",
             DiagClass::ReservedWord => "reserved_word",
+            DiagClass::DerivedCycle => "derived_cycle",
+            DiagClass::TypeMismatchedInit => "type_mismatched_init",
         }
     }
 }
@@ -137,6 +153,8 @@ mod tests {
         assert_eq!(DiagClass::IntOutOfRange.id(), "int_out_of_range");
         assert_eq!(DiagClass::NestingTooDeep.id(), "nesting_too_deep");
         assert_eq!(DiagClass::ReservedWord.id(), "reserved_word");
+        assert_eq!(DiagClass::DerivedCycle.id(), "derived_cycle");
+        assert_eq!(DiagClass::TypeMismatchedInit.id(), "type_mismatched_init");
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a

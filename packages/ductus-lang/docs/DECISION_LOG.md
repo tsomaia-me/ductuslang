@@ -3085,7 +3085,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 022-121. Selecting a type value with `match` over `Type[…]` and gating structure with `given` are both legal: `match` chooses one type placed once; `given` builds every arm and switches which is live. (§13.9.13)
 022-122. The activation-driven membership read-path covers `dynamic` views and wire-views as it covers folds: a gated-off feeder of a `dynamic` view is absent from the membership — and from `.count` — while effectively inactive, and rejoins in the commit of the gate-open; frozen presence under gating is the static view's read-path only. (§13.9.7)
 
-## 023. Reactive Evaluation & Commit — 66 Rules
+## 023. Reactive Evaluation & Commit — 67 Rules
 
 023-1. The reactive runtime exposes exactly two host-level state operations: signal writes (via `runtime.write_signal`), which stage new values without evaluation, and commit, which evaluates and atomically publishes a new consistent snapshot. (§13.10)
 023-2. A write call (`runtime.write_signal` or any write inside `runtime.transaction`) stages the new value; the staged value is not yet visible to observers. (§13.10.1)
@@ -3153,6 +3153,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 023-64. Up to `N` runs of a `deferred[N]` cell's one behavior may be in flight at once — a pipeline yielding full-rate output at N-commit latency; the run due at a commit barriers that commit if unfinished: the commit waits for it at the dirty-set-step fold-in, so publication never precedes the landing and the commit publishes only with the landed value. (§13.2.12, §13.10.2)
 023-65. A gate closing over a `deferred` cell cancels its in-flight runs — no publication, no barrier — and the frozen cell serves its last-published value; the gate-open snap dispatches a fresh run rather than evaluating synchronously, landing at +N, with the frozen value serving until it lands. Instance teardown — scope drop included — likewise cancels a deferred cell's in-flight runs. (§13.2.12, §13.9.7)
 023-66. A trap in a `deferred` run is an ordinary evaluation trap of the commit its result publishes in: it surfaces at the due commit, never between commits, and aborts per the standard trap law. A run cancelled before its due commit — gate-close, teardown, or reload discard — surfaces nothing: with no publishing commit there is no trap to surface. (§13.2.12, §13.13.1)
+023-67. The dirty-set comparison and value-change gating compare values BITWISE on the cell's stored representation: a staged or computed value differs from the previously-committed value iff their bit patterns differ. Two NaNs with identical bit patterns are the same value and propagate no change; `-0.0` and `0.0` are different values and do; and the comparison thereby agrees with the bit-exact cell-storage guarantee and with the canonical text form's treatment of `-0.0` as a value of its own. (§13.10.2)
 
 ## 024. Cycle Handling — 27 Rules
 
@@ -4237,7 +4238,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 032-178. Version metadata is recorded in the graph specification header (§15.4), where cross-version compatibility checks happen. (§14.9)
 032-179. There is no source-level version directive; matched-set versioning is carried entirely by the toolchain and the graph-spec header. (§14.9)
 
-## 033. Compilation Model & IR — 259 Rules
+## 033. Compilation Model & IR — 260 Rules
 
 033-1. Compilation transforms Ductus source files into executable form plus the build-time artifacts the runtime consumes at startup. (§15)
 033-2. The compiler emits exactly two artifact classes: executable code and the reactive graph specification. (§15.1)
@@ -4512,6 +4513,7 @@ Change this log FIRST, then update the referenced SPEC.md section to conform. If
 
 033-258. Where one position admits both a path and a value — a wire's destination and a binding's right-hand side — a word spelling one of the literals is the literal, outright: `null` in the destination, and `true`, `false`, `nan`, and `inf` on the right-hand side. The reading needs no disambiguation, because the five spellings are reserved language-wide and no path segment may bear one: a multi-segment path cannot begin with one either, so nothing is shadowed and nothing is unreachable. The earlier one-token-lookahead rule — a dot or a colon after the word reinstating the path reading — is retired by the reservation and is no longer part of this law. (§15.4.6)
 033-259. In the IR text form the five reserved spellings — `null`, `true`, `false`, `nan`, and `inf` — are never a NAME: a module name, a type id, a field name, a variant name, a binding name, and a path's name segment all reject them, and a reader that meets one in such a position reports it under its own diagnostic class rather than reading it as an identifier. So a bare occurrence of any of the five in a wire destination or a value position is always the keyword, and the reader needs no lookahead to decide it. A KEYED segment is the exception that costs nothing: a repeat key whose stringified content is one of the five is DATA, stays legal, and renders single-quoted — the bare rendering is reserved for the keyword reading, so the key's meaning survives every round trip. (§15.4.6)
+033-260. The graph section's entry sequence is the normative carrier of the composed evaluation-order tiebreak: scopes stand in the section, and entries stand in each scope's body, in program order — instance placement order, then intra-instance declaration order — and nothing else in the format carries that order. A conforming emitter preserves entry order, a conforming loader reads entry rank as the same-level tiebreak, and reordering entries is therefore a semantic change to the module, not a formatting one. (§15.4.6)
 
 ## 034. Collect / Yield / Yielded — 20 Rules
 

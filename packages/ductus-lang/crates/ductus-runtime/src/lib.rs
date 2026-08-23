@@ -6,3 +6,4 @@ pub mod loader;
 pub mod provider;
 pub mod store;
 pub mod trace_sink;
+pub mod value;

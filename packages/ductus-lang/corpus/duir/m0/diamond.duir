@@ -1,0 +1,12 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.a : i64 init 0
+      derived App.left : i64 uses B@d1 inputs [App.a]
+      derived App.right : i64 uses B@d1 inputs [App.a]
+      derived App.join : i64 uses B@d2 inputs [App.left, App.right]
+    }
+  }
+  behaviors {}
+}

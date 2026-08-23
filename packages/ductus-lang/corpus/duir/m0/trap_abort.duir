@@ -1,0 +1,10 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.t : i32 init 0
+      derived App.boom : i32 uses B@d1 inputs [App.t]
+    }
+  }
+  behaviors {}
+}
