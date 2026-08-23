@@ -52,8 +52,9 @@ never relative to the process cwd.
 The trace format is defined — R24's event schema, landed with the commit
 engine — so the commit witnesses carry both halves: `single_derived`,
 `empty_commit`, `chain`, `diamond`, `value_gating`, `tiebreak_order`,
-`transaction_batch` and `islands` each pair a `.duir` module with a `.trace`
-golden, byte-compared by `crates/ductus-conformance/tests/commit.rs`.
+`transaction_batch`, `islands` and `rank_interleaved` each pair a `.duir`
+module with a `.trace` golden, byte-compared by
+`crates/ductus-conformance/tests/commit.rs`.
 
 Two kinds of witness carry the `.duir` half alone:
 

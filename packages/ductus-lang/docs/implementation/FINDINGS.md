@@ -272,7 +272,7 @@ cells bit-exact, so bitwise is the only completion consistent with the corpus's 
 commitments. EXECUTED: DECISION_LOG (023 family), SPEC §13.10.2 step-1 clause +
 §13.2.4.4 paragraph. The runtime's comparison is Value::bits_eq.
 
-## FND-24 — the trap-stamping `catch_unwind` vs the corpus's literal "no `catch_unwind` boundary". OPEN (owner ruling due; raised at Chunk B finish)
+## FND-24 — the trap-stamping `catch_unwind` vs the corpus's literal "no `catch_unwind` boundary". RULED (a) BY CADENCE (raised at finish, unstruck; veto standing) — isolation-only reading; EXECUTED (M0 closure, 2026-08-23)
 The engine's sole behavior-invocation path wraps every call in `catch_unwind` and
 re-panics immediately as `behavior trap at <path>: <payload>` — D8's ruled trap shape, a
 harness-visible panic carrying the trapping cell's path. But SPEC §13.13.1, restated at
@@ -293,9 +293,13 @@ behavior's own location; (c) accept the mechanism and park the polish (D8 alread
 trap-diagnostics polish to M6). Recommendation: (a) for the wording, plus adopting (b)'s
 Drop-guard mechanism at a later milestone if the double-report residue bites — the
 semantics are identical under both readings; only the wording and the report shape
-differ.
+differ. EXECUTED: the prohibition now reads ISOLATION-ONLY at the three corpus sites —
+SPEC §13.13.1 (its original three prohibitions stand, with one carve-out sentence
+added), SPEC §14.6.2, and the trap-family DECISION_LOG entries 026-5 and 032-113,
+amended in place. The mechanism is untouched; (b)'s Drop-guard rewrite stays available
+if the double-report residue bites.
 
-## FND-25 — §13.10.3's "same level" is undefined and the composed order is underdetermined; the loader silently pins greedy rank-least-ready Kahn. OPEN (owner ruling due; raised at Chunk B finish)
+## FND-25 — §13.10.3's "same level" is undefined and the composed order is underdetermined; the loader silently pins greedy rank-least-ready Kahn. RULED (a) BY CADENCE (raised at finish, unstruck; veto standing) — the composed order is the rank-lexicographic minimum topological order; EXECUTED (M0 closure, 2026-08-23)
 §13.10.3 defines the same-level tiebreak (declaration order within an instance, placement
 order across) and says the deterministic output trace "is defined by this composed order"
 — but "level" is defined nowhere. Under the only gloss the corpus offers ("neither
@@ -317,8 +321,13 @@ Recommendation: (a) — it is the unique completion that degenerates to pure dec
 order exactly when the text is written dependency-first, and it is what every landed
 golden already witnesses. Rider either way: the two code comments claiming the current
 rule as already-ruled law are softened to cite this finding until it is ruled.
+EXECUTED: DECISION_LOG 023-33 and 023-34 amended in place to claim a RANK rather than a
+schedule, plus a new 023-family entry defining the composed order as the
+rank-lexicographic minimum topological order of the per-commit DAG; SPEC §13.10.3 gains
+the realized-schedule paragraph. The rank-interleaved witness — a module whose
+dependency is declared after its reader — joins the corpus.
 
-## FND-26 — scope-path legality is an unruled surface: duplicates, containment, module-root anchoring, scope/cell namespace. OPEN (owner ruling due; raised at Chunk B finish)
+## FND-26 — scope-path legality is an unruled surface: duplicates, containment, module-root anchoring, scope/cell namespace. RULED BY OWNER ("Approved, continue", 2026-08-23) — reject all four; EXECUTED (M0 closure)
 The loader is the sole legality authority (R21) and it checks a scope path's SHAPE only.
 Four sub-questions, none pinned by the corpus. (1) Duplicate scope paths: `scope App {}
 scope App {}` loads silently; §15.4.1 makes every primitive "identified by a stable
@@ -338,8 +347,15 @@ tolerate and document / defer to the milestone that consumes scopes. Recommendat
 the family at once before Chunk B commits, or explicitly park it to M2 with this entry as
 the record; if rejection is ruled the classes are ordinary F3 additions (e.g.
 `duplicate_scope_path`) and the checks are mechanical.
+EXECUTED: DECISION_LOG 033-261 (scope paths are unique, blame the second declaration),
+033-262 (a cell's path extends its scope's as a proper prefix, at ANY depth), 033-263
+(module-root anchoring, through containment reaching every cell path), and 033-264 (one
+scope/cell identity namespace); IR_GRAMMAR §3's scope-path well-formedness note beside
+the entry-order note plus the §6 `scope` row; SPEC §15.4.6's **Scope-path
+well-formedness** paragraph. Four loader classes: `duplicate_scope_path`,
+`cell_outside_scope`, `unanchored_scope_path`, `scope_cell_collision`.
 
-## FND-27 — M0.md §4's "Writes during a commit are forbidden (assert)" has no assert and no emission site: the law is structurally unrepresentable. OPEN (owner ruling due; raised at Chunk B finish)
+## FND-27 — M0.md §4's "Writes during a commit are forbidden (assert)" has no assert and no emission site: the law is structurally unrepresentable. RULED (a) BY CADENCE (raised at finish, unstruck; veto standing) — record the structural enforcement, keep the class registered; EXECUTED (M0 closure, 2026-08-23)
 `commit()` takes `&mut self` and never calls back into host code (behaviors receive only
 `&[Value]`), and a transaction closure exclusively borrows the engine — so a write during
 a commit, and a nested transaction, are both UNREPRESENTABLE in M0's sequential API. The
@@ -351,3 +367,7 @@ the plan line to record structural enforcement, keeping the class registered for
 milestone that makes it reachable (a threaded host API); (b) add a runtime in-commit flag
 plus the assert anyway, to honor the letter; (c) park. Recommendation: (a) — an assert
 that cannot fire is dead code pretending to be law.
+EXECUTED: M0.md §4's "(assert)" line now records the STRUCTURAL enforcement — `commit`
+takes exclusive access and never calls back into host code, so the violation is
+unrepresentable — and the `write_during_commit` class's standing registration for the
+milestone that makes it reachable.

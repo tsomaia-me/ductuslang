@@ -313,9 +313,24 @@ graph_section    ::= 'graph' '{' scope* '}'
 // tiebreak, and reordering entries is a semantic change (033-260). Blank
 // lines are insignificant; entry order is not.
 
+// **Scope-path well-formedness (normative, load time).** Four shapes the
+// grammar admits and a conforming loader rejects. Scope paths are UNIQUE:
+// a second `scope` bearing an already-declared path is rejected at that
+// second declaration (033-261). A `cell`'s PATH extends its enclosing
+// scope's PATH as a PROPER PREFIX, at any depth — intermediate segments
+// need not be declared as scopes, so a cell may stand several segments
+// below its scope, but a cell whose path leaves its scope's path is
+// rejected (033-262). Every scope path — and through containment every
+// cell path — is ANCHORED at the module root: its first segment is the
+// `module` NAME (033-263). Scope paths and cell paths share ONE
+// namespace: a path names at most one graph primitive, and a scope/cell
+// collision is rejected at the second declaration (033-264). All four are
+// load-time semantic rules, like the module-resolvability constraint
+// below — not grammar rules.
+
 scope            ::= 'scope' PATH 'exposes' path_set 'effects' path_set
                      ('reset_on_reopen' reopen_set)? '{' entry* '}'
-                   ;  (§15.4.6, 033-168 / 033-75)
+                   ;  (§15.4.6, 033-168 / 033-75 / 033-261 / 033-262 / 033-263 / 033-264)
 
 // 'reset_on_reopen' on a scope carries a reopen_set of (consumer : stream)
 // pairs; this is one of three grammar positions for the keyword — see also
@@ -427,16 +442,21 @@ stream           ::= 'stream' PATH ':' type_tag 'policy' ('ring' | 'gate') 'capa
 // 'lookback' is the input_lookback_map (input cell id → max lookback k).
 
 behaviors_section ::= 'behaviors' '{' behavior* '}'
-                   ;  (§15.4.6, 033-168)
+                   ;  (§15.4.6, 033-168 / 033-265)
 
 // 'behavior' production defined in §4 (per SPEC §15.4.4).
-// **Module-resolvability constraint.** An empty `behaviors {}` is
-// syntactically well-formed but renders any non-empty `graph_section`
-// unresolvable — every `derived`/`recurrent`/`deferred` cell's `uses BID` and
-// every `gate`'s `pred BID` reference a `behavior` by handle. The
-// match is a load-time semantic check (post-parse), not a grammar
-// rule; a module with `derived … uses B@xx` and no defining
-// `behavior B@xx { … }` is rejected at module load.
+// **Module-resolvability constraint.** Every `derived`/`recurrent`/
+// `deferred` cell's `uses BID` and every `gate`'s `pred BID` reference a
+// `behavior` by handle, and every such handle must resolve at module load
+// against the module's own `behaviors` table TOGETHER WITH whatever
+// behavior source the embedding supplies to the loader (033-265). The
+// match is a load-time semantic check (post-parse), not a grammar rule;
+// a module with `derived … uses B@xx` that neither defines
+// `behavior B@xx { … }` nor draws it from the supplied source is rejected
+// at module load. An empty `behaviors {}` is therefore syntactically
+// well-formed text whose non-empty `graph_section` must resolve through
+// the supplied source alone: resolvability is a property of the load, not
+// of the file.
 
 path_set         ::= '[' (PATH (',' PATH)*)? ']'
                    ;  (§15.4.6, 033-168)
@@ -808,7 +828,7 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `field_list` | §15.4.6 | 033-168 |
 | `variant` | §15.4.6 | 033-168 |
 | `graph_section` | §15.4.6 | 033-168 / 033-256 (`scope*` — an empty graph is structurally legal) / 033-260 (entry order is semantic — the evaluation-order tiebreak's carrier) |
-| `scope` | §15.4.6 | 033-168 / 033-75 |
+| `scope` | §15.4.6 | 033-168 / 033-75 / 033-261 (scope paths are unique) / 033-262 (a cell's path extends its scope's as a proper prefix, at any depth) / 033-263 (anchored at the module root) / 033-264 (one scope/cell path namespace) |
 | `entry` | §15.4.6 | 033-168 |
 | `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 / 033-245 |
 | `cell_kind` | §15.4.6 | 033-80 |
@@ -819,7 +839,7 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `wire` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 / 033-258 (a bare `null` destination is the literal, by reservation) |
 | `effect` | §15.4.6 | 033-168 / 033-119 / 033-120 / 033-121 / 033-122 / 033-123 |
 | `stream` | §15.4.6 | 033-106 / 033-107 / 033-108 / 033-109 / 033-110 / 033-111 / 033-112 / 033-114 / 033-115 / 033-117 |
-| `behaviors_section` | §15.4.6 | 033-168 |
+| `behaviors_section` | §15.4.6 | 033-168 / 033-265 (module-resolvability: the module's table together with the embedding's supplied behavior source — a load-time check) |
 | `path_set` | §15.4.6 | 033-168 |
 | `binding_set` | §15.4.6 | 033-168 |
 | `reopen_set` | §15.4.6 | 033-75 |

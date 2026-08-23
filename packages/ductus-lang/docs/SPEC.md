@@ -19496,22 +19496,36 @@ values when the node itself is evaluated.
 When two nodes at the same level (neither depends on the other)
 belong to the same node instance, the compiler chooses a
 deterministic tiebreaker: **source declaration order**. The cell
-declared earlier in source evaluates first; this rule governs
-same-instance pairs only. Since the two are not dependency-related,
+declared earlier in source ranks first; this rule governs
+same-instance pairs only, and it supplies a rank, never an override
+of a dependency edge. Since the two are not dependency-related,
 the choice does not affect correctness — but determinism matters for
 reproducibility (same program, same inputs, same output trace).
 
 For cells across different node instances at the same level, the
 placement order at construction time is the tiebreaker; cross-instance
-pairs are governed by this rule alone. The composed same-level total
-order is **instance placement order, then intra-instance declaration
-order** — every same-level pair matches exactly one rule, and the
-deterministic output trace is defined by this composed order.
+pairs are governed by this rule alone. The composed same-level rank
+is **instance placement order, then intra-instance declaration
+order** — every same-level pair draws its rank from exactly one rule;
+how that rank composes with the DAG's dependency edges into the
+evaluated schedule is the separate law stated below.
 
 In the serialized module, the carrier of this composed order is
 the graph section's entry sequence (§15.4.6): entry order in
 `.duir` is semantic, and entry rank is the same-level tiebreak a
 loader reads.
+
+The composed order is *realized* as the **rank-lexicographic minimum
+topological order** of the per-commit DAG: at every step the ready node
+of least declaration rank is scheduled first, rank being the graph
+section's entry order. The two laws never conflict — topology yields
+first, and rank breaks every remaining tie among the simultaneously
+ready — so the schedule is unique, and whenever declaration order is
+itself a topological order (the text written dependency-first) the
+schedule *is* declaration order. Where a dependency is declared after
+its reader, the dependency still evaluates first; rank orders only what
+the edges leave free. The deterministic output trace is defined by this
+schedule.
 
 Recurrent expressions across multiple recurrent cells evaluate in
 lockstep (§13.2.4.1); no internal ordering between them is
@@ -20152,8 +20166,12 @@ before its due commit surfaces nothing (§13.2.12).
 
 The runtime does not isolate traps within behavior invocations. There
 is no "errored cell" sentinel state at the runtime level, no
-`catch_unwind` boundary, no continuation past a trap. A trap is a
-bug, and bugs end the program. The sole sanctioned machinery-level
+`catch_unwind` boundary, no continuation past a trap. The prohibition
+is one of *isolation*: no boundary that a trap survives, that converts
+a trap into a value, or that lets anything continue past it — an
+observe-and-re-panic stamp that names the trapping cell and
+immediately re-raises isolates nothing and is therefore permitted. A
+trap is a bug, and bugs end the program. The sole sanctioned machinery-level
 exception is a hot reload's pre-live first-evaluation phase
 (§13.15.3): a trap there abandons the reload — the old version keeps
 running — rather than aborting the process.
@@ -25554,10 +25572,13 @@ division by zero, out-of-range indices, explicit `panic`) abort the
 process; recoverable conditions are expressed as value-track
 `Option`/`Result` values flowing through the type system. The
 runtime does not isolate behavior traps — there is no `catch_unwind`
-boundary, no errored-cell sentinel, no continuation past a trap,
-with one machinery-level exception: a behavior trap during a hot
-reload's pre-live first evaluations is contained by the reload
-machinery, which abandons the reload (§13.15.3).
+boundary, no errored-cell sentinel, no continuation past a trap. The
+ban is on isolation: nothing may survive a trap, turn it into a value,
+or run on past it, while an observe-and-re-panic stamp that names the
+trapping cell and re-raises at once isolates nothing and stays
+permitted. One machinery-level exception remains: a behavior trap
+during a hot reload's pre-live first evaluations is contained by the
+reload machinery, which abandons the reload (§13.15.3).
 See §13.13.1 for full rules and worked examples; the same semantics
 apply uniformly to all behaviors the runtime invokes.
 
@@ -26786,6 +26807,35 @@ order, then intra-instance declaration order, serialized as nothing more than
 the order entries stand in the file. A conforming emitter preserves entry
 order; a conforming loader reads entry rank as the tiebreak; reordering
 entries changes the program.
+
+**Scope-path well-formedness.** Four path shapes the grammar admits and a
+conforming loader rejects at module load. Scope paths are **unique**: two
+`scope` entries bearing one path are ill-formed IR, and the loader blames
+the second declaration — it neither merges the bodies nor lets the first
+win. The shape is unproducible by a correct producer to begin with, since
+duplicated sibling placements append declaration-order ordinals
+(§15.4.1.1). A cell entry's path **extends its enclosing scope's path as a
+proper prefix**, at any depth: the block structure and the fully-qualified
+paths carry one hierarchy, and they must agree. The extension is not
+bounded to a single segment — intermediate segments need not be declared as
+scopes of their own, which is why the worked example's
+`derived App.print:0.text` stands directly inside `scope App` — but a cell
+whose path leaves its scope's path is ill-formed. Every scope path, and
+through containment every cell path, is **anchored at the module root**:
+its first segment is the module's own name, matching §15.4.1.1's reading of
+a path as running from module root. And scope paths and cell paths share
+**one identity namespace**: a path names at most one graph primitive, so a
+`scope` and a cell bearing the same path are ill-formed, blamed again at
+the second declaration.
+
+**Behavior resolvability.** Every behavior handle the graph references — a
+`derived`, `recurrent`, or `deferred` cell's `uses`, a `gate`'s `pred` —
+must resolve at module load against the module's own `behaviors` table
+together with whatever behavior source the embedding supplies to the
+loader; a handle satisfied by neither is a load-time error, never a grammar
+one. An empty `behaviors {}` is accordingly well-formed text whose graph's
+references must then resolve through the supplied source alone:
+resolvability is a property of the load, not of the file.
 
 **Canonical digit spelling.** A typed value literal has exactly one canonical
 spelling, and canonicalization is **textual**: a typed value is not converted

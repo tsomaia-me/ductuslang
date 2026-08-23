@@ -5,8 +5,8 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: M0 complete pending owner rulings (FND-24..27 open; Chunk B committed under standing approval)
-phase: review
+increment: M0 closure wave (FND-26 owner-approved; FND-24/25/27 + probe-3 executed by cadence, veto standing)
+phase: build
 
 ## State notes
 - Hook ENFORCING this file since 2026-08-01 (R12a): .claude/settings.json → .claude/hooks/
@@ -116,3 +116,10 @@ phase: review
   diff). phase: review — owner rules FND-24..27 + reviews the landed chunk;
   M0 exit criteria met except criterion-4 closure on the open findings and
   the absent CI (raised in the finish report).
+- 2026-08-23 — "Approved, continue" (on the FND-26 recommendation: reject all
+  four scope-path shapes, now). FND-26 RULED as recommended. FND-24 (a),
+  FND-25 (a), FND-27 (a) and the probe-3 resolvability touch-up were raised
+  at finish with recommendations and not struck — executed under the #36
+  cadence with veto standing. CI remains OPEN (owner has not chosen an
+  infrastructure). phase: build for the M0 closure wave (corpus edits +
+  loader checks + rank-interleaved witness).

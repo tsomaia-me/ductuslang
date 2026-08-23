@@ -1,4 +1,4 @@
-//! Witness tests for the commit engine — the nine M0 commit witnesses
+//! Witness tests for the commit engine — the ten M0 commit witnesses
 //! (corpus/README.md, R25, M0.md §6).
 //!
 //! One `#[test]` fn per witness, named after its `.duir` file stem, so a witness
@@ -531,6 +531,114 @@ fn built_tiebreak_order() -> Module {
             input(&["App", "b"], Prim::I64, "0"),
             derived(&["App", "from_b"], Prim::I64, 0xd1, &[&["App", "b"]]),
             derived(&["App", "from_a"], Prim::I64, 0xd1, &[&["App", "a"]]),
+        ],
+    )])
+}
+
+/// `|x| x + 10` over one `i64` — a SINGLE-USE stub, written here rather than in
+/// the shared library so the reason `rank_interleaved`'s golden holds sits
+/// beside the golden.
+///
+/// The addend is the point: `App.y`'s value must be unmistakable for either
+/// increment result, so a trace that named the wrong cell — or ordered the two
+/// evaluations wrongly — could not still read correct.
+///
+/// # Panics
+///
+/// On any other argument shape — a harness-author bug, loud rather than papered
+/// over. The addition WRAPS, for the reason the library stubs give: a fixture
+/// must not trap by accident.
+fn add10_i64() -> Behavior {
+    Rc::new(|inputs| match inputs {
+        [Value::I64(payload)] => Value::I64(payload.wrapping_add(10)),
+        other => panic!("add10_i64 wants one i64 input, got {other:?}"),
+    })
+}
+
+/// The composed-order law, made observable: the static order is the
+/// RANK-LEXICOGRAPHIC MINIMUM topological order, not a level-synchronous one.
+///
+/// The module is the discriminating shape. `App.a` (rank 1) and `App.y`
+/// (rank 3) each read the input directly, so both are ready in the first wave;
+/// `App.b` (rank 2) reads `App.a`, so it becomes ready only once `a` is
+/// scheduled. Two schedules are then possible and they disagree:
+///
+/// - rank-lexicographic minimum (what Ductus pins): `a`, then — `b` having just
+///   become ready at rank 2, which beats the waiting `y` at rank 3 — `b`, then
+///   `y`;
+/// - level-synchronous: the whole first level before the second, i.e. `a`, `y`,
+///   `b`.
+///
+/// The golden is `a`, `b`, `y`. It PINS that a cell entering the ready set late
+/// still wins on rank against a cell that has been ready all along — depth does
+/// not defer to breadth.
+///
+/// `B@d1` and `B@d2` both resolve to `add1_i64`: the chain arithmetic is what
+/// makes `b`'s value evidence that it read `a`'s PENDING value rather than the
+/// committed one. `B@d3` gets the single-use `add10_i64` so `y`'s value can
+/// never be confused with either increment.
+///
+/// # Derivation
+///
+/// **Block 1 (startup).** Construction walks the static order once over the
+/// init `0`: `a = 0 + 1 = 1`, `b = 1 + 1 = 2`, `y = 0 + 10 = 10`. Untraced —
+/// construction is not a commit — and step 4's first commit finds `App.i`'s
+/// staged value equal to its committed one, so the block is
+/// `commit_begin`/`publish`/`commit_end`.
+///
+/// **Block 2.** The write stages `5`, which differs bitwise from the committed
+/// `0`, so `App.i` dirties `0 -> 5` — the one input, so the one dirty line.
+///
+/// Step 3 then walks the static order, and every one of the three deriveds has
+/// a dirty dependency, so every one evaluates:
+///
+/// - `App.a` reads the pending `5` → `6`, which differs from its committed `1`,
+///   so its dirty bit is set;
+/// - `App.b` reads `App.a`'s PENDING `6` — the value step 3 wrote a line ago,
+///   never the committed `2` — → `7`;
+/// - `App.y` reads the pending `5` → `15`.
+///
+/// A level-synchronous schedule would print `eval App.y -> 15` BEFORE
+/// `eval App.b -> 7`. The golden pins that it does not, and the assertion below
+/// says so a second time in its own right.
+#[test]
+fn rank_interleaved() {
+    let witness = Witness::load("rank_interleaved");
+    let registry = registry_of(&[(0xd1, add1_i64()), (0xd2, add1_i64()), (0xd3, add10_i64())]);
+    let script = |engine: &mut Engine<'_>| {
+        write(engine, &["App", "i"], Value::I64(5));
+        engine.commit();
+    };
+
+    let from_text = traced(
+        &parsed("rank_interleaved", &witness.source),
+        &registry,
+        script,
+    );
+
+    assert_trace("rank_interleaved", &from_text, &witness.golden);
+
+    // The discriminating fact on its own: the rank-2 cell that became ready
+    // late still precedes the rank-3 cell that was ready from the start.
+    let deep = from_text.find("eval App.b").expect("`App.b` evaluates");
+    let wide = from_text.find("eval App.y").expect("`App.y` evaluates");
+
+    assert!(deep < wide, "{from_text}");
+
+    let from_api = traced(&built_rank_interleaved(), &registry, script);
+
+    assert_trace("rank_interleaved (constructed)", &from_api, &witness.golden);
+}
+
+/// `rank_interleaved.duir`, built through the `ductus-ir` API instead of parsed.
+fn built_rank_interleaved() -> Module {
+    module(vec![scope(
+        &["App"],
+        vec![
+            input(&["App", "i"], Prim::I64, "0"),
+            derived(&["App", "a"], Prim::I64, 0xd1, &[&["App", "i"]]),
+            derived(&["App", "b"], Prim::I64, 0xd2, &[&["App", "a"]]),
+            derived(&["App", "y"], Prim::I64, 0xd3, &[&["App", "i"]]),
         ],
     )])
 }

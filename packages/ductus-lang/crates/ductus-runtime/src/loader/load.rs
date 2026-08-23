@@ -2,7 +2,7 @@
 //! authority (R21, F4).
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use ductus_ir::diag::{DiagClass, Diagnostic, Span};
 use ductus_ir::graph::{Cell, CellKind, Entry, Scope, ValueLiteral};
@@ -31,13 +31,34 @@ use crate::value::{Value, ValueType};
 ///    M0 graphs are plain dotted paths).
 /// 2. Scope clauses: a non-empty `exposes`, `effects` or `reset_on_reopen` →
 ///    `outside_m0_slice` (placement/effect/stream machinery is M2/M5).
-/// 3. Entry kind: `gate`/`wire`/`effect`/`stream` → `outside_m0_slice`.
-/// 4. Per cell: path shape as in 1; kind `recurrent`/`deferred`/`fold` →
+/// 3. Scope identity, in this order: a first segment that is not the MODULE's
+///    name → `unanchored_scope_path` (every path is anchored at the module
+///    root, §15.4.1.1); a path some CELL already claims →
+///    `scope_cell_collision`; a path some SCOPE already claims →
+///    `duplicate_scope_path`.
+/// 4. Entry kind: `gate`/`wire`/`effect`/`stream` → `outside_m0_slice`.
+/// 5. Per cell: path shape as in 1; kind `recurrent`/`deferred`/`fold` →
 ///    `outside_m0_slice`; a type outside the word tier → `outside_m0_slice`;
 ///    the kind's clause law (`input` requires `init`, `derived` requires
-///    `uses`, everything else forbidden); a duplicate path (any prior cell,
-///    any scope) → `duplicate_cell_path`; and an `input`'s `init` conversion
-///    under the declared type (R57) → `type_mismatched_init` on failure.
+///    `uses`, everything else forbidden); CONTAINMENT — the enclosing scope's
+///    path must be a proper prefix of the cell's → `cell_outside_scope`; a
+///    path some SCOPE claims → `scope_cell_collision`; a duplicate path (any
+///    prior cell, any scope) → `duplicate_cell_path`; and an `input`'s `init`
+///    conversion under the declared type (R57) → `type_mismatched_init` on
+///    failure.
+///
+/// Checks 3 and 5's identity rules are ONE namespace seen twice: a path names
+/// a scope or a cell, never both, and the SECOND declaration is always the one
+/// blamed.
+///
+/// Containment is what makes two further rules unnecessary. A cell path EQUAL
+/// to its scope's is already rejected, because a proper prefix is strictly
+/// shorter — so a cell can never collide with its OWN scope, only with another
+/// scope's path. And a cell needs no anchoring check: its scope is anchored at
+/// the module root and the cell extends its scope, so the cell is anchored
+/// too. Depth, by contrast, is FREE — an intermediate segment needs no
+/// declared scope, so `scope App { input App.print.text }` is legal with no
+/// `App.print` scope anywhere.
 ///
 /// Rank assignment rides this walk (FND-22/R64): each cell takes the next
 /// dense [`CellIndex`], so rank = declaration order, scope-major — the
@@ -47,13 +68,13 @@ use crate::value::{Value, ValueType};
 /// LEGAL: the graph section is a serialization, not a scoped program text, so
 /// a derived at rank 0 may read a cell declared later.
 ///
-/// 5. Every derived's `inputs` path, rank order then list order: unknown →
+/// 6. Every derived's `inputs` path, rank order then list order: unknown →
 ///    `unknown_input_path` carrying the MISSING path.
-/// 6. Every derived's `uses` handle, rank order: unresolvable through the
+/// 7. Every derived's `uses` handle, rank order: unresolvable through the
 ///    provider → `unresolvable_behavior` (D5: module table ∪ provider
 ///    registry — and the module table is empty throughout M0, so the registry
 ///    is the whole answer).
-/// 7. Cycle detection over derived→derived edges, whose sort is ALSO the
+/// 8. Cycle detection over derived→derived edges, whose sort is ALSO the
 ///    static evaluation order: a cycle → `derived_cycle` with the members in
 ///    the message.
 ///
@@ -63,11 +84,14 @@ use crate::value::{Value, ValueType};
 pub fn load(module: &Module, provider: &dyn BehaviorProvider) -> Result<LoadedGraph, Diagnostic> {
     let mut pending: Vec<PendingCell> = Vec::new();
     let mut index: HashMap<CellPath, CellIndex> = HashMap::new();
+    let mut scopes: HashSet<CellPath> = HashSet::new();
 
     // Pass A — file order: scopes in section order, entries in body order,
-    // checks 1–4 per construct, rank assigned as each cell survives.
+    // checks 1–5 per construct, rank assigned as each cell survives.
     for scope in &module.graph.scopes {
         admitted_scope(scope)?;
+        anchored(scope, &module.name)?;
+        claim_scope(&mut scopes, &index, scope)?;
 
         for entry in &scope.entries {
             let cell = admitted_entry(entry)?;
@@ -76,7 +100,8 @@ pub fn load(module: &Module, provider: &dyn BehaviorProvider) -> Result<LoadedGr
             let kind = admitted_kind(cell)?;
             let value_type = word_tier(cell)?;
             admitted_clauses(cell, kind)?;
-            claim(&mut index, cell, CellIndex(pending.len()))?;
+            contained(scope, cell)?;
+            claim(&mut index, &scopes, cell, CellIndex(pending.len()))?;
             let form = pending_form(cell, kind, value_type)?;
 
             pending.push(PendingCell {
@@ -88,7 +113,7 @@ pub fn load(module: &Module, provider: &dyn BehaviorProvider) -> Result<LoadedGr
         }
     }
 
-    // Pass B — checks 5–7 over the collected cells, each check a full
+    // Pass B — checks 6–8 over the collected cells, each check a full
     // rank-order loop of its own so the error order stays deterministic.
     let links = linked_inputs(&pending, &index)?;
     let resolved = resolved_cells(pending, links, provider)?;
@@ -126,12 +151,12 @@ struct PendingCell {
 enum PendingForm {
     /// An `input`: its `init`, converted under the declared type (R57).
     Input { init: Value },
-    /// A `derived`: its handle and its input PATHS — indices are check 5's.
+    /// A `derived`: its handle and its input PATHS — indices are check 6's.
     Derived { uses: u32, inputs: Vec<CellPath> },
 }
 
-/// A cell past checks 5 and 6: the role is built, the span still at hand for
-/// check 7's cycle report.
+/// A cell past checks 6 and 7: the role is built, the span still at hand for
+/// check 8's cycle report.
 struct ResolvedCell {
     path: CellPath,
     span: Span,
@@ -158,7 +183,7 @@ fn slice_error(span: Span, path: &CellPath, message: &str) -> Diagnostic {
     }
 }
 
-// Checks 1 and 4a — M0 graphs are plain dotted paths (D7): every segment a
+// Checks 1 and 5a — M0 graphs are plain dotted paths (D7): every segment a
 // bare NAME, no keyed segments, no `:N` ordinals. The parser admitted the full
 // path grammar; the slice does not.
 fn plain_path(path: &CellPath, span: Span) -> Result<(), Diagnostic> {
@@ -211,7 +236,86 @@ fn admitted_scope(scope: &Scope) -> Result<(), Diagnostic> {
     Ok(())
 }
 
-// Check 3 — the M0 slice holds cells only; the other four entry kinds are
+// Check 3a — the module-root anchor (§15.4.1.1): a scope path's FIRST segment
+// is the module's name. `module App` holds `App`, `App.panel`,
+// `App.panel.row` — never `Foo`, and never an `App`-prefixed spelling like
+// `Application`, because the segment must BE the name, not begin with it.
+//
+// The non-name arm is unreachable after check 1 — every segment is a plain
+// name by then, and a path has at least one segment — and answers with the
+// same diagnostic rather than panicking: a loader answers in diagnostics.
+fn anchored(scope: &Scope, module_name: &str) -> Result<(), Diagnostic> {
+    let anchor = match scope.path.segments().first() {
+        Some(Segment::Name { text, .. }) => Some(text.as_str()),
+        Some(Segment::Key(_)) | None => None,
+    };
+
+    if anchor == Some(module_name) {
+        return Ok(());
+    }
+
+    Err(Diagnostic {
+        class: DiagClass::UnanchoredScopePath,
+        span: Some(scope.span),
+        path: Some(scope.path.clone()),
+        message: format!(
+            "scope `{}` is not anchored at module `{module_name}`",
+            scope.path.render()
+        ),
+    })
+}
+
+// The shared `scope_cell_collision` constructor (checks 3b and 5f): scope
+// paths and cell paths are ONE namespace, so a path names a region or a cell
+// and never both. The construct making the SECOND claim is blamed — its span,
+// the contested path.
+fn collision(span: Span, path: &CellPath, message: &str) -> Diagnostic {
+    Diagnostic {
+        class: DiagClass::ScopeCellCollision,
+        span: Some(span),
+        path: Some(path.clone()),
+        message: message.to_string(),
+    }
+}
+
+// Checks 3b and 3c — the scope's claim on that one namespace: a path some CELL
+// already took is a collision, a path another SCOPE already took is a
+// duplicate, and the scope surviving both records itself for the cells and
+// scopes still to come. Both maps hold only what the walk has already passed,
+// so the offender is always this scope and the other declaration is always
+// above it.
+//
+// A `HashSet` rather than a map to spans: nothing ever reports the FIRST
+// declaration, so the earlier span would be dead weight.
+fn claim_scope(
+    scopes: &mut HashSet<CellPath>,
+    index: &HashMap<CellPath, CellIndex>,
+    scope: &Scope,
+) -> Result<(), Diagnostic> {
+    if index.contains_key(&scope.path) {
+        return Err(collision(
+            scope.span,
+            &scope.path,
+            &format!(
+                "`{}` is declared as a scope here and as a cell above",
+                scope.path.render()
+            ),
+        ));
+    }
+
+    if !scopes.insert(scope.path.clone()) {
+        return Err(Diagnostic {
+            class: DiagClass::DuplicateScopePath,
+            span: Some(scope.span),
+            path: Some(scope.path.clone()),
+            message: format!("scope `{}` is declared twice", scope.path.render()),
+        });
+    }
+
+    Ok(())
+}
+
+// Check 4 — the M0 slice holds cells only; the other four entry kinds are
 // M1/M2/M5 machinery, rejected at the entry's own span and path.
 fn admitted_entry(entry: &Entry) -> Result<&Cell, Diagnostic> {
     match entry {
@@ -239,7 +343,7 @@ fn admitted_entry(entry: &Entry) -> Result<&Cell, Diagnostic> {
     }
 }
 
-// Check 4b — the slice's cell kinds are `input` and `derived` (M0.md §2);
+// Check 5b — the slice's cell kinds are `input` and `derived` (M0.md §2);
 // `recurrent` and `deferred` are M1, `fold` is M5-adjacent.
 fn admitted_kind(cell: &Cell) -> Result<M0Kind, Diagnostic> {
     match cell.kind {
@@ -253,7 +357,7 @@ fn admitted_kind(cell: &Cell) -> Result<M0Kind, Diagnostic> {
     }
 }
 
-// Check 4c — the M0 value space is the word tier (D2): a `TypeTag::Prim` that
+// Check 5c — the M0 value space is the word tier (D2): a `TypeTag::Prim` that
 // `ValueType::from_prim` maps. Everything else — `str`, the narrow and wide
 // integers, and every non-primitive tag — is outside the slice.
 fn word_tier(cell: &Cell) -> Result<ValueType, Diagnostic> {
@@ -278,7 +382,7 @@ fn word_tier(cell: &Cell) -> Result<ValueType, Diagnostic> {
     }
 }
 
-// Check 4d — the kind's clause law. The parser admitted any clause combination
+// Check 5d — the kind's clause law. The parser admitted any clause combination
 // in grammar order (F4); which clauses a KIND admits is decided here.
 //
 // An absent set clause and an empty one are ONE state in this AST — an empty
@@ -361,14 +465,61 @@ fn admitted_clause_set(
     Ok(())
 }
 
-// Check 4e — cell identity is BY PATH, across every scope (M0.md §2), so the
+// Check 5e — containment: the enclosing scope's path is a PROPER prefix of the
+// cell's, segment by segment. The braces and the dots carry ONE hierarchy, so
+// a cell written inside `scope App.panel` lives at `App.panel.…` and nowhere
+// else.
+//
+// Two consequences are load-bearing elsewhere. A cell path EQUAL to its
+// scope's is rejected HERE, because a proper prefix is strictly shorter — so a
+// cell can never collide with its own scope, only with another scope's path.
+// And DEPTH IS FREE: only the prefix is law, so `scope App { input
+// App.print.text }` is legal with no `App.print` scope declared anywhere.
+//
+// The comparison is structural — `Segment`'s own equality, segment by segment,
+// the same authority `CellPath` compares by — never rendered text.
+fn contained(scope: &Scope, cell: &Cell) -> Result<(), Diagnostic> {
+    let enclosing = scope.path.segments();
+    let inner = cell.path.segments();
+
+    if inner.len() > enclosing.len() && inner.starts_with(enclosing) {
+        return Ok(());
+    }
+
+    Err(Diagnostic {
+        class: DiagClass::CellOutsideScope,
+        span: Some(cell.span),
+        path: Some(cell.path.clone()),
+        message: format!(
+            "cell `{}` does not extend its scope `{}`",
+            cell.path.render(),
+            scope.path.render()
+        ),
+    })
+}
+
+// Checks 5f and 5g — the cell's claim on the namespace check 3 governs: a path
+// some SCOPE took is a collision, a path some earlier CELL took is a
+// duplicate. Cell identity is BY PATH, across every scope (M0.md §2), so the
 // map that will serve the engine's lookups is also the duplicate check. The
 // SECOND declaration is the one blamed: its span, the shared path.
 fn claim(
     index: &mut HashMap<CellPath, CellIndex>,
+    scopes: &HashSet<CellPath>,
     cell: &Cell,
     rank: CellIndex,
 ) -> Result<(), Diagnostic> {
+    if scopes.contains(&cell.path) {
+        return Err(collision(
+            cell.span,
+            &cell.path,
+            &format!(
+                "`{}` is declared as a cell here and as a scope above",
+                cell.path.render()
+            ),
+        ));
+    }
+
     if index.insert(cell.path.clone(), rank).is_some() {
         return Err(Diagnostic {
             class: DiagClass::DuplicateCellPath,
@@ -381,13 +532,13 @@ fn claim(
     Ok(())
 }
 
-// Check 4f and the collected form. An `input`'s `init` converts HERE, under
+// Check 5h and the collected form. An `input`'s `init` converts HERE, under
 // the declared type — R57's other half: the parser converted structural
 // numbers where the position's type was known, and a typed value waited for
 // this exact place. A `derived` carries its handle and its input paths into
 // Pass B untouched.
 //
-// The two required-clause `else` branches repeat check 4d's law as a safety
+// The two required-clause `else` branches repeat check 5d's law as a safety
 // net: this function's contract does not depend on being called after
 // `admitted_clauses`, and the diagnostic is the same either way.
 fn pending_form(
@@ -483,7 +634,7 @@ fn converted_init(
             ValueType::I64 | ValueType::I32 | ValueType::F64 | ValueType::F32 => None,
         },
         // No M0 type holds a string — a `str`-typed cell was already rejected
-        // at check 4c — so a STRING literal mismatches every type it could
+        // at check 5c — so a STRING literal mismatches every type it could
         // stand under.
         ValueLiteral::Str(_) => None,
     };
@@ -503,7 +654,7 @@ fn converted_init(
     }
 }
 
-// Check 5 — link every derived's `inputs` paths to dense indices: rank order,
+// Check 6 — link every derived's `inputs` paths to dense indices: rank order,
 // then list order. Forward references resolve like any other — the whole point
 // of linking after Pass A — and the diagnostic carries the MISSING path, with
 // the reading cell's span.
@@ -542,7 +693,7 @@ fn linked_inputs(
     Ok(links)
 }
 
-// Check 6 — resolve every derived's handle through the provider, rank order.
+// Check 7 — resolve every derived's handle through the provider, rank order.
 // D5: resolvability = module table ∪ provider registry, and the module's
 // behavior table is empty throughout M0, so the registry is the whole answer.
 // The resolved `Rc` is kept in the role — a clone shares the executable.
@@ -588,7 +739,7 @@ fn resolved_cells(
     Ok(resolved)
 }
 
-// Check 7 and the static order, one computation — Kahn's algorithm over the
+// Check 8 and the static order, one computation — Kahn's algorithm over the
 // derived→derived dependency graph with a RANK-ORDERED ready set (§13.10.2
 // step 2's order, computed once at load). R64 rules the CARRIER — entry rank
 // is what carries declaration order into the IR; the ready-set completion,
@@ -1035,7 +1186,7 @@ mod tests {
         module(vec![shell])
     }
 
-    // Check 3: the slice holds cells only. Each of the four other entry kinds
+    // Check 4: the slice holds cells only. Each of the four other entry kinds
     // rejects at its own path.
     #[test]
     fn rejects_every_non_cell_entry_kind() {
@@ -1092,7 +1243,7 @@ mod tests {
         }
     }
 
-    // Check 4b: `recurrent`, `deferred` and `fold` parse — the grammar admits
+    // Check 5b: `recurrent`, `deferred` and `fold` parse — the grammar admits
     // them — and the slice does not.
     #[test]
     fn rejects_every_out_of_slice_cell_kind() {
@@ -1115,7 +1266,7 @@ mod tests {
         }
     }
 
-    // Check 4c, both halves: a primitive outside the word tier (`str`, `u8`),
+    // Check 5c, both halves: a primitive outside the word tier (`str`, `u8`),
     // and a tag that is no primitive at all.
     #[test]
     fn rejects_a_cell_type_outside_the_word_tier() {
@@ -1185,7 +1336,7 @@ mod tests {
         assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.print:0"));
     }
 
-    // Check 4a: the same path law on a cell.
+    // Check 5a: the same path law on a cell.
     #[test]
     fn rejects_a_keyed_or_ordinal_cell_path() {
         let mut keyed = input(&["App", "x"], Prim::I64, ValueLiteral::int("0".to_string()));
@@ -1248,7 +1399,7 @@ mod tests {
         }
     }
 
-    // Check 4d, the `input` row: every clause but `init` is forbidden, one
+    // Check 5d, the `input` row: every clause but `init` is forbidden, one
     // trigger per clause.
     #[test]
     fn rejects_every_forbidden_clause_on_an_input() {
@@ -1284,7 +1435,7 @@ mod tests {
         }
     }
 
-    // Check 4d, the `derived` row: everything but `uses` and `inputs` is
+    // Check 5d, the `derived` row: everything but `uses` and `inputs` is
     // forbidden.
     #[test]
     fn rejects_every_forbidden_clause_on_a_derived() {
@@ -1321,7 +1472,7 @@ mod tests {
         }
     }
 
-    // Check 4d's required halves: M0.md §2's rows are "input (with init)" and
+    // Check 5d's required halves: M0.md §2's rows are "input (with init)" and
     // "derived (with uses/inputs)" — absence is outside the slice, not a
     // default.
     #[test]
@@ -1345,13 +1496,26 @@ mod tests {
         assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.d"));
     }
 
-    // Check 4e: identity is by path across EVERY scope, so two scopes may not
-    // both declare `App.x` — and the SECOND declaration is the one blamed,
-    // pinned by its span.
+    // Check 5g: identity is by path across EVERY scope, so two scopes may not
+    // both declare `App.panel.x` — and the SECOND declaration is the one
+    // blamed, pinned by its span.
+    //
+    // The shared path is DEEP on purpose: containment (check 5e) runs first, so
+    // a cross-scope duplicate must be a path both scopes may legally hold —
+    // `App` reaches `App.panel.x` because depth is free, and `App.panel`
+    // reaches it because it is one segment down.
     #[test]
     fn rejects_a_duplicate_path_across_scopes_blaming_the_second() {
-        let first = input(&["App", "x"], Prim::I64, ValueLiteral::int("0".to_string()));
-        let mut second = input(&["App", "x"], Prim::I64, ValueLiteral::int("1".to_string()));
+        let first = input(
+            &["App", "panel", "x"],
+            Prim::I64,
+            ValueLiteral::int("0".to_string()),
+        );
+        let mut second = input(
+            &["App", "panel", "x"],
+            Prim::I64,
+            ValueLiteral::int("1".to_string()),
+        );
         second.span = Span::new(90, 30);
 
         let diagnostic = failure(
@@ -1364,10 +1528,211 @@ mod tests {
 
         assert_eq!(diagnostic.class.id(), "duplicate_cell_path");
         assert_eq!(diagnostic.span, Some(Span::new(90, 30)));
-        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.x"));
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.panel.x"));
     }
 
-    // Check 5: an input path no cell declares. The diagnostic carries THE
+    // Check 3c: the same identity law one level up — two scope entries may not
+    // declare one path. The SECOND is blamed, pinned by its span.
+    #[test]
+    fn rejects_a_duplicate_scope_path_blaming_the_second() {
+        let first = scope(&["App", "panel"], Vec::new());
+        let mut second = scope(&["App", "panel"], Vec::new());
+        second.span = Span::new(120, 40);
+
+        let diagnostic = failure(&module(vec![first, second]), &stubs(&[]));
+
+        assert_eq!(diagnostic.class.id(), "duplicate_scope_path");
+        assert_eq!(diagnostic.span, Some(Span::new(120, 40)));
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.panel"));
+    }
+
+    // Check 3b — the collision, scope AFTER cell: the first scope declares
+    // `App.panel` as a CELL, so the scope entry that follows may not take the
+    // same path. One namespace, and the scope is the second claim.
+    #[test]
+    fn rejects_a_scope_path_an_earlier_cell_claimed() {
+        let mut second = scope(&["App", "panel"], Vec::new());
+        second.span = Span::new(60, 25);
+
+        let diagnostic = failure(
+            &module(vec![
+                scope(
+                    &["App"],
+                    vec![input(
+                        &["App", "panel"],
+                        Prim::I64,
+                        ValueLiteral::int("0".to_string()),
+                    )],
+                ),
+                second,
+            ]),
+            &stubs(&[]),
+        );
+
+        assert_eq!(diagnostic.class.id(), "scope_cell_collision");
+        assert_eq!(diagnostic.span, Some(Span::new(60, 25)));
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.panel"));
+    }
+
+    // Check 5f — the same collision the other way round: the SCOPE comes first,
+    // so the cell is the second claim and the cell is blamed. File order alone
+    // decides which of the two is second.
+    #[test]
+    fn rejects_a_cell_path_an_earlier_scope_claimed() {
+        let mut colliding = input(
+            &["App", "panel"],
+            Prim::I64,
+            ValueLiteral::int("0".to_string()),
+        );
+        colliding.span = Span::new(75, 18);
+
+        let diagnostic = failure(
+            &module(vec![
+                scope(&["App", "panel"], Vec::new()),
+                scope(&["App"], vec![colliding]),
+            ]),
+            &stubs(&[]),
+        );
+
+        assert_eq!(diagnostic.class.id(), "scope_cell_collision");
+        assert_eq!(diagnostic.span, Some(Span::new(75, 18)));
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.panel"));
+    }
+
+    // Check 5e: the braces and the dots carry ONE hierarchy, so a cell written
+    // inside `scope App.panel` whose path goes somewhere else is rejected at
+    // the cell.
+    #[test]
+    fn rejects_a_cell_outside_its_scope() {
+        let mut stray = input(
+            &["App", "other"],
+            Prim::I64,
+            ValueLiteral::int("0".to_string()),
+        );
+        stray.span = Span::new(50, 12);
+
+        let diagnostic = failure(
+            &module(vec![scope(&["App", "panel"], vec![stray])]),
+            &stubs(&[]),
+        );
+
+        assert_eq!(diagnostic.class.id(), "cell_outside_scope");
+        assert_eq!(diagnostic.span, Some(Span::new(50, 12)));
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.other"));
+    }
+
+    // Check 5e's PROPER half: a cell path equal to its scope's is not
+    // contained — the prefix must be strictly shorter — so a scope and a cell
+    // are never the same place. This is also why check 5f can never fire for a
+    // cell's own scope: containment has already rejected it.
+    #[test]
+    fn rejects_a_cell_whose_path_is_its_scopes_path() {
+        let twin = input(
+            &["App", "panel"],
+            Prim::I64,
+            ValueLiteral::int("0".to_string()),
+        );
+
+        let diagnostic = failure(
+            &module(vec![scope(&["App", "panel"], vec![twin])]),
+            &stubs(&[]),
+        );
+
+        assert_eq!(diagnostic.class.id(), "cell_outside_scope");
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.panel"));
+    }
+
+    // Depth is FREE: only the prefix is law, so a cell may sit two or more
+    // segments below its scope with nothing declared in between — no
+    // `App.print` scope, no `App.a` scope, and both cells load.
+    #[test]
+    fn loads_a_cell_declared_below_its_scope_with_nothing_in_between() {
+        let graph = loaded(
+            &module(vec![scope(
+                &["App"],
+                vec![
+                    input(
+                        &["App", "print", "text"],
+                        Prim::I64,
+                        ValueLiteral::int("0".to_string()),
+                    ),
+                    derived(
+                        &["App", "a", "b", "c"],
+                        Prim::I64,
+                        1,
+                        &[&["App", "print", "text"]],
+                    ),
+                ],
+            )]),
+            &stubs(&[1]),
+        );
+
+        let ranks: Vec<String> = graph.cells.iter().map(|cell| cell.path.render()).collect();
+
+        assert_eq!(ranks, ["App.print.text", "App.a.b.c"]);
+        assert_eq!(graph.static_order, [CellIndex(1)]);
+    }
+
+    // Check 3a: every path is anchored at the module root (§15.4.1.1), so a
+    // scope of `module App` starts at the segment `App` — a foreign root is
+    // rejected, and so is a spelling that merely BEGINS with the module's name.
+    #[test]
+    fn rejects_an_unanchored_scope_path() {
+        for names in [&["Foo"][..], &["Foo", "App"][..], &["Application"][..]] {
+            let mut foreign = scope(names, Vec::new());
+            foreign.span = Span::new(30, 9);
+
+            let diagnostic = failure(&module(vec![foreign]), &stubs(&[]));
+
+            assert_eq!(diagnostic.class.id(), "unanchored_scope_path", "{names:?}");
+            assert_eq!(diagnostic.span, Some(Span::new(30, 9)), "{names:?}");
+            assert_eq!(
+                rendered_path(&diagnostic),
+                Some(path(names).render()),
+                "{names:?}"
+            );
+        }
+    }
+
+    // A cell needs no anchoring check of its own, and this is why: its scope is
+    // anchored and the cell extends its scope, so an unanchored CELL is
+    // unreachable — the only way to write one is under an unanchored scope,
+    // which check 3a rejects first, or under an anchored one, where check 5e
+    // rejects it.
+    #[test]
+    fn an_unanchored_cell_is_caught_by_its_scope_or_by_containment() {
+        let under_foreign = failure(
+            &module(vec![scope(
+                &["Foo"],
+                vec![input(
+                    &["Foo", "x"],
+                    Prim::I64,
+                    ValueLiteral::int("0".to_string()),
+                )],
+            )]),
+            &stubs(&[]),
+        );
+
+        assert_eq!(under_foreign.class.id(), "unanchored_scope_path");
+        assert_eq!(rendered_path(&under_foreign).as_deref(), Some("Foo"));
+
+        let under_anchored = failure(
+            &module(vec![scope(
+                &["App"],
+                vec![input(
+                    &["Foo", "x"],
+                    Prim::I64,
+                    ValueLiteral::int("0".to_string()),
+                )],
+            )]),
+            &stubs(&[]),
+        );
+
+        assert_eq!(under_anchored.class.id(), "cell_outside_scope");
+        assert_eq!(rendered_path(&under_anchored).as_deref(), Some("Foo.x"));
+    }
+
+    // Check 6: an input path no cell declares. The diagnostic carries THE
     // MISSING path — the thing the author must fix — with the reading cell's
     // span.
     #[test]
@@ -1382,7 +1747,7 @@ mod tests {
         assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.ghost"));
     }
 
-    // Check 6 (D5): the module's behavior table is empty throughout M0, so the
+    // Check 7 (D5): the module's behavior table is empty throughout M0, so the
     // provider registry is the whole answer — a handle it does not know is
     // unresolvable, and a handle it does know resolves.
     #[test]
@@ -1408,7 +1773,7 @@ mod tests {
     #[test]
     fn the_file_order_first_error_wins() {
         let bad_init = input(&["App", "x"], Prim::I64, ValueLiteral::True);
-        let bad_kind = cell(CellKind::Fold, &["App", "f"], Prim::I64);
+        let bad_kind = cell(CellKind::Fold, &["App", "panel", "f"], Prim::I64);
 
         let diagnostic = failure(
             &module(vec![
@@ -1439,7 +1804,7 @@ mod tests {
         assert_eq!(rendered_path(&diagnostic).as_deref(), Some("App.r"));
     }
 
-    // Check 5 before check 6, both full rank-order loops: a LATER derived's
+    // Check 6 before check 7, both full rank-order loops: a LATER derived's
     // unknown input beats an EARLIER derived's unresolvable handle.
     #[test]
     fn an_unknown_input_wins_over_an_earlier_unresolvable_behavior() {
@@ -1479,7 +1844,7 @@ mod tests {
         diagnostic
     }
 
-    // Check 4f, the refusing rows: STRICT by lexeme family (R57) — no family
+    // Check 5h, the refusing rows: STRICT by lexeme family (R57) — no family
     // converts under a type its lexeme does not name, one witness per family.
     #[test]
     fn rejects_every_cross_family_init() {
@@ -1608,7 +1973,7 @@ mod tests {
         assert!(init_of(&graph, &["App", "b"]).bits_eq(&Value::F32(f32::INFINITY)));
     }
 
-    // Check 7: a two-cycle. The diagnostic points at the cycle's rank-least
+    // Check 8: a two-cycle. The diagnostic points at the cycle's rank-least
     // member — path and span — and the message names the members (R21), which
     // is the one place tests read a message: the member list IS the contract
     // there, not wording.
@@ -1740,5 +2105,36 @@ mod tests {
             rendered_path(&diagnostic).as_deref(),
             Some("App.rows.'42'.value")
         );
+    }
+
+    // The hierarchy law through the whole pipeline, rejecting half: `scope Foo`
+    // inside `module App` is grammatical (F4) and unanchored, so the text lexes
+    // and parses and the LOADER is what refuses it.
+    #[test]
+    fn rejects_an_unanchored_scope_end_to_end() {
+        let source = "module App {\n  types {}\n  graph {\n    scope Foo exposes [] effects [] {\n      input Foo.x : i64 init 0\n    }\n  }\n  behaviors {}\n}\n";
+        let tokens = ductus_ir::text::lexer::lex(source).expect("the source lexes");
+        let parsed = ductus_ir::text::parser::parse(tokens).expect("the source parses");
+        let diagnostic = failure(&parsed, &stubs(&[]));
+
+        assert_eq!(diagnostic.class.id(), "unanchored_scope_path");
+        assert_eq!(rendered_path(&diagnostic).as_deref(), Some("Foo"));
+    }
+
+    // And the accepting half: a cell two segments below its scope, with no
+    // scope declared for the segment in between, loads from text — depth is
+    // free, only the prefix is law.
+    #[test]
+    fn loads_a_deeply_contained_cell_end_to_end() {
+        let source = "module App {\n  types {}\n  graph {\n    scope App exposes [] effects [] {\n      input App.print.text : i64 init 3\n      derived App.print.shown : i64 uses B@d1 inputs [App.print.text]\n    }\n  }\n  behaviors {}\n}\n";
+        let tokens = ductus_ir::text::lexer::lex(source).expect("the source lexes");
+        let parsed = ductus_ir::text::parser::parse(tokens).expect("the source parses");
+        let graph = loaded(&parsed, &stubs(&[0xd1]));
+
+        let ranks: Vec<String> = graph.cells.iter().map(|cell| cell.path.render()).collect();
+
+        assert_eq!(ranks, ["App.print.text", "App.print.shown"]);
+        assert!(init_of(&graph, &["App", "print", "text"]).bits_eq(&Value::I64(3)));
+        assert_eq!(graph.static_order, [CellIndex(1)]);
     }
 }

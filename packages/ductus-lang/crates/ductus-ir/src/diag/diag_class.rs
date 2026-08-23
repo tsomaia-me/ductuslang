@@ -92,6 +92,38 @@ pub enum DiagClass {
     /// this is that conversion's failure. The write-time sibling is
     /// `type_mismatched_write`.
     TypeMismatchedInit,
+    /// Two scope entries declare one path.
+    ///
+    /// ILL-FORMED IR: a conforming compiler cannot produce it, because a scope
+    /// is one region of the tree and the graph section names it once. The
+    /// SECOND declaration is the one rejected — the first stands, the repeat
+    /// is the error. The cell-side sibling is `duplicate_cell_path`.
+    DuplicateScopePath,
+    /// A cell's path does not extend its enclosing scope's path as a proper
+    /// prefix.
+    ///
+    /// The block structure and the paths carry ONE hierarchy, not two: a cell
+    /// written inside `scope App.panel` lives at `App.panel.…`, and a path that
+    /// wanders elsewhere would make the braces and the dots disagree about
+    /// where the cell is.
+    ///
+    /// Intermediate segments need no declared scope — depth is FREE, so
+    /// `scope App { input App.print.text }` is legal with no `App.print` scope
+    /// anywhere. Only the prefix is law.
+    CellOutsideScope,
+    /// A scope path's first segment is not the module's name.
+    ///
+    /// Every path in a module is anchored at the module root (§15.4.1.1), so
+    /// `module App` holds `App`, `App.panel`, `App.panel.row` — never `Foo`.
+    /// Cells inherit the anchor from their scope through `cell_outside_scope`
+    /// and need no check of their own.
+    UnanchoredScopePath,
+    /// One path names both a scope and a cell.
+    ///
+    /// Scope paths and cell paths share ONE identity namespace: a path is a
+    /// place in the tree, and it is either a region or a cell, never both. The
+    /// SECOND declaration is the one rejected, whichever kind it is.
+    ScopeCellCollision,
 }
 
 impl DiagClass {
@@ -119,6 +151,10 @@ impl DiagClass {
             DiagClass::ReservedWord => "reserved_word",
             DiagClass::DerivedCycle => "derived_cycle",
             DiagClass::TypeMismatchedInit => "type_mismatched_init",
+            DiagClass::DuplicateScopePath => "duplicate_scope_path",
+            DiagClass::CellOutsideScope => "cell_outside_scope",
+            DiagClass::UnanchoredScopePath => "unanchored_scope_path",
+            DiagClass::ScopeCellCollision => "scope_cell_collision",
         }
     }
 }
@@ -155,6 +191,10 @@ mod tests {
         assert_eq!(DiagClass::ReservedWord.id(), "reserved_word");
         assert_eq!(DiagClass::DerivedCycle.id(), "derived_cycle");
         assert_eq!(DiagClass::TypeMismatchedInit.id(), "type_mismatched_init");
+        assert_eq!(DiagClass::DuplicateScopePath.id(), "duplicate_scope_path");
+        assert_eq!(DiagClass::CellOutsideScope.id(), "cell_outside_scope");
+        assert_eq!(DiagClass::UnanchoredScopePath.id(), "unanchored_scope_path");
+        assert_eq!(DiagClass::ScopeCellCollision.id(), "scope_cell_collision");
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a
