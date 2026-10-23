@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2086
+set -euo pipefail
+# ensure strict mode
+
+count=${#items[@]} # length
+last=$# # arg count
+name="a # b" # trailing
+single='it # stays' # note
+word=a#b
+echo "$(printf '%s' "x") # not a comment"
+echo "$((1 << 2))" # shift
+for ((i = 0; i < ${#items[@]}; i++)); do # loop
+  echo "$i"
+done
+value=$(
+  # inside substitution
+  echo hi # also inside
+)
+cat <<EOF
+# heredoc body line
+echo "\$not code"
+EOF
+cat <<-'EOT' # trailing on the operator line
+	# tabbed body
+	EOT
+cat <<ONE; cat <<TWO # two heredocs on one line
+# first body
+ONE
+# second body
+TWO
+if true; then # branch
+  echo yes
+fi
+# shellcheck disable=SC2034
+unused=1

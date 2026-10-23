@@ -1,0 +1,20 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 1 -> 5
+eval App.step -> 6
+eval App.acc -> 7
+publish
+commit_end
+commit_begin
+dirty App.x 5 -> 2
+eval App.step -> 9
+eval App.acc -> 16
+publish
+commit_end
+commit_begin
+eval App.step -> 18
+eval App.acc -> 34
+publish
+commit_end

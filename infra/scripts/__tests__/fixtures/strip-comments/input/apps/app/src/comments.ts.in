@@ -1,0 +1,29 @@
+/**
+ * Adds one.
+ */
+export function addOne(value: number): number {
+  // the plain case
+  return value + 1; // trailing note
+}
+
+/* block before a statement */ export const two = addOne(1);
+
+export const three = addOne(2 /* inline */);
+
+export const parts = [
+  1, // first
+  2, // second
+];
+
+export const fn = (a: number) => {
+  // only a comment in the body
+};
+
+export const sum = 1 /* left */ + /* right */ 2;
+
+export type Shape = {
+  /** the width */
+  width: number; // px
+};
+
+// final note

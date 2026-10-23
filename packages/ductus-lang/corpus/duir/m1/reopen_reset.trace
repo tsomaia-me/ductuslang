@@ -1,0 +1,27 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 1 -> 2
+eval App.acc -> 3
+publish
+commit_end
+commit_begin
+dirty App.open true -> false
+publish
+commit_end
+commit_begin
+gate App.g close
+dirty App.x 2 -> 5
+publish
+commit_end
+commit_begin
+dirty App.open false -> true
+publish
+commit_end
+commit_begin
+gate App.g open
+dirty App.x 5 -> 9
+eval App.acc -> 9
+publish
+commit_end

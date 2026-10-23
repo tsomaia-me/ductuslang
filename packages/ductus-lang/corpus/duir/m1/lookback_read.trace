@@ -1,0 +1,31 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 5
+eval App.window -> 500
+publish
+commit_end
+commit_begin
+dirty App.x 5 -> 4
+eval App.window -> 450
+publish
+commit_end
+commit_begin
+dirty App.x 4 -> 3
+eval App.window -> 345
+publish
+commit_end
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 3 -> 2
+eval App.window -> 234
+publish
+commit_end
+commit_begin
+dirty App.x 2 -> 1
+eval App.window -> 123
+publish
+commit_end

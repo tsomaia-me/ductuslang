@@ -1,0 +1,8 @@
+{
+  // the worker's name
+  "name": "api",
+  "vars": { "URL": "https://x.y/z" }, /* a block note */
+  "routes": [
+    "a" // first
+  ]
+}

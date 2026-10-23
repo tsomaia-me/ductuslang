@@ -1,0 +1,7 @@
+{
+  "name": "api",
+  "vars": { "URL": "https://x.y/z" },
+  "routes": [
+    "a"
+  ]
+}

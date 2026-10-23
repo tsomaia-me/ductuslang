@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d878db723b9dcb61227bc0562b723bee8e2c54abe0e11e486d59a65be4f626dc # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Derived, gate: None }], gates: [], commits: [[]], emission: [1, 0] }
+cc 0e245fbdc36c09c1da65351af3503b716637af8239e52d3d6af7ae62906319d5 # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Derived, gate: Some(0) }], gates: [GateSpec { input: 0, parent: None, threshold: 0 }], commits: [[]], emission: [1, 2, 0] }
+cc c713a0dc00b7c134494d2522fc0f5044ba53d95ec6b3adfded714a9827c1275e # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Derived, gate: Some(0) }], gates: [GateSpec { input: 0, parent: None, threshold: 0 }], commits: [[]], emission: [1, 2, 0] }
+cc cf9e7cfd8e73fe624a9142f39969915b261a253e5da555e1cba7dd47c5c70800 # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Derived, gate: Some(0) }], gates: [GateSpec { input: 0, parent: None, threshold: 0 }], commits: [[]], emission: [1, 2, 0] }
+cc 78d5cb84a7af16da1f0d13e798d1c9b016c2dfec6f701db2aa4ec8486efface2 # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Derived, gate: Some(0) }], gates: [GateSpec { input: 0, parent: None, threshold: 0 }], commits: [[]], emission: [1, 2, 0] }
+cc d695e6b40f455c93af65115adb3f3f327d5c1e4907e7018bd7fe8934d901a326 # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Derived, gate: Some(0) }], gates: [GateSpec { input: 0, parent: None, threshold: 0 }, GateSpec { input: 0, parent: Some(0), threshold: 0 }], commits: [[]], emission: [1, 2, 3, 0] }
+cc ac2f5f8f20e970eef235b25dd0e47b608042aefa3231afbcd93435aaa18d0bfc # shrinks to plan = Plan { inputs: 1, computed: [Computed { deps: [0], kind: Recurrent { depth: 1, uniform: false, resets: false, lookback: [] }, gate: None }, Computed { deps: [1], kind: Derived, gate: None }], gates: [], commits: [[(0, 1)], []], emission: [1, 0, 2] }

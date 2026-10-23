@@ -1,0 +1,10 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.tick : i64 init 0
+      recurrent App.fib : i64 uses B@d1 inputs [App.tick] depth 2 fallbacks [1: 1, 2: 0]
+    }
+  }
+  behaviors {}
+}

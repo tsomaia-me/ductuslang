@@ -1,0 +1,21 @@
+export function addOne(value: number): number {
+  return value + 1;
+}
+
+export const two = addOne(1);
+
+export const three = addOne(2);
+
+export const parts = [
+  1,
+  2,
+];
+
+export const fn = (a: number) => {
+};
+
+export const sum = 1 + 2;
+
+export type Shape = {
+  width: number;
+};

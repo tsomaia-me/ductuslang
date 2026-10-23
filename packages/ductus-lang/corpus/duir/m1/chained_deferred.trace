@@ -1,0 +1,22 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 5
+publish
+commit_end
+commit_begin
+dirty App.first 1 -> 6
+publish
+commit_end
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.second 2 -> 7
+eval App.out -> 8
+publish
+commit_end
+commit_begin
+publish
+commit_end

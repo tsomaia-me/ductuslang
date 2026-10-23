@@ -1,0 +1,24 @@
+#!/bin/sh
+file=${1##*/}
+prefix=${file#pre}
+escaped=\#not
+echo a;
+echo $'it\'s # still a string'
+case "$1" in
+  a#b) echo hash ;;
+  *) echo other ;;
+esac
+printf '%s\n' "${#file}"
+echo "line one \
+# not a comment, inside the string"
+echo `echo '#'`
+echo a\ #b
+echo next
+echo a\;#b
+echo a\|#b c
+echo a\	#b
+echo ${x:-a #b}
+echo $(( x << 2 ))
+(( y = x << 1 ))
+echo "$(echo " #x")"
+echo $$'a\'

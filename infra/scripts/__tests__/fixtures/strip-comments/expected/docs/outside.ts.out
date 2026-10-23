@@ -1,0 +1,2 @@
+// docs/ is not one of the default paths, so this stays
+export const outside = 1; // and this

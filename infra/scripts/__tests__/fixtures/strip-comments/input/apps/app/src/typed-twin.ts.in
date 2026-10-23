@@ -1,0 +1,5 @@
+/**
+ * @param {string} a
+ * @returns {string}
+ */
+export const echo = (a: string): string => a;

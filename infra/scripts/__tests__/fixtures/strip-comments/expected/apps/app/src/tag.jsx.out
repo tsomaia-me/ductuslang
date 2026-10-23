@@ -1,0 +1,5 @@
+export const Tag = () => (
+  <b>
+    <i>// text</i>
+  </b>
+);

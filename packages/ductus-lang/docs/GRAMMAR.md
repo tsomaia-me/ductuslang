@@ -2951,8 +2951,9 @@ PastCall          ::= '.' 'past' '(' Expr ',' Expr ')'         // k, fallback
 //  reactive values are rejected. This is a post-parse semantic
 //  check, not a grammar restriction; the grammar admits any `Expr`.
 // **`fallback` is an expression of the accessed cell's value type
-//  (per §13.2.4.3).** Returned when fewer than `k` commits have
-//  happened. Post-parse type check.
+//  (per §13.2.4.3).** Returned while the read's history ring has
+//  advanced fewer than `k` times — the reading recurrent's own
+//  advances, not elapsed commits. Post-parse type check.
 // **Each call is independent (per §13.2.4.3).** Multiple calls on
 //  the same cell with different fallbacks are independent; each
 //  returns its own fallback when no history exists. The grammar does
@@ -4303,8 +4304,11 @@ StreamDecl        ::= 'stream' ( 'ring' | 'gate' ) ( '[' ConstGenericArg ']' )?
 // **`deferred[N]` latency depth (per §13.2.12, 016-296/016-297).** The
 //  optional `DeferredDepth` bracket carries the publication latency in
 //  commits: a run dispatched at one commit publishes at exactly `N`
-//  commits later. Bare `deferred` ≡ `deferred[1]`; `deferred[0]`
-//  degenerates to `derived T`. The bracket mirrors `RecurrentDepth`
+//  commits later. Bare `deferred` ≡ `deferred[1]`; `deferred[0]` is
+//  never written — the in-commit rung of the kind ladder is spelled
+//  `derived T`, and a written `[0]` (like a `recurrent[0]`) is
+//  rejected at load under `invalid_history_depth` (016-301).
+//  The bracket mirrors `RecurrentDepth`
 //  in shape; the two depths differ in meaning — memory depth versus
 //  latency depth (016-297). `deferred` composes with no other kind:
 //  there is no `deferred stream` and no deferred-recurrent compound

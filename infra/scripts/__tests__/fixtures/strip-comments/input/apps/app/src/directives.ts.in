@@ -1,0 +1,24 @@
+/// <reference types="vite/client" />
+/// <reference path="./globals.d.ts" />
+// @ts-nocheck
+/* eslint-disable no-console */
+// oxlint-disable no-unused-vars
+// @vitest-environment jsdom
+// prettier-ignore
+export const matrix = [1, 0, 0, 1];
+
+// a note that goes
+// @ts-expect-error -- the library types lag
+export const a: number = 'x';
+
+export const b: number = 'y'; // @ts-ignore
+// eslint-disable-next-line no-console
+console.log(a, b); // eslint-disable-line no-console
+// oxlint-disable-next-line no-console
+console.log(b);
+/* istanbul ignore next */
+export function uncovered() {
+  return 1; // a trailing note
+}
+/* eslint-enable no-console */
+// oxlint-enable no-unused-vars

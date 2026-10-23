@@ -1,0 +1,2 @@
+// listed in .strip-comments-ignore, so this stays
+export const kept = 1; // and this

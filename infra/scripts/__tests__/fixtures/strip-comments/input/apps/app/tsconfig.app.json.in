@@ -1,0 +1,12 @@
+// Project settings.
+{
+  // base
+  "extends": "../../tsconfig.base.json", // inherited
+  "compilerOptions": {
+    /* strict flags */
+    "strict": true, /* on */
+    "paths": { "@/*": ["./src/*"] },
+    "baseUrl": "http://x.y//z" // base
+  },
+  "include": ["src"] // sources
+}

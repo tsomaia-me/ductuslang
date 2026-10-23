@@ -1,0 +1,8 @@
+#!/usr/bin/env -S yq -P
+# a note
+a: 1 # one
+list:
+  - b # two
+
+  # before the last
+  - c

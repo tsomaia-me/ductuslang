@@ -4,17 +4,17 @@
 use std::fmt::{Arguments, Write};
 
 use crate::graph::{
-    Binding, BindingTarget, Cell, Effect, Entry, Gate, LookbackEntry, Member, ReopenPair, Scope,
-    Stream, ValueLiteral, Wire, WireTo,
+    Binding, BindingTarget, Cell, CellKind, Effect, Entry, FallbackEntry, Gate, LookbackEntry,
+    Member, ReopenPair, Scope, Stream, ValueLiteral, Wire, WireTo,
 };
 use crate::module::{GraphSection, Module, TypesSection};
 use crate::path::CellPath;
 use crate::text::keywords::{
     ALIGN, ATTRS, BEHAVIORS, CAPACITY, CLOSURE, COMBINER, DEPTH, DESIRED, EFFECT, EFFECTS, ELSE,
-    ENUM, EXPOSES, FALSE, FROM, GATE, GATE_PARENT, GRAPH, GUARDS, HANDLE, HISTORY, INF, INIT,
-    INPUTS, LOOKBACK, MEMBERS, MODULE, NAN, NULL, OBSERVED, OBSERVES, PARAMS, POLICY, POOL_INDEX,
-    PORTAL, PRED, RECONCILER, RECORD, RESET_ON_RELOAD, RESET_ON_REOPEN, SCOPE, SIZE, SOURCE_DEPS,
-    STREAM, TO, TRUE, TUPLE, TYPE, TYPES, USES, WIRE, YIELDED,
+    ENUM, EXPOSES, FALLBACKS, FALSE, FROM, GATE, GATE_PARENT, GRAPH, GUARDS, HANDLE, HISTORY, INF,
+    INIT, INPUTS, LOOKBACK, MEMBERS, MODULE, NAN, NULL, OBSERVED, OBSERVES, PARAMS, POLICY,
+    POOL_INDEX, PORTAL, PRED, RECONCILER, RECORD, RESET_ON_RELOAD, RESET_ON_REOPEN, SCOPE, SIZE,
+    SOURCE_DEPS, STREAM, TO, TRUE, TUPLE, TYPE, TYPES, USES, WIRE, YIELDED,
 };
 use crate::text::{is_name_shaped, is_reserved_word, quote};
 use crate::types::{Field, Layout, TypeDef, TypeTag, Variant};
@@ -27,8 +27,8 @@ const INDENT: &str = "  ";
 const SEPARATOR: &str = ", ";
 
 /// The one PAIR separator: colon, space. A `field`, a `binding`, a `member`, a
-/// `reopen_set` pair and a `lookback_map` entry all join their two halves with
-/// it.
+/// `reopen_set` pair, a `lookback_map` entry and a `fallback_map` entry all
+/// join their two halves with it.
 ///
 /// A `cell`'s and a `stream`'s `PATH ':' type_tag` is NOT one of these: it is
 /// spaced on both sides (`input App.count : i32`), which is what tells a
@@ -38,6 +38,14 @@ const PAIR: &str = ": ";
 /// The `BID` prefix (§2), case-sensitive. Not a keyword — the keyword table
 /// holds word-shaped spellings only — so it is written here, once.
 const BID_PREFIX: &str = "B@";
+
+/// What an omitted `depth` means on a recurrent: one slot (C-7, 016-48).
+///
+/// The emitter needs it for one reason only — 033-268 picks `init` over
+/// `fallbacks` when the map seeds EVERY depth, and "every depth" of a cell that
+/// wrote no `depth` clause is this number. It decides a SPELLING here and
+/// nothing else; the loader applies the same default to decide the ring.
+const DEFAULT_DEPTH: u64 = 1;
 
 /// Render `module` as canonical `.duir` text (IR_GRAMMAR §3, §15.4.6).
 ///
@@ -287,7 +295,9 @@ impl Emitter {
 
     // cell ::= cell_kind PATH ':' type_tag
     //          ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
-    //          ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+    //          ('lookback' lookback_map)?
+    //          ('reset_on_reopen')? ('init' value)?
+    //          ('fallbacks' fallback_map)? ('gate' PATH)?
     //          ('combiner' BID)? ('else' value)? ('members' member_set)?
     //
     // The clauses are written in the production's order, which is the order the
@@ -299,6 +309,21 @@ impl Emitter {
     // Which clauses a KIND admits is not the emitter's question either (F4,
     // R21): a hand-built `input` cell carrying a `combiner` renders it, and the
     // loader is what rejects the module.
+    //
+    // `init` VERSUS `fallbacks` is the one clause pair whose canonical SPELLING
+    // is a function of the cell's VALUES rather than of its shape alone. On a
+    // recurrent the two are one clause in two spellings — `init v` says every
+    // depth falls back to `v`, the map says them one by one — and 033-268 picks
+    // between them BY CONTENT: `init` when every depth shares one value,
+    // `fallbacks` otherwise. So a map that seeds every depth with one value is
+    // the NON-canonical spelling of `init v`, and it is written `init v` here,
+    // exactly as `inputs []` is written by being omitted.
+    //
+    // [`uniform_seed`] is that rule and nothing beyond it. Everything it
+    // declines renders as the AST holds it — both clauses at once, a map with a
+    // hole, a key out of range, `fallbacks` on a kind that admits none — because
+    // each of those means something the loader refuses (F4, R21), and an AST
+    // that means two things is not the emitter's to repair.
     fn cell(&mut self, cell: &Cell) {
         let out = &mut self.out;
 
@@ -310,8 +335,17 @@ impl Emitter {
         optional_bid(out, USES, cell.uses);
         optional_set(out, INPUTS, &cell.inputs, path_set);
         optional_int(out, DEPTH, cell.depth);
+        optional_set(out, LOOKBACK, &cell.lookback, lookback_map);
         flag(out, RESET_ON_REOPEN, cell.reset_on_reopen);
-        optional_value(out, INIT, cell.init.as_ref());
+
+        if let Some(seed) = uniform_seed(cell) {
+            clause(out, INIT);
+            value(out, seed);
+        } else {
+            optional_value(out, INIT, cell.init.as_ref());
+            optional_set(out, FALLBACKS, &cell.fallbacks, fallback_map);
+        }
+
         optional_path(out, GATE, cell.gate.as_ref());
         optional_bid(out, COMBINER, cell.combiner);
         optional_value(out, ELSE, cell.else_value.as_ref());
@@ -694,6 +728,90 @@ fn lookback_entry(out: &mut String, entry: &LookbackEntry) {
     let _ = write!(out, "{}", entry.k);
 }
 
+// fallback_map ::= '[' (INT ':' value (',' INT ':' value)*)? ']'
+fn fallback_map(out: &mut String, entries: &[FallbackEntry]) {
+    bracketed(out, entries, fallback_entry);
+}
+
+// `INT ':' value` — one `(depth : fallback)` pair, and the one pair production
+// with no colon question at all: the key is an INT, so `1: 0` has exactly one
+// colon and reads back the only way it can.
+fn fallback_entry(out: &mut String, entry: &FallbackEntry) {
+    let _ = write!(out, "{}", entry.k);
+    out.push_str(PAIR);
+    value(out, &entry.value);
+}
+
+// The value `init` spells for this cell, or `None` when `init` is not the
+// canonical spelling of what the cell holds — 033-268's by-content pick.
+//
+// It answers `Some` on exactly one shape: a RECURRENT carrying `fallbacks` and
+// no `init`, whose keys cover `1 ..= depth` once each, and whose values are all
+// one value. That is the map that MEANS `init v`, so `init v` is what it is
+// written as. Every other shape is `None` and renders unchanged — a non-recurrent
+// kind, both clauses at once, a hole, a duplicate or out-of-range key, or values
+// that differ — because each is either the general form or a module the loader
+// refuses, and neither is repaired here (F4, R21).
+//
+// Value equality is by CANONICAL TEXT, which is what `ValueLiteral` equality is
+// (R17's note): the literals were normalized where they were built (033-257), so
+// `[1: 007, 2: 7]` arrives here as two `7`s and folds, while `0.0` and `-0.0`
+// stay two values, exactly as their renderings say.
+fn uniform_seed(cell: &Cell) -> Option<&ValueLiteral> {
+    if cell.kind != CellKind::Recurrent || cell.init.is_some() || cell.fallbacks.is_empty() {
+        return None;
+    }
+
+    if !covers_each_depth(&cell.fallbacks, cell.depth.unwrap_or(DEFAULT_DEPTH)) {
+        return None;
+    }
+
+    let first = &cell.fallbacks[0].value;
+    let mut rendered = String::new();
+    let mut seed = String::new();
+
+    value(&mut seed, first);
+
+    for entry in &cell.fallbacks[1..] {
+        rendered.clear();
+        value(&mut rendered, &entry.value);
+
+        if rendered != seed {
+            return None;
+        }
+    }
+
+    Some(first)
+}
+
+// Whether `entries` seeds every depth of a `depth`-deep history exactly once —
+// the totality the loader demands (`missing_fallback_key`) and the emitter needs
+// before it may fold a map into `init`.
+//
+// The map's OWN length is tested first, so a `depth` of a billion with three
+// entries costs one comparison and no allocation.
+fn covers_each_depth(entries: &[FallbackEntry], depth: u64) -> bool {
+    if u64::try_from(entries.len()) != Ok(depth) {
+        return false;
+    }
+
+    let mut seeded = vec![false; entries.len()];
+
+    for entry in entries {
+        let Ok(k) = usize::try_from(entry.k) else {
+            return false;
+        };
+
+        if k < 1 || k > seeded.len() || seeded[k - 1] {
+            return false;
+        }
+
+        seeded[k - 1] = true;
+    }
+
+    true
+}
+
 // PATH ::= PathSegment ('.' PathSegment)*
 //
 // The rendering is `CellPath`'s own and is canonical there (R41): a key is
@@ -784,10 +902,10 @@ fn separated<T>(out: &mut String, items: &[T], render: impl Fn(&mut String, &T))
     }
 }
 
-// `'[' (element (',' element)*)? ']'` — the bracketed comma list that five
-// productions share: `path_set`, `binding_set`, `member_set`, `reopen_set` and
-// `lookback_map`. The brackets and the empty case are written once, exactly as
-// the parser reads them once.
+// `'[' (element (',' element)*)? ']'` — the bracketed comma list that six
+// productions share: `path_set`, `binding_set`, `member_set`, `reopen_set`,
+// `lookback_map` and `fallback_map`. The brackets and the empty case are
+// written once, exactly as the parser reads them once.
 fn bracketed<T>(out: &mut String, items: &[T], render: impl Fn(&mut String, &T)) {
     out.push('[');
     separated(out, items, render);
@@ -859,10 +977,10 @@ fn optional_value(out: &mut String, word: &str, literal: Option<&ValueLiteral>) 
     value(out, literal);
 }
 
-// ` word '[' … ']'`, or nothing — every OPTIONAL set clause: a cell's `inputs`
-// and `members`, a wire's `attrs`, an effect's `desired` and `observed`, a
-// stream's `source_deps`, `observes` and `lookback`, and a scope's
-// `reset_on_reopen`.
+// ` word '[' … ']'`, or nothing — every OPTIONAL set clause: a cell's `inputs`,
+// `lookback`, `fallbacks` and `members`, a wire's `attrs`, an effect's
+// `desired` and `observed`, a stream's `source_deps`, `observes` and
+// `lookback`, and a scope's `reset_on_reopen`.
 //
 // Empty means ABSENT for all of them, so an empty set writes nothing at all —
 // which is how `inputs []` canonicalizes to omission. The MANDATORY sets — a
@@ -913,10 +1031,10 @@ mod tests {
 }
 ";
 
-    // A copy of the graph lines the three `corpus/duir/m0` witnesses pin —
-    // `scopes`, `cells` and `graph_entries` — packed into one module, so the
-    // canon this file pins and the canon the corpus pins are the same text.
-    // The FILES are the authority, as with `WITNESS` above.
+    // A copy of the graph lines the four `corpus/duir/m0` witnesses pin —
+    // `scopes`, `cells`, `graph_entries` and `recurrent_clauses` — packed into
+    // one module, so the canon this file pins and the canon the corpus pins are
+    // the same text. The FILES are the authority, as with `WITNESS` above.
     const GRAPH_WITNESS: &str = "module App {
   types {}
   graph {
@@ -925,6 +1043,9 @@ mod tests {
       input App.label : str init \"say \\\"hi\\\"\"
       derived App.doubled : i32 uses B@d1 inputs [App.count]
       recurrent App.total : i32 uses B@d2 inputs [App.count] depth 1 reset_on_reopen init 0
+      recurrent App.fib : i64 uses B@d8 depth 2 fallbacks [1: 1, 2: 0]
+      recurrent App.avg : f64 uses B@d7 inputs [App.x] depth 2 lookback [App.x: 3] reset_on_reopen fallbacks [1: 0.0, 2: -1.5] gate App.g0
+      recurrent App.blend : f64 uses B@d9 inputs [App.print:0] depth 1 lookback [App.print:0: 2, App.x: 1] init nan
       fold App.sum : i32 gate App.g0 combiner B@aa10 else -1 members [App.a: permanent, App.rows.'42'.render_row: keyed_template, App.rows.'it\\'s'.render_row: keyed_template, App.rows.'null'.render_row: keyed_template, App.c: gate_guarded]
       gate App.g0 pred B@d4 inputs [App.show] guards [App.print:0] gate_parent App.g1
       wire App.w0 from App.a to null type i32 attrs [k: 1@bridge, m: App.label@bound] gate App.g0
@@ -1035,8 +1156,10 @@ mod tests {
             uses: None,
             inputs: Vec::new(),
             depth: None,
+            lookback: Vec::new(),
             reset_on_reopen: false,
             init: None,
+            fallbacks: Vec::new(),
             gate: None,
             combiner: None,
             else_value: None,
@@ -1245,6 +1368,11 @@ mod tests {
 
     // Every clause the `cell` production admits, in the production's order —
     // the same line `parse`'s clause test reads, asserted from the other side.
+    //
+    // The line is deliberately ILLEGAL as a program: a `fold` carrying `depth`
+    // and history clauses, and `init` standing beside `fallbacks`. Both are the
+    // loader's to reject (F4, R21, 033-268), and rendering them is how the
+    // emitter shows it canonicalizes spellings rather than repairing meaning.
     #[test]
     fn a_cell_renders_every_clause_in_the_productions_order() {
         let cell = Cell {
@@ -1255,8 +1383,22 @@ mod tests {
             uses: Some(0xd1),
             inputs: vec![cell_path(&["App", "a"]), cell_path(&["App", "b"])],
             depth: Some(2),
+            lookback: vec![LookbackEntry {
+                cell: cell_path(&["App", "a"]),
+                k: 3,
+            }],
             reset_on_reopen: true,
             init: Some(ValueLiteral::int("0".to_string())),
+            fallbacks: vec![
+                FallbackEntry {
+                    k: 1,
+                    value: ValueLiteral::int("1".to_string()),
+                },
+                FallbackEntry {
+                    k: 2,
+                    value: ValueLiteral::int("0".to_string()),
+                },
+            ],
             gate: Some(cell_path(&["App", "g0"])),
             combiner: Some(2),
             else_value: Some(ValueLiteral::int("-1".to_string())),
@@ -1276,7 +1418,8 @@ mod tests {
             entry_line(&Entry::Cell(cell)),
             concat!(
                 "fold App.total : i32 uses B@d1 inputs [App.a, App.b] depth 2 ",
-                "reset_on_reopen init 0 gate App.g0 combiner B@2 else -1 ",
+                "lookback [App.a: 3] reset_on_reopen init 0 fallbacks [1: 1, 2: 0] ",
+                "gate App.g0 combiner B@2 else -1 ",
                 "members [App.a: permanent, App.b: gate_guarded]"
             )
         );
@@ -1659,6 +1802,36 @@ mod tests {
         assert_eq!(emit(&module), source);
     }
 
+    // The two history clauses, through the same two rounds — the one place a
+    // cell's clause list gained a SET whose elements are pairs.
+    //
+    // R43 shows up here too, because `lookback` on a cell is the same
+    // production it is on a stream: `App.print:0: 2` keeps its ordinal and
+    // `App.x: 1` gives its trailing `:1` up as the value.
+    #[test]
+    fn a_cell_carrying_both_history_clauses_round_trips() {
+        let source = with_entry(concat!(
+            "recurrent App.avg : f64 uses B@d7 inputs [App.x] depth 2 ",
+            "lookback [App.print:0: 2, App.x: 1] reset_on_reopen ",
+            "fallbacks [1: 0.0, 2: -1.5]"
+        ));
+        let module = parsed(&source);
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        assert_eq!(cell.depth, Some(2));
+        assert_eq!(cell.lookback[0].cell.render(), "App.print:0");
+        assert_eq!(cell.lookback[0].k, 2);
+        assert_eq!(cell.lookback[1].cell.render(), "App.x");
+        assert_eq!(cell.lookback[1].k, 1);
+        assert_eq!(cell.fallbacks.len(), 2);
+        assert_eq!(cell.fallbacks[0].k, 1);
+        assert_eq!(cell.fallbacks[1].k, 2);
+        assert_eq!(emit(&module), source);
+    }
+
     // The MANDATORY positions at their smallest: a handle of zero, two empty
     // sets that are still written `[]`, and the empty reconciler name — every
     // one of them a spelling that exists only because the grammar requires the
@@ -1698,14 +1871,15 @@ mod tests {
 
     // The same claim over a graph line, where there is more to normalize: the
     // §5 column alignment, an uppercase leading-zero handle, a leading-zero
-    // depth, a trailing-zero float, and two OPTIONAL sets written `[]` — all
+    // depth, a trailing-zero float, and four OPTIONAL sets written `[]` — all
     // of them legal, none of them what the emitter writes.
     #[test]
     fn a_non_canonical_graph_source_normalizes() {
         let source = concat!(
             "module App { types {} graph { ",
             "scope App  exposes []  effects []  reset_on_reopen [] { ",
-            "recurrent   App.total : i32  uses B@00D1  inputs []  depth 007  init 0.50  members [] ",
+            "recurrent   App.total : i32  uses B@00D1  inputs []  depth 007  lookback [] ",
+            " init 0.50  fallbacks []  members [] ",
             "} } behaviors {} }"
         );
 
@@ -1723,6 +1897,98 @@ mod tests {
                 "}\n"
             )
         );
+    }
+
+    // A `fallback_map` entry's two halves normalize the two DIFFERENT ways, and
+    // one line shows both: the key is structural, so `003` is converted and
+    // written back as the number three (R57), while the value is typed, stays
+    // text, and is normalized TEXTUALLY where the literal is built (033-257) —
+    // `007` to `7`, `-1.50` to `-1.5`, `00.0` to `0.0`.
+    #[test]
+    fn a_fallback_entrys_two_halves_normalize_by_their_own_rules() {
+        let source = concat!(
+            "module App { types {} graph { scope App exposes [] effects [] { ",
+            "recurrent App.fib : f64 uses B@d8 depth 3 fallbacks [1: 007, 2: -1.50, 003: 00.0] ",
+            "} } behaviors {} }"
+        );
+
+        assert_eq!(
+            emit(&parsed(source)),
+            concat!(
+                "module App {\n",
+                "  types {}\n",
+                "  graph {\n",
+                "    scope App exposes [] effects [] {\n",
+                "      recurrent App.fib : f64 uses B@d8 depth 3 fallbacks [1: 7, 2: -1.5, 3: 0.0]\n",
+                "    }\n",
+                "  }\n",
+                "  behaviors {}\n",
+                "}\n"
+            )
+        );
+    }
+
+    // 033-268's by-content pick, which is the ONE canonicalization that reads a
+    // cell's VALUES rather than its shape: a `fallbacks` map that seeds every
+    // depth with one value MEANS `init v`, so `init v` is what it is written as.
+    // M1.md §6.1's witness 11, third clause.
+    #[test]
+    fn an_equal_valued_fallback_map_canonicalizes_to_init() {
+        let source = with_entry(
+            "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 2 fallbacks [1: 5, 2: 5]",
+        );
+        let canonical = with_entry("recurrent App.r : i64 uses B@d1 inputs [App.x] depth 2 init 5");
+
+        assert_eq!(emit(&parsed(&source)), canonical);
+        // And it is a FIXPOINT: `init 5` re-parses to the same meaning and comes
+        // back out unchanged, so one meaning keeps exactly one spelling.
+        assert_eq!(emit(&parsed(&canonical)), canonical);
+
+        // An omitted `depth` is one slot (C-7), so a one-key map covers the whole
+        // ring and folds exactly as the two-key one does.
+        assert_eq!(
+            emit(&parsed(&with_entry(
+                "recurrent App.r : i64 uses B@d1 inputs [App.x] fallbacks [1: 5]"
+            ))),
+            with_entry("recurrent App.r : i64 uses B@d1 inputs [App.x] init 5")
+        );
+
+        // The literals are already textually canonical when they arrive
+        // (033-257), so two spellings of one number are one value here.
+        assert_eq!(
+            emit(&parsed(&with_entry(
+                "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 2 fallbacks [1: 007, 2: 7]"
+            ))),
+            with_entry("recurrent App.r : i64 uses B@d1 inputs [App.x] depth 2 init 7")
+        );
+    }
+
+    // The other side: every shape that is NOT one uniform seed renders exactly
+    // as written. The general form is canonical when the values differ, and an
+    // ill-formed map is the loader's to refuse — the emitter repairs nothing
+    // (F4, R21).
+    #[test]
+    fn a_fallback_map_that_is_not_one_uniform_seed_renders_unchanged() {
+        for line in [
+            // The values differ: the general form IS the canonical spelling.
+            "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 2 fallbacks [1: 5, 2: 6]",
+            // A hole — `missing_fallback_key` at load, and `init 5` would be a
+            // different program.
+            "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 3 fallbacks [1: 5, 2: 5]",
+            // A key outside the ring: `invalid_history_depth` at load.
+            "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 1 fallbacks [2: 5]",
+            // One depth seeded twice: `duplicate_fallback_key` at load.
+            "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 2 fallbacks [1: 5, 1: 5]",
+            // Not a recurrent — `fallbacks` names no history on any other kind.
+            "input App.q : i64 fallbacks [1: 5]",
+            // Both clauses: one meaning spelled twice, which is a LOAD error
+            // (033-268) and therefore not a spelling to canonicalize.
+            "recurrent App.r : i64 uses B@d1 inputs [App.x] depth 1 init 5 fallbacks [1: 5]",
+        ] {
+            let source = with_entry(line);
+
+            assert_eq!(emit(&parsed(&source)), source, "{line}");
+        }
     }
 
     // Fixpoint: emitting a parsed module, then parsing and emitting THAT, is

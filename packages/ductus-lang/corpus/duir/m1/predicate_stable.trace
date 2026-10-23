@@ -1,0 +1,18 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.level 5 -> 7
+publish
+commit_end
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.level 7 -> -1
+publish
+commit_end
+commit_begin
+gate App.g close
+publish
+commit_end

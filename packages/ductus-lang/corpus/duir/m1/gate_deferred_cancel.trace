@@ -1,0 +1,30 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 1 -> 5
+publish
+commit_end
+commit_begin
+dirty App.open true -> false
+publish
+commit_end
+commit_begin
+gate App.g close
+publish
+commit_end
+commit_begin
+dirty App.open false -> true
+publish
+commit_end
+commit_begin
+gate App.g open
+publish
+commit_end
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.echo 1 -> 5
+publish
+commit_end

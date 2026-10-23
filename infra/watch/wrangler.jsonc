@@ -1,0 +1,26 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "cd-watch",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-09-25",
+  "compatibility_flags": ["no_nodejs_compat", "no_nodejs_compat_v2"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
+  "kv_namespaces": [
+    {
+      "binding": "WATCH",
+      "id": "REPLACE_WITH_THE_KV_NAMESPACE_ID",
+    },
+  ],
+  "vars": {
+    "API_HEALTH_URL": "https://api.crookedduke.com/api/v1/health",
+    "WEB_BUILD_URL": "https://crookedduke.com/build.json",
+    "LINEAR_TEAM": "CD",
+  },
+  "observability": {
+    "enabled": true,
+  },
+}

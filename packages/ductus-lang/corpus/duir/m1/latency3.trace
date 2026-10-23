@@ -1,0 +1,17 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 9
+publish
+commit_end
+commit_begin
+publish
+commit_end
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.slow 1 -> 10
+publish
+commit_end

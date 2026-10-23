@@ -20,10 +20,12 @@
 
 pub mod add1_i64;
 pub mod double_i32;
+pub mod registry_of;
 pub mod stub_registry;
 pub mod sum_i64;
 
 pub use self::add1_i64::add1_i64;
 pub use self::double_i32::double_i32;
+pub use self::registry_of::registry_of;
 pub use self::stub_registry::StubRegistry;
 pub use self::sum_i64::sum_i64;

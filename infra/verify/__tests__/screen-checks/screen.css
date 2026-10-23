@@ -1,0 +1,40 @@
+body {
+  font: 14px sans-serif;
+  margin: 8px;
+}
+
+.cut {
+  width: 80px;
+  margin: 0 0 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restless {
+  animation: restless 0.2s linear infinite alternate;
+}
+
+@keyframes restless {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(2px);
+  }
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: #0008;
+}
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: #222;
+  color: #fff;
+}

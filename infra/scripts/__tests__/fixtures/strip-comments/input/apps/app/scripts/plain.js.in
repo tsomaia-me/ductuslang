@@ -1,0 +1,3 @@
+// config
+const path = require('node:path');
+module.exports = path.join('a', 'b'); // joined

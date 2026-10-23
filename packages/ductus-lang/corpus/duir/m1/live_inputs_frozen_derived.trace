@@ -1,0 +1,11 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 2 -> 5
+publish
+commit_end
+commit_begin
+dirty App.x 5 -> 7
+publish
+commit_end

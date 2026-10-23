@@ -1,0 +1,14 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.b 0 -> 7
+dirty App.k 0 -> 3
+publish
+commit_end
+commit_begin
+dirty App.a 0 -> 5
+gate App.g open
+dirty App.f 1 -> 8
+publish
+commit_end

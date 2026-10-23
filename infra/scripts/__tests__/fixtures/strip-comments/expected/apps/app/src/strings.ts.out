@@ -1,0 +1,8 @@
+export const url = 'https://x.y/z';
+export const doubleQuoted = "see // not a comment and /* nor this */";
+export const pattern = /a\/*b/g;
+export const klass = /[/*]x/;
+export const template = `path // still text ${1 + 1} /* also text */`;
+export const nested = `outer ${`inner // text`} ${2}`;
+export const ratio = 10 / 2 / 5;
+export const html = '<a href="//cdn.x.y/a.js">';

@@ -1,0 +1,2 @@
+/* settings */
+module.exports = { a: 1 /* one */, b: '//' }; // exported

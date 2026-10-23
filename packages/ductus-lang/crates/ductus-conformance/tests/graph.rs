@@ -37,6 +37,13 @@ const GRAPH_ENTRIES: &str = concat!(
     "/../../corpus/duir/m0/graph_entries.duir"
 );
 
+/// Resolved against the CRATE MANIFEST, never the process cwd
+/// (corpus/README.md).
+const RECURRENT_CLAUSES: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/duir/m0/recurrent_clauses.duir"
+);
+
 /// Scopes: flat under the section, nesting carried by their PATHs.
 ///
 /// `App`, `App.mixer` and `App.panel` are three siblings here and a tree by
@@ -77,6 +84,26 @@ fn cells() {
 #[test]
 fn graph_entries() {
     round_trips(GRAPH_ENTRIES);
+}
+
+/// The two history clauses a `recurrent` cell carries — `lookback` and
+/// `fallbacks` (033-266 / 033-267).
+///
+/// `App.total` is the corpus accumulator; `App.fib` is the two-slot recurrence
+/// with a distinct seed per slot, and carries NO `inputs` — the empty set is
+/// the clause's absence, so `inputs []` is a spelling this file may not use.
+/// `App.avg` reads three commits back into one input while keeping its own
+/// depth 2, and shows the two clauses standing on the same line either side of
+/// `reset_on_reopen`. `App.blend` is the ordinal-bearing lookback key — the
+/// shape R43's last-`':' INT` rule exists for — beside `init nan`, which is
+/// the uniform spelling of `fallbacks` (033-268).
+///
+/// It is a GRAMMAR witness: the behaviors it names and the gate it points at
+/// are undeclared, and the file's only claim is that the text form reads and
+/// writes back.
+#[test]
+fn recurrent_clauses() {
+    round_trips(RECURRENT_CLAUSES);
 }
 
 /// The witness assertion: the file lexes, parses, and emits back to its own

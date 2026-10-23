@@ -1,0 +1,37 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.outer_open true -> false
+publish
+commit_end
+commit_begin
+gate App.outer close
+gate App.inner close
+publish
+commit_end
+commit_begin
+dirty App.x 2 -> 5
+publish
+commit_end
+commit_begin
+dirty App.inner_open true -> false
+publish
+commit_end
+commit_begin
+dirty App.outer_open false -> true
+publish
+commit_end
+commit_begin
+gate App.outer open
+publish
+commit_end
+commit_begin
+dirty App.inner_open false -> true
+publish
+commit_end
+commit_begin
+gate App.inner open
+eval App.deep -> 6
+publish
+commit_end

@@ -5,18 +5,19 @@ use std::mem;
 
 use crate::diag::{DiagClass, Diagnostic, Span};
 use crate::graph::{
-    Binding, BindingTarget, Cell, CellKind, Effect, Entry, Gate, LookbackEntry, Member,
-    MemberDriver, Provenance, ReopenPair, Scope, Stream, StreamPolicy, ValueLiteral, Wire, WireTo,
+    Binding, BindingTarget, Cell, CellKind, Effect, Entry, FallbackEntry, Gate, LookbackEntry,
+    Member, MemberDriver, Provenance, ReopenPair, Scope, Stream, StreamPolicy, ValueLiteral, Wire,
+    WireTo,
 };
 use crate::module::{BehaviorsSection, GraphSection, Module, TypesSection};
 use crate::path::{CellPath, Segment};
 use crate::text::is_reserved_word;
 use crate::text::keywords::{
     ALIGN, ATTRS, BEHAVIORS, CAPACITY, CLOSURE, COMBINER, DEPTH, DESIRED, EFFECT, EFFECTS, ELSE,
-    ENUM, EXPOSES, FALSE, FROM, GATE, GATE_PARENT, GRAPH, GUARDS, HANDLE, HISTORY, INF, INIT,
-    INPUTS, LOOKBACK, MEMBERS, MODULE, NAN, NULL, OBSERVED, OBSERVES, PARAMS, POLICY, POOL_INDEX,
-    PORTAL, PRED, RECONCILER, RECORD, RESET_ON_RELOAD, RESET_ON_REOPEN, SCOPE, SIZE, SOURCE_DEPS,
-    STREAM, TO, TRUE, TUPLE, TYPE, TYPES, USES, WIRE, YIELDED,
+    ENUM, EXPOSES, FALLBACKS, FALSE, FROM, GATE, GATE_PARENT, GRAPH, GUARDS, HANDLE, HISTORY, INF,
+    INIT, INPUTS, LOOKBACK, MEMBERS, MODULE, NAN, NULL, OBSERVED, OBSERVES, PARAMS, POLICY,
+    POOL_INDEX, PORTAL, PRED, RECONCILER, RECORD, RESET_ON_RELOAD, RESET_ON_REOPEN, SCOPE, SIZE,
+    SOURCE_DEPS, STREAM, TO, TRUE, TUPLE, TYPE, TYPES, USES, WIRE, YIELDED,
 };
 use crate::text::token::{Token, TokenKind};
 use crate::types::{Field, Layout, Prim, TypeDef, TypeTag, Variant};
@@ -528,10 +529,12 @@ impl Parser {
 
     // cell ::= cell_kind PATH ':' type_tag
     //          ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
-    //          ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+    //          ('lookback' lookback_map)?
+    //          ('reset_on_reopen')? ('init' value)?
+    //          ('fallbacks' fallback_map)? ('gate' PATH)?
     //          ('combiner' BID)? ('else' value)? ('members' member_set)?
     //
-    // Nine optional clauses, each admitted AT MOST ONCE and only in the
+    // Eleven optional clauses, each admitted AT MOST ONCE and only in the
     // production's order — which is what reading them SEQUENTIALLY means: a
     // clause written out of order, or twice, does not match at its turn, so the
     // entry ends before it and the terminator rejects it as a second entry on
@@ -540,8 +543,11 @@ impl Parser {
     //
     // Which clauses a KIND admits is not checked here (F4, R21): `input App.x :
     // i32 combiner B@1` parses, and the loader rejects it under the kind's
-    // rules. `depth` is structural and converts now (R57); `init` and `else`
-    // are typed and stay text.
+    // rules. So does `init` TOGETHER WITH `fallbacks` on a recurrent — one
+    // clause in two spellings, and carrying both is a load error (033-268), not
+    // a grammar failure. `depth` and every `lookback` / `fallbacks` KEY are
+    // structural and convert now (R57); `init`, `else` and every `fallbacks`
+    // VALUE are typed and stay text.
     fn cell(&mut self) -> Result<Cell, Diagnostic> {
         let (kind, start) = self.cell_kind()?;
         let path = self.path()?;
@@ -552,17 +558,14 @@ impl Parser {
         let uses = self.optional_bid(USES)?;
         let inputs = self.optional_path_set(INPUTS)?;
         let depth = self.optional_structural_int(DEPTH, "a depth")?;
+        let lookback = self.optional_list(LOOKBACK, Parser::lookback_map)?;
         let reset_on_reopen = self.flag(RESET_ON_REOPEN);
         let init = self.optional_value(INIT)?;
+        let fallbacks = self.optional_list(FALLBACKS, Parser::fallback_map)?;
         let gate = self.optional_path(GATE)?;
         let combiner = self.optional_bid(COMBINER)?;
         let else_value = self.optional_value(ELSE)?;
-        let mut members = Vec::new();
-
-        if self.at_word(MEMBERS) {
-            self.advance();
-            members = self.member_set()?;
-        }
+        let members = self.optional_list(MEMBERS, Parser::member_set)?;
 
         Ok(Cell {
             kind,
@@ -572,8 +575,10 @@ impl Parser {
             uses,
             inputs,
             depth,
+            lookback,
             reset_on_reopen,
             init,
+            fallbacks,
             gate,
             combiner,
             else_value,
@@ -771,12 +776,7 @@ impl Parser {
         let reset_on_reload = self.flag(RESET_ON_RELOAD);
         let reset_on_reopen = self.flag(RESET_ON_REOPEN);
         let history = self.optional_structural_int(HISTORY, "a history size")?;
-        let mut lookback = Vec::new();
-
-        if self.at_word(LOOKBACK) {
-            self.advance();
-            lookback = self.lookback_map()?;
-        }
+        let lookback = self.optional_list(LOOKBACK, Parser::lookback_map)?;
 
         Ok(Stream {
             path,
@@ -958,6 +958,31 @@ impl Parser {
         })
     }
 
+    // fallback_map ::= '[' (INT ':' value (',' INT ':' value)*)? ']'
+    fn fallback_map(&mut self) -> Result<Vec<FallbackEntry>, Diagnostic> {
+        self.bracketed(Parser::fallback_entry)
+    }
+
+    // `INT ':' value` — one `(depth : fallback)` pair of a `fallback_map`.
+    //
+    // NO colon rule is needed here, and that is the point of the key being an
+    // INT: an entry has exactly one colon, the key cannot be a PATH, and
+    // neither reopen_set's lookahead disambiguator nor lookback_map's
+    // positional one (R43) has anything to decide. Key first, colon, value.
+    //
+    // The two halves are converted the two OPPOSITE ways, as they are
+    // everywhere else: `k` is STRUCTURAL and becomes a `u64` now (R57), while
+    // the value is TYPED and stays text until the loader reads it under the
+    // cell's tag.
+    fn fallback_entry(&mut self) -> Result<FallbackEntry, Diagnostic> {
+        let (k, _) = self.structural_int("a fallback depth")?;
+
+        self.expect(&TokenKind::Colon, "`:`")?;
+        let value = self.value()?;
+
+        Ok(FallbackEntry { k, value })
+    }
+
     // value ::= INT | FLOAT | 'true' | 'false' | STRING | 'nan' | 'inf' | '-inf'
     //
     // The three float spellings are TYPE-GATED (033-248): admitted here
@@ -1137,11 +1162,11 @@ impl Parser {
         Ok(Box::new(tag))
     }
 
-    // `'[' (element (',' element)*)? ']'` — the bracketed comma list that five
-    // productions share: `path_set`, `binding_set`, `member_set`, `reopen_set`
-    // and `lookback_map`. All five are optional-content lists whose only
-    // difference is the element reader, so the brackets, the separator and the
-    // empty case are written once.
+    // `'[' (element (',' element)*)? ']'` — the bracketed comma list that six
+    // productions share: `path_set`, `binding_set`, `member_set`, `reopen_set`,
+    // `lookback_map` and `fallback_map`. All six are optional-content lists
+    // whose only difference is the element reader, so the brackets, the
+    // separator and the empty case are written once.
     fn bracketed<T>(
         &mut self,
         element: impl Fn(&mut Parser) -> Result<T, Diagnostic>,
@@ -1175,20 +1200,36 @@ impl Parser {
         Ok(Some(self.path()?))
     }
 
-    // `word path_set`, or nothing — the optional path-set clause shape shared
-    // by `inputs`, `desired`, `observed`, `source_deps` and `observes`.
+    // `word <list production>`, or nothing — the shape EVERY optional list
+    // clause has: `inputs`, `desired`, `observed`, `source_deps`, `observes`,
+    // `members`, `lookback` (on a cell and on a stream) and `fallbacks`.
     //
     // An absent clause and a written `[]` are ONE state (see the entry types),
     // so both come back as an empty vector and the canonical rendering of that
-    // state omits the clause.
-    fn optional_path_set(&mut self, word: &str) -> Result<Vec<CellPath>, Diagnostic> {
+    // state omits the clause. Written once here so no clause can decide that
+    // differently.
+    //
+    // `production` is the LIST production's own method, not its element's — the
+    // emitter's `optional_set` takes the same half — so a call site names the
+    // production it is reading and every production keeps its own method (R53).
+    fn optional_list<T>(
+        &mut self,
+        word: &str,
+        production: impl Fn(&mut Parser) -> Result<Vec<T>, Diagnostic>,
+    ) -> Result<Vec<T>, Diagnostic> {
         if !self.at_word(word) {
             return Ok(Vec::new());
         }
 
         self.advance();
 
-        self.path_set()
+        production(self)
+    }
+
+    // `word path_set`, or nothing — the one optional list clause with five call
+    // sites, named so those five do not each repeat the production.
+    fn optional_path_set(&mut self, word: &str) -> Result<Vec<CellPath>, Diagnostic> {
+        self.optional_list(word, Parser::path_set)
     }
 
     // `word BID`, or nothing — `uses` and `combiner`.
@@ -2412,11 +2453,17 @@ mod tests {
     }
 
     // Every cell kind, and every clause, in the production's order.
+    //
+    // The line is ILLEGAL as a program and parses anyway (F4, R21): a `fold`
+    // carrying history clauses, and `init` beside `fallbacks` — one clause in
+    // two spellings, which the LOADER rejects (033-268) and the grammar does
+    // not see.
     #[test]
     fn a_cell_carries_every_clause_in_order() {
         let module = parsed(&with_entry(concat!(
             "fold App.total : i32 uses B@d1 inputs [App.a, App.b] depth 2 ",
-            "reset_on_reopen init 0 gate App.g0 combiner B@2 else -1 ",
+            "lookback [App.a: 3] reset_on_reopen init 0 fallbacks [1: 1, 2: 0] ",
+            "gate App.g0 combiner B@2 else -1 ",
             "members [App.a: permanent, App.b: gate_guarded]"
         )));
 
@@ -2430,8 +2477,16 @@ mod tests {
         assert_eq!(cell.uses, Some(0xd1));
         assert_eq!(cell.inputs.len(), 2);
         assert_eq!(cell.depth, Some(2));
+        assert_eq!(cell.lookback.len(), 1);
+        assert_eq!(cell.lookback[0].cell.render(), "App.a");
+        assert_eq!(cell.lookback[0].k, 3);
         assert!(cell.reset_on_reopen);
         assert!(matches!(&cell.init, Some(ValueLiteral::Int(text)) if text == "0"));
+        assert_eq!(cell.fallbacks.len(), 2);
+        assert_eq!(cell.fallbacks[0].k, 1);
+        assert!(matches!(&cell.fallbacks[0].value, ValueLiteral::Int(text) if text == "1"));
+        assert_eq!(cell.fallbacks[1].k, 2);
+        assert!(matches!(&cell.fallbacks[1].value, ValueLiteral::Int(text) if text == "0"));
         assert_eq!(
             cell.gate.as_ref().map(CellPath::render).as_deref(),
             Some("App.g0")
@@ -2479,6 +2534,20 @@ mod tests {
         assert_eq!(
             failure(&with_entry("derived App.x : i32 depth 1 depth 2")),
             ("unexpected_token", Span::new(GRAPH_ENTRY + 28, 5))
+        );
+        // `lookback` before `depth`, which the production puts after it: the
+        // entry ends at the map's `]` and `depth` is a second entry, 42 bytes
+        // in.
+        assert_eq!(
+            failure(&with_entry(
+                "recurrent App.x : i32 lookback [App.a: 1] depth 1"
+            )),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 42, 5))
+        );
+        // `fallbacks` before `init`, the same way round: `init` is 39 bytes in.
+        assert_eq!(
+            failure(&with_entry("recurrent App.x : i32 fallbacks [1: 0] init 0")),
+            ("unexpected_token", Span::new(GRAPH_ENTRY + 39, 4))
         );
     }
 
@@ -2606,6 +2675,57 @@ mod tests {
             )),
             ("unexpected_token", Span::new(GRAPH_ENTRY + 68, 1))
         );
+    }
+
+    // A `fallback_map` entry has ONE colon and no rule deciding it: the key is
+    // an INT, so neither reopen_set's lookahead nor lookback_map's positional
+    // law (R43) has anything to settle here.
+    //
+    // The two halves convert the two opposite ways. `k` is STRUCTURAL and is a
+    // `u64` on arrival (R57); the value is TYPED, stays text, and is
+    // canonicalized textually where it is built (033-257) — `007` to `7`,
+    // `-1.50` to `-1.5`.
+    #[test]
+    fn a_fallback_map_pairs_a_structural_depth_with_a_canonical_literal() {
+        let module = parsed(&with_entry(
+            "recurrent App.fib : i64 uses B@d8 depth 7 fallbacks [007: 007, 2: -1.50, 3: \"hi\", 4: nan]",
+        ));
+
+        let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+            panic!("the scope holds exactly one cell");
+        };
+
+        let fallbacks = &cell.fallbacks;
+
+        assert_eq!(fallbacks.len(), 4);
+        // The KEY converts by value, so `007` is the number seven.
+        assert_eq!(fallbacks[0].k, 7);
+        assert!(matches!(&fallbacks[0].value, ValueLiteral::Int(text) if text == "7"));
+        assert_eq!(fallbacks[1].k, 2);
+        assert!(matches!(&fallbacks[1].value, ValueLiteral::Float(text) if text == "-1.5"));
+        assert_eq!(fallbacks[2].k, 3);
+        assert!(matches!(&fallbacks[2].value, ValueLiteral::Str(text) if text == "hi"));
+        assert_eq!(fallbacks[3].k, 4);
+        assert!(matches!(fallbacks[3].value, ValueLiteral::Nan));
+    }
+
+    // An absent clause and a written `[]` are one state for BOTH new set
+    // clauses, exactly as they are for `inputs` and `members`.
+    #[test]
+    fn an_empty_history_clause_is_the_clauses_absence() {
+        for entry in [
+            "recurrent App.x : i32 depth 1",
+            "recurrent App.x : i32 depth 1 lookback [] fallbacks []",
+        ] {
+            let module = parsed(&with_entry(entry));
+
+            let [Entry::Cell(cell)] = module.graph.scopes[0].entries.as_slice() else {
+                panic!("the scope holds exactly one cell");
+            };
+
+            assert!(cell.lookback.is_empty(), "{entry}");
+            assert!(cell.fallbacks.is_empty(), "{entry}");
+        }
     }
 
     #[test]
@@ -2801,8 +2921,8 @@ mod tests {
     }
 
     // R57 reaches the graph's structural positions too: a depth, a capacity, a
-    // history, an ordinal and a lookback value are all `u64` at parse time, and
-    // a spelling that names none fails at the literal.
+    // history, an ordinal, a lookback value and a fallback KEY are all `u64` at
+    // parse time, and a spelling that names none fails at the literal.
     #[test]
     fn a_graph_structural_number_must_name_a_u64() {
         // `depth -1`: the literal is 28 bytes into the entry, 2 bytes long.
@@ -2824,6 +2944,13 @@ mod tests {
         assert_eq!(
             failure(&with_entry("input App.p:-1 : i32")),
             ("int_out_of_range", Span::new(GRAPH_ENTRY + 12, 2))
+        );
+        // A fallback KEY is structural while the value beside it is not: the
+        // key fails at 33 bytes in, and the `0` after the colon is never asked
+        // to be a `u64` at all.
+        assert_eq!(
+            failure(&with_entry("recurrent App.x : i32 fallbacks [-1: 0]")),
+            ("int_out_of_range", Span::new(GRAPH_ENTRY + 33, 2))
         );
     }
 

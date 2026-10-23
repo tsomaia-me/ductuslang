@@ -98,11 +98,16 @@ pub(crate) const USES: &str = "uses";
 /// `inputs` — a cell's or a gate's input cells.
 pub(crate) const INPUTS: &str = "inputs";
 
-/// `depth` — a recurrent cell's history depth, a deferred cell's latency.
+/// `depth` — a recurrent cell's SELF-history depth, a deferred cell's latency.
 pub(crate) const DEPTH: &str = "depth";
 
-/// `init` — a cell's initial value.
+/// `init` — a cell's initial value, and on a recurrent the uniform spelling of
+/// `fallbacks` (033-268).
 pub(crate) const INIT: &str = "init";
+
+/// `fallbacks` — a recurrent cell's per-depth history seeds (033-267): the
+/// general form `init` is the uniform spelling of.
+pub(crate) const FALLBACKS: &str = "fallbacks";
 
 /// `gate` — the gate entry head, and the `gate PATH` clause on a cell, a wire
 /// and an effect.
@@ -177,7 +182,8 @@ pub(crate) const OBSERVES: &str = "observes";
 /// `history` — a recurrent stream's output history size.
 pub(crate) const HISTORY: &str = "history";
 
-/// `lookback` — a recurrent stream's input lookback map.
+/// `lookback` — a recurrent stream's or a recurrent CELL's input lookback map
+/// (033-266): one clause name, one production, two positions.
 pub(crate) const LOOKBACK: &str = "lookback";
 
 /// `true` — a boolean value literal.
@@ -221,7 +227,7 @@ mod tests {
     // The vocabulary as a list, for the two properties that a per-const
     // assertion could never state. Written out rather than generated: a keyword
     // added without being listed here is invisible to both checks.
-    const ALL: [&str; 52] = [
+    const ALL: [&str; 53] = [
         MODULE,
         TYPES,
         GRAPH,
@@ -245,6 +251,7 @@ mod tests {
         INPUTS,
         DEPTH,
         INIT,
+        FALLBACKS,
         GATE,
         COMBINER,
         ELSE,

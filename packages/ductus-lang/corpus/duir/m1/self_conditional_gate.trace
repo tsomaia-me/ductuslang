@@ -1,0 +1,19 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.n 1 -> -1
+eval App.d -> 0
+publish
+commit_end
+commit_begin
+gate App.g close
+publish
+commit_end
+commit_begin
+dirty App.n -1 -> 5
+publish
+commit_end
+commit_begin
+publish
+commit_end

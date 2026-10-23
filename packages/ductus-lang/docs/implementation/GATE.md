@@ -5,7 +5,7 @@ unless this file's phase line reads `phase: build`. Phase transitions are made O
 owner's literal instruction, quoted below the state block. Every transition is an auditable
 file edit.
 
-increment: M0 closure wave (FND-26 owner-approved; FND-24/25/27 + probe-3 executed by cadence, veto standing)
+increment: M1 cut B (temporal + gates — scope + all nine forks owner-ruled; plan finalization + build)
 phase: build
 
 ## State notes
@@ -123,3 +123,72 @@ phase: build
   cadence with veto standing. CI remains OPEN (owner has not chosen an
   infrastructure). phase: build for the M0 closure wave (corpus edits +
   loader checks + rank-interleaved witness).
+- 2026-08-23 — "Temporal + gates" → M1 SCOPE RULED: cut B (recurrent +
+  deferred + gate; wires and streams become a named successor milestone
+  whose first half is corpus work — the unstruck rider stands). M1-DRAFT.md
+  finalizes to M1.md after the fork rounds. Sequencing law: forks 3+6 ruled
+  before any gate code, forks 1+2 before any recurrent code; forks 7+8
+  (storage shape, host history reads) are implementation-latitude calls
+  taken by cadence with veto standing. phase: planning.
+- 2026-08-23 — "Fork 3 - (a) / Fork 6 - (a) / Fork 1 - (b) + (c) now
+  (regardless of whatever further forks (c) opens) / Try again" → RULED:
+  gate predicates evaluate in a step-1 pre-pass against prior-commit values
+  (transitions then join the root set); step 1 is ONE rank-ordered walk with
+  all root sources interleaved; the recurrent serialization gains BOTH the
+  `lookback` clause on `cell` AND the fallback map — sub-forks (c) opens
+  (e.g. non-literal fallbacks) are filed and raised, never blockers. Fork-3
+  rider stands as unstruck default: a predicate reading cells inside its own
+  guarded subtree REJECTS at load, named diagnostic (veto standing).
+  "Try again" = next fork round.
+- 2026-08-23 — "Fork 2 - (ii) per-advance / Fork 9 - (a) / Fork 5 - (c)" →
+  RULED: history rings shift per-ADVANCE (a skipped commit consumes no
+  slot); a recurrent that evaluates to a bit-identical value still advances
+  (gating governs propagation only — ring shifts exactly once per
+  evaluation); the M1 trace reuses `dirty` for landings and `eval` for
+  advances and adds exactly one event kind, `gate <path> open|close`.
+- 2026-08-23 — "Fork 4a - dispatch after step 4, before step 5 / Fork 4b -
+  b), with (c)'s restraint about scope" → RULED: a deferred dispatches after
+  step 4 and before step 5's flip (`publish` stays the last value-bearing
+  line of a block); the readiness surface is `has_staged_work(&self) ->
+  bool` — one query, `commit()`'s signature untouched, nothing more in M1.
+  ALL NINE FORKS RULED. phase: build — M1.md finalization + corpus batch +
+  the cut-B build run as one ultracode workflow; cadence defaults for the
+  remaining B-findings (C-13, C-20/21, C-23, C-28, C-29, C-45, C-7/C-8
+  depth defaults) execute veto-standing and are disclosed at finish.
+- 2026-08-23 — M1 WAVE 2. NO OWNER WORDS EXIST FOR THIS WAVE; nothing below is
+  quoted or owner-authorized. Orchestrator cadence actions under the standing
+  instruction (LEARNINGS #36/#35), veto standing, all disclosed at the M1 finish
+  report and recorded as M1.md R80: (1) the ADVANCE-ROOT LAW — a recurrent's
+  advance is a dirty root at the NEXT commit, rendering no trace line, and sets no
+  dirty bit inside the advancing commit; it completes corpus-silent semantics whose
+  landed answer was nondeterministic by declaration order (FND-38) and lands
+  LOG-first as the advance-root entry in the 023 family; (3) an omitted `depth` on a
+  `deferred` defaults to 1 — code conforms to landed corpus law (016-301); (4)
+  construction order = static order, only self-history and lookback edges dropped;
+  (5) C-43 conforms to the disclosed default — the guards/gate inverse is validated
+  strictly, `guards_inverse_mismatch` replacing `conflicting_gate_binding`; (6) the
+  input-history reset fallback (construction-era value) is KEPT and ledgered in
+  M1.md §4.7 + FND-28's open sub-fork; (7) witness-helper dedup into
+  ductus-conformance's library (STYLE S1). PUT TO THE OWNER, not decided here:
+  R73's fork-3 RIDER — wave-1 code enforces the load-time rejection
+  (`gate_predicate_reads_guarded`) while the plan recorded it blocked, and SPEC
+  §13.9.6 + the 022 gate family permit the pattern; the enforcement stays exactly as
+  landed, FND-36 stays OPEN, and no document states the rider as ruled in either
+  direction. phase unchanged (build).
+- 2026-08-24 — "(a) continue." → the fork-3 RIDER is RULED (a) BY THE OWNER: the
+  load-time rejection of a predicate reading its own guarded cells is REMOVED —
+  the pattern is legal per SPEC §13.9.6 and the 022 gate family (self-conditional
+  gates; prior-commit reads define it). `gate_predicate_reads_guarded` and its
+  check/tests are deleted; FND-36 closes RULED (a). "continue" → the parked wave-2
+  pipeline resumes (engine fix standalone, then the workflow from cache). phase
+  unchanged (build).
+- 2026-08-24 — "I understand now and yes, I accept your proposal regarding order.
+  be careful." → MILESTONE ORDER RESHAPED (direction ruling, LEARNINGS #39): after
+  M1 closes, the next milestone is a thin end-to-end vertical (small source
+  subset → one behavior-compilation path → one drawing effect) so a Ductus
+  program runs before any layer widens; widening milestones then implement the
+  full spec construct by construct. Nothing is skipped — the owner rejected
+  "unimplemented spec" outright; the widening schedule (M1b wires/streams and
+  onward) stays explicit. STRATEGY.md is amended to record the reorder when M1
+  closes. The vertical's plan and its forks come to the owner before any code.
+  phase unchanged (build — M1 wave 2 still running).

@@ -1,0 +1,12 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.open : bool init true
+      gate App.g pred B@d0 inputs [App.open] guards [App.acc]
+      input App.x : i64 init 1
+      recurrent App.acc : i64 uses B@d2 inputs [App.x] depth 1 reset_on_reopen init 0 gate App.g
+    }
+  }
+  behaviors {}
+}

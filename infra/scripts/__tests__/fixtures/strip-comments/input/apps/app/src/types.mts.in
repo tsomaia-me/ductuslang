@@ -1,0 +1,3 @@
+export type Id = string; // identifier
+// done
+export const id: Id = 'a';

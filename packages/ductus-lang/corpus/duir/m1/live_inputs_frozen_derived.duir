@@ -1,0 +1,12 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.open : bool init false
+      gate App.g pred B@d0 inputs [App.open] guards [App.x, App.held]
+      input App.x : i64 init 2 gate App.g
+      derived App.held : i64 uses B@d1 inputs [App.x] gate App.g
+    }
+  }
+  behaviors {}
+}

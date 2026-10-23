@@ -35,6 +35,26 @@ pub enum TraceEvent {
         /// The value its behavior produced.
         value: Value,
     },
+    /// `gate <path> open` / `gate <path> close` — a gate's EFFECTIVE
+    /// activation changed.
+    ///
+    /// The one event kind M1 adds (R75), and it is added because no existing
+    /// event can express it: a transition is observable — the whole guarded
+    /// subtree's behavior changes — and it carries no value. A recurrent's
+    /// advance and a deferred's landing needed no new kind for the opposite
+    /// reason: they ARE a value production and a dirty root, so they reuse
+    /// `eval` and `dirty`. An event naming which mechanism produced a value
+    /// would record implementation shape, which R24 forbids.
+    ///
+    /// EFFECTIVE, not own: a nested gate whose own predicate flips under a
+    /// closed ancestor changes nothing observable, so it emits nothing
+    /// (C-39/C-40). One line per change of "own gate AND every ancestor".
+    Gate {
+        /// The gate whose effective activation changed.
+        path: CellPath,
+        /// The activation it changed TO — `true` renders `open`.
+        open: bool,
+    },
     /// `publish` — the atomic snapshot flip.
     Publish,
     /// `commit_end` — the commit closed.
@@ -49,6 +69,8 @@ impl TraceEvent {
     /// commit_begin
     /// dirty <path> <old> -> <new>
     /// eval <path> -> <value>
+    /// gate <path> open
+    /// gate <path> close
     /// publish
     /// commit_end
     /// ```
@@ -87,6 +109,12 @@ impl TraceEvent {
                 path.render_into(out);
                 out.push_str(" -> ");
                 value.render_into(out);
+            }
+            TraceEvent::Gate { path, open } => {
+                out.push_str("gate ");
+                path.render_into(out);
+                out.push(' ');
+                out.push_str(if *open { "open" } else { "close" });
             }
             TraceEvent::Publish => out.push_str("publish"),
             TraceEvent::CommitEnd => out.push_str("commit_end"),
@@ -139,6 +167,23 @@ mod tests {
         };
 
         assert_eq!(event.render(), "eval App.doubled -> 2\n");
+    }
+
+    // The one M1 event: two spellings, one per direction, and no value —
+    // a transition produces none (R75).
+    #[test]
+    fn renders_a_gate_line_in_both_directions() {
+        let opened = TraceEvent::Gate {
+            path: path(&["App", "panel"]),
+            open: true,
+        };
+        let closed = TraceEvent::Gate {
+            path: path(&["App", "panel"]),
+            open: false,
+        };
+
+        assert_eq!(opened.render(), "gate App.panel open\n");
+        assert_eq!(closed.render(), "gate App.panel close\n");
     }
 
     // A float event carries the canonical value rendering — `-0.0` spells

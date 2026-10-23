@@ -11,7 +11,9 @@
 pub mod snapshot;
 
 pub(crate) mod cell_store;
+pub(crate) mod history_plan;
 
 pub use self::snapshot::Snapshot;
 
 pub(crate) use self::cell_store::CellStore;
+pub(crate) use self::history_plan::HistoryPlan;

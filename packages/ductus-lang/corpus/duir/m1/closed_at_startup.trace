@@ -1,0 +1,8 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 2 -> 5
+eval App.free -> 6
+publish
+commit_end

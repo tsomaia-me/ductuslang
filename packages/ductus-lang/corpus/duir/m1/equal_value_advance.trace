@@ -1,0 +1,31 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 3
+eval App.acc -> 3
+publish
+commit_end
+commit_begin
+dirty App.x 3 -> 1
+eval App.acc -> 1
+eval App.report -> 4
+publish
+commit_end
+commit_begin
+dirty App.x 1 -> 0
+eval App.acc -> 3
+eval App.report -> 2
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 2
+eval App.acc -> 3
+eval App.report -> 4
+publish
+commit_end
+commit_begin
+dirty App.x 2 -> 0
+eval App.acc -> 3
+publish
+commit_end

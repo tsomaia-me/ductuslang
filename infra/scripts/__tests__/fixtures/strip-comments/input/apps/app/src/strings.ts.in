@@ -1,0 +1,8 @@
+export const url = 'https://x.y/z'; // the endpoint
+export const doubleQuoted = "see // not a comment and /* nor this */";
+export const pattern = /a\/*b/g; // regex containing slash star
+export const klass = /[/*]x/;
+export const template = `path // still text ${1 + 1} /* also text */`; // trailing
+export const nested = `outer ${`inner // text`} ${2 /* real comment */}`;
+export const ratio = 10 / 2 / 5; // division, not a regex
+export const html = '<a href="//cdn.x.y/a.js">';

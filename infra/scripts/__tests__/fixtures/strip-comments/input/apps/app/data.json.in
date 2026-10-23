@@ -1,0 +1,5 @@
+{
+  // plain json cannot hold comments, so the file is left alone
+  "homepage": "https://x.y/z",
+  "note": "// kept /* kept */"
+}

@@ -1,0 +1,12 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.x : i64 init 0
+      deferred App.first : i64 uses B@d1 inputs [App.x] depth 1
+      deferred App.second : i64 uses B@d2 inputs [App.first] depth 2
+      derived App.out : i64 uses B@d3 inputs [App.second]
+    }
+  }
+  behaviors {}
+}

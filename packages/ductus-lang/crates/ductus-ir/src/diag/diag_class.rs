@@ -99,13 +99,14 @@ pub enum DiagClass {
     /// SECOND declaration is the one rejected — the first stands, the repeat
     /// is the error. The cell-side sibling is `duplicate_cell_path`.
     DuplicateScopePath,
-    /// A cell's path does not extend its enclosing scope's path as a proper
+    /// An entry's path does not extend its enclosing scope's path as a proper
     /// prefix.
     ///
     /// The block structure and the paths carry ONE hierarchy, not two: a cell
     /// written inside `scope App.panel` lives at `App.panel.…`, and a path that
     /// wanders elsewhere would make the braces and the dots disagree about
-    /// where the cell is.
+    /// where the cell is. A `gate` entry answers to the same law — its path
+    /// joins the one namespace, so it names a place in the same tree.
     ///
     /// Intermediate segments need no declared scope — depth is FREE, so
     /// `scope App { input App.print.text }` is legal with no `App.print` scope
@@ -124,6 +125,120 @@ pub enum DiagClass {
     /// place in the tree, and it is either a region or a cell, never both. The
     /// SECOND declaration is the one rejected, whichever kind it is.
     ScopeCellCollision,
+    /// A history depth means nothing at runtime: `depth 0`, a `lookback` of
+    /// `0`, or a `fallbacks` key outside `1 ..= depth`.
+    ///
+    /// `depth` counts a recurrent's history SLOTS and a deferred's latency in
+    /// commits, and both are positive by construction: a zero-slot ring names
+    /// no parameter and allocates nothing, and a zero-commit latency is not a
+    /// delay (M1.md §4.9, C-7/C-8/C-24). 016-282's "`derived T` IS the N = 0
+    /// case" is a statement about the language's type ladder, not a licence for
+    /// a `.duir` line that means nothing at runtime. A key past the ring's
+    /// depth is the same error seen from the other end: it addresses a slot the
+    /// cell does not have.
+    InvalidHistoryDepth,
+    /// A `recurrent` carries BOTH `init` and `fallbacks`.
+    ///
+    /// They are one clause in two spellings — `init v` says every depth falls
+    /// back to `v`, `fallbacks` says them one by one — so carrying both would
+    /// be two answers to one question (033-268, R71: one meaning, one
+    /// spelling).
+    ConflictingHistoryFallbacks,
+    /// A `fallbacks` map names one depth twice.
+    ///
+    /// The clause is a MAP from depth `k` to the value `.past(k, …)` yields
+    /// before `k` advances exist; a repeated key would give one slot two seeds.
+    DuplicateFallbackKey,
+    /// A `recurrent`'s history has a depth no fallback answers for.
+    ///
+    /// Every `k` in `1 ..= depth` is read by the behavior's `pastK` parameter
+    /// before the ring has advanced that far, so every `k` needs a seed —
+    /// spelled one by one with `fallbacks` or uniformly with `init`. A map that
+    /// misses a depth (a `fallbacks` clause with a hole, or a recurrent
+    /// carrying neither clause) leaves a read with no value to answer with, and
+    /// the runtime does not invent one.
+    MissingFallbackKey,
+    /// A `lookback` key names a cell that is not among the reading cell's own
+    /// `inputs`.
+    ///
+    /// The clause declares per-INPUT history depths, and the behavior ABI's
+    /// argument order is defined over the `inputs` list (R71, §15.4.1's
+    /// `input_lookback_map`): a key outside that list names history for a cell
+    /// the recurrent does not read. A key naming no cell at all is
+    /// `unknown_input_path` instead — the same diagnostic any unknown path
+    /// gets.
+    LookbackNotAnInput,
+    /// A `deferred` cell names itself among its own `inputs`.
+    ///
+    /// §13.2.12 is direct: "its expression may not read the cell it declares".
+    /// A `deferred` is a LATENCY, never a cycle device (§13.11.4) — cycle
+    /// breaking remains the recurrent's role — so the delay does not make the
+    /// self-read well-founded. Construction settles it: a deferred's startup
+    /// value comes from a synchronous evaluation like a derived's (016-298),
+    /// and a self-reading one would read the slot it is at that moment
+    /// computing.
+    DeferredSelfReference,
+    /// Two gate entries declare one path.
+    ///
+    /// The scope/cell sibling of `duplicate_scope_path` and
+    /// `duplicate_cell_path`: gate paths join the SAME identity namespace
+    /// (§15.4.1's one tree), so a path names one gate and the SECOND
+    /// declaration is the one rejected.
+    DuplicateGatePath,
+    /// A gate's `guards` entry names neither a declared cell nor a declared
+    /// gate.
+    ///
+    /// §15.4.1: a gate carries "a `guards` list naming the gated instances it
+    /// controls (each by path)". What a gate may guard in M1's slice is a cell
+    /// or another gate, so a path naming neither guards nothing.
+    UnknownGuardPath,
+    /// A gate's `gate_parent` names no declared gate.
+    ///
+    /// §15.4.1: "`gate_parent` — the `id` of the nearest enclosing gate, or
+    /// `null` if none". The clause is the nesting link effective activation is
+    /// composed along (§13.9.7), so it must name a gate — a cell path or an
+    /// undeclared one leaves the chain with nothing to climb.
+    UnknownGateParent,
+    /// The `gate_parent` chain closes a loop.
+    ///
+    /// Effective activation is "its own gate AND every ancestor gate on the
+    /// path from the root" (§13.9.7), which is only computable on a chain that
+    /// terminates. The corpus states no acyclicity rule (C-47); the loader
+    /// enforces one, because a cycle has no root to compose from.
+    GateParentCycle,
+    /// A cell's `gate PATH` clause names no declared gate.
+    ///
+    /// IR_GRAMMAR §3's `('gate' PATH)?` is a back-reference to a `gate` entry.
+    /// A cell pointing at a cell — or at nothing — declares no activation
+    /// condition, so the clause has nothing to mean.
+    UnknownGateReference,
+    /// A gate's `guards` list and the constructs' own gate clauses disagree.
+    ///
+    /// §15.4.1 calls the `guards` list "the materialized inverse" of the
+    /// construct's own clause (`gate PATH` on a cell, `gate_parent PATH` on a
+    /// gate). An inverse is a RESTATEMENT, so the two must name exactly the same
+    /// set, and a mismatch in EITHER direction is this class: a construct listed
+    /// in `guards` whose own clause names another gate or none, and a construct
+    /// whose own clause names a gate that does not list it. Two gates both
+    /// listing one construct is the same failure seen once per gate — at most
+    /// one of them can be the construct's own answer, and §13.9.7's effective
+    /// activation is defined over exactly one.
+    GuardsInverseMismatch,
+    /// A `recurrent` cell names itself among its own `inputs`.
+    ///
+    /// 016-51: prior self-values are readable only through `.previous`/`.past`,
+    /// which in the IR ride `depth` and `fallbacks` — never an `inputs` entry.
+    /// So a recurrent listing its own path among `inputs` asks for its own
+    /// current VALUE, which no source expression can spell: §13.2.4.1 denies
+    /// that value even to the cell's own history accessors — *"the value being
+    /// computed in the current commit is not visible through these accessors
+    /// during that same commit"*.
+    ///
+    /// The sibling of `deferred_self_reference`. Left standing, the self-edge
+    /// also makes the cell its own staleness trigger under the advance-root law:
+    /// its advance roots the next commit, which re-evaluates it, which advances
+    /// it again — once per commit forever, with no host activity at all.
+    RecurrentSelfReference,
 }
 
 impl DiagClass {
@@ -155,6 +270,19 @@ impl DiagClass {
             DiagClass::CellOutsideScope => "cell_outside_scope",
             DiagClass::UnanchoredScopePath => "unanchored_scope_path",
             DiagClass::ScopeCellCollision => "scope_cell_collision",
+            DiagClass::InvalidHistoryDepth => "invalid_history_depth",
+            DiagClass::ConflictingHistoryFallbacks => "conflicting_history_fallbacks",
+            DiagClass::DuplicateFallbackKey => "duplicate_fallback_key",
+            DiagClass::MissingFallbackKey => "missing_fallback_key",
+            DiagClass::LookbackNotAnInput => "lookback_not_an_input",
+            DiagClass::DeferredSelfReference => "deferred_self_reference",
+            DiagClass::DuplicateGatePath => "duplicate_gate_path",
+            DiagClass::UnknownGuardPath => "unknown_guard_path",
+            DiagClass::UnknownGateParent => "unknown_gate_parent",
+            DiagClass::GateParentCycle => "gate_parent_cycle",
+            DiagClass::UnknownGateReference => "unknown_gate_reference",
+            DiagClass::GuardsInverseMismatch => "guards_inverse_mismatch",
+            DiagClass::RecurrentSelfReference => "recurrent_self_reference",
         }
     }
 }
@@ -195,6 +323,37 @@ mod tests {
         assert_eq!(DiagClass::CellOutsideScope.id(), "cell_outside_scope");
         assert_eq!(DiagClass::UnanchoredScopePath.id(), "unanchored_scope_path");
         assert_eq!(DiagClass::ScopeCellCollision.id(), "scope_cell_collision");
+        assert_eq!(DiagClass::InvalidHistoryDepth.id(), "invalid_history_depth");
+        assert_eq!(
+            DiagClass::ConflictingHistoryFallbacks.id(),
+            "conflicting_history_fallbacks"
+        );
+        assert_eq!(
+            DiagClass::DuplicateFallbackKey.id(),
+            "duplicate_fallback_key"
+        );
+        assert_eq!(DiagClass::MissingFallbackKey.id(), "missing_fallback_key");
+        assert_eq!(DiagClass::LookbackNotAnInput.id(), "lookback_not_an_input");
+        assert_eq!(
+            DiagClass::DeferredSelfReference.id(),
+            "deferred_self_reference"
+        );
+        assert_eq!(DiagClass::DuplicateGatePath.id(), "duplicate_gate_path");
+        assert_eq!(DiagClass::UnknownGuardPath.id(), "unknown_guard_path");
+        assert_eq!(DiagClass::UnknownGateParent.id(), "unknown_gate_parent");
+        assert_eq!(DiagClass::GateParentCycle.id(), "gate_parent_cycle");
+        assert_eq!(
+            DiagClass::UnknownGateReference.id(),
+            "unknown_gate_reference"
+        );
+        assert_eq!(
+            DiagClass::GuardsInverseMismatch.id(),
+            "guards_inverse_mismatch"
+        );
+        assert_eq!(
+            DiagClass::RecurrentSelfReference.id(),
+            "recurrent_self_reference"
+        );
     }
 
     // What the `Hash` and `Ord` derives are for: grouping by class, and a

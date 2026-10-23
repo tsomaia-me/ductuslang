@@ -14,9 +14,9 @@ use crate::path::CellPath;
 /// maximum `k` it reads. It is empty for a non-recurrent stream and for a
 /// recurrent stream whose body calls no `.past` on inputs (033-118).
 ///
-/// `k` is a STRUCTURAL number (R57): it counts commits back rather than holding
-/// a value of the cell's type, so it is a `u64` here rather than text for the
-/// loader.
+/// `k` is a STRUCTURAL number (R57): it counts the READING cell's own advances
+/// back — not elapsed commits (023-71, 016-79) — rather than holding a value of
+/// the cell's type, so it is a `u64` here rather than text for the loader.
 ///
 /// **The colon rule here is NOT reopen_set's.** Both sides of a pair's colon-INT
 /// are integers, so "an INT after a colon is an ordinal" cannot decide it. The
@@ -29,6 +29,6 @@ use crate::path::CellPath;
 pub struct LookbackEntry {
     /// The input cell read through `.past`.
     pub cell: CellPath,
-    /// The deepest lookback of it, in commits.
+    /// The deepest lookback of it, in the reading cell's own advances.
     pub k: u64,
 }

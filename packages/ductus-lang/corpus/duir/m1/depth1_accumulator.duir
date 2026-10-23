@@ -1,0 +1,10 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.count : i64 init 0
+      recurrent App.total : i64 uses B@d1 inputs [App.count] depth 1 init 0
+    }
+  }
+  behaviors {}
+}

@@ -1,0 +1,13 @@
+module App {
+  types {}
+  graph {
+    scope App exposes [] effects [] {
+      input App.x : i32 init 0
+      recurrent App.total : i32 uses B@d2 inputs [App.x] depth 1 init 0
+      recurrent App.fib : i64 uses B@d8 depth 2 fallbacks [1: 1, 2: 0]
+      recurrent App.avg : f64 uses B@d7 inputs [App.x] depth 2 lookback [App.x: 3] reset_on_reopen fallbacks [1: 0.0, 2: -1.5] gate App.g0
+      recurrent App.blend : f64 uses B@d9 inputs [App.print:0] depth 1 lookback [App.print:0: 2, App.x: 1] init nan
+    }
+  }
+  behaviors {}
+}

@@ -1,0 +1,28 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.tick 0 -> 1
+eval App.fib -> 1
+publish
+commit_end
+commit_begin
+dirty App.tick 1 -> 2
+eval App.fib -> 2
+publish
+commit_end
+commit_begin
+dirty App.tick 2 -> 3
+eval App.fib -> 3
+publish
+commit_end
+commit_begin
+dirty App.tick 3 -> 4
+eval App.fib -> 5
+publish
+commit_end
+commit_begin
+dirty App.tick 4 -> 5
+eval App.fib -> 8
+publish
+commit_end

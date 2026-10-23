@@ -1,0 +1,18 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.count 0 -> 5
+eval App.total -> 5
+publish
+commit_end
+commit_begin
+dirty App.count 5 -> 7
+eval App.total -> 12
+publish
+commit_end
+commit_begin
+dirty App.count 7 -> 2
+eval App.total -> 14
+publish
+commit_end

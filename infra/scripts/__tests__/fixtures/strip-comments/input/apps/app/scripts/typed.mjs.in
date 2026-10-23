@@ -1,0 +1,17 @@
+/**
+ * Builds the row.
+ * @param {{ id: string }} options
+ * @returns {string}
+ */
+export function build(options) {
+  // the id
+  return options.id; // done
+}
+
+/** prose that goes */
+export const rows = [];
+
+/** @template T */
+export const identity = (value) => value;
+
+/** @typedef {{ id: string }} Row */

@@ -12465,7 +12465,13 @@ A recurrent declaration has:
   `name.past(k, fallback)` accesses. Must be a compile-time-known
   positive `usize` (a literal, a `const`, or a const-generic parameter
   — §2.5). When omitted, defaults to `[1]` (only `.previous`
-  accessible).
+  accessible). **Depth is positive wherever it is written** — in source
+  and in the IR's `depth` clause alike (§15.4.6) — and the IR's omitted
+  `depth` carries the same default of 1. A written depth of `0` is not a
+  no-history recurrent but an error: the loader rejects it under the
+  diagnostic class `invalid_history_depth`. At depth 0 a recurrent would
+  be a `derived` with a ring that never turns, and the zero-history rung
+  of the ladder is spelled `derived` already (§13.2.8).
 - **`name`** — a snake_case identifier naming the cell.
 - **`Type`** — the value type. Optional when inferable from the
   expression's result type and from fallback values supplied to
@@ -12481,8 +12487,10 @@ expression IS the cell's value at every moment; past values require
 the explicit accessor.
 
 The fallback in `.previous(fallback)` / `.past(k, fallback)` is the
-value returned when there is no committed value at that depth yet —
-i.e., before the cell has received its k-th commit. The
+value returned when there is no value at that depth yet — i.e., while
+the read's history ring has advanced fewer than `k` times. The count
+is the reading recurrent's own advances, not elapsed commits: a commit
+in which it does not evaluate consumes no slot (§13.2.4.1). The
 fallback type must match the cell's element type.
 
 ```
@@ -12490,13 +12498,13 @@ fallback type must match the cell's element type.
 recurrent counter: i32 = counter.previous(0) + step_value
 //   counter has 1 step of self-memory (default [1]);
 //   re-evaluates when step_value changes (implicit trigger);
-//   on first commit, counter.previous(0) = 0, so counter = 0 + step_value.
+//   on its first evaluation, counter.previous(0) = 0, so counter = 0 + step_value.
 
 // Fibonacci-style sum of last two
 recurrent[2] fib: i32 = fib.past(2, 0) + fib.past(1, 1)
 //   [2] permits up to 2-step lookback.
 
-// Moving average over last 3 commits of `input`
+// Moving average of `input` over `avg`'s last 3 advances
 recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
 //   `input` is an input signal; .past on it allocates per-input
 //   history (2 slots for k up to 2). Output [N] default to 1 here
@@ -12522,6 +12530,16 @@ exactly as at initialization — and the cell restarts cleanly from
 current inputs instead of blending in stale pre-gap state. It fires
 *only* on the gate false→true transition; a recurrent that merely
 receives no triggers for a while is correctly holding its value.
+
+**When the clearing happens.** The clear lands in **step 1a**
+(§13.10.2), at the moment the effective reopen transition is detected —
+before step 3 reads any history. The first post-gap evaluation therefore
+reads fallbacks *in the same commit as the reopen*, which is what makes
+the clearing observable at the reopen rather than one commit later. The
+transition edge is the **effective** one (own gate conjoined with every
+ancestor's, §13.9.7), the same edge the open snap uses, so an
+ancestor-driven reopen fires the reset even when the cell's own gate
+never changed.
 
 It is the reactivation counterpart to `@reset_on_reload` (§13.18.14):
 both reset accumulated state on a lifecycle event — `@reset_on_reload`
@@ -12602,8 +12620,33 @@ visible through these accessors during that same commit.
 Recurrents whose expressions did not re-evaluate in this pass do not
 advance; they retain their existing values.
 
+An advance reaches its readers at the *next* commit, where it stands
+as a dirty root (§13.10.2 step 4). A recurrent reading another
+recurrent therefore advances one commit behind it.
+
 The new value of any re-evaluated recurrent is a pure function of the
 previous-committed values and the inputs received during this pass.
+
+**History shifts per advance, not per commit.** A recurrent's history
+ring steps exactly when the recurrent advances. A commit in which the
+recurrent does not evaluate consumes no slot: the ring is untouched,
+and a gated gap or an untriggered stretch leaves it holding the values
+it held before, rather than filling it with repeats. The declared
+`[N]` therefore bounds *slots*, not elapsed commits, and `k` in
+`.past(k, …)` counts the recurrent's own advances (§13.2.4.3).
+
+**Evaluation implies advancement.** A recurrent that evaluates shifts
+its ring exactly once and writes the computed value, *even when that
+value is bit-identical to the one it held*. Value-change gating
+(§13.2.4.4) governs downstream propagation alone — an unchanged result
+dirties nothing — and never governs whether the ring moved. So after
+two evaluations that both produced the same number, `x.past(2, fb)`
+reads that number, not the value from before them.
+
+**Fallbacks.** A history read before the ring has advanced that far
+returns the read's fallback. The IR carries these per depth `k`, as the
+`fallbacks` clause on the cell's text-form line — or as the uniform
+`init` shorthand when every depth falls back to one value (§15.4.6).
 
 ##### 13.2.4.2 Recurrent vs attr
 
@@ -12637,25 +12680,31 @@ cell_name.past(k, fallback)          // k steps back
 These accessors work on two distinct subjects:
 
 - **Self-history** — the recurrent's own past values. `name.past(k,
-  fallback)` reads the recurrent's value k commits ago. `k` is
+  fallback)` reads the recurrent's value k **advances** ago — its own
+  evaluations, not elapsed commits (§13.2.4.1). `k` is
   bounded by the declared `[N]` depth (defaulting to 1): `k > N` is a
   compile error.
 - **Input history** — past values of any reactive cell referenced in
   the expression. `input_cell.past(k, fallback)` reads that input's
-  value k commits ago. The compiler scans the expression for
+  value as of the reading recurrent's k-th previous advance: the
+  input's ring belongs to the recurrent and steps with it, so a
+  recurrent's whole history view is indexed by its own advances. The
+  compiler scans the expression for
   `.past(k, ...)` calls per input cell and allocates the maximum
-  observed `k` of history per input. Inputs not accessed via `.past`
+  observed `k` of history per input; that map is what the IR's
+  `lookback` clause carries (§15.4.6). Inputs not accessed via `.past`
   add no history overhead.
 
 This is symmetric with stream recurrents (§13.18.8.4) — the same
-mechanism applies; the difference is signals contribute commits and
-streams contribute events.
+mechanism applies; the difference is what one step is: a cell
+recurrent's ring steps on its own advances, a stream recurrent's on
+events.
 
 ```
 // Self-history only
 recurrent counter: i32 = counter.previous(0) + 1
 
-// Input history — moving average over last 3 commits of `input`
+// Input history — moving average of `input` over `avg`'s last 3 advances
 recurrent[1] avg: f32 = (input + input.past(1, 0.0) + input.past(2, 0.0)) / 3.0
 // `input` is an input signal; the compiler allocates 2 slots of history
 // for it (max k referenced = 2). Output history defaults to [1].
@@ -12671,7 +12720,9 @@ Common rules:
   `const`, or a const-generic parameter (§2.5). Runtime or reactive
   values are rejected.
 - `fallback` is an expression of the accessed cell's value type,
-  returned when fewer than `k` commits have happened.
+  returned while the read's history ring has advanced fewer than `k`
+  times — the reading recurrent's own advances, not elapsed commits
+  (§13.2.4.1).
 - Each `.previous` / `.past` call is an ordinary function call.
   Multiple calls on the same cell with different fallbacks are
   independent — each returns its own fallback when no history
@@ -12702,7 +12753,13 @@ The rule applies uniformly across signal commits, attr writes,
 recurrent advancements, derived re-evaluations, and deferred
 dispatches and publications (§13.2.12). A recurrent
 whose expression re-evaluates and produces the same value as the
-previous-committed value does not propagate a change downstream.
+previous-committed value does not propagate a change downstream — but
+it has still advanced: the ring shifted once, because evaluation
+implies advancement (§13.2.4.1). Value-change gating decides what
+propagates, never what the cell recorded. An advance that *did* change
+the bits propagates at the *following* commit: it is a dirty root
+there, and its consumers evaluate then, over the published
+post-advance value (§13.10.2 step 4).
 
 To express "fire on every event regardless of value," use a counter
 pattern: the signal is a monotonically increasing count; each
@@ -13079,6 +13136,13 @@ cells:
   dispatch+N commits (§13.2.12). No self-history, no self-reference;
   `derived T` is the degenerate in-commit case (`N = 0`).
 
+**`N = 0` is a rung of the ladder, not a spelling.** Both degeneracies
+above describe where `derived T` sits among the kinds; neither licenses
+writing `[0]`. A declared depth is positive (§13.2.4, §13.2.12), and the
+zero rung is spelled `derived` — so `recurrent[0]` and `deferred[0]` are
+rejected at load under `invalid_history_depth` (§15.4.6) rather than
+silently read as `derived`.
+
 A reactive value expression combining one or more reactive cells always
 produces a `derived T`.
 
@@ -13192,10 +13256,10 @@ passed, and held. The consolidated table:
 |---|---|---|
 | Value cell (host-written) | `signal T` | `attr` also produces `signal T` (placement-written) |
 | Value cell (computed) | `derived T` | zero-history reactive computation |
-| Value cell (self-history) | `recurrent[N] T` | `N` omitted = `[1]`; `[0]` degenerates to `derived T` |
-| Value cell (deferred) | `deferred[N] T` | `N` omitted = `[1]`; publishes at dispatch+N commits (§13.2.12); `[0]` degenerates to `derived T` |
+| Value cell (self-history) | `recurrent[N] T` | `N` omitted = `[1]`; `[0]` is never written — the zero-history rung is spelled `derived T`, and a written `[0]` is rejected at load under `invalid_history_depth` (§13.2.4) |
+| Value cell (deferred) | `deferred[N] T` | `N` omitted = `[1]`; publishes at dispatch+N commits (§13.2.12); `[0]` is never written — the in-commit rung is spelled `derived T`, and a written `[0]` is rejected at load under `invalid_history_depth` |
 | Event cell | `stream ring[N] T` / `stream gate[N] T` | erased form `stream T` when policy/capacity unresolved |
-| Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (default 0) |
+| Event cell (with history) | `recurrent[H] stream ring[N] T` | two-axis: policy × history depth (`H = 0` is the prefix-absent case; a written bare `recurrent` = `[1]`, §13.18.8.1) |
 | Membership cell | `yielded T` / `yielded f32[128]` | ordered membership-varying group (§13.20.4) |
 | Cell umbrella (channel) | `cell T` | spans the value cells above (`signal T`, `derived T`, `recurrent[N] T`, `deferred[N] T`); streams and `yielded` are outside it; its keyword `cell` is the kind; a channel, not a value type, not a trait |
 | Dynamic view | `dynamic view V` | replaces `Cell[DynamicView[WeakHandle[V]]]` (§13.3.3.4) |
@@ -13939,7 +14003,11 @@ A `deferred` declares a *read-only* reactive value, like a `derived`,
 whose post-startup re-evaluations run **off the driving context** and
 publish on a structural delay: a run dispatched at one commit
 publishes at exactly `N` commits later. Bare `deferred` ≡
-`deferred[1]`; `deferred[0]` degenerates to `derived T`. The
+`deferred[1]`; `deferred[0]` is the ladder's in-commit rung, which is
+spelled `derived` — a written `[0]`, or an IR `depth 0`, is rejected at
+load under `invalid_history_depth` (§13.2.8, §15.4.6), because a
+deferred publishing in its own dispatching commit is a `derived` under
+another name. The
 declaration is legal wherever `derived` declares outside effect
 contract blocks — module level, node and wire bodies, operator
 bodies, trait required cells — and consumers read the cell as an
@@ -13978,10 +14046,29 @@ semantics are kinds.
 **Dispatch.** A deferred cell dispatches at a commit where its
 provenance is dirty, under ordinary value-change semantics (§13.2.4.4)
 — unchanged inputs dispatch nothing. The dispatched run's inputs are
-snapshotted from the dispatching commit's committed values — the
-dispatch happens at the commit's end, over the values that commit
-publishes, so the snapshot is never torn; the run
+snapshotted from the dispatching commit's committed values. The
+position is pinned (§13.10.2): dispatch falls after the commit's
+recurrent advance and before its publish, so the snapshot covers
+exactly the values that commit is about to publish — recurrent
+advances included — and is never torn, while publication stays the
+last value-bearing act of the commit. The run
 evaluates the cell's one behavior off the driving context.
+
+**What "provenance is dirty" tests.** The test is the dirty bit itself:
+a deferred cell's provenance is dirty at a commit iff at least one of
+its input cells carries *that commit's* dirty bit — the same bit step 1b
+sets — read at the dispatch position. A run landing at this commit sets
+its own cell's dirty bit like any other root, so it counts as
+provenance-dirty for a downstream deferred dispatching at the same
+commit's end: chained latencies compose additively (a `deferred[2]`
+reading a `deferred[3]` publishes five commits behind the input) rather
+than collapsing into one.
+
+**Multiplicity is ordered by rank.** Several runs landing at one commit
+fold in through step 1b's single rank-ordered walk, interleaved with the
+host writes and the gate transitions by graph-section entry rank
+(§13.10.2, §13.10.3); several dispatching at one commit's end run in
+that same rank order. Neither end forms a group of its own.
 
 **Publication.** The run's result publishes at exactly dispatch+N
 commits. The landing is a dirty root of the publishing commit:
@@ -14012,9 +14099,14 @@ deterministic frame sequence.
 
 **Initial value.** A deferred cell's initial value is its ordinary
 synchronous startup evaluation (§13.2.6), in topological order with
-every other cell: deferral applies to post-startup re-evaluations
+every other cell — evaluated exactly as a `derived` is, so the first
+published snapshot carries a real value rather than an absent one:
+deferral applies to post-startup re-evaluations
 only. The cell is typed `T` — never `Option[T]` — and has no empty
-beats; the pipeline drains into the startup value.
+beats; the pipeline drains into the startup value. The ordinary dispatch
+cadence — dispatch after step 4, land at +N — governs from the first
+commit onward, so construction is the one evaluation of a deferred that
+is not deferred.
 
 **Gating.** A gate closing over a deferred cell cancels its in-flight
 runs — no publication, no barrier — and the frozen cell serves its
@@ -18837,10 +18929,14 @@ placement-level `when` is unconditional — always active.
 #### 13.9.6 Self-conditional gates
 
 A gate predicate may reference cells of the gated instance itself.
-The runtime evaluates the predicate against the cells' current
-committed values; cyclic self-reference is well-defined: the gate
-predicate evaluates against the gated cell's *previously-committed*
-values from the prior commit. The gate-open transition is itself a
+Cyclic self-reference is well-defined, and the ordering is what makes
+it so: every predicate evaluates in the commit's step-1a pre-pass
+(§13.10.2), against the *prior-commit* values — the snapshot as it
+stands when the commit begins, never the staged values. A
+self-referential predicate therefore reads the gated cell's
+previously-committed values like any other predicate; the rule is
+general, not a carve-out for self-reference. The gate-open transition
+is itself a
 propagation event scheduled within the commit that flips the
 predicate (per §13.9.7's snap-on-gate-open rule). A
 compiler-synthesized **wake gate** (§13.3.7.6) inherits this rule: it
@@ -18941,8 +19037,9 @@ scheduled within the commit that flips the predicate (§13.9.6,
 §13.9.8). The frozen cells re-evaluate against current upstream
 state in topological order — the opening subtree's output-affecting
 deriveds join this same commit's DAG, evaluated after the flip
-(§13.9.8); the gate predicate itself keeps reading prior-commit
-values, so the snap cannot re-trigger the flip within the commit.
+(§13.9.8); the predicate that decided the flip ran in the commit's
+step-1a pre-pass over prior-commit values (§13.10.2), so the snap
+cannot re-trigger the flip within the commit.
 Any value that would have
 propagated during the gated period is re-computed *as of now* (not
 replayed); downstream sees the activation as a single jump from
@@ -18992,6 +19089,20 @@ descendant to *its own* gate state (a descendant whose own gate is false
 stays frozen). The runtime computes effective activation (own gate
 conjoined with all ancestor gates) to drive transitive `suspend`/`resume`
 delivery to contained effects (§13.14.9).
+
+**An inner gate under a closed ancestor still runs.** Ancestry does not
+suspend a predicate: an inner gate evaluates its own predicate in the
+commit's step-1a pre-pass (§13.10.2) whatever its ancestors are doing,
+and its own state updates from that evaluation. What ancestry suspends
+is *observability*. Only an **effective**-activation change is a
+transition: an own-state flip under a closed ancestor is not a dirty
+root and produces no open snap, and when the ancestor reopens, each
+descendant is restored to its own *current* state with nothing replayed
+from the gap — the descendant's own state was tracked all along, so
+there is nothing to catch up. This is why the runtime can evaluate every
+gate's predicate on every commit rather than test dirtiness first: a
+predicate is a pure function of the values it reads (§13.9.1), so an
+evaluation whose result changes nothing is unobservable.
 
 **Cell-value reads on gated subgraphs.** Reads always return a
 defined value of type T (no `Option[T]`), because:
@@ -19073,8 +19184,11 @@ predicate evaluates false do not propagate to destination outputs, and
 a gate transition — open or close — is itself a **dirty root**. On
 gate-open, the opening subtree's output-affecting deriveds join the
 same commit's DAG and evaluate after the flip in topological order
-(the open snap, §13.9.7); the gate predicate itself keeps reading
-prior-commit values, so the flip is decided once per commit and the
+(the open snap, §13.9.7). The transitions themselves come from step
+1a, the pre-pass in which every predicate evaluates against
+prior-commit values and each gate's effective activation is compared
+with the one it held (§13.10.2); the flip is therefore decided once
+per commit, before any of the evaluation it schedules, and the
 after-flip evaluation cannot re-trigger it. The fold-cell (§13.21.7)
 and membership-descriptor-cell (§13.20.4.3) dirty roots for members
 guarded by the gate are instances of this same rule, not a separate
@@ -19378,7 +19492,49 @@ previous commit matters.
 `runtime.commit()` performs the full evaluation-and-visibility
 operation:
 
-1. **Compute the dirty set.** For each writable cell (signal,
+1. **Compute the dirty set.** The step has two sub-steps: a gate
+   pre-pass (1a) and the root walk itself (1b).
+
+   **Step 1a — the gate pre-pass.** Every gate predicate evaluates
+   here, against *prior-commit* values: the visible snapshot as it
+   stands when the commit begins, never the staged values that
+   step 3's behaviors read. Each gate's effective activation — its
+   own state conjoined with its ancestors' (§13.9.7) — is compared
+   with the one it held, and the gates whose effective activation
+   flipped form this commit's **transition set**. A predicate
+   therefore never
+   reads a value the commit it runs in is publishing: a write staged
+   for commit N publishes at N and the predicate meets it at N+1, so
+   the flip and its same-commit open snap both fall at N+1. This
+   ordering, not any special reading rule inside the predicate, is
+   what keeps the flip decided once per commit and beyond the reach
+   of the evaluation it schedules.
+
+   Every gate's predicate runs here, on every commit, in rank order
+   (§13.10.3) and with no dirtiness test in front of it — including an
+   inner gate whose ancestor is closed, whose own state updates while
+   only its *effective* activation is observable (§13.9.7). A
+   predicate is a pure function of the values it reads, so an
+   evaluation whose result changes nothing is unobservable, and
+   running them all is the simpler law. Two consequences land in this
+   sub-step: a `@reset_on_reopen` recurrent whose effective reopen is
+   detected here has its self- and input-history cleared *now*, before
+   step 3 reads any of it (§13.2.4), and the transition set produced
+   here is what step 1b folds in.
+
+   **Step 1b — the root walk.** Step 1's general form is *one
+   rank-ordered walk* over the commit's dirty roots, whatever
+   produced them. Four sources feed it — a host write, a gate's
+   effective-activation transition from step 1a, a `deferred`
+   run landing at this commit (below), and a recurrent whose advance
+   at the previous commit changed its bits (step 4) — and they
+   interleave by
+   graph-section entry rank (§13.10.3, §15.4.6) rather than standing
+   in four groups, so a commit's roots form a single rank sequence
+   no matter which source contributed each. The writable-cell
+   comparison is one case of the walk, not its definition.
+
+   That case: for each writable cell (signal,
    attr), compare its staged value to its previously-committed
    value. Cells whose values differ are *dirty*; cells whose values
    are identical (including those that were written intermediate
@@ -19425,8 +19581,9 @@ operation:
    (Conditional Activation) for the full semantics, including the
    gate-open snap — a gate transition, open or close, is a dirty
    root; the opening subtree's output-affecting deriveds join this
-   commit's DAG and evaluate after the flip, while the predicate
-   keeps reading prior-commit values — the suspension of contained
+   commit's DAG and evaluate after the flip, and the predicate that
+   decided the flip already ran in step 1a, over prior-commit
+   values, so nothing here can re-trigger it — the suspension of contained
    effects on gate-close, and the membership dirty root a gate
    transition contributes to folds and membership descriptors with a
    gate_guarded member (an instance of the same dirty-root rule).
@@ -19461,7 +19618,29 @@ operation:
        expressions are not evaluated.
 4. **Advance recurrents.** Write the next values computed in step 3
    into the recurrent cells. After this step, recurrent reads return
-   their newly-advanced values.
+   their newly-advanced values. A recurrent that evaluated advances
+   here even when its result is bit-identical to the value it held:
+   the ring shifts once per evaluation (§13.2.4.1), and value-change
+   gating governs only what propagates downstream.
+
+   **Consumers read the advance one commit later.** An advance whose
+   written value differs bitwise from the value the cell held is a
+   dirty root of the *next* commit, folding into that commit's step 1b
+   walk by graph-section entry rank like any other root. The advancing
+   commit sets no dirty bit for it: the results were held aside through
+   step 3, so in-pass readers read the pre-advance value and a reader
+   whose only dirty dependency is that advancing recurrent does not
+   evaluate here. At the next commit the root marks the recurrent as a
+   changed dependency — the recurrent itself re-evaluates only if its
+   own value inputs are dirty — and its consumers evaluate over the
+   published post-advance value. Cascades therefore run one commit per
+   link: a recurrent reading another recurrent advances one commit
+   behind it, the delay-element reading of the kind (§13.2.4.1,
+   §13.11.4). An advance producing a bit-identical value is no root and
+   starts nothing.
+
+   **Deferred dispatch** happens between this step and the next: after
+   the recurrent advance, before the publish (below).
 5. **Publish the snapshot.** The runtime atomically makes the
    just-committed values the visible snapshot; observers' subsequent
    reads return the new state. A scope dropped during this commit is
@@ -19472,16 +19651,32 @@ operation:
 **Deferred cells in the commit (§13.2.12).** A `deferred` cell
 touches the commit at two points and evaluates in it at neither. In
 step 1, a deferred run **landing** this commit (dispatched `N`
-commits ago) is a dirty root: the landed value is folded in, and
+commits ago) is a dirty root, taking its place in step 1b's
+rank-ordered walk alongside the host writes and the gate transitions:
 consumers evaluate over it in steps 2–3 exactly as over a changed
 signal; if the run due at this commit is unfinished, the commit
 waits for it at this fold-in before proceeding — the publication
-barrier. At the commit's end — after evaluation has settled, so the
-values being published are known — a deferred cell whose provenance
-is dirty this commit **dispatches**: its inputs are snapshotted from
-this commit's newly committed values and its behavior is scheduled
-off the driving context. The cell's own body is never a step-2 DAG
-node. Both landing and dispatch follow value-change semantics.
+barrier. A deferred cell whose provenance
+is dirty this commit **dispatches** at a pinned position in the step
+list: *after* step 4's recurrent advance and *before* step 5's
+publish. Its inputs are therefore snapshotted from exactly the values
+this commit is about to publish, the recurrent advances included, and
+its behavior is scheduled
+off the driving context; `publish` remains the last value-bearing act
+of the commit. The cell's own body is never a step-2 DAG
+node. Both landing and dispatch follow value-change semantics, and the
+two ends of a deferred's life sit at opposite ends of the commit.
+
+"Provenance is dirty" is the dirty bit itself: the test is whether any
+of the cell's input cells carries *this* commit's dirty bit — the bit
+step 1b set — read at the dispatch position. A run landing this commit
+sets its own cell's dirty bit like any other root, so it counts as
+provenance-dirty for a downstream deferred dispatching at the same
+commit's end, and chained latencies compose additively rather than
+collapsing. Multiplicity at either end is ordered by rank and nothing
+else: several landings fold in through step 1b's one rank-ordered walk,
+several dispatches run in that same rank order, and neither end forms a
+group of its own (§13.10.3).
 
 Writes during a commit are forbidden (the driving context is busy in
 the commit call). Writes between commits accumulate as usual.
@@ -19736,11 +19931,15 @@ step 2.
 
 #### 13.11.4 Recurrents as delay elements
 
-A recurrent cell on a cycle behaves as a one-commit delay
+A recurrent cell on a cycle behaves as a one-*advance* delay
 element: it always reads the previous-committed value, regardless
 of what its expression computes this commit. The end-of-commit
 commit (§13.10.2 step 4) is what advances the cell for the next
-commit to observe.
+commit to observe. The delay is counted in the cell's own
+advances, not in elapsed commits — a commit in which the recurrent
+does not evaluate consumes no slot (§13.2.4.1), so a quiescent
+cycle holds its value rather than shifting repeats through the
+ring.
 
 The behavior is fully specified at the language
 level; the runtime requires no per-implementation convention beyond
@@ -20392,7 +20591,8 @@ runtime.commit()
 Performs the complete commit operation specified in §13.10.2: folds in due
 `deferred` results as dirty roots (§13.2.12), settles all
 dirty deriveds and recurrent expressions glitch-free in topological order,
-advances recurrents, dispatches at the commit's end the `deferred` runs the
+advances recurrents, dispatches — after that advance and before the publish
+— the `deferred` runs the
 commit's changes call for, and publishes a new consistent snapshot for
 observers; it then fires the reconciler hooks — among them
 `suspend`/`resume` for effects whose effective activation changed —
@@ -21010,7 +21210,8 @@ construct, not a mechanism.
 - Reactive evaluation is the **commit** (§13.10.2, §13.14.4): the runtime
   applies staged writes, folds in due deferred results (§13.2.12), settles
   deriveds and recurrents glitch-free in
-  topological order, dispatches at the commit's end the deferred runs the
+  topological order, dispatches — after the recurrent advance, before the
+  publish — the deferred runs the
   commit's changes call for, fires reconciler hooks, and publishes a consistent
   snapshot that observers read (§13.14.6). Which thread(s) do this, and how
   the snapshot is published, are backend concerns.
@@ -21939,7 +22140,9 @@ a flat enumeration of four members:
   fulfilling `StreamPolicy`. `Ring` overwrites the oldest
   unconsumed event when full; `Gate` rejects the write when full.
 - **Self-history depth** — a `const H: usize` history-depth parameter
-  on the stream, **default 0** (no self-history). `H > 0` gives the
+  on the stream, **0 when the `recurrent` prefix is absent** (no
+  self-history); a written prefix carries a positive depth, bare
+  `recurrent stream` meaning `[1]` (§13.18.8.1). `H > 0` gives the
   stream `H` steps of self-history *beside* its buffer, as a separate
   allocation (§13.18.8.4). This is not a policy member; it is a second,
   independent axis carried by the stream declaration.
@@ -21958,8 +22161,13 @@ There is **no** `RecurrentRing` / `RecurrentGate` type fulfilling
 `StreamPolicy`. A recurrent stream declaration (§13.18.8) is a `Ring[N]` or `Gate[N]`
 policy stream carrying a non-zero history depth `H` — the two axes
 combine (`recurrent[H] stream ring[N] T` in kind form, §13.2.8),
-rather than selecting a fourth sealed policy tag. When `H` is omitted
-it defaults to 0 and the stream is an ordinary non-recurrent stream.
+rather than selecting a fourth sealed policy tag. `H = 0` is the
+prefix-absent case: a declaration with no `recurrent` prefix is an
+ordinary non-recurrent stream. A written prefix always carries a
+positive depth — bare `recurrent stream` is `recurrent[1] stream`
+(§13.18.8.1), and `recurrent[0]` is rejected at load under
+`invalid_history_depth` (§13.2.4) — so the depth axis reads 0 only
+when the prefix is absent.
 
 **The word form is sugar.** The word forms `stream ring[N] T` and
 `stream gate[N] T` are the idiomatic sugar for the bracket forms
@@ -26127,7 +26335,13 @@ references that drive re-evaluation (implicit triggers).
 `output_history_N` is the recurrent's declared `[N]` self-history
 depth (defaulting to 1). `input_lookback_map` maps input cell IDs
 referenced via `.past(k, ...)` to their maximum `k`, mirroring the
-stream-cell encoding. `reset_on_reopen` is a boolean, true exactly when
+stream-cell encoding; it renders as the `lookback` clause on the cell's
+text-form line (§15.4.6), the same map production the `stream` line
+uses. The **fallback values** — what a history read returns before the
+ring has advanced that far (§13.2.4.1) — are carried per depth `k` and
+render as the `fallbacks` clause, or as the uniform `init` shorthand
+when every depth shares one value; the values are compile-time literals.
+`reset_on_reopen` is a boolean, true exactly when
 the recurrent carries `@reset_on_reopen` (§13.2.4): the runtime clears the
 cell's self-/input-history on the gate reopen edge. Recurrents whose
 expression is an `observe` block additionally carry the observe's per-arm
@@ -26139,7 +26353,18 @@ handle per §14.6.3 plus the input cell IDs the predicate reads); a `guards`
 list naming the gated instances it controls (each by path); and a
 `gate_parent` — the `id` of the nearest enclosing gate, or `null` if none.
 Every gated instance — cell, wire, or effect — references its gate by
-`id` (a `gate` field); the `guards` list is the materialized inverse. The
+`id` (a `gate` field); the `guards` list is the materialized inverse.
+
+**A gate's boolean occupies no graph cell.** A gate object carries its
+predicate's behavior handle and *no output cell id*: the runtime holds
+each gate's state internally, outside the cell store. Gate state is
+therefore reachable through neither a path nor a snapshot read
+(§13.14.6), and nothing in the graph's cell namespace is reserved for
+it — which is consistent with §13.9.1's rule that activation is never
+surfaced as a readable cell. Because a predicate is a pure function of
+the live values it reads, the runtime evaluates every gate's predicate
+on every commit, in rank order, with no dirtiness test in front of it
+(§13.10.2). The
 runtime composes a gate's predicate with its `gate_parent` chain to obtain
 the *effective* activation (§13.9.7) of the instances it guards, which
 drives transitive freeze and the suspend/resume delivery of §13.14.9. Block
@@ -26471,6 +26696,14 @@ and receives outputs; it never reaches inside. Inputs per role:
 | recurrent | input cells, self-history slots (`name.past(k,d)` → a `pastK` param), and input-history slots (`input.past(k)` → an `<input>_pastK` param) | new value |
 | gate predicate | the gate's input cells | `bool` (or a tag, for a `given` selector) |
 
+A recurrent behavior's **parameter order** is pinned by the
+serialization it mirrors (§15.4.6): the input cells in `inputs` list
+order, then the self-history slots `past1 … pastDepth` in ascending `k`,
+then — per `lookback` entry, in that map's own order — that input's
+`<input>_past1 … <input>_pastK`, again ascending. The graph line
+therefore determines the signature outright; there is no separate
+ordering convention for the two sides to agree on.
+
 A declaration in an effect's `desired:` block carries an ordinary
 behavior of its declaration kind — a desired `derived` a derived
 behavior, a desired `recurrent` a recurrent behavior. There is no
@@ -26761,7 +26994,9 @@ scope         ::= 'scope' PATH 'exposes' path_set 'effects' path_set
 entry         ::= cell | gate | wire | effect | stream
 cell          ::= cell_kind PATH ':' type_tag
                   ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
-                  ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+                  ('lookback' lookback_map)?
+                  ('reset_on_reopen')? ('init' value)?
+                  ('fallbacks' fallback_map)? ('gate' PATH)?
                   ('combiner' BID)? ('else' value)? ('members' member_set)?
 cell_kind     ::= 'input' | 'derived' | 'recurrent' | 'deferred' | 'fold'
 member_set    ::= '[' (member (',' member)*)? ']'
@@ -26783,6 +27018,7 @@ path_set      ::= '[' (PATH (',' PATH)*)? ']'
 binding_set   ::= '[' (binding (',' binding)*)? ']'
 reopen_set    ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'  // (consumer_id : stream_id) pairs
 lookback_map  ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
+fallback_map  ::= '[' (INT ':' value (',' INT ':' value)*)? ']'   // (depth : literal) pairs
 binding       ::= NAME ':' (PATH | value) ('@' provenance)?
 provenance    ::= 'bound' | 'constant_wrap' | 'bridge'
 type_tag      ::= PRIM | '%'NAME | 'pool_index' '<' '%'NAME '>'
@@ -26796,6 +27032,41 @@ value         ::= INT | FLOAT | 'true' | 'false' | STRING     // a compile-time 
                 | 'nan' | 'inf' | '-inf'                      // float-typed positions only
 ```
 
+**The `cell` line's clause order.** The optional clauses stand in one
+pinned order, each at most once: `uses`, `inputs`, `depth`, `lookback`,
+`reset_on_reopen`, `init`, `fallbacks`, `gate`, `combiner`, `else`,
+`members`. The two recurrent clauses sit where their meaning puts them —
+`lookback` beside `depth`, the two history depths together, and
+`fallbacks` beside `init`, the two spellings of one clause adjacent — so
+a cell line reads history shape first, then history seed. The order is
+grammar, not house style: a conforming emitter writes it and a
+conforming reader requires it.
+
+**A recurrent's two history clauses.** `lookback` carries the per-input
+history depths, using the same `lookback_map` the `stream` production
+uses: each pair maps an input cell id to the maximum `k` its
+`.past(k, …)` reads reach (§13.2.4.3), driving per-input history
+allocation, while the cell's own `depth` stays the self-history depth.
+One map production serves both primitives, and the stream form's
+disambiguator carries over unchanged — the last `':' INT` of an entry is
+the lookback value, any earlier one an ordinal on the key path. An
+omitted `lookback` is the empty map, which is what a recurrent reading no
+input history renders. `fallbacks` carries the history seeds: key `k` is
+the value a `.past(k, …)` read yields while fewer than `k` advances exist
+(§13.2.4.1). A fallback is a **literal** — the `value` production and
+nothing else. A fallback that is itself a cell read has no spelling in
+this form; it is deliberately left unspelled and named here as an open
+extension, so its absence reads as a decision rather than an oversight.
+
+**`init` versus `fallbacks`.** On a `recurrent` the two are one clause in
+two spellings: `init v` is the uniform shorthand — every depth falls back
+to `v` — and `fallbacks` the general form. One meaning gets one spelling,
+so both clauses on one recurrent is a **load-time error**, neither merged
+nor resolved by precedence, and canonical emission picks by content:
+`init` when every depth shares one value, `fallbacks` otherwise. On an
+`input` cell `init` keeps its own unrelated meaning — the cell's initial
+value (§13.8.2.1) — and no `fallbacks` clause is admitted there.
+
 **Empty graph.** The `graph` section admits zero scopes: `graph {}` is
 structurally legal — a module of pure types — and any minimum-content
 requirement is a load-time semantic rule rather than a grammar one.
@@ -26806,7 +27077,19 @@ composed same-level evaluation-order tiebreak (§13.10.3): instance placement
 order, then intra-instance declaration order, serialized as nothing more than
 the order entries stand in the file. A conforming emitter preserves entry
 order; a conforming loader reads entry rank as the tiebreak; reordering
-entries changes the program.
+entries changes the program. Rank runs over **all** entries with no
+per-kind exemption: a `gate` entry takes graph-section entry rank exactly
+like a `cell`, and its rank is what orders its transition among the other
+dirty roots in the commit's rank-ordered root walk (§13.10.2).
+
+**Depth is positive.** A `depth INT` clause carries a positive value on
+both kinds that admit one: an omitted `depth` is 1 on a `recurrent` and 1
+on a `deferred`, and a written `depth 0` is rejected at module load under
+the diagnostic class `invalid_history_depth` (§13.2.4, §13.2.12). The
+zero rung of the kind ladder is spelled `derived`, so there is no `.duir`
+line that means a no-history recurrent or a zero-latency deferred. The
+same rule reaches `lookback` values, which are per-input history depths
+of the same kind.
 
 **Scope-path well-formedness.** Four path shapes the grammar admits and a
 conforming loader rejects at module load. Scope paths are **unique**: two

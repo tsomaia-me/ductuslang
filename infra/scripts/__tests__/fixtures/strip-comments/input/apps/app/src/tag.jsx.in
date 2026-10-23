@@ -1,0 +1,6 @@
+export const Tag = () => (
+  <b>
+    {/* note */}
+    <i>// text</i>
+  </b>
+); // end

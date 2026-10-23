@@ -311,7 +311,19 @@ graph_section    ::= 'graph' '{' scope* '}'
 // intra-instance declaration order — SPEC §13.10.3): a conforming emitter
 // preserves it, a conforming loader reads entry rank as the same-level
 // tiebreak, and reordering entries is a semantic change (033-260). Blank
-// lines are insignificant; entry order is not.
+// lines are insignificant; entry order is not. Rank runs over ALL entry
+// kinds with no exemption: a `gate` entry takes entry rank exactly like a
+// `cell`, and that rank orders its transition among the commit's other
+// dirty roots (033-270).
+
+// **Depth is positive (normative, load time).** A `depth INT` clause
+// carries a positive value on both kinds that admit one. An omitted
+// `depth` is 1 on a `recurrent` and 1 on a `deferred`; a written
+// `depth 0` — and a zero `lookback` value, which is a per-input history
+// depth of the same kind — is rejected at module load under the
+// diagnostic class `invalid_history_depth` (016-301). The zero rung of
+// the kind ladder is spelled `derived`, so no `.duir` line means a
+// no-history recurrent or a zero-latency deferred.
 
 // **Scope-path well-formedness (normative, load time).** Four shapes the
 // grammar admits and a conforming loader rejects. Scope paths are UNIQUE:
@@ -342,9 +354,11 @@ entry            ::= cell | gate | wire | effect | stream
 
 cell             ::= cell_kind PATH ':' type_tag
                      ('uses' BID)? ('inputs' path_set)? ('depth' INT)?
-                     ('reset_on_reopen')? ('init' value)? ('gate' PATH)?
+                     ('lookback' lookback_map)?
+                     ('reset_on_reopen')? ('init' value)?
+                     ('fallbacks' fallback_map)? ('gate' PATH)?
                      ('combiner' BID)? ('else' value)? ('members' member_set)?
-                   ;  (§15.4.6, 033-169 / 033-215 / 033-81)
+                   ;  (§15.4.6, 033-169 / 033-215 / 033-81 / 033-266 / 033-267 / 033-268 / 033-269)
 
 // 'reset_on_reopen' on a cell is a bare flag (no payload) — one of three
 // grammar positions for the keyword (033-215): the bare flag here on
@@ -362,9 +376,31 @@ cell             ::= cell_kind PATH ':' type_tag
 // carrying a 'members' set and no 'uses' / 'inputs' (033-169). The
 // clauses must appear
 // in the order listed in the production (`uses`, `inputs`, `depth`,
-// `reset_on_reopen`, `init`, `gate`, `combiner`, `else`, `members`);
-// each clause is optional (subject
-// to the cell-kind constraints above) and appears at most once.
+// `lookback`, `reset_on_reopen`, `init`, `fallbacks`, `gate`,
+// `combiner`, `else`, `members`); each clause is optional (subject
+// to the cell-kind constraints above) and appears at most once. The
+// order is grammar, not style: a conforming emitter writes it and a
+// conforming reader requires it (033-269).
+//
+// **The two recurrent history clauses.** 'lookback' carries the
+// per-input history depths — the same 'lookback_map' the 'stream'
+// production uses, each pair an input cell id mapped to the maximum
+// 'k' its '.past(k, …)' reads reach — while 'depth' stays the
+// self-history depth; an omitted 'lookback' is the empty map
+// (033-266). 'fallbacks' carries the per-depth history seeds
+// ('fallback_map', below): key 'k' is what a '.past(k, …)' read
+// yields while fewer than 'k' advances exist (033-267). Both apply to
+// 'recurrent' cells.
+//
+// **'init' vs 'fallbacks' (normative, load time).** On a 'recurrent'
+// the two are one clause in two spellings: 'init v' is the uniform
+// shorthand — every depth falls back to 'v' — and 'fallbacks' the
+// general form. Both on one recurrent is a LOAD-TIME ERROR, not a
+// merge and not a precedence rule. Canonical emission picks by
+// content: 'init' when every depth shares one value, 'fallbacks'
+// otherwise (033-268). On an 'input' cell 'init' keeps its own
+// unrelated meaning — the cell's initial value — and 'fallbacks' is
+// not admitted there.
 
 cell_kind        ::= 'input' | 'derived' | 'recurrent' | 'deferred' | 'fold'
                    ;  (§15.4.6, 033-80)
@@ -401,6 +437,14 @@ member_driver    ::= 'permanent' | 'keyed_template' | 'gate_guarded'
 gate             ::= 'gate' PATH 'pred' BID 'inputs' path_set 'guards' path_set
                      ('gate_parent' PATH)?
                    ;  (§15.4.6, 033-168 / 033-65)
+
+// **A gate has no output cell.** The production carries `pred BID` and no
+// output cell id, and none is implied: a gate's boolean occupies no graph
+// cell, the runtime holding each gate's state internally, outside the cell
+// store. Gate state is reachable through neither a PATH nor a snapshot
+// read, and the graph's cell namespace reserves nothing for it (033-271).
+// The gate's own PATH names the gate, which lives in the one path
+// namespace with scopes and cells.
 
 wire             ::= 'wire' PATH 'from' PATH 'to' (PATH | 'null')
                      ('type' type_tag)? ('attrs' binding_set)? ('gate' PATH)?
@@ -482,13 +526,16 @@ reopen_set       ::= '[' (PATH ':' PATH (',' PATH ':' PATH)*)? ']'
 // ordinal; NAME → pair separator".
 
 lookback_map     ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
-                   ;  (§15.4.6, 033-117)
+                   ;  (§15.4.6, 033-117 / 033-266)
 
 // lookback_map elements are (input_cell_id : INT) pairs — an input cell
-// read via `.past(k, ...)` in a recurrent stream's body mapped to its
-// maximum lookback k, driving per-input history allocation. Empty for a
-// non-recurrent stream and for a recurrent stream whose body calls no
-// `.past` on inputs (033-118).
+// read via `.past(k, ...)` in a recurrent body mapped to its
+// maximum lookback k, driving per-input history allocation. ONE map
+// production serves both primitives: the `lookback` clause on a
+// `stream` and the `lookback` clause on a `recurrent` cell (033-266).
+// Empty for a
+// non-recurrent stream and for a recurrent stream or cell whose body
+// calls no `.past` on inputs (033-118, 033-266).
 //
 // **Scope of the colon-ordinal disambiguator.** The "next token is INT →
 // ordinal; NAME → pair separator" rule stated under reopen_set applies
@@ -498,6 +545,19 @@ lookback_map     ::= '[' (PATH ':' INT (',' PATH ':' INT)*)? ']'
 // the key PATH. An ordinal-suffixed lookback key therefore stays
 // expressible — 'App.print:0 : 3' is the cell 'App.print:0' at
 // lookback 3.
+
+fallback_map     ::= '[' (INT ':' value (',' INT ':' value)*)? ']'
+                   ;  (§15.4.6, 033-267)
+
+// fallback_map elements are (depth : value) pairs on a 'recurrent'
+// cell's 'fallbacks' clause: key k is the value a '.past(k, …)' read
+// yields while fewer than k advances exist. The right-hand side is a
+// LITERAL — the 'value' production and nothing else. A fallback that
+// is itself a cell read has no spelling in this form: it is
+// deliberately unspelled and named as an open extension, so its
+// absence reads as a decision rather than an oversight (033-267).
+// No colon ambiguity arises here — the key is an INT, not a PATH, so
+// each entry has exactly one colon.
 
 binding          ::= NAME ':' (PATH | value) ('@' provenance)?
                    ;  (§15.4.6, 033-252)
@@ -830,12 +890,12 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `graph_section` | §15.4.6 | 033-168 / 033-256 (`scope*` — an empty graph is structurally legal) / 033-260 (entry order is semantic — the evaluation-order tiebreak's carrier) |
 | `scope` | §15.4.6 | 033-168 / 033-75 / 033-261 (scope paths are unique) / 033-262 (a cell's path extends its scope's as a proper prefix, at any depth) / 033-263 (anchored at the module root) / 033-264 (one scope/cell path namespace) |
 | `entry` | §15.4.6 | 033-168 |
-| `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 / 033-245 |
+| `cell` | §15.4.6 | 033-169 / 033-215 / 033-81 / 033-245 / 033-266 (a recurrent's `lookback` clause) / 033-267 (its `fallbacks` clause) / 033-268 (`init` is the uniform shorthand; both clauses on one recurrent is a load error) / 033-269 (the pinned clause order) / 016-301 (`depth` and `lookback` values are positive; `invalid_history_depth`) |
 | `cell_kind` | §15.4.6 | 033-80 |
 | `member_set` | §15.4.6 | 033-81 |
 | `member` | §15.4.6 | 033-81 |
 | `member_driver` | §15.4.6 | 033-81 |
-| `gate` | §15.4.6 | 033-168 / 033-65 |
+| `gate` | §15.4.6 | 033-168 / 033-65 / 033-270 (a `gate` entry takes entry rank like every entry) / 033-271 (a gate's boolean occupies no graph cell) |
 | `wire` | §15.4.6 | 033-168 / 033-86 / 033-87 / 033-88 / 033-89 / 033-258 (a bare `null` destination is the literal, by reservation) |
 | `effect` | §15.4.6 | 033-168 / 033-119 / 033-120 / 033-121 / 033-122 / 033-123 |
 | `stream` | §15.4.6 | 033-106 / 033-107 / 033-108 / 033-109 / 033-110 / 033-111 / 033-112 / 033-114 / 033-115 / 033-117 |
@@ -843,7 +903,8 @@ The lexical laws that constrain no single production — **file intake** (033-25
 | `path_set` | §15.4.6 | 033-168 |
 | `binding_set` | §15.4.6 | 033-168 |
 | `reopen_set` | §15.4.6 | 033-75 |
-| `lookback_map` | §15.4.6 | 033-117 (last `':' INT` of an entry is the lookback value) |
+| `lookback_map` | §15.4.6 | 033-117 (last `':' INT` of an entry is the lookback value) / 033-266 (one map production, shared by the `stream` and `cell` `lookback` clauses) |
+| `fallback_map` | §15.4.6 | 033-267 (`(depth : literal)` pairs; a non-literal fallback is an open extension) |
 | `binding` | §15.4.6 | 033-168 / 033-252 (optional `'@' provenance` clause) |
 | `provenance` | §15.4.6 | 033-252 |
 | `value` | §15.4.6 | 033-168 / 033-212 / 033-248 / 033-257 (canonical digit spelling, normalized textually) / 033-258 (a value word in a `binding`'s right-hand side is the literal, by reservation) |

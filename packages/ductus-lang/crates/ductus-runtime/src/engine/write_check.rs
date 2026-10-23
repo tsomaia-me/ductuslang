@@ -15,8 +15,11 @@ use crate::value::{Value, ValueType};
 ///
 /// 1. Does a cell of this path exist? No → `unknown_input_path`.
 /// 2. Is it an `input` cell? No → `write_to_non_input`. §13.14.2 is explicit
-///    that `write_signal` targets signals only; in the M0 slice a `derived` is
-///    the only other thing there is, and it is computed, never written.
+///    that `write_signal` targets signals only; every other kind in the slice
+///    is computed, never written — a `recurrent` included, whose control is
+///    indirect by §13.2.4.2 ("the host cannot directly write a recurrent cell
+///    at runtime … the host writes signals that the recurrent's expression
+///    reads").
 /// 3. Does the value carry the cell's declared type? No →
 ///    `type_mismatched_write`.
 ///
@@ -50,7 +53,7 @@ pub(super) fn write_check(
             class: DiagClass::WriteToNonInput,
             span: None,
             path: Some(path.clone()),
-            message: format!("`{}` is a derived cell, not an input", path.render()),
+            message: format!("`{}` is a computed cell, not an input", path.render()),
         });
     }
 

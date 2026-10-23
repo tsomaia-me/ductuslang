@@ -1,0 +1,2 @@
+// e2e/ is one of the default paths
+export const smoke = 1;

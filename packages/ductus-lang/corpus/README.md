@@ -59,8 +59,11 @@ module with a `.trace` golden, byte-compared by
 Two kinds of witness carry the `.duir` half alone:
 
 - the grammar witnesses written before the engine — `module_header`,
-  `types_table`, `scopes`, `cells`, `graph_entries` — which assert parsing and
-  round-trip byte-stability only;
+  `types_table`, `scopes`, `cells`, `graph_entries`, `recurrent_clauses` —
+  which assert parsing and round-trip byte-stability only. A grammar witness
+  is not required to LOAD: it may name a behavior nobody defines or a gate no
+  entry declares, because the parser over-admits by design (F4, R21) and the
+  file's whole claim is about the text form;
 - `trap_abort`, whose commit ends in an abort (D8, §13.13.1): past a trap there
   is no trace to observe, so its test asserts the panic instead of a golden.
 
@@ -68,3 +71,59 @@ Goldens are HAND-DERIVED from the semantics contract (SPEC §13.10.2 as pinned
 in M0.md §4), never captured from a run — a captured golden would assert only
 that the engine does what the engine does. Each witness test's doc comment
 carries the derivation, block by block.
+
+### M1 — `corpus/duir/m1/`
+
+M1's witnesses live in their own directory, one per milestone, resolved by the
+same manifest-anchored rule. Everything above binds them unchanged: the pair
+convention, the five claims, the naming rule, and the hand-derived discipline —
+with the contract they are derived from being §13.10.2 as pinned in M1.md §4,
+whose step list gains step 4½.
+
+The `recurrent` family — `depth1_accumulator`, `first_evaluation`,
+`lockstep_pair`, `self_cycle`, `depth3_shift`, `equal_value_advance`,
+`skipped_commit`, `lookback_read`, `fallback_map` and `nan_history` — each pairs a `.duir`
+module with a `.trace` golden, byte-compared by
+`crates/ductus-conformance/tests/recurrent.rs`. Two things about those goldens
+are worth knowing before reading one. A recurrent's FALLBACKS are read at
+construction, which is untraced, so a fallback reaches the trace only after it
+has ridden the ring into an evaluation — `first_evaluation` therefore asserts
+the constructed value through the host read surface as well. And an advance is
+written `eval <path> -> <value>` like any other value production (R75), so what
+marks a recurrent in a block is what its numbers prove: the ring shifts exactly
+once per evaluation and never otherwise (R72 + R77).
+
+One block shape in that family surprises a cold reader and is not a mistake:
+`self_cycle` ends with a commit that has `eval` lines and NO `dirty` line. A
+recurrent's advance is a silent dirty root at the next commit (M1.md §4.12), so a
+cycle closed through a recurrent keeps turning after the writes stop — a delay
+loop with no input still ticks.
+
+The `deferred` family — `latency1`, `latency3`, `in_flight_reads`,
+`landing_dirty_root`, `pipeline_full_rate`, `landing_gating`,
+`dispatch_gating` and `chained_deferred` — each pairs a `.duir` module with a
+`.trace` golden, byte-compared by
+`crates/ductus-conformance/tests/deferred.rs`. A deferred's two ends sit at
+opposite ends of a commit, so its goldens read as `dirty` lines the host never
+staged (the landing, R75/R76) and as an absence where the dispatch happened
+(step 4½ publishes no value, so it records none).
+
+The `gate` family — `closed_at_startup`, `open_snap`, `close_freeze`,
+`live_inputs_frozen_derived`, `nested_gates`, `reopen_reset`,
+`gate_recurrent_loss`, `gate_deferred_cancel`, `predicate_stable`,
+`rank_interleaved_roots` and `self_conditional_gate` — each
+pairs a `.duir` module with a `.trace` golden, byte-compared by
+`crates/ductus-conformance/tests/gates.rs`. Two shapes recur in those goldens
+and are worth knowing before reading one. A gate move costs TWO commit blocks,
+because the predicate reads prior-commit values (R73, step 1a): the block
+carrying the `dirty` line on the predicate's input is never the block carrying
+the `gate <path> open|close` line. And a frozen subtree is recorded as an
+ABSENCE — activation is checked before staleness (RW-9), so the assertion is
+usually the `eval` line that is missing beside a `dirty` line that is not.
+
+`self_conditional_gate` is the family's newest member and the one whose
+existence was ruled rather than derived: its predicate reads a cell its own gate
+guards, which the owner ruled LEGAL on 2026-08-24 (SPEC §13.9.6, 022-36..39).
+Both shapes above are visible in it at once — the transition trails the guarded
+change by one commit, and the gate then LATCHES, because the value its predicate
+reads is the value it froze.

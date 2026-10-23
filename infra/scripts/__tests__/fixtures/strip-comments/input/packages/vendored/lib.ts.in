@@ -1,0 +1,2 @@
+// the whole folder is listed in .strip-comments-ignore
+export const vendored = 1; // stays

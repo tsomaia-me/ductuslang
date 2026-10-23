@@ -1,0 +1,18 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> NaN
+eval App.r -> NaN
+publish
+commit_end
+commit_begin
+dirty App.x NaN -> 2
+eval App.r -> 2
+publish
+commit_end
+commit_begin
+dirty App.x 2 -> 3
+eval App.r -> 1
+publish
+commit_end

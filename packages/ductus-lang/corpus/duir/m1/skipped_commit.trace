@@ -1,0 +1,28 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 7
+eval App.acc -> 7
+publish
+commit_end
+commit_begin
+dirty App.x 7 -> 20
+eval App.acc -> 27
+publish
+commit_end
+commit_begin
+dirty App.other 0 -> 1
+eval App.echo -> 2
+publish
+commit_end
+commit_begin
+dirty App.x 20 -> 0
+eval App.acc -> 34
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 1
+eval App.acc -> 62
+publish
+commit_end

@@ -17,8 +17,9 @@
 //!
 //! - **Spans on named entries** (R17). A `Scope`, `Cell`, `Gate`, `Wire`,
 //!   `Effect` and `Stream` each carry the span of their own line; the pieces
-//!   inside them — a `Member`, a `Binding`, a `ReopenPair`, a `LookbackEntry` —
-//!   do not, and a diagnostic about one points at the entry that holds it.
+//!   inside them — a `Member`, a `Binding`, a `ReopenPair`, a `LookbackEntry`,
+//!   a `FallbackEntry` — do not, and a diagnostic about one points at the entry
+//!   that holds it.
 //! - **Empty vector = absent clause.** Where the grammar makes a set clause
 //!   OPTIONAL, an empty vector is that clause's absence and the canonical
 //!   rendering omits it. Where the clause is MANDATORY — a scope's `exposes`
@@ -31,6 +32,7 @@ pub mod cell;
 pub mod cell_kind;
 pub mod effect;
 pub mod entry;
+pub mod fallback_entry;
 pub mod gate;
 pub mod lookback_entry;
 pub mod member;
@@ -50,6 +52,7 @@ pub use self::cell::Cell;
 pub use self::cell_kind::CellKind;
 pub use self::effect::Effect;
 pub use self::entry::Entry;
+pub use self::fallback_entry::FallbackEntry;
 pub use self::gate::Gate;
 pub use self::lookback_entry::LookbackEntry;
 pub use self::member::Member;

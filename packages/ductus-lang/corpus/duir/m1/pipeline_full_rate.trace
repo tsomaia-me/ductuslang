@@ -1,0 +1,27 @@
+commit_begin
+publish
+commit_end
+commit_begin
+dirty App.x 0 -> 10
+publish
+commit_end
+commit_begin
+dirty App.x 10 -> 20
+publish
+commit_end
+commit_begin
+dirty App.x 20 -> 30
+dirty App.pipe 1 -> 11
+publish
+commit_end
+commit_begin
+dirty App.pipe 11 -> 21
+publish
+commit_end
+commit_begin
+dirty App.pipe 21 -> 31
+publish
+commit_end
+commit_begin
+publish
+commit_end

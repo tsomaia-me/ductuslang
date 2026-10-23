@@ -42,9 +42,29 @@ impl Witness {
     /// fails loudly with the resolved path in the message.
     #[must_use]
     pub fn load(name: &str) -> Witness {
+        Witness::load_milestone("m0", name)
+    }
+
+    /// The same pair out of ANOTHER milestone's directory —
+    /// `corpus/duir/<milestone>/<name>.{duir,trace}`.
+    ///
+    /// Each milestone owns a directory (corpus/README.md), because a witness is
+    /// derived from the semantics contract as it stood for that milestone's
+    /// slice: M0's goldens must keep passing byte-identically while M1's are
+    /// derived from a longer step list. The directory is the only thing that
+    /// varies — the pair convention, the manifest anchoring and the failure
+    /// mode are one law across all of them.
+    ///
+    /// # Panics
+    ///
+    /// If either file is missing or unreadable, exactly as [`Witness::load`]
+    /// does, with the resolved path in the message — which is also what a
+    /// misspelled `milestone` produces.
+    #[must_use]
+    pub fn load_milestone(milestone: &str, name: &str) -> Witness {
         Witness {
-            source: read(name, "duir"),
-            golden: read(name, "trace"),
+            source: read_from(milestone, name, "duir"),
+            golden: read_from(milestone, name, "trace"),
         }
     }
 
@@ -60,10 +80,15 @@ impl Witness {
     }
 }
 
-/// Reads one corpus file of a witness pair, anchored at the crate manifest.
+/// Reads one corpus file of an M0 witness pair.
 fn read(name: &str, extension: &str) -> String {
+    read_from("m0", name, extension)
+}
+
+/// Reads one corpus file of a witness pair, anchored at the crate manifest.
+fn read_from(milestone: &str, name: &str, extension: &str) -> String {
     let path = format!(
-        "{}/../../corpus/duir/m0/{name}.{extension}",
+        "{}/../../corpus/duir/{milestone}/{name}.{extension}",
         env!("CARGO_MANIFEST_DIR")
     );
 
@@ -89,5 +114,16 @@ mod tests {
     #[should_panic(expected = "cannot read")]
     fn panics_with_the_resolved_path_when_a_file_is_missing() {
         let _ = Witness::source_only("no_such_witness_exists");
+    }
+
+    // The milestone is the ONLY thing that varies: the same name resolves in
+    // whichever directory it is asked for, and `load` is `load_milestone` at
+    // "m0".
+    #[test]
+    fn loads_a_pair_out_of_another_milestones_directory() {
+        let pair = Witness::load_milestone("m1", "first_evaluation");
+
+        assert!(pair.source.starts_with("module "));
+        assert!(pair.golden.ends_with("commit_end\n"));
     }
 }
