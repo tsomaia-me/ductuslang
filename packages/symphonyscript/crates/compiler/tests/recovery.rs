@@ -712,6 +712,10 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
             "Clip c:\n    (Note when x)\n",
         ),
         ("let x = [a,\nb\n]\n", "let x = [a, b]\n"),
+        (
+            "Clip c:\n    (\n    Note/x::y)\n",
+            "Clip c:\n    (Note/x::y)\n",
+        ),
         ("let x = f(1,\n(2))\n", "let x = f(1, (2))\n"),
         ("let x = [1,\n[2]]\n", "let x = [1, [2]]\n"),
         (
@@ -789,4 +793,36 @@ fn tight_slashes_inside_a_broken_bracket_stay_in_its_region() {
     let codes = support::codes(&text);
     assert_eq!(codes.len(), 1, "{:?}", codes.get(..3));
     assert_eq!(codes, [(Code::DefaultArgSyntax, 20, 21)]);
+}
+
+#[test]
+fn a_name_and_slash_resynchronize_only_with_a_default_value_spec_7_5_allows() {
+    for (value, resynchronizes) in [
+        ("x::y", true),
+        ("x::y::z", false),
+        ("to.gain", true),
+        ("to", false),
+        ("to.gain.x", false),
+        ("b.c::d", false),
+        ("b.c.d", true),
+        ("-3", true),
+        ("\"s\"", true),
+        ("(1)", true),
+    ] {
+        let text = format!("Clip c:\n    Note/(1 2\n    a/{value}\nlet b = )\n");
+        let close = text.rfind(')').expect("the last line holds `)`") as u32;
+        assert_eq!(
+            support::codes(&text),
+            [
+                (Code::DefaultArgSyntax, 20, 21),
+                (Code::ExpressionSyntax, close, close + 1)
+            ],
+            "{text:?}"
+        );
+        assert_eq!(
+            support::tree(&text).contains("Placement[a DefaultArg[/"),
+            resynchronizes,
+            "{text:?}"
+        );
+    }
 }

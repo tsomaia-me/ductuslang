@@ -71,7 +71,8 @@ fn default_value_ends_line<'t>(mut rest: impl Iterator<Item = &'t Token>) -> boo
             .filter(|token| token.kind == SyntaxKind::Number)
             .map(|_| rest.next()),
         SyntaxKind::Number | SyntaxKind::TrueKw | SyntaxKind::FalseKw => Some(rest.next()),
-        SyntaxKind::Ident | SyntaxKind::ToKw => skip_path(&mut rest),
+        SyntaxKind::Ident => skip_name_value(&mut rest),
+        SyntaxKind::ToKw => skip_to_value(&mut rest),
         _ => None,
     };
     after.is_some_and(|after| {
@@ -103,16 +104,28 @@ fn skip_closed<'t>(
     None
 }
 
-fn skip_path<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Option<&'t Token>> {
+fn skip_name_value<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Option<&'t Token>> {
+    let mut dotted = false;
     loop {
         let Some(separator) = rest.next() else {
             return Some(None);
         };
-        if !matches!(separator.kind, SyntaxKind::Dot | SyntaxKind::Colon2) {
-            return Some(Some(separator));
+        match separator.kind {
+            SyntaxKind::Dot => dotted = true,
+            SyntaxKind::Colon2 if !dotted => {
+                return (rest.next()?.kind == SyntaxKind::Ident).then(|| rest.next());
+            }
+            _ => return Some(Some(separator)),
         }
         if rest.next()?.kind != SyntaxKind::Ident {
             return None;
         }
     }
+}
+
+fn skip_to_value<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Option<&'t Token>> {
+    if rest.next()?.kind != SyntaxKind::Dot || rest.next()?.kind != SyntaxKind::Ident {
+        return None;
+    }
+    Some(rest.next())
 }
