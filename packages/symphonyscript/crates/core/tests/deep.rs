@@ -28,14 +28,15 @@ fn deep_ty() -> Ty {
 }
 
 fn deep_expr(leaf: i32) -> Expr {
-    let mut expr = Expr::leaf(ExprNode::Const(Value::I32(leaf)));
+    let mut expr = Expr::leaf(ExprNode::Const(Value::I32(leaf))).expect("a leaf has no operands");
     for _ in 0..DEPTH {
-        let operand = expr.root;
-        expr.root = expr.push(ExprNode::Unary {
+        let operand = expr.root();
+        expr.push(ExprNode::Unary {
             op: UnaryOp::Neg,
             ty: Ty::I32,
             operand,
-        });
+        })
+        .expect("the operand precedes its node");
     }
     expr
 }
@@ -139,9 +140,10 @@ fn a_program_of_deep_values_dumps_compares_clones_and_drops() {
         assert_eq!(program, copy);
         let text = dump(&program, &vocab);
         assert!(text.contains(&format!("  ty i32{}\n", "[1]".repeat(DEPTH))));
-        let negations = "(neg i32 ".repeat(DEPTH);
-        let closing = ")".repeat(DEPTH);
-        assert!(text.contains(&format!("  expr {negations}(const i32 7){closing}\n")));
+        assert!(text.contains("  expr\n    e0 const i32 7\n    e1 neg i32 e0\n"));
+        let last = format!("    e{DEPTH} neg i32 e{}\n  span", DEPTH - 1);
+        assert!(text.contains(&last));
+        assert_eq!(text.matches(" neg i32 e").count(), DEPTH);
         let binding = format!(
             "    steps {}const i32 3{}\n",
             "array [".repeat(DEPTH),

@@ -11,8 +11,8 @@ mod types;
 mod vocab;
 
 pub use compiled::{
-    BinaryOp, Binding, Builtin, Cell, Entry, Expr, ExprNode, ExprRef, Input, Instance, Program,
-    Target, UnaryOp, Wire, dump,
+    BinaryOp, Binding, Builtin, Cell, Entry, Expr, ExprError, ExprNode, ExprRef, Input, Instance,
+    Program, Target, UnaryOp, Wire, dump,
 };
 pub use ids::{
     AttrId, CellId, EnumId, FamilyId, InputSlot, InstanceId, NodeKind, StrId, WireId, WireKind,

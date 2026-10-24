@@ -1,5 +1,5 @@
 use symphonyscript_core::{
-    AttrId, BinaryOp, Binding, Builtin, Cell, CellId, Count, Entry, Expr, ExprNode, Input,
+    AttrId, BinaryOp, Binding, Builtin, Cell, CellId, Count, Entry, Expr, ExprNode, ExprRef, Input,
     InputSlot, Instance, InstanceId, Path, Program, Scalar, Segment, Span, StrId, Target, Ty,
     UnaryOp, Value, Vocabulary, Wire, WireId, dump,
 };
@@ -26,97 +26,141 @@ fn path(segments: &[(&str, Option<u32>)]) -> Path {
     }
 }
 
+fn leaf(node: ExprNode) -> Expr {
+    Expr::leaf(node).expect("a leaf has no operands")
+}
+
+fn push(expr: &mut Expr, node: ExprNode) -> ExprRef {
+    expr.push(node).expect("operands precede their node")
+}
+
 fn first_cell() -> Expr {
-    let mut expr = Expr::leaf(ExprNode::Input(InputSlot(3)));
-    let input = expr.root;
-    let converted = expr.push(ExprNode::Convert {
-        from: Ty::F64,
-        to: Ty::F32,
-        operand: input,
-    });
-    let factor = expr.push(ExprNode::Const(Value::F32(0.1)));
-    expr.root = expr.push(ExprNode::Binary {
-        op: BinaryOp::Mul,
-        ty: Ty::F32,
-        lhs: converted,
-        rhs: factor,
-    });
+    let mut expr = leaf(ExprNode::Input(InputSlot(3)));
+    let input = expr.root();
+    let converted = push(
+        &mut expr,
+        ExprNode::Convert {
+            from: Ty::F64,
+            to: Ty::F32,
+            operand: input,
+        },
+    );
+    let factor = push(&mut expr, ExprNode::Const(Value::F32(0.1)));
+    push(
+        &mut expr,
+        ExprNode::Binary {
+            op: BinaryOp::Mul,
+            ty: Ty::F32,
+            lhs: converted,
+            rhs: factor,
+        },
+    );
     expr
 }
 
 fn second_cell() -> Expr {
-    let mut expr = Expr::leaf(ExprNode::Input(InputSlot(0)));
-    let scrutinee = expr.root;
-    let nan = expr.push(ExprNode::Const(Value::F64(f64::NAN)));
-    let other_nan = expr.push(ExprNode::Const(Value::F64(f64::from_bits(
-        0x7FF8_0000_0000_0001,
-    ))));
-    let index = expr.push(ExprNode::Input(InputSlot(0)));
-    let infinity = expr.push(ExprNode::Const(Value::F64(f64::INFINITY)));
-    let negative = expr.push(ExprNode::Const(Value::F64(f64::NEG_INFINITY)));
-    let tiny = expr.push(ExprNode::Const(Value::F64(1e-20)));
-    let one = expr.push(ExprNode::Const(Value::F64(1.0)));
-    let huge = expr.push(ExprNode::Const(Value::F64(2.5e300)));
-    let cell = expr.push(ExprNode::Cell(CellId(0)));
-    let lerp = expr.push(ExprNode::Call {
-        builtin: Builtin::Lerp,
-        ty: Ty::F64,
-        args: vec![one, huge, cell],
-    });
-    let pick = expr.push(ExprNode::Pick {
-        index_ty: Ty::I64,
-        index,
-        items: vec![infinity, negative, tiny, lerp],
-    });
-    expr.root = expr.push(ExprNode::Match {
-        ty: Ty::I64,
-        scrutinee,
-        arms: vec![(Value::I64(0), nan), (Value::I64(1), other_nan)],
-        otherwise: Some(pick),
-    });
+    let mut expr = leaf(ExprNode::Input(InputSlot(0)));
+    let scrutinee = expr.root();
+    let nan = push(&mut expr, ExprNode::Const(Value::F64(f64::NAN)));
+    let other_nan = push(
+        &mut expr,
+        ExprNode::Const(Value::F64(f64::from_bits(0x7FF8_0000_0000_0001))),
+    );
+    let infinity = push(&mut expr, ExprNode::Const(Value::F64(f64::INFINITY)));
+    let negative = push(&mut expr, ExprNode::Const(Value::F64(f64::NEG_INFINITY)));
+    let tiny = push(&mut expr, ExprNode::Const(Value::F64(1e-20)));
+    let one = push(&mut expr, ExprNode::Const(Value::F64(1.0)));
+    let huge = push(&mut expr, ExprNode::Const(Value::F64(2.5e300)));
+    let cell = push(&mut expr, ExprNode::Cell(CellId(0)));
+    let lerp = push(
+        &mut expr,
+        ExprNode::Call {
+            builtin: Builtin::Lerp,
+            ty: Ty::F64,
+            args: vec![one, huge, cell],
+        },
+    );
+    let pick = push(
+        &mut expr,
+        ExprNode::Pick {
+            index_ty: Ty::I64,
+            index: scrutinee,
+            items: vec![infinity, negative, tiny, lerp],
+        },
+    );
+    push(
+        &mut expr,
+        ExprNode::Match {
+            ty: Ty::I64,
+            scrutinee,
+            arms: vec![(Value::I64(0), nan), (Value::I64(1), other_nan)],
+            otherwise: Some(pick),
+        },
+    );
     expr
 }
 
 fn third_cell(wave: symphonyscript_core::EnumId) -> Expr {
-    let mut expr = Expr::leaf(ExprNode::Input(InputSlot(1)));
-    let input = expr.root;
-    let condition = expr.push(ExprNode::Unary {
-        op: UnaryOp::Not,
-        ty: Ty::BOOL,
-        operand: input,
-    });
-    let saw = expr.push(ExprNode::Const(Value::Enum(wave, 1)));
-    let sine = expr.push(ExprNode::Const(Value::Enum(wave, 0)));
-    let then = expr.push(ExprNode::Binary {
-        op: BinaryOp::Is,
-        ty: Ty::of(Scalar::Enum(wave)),
-        lhs: saw,
-        rhs: sine,
-    });
-    let seed = expr.push(ExprNode::Const(Value::I64(i64::MAX)));
-    let section = expr.push(ExprNode::Input(InputSlot(0)));
-    let negated = expr.push(ExprNode::Unary {
-        op: UnaryOp::Neg,
-        ty: Ty::I64,
-        operand: section,
-    });
-    let rand = expr.push(ExprNode::Call {
-        builtin: Builtin::Rand,
-        ty: Ty::I64,
-        args: vec![seed, negated],
-    });
-    let odd_nan = expr.push(ExprNode::Const(Value::F32(f32::from_bits(0x7FC0_0001))));
-    let otherwise = expr.push(ExprNode::Binary {
-        op: BinaryOp::Gt,
-        ty: Ty::F32,
-        lhs: rand,
-        rhs: odd_nan,
-    });
-    expr.root = expr.push(ExprNode::If {
-        condition,
-        then,
-        otherwise,
-    });
+    let mut expr = leaf(ExprNode::Input(InputSlot(1)));
+    let input = expr.root();
+    let condition = push(
+        &mut expr,
+        ExprNode::Unary {
+            op: UnaryOp::Not,
+            ty: Ty::BOOL,
+            operand: input,
+        },
+    );
+    let saw = push(&mut expr, ExprNode::Const(Value::Enum(wave, 1)));
+    let sine = push(&mut expr, ExprNode::Const(Value::Enum(wave, 0)));
+    let then = push(
+        &mut expr,
+        ExprNode::Binary {
+            op: BinaryOp::Is,
+            ty: Ty::of(Scalar::Enum(wave)),
+            lhs: saw,
+            rhs: sine,
+        },
+    );
+    let seed = push(&mut expr, ExprNode::Const(Value::I64(i64::MAX)));
+    let section = push(&mut expr, ExprNode::Input(InputSlot(0)));
+    let negated = push(
+        &mut expr,
+        ExprNode::Unary {
+            op: UnaryOp::Neg,
+            ty: Ty::I64,
+            operand: section,
+        },
+    );
+    let rand = push(
+        &mut expr,
+        ExprNode::Call {
+            builtin: Builtin::Rand,
+            ty: Ty::I64,
+            args: vec![seed, negated],
+        },
+    );
+    let odd_nan = push(
+        &mut expr,
+        ExprNode::Const(Value::F32(f32::from_bits(0x7FC0_0001))),
+    );
+    let otherwise = push(
+        &mut expr,
+        ExprNode::Binary {
+            op: BinaryOp::Gt,
+            ty: Ty::F32,
+            lhs: rand,
+            rhs: odd_nan,
+        },
+    );
+    push(
+        &mut expr,
+        ExprNode::If {
+            condition,
+            then,
+            otherwise,
+        },
+    );
     expr
 }
 

@@ -98,15 +98,43 @@ input 2
   span "main.sym" 51..70
 cell c0
   ty f32
-  expr (mul f32 (convert f64 f32 (slot 3)) (const f32 0.1))
+  expr
+    e0 slot 3
+    e1 convert f64 f32 e0
+    e2 const f32 0.1
+    e3 mul f32 e1 e2
   span "main.sym" 71..90
 cell c1
   ty f64
-  expr (match i64 (slot 0) [i64 0 (const f64 nan)] [i64 1 (const f64 nan:0x7ff8000000000001)] [else (pick i64 (slot 0) (const f64 inf) (const f64 -inf) (const f64 1e-20) (call lerp f64 (const f64 1.0) (const f64 2.5e300) (cell c0)))])
+  expr
+    e0 slot 0
+    e1 const f64 nan
+    e2 const f64 nan:0x7ff8000000000001
+    e3 const f64 inf
+    e4 const f64 -inf
+    e5 const f64 1e-20
+    e6 const f64 1.0
+    e7 const f64 2.5e300
+    e8 cell c0
+    e9 call lerp f64 e6 e7 e8
+    e10 pick i64 e0 e3 e4 e5 e9
+    e11 match i64 e0 [i64 0 e1] [i64 1 e2] [else e10]
   span "main.sym" 91..100
 cell c2
   ty bool
-  expr (if (not bool (slot 1)) (is Wave (const Wave::Saw) (const Wave::Sine)) (gt f32 (call rand i64 (const i64 9223372036854775807) (neg i64 (slot 0))) (const f32 nan:0x7fc00001)))
+  expr
+    e0 slot 1
+    e1 not bool e0
+    e2 const Wave::Saw
+    e3 const Wave::Sine
+    e4 is Wave e2 e3
+    e5 const i64 9223372036854775807
+    e6 slot 0
+    e7 neg i64 e6
+    e8 call rand i64 e5 e7
+    e9 const f32 nan:0x7fc00001
+    e10 gt f32 e8 e9
+    e11 if e1 e4 e10
   span "main.sym" 101..110
 string s0 "kit/0.wav"
 string s1 "a \"quoted\" \\ line\nnext\ttab\u{1}"
