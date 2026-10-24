@@ -14,9 +14,10 @@ use rowan::GreenNode;
 use symphonyscript_core::{Span, Vocabulary};
 
 use self::checkpoint::Checkpoint;
+use self::placements::FLAG_TOKENS;
 use self::task::Task;
 use self::tree_builder::TreeBuilder;
-use super::lexer::Lexer;
+use super::lexer::{Lexer, LineStart};
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
 use crate::diagnostics::{Code, Diagnostic};
@@ -163,7 +164,9 @@ impl<'a> Parser<'a> {
             Task::ParenFinishPlacement => self.paren_finish_placement(),
             Task::PlacementHead => self.placement_head(),
             Task::DefaultArg { kind } => self.default_arg(kind),
-            Task::DefaultAfterAtom { kind, atom } => self.default_after_atom(kind, atom),
+            Task::DefaultAfterAtom { kind, slash, atom } => {
+                self.default_after_atom(kind, slash, atom)
+            }
             Task::Atom => self.atom(),
             Task::Gate => self.gate(),
             Task::Attrs => self.attrs(),
@@ -255,39 +258,43 @@ impl<'a> Parser<'a> {
             .unwrap_or("")
     }
 
-    fn text_through_group(&mut self, first: usize) -> &'a str {
+    fn text_between(&mut self, first: usize, last: usize) -> &'a str {
         let source = self.source;
         let start = self.range_at(first).map_or(0, |range| range.start);
-        let Some(open) = self.significant(0) else {
-            return "";
-        };
-        let open_start = self.range_at(open).map_or(start, |range| range.start) as usize;
+        let end = self.range_at(last).map_or(start, |range| range.end);
+        source.text.get(start as usize..end as usize).unwrap_or("")
+    }
+
+    fn closed_groups(&mut self) -> Option<usize> {
+        let source = self.source;
+        let open = self.significant(0)?;
+        let open_start = self.range_at(open)?.start as usize;
         let line_end = source
             .text
             .get(open_start..)
             .and_then(|rest| rest.find('\n'))
             .map_or(source.text.len(), |offset| open_start + offset);
         let mut depth = 0usize;
-        let mut end = start;
         let mut index = open;
-        while let (Some(kind), Some(range)) = (self.kind_at(index), self.range_at(index)) {
-            if range.start as usize >= line_end {
-                break;
+        loop {
+            let kind = self.kind_at(index)?;
+            if self.range_at(index)?.start as usize >= line_end {
+                return None;
             }
             match kind {
                 SyntaxKind::LParen | SyntaxKind::LBracket => depth += 1,
                 SyntaxKind::RParen | SyntaxKind::RBracket => depth = depth.saturating_sub(1),
                 _ => {}
             }
-            if !kind.is_trivia() {
-                end = range.end;
-            }
-            if depth == 0 {
-                break;
+            let next_opens = matches!(
+                self.kind_at(index + 1),
+                Some(SyntaxKind::LParen | SyntaxKind::LBracket)
+            );
+            if depth == 0 && !next_opens {
+                return Some(index);
             }
             index += 1;
         }
-        source.text.get(start as usize..end as usize).unwrap_or("")
     }
 
     fn current_text(&mut self) -> &'a str {
@@ -412,10 +419,13 @@ impl<'a> Parser<'a> {
         let Some(before) = self.lexer.token_before(at) else {
             return false;
         };
+        if self.kind_at(before) == Some(SyntaxKind::Error) {
+            return true;
+        }
         let Some(range) = self.range_at(before) else {
             return false;
         };
-        self.lexer.faulted_within(range)
+        self.lexer.in_cut_construct(range.start)
     }
 
     pub(super) fn abandon_bracket(&mut self) {
@@ -521,17 +531,31 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn starts_line(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
+fn starts_line(line: LineStart) -> bool {
+    match line.first {
         SyntaxKind::InputKw
-            | SyntaxKind::LetKw
-            | SyntaxKind::FnKw
-            | SyntaxKind::PatternKw
-            | SyntaxKind::Ident
-            | SyntaxKind::LParen
-            | SyntaxKind::LBracket
-            | SyntaxKind::ForKw
-            | SyntaxKind::WhenKw
-    )
+        | SyntaxKind::LetKw
+        | SyntaxKind::FnKw
+        | SyntaxKind::PatternKw
+        | SyntaxKind::LParen
+        | SyntaxKind::LBracket
+        | SyntaxKind::ForKw
+        | SyntaxKind::WhenKw => true,
+        SyntaxKind::Ident => match line.next {
+            None => line.top_level,
+            Some((next, adjacent)) if line.top_level => {
+                matches!(next, SyntaxKind::Ident | SyntaxKind::AsKw)
+                    || (adjacent && FLAG_TOKENS.contains(&next))
+            }
+            Some((next, _)) => matches!(
+                next,
+                SyntaxKind::Ident
+                    | SyntaxKind::Slash
+                    | SyntaxKind::Pipe
+                    | SyntaxKind::WhenKw
+                    | SyntaxKind::Colon
+            ),
+        },
+        _ => false,
+    }
 }

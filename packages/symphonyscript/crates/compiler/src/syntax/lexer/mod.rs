@@ -1,4 +1,5 @@
 mod clause;
+mod line_start;
 mod mode;
 mod region;
 mod scan;
@@ -12,6 +13,7 @@ use unicode_width::UnicodeWidthChar;
 use std::ops::Range;
 
 use self::clause::Clause;
+pub(crate) use self::line_start::LineStart;
 use self::mode::Mode;
 use self::region::Region;
 pub(crate) use self::scan::is_ident_continue;
@@ -42,8 +44,11 @@ pub(crate) struct Lexer<'a> {
     depths: Vec<u32>,
     suspended: Vec<Suspension>,
     regions: Vec<Region>,
+    stacks: Vec<Vec<u32>>,
+    line_stack: Option<usize>,
     faults: Vec<Range<u32>>,
     reach: Vec<u32>,
+    cut_constructs: Vec<Range<u32>>,
     resume_line: Option<usize>,
     finished: bool,
     work: usize,
@@ -69,8 +74,11 @@ impl<'a> Lexer<'a> {
             depths: Vec::new(),
             suspended: Vec::new(),
             regions: Vec::new(),
+            stacks: Vec::new(),
+            line_stack: None,
             faults: Vec::new(),
             reach: Vec::new(),
+            cut_constructs: Vec::new(),
             resume_line: None,
             finished: false,
             work: 0,
@@ -139,15 +147,16 @@ impl<'a> Lexer<'a> {
             .is_some_and(|reach| *reach > offset)
     }
 
-    pub(crate) fn faulted_within(&mut self, range: Range<u32>) -> bool {
+    pub(crate) fn in_cut_construct(&mut self, offset: u32) -> bool {
         let work = &mut self.work;
-        let first = self.faults.partition_point(|fault| {
+        let before = self.cut_constructs.partition_point(|construct| {
             *work += 1;
-            fault.start < range.start
+            construct.start <= offset
         });
-        self.faults
-            .get(first)
-            .is_some_and(|fault| fault.start < range.end)
+        before
+            .checked_sub(1)
+            .and_then(|index| self.cut_constructs.get(index))
+            .is_some_and(|construct| construct.end > offset)
     }
 
     pub(crate) fn token_before(&mut self, offset: u32) -> Option<usize> {
@@ -170,7 +179,7 @@ impl<'a> Lexer<'a> {
     pub(crate) fn resync_line(
         &mut self,
         token: usize,
-        starts_line: fn(SyntaxKind) -> bool,
+        starts_line: fn(LineStart) -> bool,
     ) -> Option<usize> {
         if self.depths.get(token).copied().unwrap_or(0) == 0 {
             return None;
@@ -180,7 +189,13 @@ impl<'a> Lexer<'a> {
             .regions
             .partition_point(|region| region.open <= start)
             .checked_sub(1)?;
-        let top = self.regions.get(region)?.stack.last().copied().unwrap_or(0);
+        let top = self
+            .regions
+            .get(region)
+            .and_then(|region| self.stacks.get(region.stack))?
+            .last()
+            .copied()
+            .unwrap_or(0);
         let mut next = self
             .suspended
             .partition_point(|line| line.first_token < token);
@@ -188,8 +203,7 @@ impl<'a> Lexer<'a> {
             match self.suspended.get(next) {
                 Some(line) if line.region != region => return None,
                 Some(line) => {
-                    let first = self.tokens.get(line.first_token).map(|token| token.kind);
-                    if line.column <= top && first.is_some_and(starts_line) {
+                    if line.column <= top && self.line_start_of(line).is_some_and(starts_line) {
                         return Some(next);
                     }
                     next += 1;
@@ -202,6 +216,30 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+    }
+
+    fn line_start_of(&self, line: &Suspension) -> Option<LineStart> {
+        let first = self.tokens.get(line.first_token)?;
+        let line_end = self
+            .text
+            .get(first.range.start as usize..)
+            .and_then(|rest| rest.find('\n'))
+            .map_or(self.text.len(), |offset| {
+                first.range.start as usize + offset
+            });
+        let next = self
+            .tokens
+            .get(line.first_token + 1..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|token| (token.range.start as usize) < line_end)
+            .find(|token| !token.kind.is_trivia())
+            .map(|token| (token.kind, token.range.start == first.range.end));
+        Some(LineStart {
+            first: first.kind,
+            next,
+            top_level: line.column == 0,
+        })
     }
 
     pub(crate) fn resynchronize(&mut self, line: usize, consumed: usize) {
@@ -218,10 +256,15 @@ impl<'a> Lexer<'a> {
             .map_or(suspension.offset, |token| {
                 (token.range.end as usize).max(suspension.offset)
             });
-        let stack = self
+        let snapshot = self
             .regions
             .get(suspension.region)
-            .map_or_else(|| vec![0], |region| region.stack.clone());
+            .map_or(0, |region| region.stack);
+        let stack = self
+            .stacks
+            .get(snapshot)
+            .cloned()
+            .unwrap_or_else(|| vec![0]);
         self.tokens.truncate(keep);
         self.depths.truncate(keep);
         let offset = suspension.offset as u32;
@@ -232,8 +275,14 @@ impl<'a> Lexer<'a> {
         let kept = self.faults.partition_point(|fault| fault.start < offset);
         self.faults.truncate(kept);
         self.reach.truncate(kept);
+        let kept = self
+            .cut_constructs
+            .partition_point(|construct| construct.start < offset);
+        self.cut_constructs.truncate(kept);
         self.suspended.truncate(line);
         self.regions.truncate(suspension.region + 1);
+        self.stacks.truncate(snapshot + 1);
+        self.line_stack = None;
         self.pos = from;
         self.line_start = suspension.offset;
         self.stack = stack;
@@ -252,6 +301,7 @@ impl<'a> Lexer<'a> {
         let begin = self.pos;
         let first_diagnostic = self.diagnostics.len();
         self.line_start = line_start;
+        self.line_stack = None;
         let rest = &self.text[self.pos..];
         let indent = rest.len() - rest.trim_start_matches([' ', '\t']).len();
         let after = &rest[indent..];
@@ -353,6 +403,7 @@ impl<'a> Lexer<'a> {
             }
             if column != self.top() {
                 let end = self.pos + self.char_len(self.pos);
+                self.cut_constructs.push(self.pos as u32..end as u32);
                 self.error(
                     Code::DedentMismatch,
                     self.pos,
@@ -370,6 +421,7 @@ impl<'a> Lexer<'a> {
         loop {
             if self.at_line_end() {
                 if let Some(start) = self.unterminated_start() {
+                    self.cut_constructs.push(start as u32..self.pos as u32);
                     self.error(
                         Code::UnterminatedString,
                         start,
@@ -871,10 +923,8 @@ impl<'a> Lexer<'a> {
                 }
                 SyntaxKind::LParen | SyntaxKind::LBracket => {
                     if self.depth == 0 {
-                        self.regions.push(Region {
-                            open: start,
-                            stack: self.stack.clone(),
-                        });
+                        let stack = self.line_stack_snapshot();
+                        self.regions.push(Region { open: start, stack });
                     }
                     self.depth += 1;
                 }
@@ -888,6 +938,16 @@ impl<'a> Lexer<'a> {
             kind,
             range: start as u32..self.pos as u32,
         });
+    }
+
+    fn line_stack_snapshot(&mut self) -> usize {
+        if let Some(snapshot) = self.line_stack {
+            return snapshot;
+        }
+        let snapshot = self.stacks.len();
+        self.stacks.push(self.stack.clone());
+        self.line_stack = Some(snapshot);
+        snapshot
     }
 
     fn top(&self) -> u32 {

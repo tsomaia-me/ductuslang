@@ -5,7 +5,7 @@ use crate::diagnostics::{Code, Diagnostic};
 use crate::syntax::lexer::is_ident_continue;
 use crate::syntax::syntax_kind::SyntaxKind;
 
-const FLAG_TOKENS: &[SyntaxKind] = &[
+pub(super) const FLAG_TOKENS: &[SyntaxKind] = &[
     SyntaxKind::Quote,
     SyntaxKind::Bang,
     SyntaxKind::Question,
@@ -256,6 +256,7 @@ impl Parser<'_> {
             return;
         }
         self.start(SyntaxKind::DefaultArg);
+        let slash = self.significant(0).unwrap_or(self.pos);
         self.bump();
         if self.at(SyntaxKind::LParen) {
             self.start(SyntaxKind::ParenExpr);
@@ -271,26 +272,33 @@ impl Parser<'_> {
             ]);
         } else {
             let atom = self.significant(0).unwrap_or(self.pos);
-            self.then([Task::Atom, Task::DefaultAfterAtom { kind, atom }]);
+            self.then([Task::Atom, Task::DefaultAfterAtom { kind, slash, atom }]);
         }
     }
 
-    pub(super) fn default_after_atom(&mut self, kind: usize, atom: usize) {
+    pub(super) fn default_after_atom(&mut self, kind: usize, slash: usize, atom: usize) {
         if !self.line_error
             && self.adjacent()
             && self.at_any(&[SyntaxKind::LBracket, SyntaxKind::LParen])
         {
             let found = self.describe();
-            let kind = self.text_of(kind);
-            let value = self.text_through_group(atom);
+            let example = match self.closed_groups() {
+                Some(last) => {
+                    let prefix = self.text_between(kind, slash);
+                    let value = self.text_between(atom, last);
+                    format!("{prefix}({value})")
+                }
+                None => {
+                    let kind = self.text_of(kind);
+                    format!("{kind}/(…)")
+                }
+            };
             let diagnostic = Diagnostic::new(
                 Code::DefaultArgSyntax,
                 self.current_span(),
                 format!("an unparenthesized `/` value ends before {found}"),
             )
-            .with_hint(format!(
-                "parenthesize the whole value, as in `{kind}/({value})`"
-            ));
+            .with_hint(format!("parenthesize the whole value, as in `{example}`"));
             self.error_with(diagnostic);
         }
         self.finish();

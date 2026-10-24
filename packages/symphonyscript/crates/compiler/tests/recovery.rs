@@ -280,6 +280,32 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         &[(Code::ExpressionSyntax, 26, 30)],
         "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( BinaryExpr[Literal[1] +]]] NL] WhenBlock[when NameRef[x] : Block[Members[Placement[Note]] NL]] <]]]]",
     ),
+    (
+        "let a = 1_ 2\n",
+        &[
+            (Code::MisplacedUnderscore, 9, 10),
+            (Code::LetSyntax, 11, 12),
+        ],
+        "File[LetDecl[let a = Literal[1_] ErrorNode[2] NL]]",
+    ),
+    (
+        "let a = 0b12 3\n",
+        &[(Code::PrefixedSuffix, 11, 12), (Code::LetSyntax, 13, 14)],
+        "File[LetDecl[let a = Literal[0b12] ErrorNode[3] NL]]",
+    ),
+    (
+        "let a = f(1 2,\nb)\nlet c = 3\n",
+        &[(Code::ExpressionSyntax, 12, 13)],
+        "File[LetDecl[let a = CallExpr[NameRef[f] ArgList[( Literal[1]]] ErrorNode[2 , b )] NL] LetDecl[let c = Literal[3] NL]]",
+    ),
+    (
+        "let a = (1 2\nx)\nlet b = )\n",
+        &[
+            (Code::ExpressionSyntax, 11, 12),
+            (Code::ExpressionSyntax, 24, 25),
+        ],
+        "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[2 x )] NL] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
 ];
 
 #[test]
@@ -318,6 +344,26 @@ fn the_parenthesize_hint_shows_the_written_value() {
         (
             "Clip c:\n    Plays/to.gain[i + 1]: d\n",
             "parenthesize the whole value, as in `Plays/(to.gain[i + 1])`",
+        ),
+        (
+            "Clip c:\n    Note'/a[0]\n",
+            "parenthesize the whole value, as in `Note'/(a[0])`",
+        ),
+        (
+            "Clip c:\n    Note as hook /a[0]\n",
+            "parenthesize the whole value, as in `Note as hook /(a[0])`",
+        ),
+        (
+            "Clip c:\n    Note/é[0](1)[2]\n",
+            "parenthesize the whole value, as in `Note/(é[0](1)[2])`",
+        ),
+        (
+            "Clip c:\n    Note/f(1\n",
+            "parenthesize the whole value, as in `Note/(…)`",
+        ),
+        (
+            "Clip c:\n    Note/a[0\n",
+            "parenthesize the whole value, as in `Note/(…)`",
         ),
     ] {
         let hints: Vec<Option<String>> = support::parsed(text)

@@ -88,6 +88,7 @@ pub(super) enum Task {
     },
     DefaultAfterAtom {
         kind: usize,
+        slash: usize,
         atom: usize,
     },
     Atom,
