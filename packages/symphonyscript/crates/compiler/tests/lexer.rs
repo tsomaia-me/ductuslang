@@ -149,7 +149,7 @@ fn a_line_at_another_column_ends_the_clause() {
 }
 
 #[test]
-fn a_line_aligned_only_on_screen_draws_a_diagnostic() {
+fn a_line_aligned_only_on_screen_is_an_error_and_continues_the_clause() {
     let text = &format!("Clip 音楽 | gain=1\n{}level=2\n", " ".repeat(12));
     let found = lex(&source(text), &vocabulary());
     let codes: Vec<(Code, u32, u32)> = found
@@ -162,7 +162,7 @@ fn a_line_aligned_only_on_screen_draws_a_diagnostic() {
     assert!(found.diagnostics[0].message.contains("column 11"));
     assert_eq!(
         render(text, &found.tokens),
-        "Ident(Clip) _ Ident(音楽) _ Pipe _ Ident(gain) Eq Number(1) NL _ > Ident(level) Eq Number(2) NL <"
+        "Ident(Clip) _ Ident(音楽) _ Pipe _ Ident(gain) Eq Number(1) _ _ Ident(level) Eq Number(2) NL"
     );
     assert_eq!(
         clean(&format!("Clip 音楽 | gain=1\n{}level=2\n", " ".repeat(10))),

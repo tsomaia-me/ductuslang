@@ -6,6 +6,8 @@ mod placements;
 use rowan::{Checkpoint, GreenNode, GreenNodeBuilder, Language};
 use symphonyscript_core::{Span, Vocabulary};
 
+use super::lexed::Lexed;
+use super::lexer::{Layout, Lexer, Suspension};
 use super::nfc::nfc;
 use super::symphony_language::SymphonyLanguage;
 use super::syntax_kind::SyntaxKind;
@@ -17,6 +19,9 @@ pub(crate) struct Parser<'a> {
     source: &'a Source,
     vocabulary: &'a Vocabulary,
     tokens: Vec<Token>,
+    depths: Vec<u32>,
+    suspended: Vec<Suspension>,
+    lexer_diagnostics: Vec<Diagnostic>,
     pos: usize,
     builder: GreenNodeBuilder<'static>,
     diagnostics: Vec<Diagnostic>,
@@ -25,11 +30,19 @@ pub(crate) struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(source: &'a Source, vocabulary: &'a Vocabulary, tokens: Vec<Token>) -> Self {
+    pub(crate) fn new(
+        source: &'a Source,
+        vocabulary: &'a Vocabulary,
+        lexed: Lexed,
+        layout: Layout,
+    ) -> Self {
         Self {
             source,
             vocabulary,
-            tokens,
+            tokens: lexed.tokens,
+            depths: layout.depths,
+            suspended: layout.suspended,
+            lexer_diagnostics: lexed.diagnostics,
             pos: 0,
             builder: GreenNodeBuilder::new(),
             diagnostics: Vec::new(),
@@ -47,7 +60,10 @@ impl<'a> Parser<'a> {
             self.raw_bump();
         }
         self.builder.finish_node();
-        (self.builder.finish(), self.diagnostics)
+        let mut diagnostics = self.lexer_diagnostics;
+        diagnostics.extend(self.diagnostics);
+        diagnostics.sort_by_key(|diagnostic| diagnostic.span.range.start);
+        (self.builder.finish(), diagnostics)
     }
 
     fn significant(&self, n: usize) -> Option<usize> {
@@ -199,10 +215,72 @@ impl<'a> Parser<'a> {
             return;
         }
         self.line_error = true;
-        if self.at(SyntaxKind::Error) {
+        if !self.at(SyntaxKind::Error) && !self.lexer_error_on_line(diagnostic.span.range.start) {
+            self.diagnostics.push(diagnostic);
+        }
+        self.resync();
+    }
+
+    fn lexer_error_on_line(&self, at: u32) -> bool {
+        let text = &self.source.text;
+        let at = (at as usize).min(text.len());
+        let start = text[..at].rfind('\n').map_or(0, |index| index + 1);
+        let end = text[at..].find('\n').map_or(text.len(), |index| at + index);
+        self.lexer_diagnostics.iter().any(|diagnostic| {
+            let position = diagnostic.span.range.start as usize;
+            position >= start && position <= end
+        })
+    }
+
+    pub(super) fn abandon_bracket(&mut self) {
+        if !self.line_error {
+            self.line_error = true;
+            self.resync();
+        }
+    }
+
+    fn resync(&mut self) {
+        let Some(current) = self.significant(0) else {
+            return;
+        };
+        if self.depths.get(current).copied().unwrap_or(0) == 0 {
             return;
         }
-        self.diagnostics.push(diagnostic);
+        let from = self.tokens[current].range.start as usize;
+        let region_end = (current..self.tokens.len())
+            .find(|index| self.depths[*index] == 0)
+            .map_or(self.source.text.len(), |index| {
+                self.tokens[index].range.start as usize
+            });
+        let Some(line) = self
+            .suspended
+            .iter()
+            .find(|line| {
+                line.first >= from
+                    && line.first < region_end
+                    && line.column <= line.stack.last().copied().unwrap_or(0)
+            })
+            .cloned()
+        else {
+            return;
+        };
+        let Some(cut) = (self.pos..self.tokens.len())
+            .find(|index| self.tokens[*index].range.start as usize >= line.offset)
+        else {
+            return;
+        };
+        let (lexed, layout) =
+            Lexer::resume(self.source, self.vocabulary, line.offset, line.stack).run_with_layout();
+        self.tokens.truncate(cut);
+        self.tokens.extend(lexed.tokens);
+        self.depths.truncate(cut);
+        self.depths.extend(layout.depths);
+        self.suspended
+            .retain(|suspension| suspension.offset < line.offset);
+        self.suspended.extend(layout.suspended);
+        self.lexer_diagnostics
+            .retain(|diagnostic| (diagnostic.span.range.start as usize) < line.offset);
+        self.lexer_diagnostics.extend(lexed.diagnostics);
     }
 
     fn describe(&self) -> String {

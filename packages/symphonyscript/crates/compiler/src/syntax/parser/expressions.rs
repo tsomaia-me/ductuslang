@@ -332,11 +332,13 @@ impl Parser<'_> {
                 }
                 Some(SyntaxKind::StringEnd) => {
                     self.bump();
-                    break;
+                    self.finish();
+                    return;
                 }
                 _ => break,
             }
         }
         self.finish();
+        self.abandon_bracket();
     }
 }

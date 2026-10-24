@@ -78,12 +78,12 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     (
         "let x = [1, 2\nlet y = 3\n",
         &[(Code::ExpressionSyntax, 14, 17)],
-        "File[LetDecl[let x = ArrayLit[[ Literal[1] , Literal[2]] ErrorNode[let y = 3] NL]]",
+        "File[LetDecl[let x = ArrayLit[[ Literal[1] , Literal[2]] NL] LetDecl[let y = Literal[3] NL]]",
     ),
     (
         "fn f(x:\n    x\nlet y = 1\n",
         &[(Code::FnSyntax, 6, 7)],
-        "File[FnDecl[fn f ParamList[( Param[x]] : FnBody[NameRef[x] ErrorNode[let y = 1] NL]]]",
+        "File[FnDecl[fn f ParamList[( Param[x]] : FnBody[NameRef[x] NL]] LetDecl[let y = Literal[1] NL]]",
     ),
     (
         "pattern P():\n    let a = 1\nClip c\n",
@@ -92,10 +92,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     ),
     (
         "Clip c:\n    Note\n  Note\n",
-        &[
-            (Code::DedentMismatch, 19, 20),
-            (Code::PlacementSyntax, 23, 24),
-        ],
+        &[(Code::DedentMismatch, 19, 20)],
         "File[Placement[Clip c Body[: Block[NL > Placement[Note NL] <]]] Placement[Note NL]]",
     ),
     (
@@ -203,6 +200,68 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         &[(Code::PlacementSyntax, 27, 27)],
         "File[Placement[Clip c Body[: Block[NL > Placement[Note NL] Placement[Note Body[: Block[NL]]] <]]]]",
     ),
+    (
+        "Clip c:\n    Note'as hook\n",
+        &[(Code::FlagSyntax, 17, 19)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note Flags['] as hook NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note'when x\n",
+        &[(Code::FlagSyntax, 17, 21)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note Flags['] Gate[when NameRef[x]] NL] <]]]]",
+    ),
+    (
+        "let a = (1 +\nlet b = )\n",
+        &[
+            (Code::ExpressionSyntax, 13, 16),
+            (Code::ExpressionSyntax, 21, 22),
+        ],
+        "File[LetDecl[let a = ParenExpr[( BinaryExpr[Literal[1] +]] NL] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "let x = [1, 2\nlet y = )\n",
+        &[
+            (Code::ExpressionSyntax, 14, 17),
+            (Code::ExpressionSyntax, 22, 23),
+        ],
+        "File[LetDecl[let x = ArrayLit[[ Literal[1] , Literal[2]] NL] LetDecl[let y = ErrorNode[)] NL]]",
+    ),
+    (
+        "let a = f(\"abc\nlet b = )\n",
+        &[
+            (Code::UnterminatedString, 10, 14),
+            (Code::ExpressionSyntax, 23, 24),
+        ],
+        "File[LetDecl[let a = CallExpr[NameRef[f] ArgList[( StringLit[\" abc]]] NL] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 +\nlet z = )\n",
+        &[
+            (Code::ExpressionSyntax, 22, 25),
+            (Code::ExpressionSyntax, 30, 31),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( BinaryExpr[Literal[1] +]]] NL] <]]] LetDecl[let z = ErrorNode[)] NL]]",
+    ),
+    (
+        "let b = x.0\n",
+        &[(Code::FloatDigits, 9, 11)],
+        "File[LetDecl[let b = NameRef[x] ErrorNode[.0] NL]]",
+    ),
+    (
+        "Clip 音楽 | gain=1\n            level=2\n",
+        &[(Code::ClauseColumn, 33, 34)],
+        "File[Placement[Clip 音楽 Attrs[| AttrEntry[gain = Literal[1]] AttrEntry[level = Literal[2]]] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/a[0]\n",
+        &[(Code::DefaultArgSyntax, 18, 19)],
+        "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ NameRef[a]]] Bundle[[] ErrorNode[0 ]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/f(1)\n",
+        &[(Code::DefaultArgSyntax, 18, 19)],
+        "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ NameRef[f]]] ParenPlacement[(] ErrorNode[1 )] NL] <]]]]",
+    ),
 ];
 
 #[test]
@@ -212,4 +271,17 @@ fn broken_sources_yield_a_tree_and_diagnostics_at_their_spans() {
         assert_eq!(support::tree(text), *tree, "{text:?}");
         assert_eq!(support::parsed(text).syntax().to_string(), *text);
     }
+}
+
+#[test]
+fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
+    assert_eq!(
+        support::clean_tree(
+            "let x = [1,\n2,\n        3]\nlet y = f(1,\nlet_value)\nClip c:\n    Note/(1 +\n2) (Note\nwhen x)\n"
+        ),
+        "File[LetDecl[let x = ArrayLit[[ Literal[1] , Literal[2] , Literal[3] ]] NL] \
+         LetDecl[let y = CallExpr[NameRef[f] ArgList[( Literal[1] , NameRef[let_value] )]] NL] \
+         Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ ParenExpr[( BinaryExpr[Literal[1] + Literal[2]] )]]] \
+         ParenPlacement[( Placement[Note Gate[when NameRef[x]]] )] NL] <]]]]"
+    );
 }

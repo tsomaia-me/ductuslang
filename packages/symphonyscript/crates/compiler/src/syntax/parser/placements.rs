@@ -1,5 +1,7 @@
 use super::Parser;
 use crate::diagnostics::Code;
+use crate::diagnostics::Diagnostic;
+use crate::syntax::lexer::is_ident_continue;
 use crate::syntax::syntax_kind::SyntaxKind;
 
 const FLAG_TOKENS: &[SyntaxKind] = &[
@@ -178,10 +180,16 @@ impl Parser<'_> {
             self.bump();
         }
         self.finish();
-        if self.adjacent() && self.at_any(&[SyntaxKind::Ident, SyntaxKind::Number]) {
+        if self.adjacent()
+            && self
+                .current_text()
+                .chars()
+                .next()
+                .is_some_and(is_ident_continue)
+        {
             self.error(
                 Code::FlagSyntax,
-                "a name or a digit directly after flags; separate them with a space",
+                "an identifier character directly after flags; separate them with a space",
             );
         }
     }
@@ -200,6 +208,16 @@ impl Parser<'_> {
             self.finish();
         } else {
             self.atom();
+            if self.adjacent() && self.at_any(&[SyntaxKind::LBracket, SyntaxKind::LParen]) {
+                let found = self.describe();
+                let diagnostic = Diagnostic::new(
+                    Code::DefaultArgSyntax,
+                    self.current_span(),
+                    format!("an unparenthesized `/` value ends before {found}"),
+                )
+                .with_hint("parenthesize the whole value, as in `Note/(a[0])`");
+                self.error_with(diagnostic);
+            }
         }
         self.finish();
     }

@@ -1,13 +1,18 @@
 mod clause;
+mod layout;
 mod mode;
 mod scan;
+mod suspension;
 
 use symphonyscript_core::{RESERVED_WORDS, Span, Vocabulary};
 use unicode_width::UnicodeWidthChar;
 
 use self::clause::Clause;
+pub(crate) use self::layout::Layout;
 use self::mode::Mode;
-use self::scan::{is_ident_continue, is_ident_start};
+pub(crate) use self::scan::is_ident_continue;
+use self::scan::is_ident_start;
+pub(crate) use self::suspension::Suspension;
 use super::lexed::Lexed;
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
@@ -30,6 +35,8 @@ pub(crate) struct Lexer<'a> {
     pending_newline: Option<usize>,
     clause: Option<Clause>,
     clause_pending: bool,
+    depths: Vec<u32>,
+    suspended: Vec<Suspension>,
 }
 
 impl<'a> Lexer<'a> {
@@ -49,10 +56,30 @@ impl<'a> Lexer<'a> {
             pending_newline: None,
             clause: None,
             clause_pending: false,
+            depths: Vec::new(),
+            suspended: Vec::new(),
         }
     }
 
-    pub(crate) fn run(mut self) -> Lexed {
+    pub(crate) fn resume(
+        source: &'a Source,
+        vocabulary: &'a Vocabulary,
+        offset: usize,
+        stack: Vec<u32>,
+    ) -> Self {
+        let mut lexer = Self::new(source, vocabulary);
+        lexer.pos = offset;
+        lexer.line_start = offset;
+        lexer.stack = stack;
+        lexer.push(SyntaxKind::Newline, offset);
+        lexer
+    }
+
+    pub(crate) fn run(self) -> Lexed {
+        self.run_with_layout().0
+    }
+
+    pub(crate) fn run_with_layout(mut self) -> (Lexed, Layout) {
         while self.pos < self.text.len() {
             self.line();
         }
@@ -63,10 +90,15 @@ impl<'a> Lexer<'a> {
             self.stack.pop();
             self.push(SyntaxKind::Dedent, self.pos);
         }
-        Lexed {
+        let lexed = Lexed {
             tokens: self.tokens,
             diagnostics: self.diagnostics,
-        }
+        };
+        let layout = Layout {
+            depths: self.depths,
+            suspended: self.suspended,
+        };
+        (lexed, layout)
     }
 
     fn line(&mut self) {
@@ -90,10 +122,16 @@ impl<'a> Lexer<'a> {
     }
 
     fn layout(&mut self) {
+        let leading = &self.text[self.line_start..self.pos];
         if self.depth > 0 {
+            self.suspended.push(Suspension {
+                offset: self.line_start,
+                first: self.pos,
+                column: leading.chars().count() as u32,
+                stack: self.stack.clone(),
+            });
             return;
         }
-        let leading = &self.text[self.line_start..self.pos];
         if let Some(tab) = leading.find('\t') {
             let start = self.line_start + tab;
             self.error(
@@ -106,15 +144,9 @@ impl<'a> Lexer<'a> {
         let column = leading.chars().count() as u32;
         let top = self.top();
         if let Some(clause) = self.clause.take() {
-            if column == clause.column && clause.column > top {
-                if let Some(index) = self.pending_newline.take() {
-                    self.tokens[index].kind = SyntaxKind::Whitespace;
-                }
-                self.line_has_token = true;
-                self.clause = Some(clause);
-                return;
-            }
-            if column == clause.display && column != clause.column {
+            let aligned = column == clause.column && clause.column > top;
+            let misaligned = column == clause.display && column != clause.column && column > top;
+            if misaligned {
                 let end = self.pos + self.char_len(self.pos);
                 self.diagnostics.push(
                     Diagnostic::new(
@@ -131,6 +163,14 @@ impl<'a> Lexer<'a> {
                         clause.display + 1
                     )),
                 );
+            }
+            if aligned || misaligned {
+                if let Some(index) = self.pending_newline.take() {
+                    self.tokens[index].kind = SyntaxKind::Whitespace;
+                }
+                self.line_has_token = true;
+                self.clause = Some(clause);
+                return;
             }
         }
         self.pending_newline = None;
@@ -636,6 +676,7 @@ impl<'a> Lexer<'a> {
 
     fn push(&mut self, kind: SyntaxKind, start: usize) {
         let normal = self.modes.is_empty();
+        self.depths.push(self.depth);
         if !kind.is_trivia() {
             if !matches!(
                 kind,
