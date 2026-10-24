@@ -78,6 +78,7 @@ pub(crate) struct Engine<'a> {
     pub call_limit_reported: bool,
     pub typing: super::infer::Typing,
     pub deferred: Vec<super::deferred::Deferred>,
+    #[cfg(test)]
     pub run_query: fn(&mut Engine<'a>, Query, &mut Vec<Query>) -> Result<bool, Internal>,
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
@@ -134,6 +135,7 @@ impl<'a> Engine<'a> {
             call_limit_reported: false,
             typing: super::infer::Typing::default(),
             deferred: Vec::new(),
+            #[cfg(test)]
             run_query: Engine::run,
             waiting: FastSet::default(),
             cyclic: FastSet::default(),
@@ -175,7 +177,7 @@ impl<'a> Engine<'a> {
             }
             let mut need = Vec::new();
             self.current = Some(top);
-            let done = (self.run_query)(self, top, &mut need)?;
+            let done = self.dispatch(top, &mut need)?;
             self.current = None;
             if done {
                 stack.pop();
@@ -224,6 +226,16 @@ impl<'a> Engine<'a> {
             Query::Sig(node) => memo.sigs.contains_key(&node),
             Query::Eval(node, ty) => memo.evals.contains_key(&(node, ty)),
         }
+    }
+
+    #[cfg(not(test))]
+    fn dispatch(&mut self, query: Query, need: &mut Vec<Query>) -> Result<bool, Internal> {
+        self.run(query, need)
+    }
+
+    #[cfg(test)]
+    fn dispatch(&mut self, query: Query, need: &mut Vec<Query>) -> Result<bool, Internal> {
+        (self.run_query)(self, query, need)
     }
 
     fn run(&mut self, query: Query, need: &mut Vec<Query>) -> Result<bool, Internal> {
