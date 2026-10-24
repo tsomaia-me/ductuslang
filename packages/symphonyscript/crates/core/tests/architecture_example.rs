@@ -1,4 +1,4 @@
-use symphonyscript_core::{AttrDefault, Count, InvalidVocabulary, Ty, Value, Vocabulary};
+use symphonyscript_core::{AttrDefault, Count, InvalidVocabulary, Scalar, Ty, Value, Vocabulary};
 
 fn example() -> Result<Vocabulary, InvalidVocabulary> {
     let mut v = Vocabulary::builder("music");
@@ -103,7 +103,7 @@ fn the_architecture_example_builds() {
     let osc = vocab.node_kind_named("Osc").expect("Osc is declared");
     let wave_attr = &vocab.node_kind(osc).expect("Osc belongs").attrs[1];
     let wave = vocab.enum_named("Wave").expect("Wave is declared");
-    assert_eq!(wave_attr.ty, Ty::Enum(wave));
+    assert_eq!(wave_attr.ty, Ty::of(Scalar::Enum(wave)));
     assert_eq!(
         wave_attr.default,
         Some(AttrDefault::Elements(vec![Value::Enum(wave, 0)]))

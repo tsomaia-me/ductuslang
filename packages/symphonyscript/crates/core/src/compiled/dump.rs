@@ -1,14 +1,19 @@
 use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::fmt::{self, Write};
 
 use super::binding::Binding;
 use super::entry::Entry;
 use super::expr::Expr;
+use super::expr_link::ExprLink;
+use super::expr_node::ExprNode;
+use super::expr_ref::ExprRef;
 use super::program::Program;
 use super::target::Target;
 use crate::ids::{AttrId, EnumId, FamilyId, InstanceId};
 use crate::source::Span;
-use crate::types::{Ty, Value};
+use crate::types::{Scalar, Ty, Value};
 use crate::vocab::{AttrDecl, Vocabulary};
 
 pub fn dump(program: &Program, vocabulary: &Vocabulary) -> String {
@@ -196,132 +201,163 @@ impl Printer<'_> {
     }
 
     fn binding(&mut self, binding: &Binding) -> fmt::Result {
-        match binding {
-            Binding::Const(value) => {
-                self.out.push_str("const ");
-                self.value(*value)
-            }
-            Binding::Input(slot) => write!(self.out, "slot {}", slot.0),
-            Binding::Cell(cell) => write!(self.out, "cell c{}", cell.0),
-            Binding::Array(elements) => {
-                self.out.push_str("array [");
-                for (position, element) in elements.iter().enumerate() {
-                    if position > 0 {
-                        self.out.push_str(", ");
-                    }
-                    self.binding(element)?;
+        let mut steps = vec![BindingStep::Visit(binding)];
+        while let Some(step) = steps.pop() {
+            match step {
+                BindingStep::Text(text) => self.out.push_str(text),
+                BindingStep::Visit(Binding::Const(value)) => {
+                    self.out.push_str("const ");
+                    self.value(*value)?;
                 }
-                self.out.push(']');
-                Ok(())
+                BindingStep::Visit(Binding::Input(slot)) => write!(self.out, "slot {}", slot.0)?,
+                BindingStep::Visit(Binding::Cell(cell)) => write!(self.out, "cell c{}", cell.0)?,
+                BindingStep::Visit(Binding::Array(elements)) => {
+                    self.out.push_str("array [");
+                    steps.push(BindingStep::Text("]"));
+                    for (position, element) in elements.iter().enumerate().rev() {
+                        steps.push(BindingStep::Visit(element));
+                        if position > 0 {
+                            steps.push(BindingStep::Text(", "));
+                        }
+                    }
+                }
             }
         }
+        Ok(())
     }
 
     fn expr(&mut self, expr: &Expr) -> fmt::Result {
-        match expr {
-            Expr::Const(value) => {
-                self.out.push_str("(const ");
-                self.value(*value)?;
-            }
-            Expr::Input(slot) => write!(self.out, "(slot {}", slot.0)?,
-            Expr::Cell(cell) => write!(self.out, "(cell c{}", cell.0)?,
-            Expr::Unary { op, ty, operand } => {
-                write!(self.out, "({} ", op.name())?;
-                self.ty(ty)?;
-                self.out.push(' ');
-                self.expr(operand)?;
-            }
-            Expr::Binary { op, ty, lhs, rhs } => {
-                write!(self.out, "({} ", op.name())?;
-                self.ty(ty)?;
-                self.out.push(' ');
-                self.expr(lhs)?;
-                self.out.push(' ');
-                self.expr(rhs)?;
-            }
-            Expr::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                self.out.push_str("(if ");
-                self.expr(condition)?;
-                self.out.push(' ');
-                self.expr(then)?;
-                self.out.push(' ');
-                self.expr(otherwise)?;
-            }
-            Expr::Match {
-                ty,
-                scrutinee,
-                arms,
-                otherwise,
-            } => {
-                self.out.push_str("(match ");
-                self.ty(ty)?;
-                self.out.push(' ');
-                self.expr(scrutinee)?;
-                for (label, value) in arms {
-                    self.out.push_str(" [");
-                    self.value(*label)?;
+        let mut steps = vec![ExprStep::Link(None, expr.root)];
+        while let Some(step) = steps.pop() {
+            let (parent, reference) = match step {
+                ExprStep::Text(text) => {
+                    self.out.push_str(text);
+                    continue;
+                }
+                ExprStep::Value(value) => {
+                    self.value(value)?;
+                    continue;
+                }
+                ExprStep::Link(parent, reference) => (parent, reference),
+            };
+            let index = match expr.link(parent, reference) {
+                ExprLink::Node(index) => index,
+                ExprLink::Dangling(reference) => {
+                    write!(self.out, "(#{reference})")?;
+                    continue;
+                }
+            };
+            let node = &expr.nodes[index];
+            let mut tail: Vec<ExprStep> = Vec::new();
+            let child = |reference: ExprRef| ExprStep::Link(Some(index), reference);
+            match node {
+                ExprNode::Const(value) => {
+                    self.out.push_str("(const ");
+                    self.value(*value)?;
+                }
+                ExprNode::Input(slot) => write!(self.out, "(slot {}", slot.0)?,
+                ExprNode::Cell(cell) => write!(self.out, "(cell c{}", cell.0)?,
+                ExprNode::Unary { op, ty, operand } => {
+                    write!(self.out, "({} ", op.name())?;
+                    self.ty(ty)?;
+                    tail.extend([ExprStep::Text(" "), child(*operand)]);
+                }
+                ExprNode::Binary { op, ty, lhs, rhs } => {
+                    write!(self.out, "({} ", op.name())?;
+                    self.ty(ty)?;
+                    tail.extend([
+                        ExprStep::Text(" "),
+                        child(*lhs),
+                        ExprStep::Text(" "),
+                        child(*rhs),
+                    ]);
+                }
+                ExprNode::If {
+                    condition,
+                    then,
+                    otherwise,
+                } => {
+                    self.out.push_str("(if");
+                    tail.extend([
+                        ExprStep::Text(" "),
+                        child(*condition),
+                        ExprStep::Text(" "),
+                        child(*then),
+                        ExprStep::Text(" "),
+                        child(*otherwise),
+                    ]);
+                }
+                ExprNode::Match {
+                    ty,
+                    scrutinee,
+                    arms,
+                    otherwise,
+                } => {
+                    self.out.push_str("(match ");
+                    self.ty(ty)?;
+                    tail.extend([ExprStep::Text(" "), child(*scrutinee)]);
+                    for (label, value) in arms {
+                        tail.extend([
+                            ExprStep::Text(" ["),
+                            ExprStep::Value(*label),
+                            ExprStep::Text(" "),
+                            child(*value),
+                            ExprStep::Text("]"),
+                        ]);
+                    }
+                    if let Some(otherwise) = otherwise {
+                        tail.extend([
+                            ExprStep::Text(" [else "),
+                            child(*otherwise),
+                            ExprStep::Text("]"),
+                        ]);
+                    }
+                }
+                ExprNode::Pick {
+                    index_ty,
+                    index: picked,
+                    items,
+                } => {
+                    self.out.push_str("(pick ");
+                    self.ty(index_ty)?;
+                    tail.extend([ExprStep::Text(" "), child(*picked)]);
+                    for item in items {
+                        tail.extend([ExprStep::Text(" "), child(*item)]);
+                    }
+                }
+                ExprNode::Convert { from, to, operand } => {
+                    self.out.push_str("(convert ");
+                    self.ty(from)?;
                     self.out.push(' ');
-                    self.expr(value)?;
-                    self.out.push(']');
+                    self.ty(to)?;
+                    tail.extend([ExprStep::Text(" "), child(*operand)]);
                 }
-                if let Some(otherwise) = otherwise {
-                    self.out.push_str(" [else ");
-                    self.expr(otherwise)?;
-                    self.out.push(']');
-                }
-            }
-            Expr::Pick {
-                index_ty,
-                index,
-                items,
-            } => {
-                self.out.push_str("(pick ");
-                self.ty(index_ty)?;
-                self.out.push(' ');
-                self.expr(index)?;
-                for item in items {
-                    self.out.push(' ');
-                    self.expr(item)?;
+                ExprNode::Call { builtin, ty, args } => {
+                    write!(self.out, "(call {} ", builtin.name())?;
+                    self.ty(ty)?;
+                    for arg in args {
+                        tail.extend([ExprStep::Text(" "), child(*arg)]);
+                    }
                 }
             }
-            Expr::Convert { from, to, operand } => {
-                self.out.push_str("(convert ");
-                self.ty(from)?;
-                self.out.push(' ');
-                self.ty(to)?;
-                self.out.push(' ');
-                self.expr(operand)?;
-            }
-            Expr::Call { builtin, ty, args } => {
-                write!(self.out, "(call {} ", builtin.name())?;
-                self.ty(ty)?;
-                for arg in args {
-                    self.out.push(' ');
-                    self.expr(arg)?;
-                }
-            }
+            steps.push(ExprStep::Text(")"));
+            steps.extend(tail.into_iter().rev());
         }
-        self.out.push(')');
         Ok(())
     }
 
     fn ty(&mut self, ty: &Ty) -> fmt::Result {
-        match ty {
-            Ty::I32 => self.out.push_str("i32"),
-            Ty::I64 => self.out.push_str("i64"),
-            Ty::F32 => self.out.push_str("f32"),
-            Ty::F64 => self.out.push_str("f64"),
-            Ty::Bool => self.out.push_str("bool"),
-            Ty::Str => self.out.push_str("str"),
-            Ty::Enum(id) => self.enum_name(*id)?,
-            Ty::Array(element, length) => {
-                self.ty(element)?;
-                write!(self.out, "[{length}]")?;
-            }
+        match ty.scalar {
+            Scalar::I32 => self.out.push_str("i32"),
+            Scalar::I64 => self.out.push_str("i64"),
+            Scalar::F32 => self.out.push_str("f32"),
+            Scalar::F64 => self.out.push_str("f64"),
+            Scalar::Bool => self.out.push_str("bool"),
+            Scalar::Str => self.out.push_str("str"),
+            Scalar::Enum(id) => self.enum_name(id)?,
+        }
+        for length in &ty.lengths {
+            write!(self.out, "[{length}]")?;
         }
         Ok(())
     }
@@ -417,4 +453,15 @@ impl Printer<'_> {
         self.out.push('"');
         Ok(())
     }
+}
+
+enum BindingStep<'a> {
+    Visit(&'a Binding),
+    Text(&'static str),
+}
+
+enum ExprStep {
+    Link(Option<usize>, ExprRef),
+    Value(Value),
+    Text(&'static str),
 }

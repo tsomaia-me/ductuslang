@@ -20,7 +20,7 @@ use super::vocabulary_stamp::VocabularyStamp;
 use super::wire_kind_decl::WireKindDecl;
 use crate::ids::AttrId;
 use crate::language::{BUILTINS, FLAG_CHARS, KEYWORDS, RESERVED_WORDS};
-use crate::types::{Ty, Value};
+use crate::types::{Scalar, Ty, Value};
 
 pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, InvalidVocabulary> {
     let enums: Vec<EnumDecl> = builder
@@ -263,7 +263,7 @@ impl Checker<'_> {
                         flag,
                     });
                 }
-                if attr.ty != Ty::Bool {
+                if attr.ty != Ty::BOOL {
                     self.errors.push(VocabularyError::FlagOnNonBool {
                         owner: String::from(owner),
                         attribute: attr.name.clone(),
@@ -336,7 +336,7 @@ fn assemble_attrs(
                         .unwrap_or(0);
                     Some(AttrDefault::Elements(vec![
                         Value::Enum(*id, index as u16);
-                        element_count(&draft.ty)
+                        draft.ty.element_count()
                     ]))
                 }
                 None => draft.default,
@@ -362,26 +362,12 @@ fn assemble_attrs(
     (attrs, default_attr)
 }
 
-fn element_count(ty: &Ty) -> usize {
-    match ty {
-        Ty::Array(element, length) => *length as usize * element_count(element),
-        _ => 1,
-    }
-}
-
 fn has_empty_array(ty: &Ty) -> bool {
-    match ty {
-        Ty::Array(element, length) => *length == 0 || has_empty_array(element),
-        _ => false,
-    }
+    ty.lengths.contains(&0)
 }
 
 fn is_integer(ty: &Ty) -> bool {
-    match ty {
-        Ty::I32 | Ty::I64 => true,
-        Ty::Array(element, _) => is_integer(element),
-        _ => false,
-    }
+    matches!(ty.scalar, Scalar::I32 | Scalar::I64)
 }
 
 fn is_integral(scale: f64) -> bool {

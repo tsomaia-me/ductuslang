@@ -1,7 +1,7 @@
 use symphonyscript_core::{
-    AttrId, BinaryOp, Binding, Builtin, Cell, CellId, Count, Entry, Expr, Input, InputSlot,
-    Instance, InstanceId, Path, Program, Segment, Span, StrId, Target, Ty, UnaryOp, Value,
-    Vocabulary, Wire, WireId, dump,
+    AttrId, BinaryOp, Binding, Builtin, Cell, CellId, Count, Entry, Expr, ExprNode, Input,
+    InputSlot, Instance, InstanceId, Path, Program, Scalar, Segment, Span, StrId, Target, Ty,
+    UnaryOp, Value, Vocabulary, Wire, WireId, dump,
 };
 
 fn span(file: &str, start: u32, end: u32) -> Span {
@@ -26,8 +26,98 @@ fn path(segments: &[(&str, Option<u32>)]) -> Path {
     }
 }
 
-fn constant(value: Value) -> Box<Expr> {
-    Box::new(Expr::Const(value))
+fn first_cell() -> Expr {
+    let mut expr = Expr::leaf(ExprNode::Input(InputSlot(3)));
+    let input = expr.root;
+    let converted = expr.push(ExprNode::Convert {
+        from: Ty::F64,
+        to: Ty::F32,
+        operand: input,
+    });
+    let factor = expr.push(ExprNode::Const(Value::F32(0.1)));
+    expr.root = expr.push(ExprNode::Binary {
+        op: BinaryOp::Mul,
+        ty: Ty::F32,
+        lhs: converted,
+        rhs: factor,
+    });
+    expr
+}
+
+fn second_cell() -> Expr {
+    let mut expr = Expr::leaf(ExprNode::Input(InputSlot(0)));
+    let scrutinee = expr.root;
+    let nan = expr.push(ExprNode::Const(Value::F64(f64::NAN)));
+    let other_nan = expr.push(ExprNode::Const(Value::F64(f64::from_bits(
+        0x7FF8_0000_0000_0001,
+    ))));
+    let index = expr.push(ExprNode::Input(InputSlot(0)));
+    let infinity = expr.push(ExprNode::Const(Value::F64(f64::INFINITY)));
+    let negative = expr.push(ExprNode::Const(Value::F64(f64::NEG_INFINITY)));
+    let tiny = expr.push(ExprNode::Const(Value::F64(1e-20)));
+    let one = expr.push(ExprNode::Const(Value::F64(1.0)));
+    let huge = expr.push(ExprNode::Const(Value::F64(2.5e300)));
+    let cell = expr.push(ExprNode::Cell(CellId(0)));
+    let lerp = expr.push(ExprNode::Call {
+        builtin: Builtin::Lerp,
+        ty: Ty::F64,
+        args: vec![one, huge, cell],
+    });
+    let pick = expr.push(ExprNode::Pick {
+        index_ty: Ty::I64,
+        index,
+        items: vec![infinity, negative, tiny, lerp],
+    });
+    expr.root = expr.push(ExprNode::Match {
+        ty: Ty::I64,
+        scrutinee,
+        arms: vec![(Value::I64(0), nan), (Value::I64(1), other_nan)],
+        otherwise: Some(pick),
+    });
+    expr
+}
+
+fn third_cell(wave: symphonyscript_core::EnumId) -> Expr {
+    let mut expr = Expr::leaf(ExprNode::Input(InputSlot(1)));
+    let input = expr.root;
+    let condition = expr.push(ExprNode::Unary {
+        op: UnaryOp::Not,
+        ty: Ty::BOOL,
+        operand: input,
+    });
+    let saw = expr.push(ExprNode::Const(Value::Enum(wave, 1)));
+    let sine = expr.push(ExprNode::Const(Value::Enum(wave, 0)));
+    let then = expr.push(ExprNode::Binary {
+        op: BinaryOp::Is,
+        ty: Ty::of(Scalar::Enum(wave)),
+        lhs: saw,
+        rhs: sine,
+    });
+    let seed = expr.push(ExprNode::Const(Value::I64(i64::MAX)));
+    let section = expr.push(ExprNode::Input(InputSlot(0)));
+    let negated = expr.push(ExprNode::Unary {
+        op: UnaryOp::Neg,
+        ty: Ty::I64,
+        operand: section,
+    });
+    let rand = expr.push(ExprNode::Call {
+        builtin: Builtin::Rand,
+        ty: Ty::I64,
+        args: vec![seed, negated],
+    });
+    let odd_nan = expr.push(ExprNode::Const(Value::F32(f32::from_bits(0x7FC0_0001))));
+    let otherwise = expr.push(ExprNode::Binary {
+        op: BinaryOp::Gt,
+        ty: Ty::F32,
+        lhs: rand,
+        rhs: odd_nan,
+    });
+    expr.root = expr.push(ExprNode::If {
+        condition,
+        then,
+        otherwise,
+    });
+    expr
 }
 
 fn fixture() -> (Program, Vocabulary) {
@@ -180,7 +270,7 @@ fn fixture() -> (Program, Vocabulary) {
             },
             Input {
                 name: "steps".into(),
-                ty: Ty::Array(Box::new(Ty::Array(Box::new(Ty::Bool), 1)), 2),
+                ty: Ty::BOOL.array(1).array(2),
                 family: None,
                 slots: InputSlot(1)..InputSlot(3),
                 initial: vec![Value::Bool(true), Value::Bool(false)],
@@ -198,83 +288,17 @@ fn fixture() -> (Program, Vocabulary) {
         cells: vec![
             Cell {
                 ty: Ty::F32,
-                expr: Expr::Binary {
-                    op: BinaryOp::Mul,
-                    ty: Ty::F32,
-                    lhs: Box::new(Expr::Convert {
-                        from: Ty::F64,
-                        to: Ty::F32,
-                        operand: Box::new(Expr::Input(InputSlot(3))),
-                    }),
-                    rhs: constant(Value::F32(0.1)),
-                },
+                expr: first_cell(),
                 span: span("main.sym", 71, 90),
             },
             Cell {
                 ty: Ty::F64,
-                expr: Expr::Match {
-                    ty: Ty::I64,
-                    scrutinee: Box::new(Expr::Input(InputSlot(0))),
-                    arms: vec![
-                        (Value::I64(0), Expr::Const(Value::F64(f64::NAN))),
-                        (
-                            Value::I64(1),
-                            Expr::Const(Value::F64(f64::from_bits(0x7FF8_0000_0000_0001))),
-                        ),
-                    ],
-                    otherwise: Some(Box::new(Expr::Pick {
-                        index_ty: Ty::I64,
-                        index: Box::new(Expr::Input(InputSlot(0))),
-                        items: vec![
-                            Expr::Const(Value::F64(f64::INFINITY)),
-                            Expr::Const(Value::F64(f64::NEG_INFINITY)),
-                            Expr::Const(Value::F64(1e-20)),
-                            Expr::Call {
-                                builtin: Builtin::Lerp,
-                                ty: Ty::F64,
-                                args: vec![
-                                    Expr::Const(Value::F64(1.0)),
-                                    Expr::Const(Value::F64(2.5e300)),
-                                    Expr::Cell(CellId(0)),
-                                ],
-                            },
-                        ],
-                    })),
-                },
+                expr: second_cell(),
                 span: span("main.sym", 91, 100),
             },
             Cell {
-                ty: Ty::Bool,
-                expr: Expr::If {
-                    condition: Box::new(Expr::Unary {
-                        op: UnaryOp::Not,
-                        ty: Ty::Bool,
-                        operand: Box::new(Expr::Input(InputSlot(1))),
-                    }),
-                    then: Box::new(Expr::Binary {
-                        op: BinaryOp::Is,
-                        ty: Ty::Enum(wave),
-                        lhs: constant(Value::Enum(wave, 1)),
-                        rhs: constant(Value::Enum(wave, 0)),
-                    }),
-                    otherwise: Box::new(Expr::Binary {
-                        op: BinaryOp::Gt,
-                        ty: Ty::F32,
-                        lhs: Box::new(Expr::Call {
-                            builtin: Builtin::Rand,
-                            ty: Ty::I64,
-                            args: vec![
-                                Expr::Const(Value::I64(i64::MAX)),
-                                Expr::Unary {
-                                    op: UnaryOp::Neg,
-                                    ty: Ty::I64,
-                                    operand: Box::new(Expr::Input(InputSlot(0))),
-                                },
-                            ],
-                        }),
-                        rhs: constant(Value::F32(f32::from_bits(0x7FC0_0001))),
-                    }),
-                },
+                ty: Ty::BOOL,
+                expr: third_cell(wave),
                 span: span("main.sym", 101, 110),
             },
         ],

@@ -8,7 +8,7 @@ use super::node_kind_decl::NodeKindDecl;
 use super::prelude_file::PreludeFile;
 use super::wire_kind_decl::WireKindDecl;
 use crate::ids::AttrId;
-use crate::types::{Ty, Value};
+use crate::types::{Scalar, Ty, Value};
 
 pub(crate) fn content_hash(
     node_kinds: &[NodeKindDecl],
@@ -124,22 +124,21 @@ fn attrs(fnv: &mut Fnv, attrs: &[AttrDecl], default_attr: Option<AttrId>) {
 }
 
 fn ty(fnv: &mut Fnv, ty: &Ty) {
-    match ty {
-        Ty::I32 => fnv.byte(0),
-        Ty::I64 => fnv.byte(1),
-        Ty::F32 => fnv.byte(2),
-        Ty::F64 => fnv.byte(3),
-        Ty::Bool => fnv.byte(4),
-        Ty::Enum(id) => {
+    for length in ty.lengths.iter().rev() {
+        fnv.byte(7);
+        fnv.u32(*length);
+    }
+    match ty.scalar {
+        Scalar::I32 => fnv.byte(0),
+        Scalar::I64 => fnv.byte(1),
+        Scalar::F32 => fnv.byte(2),
+        Scalar::F64 => fnv.byte(3),
+        Scalar::Bool => fnv.byte(4),
+        Scalar::Enum(id) => {
             fnv.byte(5);
             fnv.len(id.index());
         }
-        Ty::Str => fnv.byte(6),
-        Ty::Array(element, length) => {
-            fnv.byte(7);
-            fnv.u32(*length);
-            self::ty(fnv, element);
-        }
+        Scalar::Str => fnv.byte(6),
     }
 }
 

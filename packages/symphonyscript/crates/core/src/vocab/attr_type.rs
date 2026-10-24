@@ -25,7 +25,7 @@ impl<T: ArrayElement> AttrType for T {
 
 impl AttrType for &'static str {
     fn ty() -> Ty {
-        Ty::Str
+        Ty::STR
     }
 
     fn into_default(self) -> AttrDefault {

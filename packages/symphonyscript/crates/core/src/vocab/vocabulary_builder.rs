@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -20,7 +19,7 @@ use super::vocabulary_error::VocabularyError;
 use super::wire_draft::WireDraft;
 use super::wire_kind_builder::WireKindBuilder;
 use crate::ids::{EnumId, FamilyId, NodeKind, VocabularyToken, WireKind};
-use crate::types::Ty;
+use crate::types::{Scalar, Ty};
 
 pub struct VocabularyBuilder {
     pub(crate) token: VocabularyToken,
@@ -195,8 +194,8 @@ impl VocabularyBuilder {
         }
         let own = self.own_enum(enumeration, owner);
         let ty = match length {
-            Some(length) => Ty::Array(Box::new(Ty::Enum(enumeration)), length),
-            None => Ty::Enum(enumeration),
+            Some(length) => Ty::of(Scalar::Enum(enumeration)).array(length),
+            None => Ty::of(Scalar::Enum(enumeration)),
         };
         let mut draft = AttrDraft::new(name, ty);
         if own {

@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use super::sealed::Sealed;
@@ -59,7 +58,7 @@ impl ArrayElement for f64 {
 
 impl ArrayElement for bool {
     fn element_ty() -> Ty {
-        Ty::Bool
+        Ty::BOOL
     }
 
     fn push_elements(self, out: &mut Vec<Value>) {
@@ -69,7 +68,7 @@ impl ArrayElement for bool {
 
 impl<T: ArrayElement, const N: usize> ArrayElement for [T; N] {
     fn element_ty() -> Ty {
-        Ty::Array(Box::new(T::element_ty()), N as u32)
+        T::element_ty().array(N as u32)
     }
 
     fn push_elements(self, out: &mut Vec<Value>) {
