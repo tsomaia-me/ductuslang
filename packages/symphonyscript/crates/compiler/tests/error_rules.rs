@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Source};
+use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{SPEC, vocabulary};
 
@@ -129,7 +129,7 @@ const RULES: &[Rule] = &[
         "2.6",
         "A single underscore may separate two digits: `1_000_000`. Anywhere else it is an error.",
         "misplaced-underscore",
-        "let a = 1__0\n",
+        "let a = 10_\n",
     ),
     rule(
         "2.6",
@@ -237,7 +237,7 @@ const RULES: &[Rule] = &[
         "3.6",
         "and so is an expression that feeds two attributes of the family with different default units",
         "conflicting-units",
-        "let d = 2bars + 1\nA one | long=d\nB two | short=d\n",
+        "let d = 2bars + 1\nA one | long=d\nB two | short=d\nRoot r:\n    Item\n    Link: r\n",
     ),
     rule(
         "3.6",
@@ -249,7 +249,7 @@ const RULES: &[Rule] = &[
         "3.6",
         "a plain cell read at two attributes of one family with different default units is an error naming both",
         "conflicting-units",
-        "input p = 1.0\nA one | long=p\nB two | short=p\n",
+        "input p = 1.0\nA one | long=p\nB two | short=p\nRoot r:\n    Item\n    Link: r\n",
     ),
     rule(
         "4.1",
@@ -979,7 +979,7 @@ fn bounded_vocabulary() -> Vocabulary {
         .attr::<f64>("short")
         .default(0.0)
         .family(&beats, "beats");
-    v.wire_kind(link).connects(root, root);
+    v.wire_kind(link).connects(root, root).cyclic();
     v.wire_kind(pick)
         .connects(root, first)
         .connects(root, second)
@@ -1090,6 +1090,44 @@ fn every_rule_rejects_its_program_with_its_code() {
             .iter()
             .any(|diagnostic| diagnostic.code.as_str() == rule.code)
         {
+            failures.push(format!(
+                "§{} {:?}: {:?} gives {:?}",
+                rule.section,
+                rule.code,
+                rule.program,
+                found
+                    .iter()
+                    .map(|diagnostic| diagnostic.code.as_str())
+                    .collect::<Vec<_>>()
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it() {
+    let mut failures = Vec::new();
+    for rule in RULES {
+        let found = diagnostics(rule);
+        let errors: Vec<&str> = found
+            .iter()
+            .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        let warning = Code::ALL
+            .iter()
+            .any(|code| code.as_str() == rule.code && code.severity() == Severity::Warning);
+        let expected = if warning {
+            let of_code = found
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == rule.code)
+                .count();
+            errors.is_empty() && of_code == 1
+        } else {
+            errors == [rule.code]
+        };
+        if !expected {
             failures.push(format!(
                 "§{} {:?}: {:?} gives {:?}",
                 rule.section,

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use symphonyscript::{Code, Compiler, Source};
 use symphonyscript_core::{Count, Vocabulary};
+use symphonyscript_fixtures::deep_projects;
 
 const DEPTH: usize = 100_000;
 const BODY_DEPTH: usize = 3_000;
@@ -97,47 +98,25 @@ fn m1_deep_sources_pass_every_stage_on_a_small_stack() {
 }
 
 #[test]
-fn deep_valid_programs_pass_check_on_a_small_stack() {
-    on_small_stack(|| {
-        let text = format!(
-            "input x = true\nfn f(v): v\nlet a = {}\nlet b = {}\nlet c = {}\nlet d = {}x\nlet e = {}\nlet g = {}1\nClip top:\n    Note/{} when d\n    Note/(f(a) + c + g + b{})\n",
-            nested("(", "1", ")"),
-            nested("[", "1", "]"),
-            nested("f(", "1", ")"),
-            "not ".repeat(DEPTH),
-            nested("\"{", "1", "}\""),
-            "-".repeat(DEPTH),
-            nested("(", "60", ")"),
-            "[0]".repeat(DEPTH),
-        );
-        assert_eq!(code_counts(&text), BTreeMap::new());
-        let text = bodies(
-            "input x = true\nClip top:\n",
-            &["for v{level} in 0..1:", "when x:", "when:"],
-        );
-        assert_eq!(code_counts(&text), BTreeMap::new());
-    });
-}
-
-#[test]
-fn a_deep_array_type_and_a_long_chain_of_functions_pass_check_on_a_small_stack() {
-    on_small_stack(|| {
-        let text = format!(
-            "input k: i32{} = {}\nClip c:\n    Note/(k{})\n",
-            "[1]".repeat(DEPTH),
-            nested("[", "1", "]"),
-            "[0]".repeat(DEPTH),
-        );
-        assert_eq!(code_counts(&text), BTreeMap::new());
-        let mut text = String::new();
-        for index in 0..10_000 {
-            text.push_str(&format!("fn step{index}(x): step{}(x)\n", index + 1));
-        }
-        text.push_str(
-            "fn step10000(x): x\ninput i = 1\nClip c:\n    Note/(step0(i))\n    Note/(step0(64))\n",
-        );
-        assert_eq!(code_counts(&text), BTreeMap::new());
-    });
+fn deep_valid_programs_a_deep_array_type_and_a_long_call_chain_pass_check_on_a_small_stack() {
+    let workers: Vec<_> = deep_projects()
+        .into_iter()
+        .map(|project| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    for file in &project.files {
+                        assert_eq!(code_counts(&file.text), BTreeMap::new(), "{}", project.name);
+                    }
+                })
+                .expect("the thread starts")
+        })
+        .collect();
+    for worker in workers {
+        worker
+            .join()
+            .expect("the work finishes without overflowing");
+    }
 }
 
 #[test]

@@ -1,8 +1,13 @@
-use symphonyscript_fixtures::vocabulary;
+use symphonyscript_fixtures::{
+    Project, ProjectFile, deep_projects, dsp_project, music_project, spec_examples, spec_projects,
+    vocabulary,
+};
 
 use super::Engine;
 use super::attr_source::AttrValueSource;
 use super::binding::BindingKind;
+use super::bound::BoundVal;
+use super::destination::Destination;
 use super::ids::ScopeId;
 use super::node::Op;
 use super::val::Val;
@@ -61,6 +66,100 @@ fn analyzed<R>(text: &str, inspect: impl FnOnce(&Engine<'_>) -> R) -> (Vec<Diagn
         text: text.into(),
     };
     compiler.analyzed(&[source], inspect)
+}
+
+fn placeholders(engine: &Engine<'_>) -> Vec<String> {
+    let memo = &engine.memo;
+    let mut found = Vec::new();
+    for ((expr, _), val) in &memo.exprs {
+        if matches!(val, Val::Error) {
+            found.push(format!("value of {:?}", engine.hir.expr(*expr).loc));
+        }
+    }
+    for (node, sig) in &memo.sigs {
+        if sig.is_error() {
+            found.push(format!("type of {:?}", engine.node(*node).loc));
+        }
+    }
+    for ((node, _), value) in &memo.evals {
+        if value.is_error() {
+            found.push(format!("evaluation of {:?}", engine.node(*node).loc));
+        }
+    }
+    for (call, value) in &memo.calls {
+        if value.is_error() {
+            found.push(format!("result of {call:?}"));
+        }
+    }
+    let bounds = memo
+        .lets
+        .values()
+        .chain(memo.params.values())
+        .chain(memo.inputs.values())
+        .chain(memo.attrs.values());
+    for bound in bounds {
+        if matches!(bound, BoundVal::Error) {
+            found.push("a binding".into());
+        }
+    }
+    for destination in memo.destinations.values() {
+        if matches!(destination, Destination::Error) {
+            found.push("a destination".into());
+        }
+    }
+    found
+}
+
+#[test]
+fn a_run_that_draws_no_error_holds_no_placeholder() {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let examples = spec_examples()
+        .into_iter()
+        .filter(|example| example.tag == "sym")
+        .map(|example| Project {
+            name: example.name(),
+            files: vec![ProjectFile {
+                path: "example.sym".into(),
+                text: example.text,
+            }],
+        });
+    let projects = [music_project(), dsp_project()]
+        .into_iter()
+        .chain(deep_projects())
+        .chain(examples);
+    let clean = std::thread::scope(|threads| {
+        let runs: Vec<_> = projects
+            .map(|project| {
+                let compiler = &compiler;
+                threads.spawn(move || {
+                    let sources: Vec<Source> = project
+                        .files
+                        .iter()
+                        .map(|file| Source {
+                            path: file.path.clone(),
+                            text: file.text.clone(),
+                        })
+                        .collect();
+                    let (diagnostics, found) = compiler.analyzed(&sources, placeholders);
+                    let drew_error = !errors_of(&diagnostics).is_empty();
+                    assert!(
+                        drew_error || found.is_empty(),
+                        "{}: {found:?}",
+                        project.name
+                    );
+                    !drew_error
+                })
+            })
+            .collect();
+        runs.into_iter()
+            .map(|run| run.join().expect("every run holds no placeholder"))
+            .filter(|clean| *clean)
+            .count()
+    });
+    assert!(
+        clean >= 6 + spec_projects().len(),
+        "{clean} runs drew no error"
+    );
 }
 
 fn errors_of(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {

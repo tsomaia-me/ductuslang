@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod deep_projects;
 mod dsp_project;
 mod music_project;
 mod project;
@@ -13,6 +14,7 @@ mod spec_sym_examples;
 mod vocabulary;
 mod vocabulary_documented;
 
+pub use deep_projects::deep_projects;
 pub use dsp_project::dsp_project;
 pub use music_project::music_project;
 pub use project::Project;
