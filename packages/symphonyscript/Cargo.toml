@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/compiler",
+    "crates/tool",
+    "crates/kernel",
+    "crates/fixtures",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+symphonyscript-core = { path = "crates/core" }
+symphonyscript = { path = "crates/compiler" }
+symphonyscript-fixtures = { path = "crates/fixtures" }

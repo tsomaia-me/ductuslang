@@ -1,0 +1,8 @@
+[package]
+name = "symphonyscript-tool"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+symphonyscript.workspace = true
