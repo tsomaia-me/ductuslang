@@ -3,6 +3,9 @@ mod lex;
 mod lexed;
 mod lexer;
 mod nfc;
+mod parse;
+mod parsed;
+mod parser;
 mod symphony_language;
 mod syntax_element;
 mod syntax_kind;
@@ -12,6 +15,8 @@ mod token;
 
 pub use lex::lex;
 pub use lexed::Lexed;
+pub use parse::parse;
+pub use parsed::Parsed;
 pub use symphony_language::SymphonyLanguage;
 pub use syntax_element::SyntaxElement;
 pub use syntax_kind::SyntaxKind;
