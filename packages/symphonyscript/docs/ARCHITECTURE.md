@@ -25,13 +25,13 @@ packages/symphonyscript/
 | `symphonyscript` | `std` | the compiler, `compile`, `eval`, diagnostics, Rust code generation | core |
 | `symphonyscript-tool` | `std` | the framework tool: CLI, watch loop, language server | compiler |
 | `symphonyscript-kernel` | `std` | the `Consumer` for synaptic-kernel | core, synaptic-kernel |
-| `symphonyscript-fixtures` | `std`, tests only | the example vocabulary of SPEC §1.3, sample projects | core |
+| `symphonyscript-fixtures` | `std`, tests only | the example vocabulary of SPEC §1.3, the fixture projects (PLAN Phase 1) | core |
 
 Only `symphonyscript-core` runs on devices. Everything in it builds without `std`, and its float functions come from `libm` on every target, so desktop and device compute bit-identical values (SPEC §12.5).
 
 ## 2. The vocabulary
 
-A framework author builds a vocabulary in Rust. The builder returns typed handles, which the framework's consumer keeps and matches against the Program. A part of the SPEC §1.3 vocabulary:
+A framework author builds a vocabulary in Rust. `v.node(name)` and `v.wire(name)` return a kind's typed handle at once, and `v.kind(handle)` and `v.wire_kind(handle)` configure it, so a kind can accept itself or a kind declared after it. The framework's consumer keeps the handles and matches them against the Program. A part of the SPEC §1.3 vocabulary:
 
 ```rust
 let mut v = Vocabulary::builder("music");
@@ -39,39 +39,54 @@ let mut v = Vocabulary::builder("music");
 let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
 let wave = v.enumeration("Wave", ["Sine", "Saw", "Square"]);
 
-let note = v.node("Note")
+let note = v.node("Note");
+let clip = v.node("Clip");
+let track = v.node("Track");
+let osc = v.node("Osc");
+let session = v.node("Session");
+let plays = v.wire("Plays");
+let starts = v.wire("Starts");
+
+v.kind(note)
     .doc("A single pitched event inside a clip.")
     .attr::<i32>("pitch").default(60).default_attr()
     .attr::<f32>("velocity").default(1.0).doc("Loudness, 0 to 1.")
     .attr::<f32>("brightness").default(0.5)
     .attr::<f64>("length").default(0.25).family(beats, "beats")
-    .attr::<bool>("accent").default(false).flag('\'')
-    .handle();
+    .attr::<bool>("accent").default(false).flag('\'');
 
-let clip = v.node("Clip")
+v.kind(clip)
     .top_level(Count::Any)
     .children(note, Count::Any)
     .attr::<f32>("gain").default(1.0)
-    .attr::<f32>("level").default(1.0)
-    .handle();
+    .attr::<f32>("level").default(1.0);
 
-let plays = v.wire("Plays")
+v.kind(track)
+    .top_level(Count::Any)
+    .attr::<&'static str>("label").default("");
+
+v.kind(osc)
+    .top_level(Count::Any)
+    .attr::<f64>("freq").default(440.0).default_attr()
+    .attr_enum("wave", wave, "Sine")
+    .attr::<f32>("rate").default(1.0);
+
+v.kind(session)
+    .top_level(Count::AtMost(1))
+    .entry()
+    .children(track, Count::Any)
+    .attr::<f64>("tempo").default(120.0).default_attr();
+
+v.wire_kind(plays)
     .connects(clip, clip)
     .cyclic()
     .attr::<f32>("gain").default(1.0).default_attr()
-    .attr::<i32>("transpose").default(0)
-    .handle();
+    .attr::<i32>("transpose").default(0);
 
-v.node("Osc")
-    .top_level(Count::Any)
-    .attr_enum("wave", wave, "Sine")
-    .attr::<f64>("freq").default(440.0)
-    .attr::<f32>("rate").default(1.0);
-
-v.node("Session")
-    .top_level(Count::AtMost(1))
-    .entry()
-    .attr::<f64>("tempo").default(120.0).default_attr();
+v.wire_kind(starts)
+    .connects(clip, clip)
+    .connects(track, clip)
+    .cyclic();
 
 v.prelude("music.sym", include_str!("music.sym"));
 
@@ -80,12 +95,12 @@ let vocab = v.build()?;
 
 - `attr::<T>` takes `i32`, `i64`, `f32`, `f64`, `bool`, fixed-length arrays of these nested to any depth (`[bool; 8]`, `[[i32; 3]; 2]`), and `&'static str` for string attributes. The Rust compiler checks the default against `T`. `attr_enum(name, enum, default_variant)` declares an enum attribute, and `attr_enum_array(name, enum, length, default_variant)` an array of one.
 - `Count` is `Exactly(n)`, `AtLeast(n)`, `AtMost(n)`, `Between(n, m)` or `Any`.
-- `.children(kind, count)` accepts a child kind. `.connects(from, to)` adds a source and destination pair to a wire kind. `.incoming(wire, count)` and `.outgoing(wire, count)` bound how many wires of one kind a node kind takes; a kind that states no bound takes any number.
+- `.children(kind, count)` accepts a child kind. Each `.connects(from, to)` adds a source and destination pair to a wire kind. `.incoming(wire, count)` and `.outgoing(wire, count)` bound how many wires of one kind a node kind takes; a kind that states no bound takes any number.
 - `.doc(text)` attaches documentation to kinds, attributes, wires, enums and units. The language server shows it.
-- `build()` validates the whole vocabulary at once and returns every error: duplicate names; names that are not identifiers or are keywords, reserved words or built-in names; a second default attribute on a kind; a flag character outside the SPEC §7.4 set, on an attribute that is not `bool`, or shared by two attributes of a kind; an enum default that is not a variant; a reference to a kind of another vocabulary; a count whose minimum exceeds its maximum; a unit scale that is not positive and finite; a unit name repeated across families or excluded by SPEC §10.1; an integer attribute in a family with a scale that is not an integer.
-- A built vocabulary carries a stamp: its name and a 64-bit FNV-1a hash of a canonical serialization of its content, identical on every target. The serialization holds the kinds and wire kinds in declaration order, which fixes their indices, with their attributes (names, types, defaults, families, default units, flags and default-attribute marks), counts, connections, entry and cyclic marks; the enums and their variants; the unit families and scales; and the prelude's text. Documentation is not part of it, so a `.doc` edit leaves the stamp unchanged.
+- `build()` validates the whole vocabulary at once and returns every error SPEC §10.1 lists, except the prelude's, which the compiler reports (§7).
+- A built vocabulary carries a stamp: its name and a 64-bit FNV-1a hash of a canonical serialization of its content, identical on every target. The serialization holds the kinds and wire kinds in declaration order, which fixes their indices, with their attributes (names, types, defaults, families, default units, flags and default-attribute marks), counts, connections, entry and cyclic marks; the enums and their variants; the unit families and scales; and the prelude's text with its line endings normalized to LF. Documentation is not part of it, so a `.doc` edit leaves the stamp unchanged.
 
-The prelude is SymphonyScript source. `build()` cannot compile it, because the compiler is not in core. The compiler compiles it once per vocabulary, reports its diagnostics as vocabulary errors naming the prelude file, and reuses the result for every compilation against that vocabulary.
+The prelude is SymphonyScript source. `build()` cannot compile it, because the compiler is not in core; the compiler handles it (§7).
 
 ## 3. The Program
 
@@ -142,6 +157,7 @@ pub enum Binding {
 pub struct Input {
     pub name: String,
     pub ty: Ty,
+    pub family: Option<FamilyId>,
     pub slots: Range<InputSlot>,
     pub initial: Vec<Value>,
     pub span: Span,
@@ -154,13 +170,15 @@ pub struct Cell {
 }
 ```
 
-- `instances[i]` has `InstanceId(i)`; the same holds for wires, cells and input slots. Instances and wires are in the order of SPEC §11.
+- `instances[i]` has `InstanceId(i)`; the same holds for wires, cells and input slots. Instances, wires and inputs are in the order of SPEC §11.
 - An array input occupies one slot per element, numbered row by row (SPEC §12.1), so element writes address single slots. An array attribute binds `Binding::Array`.
 - `cells` is in dependency order: a cell reads only inputs and cells with lower indices.
-- `Select` keeps the candidates as written, and `index` chooses among them.
-- `Expr` is a tree of constants, input and cell reads, typed unary and binary operators, `if`, `match`, `Pick` (indexing with a runtime index, clamped), conversions and built-in calls. Every operator node carries its operand type. Functions, patterns, units and compile-time values are already resolved; nothing in `Expr` names a source declaration.
+- An `AttrId` indexes its kind's attribute list.
+- `gate` combines the item's own `when` with the `when` arm conditions around it in one binding (SPEC §11).
+- `Select` keeps the candidates in the order of SPEC §8.2; `index` is an integer binding, clamped to them.
+- `Expr` is a tree of constants, input and cell reads, typed unary and binary operators, `if`, `match`, `Pick` (indexing with a runtime index, clamped), conversions and built-in calls. Every operator node carries its operand type, and every read of a cell that its use reads in another type carries an explicit conversion (SPEC §4.4). Functions, patterns, units and compile-time values are already resolved; nothing in `Expr` names a source declaration.
 - `Value` is `I32`, `I64`, `F32`, `F64`, `Bool`, `Enum(EnumId, u16)` or `Str(StrId)`. A `StrId` indexes `strings`, which holds each string attribute value once.
-- `Span` is a file and byte range, used in diagnostics and tooling. `span` is where an item is written; `expanded_from` holds the pattern uses that produced it, innermost first, and is empty outside patterns.
+- `Span` is a file, named by its `Source.path`, and a byte range, used in diagnostics and tooling. `span` is where an item is written; `expanded_from` holds the pattern uses that produced it, innermost first, and is empty outside patterns.
 
 `Program` implements structural equality that compares floats by their bits, which the canonical NaN of SPEC §12.5 keeps stable, so two Programs compiled from the same sources compare equal.
 
@@ -198,8 +216,9 @@ for change in rt.changes() {
 ## 5. Reload
 
 ```rust
-match rt.reload(new_program) {
-    Ok(report) => {
+match rt.prepare_reload(new_program) {
+    Ok(pending) => {
+        let report = pending.report();
         for item in report.structure() {
             match item {
                 Structural::Kept { old, new } => {}
@@ -210,20 +229,21 @@ match rt.reload(new_program) {
         }
         for write in report.dropped() {}
         for change in report.changes() {}
+        rt.install(pending);
     }
-    Err(Refused::Vocabulary) => {}
+    Err(Refused::Vocabulary | Refused::Invalid) => {}
 }
 ```
 
-`structure()` covers instances and wires (`Item::Instance` and `Item::Wire`). `reload`:
+`structure()` covers instances, bundles and wires (`Item::Instance`, `Item::Bundle` and `Item::Wire`); `Reordered` names a parent instance, a bundle or `Parent::Top`. `prepare_reload`:
 
-1. Refuses a Program with a different vocabulary stamp.
+1. Refuses a Program with a different vocabulary stamp (`Refused::Vocabulary`), or one that fails `Runtime::new`'s validation (`Refused::Invalid`).
 2. Carries input values over by name, following SPEC §13.2. Each input element records whether the host has written it.
-3. Matches instances and wires following SPEC §13.3, from the top level down: paths below matched parents for named items, then, per parent sequence, a longest common subsequence over the keys of anonymous entries, then in-gap pairing.
+3. Matches instances, bundles and wires following SPEC §13.3, from the top level down: paths below matched parents for named items; then, per parent sequence, the common prefix and suffix, and Myers' difference algorithm over the keys of the remaining anonymous entries; then per-kind pairing in each gap.
 4. Builds the new state and evaluates every cell.
 5. Reports the structure, the staged writes it dropped, and the attribute, activation and target differences of matched items.
 
-Reload may allocate. Input handles are stable: the runtime keeps a registry from input names to handles across reloads, adds handles for new names, marks handles of removed inputs dead, and revives a dead handle when an input of its name returns.
+`install` replaces the running state with the pending one. Dropping a `PendingReload` instead leaves the runtime on the old Program. Preparing may allocate; installing swaps buffers and does not. Input handles are stable: the runtime keeps a registry from input names to handles across reloads, adds handles for new names, marks handles of removed inputs dead, and revives a dead handle when an input of its name returns.
 
 ## 6. The Consumer trait
 
@@ -232,15 +252,22 @@ pub trait Consumer {
     type Error;
     fn load(&mut self, runtime: &Runtime) -> Result<(), Self::Error>;
     fn apply(&mut self, runtime: &Runtime);
-    fn reload(&mut self, report: &ReloadReport, runtime: &Runtime) -> Result<(), Self::Error>;
+    fn reload(&mut self, pending: &PendingReload) -> Result<(), Self::Error>;
 }
 ```
 
-A consumer turns a Program into something: a synaptic-kernel graph, a MIDI file, a test trace, a printed dump. It reads the Program through `runtime.program()` and each commit's changes through `runtime.changes()`. The tool's watch loop drives any consumer through this trait. `load` refuses a Program the consumer cannot take, such as one whose vocabulary stamp differs from the vocabulary the consumer was built for. `reload` fails only when the consumer cannot get the resources the new Program needs; the watch loop then stops and reports the error.
+A consumer turns a Program into something: a synaptic-kernel graph, a MIDI file, a test trace, a printed dump. It reads the Program through `runtime.program()` and each commit's changes through `runtime.changes()`. The tool's watch loop drives any consumer through this trait. `load` refuses a Program the consumer cannot take, such as one whose vocabulary stamp differs from the vocabulary the consumer was built for. `reload` reads the new Program and the report from the pending reload and either applies all of it or changes nothing and returns an error. The watch loop installs a pending reload only after the consumer's `reload` succeeds, so a refusal leaves the runtime and the consumer on the old Program, and the loop reports the error.
 
 ## 7. The compiler
 
 ```rust
+pub struct Compiler { /* the vocabulary and its parsed, resolved prelude */ }
+
+impl Compiler {
+    pub fn new(vocab: &Vocabulary) -> Result<Compiler, Failed>;
+    pub fn compile(&self, sources: &[Source]) -> Result<Compiled, Failed>;
+}
+
 pub fn compile(sources: &[Source], vocab: &Vocabulary) -> Result<Compiled, Failed>;
 pub fn eval(source: &str, vocab: &Vocabulary) -> Result<Runtime, Failed>;
 
@@ -249,18 +276,20 @@ pub struct Compiled { pub program: Program, pub warnings: Vec<Diagnostic> }
 pub struct Failed { pub diagnostics: Vec<Diagnostic> }
 ```
 
+`Compiler::new` parses and resolves the prelude once and reports its errors as vocabulary errors (SPEC §10.1). The tool and the language server keep one `Compiler`; `compile` and `eval` build one for a single call. `Source.path` is relative to the project's source root, with `/` separators.
+
 The compiler performs no file I/O; the caller supplies every source. This keeps the compiler usable in editors, build scripts and WebAssembly. Stages:
 
 1. **Lex.** Layout tokens (SPEC §2.2), literals, keywords, unit suffixes looked up in the vocabulary. Every byte belongs to a token or to trivia (whitespace and comments).
 2. **Parse.** A lossless syntax tree that reproduces the source byte for byte, with a typed view over it. The parser recovers from errors: it records a diagnostic, skips to a synchronization point (the next line at the same or lower indentation) and continues, so a broken file still yields a tree. A placement whose kind is a wire kind of the vocabulary parses as a wire placement.
 3. **Collect.** The top-level namespace across all files, the prelude and the vocabulary, with duplicate detection and prelude shadowing; the call graph of functions, which marks recursive ones, and the use graph of patterns.
 4. **Expand.** Pattern uses are expanded and `for` loops unrolled. A value that structure needs (a range bound, an iterable, a recursive call, and any argument or `let` they read) is resolved, typed as SPEC §4.6 says and evaluated when expansion reaches it; such a value that reads a cell is an error. Every expanded item keeps the spans of its uses and of its definition.
-5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each value is classified as compile-time or reactive by what it reads. A bare name that names no declaration is left for Infer to resolve as a variant.
-6. **Infer.** Types and unit families over the whole program (SPEC §4), bare variants from their expected types, and then the remaining calls to recursive functions, evaluated in the types inference gives them. Recursive calls are memoized by their argument values, which is what makes SPEC §4.6's limit count distinct calls.
-7. **Check.** The vocabulary checks (SPEC §10.2), cycles among cells and wires, fit checks, and the warnings of SPEC §4.4 and §10.2.
+5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each value is classified as compile-time or reactive by what it reads. Cycles among declarations (SPEC §6.2) are found here, before Infer. A bare name that names no declaration is left for Infer to resolve as a variant.
+6. **Infer.** Types and unit families over the whole program (SPEC §3.6, §4), bare variants from their expected types, and then the remaining calls to recursive functions, evaluated in the types inference gives them. Recursive calls are memoized by argument values, argument types and expected type, which is what SPEC §4.6's limit counts.
+7. **Check.** The vocabulary checks (SPEC §10.2), cycles among wires, fit checks, and the warnings of SPEC §4.4 and §10.2.
 8. **Lower.** Constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program.
 
-Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose documentation names the SPEC section of its rule; a test checks that each error rule of the SPEC has a code and each code a rule. The compiler collects every diagnostic of a run instead of stopping at the first.
+Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose documentation names the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first.
 
 Each change recompiles the whole project.
 
@@ -282,6 +311,10 @@ fn main() {
         .command("export-midi", music::export_midi)
         .run()
 }
+
+fn play(project: &Project, args: &[String]) -> Result<(), ToolError> {
+    symphonyscript_tool::watch(project, &music::vocabulary(), &mut music::Engine::new())
+}
 ```
 
 | Subcommand | Provided by | Does |
@@ -292,11 +325,13 @@ fn main() {
 | `lsp` | tool | runs the language server |
 | any other | framework | playing, rendering, exporting |
 
-- **Single files.** `check`, `dump` and the framework's subcommands accept a lone `.sym` file in place of a project.
-- **Watch.** `watch(project, vocab, consumer)` recompiles on save, reloads the runtime and drives the consumer. Frameworks call it from their own commands.
+- **Commands.** A framework command is `fn(&Project, &[String]) -> Result<(), ToolError>`, receiving the project and the command's arguments.
+- **Projects.** A `Project` holds its root, the settings of its `symphony.toml`, and its sources: every `.sym` file under `source`, found recursively, each with its path relative to `source`. Those paths fix the top-level order (SPEC §2.1).
+- **Single files.** `check`, `dump` and the framework's subcommands accept a lone `.sym` file in place of a project; it is a project of one source whose path is the file's name.
+- **Watch.** `watch(project, vocab, consumer)` recompiles on save, prepares a reload, lets the consumer accept it, installs it, and drives the consumer (§5, §6). Frameworks call it from their own commands.
 - **`symphony.toml`** holds `tool`, the name of the framework's binary, and `source`, the source root (default `src`).
 - **Editor.** One VS Code extension: a static syntax grammar plus a language client that reads `symphony.toml` and starts `<tool> lsp`. For a lone `.sym` file it starts the tool named in its `symphonyscript.tool` setting; with no setting it stays inactive and says why. Other editors use their own language-client configuration.
-- **Language server.** Diagnostics; completion of attributes after `|`, accepted child kinds in a body, valid destinations after a wire's `:`, enum variants where an enum is expected; hover with documentation and inferred types with their origin; go to definition; find references; rename of instances, patterns, functions and inputs; an outline of top-level items; semantic tokens.
+- **Language server.** Diagnostics; completion of attributes after `|`, accepted child kinds in a body, valid destinations after a wire's `:`, enum variants where an enum is expected; hover with documentation and inferred types with their origin, where a compile-time value shows its value and the type each use chose, and a cell shows that it is reactive, its one type and the inputs it reads; go to definition; find references; rename of instances, patterns, functions, inputs and `let`s; an outline of top-level items; semantic tokens, which mark inputs and reactive `let`s apart from compile-time values.
 
 ## 10. The synaptic-kernel adapter
 
@@ -307,16 +342,16 @@ fn main() {
 | Program | Kernel |
 |---|---|
 | Instance | a node; `kind` is the vocabulary's node-kind index |
-| An instance's sequence | a sub-chain of its children in sequence order, reached from the instance through a `contains` synapse to the chain's head |
-| Bundle | a bundle node in the parent's chain; its members form a sub-chain behind another `contains` synapse |
+| An instance's sequence | a sub-chain that starts with a head node and holds the children in sequence order; a `contains` synapse goes from the instance to the head |
+| Bundle | a bundle node in the parent's chain; its members form a sub-chain with its own head node behind another `contains` synapse |
 | Wire | a wire-point node at the wire's position in the chain, holding the wire's attributes, activation and serial; a synapse whose `kind` is the wire-kind index goes from it to the destination |
 | Destination chosen at runtime | one synapse per distinct candidate, each holding a flag that marks the chosen one |
 | Top-level instances | a sub-chain after a root sentinel node, in top-level order |
 | Entry | the sentinel's slot, written to `mem_metadata` once at load and never changed |
 
-`kind` is 8 bits. The adapter reserves three node kinds (sentinel, bundle and wire point) and one synapse kind (`contains`), so a vocabulary used with the adapter has at most 253 node kinds and 255 wire kinds. `load` refuses a larger vocabulary.
+`kind` is 8 bits. The adapter reserves four node kinds (sentinel, head, bundle and wire point) and one synapse kind (`contains`), so a vocabulary used with the adapter has at most 252 node kinds and 255 wire kinds. `load` refuses a larger vocabulary.
 
-The engine enters at the sentinel on every cycle, walks the top-level chain, and follows `contains` synapses into sequences. When a chain's first node is removed, the adapter moves the `contains` synapse to the new head.
+The engine enters at the sentinel on every cycle, walks the top-level chain, and follows `contains` synapses to the heads of sequences. A head never moves, so reordering a sequence never touches its `contains` synapse.
 
 ### 10.2 Values
 
@@ -328,20 +363,23 @@ Each node and synapse holds the adapter's own cells, followed by attribute cells
 ```rust
 fn plane(ty: &Ty) -> Plane {
     match ty {
-        Ty::Array(..) | Ty::I64 | Ty::F64 => Plane::Meta,
+        Ty::Array(..) => Plane::Array,
+        Ty::I64 | Ty::F64 | Ty::Str => Plane::Meta,
         _ => Plane::Attr,
     }
 }
 ```
 
-A value that fits one cell is untorn in the attribute plane and needs no publish. synaptic-kernel's cells are 32-bit, so a 64-bit value, like an array, spans several cells and goes to meta, where `publish()` makes it visible all at once. The adapter computes a layout table from the vocabulary once, giving every attribute of every kind a plane and an offset. The engine reads through the same table, so the two never disagree.
+A `bool`, an enum value, an `i32`, an `f32` and a string's `StrId` each take one cell; an `i64` or `f64` takes two, low half first; an array takes its elements' cells in row order. A value that fits one cell is untorn in the attribute plane and needs no publish. synaptic-kernel's cells are 32-bit, so a 64-bit value spans two cells and goes to meta, where `publish()` makes it visible all at once.
 
-A string attribute's cell holds its `StrId`. `load` and `reload` write the Program's string table into a kernel LUT, as UTF-8 bytes packed four to a cell after a table of offsets, and size the LUT from the table, so the engine reads strings without the Program.
+Array attributes never sit in a node's stride. A node with array attributes keeps them in a separate, triple-buffered array region, reached through an index in its meta cells, so only nodes with arrays pay for them, and they become visible at the same publish as meta. The adapter computes a layout table from the vocabulary once, giving every attribute of every kind a plane and an offset. The engine reads through the same table, so the two never disagree.
 
-`apply` writes each change to its location and calls `publish()` only when a change landed in meta. The guarantee to engines, which is this consumer's statement under SPEC §12.2: every single value is consistent; meta-plane values are consistent with each other at every publish; independent attribute-plane values changed by one commit may be seen mixed for one engine cycle, and an attribute-plane value may be seen before a meta-plane value of the same commit, such as an activation, is published.
+`load` and `reload` write the Program's string table into a kernel LUT, as UTF-8 bytes packed four to a cell after a table of offsets, and size the LUT from the table, so the engine reads strings without the Program. `StrId` cells live in meta, so a reload's new ids and its new table appear at the same publish.
 
-Strides are uniform per store: the meta stride and the attribute stride are the largest any kind needs.
+`apply` writes each change to its location and calls `publish()` only when a change landed in meta or in the array region. The guarantee to engines, which is this consumer's statement under SPEC §12.2: every single value is consistent; meta-plane and array values are consistent with each other at every publish; independent attribute-plane values changed by the commits between two engine reads may be seen mixed in that read, and an attribute-plane value may be seen before a meta-plane value of the same commit, such as an activation, is published.
+
+Strides are uniform per store: the meta stride and the attribute stride are the largest any kind's scalar attributes need.
 
 ### 10.3 Capacity and reload
 
-`load` sizes the kernel from the Program's counts plus headroom equal to those counts, so a reload that replaces every node and synapse fits without `grow`, even though removed slots count until the engine acknowledges the publishes that free them. A reload that outgrows capacity calls `grow`; capacity only grows. `reload` inserts added nodes, removes removed ones together with their children's chains, writes changes and publishes. Kept and reordered nodes move to their new chain positions through synaptic-kernel's `move_node_after` and `move_node_before`, which keep a node's slot, synapses and cells and preserve the kernel's invariants.
+`load` sizes the kernel from the Program's counts plus headroom equal to those counts. A removed slot counts until the engine has acknowledged the publishes that follow its removal, so `reload` publishes first, which lets the slots the previous reload freed be reclaimed, and then inserts added nodes, removes removed ones together with their children's chains, writes changes and publishes. A reload that replaces every node and synapse fits without `grow` once the engine has acknowledged the previous reload's publishes; a reload that outgrows capacity calls `grow`, and capacity only grows. Kept and reordered nodes move to their new chain positions with `move_node_after` and `move_node_before`, which keep a node's slot, synapses and cells and preserve the kernel's invariants. The adapter requires these from synaptic-kernel, and PLAN Phase 8 adds them.
