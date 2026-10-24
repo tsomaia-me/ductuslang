@@ -1,9 +1,8 @@
-use crate::syntax::syntax_kind::SyntaxKind;
+use crate::syntax::token::Token;
 
-#[derive(Clone, Copy)]
-pub(crate) struct LineStart {
-    pub(crate) first: SyntaxKind,
-    pub(crate) next: Option<(SyntaxKind, bool)>,
+pub(crate) struct LineStart<'t> {
+    pub(crate) first: &'t Token,
+    pub(crate) rest: &'t [Token],
     pub(crate) top_level: bool,
     pub(crate) closes_region: bool,
 }

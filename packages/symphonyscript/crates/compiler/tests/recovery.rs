@@ -348,6 +348,37 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a / 2 )] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
     ),
+    (
+        "Clip c:\n    Note/(1 2\n    a/2)\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 39, 40),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a / 2 )] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a/(2)\n",
+        &[(Code::DefaultArgSyntax, 20, 21)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a DefaultArg[/ ParenExpr[( Literal[2] )]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    Note /3\n    Note | velocity=1\n",
+        &[(Code::DefaultArgSyntax, 20, 21)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[Note DefaultArg[/ Literal[3]] NL] Placement[Note Attrs[| AttrEntry[velocity = Literal[1]]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/[1 2,\n    a/2,\n    b]\n",
+        &[(Code::DefaultArgSyntax, 17, 18)],
+        "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/]] Bundle[[] ErrorNode[1 2 , a / 2 , b ]] NL] <]]]]",
+    ),
+    (
+        "let a = [\nClip c:\n    Note\nClip d:\n    Note ^\n",
+        &[
+            (Code::ExpressionSyntax, 10, 14),
+            (Code::ReservedToken, 44, 45),
+        ],
+        "File[LetDecl[let a = ArrayLit[[] NL] Placement[Clip c Body[: Block[NL > Placement[Note NL] <]]] Placement[Clip d Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
 ];
 
 #[test]
@@ -427,4 +458,15 @@ fn the_parenthesize_hint_shows_the_written_value() {
             .collect();
         assert_eq!(hints, [Some(hint.to_string())], "{text:?}");
     }
+}
+
+#[test]
+fn tight_slashes_inside_a_broken_bracket_stay_in_its_region() {
+    let text = format!(
+        "Clip c:\n    Note/(1 2\n{}    b)\n",
+        "    a/2,\n".repeat(2_500)
+    );
+    let codes = support::codes(&text);
+    assert_eq!(codes.len(), 1, "{:?}", codes.get(..3));
+    assert_eq!(codes, [(Code::DefaultArgSyntax, 20, 21)]);
 }

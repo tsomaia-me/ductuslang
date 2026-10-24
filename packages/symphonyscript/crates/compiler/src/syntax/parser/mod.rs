@@ -3,6 +3,7 @@ mod checkpoint;
 mod expressions;
 mod items;
 mod placements;
+mod starts_line;
 mod task;
 #[cfg(test)]
 mod tests;
@@ -14,7 +15,7 @@ use rowan::GreenNode;
 use symphonyscript_core::{Span, Vocabulary};
 
 use self::checkpoint::Checkpoint;
-use self::placements::FLAG_TOKENS;
+use self::starts_line::starts_line;
 use self::task::Task;
 use self::tree_builder::TreeBuilder;
 use super::lexer::{Lexer, LineStart};
@@ -391,7 +392,12 @@ impl<'a> Parser<'a> {
 
     fn visible_range(&mut self, index: usize) -> Range<u32> {
         let range = self.range_at(index).unwrap_or_default();
-        if self.kind_at(index) != Some(SyntaxKind::Indent) {
+        let layout = match self.kind_at(index) {
+            Some(SyntaxKind::Indent) => true,
+            Some(SyntaxKind::Newline) => range.is_empty(),
+            _ => false,
+        };
+        if !layout {
             return range;
         }
         let mut next = index;
@@ -448,7 +454,9 @@ impl<'a> Parser<'a> {
         let Some(current) = self.significant(0) else {
             return;
         };
-        if let Some(line) = self.lexer.resync_line(current, starts_line) {
+        let (text, vocabulary) = (self.source.text.as_str(), self.vocabulary);
+        let starts = |line: &LineStart<'_>| starts_line(line, text, vocabulary);
+        if let Some(line) = self.lexer.resync_line(current, starts) {
             self.lexer.resynchronize(line, self.pos);
         }
     }
@@ -537,37 +545,5 @@ impl<'a> Parser<'a> {
         self.start(SyntaxKind::ErrorNode);
         self.bump();
         self.finish();
-    }
-}
-
-fn starts_line(line: LineStart) -> bool {
-    match line.first {
-        SyntaxKind::InputKw
-        | SyntaxKind::LetKw
-        | SyntaxKind::FnKw
-        | SyntaxKind::PatternKw
-        | SyntaxKind::LParen
-        | SyntaxKind::LBracket
-        | SyntaxKind::ForKw
-        | SyntaxKind::WhenKw => true,
-        SyntaxKind::Ident => match line.next {
-            None => line.top_level,
-            Some((next, adjacent)) if line.top_level => {
-                matches!(next, SyntaxKind::Ident | SyntaxKind::AsKw)
-                    || (adjacent && FLAG_TOKENS.contains(&next))
-            }
-            Some((SyntaxKind::Slash, adjacent)) => adjacent && !line.closes_region,
-            Some((next, adjacent)) => {
-                matches!(
-                    next,
-                    SyntaxKind::Ident
-                        | SyntaxKind::AsKw
-                        | SyntaxKind::Pipe
-                        | SyntaxKind::WhenKw
-                        | SyntaxKind::Colon
-                ) || (adjacent && FLAG_TOKENS.contains(&next))
-            }
-        },
-        _ => false,
     }
 }

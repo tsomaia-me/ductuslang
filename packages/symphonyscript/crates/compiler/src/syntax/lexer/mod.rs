@@ -179,7 +179,7 @@ impl<'a> Lexer<'a> {
     pub(crate) fn resync_line(
         &mut self,
         token: usize,
-        starts_line: fn(LineStart) -> bool,
+        starts_line: impl Fn(&LineStart<'_>) -> bool,
     ) -> Option<usize> {
         let start = self.tokens.get(token)?.range.start as usize;
         let region = self
@@ -208,7 +208,11 @@ impl<'a> Lexer<'a> {
             match self.suspended.get(next) {
                 Some(line) if line.region != region => return None,
                 Some(line) => {
-                    if line.column <= top && self.line_start_of(line).is_some_and(starts_line) {
+                    if line.column <= top
+                        && self
+                            .line_start_of(line)
+                            .is_some_and(|start| starts_line(&start))
+                    {
                         return Some(next);
                     }
                     next += 1;
@@ -223,7 +227,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn line_start_of(&self, line: &Suspension) -> Option<LineStart> {
+    fn line_start_of(&self, line: &Suspension) -> Option<LineStart<'_>> {
         let first = self.tokens.get(line.first_token)?;
         let line_end = self
             .text
@@ -231,26 +235,19 @@ impl<'a> Lexer<'a> {
             .and_then(|rest| rest.find('\n'))
             .map_or(self.text.len(), |offset| {
                 first.range.start as usize + offset
-            });
-        let rest = self
-            .tokens
-            .get(line.first_token + 1..)
-            .unwrap_or_default()
+            }) as u32;
+        let after = self.tokens.get(line.first_token + 1..).unwrap_or_default();
+        let length = after.partition_point(|token| token.range.start < line_end);
+        let rest = after.get(..length).unwrap_or_default();
+        let closes_region = rest
             .iter()
             .zip(self.depths.get(line.first_token + 1..).unwrap_or_default())
-            .take_while(|(token, _)| (token.range.start as usize) < line_end);
-        let mut next = None;
-        let mut closes_region = false;
-        for (token, depth) in rest {
-            if next.is_none() && !token.kind.is_trivia() {
-                next = Some((token.kind, token.range.start == first.range.end));
-            }
-            closes_region |=
-                *depth == 1 && matches!(token.kind, SyntaxKind::RParen | SyntaxKind::RBracket);
-        }
+            .any(|(token, depth)| {
+                *depth == 1 && matches!(token.kind, SyntaxKind::RParen | SyntaxKind::RBracket)
+            });
         Some(LineStart {
-            first: first.kind,
-            next,
+            first,
+            rest,
             top_level: line.column == 0,
             closes_region,
         })
@@ -355,6 +352,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn layout(&mut self) {
+        let leading = &self.text[self.line_start..self.pos];
+        if self.depth > 0 && self.ends_region_here(leading.chars().count() as u32) {
+            self.depth = 0;
+            self.modes.clear();
+            self.clause = None;
+            self.clause_pending = false;
+            self.pending_newline = None;
+            self.push(SyntaxKind::Newline, self.pos);
+        }
         let leading = &self.text[self.line_start..self.pos];
         if self.depth > 0 {
             self.suspended.push(Suspension {
@@ -954,6 +960,37 @@ impl<'a> Lexer<'a> {
         });
     }
 
+    fn ends_region_here(&self, column: u32) -> bool {
+        let top = self
+            .regions
+            .last()
+            .and_then(|region| self.stacks.get(region.stack))
+            .and_then(|stack| stack.last().copied())
+            .unwrap_or(0);
+        column <= top && self.starts_item_strictly()
+    }
+
+    fn starts_item_strictly(&self) -> bool {
+        let rest = self.text.get(self.pos..).unwrap_or_default();
+        let first = word(rest);
+        match SyntaxKind::keyword(first) {
+            Some(
+                SyntaxKind::InputKw | SyntaxKind::LetKw | SyntaxKind::FnKw | SyntaxKind::PatternKw,
+            ) => true,
+            Some(_) => false,
+            None if first.is_empty() => false,
+            None => {
+                let after = rest
+                    .get(first.len()..)
+                    .unwrap_or_default()
+                    .trim_start_matches([' ', '\t']);
+                let second = word(after);
+                !second.is_empty()
+                    && SyntaxKind::keyword(second).is_none_or(|kind| kind == SyntaxKind::AsKw)
+            }
+        }
+    }
+
     fn line_stack_snapshot(&mut self) -> usize {
         if let Some(snapshot) = self.line_stack {
             return snapshot;
@@ -983,4 +1020,16 @@ impl<'a> Lexer<'a> {
         let span = self.span(start, end);
         self.diagnostics.push(Diagnostic::new(code, span, message));
     }
+}
+
+fn word(text: &str) -> &str {
+    let mut chars = text.char_indices();
+    match chars.next() {
+        Some((_, c)) if is_ident_start(c) => {}
+        _ => return "",
+    }
+    let end = chars
+        .find(|(_, c)| !is_ident_continue(*c))
+        .map_or(text.len(), |(offset, _)| offset);
+    text.get(..end).unwrap_or_default()
 }
