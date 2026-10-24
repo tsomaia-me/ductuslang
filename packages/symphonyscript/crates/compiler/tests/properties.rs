@@ -145,3 +145,59 @@ fn a_value_passed_through_a_function_keeps_its_meaning() {
     }
     assert!(wraps > 5, "{wraps} values wrapped");
 }
+
+fn orders(sources: &[Source]) -> Vec<Vec<Source>> {
+    let mut current: Vec<Source> = sources.to_vec();
+    let mut counters = vec![0; current.len()];
+    let mut found = vec![current.clone()];
+    let mut position = 1;
+    while position < current.len() {
+        if counters[position] < position {
+            let other = if position % 2 == 0 {
+                0
+            } else {
+                counters[position]
+            };
+            current.swap(other, position);
+            found.push(current.clone());
+            counters[position] += 1;
+            position = 1;
+        } else {
+            counters[position] = 0;
+            position += 1;
+        }
+    }
+    found
+}
+
+fn files(files: &[(&str, &str)]) -> Vec<Source> {
+    files
+        .iter()
+        .map(|(path, text)| Source {
+            path: (*path).into(),
+            text: (*text).into(),
+        })
+        .collect()
+}
+
+#[test]
+fn every_order_of_the_sources_gives_the_same_diagnostics() {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let mut programs: Vec<Vec<Source>> = projects().iter().map(sources).collect();
+    programs.push(files(&[("b.sym", "let x = 1\n"), ("a.sym", "let x = 2\n")]));
+    programs.push(files(&[
+        ("d/e.sym", "Clip c:\n    Note\n"),
+        ("a.sym", "let p = q\nClip lonely:\n    Note\n"),
+        ("c.sym", "let p = 1\n"),
+        ("b.sym", "Clip c:\n    Note/3000000000\n"),
+    ]));
+    let mut checked = 0;
+    for program in programs {
+        let expected = compiler.check(&program);
+        for order in orders(&program) {
+            assert_eq!(compiler.check(&order), expected, "{order:?}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 24, "{checked} orders checked");
+}

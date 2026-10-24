@@ -35,7 +35,7 @@ impl Compiler {
         }
         hir.seal_prelude();
         analyze::prelude(&hir, vocab, &mut report);
-        let diagnostics = report.finish();
+        let diagnostics = report.finish(&hir.files);
         if diagnostics
             .iter()
             .any(|diagnostic| diagnostic.severity() == Severity::Error)
@@ -61,6 +61,6 @@ impl Compiler {
             build_file(&mut hir, &source.path, &parsed, &self.vocabulary);
         }
         analyze::program(&hir, &self.vocabulary, &mut report);
-        report.finish()
+        report.finish(&hir.files)
     }
 }

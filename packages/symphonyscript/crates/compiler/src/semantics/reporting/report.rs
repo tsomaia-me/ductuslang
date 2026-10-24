@@ -41,18 +41,23 @@ impl Report {
         self.diagnostics.push(diagnostic);
     }
 
-    pub fn finish(mut self) -> Vec<Diagnostic> {
-        self.diagnostics.sort_by_cached_key(order);
+    pub fn finish(mut self, files: &[String]) -> Vec<Diagnostic> {
+        self.diagnostics
+            .sort_by_cached_key(|diagnostic| order(files, diagnostic));
         self.diagnostics.dedup();
         self.diagnostics
     }
 }
 
-type OrderKey = (String, u32, u32, Code, String, Vec<(String, u32, u32)>);
+type OrderKey = (usize, u32, u32, Code, String, Vec<(String, u32, u32)>);
 
-fn order(diagnostic: &Diagnostic) -> OrderKey {
+fn order(files: &[String], diagnostic: &Diagnostic) -> OrderKey {
+    let file = files
+        .iter()
+        .position(|file| *file == diagnostic.span.file)
+        .unwrap_or(files.len());
     (
-        diagnostic.span.file.clone(),
+        file,
         diagnostic.span.range.start,
         diagnostic.span.range.end,
         diagnostic.code,

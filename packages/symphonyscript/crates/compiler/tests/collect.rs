@@ -46,6 +46,27 @@ fn files_meet_in_byte_order_of_their_paths() {
 }
 
 #[test]
+fn diagnostics_come_by_file_in_top_level_order_with_the_prelude_first() {
+    let vocabulary = with_prelude("fn half(x): x div 2\n");
+    let compiler = Compiler::new(&vocabulary).expect("the prelude resolves");
+    let source = Source {
+        path: "a.sym".into(),
+        text: "Clip c:\n    Note/(half(0.5))\n    Note/missing\n".into(),
+    };
+    let found: Vec<(String, Code)> = support::errors(compiler.check(&[source]))
+        .into_iter()
+        .map(|diagnostic| (diagnostic.span.file, diagnostic.code))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("music.sym".to_string(), Code::OperandType),
+            ("a.sym".to_string(), Code::UnknownName),
+        ]
+    );
+}
+
+#[test]
 fn a_source_name_equal_to_a_built_in_or_vocabulary_name_is_a_duplicate() {
     for name in ["sin", "pi", "rand", "Note", "Plays", "Wave"] {
         let text = format!("let {name} = 1\n");
