@@ -952,7 +952,11 @@ fn guard_arms_cost_linear_time_and_memory() {
             text.push_str(&format!("        x is {arm}: Note/{arm}\n"));
         }
         let (diagnostics, size) = analyzed(&text, |engine| {
-            engine.nodes.len() + engine.condition_links.len() + engine.gates.len()
+            engine.nodes.len()
+                + engine.condition_links.len()
+                + engine.gates.len()
+                + engine.typing.gate_positions
+                + engine.typing.checks
         });
         assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
         size

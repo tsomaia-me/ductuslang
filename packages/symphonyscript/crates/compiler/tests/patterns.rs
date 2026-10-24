@@ -141,3 +141,24 @@ fn the_placement_a_stand_in_chain_creates_in_a_bundle_has_no_body() {
         assert_eq!(error_codes(text), expected, "{text}");
     }
 }
+
+#[test]
+fn a_bundle_a_parse_diagnostic_touched_draws_no_empty_bundle() {
+    for (text, expected) in [
+        ("Clip c:\n    [5]\n", vec![Code::BundleSyntax]),
+        (
+            "Clip c:\n    [for i in 0..3: \"x\"]\n",
+            vec![Code::BundleSyntax],
+        ),
+        (
+            "Clip c:\n    [for i in 0..0: Note/(1 +)]\n",
+            vec![Code::ExpressionSyntax],
+        ),
+        (
+            "Clip c:\n    [for i in 0..0: Note]\n",
+            vec![Code::EmptyBundle],
+        ),
+    ] {
+        assert_eq!(error_codes(text), expected, "{text}");
+    }
+}

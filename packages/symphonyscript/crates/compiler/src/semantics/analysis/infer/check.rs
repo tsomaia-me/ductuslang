@@ -26,6 +26,10 @@ impl Engine<'_> {
         let mut stack = vec![(root, expected)];
         let mut condition_root = condition;
         while let Some((node, expected)) = stack.pop() {
+            #[cfg(test)]
+            {
+                self.typing.checks += 1;
+            }
             if !self.typing.checked.insert((node, expected)) {
                 continue;
             }

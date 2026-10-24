@@ -12,6 +12,7 @@ pub(crate) enum BodyItem {
     Bundle {
         members: Vec<PlacementId>,
         each: Option<BundleFor>,
+        faulty: bool,
         loc: Loc,
     },
     For {

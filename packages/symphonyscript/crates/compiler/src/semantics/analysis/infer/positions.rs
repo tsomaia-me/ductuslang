@@ -182,6 +182,10 @@ impl Engine<'_> {
     }
 
     fn gate_position(&mut self, expr: ExprId, scope: ScopeId) -> Result<Position, Internal> {
+        #[cfg(test)]
+        {
+            self.typing.gate_positions += 1;
+        }
         let val = self.demand_val(Query::Expr(expr, scope))?;
         Ok(Position {
             val,

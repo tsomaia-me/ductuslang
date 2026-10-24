@@ -181,7 +181,12 @@ impl<'p> HirBuilder<'_> {
                 if self.faults.touch(range.start..range.start + 1) {
                     return;
                 }
-                let loc = self.loc(range);
+                let loc = self.loc(range.clone());
+                let closed = node
+                    .syntax()
+                    .last_token()
+                    .is_some_and(|token| token.kind() == SyntaxKind::RBracket);
+                let faulty = !closed || self.faults.touch(range);
                 let Some(members) = self.bundle_members(node.members(), pending) else {
                     return;
                 };
@@ -200,7 +205,12 @@ impl<'p> HirBuilder<'_> {
                     }
                     None => None,
                 };
-                items.push(BodyItem::Bundle { members, each, loc });
+                items.push(BodyItem::Bundle {
+                    members,
+                    each,
+                    faulty,
+                    loc,
+                });
             }
         }
     }

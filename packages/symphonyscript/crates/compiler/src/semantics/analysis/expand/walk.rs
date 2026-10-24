@@ -720,7 +720,12 @@ impl Engine<'_> {
                         .push(Entry::Wire(wire));
                 }
             }
-            BodyItem::Bundle { members, each, loc } => {
+            BodyItem::Bundle {
+                members,
+                each,
+                faulty,
+                loc,
+            } => {
                 if let Some(collector) = walk.bundle {
                     self.error(
                         Code::BundleMember,
@@ -733,6 +738,9 @@ impl Engine<'_> {
                 }
                 let collector = collectors.len();
                 collectors.push(Vec::new());
+                if faulty {
+                    self.broken_bundles.insert(collector);
+                }
                 frames.push(Frame::EndBundle {
                     collector,
                     owner: walk.owner,
