@@ -1,3 +1,4 @@
+use crate::semantics::Internal;
 use crate::semantics::analysis::condition::Condition;
 use crate::semantics::analysis::condition_link::ConditionLink;
 use crate::semantics::analysis::engine::Engine;
@@ -70,20 +71,23 @@ impl Engine<'_> {
         &self,
         root: BlockId,
         scope: ScopeId,
-    ) -> bool {
+    ) -> Result<bool, Internal> {
         let hir = self.hir;
         let mut blocks = vec![root];
         while let Some(block) = blocks.pop() {
-            for item in &hir.block(block).items {
+            for item in &hir.block(block)?.items {
                 match item {
-                    BodyItem::Wire(_) => return true,
+                    BodyItem::Wire(_) => return Ok(true),
                     BodyItem::Placement(id) => {
-                        let placement = hir.placement(*id);
-                        let node = placement.kind.as_ref().is_some_and(|kind| {
-                            matches!(self.kind_decl(scope, &kind.text), Some(Decl::Node(_)))
-                        });
+                        let placement = hir.placement(*id)?;
+                        let node = match placement.kind.as_ref() {
+                            Some(kind) => {
+                                matches!(self.kind_decl(scope, &kind.text)?, Some(Decl::Node(_)))
+                            }
+                            None => false,
+                        };
                         if !node {
-                            return true;
+                            return Ok(true);
                         }
                         blocks.extend(placement.body);
                     }
@@ -98,6 +102,6 @@ impl Engine<'_> {
                 }
             }
         }
-        false
+        Ok(false)
     }
 }

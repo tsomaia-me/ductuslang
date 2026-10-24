@@ -11,6 +11,7 @@ use super::pattern_graph::PatternGraph;
 use super::recursive_functions::recursive_functions;
 use super::variants::Variants;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::ir::{Hir, Ident, Loc, Top};
 use crate::semantics::reporting::Report;
 
@@ -19,7 +20,7 @@ pub(crate) fn collect(
     vocabulary: &Vocabulary,
     variants: &Variants,
     report: &mut Report,
-) -> Collected {
+) -> Result<Collected, Internal> {
     let base = base_namespace(vocabulary);
     let mut prelude = base.clone();
     let mut source = base.clone();
@@ -30,7 +31,7 @@ pub(crate) fn collect(
         let (name, decl) = match *top {
             Top::Input(id) => {
                 if in_prelude {
-                    let loc = hir.input(id).loc;
+                    let loc = hir.input(id)?.loc;
                     report.error(
                         hir,
                         Code::PreludeItem,
@@ -39,14 +40,14 @@ pub(crate) fn collect(
                     );
                     continue;
                 }
-                (hir.input(id).name.clone(), Decl::Input(id))
+                (hir.input(id)?.name.clone(), Decl::Input(id))
             }
-            Top::Let(id) => (hir.let_decl(id).name.clone(), Decl::Let(id)),
-            Top::Fn(id) => (hir.fn_decl(id).name.clone(), Decl::Fn(id)),
-            Top::Pattern(id) => (hir.pattern(id).name.clone(), Decl::Pattern(id)),
+            Top::Let(id) => (hir.let_decl(id)?.name.clone(), Decl::Let(id)),
+            Top::Fn(id) => (hir.fn_decl(id)?.name.clone(), Decl::Fn(id)),
+            Top::Pattern(id) => (hir.pattern(id)?.name.clone(), Decl::Pattern(id)),
             Top::Placement(id) => {
                 if in_prelude {
-                    let loc = hir.placement(id).loc;
+                    let loc = hir.placement(id)?.loc;
                     report.error(
                         hir,
                         Code::PreludeItem,
@@ -55,7 +56,7 @@ pub(crate) fn collect(
                     );
                     continue;
                 }
-                (hir.placement(id).name.clone(), Decl::Instance(id))
+                (hir.placement(id)?.name.clone(), Decl::Instance(id))
             }
         };
         let Some(name) = name else {
@@ -78,17 +79,17 @@ pub(crate) fn collect(
             declare(hir, &base, &mut source, &mut first, &name, decl, report);
         }
     }
-    let recursive = recursive_functions(hir, &source, &prelude);
-    let inline = InlineCounts::of(hir, &source, &prelude, &recursive);
-    let graph = PatternGraph::of(hir, &source, &prelude, report);
-    Collected {
+    let recursive = recursive_functions(hir, &source, &prelude)?;
+    let inline = InlineCounts::of(hir, &source, &prelude, &recursive)?;
+    let graph = PatternGraph::of(hir, &source, &prelude, report)?;
+    Ok(Collected {
         source,
         prelude,
         recursive,
         inline,
         cyclic_patterns: graph.cyclic,
         stand_ins: graph.stand_ins,
-    }
+    })
 }
 
 fn base_namespace(vocabulary: &Vocabulary) -> Namespace {

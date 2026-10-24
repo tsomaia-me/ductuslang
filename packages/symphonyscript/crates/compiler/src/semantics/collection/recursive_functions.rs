@@ -3,9 +3,14 @@ use std::collections::BTreeSet;
 use super::decl::Decl;
 use super::namespace::Namespace;
 use super::strongly_connected::strongly_connected;
+use crate::semantics::Internal;
 use crate::semantics::ir::{ExprId, ExprKind, FnId, Hir};
 
-pub(crate) fn recursive_functions(hir: &Hir, source: &Namespace, prelude: &Namespace) -> Vec<bool> {
+pub(crate) fn recursive_functions(
+    hir: &Hir,
+    source: &Namespace,
+    prelude: &Namespace,
+) -> Result<Vec<bool>, Internal> {
     let mut edges: Vec<Vec<usize>> = Vec::with_capacity(hir.fns.len());
     for (index, decl) in hir.fns.iter().enumerate() {
         let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
@@ -31,9 +36,9 @@ pub(crate) fn recursive_functions(hir: &Hir, source: &Namespace, prelude: &Names
         let mut targets = BTreeSet::new();
         let mut stack = roots;
         while let Some(expr) = stack.pop() {
-            let kind = &hir.expr(expr).kind;
+            let kind = &hir.expr(expr)?.kind;
             if let ExprKind::Call(callee, _) = kind
-                && let ExprKind::Name(name) = &hir.expr(*callee).kind
+                && let ExprKind::Name(name) = &hir.expr(*callee)?.kind
                 && !locals.contains(name.as_str())
                 && let Some(Decl::Fn(target)) = namespace.get(name)
             {
@@ -59,5 +64,5 @@ pub(crate) fn recursive_functions(hir: &Hir, source: &Namespace, prelude: &Names
             }
         }
     }
-    recursive
+    Ok(recursive)
 }

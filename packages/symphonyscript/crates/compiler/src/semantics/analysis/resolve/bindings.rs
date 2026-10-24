@@ -5,6 +5,7 @@ use symphonyscript_core::{AttrDefault, AttrId, Scalar};
 use super::annotation::Annotation;
 use super::bind_spec::BindSpec;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::binding::Binding;
 use crate::semantics::analysis::binding_kind::BindingKind;
@@ -31,6 +32,7 @@ use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::shape_fault::ShapeFault;
 use crate::semantics::analysis::shape_parts::shape_parts;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
@@ -42,13 +44,13 @@ impl Engine<'_> {
         scope: ScopeId,
         local: LetRef,
         need: &mut Vec<Query>,
-    ) -> bool {
-        let Some(decl) = self.let_decl(scope, local) else {
+    ) -> Result<bool, Internal> {
+        let Some(decl) = self.let_decl(scope, local)? else {
             self.memo.lets.insert((scope, local), BoundVal::Error);
-            return true;
+            return Ok(true);
         };
         let Some(val) = self.val(Query::Expr(decl.value, scope), need) else {
-            return false;
+            return Ok(false);
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
         let loc = decl.loc;
@@ -58,12 +60,12 @@ impl Engine<'_> {
             .map(|name| name.text.clone())
             .unwrap_or_default();
         let Some((val, defaulted)) =
-            self.reactive_elements(val, annotation.as_ref(), loc, scope, need)
+            self.reactive_elements(val, annotation.as_ref(), loc, scope, need)?
         else {
-            return false;
+            return Ok(false);
         };
         let Some(sigs) = self.element_sigs(&val, need) else {
-            return false;
+            return Ok(false);
         };
         let spec = BindSpec {
             kind: BindingKind::Let,
@@ -72,30 +74,33 @@ impl Engine<'_> {
             loc,
             scope,
         };
-        let bound = self.bind(&val, &sigs, &spec);
+        let bound = self.bind(&val, &sigs, &spec)?;
         self.note_defaulted(defaulted, &bound);
         self.memo.lets.insert((scope, local), bound);
-        true
+        Ok(true)
     }
 
     pub(in crate::semantics::analysis) fn let_decl(
         &self,
         scope: ScopeId,
         local: LetRef,
-    ) -> Option<&LetDecl> {
-        match local {
-            LetRef::Top(id) => Some(self.hir.let_decl(id)),
+    ) -> Result<Option<&LetDecl>, Internal> {
+        Ok(match local {
+            LetRef::Top(id) => Some(self.hir.let_decl(id)?),
             LetRef::Local(index) => {
-                let ScopeKind::Locals(locals) = &self.scope_of(scope).kind else {
-                    return None;
+                let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
+                    return Ok(None);
                 };
                 let lets = match locals.owner {
-                    LocalsOwner::Fn(function) => &self.hir.fn_decl(function).lets,
-                    LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern).lets,
+                    LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.lets,
+                    LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.lets,
                 };
-                lets.get(index as usize)
+                Some(
+                    lets.get(index as usize)
+                        .ok_or(Internal::missed("local let"))?,
+                )
             }
-        }
+        })
     }
 
     pub(in crate::semantics::analysis) fn run_param(
@@ -103,10 +108,10 @@ impl Engine<'_> {
         scope: ScopeId,
         index: u32,
         need: &mut Vec<Query>,
-    ) -> bool {
-        let ScopeKind::Locals(locals) = &self.scope_of(scope).kind else {
+    ) -> Result<bool, Internal> {
+        let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
             self.memo.params.insert((scope, index), BoundVal::Error);
-            return true;
+            return Ok(true);
         };
         let owner = locals.owner;
         let source = locals
@@ -115,13 +120,12 @@ impl Engine<'_> {
             .cloned()
             .unwrap_or(ParamSource::Missing);
         let params = match owner {
-            LocalsOwner::Fn(function) => &self.hir.fn_decl(function).params,
-            LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern).params,
+            LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
+            LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
         };
-        let Some(param) = params.get(index as usize) else {
-            self.memo.params.insert((scope, index), BoundVal::Error);
-            return true;
-        };
+        let param = params
+            .get(index as usize)
+            .ok_or(Internal::missed("parameter"))?;
         let name = param
             .name
             .as_ref()
@@ -130,37 +134,37 @@ impl Engine<'_> {
         let (val, loc) = match source {
             ParamSource::Bound(bound) => {
                 self.memo.params.insert((scope, index), bound);
-                return true;
+                return Ok(true);
             }
             ParamSource::Missing => {
                 self.memo.params.insert((scope, index), BoundVal::Error);
-                return true;
+                return Ok(true);
             }
             ParamSource::Arg {
                 expr,
                 scope: caller,
             } => {
-                let loc = self.hir.expr(expr).loc;
+                let loc = self.hir.expr(expr)?.loc;
                 (self.val(Query::Expr(expr, caller), need), loc)
             }
             ParamSource::Default => {
                 let Some(default) = param.default else {
                     self.memo.params.insert((scope, index), BoundVal::Error);
-                    return true;
+                    return Ok(true);
                 };
-                let prefix = self.prefix_scope(scope, index);
-                let loc = self.hir.expr(default).loc;
+                let prefix = self.prefix_scope(scope, index)?;
+                let loc = self.hir.expr(default)?.loc;
                 (self.val(Query::Expr(default, prefix), need), loc)
             }
         };
         let Some(val) = val else {
-            return false;
+            return Ok(false);
         };
-        let Some((val, defaulted)) = self.reactive_elements(val, None, loc, scope, need) else {
-            return false;
+        let Some((val, defaulted)) = self.reactive_elements(val, None, loc, scope, need)? else {
+            return Ok(false);
         };
         let Some(sigs) = self.element_sigs(&val, need) else {
-            return false;
+            return Ok(false);
         };
         let spec = BindSpec {
             kind: BindingKind::Param,
@@ -169,19 +173,19 @@ impl Engine<'_> {
             loc,
             scope,
         };
-        let bound = self.bind(&val, &sigs, &spec);
+        let bound = self.bind(&val, &sigs, &spec)?;
         self.note_defaulted(defaulted, &bound);
         self.memo.params.insert((scope, index), bound);
-        true
+        Ok(true)
     }
 
-    fn prefix_scope(&mut self, locals: ScopeId, count: u32) -> ScopeId {
+    fn prefix_scope(&mut self, locals: ScopeId, count: u32) -> Result<ScopeId, Internal> {
         if let Some(existing) = self.memo.prefix_scopes.get(&(locals, count)) {
-            return *existing;
+            return Ok(*existing);
         }
-        let parent = self.scope_of(locals).parent;
-        let chain = self.chain(locals);
-        let template = self.template_of(locals);
+        let parent = self.scope_of(locals)?.parent;
+        let chain = self.chain(locals)?;
+        let template = self.template_of(locals)?;
         let created = self.scope_in(
             ScopeKind::ParamPrefix { locals, count },
             parent,
@@ -189,36 +193,36 @@ impl Engine<'_> {
             template,
         );
         self.memo.prefix_scopes.insert((locals, count), created);
-        created
+        Ok(created)
     }
 
     pub(in crate::semantics::analysis) fn run_input(
         &mut self,
         input: InputId,
         need: &mut Vec<Query>,
-    ) -> bool {
-        let decl = self.hir.input(input);
+    ) -> Result<bool, Internal> {
+        let decl = self.hir.input(input)?;
         let global = self.source_global;
         let Some(val) = self.val(Query::Expr(decl.value, global), need) else {
-            return false;
+            return Ok(false);
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
-        let Some(val) = self.input_elements(val, annotation.as_ref(), decl.value, need) else {
-            return false;
+        let Some(val) = self.input_elements(val, annotation.as_ref(), decl.value, need)? else {
+            return Ok(false);
         };
         let Some(sigs) = self.element_sigs(&val, need) else {
-            return false;
+            return Ok(false);
         };
-        let loc = self.hir.expr(decl.value).loc;
+        let loc = self.hir.expr(decl.value)?.loc;
         if sigs.iter().any(|sig| sig.reactive) {
             self.error(
                 Code::ReactiveInitializer,
                 loc,
                 global,
                 "an input's initializer is a compile-time value and reads no input",
-            );
+            )?;
             self.memo.inputs.insert(input, BoundVal::Error);
-            return true;
+            return Ok(true);
         }
         let bare: Vec<NodeId> = val
             .nodes()
@@ -229,10 +233,10 @@ impl Engine<'_> {
             .collect();
         if !bare.is_empty() {
             for node in bare {
-                self.unplaced_variant(node);
+                self.unplaced_variant(node)?;
             }
             self.memo.inputs.insert(input, BoundVal::Error);
-            return true;
+            return Ok(true);
         }
         if let Some(bad) = sigs
             .iter()
@@ -243,9 +247,9 @@ impl Engine<'_> {
             } else {
                 "an input never holds a node reference"
             };
-            self.error(Code::InputValue, loc, global, message);
+            self.error(Code::InputValue, loc, global, message)?;
             self.memo.inputs.insert(input, BoundVal::Error);
-            return true;
+            return Ok(true);
         }
         if let Some(annotation) = &annotation
             && annotation.lengths != val.shape().lengths()
@@ -255,9 +259,9 @@ impl Engine<'_> {
                 loc,
                 global,
                 "the initializer's shape differs from the input's type",
-            );
+            )?;
             self.memo.inputs.insert(input, BoundVal::Error);
-            return true;
+            return Ok(true);
         }
         let name = decl
             .name
@@ -290,7 +294,7 @@ impl Engine<'_> {
             Val::Error => BoundVal::Error,
         };
         self.memo.inputs.insert(input, bound);
-        true
+        Ok(true)
     }
 
     pub(in crate::semantics::analysis) fn run_attr(
@@ -298,27 +302,27 @@ impl Engine<'_> {
         item: ItemRef,
         attr: AttrId,
         need: &mut Vec<Query>,
-    ) -> bool {
-        let Some(decl) = self.attr_decl(item, attr).cloned() else {
+    ) -> Result<bool, Internal> {
+        let Some(decl) = self.attr_decl(item, attr)?.cloned() else {
             self.memo.attrs.insert((item, attr), BoundVal::Error);
-            return true;
+            return Ok(true);
         };
         let source = self
-            .attr_sources(item)
+            .attr_sources(item)?
             .iter()
             .find(|source| source.attr == attr)
             .copied();
-        let item_loc = self.item_loc(item);
-        let item_scope = self.item_scope(item);
+        let item_loc = self.item_loc(item)?;
+        let item_scope = self.item_scope(item)?;
         let scalar = decl.ty.scalar;
         let bound = match source.map(|source| source.value) {
             Some(AttrValueSource::Expr(expr, scope)) => {
                 let Some(val) = self.val(Query::Expr(expr, scope), need) else {
-                    return false;
+                    return Ok(false);
                 };
-                let val = self.attr_elements(val, &decl.ty.lengths, expr, scope);
+                let val = self.attr_elements(val, &decl.ty.lengths, expr, scope)?;
                 let Some(sigs) = self.element_sigs(&val, need) else {
-                    return false;
+                    return Ok(false);
                 };
                 if val.shape().lengths() != decl.ty.lengths {
                     BoundVal::Error
@@ -327,7 +331,7 @@ impl Engine<'_> {
                         scalar,
                         lengths: decl.ty.lengths.clone(),
                     };
-                    let loc = self.hir.expr(expr).loc;
+                    let loc = self.hir.expr(expr)?.loc;
                     let spec = BindSpec {
                         kind: BindingKind::Attr { item, attr },
                         annotation: Some(&annotation),
@@ -335,11 +339,11 @@ impl Engine<'_> {
                         loc,
                         scope,
                     };
-                    self.bind_attr(&val, &sigs, &spec)
+                    self.bind_attr(&val, &sigs, &spec)?
                 }
             }
             Some(AttrValueSource::Set(value)) => {
-                let node = self.push_node(Op::Bool(value), item_loc, item_scope);
+                let node = self.push_node(Op::Bool(value), item_loc, item_scope)?;
                 BoundVal::Scalar(Bound::Value(node))
             }
             None => match &decl.default {
@@ -347,9 +351,10 @@ impl Engine<'_> {
                     let nodes: Vec<Bound> = values
                         .iter()
                         .map(|value| {
-                            Bound::Value(self.push_node(Op::Const(*value), item_loc, item_scope))
+                            self.push_node(Op::Const(*value), item_loc, item_scope)
+                                .map(Bound::Value)
                         })
-                        .collect();
+                        .collect::<Result<_, _>>()?;
                     if decl.ty.lengths.is_empty() {
                         nodes
                             .first()
@@ -359,14 +364,14 @@ impl Engine<'_> {
                     }
                 }
                 Some(AttrDefault::Text(text)) => {
-                    let node = self.push_node(Op::Str(text.clone()), item_loc, item_scope);
+                    let node = self.push_node(Op::Str(text.clone()), item_loc, item_scope)?;
                     BoundVal::Scalar(Bound::Value(node))
                 }
                 None => BoundVal::Error,
             },
         };
         self.memo.attrs.insert((item, attr), bound);
-        true
+        Ok(true)
     }
 
     fn input_elements(
@@ -375,20 +380,20 @@ impl Engine<'_> {
         annotation: Option<&Annotation>,
         expr: ExprId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
+    ) -> Result<Option<Val>, Internal> {
         let Val::Scalar(node) = val else {
-            return Some(val);
+            return Ok(Some(val));
         };
         if !self.arrays.contains(&node) {
-            return Some(val);
+            return Ok(Some(val));
         }
         let ty = eval_ty_of(annotation.map(|annotation| annotation.scalar));
-        let value = self.cval(Query::Eval(node, ty), need)?;
+        let value = some!(self.cval(Query::Eval(node, ty), need));
         let CVal::Array(array) = value else {
-            return Some(val);
+            return Ok(Some(val));
         };
         let shape = Shape::from_lengths(&array.lengths());
-        let loc = self.hir.expr(expr).loc;
+        let loc = self.hir.expr(expr)?.loc;
         let scope = self.source_global;
         let nodes = self.projected(
             node,
@@ -399,8 +404,8 @@ impl Engine<'_> {
             ),
             loc,
             scope,
-        );
-        Some(Val::array(shape, nodes))
+        )?;
+        Ok(Some(Val::array(shape, nodes)))
     }
 
     fn reactive_elements(
@@ -410,16 +415,16 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<(Val, Option<NodeId>)> {
+    ) -> Result<Option<(Val, Option<NodeId>)>, Internal> {
         let Val::Scalar(node) = val else {
-            return Some((val, None));
+            return Ok(Some((val, None)));
         };
-        if !self.arrays.contains(&node) || !self.sig(node, need)?.reactive {
-            return Some((val, None));
+        if !self.arrays.contains(&node) || !some!(self.sig(node, need)).reactive {
+            return Ok(Some((val, None)));
         }
         if let Some(annotation) = annotation {
             if annotation.lengths.is_empty() {
-                return Some((val, None));
+                return Ok(Some((val, None)));
             }
             let shape = Shape::from_lengths(&annotation.lengths);
             let nodes = self.projected(
@@ -428,20 +433,20 @@ impl Engine<'_> {
                 (Code::TypeMismatch, ANNOTATED_SHAPE),
                 loc,
                 scope,
-            );
-            return Some((Val::array(shape, nodes), None));
+            )?;
+            return Ok(Some((Val::array(shape, nodes), None)));
         }
-        let lengths = match self.default_shape(node, need)? {
+        let lengths = match some!(self.default_shape(node, need)?) {
             Ok(lengths) => lengths,
             Err(fault) => {
                 if let Some(fault) = fault {
-                    self.error_at_node(fault.code, fault.node, fault.message);
+                    self.error_at_node(fault.code, fault.node, fault.message)?;
                 }
-                return Some((Val::Error, None));
+                return Ok(Some((Val::Error, None)));
             }
         };
         if lengths.is_empty() {
-            return Some((val, None));
+            return Ok(Some((val, None)));
         }
         let shape = Shape::from_lengths(&lengths);
         let nodes = self.projected(
@@ -450,16 +455,16 @@ impl Engine<'_> {
             (Code::InconsistentShapes, DEFAULT_SHAPE),
             loc,
             scope,
-        );
-        Some((Val::array(shape, nodes), Some(node)))
+        )?;
+        Ok(Some((Val::array(shape, nodes), Some(node))))
     }
 
     fn default_shape(
         &self,
         root: NodeId,
         need: &mut Vec<Query>,
-    ) -> Option<Result<Vec<u32>, Option<ShapeFault>>> {
-        let mut shapes: FastMap<NodeId, Result<Vec<u32>, Option<ShapeFault>>> = FastMap::default();
+    ) -> Result<Option<Lengths>, Internal> {
+        let mut shapes: FastMap<NodeId, Lengths> = FastMap::default();
         let mut stack = vec![(root, false)];
         let mut missing = false;
         while let Some((node, ready)) = stack.pop() {
@@ -487,8 +492,8 @@ impl Engine<'_> {
                 shapes.insert(node, shape);
                 continue;
             }
-            let op = &self.node(node).op;
-            let parts = shape_parts(self, op);
+            let op = &self.node(node)?.op;
+            let parts = shape_parts(self, op)?;
             if !self.arrays.contains(&node) || parts.is_empty() {
                 shapes.insert(node, Ok(Vec::new()));
                 continue;
@@ -517,9 +522,9 @@ impl Engine<'_> {
             shapes.insert(node, shape);
         }
         if missing {
-            return None;
+            return Ok(None);
         }
-        shapes.remove(&root)
+        Ok(shapes.remove(&root))
     }
 
     fn note_defaulted(&mut self, base: Option<NodeId>, bound: &BoundVal) {
@@ -537,55 +542,66 @@ impl Engine<'_> {
         self.memo.defaulted.insert(base, elements);
     }
 
-    fn attr_elements(&mut self, val: Val, lengths: &[u32], expr: ExprId, scope: ScopeId) -> Val {
+    fn attr_elements(
+        &mut self,
+        val: Val,
+        lengths: &[u32],
+        expr: ExprId,
+        scope: ScopeId,
+    ) -> Result<Val, Internal> {
         let Val::Scalar(node) = val else {
-            return val;
+            return Ok(val);
         };
         if !self.arrays.contains(&node) {
-            return val;
+            return Ok(val);
         }
         if lengths.is_empty() {
-            return val;
+            return Ok(val);
         }
         let shape = Shape::from_lengths(lengths);
-        let loc = self.hir.expr(expr).loc;
+        let loc = self.hir.expr(expr)?.loc;
         let nodes = self.projected(
             node,
             &shape,
             (Code::TypeMismatch, ATTRIBUTE_SHAPE),
             loc,
             scope,
-        );
-        Val::array(shape, nodes)
+        )?;
+        Ok(Val::array(shape, nodes))
     }
 
-    fn bind_attr(&mut self, val: &Val, sigs: &[Sig], spec: &BindSpec<'_>) -> BoundVal {
+    fn bind_attr(
+        &mut self,
+        val: &Val,
+        sigs: &[Sig],
+        spec: &BindSpec<'_>,
+    ) -> Result<BoundVal, Internal> {
         let Some(annotation) = spec.annotation else {
-            return BoundVal::Error;
+            return Ok(BoundVal::Error);
         };
         let (kind, name, loc, scope) = (spec.kind, spec.name, spec.loc, spec.scope);
-        let one = |engine: &mut Self, node: NodeId, sig: &Sig| -> Bound {
+        let one = |engine: &mut Self, node: NodeId, sig: &Sig| -> Result<Bound, Internal> {
             if !sig.reactive {
-                return Bound::Value(engine.push_node(
+                return Ok(Bound::Value(engine.push_node(
                     Op::Annotate(annotation.scalar, node),
                     loc,
                     scope,
-                ));
+                )?));
             }
-            if let Op::Read(binding) = engine.node(node).op {
-                return Bound::Cell(binding);
+            if let Op::Read(binding) = engine.node(node)?.op {
+                return Ok(Bound::Cell(binding));
             }
-            Bound::Cell(engine.push_binding(Binding {
+            Ok(Bound::Cell(engine.push_binding(Binding {
                 kind,
                 init: node,
                 annotation: Some(annotation.scalar),
                 name: name.to_string(),
                 loc,
-            }))
+            })))
         };
-        match val {
+        Ok(match val {
             Val::Scalar(node) => match sigs.first() {
-                Some(sig) => BoundVal::Scalar(one(self, *node, sig)),
+                Some(sig) => BoundVal::Scalar(one(self, *node, sig)?),
                 None => BoundVal::Error,
             },
             Val::Array(array) => {
@@ -594,11 +610,11 @@ impl Engine<'_> {
                     .iter()
                     .zip(sigs)
                     .map(|(node, sig)| one(self, *node, sig))
-                    .collect();
+                    .collect::<Result<_, _>>()?;
                 BoundVal::Array(Rc::new((array.shape.clone(), items)))
             }
             Val::Error => BoundVal::Error,
-        }
+        })
     }
 
     pub(in crate::semantics::analysis) fn element_sigs(
@@ -619,7 +635,7 @@ impl Engine<'_> {
         val: &Val,
         sigs: &[Sig],
         spec: &BindSpec<'_>,
-    ) -> BoundVal {
+    ) -> Result<BoundVal, Internal> {
         let (kind, annotation, name, loc, scope) =
             (spec.kind, spec.annotation, spec.name, spec.loc, spec.scope);
         if let Some(annotation) = annotation
@@ -632,8 +648,8 @@ impl Engine<'_> {
                 loc,
                 scope,
                 "the value's shape differs from its annotated type",
-            );
-            return BoundVal::Error;
+            )?;
+            return Ok(BoundVal::Error);
         }
         let scalar = annotation.map(|annotation| annotation.scalar);
         if let Some(target) = scalar {
@@ -643,36 +659,37 @@ impl Engine<'_> {
                         Code::TypeMismatch,
                         node,
                         "the value does not have the annotated type; a conversion states the rounding",
-                    );
-                    return BoundVal::Error;
+                    )?;
+                    return Ok(BoundVal::Error);
                 }
             }
         }
-        let one = |engine: &mut Self, node: NodeId, sig: &Sig, alias: bool| -> Bound {
-            if !sig.reactive {
-                return Bound::Value(match scalar {
-                    Some(scalar) => engine.push_node(Op::Annotate(scalar, node), loc, scope),
-                    None => node,
-                });
-            }
-            if alias
-                && scalar.is_none()
-                && let Op::Read(binding) = engine.node(node).op
-            {
-                return Bound::Cell(binding);
-            }
-            Bound::Cell(engine.push_binding(Binding {
-                kind,
-                init: node,
-                annotation: scalar,
-                name: name.to_string(),
-                loc,
-            }))
-        };
-        match val {
+        let one =
+            |engine: &mut Self, node: NodeId, sig: &Sig, alias: bool| -> Result<Bound, Internal> {
+                if !sig.reactive {
+                    return Ok(Bound::Value(match scalar {
+                        Some(scalar) => engine.push_node(Op::Annotate(scalar, node), loc, scope)?,
+                        None => node,
+                    }));
+                }
+                if alias
+                    && scalar.is_none()
+                    && let Op::Read(binding) = engine.node(node)?.op
+                {
+                    return Ok(Bound::Cell(binding));
+                }
+                Ok(Bound::Cell(engine.push_binding(Binding {
+                    kind,
+                    init: node,
+                    annotation: scalar,
+                    name: name.to_string(),
+                    loc,
+                })))
+            };
+        Ok(match val {
             Val::Scalar(node) => match sigs.first() {
                 Some(sig) => {
-                    let bound = one(self, *node, sig, false);
+                    let bound = one(self, *node, sig, false)?;
                     if let (Some(annotation), Bound::Value(annotated)) = (annotation, bound)
                         && self.arrays.contains(node)
                     {
@@ -693,11 +710,11 @@ impl Engine<'_> {
                     .iter()
                     .zip(sigs)
                     .map(|(node, sig)| one(self, *node, sig, true))
-                    .collect();
+                    .collect::<Result<_, _>>()?;
                 BoundVal::Array(Rc::new((array.shape.clone(), items)))
             }
             Val::Error => BoundVal::Error,
-        }
+        })
     }
 
     pub(in crate::semantics::analysis) fn annotation(&self, ty: &TypeRef) -> Option<Annotation> {
@@ -731,6 +748,8 @@ fn annotated(sig: &Sig, target: Scalar) -> bool {
 }
 
 const ATTRIBUTE_SHAPE: &str = "the value's array shape differs from the attribute's type";
+
+type Lengths = Result<Vec<u32>, Option<ShapeFault>>;
 
 const ANNOTATED_SHAPE: &str = "the value's shape differs from its annotated type";
 

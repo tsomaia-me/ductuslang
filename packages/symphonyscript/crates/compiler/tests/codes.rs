@@ -29,11 +29,10 @@ fn every_code_names_a_section_of_the_spec() {
         .map(|number| number.trim_end_matches('.'))
         .collect();
     for code in Code::ALL {
-        assert!(
-            sections.contains(&code.section()),
-            "{code} names §{}",
-            code.section()
-        );
+        match code.section() {
+            Some(section) => assert!(sections.contains(&section), "{code} names §{section}"),
+            None => assert_eq!(*code, Code::InternalError, "{code} names no section"),
+        }
     }
 }
 

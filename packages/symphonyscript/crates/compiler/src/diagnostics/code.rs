@@ -141,6 +141,7 @@ codes!(
     WireCycle,
     UnreachableInstance,
     NoEntryInstance,
+    InternalError,
 );
 
 impl Code {
@@ -271,11 +272,12 @@ impl Code {
             Code::WireCycle => "wire-cycle",
             Code::UnreachableInstance => "unreachable-instance",
             Code::NoEntryInstance => "no-entry-instance",
+            Code::InternalError => "internal-error",
         }
     }
 
-    pub fn section(self) -> &'static str {
-        match self {
+    pub fn section(self) -> Option<&'static str> {
+        let section = match self {
             Code::UnexpectedCharacter => "2.1",
             Code::TabIndentation | Code::DedentMismatch | Code::ClauseColumn | Code::Semicolon => {
                 "2.2"
@@ -395,7 +397,9 @@ impl Code {
             Code::WireCycle => "8.4",
             Code::UnreachableInstance => "10.2",
             Code::NoEntryInstance => "10.2",
-        }
+            Code::InternalError => return None,
+        };
+        Some(section)
     }
 
     pub fn severity(self) -> Severity {
@@ -524,7 +528,8 @@ impl Code {
             | Code::CountBelowMinimum
             | Code::ChildNotAccepted
             | Code::WireEndpoint
-            | Code::WireCycle => Severity::Error,
+            | Code::WireCycle
+            | Code::InternalError => Severity::Error,
         }
     }
 }

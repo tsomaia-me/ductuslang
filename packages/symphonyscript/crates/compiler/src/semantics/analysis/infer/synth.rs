@@ -1,5 +1,6 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
+use crate::semantics::Internal;
 use crate::semantics::analysis::common::common;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::float_for::float_for;
@@ -11,7 +12,7 @@ use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
-    pub(super) fn synth(&mut self, root: NodeId) -> Option<Scalar> {
+    pub(super) fn synth(&mut self, root: NodeId) -> Result<Option<Scalar>, Internal> {
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
             if self.typing.synth.contains_key(&node) {
@@ -27,7 +28,7 @@ impl Engine<'_> {
                 self.typing.synth.insert(node, ty);
                 continue;
             }
-            let op = self.node(node).op.clone();
+            let op = self.node(node)?.op.clone();
             let operands = match &op {
                 Op::Read(_) => Vec::new(),
                 other => other.operands(),
@@ -42,10 +43,10 @@ impl Engine<'_> {
                 );
                 continue;
             }
-            let ty = self.synth_of(&op, &sig);
+            let ty = self.synth_of(&op, &sig)?;
             self.typing.synth.insert(node, ty);
         }
-        self.typing.synth.get(&root).copied().flatten()
+        Ok(self.typing.synth.get(&root).copied().flatten())
     }
 
     fn known(&self, node: NodeId) -> (Option<Scalar>, Kind) {
@@ -78,14 +79,14 @@ impl Engine<'_> {
         }
     }
 
-    fn synth_of(&mut self, op: &Op, sig: &Sig) -> Option<Scalar> {
+    fn synth_of(&mut self, op: &Op, sig: &Sig) -> Result<Option<Scalar>, Internal> {
         match sig.kind {
-            Kind::Bool => return Some(Scalar::Bool),
-            Kind::Enum(id) => return Some(Scalar::Enum(id)),
-            Kind::Str => return Some(Scalar::Str),
+            Kind::Bool => return Ok(Some(Scalar::Bool)),
+            Kind::Enum(id) => return Ok(Some(Scalar::Enum(id))),
+            Kind::Str => return Ok(Some(Scalar::Str)),
             Kind::Int | Kind::Float | Kind::Node | Kind::Bare | Kind::Any | Kind::Error => {}
         }
-        match op {
+        Ok(match op {
             Op::Read(binding) => self.typing.own.get(binding).copied(),
             Op::Use(inner) | Op::Unary(UnaryOp::Neg, inner) => self.known(*inner).0,
             Op::Unary(UnaryOp::Not, _) => Some(Scalar::Bool),
@@ -134,10 +135,10 @@ impl Engine<'_> {
                 | Builtin::Log
                 | Builtin::Lerp => self.combine(args).map(float_for),
             },
-            Op::ToRead { attrs, .. } => attrs
-                .first()
-                .and_then(|(item, attr)| self.attr_decl(*item, *attr))
-                .map(|decl| decl.ty.scalar),
+            Op::ToRead { attrs, .. } => match attrs.first() {
+                Some((item, attr)) => self.attr_decl(*item, *attr)?.map(|decl| decl.ty.scalar),
+                None => None,
+            },
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
@@ -149,6 +150,6 @@ impl Engine<'_> {
             | Op::NodeRef(_)
             | Op::Arg(_)
             | Op::Recursive { .. } => None,
-        }
+        })
     }
 }

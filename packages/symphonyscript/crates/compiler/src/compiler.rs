@@ -71,7 +71,7 @@ impl Compiler {
         &self,
         sources: &[Source],
         inspect: impl FnOnce(&Engine<'_>) -> R,
-    ) -> (Vec<Diagnostic>, R) {
+    ) -> (Vec<Diagnostic>, Option<R>) {
         let mut hir = self.prelude.clone();
         let mut report = Report::default();
         let mut ordered: Vec<&Source> = sources.iter().collect();

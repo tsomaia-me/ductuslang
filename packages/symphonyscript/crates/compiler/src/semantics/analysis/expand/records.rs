@@ -6,6 +6,7 @@ use symphonyscript_core::{AttrId, NodeKind, Segment, WireKind};
 use super::context::Context;
 use super::item_kind::ItemKind;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::attr_source::AttrSource;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::bound::Bound;
@@ -23,6 +24,7 @@ use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::path_parent::PathParent;
 use crate::semantics::analysis::pattern_use::PatternUse;
 use crate::semantics::analysis::scope_kind::ScopeKind;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::wire::Wire;
 use crate::semantics::collection::{Decl, StandIn};
 use crate::semantics::ir::{AttrValue, Loc, PatternId, PlacementId, WireId as HirWireId};
@@ -30,42 +32,83 @@ use crate::semantics::ir::{AttrValue, Loc, PatternId, PlacementId, WireId as Hir
 const EXPANSION_LIMIT: usize = 1_000_000;
 
 impl<'a> Engine<'a> {
-    pub(in crate::semantics::analysis) fn instance(&self, id: InstanceId) -> Option<&Instance> {
-        self.instances.get(id.index())
+    pub(in crate::semantics::analysis) fn instance(
+        &self,
+        id: InstanceId,
+    ) -> Result<&Instance, Internal> {
+        self.instances
+            .get(id.index())
+            .ok_or(Internal::missed("instance"))
     }
 
-    pub(in crate::semantics::analysis) fn wire(&self, id: WireId) -> Option<&Wire> {
-        self.wires.get(id.index())
+    pub(in crate::semantics::analysis) fn wire(&self, id: WireId) -> Result<&Wire, Internal> {
+        self.wires.get(id.index()).ok_or(Internal::missed("wire"))
     }
 
-    pub(in crate::semantics::analysis) fn pattern_use(&self, id: UseId) -> Option<&PatternUse> {
-        self.uses.get(id.index())
+    pub(in crate::semantics::analysis) fn pattern_use(
+        &self,
+        id: UseId,
+    ) -> Result<&PatternUse, Internal> {
+        self.uses
+            .get(id.index())
+            .ok_or(Internal::missed("pattern use"))
+    }
+
+    pub(in crate::semantics::analysis) fn instance_mut(
+        &mut self,
+        id: InstanceId,
+    ) -> Result<&mut Instance, Internal> {
+        self.instances
+            .get_mut(id.index())
+            .ok_or(Internal::missed("instance"))
+    }
+
+    pub(in crate::semantics::analysis) fn wire_mut(
+        &mut self,
+        id: WireId,
+    ) -> Result<&mut Wire, Internal> {
+        self.wires
+            .get_mut(id.index())
+            .ok_or(Internal::missed("wire"))
+    }
+
+    pub(in crate::semantics::analysis) fn pattern_use_mut(
+        &mut self,
+        id: UseId,
+    ) -> Result<&mut PatternUse, Internal> {
+        self.uses
+            .get_mut(id.index())
+            .ok_or(Internal::missed("pattern use"))
     }
 
     pub(in crate::semantics::analysis) fn kind_decl(
         &self,
         scope: ScopeId,
         name: &str,
-    ) -> Option<Decl> {
+    ) -> Result<Option<Decl>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
-            let scope = self.scope_of(id);
+            let scope = self.scope_of(id)?;
             if let ScopeKind::Global { prelude } = scope.kind {
                 let namespace = if prelude {
                     &self.collected.prelude
                 } else {
                     &self.collected.source
                 };
-                return namespace.get(name);
+                return Ok(namespace.get(name));
             }
             current = scope.parent;
         }
-        None
+        Ok(None)
     }
 
-    pub(in crate::semantics::analysis) fn count_item(&mut self, loc: Loc, scope: ScopeId) -> bool {
+    pub(in crate::semantics::analysis) fn count_item(
+        &mut self,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
         if self.limit_reached {
-            return false;
+            return Ok(false);
         }
         self.expanded += 1;
         if self.expanded > EXPANSION_LIMIT {
@@ -75,15 +118,19 @@ impl<'a> Engine<'a> {
                 loc,
                 scope,
                 "the expansion yields more than 1,000,000 instances and wires",
-            );
-            return false;
+            )?;
+            return Ok(false);
         }
-        true
+        Ok(true)
     }
 
-    pub(in crate::semantics::analysis) fn count_step(&mut self, loc: Loc, scope: ScopeId) -> bool {
+    pub(in crate::semantics::analysis) fn count_step(
+        &mut self,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
         if self.limit_reached {
-            return false;
+            return Ok(false);
         }
         self.steps += 1;
         if self.steps > EXPANSION_LIMIT {
@@ -93,10 +140,10 @@ impl<'a> Engine<'a> {
                 loc,
                 scope,
                 "the expansion runs more than 1,000,000 `for` iterations and pattern uses",
-            );
-            return false;
+            )?;
+            return Ok(false);
         }
-        true
+        Ok(true)
     }
 
     pub(in crate::semantics::analysis) fn segment(
@@ -128,13 +175,13 @@ impl<'a> Engine<'a> {
         name: Option<String>,
         segment: Option<Segment>,
         context: &Context,
-    ) -> Option<InstanceId> {
-        let loc = self.hir.placement(placement).loc;
-        if !self.count_item(loc, scope) {
-            return None;
+    ) -> Result<Option<InstanceId>, Internal> {
+        let loc = self.hir.placement(placement)?.loc;
+        if !self.count_item(loc, scope)? {
+            return Ok(None);
         }
         let id = InstanceId(index(self.instances.len()));
-        let attrs = self.placement_attrs(ItemKind::Node(kind), placement, scope);
+        let attrs = self.placement_attrs(ItemKind::Node(kind), placement, scope)?;
         self.instances.push(Instance {
             kind,
             placement,
@@ -151,7 +198,7 @@ impl<'a> Engine<'a> {
             loc,
             expanded: false,
         });
-        Some(id)
+        Ok(Some(id))
     }
 
     pub(in crate::semantics::analysis) fn new_wire(
@@ -162,16 +209,16 @@ impl<'a> Engine<'a> {
         segment: Option<Segment>,
         source: InstanceId,
         context: &Context,
-    ) -> Option<WireId> {
-        let decl = self.hir.wire(wire);
+    ) -> Result<Option<WireId>, Internal> {
+        let decl = self.hir.wire(wire)?;
         let loc = decl.loc;
-        if !self.count_item(loc, scope) {
-            return None;
+        if !self.count_item(loc, scope)? {
+            return Ok(None);
         }
         let id = WireId(index(self.wires.len()));
-        let chain = self.chain(scope);
-        let clause_scope = self.scope(ScopeKind::WireClause { wire: id }, Some(scope), chain);
-        let attrs = self.wire_attrs(kind, wire, clause_scope);
+        let chain = self.chain(scope)?;
+        let clause_scope = self.scope(ScopeKind::WireClause { wire: id }, Some(scope), chain)?;
+        let attrs = self.wire_attrs(kind, wire, clause_scope)?;
         self.wires.push(Wire {
             kind,
             wire,
@@ -186,7 +233,7 @@ impl<'a> Engine<'a> {
             attrs,
             loc,
         });
-        Some(id)
+        Ok(Some(id))
     }
 
     pub(in crate::semantics::analysis) fn new_use(
@@ -196,14 +243,14 @@ impl<'a> Engine<'a> {
         caller: ScopeId,
         naming: (Option<String>, Option<Segment>),
         context: &Context,
-    ) -> Option<UseId> {
+    ) -> Result<Option<UseId>, Internal> {
         let (name, segment) = naming;
-        let owner = context.owner?;
-        let loc = self.hir.placement(placement).loc;
-        if !self.count_step(loc, caller) {
-            return None;
+        let owner = some!(context.owner);
+        let loc = self.hir.placement(placement)?.loc;
+        if !self.count_step(loc, caller)? {
+            return Ok(None);
         }
-        let locals = self.use_locals(pattern, placement, caller);
+        let locals = self.use_locals(pattern, placement, caller)?;
         let id = UseId(index(self.uses.len()));
         self.uses
             .push(crate::semantics::analysis::pattern_use::PatternUse {
@@ -220,7 +267,7 @@ impl<'a> Engine<'a> {
                 conditions: context.conditions,
                 loc,
             });
-        Some(id)
+        Ok(Some(id))
     }
 
     pub(in crate::semantics::analysis) fn use_locals(
@@ -228,9 +275,9 @@ impl<'a> Engine<'a> {
         pattern: PatternId,
         placement: PlacementId,
         caller: ScopeId,
-    ) -> ScopeId {
-        let decl = self.hir.pattern(pattern);
-        let site = self.hir.placement(placement);
+    ) -> Result<ScopeId, Internal> {
+        let decl = self.hir.pattern(pattern)?;
+        let site = self.hir.placement(placement)?;
         let mut sources: Vec<Option<ParamSource>> = vec![None; decl.params.len()];
         if let Some((_, loc)) = site.flags.first() {
             self.error(
@@ -238,7 +285,7 @@ impl<'a> Engine<'a> {
                 *loc,
                 caller,
                 "a pattern use carries no flags",
-            );
+            )?;
         }
         if site.body.is_some() {
             self.error(
@@ -246,7 +293,7 @@ impl<'a> Engine<'a> {
                 site.loc,
                 caller,
                 "a pattern use carries no body",
-            );
+            )?;
         }
         if let Some(default) = site.default {
             match decl.params.iter().position(|param| param.is_default) {
@@ -259,13 +306,13 @@ impl<'a> Engine<'a> {
                     }
                 }
                 None => {
-                    let loc = self.hir.expr(default).loc;
+                    let loc = self.hir.expr(default)?.loc;
                     self.error(
                         Code::NoDefaultParameter,
                         loc,
                         caller,
                         "`/expr` supplies the parameter marked `default`, and this pattern has none",
-                    );
+                    )?;
                 }
             }
         }
@@ -281,7 +328,7 @@ impl<'a> Engine<'a> {
                     attr.name.loc,
                     caller,
                     format!("the pattern has no parameter `{}`", attr.name.text),
-                );
+                )?;
                 continue;
             };
             let source = match attr.value {
@@ -290,7 +337,7 @@ impl<'a> Engine<'a> {
                     scope: caller,
                 },
                 AttrValue::Set(value) => {
-                    let node = self.push_node(Op::Bool(value), attr.loc, caller);
+                    let node = self.push_node(Op::Bool(value), attr.loc, caller)?;
                     ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
                 }
             };
@@ -301,7 +348,7 @@ impl<'a> Engine<'a> {
                     attr.name.loc,
                     caller,
                     format!("the parameter `{}` is supplied twice", attr.name.text),
-                ),
+                )?,
                 None => {}
             }
         }
@@ -317,7 +364,7 @@ impl<'a> Engine<'a> {
                         site.loc,
                         caller,
                         format!("the parameter `{name}` has no default and no argument"),
-                    );
+                    )?;
                     ParamSource::Missing
                 }
             });
@@ -348,7 +395,7 @@ impl<'a> Engine<'a> {
         } else {
             self.source_global
         };
-        let chain = self.chain(caller).push(site.loc);
+        let chain = self.chain(caller)?.push(site.loc);
         self.scope(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Pattern(pattern),
@@ -372,21 +419,21 @@ impl<'a> Engine<'a> {
     pub(in crate::semantics::analysis) fn stand_in_target(
         &self,
         mut pattern: PatternId,
-    ) -> Option<PlacementId> {
+    ) -> Result<Option<PlacementId>, Internal> {
         loop {
-            let placement = match self.stand_in(pattern)? {
-                StandIn::Node(placement) => return Some(placement),
+            let placement = match some!(self.stand_in(pattern)) {
+                StandIn::Node(placement) => return Ok(Some(placement)),
                 StandIn::Use(placement) => placement,
             };
-            let kind = self.hir.placement(placement).kind.as_ref()?;
+            let kind = some!(self.hir.placement(placement)?.kind.as_ref());
             let global = if self.hir.is_prelude_pattern(pattern) {
                 self.prelude_global
             } else {
                 self.source_global
             };
-            match self.kind_decl(global, &kind.text)? {
+            match some!(self.kind_decl(global, &kind.text)?) {
                 Decl::Pattern(next) if !self.is_cyclic(next) => pattern = next,
-                Decl::Node(_) => return Some(placement),
+                Decl::Node(_) => return Ok(Some(placement)),
                 Decl::Input(_)
                 | Decl::Let(_)
                 | Decl::Fn(_)
@@ -394,7 +441,7 @@ impl<'a> Engine<'a> {
                 | Decl::Instance(_)
                 | Decl::Builtin(_)
                 | Decl::Wire(_)
-                | Decl::Enum(_) => return None,
+                | Decl::Enum(_) => return Ok(None),
             }
         }
     }
@@ -407,9 +454,14 @@ impl<'a> Engine<'a> {
             .unwrap_or(true)
     }
 
-    fn wire_attrs(&mut self, kind: WireKind, wire: HirWireId, scope: ScopeId) -> Vec<AttrSource> {
+    fn wire_attrs(
+        &mut self,
+        kind: WireKind,
+        wire: HirWireId,
+        scope: ScopeId,
+    ) -> Result<Vec<AttrSource>, Internal> {
         let hir = self.hir;
-        let decl = hir.wire(wire);
+        let decl = hir.wire(wire)?;
         self.attr_sources_of(
             ItemKind::Wire(kind),
             &decl.flags,
@@ -425,9 +477,9 @@ impl<'a> Engine<'a> {
         kind: ItemKind,
         placement: PlacementId,
         scope: ScopeId,
-    ) -> Vec<AttrSource> {
+    ) -> Result<Vec<AttrSource>, Internal> {
         let hir = self.hir;
-        let decl = hir.placement(placement);
+        let decl = hir.placement(placement)?;
         self.attr_sources_of(
             kind,
             &decl.flags,
@@ -446,20 +498,20 @@ impl<'a> Engine<'a> {
         attrs: &[crate::semantics::ir::Attr],
         loc: Loc,
         scope: ScopeId,
-    ) -> Vec<AttrSource> {
+    ) -> Result<Vec<AttrSource>, Internal> {
         let vocabulary = self.vocabulary;
         let (kind_name, decls, default_attr) = match kind {
             ItemKind::Node(kind) => match vocabulary.node_kind(kind) {
                 Some(decl) => (decl.name.as_str(), decl.attrs.as_slice(), decl.default_attr),
-                None => return Vec::new(),
+                None => return Ok(Vec::new()),
             },
             ItemKind::Wire(kind) => match vocabulary.wire_kind(kind) {
                 Some(decl) => (decl.name.as_str(), decl.attrs.as_slice(), decl.default_attr),
-                None => return Vec::new(),
+                None => return Ok(Vec::new()),
             },
         };
         let mut sources: Vec<AttrSource> = Vec::new();
-        let mut set = |engine: &mut Self, source: AttrSource| {
+        let mut set = |engine: &mut Self, source: AttrSource| -> Result<(), Internal> {
             if let Some(earlier) = sources.iter().find(|existing| existing.attr == source.attr) {
                 let name = decls
                     .get(source.attr.index())
@@ -471,10 +523,11 @@ impl<'a> Engine<'a> {
                     vec![earlier],
                     scope,
                     format!("the attribute `{name}` is set twice"),
-                );
-                return;
+                )?;
+                return Ok(());
             }
             sources.push(source);
+            Ok(())
         };
         for (flag, flag_loc) in flags {
             match decls.iter().position(|decl| decl.flag == Some(*flag)) {
@@ -485,17 +538,17 @@ impl<'a> Engine<'a> {
                         value: AttrValueSource::Set(true),
                         loc: *flag_loc,
                     },
-                ),
+                )?,
                 None => self.error(
                     Code::UnknownFlag,
                     *flag_loc,
                     scope,
                     format!("`{kind_name}` has no attribute flagged `{flag}`"),
-                ),
+                )?,
             }
         }
         if let Some(default) = default {
-            let default_loc = self.hir.expr(default).loc;
+            let default_loc = self.hir.expr(default)?.loc;
             match default_attr {
                 Some(attr) => set(
                     self,
@@ -504,13 +557,13 @@ impl<'a> Engine<'a> {
                         value: AttrValueSource::Expr(default, scope),
                         loc: default_loc,
                     },
-                ),
+                )?,
                 None => self.error(
                     Code::NoDefaultAttribute,
                     default_loc,
                     scope,
                     format!("`{kind_name}` has no default attribute for `/expr`"),
-                ),
+                )?,
             }
         }
         for attr in attrs {
@@ -520,7 +573,7 @@ impl<'a> Engine<'a> {
                     attr.name.loc,
                     scope,
                     format!("`{kind_name}` has no attribute `{}`", attr.name.text),
-                );
+                )?;
                 continue;
             };
             let value = match attr.value {
@@ -538,7 +591,7 @@ impl<'a> Engine<'a> {
                                 "`{}` alone or with `!` sets a `bool` attribute, and `{}` is not one",
                                 attr.name.text, attr.name.text
                             ),
-                        );
+                        )?;
                         continue;
                     }
                     AttrValueSource::Set(value)
@@ -551,7 +604,7 @@ impl<'a> Engine<'a> {
                     value,
                     loc: attr.loc,
                 },
-            );
+            )?;
         }
         for (position, decl) in decls.iter().enumerate() {
             let attr = AttrId(index(position));
@@ -564,36 +617,38 @@ impl<'a> Engine<'a> {
                         "`{kind_name}` needs a value for `{}`, which has no default",
                         decl.name
                     ),
-                );
+                )?;
             }
         }
-        sources
+        Ok(sources)
     }
 
-    pub(in crate::semantics::analysis) fn item_loc(&self, item: ItemRef) -> Loc {
-        let loc = match item {
-            ItemRef::Instance(id) => self.instance(id).map(|record| record.loc),
-            ItemRef::Wire(id) => self.wire(id).map(|record| record.loc),
-            ItemRef::Use(id) => self.pattern_use(id).map(|record| record.loc),
-        };
-        loc.unwrap_or_default()
+    pub(in crate::semantics::analysis) fn item_loc(&self, item: ItemRef) -> Result<Loc, Internal> {
+        Ok(match item {
+            ItemRef::Instance(id) => self.instance(id)?.loc,
+            ItemRef::Wire(id) => self.wire(id)?.loc,
+            ItemRef::Use(id) => self.pattern_use(id)?.loc,
+        })
     }
 
-    pub(in crate::semantics::analysis) fn item_scope(&self, item: ItemRef) -> ScopeId {
-        let scope = match item {
-            ItemRef::Instance(id) => self.instance(id).map(|record| record.scope),
-            ItemRef::Wire(id) => self.wire(id).map(|record| record.scope),
-            ItemRef::Use(id) => self.pattern_use(id).map(|record| record.caller),
-        };
-        scope.unwrap_or(self.source_global)
+    pub(in crate::semantics::analysis) fn item_scope(
+        &self,
+        item: ItemRef,
+    ) -> Result<ScopeId, Internal> {
+        Ok(match item {
+            ItemRef::Instance(id) => self.instance(id)?.scope,
+            ItemRef::Wire(id) => self.wire(id)?.scope,
+            ItemRef::Use(id) => self.pattern_use(id)?.caller,
+        })
     }
 
-    pub(in crate::semantics::analysis) fn item_description(&self, item: ItemRef) -> String {
-        match item {
+    pub(in crate::semantics::analysis) fn item_description(
+        &self,
+        item: ItemRef,
+    ) -> Result<String, Internal> {
+        Ok(match item {
             ItemRef::Instance(id) => {
-                let Some(instance) = self.instance(id) else {
-                    return String::new();
-                };
+                let instance = self.instance(id)?;
                 let kind = self
                     .vocabulary
                     .node_kind(instance.kind)
@@ -605,18 +660,21 @@ impl<'a> Engine<'a> {
             }
             ItemRef::Wire(id) => {
                 let kind = self
-                    .wire(id)
-                    .and_then(|wire| self.vocabulary.wire_kind(wire.kind))
+                    .vocabulary
+                    .wire_kind(self.wire(id)?.kind)
                     .map_or("", |decl| decl.name.as_str());
                 format!("the `{kind}` wire")
             }
             ItemRef::Use(id) => {
+                let pattern = self.pattern_use(id)?.pattern;
                 let name = self
-                    .pattern_use(id)
-                    .and_then(|record| self.hir.pattern(record.pattern).name.as_ref())
+                    .hir
+                    .pattern(pattern)?
+                    .name
+                    .as_ref()
                     .map_or("", |name| name.text.as_str());
                 format!("the use of `{name}`")
             }
-        }
+        })
     }
 }

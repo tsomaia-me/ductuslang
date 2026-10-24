@@ -1328,7 +1328,11 @@ fn every_rule_sentence_stands_in_its_section_of_the_spec() {
 
 #[test]
 fn every_code_appears_in_the_table_and_every_table_code_exists() {
-    let names: BTreeSet<&str> = Code::ALL.iter().map(|code| code.as_str()).collect();
+    let names: BTreeSet<&str> = Code::ALL
+        .iter()
+        .filter(|code| **code != Code::InternalError)
+        .map(|code| code.as_str())
+        .collect();
     let table: BTreeSet<&str> = RULES.iter().map(|rule| rule.code).collect();
     let missing: Vec<&&str> = names.difference(&table).collect();
     let unknown: Vec<&&str> = table.difference(&names).collect();
@@ -1341,12 +1345,14 @@ fn every_code_appears_in_the_table_and_every_table_code_exists() {
         "table codes that do not exist: {unknown:?}"
     );
     for code in Code::ALL {
+        let Some(section) = code.section() else {
+            continue;
+        };
         assert!(
             RULES
                 .iter()
-                .any(|rule| rule.code == code.as_str() && rule.section == code.section()),
-            "{code}: no rule of §{} maps to it",
-            code.section()
+                .any(|rule| rule.code == code.as_str() && rule.section == section),
+            "{code}: no rule of §{section} maps to it",
         );
     }
 }

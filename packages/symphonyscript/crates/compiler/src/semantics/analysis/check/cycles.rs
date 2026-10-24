@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{InstanceId, WireId};
@@ -8,14 +9,14 @@ use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::collection::strongly_connected;
 
 impl Engine<'_> {
-    pub(super) fn wire_cycles(&mut self) {
+    pub(super) fn wire_cycles(&mut self) -> Result<(), Internal> {
         let mut edges: Vec<Vec<usize>> = vec![Vec::new(); self.instances.len()];
         let mut wire_edges: Vec<(WireId, usize, usize, bool)> = Vec::new();
         for index in 0..self.wires.len() {
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
-            let Some((kind, source)) = self.wire(wire).map(|record| (record.kind, record.source))
-            else {
-                continue;
+            let (kind, source) = {
+                let record = self.wire(wire)?;
+                (record.kind, record.source)
             };
             let cyclic = self
                 .vocabulary
@@ -61,12 +62,10 @@ impl Engine<'_> {
                 .map(|member| {
                     self.instance_label(InstanceId(u32::try_from(*member).unwrap_or(u32::MAX)))
                 })
-                .collect();
-            let Some((kind, loc, uses)) = self
-                .wire(wire)
-                .map(|record| (record.kind, record.loc, record.uses.clone()))
-            else {
-                continue;
+                .collect::<Result<_, _>>()?;
+            let (kind, loc, uses) = {
+                let record = self.wire(wire)?;
+                (record.kind, record.loc, record.uses.clone())
             };
             let kind_name = self
                 .vocabulary
@@ -83,6 +82,7 @@ impl Engine<'_> {
                 ),
             );
         }
+        Ok(())
     }
 
     fn cycle_path(&self, edges: &[Vec<usize>], from: usize, to: usize) -> Vec<usize> {
@@ -118,13 +118,11 @@ impl Engine<'_> {
         path
     }
 
-    pub(crate) fn instance_label(&self, instance: InstanceId) -> String {
-        let Some(record) = self.instance(instance) else {
-            return String::new();
-        };
-        match &record.name {
+    pub(crate) fn instance_label(&self, instance: InstanceId) -> Result<String, Internal> {
+        let record = self.instance(instance)?;
+        Ok(match &record.name {
             Some(name) => name.clone(),
             None => format!("a `{}`", self.kind_name(record.kind)),
-        }
+        })
     }
 }

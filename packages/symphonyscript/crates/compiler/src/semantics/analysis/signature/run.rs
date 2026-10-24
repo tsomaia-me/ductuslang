@@ -1,6 +1,7 @@
 use symphonyscript_core::{BinaryOp, Builtin, UnaryOp};
 
 use super::extra::Extra;
+use crate::semantics::Internal;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::destination::Destination;
@@ -17,8 +18,8 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         need: &mut Vec<Query>,
-    ) -> bool {
-        let op = self.node(node).op.clone();
+    ) -> Result<bool, Internal> {
+        let op = self.node(node)?.op.clone();
         let operands = op.operands();
         let sigs: Vec<Option<Sig>> = operands
             .iter()
@@ -26,7 +27,7 @@ impl Engine<'_> {
             .collect();
         let extra = match &op {
             Op::Read(binding) => {
-                let init = self.binding(*binding).init;
+                let init = self.binding(*binding)?.init;
                 self.sig(init, need).map(Extra::Read)
             }
             Op::ToRead { wire, attrs, .. } => self.destination_read_reactive(*wire, attrs, need),
@@ -54,10 +55,10 @@ impl Engine<'_> {
             | Op::Recursive { .. } => Some(Extra::None),
         };
         if sigs.iter().any(Option::is_none) {
-            return false;
+            return Ok(false);
         }
         let Some(extra) = extra else {
-            return false;
+            return Ok(false);
         };
         let sigs: Vec<Sig> = sigs.into_iter().flatten().collect();
         let open = sigs.iter().any(|operand| operand.open);
@@ -71,9 +72,9 @@ impl Engine<'_> {
             } else if open {
                 Sig::open(false)
             } else {
-                match self.recursive_sig(node, *function, args, need) {
+                match self.recursive_sig(node, *function, args, need)? {
                     Some(sig) => sig,
-                    None => return false,
+                    None => return Ok(false),
                 }
             }
         } else if errors && !matches!(op, Op::Recursive { .. }) {
@@ -81,7 +82,7 @@ impl Engine<'_> {
         } else if open && !joins(&op) {
             Sig::open(reactive)
         } else {
-            let mut sig = self.rule(node, &op, &operands, &sigs, extra);
+            let mut sig = self.rule(node, &op, &operands, &sigs, extra)?;
             if open && sig.family.is_none() && sig.is_numeric() && !sig.is_error() {
                 sig.open = true;
             }
@@ -89,7 +90,7 @@ impl Engine<'_> {
         };
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);
-        true
+        Ok(true)
     }
 
     fn destination_read_reactive(
@@ -123,10 +124,10 @@ impl Engine<'_> {
         &self,
         binding: crate::semantics::analysis::ids::BindingId,
         init: Sig,
-    ) -> Sig {
-        let annotation = self.binding(binding).annotation;
+    ) -> Result<Sig, Internal> {
+        let annotation = self.binding(binding)?.annotation;
         let kind = annotation.map_or(init.kind, kind_of);
-        Sig::of(kind, Width::Adaptive, true, init.family)
+        Ok(Sig::of(kind, Width::Adaptive, true, init.family))
     }
 }
 

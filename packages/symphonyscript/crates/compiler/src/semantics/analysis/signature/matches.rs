@@ -4,6 +4,7 @@ use symphonyscript_core::Scalar;
 
 use super::branch_width_of::branch_width_of;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
@@ -27,12 +28,12 @@ impl Engine<'_> {
         op: &Op,
         operands: &[NodeId],
         sigs: &[Sig],
-    ) -> Sig {
+    ) -> Result<Sig, Internal> {
         let Op::Match {
             arms, otherwise, ..
         } = op
         else {
-            return Sig::ERROR;
+            return Ok(Sig::ERROR);
         };
         let scrutinee = sigs.first().copied().unwrap_or(Sig::ERROR);
         let scrutinee_node = operands.first().copied().unwrap_or(node);
@@ -41,21 +42,21 @@ impl Engine<'_> {
                 Code::MatchScrutinee,
                 scrutinee_node,
                 "a `match` selects by an enum value, an integer or a `bool`",
-            );
-            return Sig::ERROR;
+            )?;
+            return Ok(Sig::ERROR);
         }
         let mut seen: BTreeSet<Label> = BTreeSet::new();
         for (label, _) in arms {
-            let Some(value) = self.label(*label, &scrutinee) else {
-                return Sig::ERROR;
+            let Some(value) = self.label(*label, &scrutinee)? else {
+                return Ok(Sig::ERROR);
             };
             if !seen.insert(value) {
                 self.error_at_node(
                     Code::DuplicateArm,
                     *label,
                     "this label repeats an earlier one",
-                );
-                return Sig::ERROR;
+                )?;
+                return Ok(Sig::ERROR);
             }
         }
         let total = match scrutinee.kind {
@@ -79,24 +80,24 @@ impl Engine<'_> {
                     Code::MatchIncomplete,
                     node,
                     "this `match` covers some values only and ends with no `else:`",
-                );
-                return Sig::ERROR;
+                )?;
+                return Ok(Sig::ERROR);
             }
             (false, _, false) => {
                 self.error_at_node(
                     Code::MatchIncomplete,
                     node,
                     "a `match` on an integer ends with `else:`",
-                );
-                return Sig::ERROR;
+                )?;
+                return Ok(Sig::ERROR);
             }
             (true, true, true) => {
                 self.error_at_node(
                     Code::RedundantElse,
                     node,
                     "the arms cover every value, so `else:` never applies",
-                );
-                return Sig::ERROR;
+                )?;
+                return Ok(Sig::ERROR);
             }
             _ => {}
         }
@@ -117,24 +118,24 @@ impl Engine<'_> {
                     Code::TypeMismatch,
                     node,
                     "the arms of a `match` hold values of different types",
-                );
-                return Sig::ERROR;
+                )?;
+                return Ok(Sig::ERROR);
             };
             kind = unified;
             width = branch_width_of(kind, width, sig.width);
         }
-        let Some(family) = self.one_family(node, &values) else {
-            return Sig::ERROR;
+        let Some(family) = self.one_family(node, &values)? else {
+            return Ok(Sig::ERROR);
         };
         let reactive = sigs.iter().any(|sig| sig.reactive);
         if scrutinee.reactive && matches!(width, Width::Flexible) {
             width = Width::Adaptive;
         }
-        Sig::of(kind, width, reactive, family)
+        Ok(Sig::of(kind, width, reactive, family))
     }
 
-    fn label(&mut self, label: NodeId, scrutinee: &Sig) -> Option<Label> {
-        let op = self.node(label).op.clone();
+    fn label(&mut self, label: NodeId, scrutinee: &Sig) -> Result<Option<Label>, Internal> {
+        let op = self.node(label)?.op.clone();
         let found = match (&op, scrutinee.kind) {
             (Op::Bare(name), Kind::Enum(id)) => {
                 self.variants.position(id, name).map(Label::Variant)
@@ -158,7 +159,7 @@ impl Engine<'_> {
         if found.is_none() {
             return self.bad_label(label, scrutinee);
         }
-        found
+        Ok(found)
     }
 
     fn exact_label(&self, op: &Op) -> Option<i128> {
@@ -177,7 +178,7 @@ impl Engine<'_> {
         }
     }
 
-    fn bad_label(&mut self, label: NodeId, scrutinee: &Sig) -> Option<Label> {
+    fn bad_label(&mut self, label: NodeId, scrutinee: &Sig) -> Result<Option<Label>, Internal> {
         let message = match scrutinee.kind {
             Kind::Enum(id) => format!(
                 "a label here is a variant of `{}`",
@@ -196,7 +197,7 @@ impl Engine<'_> {
                 "a label here is an integer literal of the scrutinee's unit family".to_string()
             }
         };
-        self.error_at_node(Code::MatchLabel, label, message);
-        None
+        self.error_at_node(Code::MatchLabel, label, message)?;
+        Ok(None)
     }
 }

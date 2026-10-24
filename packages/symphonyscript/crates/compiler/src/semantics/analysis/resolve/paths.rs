@@ -1,6 +1,7 @@
 use symphonyscript_core::{AttrDecl, AttrId};
 
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::attr_source::AttrSource;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
@@ -12,6 +13,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Ident, Loc};
 
@@ -23,11 +25,11 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
-        match &self.hir.expr(base).kind {
+    ) -> Result<Option<Val>, Internal> {
+        match &self.hir.expr(base)?.kind {
             ExprKind::To => return self.destination_read(name, loc, scope, need),
-            ExprKind::Field(inner, _) if matches!(self.hir.expr(*inner).kind, ExprKind::To) => {
-                return Some(Val::Error);
+            ExprKind::Field(inner, _) if matches!(self.hir.expr(*inner)?.kind, ExprKind::To) => {
+                return Ok(Some(Val::Error));
             }
             ExprKind::Error
             | ExprKind::Number(..)
@@ -45,7 +47,7 @@ impl Engine<'_> {
             | ExprKind::If(..)
             | ExprKind::Match { .. } => {}
         }
-        let base_val = self.val(Query::Expr(base, scope), need)?;
+        let base_val = some!(self.val(Query::Expr(base, scope), need));
         let node = match base_val {
             Val::Scalar(node) => node,
             Val::Array(_) => {
@@ -54,17 +56,17 @@ impl Engine<'_> {
                     loc,
                     scope,
                     "an array has no attributes; index it first",
-                );
-                return Some(Val::Error);
+                )?;
+                return Ok(Some(Val::Error));
             }
-            Val::Error => return Some(Val::Error),
+            Val::Error => return Ok(Some(Val::Error)),
         };
-        let item = match &self.node(self.through_uses(node)).op {
+        let item = match &self.node(self.through_uses(node)?)?.op {
             Op::NodeRef(item) => *item,
             Op::Bare(_) => {
-                let bare = self.through_uses(node);
-                self.unplaced_variant(bare);
-                return Some(Val::Error);
+                let bare = self.through_uses(node)?;
+                self.unplaced_variant(bare)?;
+                return Ok(Some(Val::Error));
             }
             Op::Number(..)
             | Op::Const(_)
@@ -88,9 +90,9 @@ impl Engine<'_> {
             | Op::Builtin(..)
             | Op::Recursive { .. }
             | Op::ToRead { .. } => {
-                let sig = self.sig(node, need)?;
+                let sig = some!(self.sig(node, need));
                 if sig.is_error() {
-                    return Some(Val::Error);
+                    return Ok(Some(Val::Error));
                 }
                 if sig.kind != Kind::Node {
                     self.error(
@@ -98,8 +100,8 @@ impl Engine<'_> {
                         loc,
                         scope,
                         format!("`.{}` reads an attribute of an instance or a wire, and this is a value", name.text),
-                    );
-                    return Some(Val::Error);
+                    )?;
+                    return Ok(Some(Val::Error));
                 }
                 if sig.reactive {
                     self.error(
@@ -107,10 +109,10 @@ impl Engine<'_> {
                         loc,
                         scope,
                         "a path starts at an instance chosen at compile time",
-                    );
-                    return Some(Val::Error);
+                    )?;
+                    return Ok(Some(Val::Error));
                 }
-                match self.cval(Query::Eval(node, EvalTy::Node), need)? {
+                match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
                     CVal::Node(item) => item,
                     CVal::Int(_)
                     | CVal::F32(_)
@@ -119,7 +121,7 @@ impl Engine<'_> {
                     | CVal::Enum(..)
                     | CVal::Str(_)
                     | CVal::Array(_)
-                    | CVal::Error => return Some(Val::Error),
+                    | CVal::Error => return Ok(Some(Val::Error)),
                 }
             }
         };
@@ -133,26 +135,26 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
-        if let Some(child) = self.child_named(item, &name.text) {
-            return Some(self.scalar(Op::NodeRef(child), loc, scope));
+    ) -> Result<Option<Val>, Internal> {
+        if let Some(child) = self.child_named(item, &name.text)? {
+            return Ok(Some(self.scalar(Op::NodeRef(child), loc, scope)?));
         }
-        match self.attr_named(item, &name.text) {
+        Ok(match self.attr_named(item, &name.text)? {
             Some(attr) => {
-                let bound = self.bound(Query::Attr(item, attr), need)?;
-                Some(self.read(&bound, loc, scope))
+                let bound = some!(self.bound(Query::Attr(item, attr), need));
+                Some(self.read(&bound, loc, scope)?)
             }
             None => {
-                let owner = self.item_description(item);
+                let owner = self.item_description(item)?;
                 self.error(
                     Code::UnknownAttribute,
                     name.loc,
                     scope,
                     format!("{owner} has no child, wire or attribute `{}`", name.text),
-                );
+                )?;
                 Some(Val::Error)
             }
-        }
+        })
     }
 
     fn destination_read(
@@ -161,31 +163,31 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
-        let Some(wire) = self.enclosing_wire(scope) else {
-            return Some(Val::Error);
+    ) -> Result<Option<Val>, Internal> {
+        let Some(wire) = self.enclosing_wire(scope)? else {
+            return Ok(Some(Val::Error));
         };
-        let destination = self.destination(Query::Destination(wire), need)?;
+        let destination = some!(self.destination(Query::Destination(wire), need));
         let mut attrs = Vec::new();
         for candidate in destination.candidates() {
-            match self.attr_named(candidate, &name.text) {
+            match self.attr_named(candidate, &name.text)? {
                 Some(attr) => attrs.push((candidate, attr)),
                 None => {
-                    let owner = self.item_description(candidate);
+                    let owner = self.item_description(candidate)?;
                     self.error(
                         Code::UnknownAttribute,
                         name.loc,
                         scope,
                         format!("the destination {owner} has no attribute `{}`", name.text),
-                    );
-                    return Some(Val::Error);
+                    )?;
+                    return Ok(Some(Val::Error));
                 }
             }
         }
         if attrs.is_empty() {
-            return Some(Val::Error);
+            return Ok(Some(Val::Error));
         }
-        Some(self.scalar(
+        Ok(Some(self.scalar(
             Op::ToRead {
                 wire,
                 attr: name.text.clone(),
@@ -193,19 +195,19 @@ impl Engine<'_> {
             },
             loc,
             scope,
-        ))
+        )?))
     }
 
-    fn enclosing_wire(&self, scope: ScopeId) -> Option<WireId> {
+    fn enclosing_wire(&self, scope: ScopeId) -> Result<Option<WireId>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
-            let scope = self.scope_of(id);
+            let scope = self.scope_of(id)?;
             if let ScopeKind::WireClause { wire } = scope.kind {
-                return Some(wire);
+                return Ok(Some(wire));
             }
             current = scope.parent;
         }
-        None
+        Ok(None)
     }
 
     pub(in crate::semantics::analysis) fn index(
@@ -215,10 +217,10 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
+    ) -> Result<Option<Val>, Internal> {
         let base_val = self.val(Query::Expr(base, scope), need);
         let index_val = self.val(Query::Expr(index, scope), need);
-        let (base_val, index_val) = (base_val?, index_val?);
+        let (base_val, index_val) = (some!(base_val), some!(index_val));
         self.single_operand(
             &index_val,
             Code::IndexType,
@@ -232,10 +234,10 @@ impl Engine<'_> {
                     loc,
                     scope,
                     "an index is an integer, not an array",
-                );
-                return Some(Val::Error);
+                )?;
+                return Ok(Some(Val::Error));
             }
-            Val::Error => return Some(Val::Error),
+            Val::Error => return Ok(Some(Val::Error)),
         };
         if let Val::Scalar(base_node) = base_val
             && self.arrays.contains(&base_node)
@@ -244,37 +246,37 @@ impl Engine<'_> {
                 base: base_node,
                 index: index_node,
             };
-            return Some(self.scalar(element, loc, scope));
+            return Ok(Some(self.scalar(element, loc, scope)?));
         }
         let array = match &base_val {
             Val::Array(array) => array.clone(),
             Val::Scalar(_) => {
                 self.error(
                     Code::NotAnArray,
-                    self.hir.expr(base).loc,
+                    self.hir.expr(base)?.loc,
                     scope,
                     "only an array is indexed",
-                );
-                return Some(Val::Error);
+                )?;
+                return Ok(Some(Val::Error));
             }
-            Val::Error => return Some(Val::Error),
+            Val::Error => return Ok(Some(Val::Error)),
         };
         let outer = array.shape.outer().unwrap_or(0);
-        let sig = self.sig(index_node, need)?;
+        let sig = some!(self.sig(index_node, need));
         if sig.is_error() {
-            return Some(Val::Error);
+            return Ok(Some(Val::Error));
         }
         if !sig.reactive && !sig.frame {
             if sig.kind != Kind::Int {
                 self.error(
                     Code::IndexType,
-                    self.node(index_node).loc,
+                    self.node(index_node)?.loc,
                     scope,
                     "an index is an integer",
-                );
-                return Some(Val::Error);
+                )?;
+                return Ok(Some(Val::Error));
             }
-            let position = match self.cval(Query::Eval(index_node, EvalTy::Exact), need)? {
+            let position = match some!(self.cval(Query::Eval(index_node, EvalTy::Exact), need)) {
                 CVal::Int(position) => position,
                 CVal::F32(_)
                 | CVal::F64(_)
@@ -283,10 +285,10 @@ impl Engine<'_> {
                 | CVal::Str(_)
                 | CVal::Node(_)
                 | CVal::Array(_)
-                | CVal::Error => return Some(Val::Error),
+                | CVal::Error => return Ok(Some(Val::Error)),
             };
             if (0..i128::from(outer)).contains(&position) {
-                return Some(base_val.slice(usize::try_from(position).unwrap_or(0)));
+                return Ok(Some(base_val.slice(usize::try_from(position).unwrap_or(0))));
             }
         }
         let rows: Vec<Val> = (0..outer as usize).map(|row| base_val.slice(row)).collect();
@@ -308,26 +310,23 @@ impl Engine<'_> {
                     scope,
                 )
             })
-            .collect();
-        Some(self.shaped(inner, elements))
+            .collect::<Result<_, _>>()?;
+        Ok(Some(self.shaped(inner, elements)))
     }
 
     pub(in crate::semantics::analysis) fn run_destination(
         &mut self,
         wire: WireId,
         need: &mut Vec<Query>,
-    ) -> bool {
-        let Some((expr, scope)) = self
-            .wire(wire)
-            .map(|record| (self.hir.wire(record.wire).destination, record.scope))
-        else {
-            self.memo.destinations.insert(wire, Destination::Error);
-            return true;
+    ) -> Result<bool, Internal> {
+        let (expr, scope) = {
+            let record = self.wire(wire)?;
+            (self.hir.wire(record.wire)?.destination, record.scope)
         };
         let Some(val) = self.val(Query::Expr(expr, scope), need) else {
-            return false;
+            return Ok(false);
         };
-        let loc = self.hir.expr(expr).loc;
+        let loc = self.hir.expr(expr)?.loc;
         let node = match val {
             Val::Scalar(node) => node,
             Val::Array(_) => {
@@ -336,21 +335,21 @@ impl Engine<'_> {
                     loc,
                     scope,
                     "a destination is one instance, not an array",
-                );
+                )?;
                 self.memo.destinations.insert(wire, Destination::Error);
-                return true;
+                return Ok(true);
             }
             Val::Error => {
                 self.memo.destinations.insert(wire, Destination::Error);
-                return true;
+                return Ok(true);
             }
         };
         let Some(sig) = self.sig(node, need) else {
-            return false;
+            return Ok(false);
         };
         if sig.is_error() {
             self.memo.destinations.insert(wire, Destination::Error);
-            return true;
+            return Ok(true);
         }
         if sig.kind != Kind::Node {
             self.error(
@@ -358,18 +357,18 @@ impl Engine<'_> {
                 loc,
                 scope,
                 "a destination names an instance",
-            );
+            )?;
             self.memo.destinations.insert(wire, Destination::Error);
-            return true;
+            return Ok(true);
         }
         let destination = if sig.reactive {
             Destination::Select {
                 node,
-                candidates: self.candidates(node),
+                candidates: self.candidates(node)?,
             }
         } else {
             match self.cval(Query::Eval(node, EvalTy::Node), need) {
-                None => return false,
+                None => return Ok(false),
                 Some(CVal::Node(item)) => Destination::Fixed(item),
                 Some(_) => Destination::Error,
             }
@@ -380,19 +379,22 @@ impl Engine<'_> {
                 loc,
                 scope,
                 "a destination names an instance, not a pattern use",
-            );
+            )?;
             self.memo.destinations.insert(wire, Destination::Error);
-            return true;
+            return Ok(true);
         }
         self.memo.destinations.insert(wire, destination);
-        true
+        Ok(true)
     }
 
-    pub(in crate::semantics::analysis) fn candidates(&self, root: NodeId) -> Vec<ItemRef> {
+    pub(in crate::semantics::analysis) fn candidates(
+        &self,
+        root: NodeId,
+    ) -> Result<Vec<ItemRef>, Internal> {
         let mut found = Vec::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            match &self.node(node).op {
+            match &self.node(node)?.op {
                 Op::NodeRef(item) => found.push(*item),
                 Op::If(_, then, otherwise) => {
                     stack.push(*otherwise);
@@ -426,64 +428,60 @@ impl Engine<'_> {
                 | Op::ToRead { .. } => {}
             }
         }
-        found
+        Ok(found)
     }
 
-    pub(in crate::semantics::analysis) fn through_uses(&self, mut node: NodeId) -> NodeId {
-        while let Op::Use(inner) = self.node(node).op {
+    pub(in crate::semantics::analysis) fn through_uses(
+        &self,
+        mut node: NodeId,
+    ) -> Result<NodeId, Internal> {
+        while let Op::Use(inner) = self.node(node)?.op {
             node = inner;
         }
-        node
+        Ok(node)
     }
 
     pub(in crate::semantics::analysis) fn attr_named(
         &self,
         item: ItemRef,
         name: &str,
-    ) -> Option<AttrId> {
+    ) -> Result<Option<AttrId>, Internal> {
         let attrs: &[AttrDecl] = match item {
             ItemRef::Instance(instance) => {
-                &self
-                    .vocabulary
-                    .node_kind(self.instance(instance)?.kind)?
-                    .attrs
+                &some!(self.vocabulary.node_kind(self.instance(instance)?.kind)).attrs
             }
-            ItemRef::Wire(wire) => &self.vocabulary.wire_kind(self.wire(wire)?.kind)?.attrs,
-            ItemRef::Use(_) => return None,
+            ItemRef::Wire(wire) => &some!(self.vocabulary.wire_kind(self.wire(wire)?.kind)).attrs,
+            ItemRef::Use(_) => return Ok(None),
         };
-        attrs
+        Ok(attrs
             .iter()
             .position(|attr| attr.name == name)
-            .map(|position| AttrId(u32::try_from(position).unwrap_or(u32::MAX)))
+            .map(|position| AttrId(u32::try_from(position).unwrap_or(u32::MAX))))
     }
 
     pub(in crate::semantics::analysis) fn attr_decl(
         &self,
         item: ItemRef,
         attr: AttrId,
-    ) -> Option<&AttrDecl> {
+    ) -> Result<Option<&AttrDecl>, Internal> {
         let attrs: &[AttrDecl] = match item {
             ItemRef::Instance(instance) => {
-                &self
-                    .vocabulary
-                    .node_kind(self.instance(instance)?.kind)?
-                    .attrs
+                &some!(self.vocabulary.node_kind(self.instance(instance)?.kind)).attrs
             }
-            ItemRef::Wire(wire) => &self.vocabulary.wire_kind(self.wire(wire)?.kind)?.attrs,
-            ItemRef::Use(_) => return None,
+            ItemRef::Wire(wire) => &some!(self.vocabulary.wire_kind(self.wire(wire)?.kind)).attrs,
+            ItemRef::Use(_) => return Ok(None),
         };
-        attrs.get(attr.index())
+        Ok(attrs.get(attr.index()))
     }
 
-    pub(in crate::semantics::analysis) fn attr_sources(&self, item: ItemRef) -> &[AttrSource] {
-        match item {
-            ItemRef::Instance(instance) => self
-                .instance(instance)
-                .map_or(&[], |record| record.attrs.as_slice()),
-            ItemRef::Wire(wire) => self
-                .wire(wire)
-                .map_or(&[], |record| record.attrs.as_slice()),
+    pub(in crate::semantics::analysis) fn attr_sources(
+        &self,
+        item: ItemRef,
+    ) -> Result<&[AttrSource], Internal> {
+        Ok(match item {
+            ItemRef::Instance(instance) => self.instance(instance)?.attrs.as_slice(),
+            ItemRef::Wire(wire) => self.wire(wire)?.attrs.as_slice(),
             ItemRef::Use(_) => &[],
-        }
+        })
     }
 }

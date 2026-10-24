@@ -1,5 +1,6 @@
 use symphonyscript_core::Scalar;
 
+use crate::semantics::Internal;
 use crate::semantics::analysis::combined_shape::combined_shape;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
@@ -12,7 +13,7 @@ use crate::semantics::analysis::sig::Sig;
 use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
-    pub(super) fn reactive_shapes(&mut self) {
+    pub(super) fn reactive_shapes(&mut self) -> Result<(), Internal> {
         let mut needs: Vec<(NodeId, ShapeNeed)> = self
             .memo
             .shapes
@@ -21,7 +22,7 @@ impl Engine<'_> {
             .map(|(node, need)| (*node, need.clone()))
             .collect();
         if needs.is_empty() {
-            return;
+            return Ok(());
         }
         needs.sort_by_key(|(node, _)| *node);
         let mut types: FastMap<NodeId, Vec<Option<Scalar>>> = FastMap::default();
@@ -30,28 +31,29 @@ impl Engine<'_> {
         }
         for (node, need) in needs {
             if self.memo.defaulted.contains_key(&node) {
-                self.defaulted_uses(node, &need);
+                self.defaulted_uses(node, &need)?;
                 continue;
             }
             for ty in types.remove(&node).unwrap_or_default() {
                 if self
-                    .shape_at(node, ty)
+                    .shape_at(node, ty)?
                     .is_some_and(|lengths| lengths != need.lengths)
                 {
-                    self.error_at_node(need.code, node, need.message);
+                    self.error_at_node(need.code, node, need.message)?;
                     break;
                 }
             }
         }
+        Ok(())
     }
 
-    fn defaulted_uses(&mut self, node: NodeId, need: &ShapeNeed) {
+    fn defaulted_uses(&mut self, node: NodeId, need: &ShapeNeed) -> Result<(), Internal> {
         let elements = self.memo.defaulted.get(&node).cloned().unwrap_or_default();
         let Some(first) = elements.first().copied() else {
-            return;
+            return Ok(());
         };
         let (name, site) = {
-            let binding = self.binding(first);
+            let binding = self.binding(first)?;
             (binding.name.clone(), binding.loc)
         };
         let mut uses: Vec<(Scalar, Loc)> = elements
@@ -67,10 +69,10 @@ impl Engine<'_> {
         uses.sort_by_key(|(_, loc)| (loc.file, loc.start, loc.end));
         for (ty, loc) in uses {
             if self
-                .shape_at(node, Some(ty))
+                .shape_at(node, Some(ty))?
                 .is_some_and(|lengths| lengths != need.lengths)
             {
-                let scope = self.node(node).scope;
+                let scope = self.node(node)?.scope;
                 self.error_with_chain(
                     need.code,
                     loc,
@@ -79,13 +81,14 @@ impl Engine<'_> {
                     format!(
                         "`{name}` takes the shape its recursive call yields with the defaults, and this use yields another shape"
                     ),
-                );
-                return;
+                )?;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
-    fn shape_at(&mut self, root: NodeId, ty: Option<Scalar>) -> Option<Vec<u32>> {
+    fn shape_at(&mut self, root: NodeId, ty: Option<Scalar>) -> Result<Option<Vec<u32>>, Internal> {
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
             if self.typing.shapes.contains_key(&(node, ty)) {
@@ -97,13 +100,13 @@ impl Engine<'_> {
                 continue;
             }
             if !sig.reactive {
-                let value = self.demand_cval(node, eval_ty_of(ty));
+                let value = self.demand_cval(node, eval_ty_of(ty))?;
                 let shape = (!value.is_error()).then(|| lengths_of(&value));
                 self.typing.shapes.insert((node, ty), shape);
                 continue;
             }
-            let op = self.node(node).op.clone();
-            let parts = shape_parts(self, &op);
+            let op = self.node(node)?.op.clone();
+            let parts = shape_parts(self, &op)?;
             if !self.arrays.contains(&node) || parts.is_empty() {
                 self.typing.shapes.insert((node, ty), Some(Vec::new()));
                 continue;
@@ -121,15 +124,16 @@ impl Engine<'_> {
                 .iter()
                 .map(|part| self.typing.shapes.get(&(*part, ty)).cloned().flatten())
                 .collect();
-            let shape = shapes.and_then(|shapes| match combined_shape(node, &op, &shapes) {
-                Ok(lengths) => Some(lengths),
-                Err(fault) => {
-                    self.error_at_node(fault.code, fault.node, fault.message);
+            let shape = match shapes.map(|shapes| combined_shape(node, &op, &shapes)) {
+                Some(Ok(lengths)) => Some(lengths),
+                Some(Err(fault)) => {
+                    self.error_at_node(fault.code, fault.node, fault.message)?;
                     None
                 }
-            });
+                None => None,
+            };
             self.typing.shapes.insert((node, ty), shape);
         }
-        self.typing.shapes.get(&(root, ty)).cloned().flatten()
+        Ok(self.typing.shapes.get(&(root, ty)).cloned().flatten())
     }
 }

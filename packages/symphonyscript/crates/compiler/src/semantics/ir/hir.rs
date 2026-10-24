@@ -1,18 +1,16 @@
 use super::block::Block;
 use super::body_item::BodyItem;
 use super::expr::Expr;
-use super::expr_kind::ExprKind;
 use super::fn_decl::FnDecl;
-use super::ident::Ident;
 use super::ids::{BlockId, ExprId, FnId, InputId, LetId, PatternId, PlacementId, WireId};
 use super::input::Input;
 use super::let_decl::LetDecl;
-use super::loc::Loc;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
 use super::prelude_end::PreludeEnd;
 use super::top::Top;
 use super::wire::Wire;
+use crate::semantics::Internal;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Hir {
@@ -29,109 +27,43 @@ pub(crate) struct Hir {
     pub prelude: PreludeEnd,
 }
 
-const NOWHERE: Loc = Loc {
-    file: 0,
-    start: 0,
-    end: 0,
-};
-
-static MISSING_EXPR: Expr = Expr {
-    kind: ExprKind::Error,
-    loc: NOWHERE,
-};
-
-static MISSING_BLOCK: Block = Block { items: Vec::new() };
-
-static MISSING_PLACEMENT: Placement = Placement {
-    kind: None,
-    flags: Vec::new(),
-    name: None,
-    has_as: false,
-    default: None,
-    gate: None,
-    attrs: Vec::new(),
-    body: None,
-    inline: false,
-    loc: NOWHERE,
-};
-
-static MISSING_WIRE: Wire = Wire {
-    kind: Ident {
-        text: String::new(),
-        loc: NOWHERE,
-    },
-    flags: Vec::new(),
-    name: None,
-    default: None,
-    gate: None,
-    attrs: Vec::new(),
-    destination: ExprId(u32::MAX),
-    loc: NOWHERE,
-};
-
-static MISSING_INPUT: Input = Input {
-    name: None,
-    ty: None,
-    value: ExprId(u32::MAX),
-    loc: NOWHERE,
-};
-
-static MISSING_LET: LetDecl = LetDecl {
-    name: None,
-    ty: None,
-    value: ExprId(u32::MAX),
-    loc: NOWHERE,
-};
-
-static MISSING_FN: FnDecl = FnDecl {
-    name: None,
-    params: Vec::new(),
-    lets: Vec::new(),
-    value: ExprId(u32::MAX),
-    loc: NOWHERE,
-};
-
-static MISSING_PATTERN: PatternDecl = PatternDecl {
-    name: None,
-    params: Vec::new(),
-    lets: Vec::new(),
-    body: BlockId(u32::MAX),
-    loc: NOWHERE,
-};
-
 impl Hir {
-    pub fn expr(&self, id: ExprId) -> &Expr {
-        self.exprs.get(id.index()).unwrap_or(&MISSING_EXPR)
+    pub fn expr(&self, id: ExprId) -> Result<&Expr, Internal> {
+        self.exprs
+            .get(id.index())
+            .ok_or(Internal::missed("expression"))
     }
 
-    pub fn block(&self, id: BlockId) -> &Block {
-        self.blocks.get(id.index()).unwrap_or(&MISSING_BLOCK)
+    pub fn block(&self, id: BlockId) -> Result<&Block, Internal> {
+        self.blocks.get(id.index()).ok_or(Internal::missed("block"))
     }
 
-    pub fn placement(&self, id: PlacementId) -> &Placement {
+    pub fn placement(&self, id: PlacementId) -> Result<&Placement, Internal> {
         self.placements
             .get(id.index())
-            .unwrap_or(&MISSING_PLACEMENT)
+            .ok_or(Internal::missed("placement"))
     }
 
-    pub fn wire(&self, id: WireId) -> &Wire {
-        self.wires.get(id.index()).unwrap_or(&MISSING_WIRE)
+    pub fn wire(&self, id: WireId) -> Result<&Wire, Internal> {
+        self.wires.get(id.index()).ok_or(Internal::missed("wire"))
     }
 
-    pub fn input(&self, id: InputId) -> &Input {
-        self.inputs.get(id.index()).unwrap_or(&MISSING_INPUT)
+    pub fn input(&self, id: InputId) -> Result<&Input, Internal> {
+        self.inputs.get(id.index()).ok_or(Internal::missed("input"))
     }
 
-    pub fn let_decl(&self, id: LetId) -> &LetDecl {
-        self.lets.get(id.index()).unwrap_or(&MISSING_LET)
+    pub fn let_decl(&self, id: LetId) -> Result<&LetDecl, Internal> {
+        self.lets.get(id.index()).ok_or(Internal::missed("let"))
     }
 
-    pub fn fn_decl(&self, id: FnId) -> &FnDecl {
-        self.fns.get(id.index()).unwrap_or(&MISSING_FN)
+    pub fn fn_decl(&self, id: FnId) -> Result<&FnDecl, Internal> {
+        self.fns.get(id.index()).ok_or(Internal::missed("function"))
     }
 
-    pub fn pattern(&self, id: PatternId) -> &PatternDecl {
-        self.patterns.get(id.index()).unwrap_or(&MISSING_PATTERN)
+    pub fn pattern(&self, id: PatternId) -> Result<&PatternDecl, Internal> {
+        self.patterns
+            .get(id.index())
+            .ok_or(Internal::missed("pattern"))
     }
 
     pub fn seal_prelude(&mut self) {
@@ -160,15 +92,15 @@ impl Hir {
         id.index() < self.prelude.lets
     }
 
-    pub fn nested_placements(&self, root: BlockId) -> Vec<PlacementId> {
+    pub fn nested_placements(&self, root: BlockId) -> Result<Vec<PlacementId>, Internal> {
         let mut found = Vec::new();
         let mut blocks = vec![root];
         while let Some(block) = blocks.pop() {
-            for item in &self.block(block).items {
+            for item in &self.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) => {
                         found.push(*id);
-                        blocks.extend(self.placement(*id).body);
+                        blocks.extend(self.placement(*id)?.body);
                     }
                     BodyItem::Wire(_) => {}
                     BodyItem::Bundle { members, each, .. } => {
@@ -187,6 +119,6 @@ impl Hir {
                 }
             }
         }
-        found
+        Ok(found)
     }
 }

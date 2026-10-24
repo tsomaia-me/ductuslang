@@ -18,9 +18,11 @@ use super::op::Op;
 use super::val::Val;
 use crate::compiler::Compiler;
 use crate::diagnostics::{Code, Diagnostic, Severity};
+use crate::semantics::Internal;
+use crate::semantics::analyze;
 use crate::semantics::collection::{Variants, collect};
 use crate::semantics::ir::ExprId;
-use crate::semantics::ir::{Hir, build_file};
+use crate::semantics::ir::{Hir, Loc, Top, build_file};
 use crate::semantics::reporting::Report;
 use crate::source::Source;
 use crate::syntax::parse;
@@ -42,12 +44,9 @@ fn graph_size(calls: usize) -> (usize, usize) {
     build_file(&mut hir, &source.path, &parsed, &vocabulary);
     let mut report = Report::default();
     let variants = Variants::of(&vocabulary);
-    let collected = collect(&hir, &vocabulary, &variants, &mut report);
+    let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("the chain collects");
     let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
-    engine.expand();
-    engine.infer();
-    engine.check_program();
-    engine.flush_diagnostics();
+    engine.analyze().expect("the chain meets no internal error");
     let errors: Vec<_> = engine
         .report
         .diagnostics
@@ -80,7 +79,8 @@ fn analyzed_with<R>(
         path: "test.sym".into(),
         text: text.into(),
     };
-    compiler.analyzed(&[source], inspect)
+    let (diagnostics, found) = compiler.analyzed(&[source], inspect);
+    (diagnostics, found.expect("the run meets no internal error"))
 }
 
 fn envelope_vocabulary() -> Vocabulary {
@@ -655,17 +655,26 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
     let mut found = Vec::new();
     for ((expr, _), val) in &memo.exprs {
         if matches!(val, Val::Error) {
-            found.push(format!("value of {:?}", engine.hir.expr(*expr).loc));
+            found.push(format!(
+                "value of {:?}",
+                engine.hir.expr(*expr).map(|expr| expr.loc)
+            ));
         }
     }
     for (node, sig) in &memo.sigs {
         if sig.is_error() {
-            found.push(format!("type of {:?}", engine.node(*node).loc));
+            found.push(format!(
+                "type of {:?}",
+                engine.node(*node).map(|node| node.loc)
+            ));
         }
     }
     for ((node, _), value) in &memo.evals {
         if value.is_error() {
-            found.push(format!("evaluation of {:?}", engine.node(*node).loc));
+            found.push(format!(
+                "evaluation of {:?}",
+                engine.node(*node).map(|node| node.loc)
+            ));
         }
     }
     for (call, value) in &memo.calls {
@@ -723,6 +732,7 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
                         })
                         .collect();
                     let (diagnostics, found) = compiler.analyzed(&sources, placeholders);
+                    let found = found.expect("the run meets no internal error");
                     let drew_error = !errors_of(&diagnostics).is_empty();
                     assert!(
                         drew_error || found.is_empty(),
@@ -775,13 +785,18 @@ fn reads(engine: &Engine<'_>, expr: ExprId, scope: ScopeId) -> String {
         return "no single value".into();
     };
     loop {
-        match engine.node(node).op {
+        match engine.node(node).expect("the node exists").op {
             Op::Use(inner) => node = inner,
             Op::Read(binding) => {
-                let record = engine.binding(binding);
+                let record = engine.binding(binding).expect("the binding exists");
                 return match record.kind {
                     BindingKind::Input { input, element } => {
-                        let name = engine.hir.input(input).name.as_ref();
+                        let name = engine
+                            .hir
+                            .input(input)
+                            .expect("the input exists")
+                            .name
+                            .as_ref();
                         format!("input {}[{element}]", name.map_or("", |name| &name.text))
                     }
                     _ => format!("cell {}", record.name),
@@ -811,6 +826,7 @@ fn note_pitches_and_gates(engine: &Engine<'_>) -> Vec<(String, Option<String>)> 
             let gate = engine
                 .hir
                 .placement(instance.placement)
+                .expect("the placement exists")
                 .gate
                 .map(|gate| reads(engine, gate, instance.scope));
             (pitch, gate)
@@ -863,7 +879,11 @@ fn note_conditions(engine: &Engine<'_>, text: &str) -> Vec<Vec<(String, bool)>> 
                 .conditions_of(instance.conditions)
                 .into_iter()
                 .map(|condition| {
-                    let loc = engine.hir.expr(condition.expr).loc;
+                    let loc = engine
+                        .hir
+                        .expr(condition.expr)
+                        .expect("the guard exists")
+                        .loc;
                     let guard = text
                         .get(loc.start as usize..loc.end as usize)
                         .unwrap_or_default()
@@ -998,7 +1018,11 @@ fn recursive_results(engine: &Engine<'_>) -> Vec<(EvalTy, CVal)> {
         .memo
         .evals
         .iter()
-        .filter(|((node, _), _)| matches!(engine.node(*node).op, Op::Recursive { .. }))
+        .filter(|((node, _), _)| {
+            engine
+                .node(*node)
+                .is_ok_and(|record| matches!(record.op, Op::Recursive { .. }))
+        })
         .map(|((_, ty), value)| (*ty, value.clone()))
         .collect();
     found.sort_by_key(|(ty, _)| format!("{ty:?}"));
@@ -1443,7 +1467,7 @@ fn cell_type_and_value(engine: &Engine<'_>, name: &str) -> Option<(Scalar, CVal)
         Scalar::F64 => EvalTy::F64,
         Scalar::Bool | Scalar::Enum(_) | Scalar::Str => return None,
     };
-    let init = engine.binding(binding).init;
+    let init = engine.binding(binding).ok()?.init;
     let value = engine.memo.evals.get(&(init, ty)).cloned()?;
     Some((own, value))
 }
@@ -1767,4 +1791,62 @@ fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
     assert!(faulty_sizes.0 <= clean_sizes.0 * 2, "nodes");
     assert!(faulty_sizes.1 <= clean_sizes.1 * 2, "scopes");
     assert!(faulty_sizes.2 <= clean_sizes.2 * 2, "bindings");
+}
+
+fn built(vocabulary: &Vocabulary, text: &str) -> Hir {
+    let source = Source {
+        path: "test.sym".into(),
+        text: text.into(),
+    };
+    let mut hir = Hir::default();
+    hir.seal_prelude();
+    let parsed = parse(&source, vocabulary);
+    build_file(&mut hir, &source.path, &parsed, vocabulary);
+    hir
+}
+
+#[test]
+fn a_lookup_that_misses_is_an_internal_error() {
+    let vocabulary = vocabulary();
+    let variants = Variants::of(&vocabulary);
+    let other = built(
+        &vocabulary,
+        "input a = 1\ninput b = 2\ninput c = 3\nSession s\n",
+    );
+    let Some(&Top::Input(foreign_input)) = other.top.get(2) else {
+        panic!("the other program declares three inputs");
+    };
+    let mut hir = built(&vocabulary, "Session s\n");
+    hir.top.push(Top::Input(foreign_input));
+    let mut report = Report::default();
+    let found = analyze::program(&hir, &vocabulary, &variants, &mut report, |_| ());
+    let codes: Vec<Code> = report
+        .finish(&hir.files)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(found, None);
+    assert_eq!(codes, vec![Code::InternalError]);
+
+    let (_, larger) = analyzed(
+        "input i = 1\nClip c:\n    Note/(i + i + i)\n    Note/(i * 2)\n",
+        |engine| engine.nodes.len(),
+    );
+    let hir = built(&vocabulary, "Session s\n");
+    let mut report = Report::default();
+    let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("collects");
+    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
+    engine
+        .analyze()
+        .expect("the program meets no internal error");
+    assert!(engine.nodes.len() < larger);
+    let foreign = NodeId(u32::try_from(larger - 1).expect("the arena is small"));
+    let scope = engine.source_global;
+    let user = engine
+        .push_node(Op::Use(foreign), Loc::default(), scope)
+        .expect("the user node is pushed");
+    assert_eq!(
+        engine.demand_sig(user).map(|sig| sig.kind),
+        Err(Internal::missed("node"))
+    );
 }

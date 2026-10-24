@@ -1,6 +1,7 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
@@ -21,7 +22,7 @@ impl Engine<'_> {
         expected: Option<Scalar>,
         condition: bool,
         roots: &mut Vec<(NodeId, Option<Scalar>)>,
-    ) {
+    ) -> Result<(), Internal> {
         let mut stack = vec![(root, expected)];
         let mut condition_root = condition;
         while let Some((node, expected)) = stack.pop() {
@@ -34,7 +35,7 @@ impl Engine<'_> {
             }
             let as_condition = std::mem::take(&mut condition_root);
             if let Some(expected) = expected
-                && !self.compatible(node, &sig, expected, as_condition)
+                && !self.compatible(node, &sig, expected, as_condition)?
             {
                 continue;
             }
@@ -44,9 +45,9 @@ impl Engine<'_> {
             }
             let ty = match expected {
                 Some(expected) => Some(expected),
-                None => self.synth(node),
+                None => self.synth(node)?,
             };
-            let op = self.node(node).op.clone();
+            let op = self.node(node)?.op.clone();
             match op {
                 Op::Read(_) | Op::ToRead { .. } | Op::Concat(_) => {}
                 Op::Use(inner) => stack.push((inner, ty)),
@@ -63,15 +64,15 @@ impl Engine<'_> {
                     | BinaryOp::Ge
                     | BinaryOp::Is
                     | BinaryOp::IsNot => {
-                        self.synth(lhs);
-                        self.synth(rhs);
+                        self.synth(lhs)?;
+                        self.synth(rhs)?;
                         let pair = self.pair(lhs, rhs);
                         stack.push((lhs, pair));
                         stack.push((rhs, pair));
                     }
                     BinaryOp::IntDiv if ty.is_some_and(is_float) => {
-                        self.synth(lhs);
-                        self.synth(rhs);
+                        self.synth(lhs)?;
+                        self.synth(rhs)?;
                         let inner = self.combine(&[lhs, rhs]);
                         stack.push((lhs, inner));
                         stack.push((rhs, inner));
@@ -89,7 +90,7 @@ impl Engine<'_> {
                 },
                 Op::If(condition, then, otherwise) => {
                     stack.push((condition, Some(Scalar::Bool)));
-                    match self.chosen(condition, EvalTy::Bool) {
+                    match self.chosen(condition, EvalTy::Bool)? {
                         Some(CVal::Bool(true)) => stack.push((then, ty)),
                         Some(CVal::Bool(false)) => stack.push((otherwise, ty)),
                         Some(_) => {}
@@ -104,21 +105,23 @@ impl Engine<'_> {
                     arms,
                     otherwise,
                 } => {
-                    let scrutinee_ty = self.synth(scrutinee);
+                    let scrutinee_ty = self.synth(scrutinee)?;
                     stack.push((scrutinee, scrutinee_ty));
                     let label_ty = self
                         .memo
                         .sigs
                         .get(&scrutinee)
                         .map_or(EvalTy::Exact, |sig| own_type(sig, EvalTy::Exact));
-                    match self.chosen(scrutinee, label_ty) {
+                    match self.chosen(scrutinee, label_ty)? {
                         Some(CVal::Error) => {}
                         Some(value) => {
-                            let chosen = arms
-                                .iter()
-                                .find(|(label, _)| self.demand_cval(*label, label_ty) == value)
-                                .map(|(_, arm)| *arm)
-                                .or(otherwise);
+                            let mut chosen = otherwise;
+                            for (label, arm) in &arms {
+                                if self.demand_cval(*label, label_ty)? == value {
+                                    chosen = Some(*arm);
+                                    break;
+                                }
+                            }
                             stack.extend(chosen.map(|arm| (arm, ty)));
                         }
                         None => {
@@ -130,14 +133,14 @@ impl Engine<'_> {
                     }
                 }
                 Op::Pick { index, items } => {
-                    let index_ty = self.synth(index);
+                    let index_ty = self.synth(index)?;
                     stack.push((index, index_ty));
                     let position_ty = self
                         .memo
                         .sigs
                         .get(&index)
                         .map_or(EvalTy::Exact, |sig| own_type(sig, EvalTy::Exact));
-                    match self.chosen(index, position_ty) {
+                    match self.chosen(index, position_ty)? {
                         Some(CVal::Int(position)) => {
                             match usize::try_from(position)
                                 .ok()
@@ -151,7 +154,7 @@ impl Engine<'_> {
                                         "the index {position} is outside the array of length {}",
                                         items.len()
                                     ),
-                                ),
+                                )?,
                             }
                         }
                         Some(_) => {}
@@ -159,7 +162,7 @@ impl Engine<'_> {
                     }
                 }
                 Op::Element { base, index } => {
-                    let index_ty = self.synth(index);
+                    let index_ty = self.synth(index)?;
                     stack.push((index, index_ty));
                     stack.push((base, ty));
                 }
@@ -170,7 +173,7 @@ impl Engine<'_> {
                     let operand_ty = if is_float(target) {
                         Some(target)
                     } else {
-                        self.synth(operand)
+                        self.synth(operand)?
                     };
                     stack.push((operand, operand_ty));
                 }
@@ -197,20 +200,21 @@ impl Engine<'_> {
                 }
                 other => {
                     for operand in other.operands() {
-                        let operand_ty = self.synth(operand);
+                        let operand_ty = self.synth(operand)?;
                         stack.push((operand, operand_ty));
                     }
                 }
             }
         }
+        Ok(())
     }
 
-    fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Option<CVal> {
+    fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
         let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
         if sig.reactive || sig.is_error() {
-            return None;
+            return Ok(None);
         }
-        Some(self.demand_cval(node, ty))
+        Ok(Some(self.demand_cval(node, ty)?))
     }
 
     fn pair(&mut self, lhs: NodeId, rhs: NodeId) -> Option<Scalar> {
@@ -225,10 +229,16 @@ impl Engine<'_> {
         self.combine(&[lhs, rhs])
     }
 
-    fn compatible(&mut self, node: NodeId, sig: &Sig, expected: Scalar, condition: bool) -> bool {
-        let is_cell = matches!(self.node(self.through_uses(node)).op, Op::Read(_))
+    fn compatible(
+        &mut self,
+        node: NodeId,
+        sig: &Sig,
+        expected: Scalar,
+        condition: bool,
+    ) -> Result<bool, Internal> {
+        let is_cell = matches!(self.node(self.through_uses(node)?)?.op, Op::Read(_))
             || matches!(sig.width, Width::Adaptive)
-                && matches!(self.node(node).op, Op::ToRead { .. });
+                && matches!(self.node(node)?.op, Op::ToRead { .. });
         let fits_kind = match (sig.kind, expected) {
             (Kind::Bool, Scalar::Bool) | (Kind::Str, Scalar::Str) => true,
             (Kind::Enum(id), Scalar::Enum(other)) => id == other,
@@ -241,21 +251,21 @@ impl Engine<'_> {
                         Code::FloatToInteger,
                         node,
                         "a float cell is used where an integer is expected; a conversion states the rounding",
-                    );
+                    )?;
                 } else {
                     self.error_at_node(
                         Code::TypeMismatch,
                         node,
                         "a float value stands where an integer is expected; a conversion states the rounding",
-                    );
+                    )?;
                 }
-                return false;
+                return Ok(false);
             }
             _ => false,
         };
         if !fits_kind && condition {
-            self.error_at_node(Code::ConditionType, node, "a gate or a guard is a `bool`");
-            return false;
+            self.error_at_node(Code::ConditionType, node, "a gate or a guard is a `bool`")?;
+            return Ok(false);
         }
         if !fits_kind {
             self.error_at_node(
@@ -265,8 +275,8 @@ impl Engine<'_> {
                     "this value has the wrong type here; `{}` is expected",
                     scalar_name(self, expected)
                 ),
-            );
-            return false;
+            )?;
+            return Ok(false);
         }
         if let Width::Fixed(scalar) | Width::Widened(scalar) = sig.width
             && !is_cell
@@ -281,10 +291,10 @@ impl Engine<'_> {
                     scalar_name(self, scalar),
                     scalar_name(self, expected)
                 ),
-            );
-            return false;
+            )?;
+            return Ok(false);
         }
-        true
+        Ok(true)
     }
 }
 

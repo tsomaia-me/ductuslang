@@ -1,10 +1,11 @@
 use super::engine::Engine;
 use super::ids::NodeId;
 use super::op::Op;
+use crate::semantics::Internal;
 
-pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Vec<NodeId> {
-    match op {
-        Op::Read(binding) => vec![engine.binding(*binding).init],
+pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, Internal> {
+    Ok(match op {
+        Op::Read(binding) => vec![engine.binding(*binding)?.init],
         Op::Use(operand) | Op::Annotate(_, operand) => vec![*operand],
         Op::Element { base, .. } => vec![*base],
         Op::If(_, then, otherwise) => vec![*then, *otherwise],
@@ -33,5 +34,5 @@ pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Vec<NodeId> {
         | Op::Builtin(..)
         | Op::Recursive { .. }
         | Op::ToRead { .. } => Vec::new(),
-    }
+    })
 }

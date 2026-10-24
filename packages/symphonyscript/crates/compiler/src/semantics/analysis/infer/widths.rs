@@ -1,6 +1,7 @@
 use symphonyscript_core::Scalar;
 
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::BindingId;
@@ -12,24 +13,24 @@ use crate::semantics::analysis::rank::rank;
 use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
-    pub(super) fn own_type(&mut self, binding: BindingId) -> Option<Scalar> {
-        let record = self.binding(binding).clone();
+    pub(super) fn own_type(&mut self, binding: BindingId) -> Result<Option<Scalar>, Internal> {
+        let record = self.binding(binding)?.clone();
         match record.kind {
             BindingKind::Input { .. } => return self.input_type(binding),
-            BindingKind::Attr { .. } => return record.annotation,
+            BindingKind::Attr { .. } => return Ok(record.annotation),
             BindingKind::Let | BindingKind::Param => {}
         }
         if let Some(annotation) = record.annotation {
-            return Some(annotation);
+            return Ok(Some(annotation));
         }
-        let sig = self.demand_sig(record.init);
+        let sig = self.demand_sig(record.init)?;
         let expectations = self
             .typing
             .expectations
             .get(&binding)
             .cloned()
             .unwrap_or_default();
-        match sig.kind {
+        Ok(match sig.kind {
             Kind::Bool => Some(Scalar::Bool),
             Kind::Enum(id) => Some(Scalar::Enum(id)),
             Kind::Bare => {
@@ -44,9 +45,9 @@ impl Engine<'_> {
                         self.error(
                             Code::TypeMismatch,
                             record.loc,
-                            self.node(record.init).scope,
+                            self.node(record.init)?.scope,
                             "this value names a variant, and its uses expect no single enum",
-                        );
+                        )?;
                         None
                     }
                 }
@@ -55,18 +56,18 @@ impl Engine<'_> {
                 self.error(
                     Code::ReactiveString,
                     record.loc,
-                    self.node(record.init).scope,
+                    self.node(record.init)?.scope,
                     "a string exists only at compile time, and this one reads a cell",
-                );
+                )?;
                 None
             }
             Kind::Node => {
                 self.error(
                     Code::ReactiveNodeReference,
                     record.loc,
-                    self.node(record.init).scope,
+                    self.node(record.init)?.scope,
                     "a value holding node references reads no input; write the choice in the destination",
-                );
+                )?;
                 None
             }
             Kind::Float => {
@@ -85,23 +86,23 @@ impl Engine<'_> {
                     .max_by_key(|scalar| rank(*scalar));
                 match widest {
                     Some(widest) => Some(widest),
-                    None => Some(self.natural(binding).unwrap_or(Scalar::I32)),
+                    None => Some(self.natural(binding)?.unwrap_or(Scalar::I32)),
                 }
             }
             Kind::Any | Kind::Error => None,
-        }
+        })
     }
 
-    fn natural(&mut self, root: BindingId) -> Option<Scalar> {
+    fn natural(&mut self, root: BindingId) -> Result<Option<Scalar>, Internal> {
         let mut stack = vec![root];
         while let Some(&binding) = stack.last() {
             if self.typing.natural.contains_key(&binding) {
                 stack.pop();
                 continue;
             }
-            let record = self.binding(binding).clone();
+            let record = self.binding(binding)?.clone();
             let fixed = match record.kind {
-                BindingKind::Input { .. } => Some(self.input_type(binding)),
+                BindingKind::Input { .. } => Some(self.input_type(binding)?),
                 BindingKind::Attr { .. } => Some(record.annotation),
                 BindingKind::Let | BindingKind::Param => record.annotation.map(Some),
             };
@@ -111,7 +112,7 @@ impl Engine<'_> {
                 stack.pop();
                 continue;
             }
-            let reads = self.reads_of(record.init);
+            let reads = self.reads_of(record.init)?;
             let pending: Vec<BindingId> = reads
                 .iter()
                 .copied()
@@ -128,7 +129,7 @@ impl Engine<'_> {
                 if !seen.insert(node) {
                     continue;
                 }
-                let contribution = match &self.node(node).op {
+                let contribution = match &self.node(node)?.op {
                     Op::Read(read) => self.typing.natural.get(read).copied().flatten(),
                     Op::Number(..)
                     | Op::Const(_)
@@ -165,13 +166,13 @@ impl Engine<'_> {
                 {
                     widest = Some(contribution);
                 }
-                if !matches!(self.node(node).op, Op::Read(_)) {
-                    nodes.extend(self.node(node).op.operands());
+                if !matches!(self.node(node)?.op, Op::Read(_)) {
+                    nodes.extend(self.node(node)?.op.operands());
                 }
             }
             self.typing.natural.insert(binding, widest);
             stack.pop();
         }
-        self.typing.natural.get(&root).copied().flatten()
+        Ok(self.typing.natural.get(&root).copied().flatten())
     }
 }

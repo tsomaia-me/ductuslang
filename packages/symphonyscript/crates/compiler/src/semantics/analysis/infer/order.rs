@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::op::Op;
 
 impl Engine<'_> {
-    pub(super) fn reads_of(&self, root: NodeId) -> Vec<BindingId> {
+    pub(super) fn reads_of(&self, root: NodeId) -> Result<Vec<BindingId>, Internal> {
         let mut found = Vec::new();
         let mut seen = HashSet::new();
         let mut stack = vec![root];
@@ -13,21 +14,21 @@ impl Engine<'_> {
             if !seen.insert(node) {
                 continue;
             }
-            match &self.node(node).op {
+            match &self.node(node)?.op {
                 Op::Read(binding) => found.push(*binding),
                 op => stack.extend(op.operands()),
             }
         }
-        found
+        Ok(found)
     }
 
-    pub(super) fn binding_order(&self) -> Vec<BindingId> {
+    pub(super) fn binding_order(&self) -> Result<Vec<BindingId>, Internal> {
         let count = self.bindings.len();
         let mut reads: Vec<Vec<BindingId>> = Vec::with_capacity(count);
         let mut readers: HashMap<BindingId, usize> = HashMap::new();
         for index in 0..count {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
-            let mut targets = self.reads_of(self.binding(binding).init);
+            let mut targets = self.reads_of(self.binding(binding)?.init)?;
             targets.sort();
             targets.dedup();
             for target in &targets {
@@ -54,6 +55,6 @@ impl Engine<'_> {
                 }
             }
         }
-        order
+        Ok(order)
     }
 }

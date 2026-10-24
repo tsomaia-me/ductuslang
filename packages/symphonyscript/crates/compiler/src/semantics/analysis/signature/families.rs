@@ -1,6 +1,7 @@
 use symphonyscript_core::FamilyId;
 
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::sig::Sig;
@@ -10,7 +11,7 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         operands: &[(NodeId, Sig)],
-    ) -> Option<Option<FamilyId>> {
+    ) -> Result<Option<Option<FamilyId>>, Internal> {
         let mut family: Option<FamilyId> = None;
         for (_, sig) in operands.iter().filter(|(_, sig)| !sig.open) {
             match (family, sig.family) {
@@ -30,8 +31,8 @@ impl Engine<'_> {
                         format!(
                             "these values belong to the unit families {names}, which never convert"
                         ),
-                    );
-                    return None;
+                    )?;
+                    return Ok(None);
                 }
                 (None, Some(other)) => family = Some(other),
                 _ => {}
@@ -41,7 +42,7 @@ impl Engine<'_> {
             for (operand, sig) in operands {
                 if sig.family.is_none() && sig.is_numeric() && !sig.open {
                     self.memo.takes_family.insert(*operand, family);
-                    if let Some(template) = self.template_of(self.node(*operand).scope) {
+                    if let Some(template) = self.template_of(self.node(*operand)?.scope)? {
                         self.memo
                             .template_takers
                             .entry(template)
@@ -51,6 +52,6 @@ impl Engine<'_> {
                 }
             }
         }
-        Some(family)
+        Ok(Some(family))
     }
 }

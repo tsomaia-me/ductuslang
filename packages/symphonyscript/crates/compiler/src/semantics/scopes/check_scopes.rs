@@ -1,6 +1,7 @@
 use symphonyscript_core::Vocabulary;
 
 use super::checker::Checker;
+use crate::semantics::Internal;
 use crate::semantics::collection::{Collected, Variants};
 use crate::semantics::ir::{Hir, Top};
 use crate::semantics::reporting::Report;
@@ -12,7 +13,7 @@ pub(crate) fn check_scopes(
     variants: &Variants,
     prelude: bool,
     report: &mut Report,
-) {
+) -> Result<(), Internal> {
     for (position, top) in hir.top.iter().enumerate() {
         if hir.is_prelude_top(position) != prelude {
             continue;
@@ -25,22 +26,23 @@ pub(crate) fn check_scopes(
         let mut checker = Checker::new(hir, vocabulary, variants, namespace, report);
         match *top {
             Top::Input(id) => {
-                let input = hir.input(id);
+                let input = hir.input(id)?;
                 if let Some(ty) = &input.ty {
                     checker.type_ref(ty);
                 }
-                checker.expr(input.value, None, false);
+                checker.expr(input.value, None, false)?;
             }
             Top::Let(id) => {
-                let decl = hir.let_decl(id);
+                let decl = hir.let_decl(id)?;
                 if let Some(ty) = &decl.ty {
                     checker.type_ref(ty);
                 }
-                checker.expr(decl.value, None, false);
+                checker.expr(decl.value, None, false)?;
             }
-            Top::Fn(id) => checker.function(id),
-            Top::Pattern(id) => checker.pattern(id),
-            Top::Placement(id) => checker.top_placement(id),
+            Top::Fn(id) => checker.function(id)?,
+            Top::Pattern(id) => checker.pattern(id)?,
+            Top::Placement(id) => checker.top_placement(id)?,
         }
     }
+    Ok(())
 }

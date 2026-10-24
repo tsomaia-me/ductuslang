@@ -1,5 +1,6 @@
 use symphonyscript_core::Vocabulary;
 
+use super::internal_error::internal_error;
 use crate::semantics::collection::{Variants, collect};
 use crate::semantics::ir::Hir;
 use crate::semantics::reporting::Report;
@@ -11,6 +12,9 @@ pub(crate) fn prelude(
     variants: &Variants,
     report: &mut Report,
 ) {
-    let collected = collect(hir, vocabulary, variants, report);
-    check_scopes(hir, &collected, vocabulary, variants, true, report);
+    let checked = collect(hir, vocabulary, variants, report)
+        .and_then(|collected| check_scopes(hir, &collected, vocabulary, variants, true, report));
+    if let Err(internal) = checked {
+        internal_error(hir, report, internal);
+    }
 }

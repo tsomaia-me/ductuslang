@@ -5,6 +5,7 @@ use symphonyscript_core::Builtin;
 
 use super::found::Found;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::ScopeId;
 use crate::semantics::analysis::local_name::LocalName;
@@ -27,8 +28,8 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
-        let callee_expr = self.hir.expr(callee);
+    ) -> Result<Option<Val>, Internal> {
+        let callee_expr = self.hir.expr(callee)?;
         let ExprKind::Name(name) = &callee_expr.kind else {
             if !matches!(callee_expr.kind, ExprKind::Error) {
                 self.error(
@@ -36,20 +37,20 @@ impl Engine<'_> {
                     callee_expr.loc,
                     scope,
                     "only a function or a built-in is called",
-                );
+                )?;
             }
-            return Some(Val::Error);
+            return Ok(Some(Val::Error));
         };
-        match self.find(name, scope) {
+        Ok(match self.find(name, scope)? {
             Found::Decl(Decl::Builtin(BuiltinName::Function(builtin))) => {
-                self.builtin_call(builtin, args, loc, scope, need)
+                self.builtin_call(builtin, args, loc, scope, need)?
             }
             Found::Decl(Decl::Fn(function)) => {
-                self.function_call(function, args, expr, loc, scope, need)
+                self.function_call(function, args, expr, loc, scope, need)?
             }
             Found::Nothing => {
                 if self.variants.owner(name).is_some() {
-                    self.unplaced_variant_at(Some(name), callee_expr.loc, scope);
+                    self.unplaced_variant_at(Some(name), callee_expr.loc, scope)?;
                 }
                 Some(Val::Error)
             }
@@ -59,10 +60,10 @@ impl Engine<'_> {
                     callee_expr.loc,
                     scope,
                     format!("`{name}` is not a function"),
-                );
+                )?;
                 Some(Val::Error)
             }
-        }
+        })
     }
 
     fn builtin_call(
@@ -72,7 +73,7 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
+    ) -> Result<Option<Val>, Internal> {
         let Args::Positional(values) = args else {
             self.error(
                 Code::NamedBuiltinArguments,
@@ -82,15 +83,15 @@ impl Engine<'_> {
                     "the built-in `{}` takes positional arguments only",
                     builtin.name()
                 ),
-            );
-            return Some(Val::Error);
+            )?;
+            return Ok(Some(Val::Error));
         };
         let vals: Vec<Option<Val>> = values
             .iter()
             .map(|value| self.val(Query::Expr(*value, scope), need))
             .collect();
         if vals.iter().any(Option::is_none) {
-            return None;
+            return Ok(None);
         }
         let arity = builtin_arity(builtin);
         if vals.len() != arity {
@@ -104,8 +105,8 @@ impl Engine<'_> {
                     if arity == 1 { "" } else { "s" },
                     vals.len()
                 ),
-            );
-            return Some(Val::Error);
+            )?;
+            return Ok(Some(Val::Error));
         }
         let mut operands = Vec::new();
         for val in vals.into_iter().flatten() {
@@ -122,13 +123,17 @@ impl Engine<'_> {
                         loc,
                         scope,
                         "built-ins apply to single values, not arrays",
-                    );
-                    return Some(Val::Error);
+                    )?;
+                    return Ok(Some(Val::Error));
                 }
-                Val::Error => return Some(Val::Error),
+                Val::Error => return Ok(Some(Val::Error)),
             }
         }
-        Some(self.scalar(Op::Builtin(builtin, operands), loc, scope))
+        Ok(Some(self.scalar(
+            Op::Builtin(builtin, operands),
+            loc,
+            scope,
+        )?))
     }
 
     fn function_call(
@@ -139,10 +144,10 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
-        let decl = self.hir.fn_decl(function);
-        let Some(sources) = self.bind_arguments(&decl.params, args, loc, scope) else {
-            return Some(Val::Error);
+    ) -> Result<Option<Val>, Internal> {
+        let decl = self.hir.fn_decl(function)?;
+        let Some(sources) = self.bind_arguments(&decl.params, args, loc, scope)? else {
+            return Ok(Some(Val::Error));
         };
         let recursive = self
             .collected
@@ -166,7 +171,7 @@ impl Engine<'_> {
                 }
             }
             if missing {
-                return None;
+                return Ok(None);
             }
             let args = sources
                 .iter()
@@ -176,15 +181,19 @@ impl Engine<'_> {
                     ParamSource::Default | ParamSource::Missing | ParamSource::Bound(_) => None,
                 })
                 .collect();
-            return Some(self.scalar(Op::Recursive { function, args }, loc, scope));
+            return Ok(Some(self.scalar(
+                Op::Recursive { function, args },
+                loc,
+                scope,
+            )?));
         }
         let call_scope = match self.memo.call_scopes.get(&(expr, scope)) {
             Some(existing) => *existing,
             None => {
-                if !self.within_inline_limit(function, &sources, loc, scope) {
-                    return Some(Val::Error);
+                if !self.within_inline_limit(function, &sources, loc, scope)? {
+                    return Ok(Some(Val::Error));
                 }
-                let created = self.call_scope(function, sources, loc, scope, false);
+                let created = self.call_scope(function, sources, loc, scope, false)?;
                 self.memo.call_scopes.insert((expr, scope), created);
                 created
             }
@@ -208,9 +217,9 @@ impl Engine<'_> {
         }
         let value = self.val(Query::Expr(decl.value, call_scope), need);
         if !locals_ready {
-            return None;
+            return Ok(None);
         }
-        value
+        Ok(value)
     }
 
     pub(in crate::semantics::analysis) fn siblings(
@@ -219,54 +228,70 @@ impl Engine<'_> {
         second: ExprId,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> (Option<Val>, Option<Val>) {
+    ) -> Result<(Option<Val>, Option<Val>), Internal> {
         let first_val = self.val(Query::Expr(first, scope), need);
-        let sharing = self.same_call(first, second, scope);
+        let sharing = self.same_call(first, second, scope)?;
         if sharing && first_val.is_none() {
-            return (None, None);
+            return Ok((None, None));
         }
         if sharing && self.memo.call_scopes.contains_key(&(first, scope)) {
-            let shared = self.share_call(first, second, scope);
+            let shared = self.share_call(first, second, scope)?;
             let second_val = first_val.clone().filter(|_| shared).or(Some(Val::Error));
-            return (first_val, second_val);
+            return Ok((first_val, second_val));
         }
         let second_val = self.val(Query::Expr(second, scope), need);
-        (first_val, second_val)
+        Ok((first_val, second_val))
     }
 
-    fn same_call(&mut self, first: ExprId, second: ExprId, scope: ScopeId) -> bool {
+    fn same_call(
+        &mut self,
+        first: ExprId,
+        second: ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
         let hir = self.hir;
         let (ExprKind::Call(callee, args), ExprKind::Call(other_callee, other_args)) =
-            (&hir.expr(first).kind, &hir.expr(second).kind)
+            (&hir.expr(first)?.kind, &hir.expr(second)?.kind)
         else {
-            return false;
+            return Ok(false);
         };
-        let same_args = match (args, other_args) {
-            (Args::Positional(values), Args::Positional(others)) => {
-                values.len() == others.len()
+        let pairs: Vec<(ExprId, ExprId)> = match (args, other_args) {
+            (Args::Positional(values), Args::Positional(others))
+                if values.len() == others.len() =>
+            {
+                values.iter().copied().zip(others.iter().copied()).collect()
+            }
+            (Args::Named(values), Args::Named(others))
+                if values.len() == others.len()
                     && values
                         .iter()
                         .zip(others)
-                        .all(|(value, other)| self.same_path(*value, *other))
+                        .all(|((name, _), (other_name, _))| name.text == other_name.text) =>
+            {
+                values
+                    .iter()
+                    .zip(others)
+                    .map(|((_, value), (_, other))| (*value, *other))
+                    .collect()
             }
-            (Args::Named(values), Args::Named(others)) => {
-                values.len() == others.len()
-                    && values
-                        .iter()
-                        .zip(others)
-                        .all(|((name, value), (other_name, other))| {
-                            name.text == other_name.text && self.same_path(*value, *other)
-                        })
+            (Args::Positional(_) | Args::Named(_), Args::Positional(_) | Args::Named(_)) => {
+                return Ok(false);
             }
-            (Args::Positional(_), Args::Named(_)) | (Args::Named(_), Args::Positional(_)) => false,
         };
-        if !same_args || !self.same_path(*callee, *other_callee) {
-            return false;
+        let mut same_args = true;
+        for (value, other) in pairs {
+            if !self.same_path(value, other)? {
+                same_args = false;
+                break;
+            }
         }
-        let ExprKind::Name(name) = &hir.expr(*callee).kind else {
-            return false;
+        if !same_args || !self.same_path(*callee, *other_callee)? {
+            return Ok(false);
+        }
+        let ExprKind::Name(name) = &hir.expr(*callee)?.kind else {
+            return Ok(false);
         };
-        match self.find(name, scope) {
+        Ok(match self.find(name, scope)? {
             Found::Decl(Decl::Fn(function)) => !self
                 .collected
                 .recursive
@@ -276,46 +301,51 @@ impl Engine<'_> {
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
                 false
             }
-        }
+        })
     }
 
-    fn same_path(&self, first: ExprId, second: ExprId) -> bool {
+    fn same_path(&self, first: ExprId, second: ExprId) -> Result<bool, Internal> {
         let mut pairs = vec![(first, second)];
         while let Some((left, right)) = pairs.pop() {
-            match (&self.hir.expr(left).kind, &self.hir.expr(right).kind) {
+            match (&self.hir.expr(left)?.kind, &self.hir.expr(right)?.kind) {
                 (ExprKind::Name(a), ExprKind::Name(b)) if a == b => {}
                 (ExprKind::Field(a, name), ExprKind::Field(b, other))
                     if name.text == other.text =>
                 {
                     pairs.push((*a, *b));
                 }
-                _ => return false,
+                _ => return Ok(false),
             }
         }
-        true
+        Ok(true)
     }
 
-    fn share_call(&mut self, first: ExprId, second: ExprId, scope: ScopeId) -> bool {
+    fn share_call(
+        &mut self,
+        first: ExprId,
+        second: ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
         if let Some(shared) = self.memo.call_scopes.get(&(second, scope)) {
-            return self.memo.call_scopes.get(&(first, scope)) == Some(shared);
+            return Ok(self.memo.call_scopes.get(&(first, scope)) == Some(shared));
         }
         let Some(body) = self.memo.call_scopes.get(&(first, scope)).copied() else {
-            return false;
+            return Ok(false);
         };
-        let ScopeKind::Locals(locals) = &self.scope_of(body).kind else {
-            return false;
+        let ScopeKind::Locals(locals) = &self.scope_of(body)?.kind else {
+            return Ok(false);
         };
         let LocalsOwner::Fn(function) = locals.owner else {
-            return false;
+            return Ok(false);
         };
         let sources = locals.params.clone();
-        let loc = self.hir.expr(second).loc;
-        if !self.within_inline_limit(function, &sources, loc, scope) {
-            return false;
+        let loc = self.hir.expr(second)?.loc;
+        if !self.within_inline_limit(function, &sources, loc, scope)? {
+            return Ok(false);
         }
-        self.scope_of(body).chain.also(loc);
+        self.scope_of(body)?.chain.also(loc);
         self.memo.call_scopes.insert((second, scope), body);
-        true
+        Ok(true)
     }
 
     pub(in crate::semantics::analysis) fn within_inline_limit(
@@ -324,12 +354,12 @@ impl Engine<'_> {
         sources: &[ParamSource],
         loc: Loc,
         scope: ScopeId,
-    ) -> bool {
+    ) -> Result<bool, Internal> {
         if self.inline_limit_reported {
-            return false;
+            return Ok(false);
         }
-        if self.inside_inlined_body(scope) {
-            return true;
+        if self.inside_inlined_body(scope)? {
+            return Ok(true);
         }
         let defaulted: Vec<usize> = sources
             .iter()
@@ -340,12 +370,12 @@ impl Engine<'_> {
         let count = self.collected.inline.call(function, &defaulted);
         self.inlined = self.inlined.saturating_add(count);
         if self.inlined <= INLINE_LIMIT {
-            return true;
+            return Ok(true);
         }
         self.inline_limit_reported = true;
         let name = self
             .hir
-            .fn_decl(function)
+            .fn_decl(function)?
             .name
             .as_ref()
             .map_or(String::new(), |name| name.text.clone());
@@ -354,20 +384,20 @@ impl Engine<'_> {
             loc,
             scope,
             format!("this call of `{name}` makes the compilation inline more than 1,000,000 calls"),
-        );
-        false
+        )?;
+        Ok(false)
     }
 
-    fn inside_inlined_body(&self, scope: ScopeId) -> bool {
+    fn inside_inlined_body(&self, scope: ScopeId) -> Result<bool, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
-            let record = self.scope_of(id);
+            let record = self.scope_of(id)?;
             match &record.kind {
                 ScopeKind::Locals(locals) => {
-                    return matches!(locals.owner, LocalsOwner::Fn(_)) && !locals.recursive;
+                    return Ok(matches!(locals.owner, LocalsOwner::Fn(_)) && !locals.recursive);
                 }
                 ScopeKind::ParamPrefix { locals, .. } => current = Some(*locals),
-                ScopeKind::Global { .. } => return false,
+                ScopeKind::Global { .. } => return Ok(false),
                 ScopeKind::Body { .. }
                 | ScopeKind::ForVar { .. }
                 | ScopeKind::WireClause { .. } => {
@@ -375,7 +405,7 @@ impl Engine<'_> {
                 }
             }
         }
-        false
+        Ok(false)
     }
 
     pub(in crate::semantics::analysis) fn call_scope(
@@ -385,11 +415,11 @@ impl Engine<'_> {
         loc: Loc,
         caller: ScopeId,
         recursive: bool,
-    ) -> ScopeId {
+    ) -> Result<ScopeId, Internal> {
         let names = match self.memo.local_names.get(&function) {
             Some(names) => names.clone(),
             None => {
-                let decl = self.hir.fn_decl(function);
+                let decl = self.hir.fn_decl(function)?;
                 let mut names = BTreeMap::new();
                 for (index, param) in decl.params.iter().enumerate() {
                     if let Some(name) = &param.name {
@@ -413,20 +443,20 @@ impl Engine<'_> {
         } else {
             self.source_global
         };
-        let inside_recursion = self.template_of(caller).is_some();
+        let inside_recursion = self.template_of(caller)?.is_some();
         let chain = if recursive && inside_recursion {
-            self.chain(caller)
+            self.chain(caller)?
         } else {
-            self.chain(caller).push(loc)
+            self.chain(caller)?.push(loc)
         };
         let template = if recursive {
             Some(ScopeId(crate::semantics::analysis::index::index(
                 self.scopes.len(),
             )))
         } else {
-            self.template_of(caller)
+            self.template_of(caller)?
         };
-        self.scope_in(
+        Ok(self.scope_in(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Fn(function),
                 params,
@@ -436,7 +466,7 @@ impl Engine<'_> {
             Some(global),
             chain,
             template,
-        )
+        ))
     }
 
     pub(in crate::semantics::analysis) fn bind_arguments(
@@ -445,7 +475,7 @@ impl Engine<'_> {
         args: &Args,
         loc: Loc,
         scope: ScopeId,
-    ) -> Option<Vec<ParamSource>> {
+    ) -> Result<Option<Vec<ParamSource>>, Internal> {
         let mut sources: Vec<Option<ParamSource>> = vec![None; params.len()];
         match args {
             Args::Positional(values) => {
@@ -459,8 +489,8 @@ impl Engine<'_> {
                             params.len(),
                             values.len()
                         ),
-                    );
-                    return None;
+                    )?;
+                    return Ok(None);
                 }
                 for (slot, value) in sources.iter_mut().zip(values) {
                     *slot = Some(ParamSource::Arg {
@@ -479,8 +509,8 @@ impl Engine<'_> {
                             name.loc,
                             scope,
                             format!("the function has no parameter `{}`", name.text),
-                        );
-                        return None;
+                        )?;
+                        return Ok(None);
                     };
                     if let Some(slot) = sources.get_mut(position) {
                         if slot.is_some() {
@@ -489,8 +519,8 @@ impl Engine<'_> {
                                 name.loc,
                                 scope,
                                 format!("the parameter `{}` is supplied twice", name.text),
-                            );
-                            return None;
+                            )?;
+                            return Ok(None);
                         }
                         *slot = Some(ParamSource::Arg {
                             expr: *value,
@@ -513,13 +543,13 @@ impl Engine<'_> {
                         loc,
                         scope,
                         format!("the parameter `{name}` has no default and no argument"),
-                    );
+                    )?;
                     complete = false;
                     bound.push(ParamSource::Missing);
                 }
             }
         }
-        complete.then_some(bound)
+        Ok(complete.then_some(bound))
     }
 }
 

@@ -1,5 +1,6 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
+use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_float::is_float;
@@ -15,7 +16,11 @@ impl Engine<'_> {
             .then_some(Scalar::F64)
     }
 
-    pub(super) fn expect(&mut self, root: NodeId, expected: Option<Scalar>) {
+    pub(super) fn expect(
+        &mut self,
+        root: NodeId,
+        expected: Option<Scalar>,
+    ) -> Result<(), Internal> {
         let mut stack = vec![(root, expected)];
         while let Some((node, expected)) = stack.pop() {
             if !self.typing.expected_seen.insert((node, expected)) {
@@ -25,8 +30,8 @@ impl Engine<'_> {
             if !reactive {
                 continue;
             }
-            let loc: Loc = self.node(node).loc;
-            let op = self.node(node).op.clone();
+            let loc: Loc = self.node(node)?.loc;
+            let op = self.node(node)?.op.clone();
             let numeric = expected.filter(|scalar| is_integer(*scalar) || is_float(*scalar));
             let float = expected.filter(|scalar| is_float(*scalar));
             let integer = expected.filter(|scalar| is_integer(*scalar));
@@ -129,5 +134,6 @@ impl Engine<'_> {
                 other => stack.extend(other.operands().into_iter().map(|operand| (operand, None))),
             }
         }
+        Ok(())
     }
 }

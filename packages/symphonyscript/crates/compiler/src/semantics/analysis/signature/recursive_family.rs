@@ -1,4 +1,5 @@
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::arg_shape::ArgShape;
 use crate::semantics::analysis::arg_sig::ArgSig;
 use crate::semantics::analysis::engine::Engine;
@@ -8,6 +9,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::rec_family::RecFamily;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
@@ -20,7 +22,7 @@ impl Engine<'_> {
         function: FnId,
         args: &[Option<Val>],
         need: &mut Vec<Query>,
-    ) -> Option<Sig> {
+    ) -> Result<Option<Sig>, Internal> {
         let key = FamilyKey {
             function,
             args: args
@@ -31,25 +33,25 @@ impl Engine<'_> {
         loop {
             match self.memo.rec_families.get(&key).copied() {
                 None => {
-                    let scope = self.instantiate(function, &key.args, node);
+                    let scope = self.instantiate(function, &key.args, node)?;
                     self.memo.probes.insert(scope);
                     self.memo
                         .rec_families
                         .insert(key.clone(), RecFamily::Probing(scope));
                 }
                 Some(RecFamily::Probing(scope)) => {
-                    let Some(root) = self.template_root(function, scope, need)? else {
+                    let Some(root) = some!(self.template_root(function, scope, need)?) else {
                         self.memo
                             .rec_families
                             .insert(key.clone(), RecFamily::Known(Kind::Any, None));
                         continue;
                     };
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
-                        return self.pending(root, Sig::open(false), need);
+                        return Ok(self.pending(root, Sig::open(false), need));
                     };
                     let family = if sig.open { None } else { sig.family };
                     let kind = if sig.is_error() { Kind::Any } else { sig.kind };
-                    let settled = self.instantiate(function, &key.args, node);
+                    let settled = self.instantiate(function, &key.args, node)?;
                     self.memo.rec_families.insert(
                         key.clone(),
                         RecFamily::Settling {
@@ -64,7 +66,7 @@ impl Engine<'_> {
                     family,
                     scope,
                 }) => {
-                    let Some(root) = self.template_root(function, scope, need)? else {
+                    let Some(root) = some!(self.template_root(function, scope, need)?) else {
                         self.memo
                             .rec_families
                             .insert(key.clone(), RecFamily::Known(kind, family));
@@ -72,12 +74,12 @@ impl Engine<'_> {
                     };
                     let assumed = Sig::of(kind, Width::Flexible, false, family);
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
-                        return self.pending(root, assumed, need);
+                        return Ok(self.pending(root, assumed, need));
                     };
                     let state = if sig.is_error() {
                         RecFamily::Failed
                     } else if rises(kind, sig.kind) && (sig.open || sig.family == family) {
-                        let settled = self.instantiate(function, &key.args, node);
+                        let settled = self.instantiate(function, &key.args, node)?;
                         RecFamily::Settling {
                             kind: sig.kind,
                             family,
@@ -90,15 +92,15 @@ impl Engine<'_> {
                             Code::MixedFamilies,
                             node,
                             "this recursive call's result takes different unit families through its recursive calls",
-                        );
+                        )?;
                         RecFamily::Failed
                     };
                     self.memo.rec_families.insert(key.clone(), state);
                 }
                 Some(RecFamily::Known(kind, family)) => {
-                    return Some(Sig::of(kind, Width::Flexible, false, family));
+                    return Ok(Some(Sig::of(kind, Width::Flexible, false, family)));
                 }
-                Some(RecFamily::Failed) => return Some(Sig::ERROR),
+                Some(RecFamily::Failed) => return Ok(Some(Sig::ERROR)),
             }
         }
     }
@@ -117,10 +119,10 @@ impl Engine<'_> {
         function: FnId,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Option<NodeId>> {
-        let body = self.hir.fn_decl(function).value;
-        let val = self.val(Query::Expr(body, scope), need)?;
-        Some(self.boxed_body(body, scope, &val))
+    ) -> Result<Option<Option<NodeId>>, Internal> {
+        let body = self.hir.fn_decl(function)?.value;
+        let val = some!(self.val(Query::Expr(body, scope), need));
+        Ok(Some(self.boxed_body(body, scope, &val)?))
     }
 
     fn family_shape(&self, arg: Option<&Val>) -> ArgShape {

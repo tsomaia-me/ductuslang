@@ -1,3 +1,4 @@
+mod internal_error;
 mod prelude;
 mod program;
 

@@ -5,6 +5,7 @@ use symphonyscript_core::Vocabulary;
 use super::frame::Frame;
 use super::frame_kind::FrameKind;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
     AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
@@ -55,13 +56,13 @@ impl<'a> Checker<'a> {
         }
     }
 
-    pub fn function(&mut self, id: FnId) {
-        let decl = self.hir.fn_decl(id);
+    pub fn function(&mut self, id: FnId) -> Result<(), Internal> {
+        let decl = self.hir.fn_decl(id)?;
         let mut earlier: Option<usize> = None;
         let mut seen_default = false;
         for param in &decl.params {
             if let Some(default) = param.default {
-                self.expr(default, earlier, false);
+                self.expr(default, earlier, false)?;
                 seen_default = true;
             } else if seen_default {
                 self.report.error(
@@ -83,14 +84,15 @@ impl<'a> Checker<'a> {
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
         );
         for local in &decl.lets {
-            self.expr(local.value, Some(locals), false);
+            self.expr(local.value, Some(locals), false)?;
         }
-        self.expr(decl.value, Some(locals), false);
-        self.let_cycles(&decl.lets);
+        self.expr(decl.value, Some(locals), false)?;
+        self.let_cycles(&decl.lets)?;
+        Ok(())
     }
 
-    pub fn pattern(&mut self, id: PatternId) {
-        let decl = self.hir.pattern(id);
+    pub fn pattern(&mut self, id: PatternId) -> Result<(), Internal> {
+        let decl = self.hir.pattern(id)?;
         let mut defaults = decl.params.iter().filter(|param| param.is_default);
         defaults.next();
         for extra in defaults {
@@ -104,7 +106,7 @@ impl<'a> Checker<'a> {
         let mut earlier: Option<usize> = None;
         for param in &decl.params {
             if let Some(default) = param.default {
-                self.expr(default, earlier, false);
+                self.expr(default, earlier, false)?;
             }
             if let Some(name) = &param.name {
                 self.declared(name);
@@ -118,38 +120,37 @@ impl<'a> Checker<'a> {
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
         );
         for local in &decl.lets {
-            self.expr(local.value, Some(locals), false);
+            self.expr(local.value, Some(locals), false)?;
         }
-        self.blocks(vec![(decl.body, Some(locals), Mode::Body)]);
-        self.let_cycles(&decl.lets);
+        self.blocks(vec![(decl.body, Some(locals), Mode::Body)])?;
+        self.let_cycles(&decl.lets)?;
+        Ok(())
     }
 
-    fn let_cycles(&mut self, lets: &[LetDecl]) {
+    fn let_cycles(&mut self, lets: &[LetDecl]) -> Result<(), Internal> {
         let mut positions: BTreeMap<&str, usize> = BTreeMap::new();
         for (position, local) in lets.iter().enumerate() {
             if let Some(name) = &local.name {
                 positions.entry(name.text.as_str()).or_insert(position);
             }
         }
-        let reads: Vec<Vec<usize>> = lets
-            .iter()
-            .map(|local| {
-                let mut found = Vec::new();
-                let mut stack = vec![local.value];
-                while let Some(id) = stack.pop() {
-                    let kind = &self.hir.expr(id).kind;
-                    if let ExprKind::Name(name) = kind
-                        && let Some(position) = positions.get(name.as_str())
-                    {
-                        found.push(*position);
-                    }
-                    stack.extend(kind.children());
+        let mut reads: Vec<Vec<usize>> = Vec::with_capacity(lets.len());
+        for local in lets {
+            let mut found = Vec::new();
+            let mut stack = vec![local.value];
+            while let Some(id) = stack.pop() {
+                let kind = &self.hir.expr(id)?.kind;
+                if let ExprKind::Name(name) = kind
+                    && let Some(position) = positions.get(name.as_str())
+                {
+                    found.push(*position);
                 }
-                found.sort_unstable();
-                found.dedup();
-                found
-            })
-            .collect();
+                stack.extend(kind.children());
+            }
+            found.sort_unstable();
+            found.dedup();
+            reads.push(found);
+        }
         let mut state = vec![Visit::New; lets.len()];
         for start in 0..lets.len() {
             if state.get(start) != Some(&Visit::New) {
@@ -194,6 +195,7 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        Ok(())
     }
 
     fn cycle(&mut self, names: &[&Ident]) {
@@ -212,13 +214,14 @@ impl<'a> Checker<'a> {
         );
     }
 
-    pub fn top_placement(&mut self, id: PlacementId) {
-        let placement = self.hir.placement(id);
-        self.placement_exprs(id, None);
-        self.kind(id, None, None, false);
+    pub fn top_placement(&mut self, id: PlacementId) -> Result<(), Internal> {
+        let placement = self.hir.placement(id)?;
+        self.placement_exprs(id, None)?;
+        self.kind(id, None, None, false)?;
         if let Some(body) = placement.body {
-            self.blocks(vec![(body, None, Mode::Body)]);
+            self.blocks(vec![(body, None, Mode::Body)])?;
         }
+        Ok(())
     }
 
     pub fn type_ref(&mut self, ty: &TypeRef) {
@@ -348,10 +351,15 @@ impl<'a> Checker<'a> {
         None
     }
 
-    pub fn expr(&mut self, root: ExprId, frame: Option<usize>, wire_clause: bool) {
+    pub fn expr(
+        &mut self,
+        root: ExprId,
+        frame: Option<usize>,
+        wire_clause: bool,
+    ) -> Result<(), Internal> {
         let mut stack = vec![(root, false)];
         while let Some((id, field_base)) = stack.pop() {
-            let expr = self.hir.expr(id);
+            let expr = self.hir.expr(id)?;
             match &expr.kind {
                 ExprKind::Name(name) => {
                     if !self.visible(frame, name) && self.variants.owner(name).is_none() {
@@ -381,9 +389,9 @@ impl<'a> Checker<'a> {
                     }
                 }
                 ExprKind::Field(base, _) => {
-                    let base_expr = &self.hir.expr(*base).kind;
+                    let base_expr = &self.hir.expr(*base)?.kind;
                     if let ExprKind::Field(inner, _) = base_expr
-                        && matches!(self.hir.expr(*inner).kind, ExprKind::To)
+                        && matches!(self.hir.expr(*inner)?.kind, ExprKind::To)
                         && wire_clause
                     {
                         self.report.error(
@@ -403,7 +411,7 @@ impl<'a> Checker<'a> {
                 } => {
                     stack.push((*scrutinee, false));
                     for arm in arms {
-                        if !matches!(self.hir.expr(arm.label).kind, ExprKind::Name(_)) {
+                        if !matches!(self.hir.expr(arm.label)?.kind, ExprKind::Name(_)) {
                             stack.push((arm.label, false));
                         }
                         stack.push((arm.value, false));
@@ -413,18 +421,20 @@ impl<'a> Checker<'a> {
                 other => stack.extend(other.children().into_iter().map(|child| (child, false))),
             }
         }
+        Ok(())
     }
 
-    fn placement_exprs(&mut self, id: PlacementId, frame: Option<usize>) {
-        let placement = self.hir.placement(id);
+    fn placement_exprs(&mut self, id: PlacementId, frame: Option<usize>) -> Result<(), Internal> {
+        let placement = self.hir.placement(id)?;
         for expr in placement.default.iter().chain(placement.gate.iter()) {
-            self.expr(*expr, frame, false);
+            self.expr(*expr, frame, false)?;
         }
         for attr in &placement.attrs {
             if let AttrValue::Expr(value) = attr.value {
-                self.expr(value, frame, false);
+                self.expr(value, frame, false)?;
             }
         }
+        Ok(())
     }
 
     fn kind(
@@ -433,10 +443,10 @@ impl<'a> Checker<'a> {
         previous: Option<PlacementId>,
         frame: Option<usize>,
         in_unknown: bool,
-    ) {
-        let placement = self.hir.placement(id);
+    ) -> Result<(), Internal> {
+        let placement = self.hir.placement(id)?;
         let Some(kind) = &placement.kind else {
-            return;
+            return Ok(());
         };
         match self.namespace.get(&kind.text) {
             Some(Decl::Node(_) | Decl::Pattern(_)) => {}
@@ -445,15 +455,17 @@ impl<'a> Checker<'a> {
                     self.unknown_bodies.insert(body);
                 }
                 if in_unknown && self.visible(frame, &kind.text) {
-                    return;
+                    return Ok(());
                 }
                 let message = match found {
                     None => format!("`{}` is not a node kind or a pattern", kind.text),
                     Some(_) => format!("`{}` is not a kind", kind.text),
                 };
+                let previous = match previous.filter(|_| placement.inline) {
+                    Some(previous) => Some(self.hir.placement(previous)?),
+                    None => None,
+                };
                 let suggestion = previous
-                    .filter(|_| placement.inline)
-                    .map(|previous| self.hir.placement(previous))
                     .filter(|previous| previous.name.is_none())
                     .and_then(|previous| previous.kind.as_ref())
                     .map(|previous| {
@@ -477,61 +489,62 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        Ok(())
     }
 
-    fn blocks(&mut self, mut pending: Vec<(BlockId, Option<usize>, Mode)>) {
+    fn blocks(&mut self, mut pending: Vec<(BlockId, Option<usize>, Mode)>) -> Result<(), Internal> {
         while let Some((block, parent, mode)) = pending.pop() {
             let frame = match mode {
                 Mode::Body => {
-                    let names = self.body_names(block, parent);
+                    let names = self.body_names(block, parent)?;
                     Some(self.frame(names, parent, FrameKind::Body))
                 }
                 Mode::Arm => parent,
                 Mode::Anonymous => {
-                    self.anonymous_names(block);
+                    self.anonymous_names(block)?;
                     parent
                 }
             };
             let mut previous: Option<PlacementId> = None;
             let in_unknown = self.unknown_bodies.contains(&block);
-            for item in &self.hir.block(block).items {
+            for item in &self.hir.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) => {
-                        self.placement_exprs(*id, frame);
-                        self.kind(*id, previous, frame, in_unknown);
+                        self.placement_exprs(*id, frame)?;
+                        self.kind(*id, previous, frame, in_unknown)?;
                         previous = Some(*id);
-                        if let Some(body) = self.hir.placement(*id).body {
+                        if let Some(body) = self.hir.placement(*id)?.body {
                             pending.push((body, frame, Mode::Body));
                         }
                     }
                     BodyItem::Wire(id) => {
                         previous = None;
-                        let wire = self.hir.wire(*id);
+                        let wire = self.hir.wire(*id)?;
                         for expr in wire.default.iter().chain(wire.gate.iter()) {
-                            self.expr(*expr, frame, true);
+                            self.expr(*expr, frame, true)?;
                         }
                         for attr in &wire.attrs {
                             if let AttrValue::Expr(value) = attr.value {
-                                self.expr(value, frame, true);
+                                self.expr(value, frame, true)?;
                             }
                         }
-                        self.expr(wire.destination, frame, false);
+                        self.expr(wire.destination, frame, false)?;
                     }
                     BodyItem::Bundle { members, each, .. } => {
                         previous = None;
                         for member in members {
-                            self.placement_exprs(*member, frame);
-                            self.kind(*member, None, frame, in_unknown);
+                            self.placement_exprs(*member, frame)?;
+                            self.kind(*member, None, frame, in_unknown)?;
                         }
                         if let Some(each) = each {
-                            self.iterable(each.iterable, frame);
+                            self.iterable(each.iterable, frame)?;
                             let var_frame = self.for_var(each.var.as_ref(), frame);
                             for member in &each.members {
-                                if let Some(name) = &self.hir.placement(*member).name {
+                                if let Some(name) = &self.hir.placement(*member)?.name {
                                     self.named_in_for(name);
                                 }
-                                self.placement_exprs(*member, var_frame);
-                                self.kind(*member, None, var_frame, in_unknown);
+                                self.placement_exprs(*member, var_frame)?;
+                                self.kind(*member, None, var_frame, in_unknown)?;
                             }
                         }
                     }
@@ -542,7 +555,7 @@ impl<'a> Checker<'a> {
                         ..
                     } => {
                         previous = None;
-                        self.iterable(*iterable, frame);
+                        self.iterable(*iterable, frame)?;
                         let var_frame = self.for_var(var.as_ref(), frame);
                         pending.push((*body, var_frame, Mode::Anonymous));
                     }
@@ -556,7 +569,7 @@ impl<'a> Checker<'a> {
                             Mode::Arm
                         };
                         for arm in arms {
-                            self.expr(arm.guard, frame, false);
+                            self.expr(arm.guard, frame, false)?;
                             pending.push((arm.body, frame, arm_mode));
                         }
                         if let Some(otherwise) = otherwise {
@@ -566,16 +579,18 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        Ok(())
     }
 
-    fn iterable(&mut self, iterable: Iterable, frame: Option<usize>) {
+    fn iterable(&mut self, iterable: Iterable, frame: Option<usize>) -> Result<(), Internal> {
         match iterable {
             Iterable::Range(start, end) => {
-                self.expr(start, frame, false);
-                self.expr(end, frame, false);
+                self.expr(start, frame, false)?;
+                self.expr(end, frame, false)?;
             }
-            Iterable::Values(values) => self.expr(values, frame, false),
+            Iterable::Values(values) => self.expr(values, frame, false)?,
         }
+        Ok(())
     }
 
     fn for_var(&mut self, var: Option<&Ident>, frame: Option<usize>) -> Option<usize> {
@@ -605,24 +620,24 @@ impl<'a> Checker<'a> {
         );
     }
 
-    fn anonymous_names(&mut self, block: BlockId) {
+    fn anonymous_names(&mut self, block: BlockId) -> Result<(), Internal> {
         let mut blocks = vec![block];
         while let Some(block) = blocks.pop() {
-            for item in &self.hir.block(block).items {
+            for item in &self.hir.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) => {
-                        if let Some(name) = &self.hir.placement(*id).name {
+                        if let Some(name) = &self.hir.placement(*id)?.name {
                             self.named_in_for(name);
                         }
                     }
                     BodyItem::Wire(id) => {
-                        if let Some(name) = &self.hir.wire(*id).name {
+                        if let Some(name) = &self.hir.wire(*id)?.name {
                             self.named_in_for(name);
                         }
                     }
                     BodyItem::Bundle { members, .. } => {
                         for member in members {
-                            if let Some(name) = &self.hir.placement(*member).name {
+                            if let Some(name) = &self.hir.placement(*member)?.name {
                                 self.named_in_for(name);
                             }
                         }
@@ -631,20 +646,25 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        Ok(())
     }
 
-    fn body_names(&mut self, block: BlockId, parent: Option<usize>) -> BTreeMap<String, Loc> {
+    fn body_names(
+        &mut self,
+        block: BlockId,
+        parent: Option<usize>,
+    ) -> Result<BTreeMap<String, Loc>, Internal> {
         let mut names: BTreeMap<String, Loc> = BTreeMap::new();
         let mut blocks = vec![block];
         let mut found: Vec<Ident> = Vec::new();
         while let Some(block) = blocks.pop() {
-            for item in &self.hir.block(block).items {
+            for item in &self.hir.block(block)?.items {
                 match item {
-                    BodyItem::Placement(id) => found.extend(self.hir.placement(*id).name.clone()),
-                    BodyItem::Wire(id) => found.extend(self.hir.wire(*id).name.clone()),
+                    BodyItem::Placement(id) => found.extend(self.hir.placement(*id)?.name.clone()),
+                    BodyItem::Wire(id) => found.extend(self.hir.wire(*id)?.name.clone()),
                     BodyItem::Bundle { members, .. } => {
                         for member in members {
-                            found.extend(self.hir.placement(*member).name.clone());
+                            found.extend(self.hir.placement(*member)?.name.clone());
                         }
                     }
                     BodyItem::For { .. } => {}
@@ -679,6 +699,6 @@ impl<'a> Checker<'a> {
             }
             names.insert(name.text, name.loc);
         }
-        names
+        Ok(names)
     }
 }

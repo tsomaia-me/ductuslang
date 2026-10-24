@@ -11,6 +11,9 @@
 pub(crate) mod analysis;
 pub(crate) mod analyze;
 pub(crate) mod collection;
+mod internal;
 pub(crate) mod ir;
 pub(crate) mod reporting;
 pub(crate) mod scopes;
+
+pub(crate) use internal::Internal;

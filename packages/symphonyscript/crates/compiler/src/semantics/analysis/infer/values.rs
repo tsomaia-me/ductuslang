@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use symphonyscript_core::Scalar;
 
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
@@ -17,27 +18,28 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::ir::{InputId, Loc};
 
 impl Engine<'_> {
-    pub(super) fn values(&mut self, roots: &[(NodeId, Option<Scalar>)]) {
+    pub(super) fn values(&mut self, roots: &[(NodeId, Option<Scalar>)]) -> Result<(), Internal> {
         for (node, scalar) in roots {
             let ty = eval_ty_of(*scalar);
-            let value = self.demand_cval(*node, ty);
+            let value = self.demand_cval(*node, ty)?;
             if !value.is_error() {
-                self.fit(*node, value, ty);
+                self.fit(*node, value, ty)?;
             }
         }
+        Ok(())
     }
 
-    pub(super) fn input_fits(&mut self) {
+    pub(super) fn input_fits(&mut self) -> Result<(), Internal> {
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
-            let record = self.binding(binding).clone();
+            let record = self.binding(binding)?.clone();
             let BindingKind::Input { .. } = record.kind else {
                 continue;
             };
             let Some(own) = self.typing.own.get(&binding).copied() else {
                 continue;
             };
-            let value = self.demand_cval(record.init, eval_ty_of(Some(own)));
+            let value = self.demand_cval(record.init, eval_ty_of(Some(own)))?;
             let expectations = self
                 .typing
                 .expectations
@@ -53,7 +55,7 @@ impl Engine<'_> {
                     _ => true,
                 };
                 if !fits {
-                    let scope = self.node(record.init).scope;
+                    let scope = self.node(record.init)?.scope;
                     self.error(
                         Code::DoesNotFit,
                         loc,
@@ -62,17 +64,18 @@ impl Engine<'_> {
                             "the initial value of `{}` does not fit the type this use reads it in",
                             record.name
                         ),
-                    );
+                    )?;
                 }
             }
         }
+        Ok(())
     }
 
-    pub(super) fn consistency(&mut self) {
+    pub(super) fn consistency(&mut self) -> Result<(), Internal> {
         let mut kinds: crate::semantics::analysis::fast_hash::FastMap<NodeId, (bool, bool, bool)> =
             crate::semantics::analysis::fast_hash::FastMap::default();
         for ((node, ty), value) in &self.memo.evals {
-            if let Op::Use(target) = self.node(*node).op
+            if let Op::Use(target) = self.node(*node)?.op
                 && !value.is_error()
             {
                 let entry = kinds.entry(target).or_default();
@@ -88,7 +91,7 @@ impl Engine<'_> {
         }
         let mut uses: BTreeMap<NodeId, Vec<(NodeId, EvalTy, CVal)>> = BTreeMap::new();
         for ((node, ty), value) in &self.memo.evals {
-            if let Op::Use(target) = self.node(*node).op
+            if let Op::Use(target) = self.node(*node)?.op
                 && !value.is_error()
                 && kinds
                     .get(&target)
@@ -111,9 +114,9 @@ impl Engine<'_> {
                     .is_some_and(|(other, _, int)| other != node && !same_number(int, value))
             });
             if let (Some((int_node, _, _)), Some((float_node, _, _))) = (integer, float) {
-                let float_loc = self.node(*float_node).loc;
+                let float_loc = self.node(*float_node)?.loc;
                 let (loc, scope) = {
-                    let record = self.node(*int_node);
+                    let record = self.node(*int_node)?;
                     (record.loc, record.scope)
                 };
                 self.error_with_chain(
@@ -122,7 +125,7 @@ impl Engine<'_> {
                     vec![float_loc],
                     scope,
                     "this value is an integer here and a different number at its float use",
-                );
+                )?;
             }
             let enums: Vec<&(NodeId, EvalTy, CVal)> = evaluations
                 .iter()
@@ -134,9 +137,9 @@ impl Engine<'_> {
                     .iter()
                     .find(|(_, ty, _)| Some(ty) != enums.first().map(|(_, first, _)| first)),
             ) {
-                let other_loc = self.node(other.0).loc;
+                let other_loc = self.node(other.0)?.loc;
                 let (loc, scope) = {
-                    let record = self.node(first.0);
+                    let record = self.node(first.0)?;
                     (record.loc, record.scope)
                 };
                 self.error_with_chain(
@@ -145,9 +148,10 @@ impl Engine<'_> {
                     vec![other_loc],
                     scope,
                     "this variant takes its enum from its uses, and they expect different enums",
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
     fn before_unit_reading(&self, node: NodeId, target: NodeId, ty: EvalTy, value: &CVal) -> CVal {
@@ -166,10 +170,10 @@ impl Engine<'_> {
             .unwrap_or_else(|| value.clone())
     }
 
-    pub(super) fn consistent_shapes(&mut self) {
+    pub(super) fn consistent_shapes(&mut self) -> Result<(), Internal> {
         let mut uses: BTreeMap<NodeId, Vec<(NodeId, Vec<u32>)>> = BTreeMap::new();
         for ((node, _), value) in &self.memo.evals {
-            if let Op::Use(target) = self.node(*node).op
+            if let Op::Use(target) = self.node(*node)?.op
                 && self.arrays.contains(&target)
                 && !value.is_error()
             {
@@ -186,9 +190,9 @@ impl Engine<'_> {
             let Some((other, _)) = shapes.iter().find(|(_, shape)| *shape != lengths) else {
                 continue;
             };
-            let other_loc = self.node(*other).loc;
+            let other_loc = self.node(*other)?.loc;
             let (loc, scope) = {
-                let record = self.node(first);
+                let record = self.node(first)?;
                 (record.loc, record.scope)
             };
             self.error_with_chain(
@@ -197,15 +201,16 @@ impl Engine<'_> {
                 vec![other_loc],
                 scope,
                 "this value holds a recursive call's array result, and its uses give that result different shapes",
-            );
+            )?;
         }
+        Ok(())
     }
 
-    pub(super) fn integer_inputs(&mut self) {
+    pub(super) fn integer_inputs(&mut self) -> Result<(), Internal> {
         let mut inputs: BTreeMap<InputId, (usize, usize, Loc)> = BTreeMap::new();
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
-            let record = self.binding(binding);
+            let record = self.binding(binding)?;
             let BindingKind::Input { input, .. } = record.kind else {
                 continue;
             };
@@ -230,7 +235,7 @@ impl Engine<'_> {
                 });
             let loc = self
                 .hir
-                .input(input)
+                .input(input)?
                 .name
                 .as_ref()
                 .map_or(record.loc, |name| name.loc);
@@ -242,7 +247,7 @@ impl Engine<'_> {
             if reads > 0 && reads == floats {
                 let name = self
                     .hir
-                    .input(input)
+                    .input(input)?
                     .name
                     .as_ref()
                     .map_or(String::new(), |name| name.text.clone());
@@ -256,6 +261,7 @@ impl Engine<'_> {
                 );
             }
         }
+        Ok(())
     }
 }
 

@@ -5,6 +5,7 @@ use super::namespace::Namespace;
 use super::stand_in::StandIn;
 use super::strongly_connected::strongly_connected;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::ir::{BodyItem, Hir, PatternId};
 use crate::semantics::reporting::Report;
 
@@ -19,7 +20,7 @@ impl PatternGraph {
         source: &Namespace,
         prelude: &Namespace,
         report: &mut Report,
-    ) -> PatternGraph {
+    ) -> Result<PatternGraph, Internal> {
         let mut edges: Vec<Vec<usize>> = Vec::with_capacity(hir.patterns.len());
         for (index, decl) in hir.patterns.iter().enumerate() {
             let id = PatternId(u32::try_from(index).unwrap_or(u32::MAX));
@@ -29,8 +30,8 @@ impl PatternGraph {
                 source
             };
             let mut targets = BTreeSet::new();
-            for placement in hir.nested_placements(decl.body) {
-                if let Some(kind) = &hir.placement(placement).kind
+            for placement in hir.nested_placements(decl.body)? {
+                if let Some(kind) = &hir.placement(placement)?.kind
                     && let Some(Decl::Pattern(target)) = namespace.get(&kind.text)
                 {
                     targets.insert(target.index());
@@ -47,7 +48,7 @@ impl PatternGraph {
                     .is_some_and(|targets| targets.contains(only))
             });
             if component.len() > 1 || self_use {
-                Self::report_cycle(hir, &component, report);
+                Self::report_cycle(hir, &component, report)?;
                 for member in &component {
                     if let Some(flag) = cyclic.get_mut(*member) {
                         *flag = true;
@@ -64,10 +65,10 @@ impl PatternGraph {
             } else {
                 source
             };
-            let stand_in = match hir.block(hir.pattern(id).body).items.as_slice() {
+            let stand_in = match hir.block(hir.pattern(id)?.body)?.items.as_slice() {
                 [BodyItem::Placement(placement)] => {
                     match hir
-                        .placement(*placement)
+                        .placement(*placement)?
                         .kind
                         .as_ref()
                         .and_then(|kind| namespace.get(&kind.text))
@@ -97,32 +98,32 @@ impl PatternGraph {
                 *slot = stand_in;
             }
         }
-        PatternGraph { cyclic, stand_ins }
+        Ok(PatternGraph { cyclic, stand_ins })
     }
 
-    fn report_cycle(hir: &Hir, component: &[usize], report: &mut Report) {
+    fn report_cycle(hir: &Hir, component: &[usize], report: &mut Report) -> Result<(), Internal> {
         let mut members: Vec<PatternId> = component
             .iter()
             .map(|member| PatternId(u32::try_from(*member).unwrap_or(u32::MAX)))
             .collect();
         members.sort();
-        let names: Vec<String> = members
+        let decls = members
             .iter()
-            .filter_map(|id| hir.pattern(*id).name.as_ref())
+            .map(|id| hir.pattern(*id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let names: Vec<String> = decls
+            .iter()
+            .filter_map(|decl| decl.name.as_ref())
             .map(|name| format!("`{}`", name.text))
             .collect();
-        let Some(first) = members.first() else {
-            return;
+        let Some(decl) = decls.first() else {
+            return Ok(());
         };
-        let decl = hir.pattern(*first);
         let loc = decl.name.as_ref().map_or(decl.loc, |name| name.loc);
-        let others: Vec<_> = members
+        let others: Vec<_> = decls
             .iter()
             .skip(1)
-            .map(|id| {
-                let other = hir.pattern(*id);
-                other.name.as_ref().map_or(other.loc, |name| name.loc)
-            })
+            .map(|other| other.name.as_ref().map_or(other.loc, |name| name.loc))
             .collect();
         let message = if names.len() == 1 {
             format!("the pattern {} uses itself", names.join(""))
@@ -130,5 +131,6 @@ impl PatternGraph {
             format!("the patterns {} use each other", names.join(", "))
         };
         report.error_with(hir, Code::RecursivePattern, loc, &others, message);
+        Ok(())
     }
 }

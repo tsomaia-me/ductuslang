@@ -6,6 +6,7 @@ use symphonyscript_core::Segment;
 use super::context::Context;
 use super::iteration::Iteration;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::chain::Chain;
 use crate::semantics::analysis::condition::Condition;
 use crate::semantics::analysis::engine::Engine;
@@ -15,6 +16,7 @@ use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::path_parent::PathParent;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::site::Site;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
 use crate::semantics::ir::{BlockId, BodyItem, Loc, PatternId, PlacementId, Top};
@@ -63,25 +65,26 @@ enum ForBody {
 }
 
 impl Engine<'_> {
-    pub(crate) fn expand(&mut self) {
+    pub(crate) fn expand(&mut self) -> Result<(), Internal> {
         let hir = self.hir;
         for (position, top) in hir.top.iter().enumerate() {
             if hir.is_prelude_top(position) {
                 continue;
             }
             if let Top::Placement(placement) = top {
-                self.top_level_item(*placement);
+                self.top_level_item(*placement)?;
             }
         }
         while let Some(instance) = self.body_queue.pop_front() {
-            self.expand_body(instance);
+            self.expand_body(instance)?;
         }
+        Ok(())
     }
 
-    fn top_level_item(&mut self, placement: PlacementId) {
-        let site = self.hir.placement(placement);
+    fn top_level_item(&mut self, placement: PlacementId) -> Result<(), Internal> {
+        let site = self.hir.placement(placement)?;
         let (Some(kind), Some(name)) = (&site.kind, &site.name) else {
-            return;
+            return Ok(());
         };
         let global = self.source_global;
         let context = Context {
@@ -91,7 +94,7 @@ impl Engine<'_> {
             uses: Chain::default(),
         };
         let segment = Some(Segment::Named(name.text.clone()));
-        let instance = match self.kind_decl(global, &kind.text) {
+        let instance = match self.kind_decl(global, &kind.text)? {
             Some(Decl::Node(kind)) => {
                 let created = self.new_instance(
                     kind,
@@ -100,7 +103,7 @@ impl Engine<'_> {
                     Some(name.text.clone()),
                     segment,
                     &context,
-                );
+                )?;
                 if site.body.is_some()
                     && let Some(created) = created
                 {
@@ -111,7 +114,7 @@ impl Engine<'_> {
             Some(Decl::Pattern(pattern)) => {
                 if self.is_cyclic(pattern) {
                     self.unknown_items(None, true);
-                    return;
+                    return Ok(());
                 }
                 if self.stand_in(pattern).is_none() {
                     self.error(
@@ -119,9 +122,9 @@ impl Engine<'_> {
                         kind.loc,
                         global,
                         "only a pattern that stands in for a single node placement is used at top level",
-                    );
+                    )?;
                     self.unknown_items(None, true);
-                    return;
+                    return Ok(());
                 }
                 self.stand_in_instance(
                     placement,
@@ -130,7 +133,7 @@ impl Engine<'_> {
                     Some(name.text.clone()),
                     segment,
                     &context,
-                )
+                )?
             }
             Some(
                 Decl::Input(_)
@@ -150,6 +153,7 @@ impl Engine<'_> {
             }
             None => self.unknown_items(None, true),
         }
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn stand_in_instance(
@@ -160,11 +164,11 @@ impl Engine<'_> {
         name: Option<String>,
         segment: Option<Segment>,
         context: &Context,
-    ) -> Option<InstanceId> {
+    ) -> Result<Option<InstanceId>, Internal> {
         let mut conditions = context.conditions;
         let mut uses: Chain = context.uses.clone();
         loop {
-            let site = self.hir.placement(placement);
+            let site = self.hir.placement(placement)?;
             if let Some(gate) = site.gate {
                 self.register_gate(gate, caller);
                 conditions = self.push_condition(
@@ -176,22 +180,22 @@ impl Engine<'_> {
                     },
                 );
             }
-            if !self.count_step(site.loc, caller) {
-                return None;
+            if !self.count_step(site.loc, caller)? {
+                return Ok(None);
             }
             uses = uses.push(site.loc);
-            let locals = self.use_locals(pattern, placement, caller);
-            let chain = self.chain(locals);
+            let locals = self.use_locals(pattern, placement, caller)?;
+            let chain = self.chain(locals)?;
             let body = self.scope(
                 ScopeKind::Body {
                     names: BTreeMap::new(),
                 },
                 Some(locals),
                 chain,
-            );
-            let single = self.stand_in(pattern)?.placement();
-            let kind = self.hir.placement(single).kind.clone()?;
-            match self.kind_decl(body, &kind.text) {
+            )?;
+            let single = some!(self.stand_in(pattern)).placement();
+            let kind = some!(self.hir.placement(single)?.kind.clone());
+            match self.kind_decl(body, &kind.text)? {
                 Some(Decl::Node(kind)) => {
                     let inner = Context {
                         owner: context.owner,
@@ -199,11 +203,11 @@ impl Engine<'_> {
                         conditions,
                         uses,
                     };
-                    let id = self.new_instance(kind, single, body, name, segment, &inner)?;
-                    if self.hir.placement(single).body.is_some() {
+                    let id = some!(self.new_instance(kind, single, body, name, segment, &inner)?);
+                    if self.hir.placement(single)?.body.is_some() {
                         self.body_queue.push_back(id);
                     }
-                    return Some(id);
+                    return Ok(Some(id));
                 }
                 Some(Decl::Pattern(next)) if !self.is_cyclic(next) => {
                     placement = single;
@@ -220,22 +224,20 @@ impl Engine<'_> {
                     | Decl::Wire(_)
                     | Decl::Enum(_),
                 )
-                | None => return None,
+                | None => return Ok(None),
             }
         }
     }
 
-    fn expand_body(&mut self, instance: InstanceId) {
-        let Some((placement, uses)) = self
-            .instance(instance)
-            .map(|record| (record.placement, record.uses.clone()))
-        else {
-            return;
+    fn expand_body(&mut self, instance: InstanceId) -> Result<(), Internal> {
+        let (placement, uses) = {
+            let record = self.instance(instance)?;
+            (record.placement, record.uses.clone())
         };
-        let Some(block) = self.hir.placement(placement).body else {
-            return;
+        let Some(block) = self.hir.placement(placement)?.body else {
+            return Ok(());
         };
-        let scope = self.ensure_body(instance);
+        let scope = self.ensure_body(instance)?;
         let walk = Walk {
             owner: instance,
             path_parent: PathParent::Instance(instance),
@@ -243,39 +245,38 @@ impl Engine<'_> {
             uses,
             bundle: None,
         };
-        self.walk(block, scope, walk);
-        if let Some(record) = self.instances.get_mut(instance.index()) {
-            record.expanded = true;
-        }
+        self.walk(block, scope, walk)?;
+        self.instance_mut(instance)?.expanded = true;
+        Ok(())
     }
 
-    pub(in crate::semantics::analysis) fn ensure_body(&mut self, instance: InstanceId) -> ScopeId {
-        let Some((body, parent, placement, uses)) = self.instance(instance).map(|record| {
+    pub(in crate::semantics::analysis) fn ensure_body(
+        &mut self,
+        instance: InstanceId,
+    ) -> Result<ScopeId, Internal> {
+        let (body, parent, placement, uses) = {
+            let record = self.instance(instance)?;
             (
                 record.body_scope,
                 record.scope,
                 record.placement,
                 record.uses.clone(),
             )
-        }) else {
-            return self.source_global;
         };
         if let Some(scope) = body {
-            return scope;
+            return Ok(scope);
         }
-        let chain = self.chain(parent);
+        let chain = self.chain(parent)?;
         let scope = self.scope(
             ScopeKind::Body {
                 names: BTreeMap::new(),
             },
             Some(parent),
             chain,
-        );
-        if let Some(record) = self.instances.get_mut(instance.index()) {
-            record.body_scope = Some(scope);
-        }
-        if let Some(block) = self.hir.placement(placement).body {
-            let sites = self.named_sites(block);
+        )?;
+        self.instance_mut(instance)?.body_scope = Some(scope);
+        if let Some(block) = self.hir.placement(placement)?.body {
+            let sites = self.named_sites(block)?;
             if !sites.is_empty() {
                 self.prebuild(
                     &sites,
@@ -283,14 +284,18 @@ impl Engine<'_> {
                     instance,
                     PathParent::Instance(instance),
                     uses,
-                );
+                )?;
             }
         }
-        scope
+        Ok(scope)
     }
 
-    pub(in crate::semantics::analysis) fn ensure_use_body(&mut self, id: UseId) -> ScopeId {
-        let Some((body, locals, pattern, owner, uses, loc)) = self.pattern_use(id).map(|record| {
+    pub(in crate::semantics::analysis) fn ensure_use_body(
+        &mut self,
+        id: UseId,
+    ) -> Result<ScopeId, Internal> {
+        let (body, locals, pattern, owner, uses, loc) = {
+            let record = self.pattern_use(id)?;
             (
                 record.body,
                 record.locals,
@@ -299,74 +304,69 @@ impl Engine<'_> {
                 record.uses.clone(),
                 record.loc,
             )
-        }) else {
-            return self.source_global;
         };
         if let Some(scope) = body {
-            return scope;
+            return Ok(scope);
         }
-        let chain = self.chain(locals);
+        let chain = self.chain(locals)?;
         let scope = self.scope(
             ScopeKind::Body {
                 names: BTreeMap::new(),
             },
             Some(locals),
             chain,
-        );
-        if let Some(record) = self.uses.get_mut(id.index()) {
-            record.body = Some(scope);
-        }
-        let sites = self.named_sites(self.hir.pattern(pattern).body);
+        )?;
+        self.pattern_use_mut(id)?.body = Some(scope);
+        let sites = self.named_sites(self.hir.pattern(pattern)?.body)?;
         if !sites.is_empty() {
-            self.prebuild(&sites, scope, owner, PathParent::Use(id), uses.push(loc));
+            self.prebuild(&sites, scope, owner, PathParent::Use(id), uses.push(loc))?;
         }
-        scope
+        Ok(scope)
     }
 
     pub(in crate::semantics::analysis) fn child_named(
         &mut self,
         item: ItemRef,
         name: &str,
-    ) -> Option<ItemRef> {
+    ) -> Result<Option<ItemRef>, Internal> {
         let scope = match item {
-            ItemRef::Instance(instance) => self.ensure_body(instance),
-            ItemRef::Use(id) => self.ensure_use_body(id),
-            ItemRef::Wire(_) => return None,
+            ItemRef::Instance(instance) => self.ensure_body(instance)?,
+            ItemRef::Use(id) => self.ensure_use_body(id)?,
+            ItemRef::Wire(_) => return Ok(None),
         };
-        match &self.scope_of(scope).kind {
+        Ok(match &self.scope_of(scope)?.kind {
             ScopeKind::Body { names } => names.get(name).copied(),
             ScopeKind::Global { .. }
             | ScopeKind::Locals(_)
             | ScopeKind::ParamPrefix { .. }
             | ScopeKind::ForVar { .. }
             | ScopeKind::WireClause { .. } => None,
-        }
+        })
     }
 
-    fn named_sites(&mut self, root: BlockId) -> Rc<[(Site, Loc)]> {
+    fn named_sites(&mut self, root: BlockId) -> Result<Rc<[(Site, Loc)]>, Internal> {
         if let Some(sites) = self.memo.named_sites.get(&root) {
-            return sites.clone();
+            return Ok(sites.clone());
         }
         let hir = self.hir;
         let mut blocks = vec![root];
         let mut sites: Vec<(Site, Loc)> = Vec::new();
-        let named = |id: &PlacementId| hir.placement(*id).name.is_some();
         while let Some(block) = blocks.pop() {
-            for item in &hir.block(block).items {
+            for item in &hir.block(block)?.items {
                 match item {
-                    BodyItem::Placement(id) if named(id) => {
-                        sites.push((Site::Placement(*id), hir.placement(*id).loc))
+                    BodyItem::Placement(id) if hir.placement(*id)?.name.is_some() => {
+                        sites.push((Site::Placement(*id), hir.placement(*id)?.loc))
                     }
-                    BodyItem::Wire(id) if hir.wire(*id).name.is_some() => {
-                        sites.push((Site::Wire(*id), hir.wire(*id).loc))
+                    BodyItem::Wire(id) if hir.wire(*id)?.name.is_some() => {
+                        sites.push((Site::Wire(*id), hir.wire(*id)?.loc))
                     }
                     BodyItem::Bundle { members, .. } => {
-                        sites.extend(
-                            members
-                                .iter()
-                                .filter(|id| named(id))
-                                .map(|id| (Site::Placement(*id), hir.placement(*id).loc)),
-                        );
+                        for id in members {
+                            let placement = hir.placement(*id)?;
+                            if placement.name.is_some() {
+                                sites.push((Site::Placement(*id), placement.loc));
+                            }
+                        }
                     }
                     BodyItem::When {
                         arms, otherwise, ..
@@ -381,7 +381,7 @@ impl Engine<'_> {
         sites.sort_by_key(|(_, loc)| *loc);
         let sites: Rc<[(Site, Loc)]> = sites.into();
         self.memo.named_sites.insert(root, sites.clone());
-        sites
+        Ok(sites)
     }
 
     fn prebuild(
@@ -391,21 +391,19 @@ impl Engine<'_> {
         owner: InstanceId,
         path_parent: PathParent,
         uses: Chain,
-    ) {
+    ) -> Result<(), Internal> {
         let context = Context {
             owner: Some(owner),
             path_parent: Some(path_parent),
             conditions: None,
             uses,
         };
-        let Some(owner_kind) = self.instance(owner).map(|record| record.kind) else {
-            return;
-        };
+        let owner_kind = self.instance(owner)?.kind;
         let mut names = BTreeMap::new();
         for (site, _) in sites.iter().copied() {
             let named = match site {
-                Site::Placement(id) => self.hir.placement(id).name.clone(),
-                Site::Wire(id) => self.hir.wire(id).name.clone(),
+                Site::Placement(id) => self.hir.placement(id)?.name.clone(),
+                Site::Wire(id) => self.hir.wire(id)?.name.clone(),
             };
             let Some(name) = named else {
                 continue;
@@ -430,16 +428,16 @@ impl Engine<'_> {
                         "`{}` is an attribute of the parent's kind `{kind}`",
                         name.text
                     ),
-                );
+                )?;
                 continue;
             }
             let segment = Some(Segment::Named(name.text.clone()));
             let item = match site {
                 Site::Placement(id) => {
-                    let Some(kind) = self.hir.placement(id).kind.clone() else {
+                    let Some(kind) = self.hir.placement(id)?.kind.clone() else {
                         continue;
                     };
-                    match self.kind_decl(scope, &kind.text) {
+                    match self.kind_decl(scope, &kind.text)? {
                         Some(Decl::Node(kind)) => {
                             let created = self.new_instance(
                                 kind,
@@ -448,8 +446,8 @@ impl Engine<'_> {
                                 Some(name.text.clone()),
                                 segment,
                                 &context,
-                            );
-                            if self.hir.placement(id).body.is_some()
+                            )?;
+                            if self.hir.placement(id)?.body.is_some()
                                 && let Some(created) = created
                             {
                                 self.body_queue.push_back(created);
@@ -465,7 +463,7 @@ impl Engine<'_> {
                                     Some(name.text.clone()),
                                     segment,
                                     &context,
-                                )
+                                )?
                                 .map(ItemRef::Instance)
                             } else {
                                 self.new_use(
@@ -474,7 +472,7 @@ impl Engine<'_> {
                                     scope,
                                     (Some(name.text.clone()), segment),
                                     &context,
-                                )
+                                )?
                                 .map(ItemRef::Use)
                             }
                         }
@@ -492,10 +490,10 @@ impl Engine<'_> {
                     }
                 }
                 Site::Wire(id) => {
-                    let kind = self.hir.wire(id).kind.text.clone();
-                    match self.kind_decl(scope, &kind) {
+                    let kind = self.hir.wire(id)?.kind.text.clone();
+                    match self.kind_decl(scope, &kind)? {
                         Some(Decl::Wire(kind)) => self
-                            .new_wire(kind, id, scope, segment, owner, &context)
+                            .new_wire(kind, id, scope, segment, owner, &context)?
                             .map(ItemRef::Wire),
                         Some(
                             Decl::Input(_)
@@ -516,14 +514,17 @@ impl Engine<'_> {
                 names.insert(name.text, item);
             }
         }
-        if let Some(record) = self.scopes.get_mut(scope.index())
-            && let ScopeKind::Body { names: slot } = &mut record.kind
-        {
+        let record = self
+            .scopes
+            .get_mut(scope.index())
+            .ok_or(Internal::missed("scope"))?;
+        if let ScopeKind::Body { names: slot } = &mut record.kind {
             *slot = names;
         }
+        Ok(())
     }
 
-    fn walk(&mut self, block: BlockId, scope: ScopeId, walk: Walk) {
+    fn walk(&mut self, block: BlockId, scope: ScopeId, walk: Walk) -> Result<(), Internal> {
         let mut collectors: Vec<Vec<InstanceId>> = Vec::new();
         let mut frames = vec![Frame::Block {
             block,
@@ -533,7 +534,7 @@ impl Engine<'_> {
         }];
         while let Some(frame) = frames.pop() {
             if self.limit_reached {
-                return;
+                return Ok(());
             }
             match frame {
                 Frame::Block {
@@ -542,7 +543,7 @@ impl Engine<'_> {
                     scope,
                     walk,
                 } => {
-                    let Some(item) = self.hir.block(block).items.get(next).cloned() else {
+                    let Some(item) = self.hir.block(block)?.items.get(next).cloned() else {
                         continue;
                     };
                     frames.push(Frame::Block {
@@ -551,7 +552,7 @@ impl Engine<'_> {
                         scope,
                         walk: walk.clone(),
                     });
-                    self.item(item, scope, &walk, &mut frames, &mut collectors);
+                    self.item(item, scope, &walk, &mut frames, &mut collectors)?;
                 }
                 Frame::Members {
                     members,
@@ -568,7 +569,7 @@ impl Engine<'_> {
                         scope,
                         walk: walk.clone(),
                     });
-                    self.placement_item(member, scope, &walk, &mut frames, &mut collectors);
+                    self.placement_item(member, scope, &walk, &mut frames, &mut collectors)?;
                 }
                 Frame::For {
                     var,
@@ -589,7 +590,7 @@ impl Engine<'_> {
                                 ),
                                 loc,
                                 scope,
-                            );
+                            )?;
                             (
                                 Val::Scalar(node),
                                 Iteration::Range {
@@ -613,10 +614,10 @@ impl Engine<'_> {
                             )
                         }
                     };
-                    if !self.count_step(iteration.loc(), scope) {
-                        return;
+                    if !self.count_step(iteration.loc(), scope)? {
+                        return Ok(());
                     }
-                    let chain = self.chain(scope);
+                    let chain = self.chain(scope)?;
                     let var_scope = match &var {
                         Some(name) => self.scope(
                             ScopeKind::ForVar {
@@ -625,7 +626,7 @@ impl Engine<'_> {
                             },
                             Some(scope),
                             chain,
-                        ),
+                        )?,
                         None => scope,
                     };
                     frames.push(Frame::For {
@@ -656,10 +657,11 @@ impl Engine<'_> {
                     loc,
                     scope,
                 } => {
-                    let members = collectors
-                        .get_mut(collector)
-                        .map(std::mem::take)
-                        .unwrap_or_default();
+                    let members = std::mem::take(
+                        collectors
+                            .get_mut(collector)
+                            .ok_or(Internal::missed("bundle"))?,
+                    );
                     let broken = self.broken_bundles.remove(&collector);
                     if members.is_empty() && !broken {
                         self.error(
@@ -667,13 +669,16 @@ impl Engine<'_> {
                             loc,
                             scope,
                             "a bundle holds at least one member after expansion",
-                        );
-                    } else if let Some(record) = self.instances.get_mut(owner.index()) {
-                        record.sequence.push(Entry::Bundle(members));
+                        )?;
+                    } else {
+                        self.instance_mut(owner)?
+                            .sequence
+                            .push(Entry::Bundle(members));
                     }
                 }
             }
         }
+        Ok(())
     }
 
     fn item(
@@ -683,31 +688,29 @@ impl Engine<'_> {
         walk: &Walk,
         frames: &mut Vec<Frame>,
         collectors: &mut Vec<Vec<InstanceId>>,
-    ) {
+    ) -> Result<(), Internal> {
         match item {
-            BodyItem::Placement(id) => self.placement_item(id, scope, walk, frames, collectors),
+            BodyItem::Placement(id) => self.placement_item(id, scope, walk, frames, collectors)?,
             BodyItem::Wire(id) => {
                 if let Some(collector) = walk.bundle {
-                    let loc = self.hir.wire(id).loc;
+                    let loc = self.hir.wire(id)?.loc;
                     self.error(
                         Code::BundleMember,
                         loc,
                         scope,
                         "a wire is not a member of a bundle",
-                    );
+                    )?;
                     self.broken_bundles.insert(collector);
-                    return;
+                    return Ok(());
                 }
-                let kind = self.hir.wire(id).kind.text.clone();
-                let Some(Decl::Wire(kind)) = self.kind_decl(scope, &kind) else {
-                    return;
+                let kind = self.hir.wire(id)?.kind.text.clone();
+                let Some(Decl::Wire(kind)) = self.kind_decl(scope, &kind)? else {
+                    return Ok(());
                 };
                 let wire = match self.prebuilt.get(&(Site::Wire(id), scope)) {
                     Some(ItemRef::Wire(existing)) => {
                         let existing = *existing;
-                        if let Some(record) = self.wires.get_mut(existing.index()) {
-                            record.conditions = walk.conditions;
-                        }
+                        self.wire_mut(existing)?.conditions = walk.conditions;
                         Some(existing)
                     }
                     Some(ItemRef::Instance(_) | ItemRef::Use(_)) | None => {
@@ -717,13 +720,13 @@ impl Engine<'_> {
                             .map_or("", |decl| decl.name.as_str());
                         let segment = Some(self.segment(Some(walk.path_parent), None, kind_name));
                         let context = self.context(walk);
-                        self.new_wire(kind, id, scope, segment, walk.owner, &context)
+                        self.new_wire(kind, id, scope, segment, walk.owner, &context)?
                     }
                 };
-                if let Some(wire) = wire
-                    && let Some(record) = self.instances.get_mut(walk.owner.index())
-                {
-                    record.sequence.push(Entry::Wire(wire));
+                if let Some(wire) = wire {
+                    self.instance_mut(walk.owner)?
+                        .sequence
+                        .push(Entry::Wire(wire));
                 }
             }
             BodyItem::Bundle { members, each, loc } => {
@@ -733,9 +736,9 @@ impl Engine<'_> {
                         loc,
                         scope,
                         "a bundle is not a member of a bundle",
-                    );
+                    )?;
                     self.broken_bundles.insert(collector);
-                    return;
+                    return Ok(());
                 }
                 let collector = collectors.len();
                 collectors.push(Vec::new());
@@ -748,7 +751,7 @@ impl Engine<'_> {
                 let mut inner = walk.clone();
                 inner.bundle = Some(collector);
                 if let Some(each) = each {
-                    match self.iteration(each.iterable, scope) {
+                    match self.iteration(each.iterable, scope)? {
                         Some(iteration) => frames.push(Frame::For {
                             var: each.var.map(|var| var.text),
                             iteration,
@@ -774,7 +777,7 @@ impl Engine<'_> {
                 iterable,
                 body,
                 ..
-            } => match self.iteration(iterable, scope) {
+            } => match self.iteration(iterable, scope)? {
                 Some(iteration) => frames.push(Frame::For {
                     var: var.map(|var| var.text),
                     iteration,
@@ -786,7 +789,7 @@ impl Engine<'_> {
                     if let Some(collector) = walk.bundle {
                         self.broken_bundles.insert(collector);
                     }
-                    let supplies = walk.bundle.is_none() && self.may_supply_wires(body, scope);
+                    let supplies = walk.bundle.is_none() && self.may_supply_wires(body, scope)?;
                     self.unknown_items(Some(walk.owner), supplies);
                 }
             },
@@ -830,6 +833,7 @@ impl Engine<'_> {
                 }
             }
         }
+        Ok(())
     }
 
     fn placement_item(
@@ -839,21 +843,22 @@ impl Engine<'_> {
         walk: &Walk,
         frames: &mut Vec<Frame>,
         collectors: &mut [Vec<InstanceId>],
-    ) {
+    ) -> Result<(), Internal> {
         let hir = self.hir;
-        let Some(kind) = hir.placement(id).kind.as_ref() else {
-            return;
+        let Some(kind) = hir.placement(id)?.kind.as_ref() else {
+            return Ok(());
         };
-        let has_body = hir.placement(id).body.is_some();
-        let instance = match self.kind_decl(scope, &kind.text) {
+        let has_body = hir.placement(id)?.body.is_some();
+        let instance = match self.kind_decl(scope, &kind.text)? {
             Some(Decl::Node(node_kind)) => {
-                if let Some(existing) = self.reuse(id, scope, walk) {
+                if let Some(existing) = self.reuse(id, scope, walk)? {
                     Some(existing)
                 } else {
                     let segment =
                         Some(self.segment(Some(walk.path_parent), None, kind.text.as_str()));
                     let context = self.context(walk);
-                    let created = self.new_instance(node_kind, id, scope, None, segment, &context);
+                    let created =
+                        self.new_instance(node_kind, id, scope, None, segment, &context)?;
                     if has_body && let Some(created) = created {
                         self.body_queue.push_back(created);
                     }
@@ -866,25 +871,23 @@ impl Engine<'_> {
                         self.broken_bundles.insert(collector);
                     }
                     self.unknown_items(Some(walk.owner), walk.bundle.is_none());
-                    return;
+                    return Ok(());
                 }
                 if self.stand_in(pattern).is_some() {
                     if let Some(collector) = walk.bundle
-                        && self
-                            .stand_in_target(pattern)
-                            .is_some_and(|target| self.hir.placement(target).body.is_some())
+                        && self.stand_in_has_body(pattern)?
                     {
-                        let loc = self.hir.placement(id).loc;
+                        let loc = self.hir.placement(id)?.loc;
                         self.error(
                             Code::BundleMember,
                             loc,
                             scope,
                             "a member of a bundle has no body",
-                        );
+                        )?;
                         self.broken_bundles.insert(collector);
-                        return;
+                        return Ok(());
                     }
-                    let existing = self.reuse(id, scope, walk);
+                    let existing = self.reuse(id, scope, walk)?;
                     match existing {
                         Some(existing) => Some(existing),
                         None => {
@@ -894,16 +897,14 @@ impl Engine<'_> {
                                 kind.text.as_str(),
                             ));
                             let context = self.context(walk);
-                            self.stand_in_instance(id, pattern, scope, None, segment, &context)
+                            self.stand_in_instance(id, pattern, scope, None, segment, &context)?
                         }
                     }
                 } else {
                     let use_id = match self.prebuilt.get(&(Site::Placement(id), scope)) {
                         Some(ItemRef::Use(existing)) => {
                             let existing = *existing;
-                            if let Some(record) = self.uses.get_mut(existing.index()) {
-                                record.conditions = walk.conditions;
-                            }
+                            self.pattern_use_mut(existing)?.conditions = walk.conditions;
                             existing
                         }
                         Some(ItemRef::Instance(_) | ItemRef::Wire(_)) | None => {
@@ -913,20 +914,18 @@ impl Engine<'_> {
                                 kind.text.as_str(),
                             ));
                             let context = self.context(walk);
-                            match self.new_use(pattern, id, scope, (None, segment), &context) {
+                            match self.new_use(pattern, id, scope, (None, segment), &context)? {
                                 Some(created) => created,
-                                None => return,
+                                None => return Ok(()),
                             }
                         }
                     };
-                    let body_scope = self.ensure_use_body(use_id);
-                    let Some((loc, uses)) = self
-                        .pattern_use(use_id)
-                        .map(|record| (record.loc, record.uses.clone()))
-                    else {
-                        return;
+                    let body_scope = self.ensure_use_body(use_id)?;
+                    let (loc, uses) = {
+                        let record = self.pattern_use(use_id)?;
+                        (record.loc, record.uses.clone())
                     };
-                    let gate = self.hir.placement(id).gate;
+                    let gate = self.hir.placement(id)?.gate;
                     let mut conditions = walk.conditions;
                     if let Some(gate) = gate {
                         self.register_gate(gate, scope);
@@ -947,12 +946,12 @@ impl Engine<'_> {
                         bundle: walk.bundle,
                     };
                     frames.push(Frame::Block {
-                        block: self.hir.pattern(pattern).body,
+                        block: self.hir.pattern(pattern)?.body,
                         next: 0,
                         scope: body_scope,
                         walk: inner,
                     });
-                    return;
+                    return Ok(());
                 }
             }
             Some(
@@ -971,45 +970,57 @@ impl Engine<'_> {
                 self.broken_bundles.insert(collector);
             }
             self.unknown_items(Some(walk.owner), walk.bundle.is_none());
-            return;
+            return Ok(());
         };
         match walk.bundle {
             Some(collector) => {
                 if has_body {
-                    let loc = self.hir.placement(id).loc;
+                    let loc = self.hir.placement(id)?.loc;
                     self.error(
                         Code::BundleMember,
                         loc,
                         scope,
                         "a member of a bundle has no body",
-                    );
+                    )?;
                     self.broken_bundles.insert(collector);
-                    return;
+                    return Ok(());
                 }
-                if let Some(members) = collectors.get_mut(collector) {
-                    members.push(instance);
-                }
+                collectors
+                    .get_mut(collector)
+                    .ok_or(Internal::missed("bundle"))?
+                    .push(instance);
             }
             None => {
-                if let Some(record) = self.instances.get_mut(walk.owner.index()) {
-                    record.sequence.push(Entry::Child(instance));
-                }
+                self.instance_mut(walk.owner)?
+                    .sequence
+                    .push(Entry::Child(instance));
             }
         }
+        Ok(())
     }
 
-    fn reuse(&mut self, id: PlacementId, scope: ScopeId, walk: &Walk) -> Option<InstanceId> {
+    fn stand_in_has_body(&self, pattern: PatternId) -> Result<bool, Internal> {
+        Ok(match self.stand_in_target(pattern)? {
+            Some(target) => self.hir.placement(target)?.body.is_some(),
+            None => false,
+        })
+    }
+
+    fn reuse(
+        &mut self,
+        id: PlacementId,
+        scope: ScopeId,
+        walk: &Walk,
+    ) -> Result<Option<InstanceId>, Internal> {
         let Some(ItemRef::Instance(existing)) =
             self.prebuilt.get(&(Site::Placement(id), scope)).copied()
         else {
-            return None;
+            return Ok(None);
         };
-        let own = self.instance(existing).and_then(|record| record.conditions);
+        let own = self.instance(existing)?.conditions;
         let conditions = self.joined_conditions(walk.conditions, own);
-        if let Some(record) = self.instances.get_mut(existing.index()) {
-            record.conditions = conditions;
-        }
-        Some(existing)
+        self.instance_mut(existing)?.conditions = conditions;
+        Ok(Some(existing))
     }
 
     fn context(&self, walk: &Walk) -> Context {

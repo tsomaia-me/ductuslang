@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::decl::Decl;
 use super::namespace::Namespace;
+use crate::semantics::Internal;
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnDecl, FnId, Hir};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -23,7 +24,12 @@ pub(crate) struct InlineCounts {
 }
 
 impl InlineCounts {
-    pub fn of(hir: &Hir, source: &Namespace, prelude: &Namespace, recursive: &[bool]) -> Self {
+    pub fn of(
+        hir: &Hir,
+        source: &Namespace,
+        prelude: &Namespace,
+        recursive: &[bool],
+    ) -> Result<Self, Internal> {
         let count = hir.fns.len();
         let mut counts = InlineCounts {
             body: vec![0; count],
@@ -33,17 +39,15 @@ impl InlineCounts {
                 .map(|decl| vec![0; decl.params.len()])
                 .collect(),
         };
-        let sites = |index: usize, roots: Vec<ExprId>| -> Vec<Site> {
+        let sites = |index: usize, roots: Vec<ExprId>| -> Result<Vec<Site>, Internal> {
             let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
             let namespace = if hir.is_prelude_fn(id) {
                 prelude
             } else {
                 source
             };
-            hir.fns
-                .get(index)
-                .map(|decl| call_sites(hir, decl, namespace, recursive, roots))
-                .unwrap_or_default()
+            let decl = hir.fns.get(index).ok_or(Internal::missed("function"))?;
+            call_sites(hir, decl, namespace, recursive, roots)
         };
         let mut state = vec![Visit::New; count];
         for start in 0..count {
@@ -52,18 +56,15 @@ impl InlineCounts {
             }
             let mut stack = vec![start];
             while let Some(&index) = stack.last() {
-                let Some(decl) = hir.fns.get(index) else {
-                    stack.pop();
-                    continue;
-                };
+                let decl = hir.fns.get(index).ok_or(Internal::missed("function"))?;
                 let mut roots: Vec<ExprId> = decl.lets.iter().map(|local| local.value).collect();
                 roots.push(decl.value);
-                let body_sites = sites(index, roots);
+                let body_sites = sites(index, roots)?;
                 let default_sites: Vec<Vec<Site>> = decl
                     .params
                     .iter()
                     .map(|param| sites(index, param.default.into_iter().collect()))
-                    .collect();
+                    .collect::<Result<_, _>>()?;
                 if state.get(index) == Some(&Visit::New) {
                     if let Some(slot) = state.get_mut(index) {
                         *slot = Visit::Open;
@@ -105,7 +106,7 @@ impl InlineCounts {
                 }
             }
         }
-        counts
+        Ok(counts)
     }
 
     fn site(&self, site: &Site) -> u64 {
@@ -130,7 +131,7 @@ fn call_sites(
     namespace: &Namespace,
     recursive: &[bool],
     roots: Vec<ExprId>,
-) -> Vec<Site> {
+) -> Result<Vec<Site>, Internal> {
     let locals: BTreeSet<&str> = decl
         .params
         .iter()
@@ -141,21 +142,21 @@ fn call_sites(
     let mut found = Vec::new();
     let mut stack = roots;
     while let Some(expr) = stack.pop() {
-        let kind = &hir.expr(expr).kind;
+        let kind = &hir.expr(expr)?.kind;
         if let ExprKind::Call(callee, args) = kind
-            && let ExprKind::Name(name) = &hir.expr(*callee).kind
+            && let ExprKind::Name(name) = &hir.expr(*callee)?.kind
             && !locals.contains(name.as_str())
             && let Some(Decl::Fn(target)) = namespace.get(name)
             && !recursive.get(target.index()).copied().unwrap_or(true)
         {
             found.push(Site {
                 callee: target,
-                defaulted: defaulted(hir.fn_decl(target), args),
+                defaulted: defaulted(hir.fn_decl(target)?, args),
             });
         }
         stack.extend(kind.children());
     }
-    found
+    Ok(found)
 }
 
 fn defaulted(callee: &FnDecl, args: &Args) -> Vec<usize> {

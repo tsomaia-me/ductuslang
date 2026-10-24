@@ -1,5 +1,6 @@
 use super::iteration::Iteration;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
@@ -7,6 +8,7 @@ use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::shape::Shape;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Iterable, Loc, Number, Suffix};
 
@@ -15,12 +17,12 @@ impl Engine<'_> {
         &mut self,
         iterable: Iterable,
         scope: ScopeId,
-    ) -> Option<Iteration> {
-        match iterable {
+    ) -> Result<Option<Iteration>, Internal> {
+        Ok(match iterable {
             Iterable::Range(start, end) => {
-                let first = self.range_bound(start, scope)?;
-                let last = self.range_bound(end, scope)?;
-                let loc = self.hir.expr(start).loc.to(self.hir.expr(end).loc);
+                let first = some!(self.range_bound(start, scope)?);
+                let last = some!(self.range_bound(end, scope)?);
+                let loc = self.hir.expr(start)?.loc.to(self.hir.expr(end)?.loc);
                 Some(Iteration::Range {
                     next: first,
                     end: last,
@@ -28,37 +30,37 @@ impl Engine<'_> {
                 })
             }
             Iterable::Values(expr) => {
-                let val = self.demand_val(Query::Expr(expr, scope));
-                let loc = self.hir.expr(expr).loc;
-                let val = self.iterated(val, loc, scope)?;
+                let val = self.demand_val(Query::Expr(expr, scope))?;
+                let loc = self.hir.expr(expr)?.loc;
+                let val = some!(self.iterated(val, loc, scope)?);
                 let array = match &val {
                     Val::Array(array) if array.shape.depth() == 1 => array.clone(),
-                    Val::Error => return None,
+                    Val::Error => return Ok(None),
                     Val::Array(_) | Val::Scalar(_) => {
-                        self.error(Code::IterableType, loc, scope, ITERABLE);
-                        return None;
+                        self.error(Code::IterableType, loc, scope, ITERABLE)?;
+                        return Ok(None);
                     }
                 };
                 let mut bare = false;
                 for node in &array.elements {
-                    if self.demand_sig(*node).kind == Kind::Bare {
-                        self.unplaced_variant(*node);
+                    if self.demand_sig(*node)?.kind == Kind::Bare {
+                        self.unplaced_variant(*node)?;
                         bare = true;
                     }
                 }
                 if bare {
-                    return None;
+                    return Ok(None);
                 }
                 for node in &array.elements {
-                    let sig = self.demand_sig(*node);
+                    let sig = self.demand_sig(*node)?;
                     if sig.reactive {
                         self.error(
                             Code::ReactiveIterable,
                             loc,
                             scope,
                             "a `for` iterates over a compile-time value, and this one reads a cell",
-                        );
-                        return None;
+                        )?;
+                        return Ok(None);
                     }
                 }
                 let values = array
@@ -72,34 +74,34 @@ impl Engine<'_> {
                     loc,
                 })
             }
-        }
+        })
     }
 
-    fn iterated(&mut self, val: Val, loc: Loc, scope: ScopeId) -> Option<Val> {
+    fn iterated(&mut self, val: Val, loc: Loc, scope: ScopeId) -> Result<Option<Val>, Internal> {
         let Val::Scalar(node) = val else {
-            return Some(val);
+            return Ok(Some(val));
         };
         if !self.arrays.contains(&node) {
-            return Some(val);
+            return Ok(Some(val));
         }
-        let array = match self.demand_cval(node, EvalTy::Default) {
+        let array = match self.demand_cval(node, EvalTy::Default)? {
             CVal::Array(array) => array,
-            CVal::Error => return None,
+            CVal::Error => return Ok(None),
             CVal::Int(_)
             | CVal::F32(_)
             | CVal::F64(_)
             | CVal::Bool(_)
             | CVal::Enum(..)
             | CVal::Str(_)
-            | CVal::Node(_) => return Some(val),
+            | CVal::Node(_) => return Ok(Some(val)),
         };
         let shape = Shape::from_lengths(&array.lengths());
-        let nodes = self.projected(node, &shape, (Code::IterableType, ITERABLE), loc, scope);
-        Some(Val::array(shape, nodes))
+        let nodes = self.projected(node, &shape, (Code::IterableType, ITERABLE), loc, scope)?;
+        Ok(Some(Val::array(shape, nodes)))
     }
 
-    fn range_bound(&mut self, expr: ExprId, scope: ScopeId) -> Option<i128> {
-        let value = match self.hir.expr(expr).kind {
+    fn range_bound(&mut self, expr: ExprId, scope: ScopeId) -> Result<Option<i128>, Internal> {
+        let value = match self.hir.expr(expr)?.kind {
             ExprKind::Number(Number::Int(value), Suffix::None) => value,
             ExprKind::Error
             | ExprKind::Number(..)
@@ -116,24 +118,24 @@ impl Engine<'_> {
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
             | ExprKind::If(..)
-            | ExprKind::Match { .. } => self.computed_bound(expr, scope)?,
+            | ExprKind::Match { .. } => some!(self.computed_bound(expr, scope)?),
         };
         if i64::try_from(value).is_err() {
-            let loc = self.hir.expr(expr).loc;
+            let loc = self.hir.expr(expr)?.loc;
             self.error(
                 Code::RangeBound,
                 loc,
                 scope,
                 format!("the range bound {value} does not fit `i64`"),
-            );
-            return None;
+            )?;
+            return Ok(None);
         }
-        Some(value)
+        Ok(Some(value))
     }
 
-    fn computed_bound(&mut self, expr: ExprId, scope: ScopeId) -> Option<i128> {
-        let loc = self.hir.expr(expr).loc;
-        let node: NodeId = match self.demand_val(Query::Expr(expr, scope)) {
+    fn computed_bound(&mut self, expr: ExprId, scope: ScopeId) -> Result<Option<i128>, Internal> {
+        let loc = self.hir.expr(expr)?.loc;
+        let node: NodeId = match self.demand_val(Query::Expr(expr, scope))? {
             Val::Scalar(node) => node,
             Val::Array(_) => {
                 self.error(
@@ -141,14 +143,14 @@ impl Engine<'_> {
                     loc,
                     scope,
                     "a range bound is an integer, not an array",
-                );
-                return None;
+                )?;
+                return Ok(None);
             }
-            Val::Error => return None,
+            Val::Error => return Ok(None),
         };
-        let sig = self.demand_sig(node);
+        let sig = self.demand_sig(node)?;
         if sig.is_error() {
-            return None;
+            return Ok(None);
         }
         if sig.reactive {
             self.error(
@@ -156,8 +158,8 @@ impl Engine<'_> {
                 loc,
                 scope,
                 "a `for` iterates over a compile-time value, and this bound reads a cell",
-            );
-            return None;
+            )?;
+            return Ok(None);
         }
         if sig.family.is_some() {
             self.error(
@@ -165,14 +167,14 @@ impl Engine<'_> {
                 loc,
                 scope,
                 "a unit value is not a range bound",
-            );
-            return None;
+            )?;
+            return Ok(None);
         }
         if sig.kind != Kind::Int {
-            self.error(Code::RangeBound, loc, scope, "a range bound is an integer");
-            return None;
+            self.error(Code::RangeBound, loc, scope, "a range bound is an integer")?;
+            return Ok(None);
         }
-        match self.demand_cval(node, EvalTy::Exact) {
+        Ok(match self.demand_cval(node, EvalTy::Exact)? {
             CVal::Int(value) => Some(value),
             CVal::F32(_)
             | CVal::F64(_)
@@ -182,7 +184,7 @@ impl Engine<'_> {
             | CVal::Node(_)
             | CVal::Array(_)
             | CVal::Error => None,
-        }
+        })
     }
 }
 

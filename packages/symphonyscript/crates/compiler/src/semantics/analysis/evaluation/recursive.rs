@@ -8,6 +8,7 @@ use super::is_float_ty::is_float_ty;
 use super::machine::Machine;
 use super::own_type::own_type;
 use crate::diagnostics::Code;
+use crate::semantics::Internal;
 use crate::semantics::analysis::arg_key::ArgKey;
 use crate::semantics::analysis::arg_shape::ArgShape;
 use crate::semantics::analysis::arg_sig::ArgSig;
@@ -26,6 +27,7 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::template_key::TemplateKey;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
@@ -70,9 +72,9 @@ impl Engine<'_> {
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
-    ) -> Option<CVal> {
-        let Op::Recursive { function, args } = self.node(node).op.clone() else {
-            return Some(CVal::Error);
+    ) -> Result<Option<CVal>, Internal> {
+        let Op::Recursive { function, args } = self.node(node)?.op.clone() else {
+            return Ok(Some(CVal::Error));
         };
         let mut keys = Vec::new();
         let mut values = Vec::new();
@@ -84,7 +86,7 @@ impl Engine<'_> {
                     keys.push(ArgKey::Default);
                     shapes.push(ArgShape::Default);
                 }
-                Some(Val::Scalar(arg)) => match self.argument(*arg, own, ctx, need) {
+                Some(Val::Scalar(arg)) => match self.argument(*arg, own, ctx, need)? {
                     Some(argument) => {
                         values.extend(argument.values.iter().cloned());
                         let (key, shape) = argument.keyed();
@@ -96,7 +98,7 @@ impl Engine<'_> {
                 Some(Val::Array(array)) => {
                     let mut parts = Vec::new();
                     for element in &array.elements {
-                        match self.argument(*element, own, ctx, need) {
+                        match self.argument(*element, own, ctx, need)? {
                             Some(argument) => parts.push(argument),
                             None => missing = true,
                         }
@@ -113,7 +115,7 @@ impl Engine<'_> {
                             Code::RaggedArray,
                             node,
                             "the elements of an array are arrays of one length, or all single values",
-                        );
+                        )?;
                         keys.push(ArgKey::Error);
                         continue;
                     }
@@ -135,10 +137,10 @@ impl Engine<'_> {
             }
         }
         if missing {
-            return None;
+            return Ok(None);
         }
         if keys.contains(&ArgKey::Error) {
-            return Some(CVal::Error);
+            return Ok(Some(CVal::Error));
         }
         let feeds = match ctx {
             Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
@@ -152,7 +154,7 @@ impl Engine<'_> {
             units: unit_set(&feeds),
         };
         if let Some(value) = self.memo.calls.get(&key) {
-            return Some(value.clone());
+            return Ok(Some(value.clone()));
         }
         let call = Call {
             key,
@@ -173,15 +175,15 @@ impl Engine<'_> {
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
-    ) -> Option<Argument> {
-        let sig = self.sig(arg, need)?;
+    ) -> Result<Option<Argument>, Internal> {
+        let sig = some!(self.sig(arg, need));
         if sig.kind == Kind::Bare {
-            self.unplaced_variant(arg);
-            return Some(Argument {
+            self.unplaced_variant(arg)?;
+            return Ok(Some(Argument {
                 leaves: vec![arg_key(&CVal::Error, false, own, None)],
                 lengths: Vec::new(),
                 values: vec![CVal::Error],
-            });
+            }));
         }
         let flexible = sig.width == Width::Flexible;
         let ty = if flexible && sig.kind == Kind::Int {
@@ -189,7 +191,7 @@ impl Engine<'_> {
         } else {
             own_type(&sig, own)
         };
-        let value = self.child(arg, ty, ctx, need)?;
+        let value = some!(self.child(arg, ty, ctx, need));
         let (lengths, values) = match &value {
             CVal::Array(array) => (array.lengths(), array.leaves()),
             leaf => (Vec::new(), vec![leaf.clone()]),
@@ -198,11 +200,11 @@ impl Engine<'_> {
             .iter()
             .map(|value| arg_key(value, flexible, ty, sig.family))
             .collect();
-        Some(Argument {
+        Ok(Some(Argument {
             leaves,
             lengths,
             values,
-        })
+        }))
     }
 
     pub(in crate::semantics::analysis) fn instantiate(
@@ -210,9 +212,9 @@ impl Engine<'_> {
         function: FnId,
         shapes: &[ArgShape],
         call: NodeId,
-    ) -> ScopeId {
+    ) -> Result<ScopeId, Internal> {
         let (loc, caller) = {
-            let record = self.node(call);
+            let record = self.node(call)?;
             (record.loc, record.scope)
         };
         let mut slot = 0u32;
@@ -221,14 +223,14 @@ impl Engine<'_> {
             let source = match shape {
                 ArgShape::Default => ParamSource::Default,
                 ArgShape::Scalar(sig) => {
-                    let node = self.arg_node(&mut slot, *sig, loc, caller);
+                    let node = self.arg_node(&mut slot, *sig, loc, caller)?;
                     ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
                 }
                 ArgShape::Array(lengths, sigs) => {
-                    let bounds = sigs
-                        .iter()
-                        .map(|sig| Bound::Value(self.arg_node(&mut slot, *sig, loc, caller)))
-                        .collect();
+                    let mut bounds = Vec::with_capacity(sigs.len());
+                    for sig in sigs {
+                        bounds.push(Bound::Value(self.arg_node(&mut slot, *sig, loc, caller)?));
+                    }
                     let shape = crate::semantics::analysis::shape::Shape::from_lengths(lengths);
                     ParamSource::Bound(BoundVal::Array(Rc::new((shape, bounds))))
                 }
@@ -245,7 +247,7 @@ impl Engine<'_> {
         feeds: &[Feed],
         call: NodeId,
         need: &mut Vec<Query>,
-    ) -> Option<Option<NodeId>> {
+    ) -> Result<Option<Option<NodeId>>, Internal> {
         let key = TemplateKey {
             function,
             args: shapes.to_vec(),
@@ -254,34 +256,40 @@ impl Engine<'_> {
         let scope = match self.memo.templates.get(&key) {
             Some(scope) => *scope,
             None => {
-                let scope = self.instantiate(function, shapes, call);
+                let scope = self.instantiate(function, shapes, call)?;
                 self.memo.template_feeds.insert(scope, feeds.to_vec());
                 self.memo.templates.insert(key, scope);
                 scope
             }
         };
-        let body = self.hir.fn_decl(function).value;
-        let val = self.val(Query::Expr(body, scope), need)?;
-        let Some(root) = self.boxed_body(body, scope, &val) else {
-            return Some(None);
+        let body = self.hir.fn_decl(function)?.value;
+        let val = some!(self.val(Query::Expr(body, scope), need));
+        let Some(root) = self.boxed_body(body, scope, &val)? else {
+            return Ok(Some(None));
         };
-        let sig = self.sig(root, need)?;
+        let sig = some!(self.sig(root, need));
         if sig.reactive {
             self.error_at_node(
                 Code::ReactiveRecursion,
                 call,
                 format!(
                     "the body of the recursive function `{}` reads a cell",
-                    self.function_name(function)
+                    self.function_name(function)?
                 ),
-            );
-            return Some(None);
+            )?;
+            return Ok(Some(None));
         }
-        self.template_units(scope, root);
-        Some(Some(root))
+        self.template_units(scope, root)?;
+        Ok(Some(Some(root)))
     }
 
-    fn result_fits(&mut self, root: NodeId, own: EvalTy, call: NodeId, function: FnId) -> bool {
+    fn result_fits(
+        &mut self,
+        root: NodeId,
+        own: EvalTy,
+        call: NodeId,
+        function: FnId,
+    ) -> Result<bool, Internal> {
         let kind = self
             .memo
             .sigs
@@ -307,11 +315,11 @@ impl Engine<'_> {
                 call,
                 format!(
                     "this call of `{}` yields a value of the wrong type here",
-                    self.function_name(function)
+                    self.function_name(function)?
                 ),
-            );
+            )?;
         }
-        fits
+        Ok(fits)
     }
 
     fn arg_node(
@@ -320,13 +328,13 @@ impl Engine<'_> {
         sig: ArgSig,
         loc: crate::semantics::ir::Loc,
         scope: ScopeId,
-    ) -> NodeId {
-        let node = self.push_node(Op::Arg(*slot), loc, scope);
+    ) -> Result<NodeId, Internal> {
+        let node = self.push_node(Op::Arg(*slot), loc, scope)?;
         *slot += 1;
         let mut arg_sig = Sig::of(sig.kind, sig.width, false, sig.family);
         arg_sig.frame = true;
         self.memo.arg_sigs.insert(node, arg_sig);
-        node
+        Ok(node)
     }
 
     fn run_machine(
@@ -335,20 +343,25 @@ impl Engine<'_> {
         node: NodeId,
         own: EvalTy,
         need: &mut Vec<Query>,
-    ) -> Option<CVal> {
+    ) -> Result<Option<CVal>, Internal> {
         let machine = match self.machines.remove(&call.key) {
             Some(machine) => machine,
             None => {
-                let root =
-                    match self.template(call.function, &call.shapes, &call.feeds, node, need)? {
-                        Some(root) if self.result_fits(root, own, node, call.function) => root,
-                        _ => {
-                            self.memo.calls.insert(call.key, CVal::Error);
-                            return Some(CVal::Error);
-                        }
-                    };
-                if !self.within_call_limit(node, call.function) {
-                    return Some(CVal::Error);
+                let root = match some!(self.template(
+                    call.function,
+                    &call.shapes,
+                    &call.feeds,
+                    node,
+                    need
+                )?) {
+                    Some(root) if self.result_fits(root, own, node, call.function)? => root,
+                    _ => {
+                        self.memo.calls.insert(call.key, CVal::Error);
+                        return Ok(Some(CVal::Error));
+                    }
+                };
+                if !self.within_call_limit(node, call.function)? {
+                    return Ok(Some(CVal::Error));
                 }
                 let ty = self.body_type(root, own);
                 Machine {
@@ -374,7 +387,7 @@ impl Engine<'_> {
                 self.active.as_ref().and_then(|machine| machine.work.last())
             else {
                 self.active = None;
-                return Some(CVal::Error);
+                return Ok(Some(CVal::Error));
             };
             if self.frame_value(frame, current, ty).is_some() {
                 if let Some(machine) = self.active.as_mut() {
@@ -385,25 +398,25 @@ impl Engine<'_> {
             self.frame_need.clear();
             self.frame_pushed = false;
             let mut outer = Vec::new();
-            match self.evaluate(current, ty, Ctx::Frame(frame), &mut outer) {
+            match self.evaluate(current, ty, Ctx::Frame(frame), &mut outer)? {
                 Some(value) => {
                     let Some(machine) = self.active.as_mut() else {
-                        return Some(CVal::Error);
+                        return Ok(Some(CVal::Error));
                     };
                     machine.work.pop();
                     let Some(record) = machine.frames.get_mut(frame) else {
-                        return Some(CVal::Error);
+                        return Ok(Some(CVal::Error));
                     };
                     record.memo.insert((current, ty), value.clone());
                     if record.root == current && record.ty == ty {
                         let (key, call, expected) =
                             (record.key.clone(), record.call, record.expected);
                         machine.frames.pop();
-                        let value = self.call_result(call, current, expected, value);
+                        let value = self.call_result(call, current, expected, value)?;
                         self.memo.calls.insert(key, value.clone());
                         if frame == 0 {
                             self.active = None;
-                            return Some(value);
+                            return Ok(Some(value));
                         }
                     }
                 }
@@ -424,7 +437,7 @@ impl Engine<'_> {
                     if let Some(machine) = self.active.take() {
                         self.machines.insert(root_key, machine);
                     }
-                    return None;
+                    return Ok(None);
                 }
             }
         }
@@ -436,7 +449,7 @@ impl Engine<'_> {
         node: NodeId,
         own: EvalTy,
         need: &mut Vec<Query>,
-    ) -> Option<CVal> {
+    ) -> Result<Option<CVal>, Internal> {
         let depth = self
             .active
             .as_ref()
@@ -449,7 +462,7 @@ impl Engine<'_> {
                 .map(|machine| machine.frames.iter().map(|frame| frame.function).collect())
                 .unwrap_or_default();
             for function in functions {
-                let name = self.function_name(function);
+                let name = self.function_name(function)?;
                 if names.last() != Some(&name) {
                     names.push(name);
                 }
@@ -461,22 +474,23 @@ impl Engine<'_> {
                     "the evaluation goes deeper than 1,024 nested calls: {}",
                     names.join(" → ")
                 ),
-            );
-            return Some(CVal::Error);
+            )?;
+            return Ok(Some(CVal::Error));
         }
-        let root = match self.template(call.function, &call.shapes, &call.feeds, node, need)? {
-            Some(root) if self.result_fits(root, own, node, call.function) => root,
-            _ => {
-                self.memo.calls.insert(call.key, CVal::Error);
-                return Some(CVal::Error);
-            }
-        };
-        if !self.within_call_limit(node, call.function) {
-            return Some(CVal::Error);
+        let root =
+            match some!(self.template(call.function, &call.shapes, &call.feeds, node, need)?) {
+                Some(root) if self.result_fits(root, own, node, call.function)? => root,
+                _ => {
+                    self.memo.calls.insert(call.key, CVal::Error);
+                    return Ok(Some(CVal::Error));
+                }
+            };
+        if !self.within_call_limit(node, call.function)? {
+            return Ok(Some(CVal::Error));
         }
         let ty = self.body_type(root, own);
         let Some(machine) = self.active.as_mut() else {
-            return Some(CVal::Error);
+            return Ok(Some(CVal::Error));
         };
         let index = machine.frames.len();
         machine.frames.push(Frame {
@@ -492,7 +506,7 @@ impl Engine<'_> {
         });
         machine.work.push((index, root, ty));
         self.frame_pushed = true;
-        None
+        Ok(None)
     }
 
     fn body_type(&self, root: NodeId, expected: EvalTy) -> EvalTy {
@@ -508,9 +522,15 @@ impl Engine<'_> {
         }
     }
 
-    fn call_result(&mut self, call: NodeId, root: NodeId, expected: EvalTy, value: CVal) -> CVal {
+    fn call_result(
+        &mut self,
+        call: NodeId,
+        root: NodeId,
+        expected: EvalTy,
+        value: CVal,
+    ) -> Result<CVal, Internal> {
         if !is_float_ty(expected) {
-            return value;
+            return Ok(value);
         }
         let flexible = self
             .memo
@@ -522,10 +542,10 @@ impl Engine<'_> {
         })
     }
 
-    fn within_call_limit(&mut self, node: NodeId, function: FnId) -> bool {
+    fn within_call_limit(&mut self, node: NodeId, function: FnId) -> Result<bool, Internal> {
         self.call_count += 1;
         if self.call_count <= CALL_LIMIT {
-            return true;
+            return Ok(true);
         }
         if !self.call_limit_reported {
             self.call_limit_reported = true;
@@ -534,11 +554,11 @@ impl Engine<'_> {
                 node,
                 format!(
                     "this call of `{}` exceeds the 1,000,000 distinct recursive calls a compilation evaluates",
-                    self.function_name(function)
+                    self.function_name(function)?
                 ),
-            );
+            )?;
         }
-        false
+        Ok(false)
     }
 
     pub(super) fn frame_value(&self, frame: usize, node: NodeId, ty: EvalTy) -> Option<CVal> {
@@ -568,12 +588,13 @@ impl Engine<'_> {
             .unwrap_or(CVal::Error)
     }
 
-    fn function_name(&self, function: FnId) -> String {
-        self.hir
-            .fn_decl(function)
+    fn function_name(&self, function: FnId) -> Result<String, Internal> {
+        Ok(self
+            .hir
+            .fn_decl(function)?
             .name
             .as_ref()
-            .map_or(String::new(), |name| name.text.clone())
+            .map_or(String::new(), |name| name.text.clone()))
     }
 }
 
