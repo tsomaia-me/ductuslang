@@ -2,50 +2,22 @@ use std::ops::Range;
 
 use symphonyscript_core::Vocabulary;
 
-use super::fault_catalogue::{BracketKind, FaultItem, Open};
+use super::fault_catalogue::{BracketKind, FaultItem, Open, unmark};
 use super::line_shape::LineShape;
 use super::valid_items::{HOST, ValidItems};
 use crate::diagnostics::Code;
 
-pub(super) struct Candidate {
-    label: String,
-    text: String,
-    body: bool,
-    shape: LineShape,
-    faults: Vec<(Code, Range<u32>)>,
-    open: Open,
-}
+const DEEPER: usize = 4;
 
-impl Candidate {
-    fn new(
-        label: String,
-        text: &str,
-        faults: Vec<(Code, Range<u32>)>,
-        open: Open,
-        vocabulary: &Vocabulary,
-    ) -> Candidate {
-        Candidate {
-            label,
-            text: text.to_string(),
-            body: text.starts_with([' ', '\t']),
-            shape: LineShape::of(text, vocabulary),
-            faults,
-            open,
-        }
-    }
-
-    fn follows(&self, pending: Option<Open>) -> bool {
-        match pending {
-            None | Some(Open::Closed) => true,
-            Some(Open::AfterFault) => self.shape.resynchronizes(!self.body),
-            Some(Open::Unclosed { bracket, .. }) => {
-                self.faults.is_empty()
-                    && self.open == Open::Closed
-                    && self.shape.ends_unclosed(bracket)
-            }
-        }
-    }
-}
+const FAULTY_HOSTS: &[(Code, &str, usize)] = &[
+    (Code::PlacementSyntax, "Clip host ⟦2⟧:\n", 4),
+    (Code::PlacementSyntax, "Clip host | gain=1 ⟦2⟧:\n", 4),
+    (Code::PlacementSyntax, "Clip host when x ⟦y⟧:\n", 4),
+    (Code::ReservedToken, "Clip host | gain=1 ⟦^⟧:\n", 4),
+    (Code::PatternSyntax, "pattern P(a ⟦b⟧):\n", 4),
+    (Code::ForSyntax, "Clip host:\n    for i in 0..3 ⟦4⟧:\n", 8),
+    (Code::WhenSyntax, "Clip host:\n    when x ⟦y⟧:\n", 8),
+];
 
 const REGION_LINES: &[&str] = &[
     "a/b c",
@@ -75,12 +47,109 @@ const REGION_LINES: &[&str] = &[
     "when x: Note",
 ];
 
+pub(super) struct Candidate {
+    label: String,
+    text: String,
+    body: bool,
+    in_pattern: bool,
+    shape: LineShape,
+    faults: Vec<(Code, Range<u32>)>,
+    open: Open,
+    deeper: Option<Box<Candidate>>,
+}
+
+impl Candidate {
+    fn new(
+        label: String,
+        text: &str,
+        faults: Vec<(Code, Range<u32>)>,
+        open: Open,
+        vocabulary: &Vocabulary,
+    ) -> Candidate {
+        let body = text.starts_with([' ', '\t']);
+        let mut candidate = Candidate {
+            label,
+            text: text.to_string(),
+            body,
+            in_pattern: !text.trim_start().starts_with("let "),
+            shape: LineShape::of(text, vocabulary),
+            faults,
+            open,
+            deeper: None,
+        };
+        if body {
+            candidate.deeper = Some(Box::new(candidate.deepened(vocabulary)));
+        }
+        candidate
+    }
+
+    fn deepened(&self, vocabulary: &Vocabulary) -> Candidate {
+        let mut text = String::new();
+        let mut starts = Vec::new();
+        for line in self.text.split_inclusive('\n') {
+            if !line.trim().is_empty() {
+                starts.push(text.len() - starts.len() * DEEPER);
+                text.push_str(&" ".repeat(DEEPER));
+            }
+            text.push_str(line);
+        }
+        let shift = |offset: u32, end: bool| {
+            let before = starts.partition_point(|start| {
+                let start = *start as u32;
+                start < offset || (start == offset && !end)
+            });
+            offset + (before * DEEPER) as u32
+        };
+        Candidate {
+            label: format!("{} (deeper)", self.label),
+            shape: LineShape::of(&text, vocabulary),
+            text,
+            body: true,
+            in_pattern: self.in_pattern,
+            faults: self
+                .faults
+                .iter()
+                .map(|(code, range)| (*code, shift(range.start, false)..shift(range.end, true)))
+                .collect(),
+            open: self.open,
+            deeper: None,
+        }
+    }
+
+    fn column(&self) -> usize {
+        self.text.len() - self.text.trim_start_matches([' ', '\t']).len()
+    }
+
+    fn follows(&self, pending: Option<Open>) -> bool {
+        match pending {
+            None | Some(Open::Closed) => true,
+            Some(Open::AfterFault) => self.shape.resynchronizes(!self.body),
+            Some(Open::Unclosed { bracket, .. }) => {
+                self.faults.is_empty()
+                    && self.open == Open::Closed
+                    && self.shape.ends_unclosed(bracket)
+            }
+        }
+    }
+}
+
+struct Host {
+    candidate: Candidate,
+    column: usize,
+}
+
+impl Host {
+    fn takes(&self, item: &Candidate) -> bool {
+        item.in_pattern || !self.candidate.text.starts_with("pattern")
+    }
+}
+
 pub(super) struct Pool {
     region_lines: Vec<(String, LineShape)>,
     faults: Vec<Candidate>,
     top: Vec<Candidate>,
     body: Vec<Candidate>,
-    host: Candidate,
+    hosts: Vec<Host>,
 }
 
 impl Pool {
@@ -94,6 +163,29 @@ impl Pool {
                 vocabulary,
             )
         };
+        let plain = Host {
+            candidate: Candidate::new(
+                String::from("host"),
+                HOST,
+                Vec::new(),
+                Open::Closed,
+                vocabulary,
+            ),
+            column: 4,
+        };
+        let faulty = FAULTY_HOSTS.iter().map(|(code, marked, column)| {
+            let (text, faults) = unmark(*code, marked);
+            Host {
+                candidate: Candidate::new(
+                    format!("host with {code}"),
+                    &text,
+                    faults,
+                    Open::Closed,
+                    vocabulary,
+                ),
+                column: *column,
+            }
+        });
         Pool {
             region_lines: REGION_LINES
                 .iter()
@@ -114,13 +206,7 @@ impl Pool {
                 .collect(),
             top: valid.top.iter().map(valid_candidate).collect(),
             body: valid.body.iter().map(valid_candidate).collect(),
-            host: Candidate::new(
-                String::from("host"),
-                HOST,
-                Vec::new(),
-                Open::Closed,
-                vocabulary,
-            ),
+            hosts: std::iter::once(plain).chain(faulty).collect(),
         }
     }
 }
@@ -149,7 +235,7 @@ struct Writer<'p> {
     pool: &'p Pool,
     random: Random,
     out: Generated,
-    in_host: bool,
+    host: Option<&'p Host>,
     pending: Option<Open>,
 }
 
@@ -178,23 +264,55 @@ impl<'p> Writer<'p> {
         self.pending = Some(candidate.open);
     }
 
-    fn place(&mut self, candidate: &Candidate) {
+    fn in_host(&self, item: &'p Candidate) -> Option<&'p Candidate> {
+        let host = self.host?;
+        if !host.takes(item) {
+            return None;
+        }
+        if host.column > 4 {
+            item.deeper.as_deref()
+        } else {
+            Some(item)
+        }
+    }
+
+    fn open_host(&mut self, item: &Candidate) -> bool {
+        let pool = self.pool;
+        let pending = self.pending;
+        let fitting: Vec<&'p Host> = pool
+            .hosts
+            .iter()
+            .filter(|host| host.takes(item) && host.candidate.follows(pending))
+            .collect();
+        if fitting.is_empty() {
+            return false;
+        }
+        let host = fitting[self.random.below(fitting.len())];
+        self.emit(&host.candidate);
+        self.host = Some(host);
+        true
+    }
+
+    fn place(&mut self, candidate: &'p Candidate) {
         loop {
-            if candidate.body && !self.in_host {
-                if !self.pool.host.follows(self.pending) {
+            if !candidate.body {
+                self.host = None;
+            } else if self.in_host(candidate).is_none() {
+                self.host = None;
+                if !self.open_host(candidate) {
                     self.follower(false);
                     continue;
                 }
-                self.emit(&self.pool.host);
-                self.in_host = true;
             }
-            if !candidate.body {
-                self.in_host = false;
-            }
-            if candidate.follows(self.pending) {
-                self.emit(candidate);
-                if candidate.open == Open::AfterFault {
-                    self.region_lines(if candidate.body { 4 } else { 0 });
+            let target = if candidate.body {
+                self.in_host(candidate).unwrap_or(candidate)
+            } else {
+                candidate
+            };
+            if target.follows(self.pending) {
+                self.emit(target);
+                if target.open == Open::AfterFault {
+                    self.region_lines(target.column());
                 }
                 return;
             }
@@ -230,19 +348,22 @@ impl<'p> Writer<'p> {
     fn follower(&mut self, body: bool) {
         let pool = self.pool;
         let pending = self.pending;
-        let fitting = |list: &'p [Candidate]| -> Vec<&'p Candidate> {
-            list.iter()
+        let mut choices: Vec<&'p Candidate> = if body {
+            pool.body
+                .iter()
+                .filter_map(|candidate| self.in_host(candidate))
                 .filter(|candidate| candidate.follows(pending))
                 .collect()
-        };
-        let mut choices = if body && self.in_host {
-            fitting(&pool.body)
         } else {
             Vec::new()
         };
         if choices.is_empty() {
-            self.in_host = false;
-            choices = fitting(&pool.top);
+            self.host = None;
+            choices = pool
+                .top
+                .iter()
+                .filter(|candidate| candidate.follows(pending))
+                .collect();
         }
         let choice = choices[self.random.below(choices.len())];
         self.emit(choice);
@@ -270,7 +391,7 @@ pub(super) fn generate(seed: u64, fault_count: usize, pool: &Pool) -> Generated 
             closers: Vec::new(),
             items: Vec::new(),
         },
-        in_host: false,
+        host: None,
         pending: None,
     };
     let mut order: Vec<usize> = Vec::new();

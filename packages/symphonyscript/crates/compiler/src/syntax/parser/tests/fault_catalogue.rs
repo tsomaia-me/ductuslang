@@ -1502,7 +1502,7 @@ pub(super) fn fault_items() -> Vec<FaultItem> {
         .collect()
 }
 
-fn unmark(code: Code, marked: &str) -> (String, Vec<(Code, Range<u32>)>) {
+pub(super) fn unmark(code: Code, marked: &str) -> (String, Vec<(Code, Range<u32>)>) {
     let mut text = String::new();
     let mut faults = Vec::new();
     let mut start = 0;
