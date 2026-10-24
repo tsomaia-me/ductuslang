@@ -1,4 +1,4 @@
-use symphonyscript_core::Scalar;
+use symphonyscript_core::{Builtin, Scalar};
 
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::sig::{Kind, Sig, Width, common, is_integer, meet_flexible};
@@ -79,6 +79,13 @@ pub(super) fn pair_type(a: &Sig, b: &Sig) -> Pair {
             }
         }
     }
+}
+
+pub(crate) fn is_float_builtin(builtin: Builtin) -> bool {
+    !matches!(
+        builtin,
+        Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp | Builtin::Rand
+    )
 }
 
 pub(super) fn int_bits(ty: EvalTy) -> Option<u32> {

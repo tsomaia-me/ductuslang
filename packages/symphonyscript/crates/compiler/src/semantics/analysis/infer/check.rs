@@ -4,7 +4,7 @@ use crate::diagnostics::Code;
 use crate::semantics::analysis::cval::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::evaluation::own_type;
+use crate::semantics::analysis::evaluation::{is_float_builtin, own_type};
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::sig::{Kind, Sig, Width, is_float, is_integer, widens};
@@ -15,12 +15,12 @@ impl Engine<'_> {
         root: NodeId,
         expected: Option<Scalar>,
         condition: bool,
-        roots: &mut Vec<(NodeId, Option<Scalar>)>,
+        roots: &mut Vec<(NodeId, Option<Scalar>, bool)>,
     ) {
-        let mut stack = vec![(root, expected)];
+        let mut stack = vec![(root, expected, false)];
         let mut condition_root = condition;
-        while let Some((node, expected)) = stack.pop() {
-            if !self.typing.checked.insert((node, expected)) {
+        while let Some((node, expected, converted)) = stack.pop() {
+            if !self.typing.checked.insert((node, expected, converted)) {
                 continue;
             }
             let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
@@ -34,7 +34,7 @@ impl Engine<'_> {
                 continue;
             }
             if !sig.reactive {
-                roots.push((node, expected));
+                roots.push((node, expected, converted));
                 continue;
             }
             let ty = match expected {
@@ -44,13 +44,15 @@ impl Engine<'_> {
             let op = self.node(node).op.clone();
             match op {
                 Op::Read(_) | Op::ToRead { .. } | Op::Concat(_) => {}
-                Op::Use(inner) => stack.push((inner, ty)),
-                Op::Unary(UnaryOp::Neg, operand) => stack.push((operand, ty)),
-                Op::Unary(UnaryOp::Not, operand) => stack.push((operand, Some(Scalar::Bool))),
+                Op::Use(inner) => stack.push((inner, ty, false)),
+                Op::Unary(UnaryOp::Neg, operand) => stack.push((operand, ty, false)),
+                Op::Unary(UnaryOp::Not, operand) => {
+                    stack.push((operand, Some(Scalar::Bool), false))
+                }
                 Op::Binary(op, lhs, rhs) => match op {
                     BinaryOp::And | BinaryOp::Or => {
-                        stack.push((lhs, Some(Scalar::Bool)));
-                        stack.push((rhs, Some(Scalar::Bool)));
+                        stack.push((lhs, Some(Scalar::Bool), false));
+                        stack.push((rhs, Some(Scalar::Bool), false));
                     }
                     BinaryOp::Lt
                     | BinaryOp::Le
@@ -61,30 +63,34 @@ impl Engine<'_> {
                         self.synth(lhs);
                         self.synth(rhs);
                         let pair = self.pair(lhs, rhs);
-                        stack.push((lhs, pair));
-                        stack.push((rhs, pair));
+                        stack.push((lhs, pair, false));
+                        stack.push((rhs, pair, false));
                     }
                     BinaryOp::IntDiv if ty.is_some_and(is_float) => {
                         self.synth(lhs);
                         self.synth(rhs);
                         let inner = self.combine(&[lhs, rhs]);
-                        stack.push((lhs, inner));
-                        stack.push((rhs, inner));
+                        stack.push((lhs, inner, false));
+                        stack.push((rhs, inner, false));
+                    }
+                    BinaryOp::Div => {
+                        stack.push((lhs, ty, true));
+                        stack.push((rhs, ty, true));
                     }
                     _ => {
-                        stack.push((lhs, ty));
-                        stack.push((rhs, ty));
+                        stack.push((lhs, ty, false));
+                        stack.push((rhs, ty, false));
                     }
                 },
                 Op::If(condition, then, otherwise) => {
-                    stack.push((condition, Some(Scalar::Bool)));
+                    stack.push((condition, Some(Scalar::Bool), false));
                     match self.chosen(condition, EvalTy::Bool) {
-                        Some(CVal::Bool(true)) => stack.push((then, ty)),
-                        Some(CVal::Bool(false)) => stack.push((otherwise, ty)),
+                        Some(CVal::Bool(true)) => stack.push((then, ty, false)),
+                        Some(CVal::Bool(false)) => stack.push((otherwise, ty, false)),
                         Some(_) => {}
                         None => {
-                            stack.push((then, ty));
-                            stack.push((otherwise, ty));
+                            stack.push((then, ty, false));
+                            stack.push((otherwise, ty, false));
                         }
                     }
                 }
@@ -94,7 +100,7 @@ impl Engine<'_> {
                     otherwise,
                 } => {
                     let scrutinee_ty = self.synth(scrutinee);
-                    stack.push((scrutinee, scrutinee_ty));
+                    stack.push((scrutinee, scrutinee_ty, false));
                     let label_ty = self
                         .memo
                         .sigs
@@ -108,19 +114,19 @@ impl Engine<'_> {
                                 .find(|(label, _)| self.demand_cval(*label, label_ty) == value)
                                 .map(|(_, arm)| *arm)
                                 .or(otherwise);
-                            stack.extend(chosen.map(|arm| (arm, ty)));
+                            stack.extend(chosen.map(|arm| (arm, ty, false)));
                         }
                         None => {
                             for (_, value) in arms {
-                                stack.push((value, ty));
+                                stack.push((value, ty, false));
                             }
-                            stack.extend(otherwise.map(|value| (value, ty)));
+                            stack.extend(otherwise.map(|value| (value, ty, false)));
                         }
                     }
                 }
                 Op::Pick { index, items } => {
                     let index_ty = self.synth(index);
-                    stack.push((index, index_ty));
+                    stack.push((index, index_ty, false));
                     let position_ty = self
                         .memo
                         .sigs
@@ -132,7 +138,7 @@ impl Engine<'_> {
                                 .ok()
                                 .and_then(|position| items.get(position))
                             {
-                                Some(item) => stack.push((*item, ty)),
+                                Some(item) => stack.push((*item, ty, false)),
                                 None => self.error_at_node(
                                     Code::IndexOutOfRange,
                                     index,
@@ -144,7 +150,7 @@ impl Engine<'_> {
                             }
                         }
                         Some(_) => {}
-                        None => stack.extend(items.into_iter().map(|item| (item, ty))),
+                        None => stack.extend(items.into_iter().map(|item| (item, ty, false))),
                     }
                 }
                 Op::Convert(target, operand) => {
@@ -153,20 +159,21 @@ impl Engine<'_> {
                     } else {
                         self.synth(operand)
                     };
-                    stack.push((operand, operand_ty));
+                    stack.push((operand, operand_ty, false));
                 }
-                Op::Annotate(target, operand) => stack.push((operand, Some(target))),
+                Op::Annotate(target, operand) => stack.push((operand, Some(target), false)),
                 Op::Builtin(builtin, args) => {
                     let operands = match builtin {
                         Builtin::Rand => Some(Scalar::I64),
                         _ => ty,
                     };
-                    stack.extend(args.into_iter().map(|arg| (arg, operands)));
+                    let converted = is_float_builtin(builtin);
+                    stack.extend(args.into_iter().map(|arg| (arg, operands, converted)));
                 }
                 other => {
                     for operand in other.operands() {
                         let operand_ty = self.synth(operand);
-                        stack.push((operand, operand_ty));
+                        stack.push((operand, operand_ty, false));
                     }
                 }
             }

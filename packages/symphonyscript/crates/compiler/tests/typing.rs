@@ -51,6 +51,54 @@ fn a_flexible_value_takes_the_type_of_each_use_and_must_fit_it() {
 }
 
 #[test]
+fn the_fit_check_applies_at_each_use_and_where_an_integer_converts_to_a_float() {
+    expect(&[
+        ("Clip c:\n    Note/(2147483647 * 2 div 2)\n", &[]),
+        ("Clip c:\n    Note/(3000000000 - 2000000000)\n", &[]),
+        ("Osc o | freq=(1.0 / (1e300 * 1e300))\n", &[]),
+        ("Osc o | freq=((16777216 + 1) / 2)\n", &[]),
+        ("Osc o | freq=(1e300 * 1e300)\n", &[Code::DoesNotFit]),
+        ("Clip c | gain=(1.0 / 1e300)\n", &[Code::DoesNotFit]),
+        ("Clip c | gain=(16777217 / 2)\n", &[Code::DoesNotFit]),
+        ("Clip c | gain=((16777216 + 1) / 2)\n", &[Code::DoesNotFit]),
+        ("Clip c | gain=(16777217i32 / 2)\n", &[]),
+        (
+            "input n = 1.0\nClip c | gain=(n / (16777216 + 1))\n",
+            &[Code::DoesNotFit],
+        ),
+        ("input n = 1.0\nOsc o | freq=(n / (16777216 + 1))\n", &[]),
+        ("Clip c | gain=(sqrt(16777216 + 1))\n", &[Code::DoesNotFit]),
+        ("Osc o | freq=(sqrt(16777216 + 1))\n", &[]),
+        ("Clip c | gain=(33554434 div 2)\n", &[Code::DoesNotFit]),
+        ("Osc o | freq=(33554434 div 2)\n", &[]),
+        (
+            "Osc o | freq=170141183460469231731687303715884105727\n",
+            &[Code::DoesNotFit],
+        ),
+    ]);
+}
+
+#[test]
+fn flexible_integers_compute_exactly_below_two_to_the_127() {
+    for k in 31..=126 {
+        expect(&[
+            (
+                &format!("Clip c:\n    Note/(2 ** {k} div 2 ** ({k} - 10))\n"),
+                &[],
+            ),
+            (
+                &format!("Clip c:\n    Note/(2 ** {k})\n"),
+                &[Code::DoesNotFit],
+            ),
+        ]);
+    }
+    expect(&[(
+        "Clip c:\n    Note/(2 ** 127 div 2 ** 117)\n",
+        &[Code::IntegerOverflow],
+    )]);
+}
+
+#[test]
 fn an_expected_type_flows_into_operands_and_fixed_types_only_widen() {
     expect(&[
         (

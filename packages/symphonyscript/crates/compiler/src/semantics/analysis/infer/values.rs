@@ -7,9 +7,10 @@ use crate::semantics::analysis::binding::BindingKind;
 use crate::semantics::analysis::cval::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{is_float, is_integer};
+use crate::semantics::analysis::sig::{Kind, is_float, is_integer};
 use crate::semantics::ir::{InputId, Loc};
 
 pub(super) fn eval_ty(scalar: Option<Scalar>) -> EvalTy {
@@ -26,9 +27,21 @@ pub(super) fn eval_ty(scalar: Option<Scalar>) -> EvalTy {
 }
 
 impl Engine<'_> {
-    pub(super) fn values(&mut self, roots: &[(NodeId, Option<Scalar>)]) {
-        for (node, scalar) in roots {
+    pub(super) fn values(&mut self, roots: &[(NodeId, Option<Scalar>, bool)]) {
+        for (node, scalar, converted) in roots {
             let ty = eval_ty(*scalar);
+            let sig = self.memo.sigs.get(node).copied();
+            if let Some(sig) = sig
+                && *converted
+                && sig.kind == Kind::Int
+                && scalar.is_some_and(is_float)
+            {
+                let value = self.demand_cval(*node, own_type(&sig, EvalTy::Exact));
+                if !value.is_error() {
+                    self.integer_to_float(*node, value, ty);
+                }
+                continue;
+            }
             let value = self.demand_cval(*node, ty);
             if !value.is_error() {
                 self.fit(*node, value, ty);

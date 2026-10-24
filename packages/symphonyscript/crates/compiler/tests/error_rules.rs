@@ -259,6 +259,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.1",
+        "inside an expression wherever a literal or an integer result is converted to a float type",
+        "does-not-fit",
+        "Clip c | gain=((16777216 + 1) / 2)\n",
+    ),
+    rule(
+        "4.1",
         "otherwise it is an error naming both uses",
         "inconsistent-uses",
         "let q = 2 ** -1\nSynth s:\n    Osc/q\nClip c:\n    Note/q\n",

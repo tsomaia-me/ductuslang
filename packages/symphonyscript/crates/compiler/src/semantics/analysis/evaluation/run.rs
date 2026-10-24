@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use symphonyscript_core::{BinaryOp, Builtin, SpecFloat, UnaryOp, Value};
 
-use super::exact::{exact_binary, fits};
+use super::exact::{exact_binary, fits, represents};
 use super::format::text;
-use super::types::{Pair, int_bits, is_float_ty, is_int_ty, own_type, pair_type};
+use super::types::{Pair, int_bits, is_float_builtin, is_float_ty, is_int_ty, own_type, pair_type};
 use crate::diagnostics::Code;
 use crate::semantics::analysis::bound::{Bound, BoundVal};
 use crate::semantics::analysis::cval::CVal;
@@ -14,7 +14,7 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::node::{Op, Piece};
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::sig::Kind;
+use crate::semantics::analysis::sig::{Kind, Width};
 use crate::semantics::ir::{FloatLit, Number, Suffix};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -412,8 +412,17 @@ impl Engine<'_> {
                 Some(match (a?, b?) {
                     (CVal::Int(a), CVal::Int(b)) => {
                         let value = self.integer(node, EvalTy::Exact, exact_binary(op, a, b));
-                        convert_to(value, own)
+                        self.integer_to_float(node, value, own)
                     }
+                    _ => CVal::Error,
+                })
+            }
+            BinaryOp::Div => {
+                let a = self.float_operand(lhs, own, ctx, need);
+                let b = self.float_operand(rhs, own, ctx, need);
+                Some(match (a?, b?) {
+                    (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
+                    (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
                     _ => CVal::Error,
                 })
             }
@@ -457,10 +466,15 @@ impl Engine<'_> {
                 _ => CVal::Error,
             });
         }
-        let values: Vec<Option<CVal>> = args
-            .iter()
-            .map(|arg| self.child(*arg, own, ctx, need))
-            .collect();
+        let values: Vec<Option<CVal>> = if is_float_builtin(builtin) {
+            args.iter()
+                .map(|arg| self.float_operand(*arg, own, ctx, need))
+                .collect()
+        } else {
+            args.iter()
+                .map(|arg| self.child(*arg, own, ctx, need))
+                .collect()
+        };
         let values: Vec<CVal> = values.into_iter().collect::<Option<_>>()?;
         if let Some(ints) = values
             .iter()
@@ -562,6 +576,55 @@ impl Engine<'_> {
         value
     }
 
+    fn float_operand(
+        &mut self,
+        operand: NodeId,
+        own: EvalTy,
+        ctx: Ctx,
+        need: &mut Vec<Query>,
+    ) -> Option<CVal> {
+        let sig = self.sig(operand, need)?;
+        if sig.kind != Kind::Int || !is_float_ty(own) {
+            return self.child(operand, own, ctx, need);
+        }
+        let value = self.child(operand, own_type(&sig, EvalTy::Exact), ctx, need)?;
+        Some(self.integer_to_float(operand, value, own))
+    }
+
+    pub(in crate::semantics::analysis) fn integer_to_float(
+        &mut self,
+        node: NodeId,
+        value: CVal,
+        ty: EvalTy,
+    ) -> CVal {
+        let CVal::Int(integer) = value else {
+            return value;
+        };
+        let converted = convert(value, ty);
+        let exactly = match converted {
+            CVal::F32(float) => represents(integer, f64::from(float)),
+            CVal::F64(float) => represents(integer, float),
+            _ => true,
+        };
+        let flexible = self
+            .memo
+            .sigs
+            .get(&node)
+            .is_some_and(|sig| !matches!(sig.width, Width::Fixed(_)));
+        if flexible && !exactly {
+            self.error_at_node(
+                Code::DoesNotFit,
+                node,
+                format!(
+                    "the integer {integer} converts to `{}` inexactly",
+                    ty_name(ty)
+                ),
+            );
+            return CVal::Error;
+        }
+        converted
+    }
+
     fn scaled(&self, node: NodeId, value: CVal, own: EvalTy) -> CVal {
         let Some(scale) = self.memo.default_scales.get(&node).copied() else {
             return value;
@@ -593,8 +656,8 @@ fn exact_integer(value: &CVal, number: &Number, scale: Option<f64>) -> bool {
         return false;
     };
     match value {
-        CVal::F32(value) => value.is_finite() && (*value as i128) == expected,
-        CVal::F64(value) => value.is_finite() && (*value as i128) == expected,
+        CVal::F32(value) => represents(expected, f64::from(*value)),
+        CVal::F64(value) => represents(expected, *value),
         _ => false,
     }
 }
