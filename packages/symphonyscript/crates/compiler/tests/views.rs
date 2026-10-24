@@ -102,3 +102,54 @@ fn views_walk_in_preorder_and_find_tokens_by_offset() {
     assert!(first.prev_token().is_none());
     assert_eq!(format!("{first}"), "let");
 }
+
+#[test]
+fn token_steps_pass_over_nodes_that_hold_no_token() {
+    for text in ["fn f: 1\n", "pattern P:\n    Note\n", "fn f(: 1\n"] {
+        let parsed = support::parsed(text);
+        let root = parsed.root();
+        let mut tokens = Vec::new();
+        let mut nodes = Vec::new();
+        for event in root.preorder() {
+            match event {
+                Walk::Enter(ElementView::Token(token)) => tokens.push(token),
+                Walk::Enter(ElementView::Node(node)) => nodes.push(node),
+                Walk::Leave(_) => {}
+            }
+        }
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.first_token().is_none() && node.range().is_empty()),
+            "{text:?} holds an empty node"
+        );
+        let forward: Vec<_> =
+            std::iter::successors(root.first_token(), |token| token.next_token()).collect();
+        assert_eq!(forward, tokens, "{text:?} forward");
+        let mut backward: Vec<_> =
+            std::iter::successors(root.last_token(), |token| token.prev_token()).collect();
+        backward.reverse();
+        assert_eq!(backward, tokens, "{text:?} backward");
+    }
+
+    let parsed = support::parsed("fn f(: 1\n");
+    let params = parsed
+        .root()
+        .preorder()
+        .find_map(|event| match event {
+            Walk::Enter(ElementView::Node(node)) if node.kind() == SyntaxKind::ParamList => {
+                Some(node)
+            }
+            _ => None,
+        })
+        .expect("a parameter list");
+    assert_eq!(params.text(), "(");
+    assert_eq!(
+        params.first_token().map(|token| token.text().to_string()),
+        Some("(".into())
+    );
+    assert_eq!(
+        params.last_token().map(|token| token.text().to_string()),
+        Some("(".into())
+    );
+}
