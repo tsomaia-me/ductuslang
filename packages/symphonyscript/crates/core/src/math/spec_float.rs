@@ -5,7 +5,7 @@ pub trait SpecFloat: Copy {
     fn spec_pow(self, exponent: Self) -> Self;
     fn spec_min(self, other: Self) -> Self;
     fn spec_max(self, other: Self) -> Self;
-    fn spec_builtin(builtin: Builtin, args: &[Self]) -> Self;
+    fn spec_builtin(builtin: Builtin, args: &[Self]) -> Option<Self>;
 }
 
 macro_rules! spec_float {
@@ -68,25 +68,41 @@ macro_rules! spec_float {
                 if self > other { self } else { other }
             }
 
-            fn spec_builtin(builtin: Builtin, args: &[Self]) -> Self {
-                let arg = |position: usize| args.get(position).copied().unwrap_or(0.0);
-                match builtin {
-                    Builtin::Abs => $fabs(arg(0)),
-                    Builtin::Min => arg(0).spec_min(arg(1)),
-                    Builtin::Max => arg(0).spec_max(arg(1)),
-                    Builtin::Clamp => arg(0).spec_max(arg(1)).spec_min(arg(2)),
-                    Builtin::Floor => $floor(arg(0)),
-                    Builtin::Ceil => $ceil(arg(0)),
-                    Builtin::Round => $round(arg(0)),
-                    Builtin::Sqrt => $sqrt(arg(0)),
-                    Builtin::Sin => $sin(arg(0)),
-                    Builtin::Cos => $cos(arg(0)),
-                    Builtin::Tan => $tan(arg(0)),
-                    Builtin::Exp => $exp(arg(0)),
-                    Builtin::Log => $log(arg(0)),
-                    Builtin::Lerp => arg(0) + (arg(1) - arg(0)) * arg(2),
-                    Builtin::Rand => 0.0,
-                }
+            fn spec_builtin(builtin: Builtin, args: &[Self]) -> Option<Self> {
+                Some(match (builtin, args) {
+                    (Builtin::Abs, [x]) => $fabs(*x),
+                    (Builtin::Min, [a, b]) => a.spec_min(*b),
+                    (Builtin::Max, [a, b]) => a.spec_max(*b),
+                    (Builtin::Clamp, [x, lo, hi]) => x.spec_max(*lo).spec_min(*hi),
+                    (Builtin::Floor, [x]) => $floor(*x),
+                    (Builtin::Ceil, [x]) => $ceil(*x),
+                    (Builtin::Round, [x]) => $round(*x),
+                    (Builtin::Sqrt, [x]) => $sqrt(*x),
+                    (Builtin::Sin, [x]) => $sin(*x),
+                    (Builtin::Cos, [x]) => $cos(*x),
+                    (Builtin::Tan, [x]) => $tan(*x),
+                    (Builtin::Exp, [x]) => $exp(*x),
+                    (Builtin::Log, [x]) => $log(*x),
+                    (Builtin::Lerp, [a, b, t]) => *a + (*b - *a) * *t,
+                    (
+                        Builtin::Abs
+                        | Builtin::Min
+                        | Builtin::Max
+                        | Builtin::Clamp
+                        | Builtin::Floor
+                        | Builtin::Ceil
+                        | Builtin::Round
+                        | Builtin::Sqrt
+                        | Builtin::Sin
+                        | Builtin::Cos
+                        | Builtin::Tan
+                        | Builtin::Exp
+                        | Builtin::Log
+                        | Builtin::Lerp
+                        | Builtin::Rand,
+                        _,
+                    ) => return None,
+                })
             }
         }
     };

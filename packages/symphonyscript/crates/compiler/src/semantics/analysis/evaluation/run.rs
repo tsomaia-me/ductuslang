@@ -554,7 +554,7 @@ impl Engine<'_> {
             })
             .collect();
         if let Some(floats) = floats32 {
-            return Some(CVal::F32(f32::spec_builtin(builtin, &floats)));
+            return Some(f32::spec_builtin(builtin, &floats).map_or(CVal::Error, CVal::F32));
         }
         let floats64: Option<Vec<f64>> = values
             .iter()
@@ -563,10 +563,11 @@ impl Engine<'_> {
                 _ => None,
             })
             .collect();
-        Some(match floats64 {
-            Some(floats) => CVal::F64(f64::spec_builtin(builtin, &floats)),
-            None => CVal::Error,
-        })
+        Some(
+            floats64
+                .and_then(|floats| f64::spec_builtin(builtin, &floats))
+                .map_or(CVal::Error, CVal::F64),
+        )
     }
 
     fn concat(&mut self, pieces: &[Piece], ctx: Ctx, need: &mut Vec<Query>) -> Option<CVal> {

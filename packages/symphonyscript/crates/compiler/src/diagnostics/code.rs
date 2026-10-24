@@ -2,8 +2,20 @@ use std::fmt;
 
 use super::severity::Severity;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub enum Code {
+macro_rules! codes {
+    ($($variant:ident),* $(,)?) => {
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+        pub enum Code {
+            $($variant),*
+        }
+
+        impl Code {
+            pub const ALL: &'static [Code] = &[$(Code::$variant),*];
+        }
+    };
+}
+
+codes!(
     UnexpectedCharacter,
     TabIndentation,
     DedentMismatch,
@@ -127,135 +139,9 @@ pub enum Code {
     WireCycle,
     UnreachableInstance,
     NoEntryInstance,
-}
+);
 
 impl Code {
-    pub const ALL: &'static [Code] = &[
-        Code::UnexpectedCharacter,
-        Code::TabIndentation,
-        Code::DedentMismatch,
-        Code::ClauseColumn,
-        Code::Semicolon,
-        Code::InvalidIdentifier,
-        Code::ReservedWord,
-        Code::ReservedToken,
-        Code::MisplacedUnderscore,
-        Code::FloatDigits,
-        Code::FloatTypeSuffix,
-        Code::UnknownSuffix,
-        Code::PrefixedSuffix,
-        Code::IntegerTooLarge,
-        Code::UnterminatedString,
-        Code::InvalidEscape,
-        Code::TopLevelSyntax,
-        Code::UnexpectedIndent,
-        Code::TypeSyntax,
-        Code::ExpressionSyntax,
-        Code::ChainedComparison,
-        Code::UnparenthesizedIf,
-        Code::MatchSyntax,
-        Code::MatchPosition,
-        Code::MixedArguments,
-        Code::ConversionSyntax,
-        Code::InputSyntax,
-        Code::LetSyntax,
-        Code::FnSyntax,
-        Code::PatternSyntax,
-        Code::PlacementSyntax,
-        Code::TopLevelWire,
-        Code::FlagSyntax,
-        Code::DefaultArgSyntax,
-        Code::AttributeSyntax,
-        Code::InlinePlacement,
-        Code::BundleSyntax,
-        Code::ForSyntax,
-        Code::WireSyntax,
-        Code::MisplacedWire,
-        Code::WhenSyntax,
-        Code::DuplicateName,
-        Code::VariantName,
-        Code::PreludeItem,
-        Code::RecursivePattern,
-        Code::UnknownName,
-        Code::UnknownKind,
-        Code::ChildNameClash,
-        Code::ForVariableClash,
-        Code::DuplicateLocal,
-        Code::ParameterOrder,
-        Code::DuplicateDefaultParameter,
-        Code::NamedInFor,
-        Code::MisplacedTo,
-        Code::UnknownType,
-        Code::ZeroLength,
-        Code::InterpolationType,
-        Code::UnknownVariant,
-        Code::ArrayOperand,
-        Code::ConditionType,
-        Code::TypeMismatch,
-        Code::RaggedArray,
-        Code::MatchScrutinee,
-        Code::DeclarationCycle,
-        Code::NotAValue,
-        Code::NotCallable,
-        Code::NamedBuiltinArguments,
-        Code::ArgumentCount,
-        Code::UnknownParameter,
-        Code::DuplicateArgument,
-        Code::MissingArgument,
-        Code::ReactiveInitializer,
-        Code::InputValue,
-        Code::UnknownAttribute,
-        Code::RuntimePath,
-        Code::IndexType,
-        Code::NotAnArray,
-        Code::IndexOutOfRange,
-        Code::DestinationType,
-        Code::ExpansionLimit,
-        Code::UseForm,
-        Code::NoDefaultParameter,
-        Code::DuplicateAttribute,
-        Code::UnknownFlag,
-        Code::NoDefaultAttribute,
-        Code::MissingAttribute,
-        Code::TopLevelPattern,
-        Code::EmptyBundle,
-        Code::BundleMember,
-        Code::IterableType,
-        Code::ReactiveIterable,
-        Code::RangeBound,
-        Code::UnitOperation,
-        Code::OperandType,
-        Code::ConversionType,
-        Code::ReactiveString,
-        Code::MixedFamilies,
-        Code::MatchLabel,
-        Code::DuplicateArm,
-        Code::MatchIncomplete,
-        Code::RedundantElse,
-        Code::FloatToInteger,
-        Code::ToCandidates,
-        Code::ReactiveRecursion,
-        Code::RecursionDepth,
-        Code::RecursionLimit,
-        Code::ReactiveNodeReference,
-        Code::DoesNotFit,
-        Code::IntegerOverflow,
-        Code::ConstantOverflow,
-        Code::UnitMismatch,
-        Code::PlainInFamily,
-        Code::ConflictingUnits,
-        Code::InconsistentUses,
-        Code::IntegerInput,
-        Code::NotTopLevel,
-        Code::CountExceeded,
-        Code::CountBelowMinimum,
-        Code::ChildNotAccepted,
-        Code::WireEndpoint,
-        Code::WireCycle,
-        Code::UnreachableInstance,
-        Code::NoEntryInstance,
-    ];
-
     pub fn as_str(self) -> &'static str {
         match self {
             Code::UnexpectedCharacter => "unexpected-character",
@@ -511,7 +397,126 @@ impl Code {
             Code::IntegerInput | Code::UnreachableInstance | Code::NoEntryInstance => {
                 Severity::Warning
             }
-            _ => Severity::Error,
+            Code::UnexpectedCharacter
+            | Code::TabIndentation
+            | Code::DedentMismatch
+            | Code::ClauseColumn
+            | Code::Semicolon
+            | Code::InvalidIdentifier
+            | Code::ReservedWord
+            | Code::ReservedToken
+            | Code::MisplacedUnderscore
+            | Code::FloatDigits
+            | Code::FloatTypeSuffix
+            | Code::UnknownSuffix
+            | Code::PrefixedSuffix
+            | Code::IntegerTooLarge
+            | Code::UnterminatedString
+            | Code::InvalidEscape
+            | Code::TopLevelSyntax
+            | Code::UnexpectedIndent
+            | Code::TypeSyntax
+            | Code::ExpressionSyntax
+            | Code::ChainedComparison
+            | Code::UnparenthesizedIf
+            | Code::MatchSyntax
+            | Code::MatchPosition
+            | Code::MixedArguments
+            | Code::ConversionSyntax
+            | Code::InputSyntax
+            | Code::LetSyntax
+            | Code::FnSyntax
+            | Code::PatternSyntax
+            | Code::PlacementSyntax
+            | Code::TopLevelWire
+            | Code::FlagSyntax
+            | Code::DefaultArgSyntax
+            | Code::AttributeSyntax
+            | Code::InlinePlacement
+            | Code::BundleSyntax
+            | Code::ForSyntax
+            | Code::WireSyntax
+            | Code::MisplacedWire
+            | Code::WhenSyntax
+            | Code::DuplicateName
+            | Code::VariantName
+            | Code::PreludeItem
+            | Code::RecursivePattern
+            | Code::UnknownName
+            | Code::UnknownKind
+            | Code::ChildNameClash
+            | Code::ForVariableClash
+            | Code::DuplicateLocal
+            | Code::ParameterOrder
+            | Code::DuplicateDefaultParameter
+            | Code::NamedInFor
+            | Code::MisplacedTo
+            | Code::UnknownType
+            | Code::ZeroLength
+            | Code::InterpolationType
+            | Code::UnknownVariant
+            | Code::ArrayOperand
+            | Code::ConditionType
+            | Code::TypeMismatch
+            | Code::RaggedArray
+            | Code::MatchScrutinee
+            | Code::DeclarationCycle
+            | Code::NotAValue
+            | Code::NotCallable
+            | Code::NamedBuiltinArguments
+            | Code::ArgumentCount
+            | Code::UnknownParameter
+            | Code::DuplicateArgument
+            | Code::MissingArgument
+            | Code::ReactiveInitializer
+            | Code::InputValue
+            | Code::UnknownAttribute
+            | Code::RuntimePath
+            | Code::IndexType
+            | Code::NotAnArray
+            | Code::IndexOutOfRange
+            | Code::DestinationType
+            | Code::ExpansionLimit
+            | Code::UseForm
+            | Code::NoDefaultParameter
+            | Code::DuplicateAttribute
+            | Code::UnknownFlag
+            | Code::NoDefaultAttribute
+            | Code::MissingAttribute
+            | Code::TopLevelPattern
+            | Code::EmptyBundle
+            | Code::BundleMember
+            | Code::IterableType
+            | Code::ReactiveIterable
+            | Code::RangeBound
+            | Code::UnitOperation
+            | Code::OperandType
+            | Code::ConversionType
+            | Code::ReactiveString
+            | Code::MixedFamilies
+            | Code::MatchLabel
+            | Code::DuplicateArm
+            | Code::MatchIncomplete
+            | Code::RedundantElse
+            | Code::FloatToInteger
+            | Code::ToCandidates
+            | Code::ReactiveRecursion
+            | Code::RecursionDepth
+            | Code::RecursionLimit
+            | Code::ReactiveNodeReference
+            | Code::DoesNotFit
+            | Code::IntegerOverflow
+            | Code::ConstantOverflow
+            | Code::UnitMismatch
+            | Code::PlainInFamily
+            | Code::ConflictingUnits
+            | Code::InconsistentUses
+            | Code::NotTopLevel
+            | Code::CountExceeded
+            | Code::CountBelowMinimum
+            | Code::ChildNotAccepted
+            | Code::WireEndpoint
+            | Code::WireCycle => Severity::Error,
         }
     }
 }
