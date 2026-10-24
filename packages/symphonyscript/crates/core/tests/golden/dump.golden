@@ -7,9 +7,9 @@ instance i0
   expanded_from []
   attrs
     gain cell c0
-    steps array [input 1, const bool false]
+    steps array [slot 1, const bool false]
     label const str s1
-  gate input 2
+  gate slot 2
   sequence
     child i1
     bundle [i2, i3]
@@ -71,7 +71,7 @@ wire w1
   span "main.sym" 53..80
   expanded_from []
   source i0
-  target select [i4, i0] index input 0
+  target select [i4, i0] index slot 0
   attrs
     delay cell c1
   gate cell c2
@@ -98,15 +98,15 @@ input 2
   span "main.sym" 51..70
 cell c0
   ty f32
-  expr (mul f32 (convert f64 f32 (input 3)) (const f32 0.1))
+  expr (mul f32 (convert f64 f32 (slot 3)) (const f32 0.1))
   span "main.sym" 71..90
 cell c1
   ty f64
-  expr (match i64 (input 0) [i64 0 (const f64 nan)] [i64 1 (const f64 nan:0x7ff8000000000001)] [else (pick i64 (input 0) (const f64 inf) (const f64 -inf) (const f64 1e-20) (call lerp f64 (const f64 1.0) (const f64 2.5e300) (cell c0)))])
+  expr (match i64 (slot 0) [i64 0 (const f64 nan)] [i64 1 (const f64 nan:0x7ff8000000000001)] [else (pick i64 (slot 0) (const f64 inf) (const f64 -inf) (const f64 1e-20) (call lerp f64 (const f64 1.0) (const f64 2.5e300) (cell c0)))])
   span "main.sym" 91..100
 cell c2
   ty bool
-  expr (if (not bool (input 1)) (is Wave (const Wave::Saw) (const Wave::Sine)) (gt f32 (call rand i64 (const i64 9223372036854775807) (neg i64 (input 0))) (const f32 nan:0x7fc00001)))
+  expr (if (not bool (slot 1)) (is Wave (const Wave::Saw) (const Wave::Sine)) (gt f32 (call rand i64 (const i64 9223372036854775807) (neg i64 (slot 0))) (const f32 nan:0x7fc00001)))
   span "main.sym" 101..110
 string s0 "kit/0.wav"
 string s1 "a \"quoted\" \\ line\nnext\ttab\u{1}"

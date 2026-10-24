@@ -201,7 +201,7 @@ impl Printer<'_> {
                 self.out.push_str("const ");
                 self.value(*value)
             }
-            Binding::Input(slot) => write!(self.out, "input {}", slot.0),
+            Binding::Input(slot) => write!(self.out, "slot {}", slot.0),
             Binding::Cell(cell) => write!(self.out, "cell c{}", cell.0),
             Binding::Array(elements) => {
                 self.out.push_str("array [");
@@ -223,7 +223,7 @@ impl Printer<'_> {
                 self.out.push_str("(const ");
                 self.value(*value)?;
             }
-            Expr::Input(slot) => write!(self.out, "(input {}", slot.0)?,
+            Expr::Input(slot) => write!(self.out, "(slot {}", slot.0)?,
             Expr::Cell(cell) => write!(self.out, "(cell c{}", cell.0)?,
             Expr::Unary { op, ty, operand } => {
                 write!(self.out, "({} ", op.name())?;
