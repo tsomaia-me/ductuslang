@@ -289,7 +289,7 @@ The compiler performs no file I/O; the caller supplies every source. This keeps 
 7. **Check.** The vocabulary checks (SPEC §10.2), cycles among wires, fit checks, and the warnings of SPEC §4.4 and §10.2.
 8. **Lower.** Constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program.
 
-Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose documentation names the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first.
+Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose `section` method returns the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first.
 
 Each change recompiles the whole project.
 

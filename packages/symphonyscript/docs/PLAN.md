@@ -18,12 +18,13 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - A question that sets direction or has no clear winner: it goes to the owner as background, options with SymphonyScript examples, and a recommendation. Work that it does not block continues, and the question closes when the owner answers.
 - The documents change first and the code after.
 - An implementer decides none of these. It records each gap in its progress file, keeps working on what the gap does not block, and hands back to the head when it is blocked or done. The head answers and resumes it.
+- A gap is a behaviour the documents leave undefined or define twice in conflict, a statement in them that cannot be built as written, or a dependency this plan does not name. Implementation choices are not gaps and belong to the implementer: private code, module layout within the code conventions, algorithms and data structures, tests, and the names and shapes of public items ARCHITECTURE does not show, while every ARCHITECTURE example stays true. The implementer lists each public item it adds beyond ARCHITECTURE in its progress file, and the review checks them.
 - Changes to synaptic-kernel need the owner's approval of their design before code (CLAUDE.md).
 
 ### Work and checks
 
-- Commits go directly on `main` in the main checkout, one step at a time, each step passing the checks. There are no branches and no pull requests. The owner pushes.
-- One implementer runs at a time.
+- Commits go directly on `main` in the main checkout, one step at a time, each step passing the checks. There are no pull requests. At the end of each milestone the implementer pushes `main` to the branch `symphonyscript/progress` on `origin` with `git push origin main:symphonyscript/progress`, never forced, so no work is lost; the owner pushes `main`.
+- One implementer runs at a time. The head commits its document edits on `main` only while no implementer runs.
 - The implementer keeps its progress in `.memory/symphonyscript/M<n>.md`: steps done, the gaps it found, and the next step. After a compaction it continues from the repository and that file.
 - Checks, run by the implementer before every commit and by the reviewer at review: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo build -p symphonyscript-core --target thumbv7em-none-eabihf`.
 - The implementer adds no dependency this plan does not name; another dependency is a gap.
@@ -40,14 +41,14 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - Rust edition 2024. Every crate forbids `unsafe` code, and a clippy warning fails the checks.
 - One public entity per file, the file named after it; modules are folders.
 - No comments in authored files (repository CLAUDE.md).
-- Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
+- Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
 
 ## M1: Front end
 
 The workspace, the core data types, the fixtures, the lexer and the parser.
 
 Steps:
-1. The Cargo workspace with the five crates of ARCHITECTURE §1.
+1. The Cargo workspace with the five crates of ARCHITECTURE §1. `symphonyscript-kernel` starts empty and takes its synaptic-kernel dependency in M5.
 2. Core types: `Value`, `Ty`, ids and handles, `Span`, `Path`.
 3. The vocabulary builder, `build()` with every check of SPEC §10.1 except the prelude's, and the stamp (ARCHITECTURE §2).
 4. The Program types (ARCHITECTURE §3) and a `dump` printer with a fixed text format.

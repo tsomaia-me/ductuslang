@@ -56,7 +56,7 @@ Examples are fenced blocks tagged by what they hold: `sym` for a program, `sym-e
 | `Feeds` | `Osc` or `Filter` → `Filter`, `Mixer` or `Output` | none | no |
 | `Modulates` | `Osc` → `Filter` | `depth: f32 = 1` (default) | no |
 
-The enum `Wave` has the variants `Sine`, `Saw` and `Square`. The unit family `beats` has the base unit `beats` and the unit `bars` with scale 4. The unit family `time` has the base unit `s` and the unit `ms` with scale 0.001. Every count not stated above is "any number".
+The enum `Wave` has the variants `Sine`, `Saw` and `Square`. The unit family `beats` has the base unit `beats` and the unit `bars` with scale 4. The unit family `time` has the base unit `s` and the unit `ms` with scale 0.001. Every count not stated above is "any number". The example vocabulary has no prelude.
 
 ## 2. Source text
 
