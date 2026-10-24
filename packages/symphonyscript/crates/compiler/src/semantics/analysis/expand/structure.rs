@@ -42,6 +42,16 @@ impl Engine<'_> {
                         return None;
                     }
                 };
+                let mut bare = false;
+                for node in &array.elements {
+                    if self.demand_sig(*node).kind == Kind::Bare {
+                        self.unplaced_variant(*node);
+                        bare = true;
+                    }
+                }
+                if bare {
+                    return None;
+                }
                 for node in &array.elements {
                     let sig = self.demand_sig(*node);
                     if sig.reactive {

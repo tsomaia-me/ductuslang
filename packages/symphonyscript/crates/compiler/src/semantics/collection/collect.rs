@@ -9,11 +9,17 @@ use super::decl::Decl;
 use super::inline_counts::InlineCounts;
 use super::namespace::Namespace;
 use super::pattern_graph::pattern_graph;
+use super::variants::Variants;
 use crate::diagnostics::Code;
 use crate::semantics::ir::{Hir, Ident, Loc, Top};
 use crate::semantics::reporting::Report;
 
-pub(crate) fn collect(hir: &Hir, vocabulary: &Vocabulary, report: &mut Report) -> Collected {
+pub(crate) fn collect(
+    hir: &Hir,
+    vocabulary: &Vocabulary,
+    variants: &Variants,
+    report: &mut Report,
+) -> Collected {
     let base = base_namespace(vocabulary);
     let mut prelude = base.clone();
     let mut source = base.clone();
@@ -55,7 +61,7 @@ pub(crate) fn collect(hir: &Hir, vocabulary: &Vocabulary, report: &mut Report) -
         let Some(name) = name else {
             continue;
         };
-        variant_name(hir, vocabulary, &name, report);
+        variant_name(hir, vocabulary, variants, &name, report);
         if in_prelude {
             if declare(
                 hir,
@@ -154,8 +160,18 @@ fn declare(
     true
 }
 
-fn variant_name(hir: &Hir, vocabulary: &Vocabulary, name: &Ident, report: &mut Report) {
-    if let Some(owner) = variant_owner(vocabulary, &name.text) {
+fn variant_name(
+    hir: &Hir,
+    vocabulary: &Vocabulary,
+    variants: &Variants,
+    name: &Ident,
+    report: &mut Report,
+) {
+    if let Some(owner) = variants
+        .owner(&name.text)
+        .and_then(|id| vocabulary.enum_decl(id))
+        .map(|decl| decl.name.as_str())
+    {
         report.error(
             hir,
             Code::VariantName,
@@ -166,12 +182,4 @@ fn variant_name(hir: &Hir, vocabulary: &Vocabulary, name: &Ident, report: &mut R
             ),
         );
     }
-}
-
-pub(crate) fn variant_owner<'v>(vocabulary: &'v Vocabulary, name: &str) -> Option<&'v str> {
-    vocabulary
-        .enums()
-        .iter()
-        .find(|decl| decl.variants.iter().any(|variant| variant == name))
-        .map(|decl| decl.name.as_str())
 }

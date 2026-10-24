@@ -200,6 +200,20 @@ impl Engine<'_> {
             self.memo.inputs.insert(input, BoundVal::Error);
             return true;
         }
+        let bare: Vec<NodeId> = val
+            .nodes()
+            .into_iter()
+            .zip(&sigs)
+            .filter(|(_, sig)| sig.kind == Kind::Bare)
+            .map(|(node, _)| node)
+            .collect();
+        if !bare.is_empty() {
+            for node in bare {
+                self.unplaced_variant(node);
+            }
+            self.memo.inputs.insert(input, BoundVal::Error);
+            return true;
+        }
         if let Some(bad) = sigs
             .iter()
             .find(|sig| matches!(sig.kind, Kind::Str | Kind::Node))

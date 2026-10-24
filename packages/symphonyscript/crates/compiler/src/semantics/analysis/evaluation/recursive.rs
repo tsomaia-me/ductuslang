@@ -121,6 +121,18 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Option<(ArgKey, ArgSig, CVal)> {
         let sig = self.sig(arg, need)?;
+        if sig.kind == Kind::Bare {
+            self.unplaced_variant(arg);
+            return Some((
+                ArgKey::Error,
+                ArgSig {
+                    kind: Kind::Error,
+                    width: Width::Flexible,
+                    family: None,
+                },
+                CVal::Error,
+            ));
+        }
         let flexible = sig.width == Width::Flexible;
         let ty = if flexible && sig.kind == Kind::Int {
             EvalTy::Exact

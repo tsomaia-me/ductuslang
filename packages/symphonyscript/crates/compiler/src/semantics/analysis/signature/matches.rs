@@ -127,12 +127,9 @@ impl Engine<'_> {
     fn label(&mut self, label: NodeId, scrutinee: &Sig) -> Option<Label> {
         let op = self.node(label).op.clone();
         let found = match (&op, scrutinee.kind) {
-            (Op::Bare(name), Kind::Enum(id)) => self
-                .vocabulary
-                .enum_decl(id)
-                .and_then(|decl| decl.variants.iter().position(|variant| variant == name))
-                .and_then(|position| u16::try_from(position).ok())
-                .map(Label::Variant),
+            (Op::Bare(name), Kind::Enum(id)) => {
+                self.variants.position(id, name).map(Label::Variant)
+            }
             (Op::Bool(value), Kind::Bool) => Some(Label::Bool(*value)),
             (Op::Number(Number::Int(_), suffix), Kind::Int) => {
                 let family = match suffix {

@@ -150,11 +150,7 @@ impl Engine<'_> {
             );
             return Val::Error;
         };
-        let position = self
-            .vocabulary
-            .enum_decl(id)
-            .and_then(|decl| decl.variants.iter().position(|name| *name == variant.text));
-        match position.and_then(|position| u16::try_from(position).ok()) {
+        match self.variants.position(id, &variant.text) {
             Some(index) => self.scalar(Op::Variant(id, index), loc, scope),
             None => {
                 self.error(

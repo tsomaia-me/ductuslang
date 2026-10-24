@@ -479,6 +479,40 @@ fn enums_strings_and_bools_take_their_own_types() {
 }
 
 #[test]
+fn a_bare_variant_stands_only_where_an_enum_is_expected() {
+    expect(&[
+        ("Clip c | gain=Saw(1)\n", &[Code::UnknownName]),
+        ("let z = Saw.gain\nClip c | gain=z\n", &[Code::UnknownName]),
+        (
+            "input w = Saw\nSynth s:\n    Osc | wave=w\n",
+            &[Code::UnknownName],
+        ),
+        (
+            "Synth s:\n    for v in [Saw, Sine]:\n        Osc | wave=v\n",
+            &[Code::UnknownName, Code::UnknownName],
+        ),
+        (
+            "fn r(n, w): if n < 1 then w else r(n - 1, w)\nSynth s:\n    Osc | wave=(r(2, Saw))\n",
+            &[Code::UnknownName],
+        ),
+        ("Synth s:\n    Osc | wave=Saw\n", &[]),
+        (
+            "input w = Wave::Saw\nSynth s:\n    Osc when w is Saw\n",
+            &[],
+        ),
+        (
+            "input w = Wave::Saw\nlet level = match w:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\nClip c | gain=level\n",
+            &[],
+        ),
+        ("let w = Saw\nSynth s:\n    Osc | wave=w\n", &[]),
+        (
+            "Synth s:\n    for v in [Wave::Saw, Wave::Sine]:\n        Osc | wave=v\n",
+            &[],
+        ),
+    ]);
+}
+
+#[test]
 fn unit_values_keep_their_family() {
     expect(&[
         ("Clip c:\n    Note | length=2bars + 1\n", &[]),

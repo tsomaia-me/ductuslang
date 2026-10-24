@@ -47,7 +47,11 @@ impl Engine<'_> {
         };
         let item = match &self.node(self.through_uses(node)).op {
             Op::NodeRef(item) => *item,
-            Op::Bare(_) => return Some(Val::Error),
+            Op::Bare(_) => {
+                let bare = self.through_uses(node);
+                self.unplaced_variant(bare);
+                return Some(Val::Error);
+            }
             _ => {
                 let sig = self.sig(node, need)?;
                 if sig.is_error() {

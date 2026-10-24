@@ -173,28 +173,21 @@ impl Engine<'_> {
                 }
             }
             Op::Bare(name) => match own {
-                EvalTy::Enum(id) => {
-                    let position = self
-                        .vocabulary
-                        .enum_decl(id)
-                        .and_then(|decl| decl.variants.iter().position(|variant| *variant == name))
-                        .and_then(|position| u16::try_from(position).ok());
-                    match position {
-                        Some(index) => CVal::Enum(id, index),
-                        None => {
-                            let enum_name = self
-                                .vocabulary
-                                .enum_decl(id)
-                                .map_or(String::new(), |decl| decl.name.clone());
-                            self.error_at_node(
-                                Code::UnknownName,
-                                node,
-                                format!("`{name}` is not a variant of `{enum_name}`"),
-                            );
-                            CVal::Error
-                        }
+                EvalTy::Enum(id) => match self.variants.position(id, &name) {
+                    Some(index) => CVal::Enum(id, index),
+                    None => {
+                        let enum_name = self
+                            .vocabulary
+                            .enum_decl(id)
+                            .map_or(String::new(), |decl| decl.name.clone());
+                        self.error_at_node(
+                            Code::UnknownName,
+                            node,
+                            format!("`{name}` is not a variant of `{enum_name}`"),
+                        );
+                        CVal::Error
                     }
-                }
+                },
                 _ => CVal::Error,
             },
             Op::Concat(pieces) => return self.concat(&pieces, ctx, need),

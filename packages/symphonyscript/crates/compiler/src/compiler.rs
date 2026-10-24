@@ -4,6 +4,7 @@ use crate::diagnostics::{Diagnostic, Severity};
 use crate::failed::Failed;
 use crate::semantics::analysis::Engine;
 use crate::semantics::analyze;
+use crate::semantics::collection::Variants;
 use crate::semantics::ir::{Hir, build_file};
 use crate::semantics::reporting::Report;
 use crate::source::Source;
@@ -11,6 +12,7 @@ use crate::syntax::parse;
 
 pub struct Compiler {
     vocabulary: Vocabulary,
+    variants: Variants,
     prelude: Hir,
 }
 
@@ -35,7 +37,8 @@ impl Compiler {
             build_file(&mut hir, &file.path, &parsed, vocab);
         }
         hir.seal_prelude();
-        analyze::prelude(&hir, vocab, &mut report);
+        let variants = Variants::of(vocab);
+        analyze::prelude(&hir, vocab, &variants, &mut report);
         let diagnostics = report.finish(&hir.files);
         if diagnostics
             .iter()
@@ -45,6 +48,7 @@ impl Compiler {
         }
         Ok(Compiler {
             vocabulary: vocab.clone(),
+            variants,
             prelude: hir,
         })
     }
@@ -69,7 +73,8 @@ impl Compiler {
                 .extend(parsed.diagnostics.iter().cloned());
             build_file(&mut hir, &source.path, &parsed, &self.vocabulary);
         }
-        let inspected = analyze::program(&hir, &self.vocabulary, &mut report, inspect);
+        let inspected =
+            analyze::program(&hir, &self.vocabulary, &self.variants, &mut report, inspect);
         (report.finish(&hir.files), inspected)
     }
 }

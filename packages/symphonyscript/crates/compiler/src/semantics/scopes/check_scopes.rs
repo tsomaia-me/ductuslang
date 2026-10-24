@@ -1,7 +1,7 @@
 use symphonyscript_core::Vocabulary;
 
 use super::checker::Checker;
-use crate::semantics::collection::Collected;
+use crate::semantics::collection::{Collected, Variants};
 use crate::semantics::ir::{Hir, Top};
 use crate::semantics::reporting::Report;
 
@@ -9,6 +9,7 @@ pub(crate) fn check_scopes(
     hir: &Hir,
     collected: &Collected,
     vocabulary: &Vocabulary,
+    variants: &Variants,
     prelude: bool,
     report: &mut Report,
 ) {
@@ -21,7 +22,7 @@ pub(crate) fn check_scopes(
         } else {
             &collected.source
         };
-        let mut checker = Checker::new(hir, vocabulary, namespace, report);
+        let mut checker = Checker::new(hir, vocabulary, variants, namespace, report);
         match *top {
             Top::Input(id) => {
                 let input = hir.input(id);

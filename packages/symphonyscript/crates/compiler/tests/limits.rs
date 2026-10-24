@@ -2,7 +2,8 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use symphonyscript::Code;
+use symphonyscript::{Code, Compiler, Severity, Source};
+use symphonyscript_core::{Count, Vocabulary};
 
 fn codes(text: &str) -> Vec<Code> {
     support::checked(text)
@@ -83,4 +84,38 @@ fn a_compilation_inlines_at_most_a_million_calls() {
         assert_eq!(found, expected, "{text}");
         assert!(elapsed < Duration::from_secs(10), "{elapsed:?}: {text}");
     }
+}
+
+#[test]
+fn variant_lookups_cost_constant_time_per_name() {
+    let mut v = Vocabulary::builder("wide");
+    let names: Vec<String> = (0..65_536).map(|index| format!("V{index}")).collect();
+    let wide = v.enumeration("E", &names);
+    let other = v.enumeration("F", ["Other"]);
+    let kind = v.node("K");
+    v.kind(kind)
+        .top_level(Count::Any)
+        .attr_enum("e", wide, "V0")
+        .attr_enum("f", other, "Other");
+    let vocabulary = v.build().expect("the wide vocabulary builds");
+    let compiler = Compiler::new(&vocabulary).expect("the wide vocabulary compiles");
+    let mut text = String::new();
+    for index in 0..20_000 {
+        text.push_str(&format!("K k{index} | e=V{}\n", index * 3));
+    }
+    text.push_str("K x | e=Other\n");
+    let source = Source {
+        path: "wide.sym".into(),
+        text,
+    };
+    let start = Instant::now();
+    let found: Vec<Code> = compiler
+        .check(&[source])
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    let elapsed = start.elapsed();
+    assert_eq!(found, vec![Code::UnknownName]);
+    assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
 }

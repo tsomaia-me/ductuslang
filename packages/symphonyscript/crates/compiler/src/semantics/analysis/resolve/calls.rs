@@ -43,7 +43,12 @@ impl Engine<'_> {
             Found::Decl(Decl::Fn(function)) => {
                 self.function_call(function, args, expr, loc, scope, need)
             }
-            Found::Nothing => Some(Val::Error),
+            Found::Nothing => {
+                if self.variants.owner(name).is_some() {
+                    self.unplaced_variant_at(Some(name), callee_expr.loc, scope);
+                }
+                Some(Val::Error)
+            }
             _ => {
                 self.error(
                     Code::NotCallable,

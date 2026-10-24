@@ -1,6 +1,6 @@
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::ScopeId;
+use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::query::{LetRef, Query};
@@ -81,6 +81,40 @@ impl Engine<'_> {
         Found::Nothing
     }
 
+    pub(in crate::semantics::analysis) fn unplaced_variant(&mut self, node: NodeId) {
+        let (loc, scope) = {
+            let record = self.node(node);
+            (record.loc, record.scope)
+        };
+        let name = match &self.node(node).op {
+            Op::Bare(name) => Some(name.clone()),
+            _ => None,
+        };
+        self.unplaced_variant_at(name.as_deref(), loc, scope);
+    }
+
+    pub(in crate::semantics::analysis) fn unplaced_variant_at(
+        &mut self,
+        name: Option<&str>,
+        loc: Loc,
+        scope: ScopeId,
+    ) {
+        let message = match name {
+            Some(name) => {
+                let owner = self
+                    .variants
+                    .owner(name)
+                    .and_then(|id| self.vocabulary.enum_decl(id))
+                    .map_or("", |decl| decl.name.as_str());
+                format!(
+                    "`{name}` names a variant only where `{owner}` is expected; elsewhere it is written `{owner}::{name}`"
+                )
+            }
+            None => "this value names a variant, and nothing here expects an enum".to_string(),
+        };
+        self.error(Code::UnknownName, loc, scope, message);
+    }
+
     pub(in crate::semantics::analysis) fn global_of_let(
         &self,
         id: crate::semantics::ir::LetId,
@@ -120,7 +154,7 @@ impl Engine<'_> {
                 Some(Val::Error)
             }
             Found::Nothing => {
-                if crate::semantics::collection::variant_owner(self.vocabulary, name).is_some() {
+                if self.variants.owner(name).is_some() {
                     Some(self.scalar(Op::Bare(name.to_string()), loc, scope))
                 } else {
                     Some(Val::Error)

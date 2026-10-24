@@ -4,7 +4,7 @@ use symphonyscript_core::Vocabulary;
 
 use super::frame::{Frame, FrameKind};
 use crate::diagnostics::Code;
-use crate::semantics::collection::{Decl, Namespace, variant_owner};
+use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
     AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
     PatternId, PlacementId, TypeBase, TypeRef,
@@ -28,6 +28,7 @@ enum Mode {
 pub(super) struct Checker<'a> {
     hir: &'a Hir,
     vocabulary: &'a Vocabulary,
+    variants: &'a Variants,
     namespace: &'a Namespace,
     frames: Vec<Frame>,
     report: &'a mut Report,
@@ -37,12 +38,14 @@ impl<'a> Checker<'a> {
     pub fn new(
         hir: &'a Hir,
         vocabulary: &'a Vocabulary,
+        variants: &'a Variants,
         namespace: &'a Namespace,
         report: &'a mut Report,
     ) -> Self {
         Self {
             hir,
             vocabulary,
+            variants,
             namespace,
             frames: Vec::new(),
             report,
@@ -293,7 +296,12 @@ impl<'a> Checker<'a> {
     }
 
     fn declared(&mut self, name: &Ident) {
-        if let Some(owner) = variant_owner(self.vocabulary, &name.text) {
+        if let Some(owner) = self
+            .variants
+            .owner(&name.text)
+            .and_then(|id| self.vocabulary.enum_decl(id))
+            .map(|decl| decl.name.as_str())
+        {
             self.report.error(
                 self.hir,
                 Code::VariantName,
@@ -343,8 +351,7 @@ impl<'a> Checker<'a> {
             let expr = self.hir.expr(id);
             match &expr.kind {
                 ExprKind::Name(name) => {
-                    if !self.visible(frame, name) && variant_owner(self.vocabulary, name).is_none()
-                    {
+                    if !self.visible(frame, name) && self.variants.owner(name).is_none() {
                         self.report.error(
                             self.hir,
                             Code::UnknownName,

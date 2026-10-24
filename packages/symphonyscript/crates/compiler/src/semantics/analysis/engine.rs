@@ -22,7 +22,7 @@ use super::site::Site;
 use super::val::Val;
 use super::wire::Wire;
 use crate::diagnostics::Code;
-use crate::semantics::collection::Collected;
+use crate::semantics::collection::{Collected, Variants};
 use crate::semantics::ir::{Hir, Loc, PlacementId};
 use crate::semantics::reporting::Report;
 
@@ -30,6 +30,7 @@ pub(crate) struct Engine<'a> {
     pub hir: &'a Hir,
     pub vocabulary: &'a Vocabulary,
     pub collected: &'a Collected,
+    pub variants: &'a Variants,
     pub report: Report,
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
@@ -73,11 +74,17 @@ pub(crate) struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
-    pub fn new(hir: &'a Hir, vocabulary: &'a Vocabulary, collected: &'a Collected) -> Self {
+    pub fn new(
+        hir: &'a Hir,
+        vocabulary: &'a Vocabulary,
+        collected: &'a Collected,
+        variants: &'a Variants,
+    ) -> Self {
         let mut engine = Self {
             hir,
             vocabulary,
             collected,
+            variants,
             report: Report::default(),
             scopes: Vec::new(),
             nodes: Vec::new(),
