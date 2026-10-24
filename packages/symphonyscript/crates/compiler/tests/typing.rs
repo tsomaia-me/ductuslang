@@ -522,6 +522,64 @@ fn a_bare_variant_stands_only_where_an_enum_is_expected() {
 }
 
 #[test]
+fn the_operands_of_is_give_a_reactive_let_its_enum() {
+    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let rows = [
+        format!("{held}Clip c:\n    Note when x is Wave::Saw\n"),
+        format!("{held}Clip c:\n    Note when x is not Wave::Saw\n"),
+        format!("{held}Clip c:\n    Note when Wave::Saw is x\n"),
+        format!("{held}input w = Wave::Saw\nClip c:\n    Note when x is w\n"),
+        format!("{held}let g = x is Wave::Saw\nClip c:\n    Note when g\n"),
+        format!(
+            "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n"
+        ),
+        format!("{held}Osc o | wave=x\nClip c:\n    Note when x is Saw\n"),
+        format!("{held}Osc o | wave=x\n"),
+        "let x = Sine\nClip c:\n    Note when x is Wave::Saw\n".into(),
+    ];
+    let cases: Vec<(&str, &[Code])> = rows.iter().map(|text| (text.as_str(), &[][..])).collect();
+    expect(&cases);
+}
+
+#[test]
+fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
+    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let the_let = "let x = if f then Sine else Saw\n";
+    for uses in [
+        "Clip c:\n    Note when x is x\n",
+        "Clip c:\n    Note when x is Saw\n",
+        "Clip c:\n    Note/x\n",
+        "Clip c:\n    Note/(x + 1)\n",
+    ] {
+        support::expect_codes(
+            &format!("{held}{uses}"),
+            &[(Code::TypeMismatch, the_let, 0)],
+        );
+    }
+    support::expect_codes(
+        "input f = true\nlet x = if f then \"a\" else \"b\"\nClip c:\n    Note when x is \"a\"\n",
+        &[(
+            Code::ReactiveString,
+            "let x = if f then \"a\" else \"b\"\n",
+            0,
+        )],
+    );
+    let typed = format!("{held}Osc o | wave=x\n");
+    support::expect_codes(
+        &format!("{typed}Clip c:\n    Note/(x + 1)\n"),
+        &[(Code::OperandType, "x + 1", 0)],
+    );
+    support::expect_codes(
+        &format!("{typed}Clip c:\n    Note when x is 1\n"),
+        &[(Code::OperandType, "x is 1", 0)],
+    );
+    support::expect_codes(
+        "Clip c:\n    Note when 1 is true\n",
+        &[(Code::OperandType, "1 is true", 0)],
+    );
+}
+
+#[test]
 fn unit_values_keep_their_family() {
     expect(&[
         ("Clip c:\n    Note | length=2bars + 1\n", &[]),

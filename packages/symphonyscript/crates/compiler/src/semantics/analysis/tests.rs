@@ -767,7 +767,15 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
         format!("{CHORD_FN}input f = true\ninput a = 1\ninput i = 0\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
         "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\nfn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nfn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(g(2)[1][2] + rev([1, 2], 3)[0] + grow(3)[0])\n".into(),
     ];
-    for text in &recursive_arrays {
+    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let enum_lets = [
+        format!("{held}Clip c:\n    Note when x is Wave::Saw\n    Note when Wave::Saw is x\n"),
+        format!("{held}input w = Wave::Saw\nlet g = x is not w\nClip c:\n    Note when g\n"),
+        format!(
+            "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n    Note when x is Saw\n"
+        ),
+    ];
+    for text in recursive_arrays.iter().chain(&enum_lets) {
         let (diagnostics, found) = analyzed(text, placeholders);
         assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
         assert_eq!(found, Vec::<String>::new(), "{text}");

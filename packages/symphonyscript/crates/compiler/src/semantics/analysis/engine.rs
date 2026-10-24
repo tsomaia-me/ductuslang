@@ -514,13 +514,16 @@ impl<'a> Engine<'a> {
         scope: ScopeId,
         message: impl Into<String>,
     ) -> Result<(), Internal> {
-        if self
-            .template_of(scope)?
-            .is_some_and(|template| self.memo.probes.contains(&template))
-        {
+        if self.in_probe(scope)? {
             return Ok(());
         }
         self.error_with_chain(code, loc, Vec::new(), scope, message)
+    }
+
+    fn in_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
+        Ok(self
+            .template_of(scope)?
+            .is_some_and(|template| self.memo.probes.contains(&template)))
     }
 
     pub fn error_with_chain(
@@ -550,12 +553,20 @@ impl<'a> Engine<'a> {
             before,
             chain,
             message: message.into(),
+            unless_untyped: Vec::new(),
         });
     }
 
     pub fn flush_diagnostics(&mut self) {
         let mut reported: FastSet<Merged> = FastSet::default();
         for deferred in std::mem::take(&mut self.deferred) {
+            if deferred
+                .unless_untyped
+                .iter()
+                .any(|binding| self.typing.untyped.contains(binding))
+            {
+                continue;
+            }
             for path in deferred.chain.outermost_paths() {
                 let key = Merged {
                     code: deferred.code,
@@ -587,10 +598,23 @@ impl<'a> Engine<'a> {
         message: impl Into<String>,
     ) -> Result<(), Internal> {
         let (loc, scope) = {
-            let node = self.node(node)?;
-            (node.loc, node.scope)
+            let record = self.node(node)?;
+            (record.loc, record.scope)
         };
-        self.error(code, loc, scope, message)
+        if self.in_probe(scope)? {
+            return Ok(());
+        }
+        let unless_untyped = self.untypable_reads(node)?;
+        let chain = self.chain(scope)?;
+        self.deferred.push(super::deferred::Deferred {
+            code,
+            loc,
+            before: Vec::new(),
+            chain,
+            message: message.into(),
+            unless_untyped,
+        });
+        Ok(())
     }
 
     pub fn read(&mut self, bound: &BoundVal, loc: Loc, scope: ScopeId) -> Result<Val, Internal> {

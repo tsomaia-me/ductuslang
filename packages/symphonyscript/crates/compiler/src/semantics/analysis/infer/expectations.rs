@@ -16,6 +16,28 @@ impl Engine<'_> {
         Ok((integer && float).then_some(Scalar::F64))
     }
 
+    fn compared(&mut self, operand: NodeId, other: NodeId) -> Result<(), Internal> {
+        if self.known_sig(operand)?.kind != Kind::Bare {
+            return Ok(());
+        }
+        if let Op::Read(binding) = self.node(self.through_uses(operand)?)?.op {
+            self.typing.equal_to.entry(binding).or_default().push(other);
+        }
+        Ok(())
+    }
+
+    fn partner_type(
+        &self,
+        operand: NodeId,
+        other: NodeId,
+        equality: bool,
+    ) -> Result<Option<Scalar>, Internal> {
+        if equality && let Kind::Enum(id) = self.known_sig(other)?.kind {
+            return Ok(Some(Scalar::Enum(id)));
+        }
+        self.read_as_float(operand, other)
+    }
+
     pub(super) fn expect(
         &mut self,
         root: NodeId,
@@ -39,6 +61,9 @@ impl Engine<'_> {
                 Op::Read(binding) => {
                     self.typing.reads.entry(binding).or_default().push(loc);
                     if let Some(expected) = expected {
+                        if matches!(expected, Scalar::Enum(_)) {
+                            self.typing.enum_expected.push(binding);
+                        }
                         self.typing
                             .expectations
                             .entry(binding)
@@ -50,17 +75,22 @@ impl Engine<'_> {
                 Op::Unary(UnaryOp::Neg, operand) => stack.push((operand, numeric)),
                 Op::Unary(UnaryOp::Not, operand) => stack.push((operand, None)),
                 Op::Binary(
-                    BinaryOp::Lt
+                    comparison @ (BinaryOp::Lt
                     | BinaryOp::Le
                     | BinaryOp::Gt
                     | BinaryOp::Ge
                     | BinaryOp::Is
-                    | BinaryOp::IsNot,
+                    | BinaryOp::IsNot),
                     lhs,
                     rhs,
                 ) => {
-                    stack.push((lhs, self.read_as_float(lhs, rhs)?));
-                    stack.push((rhs, self.read_as_float(rhs, lhs)?));
+                    let equality = matches!(comparison, BinaryOp::Is | BinaryOp::IsNot);
+                    if equality {
+                        self.compared(lhs, rhs)?;
+                        self.compared(rhs, lhs)?;
+                    }
+                    stack.push((lhs, self.partner_type(lhs, rhs, equality)?));
+                    stack.push((rhs, self.partner_type(rhs, lhs, equality)?));
                 }
                 Op::Binary(op, lhs, rhs) => {
                     let operands = match op {

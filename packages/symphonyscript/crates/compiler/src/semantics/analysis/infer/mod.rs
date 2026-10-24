@@ -1,4 +1,5 @@
 mod check;
+mod enum_bindings;
 mod expectations;
 mod order;
 mod position;
@@ -76,6 +77,7 @@ impl Engine<'_> {
                 self.expect(init, Some(own))?;
             }
         }
+        self.enum_bindings()?;
         let mut roots = Vec::new();
         for position in &valid {
             for node in position.val.nodes() {

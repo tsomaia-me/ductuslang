@@ -34,25 +34,11 @@ impl Engine<'_> {
             Kind::Bool => Some(Scalar::Bool),
             Kind::Enum(id) => Some(Scalar::Enum(id)),
             Kind::Bare => {
-                let enums: Vec<Scalar> = expectations
-                    .iter()
-                    .map(|(scalar, _)| *scalar)
-                    .filter(|scalar| matches!(scalar, Scalar::Enum(_)))
-                    .collect();
-                match enums.first() {
-                    Some(first) if enums.iter().all(|scalar| scalar == first) => Some(*first),
-                    _ => {
-                        self.error(
-                            Code::TypeMismatch,
-                            record.loc,
-                            self.node(record.init)?.scope,
-                            "this value names a variant, and its uses expect no single enum",
-                        )?;
-                        None
-                    }
-                }
+                self.typing.awaiting_enum.push(binding);
+                None
             }
             Kind::Str => {
+                self.typing.untyped.insert(binding);
                 self.error(
                     Code::ReactiveString,
                     record.loc,
@@ -62,6 +48,7 @@ impl Engine<'_> {
                 None
             }
             Kind::Node => {
+                self.typing.untyped.insert(binding);
                 self.error(
                     Code::ReactiveNodeReference,
                     record.loc,

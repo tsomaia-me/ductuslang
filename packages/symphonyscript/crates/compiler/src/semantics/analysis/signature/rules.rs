@@ -437,6 +437,7 @@ impl Engine<'_> {
                         (Kind::Bool, Kind::Bool) | (Kind::Str, Kind::Str) => true,
                         (Kind::Enum(x), Kind::Enum(y)) => x == y,
                         (Kind::Enum(_), Kind::Bare) | (Kind::Bare, Kind::Enum(_)) => true,
+                        (Kind::Bare, Kind::Bare) => reactive,
                         _ => false,
                     };
                 if !comparable {

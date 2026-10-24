@@ -1,4 +1,5 @@
 use super::chain::Chain;
+use super::ids::BindingId;
 use crate::diagnostics::Code;
 use crate::semantics::ir::Loc;
 
@@ -8,4 +9,5 @@ pub(crate) struct Deferred {
     pub before: Vec<Loc>,
     pub chain: Chain,
     pub message: String,
+    pub unless_untyped: Vec<BindingId>,
 }
