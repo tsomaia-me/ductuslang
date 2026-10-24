@@ -1,0 +1,112 @@
+vocabulary "dump" 0xc9f06ffca2cfca2b
+top_level [i0, i4]
+instance i0
+  kind Clip
+  path intro
+  span "main.sym" 0..120
+  expanded_from []
+  attrs
+    gain cell c0
+    steps array [input 1, const bool false]
+    label const str s1
+  gate input 2
+  sequence
+    child i1
+    bundle [i2, i3]
+    wire w0
+    wire w1
+instance i1
+  kind Note
+  path intro.hook
+  span "main.sym" 10..20
+  expanded_from []
+  attrs
+    pitch const i32 -48
+    wave const Wave::Saw
+  gate none
+  sequence
+instance i2
+  kind Note
+  path intro.Arp:0.Note:0
+  span "lib/arp.sym" 30..44
+  expanded_from ["main.sym" 21..27, "lib/riff.sym" 2..9]
+  attrs
+    pitch const i32 60
+    wave const Wave::Sine
+  gate none
+  sequence
+instance i3
+  kind Note
+  path intro.Note:0
+  span "main.sym" 28..35
+  expanded_from []
+  attrs
+    pitch const i32 -2147483648
+    #9 const Wave::#7
+  gate const bool true
+  sequence
+instance i4
+  kind Clip
+  path verse
+  span "main.sym" 121..140
+  expanded_from []
+  attrs
+    gain const f32 -0.0
+    steps array [const bool true, const bool false]
+  gate none
+  sequence
+wire w0
+  kind Plays
+  path intro.Plays:0
+  span "main.sym" 40..52
+  expanded_from []
+  source i0
+  target fixed i4
+  attrs
+    delay const f64 0.2
+  gate none
+wire w1
+  kind Plays
+  path intro.back
+  span "main.sym" 53..80
+  expanded_from []
+  source i0
+  target select [i4, i0] index input 0
+  attrs
+    delay cell c1
+  gate cell c2
+input 0
+  name "section"
+  ty i64
+  family none
+  slots 0..1
+  initial [i64 0]
+  span "main.sym" 0..17
+input 1
+  name "steps"
+  ty bool[1][2]
+  family none
+  slots 1..3
+  initial [bool true, bool false]
+  span "main.sym" 18..50
+input 2
+  name "delay"
+  ty f64
+  family time
+  slots 3..4
+  initial [f64 0.005]
+  span "main.sym" 51..70
+cell c0
+  ty f32
+  expr (mul f32 (convert f64 f32 (input 3)) (const f32 0.1))
+  span "main.sym" 71..90
+cell c1
+  ty f64
+  expr (match i64 (input 0) [i64 0 (const f64 nan)] [i64 1 (const f64 nan:0x7ff8000000000001)] [else (pick i64 (input 0) (const f64 inf) (const f64 -inf) (const f64 1e-20) (call lerp f64 (const f64 1.0) (const f64 2.5e300) (cell c0)))])
+  span "main.sym" 91..100
+cell c2
+  ty bool
+  expr (if (not bool (input 1)) (is Wave (const Wave::Saw) (const Wave::Sine)) (gt f32 (call rand i64 (const i64 9223372036854775807) (neg i64 (input 0))) (const f32 nan:0x7fc00001)))
+  span "main.sym" 101..110
+string s0 "kit/0.wav"
+string s1 "a \"quoted\" \\ line\nnext\ttab\u{1}"

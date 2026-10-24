@@ -3,12 +3,17 @@
 
 extern crate alloc;
 
+mod compiled;
 mod ids;
 mod language;
 mod source;
 mod types;
 mod vocab;
 
+pub use compiled::{
+    BinaryOp, Binding, Builtin, Cell, Entry, Expr, Input, Instance, Program, Target, UnaryOp, Wire,
+    dump,
+};
 pub use ids::{
     AttrId, CellId, EnumId, FamilyId, InputSlot, InstanceId, NodeKind, StrId, WireId, WireKind,
 };
