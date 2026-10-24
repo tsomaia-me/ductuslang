@@ -88,6 +88,7 @@ Exit:
 - Every `sym` example that declares all the names it uses passes Check against the fixture vocabulary, and every `sym-error` example is rejected.
 - Diagnostics for expanded patterns point at the use and the pattern line.
 - M1's deep sources, a 100,000-deep array type and a chain of 10,000 functions each calling the next pass every stage through Check on a thread with a 1 MiB stack.
+- A chain of 40 calls of a function that uses its parameter twice, each call the argument of the next and the innermost reading an input, passes Check in time and memory linear in the chain.
 
 ## M3: Runtime and reload
 
