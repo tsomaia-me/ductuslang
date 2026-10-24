@@ -8,7 +8,7 @@ use super::super::cost::Cost;
 use super::fault_catalogue::fault_items;
 use super::generated_file::{Generated, Pool, generate};
 use super::valid_items::valid_items;
-use crate::diagnostics::Code;
+use crate::diagnostics::{Code, Diagnostic};
 use crate::source::Source;
 
 const LEXER_AND_PARSER_CODES: &[Code] = &[
@@ -57,18 +57,14 @@ const LEXER_AND_PARSER_CODES: &[Code] = &[
 
 const SEEDS: u64 = 24;
 
-fn parse_counting(text: &str) -> (Vec<(Code, Range<u32>)>, Cost) {
+fn parse_counting(text: &str) -> (Vec<Diagnostic>, Cost) {
     let source = Source {
         path: "generated.sym".into(),
         text: text.into(),
     };
     let vocabulary = vocabulary();
     let (_, diagnostics, cost) = Parser::new(&source, &vocabulary).run_counting();
-    let found = diagnostics
-        .into_iter()
-        .map(|diagnostic| (diagnostic.code, diagnostic.span.range))
-        .collect();
-    (found, cost)
+    (diagnostics, cost)
 }
 
 fn sorted(mut diagnostics: Vec<(Code, Range<u32>)>) -> Vec<(u32, u32, &'static str)> {
@@ -80,8 +76,23 @@ fn sorted(mut diagnostics: Vec<(Code, Range<u32>)>) -> Vec<(u32, u32, &'static s
 }
 
 fn assert_reported_once(generated: &Generated, seed: u64) -> Cost {
-    let (found, cost) = parse_counting(&generated.text);
-    let found = sorted(found);
+    let (diagnostics, cost) = parse_counting(&generated.text);
+    for (span, named) in &generated.closers {
+        let message = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.span.range == *span)
+            .map(|diagnostic| diagnostic.message.as_str());
+        assert!(
+            message.is_some_and(|message| message.ends_with(named.as_str())),
+            "seed {seed}: the missing closer at {span:?} says {message:?}, not {named:?}"
+        );
+    }
+    let found = sorted(
+        diagnostics
+            .into_iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.span.range))
+            .collect(),
+    );
     let expected = sorted(generated.expected.clone());
     if found != expected {
         let first = found

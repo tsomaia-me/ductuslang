@@ -657,6 +657,14 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[LetDecl[let a = Literal[1] ErrorNode[& ( 2 ,] NL] Placement[Clip c Body[: Block[NL > Placement[Note Attrs[|] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
     ),
+    (
+        "Clip c:\n    Note | velocity=(1\n  Note |\n",
+        &[
+            (Code::DedentMismatch, 33, 34),
+            (Code::ExpressionSyntax, 33, 37),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note Attrs[| AttrEntry[velocity = ParenExpr[( Literal[1]]]] NL] <]]] Placement[Note Attrs[|] NL]]",
+    ),
 ];
 
 #[test]
@@ -831,6 +839,31 @@ fn a_name_and_slash_resynchronize_only_with_a_default_value_spec_7_5_allows() {
         assert_eq!(
             support::tree(&text).contains("Placement[a DefaultArg[/"),
             resynchronizes,
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn a_missing_closer_names_the_token_it_underlines() {
+    for (text, message) in [
+        (
+            "let a = [1,\nlet b = 2\n",
+            "expected an expression, found `let`",
+        ),
+        (
+            "Clip c:\n    [Note\n    Plays: d]\n",
+            "expected `]`, found `Plays`",
+        ),
+    ] {
+        let messages: Vec<String> = support::parsed(text)
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect();
+        assert_eq!(
+            messages.first().map(String::as_str),
+            Some(message),
             "{text:?}"
         );
     }

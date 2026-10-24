@@ -546,7 +546,14 @@ impl<'a> Parser<'a> {
     fn describe(&mut self) -> String {
         match self.peek() {
             None => String::from("the end of the file"),
-            Some(SyntaxKind::Newline) => String::from("the end of the line"),
+            Some(SyntaxKind::Newline) => {
+                let range = self.current_span().range;
+                let source = self.source;
+                match source.text.get(range.start as usize..range.end as usize) {
+                    Some(text) if !text.trim().is_empty() => format!("`{text}`"),
+                    _ => String::from("the end of the line"),
+                }
+            }
             Some(SyntaxKind::Indent) => String::from("an indented line"),
             Some(SyntaxKind::Dedent) => String::from("the end of the block"),
             Some(_) => {

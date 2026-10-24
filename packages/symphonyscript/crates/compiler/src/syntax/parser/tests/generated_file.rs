@@ -95,6 +95,7 @@ impl Pool {
 pub(super) struct Generated {
     pub(super) text: String,
     pub(super) expected: Vec<(Code, Range<u32>)>,
+    pub(super) closers: Vec<(Range<u32>, String)>,
     pub(super) items: Vec<(u32, String)>,
 }
 
@@ -124,9 +125,15 @@ impl<'p> Writer<'p> {
         let offset = self.out.text.len() as u32;
         if let Some(Open::Unclosed { closer, .. }) = self.pending {
             let first = &candidate.shape.first_token;
+            let span = offset + first.start..offset + first.end;
+            let token = candidate
+                .text
+                .get(first.start as usize..first.end as usize)
+                .unwrap_or_default();
             self.out
-                .expected
-                .push((closer, offset + first.start..offset + first.end));
+                .closers
+                .push((span.clone(), format!("found `{token}`")));
+            self.out.expected.push((closer, span));
         }
         for (code, range) in &candidate.faults {
             self.out
@@ -199,6 +206,7 @@ pub(super) fn generate(seed: u64, fault_count: usize, pool: &Pool) -> Generated 
         out: Generated {
             text: String::new(),
             expected: Vec::new(),
+            closers: Vec::new(),
             items: Vec::new(),
         },
         in_host: false,
