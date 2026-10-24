@@ -223,7 +223,7 @@ Synth lead:
 
 `base` is `i32` in the pitch and `f64` in `freq`.
 
-The fit check applies to every flexible value once it is computed: an integer fits a float type when its value is exactly representable, and a float fits a float type when it rounds to a finite value. A minus applied directly to a literal forms one value for this check, so `-2147483648` fits `i32`.
+The fit check applies to a flexible value where it takes a type: at each use, and inside an expression wherever a literal or an integer result is converted to a float type. An integer fits a float type when its value is exactly representable, and a float fits a float type when it rounds to a finite value. Other results inside one flexible expression are not checked: integers compute exactly (§4.6), and floats follow §5.2 in the chosen type, so `Note/(2147483647 * 2 div 2)` fits and `Osc | freq=(1.0 / (1e300 * 1e300))` is 0.0. A minus applied directly to a literal forms one value for this check, so `-2147483648` fits `i32`.
 
 ```sym-error
 Clip melody:
@@ -289,7 +289,7 @@ Clip c:
 
 `b` is a float `let` with the default width `f32`, and its initializer reads `a`, an `i64` input, as an `f32`.
 
-An array `let` whose elements read cells is an array of bindings (§5.5), not one cell. An element read with a literal index is its own binding with its own type; an element read through a runtime index is read in that read's type.
+An array `let` whose elements read cells is an array of bindings (§5.5), not one cell. An element read with an index known at compile time, such as a literal, a compile-time `let` or a `for` variable, is its own binding with its own type; an element read through a runtime index is read in that read's type.
 
 The compiler resolves cell types once over the whole program. This always terminates, because cells form no cycles (§6.2).
 
@@ -297,7 +297,7 @@ The compiler resolves cell types once over the whole program. This always termin
 
 A cell's kind is its initializer's: `bool`, an enum, integer or float, element by element for an array. A numeric initializer is a float one when its result is a float under §5: when it holds a float literal, `pi`, `/`, a float built-in, `rand`, a float conversion or a float unit value, or reads a float cell or a float compile-time `let`. Every other numeric initializer is an integer one.
 
-A reactive `let` whose uses fix no width takes `f32` when it is a float, and the widest integer type among its operands when it is an integer, so a `let` reading an `i64` input stays `i64`. A flexible value in a position that fixes no type (§4.1) takes `i32`, or `i64` when its value does not fit `i32`, and a flexible float takes `f32`, or `f64` when its value lies outside `f32`'s finite range.
+A reactive `let` whose uses fix no width takes `f32` when it is a float, and the widest integer type among its operands when it is an integer, an operand that is a reactive `let` counting with the widest integer type among its own operands, found the same way, so a `let` reading an `i64` input, directly or through other `let`s, stays `i64`. A flexible value in a position that fixes no type (§4.1) takes `i32`, or `i64` when its value does not fit `i32`, and a flexible float takes `f32`, or `f64` when its value lies outside `f32`'s finite range.
 
 An annotation fixes a type outright: `input fine: f32 = 0` is a float input stored as `f32`, and its uses read it as §4.4 says. A suffix does the same for a literal: `0f64`.
 
@@ -308,7 +308,7 @@ A compile-time value is computed by the rules of §5, except that flexible integ
 - The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls, and its expansion yields at most 1,000,000 instances and wires. A call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and expected type are all equal. Exceeding either limit is an error naming the call or the expansion.
+- A compilation evaluates at most 1,000,000 distinct recursive calls, and its expansion runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. A call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and expected type are all equal. Exceeding a limit is an error naming the call or the expansion.
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
 
@@ -416,7 +416,7 @@ input i = 0
 let c = [a, b, a + b]
 ```
 
-- `c[1]` with a literal index is the same binding as `b`. A change to `a` does not reach it.
+- `c[1]`, with an index known at compile time, is the same binding as `b`. A change to `a` does not reach it.
 - `c[2]` is a cell of its own, computed from `a` and `b`.
 - `c[i]` depends on `i` and on every element.
 
@@ -534,7 +534,7 @@ Param    ::= Name ('=' Expr)?
 
 A function computes one value from its parameters.
 
-- A body is one expression, or local `let`s followed by one expression or `match`. Two local `let`s with one name, or a local `let` named like a parameter, are an error.
+- A body is one expression, or local `let`s followed by one expression or `match`, the local `let`s visible throughout the body. Two parameters or two local `let`s with one name, or a local `let` named like a parameter, are an error.
 - A call to a non-recursive function evaluates the body in the function's own scope, with each parameter bound to its argument, and the argument evaluated in the caller's scope. The compiler inlines the call and checks the result in place. A parameter is typed as a `let` holding its argument would be: bound to a compile-time argument it is a compile-time value, flexible when the argument is (§4.1), and bound to an argument that reads cells it is typed as a reactive `let` is (§4.4), each use reading it in the use's type. A function never appears in the Program.
 - A call whose arguments read cells yields a reactive value.
 - A parameter with a default follows every parameter without one, and its default may read earlier parameters. A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default.
@@ -565,7 +565,7 @@ PatternParam  ::= 'default'? Name ('=' Expr)?
 
 A pattern is a named, parameterized group of placements.
 
-- Patterns are declared at top level. The body holds `let` lines first and then any body items (§7.1). Each expansion has its own `let`s, visible throughout the body. Two `let`s with one name, or a `let` named like a parameter, are an error.
+- Patterns are declared at top level. The body holds `let` lines first and then any body items (§7.1). Each expansion has its own `let`s, visible throughout the body. Two parameters or two `let`s with one name, or a `let` named like a parameter, are an error.
 - A pattern is used with placement syntax. The attribute clause supplies parameters in every entry form of §7.6, so `name` and `!name` supply a `bool` parameter, and `/expr` supplies the parameter marked `default`, of which there is at most one. `/expr` on a pattern without a `default` parameter is an error. Supplying a parameter twice is an error, and so is omitting a parameter that has no default value. A use carries no flags and no body.
 - A use is replaced by the body's placements at the use's position, with each parameter bound to its argument as in a function call (§6.3), and the result is checked in place. Parameters are typed as a function's are (§6.3); an argument that needs an expected type, such as a bare variant in `Voice | shape=Saw`, takes it from the parameter's uses in the body. An argument may be a value, a reactive value, a node reference or an array of node references.
 - A wire placed directly in the body has as its source the instance whose body holds the use.
@@ -614,7 +614,7 @@ All top-level names share one namespace across the project: inputs, `let`s, func
 
 Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's `let`s do.
 
-A function or pattern that nothing uses has its names resolved and no types checked.
+A function or pattern that nothing uses has its names resolved and no types checked. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported.
 
 A bare name that is a variant of the enum its position expects resolves to that variant (§3.4). Every other name resolves in scope.
 

@@ -281,19 +281,34 @@ pub struct Failed { pub diagnostics: Vec<Diagnostic> }
 The compiler performs no file I/O; the caller supplies every source. This keeps the compiler usable in editors, build scripts and WebAssembly. Stages:
 
 1. **Lex.** Layout tokens (SPEC §2.2), literals, keywords, unit suffixes looked up in the vocabulary. Every byte belongs to a token or to trivia (whitespace and comments).
-2. **Parse.** A lossless syntax tree that reproduces the source byte for byte, with a typed view over it. Code outside the parser reaches the tree only through views that borrow the parse result, so the parse result is the tree's last owner and dismantles it without recursion. The parser recovers from errors: it records a diagnostic, skips to a synchronization point (the next line at the same or lower indentation) and continues, so a broken file still yields a tree. A placement whose kind is a wire kind of the vocabulary parses as a wire placement.
+2. **Parse.** A lossless syntax tree that reproduces the source byte for byte, with a typed view over it. Code outside the parser reaches the tree only through views that borrow the parse result, so the parse result is the tree's last owner and dismantles it without recursion. The parser recovers from errors (§7.1), so a broken file still yields a tree. A placement whose kind is a wire kind of the vocabulary parses as a wire placement.
 3. **Collect.** The top-level namespace across all files, the prelude and the vocabulary, with duplicate detection and prelude shadowing; the call graph of functions, which marks recursive ones, and the use graph of patterns.
 4. **Expand.** Pattern uses are expanded and `for` loops unrolled. A value that structure needs (a range bound, an iterable, a recursive call, and any argument or `let` they read) is resolved, typed as SPEC §4.6 says and evaluated when expansion reaches it; such a value that reads a cell is an error. Every expanded item keeps the spans of its uses and of its definition.
 5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each argument is bound once and shared by every use of its parameter, so nested calls grow the program linearly; each value is classified as compile-time or reactive by what it reads. Cycles among declarations (SPEC §6.2) are found here, before Infer. A bare name that names no declaration is left for Infer to resolve as a variant.
-6. **Infer.** Types and unit families over the whole program (SPEC §3.6, §4), bare variants from their expected types, and then the remaining calls to recursive functions, evaluated in the types inference gives them. Recursive calls are memoized by argument values, argument types and expected type, which is what SPEC §4.6's limit counts.
+6. **Infer.** Types and unit families over the whole program (SPEC §3.6, §4), bare variants from their expected types, and then the remaining calls to recursive functions, evaluated in the types inference gives them. Recursive calls are memoized by argument values, argument types and expected type, which is what SPEC §4.6's limit counts. Exact compile-time integers never grow past SPEC §4.6's bound: an operation whose result would reach 2¹²⁷ reports the error before computing it, so `2 ** 1000000` costs no more than `2 ** 200`.
 7. **Check.** The vocabulary checks (SPEC §10.2), cycles among wires, fit checks, and the warnings of SPEC §4.4 and §10.2.
 8. **Lower.** Constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program.
 
-Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose `section` method returns the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first.
+Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose `section` method returns the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first. It returns them in source order: by file in top-level order, then by span start, span end and code. A name, type or unit family that an error leaves unknown takes an error placeholder that every later stage accepts without a diagnostic, so one fault draws one diagnostic; a placeholder arises only where a diagnostic is reported, so a program that draws no error holds none.
 
 Each change recompiles the whole project.
 
 No source overflows the native stack, however deeply it nests. Every stage, and every operation on the syntax tree and on the Program (building, walking, comparing, cloning, hashing, printing, validating and dropping), works without recursion that grows with the source's nesting, as the runtime evaluator does (§4).
+
+### 7.1 Error recovery
+
+The parser records a diagnostic for a fault, skips to a synchronization point and continues. Recovery holds three properties:
+
+- A valid source never reaches recovery, so its tree does not depend on it.
+- Every fault outside the region of an earlier fault is reported exactly once, at its span. A fault's region is the rest of its line, the block indented under that line, and inside an unclosed bracket the bracket up to its next synchronization point. A parser complaint that starts inside a lexer diagnostic, or directly after an error token, an unterminated string or a dedent mismatch, belongs to that diagnostic and is not reported.
+- Recovery costs time and memory linear in the source.
+
+A synchronization point is the next line at the same or lower indentation. Inside an unclosed bracket, where newlines are whitespace (SPEC §2.2), it is the next line of the bracket, at or left of the column of the line that opened it, that cannot continue the bracket:
+
+- in any bracket, a line that begins with `input`, `let`, `fn` or `pattern`;
+- in an expression bracket (an array, a parenthesized expression, arguments, an index, a conversion or an interpolation), a line that begins with a name followed by a name or `as`;
+- in a bundle, a line holding a `:` at the bundle's depth that closes no pending `for` header of the bundle;
+- in a bracket inside a body, a line that begins with a kind followed by `/`, with a name followed by `as` or a flag, or with a name directly followed by `/` and one value that ends the line or meets `|`, `when` or `:`, on a line that closes no bracket of the region.
 
 ## 8. Delivery
 

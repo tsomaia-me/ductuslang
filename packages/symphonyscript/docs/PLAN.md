@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M3 and M5 and `high` for M1 and M4. A Fable reviewer joins a review when the owner launches one.
+- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M3 and M5 and `high` for M1 and M4. In M2, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
 ### Decisions
 
@@ -17,6 +17,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - A question the documents and the owner's rulings answer, whose best-practice answer stands out among the alternatives and which is cheap to reverse: the head decides it and records it in the head notes, with how to reverse it. The owner reads the notes and may reverse any of them.
 - A question that sets direction or has no clear winner: it goes to the owner as background, options with SymphonyScript examples, and a recommendation. Work that it does not block continues, and the question closes when the owner answers.
 - The documents change first and the code after.
+- Before a milestone starts, the head checks its documents for cross-cutting questions (nesting depth, size and cost, determinism, allocation, error paths and cascades) and settles them in the documents first.
 - An implementer decides none of these. It records each gap in its progress file, keeps working on what the gap does not block, and hands back to the head when it is blocked or done. The head answers and resumes it.
 - A gap is a behaviour the documents leave undefined or define twice in conflict, a statement in them that cannot be built as written, or a dependency this plan does not name. Implementation choices are not gaps and belong to the implementer: private code, module layout within the code conventions, algorithms and data structures, tests, and the names and shapes of public items ARCHITECTURE does not show, while every ARCHITECTURE example stays true. The implementer lists each public item it adds beyond ARCHITECTURE in its progress file, and the review checks them.
 - Changes to synaptic-kernel need the owner's approval of their design before code (CLAUDE.md).
@@ -35,6 +36,8 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - A reviewer reviews a whole milestone, never single commits: the milestone's diff against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md, running the checks itself.
 - A reviewer checks the ordinary paths and the common defects, then goes beyond them to every pattern `.claude/docs/REVIEWING.md` shows, each with its bad and good form.
 - The head consolidates the findings with a verdict on each, has the implementer fix the accepted ones, and sorts the rest by the decision rules.
+- The head briefs each fix as the property it must hold, with an adversarial test and a test over valid input beside the reported case, and checks a reviewer's proposed fix against the SPEC before briefing it.
+- The implementer fixes every finding the head sends it, whoever wrote the code and whichever milestone it came from, and declines none. An item that cannot be built as the documents stand is a gap (§ Decisions), never a reason to skip it.
 - A milestone gets at most two cold reviews: the first, and a second when the head judges the fixes need fresh eyes. Warm reviews, in which the reviewer that found an issue checks its fix, are unlimited.
 - A milestone is done when its exit criteria pass and its last review's accepted findings are fixed and checked. The head then records it in the head notes and starts the next one.
 
@@ -58,7 +61,7 @@ Steps:
 5. `symphonyscript-fixtures`: the example vocabulary of SPEC §1.3; the fixture projects, each `sym` example of the SPEC that declares every name it uses, and a music project and a DSP project that together use every kind and wire kind of the fixture vocabulary.
 6. The lexer (SPEC §2): layout, literals, unit suffixes from the vocabulary, interpolation, NFC comparison, trivia.
 7. The lossless syntax tree on `rowan`, with its typed view.
-8. The parser for every production, with error recovery (ARCHITECTURE §7). It takes the fixture vocabulary to tell wire placements from node placements.
+8. The parser for every production, with error recovery (ARCHITECTURE §7.1). It takes the fixture vocabulary to tell wire placements from node placements.
 
 Exit:
 - A test for each error `build()` reports.
@@ -69,6 +72,7 @@ Exit:
 - Every production in SPEC.md has parse tests.
 - Parsing any source and printing the tree reproduces it byte for byte.
 - Broken sources still yield a tree, with diagnostics at the right spans.
+- Recovery holds ARCHITECTURE §7.1's properties, shown by generated tests: every `sym` example and fixture file, re-flowed inside its brackets, parses unchanged; and in files built from independent single-fault items, each fault is reported exactly once at its span, in time linear in the file.
 - A source nested 100,000 levels deep in parentheses, brackets and array literals, and one nested 3,000 levels deep in bodies, each lex, parse, print and drop on a thread with a 1 MiB stack (ARCHITECTURE §7).
 
 ## M2: Semantics
