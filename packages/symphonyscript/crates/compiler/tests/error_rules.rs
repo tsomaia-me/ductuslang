@@ -541,6 +541,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
+        "Two parameters or two local `let`s with one name",
+        "duplicate-local",
+        "fn f(a, a): a\n",
+    ),
+    rule(
+        "6.3",
         "or a local `let` named like a parameter, are an error.",
         "duplicate-local",
         "fn f(x):\n    let x = 1\n    x\n",
@@ -574,6 +580,12 @@ const RULES: &[Rule] = &[
         "PatternDecl ::= 'pattern' Name '(' PatternParams? ')' ':' NEWLINE INDENT LocalLet* BodyItem+ DEDENT",
         "pattern-syntax",
         "pattern (x):\n    Note\n",
+    ),
+    rule(
+        "6.4",
+        "Two parameters or two `let`s with one name",
+        "duplicate-local",
+        "pattern P(a, a):\n    Note/a\n",
     ),
     rule(
         "6.4",

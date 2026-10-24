@@ -98,8 +98,17 @@ fn a_loop_variable_equal_to_a_visible_name_is_an_error() {
 }
 
 #[test]
-fn locals_are_declared_once_and_never_like_a_parameter() {
+fn parameters_and_locals_are_declared_once_and_never_like_a_parameter() {
     let cases: &[Case] = &[
+        ("fn f(v, v): v\n", &[(Code::DuplicateLocal, "v", 1)]),
+        (
+            "pattern P(v, v):\n    Note/v\n",
+            &[(Code::DuplicateLocal, "v", 1)],
+        ),
+        (
+            "fn f(a, b): a + b\nClip c:\n    Note/(f(1, 2))\n    Note/(f(b=3, a=4))\n",
+            &[],
+        ),
         (
             "fn f(x):\n    let a = 1\n    let a = 2\n    a\n",
             &[(Code::DuplicateLocal, "a", 1)],

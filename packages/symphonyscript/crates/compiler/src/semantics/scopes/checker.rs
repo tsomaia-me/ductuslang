@@ -148,7 +148,18 @@ impl<'a> Checker<'a> {
     ) -> usize {
         let mut names: BTreeMap<String, Loc> = BTreeMap::new();
         for param in params {
-            names.entry(param.text.clone()).or_insert(param.loc);
+            if let Some(earlier) = names.get(&param.text) {
+                let earlier = *earlier;
+                self.report.error_with(
+                    self.hir,
+                    Code::DuplicateLocal,
+                    param.loc,
+                    &[earlier],
+                    format!("`{}` names two parameters", param.text),
+                );
+                continue;
+            }
+            names.insert(param.text.clone(), param.loc);
         }
         let mut seen: BTreeMap<String, Loc> = BTreeMap::new();
         for local in lets {
