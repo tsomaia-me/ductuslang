@@ -386,7 +386,14 @@ impl<'a> Engine<'a> {
             match self.kind_decl(global, &kind.text)? {
                 Decl::Pattern(next) if !self.is_cyclic(next) => pattern = next,
                 Decl::Node(_) => return Some(placement),
-                _ => return None,
+                Decl::Input(_)
+                | Decl::Let(_)
+                | Decl::Fn(_)
+                | Decl::Pattern(_)
+                | Decl::Instance(_)
+                | Decl::Builtin(_)
+                | Decl::Wire(_)
+                | Decl::Enum(_) => return None,
             }
         }
     }

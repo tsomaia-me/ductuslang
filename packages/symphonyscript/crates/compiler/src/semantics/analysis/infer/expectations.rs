@@ -64,7 +64,14 @@ impl Engine<'_> {
                         | BinaryOp::Pow => numeric,
                         BinaryOp::Div => float,
                         BinaryOp::IntDiv => integer,
-                        _ => None,
+                        BinaryOp::Is
+                        | BinaryOp::IsNot
+                        | BinaryOp::Lt
+                        | BinaryOp::Le
+                        | BinaryOp::Gt
+                        | BinaryOp::Ge
+                        | BinaryOp::And
+                        | BinaryOp::Or => None,
                     };
                     stack.push((lhs, operands));
                     stack.push((rhs, operands));
@@ -97,7 +104,16 @@ impl Engine<'_> {
                     let operands = match builtin {
                         Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp => numeric,
                         Builtin::Rand => Some(Scalar::I64),
-                        _ => float,
+                        Builtin::Floor
+                        | Builtin::Ceil
+                        | Builtin::Round
+                        | Builtin::Sqrt
+                        | Builtin::Sin
+                        | Builtin::Cos
+                        | Builtin::Tan
+                        | Builtin::Exp
+                        | Builtin::Log
+                        | Builtin::Lerp => float,
                     };
                     stack.extend(args.into_iter().map(|arg| (arg, operands)));
                 }

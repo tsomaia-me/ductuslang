@@ -96,7 +96,7 @@ pub(crate) fn rank(scalar: Scalar) -> u8 {
         Scalar::I64 => 1,
         Scalar::F32 => 2,
         Scalar::F64 => 3,
-        _ => 4,
+        Scalar::Bool | Scalar::Enum(_) | Scalar::Str => 4,
     }
 }
 
@@ -129,7 +129,7 @@ pub(crate) fn common(a: Scalar, b: Scalar) -> Option<Scalar> {
 pub(crate) fn float_for(scalar: Scalar) -> Scalar {
     match scalar {
         Scalar::I64 | Scalar::F64 => Scalar::F64,
-        _ => Scalar::F32,
+        Scalar::I32 | Scalar::F32 | Scalar::Bool | Scalar::Enum(_) | Scalar::Str => Scalar::F32,
     }
 }
 

@@ -61,7 +61,13 @@ impl Engine<'_> {
                 .enum_decl(id)
                 .map(|decl| decl.variants.len()),
             Kind::Bool => Some(2),
-            _ => None,
+            Kind::Int
+            | Kind::Float
+            | Kind::Str
+            | Kind::Node
+            | Kind::Bare
+            | Kind::Any
+            | Kind::Error => None,
         };
         let complete = total.is_some_and(|total| seen.len() >= total);
         match (otherwise.is_some(), complete, total.is_some()) {
@@ -137,7 +143,7 @@ impl Engine<'_> {
                     Suffix::Type(scalar) if !matches!(scalar, Scalar::I32 | Scalar::I64) => {
                         return self.bad_label(label, scrutinee);
                     }
-                    _ => None,
+                    Suffix::None | Suffix::Type(_) => None,
                 };
                 if family.is_some() && family != scrutinee.family {
                     return self.bad_label(label, scrutinee);
@@ -164,7 +170,7 @@ impl Engine<'_> {
                 }
                 value.checked_mul(scale as i128)
             }
-            _ => Some(*value),
+            Suffix::None | Suffix::Type(_) => Some(*value),
         }
     }
 
@@ -177,7 +183,15 @@ impl Engine<'_> {
                     .map_or("", |decl| decl.name.as_str())
             ),
             Kind::Bool => "a label here is `true` or `false`".to_string(),
-            _ => "a label here is an integer literal of the scrutinee's unit family".to_string(),
+            Kind::Int
+            | Kind::Float
+            | Kind::Str
+            | Kind::Node
+            | Kind::Bare
+            | Kind::Any
+            | Kind::Error => {
+                "a label here is an integer literal of the scrutinee's unit family".to_string()
+            }
         };
         self.error_at_node(Code::MatchLabel, label, message);
         None

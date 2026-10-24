@@ -31,7 +31,7 @@ impl Engine<'_> {
                     let global = self.source_global;
                     self.demand(Query::Let(global, LetRef::Top(id)));
                 }
-                _ => {}
+                Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
             }
         }
         for index in 0..self.instances.len() {
@@ -84,9 +84,10 @@ impl Engine<'_> {
             BoundVal::Scalar(crate::semantics::analysis::bound::Bound::Cell(binding)) => *binding,
             BoundVal::Array(array) => match array.1.first() {
                 Some(crate::semantics::analysis::bound::Bound::Cell(binding)) => *binding,
-                _ => return None,
+                Some(crate::semantics::analysis::bound::Bound::Value(_)) | None => return None,
             },
-            _ => return None,
+            BoundVal::Scalar(crate::semantics::analysis::bound::Bound::Value(_))
+            | BoundVal::Error => return None,
         };
         let scalar = self.input_type(first)?;
         let mut ty = Ty::of(scalar);
@@ -117,7 +118,7 @@ impl Engine<'_> {
             Kind::Float => Some(symphonyscript_core::Scalar::F64),
             Kind::Bool => Some(symphonyscript_core::Scalar::Bool),
             Kind::Enum(id) => Some(symphonyscript_core::Scalar::Enum(id)),
-            _ => None,
+            Kind::Str | Kind::Node | Kind::Bare | Kind::Any | Kind::Error => None,
         }
     }
 

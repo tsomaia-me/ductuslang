@@ -501,7 +501,7 @@ fn annotated(sig: &Sig, target: Scalar) -> bool {
     };
     let widens_into = match sig.width {
         Width::Fixed(scalar) if sig.is_numeric() && !sig.reactive => widens(scalar, target),
-        _ => true,
+        Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => true,
     };
     fits && widens_into
 }

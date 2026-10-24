@@ -86,7 +86,27 @@ impl Engine<'_> {
         match self.node(node).op {
             Op::Number(..) => true,
             Op::Unary(UnaryOp::Neg, operand) => matches!(self.node(operand).op, Op::Number(..)),
-            _ => false,
+            Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Arg(_)
+            | Op::Unary(UnaryOp::Not, _)
+            | Op::Binary(..)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Pick { .. }
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. } => false,
         }
     }
 
@@ -126,7 +146,13 @@ impl Engine<'_> {
                 let index_ty = own_type(&index_sig, EvalTy::Exact);
                 let position = match self.child(index, index_ty, ctx, need)? {
                     CVal::Int(position) => position,
-                    _ => return Some(CVal::Error),
+                    CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Bool(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Node(_)
+                    | CVal::Error => return Some(CVal::Error),
                 };
                 let item = usize::try_from(position)
                     .ok()
@@ -188,13 +214,29 @@ impl Engine<'_> {
                         CVal::Error
                     }
                 },
-                _ => CVal::Error,
+                EvalTy::Exact
+                | EvalTy::Default
+                | EvalTy::I32
+                | EvalTy::I64
+                | EvalTy::F32
+                | EvalTy::F64
+                | EvalTy::DefaultF32
+                | EvalTy::DefaultF64
+                | EvalTy::Bool
+                | EvalTy::Str
+                | EvalTy::Node => CVal::Error,
             },
             Op::Concat(pieces) => return self.concat(&pieces, ctx, need),
             Op::Unary(UnaryOp::Not, operand) => {
                 match self.child(operand, EvalTy::Bool, ctx, need)? {
                     CVal::Bool(value) => CVal::Bool(!value),
-                    _ => CVal::Error,
+                    CVal::Int(_)
+                    | CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Node(_)
+                    | CVal::Error => CVal::Error,
                 }
             }
             Op::Unary(UnaryOp::Neg, operand) => {
@@ -203,7 +245,9 @@ impl Engine<'_> {
                     CVal::Int(value) => self.integer(node, own, value.checked_neg()),
                     CVal::F32(value) => CVal::F32(-value),
                     CVal::F64(value) => CVal::F64(-value),
-                    _ => CVal::Error,
+                    CVal::Bool(_) | CVal::Enum(..) | CVal::Str(_) | CVal::Node(_) | CVal::Error => {
+                        CVal::Error
+                    }
                 }
             }
             Op::Binary(op, _, _) => return self.binary(node, op, own, ctx, need),
@@ -211,7 +255,13 @@ impl Engine<'_> {
                 let chosen = match self.child(condition, EvalTy::Bool, ctx, need)? {
                     CVal::Bool(true) => then,
                     CVal::Bool(false) => otherwise,
-                    _ => return Some(CVal::Error),
+                    CVal::Int(_)
+                    | CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Node(_)
+                    | CVal::Error => return Some(CVal::Error),
                 };
                 self.child(chosen, own, ctx, need)?
             }
@@ -273,7 +323,9 @@ impl Engine<'_> {
                 };
                 match self.bound(Query::Attr(item, *attr), need)? {
                     BoundVal::Scalar(Bound::Value(value)) => self.child(value, own, ctx, need)?,
-                    _ => CVal::Error,
+                    BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Array(_) | BoundVal::Error => {
+                        CVal::Error
+                    }
                 }
             }
         })
@@ -286,7 +338,7 @@ impl Engine<'_> {
                 .family(family)
                 .and_then(|decl| decl.units.get(unit))
                 .map(|unit| unit.scale),
-            _ => self
+            Suffix::None | Suffix::Type(_) => self
                 .memo
                 .default_scales
                 .get(&node)
@@ -343,7 +395,12 @@ impl Engine<'_> {
             let finite = match value {
                 CVal::F32(value) => value.is_finite(),
                 CVal::F64(value) => value.is_finite(),
-                _ => false,
+                CVal::Int(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Error => false,
             };
             let exactly = !is_integer || exact_integer(&value, number, scale);
             if !finite || !exactly {
@@ -419,7 +476,13 @@ impl Engine<'_> {
                         let b = self.child(rhs, EvalTy::DefaultF64, ctx, need);
                         let fits_f32 = |value: &CVal| match value {
                             CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
-                            _ => true,
+                            CVal::Int(_)
+                            | CVal::F32(_)
+                            | CVal::Bool(_)
+                            | CVal::Enum(..)
+                            | CVal::Str(_)
+                            | CVal::Node(_)
+                            | CVal::Error => true,
                         };
                         let (a, b) = (a?, b?);
                         if fits_f32(&a) && fits_f32(&b) {
@@ -467,13 +530,22 @@ impl Engine<'_> {
                     _ => CVal::Error,
                 })
             }
-            _ => {
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::IntDiv
+            | BinaryOp::Rem
+            | BinaryOp::Pow => {
                 let a = self.child(lhs, own, ctx, need);
                 let b = self.child(rhs, own, ctx, need);
                 Some(match (a?, b?) {
                     (CVal::Int(a), CVal::Int(b)) => self.integer(node, own, exact_binary(op, a, b)),
-                    (CVal::F32(a), CVal::F32(b)) => CVal::F32(float_binary(op, a, b)),
-                    (CVal::F64(a), CVal::F64(b)) => CVal::F64(float_binary(op, a, b)),
+                    (CVal::F32(a), CVal::F32(b)) => {
+                        float_binary(op, a, b).map_or(CVal::Error, CVal::F32)
+                    }
+                    (CVal::F64(a), CVal::F64(b)) => {
+                        float_binary(op, a, b).map_or(CVal::Error, CVal::F64)
+                    }
                     _ => CVal::Error,
                 })
             }
@@ -504,7 +576,13 @@ impl Engine<'_> {
                 .iter()
                 .filter_map(|value| match value {
                     CVal::Int(value) => i64::try_from(*value).ok(),
-                    _ => None,
+                    CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Bool(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Node(_)
+                    | CVal::Error => None,
                 })
                 .collect();
             return Some(match ints.as_slice() {
@@ -526,7 +604,13 @@ impl Engine<'_> {
             .iter()
             .map(|value| match value {
                 CVal::Int(value) => Some(*value),
-                _ => None,
+                CVal::F32(_)
+                | CVal::F64(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Error => None,
             })
             .collect::<Option<Vec<i128>>>()
         {
@@ -543,7 +627,13 @@ impl Engine<'_> {
             .iter()
             .map(|value| match value {
                 CVal::F32(value) => Some(*value),
-                _ => None,
+                CVal::Int(_)
+                | CVal::F64(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Error => None,
             })
             .collect();
         if let Some(floats) = floats32 {
@@ -553,7 +643,13 @@ impl Engine<'_> {
             .iter()
             .map(|value| match value {
                 CVal::F64(value) => Some(*value),
-                _ => None,
+                CVal::Int(_)
+                | CVal::F32(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Error => None,
             })
             .collect();
         Some(
@@ -637,7 +733,17 @@ impl Engine<'_> {
         }
         match ty {
             EvalTy::Exact => self.fit(node, value, EvalTy::I64),
-            _ => self.fit(node, value, ty),
+            EvalTy::Default
+            | EvalTy::I32
+            | EvalTy::I64
+            | EvalTy::F32
+            | EvalTy::F64
+            | EvalTy::DefaultF32
+            | EvalTy::DefaultF64
+            | EvalTy::Bool
+            | EvalTy::Enum(_)
+            | EvalTy::Str
+            | EvalTy::Node => self.fit(node, value, ty),
         }
     }
 
@@ -677,7 +783,10 @@ impl Engine<'_> {
             .find_map(
                 |partner| match self.memo.sigs.get(partner).map(|sig| sig.width) {
                     Some(Width::Fixed(scalar)) if is_integer(scalar) => Some(scalar),
-                    _ => None,
+                    Some(
+                        Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive,
+                    )
+                    | None => None,
                 },
             );
         let ty = match partner {
@@ -722,7 +831,12 @@ impl Engine<'_> {
         let exactly = match converted {
             CVal::F32(float) => represents(integer, f64::from(float)),
             CVal::F64(float) => represents(integer, float),
-            _ => true,
+            CVal::Int(_)
+            | CVal::Bool(_)
+            | CVal::Enum(..)
+            | CVal::Str(_)
+            | CVal::Node(_)
+            | CVal::Error => true,
         };
         if flexible && !exactly {
             self.error_at_node(
@@ -751,7 +865,12 @@ impl Engine<'_> {
             }
             CVal::F32(value) => CVal::F32(value * scale as f32),
             CVal::F64(value) => CVal::F64(value * scale),
-            _ => CVal::Error,
+            CVal::Int(_)
+            | CVal::Bool(_)
+            | CVal::Enum(..)
+            | CVal::Str(_)
+            | CVal::Node(_)
+            | CVal::Error => CVal::Error,
         }
     }
 }
@@ -785,7 +904,12 @@ fn exact_integer(value: &CVal, number: &Number, scale: Option<f64>) -> bool {
     match value {
         CVal::F32(value) => represents(expected, f64::from(*value)),
         CVal::F64(value) => represents(expected, *value),
-        _ => false,
+        CVal::Int(_)
+        | CVal::Bool(_)
+        | CVal::Enum(..)
+        | CVal::Str(_)
+        | CVal::Node(_)
+        | CVal::Error => false,
     }
 }
 
@@ -799,15 +923,24 @@ fn float_binary<
     op: BinaryOp,
     a: F,
     b: F,
-) -> F {
-    match op {
+) -> Option<F> {
+    Some(match op {
         BinaryOp::Add => a + b,
         BinaryOp::Sub => a - b,
         BinaryOp::Mul => a * b,
         BinaryOp::Div => a / b,
         BinaryOp::Rem => a.spec_rem(b),
-        _ => a.spec_pow(b),
-    }
+        BinaryOp::Pow => a.spec_pow(b),
+        BinaryOp::IntDiv
+        | BinaryOp::Is
+        | BinaryOp::IsNot
+        | BinaryOp::Lt
+        | BinaryOp::Le
+        | BinaryOp::Gt
+        | BinaryOp::Ge
+        | BinaryOp::And
+        | BinaryOp::Or => return None,
+    })
 }
 
 fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
@@ -833,7 +966,15 @@ fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
             ordering,
             Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
         ),
-        _ => return CVal::Error,
+        BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::IntDiv
+        | BinaryOp::Rem
+        | BinaryOp::Pow
+        | BinaryOp::And
+        | BinaryOp::Or => return CVal::Error,
     };
     CVal::Bool(result)
 }
@@ -879,6 +1020,8 @@ pub(super) fn ty_name(ty: EvalTy) -> &'static str {
         EvalTy::F32 | EvalTy::DefaultF32 => "f32",
         EvalTy::F64 | EvalTy::DefaultF64 => "f64",
         EvalTy::Bool => "bool",
-        _ => "the type",
+        EvalTy::Exact | EvalTy::Default | EvalTy::Enum(_) | EvalTy::Str | EvalTy::Node => {
+            "the type"
+        }
     }
 }

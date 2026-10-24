@@ -132,7 +132,16 @@ impl Engine<'_> {
                     &context,
                 )
             }
-            _ => None,
+            Some(
+                Decl::Input(_)
+                | Decl::Let(_)
+                | Decl::Fn(_)
+                | Decl::Instance(_)
+                | Decl::Builtin(_)
+                | Decl::Wire(_)
+                | Decl::Enum(_),
+            )
+            | None => None,
         };
         match instance {
             Some(instance) => {
@@ -201,7 +210,17 @@ impl Engine<'_> {
                     pattern = next;
                     caller = body;
                 }
-                _ => return None,
+                Some(
+                    Decl::Input(_)
+                    | Decl::Let(_)
+                    | Decl::Fn(_)
+                    | Decl::Pattern(_)
+                    | Decl::Instance(_)
+                    | Decl::Builtin(_)
+                    | Decl::Wire(_)
+                    | Decl::Enum(_),
+                )
+                | None => return None,
             }
         }
     }
@@ -304,7 +323,11 @@ impl Engine<'_> {
         };
         match &self.scope_of(scope).kind {
             ScopeKind::Body { names } => names.get(name).copied(),
-            _ => None,
+            ScopeKind::Global { .. }
+            | ScopeKind::Locals(_)
+            | ScopeKind::ParamPrefix { .. }
+            | ScopeKind::ForVar { .. }
+            | ScopeKind::WireClause { .. } => None,
         }
     }
 
@@ -441,7 +464,17 @@ impl Engine<'_> {
                                 .map(ItemRef::Use)
                             }
                         }
-                        _ => None,
+                        Some(
+                            Decl::Input(_)
+                            | Decl::Let(_)
+                            | Decl::Fn(_)
+                            | Decl::Pattern(_)
+                            | Decl::Instance(_)
+                            | Decl::Builtin(_)
+                            | Decl::Wire(_)
+                            | Decl::Enum(_),
+                        )
+                        | None => None,
                     }
                 }
                 Site::Wire(id) => {
@@ -450,7 +483,17 @@ impl Engine<'_> {
                         Some(Decl::Wire(kind)) => self
                             .new_wire(kind, id, scope, segment, owner, &context)
                             .map(ItemRef::Wire),
-                        _ => None,
+                        Some(
+                            Decl::Input(_)
+                            | Decl::Let(_)
+                            | Decl::Fn(_)
+                            | Decl::Pattern(_)
+                            | Decl::Instance(_)
+                            | Decl::Builtin(_)
+                            | Decl::Node(_)
+                            | Decl::Enum(_),
+                        )
+                        | None => None,
                     }
                 }
             };
@@ -653,7 +696,7 @@ impl Engine<'_> {
                         }
                         Some(existing)
                     }
-                    _ => {
+                    Some(ItemRef::Instance(_) | ItemRef::Use(_)) | None => {
                         let vocabulary = self.vocabulary;
                         let kind_name = vocabulary
                             .wire_kind(kind)
@@ -848,7 +891,7 @@ impl Engine<'_> {
                             }
                             existing
                         }
-                        _ => {
+                        Some(ItemRef::Instance(_) | ItemRef::Wire(_)) | None => {
                             let segment = Some(self.segment(
                                 Some(walk.path_parent),
                                 None,
@@ -894,7 +937,16 @@ impl Engine<'_> {
                     return;
                 }
             }
-            _ => None,
+            Some(
+                Decl::Input(_)
+                | Decl::Let(_)
+                | Decl::Fn(_)
+                | Decl::Instance(_)
+                | Decl::Builtin(_)
+                | Decl::Wire(_)
+                | Decl::Enum(_),
+            )
+            | None => None,
         };
         let Some(instance) = instance else {
             if let Some(collector) = walk.bundle {

@@ -187,7 +187,7 @@ impl<'a> Checker<'a> {
                             .collect();
                         self.cycle(&cycle);
                     }
-                    _ => {}
+                    Some(Visit::Done) | None => {}
                 }
             }
         }

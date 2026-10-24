@@ -99,22 +99,24 @@ impl Builder<'_> {
                 Some(op) => (Shape::Binary(op), vec![node.lhs(), node.rhs()]),
                 None => (Shape::Leaf(ExprKind::Error), Vec::new()),
             },
-            ast::Expr::Prefix(node) => match node
-                .op()
-                .filter(|op| !self.faults.touch(op.range()))
-                .map(|op| op.kind())
-            {
-                Some(SyntaxKind::Minus) => {
-                    let operand = node.operand();
+            ast::Expr::Prefix(node) => {
+                let op = node
+                    .op()
+                    .filter(|op| !self.faults.touch(op.range()))
+                    .map(|op| op.kind());
+                let operand = node.operand();
+                if op == Some(SyntaxKind::Minus) {
                     if matches!(operand, Some(ast::Expr::Literal(_))) {
                         (Shape::Fold, vec![operand])
                     } else {
                         (Shape::Unary(UnaryOp::Neg), vec![operand])
                     }
+                } else if op == Some(SyntaxKind::NotKw) {
+                    (Shape::Unary(UnaryOp::Not), vec![operand])
+                } else {
+                    (Shape::Leaf(ExprKind::Error), Vec::new())
                 }
-                Some(SyntaxKind::NotKw) => (Shape::Unary(UnaryOp::Not), vec![node.operand()]),
-                _ => (Shape::Leaf(ExprKind::Error), Vec::new()),
-            },
+            }
             ast::Expr::Paren(node) => (Shape::Paren, vec![node.inner()]),
             ast::Expr::Literal(node) => (Shape::Leaf(self.literal(node)), Vec::new()),
             ast::Expr::String(node) => self.string(node),
@@ -261,7 +263,20 @@ impl Builder<'_> {
                 operand
             }
             ExprKind::Error => operand,
-            _ => self.push(ExprKind::Unary(UnaryOp::Neg, operand), loc),
+            ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::Name(_)
+            | ExprKind::Variant { .. }
+            | ExprKind::To
+            | ExprKind::Convert(..)
+            | ExprKind::Array(_)
+            | ExprKind::Field(..)
+            | ExprKind::Index(..)
+            | ExprKind::Call(..)
+            | ExprKind::Unary(..)
+            | ExprKind::Binary(..)
+            | ExprKind::If(..)
+            | ExprKind::Match { .. } => self.push(ExprKind::Unary(UnaryOp::Neg, operand), loc),
         }
     }
 
@@ -272,15 +287,17 @@ impl Builder<'_> {
         if self.faults.touch(token.range()) {
             return ExprKind::Error;
         }
-        match token.kind() {
-            SyntaxKind::TrueKw => ExprKind::Bool(true),
-            SyntaxKind::FalseKw => ExprKind::Bool(false),
-            SyntaxKind::Number => match number_literal(token.text(), self.vocabulary) {
+        let kind = token.kind();
+        if kind == SyntaxKind::Number {
+            return match number_literal(token.text(), self.vocabulary) {
                 Some((number, suffix)) => ExprKind::Number(number, suffix),
                 None => ExprKind::Error,
-            },
-            _ => ExprKind::Error,
+            };
         }
+        BOOL_LITERALS
+            .iter()
+            .find(|(literal, _)| *literal == kind)
+            .map_or(ExprKind::Error, |(_, value)| ExprKind::Bool(*value))
     }
 
     fn string<'p>(&self, node: &ast::StringLit<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
@@ -311,37 +328,51 @@ impl Builder<'_> {
     }
 }
 
+const BOOL_LITERALS: [(SyntaxKind, bool); 2] =
+    [(SyntaxKind::TrueKw, true), (SyntaxKind::FalseKw, false)];
+
+const BINARY_OPS: [(SyntaxKind, BinaryOp); 14] = [
+    (SyntaxKind::Plus, BinaryOp::Add),
+    (SyntaxKind::Minus, BinaryOp::Sub),
+    (SyntaxKind::Star, BinaryOp::Mul),
+    (SyntaxKind::Slash, BinaryOp::Div),
+    (SyntaxKind::DivKw, BinaryOp::IntDiv),
+    (SyntaxKind::Percent, BinaryOp::Rem),
+    (SyntaxKind::Star2, BinaryOp::Pow),
+    (SyntaxKind::IsKw, BinaryOp::Is),
+    (SyntaxKind::Lt, BinaryOp::Lt),
+    (SyntaxKind::Le, BinaryOp::Le),
+    (SyntaxKind::Gt, BinaryOp::Gt),
+    (SyntaxKind::Ge, BinaryOp::Ge),
+    (SyntaxKind::AndKw, BinaryOp::And),
+    (SyntaxKind::OrKw, BinaryOp::Or),
+];
+
+const SCALAR_KEYWORDS: [(SyntaxKind, Scalar); 5] = [
+    (SyntaxKind::I32Kw, Scalar::I32),
+    (SyntaxKind::I64Kw, Scalar::I64),
+    (SyntaxKind::F32Kw, Scalar::F32),
+    (SyntaxKind::F64Kw, Scalar::F64),
+    (SyntaxKind::BoolKw, Scalar::Bool),
+];
+
 fn binary_op(token: &TokenView<'_>, node: &ast::BinaryExpr<'_>) -> Option<BinaryOp> {
-    let op = match token.kind() {
-        SyntaxKind::Plus => BinaryOp::Add,
-        SyntaxKind::Minus => BinaryOp::Sub,
-        SyntaxKind::Star => BinaryOp::Mul,
-        SyntaxKind::Slash => BinaryOp::Div,
-        SyntaxKind::DivKw => BinaryOp::IntDiv,
-        SyntaxKind::Percent => BinaryOp::Rem,
-        SyntaxKind::Star2 => BinaryOp::Pow,
-        SyntaxKind::IsKw if node.is_not() => BinaryOp::IsNot,
-        SyntaxKind::IsKw => BinaryOp::Is,
-        SyntaxKind::Lt => BinaryOp::Lt,
-        SyntaxKind::Le => BinaryOp::Le,
-        SyntaxKind::Gt => BinaryOp::Gt,
-        SyntaxKind::Ge => BinaryOp::Ge,
-        SyntaxKind::AndKw => BinaryOp::And,
-        SyntaxKind::OrKw => BinaryOp::Or,
-        _ => return None,
-    };
-    Some(op)
+    let kind = token.kind();
+    if kind == SyntaxKind::IsKw && node.is_not() {
+        return Some(BinaryOp::IsNot);
+    }
+    BINARY_OPS
+        .iter()
+        .find(|(token, _)| *token == kind)
+        .map(|(_, op)| *op)
 }
 
 fn scalar(token: &TokenView<'_>) -> Option<Scalar> {
-    match token.kind() {
-        SyntaxKind::I32Kw => Some(Scalar::I32),
-        SyntaxKind::I64Kw => Some(Scalar::I64),
-        SyntaxKind::F32Kw => Some(Scalar::F32),
-        SyntaxKind::F64Kw => Some(Scalar::F64),
-        SyntaxKind::BoolKw => Some(Scalar::Bool),
-        _ => None,
-    }
+    let kind = token.kind();
+    SCALAR_KEYWORDS
+        .iter()
+        .find(|(keyword, _)| *keyword == kind)
+        .map(|(_, scalar)| *scalar)
 }
 
 pub(super) fn scalar_type(token: &TokenView<'_>) -> Option<Scalar> {

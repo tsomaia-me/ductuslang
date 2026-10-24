@@ -29,7 +29,21 @@ impl Engine<'_> {
             ExprKind::Field(inner, _) if matches!(self.hir.expr(*inner).kind, ExprKind::To) => {
                 return Some(Val::Error);
             }
-            _ => {}
+            ExprKind::Error
+            | ExprKind::Number(..)
+            | ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::Name(_)
+            | ExprKind::Variant { .. }
+            | ExprKind::Convert(..)
+            | ExprKind::Array(_)
+            | ExprKind::Field(..)
+            | ExprKind::Index(..)
+            | ExprKind::Call(..)
+            | ExprKind::Unary(..)
+            | ExprKind::Binary(..)
+            | ExprKind::If(..)
+            | ExprKind::Match { .. } => {}
         }
         let base_val = self.val(Query::Expr(base, scope), need)?;
         let node = match base_val {
@@ -52,7 +66,26 @@ impl Engine<'_> {
                 self.unplaced_variant(bare);
                 return Some(Val::Error);
             }
-            _ => {
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Pi
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Pick { .. }
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. } => {
                 let sig = self.sig(node, need)?;
                 if sig.is_error() {
                     return Some(Val::Error);
@@ -77,7 +110,13 @@ impl Engine<'_> {
                 }
                 match self.cval(Query::Eval(node, EvalTy::Node), need)? {
                     CVal::Node(item) => item,
-                    _ => return Some(Val::Error),
+                    CVal::Int(_)
+                    | CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Bool(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Error => return Some(Val::Error),
                 }
             }
         };
@@ -220,7 +259,13 @@ impl Engine<'_> {
             }
             let position = match self.cval(Query::Eval(index_node, EvalTy::Exact), need)? {
                 CVal::Int(position) => position,
-                _ => return Some(Val::Error),
+                CVal::F32(_)
+                | CVal::F64(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Error => return Some(Val::Error),
             };
             if (0..i128::from(outer)).contains(&position) {
                 return Some(base_val.slice(usize::try_from(position).unwrap_or(0)));
@@ -340,7 +385,22 @@ impl Engine<'_> {
                     stack.extend(arms.iter().rev().map(|(_, value)| *value));
                 }
                 Op::Annotate(_, inner) | Op::Use(inner) => stack.push(*inner),
-                _ => {}
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::Read(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::Convert(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. } => {}
             }
         }
         found

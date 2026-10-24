@@ -104,7 +104,7 @@ impl Engine<'_> {
         let body = self.hir.fn_decl(function).value;
         match self.val(Query::Expr(body, scope), need)? {
             Val::Scalar(root) => Some(Some(root)),
-            _ => Some(None),
+            Val::Array(_) | Val::Error => Some(None),
         }
     }
 

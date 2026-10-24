@@ -82,7 +82,7 @@ impl Engine<'_> {
             Op::Arg(_) => Sig::ERROR,
             Op::Read(binding) => match extra {
                 Extra::Read(init) => self.read_sig(*binding, init),
-                _ => Sig::ERROR,
+                Extra::None | Extra::ToRead { .. } => Sig::ERROR,
             },
             Op::Unary(UnaryOp::Neg, _) => {
                 if !first.is_numeric() {
@@ -164,7 +164,12 @@ impl Engine<'_> {
                         Kind::Bool | Kind::Enum(_) | Kind::Bare => {
                             "a `bool` or an enum value is not converted"
                         }
-                        _ => "a conversion takes a number",
+                        Kind::Int
+                        | Kind::Float
+                        | Kind::Str
+                        | Kind::Node
+                        | Kind::Any
+                        | Kind::Error => "a conversion takes a number",
                     };
                     self.error_at_node(Code::ConversionType, node, message);
                     return Sig::ERROR;
@@ -268,7 +273,20 @@ impl Engine<'_> {
                 if !numeric {
                     let message = match op {
                         BinaryOp::Add => "`+` takes two numbers or two strings",
-                        _ => "this operator takes numbers",
+                        BinaryOp::Sub
+                        | BinaryOp::Mul
+                        | BinaryOp::Div
+                        | BinaryOp::IntDiv
+                        | BinaryOp::Rem
+                        | BinaryOp::Pow
+                        | BinaryOp::Is
+                        | BinaryOp::IsNot
+                        | BinaryOp::Lt
+                        | BinaryOp::Le
+                        | BinaryOp::Gt
+                        | BinaryOp::Ge
+                        | BinaryOp::And
+                        | BinaryOp::Or => "this operator takes numbers",
                     };
                     self.error_at_node(Code::OperandType, node, message);
                     return Sig::ERROR;
@@ -296,7 +314,19 @@ impl Engine<'_> {
                         }
                         None
                     }
-                    _ => match self.one_family(node, &[lhs, rhs]) {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Div
+                    | BinaryOp::IntDiv
+                    | BinaryOp::Rem
+                    | BinaryOp::Is
+                    | BinaryOp::IsNot
+                    | BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::And
+                    | BinaryOp::Or => match self.one_family(node, &[lhs, rhs]) {
                         Some(family) => family,
                         None => return Sig::ERROR,
                     },
@@ -558,6 +588,6 @@ pub(super) fn branch_width_of(kind: Kind, a: Width, b: Width) -> Width {
         Kind::Bool => Width::Fixed(Scalar::Bool),
         Kind::Str => Width::Fixed(Scalar::Str),
         Kind::Enum(id) => Width::Fixed(Scalar::Enum(id)),
-        _ => Width::Flexible,
+        Kind::Node | Kind::Bare | Kind::Any | Kind::Error => Width::Flexible,
     }
 }

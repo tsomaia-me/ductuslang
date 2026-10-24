@@ -32,7 +32,7 @@ impl Engine<'_> {
                 let array = match &val {
                     Val::Array(array) if array.shape.depth() == 1 => array.clone(),
                     Val::Error => return None,
-                    _ => {
+                    Val::Array(_) | Val::Scalar(_) => {
                         self.error(
                             Code::IterableType,
                             loc,
@@ -81,7 +81,22 @@ impl Engine<'_> {
     fn range_bound(&mut self, expr: ExprId, scope: ScopeId) -> Option<i128> {
         let value = match self.hir.expr(expr).kind {
             ExprKind::Number(Number::Int(value), Suffix::None) => value,
-            _ => self.computed_bound(expr, scope)?,
+            ExprKind::Error
+            | ExprKind::Number(..)
+            | ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::Name(_)
+            | ExprKind::Variant { .. }
+            | ExprKind::To
+            | ExprKind::Convert(..)
+            | ExprKind::Array(_)
+            | ExprKind::Field(..)
+            | ExprKind::Index(..)
+            | ExprKind::Call(..)
+            | ExprKind::Unary(..)
+            | ExprKind::Binary(..)
+            | ExprKind::If(..)
+            | ExprKind::Match { .. } => self.computed_bound(expr, scope)?,
         };
         if i64::try_from(value).is_err() {
             let loc = self.hir.expr(expr).loc;
@@ -139,7 +154,13 @@ impl Engine<'_> {
         }
         match self.demand_cval(node, EvalTy::Exact) {
             CVal::Int(value) => Some(value),
-            _ => None,
+            CVal::F32(_)
+            | CVal::F64(_)
+            | CVal::Bool(_)
+            | CVal::Enum(..)
+            | CVal::Str(_)
+            | CVal::Node(_)
+            | CVal::Error => None,
         }
     }
 }

@@ -30,7 +30,15 @@ pub(super) fn exact_binary(op: BinaryOp, a: i128, b: i128) -> Option<i128> {
             }
         }
         BinaryOp::Pow => exact_pow(a, b)?,
-        _ => return None,
+        BinaryOp::Div
+        | BinaryOp::Is
+        | BinaryOp::IsNot
+        | BinaryOp::Lt
+        | BinaryOp::Le
+        | BinaryOp::Gt
+        | BinaryOp::Ge
+        | BinaryOp::And
+        | BinaryOp::Or => return None,
     };
     (value != i128::MIN).then_some(value)
 }

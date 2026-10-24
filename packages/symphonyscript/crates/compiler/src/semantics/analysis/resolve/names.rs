@@ -74,7 +74,7 @@ impl Engine<'_> {
                         None => Found::Nothing,
                     };
                 }
-                _ => {}
+                ScopeKind::ForVar { .. } | ScopeKind::Locals(_) | ScopeKind::WireClause { .. } => {}
             }
             current = parent;
         }
@@ -88,7 +88,27 @@ impl Engine<'_> {
         };
         let name = match &self.node(node).op {
             Op::Bare(name) => Some(name.clone()),
-            _ => None,
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Pick { .. }
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. } => None,
         };
         self.unplaced_variant_at(name.as_deref(), loc, scope);
     }
@@ -148,7 +168,7 @@ impl Engine<'_> {
                     Decl::Node(_) => "a node kind, which is only placed",
                     Decl::Wire(_) => "a wire kind, which is only placed",
                     Decl::Enum(_) => "an enum, whose variants are written `Enum::Variant`",
-                    _ => "not a value",
+                    Decl::Input(_) | Decl::Let(_) | Decl::Instance(_) => "not a value",
                 };
                 self.error(Code::NotAValue, loc, scope, format!("`{name}` is {what}"));
                 Some(Val::Error)

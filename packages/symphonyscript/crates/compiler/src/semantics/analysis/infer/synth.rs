@@ -17,7 +17,7 @@ impl Engine<'_> {
                 let ty = match sig.width {
                     Width::Fixed(scalar) => Some(scalar),
                     Width::Widened(scalar) => Some(float_for(scalar)),
-                    _ => None,
+                    Width::Flexible | Width::Adaptive => None,
                 };
                 self.typing.synth.insert(node, ty);
                 continue;
@@ -78,7 +78,7 @@ impl Engine<'_> {
             Kind::Bool => return Some(Scalar::Bool),
             Kind::Enum(id) => return Some(Scalar::Enum(id)),
             Kind::Str => return Some(Scalar::Str),
-            _ => {}
+            Kind::Int | Kind::Float | Kind::Node | Kind::Bare | Kind::Any | Kind::Error => {}
         }
         match op {
             Op::Read(binding) => self.typing.own.get(binding).copied(),
@@ -88,7 +88,20 @@ impl Engine<'_> {
                 let combined = self.combine(&[*lhs, *rhs]);
                 match op {
                     BinaryOp::Div => combined.map(float_for),
-                    _ => combined,
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::IntDiv
+                    | BinaryOp::Rem
+                    | BinaryOp::Pow
+                    | BinaryOp::Is
+                    | BinaryOp::IsNot
+                    | BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::And
+                    | BinaryOp::Or => combined,
                 }
             }
             Op::If(_, then, otherwise) => self.combine(&[*then, *otherwise]),
@@ -104,13 +117,32 @@ impl Engine<'_> {
             Op::Builtin(builtin, args) => match builtin {
                 Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp => self.combine(args),
                 Builtin::Rand => Some(Scalar::F32),
-                _ => self.combine(args).map(float_for),
+                Builtin::Floor
+                | Builtin::Ceil
+                | Builtin::Round
+                | Builtin::Sqrt
+                | Builtin::Sin
+                | Builtin::Cos
+                | Builtin::Tan
+                | Builtin::Exp
+                | Builtin::Log
+                | Builtin::Lerp => self.combine(args).map(float_for),
             },
             Op::ToRead { attrs, .. } => attrs
                 .first()
                 .and_then(|(item, attr)| self.attr_decl(*item, *attr))
                 .map(|decl| decl.ty.scalar),
-            _ => None,
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Arg(_)
+            | Op::Recursive { .. } => None,
         }
     }
 }

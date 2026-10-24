@@ -99,7 +99,7 @@ impl Engine<'_> {
             let fixed = match record.kind {
                 BindingKind::Input { .. } => Some(self.input_type(binding)),
                 BindingKind::Attr { .. } => Some(record.annotation),
-                _ => record.annotation.map(Some),
+                BindingKind::Let | BindingKind::Param => record.annotation.map(Some),
             };
             if let Some(fixed) = fixed {
                 let fixed = fixed.filter(|scalar| is_integer(*scalar));
@@ -126,9 +126,32 @@ impl Engine<'_> {
                 }
                 let contribution = match &self.node(node).op {
                     Op::Read(read) => self.typing.natural.get(read).copied().flatten(),
-                    _ => match self.memo.sigs.get(&node).map(|sig| sig.width) {
+                    Op::Number(..)
+                    | Op::Const(_)
+                    | Op::Bool(_)
+                    | Op::Str(_)
+                    | Op::Concat(_)
+                    | Op::Variant(..)
+                    | Op::Bare(_)
+                    | Op::Pi
+                    | Op::NodeRef(_)
+                    | Op::Use(_)
+                    | Op::Arg(_)
+                    | Op::Unary(..)
+                    | Op::Binary(..)
+                    | Op::If(..)
+                    | Op::Match { .. }
+                    | Op::Pick { .. }
+                    | Op::Convert(..)
+                    | Op::Annotate(..)
+                    | Op::Builtin(..)
+                    | Op::Recursive { .. }
+                    | Op::ToRead { .. } => match self.memo.sigs.get(&node).map(|sig| sig.width) {
                         Some(Width::Fixed(scalar)) if is_integer(scalar) => Some(scalar),
-                        _ => None,
+                        Some(
+                            Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive,
+                        )
+                        | None => None,
                     },
                 };
                 if let Some(contribution) = contribution

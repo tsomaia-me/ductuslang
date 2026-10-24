@@ -71,7 +71,13 @@ impl Engine<'_> {
                         stack.push((lhs, inner));
                         stack.push((rhs, inner));
                     }
-                    _ => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::IntDiv
+                    | BinaryOp::Rem
+                    | BinaryOp::Pow => {
                         stack.push((lhs, ty));
                         stack.push((rhs, ty));
                     }
@@ -159,7 +165,20 @@ impl Engine<'_> {
                 Op::Builtin(builtin, args) => {
                     let operands = match builtin {
                         Builtin::Rand => Some(Scalar::I64),
-                        _ => ty,
+                        Builtin::Abs
+                        | Builtin::Min
+                        | Builtin::Max
+                        | Builtin::Clamp
+                        | Builtin::Floor
+                        | Builtin::Ceil
+                        | Builtin::Round
+                        | Builtin::Sqrt
+                        | Builtin::Sin
+                        | Builtin::Cos
+                        | Builtin::Tan
+                        | Builtin::Exp
+                        | Builtin::Log
+                        | Builtin::Lerp => ty,
                     };
                     stack.extend(args.into_iter().map(|arg| (arg, operands)));
                 }

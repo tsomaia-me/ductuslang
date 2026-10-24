@@ -62,7 +62,7 @@ impl Engine<'_> {
                 let name = decl.name.as_ref()?;
                 Some((name.text.clone(), name.loc))
             }
-            _ => None,
+            Query::Destination(_) | Query::Sig(_) | Query::Eval(..) => None,
         }
     }
 }

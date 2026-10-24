@@ -273,17 +273,19 @@ impl Engine<'_> {
             .sigs
             .get(&root)
             .map_or(Kind::Error, |sig| sig.kind);
-        let fits = match (kind, own) {
-            (Kind::Float, EvalTy::Exact | EvalTy::I32 | EvalTy::I64) => false,
-            (Kind::Bool, ty) => matches!(ty, EvalTy::Bool | EvalTy::Default),
-            (
-                Kind::Int | Kind::Float,
-                EvalTy::Bool | EvalTy::Str | EvalTy::Enum(_) | EvalTy::Node,
-            ) => false,
-            (Kind::Str, ty) => matches!(ty, EvalTy::Str | EvalTy::Default),
-            (Kind::Enum(id), EvalTy::Enum(other)) => id == other,
-            (Kind::Enum(_), ty) => ty == EvalTy::Default,
-            _ => true,
+        let not_numeric = matches!(
+            own,
+            EvalTy::Bool | EvalTy::Str | EvalTy::Enum(_) | EvalTy::Node
+        );
+        let fits = match kind {
+            Kind::Float => {
+                !not_numeric && !matches!(own, EvalTy::Exact | EvalTy::I32 | EvalTy::I64)
+            }
+            Kind::Int => !not_numeric,
+            Kind::Bool => matches!(own, EvalTy::Bool | EvalTy::Default),
+            Kind::Str => matches!(own, EvalTy::Str | EvalTy::Default),
+            Kind::Enum(id) => own == EvalTy::Enum(id) || own == EvalTy::Default,
+            Kind::Node | Kind::Bare | Kind::Any | Kind::Error => true,
         };
         if !fits {
             self.error_at_node(

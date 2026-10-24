@@ -32,7 +32,26 @@ impl Engine<'_> {
                 self.sig(init, need).map(Extra::Read)
             }
             Op::ToRead { wire, attrs, .. } => self.destination_read_reactive(*wire, attrs, need),
-            _ => Some(Extra::None),
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Use(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Pick { .. }
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. } => Some(Extra::None),
         };
         if sigs.iter().any(Option::is_none) {
             return false;
@@ -43,31 +62,30 @@ impl Engine<'_> {
         let sigs: Vec<Sig> = sigs.into_iter().flatten().collect();
         let open = sigs.iter().any(|operand| operand.open);
         let reactive = sigs.iter().any(|operand| operand.reactive);
-        let mut sig = match &op {
-            Op::Arg(_) => self.memo.arg_sigs.get(&node).copied().unwrap_or(Sig::ERROR),
-            Op::Recursive { function, args } if !reactive => {
-                if sigs.iter().any(Sig::is_error) {
-                    Sig::ERROR
-                } else if open {
-                    Sig::open(false)
-                } else {
-                    match self.recursive_sig(node, *function, args, need) {
-                        Some(sig) => sig,
-                        None => return false,
-                    }
-                }
-            }
-            _ if sigs.iter().any(Sig::is_error) && !matches!(op, Op::Recursive { .. }) => {
+        let errors = sigs.iter().any(Sig::is_error);
+        let mut sig = if let Op::Arg(_) = op {
+            self.memo.arg_sigs.get(&node).copied().unwrap_or(Sig::ERROR)
+        } else if let (Op::Recursive { function, args }, false) = (&op, reactive) {
+            if errors {
                 Sig::ERROR
-            }
-            _ if open && !joins(&op) => Sig::open(reactive),
-            _ => {
-                let mut sig = self.rule(node, &op, &operands, &sigs, extra);
-                if open && sig.family.is_none() && sig.is_numeric() && !sig.is_error() {
-                    sig.open = true;
+            } else if open {
+                Sig::open(false)
+            } else {
+                match self.recursive_sig(node, *function, args, need) {
+                    Some(sig) => sig,
+                    None => return false,
                 }
-                sig
             }
+        } else if errors && !matches!(op, Op::Recursive { .. }) {
+            Sig::ERROR
+        } else if open && !joins(&op) {
+            Sig::open(reactive)
+        } else {
+            let mut sig = self.rule(node, &op, &operands, &sigs, extra);
+            if open && sig.family.is_none() && sig.is_numeric() && !sig.is_error() {
+                sig.open = true;
+            }
+            sig
         };
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);

@@ -77,7 +77,17 @@ pub(crate) fn pattern_graph(
                     {
                         Some(StandIn::Use(*placement))
                     }
-                    _ => None,
+                    Some(
+                        Decl::Pattern(_)
+                        | Decl::Input(_)
+                        | Decl::Let(_)
+                        | Decl::Fn(_)
+                        | Decl::Instance(_)
+                        | Decl::Builtin(_)
+                        | Decl::Wire(_)
+                        | Decl::Enum(_),
+                    )
+                    | None => None,
                 }
             }
             _ => None,

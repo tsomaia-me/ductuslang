@@ -281,7 +281,48 @@ impl Engine<'_> {
                             args,
                         ) => any(args),
                         Op::Read(binding) => floats.contains(&self.binding(*binding).init),
-                        _ => false,
+                        Op::Number(..)
+                        | Op::Const(_)
+                        | Op::Bool(_)
+                        | Op::Str(_)
+                        | Op::Concat(_)
+                        | Op::Variant(..)
+                        | Op::Bare(_)
+                        | Op::Pi
+                        | Op::NodeRef(_)
+                        | Op::Arg(_)
+                        | Op::Unary(UnaryOp::Not, _)
+                        | Op::Binary(
+                            BinaryOp::Div
+                            | BinaryOp::Is
+                            | BinaryOp::IsNot
+                            | BinaryOp::Lt
+                            | BinaryOp::Le
+                            | BinaryOp::Gt
+                            | BinaryOp::Ge
+                            | BinaryOp::And
+                            | BinaryOp::Or,
+                            _,
+                            _,
+                        )
+                        | Op::Convert(..)
+                        | Op::Annotate(..)
+                        | Op::Builtin(
+                            Builtin::Floor
+                            | Builtin::Ceil
+                            | Builtin::Round
+                            | Builtin::Sqrt
+                            | Builtin::Sin
+                            | Builtin::Cos
+                            | Builtin::Tan
+                            | Builtin::Exp
+                            | Builtin::Log
+                            | Builtin::Lerp
+                            | Builtin::Rand,
+                            _,
+                        )
+                        | Op::Recursive { .. }
+                        | Op::ToRead { .. } => false,
                     };
                 if becomes_float {
                     floats.insert(node);

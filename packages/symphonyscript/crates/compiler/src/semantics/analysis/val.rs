@@ -32,7 +32,7 @@ impl Val {
     pub fn shape(&self) -> Shape {
         match self {
             Val::Array(array) => array.shape.clone(),
-            _ => Shape::scalar(),
+            Val::Scalar(_) | Val::Error => Shape::scalar(),
         }
     }
 

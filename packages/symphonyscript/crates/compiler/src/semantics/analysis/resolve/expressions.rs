@@ -127,7 +127,7 @@ impl Engine<'_> {
                         );
                         return Some(Val::Error);
                     }
-                    _ => return Some(Val::Error),
+                    Some((_, Some(Val::Error) | None)) | None => return Some(Val::Error),
                 },
             }
         }
@@ -344,7 +344,21 @@ impl Engine<'_> {
         for arm in arms {
             let label = match &self.hir.expr(arm.label).kind {
                 ExprKind::Name(_) => Some(Val::Error),
-                _ => self.val(Query::Expr(arm.label, scope), need),
+                ExprKind::Error
+                | ExprKind::Number(..)
+                | ExprKind::Bool(_)
+                | ExprKind::Str(_)
+                | ExprKind::Variant { .. }
+                | ExprKind::To
+                | ExprKind::Convert(..)
+                | ExprKind::Array(_)
+                | ExprKind::Field(..)
+                | ExprKind::Index(..)
+                | ExprKind::Call(..)
+                | ExprKind::Unary(..)
+                | ExprKind::Binary(..)
+                | ExprKind::If(..)
+                | ExprKind::Match { .. } => self.val(Query::Expr(arm.label, scope), need),
             };
             labels.push(label);
             values.push(self.val(Query::Expr(arm.value, scope), need));
@@ -368,7 +382,7 @@ impl Engine<'_> {
                 );
                 return Some(Val::Error);
             }
-            _ => return Some(Val::Error),
+            Some(Val::Error) | None => return Some(Val::Error),
         };
         let mut label_nodes = Vec::new();
         for (arm, label) in arms.iter().zip(labels) {

@@ -91,7 +91,7 @@ impl Engine<'_> {
                         entry.1 = true
                     }
                     EvalTy::Enum(_) => entry.2 = true,
-                    _ => {}
+                    EvalTy::Default | EvalTy::Bool | EvalTy::Str | EvalTy::Node => {}
                 }
             }
         }

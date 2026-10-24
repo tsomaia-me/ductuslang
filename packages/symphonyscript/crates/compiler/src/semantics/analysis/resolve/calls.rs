@@ -49,7 +49,7 @@ impl Engine<'_> {
                 }
                 Some(Val::Error)
             }
-            _ => {
+            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
                 self.error(
                     Code::NotCallable,
                     callee_expr.loc,
@@ -151,7 +151,9 @@ impl Engine<'_> {
                         missing |= val.is_none();
                         vals.push(val);
                     }
-                    _ => vals.push(None),
+                    ParamSource::Default | ParamSource::Missing | ParamSource::Bound(_) => {
+                        vals.push(None)
+                    }
                 }
             }
             if missing {
@@ -162,7 +164,7 @@ impl Engine<'_> {
                 .zip(vals)
                 .map(|(source, val)| match source {
                     ParamSource::Arg { .. } => val,
-                    _ => None,
+                    ParamSource::Default | ParamSource::Missing | ParamSource::Bound(_) => None,
                 })
                 .collect();
             return Some(self.scalar(Op::Recursive { function, args }, loc, scope));

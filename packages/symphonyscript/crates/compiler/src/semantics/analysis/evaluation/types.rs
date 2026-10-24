@@ -44,7 +44,7 @@ pub(crate) fn own_type(sig: &Sig, ty: EvalTy) -> EvalTy {
                 of_scalar(float_for(scalar))
             }
         }
-        _ => match sig.kind {
+        Width::Flexible | Width::Adaptive => match sig.kind {
             Kind::Int => {
                 if is_float_ty(ty) {
                     ty
@@ -84,7 +84,7 @@ pub(super) fn pair_type(a: &Sig, b: &Sig) -> Pair {
     let fixed = |sig: &Sig| match sig.width {
         Width::Fixed(scalar) => Some(scalar),
         Width::Widened(scalar) => Some(float_for(scalar)),
-        _ => None,
+        Width::Flexible | Width::Adaptive => None,
     };
     match (fixed(a), fixed(b)) {
         (Some(x), Some(y)) => Pair::Ty(of_scalar(common(x, y).unwrap_or(x))),
@@ -111,6 +111,15 @@ pub(super) fn int_bits(ty: EvalTy) -> Option<u32> {
     match ty {
         EvalTy::I32 => Some(32),
         EvalTy::I64 => Some(64),
-        _ => None,
+        EvalTy::Exact
+        | EvalTy::Default
+        | EvalTy::F32
+        | EvalTy::F64
+        | EvalTy::DefaultF32
+        | EvalTy::DefaultF64
+        | EvalTy::Bool
+        | EvalTy::Enum(_)
+        | EvalTy::Str
+        | EvalTy::Node => None,
     }
 }

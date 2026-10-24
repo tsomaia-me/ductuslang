@@ -135,7 +135,9 @@ fn declare(
             Decl::Node(_) => "a node kind of the vocabulary",
             Decl::Wire(_) => "a wire kind of the vocabulary",
             Decl::Enum(_) => "an enum of the vocabulary",
-            _ => "already declared",
+            Decl::Input(_) | Decl::Let(_) | Decl::Fn(_) | Decl::Pattern(_) | Decl::Instance(_) => {
+                "already declared"
+            }
         };
         report.error(
             hir,

@@ -240,7 +240,9 @@ impl<'a> Engine<'a> {
             Query::Param(scope, index) => memo.params.get(&(scope, index)).cloned(),
             Query::Input(input) => memo.inputs.get(&input).cloned(),
             Query::Attr(item, attr) => memo.attrs.get(&(item, attr)).cloned(),
-            _ => Some(BoundVal::Error),
+            Query::Expr(..) | Query::Destination(_) | Query::Sig(_) | Query::Eval(..) => {
+                Some(BoundVal::Error)
+            }
         };
         if found.is_none() {
             need.push(query);
