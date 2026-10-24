@@ -60,14 +60,13 @@ fn the_fit_check_applies_at_each_use_and_where_an_integer_converts_to_a_float() 
         ("Osc o | freq=(1e300 * 1e300)\n", &[Code::DoesNotFit]),
         ("Clip c | gain=(1.0 / 1e300)\n", &[Code::DoesNotFit]),
         ("Clip c | gain=(16777217 / 2)\n", &[Code::DoesNotFit]),
-        ("Clip c | gain=((16777216 + 1) / 2)\n", &[Code::DoesNotFit]),
         ("Clip c | gain=(16777217i32 / 2)\n", &[]),
         (
-            "input n = 1.0\nClip c | gain=(n / (16777216 + 1))\n",
+            "input n = 1.0\nClip c | gain=(n / 16777217)\n",
             &[Code::DoesNotFit],
         ),
-        ("input n = 1.0\nOsc o | freq=(n / (16777216 + 1))\n", &[]),
-        ("Clip c | gain=(sqrt(16777216 + 1))\n", &[Code::DoesNotFit]),
+        ("input n = 1.0\nOsc o | freq=(n / 16777217)\n", &[]),
+        ("Clip c | gain=(sqrt(16777217))\n", &[Code::DoesNotFit]),
         ("Osc o | freq=(sqrt(16777216 + 1))\n", &[]),
         ("Clip c | gain=(33554434 div 2)\n", &[Code::DoesNotFit]),
         ("Osc o | freq=(33554434 div 2)\n", &[]),
@@ -76,6 +75,217 @@ fn the_fit_check_applies_at_each_use_and_where_an_integer_converts_to_a_float() 
             &[Code::DoesNotFit],
         ),
     ]);
+}
+
+#[test]
+fn a_float_type_that_flows_in_makes_a_flexible_value_a_float_from_its_literals_up() {
+    expect(&[
+        ("Clip c | gain=((16777216 + 1) / 2)\n", &[]),
+        ("input n = 1.0\nClip c | gain=(n / (16777216 + 1))\n", &[]),
+        ("Clip c | gain=(sqrt(16777216 + 1))\n", &[]),
+        (
+            "let c = (16777216 + 1) / 2 > 1\nClip k:\n    Note when c\n",
+            &[Code::DoesNotFit],
+        ),
+        (
+            "let c = (16777216 + 2) / 2 > 1\nClip k:\n    Note when c\n",
+            &[],
+        ),
+        (
+            "let c = sqrt(16777217) > 1\nClip k:\n    Note when c\n",
+            &[Code::DoesNotFit],
+        ),
+    ]);
+    for n in (1u32 << 24) - 3..=(1u32 << 24) + 9 {
+        let exact = n <= 1 << 24 || n % 2 == 0;
+        let expected: &[Code] = if exact { &[] } else { &[Code::DoesNotFit] };
+        expect(&[
+            (&format!("Clip c | gain=({n} / 2)\n"), expected),
+            (&format!("Clip c | gain=(({n} - 1 + 1) / 2)\n"), expected),
+            (&format!("Osc o | freq=({n} / 2)\n"), &[]),
+            (
+                &format!("let c = {n} / 2 > 1\nClip k:\n    Note when c\n"),
+                expected,
+            ),
+        ]);
+    }
+}
+
+#[test]
+fn a_recursive_call_computes_flexible_integer_arguments_exactly() {
+    let fact = "fn fact(n): if n < 1 then 1 else n * fact(n - 1)\n";
+    for k in 0u32..=30 {
+        let value: u128 = (1..=u128::from(k)).product();
+        let exact = value as f64 as u128 == value;
+        let expected: &[Code] = if exact { &[] } else { &[Code::DoesNotFit] };
+        expect(&[(&format!("{fact}Osc o | freq=(fact({k}))\n"), expected)]);
+    }
+    expect(&[
+        (
+            "fn s(n): if n < 1 then 0 else (n div 2) + s(n - 1)\nOsc o | freq=(s(7))\n",
+            &[],
+        ),
+        (
+            "fn f(x): if x < 1 then x div 2 else f(x - 1)\nClip c:\n    Note/(f(0.5))\n",
+            &[Code::OperandType],
+        ),
+    ]);
+}
+
+#[test]
+fn a_recursive_result_and_body_follow_the_unit_rules() {
+    expect(&[
+        (
+            "fn r(n): if n < 1 then 2bars else r(n - 1)\nClip c:\n    Note/(r(3))\n",
+            &[Code::UnitMismatch],
+        ),
+        (
+            "fn r(n): if n < 1 then 2bars else r(n - 1)\nClip c:\n    Note | length=(r(3))\n",
+            &[],
+        ),
+        (
+            "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\nClip c:\n    Note | length=(fib(3))\n",
+            &[],
+        ),
+    ]);
+    support::expect_codes(
+        "fn t(n): if n < 1 then 0 else t(n - 1) + 1\nKit k:\n    Sampler | file=\"{t(2bars)}\"\n",
+        &[(Code::PlainInFamily, "1", 0), (Code::PlainInFamily, "1", 1)],
+    );
+}
+
+#[test]
+fn a_flexible_integer_where_no_type_is_fixed_takes_the_defaults_and_fits_i64() {
+    expect(&[
+        (
+            "let c = 10000000000000000000000 > 1\nClip k:\n    Note when c\n",
+            &[Code::DoesNotFit],
+        ),
+        (
+            "let c = 9223372036854775807 > 1\nClip k:\n    Note when c\n",
+            &[],
+        ),
+        (
+            "let c = -9223372036854775808 > 1\nClip k:\n    Note when c\n",
+            &[],
+        ),
+        (
+            "let c = 9223372036854775808 > 1\nClip k:\n    Note when c\n",
+            &[Code::DoesNotFit],
+        ),
+        (
+            "let c = 2 ** 70 div 2 ** 69 > 1\nClip k:\n    Note when c\n",
+            &[],
+        ),
+        (
+            "Kit k:\n    Sampler | file=\"{2 ** 100}\"\n",
+            &[Code::DoesNotFit],
+        ),
+        ("Kit k:\n    Sampler | file=\"{2 ** 62}\"\n", &[]),
+        ("Clip c:\n    Note/(i32(2 ** 100))\n", &[Code::DoesNotFit]),
+        ("Clip c:\n    Note/(i32(3000000000))\n", &[]),
+        (
+            "let v = match 2 ** 70:\n    1: 1\n    else: 2\nClip c:\n    Note/v\n",
+            &[Code::DoesNotFit],
+        ),
+        (
+            "let v = match 2 ** 62:\n    1: 1\n    else: 2\nClip c:\n    Note/v\n",
+            &[],
+        ),
+        ("Clip c:\n    Note/(2147483647 * 2 div 2)\n", &[]),
+        ("Clip c:\n    for i in 0..2:\n        Note/i\n", &[]),
+    ]);
+}
+
+#[test]
+fn a_flexible_argument_of_rand_takes_i64_and_fits_it() {
+    expect(&[
+        ("Clip c | gain=(rand(2 ** 70, 1))\n", &[Code::DoesNotFit]),
+        (
+            "Clip c | gain=(rand(1, -(2 ** 63) - 1))\n",
+            &[Code::DoesNotFit],
+        ),
+        ("Clip c | gain=(rand(2 ** 63 - 1, -(2 ** 63)))\n", &[]),
+    ]);
+}
+
+#[test]
+fn a_literal_a_fixed_type_operand_types_fits_that_type() {
+    support::expect_codes(
+        "Clip c:\n    Note/(5i32 + 3000000000)\n",
+        &[(Code::DoesNotFit, "3000000000", 0)],
+    );
+    expect(&[
+        ("Clip c:\n    Note/(5i32 + 2147483642)\n", &[]),
+        (
+            "Clip c:\n    Note/(5i32 + 2147483643)\n",
+            &[Code::ConstantOverflow],
+        ),
+        (
+            "let x = 2147483647i32 + 1\nClip c:\n    Note/x\n",
+            &[Code::ConstantOverflow],
+        ),
+    ]);
+}
+
+#[test]
+fn a_nan_at_a_use_does_not_fit() {
+    expect(&[
+        ("Osc o | freq=(0.0 / 0.0)\n", &[Code::DoesNotFit]),
+        (
+            "let c = (0.0 / 0.0) > 1\nClip k:\n    Note when c\n",
+            &[Code::DoesNotFit],
+        ),
+        ("Osc o | freq=(max(0.0 / 0.0, 440.0))\n", &[]),
+    ]);
+}
+
+#[test]
+fn the_two_to_the_127_bound_counts_magnitude() {
+    expect(&[
+        (
+            "Clip c:\n    Note/(-(2 ** 126) * 2 div 2 ** 120)\n",
+            &[Code::IntegerOverflow],
+        ),
+        (
+            "Clip c:\n    Note/((-(2 ** 126) - (2 ** 126 - 1)) div 2 ** 120)\n",
+            &[],
+        ),
+        (
+            "Clip c:\n    Note/((-2) ** 127 div 2 ** 120)\n",
+            &[Code::IntegerOverflow],
+        ),
+        (
+            "Clip c:\n    Note/((-(2 ** 126) - 2 ** 126) div 2 ** 120)\n",
+            &[Code::IntegerOverflow],
+        ),
+        (
+            "Clip c:\n    Note/((2 ** 126 + (2 ** 126 - 1)) div 2 ** 120)\n",
+            &[],
+        ),
+    ]);
+}
+
+#[test]
+fn a_comparison_that_reads_an_integer_input_as_a_float_is_a_float_use() {
+    let integer_inputs = |text: &str| {
+        support::checked_all(text)
+            .iter()
+            .filter(|diagnostic| diagnostic.code == Code::IntegerInput)
+            .count()
+    };
+    assert_eq!(
+        integer_inputs("input n = 4\nClip c:\n    Note when n > 0.5\n"),
+        1
+    );
+    assert_eq!(
+        integer_inputs("input n = 4\nClip c:\n    Note when n > 1\n"),
+        0
+    );
+    assert_eq!(
+        integer_inputs("input n = 4\nClip c:\n    Note when n + 1 > 0.5\n"),
+        1
+    );
 }
 
 #[test]

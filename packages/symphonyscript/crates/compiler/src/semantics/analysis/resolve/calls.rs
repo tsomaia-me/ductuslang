@@ -229,13 +229,20 @@ impl Engine<'_> {
         } else {
             self.source_global
         };
-        let inside_recursion = self.in_recursion(caller);
+        let inside_recursion = self.template_of(caller).is_some();
         let chain = if recursive && !inside_recursion {
             self.chain(caller).push(loc)
         } else {
             self.chain(caller)
         };
-        self.scope(
+        let template = if recursive {
+            Some(ScopeId(crate::semantics::analysis::engine::index(
+                self.scopes.len(),
+            )))
+        } else {
+            self.template_of(caller)
+        };
+        self.scope_in(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Fn(function),
                 params,
@@ -244,19 +251,8 @@ impl Engine<'_> {
             }),
             Some(global),
             chain,
+            template,
         )
-    }
-
-    fn in_recursion(&self, scope: ScopeId) -> bool {
-        let mut current = Some(scope);
-        while let Some(id) = current {
-            let scope = self.scope_of(id);
-            if let ScopeKind::Locals(locals) = &scope.kind {
-                return locals.recursive;
-            }
-            current = scope.parent;
-        }
-        false
     }
 
     pub(in crate::semantics::analysis) fn bind_arguments(

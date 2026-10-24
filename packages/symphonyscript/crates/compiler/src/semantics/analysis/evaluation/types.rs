@@ -1,9 +1,7 @@
 use symphonyscript_core::{Builtin, Scalar};
 
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::sig::{
-    Kind, Sig, Width, common, float_for, is_integer, meet_flexible,
-};
+use crate::semantics::analysis::sig::{Kind, Sig, Width, common, float_for, meet_flexible};
 
 pub(super) fn of_scalar(scalar: Scalar) -> EvalTy {
     match scalar {
@@ -22,7 +20,18 @@ pub(super) fn is_int_ty(ty: EvalTy) -> bool {
 }
 
 pub(super) fn is_float_ty(ty: EvalTy) -> bool {
-    matches!(ty, EvalTy::F32 | EvalTy::F64)
+    matches!(
+        ty,
+        EvalTy::F32 | EvalTy::F64 | EvalTy::DefaultF32 | EvalTy::DefaultF64
+    )
+}
+
+pub(super) fn is_chosen_float(ty: EvalTy) -> bool {
+    matches!(ty, EvalTy::DefaultF32 | EvalTy::DefaultF64)
+}
+
+pub(super) fn is_f32(ty: EvalTy) -> bool {
+    matches!(ty, EvalTy::F32 | EvalTy::DefaultF32)
 }
 
 pub(crate) fn own_type(sig: &Sig, ty: EvalTy) -> EvalTy {
@@ -91,7 +100,7 @@ pub(super) fn pair_type(a: &Sig, b: &Sig) -> Pair {
     }
 }
 
-pub(crate) fn is_float_builtin(builtin: Builtin) -> bool {
+pub(super) fn is_float_builtin(builtin: Builtin) -> bool {
     !matches!(
         builtin,
         Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp | Builtin::Rand
@@ -104,8 +113,4 @@ pub(super) fn int_bits(ty: EvalTy) -> Option<u32> {
         EvalTy::I64 => Some(64),
         _ => None,
     }
-}
-
-pub(super) fn _unused(scalar: Scalar) -> bool {
-    is_integer(scalar)
 }

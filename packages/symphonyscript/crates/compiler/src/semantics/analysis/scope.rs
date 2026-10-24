@@ -51,4 +51,5 @@ pub(crate) struct Scope {
     pub kind: ScopeKind,
     pub parent: Option<ScopeId>,
     pub chain: Chain,
+    pub template: Option<ScopeId>,
 }

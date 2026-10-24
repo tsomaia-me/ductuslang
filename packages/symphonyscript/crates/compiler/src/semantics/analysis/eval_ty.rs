@@ -8,6 +8,8 @@ pub(crate) enum EvalTy {
     I64,
     F32,
     F64,
+    DefaultF32,
+    DefaultF64,
     Bool,
     Enum(EnumId),
     Str,

@@ -259,9 +259,15 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.1",
-        "inside an expression wherever a literal or an integer result is converted to a float type",
+        "wherever a literal or an integer result is converted to a float type",
         "does-not-fit",
-        "Clip c | gain=((16777216 + 1) / 2)\n",
+        "Clip c | gain=(16777217 / 2)\n",
+    ),
+    rule(
+        "4.1",
+        "where a fixed-type operand gives a literal its type",
+        "does-not-fit",
+        "Clip c:\n    Note/(5i32 + 3000000000)\n",
     ),
     rule(
         "4.1",
@@ -313,9 +319,15 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.6",
-        "A flexible integer whose magnitude reaches 2¹²⁷ is an error.",
+        "A flexible integer whose magnitude reaches 2¹²⁷, positive or negative, is an error.",
         "integer-overflow",
         "Clip c:\n    Note/(2 ** 200)\n",
+    ),
+    rule(
+        "4.6",
+        "A flexible integer whose magnitude reaches 2¹²⁷, positive or negative, is an error.",
+        "integer-overflow",
+        "Clip c:\n    Note/(-(2 ** 126) * 2 div 2 ** 120)\n",
     ),
     rule(
         "4.6",

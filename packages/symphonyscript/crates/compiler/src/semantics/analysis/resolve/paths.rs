@@ -204,7 +204,7 @@ impl Engine<'_> {
         if sig.is_error() {
             return Some(Val::Error);
         }
-        if !sig.reactive {
+        if !sig.reactive && !sig.frame {
             if sig.kind != Kind::Int {
                 self.error(
                     Code::IndexType,

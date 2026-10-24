@@ -21,4 +21,5 @@ pub(crate) enum ArgShape {
 pub(crate) struct TemplateKey {
     pub function: FnId,
     pub args: Vec<ArgShape>,
+    pub units: Vec<(FamilyId, usize)>,
 }

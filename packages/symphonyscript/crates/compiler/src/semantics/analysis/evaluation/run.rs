@@ -5,7 +5,8 @@ use symphonyscript_core::{BinaryOp, Builtin, SpecFloat, UnaryOp, Value};
 use super::exact::{exact_binary, fits, represents};
 use super::format::text;
 use super::types::{
-    Pair, int_bits, is_float_builtin, is_float_ty, is_int_ty, of_scalar, own_type, pair_type,
+    Pair, int_bits, is_chosen_float, is_f32, is_float_builtin, is_float_ty, is_int_ty, of_scalar,
+    own_type, pair_type,
 };
 use crate::diagnostics::Code;
 use crate::semantics::analysis::bound::{Bound, BoundVal};
@@ -16,7 +17,7 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::node::{Op, Piece};
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::sig::{Kind, Width};
+use crate::semantics::analysis::sig::{Kind, Sig, Width, is_integer};
 use crate::semantics::ir::{FloatLit, Number, Suffix};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -60,18 +61,33 @@ impl Engine<'_> {
             return Some(convert_to(scaled_into(value, scale, own), ty));
         }
         let value = if own == EvalTy::Default && sig.kind == Kind::Float {
-            match self.child(node, EvalTy::F64, ctx, need)? {
+            match self.child(node, EvalTy::DefaultF64, ctx, need)? {
                 CVal::F64(value) if !value.is_nan() && !(value as f32).is_finite() => {
                     CVal::F64(value)
                 }
-                CVal::F64(_) => self.child(node, EvalTy::F32, ctx, need)?,
+                CVal::F64(_) => self.child(node, EvalTy::DefaultF32, ctx, need)?,
                 other => other,
             }
         } else {
             let value = self.compute(node, own, ctx, need)?;
             self.scaled(node, value)
         };
+        if sig.kind == Kind::Int
+            && sig.width == Width::Flexible
+            && int_bits(ty).is_some()
+            && self.is_literal(node)
+        {
+            return Some(self.fit(node, value, ty));
+        }
         Some(convert_to(value, ty))
+    }
+
+    fn is_literal(&self, node: NodeId) -> bool {
+        match self.node(node).op {
+            Op::Number(..) => true,
+            Op::Unary(UnaryOp::Neg, operand) => matches!(self.node(operand).op, Op::Number(..)),
+            _ => false,
+        }
     }
 
     pub(super) fn child(
@@ -149,10 +165,13 @@ impl Engine<'_> {
             Op::Str(text) => CVal::Str(Rc::from(text.as_str())),
             Op::Variant(id, index) => CVal::Enum(id, index),
             Op::NodeRef(item) => CVal::Node(item),
-            Op::Pi => match own {
-                EvalTy::F32 => CVal::F32(std::f32::consts::PI),
-                _ => CVal::F64(std::f64::consts::PI),
-            },
+            Op::Pi => {
+                if is_f32(own) {
+                    CVal::F32(std::f32::consts::PI)
+                } else {
+                    CVal::F64(std::f64::consts::PI)
+                }
+            }
             Op::Bare(name) => match own {
                 EvalTy::Enum(id) => {
                     let position = self
@@ -211,9 +230,14 @@ impl Engine<'_> {
                 let scrutinee_sig = self.sig(scrutinee, need)?;
                 let scrutinee_ty = own_type(&scrutinee_sig, EvalTy::Exact);
                 let value = self.child(scrutinee, scrutinee_ty, ctx, need)?;
+                let value = self.default_fit(scrutinee, value);
+                if value.is_error() {
+                    return Some(CVal::Error);
+                }
                 let mut chosen = otherwise;
                 for (label, arm) in &arms {
                     let label_value = self.child(*label, scrutinee_ty, ctx, need)?;
+                    let label_value = self.default_fit(*label, label_value);
                     if label_value == value {
                         chosen = Some(*arm);
                         break;
@@ -231,6 +255,11 @@ impl Engine<'_> {
                     EvalTy::Default
                 };
                 let value = self.child(operand, operand_ty, ctx, need)?;
+                let value = if is_int_ty(own) {
+                    self.default_fit(operand, value)
+                } else {
+                    value
+                };
                 convert(value, own)
             }
             Op::Annotate(_, operand) => {
@@ -313,7 +342,7 @@ impl Engine<'_> {
             };
             let is_integer =
                 matches!(number, Number::Int(_)) && scale.is_none_or(|scale| scale.fract() == 0.0);
-            let value = if own == EvalTy::F32 {
+            let value = if is_f32(own) {
                 CVal::F32(exact.to_f32())
             } else {
                 CVal::F64(exact.to_f64())
@@ -393,23 +422,29 @@ impl Engine<'_> {
                 let ty = match pair_type(&a_sig, &b_sig) {
                     Pair::Ty(ty) => ty,
                     Pair::FlexibleFloat => {
-                        let a = self.child(lhs, EvalTy::F64, ctx, need);
-                        let b = self.child(rhs, EvalTy::F64, ctx, need);
+                        let a = self.child(lhs, EvalTy::DefaultF64, ctx, need);
+                        let b = self.child(rhs, EvalTy::DefaultF64, ctx, need);
                         let fits_f32 = |value: &CVal| match value {
                             CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
                             _ => true,
                         };
                         let (a, b) = (a?, b?);
                         if fits_f32(&a) && fits_f32(&b) {
-                            EvalTy::F32
+                            EvalTy::DefaultF32
                         } else {
-                            EvalTy::F64
+                            EvalTy::DefaultF64
                         }
                     }
                 };
                 let a = self.child(lhs, ty, ctx, need);
                 let b = self.child(rhs, ty, ctx, need);
-                Some(compare(op, &a?, &b?))
+                let (a, b) = (a?, b?);
+                let a = self.operand_fit(lhs, &a_sig, a, ty);
+                let b = self.operand_fit(rhs, &b_sig, b, ty);
+                if a.is_error() || b.is_error() {
+                    return Some(CVal::Error);
+                }
+                Some(compare(op, &a, &b))
             }
             BinaryOp::Add if own == EvalTy::Str => {
                 let a = self.child(lhs, EvalTy::Str, ctx, need);
@@ -431,8 +466,8 @@ impl Engine<'_> {
                 })
             }
             BinaryOp::Div => {
-                let a = self.float_operand(lhs, own, ctx, need);
-                let b = self.float_operand(rhs, own, ctx, need);
+                let a = self.float_operand(lhs, &[rhs], own, ctx, need);
+                let b = self.float_operand(rhs, &[lhs], own, ctx, need);
                 Some(match (a?, b?) {
                     (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
                     (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
@@ -467,6 +502,11 @@ impl Engine<'_> {
                 .map(|arg| self.child(*arg, EvalTy::I64, ctx, need))
                 .collect();
             let values: Vec<CVal> = values.into_iter().collect::<Option<_>>()?;
+            let values: Vec<CVal> = args
+                .iter()
+                .zip(values)
+                .map(|(arg, value)| self.fit(*arg, value, EvalTy::I64))
+                .collect();
             let ints: Vec<i64> = values
                 .iter()
                 .filter_map(|value| match value {
@@ -481,7 +521,7 @@ impl Engine<'_> {
         }
         let values: Vec<Option<CVal>> = if is_float_builtin(builtin) {
             args.iter()
-                .map(|arg| self.float_operand(*arg, own, ctx, need))
+                .map(|arg| self.float_operand(*arg, args, own, ctx, need))
                 .collect()
         } else {
             args.iter()
@@ -541,7 +581,15 @@ impl Engine<'_> {
         if values.iter().any(Option::is_none) {
             return None;
         }
-        let mut values = values.into_iter().flatten();
+        let nodes = pieces.iter().filter_map(|piece| match piece {
+            Piece::Value(node) => Some(*node),
+            Piece::Text(_) => None,
+        });
+        let fitted: Vec<CVal> = nodes
+            .zip(values.into_iter().flatten())
+            .map(|(node, value)| self.default_fit(node, value))
+            .collect();
+        let mut values = fitted.into_iter();
         let mut out = String::new();
         for piece in pieces {
             match piece {
@@ -574,8 +622,8 @@ impl Engine<'_> {
         let fits_type = match (&value, ty) {
             (CVal::Int(value), EvalTy::I32) => fits(*value, 32),
             (CVal::Int(value), EvalTy::I64) => fits(*value, 64),
-            (CVal::F32(value), EvalTy::F32) => value.is_finite() || value.is_nan(),
-            (CVal::F64(value), EvalTy::F64) => value.is_finite() || value.is_nan(),
+            (CVal::F32(value), EvalTy::F32 | EvalTy::DefaultF32) => value.is_finite(),
+            (CVal::F64(value), EvalTy::F64 | EvalTy::DefaultF64) => value.is_finite(),
             _ => true,
         };
         if !fits_type {
@@ -589,9 +637,37 @@ impl Engine<'_> {
         value
     }
 
+    fn operand_fit(&mut self, node: NodeId, sig: &Sig, value: CVal, ty: EvalTy) -> CVal {
+        if sig.width != Width::Flexible || !sig.is_numeric() {
+            return value;
+        }
+        match ty {
+            EvalTy::Exact => self.fit(node, value, EvalTy::I64),
+            _ => self.fit(node, value, ty),
+        }
+    }
+
+    pub(in crate::semantics::analysis) fn default_fit(
+        &mut self,
+        node: NodeId,
+        value: CVal,
+    ) -> CVal {
+        let flexible_integer = self
+            .memo
+            .sigs
+            .get(&node)
+            .is_some_and(|sig| sig.kind == Kind::Int && sig.width == Width::Flexible);
+        if flexible_integer {
+            self.fit(node, value, EvalTy::I64)
+        } else {
+            value
+        }
+    }
+
     fn float_operand(
         &mut self,
         operand: NodeId,
+        partners: &[NodeId],
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
@@ -600,13 +676,48 @@ impl Engine<'_> {
         if sig.kind != Kind::Int || !is_float_ty(own) {
             return self.child(operand, own, ctx, need);
         }
-        let value = self.child(operand, own_type(&sig, EvalTy::Exact), ctx, need)?;
+        let flexible = sig.width == Width::Flexible;
+        let partner = partners
+            .iter()
+            .filter(|partner| **partner != operand)
+            .find_map(
+                |partner| match self.memo.sigs.get(partner).map(|sig| sig.width) {
+                    Some(Width::Fixed(scalar)) if is_integer(scalar) => Some(scalar),
+                    _ => None,
+                },
+            );
+        let ty = match partner {
+            Some(scalar) if flexible => of_scalar(scalar),
+            _ if flexible && !is_chosen_float(own) => return self.child(operand, own, ctx, need),
+            _ => own_type(&sig, EvalTy::Exact),
+        };
+        let value = self.child(operand, ty, ctx, need)?;
+        let value = if flexible && int_bits(ty).is_some() {
+            self.fit(operand, value, ty)
+        } else {
+            value
+        };
         Some(self.integer_to_float(operand, value, own))
     }
 
     pub(in crate::semantics::analysis) fn integer_to_float(
         &mut self,
         node: NodeId,
+        value: CVal,
+        ty: EvalTy,
+    ) -> CVal {
+        let flexible = self
+            .memo
+            .sigs
+            .get(&node)
+            .is_some_and(|sig| !matches!(sig.width, Width::Fixed(_)));
+        self.convert_integer(node, flexible, value, ty)
+    }
+
+    pub(super) fn convert_integer(
+        &mut self,
+        node: NodeId,
+        flexible: bool,
         value: CVal,
         ty: EvalTy,
     ) -> CVal {
@@ -619,11 +730,6 @@ impl Engine<'_> {
             CVal::F64(float) => represents(integer, float),
             _ => true,
         };
-        let flexible = self
-            .memo
-            .sigs
-            .get(&node)
-            .is_some_and(|sig| !matches!(sig.width, Width::Fixed(_)));
         if flexible && !exactly {
             self.error_at_node(
                 Code::DoesNotFit,
@@ -638,7 +744,7 @@ impl Engine<'_> {
         converted
     }
 
-    fn scaled(&self, node: NodeId, value: CVal) -> CVal {
+    fn scaled(&mut self, node: NodeId, value: CVal) -> CVal {
         if matches!(self.node(node).op, Op::Number(..)) {
             return value;
         }
@@ -646,9 +752,9 @@ impl Engine<'_> {
             return value;
         };
         match value {
-            CVal::Int(value) if scale.fract() == 0.0 && scale.abs() < 1e38 => value
-                .checked_mul(scale as i128)
-                .map_or(CVal::Error, CVal::Int),
+            CVal::Int(value) if scale.fract() == 0.0 && scale.abs() < 1e38 => {
+                self.integer(node, EvalTy::Exact, value.checked_mul(scale as i128))
+            }
             CVal::F32(value) => CVal::F32(value * scale as f32),
             CVal::F64(value) => CVal::F64(value * scale),
             _ => CVal::Error,
@@ -661,9 +767,10 @@ fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> CVal {
         return CVal::Error;
     };
     let exact = FloatLit::from_integer(integer).scaled(scale);
-    match ty {
-        EvalTy::F32 => CVal::F32(exact.to_f32()),
-        _ => CVal::F64(exact.to_f64()),
+    if is_f32(ty) {
+        CVal::F32(exact.to_f32())
+    } else {
+        CVal::F64(exact.to_f64())
     }
 }
 
@@ -738,6 +845,11 @@ fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
 }
 
 pub(super) fn convert(value: CVal, target: EvalTy) -> CVal {
+    let target = match target {
+        EvalTy::DefaultF32 => EvalTy::F32,
+        EvalTy::DefaultF64 => EvalTy::F64,
+        other => other,
+    };
     match (value, target) {
         (CVal::Int(value), EvalTy::I32) => {
             CVal::Int(value.clamp(i128::from(i32::MIN), i128::from(i32::MAX)))
@@ -759,9 +871,8 @@ pub(super) fn convert(value: CVal, target: EvalTy) -> CVal {
 
 pub(super) fn convert_to(value: CVal, ty: EvalTy) -> CVal {
     match (&value, ty) {
-        (CVal::Int(_), EvalTy::F32 | EvalTy::F64) | (CVal::F32(_), EvalTy::F64) => {
-            convert(value, ty)
-        }
+        (CVal::Int(_), ty) if is_float_ty(ty) => convert(value, ty),
+        (CVal::F32(_), EvalTy::F64 | EvalTy::DefaultF64) => convert(value, ty),
         (CVal::F32(_) | CVal::F64(_), EvalTy::I32 | EvalTy::I64 | EvalTy::Exact) => CVal::Error,
         _ => value,
     }
@@ -771,8 +882,8 @@ pub(super) fn ty_name(ty: EvalTy) -> &'static str {
     match ty {
         EvalTy::I32 => "i32",
         EvalTy::I64 => "i64",
-        EvalTy::F32 => "f32",
-        EvalTy::F64 => "f64",
+        EvalTy::F32 | EvalTy::DefaultF32 => "f32",
+        EvalTy::F64 | EvalTy::DefaultF64 => "f64",
         EvalTy::Bool => "bool",
         _ => "the type",
     }

@@ -28,6 +28,7 @@ pub(crate) struct Sig {
     pub reactive: bool,
     pub family: Option<FamilyId>,
     pub frame: bool,
+    pub open: bool,
 }
 
 impl Sig {
@@ -37,6 +38,7 @@ impl Sig {
         reactive: false,
         family: None,
         frame: false,
+        open: false,
     };
 
     pub fn is_numeric(&self) -> bool {
@@ -54,6 +56,18 @@ impl Sig {
             reactive,
             family,
             frame: false,
+            open: false,
+        }
+    }
+
+    pub fn open(reactive: bool) -> Sig {
+        Sig {
+            kind: Kind::Any,
+            width: Width::Flexible,
+            reactive,
+            family: None,
+            frame: false,
+            open: true,
         }
     }
 }

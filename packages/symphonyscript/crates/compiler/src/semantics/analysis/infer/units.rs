@@ -5,12 +5,11 @@ use symphonyscript_core::{BinaryOp, Builtin, FamilyId, UnaryOp};
 use super::position::{Position, Role};
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::{BindingId, NodeId};
+use crate::semantics::analysis::feed::Feed;
+use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::sig::{Kind, Sig, Width, is_integer};
 use crate::semantics::ir::Loc;
-
-type Feed = (FamilyId, usize, Loc);
 
 impl Engine<'_> {
     pub(super) fn units(&mut self, positions: &[Position]) {
@@ -62,6 +61,9 @@ impl Engine<'_> {
                         continue;
                     }
                     feeds.entry(current).or_default().push(feed);
+                    if matches!(self.node(current).op, Op::Recursive { .. }) {
+                        self.memo.call_feeds.entry(current).or_default().push(feed);
+                    }
                     match &self.node(current).op {
                         Op::Read(binding) => {
                             binding_feeds.entry(*binding).or_default().push(feed);
@@ -80,52 +82,11 @@ impl Engine<'_> {
             .collect();
         takers.sort();
         for (node, family) in takers {
-            let mut units: Vec<(usize, Loc)> = feeds
-                .get(&node)
-                .map(|found| {
-                    found
-                        .iter()
-                        .filter(|(fed, _, _)| *fed == family)
-                        .map(|(_, unit, loc)| (*unit, *loc))
-                        .collect()
-                })
-                .unwrap_or_default();
-            units.sort();
-            units.dedup_by_key(|(unit, _)| *unit);
-            match units.as_slice() {
-                [] => {
-                    let name = self.family_name(family);
-                    self.error_at_node(
-                        Code::PlainInFamily,
-                        node,
-                        format!(
-                            "this plain value takes the unit family `{name}`, and the expression feeds no attribute of that family to give its unit"
-                        ),
-                    );
-                }
-                [(unit, _)] => {
-                    if let Some(scale) = self.unit_scale(family, *unit)
-                        && scale != 1.0
-                    {
-                        self.memo.default_scales.insert(node, scale);
-                    }
-                }
-                [(_, first), (_, second), ..] => {
-                    let (loc, scope) = {
-                        let record = self.node(node);
-                        (record.loc, record.scope)
-                    };
-                    let mut secondary = vec![*first, *second];
-                    secondary.extend(self.chain(scope).to_vec());
-                    self.report.error_with(
-                        self.hir,
-                        Code::ConflictingUnits,
-                        loc,
-                        &secondary,
-                        "this plain value feeds two attributes of one unit family with different default units",
-                    );
-                }
+            if self.template_of(self.node(node).scope).is_some() {
+                continue;
             }
+            let units = units_of(feeds.get(&node).map_or(&[], Vec::as_slice), family);
+            self.resolve_taker(node, family, &units);
         }
         let mut cells: Vec<(BindingId, Vec<Feed>)> = binding_feeds.into_iter().collect();
         cells.sort_by_key(|(binding, _)| *binding);
@@ -166,13 +127,113 @@ impl Engine<'_> {
         }
     }
 
-    pub(super) fn read_in_default_units(&mut self) {
-        let fractional: HashSet<NodeId> = self
+    fn resolve_taker(&mut self, node: NodeId, family: FamilyId, units: &[(usize, Loc)]) -> bool {
+        match units {
+            [] => {
+                let name = self.family_name(family);
+                self.error_at_node(
+                    Code::PlainInFamily,
+                    node,
+                    format!(
+                        "this plain value takes the unit family `{name}`, and the expression feeds no attribute of that family to give its unit"
+                    ),
+                );
+                false
+            }
+            [(unit, _)] => match self.unit_scale(family, *unit) {
+                Some(scale) if scale != 1.0 => {
+                    self.memo.default_scales.insert(node, scale);
+                    scale.fract() != 0.0
+                }
+                _ => false,
+            },
+            [(_, first), (_, second), ..] => {
+                let (loc, scope) = {
+                    let record = self.node(node);
+                    (record.loc, record.scope)
+                };
+                let mut secondary = vec![*first, *second];
+                secondary.extend(self.chain(scope).to_vec());
+                self.report.error_with(
+                    self.hir,
+                    Code::ConflictingUnits,
+                    loc,
+                    &secondary,
+                    "this plain value feeds two attributes of one unit family with different default units",
+                );
+                false
+            }
+        }
+    }
+
+    pub(in crate::semantics::analysis) fn template_units(
+        &mut self,
+        template: ScopeId,
+        root: NodeId,
+    ) {
+        let Some(takers) = self.memo.template_takers.remove(&template) else {
+            return;
+        };
+        let feeds = self
             .memo
-            .default_scales
+            .template_feeds
+            .get(&template)
+            .cloned()
+            .unwrap_or_default();
+        let mut takers: Vec<(NodeId, FamilyId)> = takers
+            .into_iter()
+            .filter_map(|node| {
+                self.memo
+                    .takes_family
+                    .get(&node)
+                    .map(|family| (node, *family))
+            })
+            .collect();
+        takers.sort();
+        takers.dedup();
+        let mut fractional = false;
+        for (node, family) in takers {
+            let units = units_of(&feeds, family);
+            fractional |= self.resolve_taker(node, family, &units);
+        }
+        if fractional {
+            let nodes = self.template_nodes(template, root);
+            self.read_in_units_of(&nodes);
+        }
+    }
+
+    fn template_nodes(&self, template: ScopeId, root: NodeId) -> Vec<NodeId> {
+        let mut found = Vec::new();
+        let mut seen: HashSet<NodeId> = HashSet::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) || self.template_of(self.node(node).scope) != Some(template) {
+                continue;
+            }
+            found.push(node);
+            stack.extend(self.node(node).op.operands());
+        }
+        found.sort();
+        found
+    }
+
+    pub(super) fn read_in_default_units(&mut self) {
+        let nodes: Vec<NodeId> = (0..self.nodes.len())
+            .map(|index| NodeId(u32::try_from(index).unwrap_or(u32::MAX)))
+            .collect();
+        self.read_in_units_of(&nodes);
+    }
+
+    fn read_in_units_of(&mut self, nodes: &[NodeId]) {
+        let fractional: HashSet<NodeId> = nodes
             .iter()
-            .filter(|(_, scale)| scale.fract() != 0.0)
-            .map(|(node, _)| *node)
+            .copied()
+            .filter(|node| {
+                self.memo
+                    .default_scales
+                    .get(node)
+                    .is_some_and(|scale| scale.fract() != 0.0)
+            })
             .collect();
         if fractional.is_empty() {
             return;
@@ -181,8 +242,7 @@ impl Engine<'_> {
         let mut changed = true;
         while changed {
             changed = false;
-            for index in 0..self.nodes.len() {
-                let node = NodeId(u32::try_from(index).unwrap_or(u32::MAX));
+            for node in nodes.iter().copied() {
                 let Some(sig) = self.memo.sigs.get(&node).copied() else {
                     continue;
                 };
@@ -257,4 +317,15 @@ impl Engine<'_> {
             .family(family)
             .map_or(String::new(), |decl| decl.name.clone())
     }
+}
+
+fn units_of(feeds: &[Feed], family: FamilyId) -> Vec<(usize, Loc)> {
+    let mut units: Vec<(usize, Loc)> = feeds
+        .iter()
+        .filter(|(fed, _, _)| *fed == family)
+        .map(|(_, unit, loc)| (*unit, *loc))
+        .collect();
+    units.sort();
+    units.dedup_by_key(|(unit, _)| *unit);
+    units
 }

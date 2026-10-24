@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::machine::{Frame, Machine};
 use super::run::Ctx;
-use super::types::own_type;
+use super::types::{is_float_ty, own_type};
 use crate::diagnostics::Code;
 use crate::semantics::analysis::bound::{Bound, BoundVal};
 use crate::semantics::analysis::call_key::{ArgKey, CallKey};
@@ -10,6 +10,7 @@ use crate::semantics::analysis::cval::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastMap;
+use crate::semantics::analysis::feed::Feed;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::query::Query;
@@ -18,6 +19,7 @@ use crate::semantics::analysis::sig::{Kind, Sig, Width};
 use crate::semantics::analysis::template_key::{ArgShape, ArgSig, TemplateKey};
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::FnId;
+use symphonyscript_core::FamilyId;
 
 pub(crate) const CALL_LIMIT: usize = 1_000_000;
 pub(crate) const DEPTH_LIMIT: usize = 1_024;
@@ -27,6 +29,7 @@ struct Call {
     function: FnId,
     values: Vec<CVal>,
     shapes: Vec<ArgShape>,
+    feeds: Vec<Feed>,
 }
 
 impl Engine<'_> {
@@ -83,10 +86,16 @@ impl Engine<'_> {
         if keys.contains(&ArgKey::Error) {
             return Some(CVal::Error);
         }
+        let feeds = match ctx {
+            Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
+            Ctx::Frame(frame) => self.frame_feeds(frame),
+        };
         let key = CallKey {
             function,
             args: keys,
+            shapes: shapes.clone(),
             expected: own,
+            units: unit_set(&feeds),
         };
         if let Some(value) = self.memo.calls.get(&key) {
             return Some(value.clone());
@@ -96,6 +105,7 @@ impl Engine<'_> {
             function,
             values,
             shapes,
+            feeds,
         };
         match ctx {
             Ctx::Global => self.run_machine(call, node, own, need),
@@ -111,12 +121,13 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Option<(ArgKey, ArgSig, CVal)> {
         let sig = self.sig(arg, need)?;
-        let ty = match own_type(&sig, own) {
-            EvalTy::Default if matches!(own, EvalTy::F32 | EvalTy::F64) => own,
-            other => other,
+        let flexible = sig.width == Width::Flexible;
+        let ty = if flexible && sig.kind == Kind::Int {
+            EvalTy::Exact
+        } else {
+            own_type(&sig, own)
         };
         let value = self.child(arg, ty, ctx, need)?;
-        let flexible = sig.width == Width::Flexible;
         let family = sig.family;
         let arg_sig = |kind, width| ArgSig {
             kind,
@@ -168,48 +179,57 @@ impl Engine<'_> {
         Some((key, shape, value))
     }
 
+    pub(in crate::semantics::analysis) fn instantiate(
+        &mut self,
+        function: FnId,
+        shapes: &[ArgShape],
+        call: NodeId,
+    ) -> ScopeId {
+        let (loc, caller) = {
+            let record = self.node(call);
+            (record.loc, record.scope)
+        };
+        let mut slot = 0u32;
+        let mut params = Vec::new();
+        for shape in shapes {
+            let source = match shape {
+                ArgShape::Default => ParamSource::Default,
+                ArgShape::Scalar(sig) => {
+                    let node = self.arg_node(&mut slot, *sig, loc, caller);
+                    ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
+                }
+                ArgShape::Array(lengths, sigs) => {
+                    let bounds = sigs
+                        .iter()
+                        .map(|sig| Bound::Value(self.arg_node(&mut slot, *sig, loc, caller)))
+                        .collect();
+                    let shape = crate::semantics::analysis::shape::Shape::from_lengths(lengths);
+                    ParamSource::Bound(BoundVal::Array(Rc::new((shape, bounds))))
+                }
+            };
+            params.push(source);
+        }
+        self.call_scope(function, params, loc, caller, true)
+    }
+
     fn template(
         &mut self,
         function: FnId,
         shapes: &[ArgShape],
+        feeds: &[Feed],
         call: NodeId,
         need: &mut Vec<Query>,
     ) -> Option<Option<NodeId>> {
         let key = TemplateKey {
             function,
             args: shapes.to_vec(),
+            units: unit_set(feeds),
         };
         let scope = match self.memo.templates.get(&key) {
             Some(scope) => *scope,
             None => {
-                let (loc, caller) = {
-                    let record = self.node(call);
-                    (record.loc, record.scope)
-                };
-                let mut slot = 0u32;
-                let mut params = Vec::new();
-                for shape in shapes {
-                    let source = match shape {
-                        ArgShape::Default => ParamSource::Default,
-                        ArgShape::Scalar(sig) => {
-                            let node = self.arg_node(&mut slot, *sig, loc, caller);
-                            ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
-                        }
-                        ArgShape::Array(lengths, sigs) => {
-                            let bounds = sigs
-                                .iter()
-                                .map(|sig| {
-                                    Bound::Value(self.arg_node(&mut slot, *sig, loc, caller))
-                                })
-                                .collect();
-                            let shape =
-                                crate::semantics::analysis::shape::Shape::from_lengths(lengths);
-                            ParamSource::Bound(BoundVal::Array(Rc::new((shape, bounds))))
-                        }
-                    };
-                    params.push(source);
-                }
-                let scope = self.call_scope(function, params, loc, caller, true);
+                let scope = self.instantiate(function, shapes, call);
+                self.memo.template_feeds.insert(scope, feeds.to_vec());
                 self.memo.templates.insert(key, scope);
                 scope
             }
@@ -231,7 +251,7 @@ impl Engine<'_> {
             );
             return Some(None);
         }
-        let _: ScopeId = scope;
+        self.template_units(scope, root);
         Some(Some(root))
     }
 
@@ -291,26 +311,31 @@ impl Engine<'_> {
         let machine = match self.machines.remove(&call.key) {
             Some(machine) => machine,
             None => {
-                let root = match self.template(call.function, &call.shapes, node, need)? {
-                    Some(root) if self.result_fits(root, own, node, call.function) => root,
-                    _ => {
-                        self.memo.calls.insert(call.key, CVal::Error);
-                        return Some(CVal::Error);
-                    }
-                };
+                let root =
+                    match self.template(call.function, &call.shapes, &call.feeds, node, need)? {
+                        Some(root) if self.result_fits(root, own, node, call.function) => root,
+                        _ => {
+                            self.memo.calls.insert(call.key, CVal::Error);
+                            return Some(CVal::Error);
+                        }
+                    };
                 if !self.within_call_limit(node, call.function) {
                     return Some(CVal::Error);
                 }
+                let ty = self.body_type(root, own);
                 Machine {
                     frames: vec![Frame {
                         key: call.key.clone(),
                         function: call.function,
                         args: call.values,
+                        call: node,
                         root,
-                        ty: own,
+                        ty,
+                        expected: own,
+                        feeds: call.feeds,
                         memo: FastMap::default(),
                     }],
-                    work: vec![(0, root, own)],
+                    work: vec![(0, root, ty)],
                 }
             }
         };
@@ -343,8 +368,10 @@ impl Engine<'_> {
                     };
                     record.memo.insert((current, ty), value.clone());
                     if record.root == current && record.ty == ty {
-                        let key = record.key.clone();
+                        let (key, call, expected) =
+                            (record.key.clone(), record.call, record.expected);
                         machine.frames.pop();
+                        let value = self.call_result(call, current, expected, value);
                         self.memo.calls.insert(key, value.clone());
                         if frame == 0 {
                             self.active = None;
@@ -409,7 +436,7 @@ impl Engine<'_> {
             );
             return Some(CVal::Error);
         }
-        let root = match self.template(call.function, &call.shapes, node, need)? {
+        let root = match self.template(call.function, &call.shapes, &call.feeds, node, need)? {
             Some(root) if self.result_fits(root, own, node, call.function) => root,
             _ => {
                 self.memo.calls.insert(call.key, CVal::Error);
@@ -419,6 +446,7 @@ impl Engine<'_> {
         if !self.within_call_limit(node, call.function) {
             return Some(CVal::Error);
         }
+        let ty = self.body_type(root, own);
         let Some(machine) = self.active.as_mut() else {
             return Some(CVal::Error);
         };
@@ -427,13 +455,41 @@ impl Engine<'_> {
             key: call.key,
             function: call.function,
             args: call.values,
+            call: node,
             root,
-            ty: own,
+            ty,
+            expected: own,
+            feeds: call.feeds,
             memo: FastMap::default(),
         });
-        machine.work.push((index, root, own));
+        machine.work.push((index, root, ty));
         self.frame_pushed = true;
         None
+    }
+
+    fn body_type(&self, root: NodeId, expected: EvalTy) -> EvalTy {
+        let integer = self
+            .memo
+            .sigs
+            .get(&root)
+            .is_some_and(|sig| sig.kind == Kind::Int);
+        if integer && is_float_ty(expected) {
+            EvalTy::Exact
+        } else {
+            expected
+        }
+    }
+
+    fn call_result(&mut self, call: NodeId, root: NodeId, expected: EvalTy, value: CVal) -> CVal {
+        if !is_float_ty(expected) || !matches!(value, CVal::Int(_)) {
+            return value;
+        }
+        let flexible = self
+            .memo
+            .sigs
+            .get(&root)
+            .is_some_and(|sig| sig.width == Width::Flexible);
+        self.convert_integer(call, flexible, value, expected)
     }
 
     fn within_call_limit(&mut self, node: NodeId, function: FnId) -> bool {
@@ -465,6 +521,14 @@ impl Engine<'_> {
             .cloned()
     }
 
+    fn frame_feeds(&self, frame: usize) -> Vec<Feed> {
+        self.active
+            .as_ref()
+            .and_then(|machine| machine.frames.get(frame))
+            .map(|record| record.feeds.clone())
+            .unwrap_or_default()
+    }
+
     pub(super) fn frame_arg(&self, frame: usize, slot: u32) -> CVal {
         self.active
             .as_ref()
@@ -481,4 +545,14 @@ impl Engine<'_> {
             .as_ref()
             .map_or(String::new(), |name| name.text.clone())
     }
+}
+
+fn unit_set(feeds: &[Feed]) -> Vec<(FamilyId, usize)> {
+    let mut units: Vec<(FamilyId, usize)> = feeds
+        .iter()
+        .map(|(family, unit, _)| (*family, *unit))
+        .collect();
+    units.sort_by_key(|(family, unit)| (family.index(), *unit));
+    units.dedup();
+    units
 }

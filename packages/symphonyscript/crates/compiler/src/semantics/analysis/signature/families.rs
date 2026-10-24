@@ -12,7 +12,7 @@ impl Engine<'_> {
         operands: &[(NodeId, Sig)],
     ) -> Option<Option<FamilyId>> {
         let mut family: Option<FamilyId> = None;
-        for (_, sig) in operands {
+        for (_, sig) in operands.iter().filter(|(_, sig)| !sig.open) {
             match (family, sig.family) {
                 (Some(existing), Some(other)) if existing != other => {
                     let names = [existing, other]
@@ -39,8 +39,15 @@ impl Engine<'_> {
         }
         if let Some(family) = family {
             for (operand, sig) in operands {
-                if sig.family.is_none() && sig.is_numeric() {
+                if sig.family.is_none() && sig.is_numeric() && !sig.open {
                     self.memo.takes_family.insert(*operand, family);
+                    if let Some(template) = self.template_of(self.node(*operand).scope) {
+                        self.memo
+                            .template_takers
+                            .entry(template)
+                            .or_default()
+                            .push(*operand);
+                    }
                 }
             }
         }

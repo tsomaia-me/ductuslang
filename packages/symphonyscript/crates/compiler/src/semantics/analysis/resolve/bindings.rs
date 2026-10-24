@@ -165,7 +165,13 @@ impl Engine<'_> {
         }
         let parent = self.scope_of(locals).parent;
         let chain = self.chain(locals);
-        let created = self.scope(ScopeKind::ParamPrefix { locals, count }, parent, chain);
+        let template = self.template_of(locals);
+        let created = self.scope_in(
+            ScopeKind::ParamPrefix { locals, count },
+            parent,
+            chain,
+            template,
+        );
         self.memo.prefix_scopes.insert((locals, count), created);
         created
     }

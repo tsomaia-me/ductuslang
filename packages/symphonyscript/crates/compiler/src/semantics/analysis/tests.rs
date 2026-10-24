@@ -212,6 +212,252 @@ fn a_plain_value_reads_in_the_default_unit_as_a_literal_with_its_suffix_would() 
     assert_eq!(found, Some((CVal::F64(9.0), Kind::Int)));
 }
 
+fn bar_vocabulary() -> Vocabulary {
+    let mut v = Vocabulary::builder("bars");
+    let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
+    let bar = v.node("Bar");
+    v.kind(bar)
+        .top_level(Count::Any)
+        .attr::<i64>("len")
+        .default(0)
+        .family(&beats, "bars")
+        .attr::<i64>("beat_len")
+        .default(0)
+        .family(&beats, "beats")
+        .attr::<i64>("plain")
+        .default(0);
+    v.build().expect("the bar vocabulary builds")
+}
+
+fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
+    let instance = engine.instances.last()?;
+    let decl = engine.vocabulary.node_kind(instance.kind)?;
+    let source = instance.attrs.iter().find(|source| {
+        decl.attrs
+            .get(source.attr.index())
+            .is_some_and(|attr| attr.name == name)
+    })?;
+    let AttrValueSource::Expr(expr, scope) = source.value else {
+        return None;
+    };
+    let Some(Val::Scalar(node)) = engine.memo.exprs.get(&(expr, scope)) else {
+        return None;
+    };
+    engine.memo.evals.get(&(*node, ty)).cloned()
+}
+
+fn error_codes(diagnostics: &[Diagnostic]) -> Vec<Code> {
+    errors_of(diagnostics)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect()
+}
+
+#[test]
+fn compile_time_values_follow_the_types_that_flow_into_them() {
+    let example = vocabulary();
+    let bars = bar_vocabulary();
+    let fib = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
+    let r = "fn r(n): if n < 1 then 1bars else r(n - 1) + 1\n";
+    let q = "fn q(n): if n < 1 then 1bars else q(n - 1)\n";
+    let rows: Vec<(&Vocabulary, String, &str, EvalTy, CVal)> = vec![
+        (
+            &example,
+            "Clip c | gain=((16777216 + 1) / 2)\n".into(),
+            "gain",
+            EvalTy::F32,
+            CVal::F32(8388608.0),
+        ),
+        (
+            &example,
+            "Clip c | gain=(16777216 + 1)\n".into(),
+            "gain",
+            EvalTy::F32,
+            CVal::F32(16777216.0),
+        ),
+        (
+            &example,
+            "Osc o | freq=(2 ** -1 / 1)\n".into(),
+            "freq",
+            EvalTy::F64,
+            CVal::F64(0.5),
+        ),
+        (
+            &example,
+            "Osc o | freq=((16777216 + 1) / 2)\n".into(),
+            "freq",
+            EvalTy::F64,
+            CVal::F64(8388608.5),
+        ),
+        (
+            &example,
+            "fn s(n): if n < 1 then 0 else (n div 2) + s(n - 1)\nOsc o | freq=(s(7))\n".into(),
+            "freq",
+            EvalTy::F64,
+            CVal::F64(12.0),
+        ),
+        (
+            &example,
+            "fn g(n): if n < 1 then 0 else [10, 20, 30][n] + g(n - 1)\nOsc o | freq=(g(2))\n"
+                .into(),
+            "freq",
+            EvalTy::F64,
+            CVal::F64(50.0),
+        ),
+        (
+            &example,
+            format!("{fib}Clip c:\n    Note | length=(fib(3))\n"),
+            "length",
+            EvalTy::F64,
+            CVal::F64(2.0),
+        ),
+        (
+            &bars,
+            format!("{q}Bar b | len=(q(0))\n"),
+            "len",
+            EvalTy::I64,
+            CVal::Int(4),
+        ),
+        (
+            &bars,
+            format!("{r}Bar b | len=(r(2))\n"),
+            "len",
+            EvalTy::I64,
+            CVal::Int(12),
+        ),
+        (
+            &bars,
+            format!("{r}Bar b | beat_len=(r(2))\n"),
+            "beat_len",
+            EvalTy::I64,
+            CVal::Int(6),
+        ),
+        (
+            &bars,
+            format!("{r}Bar b | len=(r(2)) beat_len=(r(2))\n"),
+            "len",
+            EvalTy::I64,
+            CVal::Int(12),
+        ),
+        (
+            &bars,
+            format!("{r}Bar b | len=(r(2)) beat_len=(r(2))\n"),
+            "beat_len",
+            EvalTy::I64,
+            CVal::Int(6),
+        ),
+        (
+            &bars,
+            format!("{r}Bar b | len=(r(0) + 1)\n"),
+            "len",
+            EvalTy::I64,
+            CVal::Int(8),
+        ),
+        (
+            &bars,
+            "Bar b | len=(1bars + 1)\n".into(),
+            "len",
+            EvalTy::I64,
+            CVal::Int(8),
+        ),
+        (
+            &example,
+            "Clip c | gain=(rand(0, 0))\n".into(),
+            "gain",
+            EvalTy::F32,
+            CVal::F32(14819496.0 / 16777216.0),
+        ),
+        (
+            &example,
+            "Osc o | freq=(max(0.0 / 0.0, 440.0))\n".into(),
+            "freq",
+            EvalTy::F64,
+            CVal::F64(440.0),
+        ),
+        (
+            &example,
+            "Clip c:\n    Note/((-(2 ** 126) - (2 ** 126 - 1)) div 2 ** 120)\n".into(),
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(-128),
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (vocabulary, text, attr, ty, expected) in rows {
+        let (diagnostics, found) =
+            analyzed_with(vocabulary, &text, |engine| attr_value(engine, attr, ty));
+        let errors = error_codes(&diagnostics);
+        if !errors.is_empty() || found.as_ref() != Some(&expected) {
+            failures.push(format!(
+                "{text:?} {attr}: expected {expected:?}, found {found:?} with {errors:?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_recursive_call_repeats_an_earlier_one_only_with_an_equal_expected_type() {
+    let fib = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
+    let (diagnostics, one) = analyzed(&format!("{fib}Clip c:\n    Note/(fib(3))\n"), |engine| {
+        engine.call_count
+    });
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    let (diagnostics, both) = analyzed(
+        &format!("{fib}Clip c:\n    Note/(fib(3))\nOsc o | freq=(fib(3))\n"),
+        |engine| engine.call_count,
+    );
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    assert_eq!((one, both), (4, 5));
+}
+
+#[test]
+fn unit_rules_cover_recursive_results_and_bodies() {
+    let bars = bar_vocabulary();
+    let q = "fn q(n): if n < 1 then 1bars else q(n - 1)\n";
+    let rows: Vec<(String, Vec<Code>)> = vec![
+        (
+            format!("{q}Bar b | plain=(q(0))\n"),
+            vec![Code::UnitMismatch],
+        ),
+        (format!("{q}Bar b | len=(q(0))\n"), vec![]),
+        ("let d = 2bars + 1\nBar b | len=d\n".into(), vec![]),
+        (
+            "let d = 2bars + 1\nBar b | len=d beat_len=d\n".into(),
+            vec![Code::ConflictingUnits],
+        ),
+        (
+            "Bar b | len=42535295865117307932921825928971026432\n".into(),
+            vec![Code::IntegerOverflow],
+        ),
+        (
+            "Bar b | len=(42535295865117307932921825928971026432 + 0)\n".into(),
+            vec![Code::IntegerOverflow],
+        ),
+        (
+            "Bar b | len=42535295865117307932921825928971026431\n".into(),
+            vec![Code::DoesNotFit],
+        ),
+        (
+            "Bar b | len=(-42535295865117307932921825928971026432 + 0)\n".into(),
+            vec![Code::IntegerOverflow],
+        ),
+        (
+            "Bar b | len=(-42535295865117307932921825928971026431 + 0)\n".into(),
+            vec![Code::DoesNotFit],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (text, expected) in rows {
+        let (diagnostics, ()) = analyzed_with(&bars, &text, |_| ());
+        let found = error_codes(&diagnostics);
+        if found != expected {
+            failures.push(format!("{text:?}: expected {expected:?}, found {found:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 fn placeholders(engine: &Engine<'_>) -> Vec<String> {
     let memo = &engine.memo;
     let mut found = Vec::new();

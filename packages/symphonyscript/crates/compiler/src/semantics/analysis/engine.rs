@@ -151,6 +151,10 @@ impl<'a> Engine<'a> {
         }
     }
 
+    pub fn in_progress(&self, query: Query) -> bool {
+        self.waiting.contains(&query)
+    }
+
     fn is_done(&self, query: Query) -> bool {
         let memo = &self.memo;
         match query {
@@ -276,13 +280,29 @@ impl<'a> Engine<'a> {
     }
 
     pub fn scope(&mut self, kind: ScopeKind, parent: Option<ScopeId>, chain: Chain) -> ScopeId {
+        let template = parent.and_then(|parent| self.scope_of(parent).template);
+        self.scope_in(kind, parent, chain, template)
+    }
+
+    pub fn scope_in(
+        &mut self,
+        kind: ScopeKind,
+        parent: Option<ScopeId>,
+        chain: Chain,
+        template: Option<ScopeId>,
+    ) -> ScopeId {
         let id = ScopeId(index(self.scopes.len()));
         self.scopes.push(Scope {
             kind,
             parent,
             chain,
+            template,
         });
         id
+    }
+
+    pub fn template_of(&self, scope: ScopeId) -> Option<ScopeId> {
+        self.scope_of(scope).template
     }
 
     pub fn scope_of(&self, id: ScopeId) -> &Scope {
@@ -314,6 +334,12 @@ impl<'a> Engine<'a> {
     }
 
     pub fn error(&mut self, code: Code, loc: Loc, scope: ScopeId, message: impl Into<String>) {
+        if self
+            .template_of(scope)
+            .is_some_and(|template| self.memo.probes.contains(&template))
+        {
+            return;
+        }
         let chain = self.chain(scope).to_vec();
         self.report.error_with(self.hir, code, loc, &chain, message);
     }

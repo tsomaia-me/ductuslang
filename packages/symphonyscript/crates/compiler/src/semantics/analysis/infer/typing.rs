@@ -11,6 +11,6 @@ pub(crate) struct Typing {
     pub own: FastMap<BindingId, Scalar>,
     pub synth: FastMap<NodeId, Option<Scalar>>,
     pub expected_seen: FastSet<(NodeId, Option<Scalar>)>,
-    pub checked: FastSet<(NodeId, Option<Scalar>, bool)>,
+    pub checked: FastSet<(NodeId, Option<Scalar>)>,
     pub natural: FastMap<BindingId, Option<Scalar>>,
 }

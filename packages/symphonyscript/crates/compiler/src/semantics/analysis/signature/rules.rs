@@ -184,15 +184,12 @@ impl Engine<'_> {
             ),
             Op::Builtin(builtin, _) => self.builtin_sig(node, *builtin, operands, sigs),
             Op::Recursive { .. } => {
-                if reactive {
-                    self.error_at_node(
-                        Code::ReactiveRecursion,
-                        node,
-                        "a call to a recursive function has compile-time arguments, and this one reads a cell",
-                    );
-                    return Sig::ERROR;
-                }
-                Sig::of(Kind::Any, Width::Flexible, false, None)
+                self.error_at_node(
+                    Code::ReactiveRecursion,
+                    node,
+                    "a call to a recursive function has compile-time arguments, and this one reads a cell",
+                );
+                Sig::ERROR
             }
             Op::ToRead { attrs, .. } => self.destination_read_sig(node, attrs, extra),
         }
