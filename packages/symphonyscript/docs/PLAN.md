@@ -13,7 +13,7 @@ The workspace, `symphonyscript-core`'s data types, and the fixtures.
 
 Exit:
 - A test for each error `build()` reports.
-- The fixture vocabulary builds, and its stamp is identical across runs and targets.
+- The fixture vocabulary builds, and its stamp is identical across runs and targets and unchanged by a `.doc` edit.
 - A hand-built Program dumps to a golden text.
 - `symphonyscript-core` builds for a `no_std` target.
 
@@ -22,20 +22,21 @@ Exit:
 - Layout, literals, keywords and unit suffixes (SPEC §2).
 - The lossless syntax tree with its typed view.
 - Error recovery.
+- The parser takes the fixture vocabulary, which tells wire placements from node placements (ARCHITECTURE §7).
 
 Exit:
-- A test extracts every example from SPEC.md and parses it.
+- A test extracts every `sym` and `sym-error` example from SPEC.md, and every `sym` example parses.
 - Every production in SPEC.md has parse tests.
 - Parsing any source and printing the tree reproduces it byte for byte.
 - Broken sources still yield a tree, with diagnostics at the right spans.
 
 ## Phase 3: Semantics
 
-Collect, expand, resolve, infer and check (ARCHITECTURE §7, stages 3 to 7).
+Collect, expand, resolve, infer and check (ARCHITECTURE §7, stages 3 to 7), and the `Code` enum.
 
 Exit:
-- For every rule in SPEC.md that names an error, a test rejects a program with that error's stable code.
-- Every SPEC example that declares all the names it uses compiles against the fixture vocabulary.
+- For every rule in SPEC.md that names an error, a test rejects a program with that error's stable code, and a test checks that every such rule has a code and every code a rule.
+- Every `sym` example that declares all the names it uses compiles against the fixture vocabulary, and every `sym-error` example is rejected.
 - Diagnostics for expanded patterns point at the use and the pattern line.
 
 ## Phase 4: Lowering and runtime
@@ -45,8 +46,8 @@ Lowering, the runtime, `eval`, and the `Consumer` trait.
 Exit:
 - Commit traces match golden traces for the fixture projects.
 - A counting allocator shows `commit` allocates nothing.
-- Golden values for float built-ins, saturation, division by zero, clamped indexing and `rand` match bit for bit.
-- Change reports carry element indices for array attributes.
+- Golden values for float built-ins, saturation, division by zero, float `%`, the canonical NaN, clamped indexing and `rand` (SPEC §5.2, §5.7, §12.5) match bit for bit.
+- Change reports carry element indices for array attributes and follow the order of SPEC §12.3.
 
 ## Phase 5: Reload
 
@@ -71,10 +72,14 @@ Exit:
 
 ## Phase 8: Kernel adapter
 
+- `move_node_after` and `move_node_before` in synaptic-kernel, keeping a node's slot, synapses and cells. The owner approved these on the condition that they preserve every kernel invariant; their design goes to the owner before code, as every kernel change does.
+- The adapter of ARCHITECTURE §10.
+
 Exit:
-- A fixture project loads into synaptic-kernel. A consumer thread entering at the sentinel reaches every instance and wire.
+- A fixture project loads into synaptic-kernel. A consumer thread entering at the sentinel reaches every instance and wire, and reads string attributes from the LUT.
 - An input write and a commit become visible to the consumer thread, and the adapter publishes only when a meta-plane value changed.
-- A reload keeps the serials of matched instances.
+- A reload keeps the slots and serials of matched instances, and moving a kept instance re-creates none of its synapses.
+- The kernel's own test suite passes with the move operations added.
 
 ## Order
 
