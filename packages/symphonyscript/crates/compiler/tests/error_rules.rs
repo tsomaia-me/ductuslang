@@ -216,6 +216,12 @@ const RULES: &[Rule] = &[
         "input n = c\nClip c:\n    Note\n",
     ),
     rule(
+        "3.5",
+        "They are never stored in an input, a reactive `let` or an attribute.",
+        "type-mismatch",
+        "Clip c:\n    Note | velocity=c\n",
+    ),
+    rule(
         "3.6",
         "A unit value bound to an attribute of a different family, or of no family, is an error.",
         "unit-mismatch",
@@ -469,6 +475,18 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "5.4",
+        "Arm labels are variant names of the scrutinee's enum, or literals of its type and unit family.",
+        "match-label",
+        "input n = 1\nlet l = match n:\n    1.5: 1\n    else: 2\n",
+    ),
+    rule(
+        "5.4",
+        "Arm labels are variant names of the scrutinee's enum, or literals of its type and unit family.",
+        "match-label",
+        "input n = 1\nlet l = match n:\n    2bars: 1\n    else: 2\n",
+    ),
+    rule(
+        "5.4",
         "A label that repeats an earlier one is an error.",
         "duplicate-arm",
         "input w = Wave::Saw\nlet l = match w:\n    Sine: 1\n    Sine: 2\n    else: 3\n",
@@ -616,6 +634,12 @@ const RULES: &[Rule] = &[
         "A declaration that reaches itself through `let`s, inputs, attribute reads or function bodies is an error naming the cycle",
         "declaration-cycle",
         "fn f(): a\nlet a = f()\n",
+    ),
+    rule(
+        "6.2",
+        "A declaration that reaches itself through `let`s, inputs, attribute reads or function bodies is an error naming the cycle",
+        "declaration-cycle",
+        "input a = b\nlet b = a + 1\n",
     ),
     rule(
         "6.2",
@@ -971,6 +995,12 @@ const RULES: &[Rule] = &[
         "misplaced-to",
         "Clip a:\n    Note\nClip c:\n    Plays: to.x\n",
     ),
+    rule(
+        "8.2",
+        "It is never an inline placement or a pattern use written in the destination",
+        "not-a-value",
+        "pattern V():\n    Note\nClip c:\n    Plays: V\n",
+    ),
     bounded(
         "8.3",
         "every candidate has `name` with the same type and unit family",
@@ -1238,6 +1268,24 @@ fn a_count_an_unknown_placement_or_destination_could_change_draws_no_diagnostic(
             "",
             "unknown-kind",
             "Session s:\n    Track\nClip lonely:\n    Nte:\n        Starts: lonely\n",
+        ),
+        bounded(
+            "10.2",
+            "",
+            "unknown-kind",
+            "pattern Back():\n    Link: r\nRoot r:\n    Item\n    Bak\n",
+        ),
+        rule(
+            "10.2",
+            "",
+            "unknown-kind",
+            "pattern Feed():\n    Includes: t\nSession s:\n    Fed\nTrack t:\n    Piano\n",
+        ),
+        bounded(
+            "10.2",
+            "",
+            "unknown-kind",
+            "Root r:\n    Item\n    Lnk: r\n",
         ),
     ];
     let mut failures = Vec::new();

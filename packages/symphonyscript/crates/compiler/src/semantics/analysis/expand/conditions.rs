@@ -3,6 +3,7 @@ use crate::semantics::analysis::condition_link::ConditionLink;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{ConditionsId, InstanceId, ScopeId};
 use crate::semantics::analysis::index::index;
+use crate::semantics::collection::Decl;
 use crate::semantics::ir::{BlockId, BodyItem, ExprId};
 
 impl Engine<'_> {
@@ -51,7 +52,7 @@ impl Engine<'_> {
     pub(in crate::semantics::analysis) fn unknown_items(
         &mut self,
         owner: Option<InstanceId>,
-        body: Option<BlockId>,
+        supplies_wires: bool,
     ) {
         self.unknown_placement = true;
         match owner {
@@ -60,19 +61,32 @@ impl Engine<'_> {
             }
             None => self.unknown_top = true,
         }
-        if body.is_some_and(|block| self.holds_wire(block)) {
+        if supplies_wires {
             self.unknown_wires = true;
         }
     }
 
-    fn holds_wire(&self, root: BlockId) -> bool {
+    pub(in crate::semantics::analysis) fn may_supply_wires(
+        &self,
+        root: BlockId,
+        scope: ScopeId,
+    ) -> bool {
         let hir = self.hir;
         let mut blocks = vec![root];
         while let Some(block) = blocks.pop() {
             for item in &hir.block(block).items {
                 match item {
                     BodyItem::Wire(_) => return true,
-                    BodyItem::Placement(id) => blocks.extend(hir.placement(*id).body),
+                    BodyItem::Placement(id) => {
+                        let placement = hir.placement(*id);
+                        let node = placement.kind.as_ref().is_some_and(|kind| {
+                            matches!(self.kind_decl(scope, &kind.text), Some(Decl::Node(_)))
+                        });
+                        if !node {
+                            return true;
+                        }
+                        blocks.extend(placement.body);
+                    }
                     BodyItem::For { body, .. } => blocks.push(*body),
                     BodyItem::When {
                         arms, otherwise, ..

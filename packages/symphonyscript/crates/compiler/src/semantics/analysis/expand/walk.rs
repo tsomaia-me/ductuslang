@@ -110,7 +110,7 @@ impl Engine<'_> {
             }
             Some(Decl::Pattern(pattern)) => {
                 if self.is_cyclic(pattern) {
-                    self.unknown_items(None, site.body);
+                    self.unknown_items(None, true);
                     return;
                 }
                 if self.stand_in(pattern).is_none() {
@@ -120,7 +120,7 @@ impl Engine<'_> {
                         global,
                         "only a pattern that stands in for a single node placement is used at top level",
                     );
-                    self.unknown_items(None, site.body);
+                    self.unknown_items(None, true);
                     return;
                 }
                 self.stand_in_instance(
@@ -148,7 +148,7 @@ impl Engine<'_> {
                 self.top_instances.insert(placement, instance);
                 self.top_level.push(instance);
             }
-            None => self.unknown_items(None, site.body),
+            None => self.unknown_items(None, true),
         }
     }
 
@@ -758,7 +758,7 @@ impl Engine<'_> {
                         }),
                         None => {
                             self.broken_bundles.insert(collector);
-                            self.unknown_items(Some(walk.owner), None);
+                            self.unknown_items(Some(walk.owner), false);
                         }
                     }
                 }
@@ -786,7 +786,8 @@ impl Engine<'_> {
                     if let Some(collector) = walk.bundle {
                         self.broken_bundles.insert(collector);
                     }
-                    self.unknown_items(Some(walk.owner), Some(body));
+                    let supplies = walk.bundle.is_none() && self.may_supply_wires(body, scope);
+                    self.unknown_items(Some(walk.owner), supplies);
                 }
             },
             BodyItem::When {
@@ -864,7 +865,7 @@ impl Engine<'_> {
                     if let Some(collector) = walk.bundle {
                         self.broken_bundles.insert(collector);
                     }
-                    self.unknown_items(Some(walk.owner), None);
+                    self.unknown_items(Some(walk.owner), walk.bundle.is_none());
                     return;
                 }
                 if self.stand_in(pattern).is_some() {
@@ -969,7 +970,7 @@ impl Engine<'_> {
             if let Some(collector) = walk.bundle {
                 self.broken_bundles.insert(collector);
             }
-            self.unknown_items(Some(walk.owner), self.hir.placement(id).body);
+            self.unknown_items(Some(walk.owner), walk.bundle.is_none());
             return;
         };
         match walk.bundle {

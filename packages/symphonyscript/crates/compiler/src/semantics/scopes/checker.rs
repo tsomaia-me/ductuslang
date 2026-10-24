@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use symphonyscript_core::Vocabulary;
 
@@ -32,6 +32,7 @@ pub(super) struct Checker<'a> {
     variants: &'a Variants,
     namespace: &'a Namespace,
     frames: Vec<Frame>,
+    unknown_bodies: BTreeSet<BlockId>,
     report: &'a mut Report,
 }
 
@@ -49,6 +50,7 @@ impl<'a> Checker<'a> {
             variants,
             namespace,
             frames: Vec::new(),
+            unknown_bodies: BTreeSet::new(),
             report,
         }
     }
@@ -213,7 +215,7 @@ impl<'a> Checker<'a> {
     pub fn top_placement(&mut self, id: PlacementId) {
         let placement = self.hir.placement(id);
         self.placement_exprs(id, None);
-        self.kind(id, None);
+        self.kind(id, None, None, false);
         if let Some(body) = placement.body {
             self.blocks(vec![(body, None, Mode::Body)]);
         }
@@ -425,7 +427,13 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn kind(&mut self, id: PlacementId, previous: Option<PlacementId>) {
+    fn kind(
+        &mut self,
+        id: PlacementId,
+        previous: Option<PlacementId>,
+        frame: Option<usize>,
+        in_unknown: bool,
+    ) {
         let placement = self.hir.placement(id);
         let Some(kind) = &placement.kind else {
             return;
@@ -433,6 +441,12 @@ impl<'a> Checker<'a> {
         match self.namespace.get(&kind.text) {
             Some(Decl::Node(_) | Decl::Pattern(_)) => {}
             found => {
+                if let Some(body) = placement.body {
+                    self.unknown_bodies.insert(body);
+                }
+                if in_unknown && self.visible(frame, &kind.text) {
+                    return;
+                }
                 let message = match found {
                     None => format!("`{}` is not a node kind or a pattern", kind.text),
                     Some(_) => format!("`{}` is not a kind", kind.text),
@@ -479,11 +493,12 @@ impl<'a> Checker<'a> {
                 }
             };
             let mut previous: Option<PlacementId> = None;
+            let in_unknown = self.unknown_bodies.contains(&block);
             for item in &self.hir.block(block).items {
                 match item {
                     BodyItem::Placement(id) => {
                         self.placement_exprs(*id, frame);
-                        self.kind(*id, previous);
+                        self.kind(*id, previous, frame, in_unknown);
                         previous = Some(*id);
                         if let Some(body) = self.hir.placement(*id).body {
                             pending.push((body, frame, Mode::Body));
@@ -506,7 +521,7 @@ impl<'a> Checker<'a> {
                         previous = None;
                         for member in members {
                             self.placement_exprs(*member, frame);
-                            self.kind(*member, None);
+                            self.kind(*member, None, frame, in_unknown);
                         }
                         if let Some(each) = each {
                             self.iterable(each.iterable, frame);
@@ -516,7 +531,7 @@ impl<'a> Checker<'a> {
                                     self.named_in_for(name);
                                 }
                                 self.placement_exprs(*member, var_frame);
-                                self.kind(*member, None);
+                                self.kind(*member, None, var_frame, in_unknown);
                             }
                         }
                     }
