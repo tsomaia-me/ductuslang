@@ -186,6 +186,20 @@ fn comments_run_to_the_end_of_the_line() {
 }
 
 #[test]
+fn a_double_slash_is_text_in_a_string_and_a_comment_in_an_interpolation() {
+    assert_eq!(
+        clean(r#"let a = "x // y{b}// z""#),
+        "LetKw _ Ident(a) _ Eq _ StringStart StringText(x // y) InterpStart Ident(b) InterpEnd StringText(// z) StringEnd NL"
+    );
+    let text = r#"let a = "{b // c}""#;
+    assert_eq!(diagnostics(text), vec![(Code::UnterminatedString, 8, 18)]);
+    assert_eq!(
+        tokens(text),
+        "LetKw _ Ident(a) _ Eq _ StringStart InterpStart Ident(b) _ Comment(// c}\") NL"
+    );
+}
+
+#[test]
 fn identifiers_take_xid_characters_and_hash() {
     assert_eq!(
         clean("C#4 F#3 _x #a über x1_y"),
