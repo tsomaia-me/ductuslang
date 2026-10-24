@@ -400,7 +400,13 @@ fn is_ascii_identifier(name: &str) -> bool {
 
 fn looks_numeric(name: &str) -> bool {
     let mut chars = name.chars();
-    let (Some(first), Some(second)) = (chars.next(), chars.next()) else {
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first == '_' {
+        return true;
+    }
+    let Some(second) = chars.next() else {
         return false;
     };
     match first {

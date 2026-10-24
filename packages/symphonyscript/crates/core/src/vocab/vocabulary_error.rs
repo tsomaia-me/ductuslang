@@ -181,7 +181,7 @@ impl fmt::Display for VocabularyError {
             ),
             VocabularyError::NumericUnitName { unit } => write!(
                 f,
-                "the unit name `{unit}` would read as part of a number literal after a digit"
+                "the unit name `{unit}` would not read as a suffix after a digit"
             ),
             VocabularyError::FractionalScale {
                 owner,

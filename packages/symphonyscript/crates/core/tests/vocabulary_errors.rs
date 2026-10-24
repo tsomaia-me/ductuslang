@@ -376,7 +376,7 @@ fn a_default_unit_must_be_in_its_family() {
 
 #[test]
 fn a_unit_name_must_not_read_as_a_number() {
-    for unit in ["xa", "x9", "b0", "b1", "o7", "e1", "E5"] {
+    for unit in ["xa", "x9", "b0", "b1", "o7", "e1", "E5", "_ms", "__x", "_1"] {
         let mut v = Vocabulary::builder("v");
         v.unit_family("f").base("u").unit(unit, 2.0);
         single(v, VocabularyError::NumericUnitName { unit: s(unit) });
