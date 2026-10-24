@@ -2028,3 +2028,95 @@ fn staged(
         }
     }
 }
+
+#[test]
+fn a_range_bound_that_is_an_array_draws_range_bound() {
+    let rejected = [
+        (
+            format!("{CHORD_FN}Clip c:\n    for i in 0..chord(1):\n        Note\n"),
+            "chord(1):",
+        ),
+        (
+            format!("{CHORD_FN}Clip c:\n    for i in chord(1)..3:\n        Note\n"),
+            "chord(1)..",
+        ),
+        (
+            format!("{CHORD_FN}let k = chord(1)\nClip c:\n    for i in 0..k:\n        Note\n"),
+            "k:",
+        ),
+    ];
+    for (text, bound) in &rejected {
+        let (diagnostics, ()) = analyzed(text, |_| ());
+        let at = text.rfind(bound).unwrap_or(usize::MAX);
+        assert_eq!(
+            located(text, &diagnostics),
+            vec![(Code::RangeBound, at, vec![])],
+            "{text}"
+        );
+    }
+    let fib = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
+    let accepted = format!("{fib}Clip c:\n    for i in 0..fib(5):\n        Note\n");
+    let (diagnostics, (notes, _)) = analyzed(&accepted, notes_and_pitches);
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    assert_eq!(notes, 5);
+}
+
+#[test]
+fn every_evaluation_path_checks_the_shape_of_its_value() {
+    let chords = chord_vocabulary();
+    let example = vocabulary();
+    let held = format!("{CHORD_FN}let v = chord(1)\n");
+    let rows = vec![
+        (
+            &example,
+            format!("{held}Clip c:\n    Note/v\n"),
+            "pitch",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            &chords,
+            format!("{held}Chord a | grid=v\n"),
+            "grid",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            &chords,
+            format!("{held}Chord a | notes=v\n"),
+            "notes",
+            vec![],
+            Some(CVal::Array(CArray::new(vec![
+                CVal::Int(62),
+                CVal::Int(65),
+                CVal::Int(69),
+            ]))),
+        ),
+        (
+            &example,
+            format!("{held}Clip c:\n    Note/(v[2])\n"),
+            "pitch",
+            vec![],
+            Some(CVal::Int(69)),
+        ),
+        (
+            &example,
+            "let x = 3000000000\nClip c:\n    Note/(5i32 + x)\n".to_string(),
+            "pitch",
+            vec![Code::DoesNotFit],
+            None,
+        ),
+    ];
+    for (vocabulary, text, attr, codes, value) in rows {
+        let (diagnostics, found) = analyzed_with(vocabulary, &text, |engine| {
+            attr_values(engine, attr, EvalTy::I32)
+                .into_iter()
+                .find(|value| !value.is_error())
+        });
+        let at = text.rfind(['v', 'x']).unwrap_or(usize::MAX);
+        let expected: Vec<(Code, usize, Vec<usize>)> =
+            codes.into_iter().map(|code| (code, at, vec![])).collect();
+        assert_eq!(located(&text, &diagnostics), expected, "{text}");
+        assert_eq!(found, value, "{text}");
+    }
+}

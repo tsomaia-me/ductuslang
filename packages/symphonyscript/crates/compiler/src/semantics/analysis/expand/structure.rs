@@ -176,13 +176,21 @@ impl Engine<'_> {
         }
         Ok(match self.demand_cval(node, EvalTy::Exact)? {
             CVal::Int(value) => Some(value),
+            CVal::Array(_) => {
+                self.error(
+                    Code::RangeBound,
+                    loc,
+                    scope,
+                    "a range bound is an integer, not an array",
+                )?;
+                None
+            }
             CVal::F32(_)
             | CVal::F64(_)
             | CVal::Bool(_)
             | CVal::Enum(..)
             | CVal::Str(_)
             | CVal::Node(_)
-            | CVal::Array(_)
             | CVal::Error => None,
         })
     }

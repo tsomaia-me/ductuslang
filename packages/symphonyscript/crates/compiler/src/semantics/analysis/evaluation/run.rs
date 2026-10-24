@@ -104,6 +104,7 @@ impl Engine<'_> {
             && int_bits(ty).is_some()
             && self.takes_a_type(node)?
         {
+            let value = self.shape_checked(node, value)?;
             return Ok(Some(self.fit(node, value, ty)?));
         }
         let value = map_leaves(value, |leaf| Ok(convert_to(leaf, ty)))?;
