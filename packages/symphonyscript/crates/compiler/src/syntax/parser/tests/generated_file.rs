@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use symphonyscript_core::Vocabulary;
 
-use super::fault_catalogue::{FaultItem, Open};
+use super::fault_catalogue::{BracketKind, FaultItem, Open};
 use super::line_shape::LineShape;
 use super::valid_items::{HOST, ValidItems};
 use crate::diagnostics::Code;
@@ -47,7 +47,36 @@ impl Candidate {
     }
 }
 
+const REGION_LINES: &[&str] = &[
+    "a/b c",
+    "x/2,",
+    "a /2",
+    "Arp /48 | steps=3",
+    "a/x::y::z",
+    "a/to",
+    "a/to.gain.x",
+    "a/b.c::d",
+    "a/2 b",
+    "x/(1) y",
+    "a/x::y",
+    "a/(1)",
+    "a/-3 | x",
+    "1 + 2",
+    "a.b",
+    "a,",
+    "- b",
+    "a = 1",
+    "\"s\",",
+    "f(1),",
+    "Note",
+    "Note Note",
+    "(Note)",
+    "let x = 1",
+    "when x: Note",
+];
+
 pub(super) struct Pool {
+    region_lines: Vec<(String, LineShape)>,
     faults: Vec<Candidate>,
     top: Vec<Candidate>,
     body: Vec<Candidate>,
@@ -66,6 +95,10 @@ impl Pool {
             )
         };
         Pool {
+            region_lines: REGION_LINES
+                .iter()
+                .map(|line| (format!("{line}\n"), LineShape::of(line, vocabulary)))
+                .collect(),
             faults: faults
                 .iter()
                 .map(|item| {
@@ -160,9 +193,37 @@ impl<'p> Writer<'p> {
             }
             if candidate.follows(self.pending) {
                 self.emit(candidate);
+                if candidate.open == Open::AfterFault {
+                    self.region_lines(if candidate.body { 4 } else { 0 });
+                }
                 return;
             }
             self.follower(candidate.body);
+        }
+    }
+
+    fn region_lines(&mut self, column: usize) {
+        let pool = self.pool;
+        for _ in 0..self.random.below(3) {
+            let deeper = self.random.below(2) == 0;
+            let fitting: Vec<&String> = pool
+                .region_lines
+                .iter()
+                .filter(|(_, shape)| {
+                    deeper
+                        || !(shape.resynchronizes(column == 0)
+                            || shape.ends_unclosed(BracketKind::Expression)
+                            || shape.ends_unclosed(BracketKind::Bundle))
+                })
+                .map(|(line, _)| line)
+                .collect();
+            let line = fitting[self.random.below(fitting.len())];
+            let indentation = column + if deeper { 2 } else { 0 };
+            self.out
+                .items
+                .push((self.out.text.len() as u32, String::from("region line")));
+            self.out.text.push_str(&" ".repeat(indentation));
+            self.out.text.push_str(line);
         }
     }
 

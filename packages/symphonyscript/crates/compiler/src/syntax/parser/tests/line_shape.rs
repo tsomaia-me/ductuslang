@@ -4,7 +4,7 @@ use symphonyscript_core::Vocabulary;
 
 use super::fault_catalogue::BracketKind;
 use crate::source::Source;
-use crate::syntax::{SyntaxKind, lex};
+use crate::syntax::{SyntaxKind, Token, lex};
 
 const ITEM_KEYWORDS: &[SyntaxKind] = &[
     SyntaxKind::InputKw,
@@ -33,6 +33,8 @@ pub(super) struct LineShape {
     second: Option<SyntaxKind>,
     second_adjacent: bool,
     stray_colon: bool,
+    slash_value: bool,
+    unmatched_closer: bool,
 }
 
 impl LineShape {
@@ -62,10 +64,12 @@ impl LineShape {
         let mut depth = 0usize;
         let mut header = false;
         let mut stray_colon = false;
+        let mut unmatched_closer = false;
         for token in &tokens {
             match token.kind {
                 SyntaxKind::LParen | SyntaxKind::LBracket => depth += 1,
-                SyntaxKind::RParen | SyntaxKind::RBracket => depth = depth.saturating_sub(1),
+                SyntaxKind::RParen | SyntaxKind::RBracket if depth == 0 => unmatched_closer = true,
+                SyntaxKind::RParen | SyntaxKind::RBracket => depth -= 1,
                 SyntaxKind::ForKw if depth == 0 => header = true,
                 SyntaxKind::Colon if depth == 0 && header => header = false,
                 SyntaxKind::Colon if depth == 0 => stray_colon = true,
@@ -80,6 +84,8 @@ impl LineShape {
             second: second.map(|token| token.kind),
             second_adjacent: second.is_some_and(|token| token.range.start == first.range.end),
             stray_colon,
+            slash_value: tokens.get(2..).is_some_and(value_ends_the_line),
+            unmatched_closer,
         }
     }
 
@@ -126,6 +132,54 @@ impl LineShape {
                     | SyntaxKind::WhenKw
                     | SyntaxKind::Colon
             )
-        ) || (self.second == Some(SyntaxKind::Slash) && self.first_is_kind)
+        ) || (self.second == Some(SyntaxKind::Slash)
+            && (self.first_is_kind
+                || (self.second_adjacent && self.slash_value && !self.unmatched_closer)))
     }
+}
+
+fn value_ends_the_line(tokens: &[Token]) -> bool {
+    let kinds: Vec<SyntaxKind> = tokens.iter().map(|token| token.kind).collect();
+    let length = match kinds.as_slice() {
+        [SyntaxKind::Minus, SyntaxKind::Number, ..] => 2,
+        [
+            SyntaxKind::Number | SyntaxKind::TrueKw | SyntaxKind::FalseKw,
+            ..,
+        ] => 1,
+        [SyntaxKind::ToKw, SyntaxKind::Dot, SyntaxKind::Ident, ..] => 3,
+        [SyntaxKind::Ident, SyntaxKind::Colon2, SyntaxKind::Ident, ..] => 3,
+        [SyntaxKind::Ident, ..] => {
+            let mut length = 1;
+            while kinds.get(length) == Some(&SyntaxKind::Dot)
+                && kinds.get(length + 1) == Some(&SyntaxKind::Ident)
+            {
+                length += 2;
+            }
+            length
+        }
+        [open @ (SyntaxKind::LParen | SyntaxKind::StringStart), ..] => {
+            let close = if *open == SyntaxKind::LParen {
+                SyntaxKind::RParen
+            } else {
+                SyntaxKind::StringEnd
+            };
+            let mut depth = 0usize;
+            let Some(end) = kinds.iter().position(|kind| {
+                if kind == open {
+                    depth += 1;
+                } else if *kind == close {
+                    depth -= 1;
+                }
+                depth == 0
+            }) else {
+                return false;
+            };
+            end + 1
+        }
+        _ => return false,
+    };
+    matches!(
+        kinds.get(length),
+        None | Some(SyntaxKind::Pipe | SyntaxKind::WhenKw | SyntaxKind::Colon)
+    )
 }
