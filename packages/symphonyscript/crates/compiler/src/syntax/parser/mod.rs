@@ -1,6 +1,7 @@
 mod blocks;
 mod bracket;
 mod checkpoint;
+mod cost;
 mod expressions;
 mod items;
 mod placements;
@@ -17,6 +18,7 @@ use symphonyscript_core::{Span, Vocabulary};
 
 use self::bracket::Bracket;
 use self::checkpoint::Checkpoint;
+use self::cost::Cost;
 use self::starts_line::starts_line;
 use self::task::Task;
 use self::tree_builder::TreeBuilder;
@@ -60,7 +62,7 @@ impl<'a> Parser<'a> {
         (green, diagnostics)
     }
 
-    fn run_counting(mut self) -> (GreenNode, Vec<Diagnostic>, usize) {
+    fn run_counting(mut self) -> (GreenNode, Vec<Diagnostic>, Cost) {
         self.builder.start_node(SyntaxKind::File);
         self.tasks.push(Task::File);
         while let Some(task) = self.tasks.pop() {
@@ -72,11 +74,14 @@ impl<'a> Parser<'a> {
         }
         self.builder.finish_node();
         let green = self.builder.finish();
-        let work = self.lexer.work();
+        let cost = Cost {
+            work: self.lexer.work(),
+            peak_stored_entries: self.lexer.peak_stored_entries(),
+        };
         let mut diagnostics = self.lexer.into_diagnostics();
         diagnostics.extend(self.diagnostics);
         diagnostics.sort_by_key(|diagnostic| diagnostic.span.range.start);
-        (green, diagnostics, work)
+        (green, diagnostics, cost)
     }
 
     fn fill(&mut self, index: usize) -> bool {

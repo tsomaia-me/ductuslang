@@ -1,6 +1,6 @@
 use symphonyscript_core::Vocabulary;
 
-use super::Parser;
+use super::super::Parser;
 use crate::diagnostics::Code;
 use crate::source::Source;
 
@@ -12,12 +12,12 @@ fn work_and_codes(line: &str, repetitions: usize) -> (usize, Vec<Code>) {
     let vocabulary = Vocabulary::builder("empty")
         .build()
         .expect("an empty vocabulary is valid");
-    let (_, diagnostics, work) = Parser::new(&source, &vocabulary).run_counting();
+    let (_, diagnostics, cost) = Parser::new(&source, &vocabulary).run_counting();
     let codes = diagnostics
         .iter()
         .map(|diagnostic| diagnostic.code)
         .collect();
-    (work, codes)
+    (cost.work, codes)
 }
 
 #[test]

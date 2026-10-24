@@ -45,6 +45,8 @@ pub(crate) struct Lexer<'a> {
     suspended: Vec<Suspension>,
     regions: Vec<Region>,
     stacks: Vec<Vec<u32>>,
+    stored_entries: usize,
+    peak_stored_entries: usize,
     line_stack: Option<usize>,
     faults: Vec<Range<u32>>,
     reach: Vec<u32>,
@@ -75,6 +77,8 @@ impl<'a> Lexer<'a> {
             suspended: Vec::new(),
             regions: Vec::new(),
             stacks: Vec::new(),
+            stored_entries: 0,
+            peak_stored_entries: 0,
             line_stack: None,
             faults: Vec::new(),
             reach: Vec::new(),
@@ -129,6 +133,10 @@ impl<'a> Lexer<'a> {
 
     pub(crate) fn work(&self) -> usize {
         self.work
+    }
+
+    pub(crate) fn peak_stored_entries(&self) -> usize {
+        self.peak_stored_entries
     }
 
     pub(crate) fn into_diagnostics(self) -> Vec<Diagnostic> {
@@ -320,6 +328,14 @@ impl<'a> Lexer<'a> {
         self.cut_constructs.truncate(kept);
         self.suspended.truncate(line);
         self.regions.truncate(suspension.region + 1);
+        let dropped: usize = self
+            .stacks
+            .get(snapshot + 1..)
+            .unwrap_or_default()
+            .iter()
+            .map(Vec::len)
+            .sum();
+        self.stored_entries = self.stored_entries.saturating_sub(dropped);
         self.stacks.truncate(snapshot + 1);
         self.line_stack = None;
         self.pos = from;
@@ -1014,6 +1030,8 @@ impl<'a> Lexer<'a> {
         }
         let snapshot = self.stacks.len();
         self.stacks.push(self.stack.clone());
+        self.stored_entries += self.stack.len();
+        self.peak_stored_entries = self.peak_stored_entries.max(self.stored_entries);
         self.line_stack = Some(snapshot);
         snapshot
     }
