@@ -297,18 +297,33 @@ No source overflows the native stack, however deeply it nests. Every stage, and 
 
 ### 7.1 Error recovery
 
-The parser records a diagnostic for a fault, skips to a synchronization point and continues. Recovery holds three properties:
+The parser records a diagnostic for a fault, skips the fault's region and continues. Recovery holds three properties:
 
 - A valid source never reaches recovery, so its tree does not depend on it.
-- Every fault outside the region of an earlier fault is reported exactly once, at its span. A fault's region is the rest of its line, the block indented under that line, and inside an unclosed bracket the bracket up to its next synchronization point. A parser complaint that starts inside a lexer diagnostic, or directly after an error token, an unterminated string or a dedent mismatch, belongs to that diagnostic and is not reported.
+- Every fault outside the region of an earlier fault is reported exactly once, at its span.
 - Recovery costs time and memory linear in the source.
 
-A synchronization point is the next line at the same or lower indentation. Inside an unclosed bracket, where newlines are whitespace (SPEC §2.2), it is the next line of the bracket, at or left of the column of the line that opened it, that cannot continue the bracket:
+A fault's region is the rest of its line and the block indented under that line. Inside an unclosed bracket, where newlines are whitespace (SPEC §2.2), it runs to the bracket's next resynchronization line, or without one to the bracket's closer and the end of that line. A bracket's lines are the non-blank lines of its region, and its column is the indentation in force where its outermost bracket opened.
 
-- in any bracket, a line that begins with `input`, `let`, `fn` or `pattern`;
-- in an expression bracket (an array, a parenthesized expression, arguments, an index, a conversion or an interpolation), a line that begins with a name followed by a name or `as`;
-- in a bundle, a line holding a `:` at the bundle's depth that closes no pending `for` header of the bundle;
-- in a bracket inside a body, a line that begins with a kind followed by `/`, with a name followed by `as` or a flag, or with a name directly followed by `/` and one value that ends the line or meets `|`, `when` or `:`, on a line that closes no bracket of the region.
+An unclosed bracket ends before the first of its lines, at or left of its column, that cannot continue it. The missing closer is a fault, reported at that line's first token, and the line starts an item:
+
+- in any bracket, a line whose first word is `input`, `let`, `fn` or `pattern`;
+- in an expression bracket (an array, a parenthesized expression, arguments, an index or a conversion), a line that begins with a name followed by a name or `as`;
+- in a bundle, a line holding a `:` at the bundle's depth that closes no pending `for` header of the bundle.
+
+After a fault inside an unclosed bracket, the parser resynchronizes at the first of the bracket's lines that begins at or after the fault, sits at or left of the bracket's column, and starts an item:
+
+- a line that begins with `input`, `let`, `fn`, `pattern`, `(`, `[`, `for` or `when`;
+- at column 0, a line that begins with a name followed by a name, `as`, an adjacent flag or nothing;
+- in a body, a line that begins with a name followed by a name, `as`, an adjacent flag, `|`, `when` or `:`; with a node or wire kind followed by `/`; or with another name directly followed by `/` and one value that ends the line or meets `|`, `when` or `:`, on a line that holds no closer at the bracket's outermost depth.
+
+One fault draws one diagnostic:
+
+- A logical line draws at most one parser diagnostic. A bracket that spans lines is one logical line until a bracket end or a resynchronization starts a new one.
+- A parser complaint at an error token, starting inside a lexer diagnostic, or directly after an error token, an unterminated string or the first character of a line with a dedent mismatch belongs to that lexer diagnostic and is not reported.
+- An unexpected indented block is reported unless the line it sits under drew a diagnostic, and is skipped either way.
+
+A diagnostic at a zero-width INDENT or NEWLINE takes the span of the next token; one at a DEDENT or at the end of input stays empty at its position.
 
 ## 8. Delivery
 
