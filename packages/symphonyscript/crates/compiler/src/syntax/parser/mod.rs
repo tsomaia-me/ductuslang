@@ -274,7 +274,7 @@ impl<'a> Parser<'a> {
             .get(open_start..)
             .and_then(|rest| rest.find('\n'))
             .map_or(source.text.len(), |offset| open_start + offset);
-        let mut depth = 0usize;
+        let mut openers: Vec<SyntaxKind> = Vec::new();
         let mut index = open;
         loop {
             let kind = self.kind_at(index)?;
@@ -282,16 +282,25 @@ impl<'a> Parser<'a> {
                 return None;
             }
             match kind {
-                SyntaxKind::LParen | SyntaxKind::LBracket => depth += 1,
-                SyntaxKind::RParen | SyntaxKind::RBracket => depth = depth.saturating_sub(1),
+                SyntaxKind::LParen | SyntaxKind::LBracket => openers.push(kind),
+                SyntaxKind::RParen if openers.pop() != Some(SyntaxKind::LParen) => return None,
+                SyntaxKind::RBracket if openers.pop() != Some(SyntaxKind::LBracket) => {
+                    return None;
+                }
                 _ => {}
             }
-            let next_opens = matches!(
-                self.kind_at(index + 1),
-                Some(SyntaxKind::LParen | SyntaxKind::LBracket)
-            );
-            if depth == 0 && !next_opens {
-                return Some(index);
+            if openers.is_empty() {
+                while self.kind_at(index + 1) == Some(SyntaxKind::Dot)
+                    && self.kind_at(index + 2) == Some(SyntaxKind::Ident)
+                {
+                    index += 2;
+                }
+                if !matches!(
+                    self.kind_at(index + 1),
+                    Some(SyntaxKind::LParen | SyntaxKind::LBracket)
+                ) {
+                    return Some(index);
+                }
             }
             index += 1;
         }
@@ -547,14 +556,17 @@ fn starts_line(line: LineStart) -> bool {
                 matches!(next, SyntaxKind::Ident | SyntaxKind::AsKw)
                     || (adjacent && FLAG_TOKENS.contains(&next))
             }
-            Some((next, _)) => matches!(
-                next,
-                SyntaxKind::Ident
-                    | SyntaxKind::Slash
-                    | SyntaxKind::Pipe
-                    | SyntaxKind::WhenKw
-                    | SyntaxKind::Colon
-            ),
+            Some((SyntaxKind::Slash, adjacent)) => adjacent && !line.closes_region,
+            Some((next, adjacent)) => {
+                matches!(
+                    next,
+                    SyntaxKind::Ident
+                        | SyntaxKind::AsKw
+                        | SyntaxKind::Pipe
+                        | SyntaxKind::WhenKw
+                        | SyntaxKind::Colon
+                ) || (adjacent && FLAG_TOKENS.contains(&next))
+            }
         },
         _ => false,
     }

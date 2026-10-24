@@ -306,6 +306,48 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[2 x )] NL] LetDecl[let b = ErrorNode[)] NL]]",
     ),
+    (
+        "Clip c:\n    Note/a[0\n    Note/1\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 18, 19),
+            (Code::ExpressionSyntax, 40, 41),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ NameRef[a]]] Bundle[[] ErrorNode[0] NL] Placement[Note DefaultArg[/ Literal[1]] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/f(1\n    Note/1\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 18, 19),
+            (Code::ExpressionSyntax, 40, 41),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ NameRef[f]]] ParenPlacement[(] ErrorNode[1] NL] Placement[Note DefaultArg[/ Literal[1]] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    Note as hook /3\n    Note'/4\n    Note\n    Plays: c\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 84, 85),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[Note as hook DefaultArg[/ Literal[3]] NL] Placement[Note Flags['] DefaultArg[/ Literal[4]] NL] Placement[Note NL] WirePlacement[Plays : Destination[NameRef[c] NL]] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    Plays as w: d\n",
+        &[(Code::DefaultArgSyntax, 20, 21)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] WirePlacement[Plays as w : Destination[NameRef[d] NL]] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2 +\n    b / 2)\n    Note/3\n",
+        &[(Code::DefaultArgSyntax, 20, 21)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 + b / 2 )] NL] Placement[Note DefaultArg[/ Literal[3]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a / 2)\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 41, 42),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a / 2 )] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
 ];
 
 #[test]
@@ -363,6 +405,18 @@ fn the_parenthesize_hint_shows_the_written_value() {
         ),
         (
             "Clip c:\n    Note/a[0\n",
+            "parenthesize the whole value, as in `Note/(…)`",
+        ),
+        (
+            "Clip c:\n    Note/a[0].b\n",
+            "parenthesize the whole value, as in `Note/(a[0].b)`",
+        ),
+        (
+            "Clip c:\n    Note/a(1).b[2]\n",
+            "parenthesize the whole value, as in `Note/(a(1).b[2])`",
+        ),
+        (
+            "Clip c:\n    Note/a[0)\n",
             "parenthesize the whole value, as in `Note/(…)`",
         ),
     ] {

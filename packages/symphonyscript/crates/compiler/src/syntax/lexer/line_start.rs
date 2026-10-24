@@ -5,4 +5,5 @@ pub(crate) struct LineStart {
     pub(crate) first: SyntaxKind,
     pub(crate) next: Option<(SyntaxKind, bool)>,
     pub(crate) top_level: bool,
+    pub(crate) closes_region: bool,
 }

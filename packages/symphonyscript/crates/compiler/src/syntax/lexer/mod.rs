@@ -181,14 +181,19 @@ impl<'a> Lexer<'a> {
         token: usize,
         starts_line: fn(LineStart) -> bool,
     ) -> Option<usize> {
-        if self.depths.get(token).copied().unwrap_or(0) == 0 {
-            return None;
-        }
         let start = self.tokens.get(token)?.range.start as usize;
         let region = self
             .regions
             .partition_point(|region| region.open <= start)
             .checked_sub(1)?;
+        let inside = self.depths.get(token).copied().unwrap_or(0) > 0;
+        let opens = self
+            .regions
+            .get(region)
+            .is_some_and(|region| region.open == start);
+        if !inside && !opens {
+            return None;
+        }
         let top = self
             .regions
             .get(region)
@@ -227,18 +232,27 @@ impl<'a> Lexer<'a> {
             .map_or(self.text.len(), |offset| {
                 first.range.start as usize + offset
             });
-        let next = self
+        let rest = self
             .tokens
             .get(line.first_token + 1..)
             .unwrap_or_default()
             .iter()
-            .take_while(|token| (token.range.start as usize) < line_end)
-            .find(|token| !token.kind.is_trivia())
-            .map(|token| (token.kind, token.range.start == first.range.end));
+            .zip(self.depths.get(line.first_token + 1..).unwrap_or_default())
+            .take_while(|(token, _)| (token.range.start as usize) < line_end);
+        let mut next = None;
+        let mut closes_region = false;
+        for (token, depth) in rest {
+            if next.is_none() && !token.kind.is_trivia() {
+                next = Some((token.kind, token.range.start == first.range.end));
+            }
+            closes_region |=
+                *depth == 1 && matches!(token.kind, SyntaxKind::RParen | SyntaxKind::RBracket);
+        }
         Some(LineStart {
             first: first.kind,
             next,
             top_level: line.column == 0,
+            closes_region,
         })
     }
 
