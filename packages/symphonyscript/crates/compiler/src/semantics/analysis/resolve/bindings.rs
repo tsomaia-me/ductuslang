@@ -13,7 +13,7 @@ use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::query::{LetRef, Query};
 use crate::semantics::analysis::scope::{LocalsOwner, ParamSource, ScopeKind};
 use crate::semantics::analysis::shape::Shape;
-use crate::semantics::analysis::sig::{Kind, Sig};
+use crate::semantics::analysis::sig::{Kind, Sig, Width, kind_of, widens};
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{InputId, LetDecl, Loc, TypeBase, TypeRef};
 
@@ -405,6 +405,18 @@ impl Engine<'_> {
             return BoundVal::Error;
         }
         let scalar = annotation.map(|annotation| annotation.scalar);
+        if let Some(target) = scalar {
+            for (node, sig) in val.nodes().into_iter().zip(sigs) {
+                if !annotated(sig, target) {
+                    self.error_at_node(
+                        Code::TypeMismatch,
+                        node,
+                        "the value does not have the annotated type; a conversion states the rounding",
+                    );
+                    return BoundVal::Error;
+                }
+            }
+        }
         let one = |engine: &mut Self, node: NodeId, sig: &Sig, alias: bool| -> Bound {
             if !sig.reactive {
                 return Bound::Value(match scalar {
@@ -457,4 +469,19 @@ impl Engine<'_> {
             .collect::<Option<Vec<u32>>>()?;
         Some(Annotation { scalar, lengths })
     }
+}
+
+fn annotated(sig: &Sig, target: Scalar) -> bool {
+    if sig.is_error() {
+        return true;
+    }
+    let fits = match (sig.kind, kind_of(target)) {
+        (Kind::Any, _) | (Kind::Int, Kind::Float) | (Kind::Bare, Kind::Enum(_)) => true,
+        (operand, wanted) => operand == wanted,
+    };
+    let widens_into = match sig.width {
+        Width::Fixed(scalar) if sig.is_numeric() && !sig.reactive => widens(scalar, target),
+        _ => true,
+    };
+    fits && widens_into
 }

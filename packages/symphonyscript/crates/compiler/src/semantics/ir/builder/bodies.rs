@@ -6,6 +6,49 @@ use crate::semantics::ir::{
 use crate::syntax::ast::{self, AstNode, BodyItem as AstBodyItem, Member};
 use crate::syntax::{ElementView, NodeView, SyntaxKind};
 
+fn significant(kind: SyntaxKind) -> bool {
+    !kind.is_trivia()
+        && !matches!(
+            kind,
+            SyntaxKind::Newline | SyntaxKind::Indent | SyntaxKind::Dedent
+        )
+}
+
+fn head(node: &NodeView<'_>) -> std::ops::Range<u32> {
+    let range = node.range();
+    let mut end = range.start;
+    for element in node.children_with_tokens() {
+        match element {
+            ElementView::Node(child) if child.kind() == SyntaxKind::Body => break,
+            ElementView::Node(child) => {
+                let mut token = child.last_token();
+                while let Some(current) = token.clone() {
+                    if current.range().start < child.range().start {
+                        token = None;
+                        break;
+                    }
+                    if significant(current.kind()) {
+                        break;
+                    }
+                    token = current.prev_token();
+                }
+                if let Some(token) = token {
+                    end = end.max(token.range().end);
+                }
+            }
+            ElementView::Token(token) => {
+                if token.kind() == SyntaxKind::Newline {
+                    break;
+                }
+                if significant(token.kind()) {
+                    end = end.max(token.range().end);
+                }
+            }
+        }
+    }
+    range.start..end.max(range.start)
+}
+
 impl<'p> Builder<'_> {
     pub(super) fn top_placement(&mut self, node: &ast::Placement<'p>) -> PlacementId {
         let mut pending = Vec::new();
@@ -200,7 +243,7 @@ impl<'p> Builder<'_> {
         inline: bool,
         pending: &mut Vec<(ast::Block<'p>, BlockId)>,
     ) -> PlacementId {
-        let loc = self.loc(node.syntax().range());
+        let loc = self.loc(head(node.syntax()));
         let default = node.default_arg().map(|arg| self.default_arg(&arg));
         let gate = node
             .gate()
@@ -226,7 +269,7 @@ impl<'p> Builder<'_> {
 
     fn wire(&mut self, node: &ast::WirePlacement<'p>) -> Option<WireId> {
         let kind = self.ident(node.kind())?;
-        let loc = self.loc(node.syntax().range());
+        let loc = self.loc(head(node.syntax()));
         let default = node.default_arg().map(|arg| self.default_arg(&arg));
         let gate = node
             .gate()
