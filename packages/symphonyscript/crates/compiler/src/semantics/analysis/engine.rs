@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use symphonyscript_core::Vocabulary;
+use symphonyscript_core::{
+    EnumDecl, EnumId, FamilyDecl, FamilyId, NodeKind, NodeKindDecl, UnitDecl, Vocabulary, WireKind,
+    WireKindDecl,
+};
 
 use super::binding::Binding;
 use super::bound::Bound;
@@ -75,6 +78,7 @@ pub(crate) struct Engine<'a> {
     pub call_limit_reported: bool,
     pub typing: super::infer::Typing,
     pub deferred: Vec<super::deferred::Deferred>,
+    pub run_query: fn(&mut Engine<'a>, Query, &mut Vec<Query>) -> Result<bool, Internal>,
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
     current: Option<Query>,
@@ -130,6 +134,7 @@ impl<'a> Engine<'a> {
             call_limit_reported: false,
             typing: super::infer::Typing::default(),
             deferred: Vec::new(),
+            run_query: Engine::run,
             waiting: FastSet::default(),
             cyclic: FastSet::default(),
             current: None,
@@ -170,7 +175,7 @@ impl<'a> Engine<'a> {
             }
             let mut need = Vec::new();
             self.current = Some(top);
-            let done = self.run(top, &mut need)?;
+            let done = (self.run_query)(self, top, &mut need)?;
             self.current = None;
             if done {
                 stack.pop();
@@ -196,9 +201,7 @@ impl<'a> Engine<'a> {
             } else {
                 stalled += 1;
                 if stalled > 2 {
-                    stack.pop();
-                    self.waiting.remove(&top);
-                    stalled = 0;
+                    return Err(Internal::missed("query result"));
                 }
             }
         }
@@ -318,12 +321,17 @@ impl<'a> Engine<'a> {
     pub fn demand_val(&mut self, query: Query) -> Result<Val, Internal> {
         self.demand(query)?;
         let mut need = Vec::new();
-        Ok(self.val(query, &mut need).unwrap_or(Val::Error))
+        self.val(query, &mut need)
+            .ok_or(Internal::missed("demanded value"))
     }
 
     pub fn demand_sig(&mut self, node: NodeId) -> Result<Sig, Internal> {
         self.demand(Query::Sig(node))?;
-        Ok(self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR))
+        self.memo
+            .sigs
+            .get(&node)
+            .copied()
+            .ok_or(Internal::missed("demanded signature"))
     }
 
     pub fn demand_cval(
@@ -332,12 +340,11 @@ impl<'a> Engine<'a> {
         ty: super::eval_ty::EvalTy,
     ) -> Result<CVal, Internal> {
         self.demand(Query::Eval(node, ty))?;
-        Ok(self
-            .memo
+        self.memo
             .evals
             .get(&(node, ty))
             .cloned()
-            .unwrap_or(CVal::Error))
+            .ok_or(Internal::missed("demanded compile-time value"))
     }
 
     pub fn scope(
@@ -386,6 +393,37 @@ impl<'a> Engine<'a> {
         self.bindings
             .get(id.index())
             .ok_or(Internal::missed("binding"))
+    }
+
+    pub fn node_decl(&self, kind: NodeKind) -> Result<&'a NodeKindDecl, Internal> {
+        self.vocabulary
+            .node_kind(kind)
+            .ok_or(Internal::missed("node kind"))
+    }
+
+    pub fn wire_decl(&self, kind: WireKind) -> Result<&'a WireKindDecl, Internal> {
+        self.vocabulary
+            .wire_kind(kind)
+            .ok_or(Internal::missed("wire kind"))
+    }
+
+    pub fn enum_decl(&self, id: EnumId) -> Result<&'a EnumDecl, Internal> {
+        self.vocabulary
+            .enum_decl(id)
+            .ok_or(Internal::missed("enum"))
+    }
+
+    pub fn family_decl(&self, id: FamilyId) -> Result<&'a FamilyDecl, Internal> {
+        self.vocabulary
+            .family(id)
+            .ok_or(Internal::missed("unit family"))
+    }
+
+    pub fn unit_decl(&self, family: FamilyId, unit: usize) -> Result<&'a UnitDecl, Internal> {
+        self.family_decl(family)?
+            .units
+            .get(unit)
+            .ok_or(Internal::missed("unit"))
     }
 
     pub fn push_node(&mut self, op: Op, loc: Loc, scope: ScopeId) -> Result<NodeId, Internal> {

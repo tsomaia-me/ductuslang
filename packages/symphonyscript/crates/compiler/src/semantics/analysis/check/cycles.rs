@@ -2,7 +2,6 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{InstanceId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
@@ -18,24 +17,17 @@ impl Engine<'_> {
                 let record = self.wire(wire)?;
                 (record.kind, record.source)
             };
-            let cyclic = self
-                .vocabulary
-                .wire_kind(kind)
-                .is_some_and(|decl| decl.cyclic);
-            let destination = self
-                .memo
-                .destinations
-                .get(&wire)
-                .cloned()
-                .unwrap_or(Destination::Error);
+            let cyclic = self.wire_decl(kind)?.cyclic;
+            let destination = self.checked_destination(wire)?;
             let mut candidates = destination.candidates();
             candidates.sort();
             candidates.dedup();
             for candidate in candidates {
                 if let ItemRef::Instance(target) = candidate {
-                    if let Some(targets) = edges.get_mut(source.index()) {
-                        targets.push(target.index());
-                    }
+                    edges
+                        .get_mut(source.index())
+                        .ok_or(Internal::missed("instance"))?
+                        .push(target.index());
                     wire_edges.push((wire, source.index(), target.index(), cyclic));
                 }
             }
@@ -67,10 +59,7 @@ impl Engine<'_> {
                 let record = self.wire(wire)?;
                 (record.kind, record.loc, record.uses.clone())
             };
-            let kind_name = self
-                .vocabulary
-                .wire_kind(kind)
-                .map_or(String::new(), |decl| decl.name.clone());
+            let kind_name = self.wire_decl(kind)?.name.clone();
             self.defer(
                 Code::WireCycle,
                 loc,
@@ -122,7 +111,7 @@ impl Engine<'_> {
         let record = self.instance(instance)?;
         Ok(match &record.name {
             Some(name) => name.clone(),
-            None => format!("a `{}`", self.kind_name(record.kind)),
+            None => format!("a `{}`", self.kind_name(record.kind)?),
         })
     }
 }

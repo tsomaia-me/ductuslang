@@ -44,7 +44,12 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            build_file(&mut hir, &file.path, &parsed, vocab);
+            if let Err(internal) = build_file(&mut hir, &file.path, &parsed, vocab) {
+                analyze::internal_error(&hir, &mut report, internal);
+                return Err(Failed {
+                    diagnostics: report.finish(&hir.files),
+                });
+            }
         }
         hir.seal_prelude();
         let variants = Variants::of(vocab);
@@ -81,7 +86,10 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            build_file(&mut hir, &source.path, &parsed, &self.vocabulary);
+            if let Err(internal) = build_file(&mut hir, &source.path, &parsed, &self.vocabulary) {
+                analyze::internal_error(&hir, &mut report, internal);
+                return (report.finish(&hir.files), None);
+            }
         }
         let inspected =
             analyze::program(&hir, &self.vocabulary, &self.variants, &mut report, inspect);

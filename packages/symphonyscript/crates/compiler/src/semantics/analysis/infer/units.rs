@@ -49,9 +49,8 @@ impl Engine<'_> {
                         )?;
                     }
                     (None, Some(unit)) => {
-                        if let Some(scale) = self.unit_scale(unit.family, unit.default_unit)
-                            && scale != 1.0
-                        {
+                        let scale = self.unit_decl(unit.family, unit.default_unit)?.scale;
+                        if scale != 1.0 {
                             self.memo.default_scales.insert(node, scale);
                         }
                     }
@@ -155,7 +154,7 @@ impl Engine<'_> {
     ) -> Result<bool, Internal> {
         Ok(match units {
             [] => {
-                let name = self.family_name(family);
+                let name = self.family_decl(family)?.name.clone();
                 self.error_at_node(
                     Code::PlainInFamily,
                     node,
@@ -165,13 +164,15 @@ impl Engine<'_> {
                 )?;
                 false
             }
-            [(unit, _)] => match self.unit_scale(family, *unit) {
-                Some(scale) if scale != 1.0 => {
+            [(unit, _)] => {
+                let scale = self.unit_decl(family, *unit)?.scale;
+                if scale == 1.0 {
+                    false
+                } else {
                     self.memo.default_scales.insert(node, scale);
                     scale.fract() != 0.0
                 }
-                _ => false,
-            },
+            }
             [(_, first), (_, second), ..] => {
                 let (loc, scope) = {
                     let record = self.node(node)?;
@@ -405,19 +406,6 @@ impl Engine<'_> {
             }
         }
         Ok(())
-    }
-
-    fn unit_scale(&self, family: FamilyId, unit: usize) -> Option<f64> {
-        self.vocabulary
-            .family(family)
-            .and_then(|decl| decl.units.get(unit))
-            .map(|unit| unit.scale)
-    }
-
-    fn family_name(&self, family: FamilyId) -> String {
-        self.vocabulary
-            .family(family)
-            .map_or(String::new(), |decl| decl.name.clone())
     }
 }
 

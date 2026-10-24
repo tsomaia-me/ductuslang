@@ -73,7 +73,7 @@ impl<'a> Checker<'a> {
                 );
             }
             if let Some(name) = &param.name {
-                self.declared(name);
+                self.declared(name)?;
                 let mut names = BTreeMap::new();
                 names.insert(name.text.clone(), name.loc);
                 earlier = Some(self.frame(names, earlier, FrameKind::Locals));
@@ -82,7 +82,7 @@ impl<'a> Checker<'a> {
         let locals = self.locals(
             decl.params.iter().filter_map(|param| param.name.as_ref()),
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
-        );
+        )?;
         for local in &decl.lets {
             self.expr(local.value, Some(locals), false)?;
         }
@@ -109,7 +109,7 @@ impl<'a> Checker<'a> {
                 self.expr(default, earlier, false)?;
             }
             if let Some(name) = &param.name {
-                self.declared(name);
+                self.declared(name)?;
                 let mut names = BTreeMap::new();
                 names.insert(name.text.clone(), name.loc);
                 earlier = Some(self.frame(names, earlier, FrameKind::Locals));
@@ -118,7 +118,7 @@ impl<'a> Checker<'a> {
         let locals = self.locals(
             decl.params.iter().filter_map(|param| param.name.as_ref()),
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
-        );
+        )?;
         for local in &decl.lets {
             self.expr(local.value, Some(locals), false)?;
         }
@@ -251,7 +251,7 @@ impl<'a> Checker<'a> {
         &mut self,
         params: impl Iterator<Item = &'n Ident>,
         lets: impl Iterator<Item = &'n Ident>,
-    ) -> usize {
+    ) -> Result<usize, Internal> {
         let mut names: BTreeMap<String, Loc> = BTreeMap::new();
         for param in params {
             if let Some(earlier) = names.get(&param.text) {
@@ -269,7 +269,7 @@ impl<'a> Checker<'a> {
         }
         let mut seen: BTreeMap<String, Loc> = BTreeMap::new();
         for local in lets {
-            self.declared(local);
+            self.declared(local)?;
             if let Some(earlier) = seen.get(&local.text).or_else(|| names.get(&local.text)) {
                 let earlier = *earlier;
                 self.report.error_with(
@@ -284,7 +284,7 @@ impl<'a> Checker<'a> {
             seen.insert(local.text.clone(), local.loc);
         }
         names.extend(seen);
-        self.frame(names, None, FrameKind::Locals)
+        Ok(self.frame(names, None, FrameKind::Locals))
     }
 
     fn frame(
@@ -301,13 +301,14 @@ impl<'a> Checker<'a> {
         self.frames.len() - 1
     }
 
-    fn declared(&mut self, name: &Ident) {
-        if let Some(owner) = self
-            .variants
-            .owner(&name.text)
-            .and_then(|id| self.vocabulary.enum_decl(id))
-            .map(|decl| decl.name.as_str())
-        {
+    fn declared(&mut self, name: &Ident) -> Result<(), Internal> {
+        if let Some(id) = self.variants.owner(&name.text) {
+            let owner = self
+                .vocabulary
+                .enum_decl(id)
+                .ok_or(Internal::missed("enum"))?
+                .name
+                .as_str();
             self.report.error(
                 self.hir,
                 Code::VariantName,
@@ -318,6 +319,7 @@ impl<'a> Checker<'a> {
                 ),
             );
         }
+        Ok(())
     }
 
     fn visible(&self, frame: Option<usize>, name: &str) -> bool {
@@ -538,7 +540,7 @@ impl<'a> Checker<'a> {
                         }
                         if let Some(each) = each {
                             self.iterable(each.iterable, frame)?;
-                            let var_frame = self.for_var(each.var.as_ref(), frame);
+                            let var_frame = self.for_var(each.var.as_ref(), frame)?;
                             for member in &each.members {
                                 if let Some(name) = &self.hir.placement(*member)?.name {
                                     self.named_in_for(name);
@@ -556,7 +558,7 @@ impl<'a> Checker<'a> {
                     } => {
                         previous = None;
                         self.iterable(*iterable, frame)?;
-                        let var_frame = self.for_var(var.as_ref(), frame);
+                        let var_frame = self.for_var(var.as_ref(), frame)?;
                         pending.push((*body, var_frame, Mode::Anonymous));
                     }
                     BodyItem::When {
@@ -593,11 +595,15 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    fn for_var(&mut self, var: Option<&Ident>, frame: Option<usize>) -> Option<usize> {
+    fn for_var(
+        &mut self,
+        var: Option<&Ident>,
+        frame: Option<usize>,
+    ) -> Result<Option<usize>, Internal> {
         let Some(var) = var else {
-            return frame;
+            return Ok(frame);
         };
-        self.declared(var);
+        self.declared(var)?;
         if self.visible(frame, &var.text) {
             self.report.error(
                 self.hir,
@@ -608,7 +614,7 @@ impl<'a> Checker<'a> {
         }
         let mut names = BTreeMap::new();
         names.insert(var.text.clone(), var.loc);
-        Some(self.frame(names, frame, FrameKind::ForVar))
+        Ok(Some(self.frame(names, frame, FrameKind::ForVar)))
     }
 
     fn named_in_for(&mut self, name: &Ident) {
@@ -679,7 +685,7 @@ impl<'a> Checker<'a> {
         }
         found.sort_by_key(|name| name.loc);
         for name in found {
-            self.declared(&name);
+            self.declared(&name)?;
             let clash = names
                 .get(&name.text)
                 .copied()

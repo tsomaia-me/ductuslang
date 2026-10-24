@@ -446,12 +446,9 @@ impl Engine<'_> {
         item: ItemRef,
         name: &str,
     ) -> Result<Option<AttrId>, Internal> {
-        let attrs: &[AttrDecl] = match item {
-            ItemRef::Instance(instance) => {
-                &some!(self.vocabulary.node_kind(self.instance(instance)?.kind)).attrs
-            }
-            ItemRef::Wire(wire) => &some!(self.vocabulary.wire_kind(self.wire(wire)?.kind)).attrs,
-            ItemRef::Use(_) => return Ok(None),
+        let attrs = match self.kind_attrs(item)? {
+            Some(attrs) => attrs,
+            None => return Ok(None),
         };
         Ok(attrs
             .iter()
@@ -464,14 +461,24 @@ impl Engine<'_> {
         item: ItemRef,
         attr: AttrId,
     ) -> Result<Option<&AttrDecl>, Internal> {
-        let attrs: &[AttrDecl] = match item {
-            ItemRef::Instance(instance) => {
-                &some!(self.vocabulary.node_kind(self.instance(instance)?.kind)).attrs
-            }
-            ItemRef::Wire(wire) => &some!(self.vocabulary.wire_kind(self.wire(wire)?.kind)).attrs,
-            ItemRef::Use(_) => return Ok(None),
+        let attrs = match self.kind_attrs(item)? {
+            Some(attrs) => attrs,
+            None => return Ok(None),
         };
-        Ok(attrs.get(attr.index()))
+        attrs
+            .get(attr.index())
+            .map(Some)
+            .ok_or(Internal::missed("attribute"))
+    }
+
+    fn kind_attrs(&self, item: ItemRef) -> Result<Option<&[AttrDecl]>, Internal> {
+        Ok(match item {
+            ItemRef::Instance(instance) => {
+                Some(&self.node_decl(self.instance(instance)?.kind)?.attrs)
+            }
+            ItemRef::Wire(wire) => Some(&self.wire_decl(self.wire(wire)?.kind)?.attrs),
+            ItemRef::Use(_) => None,
+        })
     }
 
     pub(in crate::semantics::analysis) fn attr_sources(

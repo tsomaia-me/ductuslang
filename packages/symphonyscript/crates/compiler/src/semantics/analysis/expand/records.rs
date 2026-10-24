@@ -499,23 +499,24 @@ impl<'a> Engine<'a> {
         loc: Loc,
         scope: ScopeId,
     ) -> Result<Vec<AttrSource>, Internal> {
-        let vocabulary = self.vocabulary;
         let (kind_name, decls, default_attr) = match kind {
-            ItemKind::Node(kind) => match vocabulary.node_kind(kind) {
-                Some(decl) => (decl.name.as_str(), decl.attrs.as_slice(), decl.default_attr),
-                None => return Ok(Vec::new()),
-            },
-            ItemKind::Wire(kind) => match vocabulary.wire_kind(kind) {
-                Some(decl) => (decl.name.as_str(), decl.attrs.as_slice(), decl.default_attr),
-                None => return Ok(Vec::new()),
-            },
+            ItemKind::Node(kind) => {
+                let decl = self.node_decl(kind)?;
+                (decl.name.as_str(), decl.attrs.as_slice(), decl.default_attr)
+            }
+            ItemKind::Wire(kind) => {
+                let decl = self.wire_decl(kind)?;
+                (decl.name.as_str(), decl.attrs.as_slice(), decl.default_attr)
+            }
         };
         let mut sources: Vec<AttrSource> = Vec::new();
         let mut set = |engine: &mut Self, source: AttrSource| -> Result<(), Internal> {
             if let Some(earlier) = sources.iter().find(|existing| existing.attr == source.attr) {
                 let name = decls
                     .get(source.attr.index())
-                    .map_or("", |decl| decl.name.as_str());
+                    .ok_or(Internal::missed("attribute"))?
+                    .name
+                    .as_str();
                 let earlier = earlier.loc;
                 engine.error_with_chain(
                     Code::DuplicateAttribute,
@@ -567,7 +568,11 @@ impl<'a> Engine<'a> {
             }
         }
         for attr in attrs {
-            let Some(position) = decls.iter().position(|decl| decl.name == attr.name.text) else {
+            let Some((position, decl)) = decls
+                .iter()
+                .enumerate()
+                .find(|(_, decl)| decl.name == attr.name.text)
+            else {
                 self.error(
                     Code::UnknownAttribute,
                     attr.name.loc,
@@ -579,10 +584,7 @@ impl<'a> Engine<'a> {
             let value = match attr.value {
                 AttrValue::Expr(expr) => AttrValueSource::Expr(expr, scope),
                 AttrValue::Set(value) => {
-                    let is_bool = decls
-                        .get(position)
-                        .is_some_and(|decl| decl.ty == symphonyscript_core::Ty::BOOL);
-                    if !is_bool {
+                    if decl.ty != symphonyscript_core::Ty::BOOL {
                         self.error(
                             Code::TypeMismatch,
                             attr.loc,
@@ -649,20 +651,14 @@ impl<'a> Engine<'a> {
         Ok(match item {
             ItemRef::Instance(id) => {
                 let instance = self.instance(id)?;
-                let kind = self
-                    .vocabulary
-                    .node_kind(instance.kind)
-                    .map_or("", |decl| decl.name.as_str());
+                let kind = self.node_decl(instance.kind)?.name.as_str();
                 match &instance.name {
                     Some(name) => format!("the `{kind}` `{name}`"),
                     None => format!("the `{kind}`"),
                 }
             }
             ItemRef::Wire(id) => {
-                let kind = self
-                    .vocabulary
-                    .wire_kind(self.wire(id)?.kind)
-                    .map_or("", |decl| decl.name.as_str());
+                let kind = self.wire_decl(self.wire(id)?.kind)?.name.as_str();
                 format!("the `{kind}` wire")
             }
             ItemRef::Use(id) => {

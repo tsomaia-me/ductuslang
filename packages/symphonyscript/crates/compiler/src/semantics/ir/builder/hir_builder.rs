@@ -5,6 +5,7 @@ use symphonyscript_core::Vocabulary;
 use super::faults::Faults;
 use super::index::index;
 use super::scalar_type::scalar_type;
+use crate::semantics::Internal;
 use crate::semantics::ir::{
     Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
     PatternDecl, PatternId, Top, TypeBase, TypeRef,
@@ -19,7 +20,7 @@ pub(crate) struct HirBuilder<'h> {
 }
 
 impl HirBuilder<'_> {
-    pub(super) fn item(&mut self, item: Item<'_>) {
+    pub(super) fn item(&mut self, item: Item<'_>) -> Result<(), Internal> {
         match item {
             Item::Input(node) => {
                 let loc = self.loc(node.syntax().range());
@@ -100,7 +101,7 @@ impl HirBuilder<'_> {
                 let (lets, body) = match node.body() {
                     Some(block) => {
                         let lets = block.lets().map(|local| self.local_let(&local)).collect();
-                        (lets, self.block(block))
+                        (lets, self.block(block)?)
                     }
                     None => (Vec::new(), self.empty_block()),
                 };
@@ -116,11 +117,12 @@ impl HirBuilder<'_> {
                 self.hir.top.push(Top::Pattern(id));
             }
             Item::Placement(node) => {
-                let id = self.top_placement(&node);
+                let id = self.top_placement(&node)?;
                 self.hir.top.push(Top::Placement(id));
             }
             Item::Wire(_) => {}
         }
+        Ok(())
     }
 
     pub(super) fn local_let(&mut self, node: &ast::LocalLet<'_>) -> LetDecl {

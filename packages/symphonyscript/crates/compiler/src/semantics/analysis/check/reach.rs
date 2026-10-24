@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::entry::Entry;
 use crate::semantics::analysis::ids::InstanceId;
@@ -17,11 +16,7 @@ impl Engine<'_> {
         }
         let mut entries: Vec<InstanceId> = Vec::new();
         for (index, record) in self.instances.iter().enumerate() {
-            if self
-                .vocabulary
-                .node_kind(record.kind)
-                .is_some_and(|decl| decl.entry)
-            {
+            if self.node_decl(record.kind)?.entry {
                 entries.push(InstanceId(u32::try_from(index).unwrap_or(u32::MAX)));
             }
         }
@@ -57,12 +52,7 @@ impl Engine<'_> {
                     Entry::Child(child) => stack.push(*child),
                     Entry::Bundle(members) => stack.extend(members.iter().copied()),
                     Entry::Wire(wire) => {
-                        let destination = self
-                            .memo
-                            .destinations
-                            .get(wire)
-                            .cloned()
-                            .unwrap_or(Destination::Error);
+                        let destination = self.checked_destination(*wire)?;
                         for candidate in destination.candidates() {
                             if let ItemRef::Instance(target) = candidate {
                                 stack.push(target);

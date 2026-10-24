@@ -8,3 +8,6 @@ mod number_literal;
 mod scalar_type;
 
 pub(crate) use build_file::build_file;
+
+#[cfg(test)]
+mod tests;

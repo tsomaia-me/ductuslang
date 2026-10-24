@@ -10,7 +10,6 @@ use crate::syntax::{SyntaxKind, TokenView};
 enum Shape {
     Leaf(ExprKind),
     Paren,
-    Fold,
     Unary(UnaryOp),
     Binary(BinaryOp),
     If,
@@ -107,11 +106,7 @@ impl HirBuilder<'_> {
                     .map(|op| op.kind());
                 let operand = node.operand();
                 if op == Some(SyntaxKind::Minus) {
-                    if matches!(operand, Some(ast::Expr::Literal(_))) {
-                        (Shape::Fold, vec![operand])
-                    } else {
-                        (Shape::Unary(UnaryOp::Neg), vec![operand])
-                    }
+                    self.negation(operand)
                 } else if op == Some(SyntaxKind::NotKw) {
                     (Shape::Unary(UnaryOp::Not), vec![operand])
                 } else {
@@ -192,10 +187,6 @@ impl HirBuilder<'_> {
         match shape {
             Shape::Leaf(kind) => self.push(kind, loc),
             Shape::Paren => next(self),
-            Shape::Fold => {
-                let operand = next(self);
-                self.fold_negation(operand, loc)
-            }
             Shape::Unary(op) => {
                 let operand = next(self);
                 self.push(ExprKind::Unary(op, operand), loc)
@@ -251,21 +242,19 @@ impl HirBuilder<'_> {
         }
     }
 
-    fn fold_negation(&mut self, operand: ExprId, loc: Loc) -> ExprId {
-        let Some(expr) = self.hir.exprs.get_mut(operand.index()) else {
-            return operand;
+    fn negation<'p>(&self, operand: Option<ast::Expr<'p>>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        let Some(ast::Expr::Literal(literal)) = &operand else {
+            return (Shape::Unary(UnaryOp::Neg), vec![operand]);
         };
-        match &expr.kind {
+        match self.literal(literal) {
             ExprKind::Number(number, suffix) => {
-                let suffix = *suffix;
-                expr.kind = match number.negated() {
+                let negated = match number.negated() {
                     Some(negated) => ExprKind::Number(negated, suffix),
                     None => ExprKind::Error,
                 };
-                expr.loc = loc;
-                operand
+                (Shape::Leaf(negated), Vec::new())
             }
-            ExprKind::Error => operand,
+            ExprKind::Error => (Shape::Paren, vec![operand]),
             ExprKind::Bool(_)
             | ExprKind::Str(_)
             | ExprKind::Name(_)
@@ -279,7 +268,7 @@ impl HirBuilder<'_> {
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
             | ExprKind::If(..)
-            | ExprKind::Match { .. } => self.push(ExprKind::Unary(UnaryOp::Neg, operand), loc),
+            | ExprKind::Match { .. } => (Shape::Unary(UnaryOp::Neg), vec![operand]),
         }
     }
 

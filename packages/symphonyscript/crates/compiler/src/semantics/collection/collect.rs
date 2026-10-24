@@ -62,7 +62,7 @@ pub(crate) fn collect(
         let Some(name) = name else {
             continue;
         };
-        variant_name(hir, vocabulary, variants, &name, report);
+        variant_name(hir, vocabulary, variants, &name, report)?;
         if in_prelude {
             if declare(
                 hir,
@@ -169,12 +169,13 @@ fn variant_name(
     variants: &Variants,
     name: &Ident,
     report: &mut Report,
-) {
-    if let Some(owner) = variants
-        .owner(&name.text)
-        .and_then(|id| vocabulary.enum_decl(id))
-        .map(|decl| decl.name.as_str())
-    {
+) -> Result<(), Internal> {
+    if let Some(id) = variants.owner(&name.text) {
+        let owner = vocabulary
+            .enum_decl(id)
+            .ok_or(Internal::missed("enum"))?
+            .name
+            .as_str();
         report.error(
             hir,
             Code::VariantName,
@@ -185,4 +186,5 @@ fn variant_name(
             ),
         );
     }
+    Ok(())
 }

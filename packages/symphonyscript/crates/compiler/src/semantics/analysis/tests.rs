@@ -15,6 +15,7 @@ use super::eval_ty::EvalTy;
 use super::ids::{BindingId, NodeId, ScopeId};
 use super::kind::Kind;
 use super::op::Op;
+use super::query::Query;
 use super::val::Val;
 use crate::compiler::Compiler;
 use crate::diagnostics::{Code, Diagnostic, Severity};
@@ -41,7 +42,7 @@ fn graph_size(calls: usize) -> (usize, usize) {
     let mut hir = Hir::default();
     hir.seal_prelude();
     let parsed = parse(&source, &vocabulary);
-    build_file(&mut hir, &source.path, &parsed, &vocabulary);
+    build_file(&mut hir, &source.path, &parsed, &vocabulary).expect("the chain builds");
     let mut report = Report::default();
     let variants = Variants::of(&vocabulary);
     let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("the chain collects");
@@ -1801,7 +1802,7 @@ fn built(vocabulary: &Vocabulary, text: &str) -> Hir {
     let mut hir = Hir::default();
     hir.seal_prelude();
     let parsed = parse(&source, vocabulary);
-    build_file(&mut hir, &source.path, &parsed, vocabulary);
+    build_file(&mut hir, &source.path, &parsed, vocabulary).expect("the program builds");
     hir
 }
 
@@ -1849,4 +1850,101 @@ fn a_lookup_that_misses_is_an_internal_error() {
         engine.demand_sig(user).map(|sig| sig.kind),
         Err(Internal::missed("node"))
     );
+
+    let fresh = engine
+        .push_node(Op::Bool(true), Loc::default(), scope)
+        .expect("the fresh node is pushed");
+    engine.run_query = |_, _, _| Ok(false);
+    assert_eq!(
+        engine.demand_sig(fresh).map(|sig| sig.kind),
+        Err(Internal::missed("query result"))
+    );
+    engine.run_query = |_, _, _| Ok(true);
+    assert_eq!(
+        engine.demand_sig(fresh).map(|sig| sig.kind),
+        Err(Internal::missed("demanded signature"))
+    );
+    assert_eq!(
+        engine.demand_cval(fresh, EvalTy::Exact),
+        Err(Internal::missed("demanded compile-time value"))
+    );
+    assert_eq!(
+        engine.demand_val(Query::Expr(ExprId(0), scope)),
+        Err(Internal::missed("demanded value"))
+    );
+
+    let empty = Vocabulary::builder("empty")
+        .build()
+        .expect("the empty vocabulary builds");
+    let rows = [
+        ("Clip c\n", Stage::Expand, "node kind"),
+        ("let g = c.gain\nClip c\n", Stage::Infer, "node kind"),
+        ("Clip c | gain=0.5\n", Stage::Infer, "node kind"),
+        ("Clip c\n", Stage::Check, "node kind"),
+        (
+            "Clip a:\n    Plays: b\nClip b\n",
+            Stage::CheckWithoutDestinations,
+            "destination",
+        ),
+    ];
+    for (text, stage, missed) in rows {
+        assert_eq!(
+            staged(&vocabulary, &empty, text, stage),
+            Err(Internal::missed(missed)),
+            "{text}"
+        );
+        let valid = match stage {
+            Stage::CheckWithoutDestinations => Stage::Check,
+            Stage::Expand | Stage::Infer | Stage::Check => stage,
+        };
+        assert_eq!(
+            staged(&vocabulary, &vocabulary, text, valid),
+            Ok(()),
+            "{text}"
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Stage {
+    Expand,
+    Infer,
+    Check,
+    CheckWithoutDestinations,
+}
+
+fn staged(
+    vocabulary: &Vocabulary,
+    swapped: &Vocabulary,
+    text: &str,
+    stage: Stage,
+) -> Result<(), Internal> {
+    let variants = Variants::of(vocabulary);
+    let hir = built(vocabulary, text);
+    let mut report = Report::default();
+    let collected = collect(&hir, vocabulary, &variants, &mut report)?;
+    let mut engine = Engine::new(&hir, vocabulary, &collected, &variants);
+    match stage {
+        Stage::Expand => {
+            engine.vocabulary = swapped;
+            engine.expand()
+        }
+        Stage::Infer => {
+            engine.expand()?;
+            engine.vocabulary = swapped;
+            engine.infer()
+        }
+        Stage::Check => {
+            engine.expand()?;
+            engine.infer()?;
+            engine.vocabulary = swapped;
+            engine.check_program()
+        }
+        Stage::CheckWithoutDestinations => {
+            engine.expand()?;
+            engine.infer()?;
+            engine.memo.destinations.clear();
+            engine.check_program()
+        }
+    }
 }

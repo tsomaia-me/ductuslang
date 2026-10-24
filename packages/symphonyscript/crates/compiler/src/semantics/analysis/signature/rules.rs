@@ -46,7 +46,7 @@ impl Engine<'_> {
         let first = sigs.first().copied().unwrap_or(Sig::ERROR);
         let second = sigs.get(1).copied().unwrap_or(Sig::ERROR);
         Ok(match op {
-            Op::Number(number, suffix) => self.number_sig(number, *suffix),
+            Op::Number(number, suffix) => self.number_sig(number, *suffix)?,
             Op::Const(value) => {
                 let scalar = match value {
                     Value::I32(_) => Scalar::I32,
@@ -229,20 +229,16 @@ impl Engine<'_> {
         Ok(Some((kind, width, family)))
     }
 
-    fn number_sig(&self, number: &Number, suffix: Suffix) -> Sig {
+    fn number_sig(&self, number: &Number, suffix: Suffix) -> Result<Sig, Internal> {
         let literal_kind = match number {
             Number::Int(_) => Kind::Int,
             Number::Float(_) => Kind::Float,
         };
-        match suffix {
+        Ok(match suffix {
             Suffix::None => Sig::of(literal_kind, Width::Flexible, false, None),
             Suffix::Type(scalar) => Sig::of(kind_of(scalar), Width::Fixed(scalar), false, None),
             Suffix::Unit { family, unit } => {
-                let integral = self
-                    .vocabulary
-                    .family(family)
-                    .and_then(|decl| decl.units.get(unit))
-                    .is_some_and(|unit| unit.scale.fract() == 0.0);
+                let integral = self.unit_decl(family, unit)?.scale.fract() == 0.0;
                 let kind = if literal_kind == Kind::Int && integral {
                     Kind::Int
                 } else {
@@ -250,7 +246,7 @@ impl Engine<'_> {
                 };
                 Sig::of(kind, Width::Flexible, false, Some(family))
             }
-        }
+        })
     }
 
     fn concat_sig(&mut self, operands: &[NodeId], sigs: &[Sig]) -> Result<Sig, Internal> {

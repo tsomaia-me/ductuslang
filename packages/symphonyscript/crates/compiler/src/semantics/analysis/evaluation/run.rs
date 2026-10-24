@@ -307,10 +307,7 @@ impl Engine<'_> {
                 EvalTy::Enum(id) => match self.variants.position(id, &name) {
                     Some(index) => CVal::Enum(id, index),
                     None => {
-                        let enum_name = self
-                            .vocabulary
-                            .enum_decl(id)
-                            .map_or(String::new(), |decl| decl.name.clone());
+                        let enum_name = self.enum_decl(id)?.name.clone();
                         self.error_at_node(
                             Code::UnknownName,
                             node,
@@ -451,11 +448,7 @@ impl Engine<'_> {
         own: EvalTy,
     ) -> Result<CVal, Internal> {
         let scale = match suffix {
-            Suffix::Unit { family, unit } => self
-                .vocabulary
-                .family(family)
-                .and_then(|decl| decl.units.get(unit))
-                .map(|unit| unit.scale),
+            Suffix::Unit { family, unit } => Some(self.unit_decl(family, unit)?.scale),
             Suffix::None | Suffix::Type(_) => self
                 .memo
                 .default_scales
@@ -824,14 +817,14 @@ impl Engine<'_> {
                 Piece::Text(text) => out.push_str(text),
                 Piece::Value(_) => {
                     let value = values.next().unwrap_or(CVal::Error);
-                    let vocabulary = self.vocabulary;
                     let variant = |id, index: u16| {
-                        vocabulary
-                            .enum_decl(id)
-                            .and_then(|decl| decl.variants.get(usize::from(index)).cloned())
-                            .unwrap_or_default()
+                        self.enum_decl(id)?
+                            .variants
+                            .get(usize::from(index))
+                            .cloned()
+                            .ok_or(Internal::missed("enum variant"))
                     };
-                    match text(&value, variant) {
+                    match text(&value, variant)? {
                         Some(piece) => out.push_str(&piece),
                         None => return Ok(Some(CVal::Error)),
                     }

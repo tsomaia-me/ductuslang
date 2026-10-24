@@ -411,15 +411,9 @@ impl Engine<'_> {
             if names.contains_key(&name.text) {
                 continue;
             }
-            let attribute_clash = self
-                .vocabulary
-                .node_kind(owner_kind)
-                .is_some_and(|decl| decl.attrs.iter().any(|attr| attr.name == name.text));
-            if attribute_clash {
-                let kind = self
-                    .vocabulary
-                    .node_kind(owner_kind)
-                    .map_or("", |decl| decl.name.as_str());
+            let owner_decl = self.node_decl(owner_kind)?;
+            if owner_decl.attrs.iter().any(|attr| attr.name == name.text) {
+                let kind = owner_decl.name.as_str();
                 self.error(
                     Code::ChildNameClash,
                     name.loc,
@@ -714,10 +708,7 @@ impl Engine<'_> {
                         Some(existing)
                     }
                     Some(ItemRef::Instance(_) | ItemRef::Use(_)) | None => {
-                        let vocabulary = self.vocabulary;
-                        let kind_name = vocabulary
-                            .wire_kind(kind)
-                            .map_or("", |decl| decl.name.as_str());
+                        let kind_name = self.wire_decl(kind)?.name.as_str();
                         let segment = Some(self.segment(Some(walk.path_parent), None, kind_name));
                         let context = self.context(walk);
                         self.new_wire(kind, id, scope, segment, walk.owner, &context)?

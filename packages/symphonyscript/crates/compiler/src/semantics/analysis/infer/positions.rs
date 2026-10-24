@@ -87,7 +87,12 @@ impl Engine<'_> {
         let decl = self.hir.input(input)?;
         let global = self.source_global;
         let val = self.demand_val(Query::Expr(decl.value, global))?;
-        let bound = some!(self.memo.inputs.get(&input).cloned());
+        let bound = self
+            .memo
+            .inputs
+            .get(&input)
+            .cloned()
+            .ok_or(Internal::missed("demanded input binding"))?;
         let first = match &bound {
             BoundVal::Scalar(crate::semantics::analysis::bound::Bound::Cell(binding)) => *binding,
             BoundVal::Array(array) => match array.1.first() {

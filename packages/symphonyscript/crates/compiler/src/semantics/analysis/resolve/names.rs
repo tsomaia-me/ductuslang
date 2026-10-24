@@ -127,11 +127,10 @@ impl Engine<'_> {
     ) -> Result<(), Internal> {
         let message = match name {
             Some(name) => {
-                let owner = self
-                    .variants
-                    .owner(name)
-                    .and_then(|id| self.vocabulary.enum_decl(id))
-                    .map_or("", |decl| decl.name.as_str());
+                let owner = match self.variants.owner(name) {
+                    Some(id) => self.enum_decl(id)?.name.as_str(),
+                    None => "",
+                };
                 format!(
                     "`{name}` names a variant only where `{owner}` is expected; elsewhere it is written `{owner}::{name}`"
                 )

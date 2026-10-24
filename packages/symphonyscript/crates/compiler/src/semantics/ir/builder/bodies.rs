@@ -1,5 +1,6 @@
 use super::hir_builder::HirBuilder;
 use super::index::index;
+use crate::semantics::Internal;
 use crate::semantics::ir::{
     Attr, AttrValue, Block, BlockId, BodyItem, BundleFor, ExprKind, Iterable, Loc, Placement,
     PlacementId, WhenArm, Wire, WireId,
@@ -51,17 +52,20 @@ fn head(node: &NodeView<'_>) -> std::ops::Range<u32> {
 }
 
 impl<'p> HirBuilder<'_> {
-    pub(super) fn top_placement(&mut self, node: &ast::Placement<'p>) -> PlacementId {
+    pub(super) fn top_placement(
+        &mut self,
+        node: &ast::Placement<'p>,
+    ) -> Result<PlacementId, Internal> {
         let mut pending = Vec::new();
         let id = self.placement(node, false, &mut pending);
-        self.fill(pending);
-        id
+        self.fill(pending)?;
+        Ok(id)
     }
 
-    pub(super) fn block(&mut self, node: ast::Block<'p>) -> BlockId {
+    pub(super) fn block(&mut self, node: ast::Block<'p>) -> Result<BlockId, Internal> {
         let id = self.empty_block();
-        self.fill(vec![(node, id)]);
-        id
+        self.fill(vec![(node, id)])?;
+        Ok(id)
     }
 
     pub(super) fn empty_block(&mut self) -> BlockId {
@@ -70,7 +74,10 @@ impl<'p> HirBuilder<'_> {
         id
     }
 
-    fn fill(&mut self, mut pending: Vec<(ast::Block<'p>, BlockId)>) {
+    pub(super) fn fill(
+        &mut self,
+        mut pending: Vec<(ast::Block<'p>, BlockId)>,
+    ) -> Result<(), Internal> {
         while let Some((node, id)) = pending.pop() {
             let mut items = Vec::new();
             for item in node.items() {
@@ -81,10 +88,13 @@ impl<'p> HirBuilder<'_> {
                     self.member(member, position > 0, &mut items, &mut pending);
                 }
             }
-            if let Some(block) = self.hir.blocks.get_mut(id.index()) {
-                block.items = items;
-            }
+            self.hir
+                .blocks
+                .get_mut(id.index())
+                .ok_or(Internal::missed("block"))?
+                .items = items;
         }
+        Ok(())
     }
 
     fn body_item(

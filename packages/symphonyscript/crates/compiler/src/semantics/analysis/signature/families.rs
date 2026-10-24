@@ -18,12 +18,8 @@ impl Engine<'_> {
                 (Some(existing), Some(other)) if existing != other => {
                     let names = [existing, other]
                         .iter()
-                        .map(|id| {
-                            self.vocabulary
-                                .family(*id)
-                                .map_or(String::new(), |decl| format!("`{}`", decl.name))
-                        })
-                        .collect::<Vec<_>>()
+                        .map(|id| Ok(format!("`{}`", self.family_decl(*id)?.name)))
+                        .collect::<Result<Vec<_>, Internal>>()?
                         .join(" and ");
                     self.error_at_node(
                         Code::MixedFamilies,

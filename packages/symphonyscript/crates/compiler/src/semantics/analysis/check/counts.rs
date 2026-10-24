@@ -13,20 +13,17 @@ use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
     pub(crate) fn check_program(&mut self) -> Result<(), Internal> {
-        let unknown: Vec<WireKind> = self
-            .wires
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| {
-                let wire = WireId(u32::try_from(*index).unwrap_or(u32::MAX));
-                !matches!(
-                    self.memo.destinations.get(&wire),
-                    Some(Destination::Fixed(_) | Destination::Select { .. })
-                )
-            })
-            .map(|(_, record)| record.kind)
-            .collect();
-        self.unknown_destinations.extend(unknown);
+        for index in 0..self.wires.len() {
+            let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
+            let known = matches!(
+                self.checked_destination(wire)?,
+                Destination::Fixed(_) | Destination::Select { .. }
+            );
+            if !known {
+                let kind = self.wire(wire)?.kind;
+                self.unknown_destinations.insert(kind);
+            }
+        }
         self.top_level_counts()?;
         for index in 0..self.instances.len() {
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
@@ -54,29 +51,30 @@ impl Engine<'_> {
         Ok(())
     }
 
-    pub(crate) fn kind_name(&self, kind: NodeKind) -> String {
-        self.vocabulary
-            .node_kind(kind)
-            .map_or(String::new(), |decl| decl.name.clone())
+    pub(super) fn checked_destination(&self, wire: WireId) -> Result<Destination, Internal> {
+        self.memo
+            .destinations
+            .get(&wire)
+            .cloned()
+            .ok_or(Internal::missed("destination"))
     }
 
-    fn wire_kind_name(&self, kind: WireKind) -> String {
-        self.vocabulary
-            .wire_kind(kind)
-            .map_or(String::new(), |decl| decl.name.clone())
+    pub(crate) fn kind_name(&self, kind: NodeKind) -> Result<String, Internal> {
+        Ok(self.node_decl(kind)?.name.clone())
+    }
+
+    fn wire_kind_name(&self, kind: WireKind) -> Result<String, Internal> {
+        Ok(self.wire_decl(kind)?.name.clone())
     }
 
     fn top_level_counts(&mut self) -> Result<(), Internal> {
         let mut by_kind: BTreeMap<NodeKind, Vec<InstanceId>> = BTreeMap::new();
         for instance in self.top_level.clone() {
             let kind = self.instance(instance)?.kind;
-            let allowed = self
-                .vocabulary
-                .node_kind(kind)
-                .and_then(|decl| decl.top_level);
+            let allowed = self.node_decl(kind)?.top_level;
             if allowed.is_none() {
                 let loc = self.item_loc(ItemRef::Instance(instance))?;
-                let name = self.kind_name(kind);
+                let name = self.kind_name(kind)?;
                 self.item_error(
                     Code::NotTopLevel,
                     ItemRef::Instance(instance),
@@ -88,18 +86,15 @@ impl Engine<'_> {
             by_kind.entry(kind).or_default().push(instance);
         }
         for index in 0..self.vocabulary.node_kinds().len() {
-            let Some(kind) = self.vocabulary.node_kind_at(index) else {
-                continue;
-            };
-            let Some(count) = self
+            let kind = self
                 .vocabulary
-                .node_kind(kind)
-                .and_then(|decl| decl.top_level)
-            else {
+                .node_kind_at(index)
+                .ok_or(Internal::missed("node kind"))?;
+            let Some(count) = self.node_decl(kind)?.top_level else {
                 continue;
             };
             let found = by_kind.get(&kind).cloned().unwrap_or_default();
-            let name = self.kind_name(kind);
+            let name = self.kind_name(kind)?;
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
             {
@@ -149,13 +144,7 @@ impl Engine<'_> {
     }
 
     fn children_counts(&mut self, parent: InstanceId) -> Result<(), Internal> {
-        let Some(decl) = self
-            .vocabulary
-            .node_kind(self.instance(parent)?.kind)
-            .cloned()
-        else {
-            return Ok(());
-        };
+        let decl = self.node_decl(self.instance(parent)?.kind)?;
         let mut by_kind: BTreeMap<NodeKind, Vec<InstanceId>> = BTreeMap::new();
         for child in self.children_of(parent)? {
             let child_kind = self.instance(child)?.kind;
@@ -174,7 +163,7 @@ impl Engine<'_> {
                     format!(
                         "`{}` does not accept a `{}` child",
                         decl.name,
-                        self.kind_name(child_kind)
+                        self.kind_name(child_kind)?
                     )
                 };
                 self.item_error(
@@ -189,7 +178,7 @@ impl Engine<'_> {
         }
         for (child_kind, count) in &decl.children {
             let found = by_kind.get(child_kind).cloned().unwrap_or_default();
-            let name = self.kind_name(*child_kind);
+            let name = self.kind_name(*child_kind)?;
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
             {
@@ -234,19 +223,12 @@ impl Engine<'_> {
                 (record.kind, record.source, record.loc)
             };
             outgoing.entry((source, kind)).or_default().push(wire);
-            let destination = self
-                .memo
-                .destinations
-                .get(&wire)
-                .cloned()
-                .unwrap_or(Destination::Error);
+            let destination = self.checked_destination(wire)?;
             let fixed = matches!(destination, Destination::Fixed(_));
             let mut candidates = destination.candidates();
             candidates.sort();
             candidates.dedup();
-            let Some(decl) = self.vocabulary.wire_kind(kind).cloned() else {
-                continue;
-            };
+            let decl = self.wire_decl(kind)?;
             let source_kind = self.instance(source)?.kind;
             for candidate in candidates {
                 let ItemRef::Instance(target) = candidate else {
@@ -267,8 +249,8 @@ impl Engine<'_> {
                         format!(
                             "a `{}` wire does not connect a `{}` to a `{}`",
                             decl.name,
-                            self.kind_name(source_kind),
-                            self.kind_name(target_kind)
+                            self.kind_name(source_kind)?,
+                            self.kind_name(target_kind)?
                         ),
                     )?;
                 }
@@ -280,13 +262,7 @@ impl Engine<'_> {
         }
         for index in 0..self.instances.len() {
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
-            let Some(decl) = self
-                .vocabulary
-                .node_kind(self.instance(instance)?.kind)
-                .cloned()
-            else {
-                continue;
-            };
+            let decl = self.node_decl(self.instance(instance)?.kind)?;
             for (wire_kind, count) in &decl.outgoing {
                 let found = outgoing
                     .get(&(instance, *wire_kind))
@@ -334,8 +310,8 @@ impl Engine<'_> {
         toward_min: Option<&[WireId]>,
         direction: &str,
     ) -> Result<(), Internal> {
-        let name = self.wire_kind_name(wire_kind);
-        let kind = self.kind_name(self.instance(instance)?.kind);
+        let name = self.wire_kind_name(wire_kind)?;
+        let kind = self.kind_name(self.instance(instance)?.kind)?;
         if let Some(max) = count.max()
             && let Some(wire) = toward_max.get(max as usize).copied()
         {

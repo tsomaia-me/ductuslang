@@ -60,10 +60,7 @@ impl Engine<'_> {
             }
         }
         let total = match scrutinee.kind {
-            Kind::Enum(id) => self
-                .vocabulary
-                .enum_decl(id)
-                .map(|decl| decl.variants.len()),
+            Kind::Enum(id) => Some(self.enum_decl(id)?.variants.len()),
             Kind::Bool => Some(2),
             Kind::Int
             | Kind::Float
@@ -152,7 +149,7 @@ impl Engine<'_> {
                 if family.is_some() && family != scrutinee.family {
                     return self.bad_label(label, scrutinee);
                 }
-                self.exact_label(&op).map(Label::Int)
+                self.exact_label(&op)?.map(Label::Int)
             }
             _ => None,
         };
@@ -162,29 +159,27 @@ impl Engine<'_> {
         Ok(found)
     }
 
-    fn exact_label(&self, op: &Op) -> Option<i128> {
+    fn exact_label(&self, op: &Op) -> Result<Option<i128>, Internal> {
         let Op::Number(Number::Int(value), suffix) = op else {
-            return None;
+            return Ok(None);
         };
-        match suffix {
+        Ok(match suffix {
             Suffix::Unit { family, unit } => {
-                let scale = self.vocabulary.family(*family)?.units.get(*unit)?.scale;
+                let scale = self.unit_decl(*family, *unit)?.scale;
                 if scale.fract() != 0.0 || scale.abs() >= 1e38 {
-                    return None;
+                    return Ok(None);
                 }
                 value.checked_mul(scale as i128)
             }
             Suffix::None | Suffix::Type(_) => Some(*value),
-        }
+        })
     }
 
     fn bad_label(&mut self, label: NodeId, scrutinee: &Sig) -> Result<Option<Label>, Internal> {
         let message = match scrutinee.kind {
             Kind::Enum(id) => format!(
                 "a label here is a variant of `{}`",
-                self.vocabulary
-                    .enum_decl(id)
-                    .map_or("", |decl| decl.name.as_str())
+                self.enum_decl(id)?.name
             ),
             Kind::Bool => "a label here is `true` or `false`".to_string(),
             Kind::Int
