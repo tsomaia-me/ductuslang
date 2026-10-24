@@ -7,7 +7,7 @@ use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::sig::Kind;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, Iterable};
+use crate::semantics::ir::{ExprId, ExprKind, Iterable, Number, Suffix};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn iteration(
@@ -59,12 +59,34 @@ impl Engine<'_> {
                     .iter()
                     .map(|node| Val::Scalar(*node))
                     .collect();
-                Some(Iteration::Values { values, next: 0 })
+                Some(Iteration::Values {
+                    values,
+                    next: 0,
+                    loc,
+                })
             }
         }
     }
 
     fn range_bound(&mut self, expr: ExprId, scope: ScopeId) -> Option<i128> {
+        let value = match self.hir.expr(expr).kind {
+            ExprKind::Number(Number::Int(value), Suffix::None) => value,
+            _ => self.computed_bound(expr, scope)?,
+        };
+        if i64::try_from(value).is_err() {
+            let loc = self.hir.expr(expr).loc;
+            self.error(
+                Code::RangeBound,
+                loc,
+                scope,
+                format!("the range bound {value} does not fit `i64`"),
+            );
+            return None;
+        }
+        Some(value)
+    }
+
+    fn computed_bound(&mut self, expr: ExprId, scope: ScopeId) -> Option<i128> {
         let loc = self.hir.expr(expr).loc;
         let node: NodeId = match self.demand_val(Query::Expr(expr, scope)) {
             Val::Scalar(node) => node,
@@ -106,16 +128,7 @@ impl Engine<'_> {
             return None;
         }
         match self.demand_cval(node, EvalTy::Exact) {
-            CVal::Int(value) if i64::try_from(value).is_ok() => Some(value),
-            CVal::Int(value) => {
-                self.error(
-                    Code::RangeBound,
-                    loc,
-                    scope,
-                    format!("the range bound {value} does not fit `i64`"),
-                );
-                None
-            }
+            CVal::Int(value) => Some(value),
             _ => None,
         }
     }

@@ -331,9 +331,21 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.6",
+        "and yields at most 1,000,000 instances and wires",
+        "expansion-limit",
+        "Clip c:\n    for i in 0..100001:\n        Note Note Note Note Note Note Note Note Note Note\n",
+    ),
+    rule(
+        "4.6",
+        "its expansion runs at most 1,000,000 `for` iterations and pattern uses",
+        "expansion-limit",
+        "Clip c:\n    for i in 0..1000000000000:\n        for j in 0..0:\n            Note\n",
+    ),
+    rule(
+        "4.6",
         "Exceeding a limit is an error naming the call or the expansion.",
         "expansion-limit",
-        "Clip c:\n    for i in 0..1000001:\n        Note\n",
+        "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n    for i in 0..500001:\n        P\n",
     ),
     rule(
         "4.6",

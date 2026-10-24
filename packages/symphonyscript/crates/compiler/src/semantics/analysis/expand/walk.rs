@@ -158,6 +158,9 @@ impl Engine<'_> {
                     holds: true,
                 });
             }
+            if !self.count_step(site.loc, caller) {
+                return None;
+            }
             uses = uses.push(site.loc);
             let locals = self.use_locals(pattern, placement, caller);
             let chain = self.chain(locals);
@@ -233,8 +236,17 @@ impl Engine<'_> {
             record.body_scope = Some(scope);
         }
         if let Some(block) = self.hir.placement(placement).body {
-            let uses = self.instance(instance).uses.clone();
-            self.prebuild(block, scope, instance, PathParent::Instance(instance), uses);
+            let sites = self.named_sites(block);
+            if !sites.is_empty() {
+                let uses = self.instance(instance).uses.clone();
+                self.prebuild(
+                    &sites,
+                    scope,
+                    instance,
+                    PathParent::Instance(instance),
+                    uses,
+                );
+            }
         }
         scope
     }
@@ -264,8 +276,10 @@ impl Engine<'_> {
         if let Some(record) = self.uses.get_mut(id.index()) {
             record.body = Some(scope);
         }
-        let block = self.hir.pattern(pattern).body;
-        self.prebuild(block, scope, owner, PathParent::Use(id), uses.push(loc));
+        let sites = self.named_sites(self.hir.pattern(pattern).body);
+        if !sites.is_empty() {
+            self.prebuild(&sites, scope, owner, PathParent::Use(id), uses.push(loc));
+        }
         scope
     }
 
@@ -285,9 +299,50 @@ impl Engine<'_> {
         }
     }
 
+    fn named_sites(&mut self, root: BlockId) -> Rc<[(Site, Loc)]> {
+        if let Some(sites) = self.memo.named_sites.get(&root) {
+            return sites.clone();
+        }
+        let hir = self.hir;
+        let mut blocks = vec![root];
+        let mut sites: Vec<(Site, Loc)> = Vec::new();
+        let named = |id: &PlacementId| hir.placement(*id).name.is_some();
+        while let Some(block) = blocks.pop() {
+            for item in &hir.block(block).items {
+                match item {
+                    BodyItem::Placement(id) if named(id) => {
+                        sites.push((Site::Placement(*id), hir.placement(*id).loc))
+                    }
+                    BodyItem::Wire(id) if hir.wire(*id).name.is_some() => {
+                        sites.push((Site::Wire(*id), hir.wire(*id).loc))
+                    }
+                    BodyItem::Bundle { members, .. } => {
+                        sites.extend(
+                            members
+                                .iter()
+                                .filter(|id| named(id))
+                                .map(|id| (Site::Placement(*id), hir.placement(*id).loc)),
+                        );
+                    }
+                    BodyItem::When {
+                        arms, otherwise, ..
+                    } => {
+                        blocks.extend(arms.iter().map(|arm| arm.body));
+                        blocks.extend(otherwise.iter().copied());
+                    }
+                    BodyItem::Placement(_) | BodyItem::Wire(_) | BodyItem::For { .. } => {}
+                }
+            }
+        }
+        sites.sort_by_key(|(_, loc)| *loc);
+        let sites: Rc<[(Site, Loc)]> = sites.into();
+        self.memo.named_sites.insert(root, sites.clone());
+        sites
+    }
+
     fn prebuild(
         &mut self,
-        block: BlockId,
+        sites: &[(Site, Loc)],
         scope: ScopeId,
         owner: InstanceId,
         path_parent: PathParent,
@@ -301,34 +356,7 @@ impl Engine<'_> {
         };
         let owner_kind = self.instance(owner).kind;
         let mut names = BTreeMap::new();
-        let mut blocks = vec![block];
-        let mut sites: Vec<(Site, Loc)> = Vec::new();
-        while let Some(block) = blocks.pop() {
-            for item in &self.hir.block(block).items {
-                match item {
-                    BodyItem::Placement(id) => {
-                        sites.push((Site::Placement(*id), self.hir.placement(*id).loc))
-                    }
-                    BodyItem::Wire(id) => sites.push((Site::Wire(*id), self.hir.wire(*id).loc)),
-                    BodyItem::Bundle { members, .. } => {
-                        sites.extend(
-                            members
-                                .iter()
-                                .map(|id| (Site::Placement(*id), self.hir.placement(*id).loc)),
-                        );
-                    }
-                    BodyItem::For { .. } => {}
-                    BodyItem::When {
-                        arms, otherwise, ..
-                    } => {
-                        blocks.extend(arms.iter().map(|arm| arm.body));
-                        blocks.extend(otherwise.iter().copied());
-                    }
-                }
-            }
-        }
-        sites.sort_by_key(|(_, loc)| *loc);
-        for (site, _) in sites {
+        for (site, _) in sites.iter().copied() {
             let named = match site {
                 Site::Placement(id) => self.hir.placement(id).name.clone(),
                 Site::Wire(id) => self.hir.wire(id).name.clone(),
@@ -505,7 +533,7 @@ impl Engine<'_> {
                                 },
                             )
                         }
-                        Iteration::Values { values, next } => {
+                        Iteration::Values { values, next, loc } => {
                             let Some(value) = values.get(next).cloned() else {
                                 continue;
                             };
@@ -514,10 +542,14 @@ impl Engine<'_> {
                                 Iteration::Values {
                                     values,
                                     next: next + 1,
+                                    loc,
                                 },
                             )
                         }
                     };
+                    if !self.count_step(iteration.loc(), scope) {
+                        return;
+                    }
                     let chain = self.chain(scope);
                     let var_scope = match &var {
                         Some(name) => self.scope(
@@ -613,11 +645,11 @@ impl Engine<'_> {
                         Some(existing)
                     }
                     _ => {
-                        let kind_name = self
-                            .vocabulary
+                        let vocabulary = self.vocabulary;
+                        let kind_name = vocabulary
                             .wire_kind(kind)
-                            .map_or(String::new(), |decl| decl.name.clone());
-                        let segment = Some(self.segment(Some(walk.path_parent), None, &kind_name));
+                            .map_or("", |decl| decl.name.as_str());
+                        let segment = Some(self.segment(Some(walk.path_parent), None, kind_name));
                         let context = self.context(walk);
                         self.new_wire(kind, id, scope, segment, walk.owner, &context)
                     }
@@ -723,16 +755,18 @@ impl Engine<'_> {
         frames: &mut Vec<Frame>,
         collectors: &mut [Vec<InstanceId>],
     ) {
-        let Some(kind) = self.hir.placement(id).kind.clone() else {
+        let hir = self.hir;
+        let Some(kind) = hir.placement(id).kind.as_ref() else {
             return;
         };
-        let has_body = self.hir.placement(id).body.is_some();
+        let has_body = hir.placement(id).body.is_some();
         let instance = match self.kind_decl(scope, &kind.text) {
             Some(Decl::Node(node_kind)) => {
                 if let Some(existing) = self.reuse(id, scope, walk) {
                     Some(existing)
                 } else {
-                    let segment = Some(self.segment(Some(walk.path_parent), None, &kind.text));
+                    let segment =
+                        Some(self.segment(Some(walk.path_parent), None, kind.text.as_str()));
                     let context = self.context(walk);
                     let created = self.new_instance(node_kind, id, scope, None, segment, &context);
                     if has_body && let Some(created) = created {
@@ -750,8 +784,11 @@ impl Engine<'_> {
                     let instance = match existing {
                         Some(existing) => Some(existing),
                         None => {
-                            let segment =
-                                Some(self.segment(Some(walk.path_parent), None, &kind.text));
+                            let segment = Some(self.segment(
+                                Some(walk.path_parent),
+                                None,
+                                kind.text.as_str(),
+                            ));
                             let context = self.context(walk);
                             self.stand_in_instance(id, pattern, scope, None, segment, &context)
                         }
@@ -780,8 +817,11 @@ impl Engine<'_> {
                             existing
                         }
                         _ => {
-                            let segment =
-                                Some(self.segment(Some(walk.path_parent), None, &kind.text));
+                            let segment = Some(self.segment(
+                                Some(walk.path_parent),
+                                None,
+                                kind.text.as_str(),
+                            ));
                             let context = self.context(walk);
                             match self.new_use(pattern, id, scope, (None, segment), &context) {
                                 Some(created) => created,

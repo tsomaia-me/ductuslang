@@ -31,6 +31,14 @@ pub(crate) struct Memo {
     pub calls: FastMap<CallKey, CVal>,
     pub arg_sigs: FastMap<NodeId, Sig>,
     pub templates: FastMap<super::template_key::TemplateKey, ScopeId>,
+    pub named_sites: FastMap<
+        crate::semantics::ir::BlockId,
+        std::rc::Rc<[(super::site::Site, crate::semantics::ir::Loc)]>,
+    >,
+    pub pattern_names: FastMap<
+        crate::semantics::ir::PatternId,
+        std::rc::Rc<std::collections::BTreeMap<String, super::scope::LocalName>>,
+    >,
     pub local_names: FastMap<
         crate::semantics::ir::FnId,
         std::rc::Rc<std::collections::BTreeMap<String, super::scope::LocalName>>,

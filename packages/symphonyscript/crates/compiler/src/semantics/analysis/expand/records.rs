@@ -29,7 +29,7 @@ pub(crate) struct Context {
     pub uses: Chain,
 }
 
-impl Engine<'_> {
+impl<'a> Engine<'a> {
     pub(in crate::semantics::analysis) fn instance(&self, id: InstanceId) -> &Instance {
         &self.instances[id.index()]
     }
@@ -81,11 +81,29 @@ impl Engine<'_> {
         true
     }
 
+    pub(in crate::semantics::analysis) fn count_step(&mut self, loc: Loc, scope: ScopeId) -> bool {
+        if self.limit_reached {
+            return false;
+        }
+        self.steps += 1;
+        if self.steps > EXPANSION_LIMIT {
+            self.limit_reached = true;
+            self.error(
+                Code::ExpansionLimit,
+                loc,
+                scope,
+                "the expansion runs more than 1,000,000 `for` iterations and pattern uses",
+            );
+            return false;
+        }
+        true
+    }
+
     pub(in crate::semantics::analysis) fn segment(
         &mut self,
         parent: Option<PathParent>,
         name: Option<&str>,
-        kind_name: &str,
+        kind_name: &'a str,
     ) -> Segment {
         if let Some(name) = name {
             return Segment::Named(name.to_string());
@@ -93,10 +111,7 @@ impl Engine<'_> {
         let Some(parent) = parent else {
             return Segment::Named(kind_name.to_string());
         };
-        let counter = self
-            .counters
-            .entry((parent, kind_name.to_string()))
-            .or_insert(0);
+        let counter = self.counters.entry((parent, kind_name)).or_insert(0);
         let index = *counter;
         *counter += 1;
         Segment::Anonymous {
@@ -185,6 +200,9 @@ impl Engine<'_> {
         let (name, segment) = naming;
         let owner = context.owner?;
         let loc = self.hir.placement(placement).loc;
+        if !self.count_step(loc, caller) {
+            return None;
+        }
         let locals = self.use_locals(pattern, placement, caller);
         let id = UseId(index(self.uses.len()));
         self.uses
@@ -304,19 +322,27 @@ impl Engine<'_> {
                 }
             });
         }
-        let mut names = BTreeMap::new();
-        for (position, param) in decl.params.iter().enumerate() {
-            if let Some(name) = &param.name {
-                names.insert(name.text.clone(), LocalName::Param(index(position)));
-            }
-        }
-        for (position, local) in decl.lets.iter().enumerate() {
-            if let Some(name) = &local.name {
+        let names = match self.memo.pattern_names.get(&pattern) {
+            Some(names) => names.clone(),
+            None => {
+                let mut names = BTreeMap::new();
+                for (position, param) in decl.params.iter().enumerate() {
+                    if let Some(name) = &param.name {
+                        names.insert(name.text.clone(), LocalName::Param(index(position)));
+                    }
+                }
+                for (position, local) in decl.lets.iter().enumerate() {
+                    if let Some(name) = &local.name {
+                        names
+                            .entry(name.text.clone())
+                            .or_insert(LocalName::Let(index(position)));
+                    }
+                }
+                let names = Rc::new(names);
+                self.memo.pattern_names.insert(pattern, names.clone());
                 names
-                    .entry(name.text.clone())
-                    .or_insert(LocalName::Let(index(position)));
             }
-        }
+        };
         let global = if self.hir.is_prelude_pattern(pattern) {
             self.prelude_global
         } else {
@@ -327,7 +353,7 @@ impl Engine<'_> {
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Pattern(pattern),
                 params,
-                names: Rc::new(names),
+                names,
                 recursive: false,
             }),
             Some(global),
