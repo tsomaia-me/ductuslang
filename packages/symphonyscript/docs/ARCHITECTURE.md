@@ -31,7 +31,7 @@ Only `symphonyscript-core` runs on devices. Everything in it builds without `std
 
 ## 2. The vocabulary
 
-A framework author builds a vocabulary in Rust. `v.node(name)` and `v.wire(name)` return a kind's typed handle at once, and `v.kind(handle)` and `v.wire_kind(handle)` configure it, so a kind can accept itself or a kind declared after it. The framework's consumer keeps the handles and matches them against the Program. A part of the SPEC §1.3 vocabulary:
+A framework author builds a vocabulary in Rust. `v.node(name)` and `v.wire(name)` return a kind's typed handle at once, and `v.kind(handle)` and `v.wire_kind(handle)` configure it, so a kind can accept itself or a kind declared after it. The framework's consumer keeps the handles and matches them against the Program. A handle compares, hashes and looks up by its kind's index alone, so two builds of one vocabulary give equal handles; the vocabulary stamp tells vocabularies apart, and only `build()` rejects a handle from another builder (SPEC §10.1). A part of the SPEC §1.3 vocabulary:
 
 ```rust
 let mut v = Vocabulary::builder("music");

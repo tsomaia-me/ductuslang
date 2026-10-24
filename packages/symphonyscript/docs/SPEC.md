@@ -77,7 +77,7 @@ The lexer keeps a stack of indentation columns, starting with column 0. A line i
 
 Inside `( )` and `[ ]`, layout is suspended: newlines are whitespace and no layout tokens are emitted.
 
-An attribute clause (§7.6) continues onto each following line whose first token sits exactly at the column of the clause's first entry, while that column is deeper than the top of the stack and no `:` has closed the clause; `::` closes nothing. The line break before such a line emits no `NEWLINE`, and the line emits no `INDENT` or `DEDENT`. The lexer tracks each clause's first-entry column for this rule, and a line that misses the column only by the display width of wide characters draws a diagnostic that shows the column.
+An attribute clause (§7.6) continues onto each following line whose first token sits exactly at the column of the clause's first entry, while that column is deeper than the top of the stack and no `:` has closed the clause; `::` closes nothing. The line break before such a line emits no `NEWLINE`, and the line emits no `INDENT` or `DEDENT`. The lexer tracks each clause's first-entry column for this rule, and a line that misses the column only by the display width of wide characters is an error whose diagnostic shows the column.
 
 A semicolon outside strings and comments is an error.
 
@@ -886,13 +886,13 @@ A count is exactly *n*, at least *n*, at most *n*, between *n* and *m*, or any n
 A vocabulary is invalid, and no program compiles against it, when:
 
 - a name it declares is not an ASCII identifier (§2.4), or is a keyword or reserved word (§2.5), a built-in name (§5.7) or a variant of one of its enums;
-- two of its declarations share a name, a node kind or wire kind declares two attributes of one name, or an enum declares two variants of one name;
+- two of its node kinds, wire kinds, enums and unit families share a name, a node kind or wire kind declares two attributes of one name, or an enum declares two variants of one name;
 - a kind has two default attributes, two of its attributes share a flag character, or a flag character is outside the set of §7.4 or flags an attribute that is not `bool`;
 - a count's minimum exceeds its maximum;
 - a declaration refers to a kind of another vocabulary;
 - an enum has no variants or more than 65,536, or an enum attribute's default is not one of its variants;
 - an array attribute has a length of 0 at any level (§3.2);
-- a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
+- a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `_`, or with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
 - an integer attribute belongs to a family with a unit whose scale is not an integer;
 - the prelude fails to parse or to resolve its names.
 
