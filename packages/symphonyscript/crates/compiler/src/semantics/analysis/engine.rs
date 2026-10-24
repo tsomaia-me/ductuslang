@@ -62,8 +62,11 @@ pub(crate) struct Engine<'a> {
     pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
     pub frame_pushed: bool,
     pub call_count: usize,
+    pub inlined: u64,
+    pub inline_limit_reported: bool,
     pub call_limit_reported: bool,
     pub typing: super::infer::Typing,
+    pub deferred: Vec<super::deferred::Deferred>,
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
     current: Option<Query>,
@@ -107,8 +110,11 @@ impl<'a> Engine<'a> {
             frame_need: Vec::new(),
             frame_pushed: false,
             call_count: 0,
+            inlined: 0,
+            inline_limit_reported: false,
             call_limit_reported: false,
             typing: super::infer::Typing::default(),
+            deferred: Vec::new(),
             waiting: FastSet::default(),
             cyclic: FastSet::default(),
             current: None,
@@ -356,8 +362,41 @@ impl<'a> Engine<'a> {
         {
             return;
         }
-        let chain = self.chain(scope).to_vec();
-        self.report.error_with(self.hir, code, loc, &chain, message);
+        self.error_with_chain(code, loc, Vec::new(), scope, message);
+    }
+
+    pub fn error_with_chain(
+        &mut self,
+        code: Code,
+        loc: Loc,
+        before: Vec<Loc>,
+        scope: ScopeId,
+        message: impl Into<String>,
+    ) {
+        let chain = self.chain(scope);
+        self.deferred.push(super::deferred::Deferred {
+            code,
+            loc,
+            before,
+            chain,
+            message: message.into(),
+        });
+    }
+
+    pub fn flush_diagnostics(&mut self) {
+        for deferred in std::mem::take(&mut self.deferred) {
+            for path in deferred.chain.paths() {
+                let mut secondary = deferred.before.clone();
+                secondary.extend(path);
+                self.report.error_with(
+                    self.hir,
+                    deferred.code,
+                    deferred.loc,
+                    &secondary,
+                    deferred.message.clone(),
+                );
+            }
+        }
     }
 
     pub fn error_at_node(&mut self, code: Code, node: NodeId, message: impl Into<String>) {

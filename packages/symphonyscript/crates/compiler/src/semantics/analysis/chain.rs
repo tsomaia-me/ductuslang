@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
@@ -8,6 +9,7 @@ pub(crate) struct Chain(Option<Rc<Link>>);
 
 struct Link {
     loc: Loc,
+    also: RefCell<Vec<Loc>>,
     rest: Chain,
 }
 
@@ -15,8 +17,15 @@ impl Chain {
     pub fn push(&self, loc: Loc) -> Chain {
         Chain(Some(Rc::new(Link {
             loc,
+            also: RefCell::new(Vec::new()),
             rest: self.clone(),
         })))
+    }
+
+    pub fn also(&self, loc: Loc) {
+        if let Some(link) = &self.0 {
+            link.also.borrow_mut().push(loc);
+        }
     }
 
     pub fn to_vec(&self) -> Vec<Loc> {
@@ -27,6 +36,25 @@ impl Chain {
             current = link.rest.0.as_ref();
         }
         locs
+    }
+
+    pub fn paths(&self) -> Vec<Vec<Loc>> {
+        let mut paths = vec![Vec::new()];
+        let mut current = self.0.as_ref();
+        while let Some(link) = current {
+            let also = link.also.borrow();
+            let mut next = Vec::with_capacity(paths.len() * (1 + also.len()));
+            for path in &paths {
+                for loc in std::iter::once(&link.loc).chain(also.iter()) {
+                    let mut extended = path.clone();
+                    extended.push(*loc);
+                    next.push(extended);
+                }
+            }
+            paths = next;
+            current = link.rest.0.as_ref();
+        }
+        paths
     }
 }
 

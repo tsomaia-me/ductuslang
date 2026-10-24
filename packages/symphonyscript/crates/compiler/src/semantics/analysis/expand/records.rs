@@ -457,13 +457,11 @@ impl<'a> Engine<'a> {
                     .get(source.attr.index())
                     .map_or("", |decl| decl.name.as_str());
                 let earlier = earlier.loc;
-                let mut secondary = vec![earlier];
-                secondary.extend(engine.chain(scope).to_vec());
-                engine.report.error_with(
-                    engine.hir,
+                engine.error_with_chain(
                     Code::DuplicateAttribute,
                     source.loc,
-                    &secondary,
+                    vec![earlier],
+                    scope,
                     format!("the attribute `{name}` is set twice"),
                 );
                 return;

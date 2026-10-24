@@ -46,8 +46,7 @@ impl Engine<'_> {
                 })
             }
             ExprKind::Binary(op, lhs, rhs) => {
-                let lhs = self.val(Query::Expr(*lhs, scope), need);
-                let rhs = self.val(Query::Expr(*rhs, scope), need);
+                let (lhs, rhs) = self.siblings(*lhs, *rhs, scope, need);
                 match (lhs, rhs) {
                     (Some(lhs), Some(rhs)) => Some(self.binary_val(*op, lhs, rhs, loc, scope)),
                     _ => None,
@@ -55,8 +54,7 @@ impl Engine<'_> {
             }
             ExprKind::If(condition, then, otherwise) => {
                 let condition = self.val(Query::Expr(*condition, scope), need);
-                let then = self.val(Query::Expr(*then, scope), need);
-                let otherwise = self.val(Query::Expr(*otherwise, scope), need);
+                let (then, otherwise) = self.siblings(*then, *otherwise, scope, need);
                 match (condition, then, otherwise) {
                     (Some(condition), Some(then), Some(otherwise)) => {
                         Some(self.if_val(condition, then, otherwise, loc, scope))

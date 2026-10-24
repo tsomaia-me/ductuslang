@@ -96,6 +96,7 @@ codes!(
     IndexOutOfRange,
     DestinationType,
     ExpansionLimit,
+    InlineLimit,
     UseForm,
     NoDefaultParameter,
     DuplicateAttribute,
@@ -224,6 +225,7 @@ impl Code {
             Code::IndexOutOfRange => "index-out-of-range",
             Code::DestinationType => "destination-type",
             Code::ExpansionLimit => "expansion-limit",
+            Code::InlineLimit => "inline-limit",
             Code::UseForm => "use-form",
             Code::NoDefaultParameter => "no-default-parameter",
             Code::DuplicateAttribute => "duplicate-attribute",
@@ -346,6 +348,7 @@ impl Code {
             Code::IndexOutOfRange => "5.5",
             Code::DestinationType => "8.2",
             Code::ExpansionLimit => "4.6",
+            Code::InlineLimit => "4.6",
             Code::UseForm => "6.4",
             Code::NoDefaultParameter => "6.4",
             Code::DuplicateAttribute => "7.6",
@@ -477,6 +480,7 @@ impl Code {
             | Code::IndexOutOfRange
             | Code::DestinationType
             | Code::ExpansionLimit
+            | Code::InlineLimit
             | Code::UseForm
             | Code::NoDefaultParameter
             | Code::DuplicateAttribute

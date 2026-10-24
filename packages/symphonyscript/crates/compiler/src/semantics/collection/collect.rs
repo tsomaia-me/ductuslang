@@ -6,6 +6,7 @@ use super::builtin_name::BuiltinName;
 use super::call_graph::recursive_functions;
 use super::collected::Collected;
 use super::decl::Decl;
+use super::inline_counts::InlineCounts;
 use super::namespace::Namespace;
 use super::pattern_graph::pattern_graph;
 use crate::diagnostics::Code;
@@ -72,11 +73,13 @@ pub(crate) fn collect(hir: &Hir, vocabulary: &Vocabulary, report: &mut Report) -
         }
     }
     let recursive = recursive_functions(hir, &source, &prelude);
+    let inline = InlineCounts::of(hir, &source, &prelude, &recursive);
     let graph = pattern_graph(hir, &source, &prelude, report);
     Collected {
         source,
         prelude,
         recursive,
+        inline,
         cyclic_patterns: graph.cyclic,
         stand_ins: graph.stand_ins,
     }

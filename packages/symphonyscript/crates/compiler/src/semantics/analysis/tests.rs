@@ -46,6 +46,7 @@ fn graph_size(calls: usize) -> (usize, usize) {
     engine.expand();
     engine.infer();
     engine.check_program();
+    engine.flush_diagnostics();
     let errors: Vec<_> = engine
         .report
         .diagnostics
@@ -740,4 +741,25 @@ fn guard_arms_cost_linear_time_and_memory() {
             );
         }
     }
+}
+
+#[test]
+fn equal_sibling_calls_share_one_inlined_body() {
+    let work = |levels: usize| {
+        let mut text = String::from("input i = 1\nfn f0(x): x\n");
+        for level in 1..=levels {
+            let below = level - 1;
+            text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
+        }
+        text.push_str(&format!("Clip c:\n    Note/(f{levels}(i))\n"));
+        let (diagnostics, work) = analyzed(&text, |engine| {
+            (engine.nodes.len(), engine.scopes.len(), engine.inlined)
+        });
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+        work
+    };
+    let (six, twelve, eighteen) = (work(6), work(12), work(18));
+    assert_eq!(eighteen.0 - twelve.0, twelve.0 - six.0, "nodes");
+    assert_eq!(eighteen.1 - twelve.1, twelve.1 - six.1, "scopes");
+    assert_eq!(eighteen.2, (1 << 19) - 1, "inlined calls");
 }

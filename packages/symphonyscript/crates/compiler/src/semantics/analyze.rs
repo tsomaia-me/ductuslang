@@ -23,6 +23,7 @@ pub(crate) fn program<R>(
     engine.expand();
     engine.infer();
     engine.check_program();
+    engine.flush_diagnostics();
     report.diagnostics.append(&mut engine.report.diagnostics);
     inspect(&engine)
 }

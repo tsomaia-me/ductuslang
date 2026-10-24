@@ -126,13 +126,11 @@ impl Engine<'_> {
                     let record = self.node(*int_node);
                     (record.loc, record.scope)
                 };
-                let mut secondary = vec![float_loc];
-                secondary.extend(self.chain(scope).to_vec());
-                self.report.error_with(
-                    self.hir,
+                self.error_with_chain(
                     Code::InconsistentUses,
                     loc,
-                    &secondary,
+                    vec![float_loc],
+                    scope,
                     "this value is an integer here and a different number at its float use",
                 );
             }
@@ -151,13 +149,11 @@ impl Engine<'_> {
                     let record = self.node(first.0);
                     (record.loc, record.scope)
                 };
-                let mut secondary = vec![other_loc];
-                secondary.extend(self.chain(scope).to_vec());
-                self.report.error_with(
-                    self.hir,
+                self.error_with_chain(
                     Code::TypeMismatch,
                     loc,
-                    &secondary,
+                    vec![other_loc],
+                    scope,
                     "this variant takes its enum from its uses, and they expect different enums",
                 );
             }

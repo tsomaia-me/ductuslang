@@ -152,13 +152,11 @@ impl Engine<'_> {
                     let record = self.node(node);
                     (record.loc, record.scope)
                 };
-                let mut secondary = vec![*first, *second];
-                secondary.extend(self.chain(scope).to_vec());
-                self.report.error_with(
-                    self.hir,
+                self.error_with_chain(
                     Code::ConflictingUnits,
                     loc,
-                    &secondary,
+                    vec![*first, *second],
+                    scope,
                     "this plain value feeds two attributes of one unit family with different default units",
                 );
                 false

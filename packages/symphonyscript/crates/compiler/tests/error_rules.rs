@@ -361,6 +361,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.6",
+        "inlines at most 1,000,000 calls of other functions",
+        "inline-limit",
+        "fn h0(x): x\nfn h1(x): h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x)\nfn h2(x): h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x)\nfn h3(x): h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x)\nfn h4(x): h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x)\nfn h5(x): h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x)\nfn h6(x): h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x)\nClip k:\n    Note/(h6(1))\n",
+    ),
+    rule(
+        "4.6",
         "A compilation evaluates at most 1,000,000 distinct recursive calls",
         "recursion-limit",
         "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b + 1, c) + f(a - 1, b, c + 1) + f(a - 1, b, c)\nClip k:\n    Note/(f(200, 0, 0))\n",

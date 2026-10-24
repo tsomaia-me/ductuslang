@@ -165,6 +165,9 @@ impl Engine<'_> {
         let call_scope = match self.memo.call_scopes.get(&(expr, scope)) {
             Some(existing) => *existing,
             None => {
+                if !self.within_inline_limit(function, &sources, loc, scope) {
+                    return Some(Val::Error);
+                }
                 let created = self.call_scope(function, sources, loc, scope, false);
                 self.memo.call_scopes.insert((expr, scope), created);
                 created
@@ -192,6 +195,171 @@ impl Engine<'_> {
             return None;
         }
         value
+    }
+
+    pub(in crate::semantics::analysis) fn siblings(
+        &mut self,
+        first: ExprId,
+        second: ExprId,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> (Option<Val>, Option<Val>) {
+        let first_val = self.val(Query::Expr(first, scope), need);
+        let sharing = self.same_call(first, second, scope);
+        if sharing && first_val.is_none() {
+            return (None, None);
+        }
+        if sharing && self.memo.call_scopes.contains_key(&(first, scope)) {
+            let shared = self.share_call(first, second, scope);
+            let second_val = first_val.clone().filter(|_| shared).or(Some(Val::Error));
+            return (first_val, second_val);
+        }
+        let second_val = self.val(Query::Expr(second, scope), need);
+        (first_val, second_val)
+    }
+
+    fn same_call(&mut self, first: ExprId, second: ExprId, scope: ScopeId) -> bool {
+        let hir = self.hir;
+        let (ExprKind::Call(callee, args), ExprKind::Call(other_callee, other_args)) =
+            (&hir.expr(first).kind, &hir.expr(second).kind)
+        else {
+            return false;
+        };
+        let same_args = match (args, other_args) {
+            (Args::Positional(values), Args::Positional(others)) => {
+                values.len() == others.len()
+                    && values
+                        .iter()
+                        .zip(others)
+                        .all(|(value, other)| self.same_path(*value, *other))
+            }
+            (Args::Named(values), Args::Named(others)) => {
+                values.len() == others.len()
+                    && values
+                        .iter()
+                        .zip(others)
+                        .all(|((name, value), (other_name, other))| {
+                            name.text == other_name.text && self.same_path(*value, *other)
+                        })
+            }
+            (Args::Positional(_), Args::Named(_)) | (Args::Named(_), Args::Positional(_)) => false,
+        };
+        if !same_args || !self.same_path(*callee, *other_callee) {
+            return false;
+        }
+        let ExprKind::Name(name) = &hir.expr(*callee).kind else {
+            return false;
+        };
+        match self.find(name, scope) {
+            Found::Decl(Decl::Fn(function)) => !self
+                .collected
+                .recursive
+                .get(function.index())
+                .copied()
+                .unwrap_or(true),
+            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
+                false
+            }
+        }
+    }
+
+    fn same_path(&self, first: ExprId, second: ExprId) -> bool {
+        let mut pairs = vec![(first, second)];
+        while let Some((left, right)) = pairs.pop() {
+            match (&self.hir.expr(left).kind, &self.hir.expr(right).kind) {
+                (ExprKind::Name(a), ExprKind::Name(b)) if a == b => {}
+                (ExprKind::Field(a, name), ExprKind::Field(b, other))
+                    if name.text == other.text =>
+                {
+                    pairs.push((*a, *b));
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    fn share_call(&mut self, first: ExprId, second: ExprId, scope: ScopeId) -> bool {
+        if let Some(shared) = self.memo.call_scopes.get(&(second, scope)) {
+            return self.memo.call_scopes.get(&(first, scope)) == Some(shared);
+        }
+        let Some(body) = self.memo.call_scopes.get(&(first, scope)).copied() else {
+            return false;
+        };
+        let ScopeKind::Locals(locals) = &self.scope_of(body).kind else {
+            return false;
+        };
+        let LocalsOwner::Fn(function) = locals.owner else {
+            return false;
+        };
+        let sources = locals.params.clone();
+        let loc = self.hir.expr(second).loc;
+        if !self.within_inline_limit(function, &sources, loc, scope) {
+            return false;
+        }
+        self.scope_of(body).chain.also(loc);
+        self.memo.call_scopes.insert((second, scope), body);
+        true
+    }
+
+    pub(in crate::semantics::analysis) fn within_inline_limit(
+        &mut self,
+        function: FnId,
+        sources: &[ParamSource],
+        loc: Loc,
+        scope: ScopeId,
+    ) -> bool {
+        if self.inline_limit_reported {
+            return false;
+        }
+        if self.inside_inlined_body(scope) {
+            return true;
+        }
+        let defaulted: Vec<usize> = sources
+            .iter()
+            .enumerate()
+            .filter(|(_, source)| matches!(source, ParamSource::Default))
+            .map(|(position, _)| position)
+            .collect();
+        let count = self.collected.inline.call(function, &defaulted);
+        self.inlined = self.inlined.saturating_add(count);
+        if self.inlined <= INLINE_LIMIT {
+            return true;
+        }
+        self.inline_limit_reported = true;
+        let name = self
+            .hir
+            .fn_decl(function)
+            .name
+            .as_ref()
+            .map_or(String::new(), |name| name.text.clone());
+        self.error(
+            Code::InlineLimit,
+            loc,
+            scope,
+            format!("this call of `{name}` makes the compilation inline more than 1,000,000 calls"),
+        );
+        false
+    }
+
+    fn inside_inlined_body(&self, scope: ScopeId) -> bool {
+        let mut current = Some(scope);
+        while let Some(id) = current {
+            let record = self.scope_of(id);
+            match &record.kind {
+                ScopeKind::Locals(locals) => {
+                    return matches!(locals.owner, LocalsOwner::Fn(_)) && !locals.recursive;
+                }
+                ScopeKind::ParamPrefix { locals, .. } => current = Some(*locals),
+                ScopeKind::Global { .. } => return false,
+                ScopeKind::Body { .. }
+                | ScopeKind::ForVar { .. }
+                | ScopeKind::WireClause { .. } => {
+                    current = record.parent;
+                }
+            }
+        }
+        false
     }
 
     pub(in crate::semantics::analysis) fn call_scope(
@@ -230,10 +398,10 @@ impl Engine<'_> {
             self.source_global
         };
         let inside_recursion = self.template_of(caller).is_some();
-        let chain = if recursive && !inside_recursion {
-            self.chain(caller).push(loc)
-        } else {
+        let chain = if recursive && inside_recursion {
             self.chain(caller)
+        } else {
+            self.chain(caller).push(loc)
         };
         let template = if recursive {
             Some(ScopeId(crate::semantics::analysis::engine::index(
@@ -355,6 +523,8 @@ fn builtin_arity(builtin: Builtin) -> usize {
         Builtin::Clamp | Builtin::Lerp => 3,
     }
 }
+
+pub(crate) const INLINE_LIMIT: u64 = 1_000_000;
 
 fn index_of(position: usize) -> u32 {
     u32::try_from(position).unwrap_or(u32::MAX)

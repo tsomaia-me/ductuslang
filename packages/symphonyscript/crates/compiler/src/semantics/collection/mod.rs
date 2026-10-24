@@ -3,6 +3,7 @@ mod call_graph;
 mod collect;
 mod collected;
 mod decl;
+mod inline_counts;
 mod namespace;
 mod pattern_graph;
 mod stand_in;
