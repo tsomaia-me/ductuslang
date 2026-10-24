@@ -223,7 +223,7 @@ Synth lead:
 
 `base` is `i32` in the pitch and `f64` in `freq`.
 
-The fit check applies to a flexible value where it takes a type: at each use, and inside an expression wherever a literal or an integer result is converted to a float type. An integer fits a float type when its value is exactly representable, and a float fits a float type when it rounds to a finite value. Other results inside one flexible expression are not checked: integers compute exactly (§4.6), and floats follow §5.2 in the chosen type, so `Note/(2147483647 * 2 div 2)` fits and `Osc | freq=(1.0 / (1e300 * 1e300))` is 0.0. A minus applied directly to a literal forms one value for this check, so `-2147483648` fits `i32`.
+The fit check applies to a flexible value where it takes a type: at each use, where a fixed-type operand gives a literal its type, and wherever a literal or an integer result is converted to a float type. An integer fits a float type when its value is exactly representable, and a float fits a float type when it rounds to a finite value. Other results inside one flexible expression are not checked: integers compute exactly (§4.6), and floats follow §5.2 in the chosen type, so `Note/(2147483647 * 2 div 2)` fits and `Osc | freq=(1.0 / (1e300 * 1e300))` is 0.0. A minus applied directly to a literal forms one value for this check, so `-2147483648` fits `i32`.
 
 ```sym-error
 Clip melody:
@@ -303,12 +303,12 @@ An annotation fixes a type outright: `input fine: f32 = 0` is a float input stor
 
 ### 4.6 Compile-time evaluation
 
-A compile-time value is computed by the rules of §5, except that flexible integers compute exactly and a fixed-type integer operation that saturates is an error; a conversion saturates as §5.8 says and is no error. A flexible integer whose magnitude reaches 2¹²⁷ is an error. A flexible float computes in the type its use chooses (§4.1).
+A compile-time value is computed by the rules of §5, except that a flexible integer computes exactly and a fixed-type integer operation that saturates is an error; a conversion saturates as §5.8 says and is no error. A flexible integer whose magnitude reaches 2¹²⁷, positive or negative, is an error. A float type that flows into a flexible value (§4.2) makes it a float of that type from its literals up, so `2 ** -1` is 0.5 where a frequency expects it (§4.1) and `16777216 + 1` is 16777216 where an `f32` does; a flexible float computes in the type its use chooses.
 
 - The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls, and its expansion runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. A call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and expected type are all equal. Exceeding a limit is an error naming the call or the expansion.
+- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 1,000,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and its expansion runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type, and the default unit its plain values are read in (§3.6) are all equal. Exceeding a limit is an error naming the call or the expansion.
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
 

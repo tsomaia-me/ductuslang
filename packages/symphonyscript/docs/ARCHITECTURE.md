@@ -284,12 +284,12 @@ The compiler performs no file I/O; the caller supplies every source. This keeps 
 2. **Parse.** A lossless syntax tree that reproduces the source byte for byte, with a typed view over it. Code outside the parser reaches the tree only through views that borrow the parse result, so the parse result is the tree's last owner and dismantles it without recursion. The parser recovers from errors (§7.1), so a broken file still yields a tree. A placement whose kind is a wire kind of the vocabulary parses as a wire placement.
 3. **Collect.** The top-level namespace across all files, the prelude and the vocabulary, with duplicate detection and prelude shadowing; the call graph of functions, which marks recursive ones, and the use graph of patterns.
 4. **Expand.** Pattern uses are expanded and `for` loops unrolled. A value that structure needs (a range bound, an iterable, a recursive call, and any argument or `let` they read) is resolved, typed as SPEC §4.6 says and evaluated when expansion reaches it; such a value that reads a cell is an error. Every expanded item keeps the spans of its uses and of its definition.
-5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each argument is bound once and shared by every use of its parameter, so nested calls grow the program linearly; each value is classified as compile-time or reactive by what it reads. Cycles among declarations (SPEC §6.2) are found here, before Infer. A bare name that names no declaration is left for Infer to resolve as a variant.
+5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each argument is bound once and shared by every use of its parameter, so nested calls grow the program linearly; a call whose function, argument bindings and expected type equal an earlier call's shares that call's inlined body; each value is classified as compile-time or reactive by what it reads. Cycles among declarations (SPEC §6.2) are found here, before Infer. A bare name that names no declaration is left for Infer to resolve as a variant.
 6. **Infer.** Types and unit families over the whole program (SPEC §3.6, §4), bare variants from their expected types, and then the remaining calls to recursive functions, evaluated in the types inference gives them. Recursive calls are memoized by argument values, argument types and expected type, which is what SPEC §4.6's limit counts. Exact compile-time integers never grow past SPEC §4.6's bound: an operation whose result would reach 2¹²⁷ reports the error before computing it, so `2 ** 1000000` costs no more than `2 ** 200`.
 7. **Check.** The vocabulary checks (SPEC §10.2), cycles among wires, fit checks, and the warnings of SPEC §4.4 and §10.2.
 8. **Lower.** Constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program.
 
-Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose `section` method returns the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first. It returns them in source order: by file in top-level order, then by span start, span end and code. A name, type or unit family that an error leaves unknown takes an error placeholder that every later stage accepts without a diagnostic, so one fault draws one diagnostic; a placeholder arises only where a diagnostic is reported, so a program that draws no error holds none.
+Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern; for an error inside an inlined function body: the calls, innermost first), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose `section` method returns the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. The compiler collects every diagnostic of a run instead of stopping at the first. It returns them in source order: by file in top-level order, then by span start, span end and code. A name, type or unit family that an error leaves unknown takes an error placeholder that every later stage accepts without a diagnostic, so one fault draws one diagnostic; a placeholder arises only where a diagnostic is reported, so a program that draws no error holds none.
 
 Each change recompiles the whole project.
 
@@ -297,33 +297,35 @@ No source overflows the native stack, however deeply it nests. Every stage, and 
 
 ### 7.1 Error recovery
 
-The parser records a diagnostic for a fault, skips the fault's region and continues. Recovery holds three properties:
+The lexer and the parser record a diagnostic for a fault, skip the fault's region and continue. Recovery holds three properties:
 
 - A valid source never reaches recovery, so its tree does not depend on it.
 - Every fault outside the region of an earlier fault is reported exactly once, at its span.
 - Recovery costs time and memory linear in the source.
 
-A fault's region is the rest of its line and the block indented under that line. Inside an unclosed bracket, where newlines are whitespace (SPEC §2.2), it runs to the bracket's next resynchronization line, or without one to the bracket's closer and the end of that line. A bracket's lines are the non-blank lines of its region, and its column is the indentation in force where its outermost bracket opened.
+The lexer recovers in place: a line with a dedent mismatch is laid out at the enclosing column, a line that misses a clause's column only by the display width of wide characters continues the clause, and an unterminated string ends at the end of its line, leaving the brackets opened before it open.
 
-An unclosed bracket ends before the first of its lines, at or left of its column, that cannot continue it. The missing closer is a fault, reported at that line's first token, and the line starts an item:
+A fault's region is the rest of its line and the block indented under that line, except that the block of a construct that takes one, such as a placement's body, parses as usual. Inside an unclosed bracket, where newlines are whitespace (SPEC §2.2), the region runs to the bracket's next resynchronization line, or without one to the bracket's closer and the end of that line. A bracket's lines are the non-blank lines of its region, and its column is the indentation in force where its outermost bracket opened.
+
+An unclosed bracket ends before the first of its lines, at or left of its column, that cannot continue its innermost open bracket, and that line starts an item. The missing closer is a fault reported at the line's first token, unless the bracket already holds a fault, to which it then belongs:
 
 - in any bracket, a line whose first word is `input`, `let`, `fn` or `pattern`;
 - in an expression bracket (an array, a parenthesized expression, arguments, an index or a conversion), a line that begins with a name followed by a name or `as`;
 - in a bundle, a line holding a `:` at the bundle's depth that closes no pending `for` header of the bundle.
 
-After a fault inside an unclosed bracket, the parser resynchronizes at the first of the bracket's lines that begins at or after the fault, sits at or left of the bracket's column, and starts an item:
+A bracket holds a fault when a parser complaint falls inside it, its opener included, when an unterminated string does, or when it opens in the skipped rest of a faulty line; a lexer diagnostic on a token the parser accepts is no such fault. The parser then resynchronizes at the first of the bracket's lines that begins at or after the fault, sits at or left of the bracket's column, and starts an item:
 
 - a line that begins with `input`, `let`, `fn`, `pattern`, `(`, `[`, `for` or `when`;
 - at column 0, a line that begins with a name followed by a name, `as`, an adjacent flag or nothing;
-- in a body, a line that begins with a name followed by a name, `as`, an adjacent flag, `|`, `when` or `:`; with a node or wire kind followed by `/`; or with another name directly followed by `/` and one value that ends the line or meets `|`, `when` or `:`, on a line that holds no closer at the bracket's outermost depth.
+- in a body, a line that begins with a name followed by a name, `as`, an adjacent flag, `|`, `when` or `:`; with a node or wire kind followed by `/`; or with another name directly followed by `/` and a value SPEC §7.5 allows there that ends the line or meets `|`, `when` or `:`, on a line that holds no closer at the bracket's outermost depth.
 
 One fault draws one diagnostic:
 
-- A logical line draws at most one parser diagnostic. A bracket that spans lines is one logical line until a bracket end or a resynchronization starts a new one.
+- A logical line draws at most one parser diagnostic, a complaint that belongs to a lexer diagnostic included. A bracket that spans lines is one logical line until a bracket end or a resynchronization starts a new one.
 - A parser complaint at an error token, starting inside a lexer diagnostic, or directly after an error token, an unterminated string or the first character of a line with a dedent mismatch belongs to that lexer diagnostic and is not reported.
-- An unexpected indented block is reported unless the line it sits under drew a diagnostic, and is skipped either way.
+- An unexpected indented block is reported unless the line it sits under drew a parser complaint, and is skipped either way.
 
-A diagnostic at a zero-width INDENT or NEWLINE takes the span of the next token; one at a DEDENT or at the end of input stays empty at its position.
+A diagnostic at a zero-width INDENT or NEWLINE takes the span of the next token that holds text; one at a DEDENT or at the end of input stays empty at its position.
 
 ## 8. Delivery
 
