@@ -141,6 +141,51 @@ assert_eq!(eval("1 + 2"), Ok(3));
 ```rust
 #[test] fn product_binds_tighter_than_sum() { assert_eq!(sexp("1 + 2 * 3"), "(+ 1 (* 2 3))"); }
 ```
+**A clause no test isolates.** Each condition of a rule needs a row that fails when that condition alone is deleted; a row another condition already decides proves nothing about it.\
+**Bad**
+```rust
+assert!(!resyncs("a / 2)"));
+```
+**Good**
+```rust
+assert!(!resyncs("a/b when c)"));
+assert!(resyncs("a/b when c"));
+```
+
+### Fixes
+
+A warm review checks each fix as a change of its own: the reported case, then the class of input the fix touches, then what the fix newly allows.
+
+**A fix that moves the cost.** A fix tested on the reported shape leaves the same growth at the next shape: one copy per region becomes one per bracket group.\
+**Bad**
+```rust
+assert_eq!(lexed(&deep_body_with_long_bracket()).stacks.len(), regions);
+```
+**Good**
+```rust
+for source in [deep_body_with_long_bracket(), deep_body_with_many_groups_on_one_line()] {
+    assert!(lexed(&source).stack_entries() <= source.len());
+}
+```
+**A fix that rejects valid input.** A recovery or validation rule tested only on broken input can split or refuse a valid program no reported case holds; every such rule runs over generated valid input too.\
+**Bad**
+```rust
+assert_eq!(parse(BROKEN_BUNDLE).diagnostics.len(), 1);
+```
+**Good**
+```rust
+assert_eq!(parse(BROKEN_BUNDLE).diagnostics.len(), 1);
+for variant in line_break_variants(&valid_corpus()) { assert!(parse(&variant).diagnostics.is_empty()); }
+```
+**A proposed fix stated as a mechanism.** A reviewer's fix names the property the code must hold and the valid input it must keep, checked against the specification first, because a mechanism copied as written fixes the reported case and breaks the next one.\
+**Bad**
+```text
+Fix: end the region before a line whose first word is followed by a name.
+```
+**Good**
+```text
+Fix: inside an expression bracket, a line no expression continues ends the region; multi-line bundles and parenthesized placements (SPEC §7.6 to §7.8) keep parsing, shown by the line-break variants of the valid corpus.
+```
 
 ### Rust
 
