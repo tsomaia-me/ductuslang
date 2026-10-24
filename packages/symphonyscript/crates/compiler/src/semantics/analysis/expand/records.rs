@@ -29,16 +29,16 @@ pub(crate) struct Context {
 }
 
 impl<'a> Engine<'a> {
-    pub(in crate::semantics::analysis) fn instance(&self, id: InstanceId) -> &Instance {
-        &self.instances[id.index()]
+    pub(in crate::semantics::analysis) fn instance(&self, id: InstanceId) -> Option<&Instance> {
+        self.instances.get(id.index())
     }
 
-    pub(in crate::semantics::analysis) fn wire(&self, id: WireId) -> &Wire {
-        &self.wires[id.index()]
+    pub(in crate::semantics::analysis) fn wire(&self, id: WireId) -> Option<&Wire> {
+        self.wires.get(id.index())
     }
 
-    pub(in crate::semantics::analysis) fn pattern_use(&self, id: UseId) -> &PatternUse {
-        &self.uses[id.index()]
+    pub(in crate::semantics::analysis) fn pattern_use(&self, id: UseId) -> Option<&PatternUse> {
+        self.uses.get(id.index())
     }
 
     pub(in crate::semantics::analysis) fn kind_decl(
@@ -570,25 +570,29 @@ impl<'a> Engine<'a> {
     }
 
     pub(in crate::semantics::analysis) fn item_loc(&self, item: ItemRef) -> Loc {
-        match item {
-            ItemRef::Instance(id) => self.instance(id).loc,
-            ItemRef::Wire(id) => self.wire(id).loc,
-            ItemRef::Use(id) => self.pattern_use(id).loc,
-        }
+        let loc = match item {
+            ItemRef::Instance(id) => self.instance(id).map(|record| record.loc),
+            ItemRef::Wire(id) => self.wire(id).map(|record| record.loc),
+            ItemRef::Use(id) => self.pattern_use(id).map(|record| record.loc),
+        };
+        loc.unwrap_or_default()
     }
 
     pub(in crate::semantics::analysis) fn item_scope(&self, item: ItemRef) -> ScopeId {
-        match item {
-            ItemRef::Instance(id) => self.instance(id).scope,
-            ItemRef::Wire(id) => self.wire(id).scope,
-            ItemRef::Use(id) => self.pattern_use(id).caller,
-        }
+        let scope = match item {
+            ItemRef::Instance(id) => self.instance(id).map(|record| record.scope),
+            ItemRef::Wire(id) => self.wire(id).map(|record| record.scope),
+            ItemRef::Use(id) => self.pattern_use(id).map(|record| record.caller),
+        };
+        scope.unwrap_or(self.source_global)
     }
 
     pub(in crate::semantics::analysis) fn item_description(&self, item: ItemRef) -> String {
         match item {
             ItemRef::Instance(id) => {
-                let instance = self.instance(id);
+                let Some(instance) = self.instance(id) else {
+                    return String::new();
+                };
                 let kind = self
                     .vocabulary
                     .node_kind(instance.kind)
@@ -599,16 +603,17 @@ impl<'a> Engine<'a> {
                 }
             }
             ItemRef::Wire(id) => {
-                let wire = self.wire(id);
                 let kind = self
-                    .vocabulary
-                    .wire_kind(wire.kind)
+                    .wire(id)
+                    .and_then(|wire| self.vocabulary.wire_kind(wire.kind))
                     .map_or("", |decl| decl.name.as_str());
                 format!("the `{kind}` wire")
             }
             ItemRef::Use(id) => {
-                let pattern = self.hir.pattern(self.pattern_use(id).pattern);
-                let name = pattern.name.as_ref().map_or("", |name| name.text.as_str());
+                let name = self
+                    .pattern_use(id)
+                    .and_then(|record| self.hir.pattern(record.pattern).name.as_ref())
+                    .map_or("", |name| name.text.as_str());
                 format!("the use of `{name}`")
             }
         }

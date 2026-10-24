@@ -142,20 +142,18 @@ impl Engine<'_> {
             }
         }
         let gate = match item {
-            ItemRef::Instance(id) => {
-                let record = self.instance(id);
+            ItemRef::Instance(id) => self.instance(id).and_then(|record| {
                 self.hir
                     .placement(record.placement)
                     .gate
                     .map(|gate| (gate, record.scope))
-            }
-            ItemRef::Wire(id) => {
-                let record = self.wire(id);
+            }),
+            ItemRef::Wire(id) => self.wire(id).and_then(|record| {
                 self.hir
                     .wire(record.wire)
                     .gate
                     .map(|gate| (gate, record.clause_scope))
-            }
+            }),
             ItemRef::Use(_) => None,
         };
         if let Some((expr, scope)) = gate {

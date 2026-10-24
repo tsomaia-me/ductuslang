@@ -71,6 +71,9 @@ pub(crate) struct Engine<'a> {
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
     current: Option<Query>,
+    missing_scope: Scope,
+    missing_node: Node,
+    missing_binding: Binding,
 }
 
 impl<'a> Engine<'a> {
@@ -125,6 +128,24 @@ impl<'a> Engine<'a> {
             waiting: FastSet::default(),
             cyclic: FastSet::default(),
             current: None,
+            missing_scope: Scope {
+                kind: ScopeKind::Global { prelude: false },
+                parent: None,
+                chain: Chain::default(),
+                template: None,
+            },
+            missing_node: Node {
+                op: Op::Bool(false),
+                loc: Loc::default(),
+                scope: ScopeId(0),
+            },
+            missing_binding: Binding {
+                kind: super::binding::BindingKind::Let,
+                init: NodeId(u32::MAX),
+                annotation: None,
+                name: String::new(),
+                loc: Loc::default(),
+            },
         };
         engine.source_global =
             engine.scope(ScopeKind::Global { prelude: false }, None, Chain::default());
@@ -337,15 +358,17 @@ impl<'a> Engine<'a> {
     }
 
     pub fn scope_of(&self, id: ScopeId) -> &Scope {
-        &self.scopes[id.index()]
+        self.scopes.get(id.index()).unwrap_or(&self.missing_scope)
     }
 
     pub fn node(&self, id: NodeId) -> &Node {
-        &self.nodes[id.index()]
+        self.nodes.get(id.index()).unwrap_or(&self.missing_node)
     }
 
     pub fn binding(&self, id: BindingId) -> &Binding {
-        &self.bindings[id.index()]
+        self.bindings
+            .get(id.index())
+            .unwrap_or(&self.missing_binding)
     }
 
     pub fn push_node(&mut self, op: Op, loc: Loc, scope: ScopeId) -> NodeId {
@@ -475,8 +498,9 @@ impl<'a> Engine<'a> {
             return;
         };
         let message = format!("these declarations reach themselves: {}", names.join(" → "));
+        let secondary = locs.get(1..).unwrap_or_default();
         self.report
-            .error_with(self.hir, Code::DeclarationCycle, loc, &locs[1..], message);
+            .error_with(self.hir, Code::DeclarationCycle, loc, secondary, message);
     }
 }
 

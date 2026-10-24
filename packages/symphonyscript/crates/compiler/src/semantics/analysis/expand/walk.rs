@@ -226,7 +226,12 @@ impl Engine<'_> {
     }
 
     fn expand_body(&mut self, instance: InstanceId) {
-        let placement = self.instance(instance).placement;
+        let Some((placement, uses)) = self
+            .instance(instance)
+            .map(|record| (record.placement, record.uses.clone()))
+        else {
+            return;
+        };
         let Some(block) = self.hir.placement(placement).body else {
             return;
         };
@@ -235,7 +240,7 @@ impl Engine<'_> {
             owner: instance,
             path_parent: PathParent::Instance(instance),
             conditions: None,
-            uses: self.instance(instance).uses.clone(),
+            uses,
             bundle: None,
         };
         self.walk(block, scope, walk);
@@ -245,13 +250,19 @@ impl Engine<'_> {
     }
 
     pub(in crate::semantics::analysis) fn ensure_body(&mut self, instance: InstanceId) -> ScopeId {
-        if let Some(scope) = self.instance(instance).body_scope {
+        let Some((body, parent, placement, uses)) = self.instance(instance).map(|record| {
+            (
+                record.body_scope,
+                record.scope,
+                record.placement,
+                record.uses.clone(),
+            )
+        }) else {
+            return self.source_global;
+        };
+        if let Some(scope) = body {
             return scope;
         }
-        let (parent, placement) = {
-            let record = self.instance(instance);
-            (record.scope, record.placement)
-        };
         let chain = self.chain(parent);
         let scope = self.scope(
             ScopeKind::Body {
@@ -266,7 +277,6 @@ impl Engine<'_> {
         if let Some(block) = self.hir.placement(placement).body {
             let sites = self.named_sites(block);
             if !sites.is_empty() {
-                let uses = self.instance(instance).uses.clone();
                 self.prebuild(
                     &sites,
                     scope,
@@ -280,19 +290,21 @@ impl Engine<'_> {
     }
 
     pub(in crate::semantics::analysis) fn ensure_use_body(&mut self, id: UseId) -> ScopeId {
-        if let Some(scope) = self.pattern_use(id).body {
-            return scope;
-        }
-        let (locals, pattern, owner, uses, loc) = {
-            let record = self.pattern_use(id);
+        let Some((body, locals, pattern, owner, uses, loc)) = self.pattern_use(id).map(|record| {
             (
+                record.body,
                 record.locals,
                 record.pattern,
                 record.owner,
                 record.uses.clone(),
                 record.loc,
             )
+        }) else {
+            return self.source_global;
         };
+        if let Some(scope) = body {
+            return scope;
+        }
         let chain = self.chain(locals);
         let scope = self.scope(
             ScopeKind::Body {
@@ -386,7 +398,9 @@ impl Engine<'_> {
             conditions: None,
             uses,
         };
-        let owner_kind = self.instance(owner).kind;
+        let Some(owner_kind) = self.instance(owner).map(|record| record.kind) else {
+            return;
+        };
         let mut names = BTreeMap::new();
         for (site, _) in sites.iter().copied() {
             let named = match site {
@@ -905,10 +919,13 @@ impl Engine<'_> {
                         }
                     };
                     let body_scope = self.ensure_use_body(use_id);
-                    let (gate, loc, uses) = {
-                        let record = self.pattern_use(use_id);
-                        (self.hir.placement(id).gate, record.loc, record.uses.clone())
+                    let Some((loc, uses)) = self
+                        .pattern_use(use_id)
+                        .map(|record| (record.loc, record.uses.clone()))
+                    else {
+                        return;
                     };
+                    let gate = self.hir.placement(id).gate;
                     let mut conditions = walk.conditions;
                     if let Some(gate) = gate {
                         self.register_gate(gate, scope);
@@ -986,7 +1003,7 @@ impl Engine<'_> {
         else {
             return None;
         };
-        let own = self.instance(existing).conditions;
+        let own = self.instance(existing).and_then(|record| record.conditions);
         let conditions = self.joined_conditions(walk.conditions, own);
         if let Some(record) = self.instances.get_mut(existing.index()) {
             record.conditions = conditions;

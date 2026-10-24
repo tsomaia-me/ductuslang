@@ -33,8 +33,10 @@ impl Engine<'_> {
             Query::Attr(item, attr) => {
                 let decl = self.attr_decl(item, attr)?;
                 let owner = match item {
-                    ItemRef::Instance(id) => self.instance(id).name.clone(),
-                    ItemRef::Wire(id) => self.wire(id).name.clone(),
+                    ItemRef::Instance(id) => {
+                        self.instance(id).and_then(|record| record.name.clone())
+                    }
+                    ItemRef::Wire(id) => self.wire(id).and_then(|record| record.name.clone()),
                     ItemRef::Use(_) => None,
                 };
                 let loc = self

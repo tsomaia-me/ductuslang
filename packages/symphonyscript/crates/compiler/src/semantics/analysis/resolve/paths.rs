@@ -299,9 +299,12 @@ impl Engine<'_> {
         wire: WireId,
         need: &mut Vec<Query>,
     ) -> bool {
-        let (expr, scope) = {
-            let record = self.wire(wire);
-            (self.hir.wire(record.wire).destination, record.scope)
+        let Some((expr, scope)) = self
+            .wire(wire)
+            .map(|record| (self.hir.wire(record.wire).destination, record.scope))
+        else {
+            self.memo.destinations.insert(wire, Destination::Error);
+            return true;
         };
         let Some(val) = self.val(Query::Expr(expr, scope), need) else {
             return false;
@@ -422,10 +425,10 @@ impl Engine<'_> {
             ItemRef::Instance(instance) => {
                 &self
                     .vocabulary
-                    .node_kind(self.instance(instance).kind)?
+                    .node_kind(self.instance(instance)?.kind)?
                     .attrs
             }
-            ItemRef::Wire(wire) => &self.vocabulary.wire_kind(self.wire(wire).kind)?.attrs,
+            ItemRef::Wire(wire) => &self.vocabulary.wire_kind(self.wire(wire)?.kind)?.attrs,
             ItemRef::Use(_) => return None,
         };
         attrs
@@ -443,10 +446,10 @@ impl Engine<'_> {
             ItemRef::Instance(instance) => {
                 &self
                     .vocabulary
-                    .node_kind(self.instance(instance).kind)?
+                    .node_kind(self.instance(instance)?.kind)?
                     .attrs
             }
-            ItemRef::Wire(wire) => &self.vocabulary.wire_kind(self.wire(wire).kind)?.attrs,
+            ItemRef::Wire(wire) => &self.vocabulary.wire_kind(self.wire(wire)?.kind)?.attrs,
             ItemRef::Use(_) => return None,
         };
         attrs.get(attr.index())
@@ -454,8 +457,12 @@ impl Engine<'_> {
 
     pub(in crate::semantics::analysis) fn attr_sources(&self, item: ItemRef) -> &[AttrSource] {
         match item {
-            ItemRef::Instance(instance) => &self.instance(instance).attrs,
-            ItemRef::Wire(wire) => &self.wire(wire).attrs,
+            ItemRef::Instance(instance) => self
+                .instance(instance)
+                .map_or(&[], |record| record.attrs.as_slice()),
+            ItemRef::Wire(wire) => self
+                .wire(wire)
+                .map_or(&[], |record| record.attrs.as_slice()),
             ItemRef::Use(_) => &[],
         }
     }

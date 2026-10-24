@@ -1,10 +1,13 @@
 use super::block::Block;
 use super::body_item::BodyItem;
 use super::expr::Expr;
+use super::expr_kind::ExprKind;
 use super::fn_decl::FnDecl;
+use super::ident::Ident;
 use super::ids::{BlockId, ExprId, FnId, InputId, LetId, PatternId, PlacementId, WireId};
 use super::input::Input;
 use super::let_decl::LetDecl;
+use super::loc::Loc;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
 use super::top::Top;
@@ -34,37 +37,109 @@ pub(crate) struct PreludeEnd {
     pub lets: usize,
 }
 
+const NOWHERE: Loc = Loc {
+    file: 0,
+    start: 0,
+    end: 0,
+};
+
+static MISSING_EXPR: Expr = Expr {
+    kind: ExprKind::Error,
+    loc: NOWHERE,
+};
+
+static MISSING_BLOCK: Block = Block { items: Vec::new() };
+
+static MISSING_PLACEMENT: Placement = Placement {
+    kind: None,
+    flags: Vec::new(),
+    name: None,
+    has_as: false,
+    default: None,
+    gate: None,
+    attrs: Vec::new(),
+    body: None,
+    inline: false,
+    loc: NOWHERE,
+};
+
+static MISSING_WIRE: Wire = Wire {
+    kind: Ident {
+        text: String::new(),
+        loc: NOWHERE,
+    },
+    flags: Vec::new(),
+    name: None,
+    default: None,
+    gate: None,
+    attrs: Vec::new(),
+    destination: ExprId(u32::MAX),
+    loc: NOWHERE,
+};
+
+static MISSING_INPUT: Input = Input {
+    name: None,
+    ty: None,
+    value: ExprId(u32::MAX),
+    loc: NOWHERE,
+};
+
+static MISSING_LET: LetDecl = LetDecl {
+    name: None,
+    ty: None,
+    value: ExprId(u32::MAX),
+    loc: NOWHERE,
+};
+
+static MISSING_FN: FnDecl = FnDecl {
+    name: None,
+    params: Vec::new(),
+    lets: Vec::new(),
+    value: ExprId(u32::MAX),
+    loc: NOWHERE,
+};
+
+static MISSING_PATTERN: PatternDecl = PatternDecl {
+    name: None,
+    params: Vec::new(),
+    lets: Vec::new(),
+    body: BlockId(u32::MAX),
+    loc: NOWHERE,
+};
+
 impl Hir {
     pub fn expr(&self, id: ExprId) -> &Expr {
-        &self.exprs[id.index()]
+        self.exprs.get(id.index()).unwrap_or(&MISSING_EXPR)
     }
 
     pub fn block(&self, id: BlockId) -> &Block {
-        &self.blocks[id.index()]
+        self.blocks.get(id.index()).unwrap_or(&MISSING_BLOCK)
     }
 
     pub fn placement(&self, id: PlacementId) -> &Placement {
-        &self.placements[id.index()]
+        self.placements
+            .get(id.index())
+            .unwrap_or(&MISSING_PLACEMENT)
     }
 
     pub fn wire(&self, id: WireId) -> &Wire {
-        &self.wires[id.index()]
+        self.wires.get(id.index()).unwrap_or(&MISSING_WIRE)
     }
 
     pub fn input(&self, id: InputId) -> &Input {
-        &self.inputs[id.index()]
+        self.inputs.get(id.index()).unwrap_or(&MISSING_INPUT)
     }
 
     pub fn let_decl(&self, id: LetId) -> &LetDecl {
-        &self.lets[id.index()]
+        self.lets.get(id.index()).unwrap_or(&MISSING_LET)
     }
 
     pub fn fn_decl(&self, id: FnId) -> &FnDecl {
-        &self.fns[id.index()]
+        self.fns.get(id.index()).unwrap_or(&MISSING_FN)
     }
 
     pub fn pattern(&self, id: PatternId) -> &PatternDecl {
-        &self.patterns[id.index()]
+        self.patterns.get(id.index()).unwrap_or(&MISSING_PATTERN)
     }
 
     pub fn seal_prelude(&mut self) {

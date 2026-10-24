@@ -38,10 +38,11 @@ impl Engine<'_> {
 
     fn item_error(&mut self, code: Code, item: ItemRef, loc: Loc, message: String) {
         let uses = match item {
-            ItemRef::Instance(id) => self.instance(id).uses.clone(),
-            ItemRef::Wire(id) => self.wire(id).uses.clone(),
-            ItemRef::Use(id) => self.pattern_use(id).uses.clone(),
-        };
+            ItemRef::Instance(id) => self.instance(id).map(|record| record.uses.clone()),
+            ItemRef::Wire(id) => self.wire(id).map(|record| record.uses.clone()),
+            ItemRef::Use(id) => self.pattern_use(id).map(|record| record.uses.clone()),
+        }
+        .unwrap_or_default();
         self.report
             .error_with(self.hir, code, loc, &uses.to_vec(), message);
     }
@@ -61,13 +62,15 @@ impl Engine<'_> {
     fn top_level_counts(&mut self) {
         let mut by_kind: BTreeMap<NodeKind, Vec<InstanceId>> = BTreeMap::new();
         for instance in self.top_level.clone() {
-            let kind = self.instance(instance).kind;
+            let Some(kind) = self.instance(instance).map(|record| record.kind) else {
+                continue;
+            };
             let allowed = self
                 .vocabulary
                 .node_kind(kind)
                 .and_then(|decl| decl.top_level);
             if allowed.is_none() {
-                let loc = self.instance(instance).loc;
+                let loc = self.item_loc(ItemRef::Instance(instance));
                 let name = self.kind_name(kind);
                 self.item_error(
                     Code::NotTopLevel,
@@ -95,7 +98,7 @@ impl Engine<'_> {
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
             {
-                let loc = self.instance(*extra).loc;
+                let loc = self.item_loc(ItemRef::Instance(*extra));
                 self.item_error(
                     Code::CountExceeded,
                     ItemRef::Instance(*extra),
@@ -128,7 +131,10 @@ impl Engine<'_> {
 
     pub(crate) fn children_of(&self, instance: InstanceId) -> Vec<InstanceId> {
         let mut children = Vec::new();
-        for entry in &self.instance(instance).sequence {
+        let Some(record) = self.instance(instance) else {
+            return children;
+        };
+        for entry in &record.sequence {
             match entry {
                 Entry::Child(child) => children.push(*child),
                 Entry::Bundle(members) => children.extend(members.iter().copied()),
@@ -139,19 +145,24 @@ impl Engine<'_> {
     }
 
     fn children_counts(&mut self, parent: InstanceId) {
-        let kind = self.instance(parent).kind;
-        let Some(decl) = self.vocabulary.node_kind(kind).cloned() else {
+        let Some(decl) = self
+            .instance(parent)
+            .and_then(|record| self.vocabulary.node_kind(record.kind))
+            .cloned()
+        else {
             return;
         };
         let mut by_kind: BTreeMap<NodeKind, Vec<InstanceId>> = BTreeMap::new();
         for child in self.children_of(parent) {
-            let child_kind = self.instance(child).kind;
+            let Some(child_kind) = self.instance(child).map(|record| record.kind) else {
+                continue;
+            };
             if !decl
                 .children
                 .iter()
                 .any(|(accepted, _)| *accepted == child_kind)
             {
-                let loc = self.instance(child).loc;
+                let loc = self.item_loc(ItemRef::Instance(child));
                 let message = if decl.children.is_empty() {
                     format!(
                         "`{}` accepts no children, and its body holds only wires",
@@ -180,7 +191,7 @@ impl Engine<'_> {
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
             {
-                let loc = self.instance(*extra).loc;
+                let loc = self.item_loc(ItemRef::Instance(*extra));
                 self.item_error(
                     Code::CountExceeded,
                     ItemRef::Instance(*extra),
@@ -193,7 +204,7 @@ impl Engine<'_> {
                 );
             }
             if found.len() < count.min() as usize && !self.unknown_children.contains(&parent) {
-                let loc = self.instance(parent).loc;
+                let loc = self.item_loc(ItemRef::Instance(parent));
                 self.item_error(
                     Code::CountBelowMinimum,
                     ItemRef::Instance(parent),
@@ -215,9 +226,11 @@ impl Engine<'_> {
         let mut incoming_any: BTreeMap<(InstanceId, WireKind), Vec<WireId>> = BTreeMap::new();
         for index in 0..self.wires.len() {
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
-            let (kind, source, loc) = {
-                let record = self.wire(wire);
-                (record.kind, record.source, record.loc)
+            let Some((kind, source, loc)) = self
+                .wire(wire)
+                .map(|record| (record.kind, record.source, record.loc))
+            else {
+                continue;
             };
             outgoing.entry((source, kind)).or_default().push(wire);
             let destination = self
@@ -233,7 +246,9 @@ impl Engine<'_> {
             let Some(decl) = self.vocabulary.wire_kind(kind).cloned() else {
                 continue;
             };
-            let source_kind = self.instance(source).kind;
+            let Some(source_kind) = self.instance(source).map(|record| record.kind) else {
+                continue;
+            };
             for candidate in candidates {
                 let ItemRef::Instance(target) = candidate else {
                     self.item_error(
@@ -244,7 +259,9 @@ impl Engine<'_> {
                     );
                     continue;
                 };
-                let target_kind = self.instance(target).kind;
+                let Some(target_kind) = self.instance(target).map(|record| record.kind) else {
+                    continue;
+                };
                 if !decl.connects.contains(&(source_kind, target_kind)) {
                     self.item_error(
                         Code::WireEndpoint,
@@ -266,8 +283,11 @@ impl Engine<'_> {
         }
         for index in 0..self.instances.len() {
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
-            let kind = self.instance(instance).kind;
-            let Some(decl) = self.vocabulary.node_kind(kind).cloned() else {
+            let Some(decl) = self
+                .instance(instance)
+                .and_then(|record| self.vocabulary.node_kind(record.kind))
+                .cloned()
+            else {
                 continue;
             };
             for (wire_kind, count) in &decl.outgoing {
@@ -317,12 +337,13 @@ impl Engine<'_> {
         direction: &str,
     ) {
         let name = self.wire_kind_name(wire_kind);
-        let kind = self.kind_name(self.instance(instance).kind);
+        let kind = self
+            .instance(instance)
+            .map_or(String::new(), |record| self.kind_name(record.kind));
         if let Some(max) = count.max()
-            && toward_max.len() > max as usize
+            && let Some(wire) = toward_max.get(max as usize).copied()
         {
-            let wire = toward_max.get(max as usize).copied().unwrap_or(WireId(0));
-            let loc = self.wire(wire).loc;
+            let loc = self.item_loc(ItemRef::Wire(wire));
             self.item_error(
                 Code::CountExceeded,
                 ItemRef::Wire(wire),
@@ -336,7 +357,7 @@ impl Engine<'_> {
         if let Some(toward_min) = toward_min
             && toward_min.len() < count.min() as usize
         {
-            let loc = self.instance(instance).loc;
+            let loc = self.item_loc(ItemRef::Instance(instance));
             self.item_error(
                 Code::CountBelowMinimum,
                 ItemRef::Instance(instance),

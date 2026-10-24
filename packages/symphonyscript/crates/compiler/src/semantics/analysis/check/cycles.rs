@@ -13,9 +13,9 @@ impl Engine<'_> {
         let mut wire_edges: Vec<(WireId, usize, usize, bool)> = Vec::new();
         for index in 0..self.wires.len() {
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
-            let (kind, source) = {
-                let record = self.wire(wire);
-                (record.kind, record.source)
+            let Some((kind, source)) = self.wire(wire).map(|record| (record.kind, record.source))
+            else {
+                continue;
             };
             let cyclic = self
                 .vocabulary
@@ -62,13 +62,16 @@ impl Engine<'_> {
                     self.instance_label(InstanceId(u32::try_from(*member).unwrap_or(u32::MAX)))
                 })
                 .collect();
-            let kind = self.wire(wire).kind;
+            let Some((kind, loc, uses)) = self
+                .wire(wire)
+                .map(|record| (record.kind, record.loc, record.uses.clone()))
+            else {
+                continue;
+            };
             let kind_name = self
                 .vocabulary
                 .wire_kind(kind)
                 .map_or(String::new(), |decl| decl.name.clone());
-            let loc = self.wire(wire).loc;
-            let uses = self.wire(wire).uses.clone();
             self.report.error_with(
                 self.hir,
                 Code::WireCycle,
@@ -116,7 +119,9 @@ impl Engine<'_> {
     }
 
     pub(crate) fn instance_label(&self, instance: InstanceId) -> String {
-        let record = self.instance(instance);
+        let Some(record) = self.instance(instance) else {
+            return String::new();
+        };
         match &record.name {
             Some(name) => name.clone(),
             None => format!("a `{}`", self.kind_name(record.kind)),

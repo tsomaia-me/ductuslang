@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) struct Loc {
     pub file: u32,
     pub start: u32,

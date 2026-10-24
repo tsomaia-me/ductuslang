@@ -17,8 +17,8 @@ impl Engine<'_> {
         let entries: Vec<InstanceId> = (0..self.instances.len())
             .map(|index| InstanceId(u32::try_from(index).unwrap_or(u32::MAX)))
             .filter(|instance| {
-                self.vocabulary
-                    .node_kind(self.instance(*instance).kind)
+                self.instance(*instance)
+                    .and_then(|record| self.vocabulary.node_kind(record.kind))
                     .is_some_and(|decl| decl.entry)
             })
             .collect();
@@ -48,7 +48,10 @@ impl Engine<'_> {
             if !reached.insert(instance) {
                 continue;
             }
-            for entry in &self.instance(instance).sequence {
+            let Some(record) = self.instance(instance) else {
+                continue;
+            };
+            for entry in &record.sequence {
                 match entry {
                     Entry::Child(child) => stack.push(*child),
                     Entry::Bundle(members) => stack.extend(members.iter().copied()),
@@ -77,7 +80,9 @@ impl Engine<'_> {
             if reached.contains(&instance) {
                 continue;
             }
-            let record = self.instance(instance);
+            let Some(record) = self.instance(instance) else {
+                continue;
+            };
             let placement = self.hir.placement(record.placement);
             let loc = placement.name.as_ref().map_or(record.loc, |name| name.loc);
             let label = self.instance_label(instance);
