@@ -223,6 +223,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "3.6",
+        "A unit value bound to an attribute of a different family, or of no family, is an error.",
+        "unit-mismatch",
+        "Clip c:\n    Note | velocity=2bars\n",
+    ),
+    rule(
+        "3.6",
         "`+`, `-`, `%`, comparisons, `min`, `max`, `clamp`, the first two arguments of `lerp`, array literals, and the arms of `if` and `match` take operands of one family.",
         "mixed-families",
         "Synth s:\n    Osc | freq=2s + 1bars\n",
@@ -244,6 +250,24 @@ const RULES: &[Rule] = &[
         "Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound are errors.",
         "unit-operation",
         "Clip c:\n    Note | length=2bars * 2bars\n",
+    ),
+    rule(
+        "3.6",
+        "Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound are errors.",
+        "unit-operation",
+        "Clip c:\n    Note | length=(1 / 1bars)\n",
+    ),
+    rule(
+        "3.6",
+        "Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound are errors.",
+        "unit-operation",
+        "Clip c:\n    Note | length=(2bars ** 2)\n",
+    ),
+    rule(
+        "3.6",
+        "Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound are errors.",
+        "unit-operation",
+        "Clip c:\n    for i in 0..2bars:\n        Note\n",
     ),
     bounded(
         "3.6",
@@ -334,6 +358,12 @@ const RULES: &[Rule] = &[
         "The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`.",
         "range-bound",
         "Clip c:\n    for i in 0..0.5:\n        Note\n",
+    ),
+    rule(
+        "4.6",
+        "The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`.",
+        "index-out-of-range",
+        "Clip c:\n    Note/([1, 2][2 ** 70])\n",
     ),
     rule(
         "4.6",
@@ -534,6 +564,12 @@ const RULES: &[Rule] = &[
         "let a = f32(true)\n",
     ),
     rule(
+        "5.8",
+        "Converting a `bool` or an enum value is an error.",
+        "conversion-type",
+        "let a = f32(Wave::Saw)\n",
+    ),
+    rule(
         "5.9",
         "`{expr}` inside a literal interpolates a compile-time value",
         "interpolation-type",
@@ -565,6 +601,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.2",
+        "A declaration that reaches itself through `let`s, inputs, attribute reads or function bodies is an error naming the cycle",
+        "declaration-cycle",
+        "fn f(): a\nlet a = f()\n",
+    ),
+    rule(
+        "6.2",
         "A `let` holding node references that reads an input is an error",
         "reactive-node-reference",
         "input i = 0\nlet t = [verse, chorus][i]\nClip verse:\n    Note\nClip chorus:\n    Note\n",
@@ -580,6 +622,12 @@ const RULES: &[Rule] = &[
         "Two parameters or two local `let`s with one name",
         "duplicate-local",
         "fn f(a, a): a\n",
+    ),
+    rule(
+        "6.3",
+        "Two parameters or two local `let`s with one name",
+        "duplicate-local",
+        "fn f(x):\n    let a = 1\n    let a = 2\n    a\n",
     ),
     rule(
         "6.3",
@@ -607,6 +655,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
+        "A recursive function whose body reads a cell is an error",
+        "reactive-recursion",
+        "input i = 1\nfn f(n): if n < 1 then i else f(n - 1)\nClip c:\n    Note/(f(3))\n",
+    ),
+    rule(
+        "6.3",
         "evaluation deeper than 1,024 nested calls",
         "recursion-depth",
         "fn f(n): if n < 1 then 0 else f(n - 1) + 1\nClip c:\n    Note/(f(2000))\n",
@@ -622,6 +676,12 @@ const RULES: &[Rule] = &[
         "Two parameters or two `let`s with one name",
         "duplicate-local",
         "pattern P(a, a):\n    Note/a\n",
+    ),
+    rule(
+        "6.4",
+        "Two parameters or two `let`s with one name",
+        "duplicate-local",
+        "pattern P():\n    let a = 1\n    let a = 2\n    Note/a\n",
     ),
     rule(
         "6.4",
@@ -667,6 +727,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.4",
+        "A use carries no flags and no body.",
+        "use-form",
+        "pattern P():\n    Note\nClip c:\n    P:\n        Note\n",
+    ),
+    rule(
+        "6.4",
         "A pattern may use other patterns, but no pattern reaches itself through uses.",
         "recursive-pattern",
         "pattern A():\n    Clip:\n        A\n",
@@ -691,9 +757,33 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.5",
+        "A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.",
+        "variant-name",
+        "fn f(x):\n    let Saw = x\n    Saw\n",
+    ),
+    rule(
+        "6.5",
         "A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error",
         "child-name-clash",
         "Clip c:\n    Note as dup\n    Note as dup\n",
+    ),
+    rule(
+        "6.5",
+        "A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error",
+        "child-name-clash",
+        "Track t:\n    Synth as dup:\n        Osc as dup\n",
+    ),
+    rule(
+        "6.5",
+        "A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error",
+        "child-name-clash",
+        "Clip c:\n    Note as gain\n",
+    ),
+    rule(
+        "6.5",
+        "also when the two names stand in different arms of one `when` block",
+        "child-name-clash",
+        "input b = true\nClip c:\n    when b:\n        Note as dup\n    else:\n        Note as dup\n",
     ),
     rule(
         "6.5",
@@ -712,6 +802,12 @@ const RULES: &[Rule] = &[
         "Every other name resolves in scope.",
         "unknown-name",
         "let a = b\n",
+    ),
+    rule(
+        "3.4",
+        "Anywhere else it is qualified with the enum's name: `Wave::Saw`.",
+        "unknown-name",
+        "Clip c | gain=Saw(1)\n",
     ),
     rule(
         "7.1",
@@ -800,6 +896,24 @@ const RULES: &[Rule] = &[
     rule(
         "7.8",
         "Wires and bundles are not members, and a member has no body, also when a pattern supplies it.",
+        "bundle-member",
+        "pattern P():\n    [Note/62 Note/64]\nClip c:\n    [P]\n",
+    ),
+    rule(
+        "7.8",
+        "Wires and bundles are not members, and a member has no body, also when a pattern supplies it.",
+        "bundle-member",
+        "pattern Inner():\n    Synth:\n        Osc\nTrack t:\n    [Inner]\nSession s:\n    Includes: t\n",
+    ),
+    rule(
+        "7.8",
+        "Wires and bundles are not members, and a member has no body, also when a pattern supplies it.",
+        "bundle-member",
+        "pattern Inner():\n    Synth:\n        Osc\npattern Outer():\n    Inner\nTrack t:\n    [Outer]\nSession s:\n    Includes: t\n",
+    ),
+    rule(
+        "7.8",
+        "Wires and bundles are not members, and a member has no body, also when a pattern supplies it.",
         "misplaced-wire",
         "Clip c:\n    [Plays: c]\n",
     ),
@@ -856,6 +970,18 @@ const RULES: &[Rule] = &[
         "`to.a.b`, `to` alone, and `to` written outside a wire placement are errors",
         "misplaced-to",
         "let a = to.gain\n",
+    ),
+    rule(
+        "8.3",
+        "`to.a.b`, `to` alone, and `to` written outside a wire placement are errors",
+        "misplaced-to",
+        "Clip a:\n    Note\nClip c:\n    Plays | gain=to.a.b: a\n",
+    ),
+    rule(
+        "8.3",
+        "`to.a.b`, `to` alone, and `to` written outside a wire placement are errors",
+        "misplaced-to",
+        "Clip c:\n    Plays | gain=to: c\n",
     ),
     rule(
         "8.4",
