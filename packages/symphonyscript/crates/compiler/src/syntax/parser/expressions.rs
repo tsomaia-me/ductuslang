@@ -1,4 +1,7 @@
+use super::checkpoint::Checkpoint;
+
 use super::Parser;
+use super::task::Task;
 use crate::diagnostics::Code;
 use crate::syntax::syntax_kind::SyntaxKind;
 
@@ -20,9 +23,12 @@ const PRODUCTS: &[SyntaxKind] = &[
 impl Parser<'_> {
     pub(super) fn expr(&mut self) {
         match self.peek() {
-            Some(SyntaxKind::IfKw) => self.if_expr(),
-            Some(SyntaxKind::MatchKw) => self.misplaced_match(),
-            _ => self.or_expr(),
+            Some(SyntaxKind::IfKw) => self.then([Task::IfExpr]),
+            Some(SyntaxKind::MatchKw) => {
+                self.misplaced_match();
+                self.then([Task::OrExpr]);
+            }
+            _ => self.then([Task::OrExpr]),
         }
     }
 
@@ -32,170 +38,206 @@ impl Parser<'_> {
             "a match is the whole value of a let, a function body or a wire destination",
         );
         self.skip_token();
-        self.or_expr();
     }
 
-    fn if_expr(&mut self) {
+    pub(super) fn if_expr(&mut self) {
         self.start(SyntaxKind::IfExpr);
         self.bump();
-        self.expr();
+        self.then([Task::Expr, Task::IfThen]);
+    }
+
+    pub(super) fn if_then(&mut self) {
         self.expect(SyntaxKind::ThenKw, Code::ExpressionSyntax, "`then`");
-        self.expr();
+        self.then([Task::Expr, Task::IfElse]);
+    }
+
+    pub(super) fn if_else(&mut self) {
         self.expect(SyntaxKind::ElseKw, Code::ExpressionSyntax, "`else`");
-        self.expr();
-        self.finish();
+        self.then([Task::Expr, Task::Finish]);
     }
 
-    fn or_expr(&mut self) {
+    pub(super) fn or_expr(&mut self) {
         let checkpoint = self.checkpoint();
-        self.and_expr();
-        while self.at(SyntaxKind::OrKw) {
+        self.then([Task::AndExpr, Task::OrLoop(checkpoint)]);
+    }
+
+    pub(super) fn or_loop(&mut self, checkpoint: Checkpoint) {
+        if self.at(SyntaxKind::OrKw) {
             self.start_at(checkpoint, SyntaxKind::BinaryExpr);
             self.bump();
-            self.and_expr();
-            self.finish();
+            self.then([Task::AndExpr, Task::Finish, Task::OrLoop(checkpoint)]);
         }
     }
 
-    fn and_expr(&mut self) {
+    pub(super) fn and_expr(&mut self) {
         let checkpoint = self.checkpoint();
-        self.not_expr();
-        while self.at(SyntaxKind::AndKw) {
+        self.then([Task::NotExpr, Task::AndLoop(checkpoint)]);
+    }
+
+    pub(super) fn and_loop(&mut self, checkpoint: Checkpoint) {
+        if self.at(SyntaxKind::AndKw) {
             self.start_at(checkpoint, SyntaxKind::BinaryExpr);
             self.bump();
-            self.not_expr();
-            self.finish();
+            self.then([Task::NotExpr, Task::Finish, Task::AndLoop(checkpoint)]);
         }
     }
 
-    fn not_expr(&mut self) {
+    pub(super) fn not_expr(&mut self) {
         if self.at(SyntaxKind::NotKw) {
             self.start(SyntaxKind::PrefixExpr);
             self.bump();
-            self.not_expr();
-            self.finish();
+            self.then([Task::NotExpr, Task::Finish]);
         } else {
-            self.cmp_expr();
+            self.then([Task::CmpExpr]);
         }
     }
 
-    fn cmp_expr(&mut self) {
+    pub(super) fn cmp_expr(&mut self) {
         let checkpoint = self.checkpoint();
-        self.add_expr();
-        let mut chained = false;
-        while self.at_any(COMPARISONS) {
-            if chained {
-                self.error(
-                    Code::ChainedComparison,
-                    "comparisons do not chain; combine them with `and`",
-                );
-            }
-            self.start_at(checkpoint, SyntaxKind::BinaryExpr);
-            if self.eat(SyntaxKind::IsKw) {
-                self.eat(SyntaxKind::NotKw);
-            } else {
-                self.bump();
-            }
-            self.add_expr();
-            self.finish();
-            chained = true;
-        }
+        self.then([
+            Task::AddExpr,
+            Task::CmpLoop {
+                checkpoint,
+                chained: false,
+            },
+        ]);
     }
 
-    fn add_expr(&mut self) {
+    pub(super) fn cmp_loop(&mut self, checkpoint: Checkpoint, chained: bool) {
+        if !self.at_any(COMPARISONS) {
+            return;
+        }
+        if chained {
+            self.error(
+                Code::ChainedComparison,
+                "comparisons do not chain; combine them with `and`",
+            );
+        }
+        self.start_at(checkpoint, SyntaxKind::BinaryExpr);
+        if self.eat(SyntaxKind::IsKw) {
+            self.eat(SyntaxKind::NotKw);
+        } else {
+            self.bump();
+        }
+        self.then([
+            Task::AddExpr,
+            Task::Finish,
+            Task::CmpLoop {
+                checkpoint,
+                chained: true,
+            },
+        ]);
+    }
+
+    pub(super) fn add_expr(&mut self) {
         let checkpoint = self.checkpoint();
-        self.mul_expr();
-        while self.at_any(&[SyntaxKind::Plus, SyntaxKind::Minus]) {
+        self.then([Task::MulExpr, Task::AddLoop(checkpoint)]);
+    }
+
+    pub(super) fn add_loop(&mut self, checkpoint: Checkpoint) {
+        if self.at_any(&[SyntaxKind::Plus, SyntaxKind::Minus]) {
             self.start_at(checkpoint, SyntaxKind::BinaryExpr);
             self.bump();
-            self.mul_expr();
-            self.finish();
+            self.then([Task::MulExpr, Task::Finish, Task::AddLoop(checkpoint)]);
         }
     }
 
-    fn mul_expr(&mut self) {
+    pub(super) fn mul_expr(&mut self) {
         let checkpoint = self.checkpoint();
-        self.unary_expr();
-        while self.at_any(PRODUCTS) {
+        self.then([Task::UnaryExpr, Task::MulLoop(checkpoint)]);
+    }
+
+    pub(super) fn mul_loop(&mut self, checkpoint: Checkpoint) {
+        if self.at_any(PRODUCTS) {
             self.start_at(checkpoint, SyntaxKind::BinaryExpr);
             self.bump();
-            self.unary_expr();
-            self.finish();
+            self.then([Task::UnaryExpr, Task::Finish, Task::MulLoop(checkpoint)]);
         }
     }
 
-    fn unary_expr(&mut self) {
+    pub(super) fn unary_expr(&mut self) {
         if self.at(SyntaxKind::Minus) {
             self.start(SyntaxKind::PrefixExpr);
             self.bump();
-            self.unary_expr();
-            self.finish();
+            self.then([Task::UnaryExpr, Task::Finish]);
         } else {
-            self.pow_expr();
+            self.then([Task::PowExpr]);
         }
     }
 
-    fn pow_expr(&mut self) {
+    pub(super) fn pow_expr(&mut self) {
         let checkpoint = self.checkpoint();
-        self.postfix_expr();
+        self.then([Task::Postfix, Task::PowTail(checkpoint)]);
+    }
+
+    pub(super) fn pow_tail(&mut self, checkpoint: Checkpoint) {
         if self.at(SyntaxKind::Star2) {
             self.start_at(checkpoint, SyntaxKind::BinaryExpr);
             self.bump();
-            self.unary_expr();
-            self.finish();
+            self.then([Task::UnaryExpr, Task::Finish]);
         }
     }
 
-    fn postfix_expr(&mut self) {
+    pub(super) fn postfix(&mut self) {
         let checkpoint = self.checkpoint();
-        if !self.primary() {
-            return;
-        }
-        loop {
-            match self.peek() {
-                Some(SyntaxKind::Dot) => {
-                    self.start_at(checkpoint, SyntaxKind::FieldExpr);
-                    self.bump();
-                    self.expect_name(Code::ExpressionSyntax, "an attribute name after `.`");
-                    self.finish();
-                }
-                Some(SyntaxKind::LBracket) => {
-                    self.start_at(checkpoint, SyntaxKind::IndexExpr);
-                    self.bump();
-                    self.expr();
-                    self.expect(SyntaxKind::RBracket, Code::ExpressionSyntax, "`]`");
-                    self.finish();
-                }
-                Some(SyntaxKind::LParen) => {
-                    self.start_at(checkpoint, SyntaxKind::CallExpr);
-                    self.arg_list();
-                    self.finish();
-                }
-                _ => break,
+        self.then([Task::Primary(checkpoint)]);
+    }
+
+    pub(super) fn postfix_loop(&mut self, checkpoint: Checkpoint) {
+        match self.peek() {
+            Some(SyntaxKind::Dot) => {
+                self.start_at(checkpoint, SyntaxKind::FieldExpr);
+                self.bump();
+                self.expect_name(Code::ExpressionSyntax, "an attribute name after `.`");
+                self.finish();
+                self.then([Task::PostfixLoop(checkpoint)]);
             }
+            Some(SyntaxKind::LBracket) => {
+                self.start_at(checkpoint, SyntaxKind::IndexExpr);
+                self.bump();
+                self.then([
+                    Task::Expr,
+                    Task::Close {
+                        kind: SyntaxKind::RBracket,
+                        code: Code::ExpressionSyntax,
+                        what: "`]`",
+                    },
+                    Task::PostfixLoop(checkpoint),
+                ]);
+            }
+            Some(SyntaxKind::LParen) => {
+                self.start_at(checkpoint, SyntaxKind::CallExpr);
+                self.then([Task::ArgList, Task::Finish, Task::PostfixLoop(checkpoint)]);
+            }
+            _ => {}
         }
     }
 
-    fn primary(&mut self) -> bool {
+    pub(super) fn primary(&mut self, checkpoint: Checkpoint) {
+        let rest = Task::PostfixLoop(checkpoint);
         match self.peek() {
             Some(SyntaxKind::Number | SyntaxKind::TrueKw | SyntaxKind::FalseKw) => {
                 self.start(SyntaxKind::Literal);
                 self.bump();
                 self.finish();
+                self.then([rest]);
             }
-            Some(SyntaxKind::StringStart) => self.string_lit(),
+            Some(SyntaxKind::StringStart) => self.then([Task::StringLit, rest]),
             Some(SyntaxKind::Ident) if self.nth(1) == Some(SyntaxKind::Colon2) => {
                 self.variant_ref();
+                self.then([rest]);
             }
             Some(SyntaxKind::Ident) => {
                 self.start(SyntaxKind::NameRef);
                 self.bump();
                 self.finish();
+                self.then([rest]);
             }
             Some(SyntaxKind::ToKw) => {
                 self.start(SyntaxKind::ToExpr);
                 self.bump();
                 self.finish();
+                self.then([rest]);
             }
             Some(SyntaxKind::I32Kw | SyntaxKind::I64Kw | SyntaxKind::F32Kw | SyntaxKind::F64Kw) => {
                 self.start(SyntaxKind::Conversion);
@@ -205,37 +247,53 @@ impl Parser<'_> {
                     Code::ConversionSyntax,
                     "`(` after the conversion's type",
                 ) {
-                    self.expr();
-                    self.expect(SyntaxKind::RParen, Code::ConversionSyntax, "`)`");
+                    self.then([
+                        Task::Expr,
+                        Task::Close {
+                            kind: SyntaxKind::RParen,
+                            code: Code::ConversionSyntax,
+                            what: "`)`",
+                        },
+                        rest,
+                    ]);
+                } else {
+                    self.finish();
+                    self.then([rest]);
                 }
-                self.finish();
             }
-            Some(SyntaxKind::LBracket) => self.array_lit(),
+            Some(SyntaxKind::LBracket) => self.then([Task::ArrayLit, rest]),
             Some(SyntaxKind::LParen) => {
                 self.start(SyntaxKind::ParenExpr);
                 self.bump();
-                self.expr();
-                self.expect(SyntaxKind::RParen, Code::ExpressionSyntax, "`)`");
-                self.finish();
+                self.then([
+                    Task::Expr,
+                    Task::Close {
+                        kind: SyntaxKind::RParen,
+                        code: Code::ExpressionSyntax,
+                        what: "`)`",
+                    },
+                    rest,
+                ]);
             }
             Some(SyntaxKind::IfKw) => {
                 self.error(
                     Code::UnparenthesizedIf,
                     "an `if` that is an operand of another operator is parenthesized",
                 );
-                self.if_expr();
+                self.then([Task::IfExpr, rest]);
             }
-            Some(SyntaxKind::MatchKw) => self.misplaced_match(),
+            Some(SyntaxKind::MatchKw) => {
+                self.misplaced_match();
+                self.then([Task::OrExpr, rest]);
+            }
             _ => {
                 let found = self.describe();
                 self.error(
                     Code::ExpressionSyntax,
                     format!("expected an expression, found {found}"),
                 );
-                return false;
             }
         }
-        true
     }
 
     pub(super) fn variant_ref(&mut self) {
@@ -246,7 +304,7 @@ impl Parser<'_> {
         self.finish();
     }
 
-    fn array_lit(&mut self) {
+    pub(super) fn array_lit(&mut self) {
         self.start(SyntaxKind::ArrayLit);
         self.bump();
         if self.at(SyntaxKind::RBracket) {
@@ -254,91 +312,119 @@ impl Parser<'_> {
                 Code::ExpressionSyntax,
                 "an array holds at least one element",
             );
+            self.then([ARRAY_CLOSE]);
         } else {
-            loop {
-                self.expr();
-                if !self.eat(SyntaxKind::Comma) || self.at(SyntaxKind::RBracket) {
-                    break;
-                }
-            }
+            self.then([Task::Expr, Task::ArrayLoop]);
         }
-        self.expect(SyntaxKind::RBracket, Code::ExpressionSyntax, "`,` or `]`");
-        self.finish();
     }
 
-    fn arg_list(&mut self) {
+    pub(super) fn array_loop(&mut self) {
+        if self.eat(SyntaxKind::Comma) && !self.at(SyntaxKind::RBracket) {
+            self.then([Task::Expr, Task::ArrayLoop]);
+        } else {
+            self.then([ARRAY_CLOSE]);
+        }
+    }
+
+    pub(super) fn arg_list(&mut self) {
         self.start(SyntaxKind::ArgList);
         self.bump();
-        if !self.at(SyntaxKind::RParen) {
-            let mut named_call = None;
-            loop {
-                let named = self.at(SyntaxKind::Ident) && self.nth(1) == Some(SyntaxKind::Eq);
-                if named_call.is_some_and(|first| first != named) {
-                    self.error(
-                        Code::MixedArguments,
-                        "a call's arguments are all positional or all named",
-                    );
-                }
-                named_call.get_or_insert(named);
-                if named {
-                    self.start(SyntaxKind::NamedArg);
-                    self.bump();
-                    self.bump();
-                    self.expr();
-                    self.finish();
-                } else {
-                    self.expr();
-                }
-                if !self.eat(SyntaxKind::Comma) {
-                    break;
-                }
-            }
+        if self.at(SyntaxKind::RParen) {
+            self.then([ARGS_CLOSE]);
+        } else {
+            self.then([Task::ArgItem { named_call: None }]);
         }
-        self.expect(SyntaxKind::RParen, Code::ExpressionSyntax, "`,` or `)`");
-        self.finish();
+    }
+
+    pub(super) fn arg_item(&mut self, named_call: Option<bool>) {
+        let named = self.at(SyntaxKind::Ident) && self.nth(1) == Some(SyntaxKind::Eq);
+        if named_call.is_some_and(|first| first != named) {
+            self.error(
+                Code::MixedArguments,
+                "a call's arguments are all positional or all named",
+            );
+        }
+        let named_call = named_call.or(Some(named));
+        if named {
+            self.start(SyntaxKind::NamedArg);
+            self.bump();
+            self.bump();
+            self.then([Task::Expr, Task::Finish, Task::ArgAfter { named_call }]);
+        } else {
+            self.then([Task::Expr, Task::ArgAfter { named_call }]);
+        }
+    }
+
+    pub(super) fn arg_after(&mut self, named_call: Option<bool>) {
+        if self.eat(SyntaxKind::Comma) {
+            self.then([Task::ArgItem { named_call }]);
+        } else {
+            self.then([ARGS_CLOSE]);
+        }
     }
 
     pub(super) fn string_lit(&mut self) {
         self.start(SyntaxKind::StringLit);
         self.bump();
-        loop {
-            match self.peek() {
-                Some(SyntaxKind::StringText) => self.bump(),
-                Some(SyntaxKind::InterpStart) => {
-                    self.start(SyntaxKind::Interpolation);
-                    self.bump();
-                    self.expr();
-                    if !self.at(SyntaxKind::InterpEnd) {
-                        let found = self.describe();
-                        self.error(
-                            Code::ExpressionSyntax,
-                            format!("expected `}}` after the interpolated value, found {found}"),
-                        );
-                        self.start(SyntaxKind::ErrorNode);
-                        while !self.at_end()
-                            && !self.at_any(&[
-                                SyntaxKind::InterpEnd,
-                                SyntaxKind::StringEnd,
-                                SyntaxKind::Newline,
-                                SyntaxKind::Dedent,
-                            ])
-                        {
-                            self.bump();
-                        }
-                        self.finish();
-                    }
-                    self.eat(SyntaxKind::InterpEnd);
-                    self.finish();
-                }
-                Some(SyntaxKind::StringEnd) => {
-                    self.bump();
-                    self.finish();
-                    return;
-                }
-                _ => break,
+        self.then([Task::StringLoop]);
+    }
+
+    pub(super) fn string_loop(&mut self) {
+        match self.peek() {
+            Some(SyntaxKind::StringText) => {
+                self.bump();
+                self.then([Task::StringLoop]);
+            }
+            Some(SyntaxKind::InterpStart) => {
+                self.start(SyntaxKind::Interpolation);
+                self.bump();
+                self.then([Task::Expr, Task::InterpEnd]);
+            }
+            Some(SyntaxKind::StringEnd) => {
+                self.bump();
+                self.finish();
+            }
+            _ => {
+                self.finish();
+                self.abandon_bracket();
             }
         }
+    }
+
+    pub(super) fn interp_end(&mut self) {
+        if !self.at(SyntaxKind::InterpEnd) {
+            let found = self.describe();
+            self.error(
+                Code::ExpressionSyntax,
+                format!("expected `}}` after the interpolated value, found {found}"),
+            );
+            self.start(SyntaxKind::ErrorNode);
+            while !self.at_end()
+                && !self.at_any(&[
+                    SyntaxKind::InterpEnd,
+                    SyntaxKind::StringEnd,
+                    SyntaxKind::Newline,
+                    SyntaxKind::Dedent,
+                ])
+            {
+                self.bump();
+            }
+            self.finish();
+        }
+        self.eat(SyntaxKind::InterpEnd);
         self.finish();
-        self.abandon_bracket();
+        self.then([Task::StringLoop]);
     }
 }
+
+const ARRAY_CLOSE: Task = Task::Close {
+    kind: SyntaxKind::RBracket,
+    code: Code::ExpressionSyntax,
+    what: "`,` or `]`",
+};
+
+const ARGS_CLOSE: Task = Task::Close {
+    kind: SyntaxKind::RParen,
+    code: Code::ExpressionSyntax,
+    what: "`,` or `)`",
+};

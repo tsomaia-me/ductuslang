@@ -1,6 +1,7 @@
 use super::Parser;
-use crate::diagnostics::Code;
-use crate::diagnostics::Diagnostic;
+use super::checkpoint::Checkpoint;
+use super::task::Task;
+use crate::diagnostics::{Code, Diagnostic};
 use crate::syntax::lexer::is_ident_continue;
 use crate::syntax::syntax_kind::SyntaxKind;
 
@@ -25,9 +26,7 @@ impl Parser<'_> {
         self.flags();
         self.eat(SyntaxKind::AsKw);
         self.expect_name(Code::PlacementSyntax, "the top-level instance's name");
-        self.default_arg_if_any();
-        self.placement_tail();
-        self.finish();
+        self.then([Task::DefaultArg, Task::PlacementTail, Task::Finish]);
     }
 
     pub(super) fn wire_placement(&mut self) {
@@ -37,13 +36,26 @@ impl Parser<'_> {
         if self.eat(SyntaxKind::AsKw) {
             self.expect_name(Code::WireSyntax, "the wire's name");
         }
-        self.default_arg_if_any();
+        self.then([Task::DefaultArg, Task::WireAfterDefault]);
+    }
+
+    pub(super) fn wire_after_default(&mut self) {
         if self.at(SyntaxKind::WhenKw) {
-            self.gate();
+            self.then([Task::Gate, Task::WireAfterGate]);
+        } else {
+            self.then([Task::WireAfterGate]);
         }
+    }
+
+    pub(super) fn wire_after_gate(&mut self) {
         if self.at(SyntaxKind::Pipe) {
-            self.attrs();
+            self.then([Task::Attrs, Task::WireAfterAttrs]);
+        } else {
+            self.then([Task::WireAfterAttrs]);
         }
+    }
+
+    pub(super) fn wire_after_attrs(&mut self) {
         if self.expect(
             SyntaxKind::Colon,
             Code::WireSyntax,
@@ -51,33 +63,45 @@ impl Parser<'_> {
         ) {
             self.start(SyntaxKind::Destination);
             if self.at(SyntaxKind::MatchKw) {
-                self.match_block();
+                self.then([Task::MatchBlock, Task::Finish, Task::Finish]);
             } else {
-                self.expr();
-                self.finish_line(Code::WireSyntax);
+                self.then([
+                    Task::Expr,
+                    Task::FinishLineFinish(Code::WireSyntax),
+                    Task::Finish,
+                ]);
             }
-            self.finish();
         } else {
             self.finish_line(Code::WireSyntax);
+            self.finish();
         }
-        self.finish();
     }
 
     pub(super) fn line(&mut self) {
         let checkpoint = self.checkpoint();
         if self.at(SyntaxKind::Ident) {
             self.start(SyntaxKind::Placement);
-            self.placement_head();
-            if !self.at_any(MEMBER_START) {
-                self.placement_tail();
-                self.finish();
-                return;
-            }
-            self.finish();
+            self.then([Task::PlacementHead, Task::LineAfterHead(checkpoint)]);
+        } else {
+            self.start_at(checkpoint, SyntaxKind::Line);
+            self.then([Task::LineMembers]);
         }
-        self.start_at(checkpoint, SyntaxKind::Line);
-        while self.at_any(MEMBER_START) {
-            self.member();
+    }
+
+    pub(super) fn line_after_head(&mut self, checkpoint: Checkpoint) {
+        if self.at_any(MEMBER_START) {
+            self.finish();
+            self.start_at(checkpoint, SyntaxKind::Line);
+            self.then([Task::LineMembers]);
+        } else {
+            self.then([Task::PlacementTail, Task::Finish]);
+        }
+    }
+
+    pub(super) fn line_members(&mut self) {
+        if self.at_any(MEMBER_START) {
+            self.then([Task::Member, Task::LineMembers]);
+            return;
         }
         if self.at_any(&[SyntaxKind::WhenKw, SyntaxKind::Pipe, SyntaxKind::Colon]) {
             self.error(
@@ -89,18 +113,27 @@ impl Parser<'_> {
         self.finish();
     }
 
-    fn placement_tail(&mut self) {
+    pub(super) fn placement_tail(&mut self) {
         if self.at(SyntaxKind::WhenKw) {
-            self.gate();
+            self.then([Task::Gate, Task::PlacementTailAttrs]);
+        } else {
+            self.then([Task::PlacementTailAttrs]);
         }
+    }
+
+    pub(super) fn placement_tail_attrs(&mut self) {
         if self.at(SyntaxKind::Pipe) {
-            self.attrs();
+            self.then([Task::Attrs, Task::PlacementTailBody]);
+        } else {
+            self.then([Task::PlacementTailBody]);
         }
+    }
+
+    pub(super) fn placement_tail_body(&mut self) {
         if self.at(SyntaxKind::Colon) {
             self.start(SyntaxKind::Body);
             self.bump();
-            self.block(false);
-            self.finish();
+            self.then([Task::Block { pattern: false }, Task::Finish]);
         } else {
             self.finish_line(Code::PlacementSyntax);
         }
@@ -115,47 +148,64 @@ impl Parser<'_> {
                 format!("expected a placement, found {found}"),
             );
         }
-        while self.at_any(MEMBER_START) {
-            self.member();
-        }
-        self.finish();
+        self.then([Task::MembersLoop]);
     }
 
-    fn member(&mut self) {
+    pub(super) fn members_loop(&mut self) {
+        if self.at_any(MEMBER_START) {
+            self.then([Task::Member, Task::MembersLoop]);
+        } else {
+            self.finish();
+        }
+    }
+
+    pub(super) fn member(&mut self) {
         match self.peek() {
             Some(SyntaxKind::LParen) => {
                 self.start(SyntaxKind::ParenPlacement);
                 self.bump();
                 if self.at(SyntaxKind::Ident) {
                     self.start(SyntaxKind::Placement);
-                    self.placement_head();
-                    if self.at(SyntaxKind::WhenKw) {
-                        self.gate();
-                    }
-                    if self.at(SyntaxKind::Pipe) {
-                        self.attrs();
-                    }
-                    self.finish();
+                    self.then([Task::PlacementHead, Task::ParenAfterHead]);
                 } else {
                     let found = self.describe();
                     self.error(
                         Code::PlacementSyntax,
                         format!("expected a placement inside the parentheses, found {found}"),
                     );
+                    self.then([PAREN_CLOSE]);
                 }
-                self.expect(SyntaxKind::RParen, Code::PlacementSyntax, "`)`");
-                self.finish();
             }
-            Some(SyntaxKind::LBracket) => self.bundle(),
+            Some(SyntaxKind::LBracket) => self.then([Task::Bundle]),
             _ => {
                 self.start(SyntaxKind::Placement);
-                self.placement_head();
-                self.finish();
+                self.then([Task::PlacementHead, Task::Finish]);
             }
         }
     }
 
-    fn placement_head(&mut self) {
+    pub(super) fn paren_after_head(&mut self) {
+        if self.at(SyntaxKind::WhenKw) {
+            self.then([Task::Gate, Task::ParenAfterGate]);
+        } else {
+            self.then([Task::ParenAfterGate]);
+        }
+    }
+
+    pub(super) fn paren_after_gate(&mut self) {
+        if self.at(SyntaxKind::Pipe) {
+            self.then([Task::Attrs, Task::ParenFinishPlacement]);
+        } else {
+            self.then([Task::ParenFinishPlacement]);
+        }
+    }
+
+    pub(super) fn paren_finish_placement(&mut self) {
+        self.finish();
+        self.then([PAREN_CLOSE]);
+    }
+
+    pub(super) fn placement_head(&mut self) {
         if self.at_wire_kind() {
             let name = self.current_text();
             self.error(
@@ -168,7 +218,7 @@ impl Parser<'_> {
         if self.eat(SyntaxKind::AsKw) {
             self.expect_name(Code::PlacementSyntax, "the name after `as`");
         }
-        self.default_arg_if_any();
+        self.then([Task::DefaultArg]);
     }
 
     fn flags(&mut self) {
@@ -194,7 +244,7 @@ impl Parser<'_> {
         }
     }
 
-    fn default_arg_if_any(&mut self) {
+    pub(super) fn default_arg(&mut self) {
         if !self.at(SyntaxKind::Slash) {
             return;
         }
@@ -203,26 +253,35 @@ impl Parser<'_> {
         if self.at(SyntaxKind::LParen) {
             self.start(SyntaxKind::ParenExpr);
             self.bump();
-            self.expr();
-            self.expect(SyntaxKind::RParen, Code::DefaultArgSyntax, "`)`");
-            self.finish();
+            self.then([
+                Task::Expr,
+                Task::Close {
+                    kind: SyntaxKind::RParen,
+                    code: Code::DefaultArgSyntax,
+                    what: "`)`",
+                },
+                Task::Finish,
+            ]);
         } else {
-            self.atom();
-            if self.adjacent() && self.at_any(&[SyntaxKind::LBracket, SyntaxKind::LParen]) {
-                let found = self.describe();
-                let diagnostic = Diagnostic::new(
-                    Code::DefaultArgSyntax,
-                    self.current_span(),
-                    format!("an unparenthesized `/` value ends before {found}"),
-                )
-                .with_hint("parenthesize the whole value, as in `Note/(a[0])`");
-                self.error_with(diagnostic);
-            }
+            self.then([Task::Atom, Task::DefaultAfterAtom]);
+        }
+    }
+
+    pub(super) fn default_after_atom(&mut self) {
+        if self.adjacent() && self.at_any(&[SyntaxKind::LBracket, SyntaxKind::LParen]) {
+            let found = self.describe();
+            let diagnostic = Diagnostic::new(
+                Code::DefaultArgSyntax,
+                self.current_span(),
+                format!("an unparenthesized `/` value ends before {found}"),
+            )
+            .with_hint("parenthesize the whole value, as in `Note/(a[0])`");
+            self.error_with(diagnostic);
         }
         self.finish();
     }
 
-    fn atom(&mut self) {
+    pub(super) fn atom(&mut self) {
         match self.peek() {
             Some(SyntaxKind::Minus) if self.nth(1) == Some(SyntaxKind::Number) => {
                 self.start(SyntaxKind::PrefixExpr);
@@ -237,7 +296,7 @@ impl Parser<'_> {
                 self.bump();
                 self.finish();
             }
-            Some(SyntaxKind::StringStart) => self.string_lit(),
+            Some(SyntaxKind::StringStart) => self.then([Task::StringLit]),
             Some(SyntaxKind::Ident) if self.nth(1) == Some(SyntaxKind::Colon2) => {
                 self.variant_ref();
             }
@@ -279,14 +338,13 @@ impl Parser<'_> {
         }
     }
 
-    fn gate(&mut self) {
+    pub(super) fn gate(&mut self) {
         self.start(SyntaxKind::Gate);
         self.bump();
-        self.expr();
-        self.finish();
+        self.then([Task::Expr, Task::Finish]);
     }
 
-    fn attrs(&mut self) {
+    pub(super) fn attrs(&mut self) {
         self.start(SyntaxKind::Attrs);
         self.bump();
         if !self.at_any(&[SyntaxKind::Ident, SyntaxKind::Bang]) {
@@ -296,61 +354,91 @@ impl Parser<'_> {
                 format!("expected an attribute after `|`, found {found}"),
             );
         }
-        while self.at_any(&[SyntaxKind::Ident, SyntaxKind::Bang]) {
-            self.start(SyntaxKind::AttrEntry);
-            if self.eat(SyntaxKind::Bang) {
-                self.expect_name(Code::AttributeSyntax, "the attribute after `!`");
-                if self.at(SyntaxKind::Eq) {
-                    self.error(
-                        Code::AttributeSyntax,
-                        "`!name` sets an attribute to false and takes no value",
-                    );
-                }
-            } else {
-                self.bump();
-                if self.eat(SyntaxKind::Eq) {
-                    self.expr();
-                }
-            }
-            self.finish();
-        }
-        self.finish();
+        self.then([Task::AttrsLoop]);
     }
 
-    fn bundle(&mut self) {
+    pub(super) fn attrs_loop(&mut self) {
+        if !self.at_any(&[SyntaxKind::Ident, SyntaxKind::Bang]) {
+            self.finish();
+            return;
+        }
+        self.start(SyntaxKind::AttrEntry);
+        if self.eat(SyntaxKind::Bang) {
+            self.expect_name(Code::AttributeSyntax, "the attribute after `!`");
+            if self.at(SyntaxKind::Eq) {
+                self.error(
+                    Code::AttributeSyntax,
+                    "`!name` sets an attribute to false and takes no value",
+                );
+            }
+            self.finish();
+            self.then([Task::AttrsLoop]);
+        } else {
+            self.bump();
+            if self.eat(SyntaxKind::Eq) {
+                self.then([Task::Expr, Task::Finish, Task::AttrsLoop]);
+            } else {
+                self.finish();
+                self.then([Task::AttrsLoop]);
+            }
+        }
+    }
+
+    pub(super) fn bundle(&mut self) {
         self.start(SyntaxKind::Bundle);
         self.bump();
-        let mut members = 0;
-        while self.at_any(MEMBER_START) {
+        self.then([Task::BundleLoop { members: 0 }]);
+    }
+
+    pub(super) fn bundle_loop(&mut self, members: usize) {
+        if self.at_any(MEMBER_START) {
             if self.at(SyntaxKind::LBracket) {
                 self.error(
                     Code::BundleSyntax,
                     "a bundle is not a member of another bundle",
                 );
             }
-            self.member();
-            members += 1;
-        }
-        if self.at(SyntaxKind::ForKw) {
+            self.then([
+                Task::Member,
+                Task::BundleLoop {
+                    members: members + 1,
+                },
+            ]);
+        } else if self.at(SyntaxKind::ForKw) {
             self.start(SyntaxKind::BundleFor);
             self.bump();
             self.expect_name(Code::BundleSyntax, "the loop variable");
             self.expect(SyntaxKind::InKw, Code::BundleSyntax, "`in`");
-            self.iterable();
-            self.expect(SyntaxKind::Colon, Code::BundleSyntax, "`:` and the members");
-            if !self.at_any(MEMBER_START) {
-                let found = self.describe();
-                self.error(
-                    Code::BundleSyntax,
-                    format!("expected a member, found {found}"),
-                );
-            }
-            while self.at_any(MEMBER_START) {
-                self.member();
-            }
-            self.finish();
-            members += 1;
+            self.then([Task::Iterable, Task::BundleForAfterIterable { members }]);
+        } else {
+            self.then([Task::BundleEnd { members }]);
         }
+    }
+
+    pub(super) fn bundle_for_after_iterable(&mut self, members: usize) {
+        self.expect(SyntaxKind::Colon, Code::BundleSyntax, "`:` and the members");
+        if !self.at_any(MEMBER_START) {
+            let found = self.describe();
+            self.error(
+                Code::BundleSyntax,
+                format!("expected a member, found {found}"),
+            );
+        }
+        self.then([Task::BundleForMembers { members }]);
+    }
+
+    pub(super) fn bundle_for_members(&mut self, members: usize) {
+        if self.at_any(MEMBER_START) {
+            self.then([Task::Member, Task::BundleForMembers { members }]);
+        } else {
+            self.finish();
+            self.then([Task::BundleEnd {
+                members: members + 1,
+            }]);
+        }
+    }
+
+    pub(super) fn bundle_end(&mut self, members: usize) {
         if members == 0 {
             let found = self.describe();
             self.error(
@@ -362,3 +450,9 @@ impl Parser<'_> {
         self.finish();
     }
 }
+
+const PAREN_CLOSE: Task = Task::Close {
+    kind: SyntaxKind::RParen,
+    code: Code::PlacementSyntax,
+    what: "`)`",
+};

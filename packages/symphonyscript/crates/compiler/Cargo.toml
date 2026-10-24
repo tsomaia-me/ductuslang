@@ -12,4 +12,5 @@ unicode-normalization = "0.1"
 unicode-width = "0.2"
 
 [dev-dependencies]
+rowan = "0.16"
 symphonyscript-fixtures.workspace = true

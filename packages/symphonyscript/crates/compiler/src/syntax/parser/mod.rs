@@ -1,15 +1,20 @@
 mod blocks;
+mod checkpoint;
 mod expressions;
 mod items;
 mod placements;
+mod task;
+mod tree_builder;
 
-use rowan::{Checkpoint, GreenNode, GreenNodeBuilder, Language};
+use rowan::GreenNode;
 use symphonyscript_core::{Span, Vocabulary};
 
+use self::checkpoint::Checkpoint;
+use self::task::Task;
+use self::tree_builder::TreeBuilder;
 use super::lexed::Lexed;
 use super::lexer::{Layout, Lexer, Suspension};
 use super::nfc::nfc;
-use super::symphony_language::SymphonyLanguage;
 use super::syntax_kind::SyntaxKind;
 use super::token::Token;
 use crate::diagnostics::{Code, Diagnostic};
@@ -23,10 +28,11 @@ pub(crate) struct Parser<'a> {
     suspended: Vec<Suspension>,
     lexer_diagnostics: Vec<Diagnostic>,
     pos: usize,
-    builder: GreenNodeBuilder<'static>,
+    builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
     line_error: bool,
     previous_line_error: bool,
+    tasks: Vec<Task>,
 }
 
 impl<'a> Parser<'a> {
@@ -44,26 +50,142 @@ impl<'a> Parser<'a> {
             suspended: layout.suspended,
             lexer_diagnostics: lexed.diagnostics,
             pos: 0,
-            builder: GreenNodeBuilder::new(),
+            builder: TreeBuilder::new(),
             diagnostics: Vec::new(),
             line_error: false,
             previous_line_error: false,
+            tasks: Vec::new(),
         }
     }
 
     pub(crate) fn run(mut self) -> (GreenNode, Vec<Diagnostic>) {
-        self.builder
-            .start_node(SymphonyLanguage::kind_to_raw(SyntaxKind::File));
-        self.file();
+        self.builder.start_node(SyntaxKind::File);
+        self.tasks.push(Task::File);
+        while let Some(task) = self.tasks.pop() {
+            self.step(task);
+        }
         self.flush_trivia();
         while self.pos < self.tokens.len() {
             self.raw_bump();
         }
         self.builder.finish_node();
+        let green = self.builder.finish();
         let mut diagnostics = self.lexer_diagnostics;
         diagnostics.extend(self.diagnostics);
         diagnostics.sort_by_key(|diagnostic| diagnostic.span.range.start);
-        (self.builder.finish(), diagnostics)
+        (green, diagnostics)
+    }
+
+    fn then<const N: usize>(&mut self, tasks: [Task; N]) {
+        self.tasks.extend(tasks.into_iter().rev());
+    }
+
+    fn step(&mut self, task: Task) {
+        match task {
+            Task::Finish => self.finish(),
+            Task::FinishLine(code) => self.finish_line(code),
+            Task::FinishLineFinish(code) => {
+                self.finish_line(code);
+                self.finish();
+            }
+            Task::Close { kind, code, what } => {
+                self.expect(kind, code, what);
+                self.finish();
+            }
+            Task::File => self.file_step(),
+            Task::TopItem => self.top_item(),
+            Task::InputDecl => self.input_decl(),
+            Task::LetDecl(kind) => self.let_decl(kind),
+            Task::FnDecl => self.fn_decl(),
+            Task::Param { pattern } => self.param(pattern),
+            Task::ParamAfter { pattern } => self.param_after(pattern),
+            Task::FnAfterParams => self.fn_after_params(),
+            Task::FnBody => self.fn_body(),
+            Task::FnLets => self.fn_lets(),
+            Task::FnBodyBlockEnd => self.fn_body_block_end(),
+            Task::PatternDecl => self.pattern_decl(),
+            Task::PatternAfterParams => self.pattern_after_params(),
+            Task::Block { pattern } => self.block(pattern),
+            Task::PatternLets => self.pattern_lets(),
+            Task::BlockItems { pattern, items } => self.block_items(pattern, items),
+            Task::BodyItem => self.body_item(),
+            Task::ForBlock => self.for_block(),
+            Task::ForAfterIterable => self.for_after_iterable(),
+            Task::Iterable => self.iterable(),
+            Task::IterableEnd(checkpoint) => self.iterable_end(checkpoint),
+            Task::WhenBlock => self.when_block(),
+            Task::WhenArms { arms } => self.when_arms(arms),
+            Task::WhenAfterElse { arms } => self.when_after_else(arms),
+            Task::GuardAfter { arms } => self.guard_after(arms),
+            Task::WhenAfterCondition => self.when_after_condition(),
+            Task::WhenElseOptional => self.when_else_optional(),
+            Task::WhenElse => self.when_else(),
+            Task::MatchBlock => self.match_block(),
+            Task::MatchAfterScrutinee => self.match_after_scrutinee(),
+            Task::MatchArms { arms, after_else } => self.match_arms(arms, after_else),
+            Task::MatchArmEnd { arms, after_else } => self.match_arm_end(arms, after_else),
+            Task::TopPlacement => self.top_placement(),
+            Task::WirePlacement => self.wire_placement(),
+            Task::WireAfterDefault => self.wire_after_default(),
+            Task::WireAfterGate => self.wire_after_gate(),
+            Task::WireAfterAttrs => self.wire_after_attrs(),
+            Task::PlacementTail => self.placement_tail(),
+            Task::PlacementTailAttrs => self.placement_tail_attrs(),
+            Task::PlacementTailBody => self.placement_tail_body(),
+            Task::Line => self.line(),
+            Task::LineAfterHead(checkpoint) => self.line_after_head(checkpoint),
+            Task::LineMembers => self.line_members(),
+            Task::Members(kind) => self.members(kind),
+            Task::MembersLoop => self.members_loop(),
+            Task::Member => self.member(),
+            Task::ParenAfterHead => self.paren_after_head(),
+            Task::ParenAfterGate => self.paren_after_gate(),
+            Task::ParenFinishPlacement => self.paren_finish_placement(),
+            Task::PlacementHead => self.placement_head(),
+            Task::DefaultArg => self.default_arg(),
+            Task::DefaultAfterAtom => self.default_after_atom(),
+            Task::Atom => self.atom(),
+            Task::Gate => self.gate(),
+            Task::Attrs => self.attrs(),
+            Task::AttrsLoop => self.attrs_loop(),
+            Task::Bundle => self.bundle(),
+            Task::BundleLoop { members } => self.bundle_loop(members),
+            Task::BundleForAfterIterable { members } => self.bundle_for_after_iterable(members),
+            Task::BundleForMembers { members } => self.bundle_for_members(members),
+            Task::BundleEnd { members } => self.bundle_end(members),
+            Task::Expr => self.expr(),
+            Task::IfExpr => self.if_expr(),
+            Task::IfThen => self.if_then(),
+            Task::IfElse => self.if_else(),
+            Task::OrExpr => self.or_expr(),
+            Task::OrLoop(checkpoint) => self.or_loop(checkpoint),
+            Task::AndExpr => self.and_expr(),
+            Task::AndLoop(checkpoint) => self.and_loop(checkpoint),
+            Task::NotExpr => self.not_expr(),
+            Task::CmpExpr => self.cmp_expr(),
+            Task::CmpLoop {
+                checkpoint,
+                chained,
+            } => self.cmp_loop(checkpoint, chained),
+            Task::AddExpr => self.add_expr(),
+            Task::AddLoop(checkpoint) => self.add_loop(checkpoint),
+            Task::MulExpr => self.mul_expr(),
+            Task::MulLoop(checkpoint) => self.mul_loop(checkpoint),
+            Task::UnaryExpr => self.unary_expr(),
+            Task::PowExpr => self.pow_expr(),
+            Task::PowTail(checkpoint) => self.pow_tail(checkpoint),
+            Task::Postfix => self.postfix(),
+            Task::Primary(checkpoint) => self.primary(checkpoint),
+            Task::PostfixLoop(checkpoint) => self.postfix_loop(checkpoint),
+            Task::ArrayLit => self.array_lit(),
+            Task::ArrayLoop => self.array_loop(),
+            Task::ArgList => self.arg_list(),
+            Task::ArgItem { named_call } => self.arg_item(named_call),
+            Task::ArgAfter { named_call } => self.arg_after(named_call),
+            Task::StringLit => self.string_lit(),
+            Task::StringLoop => self.string_loop(),
+            Task::InterpEnd => self.interp_end(),
+        }
     }
 
     fn significant(&self, n: usize) -> Option<usize> {
@@ -126,8 +248,7 @@ impl<'a> Parser<'a> {
     fn raw_bump(&mut self) {
         let token = &self.tokens[self.pos];
         let text = &self.source.text[token.range.start as usize..token.range.end as usize];
-        self.builder
-            .token(SymphonyLanguage::kind_to_raw(token.kind), text);
+        self.builder.token(token.kind, text);
         self.pos += 1;
     }
 
@@ -165,7 +286,7 @@ impl<'a> Parser<'a> {
 
     fn start(&mut self, kind: SyntaxKind) {
         self.flush_trivia();
-        self.builder.start_node(SymphonyLanguage::kind_to_raw(kind));
+        self.builder.start_node(kind);
     }
 
     fn finish(&mut self) {
@@ -178,8 +299,7 @@ impl<'a> Parser<'a> {
     }
 
     fn start_at(&mut self, checkpoint: Checkpoint, kind: SyntaxKind) {
-        self.builder
-            .start_node_at(checkpoint, SymphonyLanguage::kind_to_raw(kind));
+        self.builder.start_node_at(checkpoint, kind);
     }
 
     fn current_span(&self) -> Span {
