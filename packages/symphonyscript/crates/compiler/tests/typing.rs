@@ -173,6 +173,24 @@ fn a_cell_is_read_in_each_use_type_and_its_initial_value_fits_every_use() {
 }
 
 #[test]
+fn a_reactive_let_read_by_another_keeps_the_width_of_the_input_it_reads() {
+    for links in 1..=50 {
+        for (annotation, misfits) in [("", 0), (": i32", links)] {
+            let mut text = format!("input a{annotation} = 1\nlet l1 = a + 1\n");
+            for link in 2..=links {
+                text.push_str(&format!("let l{link} = l{} * 2\n", link - 1));
+            }
+            text.push_str("Clip k:\n");
+            for link in 1..=links {
+                text.push_str(&format!("    Note when l{link} > 3000000000\n"));
+            }
+            let expected = vec![Code::DoesNotFit; misfits];
+            assert_eq!(codes(&text), expected, "{text}");
+        }
+    }
+}
+
+#[test]
 fn an_annotation_fixes_a_type_outright() {
     expect(&[
         ("let x: i32 = 0.5\n", &[Code::TypeMismatch]),
