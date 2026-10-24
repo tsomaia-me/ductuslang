@@ -68,12 +68,11 @@ impl Engine<'_> {
                     if matches!(self.node(current).op, Op::Recursive { .. }) {
                         self.memo.call_feeds.entry(current).or_default().push(feed);
                     }
-                    match &self.node(current).op {
-                        Op::Read(binding) => {
-                            binding_feeds.entry(*binding).or_default().push(feed);
-                            stack.push(self.binding(*binding).init);
-                        }
-                        op => stack.extend(op.operands()),
+                    if let Op::Read(binding) = &self.node(current).op {
+                        binding_feeds.entry(*binding).or_default().push(feed);
+                    }
+                    if self.carries(current, feed.0) {
+                        stack.extend(self.carried_operands(current));
                     }
                 }
             }
@@ -131,6 +130,20 @@ impl Engine<'_> {
         }
     }
 
+    fn carries(&self, node: NodeId, family: FamilyId) -> bool {
+        self.memo
+            .sigs
+            .get(&node)
+            .is_some_and(|sig| sig.open || sig.family == Some(family))
+    }
+
+    fn carried_operands(&self, node: NodeId) -> Vec<NodeId> {
+        match &self.node(node).op {
+            Op::Read(binding) => vec![self.binding(*binding).init],
+            op => op.operands(),
+        }
+    }
+
     fn resolve_taker(&mut self, node: NodeId, family: FamilyId, units: &[(usize, Loc)]) -> bool {
         match units {
             [] => {
@@ -139,7 +152,7 @@ impl Engine<'_> {
                     Code::PlainInFamily,
                     node,
                     format!(
-                        "this plain value takes the unit family `{name}`, and the expression feeds no attribute of that family to give its unit"
+                        "this plain value takes the unit family `{name}`, and its family value reaches no attribute of that family to give its unit"
                     ),
                 );
                 false
@@ -194,14 +207,37 @@ impl Engine<'_> {
         takers.sort();
         takers.dedup();
         let mut fractional = false;
+        let mut carried: HashMap<FamilyId, HashSet<NodeId>> = HashMap::new();
         for (node, family) in takers {
-            let units = units_of(&feeds, family);
+            let reached = carried
+                .entry(family)
+                .or_insert_with(|| self.carried_in(template, root, family))
+                .contains(&node);
+            let units = if reached {
+                units_of(&feeds, family)
+            } else {
+                Vec::new()
+            };
             fractional |= self.resolve_taker(node, family, &units);
         }
         if fractional {
             let nodes = self.template_nodes(template, root);
             self.read_in_units_of(&nodes);
         }
+    }
+
+    fn carried_in(&self, template: ScopeId, root: NodeId, family: FamilyId) -> HashSet<NodeId> {
+        let mut reached = HashSet::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if self.template_of(self.node(node).scope) != Some(template) || !reached.insert(node) {
+                continue;
+            }
+            if self.carries(node, family) {
+                stack.extend(self.carried_operands(node));
+            }
+        }
+        reached
     }
 
     fn template_nodes(&self, template: ScopeId, root: NodeId) -> Vec<NodeId> {

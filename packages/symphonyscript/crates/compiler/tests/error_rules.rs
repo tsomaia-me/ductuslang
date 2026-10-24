@@ -235,13 +235,19 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "3.6",
-        "Where the expression feeds no attribute of the family, the plain value is an error",
+        "Where the family value reaches no attribute of the family, as when `/` or `div` makes it a plain number or a comparison a `bool`, the plain value is an error",
         "plain-in-family",
         "input d = 5ms\nClip c:\n    Note when d > 1\n",
     ),
+    rule(
+        "3.6",
+        "Where the family value reaches no attribute of the family, as when `/` or `div` makes it a plain number or a comparison a `bool`, the plain value is an error",
+        "plain-in-family",
+        "Clip c:\n    Note | length=((2bars + 1) div 1bars)\n",
+    ),
     bounded(
         "3.6",
-        "and so is an expression that feeds two attributes of the family with different default units",
+        "and so is a family value that reaches two attributes of the family with different default units",
         "conflicting-units",
         "let d = 2bars + 1\nA one | long=d\nB two | short=d\nRoot r:\n    Item\n    Link: r\n",
     ),

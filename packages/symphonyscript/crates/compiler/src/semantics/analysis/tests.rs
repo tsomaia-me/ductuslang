@@ -99,7 +99,6 @@ fn envelope_vocabulary() -> Vocabulary {
 
 const IN_DEFAULT_UNITS: &[&str] = &[
     "Env e | attack=(1s + 3)\n",
-    "Env e | attack=(if 1s + 3 > 2s then 1s else 2s)\n",
     "Env e | attack=((1s + 3) / 2)\n",
     "Env e | attack=(1s + 3ms)\n",
 ];
@@ -108,7 +107,6 @@ const FIXED_IN_DEFAULT_UNITS: &[&str] = &[
     "Env e | attack=3i64\n",
     "Env e | attack=i64(3)\n",
     "Env e | attack=(1s + 3i32)\n",
-    "Env e | attack=(if 1s + 3i32 > 2s then 1s else 2s)\n",
     "Env e | release=3i32\n",
 ];
 
@@ -133,43 +131,15 @@ fn first_value(engine: &Engine<'_>) -> Option<(CVal, Kind)> {
     first_value_in(engine, EvalTy::F64)
 }
 
-fn compared_in(engine: &Engine<'_>) -> Vec<EvalTy> {
-    let Some(node) = first_node(engine) else {
-        return Vec::new();
-    };
-    let Op::If(condition, _, _) = engine.node(node).op else {
-        return Vec::new();
-    };
-    let Op::Binary(_, lhs, _) = engine.node(condition).op else {
-        return Vec::new();
-    };
-    let mut types: Vec<EvalTy> = engine
-        .memo
-        .evals
-        .keys()
-        .filter(|(evaluated, _)| *evaluated == lhs)
-        .map(|(_, ty)| *ty)
-        .collect();
-    types.sort_by_key(|ty| format!("{ty:?}"));
-    types
-}
-
 #[test]
 fn a_fixed_type_integer_read_in_a_fractional_unit_is_the_float_it_widens_into() {
     let envelope = envelope_vocabulary();
-    let expected = [
-        CVal::F64(0.003),
-        CVal::F64(0.003),
-        CVal::F64(1.0 + 0.003),
-        CVal::F64(2.0),
-    ];
+    let expected = [CVal::F64(0.003), CVal::F64(0.003), CVal::F64(1.0 + 0.003)];
     for (text, value) in FIXED_IN_DEFAULT_UNITS.iter().zip(expected) {
         let (diagnostics, found) = analyzed_with(&envelope, text, first_value);
         assert_eq!(diagnostics, Vec::<Diagnostic>::new(), "{text}");
         assert_eq!(found.map(|(value, _)| value), Some(value), "{text}");
     }
-    let (_, types) = analyzed_with(&envelope, FIXED_IN_DEFAULT_UNITS[3], compared_in);
-    assert_eq!(types, vec![EvalTy::F32]);
     let (diagnostics, found) = analyzed_with(&envelope, "Env e | release=3i32\n", |engine| {
         first_value_in(engine, EvalTy::F32)
     });
@@ -193,7 +163,6 @@ fn a_plain_value_reads_in_the_default_unit_as_a_literal_with_its_suffix_would() 
     let envelope = envelope_vocabulary();
     let expected = [
         (1.0 + 0.003, Kind::Float),
-        (2.0, Kind::Int),
         ((1.0 + 0.003) / 2.0, Kind::Float),
         (1.0 + 0.003, Kind::Float),
     ];
@@ -245,6 +214,165 @@ fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
         return None;
     };
     engine.memo.evals.get(&(*node, ty)).cloned()
+}
+
+fn attr_values(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Vec<CVal> {
+    let mut values = Vec::new();
+    for instance in &engine.instances {
+        let Some(decl) = engine.vocabulary.node_kind(instance.kind) else {
+            continue;
+        };
+        for source in &instance.attrs {
+            let named = decl
+                .attrs
+                .get(source.attr.index())
+                .is_some_and(|attr| attr.name == name);
+            if let (true, AttrValueSource::Expr(expr, scope)) = (named, source.value)
+                && let Some(Val::Scalar(node)) = engine.memo.exprs.get(&(expr, scope))
+                && let Some(value) = engine.memo.evals.get(&(*node, ty))
+            {
+                values.push(value.clone());
+            }
+        }
+    }
+    values
+}
+
+#[test]
+fn a_plain_value_reads_in_the_unit_its_family_value_reaches() {
+    let example = vocabulary();
+    let bars = bar_vocabulary();
+    let family = "2bars + 1";
+    let mut rejected: Vec<(&Vocabulary, String)> = vec![
+        (
+            &example,
+            format!("Clip c:\n    Note | length=(({family}) div 1bars)\n"),
+        ),
+        (
+            &example,
+            format!("Clip c:\n    for i in 0..(({family}) div 1bars):\n        Note\n"),
+        ),
+        (
+            &bars,
+            format!("let k = ({family}) div 1bars\nBar b | len=k\n"),
+        ),
+        (
+            &example,
+            format!("Clip c:\n    Note when {family} > 3bars\n"),
+        ),
+    ];
+    let plain = [
+        format!("({family}) div 1bars"),
+        format!("({family}) / 1bars"),
+    ];
+    let plain_uses = [
+        "Clip c:\n    Note | length=({})\n",
+        "let k = {}\nClip c:\n    Note | length=k\n",
+        "Clip c:\n    Note when ({}) > 1\n",
+        "Clip c | gain=({})\n",
+    ];
+    for wrapped in &plain {
+        for user in plain_uses {
+            rejected.push((&example, user.replace("{}", wrapped)));
+        }
+    }
+    rejected.push((
+        &example,
+        format!("Clip c:\n    for i in 0..({}):\n        Note\n", plain[0]),
+    ));
+    for wrapped in [format!("{family} > 3bars"), format!("{family} <= 3bars")] {
+        for user in [
+            "Clip c:\n    Note when {}\n",
+            "Clip c:\n    Note | accent=({})\n",
+        ] {
+            rejected.push((&example, user.replace("{}", &wrapped)));
+        }
+    }
+    let mut failures = Vec::new();
+    for (vocabulary, text) in &rejected {
+        let (diagnostics, ()) = analyzed_with(vocabulary, text, |_| ());
+        let start = text.find(family).map(|at| at + family.len() - 1);
+        let found: Vec<(Code, Option<usize>)> = errors_of(&diagnostics)
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code,
+                    usize::try_from(diagnostic.span.range.start).ok(),
+                )
+            })
+            .collect();
+        if found != [(Code::PlainInFamily, start)] {
+            failures.push(format!("{text:?}: found {found:?}"));
+        }
+    }
+    let envelope = envelope_vocabulary();
+    for (vocabulary, text, plain) in [
+        (
+            &envelope,
+            "Env e | attack=(if 1s + 3 > 2s then 1s else 2s)\n",
+            "3 >",
+        ),
+        (
+            &envelope,
+            "Env e | attack=(if 1s + 3i32 > 2s then 1s else 2s)\n",
+            "3i32",
+        ),
+        (
+            &example,
+            "fn u(n): if n < 1 then (n * 1bars + 1) div 1bars else u(n - 1)\nClip c:\n    Note | length=(u(2))\n",
+            "1) div",
+        ),
+    ] {
+        let (diagnostics, ()) = analyzed_with(vocabulary, text, |_| ());
+        let found: Vec<(Code, Option<u32>)> = errors_of(&diagnostics)
+            .iter()
+            .map(|diagnostic| (diagnostic.code, Some(diagnostic.span.range.start)))
+            .collect();
+        let start = text.find(plain).and_then(|at| u32::try_from(at).ok());
+        if found != [(Code::PlainInFamily, start)] {
+            failures.push(format!("{text:?}: found {found:?}"));
+        }
+    }
+    let mut accepted: Vec<(String, Vec<f64>)> = vec![
+        (format!("Clip c:\n    Note | length={family}\n"), vec![9.0]),
+        (
+            "Clip c:\n    Note | length=((2bars + 4bars) div 1bars)\n".into(),
+            vec![6.0],
+        ),
+        (
+            format!("Clip c:\n    for x in [1bars, {family}]:\n        Note | length=x\n"),
+            vec![4.0, 9.0],
+        ),
+        (
+            format!("let d = {family}\nClip c:\n    Note | length=d\n"),
+            vec![9.0],
+        ),
+    ];
+    for (wrapped, value) in [
+        (format!("({family}) * 2"), 18.0),
+        (format!("({family}) / 2"), 4.5),
+        (format!("-({family})"), -9.0),
+        (format!("abs({family})"), 9.0),
+        (format!("min({family}, 3bars)"), 9.0),
+        (format!("if true then {family} else 1bars"), 9.0),
+    ] {
+        accepted.push((
+            format!("Clip c:\n    Note | length=({wrapped})\n"),
+            vec![value],
+        ));
+    }
+    for (text, expected) in &accepted {
+        let (diagnostics, found) =
+            analyzed(text, |engine| attr_values(engine, "length", EvalTy::F64));
+        let expected: Vec<CVal> = expected.iter().map(|value| CVal::F64(*value)).collect();
+        if !errors_of(&diagnostics).is_empty() || found != expected {
+            failures.push(format!(
+                "{text:?}: expected {expected:?}, found {found:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn error_codes(diagnostics: &[Diagnostic]) -> Vec<Code> {
