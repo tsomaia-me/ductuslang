@@ -1730,6 +1730,69 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+fn doubling(name: &str, levels: usize, left: &str, right: &str) -> String {
+    let mut text = format!("input i = 1\nfn {name}0(x): x\n");
+    for level in 1..=levels {
+        let below = level - 1;
+        text.push_str(&format!(
+            "fn {name}{level}(x): {name}{below}({left}) + {name}{below}({right})\n"
+        ));
+    }
+    text.push_str(&format!("Clip c:\n    Note/({name}{levels}(i))\n"));
+    text
+}
+
+#[test]
+fn a_compilation_inlines_at_most_a_million_calls() {
+    let work = |text: &str| {
+        let (diagnostics, sizes) = analyzed(text, |engine| {
+            engine.nodes.len() + engine.scopes.len() + engine.bindings.len()
+        });
+        (error_codes(&diagnostics), sizes)
+    };
+    let (accepted, accepted_work) = work(&doubling("f", 18, "x", "x"));
+    assert_eq!(accepted, Vec::<Code>::new());
+    for text in [
+        doubling("f", 19, "x", "x"),
+        doubling("g", 19, "x * 2", "x * 3"),
+        doubling("g", 40, "x * 2", "x * 3"),
+    ] {
+        let (codes, sizes) = work(&text);
+        assert_eq!(codes, vec![Code::InlineLimit], "{text}");
+        assert!(
+            sizes <= accepted_work,
+            "{sizes} against {accepted_work}: {text}"
+        );
+    }
+}
+
+#[test]
+fn expansion_stops_after_a_million_iterations_and_uses_whatever_the_loop_bounds() {
+    let mut chain = String::new();
+    for level in 1..25 {
+        let next = level + 1;
+        chain.push_str(&format!("pattern P{level}():\n    P{next}\n    P{next}\n"));
+    }
+    chain.push_str("pattern P25():\n    for j in 0..0:\n        Note\nClip c:\n    P1\n");
+    let unbounded =
+        "Clip c:\n    for i in 0..1000000000000:\n        for j in 0..0:\n            Note\n";
+    for text in [unbounded, chain.as_str()] {
+        let (diagnostics, (steps, work)) = analyzed(text, |engine| {
+            (
+                engine.steps,
+                engine.nodes.len() + engine.scopes.len() + engine.uses.len(),
+            )
+        });
+        assert_eq!(
+            error_codes(&diagnostics),
+            vec![Code::ExpansionLimit],
+            "{text}"
+        );
+        assert_eq!(steps, 1_000_001, "{text}");
+        assert!(work <= 3 * steps + 16, "{work} for {steps} steps: {text}");
+    }
+}
+
 fn doubled_calls(levels: usize, body: &str) -> String {
     let mut text = format!("input i = 1\nfn g0(x): {body}\n");
     for level in 1..=levels {

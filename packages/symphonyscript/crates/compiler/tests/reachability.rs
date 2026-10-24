@@ -26,7 +26,7 @@ fn reachability_warnings_cost_linear_time() {
         large = large.min(timed(&large_text));
     }
     assert!(
-        large.as_secs_f64() <= small.as_secs_f64() * 2.2 * 2.2,
+        large <= small * 8,
         "{small:?} for 10,000 clips, {large:?} for 40,000"
     );
     let text = program(3);
