@@ -32,6 +32,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 ### Reviews
 
 - A reviewer reviews a whole milestone, never single commits: the milestone's diff against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md, running the checks itself.
+- A reviewer checks the ordinary paths and the common defects, and goes beyond them: into deep-seated leaks and unbounded growth, clones and copies that work around the borrow checker instead of fixing ownership, tests made to look good (asserting what the code does instead of what the SPEC says, golden files saved without being checked, cases that cannot fail, names that promise more than the test proves), and subtle defects in error paths, edge values and the interplay of rules.
 - The head consolidates the findings with a verdict on each, has the implementer fix the accepted ones, and sorts the rest by the decision rules.
 - A milestone gets at most two cold reviews: the first, and a second when the head judges the fixes need fresh eyes. Warm reviews, in which the reviewer that found an issue checks its fix, are unlimited.
 - A milestone is done when its exit criteria pass and its last review's accepted findings are fixed and checked. The head then records it in the head notes and starts the next one.

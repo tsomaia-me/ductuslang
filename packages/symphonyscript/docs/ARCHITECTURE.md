@@ -281,7 +281,7 @@ pub struct Failed { pub diagnostics: Vec<Diagnostic> }
 The compiler performs no file I/O; the caller supplies every source. This keeps the compiler usable in editors, build scripts and WebAssembly. Stages:
 
 1. **Lex.** Layout tokens (SPEC §2.2), literals, keywords, unit suffixes looked up in the vocabulary. Every byte belongs to a token or to trivia (whitespace and comments).
-2. **Parse.** A lossless syntax tree that reproduces the source byte for byte, with a typed view over it. The parser recovers from errors: it records a diagnostic, skips to a synchronization point (the next line at the same or lower indentation) and continues, so a broken file still yields a tree. A placement whose kind is a wire kind of the vocabulary parses as a wire placement.
+2. **Parse.** A lossless syntax tree that reproduces the source byte for byte, with a typed view over it. Code outside the parser reaches the tree only through views that borrow the parse result, so the parse result is the tree's last owner and dismantles it without recursion. The parser recovers from errors: it records a diagnostic, skips to a synchronization point (the next line at the same or lower indentation) and continues, so a broken file still yields a tree. A placement whose kind is a wire kind of the vocabulary parses as a wire placement.
 3. **Collect.** The top-level namespace across all files, the prelude and the vocabulary, with duplicate detection and prelude shadowing; the call graph of functions, which marks recursive ones, and the use graph of patterns.
 4. **Expand.** Pattern uses are expanded and `for` loops unrolled. A value that structure needs (a range bound, an iterable, a recursive call, and any argument or `let` they read) is resolved, typed as SPEC §4.6 says and evaluated when expansion reaches it; such a value that reads a cell is an error. Every expanded item keeps the spans of its uses and of its definition.
 5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each value is classified as compile-time or reactive by what it reads. Cycles among declarations (SPEC §6.2) are found here, before Infer. A bare name that names no declaration is left for Infer to resolve as a variant.
@@ -364,9 +364,11 @@ Each node and synapse holds the adapter's own cells, followed by attribute cells
 
 ```rust
 fn plane(ty: &Ty) -> Plane {
-    match ty {
-        Ty::Array(..) => Plane::Array,
-        Ty::I64 | Ty::F64 | Ty::Str => Plane::Meta,
+    if !ty.is_scalar() {
+        return Plane::Array;
+    }
+    match ty.scalar {
+        Scalar::I64 | Scalar::F64 | Scalar::Str => Plane::Meta,
         _ => Plane::Attr,
     }
 }
