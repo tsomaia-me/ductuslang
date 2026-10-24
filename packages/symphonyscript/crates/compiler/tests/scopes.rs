@@ -128,6 +128,29 @@ fn parameters_and_locals_are_declared_once_and_never_like_a_parameter() {
 }
 
 #[test]
+fn a_functions_local_lets_are_visible_throughout_its_body() {
+    let later = "fn f(x):\n    let a = b + x\n    let b = 1\n    a\nClip c:\n";
+    support::expect_codes(&format!("{later}    Note/(f(1))\n"), &[]);
+    let text = format!("{later}    Note/(f(2147483647))\n");
+    support::expect_codes(&text, &[(Code::DoesNotFit, "a", 1)]);
+    let text = "fn f():\n    let a = b\n    let b = a\n    a\nClip c:\n    Note/(f())\n";
+    let diagnostics = support::checked(text);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, Code::DeclarationCycle);
+    let name_in = |line| {
+        let (start, _) = support::at(text, line, 0);
+        start..start + 1
+    };
+    assert_eq!(diagnostics[0].span.range, name_in("a = b"));
+    let secondary: Vec<_> = diagnostics[0]
+        .secondary
+        .iter()
+        .map(|span| span.range.clone())
+        .collect();
+    assert_eq!(secondary, vec![name_in("b = a")]);
+}
+
+#[test]
 fn parameters_with_defaults_come_last_and_one_is_marked_default() {
     support::expect_codes("fn f(a = 1, b): a + b\n", &[(Code::ParameterOrder, "b", 0)]);
     support::expect_codes(

@@ -105,9 +105,10 @@ impl<'a> Engine<'a> {
     }
 
     pub fn demand(&mut self, query: Query) {
-        let mut stack = vec![query];
+        let mut stack: Vec<(Query, Option<usize>)> = vec![(query, None)];
         let mut stalled = 0;
-        while let Some(top) = stack.last().copied() {
+        while let Some((top, _)) = stack.last().copied() {
+            let position = stack.len() - 1;
             if self.is_done(top) {
                 stack.pop();
                 self.waiting.remove(&top);
@@ -129,11 +130,11 @@ impl<'a> Engine<'a> {
             for dep in need {
                 if self.waiting.contains(&dep) {
                     if self.cyclic.insert((top, dep)) {
-                        self.cycle(&stack, dep);
+                        self.cycle(&stack, position, dep);
                         progressed = true;
                     }
                 } else if !self.is_done(dep) {
-                    stack.push(dep);
+                    stack.push((dep, Some(position)));
                     progressed = true;
                 }
             }
@@ -347,12 +348,24 @@ impl<'a> Engine<'a> {
         }
     }
 
-    fn cycle(&mut self, stack: &[Query], dep: Query) {
-        let start = stack.iter().position(|query| *query == dep).unwrap_or(0);
+    fn cycle(&mut self, stack: &[(Query, Option<usize>)], top: usize, dep: Query) {
+        let mut path = Vec::new();
+        let mut current = Some(top);
+        while let Some(position) = current {
+            let Some(&(query, parent)) = stack.get(position) else {
+                break;
+            };
+            path.push(query);
+            if query == dep {
+                break;
+            }
+            current = parent;
+        }
+        path.reverse();
         let mut names = Vec::new();
         let mut locs = Vec::new();
-        for query in stack.iter().skip(start) {
-            if let Some((name, loc)) = self.declaration(*query) {
+        for query in path {
+            if let Some((name, loc)) = self.declaration(query) {
                 names.push(name);
                 locs.push(loc);
             }
