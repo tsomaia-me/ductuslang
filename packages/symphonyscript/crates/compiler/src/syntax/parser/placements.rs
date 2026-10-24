@@ -179,10 +179,11 @@ impl Parser<'_> {
                 }
             }
             Some(SyntaxKind::LBracket) => self.then([Task::Bundle]),
-            _ => {
+            Some(SyntaxKind::Ident) => {
                 self.start(SyntaxKind::Placement);
                 self.then([Task::PlacementHead, Task::Finish]);
             }
+            _ => {}
         }
     }
 
@@ -214,6 +215,9 @@ impl Parser<'_> {
                 Code::MisplacedWire,
                 format!("`{name}` is a wire kind; a wire placement stands on its own line"),
             );
+        }
+        if !self.at(SyntaxKind::Ident) {
+            return;
         }
         let kind = self.kind_token();
         self.bump();

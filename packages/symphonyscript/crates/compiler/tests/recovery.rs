@@ -392,6 +392,19 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         &[(Code::BundleSyntax, 21, 25), (Code::ReservedToken, 57, 58)],
         "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note DefaultArg[/ Literal[60]]]] NL] <]]] Placement[Clip d Body[: Block[NL > Placement[Note DefaultArg[/ Literal[1]] NL] <]]] Placement[Clip e Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
+    (
+        "Clip c:\n    (\n    Plays | gain=1)\n",
+        &[(Code::MisplacedWire, 18, 23), (Code::WireSyntax, 32, 33)],
+        "File[Placement[Clip c Body[: Block[NL > Line[ParenPlacement[( Placement[]] NL] WirePlacement[Plays Attrs[| AttrEntry[gain = Literal[1]]] ErrorNode[)] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    [Note\n    [Note]]\n",
+        &[
+            (Code::BundleSyntax, 22, 23),
+            (Code::InlinePlacement, 28, 29),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note]] NL] Line[Bundle[[ Placement[Note] ]] ErrorNode[]] NL] <]]]]",
+    ),
 ];
 
 #[test]
