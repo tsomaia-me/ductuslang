@@ -457,3 +457,87 @@ fn errors_display_as_plain_messages() {
         "the vocabulary is invalid\ntwo declarations are named `Note`"
     );
 }
+
+#[test]
+fn a_node_kind_must_not_declare_two_attributes_of_one_name() {
+    let mut v = Vocabulary::builder("v");
+    let note = v.node("Note");
+    v.kind(note).attr::<i32>("pitch").attr::<bool>("pitch");
+    single(
+        v,
+        VocabularyError::DuplicateAttribute {
+            owner: s("Note"),
+            name: s("pitch"),
+        },
+    );
+}
+
+#[test]
+fn an_enum_must_not_declare_two_variants_of_one_name() {
+    let mut v = Vocabulary::builder("v");
+    v.enumeration("Wave", ["Sine", "Saw", "Sine", "Saw", "Sine"]);
+    v.enumeration("Shape", ["Sine", "Round"]);
+    assert_eq!(
+        errors(v),
+        vec![
+            VocabularyError::DuplicateVariant {
+                enumeration: s("Wave"),
+                variant: s("Sine"),
+            },
+            VocabularyError::DuplicateVariant {
+                enumeration: s("Wave"),
+                variant: s("Saw"),
+            },
+            VocabularyError::DuplicateVariant {
+                enumeration: s("Wave"),
+                variant: s("Sine"),
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_unit_name_must_not_repeat_within_a_family() {
+    let mut v = Vocabulary::builder("v");
+    v.unit_family("time")
+        .base("s")
+        .unit("ms", 0.001)
+        .unit("ms", 0.002)
+        .unit("s", 2.0);
+    assert_eq!(
+        errors(v),
+        vec![
+            VocabularyError::RepeatedUnit { unit: s("ms") },
+            VocabularyError::RepeatedUnit { unit: s("s") },
+        ]
+    );
+}
+
+#[test]
+fn an_array_attribute_must_not_have_a_length_of_zero() {
+    let mut v = Vocabulary::builder("v");
+    let wave = v.enumeration("Wave", ["Sine"]);
+    let clip = v.node("Clip");
+    let plays = v.wire("Plays");
+    v.kind(clip)
+        .attr::<[i32; 0]>("empty")
+        .attr::<[[bool; 0]; 2]>("inner")
+        .attr::<[[f32; 3]; 0]>("outer")
+        .attr_enum_array("waves", &wave, 0, "Sine")
+        .attr::<[[i64; 2]; 3]>("full");
+    v.wire_kind(plays).attr::<[f64; 0]>("steps");
+    let empty = |owner: &str, attribute: &str| VocabularyError::EmptyArrayAttribute {
+        owner: s(owner),
+        attribute: s(attribute),
+    };
+    assert_eq!(
+        errors(v),
+        vec![
+            empty("Clip", "empty"),
+            empty("Clip", "inner"),
+            empty("Clip", "outer"),
+            empty("Clip", "waves"),
+            empty("Plays", "steps"),
+        ]
+    );
+}

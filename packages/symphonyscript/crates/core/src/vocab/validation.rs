@@ -64,8 +64,15 @@ pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, Invalid
     }
     for decl in &enums {
         check.name(&decl.name);
+        let mut variants = BTreeSet::new();
         for variant in &decl.variants {
             check.word(variant);
+            if !variants.insert(variant.as_str()) {
+                check.errors.push(VocabularyError::DuplicateVariant {
+                    enumeration: decl.name.clone(),
+                    variant: variant.clone(),
+                });
+            }
         }
         if decl.variants.is_empty() {
             check.errors.push(VocabularyError::EmptyEnum {
@@ -242,6 +249,12 @@ impl Checker<'_> {
                     name: attr.name.clone(),
                 });
             }
+            if has_empty_array(&attr.ty) {
+                self.errors.push(VocabularyError::EmptyArrayAttribute {
+                    owner: String::from(owner),
+                    attribute: attr.name.clone(),
+                });
+            }
             if let Some(flag) = attr.flag {
                 if !FLAG_CHARS.contains(&flag) {
                     self.errors.push(VocabularyError::InvalidFlag {
@@ -353,6 +366,13 @@ fn element_count(ty: &Ty) -> usize {
     match ty {
         Ty::Array(element, length) => *length as usize * element_count(element),
         _ => 1,
+    }
+}
+
+fn has_empty_array(ty: &Ty) -> bool {
+    match ty {
+        Ty::Array(element, length) => *length == 0 || has_empty_array(element),
+        _ => false,
     }
 }
 

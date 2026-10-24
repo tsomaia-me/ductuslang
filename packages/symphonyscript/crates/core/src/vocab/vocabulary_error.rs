@@ -24,6 +24,14 @@ pub enum VocabularyError {
         owner: String,
         name: String,
     },
+    DuplicateVariant {
+        enumeration: String,
+        variant: String,
+    },
+    EmptyArrayAttribute {
+        owner: String,
+        attribute: String,
+    },
     DuplicateDefaultAttribute {
         owner: String,
     },
@@ -100,6 +108,17 @@ impl fmt::Display for VocabularyError {
             VocabularyError::DuplicateAttribute { owner, name } => {
                 write!(f, "`{owner}` declares two attributes named `{name}`")
             }
+            VocabularyError::DuplicateVariant {
+                enumeration,
+                variant,
+            } => write!(
+                f,
+                "enum `{enumeration}` declares two variants named `{variant}`"
+            ),
+            VocabularyError::EmptyArrayAttribute { owner, attribute } => write!(
+                f,
+                "the array attribute `{owner}.{attribute}` has a length of 0"
+            ),
             VocabularyError::DuplicateDefaultAttribute { owner } => {
                 write!(f, "`{owner}` has two default attributes")
             }
