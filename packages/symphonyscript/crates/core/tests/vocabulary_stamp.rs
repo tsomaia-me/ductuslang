@@ -136,3 +136,20 @@ fn content_changes_change_the_stamp() {
         })
     );
 }
+
+#[test]
+fn nested_and_enum_array_attributes_keep_their_pinned_stamp() {
+    let mut v = Vocabulary::builder("arrays");
+    let wave = v.enumeration("Wave", ["Sine", "Saw", "Square"]);
+    let grid = v.node("Grid");
+    v.kind(grid)
+        .top_level(Count::Any)
+        .attr::<[[i32; 3]; 2]>("cells")
+        .default([[1, 2, 3], [4, 5, 6]])
+        .attr_enum_array("waves", &wave, 4, "Saw")
+        .attr::<[[[bool; 1]; 2]; 3]>("gates")
+        .default([[[true], [false]], [[false], [true]], [[true], [true]]]);
+    let stamp = v.build().expect("the vocabulary is valid").stamp().clone();
+    assert_eq!(stamp.name, "arrays");
+    assert_eq!(stamp.hash, 0x35f8_efc8_552d_30a7);
+}
