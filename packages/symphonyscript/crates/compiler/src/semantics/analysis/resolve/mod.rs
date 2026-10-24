@@ -1,7 +1,10 @@
 mod annotation;
+mod bind_fault;
 mod bind_spec;
 mod bindings;
+mod bound_sources;
 mod calls;
+mod count_inlining;
 mod declarations;
 mod expressions;
 mod found;

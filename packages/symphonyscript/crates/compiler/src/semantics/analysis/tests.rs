@@ -1763,28 +1763,98 @@ fn doubling(name: &str, levels: usize, left: &str, right: &str) -> String {
     text
 }
 
+fn inlined_bodies(engine: &Engine<'_>) -> usize {
+    engine
+        .scopes
+        .iter()
+        .filter(|scope| {
+            matches!(&scope.kind, super::scope_kind::ScopeKind::Locals(locals)
+                if matches!(locals.owner, super::locals_owner::LocalsOwner::Fn(_))
+                    && !locals.recursive)
+        })
+        .count()
+}
+
 #[test]
 fn a_compilation_inlines_at_most_a_million_calls() {
     let work = |text: &str| {
         let (diagnostics, sizes) = analyzed(text, |engine| {
-            engine.nodes.len() + engine.scopes.len() + engine.bindings.len()
+            (
+                engine.nodes.len() + engine.scopes.len() + engine.bindings.len(),
+                inlined_bodies(engine),
+                engine.inlined,
+            )
         });
-        (error_codes(&diagnostics), sizes)
+        (diagnostics, sizes)
     };
-    let (accepted, accepted_work) = work(&doubling("f", 18, "x", "x"));
-    assert_eq!(accepted, Vec::<Code>::new());
+    let (diagnostics, (accepted_work, bodies, counted)) = work(&doubling("f", 18, "x", "x"));
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    assert_eq!((bodies, counted), (19, (1 << 19) - 1));
     for text in [
         doubling("f", 19, "x", "x"),
         doubling("g", 19, "x * 2", "x * 3"),
         doubling("g", 40, "x * 2", "x * 3"),
     ] {
-        let (codes, sizes) = work(&text);
-        assert_eq!(codes, vec![Code::InlineLimit], "{text}");
+        let (diagnostics, (sizes, bodies, _)) = work(&text);
+        assert_eq!(error_codes(&diagnostics), vec![Code::InlineLimit], "{text}");
+        assert_eq!(bodies, 0, "{text}");
         assert!(
             sizes <= accepted_work,
             "{sizes} against {accepted_work}: {text}"
         );
     }
+    let mut sites = String::from("input i = 1\nfn g0(x): x\n");
+    for level in 1..=10 {
+        let below = level - 1;
+        sites.push_str(&format!(
+            "fn g{level}(x): g{below}(x * 2) + g{below}(x * 3)\n"
+        ));
+    }
+    sites.push_str("Clip c:\n    for j in 0..1000:\n        Note/(g10(i + j))\n");
+    let (diagnostics, (_, bodies, _)) = work(&sites);
+    let call = sites.find("g10(i + j)").unwrap_or(usize::MAX);
+    assert_eq!(
+        located(&sites, &diagnostics),
+        vec![(Code::InlineLimit, call, vec![])]
+    );
+    assert_eq!(bodies, 0);
+}
+
+#[test]
+fn the_count_before_inlining_is_the_count_of_every_construct() {
+    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    for level in 1..=18 {
+        let below = level - 1;
+        text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
+    }
+    text.push_str(concat!(
+        "let a = f18(i)\n",
+        "pattern P(default root, extra = f15(i)):\n",
+        "    let b = f16(i)\n",
+        "    Note/(root + b + extra)\n",
+        "Clip c:\n",
+        "    P/(f17(i))\n",
+        "    Note/a when f13(i) > 0\n",
+        "    Plays | gain=(f8(i)): c\n",
+        "    for j in 0..1:\n",
+        "        Note/(f4(f4(f0(i + j))))\n",
+        "Clip d:\n",
+        "    when f2(i) > 0:\n",
+        "        Note\n",
+    ));
+    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let (diagnostics, (_, counted)) = measure(&text);
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    assert_eq!(counted, 1_000_000);
+    let past = format!("{text}        Note/(f0(i))\n");
+    let (diagnostics, (bodies, _)) = measure(&past);
+    let crossing = past.find("f16(i)").unwrap_or(usize::MAX);
+    let used = past.find("P/(f17(i))").unwrap_or(usize::MAX);
+    assert_eq!(
+        located(&past, &diagnostics),
+        vec![(Code::InlineLimit, crossing, vec![used])]
+    );
+    assert_eq!(bodies, 0);
 }
 
 #[test]

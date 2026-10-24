@@ -3,6 +3,8 @@ use std::rc::Rc;
 
 use symphonyscript_core::Builtin;
 
+use super::bind_fault::BindFault;
+use super::bound_sources::bound_sources;
 use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -361,17 +363,32 @@ impl Engine<'_> {
         if self.inside_inlined_body(scope)? {
             return Ok(true);
         }
+        self.inlined = self
+            .inlined
+            .saturating_add(self.inline_count(function, sources));
+        if self.inlined <= INLINE_LIMIT {
+            return Ok(true);
+        }
+        self.report_inline_limit(function, loc, scope)?;
+        Ok(false)
+    }
+
+    pub(super) fn inline_count(&self, function: FnId, sources: &[ParamSource]) -> u64 {
         let defaulted: Vec<usize> = sources
             .iter()
             .enumerate()
             .filter(|(_, source)| matches!(source, ParamSource::Default))
             .map(|(position, _)| position)
             .collect();
-        let count = self.collected.inline.call(function, &defaulted);
-        self.inlined = self.inlined.saturating_add(count);
-        if self.inlined <= INLINE_LIMIT {
-            return Ok(true);
-        }
+        self.collected.inline.call(function, &defaulted)
+    }
+
+    pub(super) fn report_inline_limit(
+        &mut self,
+        function: FnId,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
         self.inline_limit_reported = true;
         let name = self
             .hir
@@ -384,11 +401,10 @@ impl Engine<'_> {
             loc,
             scope,
             format!("this call of `{name}` makes the compilation inline more than 1,000,000 calls"),
-        )?;
-        Ok(false)
+        )
     }
 
-    fn inside_inlined_body(&self, scope: ScopeId) -> Result<bool, Internal> {
+    pub(super) fn inside_inlined_body(&self, scope: ScopeId) -> Result<bool, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
             let record = self.scope_of(id)?;
@@ -476,80 +492,53 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
     ) -> Result<Option<Vec<ParamSource>>, Internal> {
-        let mut sources: Vec<Option<ParamSource>> = vec![None; params.len()];
-        match args {
-            Args::Positional(values) => {
-                if values.len() > params.len() {
-                    self.error(
-                        Code::ArgumentCount,
-                        loc,
-                        scope,
-                        format!(
-                            "the function takes at most {} arguments, not {}",
-                            params.len(),
-                            values.len()
-                        ),
-                    )?;
-                    return Ok(None);
-                }
-                for (slot, value) in sources.iter_mut().zip(values) {
-                    *slot = Some(ParamSource::Arg {
-                        expr: *value,
-                        scope,
-                    });
-                }
+        let sources = match bound_sources(params, args, scope) {
+            Ok(sources) => sources,
+            Err(BindFault::TooMany { given }) => {
+                self.error(
+                    Code::ArgumentCount,
+                    loc,
+                    scope,
+                    format!(
+                        "the function takes at most {} arguments, not {given}",
+                        params.len()
+                    ),
+                )?;
+                return Ok(None);
             }
-            Args::Named(values) => {
-                for (name, value) in values {
-                    let Some(position) = params.iter().position(|param| {
-                        param.name.as_ref().is_some_and(|own| own.text == name.text)
-                    }) else {
-                        self.error(
-                            Code::UnknownParameter,
-                            name.loc,
-                            scope,
-                            format!("the function has no parameter `{}`", name.text),
-                        )?;
-                        return Ok(None);
-                    };
-                    if let Some(slot) = sources.get_mut(position) {
-                        if slot.is_some() {
-                            self.error(
-                                Code::DuplicateArgument,
-                                name.loc,
-                                scope,
-                                format!("the parameter `{}` is supplied twice", name.text),
-                            )?;
-                            return Ok(None);
-                        }
-                        *slot = Some(ParamSource::Arg {
-                            expr: *value,
-                            scope,
-                        });
-                    }
-                }
+            Err(BindFault::Unknown(name)) => {
+                self.error(
+                    Code::UnknownParameter,
+                    name.loc,
+                    scope,
+                    format!("the function has no parameter `{}`", name.text),
+                )?;
+                return Ok(None);
             }
-        }
-        let mut bound = Vec::new();
+            Err(BindFault::Duplicate(name)) => {
+                self.error(
+                    Code::DuplicateArgument,
+                    name.loc,
+                    scope,
+                    format!("the parameter `{}` is supplied twice", name.text),
+                )?;
+                return Ok(None);
+            }
+        };
         let mut complete = true;
-        for (param, slot) in params.iter().zip(sources) {
-            match slot {
-                Some(source) => bound.push(source),
-                None if param.default.is_some() => bound.push(ParamSource::Default),
-                None => {
-                    let name = param.name.as_ref().map_or("", |name| name.text.as_str());
-                    self.error(
-                        Code::MissingArgument,
-                        loc,
-                        scope,
-                        format!("the parameter `{name}` has no default and no argument"),
-                    )?;
-                    complete = false;
-                    bound.push(ParamSource::Missing);
-                }
+        for (param, source) in params.iter().zip(&sources) {
+            if matches!(source, ParamSource::Missing) {
+                let name = param.name.as_ref().map_or("", |name| name.text.as_str());
+                self.error(
+                    Code::MissingArgument,
+                    loc,
+                    scope,
+                    format!("the parameter `{name}` has no default and no argument"),
+                )?;
+                complete = false;
             }
         }
-        Ok(complete.then_some(bound))
+        Ok(complete.then_some(sources))
     }
 }
 
@@ -570,7 +559,7 @@ fn builtin_arity(builtin: Builtin) -> usize {
     }
 }
 
-const INLINE_LIMIT: u64 = 1_000_000;
+pub(super) const INLINE_LIMIT: u64 = 1_000_000;
 
 fn index_of(position: usize) -> u32 {
     u32::try_from(position).unwrap_or(u32::MAX)

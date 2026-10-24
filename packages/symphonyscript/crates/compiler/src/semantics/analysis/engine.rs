@@ -158,6 +158,7 @@ impl<'a> Engine<'a> {
 
     pub fn analyze(&mut self) -> Result<(), Internal> {
         self.expand()?;
+        self.count_inlining()?;
         self.infer()?;
         self.check_program()?;
         self.flush_diagnostics();

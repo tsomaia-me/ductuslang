@@ -179,7 +179,11 @@ impl Engine<'_> {
         Ok(true)
     }
 
-    fn prefix_scope(&mut self, locals: ScopeId, count: u32) -> Result<ScopeId, Internal> {
+    pub(super) fn prefix_scope(
+        &mut self,
+        locals: ScopeId,
+        count: u32,
+    ) -> Result<ScopeId, Internal> {
         if let Some(existing) = self.memo.prefix_scopes.get(&(locals, count)) {
             return Ok(*existing);
         }
