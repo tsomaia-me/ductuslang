@@ -1,8 +1,15 @@
 use symphonyscript_fixtures::vocabulary;
 
 use super::Engine;
-use crate::diagnostics::Severity;
+use super::attr_source::AttrValueSource;
+use super::binding::BindingKind;
+use super::ids::ScopeId;
+use super::node::Op;
+use super::val::Val;
+use crate::compiler::Compiler;
+use crate::diagnostics::{Diagnostic, Severity};
 use crate::semantics::collection::collect;
+use crate::semantics::ir::ExprId;
 use crate::semantics::ir::{Hir, build_file};
 use crate::semantics::reporting::Report;
 use crate::source::Source;
@@ -45,4 +52,98 @@ fn nested_calls_that_use_their_parameter_twice_grow_the_graph_linearly() {
     assert_eq!(large.0 - middle.0, 2 * (middle.0 - small.0), "nodes");
     assert_eq!(large.1 - middle.1, 2 * (middle.1 - small.1), "bindings");
     assert_eq!(middle.1 - small.1, 10, "one binding per call");
+}
+
+fn analyzed<R>(text: &str, inspect: impl FnOnce(&Engine<'_>) -> R) -> (Vec<Diagnostic>, R) {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let source = Source {
+        path: "test.sym".into(),
+        text: text.into(),
+    };
+    compiler.analyzed(&[source], inspect)
+}
+
+fn errors_of(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {
+    diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .collect()
+}
+
+fn reads(engine: &Engine<'_>, expr: ExprId, scope: ScopeId) -> String {
+    let Some(Val::Scalar(mut node)) = engine.memo.exprs.get(&(expr, scope)).cloned() else {
+        return "no single value".into();
+    };
+    loop {
+        match engine.node(node).op {
+            Op::Use(inner) => node = inner,
+            Op::Read(binding) => {
+                let record = engine.binding(binding);
+                return match record.kind {
+                    BindingKind::Input { input, element } => {
+                        let name = engine.hir.input(input).name.as_ref();
+                        format!("input {}[{element}]", name.map_or("", |name| &name.text))
+                    }
+                    _ => format!("cell {}", record.name),
+                };
+            }
+            Op::Pick { .. } => return "runtime pick".into(),
+            _ => return "computed".into(),
+        }
+    }
+}
+
+fn note_pitches_and_gates(engine: &Engine<'_>) -> Vec<(String, Option<String>)> {
+    engine
+        .instances
+        .iter()
+        .filter(|instance| {
+            engine
+                .vocabulary
+                .node_kind(instance.kind)
+                .is_some_and(|decl| decl.name == "Note")
+        })
+        .map(|instance| {
+            let pitch = match instance.attrs.first().map(|source| source.value) {
+                Some(AttrValueSource::Expr(expr, scope)) => reads(engine, expr, scope),
+                _ => "no pitch".into(),
+            };
+            let gate = engine
+                .hir
+                .placement(instance.placement)
+                .gate
+                .map(|gate| reads(engine, gate, instance.scope));
+            (pitch, gate)
+        })
+        .collect()
+}
+
+#[test]
+fn an_index_known_at_compile_time_reads_the_elements_own_binding() {
+    let text = "input a = 1\ninput b = 2\ninput j = 0\nlet c = [a, b, a + b]\nlet k = 1\nClip m:\n    Note/(c[1])\n    Note/(c[k])\n    for i in 1..2:\n        Note/(c[i])\n    Note/(c[2])\n    Note/(c[j])\n";
+    let (diagnostics, notes) = analyzed(text, note_pitches_and_gates);
+    assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+    let pitches: Vec<String> = notes.into_iter().map(|(pitch, _)| pitch).collect();
+    assert_eq!(
+        pitches,
+        [
+            "input b[0]",
+            "input b[0]",
+            "input b[0]",
+            "cell c",
+            "runtime pick"
+        ]
+    );
+    let text = "input steps = [true, false, false, true, false, false, true, false]\ninput pitches = [36, 36, 43, 36, 41, 36, 43, 48]\n\nClip seq:\n    for i in 0..8:\n        Note/(pitches[i]) when steps[i]\n";
+    let (diagnostics, notes) = analyzed(text, note_pitches_and_gates);
+    assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+    let expected: Vec<(String, Option<String>)> = (0..8)
+        .map(|element| {
+            (
+                format!("input pitches[{element}]"),
+                Some(format!("input steps[{element}]")),
+            )
+        })
+        .collect();
+    assert_eq!(notes, expected);
 }

@@ -2,6 +2,7 @@ use symphonyscript_core::Vocabulary;
 
 use crate::diagnostics::{Diagnostic, Severity};
 use crate::failed::Failed;
+use crate::semantics::analysis::Engine;
 use crate::semantics::analyze;
 use crate::semantics::ir::{Hir, build_file};
 use crate::semantics::reporting::Report;
@@ -49,6 +50,14 @@ impl Compiler {
     }
 
     pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
+        self.analyzed(sources, |_| ()).0
+    }
+
+    pub(crate) fn analyzed<R>(
+        &self,
+        sources: &[Source],
+        inspect: impl FnOnce(&Engine<'_>) -> R,
+    ) -> (Vec<Diagnostic>, R) {
         let mut hir = self.prelude.clone();
         let mut report = Report::default();
         let mut ordered: Vec<&Source> = sources.iter().collect();
@@ -60,7 +69,7 @@ impl Compiler {
                 .extend(parsed.diagnostics.iter().cloned());
             build_file(&mut hir, &source.path, &parsed, &self.vocabulary);
         }
-        analyze::program(&hir, &self.vocabulary, &mut report);
-        report.finish(&hir.files)
+        let inspected = analyze::program(&hir, &self.vocabulary, &mut report, inspect);
+        (report.finish(&hir.files), inspected)
     }
 }
