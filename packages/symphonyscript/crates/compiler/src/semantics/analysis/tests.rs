@@ -1006,6 +1006,23 @@ fn equal_calls_in_different_positions_are_inlined_separately() {
         assert_eq!(error_codes(&diagnostics), Vec::<Code>::new(), "{text}");
         assert_eq!(found, (Some(CVal::Int(8)), Some(CVal::Int(5))), "{text}");
     }
+    let half = "fn g(): 2 ** -1\n";
+    for text in [
+        format!("{half}Clip c:\n    Note/(g())\nOsc o | freq=(g())\n"),
+        format!("{half}let x = g()\nlet z = g()\nClip c:\n    Note/x\nOsc o | freq=z\n"),
+    ] {
+        let (diagnostics, found) = analyzed(&text, |engine| {
+            (
+                attr_values(engine, "pitch", EvalTy::I32),
+                attr_values(engine, "freq", EvalTy::F64),
+            )
+        });
+        assert_eq!(error_codes(&diagnostics), Vec::<Code>::new(), "{text}");
+        assert_eq!(found, (vec![CVal::Int(0)], vec![CVal::F64(0.5)]), "{text}");
+    }
+    let held = format!("{half}let q = g()\nClip c:\n    Note/q\nOsc o | freq=q\n");
+    let (diagnostics, ()) = analyzed(&held, |_| ());
+    assert_eq!(error_codes(&diagnostics), vec![Code::InconsistentUses]);
 }
 
 const R_FN: &str =
