@@ -405,6 +405,14 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note]] NL] Line[Bundle[[ Placement[Note] ]] ErrorNode[]] NL] <]]]]",
     ),
+    (
+        "Clip c:\n    [Note\n    (Note): x\n",
+        &[
+            (Code::BundleSyntax, 22, 23),
+            (Code::InlinePlacement, 28, 29),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note]] NL] Line[ParenPlacement[( Placement[Note] )] ErrorNode[: x] NL] <]]]]",
+    ),
 ];
 
 #[test]
@@ -459,6 +467,10 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
         (
             "Clip c:\n    [Note/60\n    Note for i in xs: Note/i]\n",
             "Clip c:\n    [Note/60 Note for i in xs: Note/i]\n",
+        ),
+        (
+            "Clip c:\n    [Note/60\n    for i in xs: Note/i]\n",
+            "Clip c:\n    [Note/60 for i in xs: Note/i]\n",
         ),
     ] {
         assert_eq!(support::clean_tree(text), support::clean_tree(one_line));

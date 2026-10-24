@@ -250,15 +250,17 @@ impl<'a> Parser<'a> {
         let Some((line, start)) = self.lexer.suspended_line_at(index) else {
             return false;
         };
-        if start.first.kind != SyntaxKind::Ident {
-            return false;
-        }
         let ends = match bracket {
-            Bracket::Expression => start
-                .rest
-                .iter()
-                .find(|token| !token.kind.is_trivia())
-                .is_some_and(|next| matches!(next.kind, SyntaxKind::Ident | SyntaxKind::AsKw)),
+            Bracket::Expression => {
+                start.first.kind == SyntaxKind::Ident
+                    && start
+                        .rest
+                        .iter()
+                        .find(|token| !token.kind.is_trivia())
+                        .is_some_and(|next| {
+                            matches!(next.kind, SyntaxKind::Ident | SyntaxKind::AsKw)
+                        })
+            }
             Bracket::Bundle { depth, header } => holds_stray_colon(&start, depth, header),
             Bracket::Other => false,
         };
@@ -620,7 +622,8 @@ impl<'a> Parser<'a> {
 }
 
 fn holds_stray_colon(line: &LineStart<'_>, depth: u32, mut header: bool) -> bool {
-    for (token, token_depth) in line.rest.iter().zip(line.rest_depths) {
+    let first = std::iter::once((line.first, &line.first_depth));
+    for (token, token_depth) in first.chain(line.rest.iter().zip(line.rest_depths)) {
         if *token_depth != depth {
             continue;
         }

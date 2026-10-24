@@ -282,6 +282,7 @@ impl<'a> Lexer<'a> {
         });
         Some(LineStart {
             first,
+            first_depth: self.depths.get(line.first_token).copied().unwrap_or(0),
             rest,
             rest_depths,
             top_level: line.column == 0,
