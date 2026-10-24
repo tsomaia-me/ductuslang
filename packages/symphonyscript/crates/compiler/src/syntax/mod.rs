@@ -1,11 +1,20 @@
+pub mod ast;
 mod lex;
 mod lexed;
 mod lexer;
 mod nfc;
+mod symphony_language;
+mod syntax_element;
 mod syntax_kind;
+mod syntax_node;
+mod syntax_token;
 mod token;
 
 pub use lex::lex;
 pub use lexed::Lexed;
+pub use symphony_language::SymphonyLanguage;
+pub use syntax_element::SyntaxElement;
 pub use syntax_kind::SyntaxKind;
+pub use syntax_node::SyntaxNode;
+pub use syntax_token::SyntaxToken;
 pub use token::Token;
