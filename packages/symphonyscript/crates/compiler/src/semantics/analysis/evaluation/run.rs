@@ -60,9 +60,9 @@ impl Engine<'_> {
                 other => other,
             }
         } else {
-            self.compute(node, own, ctx, need)?
+            let value = self.compute(node, own, ctx, need)?;
+            self.scaled(node, value)
         };
-        let value = self.scaled(node, value, own);
         Some(convert_to(value, ty))
     }
 
@@ -256,7 +256,7 @@ impl Engine<'_> {
                 .family(family)
                 .and_then(|decl| decl.units.get(unit))
                 .map(|unit| unit.scale),
-            _ => None,
+            _ => self.memo.default_scales.get(&node).copied(),
         };
         if is_int_ty(own) {
             let Number::Int(value) = number else {
@@ -625,11 +625,13 @@ impl Engine<'_> {
         converted
     }
 
-    fn scaled(&self, node: NodeId, value: CVal, own: EvalTy) -> CVal {
+    fn scaled(&self, node: NodeId, value: CVal) -> CVal {
+        if matches!(self.node(node).op, Op::Number(..)) {
+            return value;
+        }
         let Some(scale) = self.memo.default_scales.get(&node).copied() else {
             return value;
         };
-        let _ = own;
         match value {
             CVal::Int(value) if scale.fract() == 0.0 && scale.abs() < 1e38 => value
                 .checked_mul(scale as i128)

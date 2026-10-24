@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use symphonyscript_core::FamilyId;
+use symphonyscript_core::{BinaryOp, Builtin, FamilyId, UnaryOp};
 
 use super::position::{Position, Role};
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::sig::{Kind, Sig};
 use crate::semantics::ir::Loc;
 
 type Feed = (FamilyId, usize, Loc);
@@ -160,6 +161,80 @@ impl Engine<'_> {
                         &[*second],
                         message,
                     );
+                }
+            }
+        }
+    }
+
+    pub(super) fn read_in_default_units(&mut self) {
+        let fractional: HashSet<NodeId> = self
+            .memo
+            .default_scales
+            .iter()
+            .filter(|(_, scale)| scale.fract() != 0.0)
+            .map(|(node, _)| *node)
+            .collect();
+        if fractional.is_empty() {
+            return;
+        }
+        let mut floats: HashSet<NodeId> = HashSet::new();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for index in 0..self.nodes.len() {
+                let node = NodeId(u32::try_from(index).unwrap_or(u32::MAX));
+                let Some(sig) = self.memo.sigs.get(&node).copied() else {
+                    continue;
+                };
+                if sig.kind != Kind::Int || floats.contains(&node) {
+                    continue;
+                }
+                let any = |nodes: &[NodeId]| nodes.iter().any(|node| floats.contains(node));
+                let becomes_float = fractional.contains(&node)
+                    || match &self.node(node).op {
+                        Op::Use(operand) | Op::Unary(UnaryOp::Neg, operand) => any(&[*operand]),
+                        Op::Binary(
+                            BinaryOp::Add
+                            | BinaryOp::Sub
+                            | BinaryOp::Mul
+                            | BinaryOp::Rem
+                            | BinaryOp::Pow,
+                            lhs,
+                            rhs,
+                        ) => any(&[*lhs, *rhs]),
+                        Op::Binary(BinaryOp::IntDiv, lhs, rhs) => {
+                            if any(&[*lhs, *rhs]) {
+                                self.error_at_node(Code::OperandType, node, "`div` takes integers");
+                                self.memo.sigs.insert(node, Sig::ERROR);
+                                changed = true;
+                            }
+                            continue;
+                        }
+                        Op::If(_, then, otherwise) => any(&[*then, *otherwise]),
+                        Op::Match {
+                            arms, otherwise, ..
+                        } => {
+                            arms.iter().any(|(_, value)| floats.contains(value))
+                                || otherwise.is_some_and(|value| floats.contains(&value))
+                        }
+                        Op::Pick { items, .. } => any(items),
+                        Op::Builtin(
+                            Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp,
+                            args,
+                        ) => any(args),
+                        Op::Read(binding) => floats.contains(&self.binding(*binding).init),
+                        _ => false,
+                    };
+                if becomes_float {
+                    floats.insert(node);
+                    self.memo.sigs.insert(
+                        node,
+                        Sig {
+                            kind: Kind::Float,
+                            ..sig
+                        },
+                    );
+                    changed = true;
                 }
             }
         }

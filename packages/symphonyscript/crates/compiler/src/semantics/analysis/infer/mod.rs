@@ -40,6 +40,12 @@ impl Engine<'_> {
             }
             valid.push(position);
         }
+        for index in 0..self.bindings.len() {
+            let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
+            self.demand_sig(self.binding(binding).init);
+        }
+        self.units(&valid);
+        self.read_in_default_units();
         for position in &valid {
             for node in position.val.nodes() {
                 self.expect(node, Some(position.ty.scalar));
@@ -53,7 +59,6 @@ impl Engine<'_> {
                 self.expect(init, Some(own));
             }
         }
-        self.units(&valid);
         let mut roots = Vec::new();
         for position in &valid {
             for node in position.val.nodes() {

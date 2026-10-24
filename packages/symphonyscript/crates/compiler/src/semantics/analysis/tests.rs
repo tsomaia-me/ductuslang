@@ -5,14 +5,19 @@ use symphonyscript_fixtures::{
 
 use super::Engine;
 use super::attr_source::AttrValueSource;
+use symphonyscript_core::{Count, Vocabulary};
+
 use super::binding::BindingKind;
 use super::bound::BoundVal;
+use super::cval::CVal;
 use super::destination::Destination;
+use super::eval_ty::EvalTy;
 use super::ids::ScopeId;
 use super::node::Op;
+use super::sig::Kind;
 use super::val::Val;
 use crate::compiler::Compiler;
-use crate::diagnostics::{Diagnostic, Severity};
+use crate::diagnostics::{Code, Diagnostic, Severity};
 use crate::semantics::collection::collect;
 use crate::semantics::ir::ExprId;
 use crate::semantics::ir::{Hir, build_file};
@@ -60,12 +65,76 @@ fn nested_calls_that_use_their_parameter_twice_grow_the_graph_linearly() {
 }
 
 fn analyzed<R>(text: &str, inspect: impl FnOnce(&Engine<'_>) -> R) -> (Vec<Diagnostic>, R) {
-    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    analyzed_with(&vocabulary(), text, inspect)
+}
+
+fn analyzed_with<R>(
+    vocabulary: &Vocabulary,
+    text: &str,
+    inspect: impl FnOnce(&Engine<'_>) -> R,
+) -> (Vec<Diagnostic>, R) {
+    let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
     let source = Source {
         path: "test.sym".into(),
         text: text.into(),
     };
     compiler.analyzed(&[source], inspect)
+}
+
+fn envelope_vocabulary() -> Vocabulary {
+    let mut v = Vocabulary::builder("envelope");
+    let time = v.unit_family("time").base("s").unit("ms", 0.001);
+    let envelope = v.node("Env");
+    v.kind(envelope)
+        .top_level(Count::Any)
+        .attr::<f64>("attack")
+        .default(0.0)
+        .family(&time, "ms");
+    v.build().expect("the envelope vocabulary builds")
+}
+
+const IN_DEFAULT_UNITS: &[&str] = &[
+    "Env e | attack=(1s + 3)\n",
+    "Env e | attack=(if 1s + 3 > 2s then 1s else 2s)\n",
+    "Env e | attack=((1s + 3) / 2)\n",
+    "Env e | attack=(1s + 3ms)\n",
+];
+
+fn first_value(engine: &Engine<'_>) -> Option<(CVal, Kind)> {
+    let instance = engine.instances.last()?;
+    let AttrValueSource::Expr(expr, scope) = instance.attrs.first()?.value else {
+        return None;
+    };
+    let Some(Val::Scalar(node)) = engine.memo.exprs.get(&(expr, scope)) else {
+        return None;
+    };
+    let value = engine.memo.evals.get(&(*node, EvalTy::F64))?.clone();
+    Some((value, engine.memo.sigs.get(node)?.kind))
+}
+
+#[test]
+fn a_plain_value_reads_in_the_default_unit_as_a_literal_with_its_suffix_would() {
+    let envelope = envelope_vocabulary();
+    let expected = [
+        (1.0 + 0.003, Kind::Float),
+        (2.0, Kind::Int),
+        ((1.0 + 0.003) / 2.0, Kind::Float),
+        (1.0 + 0.003, Kind::Float),
+    ];
+    for (text, (value, kind)) in IN_DEFAULT_UNITS.iter().zip(expected) {
+        let (diagnostics, found) = analyzed_with(&envelope, text, first_value);
+        assert_eq!(diagnostics, Vec::<Diagnostic>::new(), "{text}");
+        assert_eq!(found, Some((CVal::F64(value), kind)), "{text}");
+    }
+    let (diagnostics, _) = analyzed_with(&envelope, "Env e | attack=((1s + 3) div 2)\n", |_| ());
+    let codes: Vec<Code> = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(codes, vec![Code::OperandType]);
+    let (diagnostics, found) = analyzed("Clip c:\n    Note | length=2bars + 1\n", first_value);
+    assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+    assert_eq!(found, Some((CVal::F64(9.0), Kind::Int)));
 }
 
 fn placeholders(engine: &Engine<'_>) -> Vec<String> {
@@ -160,6 +229,12 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
         clean >= 6 + spec_projects().len(),
         "{clean} runs drew no error"
     );
+    let envelope = envelope_vocabulary();
+    for text in IN_DEFAULT_UNITS {
+        let (diagnostics, found) = analyzed_with(&envelope, text, placeholders);
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
+        assert_eq!(found, Vec::<String>::new(), "{text}");
+    }
 }
 
 fn errors_of(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {
