@@ -10,10 +10,10 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
-    fn read_as_float(&self, operand: NodeId, other: NodeId) -> Option<Scalar> {
-        let kind = |node: NodeId| self.memo.sigs.get(&node).map(|sig| sig.kind);
-        (kind(operand) == Some(Kind::Int) && kind(other) == Some(Kind::Float))
-            .then_some(Scalar::F64)
+    fn read_as_float(&self, operand: NodeId, other: NodeId) -> Result<Option<Scalar>, Internal> {
+        let integer = self.known_sig(operand)?.kind == Kind::Int;
+        let float = self.known_sig(other)?.kind == Kind::Float;
+        Ok((integer && float).then_some(Scalar::F64))
     }
 
     pub(super) fn expect(
@@ -26,7 +26,7 @@ impl Engine<'_> {
             if !self.typing.expected_seen.insert((node, expected)) {
                 continue;
             }
-            let reactive = self.memo.sigs.get(&node).is_some_and(|sig| sig.reactive);
+            let reactive = self.known_sig(node)?.reactive;
             if !reactive {
                 continue;
             }
@@ -59,8 +59,8 @@ impl Engine<'_> {
                     lhs,
                     rhs,
                 ) => {
-                    stack.push((lhs, self.read_as_float(lhs, rhs)));
-                    stack.push((rhs, self.read_as_float(rhs, lhs)));
+                    stack.push((lhs, self.read_as_float(lhs, rhs)?));
+                    stack.push((rhs, self.read_as_float(rhs, lhs)?));
                 }
                 Op::Binary(op, lhs, rhs) => {
                     let operands = match op {

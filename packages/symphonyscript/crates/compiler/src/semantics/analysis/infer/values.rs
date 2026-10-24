@@ -95,9 +95,10 @@ impl Engine<'_> {
                 && !value.is_error()
                 && kinds
                     .get(&target)
-                    .is_some_and(|(int, float, enumeration)| (*int && *float) || *enumeration)
+                    .ok_or(Internal::missed("use kinds"))
+                    .map(|(int, float, enumeration)| (*int && *float) || *enumeration)?
             {
-                let value = self.before_unit_reading(*node, target, *ty, value);
+                let value = self.before_unit_reading(*node, target, *ty, value)?;
                 uses.entry(target).or_default().push((*node, *ty, value));
             }
         }
@@ -154,20 +155,22 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn before_unit_reading(&self, node: NodeId, target: NodeId, ty: EvalTy, value: &CVal) -> CVal {
+    fn before_unit_reading(
+        &self,
+        node: NodeId,
+        target: NodeId,
+        ty: EvalTy,
+        value: &CVal,
+    ) -> Result<CVal, Internal> {
         if !self.memo.default_scales.contains_key(&node) {
-            return value.clone();
+            return Ok(value.clone());
         }
-        let own = self
-            .memo
-            .sigs
-            .get(&node)
-            .map_or(ty, |sig| own_type(sig, ty));
+        let own = own_type(&self.known_sig(node)?, ty);
         self.memo
             .evals
             .get(&(target, own))
             .cloned()
-            .unwrap_or_else(|| value.clone())
+            .ok_or(Internal::missed("compile-time value"))
     }
 
     pub(super) fn consistent_shapes(&mut self) -> Result<(), Internal> {

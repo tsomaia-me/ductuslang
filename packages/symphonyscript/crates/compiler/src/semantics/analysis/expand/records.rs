@@ -298,12 +298,12 @@ impl<'a> Engine<'a> {
         if let Some(default) = site.default {
             match decl.params.iter().position(|param| param.is_default) {
                 Some(position) => {
-                    if let Some(slot) = sources.get_mut(position) {
-                        *slot = Some(ParamSource::Arg {
-                            expr: default,
-                            scope: caller,
-                        });
-                    }
+                    *sources
+                        .get_mut(position)
+                        .ok_or(Internal::missed("parameter"))? = Some(ParamSource::Arg {
+                        expr: default,
+                        scope: caller,
+                    });
                 }
                 None => {
                     let loc = self.hir.expr(default)?.loc;
@@ -341,15 +341,17 @@ impl<'a> Engine<'a> {
                     ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
                 }
             };
-            match sources.get_mut(position) {
-                Some(slot @ None) => *slot = Some(source),
-                Some(Some(_)) => self.error(
+            match sources
+                .get_mut(position)
+                .ok_or(Internal::missed("parameter"))?
+            {
+                slot @ None => *slot = Some(source),
+                Some(_) => self.error(
                     Code::DuplicateArgument,
                     attr.name.loc,
                     caller,
                     format!("the parameter `{}` is supplied twice", attr.name.text),
                 )?,
-                None => {}
             }
         }
         let mut params = Vec::new();
@@ -408,12 +410,15 @@ impl<'a> Engine<'a> {
         )
     }
 
-    pub(in crate::semantics::analysis) fn stand_in(&self, pattern: PatternId) -> Option<StandIn> {
+    pub(in crate::semantics::analysis) fn stand_in(
+        &self,
+        pattern: PatternId,
+    ) -> Result<Option<StandIn>, Internal> {
         self.collected
             .stand_ins
             .get(pattern.index())
             .copied()
-            .flatten()
+            .ok_or(Internal::missed("pattern"))
     }
 
     pub(in crate::semantics::analysis) fn stand_in_target(
@@ -421,7 +426,7 @@ impl<'a> Engine<'a> {
         mut pattern: PatternId,
     ) -> Result<Option<PlacementId>, Internal> {
         loop {
-            let placement = match some!(self.stand_in(pattern)) {
+            let placement = match some!(self.stand_in(pattern)?) {
                 StandIn::Node(placement) => return Ok(Some(placement)),
                 StandIn::Use(placement) => placement,
             };
@@ -432,7 +437,7 @@ impl<'a> Engine<'a> {
                 self.source_global
             };
             match some!(self.kind_decl(global, &kind.text)?) {
-                Decl::Pattern(next) if !self.is_cyclic(next) => pattern = next,
+                Decl::Pattern(next) if !self.is_cyclic(next)? => pattern = next,
                 Decl::Node(_) => return Ok(Some(placement)),
                 Decl::Input(_)
                 | Decl::Let(_)
@@ -446,12 +451,15 @@ impl<'a> Engine<'a> {
         }
     }
 
-    pub(in crate::semantics::analysis) fn is_cyclic(&self, pattern: PatternId) -> bool {
+    pub(in crate::semantics::analysis) fn is_cyclic(
+        &self,
+        pattern: PatternId,
+    ) -> Result<bool, Internal> {
         self.collected
             .cyclic_patterns
             .get(pattern.index())
             .copied()
-            .unwrap_or(true)
+            .ok_or(Internal::missed("pattern"))
     }
 
     fn wire_attrs(

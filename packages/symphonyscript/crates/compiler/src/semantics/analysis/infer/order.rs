@@ -44,14 +44,14 @@ impl Engine<'_> {
         let mut order = Vec::with_capacity(count);
         while let Some(binding) = ready.pop() {
             order.push(binding);
-            if let Some(targets) = reads.get(binding.index()) {
-                for target in targets {
-                    if let Some(remaining) = readers.get_mut(target) {
-                        *remaining -= 1;
-                        if *remaining == 0 {
-                            ready.push(*target);
-                        }
-                    }
+            let targets = reads
+                .get(binding.index())
+                .ok_or(Internal::missed("binding"))?;
+            for target in targets {
+                let remaining = readers.get_mut(target).ok_or(Internal::missed("binding"))?;
+                *remaining -= 1;
+                if *remaining == 0 {
+                    ready.push(*target);
                 }
             }
         }

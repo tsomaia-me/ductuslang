@@ -33,7 +33,7 @@ impl Engine<'_> {
                 self.defaulted_uses(node, &need)?;
                 continue;
             }
-            for ty in types.remove(&node).unwrap_or_default() {
+            for ty in types.remove(&node).ok_or(Internal::missed("checked use"))? {
                 if self
                     .shape_at(node, ty)?
                     .is_some_and(|lengths| lengths != need.lengths)
@@ -47,10 +47,13 @@ impl Engine<'_> {
     }
 
     fn defaulted_uses(&mut self, node: NodeId, need: &ShapeNeed) -> Result<(), Internal> {
-        let elements = self.memo.defaulted.get(&node).cloned().unwrap_or_default();
-        let Some(first) = elements.first().copied() else {
-            return Ok(());
-        };
+        let elements = self
+            .memo
+            .defaulted
+            .get(&node)
+            .cloned()
+            .ok_or(Internal::missed("default shape"))?;
+        let first = *elements.first().ok_or(Internal::missed("default shape"))?;
         let (name, site) = {
             let binding = self.binding(first)?;
             (binding.name.clone(), binding.loc)
@@ -119,10 +122,11 @@ impl Engine<'_> {
                 }
                 continue;
             }
-            let shapes: Option<Vec<Vec<u32>>> = parts
+            let found: Vec<Option<Vec<u32>>> = parts
                 .iter()
-                .map(|part| self.typing.shapes.get(&(*part, ty)).cloned().flatten())
-                .collect();
+                .map(|part| self.shape_found(*part, ty))
+                .collect::<Result<_, _>>()?;
+            let shapes: Option<Vec<Vec<u32>>> = found.into_iter().collect();
             let shape = match shapes.map(|shapes| combined_shape(node, &op, &shapes)) {
                 Some(Ok(lengths)) => Some(lengths),
                 Some(Err(fault)) => {
@@ -133,6 +137,14 @@ impl Engine<'_> {
             };
             self.typing.shapes.insert((node, ty), shape);
         }
-        Ok(self.typing.shapes.get(&(root, ty)).cloned().flatten())
+        self.shape_found(root, ty)
+    }
+
+    fn shape_found(&self, node: NodeId, ty: Option<Scalar>) -> Result<Option<Vec<u32>>, Internal> {
+        self.typing
+            .shapes
+            .get(&(node, ty))
+            .cloned()
+            .ok_or(Internal::missed("shape"))
     }
 }

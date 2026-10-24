@@ -21,27 +21,31 @@ impl Engine<'_> {
     pub(in crate::semantics::analysis) fn conditions_of(
         &self,
         head: Option<ConditionsId>,
-    ) -> Vec<Condition> {
+    ) -> Result<Vec<Condition>, Internal> {
         let mut found = Vec::new();
         let mut current = head;
-        while let Some(link) = current.and_then(|id| self.condition_links.get(id.index())) {
+        while let Some(id) = current {
+            let link = self
+                .condition_links
+                .get(id.index())
+                .ok_or(Internal::missed("condition"))?;
             found.push(link.condition);
             current = link.rest;
         }
         found.reverse();
-        found
+        Ok(found)
     }
 
     pub(in crate::semantics::analysis) fn joined_conditions(
         &mut self,
         base: Option<ConditionsId>,
         extra: Option<ConditionsId>,
-    ) -> Option<ConditionsId> {
+    ) -> Result<Option<ConditionsId>, Internal> {
         let mut head = base;
-        for condition in self.conditions_of(extra) {
+        for condition in self.conditions_of(extra)? {
             head = self.push_condition(head, condition);
         }
-        head
+        Ok(head)
     }
 
     pub(in crate::semantics::analysis) fn register_gate(&mut self, expr: ExprId, scope: ScopeId) {

@@ -20,7 +20,7 @@ impl Engine<'_> {
             }
             Query::Param(scope, index) => {
                 let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
-                    return Ok(None);
+                    return Err(Internal::missed("locals scope"));
                 };
                 let params = match locals.owner {
                     LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,

@@ -112,11 +112,11 @@ impl Engine<'_> {
                 created
             }
             Some(Decl::Pattern(pattern)) => {
-                if self.is_cyclic(pattern) {
+                if self.is_cyclic(pattern)? {
                     self.unknown_items(None, true);
                     return Ok(());
                 }
-                if self.stand_in(pattern).is_none() {
+                if self.stand_in(pattern)?.is_none() {
                     self.error(
                         Code::TopLevelPattern,
                         kind.loc,
@@ -193,7 +193,7 @@ impl Engine<'_> {
                 Some(locals),
                 chain,
             )?;
-            let single = some!(self.stand_in(pattern)).placement();
+            let single = some!(self.stand_in(pattern)?).placement();
             let kind = some!(self.hir.placement(single)?.kind.clone());
             match self.kind_decl(body, &kind.text)? {
                 Some(Decl::Node(kind)) => {
@@ -209,7 +209,7 @@ impl Engine<'_> {
                     }
                     return Ok(Some(id));
                 }
-                Some(Decl::Pattern(next)) if !self.is_cyclic(next) => {
+                Some(Decl::Pattern(next)) if !self.is_cyclic(next)? => {
                     placement = single;
                     pattern = next;
                     caller = body;
@@ -448,8 +448,8 @@ impl Engine<'_> {
                             }
                             created.map(ItemRef::Instance)
                         }
-                        Some(Decl::Pattern(pattern)) if !self.is_cyclic(pattern) => {
-                            if self.stand_in(pattern).is_some() {
+                        Some(Decl::Pattern(pattern)) if !self.is_cyclic(pattern)? => {
+                            if self.stand_in(pattern)?.is_some() {
                                 self.stand_in_instance(
                                     id,
                                     pattern,
@@ -707,7 +707,10 @@ impl Engine<'_> {
                         self.wire_mut(existing)?.conditions = walk.conditions;
                         Some(existing)
                     }
-                    Some(ItemRef::Instance(_) | ItemRef::Use(_)) | None => {
+                    Some(ItemRef::Instance(_) | ItemRef::Use(_)) => {
+                        return Err(Internal::missed("prebuilt wire"));
+                    }
+                    None => {
                         let kind_name = self.wire_decl(kind)?.name.as_str();
                         let segment = Some(self.segment(Some(walk.path_parent), None, kind_name));
                         let context = self.context(walk);
@@ -865,14 +868,14 @@ impl Engine<'_> {
                 }
             }
             Some(Decl::Pattern(pattern)) => {
-                if self.is_cyclic(pattern) {
+                if self.is_cyclic(pattern)? {
                     if let Some(collector) = walk.bundle {
                         self.broken_bundles.insert(collector);
                     }
                     self.unknown_items(Some(walk.owner), walk.bundle.is_none());
                     return Ok(());
                 }
-                if self.stand_in(pattern).is_some() {
+                if self.stand_in(pattern)?.is_some() {
                     if let Some(collector) = walk.bundle
                         && self.stand_in_has_body(pattern)?
                     {
@@ -906,7 +909,10 @@ impl Engine<'_> {
                             self.pattern_use_mut(existing)?.conditions = walk.conditions;
                             existing
                         }
-                        Some(ItemRef::Instance(_) | ItemRef::Wire(_)) | None => {
+                        Some(ItemRef::Instance(_) | ItemRef::Wire(_)) => {
+                            return Err(Internal::missed("prebuilt pattern use"));
+                        }
+                        None => {
                             let segment = Some(self.segment(
                                 Some(walk.path_parent),
                                 None,
@@ -1011,13 +1017,15 @@ impl Engine<'_> {
         scope: ScopeId,
         walk: &Walk,
     ) -> Result<Option<InstanceId>, Internal> {
-        let Some(ItemRef::Instance(existing)) =
-            self.prebuilt.get(&(Site::Placement(id), scope)).copied()
-        else {
-            return Ok(None);
+        let existing = match self.prebuilt.get(&(Site::Placement(id), scope)).copied() {
+            Some(ItemRef::Instance(existing)) => existing,
+            Some(ItemRef::Use(_) | ItemRef::Wire(_)) => {
+                return Err(Internal::missed("prebuilt instance"));
+            }
+            None => return Ok(None),
         };
         let own = self.instance(existing)?.conditions;
-        let conditions = self.joined_conditions(walk.conditions, own);
+        let conditions = self.joined_conditions(walk.conditions, own)?;
         self.instance_mut(existing)?.conditions = conditions;
         Ok(Some(existing))
     }

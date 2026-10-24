@@ -3,6 +3,7 @@ mod collect;
 mod collected;
 mod decl;
 mod inline_counts;
+mod is_cycle;
 mod namespace;
 mod pattern_graph;
 mod recursive_functions;

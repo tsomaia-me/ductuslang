@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use symphonyscript_core::{EnumId, Vocabulary};
 
+use crate::semantics::Internal;
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Variants {
     owners: HashMap<String, EnumId>,
@@ -9,33 +11,32 @@ pub(crate) struct Variants {
 }
 
 impl Variants {
-    pub fn of(vocabulary: &Vocabulary) -> Self {
+    pub fn of(vocabulary: &Vocabulary) -> Result<Self, Internal> {
         let mut variants = Variants::default();
-        for index in 0..vocabulary.enums().len() {
-            let (Some(id), Some(decl)) = (vocabulary.enum_at(index), vocabulary.enums().get(index))
-            else {
-                continue;
-            };
+        for (index, decl) in vocabulary.enums().iter().enumerate() {
+            let id = vocabulary.enum_at(index).ok_or(Internal::missed("enum"))?;
             let mut positions = HashMap::with_capacity(decl.variants.len());
             for (position, name) in decl.variants.iter().enumerate() {
-                if let Ok(position) = u16::try_from(position) {
-                    positions.entry(name.clone()).or_insert(position);
-                }
+                let position =
+                    u16::try_from(position).map_err(|_| Internal::missed("enum variant"))?;
+                positions.entry(name.clone()).or_insert(position);
                 variants.owners.entry(name.clone()).or_insert(id);
             }
             variants.positions.push(positions);
         }
-        variants
+        Ok(variants)
     }
 
     pub fn owner(&self, name: &str) -> Option<EnumId> {
         self.owners.get(name).copied()
     }
 
-    pub fn position(&self, enumeration: EnumId, name: &str) -> Option<u16> {
-        self.positions
+    pub fn position(&self, enumeration: EnumId, name: &str) -> Result<Option<u16>, Internal> {
+        Ok(self
+            .positions
             .get(enumeration.index())
-            .and_then(|positions| positions.get(name))
-            .copied()
+            .ok_or(Internal::missed("enum"))?
+            .get(name)
+            .copied())
     }
 }

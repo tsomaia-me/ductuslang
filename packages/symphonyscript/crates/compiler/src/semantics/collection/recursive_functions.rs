@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::decl::Decl;
+use super::is_cycle::is_cycle;
 use super::namespace::Namespace;
 use super::strongly_connected::strongly_connected;
 use crate::semantics::Internal;
@@ -49,18 +50,12 @@ pub(crate) fn recursive_functions(
         edges.push(targets.into_iter().collect());
     }
     let mut recursive = vec![false; hir.fns.len()];
-    for component in strongly_connected(&edges) {
-        let cyclic = component.len() > 1
-            || component.first().is_some_and(|only| {
-                edges
-                    .get(*only)
-                    .is_some_and(|targets| targets.contains(only))
-            });
-        if cyclic {
+    for component in strongly_connected(&edges)? {
+        if is_cycle(&component, &edges)? {
             for member in component {
-                if let Some(flag) = recursive.get_mut(member) {
-                    *flag = true;
-                }
+                *recursive
+                    .get_mut(member)
+                    .ok_or(Internal::missed("function"))? = true;
             }
         }
     }

@@ -89,7 +89,7 @@ impl Engine<'_> {
             LetRef::Top(id) => Some(self.hir.let_decl(id)?),
             LetRef::Local(index) => {
                 let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
-                    return Ok(None);
+                    return Err(Internal::missed("locals scope"));
                 };
                 let lets = match locals.owner {
                     LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.lets,
@@ -110,15 +110,14 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<bool, Internal> {
         let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
-            self.memo.params.insert((scope, index), BoundVal::Error);
-            return Ok(true);
+            return Err(Internal::missed("locals scope"));
         };
         let owner = locals.owner;
         let source = locals
             .params
             .get(index as usize)
             .cloned()
-            .unwrap_or(ParamSource::Missing);
+            .ok_or(Internal::missed("parameter"))?;
         let params = match owner {
             LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
             LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
@@ -360,9 +359,9 @@ impl Engine<'_> {
                         })
                         .collect::<Result<_, _>>()?;
                     if decl.ty.lengths.is_empty() {
-                        nodes
-                            .first()
-                            .map_or(BoundVal::Error, |node| BoundVal::Scalar(*node))
+                        BoundVal::Scalar(
+                            *nodes.first().ok_or(Internal::missed("attribute default"))?,
+                        )
                     } else {
                         BoundVal::Array(Rc::new((Shape::from_lengths(&decl.ty.lengths), nodes)))
                     }
@@ -528,7 +527,10 @@ impl Engine<'_> {
         if missing {
             return Ok(None);
         }
-        Ok(shapes.remove(&root))
+        shapes
+            .remove(&root)
+            .map(Some)
+            .ok_or(Internal::missed("shape"))
     }
 
     fn note_defaulted(&mut self, base: Option<NodeId>, bound: &BoundVal) {
@@ -604,11 +606,14 @@ impl Engine<'_> {
             })))
         };
         Ok(match val {
-            Val::Scalar(node) => match sigs.first() {
-                Some(sig) => BoundVal::Scalar(one(self, *node, sig)?),
-                None => BoundVal::Error,
-            },
+            Val::Scalar(node) => {
+                let sig = sigs.first().ok_or(Internal::missed("signature"))?;
+                BoundVal::Scalar(one(self, *node, sig)?)
+            }
             Val::Array(array) => {
+                if array.elements.len() != sigs.len() {
+                    return Err(Internal::missed("signature"));
+                }
                 let items = array
                     .elements
                     .iter()
@@ -706,9 +711,12 @@ impl Engine<'_> {
                     }
                     BoundVal::Scalar(bound)
                 }
-                None => BoundVal::Error,
+                None => return Err(Internal::missed("signature")),
             },
             Val::Array(array) => {
+                if array.elements.len() != sigs.len() {
+                    return Err(Internal::missed("signature"));
+                }
                 let items = array
                     .elements
                     .iter()

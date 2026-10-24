@@ -27,9 +27,7 @@ impl Engine<'_> {
             .filter(|position| position.role == Role::Attribute)
         {
             for node in position.val.nodes() {
-                let Some(sig) = self.memo.sigs.get(&node).copied() else {
-                    continue;
-                };
+                let sig = self.known_sig(node)?;
                 if sig.is_error() || !sig.is_numeric() {
                     continue;
                 }
@@ -72,7 +70,7 @@ impl Engine<'_> {
                     if let Op::Read(binding) = &self.node(current)?.op {
                         binding_feeds.entry(*binding).or_default().push(feed);
                     }
-                    if self.carries(current, feed.0) {
+                    if self.carries(current, feed.0)? {
                         stack.extend(self.carried_operands(current)?);
                     }
                 }
@@ -96,11 +94,8 @@ impl Engine<'_> {
         cells.sort_by_key(|(binding, _)| *binding);
         for (binding, feeds) in cells {
             let init = self.binding(binding)?.init;
-            let plain = self
-                .memo
-                .sigs
-                .get(&init)
-                .is_some_and(|sig| sig.family.is_none() && sig.is_numeric());
+            let sig = self.known_sig(init)?;
+            let plain = sig.family.is_none() && sig.is_numeric();
             if !plain {
                 continue;
             }
@@ -132,11 +127,9 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn carries(&self, node: NodeId, family: FamilyId) -> bool {
-        self.memo
-            .sigs
-            .get(&node)
-            .is_some_and(|sig| sig.open || sig.family == Some(family))
+    fn carries(&self, node: NodeId, family: FamilyId) -> Result<bool, Internal> {
+        let sig = self.known_sig(node)?;
+        Ok(sig.open || sig.family == Some(family))
     }
 
     fn carried_operands(&self, node: NodeId) -> Result<Vec<NodeId>, Internal> {
@@ -203,7 +196,7 @@ impl Engine<'_> {
             .template_feeds
             .get(&template)
             .cloned()
-            .unwrap_or_default();
+            .ok_or(Internal::missed("template feeds"))?;
         let mut takers: Vec<(NodeId, FamilyId)> = takers
             .into_iter()
             .filter_map(|node| {
@@ -223,7 +216,8 @@ impl Engine<'_> {
             }
             let reached = carried
                 .get(&family)
-                .is_some_and(|nodes| nodes.contains(&node));
+                .ok_or(Internal::missed("carried family"))?
+                .contains(&node);
             let units = if reached {
                 units_of(&feeds, family)
             } else {
@@ -251,7 +245,7 @@ impl Engine<'_> {
             {
                 continue;
             }
-            if self.carries(node, family) {
+            if self.carries(node, family)? {
                 stack.extend(self.carried_operands(node)?);
             }
         }

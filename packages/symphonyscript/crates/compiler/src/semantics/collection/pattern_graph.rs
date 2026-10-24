@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::decl::Decl;
+use super::is_cycle::is_cycle;
 use super::namespace::Namespace;
 use super::stand_in::StandIn;
 use super::strongly_connected::strongly_connected;
@@ -41,23 +42,16 @@ impl PatternGraph {
         }
         let mut cyclic = vec![false; hir.patterns.len()];
         let mut stand_ins = vec![None; hir.patterns.len()];
-        for component in strongly_connected(&edges) {
-            let self_use = component.first().is_some_and(|only| {
-                edges
-                    .get(*only)
-                    .is_some_and(|targets| targets.contains(only))
-            });
-            if component.len() > 1 || self_use {
+        for component in strongly_connected(&edges)? {
+            if is_cycle(&component, &edges)? {
                 Self::report_cycle(hir, &component, report)?;
                 for member in &component {
-                    if let Some(flag) = cyclic.get_mut(*member) {
-                        *flag = true;
-                    }
+                    *cyclic.get_mut(*member).ok_or(Internal::missed("pattern"))? = true;
                 }
                 continue;
             }
-            let Some(&member) = component.first() else {
-                continue;
+            let &[member] = component.as_slice() else {
+                return Err(Internal::missed("graph component"));
             };
             let id = PatternId(u32::try_from(member).unwrap_or(u32::MAX));
             let namespace = if hir.is_prelude_pattern(id) {
@@ -74,14 +68,13 @@ impl PatternGraph {
                         .and_then(|kind| namespace.get(&kind.text))
                     {
                         Some(Decl::Node(_)) => Some(StandIn::Node(*placement)),
-                        Some(Decl::Pattern(target))
-                            if stand_ins.get(target.index()).is_some_and(Option::is_some) =>
-                        {
-                            Some(StandIn::Use(*placement))
-                        }
+                        Some(Decl::Pattern(target)) => stand_ins
+                            .get(target.index())
+                            .ok_or(Internal::missed("pattern"))?
+                            .as_ref()
+                            .map(|_| StandIn::Use(*placement)),
                         Some(
-                            Decl::Pattern(_)
-                            | Decl::Input(_)
+                            Decl::Input(_)
                             | Decl::Let(_)
                             | Decl::Fn(_)
                             | Decl::Instance(_)
@@ -94,9 +87,9 @@ impl PatternGraph {
                 }
                 _ => None,
             };
-            if let Some(slot) = stand_ins.get_mut(member) {
-                *slot = stand_in;
-            }
+            *stand_ins
+                .get_mut(member)
+                .ok_or(Internal::missed("pattern"))? = stand_in;
         }
         Ok(PatternGraph { cyclic, stand_ins })
     }
@@ -116,9 +109,7 @@ impl PatternGraph {
             .filter_map(|decl| decl.name.as_ref())
             .map(|name| format!("`{}`", name.text))
             .collect();
-        let Some(decl) = decls.first() else {
-            return Ok(());
-        };
+        let decl = decls.first().ok_or(Internal::missed("graph component"))?;
         let loc = decl.name.as_ref().map_or(decl.loc, |name| name.loc);
         let others: Vec<_> = decls
             .iter()

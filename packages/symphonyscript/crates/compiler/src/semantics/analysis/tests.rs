@@ -44,7 +44,7 @@ fn graph_size(calls: usize) -> (usize, usize) {
     let parsed = parse(&source, &vocabulary);
     build_file(&mut hir, &source.path, &parsed, &vocabulary).expect("the chain builds");
     let mut report = Report::default();
-    let variants = Variants::of(&vocabulary);
+    let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("the chain collects");
     let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
     engine.analyze().expect("the chain meets no internal error");
@@ -878,6 +878,7 @@ fn note_conditions(engine: &Engine<'_>, text: &str) -> Vec<Vec<(String, bool)>> 
         .map(|instance| {
             engine
                 .conditions_of(instance.conditions)
+                .expect("every condition link exists")
                 .into_iter()
                 .map(|condition| {
                     let loc = engine
@@ -1963,7 +1964,7 @@ fn built(vocabulary: &Vocabulary, text: &str) -> Hir {
 #[test]
 fn a_lookup_that_misses_is_an_internal_error() {
     let vocabulary = vocabulary();
-    let variants = Variants::of(&vocabulary);
+    let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let other = built(
         &vocabulary,
         "input a = 1\ninput b = 2\ninput c = 3\nSession s\n",
@@ -2061,7 +2062,7 @@ fn a_lookup_that_misses_is_an_internal_error() {
 
 pub(super) fn with_engine<R>(text: &str, run: impl FnOnce(&mut Engine<'_>) -> R) -> R {
     let vocabulary = vocabulary();
-    let variants = Variants::of(&vocabulary);
+    let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let hir = built(&vocabulary, text);
     let mut report = Report::default();
     let collected =
@@ -2118,6 +2119,94 @@ fn a_cycle_walk_that_misses_is_an_internal_error() {
     });
 }
 
+#[test]
+fn a_miss_in_collected_or_derived_state_is_an_internal_error() {
+    let missed = |what| Internal::missed(what);
+    assert_eq!(
+        crate::semantics::collection::strongly_connected(&[vec![1]]),
+        Err(missed("graph node"))
+    );
+    assert_eq!(
+        crate::semantics::collection::strongly_connected(&[vec![0], vec![0, 1]]),
+        Ok(vec![vec![0], vec![1]])
+    );
+    let example = vocabulary();
+    let wave = example
+        .enum_at(0)
+        .expect("the example vocabulary declares Wave");
+    let empty = Vocabulary::builder("empty")
+        .build()
+        .expect("the empty vocabulary builds");
+    let variants_of = |vocabulary: &Vocabulary| {
+        Variants::of(vocabulary).expect("the vocabulary's variants index")
+    };
+    assert_eq!(
+        variants_of(&empty).position(wave, "Sine"),
+        Err(missed("enum"))
+    );
+    assert_eq!(variants_of(&example).position(wave, "Saw"), Ok(Some(1)));
+    let pair = Val::array(
+        super::shape::Shape::from_lengths(&[2]),
+        vec![NodeId(0), NodeId(1)],
+    );
+    assert_eq!(pair.slice(1), Ok(Val::Scalar(NodeId(1))));
+    assert_eq!(pair.slice(2), Err(missed("array element")));
+    assert_eq!(
+        Val::Scalar(NodeId(0)).slice(0),
+        Err(missed("array element"))
+    );
+    let literal = |digits: &str| crate::semantics::ir::FloatLit {
+        negative: false,
+        digits: digits.into(),
+        exponent: 0,
+    };
+    assert_eq!(
+        literal("3").scaled(0.5).and_then(|half| half.to_f64()),
+        Ok(1.5)
+    );
+    assert_eq!(literal("1x").to_f64(), Err(missed("float literal")));
+    assert_eq!(literal("1x").to_f32(), Err(missed("float literal")));
+    assert_eq!(
+        literal("1x").scaled(2.0).map(|_| ()),
+        Err(missed("float literal"))
+    );
+    with_engine(
+        "fn f(x = 1): x\npattern P():\n    Note\nClip c:\n    P\n",
+        |engine| {
+            assert_eq!(engine.analyze(), Ok(()));
+            let inline = &engine.collected.inline;
+            let (function, other) = (crate::semantics::ir::FnId(0), crate::semantics::ir::FnId(9));
+            assert_eq!(inline.call(function, &[0]), Ok(1));
+            assert_eq!(inline.call(other, &[]), Err(missed("function")));
+            assert_eq!(
+                inline.call(function, &[3]),
+                Err(missed("parameter default"))
+            );
+            let (pattern, unknown) = (
+                crate::semantics::ir::PatternId(0),
+                crate::semantics::ir::PatternId(9),
+            );
+            assert_eq!(engine.is_cyclic(pattern), Ok(false));
+            assert_eq!(engine.is_cyclic(unknown), Err(missed("pattern")));
+            assert_eq!(engine.stand_in(unknown), Err(missed("pattern")));
+            assert_eq!(engine.conditions_of(None), Ok(Vec::new()));
+            assert_eq!(
+                engine.conditions_of(Some(super::ids::ConditionsId(999))),
+                Err(missed("condition"))
+            );
+            let global = engine.source_global;
+            assert_eq!(
+                engine.demand(Query::Param(global, 0)),
+                Err(missed("locals scope"))
+            );
+            assert_eq!(
+                engine.demand(Query::Let(global, super::let_ref::LetRef::Local(0))),
+                Err(missed("locals scope"))
+            );
+        },
+    );
+}
+
 #[derive(Clone, Copy)]
 enum Stage {
     Expand,
@@ -2132,7 +2221,7 @@ fn staged(
     text: &str,
     stage: Stage,
 ) -> Result<(), Internal> {
-    let variants = Variants::of(vocabulary);
+    let variants = Variants::of(vocabulary).expect("the vocabulary's variants index");
     let hir = built(vocabulary, text);
     let mut report = Report::default();
     let collected = collect(&hir, vocabulary, &variants, &mut report)?;

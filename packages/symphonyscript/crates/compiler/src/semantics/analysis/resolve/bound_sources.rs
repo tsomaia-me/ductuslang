@@ -1,7 +1,7 @@
 use super::bind_fault::BindFault;
 use crate::semantics::analysis::ids::ScopeId;
 use crate::semantics::analysis::param_source::ParamSource;
-use crate::semantics::ir::{Args, Param};
+use crate::semantics::ir::{Args, Ident, Param};
 
 pub(super) fn bound_sources<'a>(
     params: &[Param],
@@ -24,20 +24,26 @@ pub(super) fn bound_sources<'a>(
             }
         }
         Args::Named(values) => {
-            for (name, value) in values {
-                let position = params
+            for (earlier, (name, _)) in values.iter().enumerate() {
+                if !params.iter().any(|param| named(param, name)) {
+                    return Err(BindFault::Unknown(name));
+                }
+                if values
                     .iter()
-                    .position(|param| param.name.as_ref().is_some_and(|own| own.text == name.text))
-                    .ok_or(BindFault::Unknown(name))?;
-                if let Some(slot) = sources.get_mut(position) {
-                    if slot.is_some() {
-                        return Err(BindFault::Duplicate(name));
-                    }
-                    *slot = Some(ParamSource::Arg {
+                    .take(earlier)
+                    .any(|(other, _)| other.text == name.text)
+                {
+                    return Err(BindFault::Duplicate(name));
+                }
+            }
+            for (slot, param) in sources.iter_mut().zip(params) {
+                *slot = values
+                    .iter()
+                    .find(|(name, _)| named(param, name))
+                    .map(|(_, value)| ParamSource::Arg {
                         expr: *value,
                         scope,
                     });
-                }
             }
         }
     }
@@ -50,4 +56,8 @@ pub(super) fn bound_sources<'a>(
             None => ParamSource::Missing,
         })
         .collect())
+}
+
+fn named(param: &Param, name: &Ident) -> bool {
+    param.name.as_ref().is_some_and(|own| own.text == name.text)
 }

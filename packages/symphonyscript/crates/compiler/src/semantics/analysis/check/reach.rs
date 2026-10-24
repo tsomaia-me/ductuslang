@@ -75,16 +75,15 @@ impl Engine<'_> {
             let placement = self.hir.placement(record.placement)?;
             let loc = placement.name.as_ref().map_or(record.loc, |name| name.loc);
             let label = self.instance_label(instance)?;
-            let top = sites.get(&instance).copied();
-            let loc = match top {
-                Some(pid) => self
-                    .hir
-                    .placement(pid)?
-                    .name
-                    .as_ref()
-                    .map_or(loc, |name| name.loc),
-                None => loc,
-            };
+            let site = *sites
+                .get(&instance)
+                .ok_or(Internal::missed("top-level instance"))?;
+            let loc = self
+                .hir
+                .placement(site)?
+                .name
+                .as_ref()
+                .map_or(loc, |name| name.loc);
             self.report.error(
                 self.hir,
                 Code::UnreachableInstance,

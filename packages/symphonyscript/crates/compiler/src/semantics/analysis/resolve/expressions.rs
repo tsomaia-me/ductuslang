@@ -144,7 +144,8 @@ impl Engine<'_> {
                         )?;
                         return Ok(Some(Val::Error));
                     }
-                    Some((_, Some(Val::Error) | None)) | None => return Ok(Some(Val::Error)),
+                    Some((_, Some(Val::Error) | None)) => return Ok(Some(Val::Error)),
+                    None => return Err(Internal::missed("interpolation")),
                 },
             }
         }
@@ -167,7 +168,7 @@ impl Engine<'_> {
             )?;
             return Ok(Val::Error);
         };
-        Ok(match self.variants.position(id, &variant.text) {
+        Ok(match self.variants.position(id, &variant.text)? {
             Some(index) => self.scalar(Op::Variant(id, index), loc, scope)?,
             None => {
                 self.error(
@@ -263,11 +264,11 @@ impl Engine<'_> {
         let vals =
             match some!(self.branches(vec![then, otherwise], condition, (loc, scope), need)?) {
                 Branches::Whole(nodes) => {
-                    let (Some(then), Some(otherwise)) = (nodes.first(), nodes.get(1)) else {
+                    let &[then, otherwise] = nodes.as_slice() else {
                         return Ok(Some(Val::Error));
                     };
                     return Ok(Some(self.scalar(
-                        Op::If(condition, *then, *otherwise),
+                        Op::If(condition, then, otherwise),
                         loc,
                         scope,
                     )?));
@@ -280,8 +281,9 @@ impl Engine<'_> {
         let elements: Vec<NodeId> = pairs
             .into_iter()
             .map(|pair| {
-                let then = pair.first().copied().unwrap_or(condition);
-                let otherwise = pair.get(1).copied().unwrap_or(condition);
+                let &[then, otherwise] = pair.as_slice() else {
+                    return Err(Internal::missed("branch"));
+                };
                 self.push_node(Op::If(condition, then, otherwise), loc, scope)
             })
             .collect::<Result<_, _>>()?;
@@ -472,10 +474,15 @@ impl Engine<'_> {
             .map(|position| {
                 columns
                     .iter()
-                    .filter_map(|column| column.get(position).copied())
+                    .map(|column| {
+                        column
+                            .get(position)
+                            .copied()
+                            .ok_or(Internal::missed("array element"))
+                    })
                     .collect()
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         Ok(Some((shape, rows)))
     }
 

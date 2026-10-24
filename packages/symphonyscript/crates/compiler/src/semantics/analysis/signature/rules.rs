@@ -575,14 +575,13 @@ impl Engine<'_> {
         let reactive = matches!(extra, Extra::ToRead { reactive: true });
         let mut found = Vec::new();
         for (item, attr) in attrs {
-            if let Some(decl) = self.attr_decl(*item, *attr)? {
-                found.push(decl.clone());
-            }
+            let decl = self
+                .attr_decl(*item, *attr)?
+                .ok_or(Internal::missed("attribute"))?;
+            found.push(decl.clone());
         }
         let mut decls = found.into_iter();
-        let Some(first) = decls.next() else {
-            return Ok(Sig::ERROR);
-        };
+        let first = decls.next().ok_or(Internal::missed("attribute"))?;
         let family: Option<FamilyId> = first.unit.map(|unit| unit.family);
         for decl in decls {
             if decl.ty != first.ty || decl.unit.map(|unit| unit.family) != family {

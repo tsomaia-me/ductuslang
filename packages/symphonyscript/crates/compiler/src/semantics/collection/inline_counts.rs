@@ -51,7 +51,7 @@ impl InlineCounts {
         };
         let mut state = vec![Visit::New; count];
         for start in 0..count {
-            if state.get(start) != Some(&Visit::New) {
+            if visit_of(&state, start)? != Visit::New {
                 continue;
             }
             let mut stack = vec![start];
@@ -65,64 +65,73 @@ impl InlineCounts {
                     .iter()
                     .map(|param| sites(index, param.default.into_iter().collect()))
                     .collect::<Result<_, _>>()?;
-                if state.get(index) == Some(&Visit::New) {
-                    if let Some(slot) = state.get_mut(index) {
-                        *slot = Visit::Open;
+                if visit_of(&state, index)? == Visit::New {
+                    *visit_mut(&mut state, index)? = Visit::Open;
+                    let mut pending: Vec<usize> = Vec::new();
+                    for site in body_sites.iter().chain(default_sites.iter().flatten()) {
+                        let callee = site.callee.index();
+                        if visit_of(&state, callee)? == Visit::New {
+                            pending.push(callee);
+                        }
                     }
-                    let pending: Vec<usize> = body_sites
-                        .iter()
-                        .chain(default_sites.iter().flatten())
-                        .map(|site| site.callee.index())
-                        .filter(|callee| state.get(*callee) == Some(&Visit::New))
-                        .collect();
                     if !pending.is_empty() {
                         stack.extend(pending);
                         continue;
                     }
                 }
                 stack.pop();
-                if state.get(index) == Some(&Visit::Done) {
+                if visit_of(&state, index)? == Visit::Done {
                     continue;
                 }
-                let body = body_sites
-                    .iter()
-                    .fold(0u64, |total, site| total.saturating_add(counts.site(site)));
+                let body = counts.total(&body_sites)?;
                 let defaults: Vec<u64> = default_sites
                     .iter()
-                    .map(|sites| {
-                        sites
-                            .iter()
-                            .fold(0u64, |total, site| total.saturating_add(counts.site(site)))
-                    })
-                    .collect();
-                if let Some(slot) = counts.body.get_mut(index) {
-                    *slot = body;
-                }
-                if let Some(slot) = counts.defaults.get_mut(index) {
-                    *slot = defaults;
-                }
-                if let Some(slot) = state.get_mut(index) {
-                    *slot = Visit::Done;
-                }
+                    .map(|sites| counts.total(sites))
+                    .collect::<Result<_, _>>()?;
+                *counts
+                    .body
+                    .get_mut(index)
+                    .ok_or(Internal::missed("function"))? = body;
+                *counts
+                    .defaults
+                    .get_mut(index)
+                    .ok_or(Internal::missed("function"))? = defaults;
+                *visit_mut(&mut state, index)? = Visit::Done;
             }
         }
         Ok(counts)
     }
 
-    fn site(&self, site: &Site) -> u64 {
-        self.call(site.callee, &site.defaulted)
+    fn total(&self, sites: &[Site]) -> Result<u64, Internal> {
+        sites.iter().try_fold(0u64, |total, site| {
+            Ok(total.saturating_add(self.call(site.callee, &site.defaulted)?))
+        })
     }
 
-    pub fn call(&self, callee: FnId, defaulted: &[usize]) -> u64 {
-        let body = self.body.get(callee.index()).copied().unwrap_or(0);
-        let defaults = self.defaults.get(callee.index());
+    pub fn call(&self, callee: FnId, defaulted: &[usize]) -> Result<u64, Internal> {
+        let missed = Internal::missed("function");
+        let body = *self.body.get(callee.index()).ok_or(missed)?;
+        let defaults = self.defaults.get(callee.index()).ok_or(missed)?;
         defaulted
             .iter()
-            .filter_map(|param| defaults.and_then(|counts| counts.get(*param)))
-            .fold(body.saturating_add(1), |total, count| {
-                total.saturating_add(*count)
+            .try_fold(body.saturating_add(1), |total, param| {
+                let count = defaults
+                    .get(*param)
+                    .ok_or(Internal::missed("parameter default"))?;
+                Ok(total.saturating_add(*count))
             })
     }
+}
+
+fn visit_of(state: &[Visit], index: usize) -> Result<Visit, Internal> {
+    state
+        .get(index)
+        .copied()
+        .ok_or(Internal::missed("function"))
+}
+
+fn visit_mut(state: &mut [Visit], index: usize) -> Result<&mut Visit, Internal> {
+    state.get_mut(index).ok_or(Internal::missed("function"))
 }
 
 fn call_sites(
@@ -147,7 +156,9 @@ fn call_sites(
             && let ExprKind::Name(name) = &hir.expr(*callee)?.kind
             && !locals.contains(name.as_str())
             && let Some(Decl::Fn(target)) = namespace.get(name)
-            && !recursive.get(target.index()).copied().unwrap_or(true)
+            && !*recursive
+                .get(target.index())
+                .ok_or(Internal::missed("function"))?
         {
             found.push(Site {
                 callee: target,

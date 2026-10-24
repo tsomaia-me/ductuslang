@@ -74,16 +74,10 @@ impl Engine<'_> {
                     .any(|source| matches!(source, ParamSource::Missing))
                 {
                     Called::Unresolved
-                } else if self
-                    .collected
-                    .recursive
-                    .get(function.index())
-                    .copied()
-                    .ok_or(Internal::missed("function"))?
-                {
+                } else if self.is_recursive(function)? {
                     Called::Evaluated
                 } else {
-                    Called::Inlined(function, self.inline_count(function, &sources))
+                    Called::Inlined(function, self.inline_count(function, &sources)?)
                 }
             }
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {

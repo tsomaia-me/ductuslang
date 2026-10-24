@@ -130,7 +130,7 @@ impl Engine<'_> {
                     continue;
                 }
                 let contribution = match &self.node(node)?.op {
-                    Op::Read(read) => self.typing.natural.get(read).copied().flatten(),
+                    Op::Read(read) => self.natural_of(*read)?,
                     Op::Number(..)
                     | Op::Const(_)
                     | Op::Bool(_)
@@ -153,12 +153,11 @@ impl Engine<'_> {
                     | Op::Annotate(..)
                     | Op::Builtin(..)
                     | Op::Recursive { .. }
-                    | Op::ToRead { .. } => match self.memo.sigs.get(&node).map(|sig| sig.width) {
-                        Some(Width::Fixed(scalar)) if is_integer(scalar) => Some(scalar),
-                        Some(
-                            Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive,
-                        )
-                        | None => None,
+                    | Op::ToRead { .. } => match self.known_sig(node)?.width {
+                        Width::Fixed(scalar) if is_integer(scalar) => Some(scalar),
+                        Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => {
+                            None
+                        }
                     },
                 };
                 if let Some(contribution) = contribution
@@ -173,6 +172,14 @@ impl Engine<'_> {
             self.typing.natural.insert(binding, widest);
             stack.pop();
         }
-        Ok(self.typing.natural.get(&root).copied().flatten())
+        self.natural_of(root)
+    }
+
+    fn natural_of(&self, binding: BindingId) -> Result<Option<Scalar>, Internal> {
+        self.typing
+            .natural
+            .get(&binding)
+            .copied()
+            .ok_or(Internal::missed("natural width"))
     }
 }

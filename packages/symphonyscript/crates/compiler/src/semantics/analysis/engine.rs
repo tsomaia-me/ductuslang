@@ -658,7 +658,7 @@ impl<'a> Engine<'a> {
         names.push(first);
         let &loc = locs.first().ok_or(Internal::missed("cycle declaration"))?;
         let message = format!("these declarations reach themselves: {}", names.join(" → "));
-        let secondary = locs.get(1..).unwrap_or_default();
+        let secondary = locs.get(1..).ok_or(Internal::missed("cycle declaration"))?;
         self.report
             .error_with(self.hir, Code::DeclarationCycle, loc, secondary, message);
         Ok(())

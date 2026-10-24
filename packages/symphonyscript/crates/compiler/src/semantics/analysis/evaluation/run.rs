@@ -75,7 +75,7 @@ impl Engine<'_> {
         {
             let value = some!(self.compute(node, of_scalar(integer), ctx, need)?);
             let value = map_leaves(value, |leaf| {
-                Ok(convert_to(scaled_into(leaf, scale, own), ty))
+                Ok(convert_to(scaled_into(leaf, scale, own)?, ty))
             })?;
             return Ok(Some(self.shape_checked(node, value)?));
         }
@@ -266,7 +266,7 @@ impl Engine<'_> {
                 if values.iter().any(CVal::is_error) {
                     return Ok(Some(CVal::Error));
                 }
-                let inner = values.first().map(lengths_of).unwrap_or_default();
+                let inner = lengths_of(values.first().ok_or(Internal::missed("array element"))?);
                 if values.iter().any(|value| lengths_of(value) != inner) {
                     self.error_at_node(
                         Code::RaggedArray,
@@ -304,7 +304,7 @@ impl Engine<'_> {
                 }
             }
             Op::Bare(name) => match own {
-                EvalTy::Enum(id) => match self.variants.position(id, &name) {
+                EvalTy::Enum(id) => match self.variants.position(id, &name)? {
                     Some(index) => CVal::Enum(id, index),
                     None => {
                         let enum_name = self.enum_decl(id)?.name.clone();
@@ -427,9 +427,10 @@ impl Engine<'_> {
                 let Destination::Fixed(item) = destination else {
                     return Ok(Some(CVal::Error));
                 };
-                let Some((_, attr)) = attrs.iter().find(|(candidate, _)| *candidate == item) else {
-                    return Ok(Some(CVal::Error));
-                };
+                let (_, attr) = attrs
+                    .iter()
+                    .find(|(candidate, _)| *candidate == item)
+                    .ok_or(Internal::missed("attribute"))?;
                 match some!(self.bound(Query::Attr(item, *attr), need)) {
                     BoundVal::Scalar(Bound::Value(value)) => {
                         some!(self.child(value, own, ctx, need)?)
@@ -495,15 +496,15 @@ impl Engine<'_> {
                 Number::Float(value) => value.clone(),
             };
             let exact = match scale {
-                Some(scale) => exact.scaled(scale),
+                Some(scale) => exact.scaled(scale)?,
                 None => exact,
             };
             let is_integer =
                 matches!(number, Number::Int(_)) && scale.is_none_or(|scale| scale.fract() == 0.0);
             let value = if is_f32(own) {
-                CVal::F32(exact.to_f32())
+                CVal::F32(exact.to_f32()?)
             } else {
-                CVal::F64(exact.to_f64())
+                CVal::F64(exact.to_f64()?)
             };
             let finite = match value {
                 CVal::F32(value) => value.is_finite(),
@@ -660,10 +661,10 @@ impl Engine<'_> {
                         self.integer(node, own, exact_binary(op, a, b))?
                     }
                     (CVal::F32(a), CVal::F32(b)) => {
-                        float_binary(op, a, b).map_or(CVal::Error, CVal::F32)
+                        CVal::F32(float_binary(op, a, b).ok_or(Internal::missed("float operator"))?)
                     }
                     (CVal::F64(a), CVal::F64(b)) => {
-                        float_binary(op, a, b).map_or(CVal::Error, CVal::F64)
+                        CVal::F64(float_binary(op, a, b).ok_or(Internal::missed("float operator"))?)
                     }
                     _ => CVal::Error,
                 })
@@ -759,9 +760,9 @@ impl Engine<'_> {
             })
             .collect();
         if let Some(floats) = floats32 {
-            return Ok(Some(
-                f32::spec_builtin(builtin, &floats).map_or(CVal::Error, CVal::F32),
-            ));
+            return Ok(Some(CVal::F32(
+                f32::spec_builtin(builtin, &floats).ok_or(Internal::missed("built-in"))?,
+            )));
         }
         let floats64: Option<Vec<f64>> = values
             .iter()
@@ -777,11 +778,12 @@ impl Engine<'_> {
                 | CVal::Error => None,
             })
             .collect();
-        Ok(Some(
-            floats64
-                .and_then(|floats| f64::spec_builtin(builtin, &floats))
-                .map_or(CVal::Error, CVal::F64),
-        ))
+        Ok(Some(match floats64 {
+            Some(floats) => {
+                CVal::F64(f64::spec_builtin(builtin, &floats).ok_or(Internal::missed("built-in"))?)
+            }
+            None => CVal::Error,
+        }))
     }
 
     fn concat(
@@ -818,7 +820,7 @@ impl Engine<'_> {
             match piece {
                 Piece::Text(text) => out.push_str(text),
                 Piece::Value(_) => {
-                    let value = values.next().unwrap_or(CVal::Error);
+                    let value = values.next().ok_or(Internal::missed("interpolation"))?;
                     let variant = |id, index: u16| {
                         self.enum_decl(id)?
                             .variants
@@ -888,11 +890,8 @@ impl Engine<'_> {
         node: NodeId,
         value: CVal,
     ) -> Result<CVal, Internal> {
-        let flexible_integer = self
-            .memo
-            .sigs
-            .get(&node)
-            .is_some_and(|sig| sig.kind == Kind::Int && sig.width == Width::Flexible);
+        let sig = self.known_sig(node)?;
+        let flexible_integer = sig.kind == Kind::Int && sig.width == Width::Flexible;
         if flexible_integer {
             self.fit(node, value, EvalTy::I64)
         } else {
@@ -913,18 +912,16 @@ impl Engine<'_> {
             return self.child(operand, own, ctx, need);
         }
         let flexible = sig.width == Width::Flexible;
-        let partner = partners
-            .iter()
-            .filter(|partner| **partner != operand)
-            .find_map(
-                |partner| match self.memo.sigs.get(partner).map(|sig| sig.width) {
-                    Some(Width::Fixed(scalar)) if is_integer(scalar) => Some(scalar),
-                    Some(
-                        Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive,
-                    )
-                    | None => None,
-                },
-            );
+        let mut partner = None;
+        for other in partners.iter().filter(|partner| **partner != operand) {
+            match self.known_sig(*other)?.width {
+                Width::Fixed(scalar) if is_integer(scalar) => {
+                    partner = Some(scalar);
+                    break;
+                }
+                Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => {}
+            }
+        }
         let ty = match partner {
             Some(scalar) if flexible => of_scalar(scalar),
             _ if flexible && !is_chosen_float(own) => {
@@ -946,11 +943,7 @@ impl Engine<'_> {
         value: CVal,
         ty: EvalTy,
     ) -> Result<CVal, Internal> {
-        let flexible = self
-            .memo
-            .sigs
-            .get(&node)
-            .is_some_and(|sig| !matches!(sig.width, Width::Fixed(_)));
+        let flexible = !matches!(self.known_sig(node)?.width, Width::Fixed(_));
         self.convert_integer(node, flexible, value, ty)
     }
 
@@ -1011,8 +1004,8 @@ impl Engine<'_> {
             CVal::Int(value) if scale.fract() == 0.0 && scale.abs() < 1e38 => {
                 self.integer(node, EvalTy::Exact, value.checked_mul(scale as i128))?
             }
-            CVal::F32(value) => scaled_float(f64::from(value), scale, target),
-            CVal::F64(value) => scaled_float(value, scale, target),
+            CVal::F32(value) => scaled_float(f64::from(value), scale, target)?,
+            CVal::F64(value) => scaled_float(value, scale, target)?,
             CVal::Int(_)
             | CVal::Bool(_)
             | CVal::Enum(..)
@@ -1048,37 +1041,39 @@ fn fits_in(value: &CVal, ty: EvalTy) -> bool {
     }
 }
 
-fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> CVal {
+fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> Result<CVal, Internal> {
     let CVal::Int(integer) = value else {
-        return CVal::Error;
+        return Ok(CVal::Error);
     };
-    let exact = FloatLit::from_integer(integer).scaled(scale);
-    if is_f32(ty) {
-        CVal::F32(exact.to_f32())
+    let exact = FloatLit::from_integer(integer).scaled(scale)?;
+    Ok(if is_f32(ty) {
+        CVal::F32(exact.to_f32()?)
     } else {
-        CVal::F64(exact.to_f64())
-    }
+        CVal::F64(exact.to_f64()?)
+    })
 }
 
-fn scaled_float(value: f64, scale: f64, target: EvalTy) -> CVal {
+fn scaled_float(value: f64, scale: f64, target: EvalTy) -> Result<CVal, Internal> {
     if !value.is_finite() {
-        return if is_f32(target) {
+        return Ok(if is_f32(target) {
             CVal::F32((value * scale) as f32)
         } else {
             CVal::F64(value * scale)
-        };
+        });
     }
-    let magnitude = FloatLit::from_integer(1).scaled(value.abs()).scaled(scale);
+    let magnitude = FloatLit::from_integer(1)
+        .scaled(value.abs())?
+        .scaled(scale)?;
     let exact = if value.is_sign_negative() {
         magnitude.negated()
     } else {
         magnitude
     };
-    if is_f32(target) {
-        CVal::F32(exact.to_f32())
+    Ok(if is_f32(target) {
+        CVal::F32(exact.to_f32()?)
     } else {
-        CVal::F64(exact.to_f64())
-    }
+        CVal::F64(exact.to_f64()?)
+    })
 }
 
 fn exact_integer(value: &CVal, number: &Number, scale: Option<f64>) -> bool {

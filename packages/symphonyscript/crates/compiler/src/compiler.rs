@@ -52,7 +52,15 @@ impl Compiler {
             }
         }
         hir.seal_prelude();
-        let variants = Variants::of(vocab);
+        let variants = match Variants::of(vocab) {
+            Ok(variants) => variants,
+            Err(internal) => {
+                analyze::internal_error(&hir, &mut report, internal);
+                return Err(Failed {
+                    diagnostics: report.finish(&hir.files),
+                });
+            }
+        };
         analyze::prelude(&hir, vocab, &variants, &mut report);
         let diagnostics = report.finish(&hir.files);
         if diagnostics

@@ -151,12 +151,7 @@ impl Engine<'_> {
         let Some(sources) = self.bind_arguments(&decl.params, args, loc, scope)? else {
             return Ok(Some(Val::Error));
         };
-        let recursive = self
-            .collected
-            .recursive
-            .get(function.index())
-            .copied()
-            .unwrap_or(false);
+        let recursive = self.is_recursive(function)?;
         if recursive {
             let mut vals = Vec::new();
             let mut missing = false;
@@ -294,12 +289,7 @@ impl Engine<'_> {
             return Ok(false);
         };
         Ok(match self.find(name, scope)? {
-            Found::Decl(Decl::Fn(function)) => !self
-                .collected
-                .recursive
-                .get(function.index())
-                .copied()
-                .unwrap_or(true),
+            Found::Decl(Decl::Fn(function)) => !self.is_recursive(function)?,
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
                 false
             }
@@ -331,14 +321,17 @@ impl Engine<'_> {
         if let Some(shared) = self.memo.call_scopes.get(&(second, scope)) {
             return Ok(self.memo.call_scopes.get(&(first, scope)) == Some(shared));
         }
-        let Some(body) = self.memo.call_scopes.get(&(first, scope)).copied() else {
-            return Ok(false);
-        };
+        let body = self
+            .memo
+            .call_scopes
+            .get(&(first, scope))
+            .copied()
+            .ok_or(Internal::missed("call scope"))?;
         let ScopeKind::Locals(locals) = &self.scope_of(body)?.kind else {
-            return Ok(false);
+            return Err(Internal::missed("locals scope"));
         };
         let LocalsOwner::Fn(function) = locals.owner else {
-            return Ok(false);
+            return Err(Internal::missed("function scope"));
         };
         let sources = locals.params.clone();
         let loc = self.hir.expr(second)?.loc;
@@ -365,7 +358,7 @@ impl Engine<'_> {
         }
         self.inlined = self
             .inlined
-            .saturating_add(self.inline_count(function, sources));
+            .saturating_add(self.inline_count(function, sources)?);
         if self.inlined <= INLINE_LIMIT {
             return Ok(true);
         }
@@ -373,7 +366,19 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    pub(super) fn inline_count(&self, function: FnId, sources: &[ParamSource]) -> u64 {
+    pub(super) fn is_recursive(&self, function: FnId) -> Result<bool, Internal> {
+        self.collected
+            .recursive
+            .get(function.index())
+            .copied()
+            .ok_or(Internal::missed("function"))
+    }
+
+    pub(super) fn inline_count(
+        &self,
+        function: FnId,
+        sources: &[ParamSource],
+    ) -> Result<u64, Internal> {
         let defaulted: Vec<usize> = sources
             .iter()
             .enumerate()

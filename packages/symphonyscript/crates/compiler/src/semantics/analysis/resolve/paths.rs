@@ -261,7 +261,7 @@ impl Engine<'_> {
             }
             Val::Error => return Ok(Some(Val::Error)),
         };
-        let outer = array.shape.outer().unwrap_or(0);
+        let outer = array.shape.outer().ok_or(Internal::missed("array shape"))?;
         let sig = some!(self.sig(index_node, need));
         if sig.is_error() {
             return Ok(Some(Val::Error));
@@ -288,10 +288,14 @@ impl Engine<'_> {
                 | CVal::Error => return Ok(Some(Val::Error)),
             };
             if (0..i128::from(outer)).contains(&position) {
-                return Ok(Some(base_val.slice(usize::try_from(position).unwrap_or(0))));
+                let position =
+                    usize::try_from(position).map_err(|_| Internal::missed("array element"))?;
+                return Ok(Some(base_val.slice(position)?));
             }
         }
-        let rows: Vec<Val> = (0..outer as usize).map(|row| base_val.slice(row)).collect();
+        let rows: Vec<Val> = (0..outer as usize)
+            .map(|row| base_val.slice(row))
+            .collect::<Result<_, _>>()?;
         let inner = array.shape.inner();
         let columns: Vec<Vec<NodeId>> = rows.iter().map(Val::nodes).collect();
         let width = columns.first().map_or(0, Vec::len);
@@ -299,8 +303,13 @@ impl Engine<'_> {
             .map(|position| {
                 let items = columns
                     .iter()
-                    .filter_map(|column| column.get(position).copied())
-                    .collect();
+                    .map(|column| {
+                        column
+                            .get(position)
+                            .copied()
+                            .ok_or(Internal::missed("array element"))
+                    })
+                    .collect::<Result<_, _>>()?;
                 self.push_node(
                     Op::Pick {
                         index: index_node,

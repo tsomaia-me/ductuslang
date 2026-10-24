@@ -151,47 +151,44 @@ impl<'a> Checker<'a> {
             found.dedup();
             reads.push(found);
         }
+        let missed = Internal::missed("local let");
         let mut state = vec![Visit::New; lets.len()];
         for start in 0..lets.len() {
-            if state.get(start) != Some(&Visit::New) {
+            let visit = state.get_mut(start).ok_or(missed)?;
+            if *visit != Visit::New {
                 continue;
             }
+            *visit = Visit::Open;
             let mut path: Vec<(usize, usize)> = vec![(start, 0)];
-            if let Some(slot) = state.get_mut(start) {
-                *slot = Visit::Open;
-            }
             while let Some((node, next)) = path.last().copied() {
-                let Some(&target) = reads.get(node).and_then(|targets| targets.get(next)) else {
-                    if let Some(slot) = state.get_mut(node) {
-                        *slot = Visit::Done;
-                    }
+                let Some(&target) = reads.get(node).ok_or(missed)?.get(next) else {
+                    *state.get_mut(node).ok_or(missed)? = Visit::Done;
                     path.pop();
                     continue;
                 };
                 if let Some(top) = path.last_mut() {
                     top.1 += 1;
                 }
-                match state.get(target) {
-                    Some(Visit::New) => {
-                        if let Some(slot) = state.get_mut(target) {
-                            *slot = Visit::Open;
-                        }
+                let visit = state.get_mut(target).ok_or(missed)?;
+                match *visit {
+                    Visit::New => {
+                        *visit = Visit::Open;
                         path.push((target, 0));
                     }
-                    Some(Visit::Open) => {
+                    Visit::Open => {
                         let from = path
                             .iter()
                             .position(|(position, _)| *position == target)
-                            .unwrap_or(0);
-                        let cycle: Vec<&Ident> = path
-                            .get(from..)
-                            .unwrap_or_default()
-                            .iter()
-                            .filter_map(|(position, _)| lets.get(*position)?.name.as_ref())
-                            .collect();
+                            .ok_or(missed)?;
+                        let mut cycle: Vec<&Ident> = Vec::new();
+                        for (position, _) in path.iter().skip(from) {
+                            if let Some(name) = lets.get(*position).ok_or(missed)?.name.as_ref() {
+                                cycle.push(name);
+                            }
+                        }
                         self.cycle(&cycle);
                     }
-                    Some(Visit::Done) | None => {}
+                    Visit::Done => {}
                 }
             }
         }
@@ -322,35 +319,43 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    fn visible(&self, frame: Option<usize>, name: &str) -> bool {
+    fn visible(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
         let mut current = frame;
         while let Some(index) = current {
-            let Some(frame) = self.frames.get(index) else {
-                break;
-            };
+            let frame = self
+                .frames
+                .get(index)
+                .ok_or(Internal::missed("scope frame"))?;
             if frame.names.contains_key(name) {
-                return true;
+                return Ok(true);
             }
             current = frame.parent;
         }
-        self.namespace.get(name).is_some()
+        Ok(self.namespace.get(name).is_some())
     }
 
-    fn enclosing_body_name(&self, frame: Option<usize>, name: &str) -> Option<Loc> {
+    fn enclosing_body_name(
+        &self,
+        frame: Option<usize>,
+        name: &str,
+    ) -> Result<Option<Loc>, Internal> {
         let mut current = frame;
         while let Some(index) = current {
-            let frame = self.frames.get(index)?;
+            let frame = self
+                .frames
+                .get(index)
+                .ok_or(Internal::missed("scope frame"))?;
             if frame.kind == FrameKind::Locals {
-                return None;
+                return Ok(None);
             }
             if frame.kind == FrameKind::Body
                 && let Some(loc) = frame.names.get(name)
             {
-                return Some(*loc);
+                return Ok(Some(*loc));
             }
             current = frame.parent;
         }
-        None
+        Ok(None)
     }
 
     pub fn expr(
@@ -364,7 +369,7 @@ impl<'a> Checker<'a> {
             let expr = self.hir.expr(id)?;
             match &expr.kind {
                 ExprKind::Name(name) => {
-                    if !self.visible(frame, name) && self.variants.owner(name).is_none() {
+                    if !self.visible(frame, name)? && self.variants.owner(name).is_none() {
                         self.report.error(
                             self.hir,
                             Code::UnknownName,
@@ -456,7 +461,7 @@ impl<'a> Checker<'a> {
                 if let Some(body) = placement.body {
                     self.unknown_bodies.insert(body);
                 }
-                if in_unknown && self.visible(frame, &kind.text) {
+                if in_unknown && self.visible(frame, &kind.text)? {
                     return Ok(());
                 }
                 let message = match found {
@@ -604,7 +609,7 @@ impl<'a> Checker<'a> {
             return Ok(frame);
         };
         self.declared(var)?;
-        if self.visible(frame, &var.text) {
+        if self.visible(frame, &var.text)? {
             self.report.error(
                 self.hir,
                 Code::ForVariableClash,
@@ -686,10 +691,10 @@ impl<'a> Checker<'a> {
         found.sort_by_key(|name| name.loc);
         for name in found {
             self.declared(&name)?;
-            let clash = names
-                .get(&name.text)
-                .copied()
-                .or_else(|| self.enclosing_body_name(parent, &name.text));
+            let clash = match names.get(&name.text) {
+                Some(loc) => Some(*loc),
+                None => self.enclosing_body_name(parent, &name.text)?,
+            };
             if let Some(earlier) = clash {
                 self.report.error_with(
                     self.hir,

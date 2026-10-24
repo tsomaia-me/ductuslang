@@ -32,7 +32,7 @@ impl Engine<'_> {
                 }
             }
         }
-        let components = strongly_connected(&edges);
+        let components = strongly_connected(&edges)?;
         let mut component_of: HashMap<usize, usize> = HashMap::new();
         for (position, component) in components.iter().enumerate() {
             for member in component {
@@ -40,15 +40,21 @@ impl Engine<'_> {
             }
         }
         let mut reported = std::collections::HashSet::new();
+        let component = |node: usize| {
+            component_of
+                .get(&node)
+                .copied()
+                .ok_or(Internal::missed("instance"))
+        };
         for (wire, source, target, cyclic) in wire_edges {
-            let component = component_of.get(&source);
-            if cyclic || component != component_of.get(&target) {
+            let source_component = component(source)?;
+            if cyclic || source_component != component(target)? {
                 continue;
             }
-            if !reported.insert(component.copied()) {
+            if !reported.insert(source_component) {
                 continue;
             }
-            let path = self.cycle_path(&edges, target, source);
+            let path = self.cycle_path(&edges, target, source)?;
             let names: Vec<String> = path
                 .iter()
                 .map(|member| {
@@ -74,7 +80,12 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn cycle_path(&self, edges: &[Vec<usize>], from: usize, to: usize) -> Vec<usize> {
+    fn cycle_path(
+        &self,
+        edges: &[Vec<usize>],
+        from: usize,
+        to: usize,
+    ) -> Result<Vec<usize>, Internal> {
         let mut previous: HashMap<usize, usize> = HashMap::new();
         let mut queue = VecDeque::from([from]);
         previous.insert(from, from);
@@ -82,7 +93,7 @@ impl Engine<'_> {
             if node == to {
                 break;
             }
-            for next in edges.get(node).into_iter().flatten() {
+            for next in edges.get(node).ok_or(Internal::missed("instance"))? {
                 if !previous.contains_key(next) {
                     previous.insert(*next, node);
                     queue.push_back(*next);
@@ -92,10 +103,9 @@ impl Engine<'_> {
         let mut path = vec![to];
         let mut current = to;
         while current != from {
-            let Some(&back) = previous.get(&current) else {
-                break;
-            };
-            current = back;
+            current = *previous
+                .get(&current)
+                .ok_or(Internal::missed("cycle step"))?;
             path.push(current);
         }
         path.reverse();
@@ -104,7 +114,7 @@ impl Engine<'_> {
         if path.first() != path.last() {
             path.push(from);
         }
-        path
+        Ok(path)
     }
 
     pub(crate) fn instance_label(&self, instance: InstanceId) -> Result<String, Internal> {

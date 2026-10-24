@@ -77,7 +77,7 @@ impl Engine<'_> {
                     BinaryOp::IntDiv if ty.is_some_and(is_float) => {
                         self.synth(lhs)?;
                         self.synth(rhs)?;
-                        let inner = self.combine(&[lhs, rhs]);
+                        let inner = self.combine(&[lhs, rhs])?;
                         stack.push((lhs, inner));
                         stack.push((rhs, inner));
                     }
@@ -111,11 +111,7 @@ impl Engine<'_> {
                 } => {
                     let scrutinee_ty = self.synth(scrutinee)?;
                     stack.push((scrutinee, scrutinee_ty));
-                    let label_ty = self
-                        .memo
-                        .sigs
-                        .get(&scrutinee)
-                        .map_or(EvalTy::Exact, |sig| own_type(sig, EvalTy::Exact));
+                    let label_ty = own_type(&self.known_sig(scrutinee)?, EvalTy::Exact);
                     match self.chosen(scrutinee, label_ty)? {
                         Some(CVal::Error) => {}
                         Some(value) => {
@@ -139,11 +135,7 @@ impl Engine<'_> {
                 Op::Pick { index, items } => {
                     let index_ty = self.synth(index)?;
                     stack.push((index, index_ty));
-                    let position_ty = self
-                        .memo
-                        .sigs
-                        .get(&index)
-                        .map_or(EvalTy::Exact, |sig| own_type(sig, EvalTy::Exact));
+                    let position_ty = own_type(&self.known_sig(index)?, EvalTy::Exact);
                     match self.chosen(index, position_ty)? {
                         Some(CVal::Int(position)) => {
                             match usize::try_from(position)
@@ -227,7 +219,7 @@ impl Engine<'_> {
             (Kind::Bool, _) => Some(Scalar::Bool),
             (Kind::Str, _) => Some(Scalar::Str),
             (Kind::Enum(id), _) | (_, Kind::Enum(id)) => Some(Scalar::Enum(id)),
-            _ => self.combine(&[lhs, rhs]),
+            _ => self.combine(&[lhs, rhs])?,
         })
     }
 

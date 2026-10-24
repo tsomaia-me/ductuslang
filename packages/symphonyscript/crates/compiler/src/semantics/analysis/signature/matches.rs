@@ -98,8 +98,9 @@ impl Engine<'_> {
         if let Some(otherwise) = otherwise {
             values.push((otherwise, operand(sigs, 1 + arms.len() * 2)?));
         }
-        let mut kind = values.first().map_or(Kind::Error, |(_, sig)| sig.kind);
-        let mut width = values.first().map_or(Width::Flexible, |(_, sig)| sig.width);
+        let &(_, first) = values.first().ok_or(Internal::missed("match arm"))?;
+        let mut kind = first.kind;
+        let mut width = first.width;
         for (_, sig) in values.iter().skip(1) {
             let Some(unified) = unify_kinds(kind, sig.kind) else {
                 self.error_at_node(
@@ -126,7 +127,7 @@ impl Engine<'_> {
         let op = self.node(label)?.op.clone();
         let found = match (&op, scrutinee.kind) {
             (Op::Bare(name), Kind::Enum(id)) => {
-                self.variants.position(id, name).map(Label::Variant)
+                self.variants.position(id, name)?.map(Label::Variant)
             }
             (Op::Bool(value), Kind::Bool) => Some(Label::Bool(*value)),
             (Op::Number(Number::Int(value), suffix), Kind::Int) => {

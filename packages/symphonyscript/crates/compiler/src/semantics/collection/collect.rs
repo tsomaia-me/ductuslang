@@ -21,7 +21,7 @@ pub(crate) fn collect(
     variants: &Variants,
     report: &mut Report,
 ) -> Result<Collected, Internal> {
-    let base = base_namespace(vocabulary);
+    let base = base_namespace(vocabulary)?;
     let mut prelude = base.clone();
     let mut source = base.clone();
     let mut first: BTreeMap<String, Loc> = BTreeMap::new();
@@ -92,33 +92,28 @@ pub(crate) fn collect(
     })
 }
 
-fn base_namespace(vocabulary: &Vocabulary) -> Namespace {
+fn base_namespace(vocabulary: &Vocabulary) -> Result<Namespace, Internal> {
     let mut base = Namespace::default();
-    for index in 0..vocabulary.node_kinds().len() {
-        if let (Some(kind), Some(decl)) = (
-            vocabulary.node_kind_at(index),
-            vocabulary.node_kinds().get(index),
-        ) {
-            base.insert(decl.name.clone(), Decl::Node(kind));
-        }
+    for (index, decl) in vocabulary.node_kinds().iter().enumerate() {
+        let kind = vocabulary
+            .node_kind_at(index)
+            .ok_or(Internal::missed("node kind"))?;
+        base.insert(decl.name.clone(), Decl::Node(kind));
     }
-    for index in 0..vocabulary.wire_kinds().len() {
-        if let (Some(kind), Some(decl)) = (
-            vocabulary.wire_kind_at(index),
-            vocabulary.wire_kinds().get(index),
-        ) {
-            base.insert(decl.name.clone(), Decl::Wire(kind));
-        }
+    for (index, decl) in vocabulary.wire_kinds().iter().enumerate() {
+        let kind = vocabulary
+            .wire_kind_at(index)
+            .ok_or(Internal::missed("wire kind"))?;
+        base.insert(decl.name.clone(), Decl::Wire(kind));
     }
-    for index in 0..vocabulary.enums().len() {
-        if let (Some(id), Some(decl)) = (vocabulary.enum_at(index), vocabulary.enums().get(index)) {
-            base.insert(decl.name.clone(), Decl::Enum(id));
-        }
+    for (index, decl) in vocabulary.enums().iter().enumerate() {
+        let id = vocabulary.enum_at(index).ok_or(Internal::missed("enum"))?;
+        base.insert(decl.name.clone(), Decl::Enum(id));
     }
     for builtin in BuiltinName::all() {
         base.insert(builtin.name().to_string(), Decl::Builtin(builtin));
     }
-    base
+    Ok(base)
 }
 
 fn declare(

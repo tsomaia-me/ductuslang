@@ -84,3 +84,32 @@ fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
     assert!(checked > 5_000, "{checked} mutants checked");
     assert_eq!(failures, Vec::<String>::new());
 }
+
+#[test]
+fn the_absences_that_are_normal_draw_no_internal_error() {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let empty: [Source; 0] = [];
+    assert!(
+        compiler
+            .check(&empty)
+            .iter()
+            .all(|diagnostic| diagnostic.code != Code::InternalError)
+    );
+    for text in [
+        "fn r(n): if n < 1 then [] else r(n - 1)\nClip c:\n    Note/(r(2)[0])\n",
+        "fn r(a, n): if n < 1 then 0 else r(a, n - 1)\nClip c:\n    Note/(r([], 2))\n",
+        "input f = true\nlet x = if f then Sine else Saw\nClip c:\n    Note when x is x\n",
+        "Clip c:\n    Note/([][0])\n",
+    ] {
+        let diagnostics = compiler.check(&[Source {
+            path: "test.sym".into(),
+            text: text.into(),
+        }]);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != Code::InternalError),
+            "{text}"
+        );
+    }
+}

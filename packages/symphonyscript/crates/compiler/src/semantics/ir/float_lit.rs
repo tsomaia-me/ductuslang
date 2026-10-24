@@ -1,5 +1,7 @@
 use num_bigint::BigUint;
 
+use crate::semantics::Internal;
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct FloatLit {
     pub negative: bool,
@@ -23,15 +25,19 @@ impl FloatLit {
         }
     }
 
-    pub fn to_f64(&self) -> f64 {
-        self.text().parse().unwrap_or(f64::NAN)
+    pub fn to_f64(&self) -> Result<f64, Internal> {
+        self.text()
+            .parse()
+            .map_err(|_| Internal::missed("float literal"))
     }
 
-    pub fn to_f32(&self) -> f32 {
-        self.text().parse().unwrap_or(f32::NAN)
+    pub fn to_f32(&self) -> Result<f32, Internal> {
+        self.text()
+            .parse()
+            .map_err(|_| Internal::missed("float literal"))
     }
 
-    pub fn scaled(&self, scale: f64) -> FloatLit {
+    pub fn scaled(&self, scale: f64) -> Result<FloatLit, Internal> {
         let bits = scale.to_bits();
         let raw_exponent = ((bits >> 52) & 0x7ff) as i64;
         let fraction = bits & ((1u64 << 52) - 1);
@@ -40,7 +46,10 @@ impl FloatLit {
         } else {
             (fraction | (1u64 << 52), raw_exponent - 1075)
         };
-        let digits: BigUint = self.digits.parse().unwrap_or_default();
+        let digits: BigUint = self
+            .digits
+            .parse()
+            .map_err(|_| Internal::missed("float literal"))?;
         let mut product = digits * BigUint::from(mantissa);
         let mut exponent = self.exponent;
         if binary_exponent >= 0 {
@@ -50,11 +59,11 @@ impl FloatLit {
             product *= fives;
             exponent = exponent.saturating_add(binary_exponent);
         }
-        FloatLit {
+        Ok(FloatLit {
             negative: self.negative,
             digits: product.to_string(),
             exponent,
-        }
+        })
     }
 
     fn text(&self) -> String {

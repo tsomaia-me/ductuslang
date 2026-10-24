@@ -46,23 +46,26 @@ impl Engine<'_> {
             let ty = self.synth_of(&op, &sig)?;
             self.typing.synth.insert(node, ty);
         }
-        Ok(self.typing.synth.get(&root).copied().flatten())
+        self.synthesized(root)
     }
 
-    fn known(&self, node: NodeId) -> (Option<Scalar>, Kind) {
-        let kind = self
-            .memo
-            .sigs
+    fn synthesized(&self, node: NodeId) -> Result<Option<Scalar>, Internal> {
+        self.typing
+            .synth
             .get(&node)
-            .map_or(Kind::Error, |sig| sig.kind);
-        (self.typing.synth.get(&node).copied().flatten(), kind)
+            .copied()
+            .ok_or(Internal::missed("synthesized type"))
     }
 
-    pub(super) fn combine(&self, operands: &[NodeId]) -> Option<Scalar> {
+    fn known(&self, node: NodeId) -> Result<(Option<Scalar>, Kind), Internal> {
+        Ok((self.synthesized(node)?, self.known_sig(node)?.kind))
+    }
+
+    pub(super) fn combine(&self, operands: &[NodeId]) -> Result<Option<Scalar>, Internal> {
         let mut known: Option<Scalar> = None;
         let mut flexible_float = false;
         for operand in operands {
-            match self.known(*operand) {
+            match self.known(*operand)? {
                 (Some(scalar), _) => {
                     known = Some(match known {
                         Some(current) => common(current, scalar).unwrap_or(current),
@@ -73,10 +76,10 @@ impl Engine<'_> {
                 _ => {}
             }
         }
-        match known {
+        Ok(match known {
             Some(scalar) if flexible_float && is_integer(scalar) => Some(float_for(scalar)),
             other => other,
-        }
+        })
     }
 
     fn synth_of(&mut self, op: &Op, sig: &Sig) -> Result<Option<Scalar>, Internal> {
@@ -88,10 +91,10 @@ impl Engine<'_> {
         }
         Ok(match op {
             Op::Read(binding) => self.typing.own.get(binding).copied(),
-            Op::Use(inner) | Op::Unary(UnaryOp::Neg, inner) => self.known(*inner).0,
+            Op::Use(inner) | Op::Unary(UnaryOp::Neg, inner) => self.known(*inner)?.0,
             Op::Unary(UnaryOp::Not, _) => Some(Scalar::Bool),
             Op::Binary(op, lhs, rhs) => {
-                let combined = self.combine(&[*lhs, *rhs]);
+                let combined = self.combine(&[*lhs, *rhs])?;
                 match op {
                     BinaryOp::Div => combined.map(float_for),
                     BinaryOp::Add
@@ -110,19 +113,21 @@ impl Engine<'_> {
                     | BinaryOp::Or => combined,
                 }
             }
-            Op::If(_, then, otherwise) => self.combine(&[*then, *otherwise]),
+            Op::If(_, then, otherwise) => self.combine(&[*then, *otherwise])?,
             Op::Match {
                 arms, otherwise, ..
             } => {
                 let mut values: Vec<NodeId> = arms.iter().map(|(_, value)| *value).collect();
                 values.extend(otherwise.iter().copied());
-                self.combine(&values)
+                self.combine(&values)?
             }
-            Op::Pick { items, .. } | Op::Array(items) => self.combine(items),
-            Op::Element { base, .. } => self.known(*base).0,
+            Op::Pick { items, .. } | Op::Array(items) => self.combine(items)?,
+            Op::Element { base, .. } => self.known(*base)?.0,
             Op::Convert(target, _) | Op::Annotate(target, _) => Some(*target),
             Op::Builtin(builtin, args) => match builtin {
-                Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp => self.combine(args),
+                Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp => {
+                    self.combine(args)?
+                }
                 Builtin::Rand => Some(Scalar::F32),
                 Builtin::Floor
                 | Builtin::Ceil
@@ -133,12 +138,12 @@ impl Engine<'_> {
                 | Builtin::Tan
                 | Builtin::Exp
                 | Builtin::Log
-                | Builtin::Lerp => self.combine(args).map(float_for),
+                | Builtin::Lerp => self.combine(args)?.map(float_for),
             },
-            Op::ToRead { attrs, .. } => match attrs.first() {
-                Some((item, attr)) => self.attr_decl(*item, *attr)?.map(|decl| decl.ty.scalar),
-                None => None,
-            },
+            Op::ToRead { attrs, .. } => {
+                let (item, attr) = attrs.first().ok_or(Internal::missed("attribute"))?;
+                self.attr_decl(*item, *attr)?.map(|decl| decl.ty.scalar)
+            }
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)

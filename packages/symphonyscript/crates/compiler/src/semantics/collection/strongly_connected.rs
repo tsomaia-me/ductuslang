@@ -1,65 +1,59 @@
-const UNSEEN: usize = usize::MAX;
+use crate::semantics::Internal;
 
-pub(crate) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let count = edges.len();
-    let mut index = vec![UNSEEN; count];
-    let mut low = vec![0; count];
-    let mut on_stack = vec![false; count];
+#[derive(Clone, Copy)]
+struct Mark {
+    index: Option<usize>,
+    low: usize,
+    on_stack: bool,
+}
+
+pub(crate) fn strongly_connected(edges: &[Vec<usize>]) -> Result<Vec<Vec<usize>>, Internal> {
+    let mut marks = vec![
+        Mark {
+            index: None,
+            low: 0,
+            on_stack: false,
+        };
+        edges.len()
+    ];
     let mut stack = Vec::new();
     let mut components = Vec::new();
     let mut next = 0;
-    let seen = |index: &[usize], node: usize| index.get(node).is_some_and(|value| *value != UNSEEN);
-    for root in 0..count {
-        if seen(&index, root) {
+    for root in 0..edges.len() {
+        if mark(&mut marks, root)?.index.is_some() {
             continue;
         }
         let mut work: Vec<(usize, usize)> = vec![(root, 0)];
-        visit(
-            root,
-            &mut next,
-            &mut index,
-            &mut low,
-            &mut on_stack,
-            &mut stack,
-        );
+        visit(root, &mut next, &mut marks, &mut stack)?;
         while let Some(&mut (node, ref mut edge)) = work.last_mut() {
-            let target = edges
-                .get(node)
-                .and_then(|targets| targets.get(*edge))
-                .copied();
-            if let Some(target) = target {
+            let targets = edges.get(node).ok_or(Internal::missed("graph node"))?;
+            if let Some(&target) = targets.get(*edge) {
                 *edge += 1;
-                if !seen(&index, target) {
-                    visit(
-                        target,
-                        &mut next,
-                        &mut index,
-                        &mut low,
-                        &mut on_stack,
-                        &mut stack,
-                    );
-                    work.push((target, 0));
-                } else if on_stack.get(target).copied().unwrap_or(false) {
-                    let reached = index.get(target).copied().unwrap_or(UNSEEN);
-                    if let Some(slot) = low.get_mut(node) {
-                        *slot = (*slot).min(reached);
+                let reached = *mark(&mut marks, target)?;
+                match reached.index {
+                    None => {
+                        visit(target, &mut next, &mut marks, &mut stack)?;
+                        work.push((target, 0));
                     }
+                    Some(index) if reached.on_stack => {
+                        let current = mark(&mut marks, node)?;
+                        current.low = current.low.min(index);
+                    }
+                    Some(_) => {}
                 }
                 continue;
             }
             work.pop();
-            let node_low = low.get(node).copied().unwrap_or(0);
-            if let Some(&(parent, _)) = work.last()
-                && let Some(slot) = low.get_mut(parent)
-            {
-                *slot = (*slot).min(node_low);
+            let finished = *mark(&mut marks, node)?;
+            if let Some(&(parent, _)) = work.last() {
+                let parent = mark(&mut marks, parent)?;
+                parent.low = parent.low.min(finished.low);
             }
-            if Some(node_low) == index.get(node).copied() {
+            if finished.index == Some(finished.low) {
                 let mut component = Vec::new();
-                while let Some(member) = stack.pop() {
-                    if let Some(flag) = on_stack.get_mut(member) {
-                        *flag = false;
-                    }
+                loop {
+                    let member = stack.pop().ok_or(Internal::missed("graph stack"))?;
+                    mark(&mut marks, member)?.on_stack = false;
                     component.push(member);
                     if member == node {
                         break;
@@ -70,26 +64,25 @@ pub(crate) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
             }
         }
     }
-    components
+    Ok(components)
+}
+
+fn mark(marks: &mut [Mark], node: usize) -> Result<&mut Mark, Internal> {
+    marks.get_mut(node).ok_or(Internal::missed("graph node"))
 }
 
 fn visit(
     node: usize,
     next: &mut usize,
-    index: &mut [usize],
-    low: &mut [usize],
-    on_stack: &mut [bool],
+    marks: &mut [Mark],
     stack: &mut Vec<usize>,
-) {
-    if let Some(slot) = index.get_mut(node) {
-        *slot = *next;
-    }
-    if let Some(slot) = low.get_mut(node) {
-        *slot = *next;
-    }
+) -> Result<(), Internal> {
+    *mark(marks, node)? = Mark {
+        index: Some(*next),
+        low: *next,
+        on_stack: true,
+    };
     *next += 1;
     stack.push(node);
-    if let Some(flag) = on_stack.get_mut(node) {
-        *flag = true;
-    }
+    Ok(())
 }

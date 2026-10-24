@@ -3,8 +3,7 @@ use std::ops::Range;
 use crate::diagnostics::Diagnostic;
 
 pub(super) struct Faults {
-    starts: Vec<u32>,
-    reach: Vec<u32>,
+    marks: Vec<(u32, u32)>,
 }
 
 impl Faults {
@@ -14,25 +13,24 @@ impl Faults {
             .map(|diagnostic| diagnostic.span.range.clone())
             .collect();
         ranges.sort_by_key(|range| range.start);
-        let starts = ranges.iter().map(|range| range.start).collect();
         let mut furthest = 0;
-        let reach = ranges
+        let marks = ranges
             .iter()
             .map(|range| {
                 furthest = furthest.max(range.end.max(range.start + 1));
-                furthest
+                (range.start, furthest)
             })
             .collect();
-        Self { starts, reach }
+        Self { marks }
     }
 
     pub fn touch(&self, range: Range<u32>) -> bool {
         let end = range.end.max(range.start + 1);
-        let before = self.starts.partition_point(|start| *start < end);
-        before > 0
-            && self
-                .reach
-                .get(before - 1)
-                .is_some_and(|reach| *reach > range.start)
+        let before = self.marks.partition_point(|(start, _)| *start < end);
+        self.marks
+            .iter()
+            .take(before)
+            .next_back()
+            .is_some_and(|(_, reach)| *reach > range.start)
     }
 }

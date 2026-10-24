@@ -3,6 +3,7 @@ use std::rc::Rc;
 use super::array::Array;
 use super::ids::NodeId;
 use super::shape::Shape;
+use crate::semantics::Internal;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Val {
@@ -31,31 +32,23 @@ impl Val {
         }
     }
 
-    pub fn slice(&self, index: usize) -> Val {
+    pub fn slice(&self, index: usize) -> Result<Val, Internal> {
+        let missed = Internal::missed("array element");
         let Val::Array(array) = self else {
-            return Val::Error;
-        };
-        let Some(outer) = array.shape.outer() else {
-            return Val::Error;
+            return Err(missed);
         };
         let inner = array.shape.inner();
         let stride = inner.count();
-        if index >= outer as usize {
-            return Val::Error;
-        }
-        let start = index * stride;
+        let start = index.checked_mul(stride).ok_or(missed)?;
         let elements = array
             .elements
-            .get(start..start + stride)
-            .map(<[NodeId]>::to_vec)
-            .unwrap_or_default();
-        if inner.is_scalar() {
-            match elements.first() {
-                Some(node) => Val::Scalar(*node),
-                None => Val::Error,
-            }
+            .get(start..start.checked_add(stride).ok_or(missed)?)
+            .ok_or(missed)?
+            .to_vec();
+        Ok(if inner.is_scalar() {
+            Val::Scalar(*elements.first().ok_or(missed)?)
         } else {
             Val::array(inner, elements)
-        }
+        })
     }
 }
