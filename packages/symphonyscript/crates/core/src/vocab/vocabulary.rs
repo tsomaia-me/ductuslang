@@ -99,27 +99,19 @@ impl Vocabulary {
     }
 
     pub fn node_kind(&self, kind: NodeKind) -> Option<&NodeKindDecl> {
-        self.owns(kind.vocabulary())
-            .then(|| self.node_kinds.get(kind.index()))
-            .flatten()
+        self.node_kinds.get(kind.index())
     }
 
     pub fn wire_kind(&self, kind: WireKind) -> Option<&WireKindDecl> {
-        self.owns(kind.vocabulary())
-            .then(|| self.wire_kinds.get(kind.index()))
-            .flatten()
+        self.wire_kinds.get(kind.index())
     }
 
     pub fn enum_decl(&self, id: EnumId) -> Option<&EnumDecl> {
-        self.owns(id.vocabulary())
-            .then(|| self.enums.get(id.index()))
-            .flatten()
+        self.enums.get(id.index())
     }
 
     pub fn family(&self, id: FamilyId) -> Option<&FamilyDecl> {
-        self.owns(id.vocabulary())
-            .then(|| self.families.get(id.index()))
-            .flatten()
+        self.families.get(id.index())
     }
 
     pub fn node_kind_at(&self, index: usize) -> Option<NodeKind> {
@@ -156,9 +148,5 @@ impl Vocabulary {
     pub fn unit_named(&self, name: &str) -> Option<(FamilyId, usize)> {
         let (family, unit) = *self.unit_names.get(name)?;
         Some((FamilyId::new(self.token, family), unit))
-    }
-
-    fn owns(&self, token: VocabularyToken) -> bool {
-        token == self.token
     }
 }

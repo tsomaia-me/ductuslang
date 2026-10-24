@@ -1,3 +1,7 @@
+use symphonyscript_core::{
+    AttrId, Binding, Entry, Instance, InstanceId, Path, Program, Segment, Span, Target, Value,
+    Wire, dump,
+};
 use symphonyscript_fixtures::{
     SPEC_SYM_EXAMPLES, dsp_project, music_project, spec_examples, spec_productions, spec_projects,
     vocabulary, vocabulary_documented,
@@ -151,4 +155,91 @@ fn the_music_and_dsp_projects_use_every_kind_and_wire_kind() {
 fn words(text: &str) -> impl Iterator<Item = &str> {
     text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '#'))
         .filter(|word| !word.is_empty())
+}
+
+#[test]
+fn two_builds_of_the_vocabulary_share_their_handles() {
+    let first = vocabulary();
+    let second = vocabulary();
+    for (index, decl) in first.node_kinds().iter().enumerate() {
+        let from_first = first.node_kind_named(&decl.name).expect("the kind exists");
+        let from_second = second.node_kind_named(&decl.name).expect("the kind exists");
+        assert_eq!(from_first, from_second);
+        assert_eq!(second.node_kind(from_first), Some(decl));
+        assert_eq!(
+            first.node_kind(from_second).map(|other| &other.name),
+            Some(&decl.name)
+        );
+        assert_eq!(first.node_kind_at(index), Some(from_second));
+    }
+    for decl in first.wire_kinds() {
+        let handle = first
+            .wire_kind_named(&decl.name)
+            .expect("the wire kind exists");
+        assert_eq!(
+            second.wire_kind(handle).map(|other| &other.name),
+            Some(&decl.name)
+        );
+        assert_eq!(second.wire_kind_named(&decl.name), Some(handle));
+    }
+    let wave = first.enum_named("Wave").expect("Wave exists");
+    assert_eq!(
+        second.enum_decl(wave).map(|decl| decl.name.as_str()),
+        Some("Wave")
+    );
+    let (beats, bars) = first.unit_named("bars").expect("bars exists");
+    assert_eq!(
+        second
+            .family(beats)
+            .map(|decl| decl.units[bars].name.as_str()),
+        Some("bars")
+    );
+
+    let span = Span {
+        file: "main.sym".into(),
+        range: 0..10,
+    };
+    let named = |name: &str| Path {
+        segments: vec![Segment::Named(name.into())],
+    };
+    let clip = first.node_kind_named("Clip").expect("Clip exists");
+    let plays = second.wire_kind_named("Plays").expect("Plays exists");
+    let program = Program {
+        vocabulary: first.stamp().clone(),
+        top_level: vec![InstanceId(0)],
+        instances: vec![Instance {
+            kind: clip,
+            path: named("intro"),
+            span: span.clone(),
+            expanded_from: vec![],
+            attrs: vec![(AttrId(0), Binding::Const(Value::F32(0.5)))],
+            gate: None,
+            sequence: vec![Entry::Wire(symphonyscript_core::WireId(0))],
+        }],
+        wires: vec![Wire {
+            kind: plays,
+            path: Path {
+                segments: vec![
+                    Segment::Named("intro".into()),
+                    Segment::Anonymous {
+                        name: "Plays".into(),
+                        index: 0,
+                    },
+                ],
+            },
+            span,
+            expanded_from: vec![],
+            source: InstanceId(0),
+            target: Target::Fixed(InstanceId(0)),
+            attrs: vec![(AttrId(1), Binding::Const(Value::I32(2)))],
+            gate: None,
+        }],
+        inputs: vec![],
+        cells: vec![],
+        strings: vec![],
+    };
+    let text = dump(&program, &first);
+    assert_eq!(text, dump(&program, &second));
+    assert!(text.contains("  kind Clip\n"));
+    assert!(text.contains("    transpose const i32 2\n"));
 }

@@ -1,9 +1,10 @@
 use symphonyscript_core::{Count, Vocabulary};
 
 #[test]
-fn handles_of_another_vocabulary_find_nothing() {
+fn handles_look_up_by_index_alone() {
     let mut a = Vocabulary::builder("a");
     let note = a.node("Note");
+    let rest = a.node("Rest");
     let plays = a.wire("Plays");
     let wave = a.enumeration("Wave", ["Sine"]).id();
     let time = a.unit_family("time").base("s").id();
@@ -14,21 +15,25 @@ fn handles_of_another_vocabulary_find_nothing() {
     b.unit_family("beats").base("beats");
     let a = a.build().expect("a is valid");
     let b = b.build().expect("b is valid");
-    assert!(a.node_kind(note).is_some());
-    assert!(b.node_kind(note).is_none());
-    assert!(b.wire_kind(plays).is_none());
-    assert!(b.enum_decl(wave).is_none());
-    assert!(b.family(time).is_none());
+    let name =
+        |decl: Option<&symphonyscript_core::NodeKindDecl>| decl.map(|decl| decl.name.clone());
+    assert_eq!(name(a.node_kind(note)).as_deref(), Some("Note"));
+    assert_eq!(name(b.node_kind(note)).as_deref(), Some("Clip"));
+    assert!(b.node_kind(rest).is_none());
     assert_eq!(
-        b.node_kind_at(0)
-            .and_then(|kind| b.node_kind(kind))
-            .map(|decl| decl.name.as_str()),
-        Some("Clip")
+        b.wire_kind(plays).map(|decl| decl.name.as_str()),
+        Some("Starts")
     );
+    assert_eq!(
+        b.enum_decl(wave).map(|decl| decl.name.as_str()),
+        Some("Shape")
+    );
+    assert_eq!(b.family(time).map(|decl| decl.name.as_str()), Some("beats"));
+    assert_eq!(b.node_kind_at(0), Some(note));
     assert!(b.node_kind_at(1).is_none());
-    assert!(b.wire_kind_at(0).is_some());
-    assert!(b.enum_at(0).is_some());
-    assert!(b.family_at(0).is_some());
+    assert_eq!(b.wire_kind_at(0), Some(plays));
+    assert_eq!(b.enum_at(0), Some(wave));
+    assert_eq!(b.family_at(0), Some(time));
     assert!(b.unit_named("s").is_none());
 }
 
