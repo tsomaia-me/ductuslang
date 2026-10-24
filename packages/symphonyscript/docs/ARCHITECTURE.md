@@ -293,6 +293,8 @@ Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-excee
 
 Each change recompiles the whole project.
 
+No source overflows the native stack, however deeply it nests. Every stage, and every operation on the syntax tree and on the Program (building, walking, comparing, cloning, hashing, printing, validating and dropping), works without recursion that grows with the source's nesting, as the runtime evaluator does (§4).
+
 ## 8. Delivery
 
 - **Library.** A host calls `compile` and `Runtime::new` in its own process. Edits reload live. `eval` compiles and loads a single source in one call.

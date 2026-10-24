@@ -66,6 +66,7 @@ Exit:
 - Every production in SPEC.md has parse tests.
 - Parsing any source and printing the tree reproduces it byte for byte.
 - Broken sources still yield a tree, with diagnostics at the right spans.
+- A source nested 100,000 levels deep in parentheses, brackets and array literals, and one nested 3,000 levels deep in bodies, each lex, parse, print and drop on a thread with a 1 MiB stack (ARCHITECTURE §7).
 
 ## M2: Semantics
 
@@ -83,6 +84,7 @@ Exit:
 - For every rule in SPEC.md that names an error, a test rejects a program with that error's stable code, and the tests' table maps each such rule to its code (ARCHITECTURE §7).
 - Every `sym` example that declares all the names it uses passes Check against the fixture vocabulary, and every `sym-error` example is rejected.
 - Diagnostics for expanded patterns point at the use and the pattern line.
+- M1's deep sources, a 100,000-deep array type and a chain of 10,000 functions each calling the next pass every stage through Check on a thread with a 1 MiB stack.
 
 ## M3: Runtime and reload
 
@@ -102,6 +104,7 @@ Exit:
 - Change reports carry element indices for array attributes and follow the order of SPEC §12.3.
 - A test for each rule of SPEC §13.
 - Inserting one anonymous note into a playing clip reports exactly one addition.
+- M2's deep sources lower, load, commit, reload, compare, clone, dump and drop on a thread with a 1 MiB stack.
 
 ## M4: Delivery and tooling
 
@@ -120,6 +123,7 @@ Exit:
 - End-to-end tests for `new`, `check` and `dump`, and for single-file mode.
 - Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects.
 - The extension starts the language server for a sample project.
+- `codegen` and the language server handle M2's deep sources on a thread with a 1 MiB stack.
 
 ## M5: Kernel adapter
 
