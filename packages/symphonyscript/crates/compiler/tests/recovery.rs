@@ -406,12 +406,247 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note]] NL] Line[Bundle[[ Placement[Note] ]] ErrorNode[]] NL] <]]]]",
     ),
     (
+        "Clip c:\n    Note/(1 2\n    a | velocity=1 +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 42, 43),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a Attrs[| AttrEntry[velocity = BinaryExpr[Literal[1] +]]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a when x +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 36, 37),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a Gate[when BinaryExpr[NameRef[x] +]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a: Note +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::InlinePlacement, 34, 35),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a Body[: Block[Members[Placement[Note]] ErrorNode[+] NL]]] <]]]]",
+    ),
+    (
+        "let a = (1 2\nClip\nlet b = )\n",
+        &[
+            (Code::ExpressionSyntax, 11, 12),
+            (Code::PlacementSyntax, 17, 18),
+            (Code::ExpressionSyntax, 26, 27),
+        ],
+        "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[2] NL] Placement[Clip NL] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    (Note) +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::InlinePlacement, 33, 34),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Line[ParenPlacement[( Placement[Note] )] ErrorNode[+] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    [Note] +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::InlinePlacement, 33, 34),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Line[Bundle[[ Placement[Note] ]] ErrorNode[+] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    for i in xs: Note +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::InlinePlacement, 44, 45),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] ForBlock[for i in NameRef[xs] : Block[Members[Placement[Note]] ErrorNode[+] NL]] <]]]]",
+    ),
+    (
         "Clip c:\n    [Note\n    (Note): x\n",
         &[
             (Code::BundleSyntax, 22, 23),
             (Code::InlinePlacement, 28, 29),
         ],
         "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note]] NL] Line[ParenPlacement[( Placement[Note] )] ErrorNode[: x] NL] <]]]]",
+    ),
+    (
+        "let a = (1\n    let b = 2\nlet c = )\n",
+        &[
+            (Code::ExpressionSyntax, 15, 18),
+            (Code::ExpressionSyntax, 33, 34),
+        ],
+        "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[let b = 2] NL] LetDecl[let c = ErrorNode[)] NL]]",
+    ),
+    (
+        "let a = (1\n    x y\nlet b = )\n",
+        &[
+            (Code::ExpressionSyntax, 15, 16),
+            (Code::ExpressionSyntax, 27, 28),
+        ],
+        "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[x y] NL] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "let a = (\nClip as c:\n    Note ^\n",
+        &[
+            (Code::ExpressionSyntax, 10, 14),
+            (Code::ReservedToken, 30, 31),
+        ],
+        "File[LetDecl[let a = ParenExpr[(] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
+    (
+        "let a = f(\nClip as c:\n    Note ^\n",
+        &[
+            (Code::ExpressionSyntax, 11, 15),
+            (Code::ReservedToken, 31, 32),
+        ],
+        "File[LetDecl[let a = CallExpr[NameRef[f] ArgList[(]] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
+    (
+        "let a = b[\nClip as c:\n    Note ^\n",
+        &[
+            (Code::ExpressionSyntax, 11, 15),
+            (Code::ReservedToken, 31, 32),
+        ],
+        "File[LetDecl[let a = IndexExpr[NameRef[b] [] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
+    (
+        "let a = i32(\nClip as c:\n    Note ^\n",
+        &[
+            (Code::ExpressionSyntax, 13, 17),
+            (Code::ReservedToken, 33, 34),
+        ],
+        "File[LetDecl[let a = Conversion[i32 (] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
+    (
+        "let a = [\nClip as c:\n    Note ^\n",
+        &[
+            (Code::ExpressionSyntax, 10, 14),
+            (Code::ReservedToken, 30, 31),
+        ],
+        "File[LetDecl[let a = ArrayLit[[] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a b +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::InlinePlacement, 30, 31),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Line[Placement[a] Placement[b] ErrorNode[+] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a as b +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::PlacementSyntax, 33, 34),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a as b ErrorNode[+] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a' +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::PlacementSyntax, 29, 30),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a Flags['] ErrorNode[+] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a ' +\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 40, 41),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a ' +] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "let a = (1 2\nClip' c +\n",
+        &[
+            (Code::ExpressionSyntax, 11, 12),
+            (Code::PlacementSyntax, 21, 22),
+        ],
+        "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[2] NL] Placement[Clip Flags['] c ErrorNode[+] NL]]",
+    ),
+    (
+        "Clip c:\n    (Note | velocity=1 2\nClip d +\n",
+        &[
+            (Code::PlacementSyntax, 31, 32),
+            (Code::PlacementSyntax, 40, 41),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Line[ParenPlacement[( Placement[Note Attrs[| AttrEntry[velocity = Literal[1]]]]] ErrorNode[2] NL] <]]] Placement[Clip d ErrorNode[+] NL]]",
+    ),
+    (
+        "Clip c:\n    (Note | velocity=1 2\nClip as d +\n",
+        &[
+            (Code::PlacementSyntax, 31, 32),
+            (Code::PlacementSyntax, 43, 44),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Line[ParenPlacement[( Placement[Note Attrs[| AttrEntry[velocity = Literal[1]]]]] ErrorNode[2] NL] <]]] Placement[Clip as d ErrorNode[+] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    Plays /1: verse +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 43, 44),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] WirePlacement[Plays DefaultArg[/ Literal[1]] : Destination[BinaryExpr[NameRef[verse] +] NL]] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a/2 | x=1 +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 37, 38),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a DefaultArg[/ Literal[2]] Attrs[| AttrEntry[x = BinaryExpr[Literal[1] +]]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a/2 when x +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 38, 39),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a DefaultArg[/ Literal[2]] Gate[when BinaryExpr[NameRef[x] +]] NL] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a/2: Note +\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::InlinePlacement, 36, 37),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2] NL] Placement[a DefaultArg[/ Literal[2]] Body[: Block[Members[Placement[Note]] ErrorNode[+] NL]]] <]]]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 2\n    a /2\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 39, 40),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a / 2] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
+    (
+        "Clip c:\n    Sampler/(f(\"abc\n    a | x=1 +\n",
+        &[
+            (Code::UnterminatedString, 23, 27),
+            (Code::ExpressionSyntax, 41, 42),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Sampler DefaultArg[/ ParenExpr[( CallExpr[NameRef[f] ArgList[( StringLit[\" abc]]]]] NL] Placement[a Attrs[| AttrEntry[x = BinaryExpr[Literal[1] +]]] NL] <]]]]",
+    ),
+    (
+        "fn f():\n",
+        &[(Code::FnSyntax, 8, 8)],
+        "File[FnDecl[fn f ParamList[( )] : FnBody[NL]]]",
+    ),
+    (
+        "Clip c:\n    [Note\n    Note/(a: b)]\n",
+        &[(Code::DefaultArgSyntax, 29, 30)],
+        "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note] Placement[Note DefaultArg[/ ParenExpr[( NameRef[a]]]]] ErrorNode[: b ) ]] NL] <]]]]",
+    ),
+    (
+        "let a = (1 2\n    (3))\nlet b = )\n",
+        &[
+            (Code::ExpressionSyntax, 11, 12),
+            (Code::ExpressionSyntax, 30, 31),
+        ],
+        "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[2 ( 3 ) )] NL] LetDecl[let b = ErrorNode[)] NL]]",
     ),
 ];
 
@@ -468,6 +703,17 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
             "Clip c:\n    [Note/60\n    Note for i in xs: Note/i]\n",
             "Clip c:\n    [Note/60 Note for i in xs: Note/i]\n",
         ),
+        (
+            "Clip c:\n    (\n    Note | velocity=1)\n",
+            "Clip c:\n    (Note | velocity=1)\n",
+        ),
+        (
+            "Clip c:\n    (\n    Note when x)\n",
+            "Clip c:\n    (Note when x)\n",
+        ),
+        ("let x = [a,\nb\n]\n", "let x = [a, b]\n"),
+        ("let x = f(1,\n(2))\n", "let x = f(1, (2))\n"),
+        ("let x = [1,\n[2]]\n", "let x = [1, [2]]\n"),
         (
             "Clip c:\n    [Note/60\n    for i in xs: Note/i]\n",
             "Clip c:\n    [Note/60 for i in xs: Note/i]\n",
