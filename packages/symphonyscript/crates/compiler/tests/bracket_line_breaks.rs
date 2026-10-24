@@ -6,8 +6,9 @@ use symphonyscript::Source;
 use symphonyscript::syntax::{SyntaxKind, lex};
 use symphonyscript_fixtures::{dsp_project, music_project, spec_examples, vocabulary};
 
-const BRACKETS: [SyntaxKind; 6] = [
+const BRACKETS: [SyntaxKind; 7] = [
     SyntaxKind::Bundle,
+    SyntaxKind::Conversion,
     SyntaxKind::ParenPlacement,
     SyntaxKind::ArrayLit,
     SyntaxKind::ArgList,
@@ -32,7 +33,7 @@ fn indentation_of_line_at(text: &str, offset: usize) -> usize {
     text[start..].len() - text[start..].trim_start_matches(' ').len()
 }
 
-fn spaces_in_brackets(text: &str) -> Vec<(usize, usize, usize)> {
+fn break_points_in_brackets(text: &str) -> Vec<(usize, usize, usize)> {
     let source = Source {
         path: "variant.sym".into(),
         text: text.into(),
@@ -42,17 +43,28 @@ fn spaces_in_brackets(text: &str) -> Vec<(usize, usize, usize)> {
     let mut found = Vec::new();
     for token in lex(&source, &vocabulary()).tokens {
         let start = token.range.start as usize;
+        let end = token.range.end as usize;
         match token.kind {
             SyntaxKind::StringStart => strings += 1,
             SyntaxKind::StringEnd => strings = strings.saturating_sub(1),
             _ if strings > 0 => {}
-            SyntaxKind::LParen | SyntaxKind::LBracket => openers.push(start),
-            SyntaxKind::RParen | SyntaxKind::RBracket => {
-                openers.pop();
+            SyntaxKind::LParen | SyntaxKind::LBracket => {
+                openers.push(start);
+                found.push((end, end, start));
             }
-            SyntaxKind::Whitespace => {
+            SyntaxKind::RParen | SyntaxKind::RBracket => {
+                if let Some(opener) = openers.pop() {
+                    found.push((start, start, opener));
+                }
+            }
+            SyntaxKind::Whitespace | SyntaxKind::Comma => {
                 if let Some(opener) = openers.last() {
-                    found.push((start, token.range.end as usize, *opener));
+                    let point = if token.kind == SyntaxKind::Comma {
+                        (end, end)
+                    } else {
+                        (start, end)
+                    };
+                    found.push((point.0, point.1, *opener));
                 }
             }
             _ => {}
@@ -81,7 +93,7 @@ fn line_breaks_inside_brackets_change_no_valid_program() {
     let mut variants = 0;
     for text in valid_sources() {
         let original = support::tree(&text);
-        for (start, end, opener) in spaces_in_brackets(&text) {
+        for (start, end, opener) in break_points_in_brackets(&text) {
             if let Some(kind) = innermost_bracket(&text, start) {
                 covered.insert(kind);
             }

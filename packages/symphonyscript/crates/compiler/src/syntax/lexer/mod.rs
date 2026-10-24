@@ -227,7 +227,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub(crate) fn name_pair_line(&self, token: usize) -> Option<usize> {
+    pub(crate) fn depth_at(&self, index: usize) -> Option<u32> {
+        self.depths.get(index).copied()
+    }
+
+    pub(crate) fn suspended_line_at(&self, token: usize) -> Option<(usize, LineStart<'_>)> {
         if self.depths.get(token).copied().unwrap_or(0) == 0 {
             return None;
         }
@@ -245,11 +249,7 @@ impl<'a> Lexer<'a> {
         if line.column > top {
             return None;
         }
-        let start = self.line_start_of(line)?;
-        let next = start.rest.iter().find(|token| !token.kind.is_trivia())?;
-        let pair = start.first.kind == SyntaxKind::Ident
-            && matches!(next.kind, SyntaxKind::Ident | SyntaxKind::AsKw);
-        pair.then_some(index)
+        Some((index, self.line_start_of(line)?))
     }
 
     fn line_start_of(&self, line: &Suspension) -> Option<LineStart<'_>> {
@@ -264,15 +264,18 @@ impl<'a> Lexer<'a> {
         let after = self.tokens.get(line.first_token + 1..).unwrap_or_default();
         let length = after.partition_point(|token| token.range.start < line_end);
         let rest = after.get(..length).unwrap_or_default();
-        let closes_region = rest
-            .iter()
-            .zip(self.depths.get(line.first_token + 1..).unwrap_or_default())
-            .any(|(token, depth)| {
-                *depth == 1 && matches!(token.kind, SyntaxKind::RParen | SyntaxKind::RBracket)
-            });
+        let rest_depths = self
+            .depths
+            .get(line.first_token + 1..)
+            .and_then(|depths| depths.get(..length))
+            .unwrap_or_default();
+        let closes_region = rest.iter().zip(rest_depths).any(|(token, depth)| {
+            *depth == 1 && matches!(token.kind, SyntaxKind::RParen | SyntaxKind::RBracket)
+        });
         Some(LineStart {
             first,
             rest,
+            rest_depths,
             top_level: line.column == 0,
             closes_region,
         })

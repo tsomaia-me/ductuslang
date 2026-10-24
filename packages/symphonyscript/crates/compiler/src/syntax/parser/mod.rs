@@ -1,4 +1,5 @@
 mod blocks;
+mod bracket;
 mod checkpoint;
 mod expressions;
 mod items;
@@ -14,6 +15,7 @@ use std::ops::Range;
 use rowan::GreenNode;
 use symphonyscript_core::{Span, Vocabulary};
 
+use self::bracket::Bracket;
 use self::checkpoint::Checkpoint;
 use self::starts_line::starts_line;
 use self::task::Task;
@@ -29,7 +31,7 @@ pub(crate) struct Parser<'a> {
     vocabulary: &'a Vocabulary,
     lexer: Lexer<'a>,
     pos: usize,
-    expression_brackets: Vec<bool>,
+    brackets: Vec<Bracket>,
     builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
     line_error: bool,
@@ -44,7 +46,7 @@ impl<'a> Parser<'a> {
             vocabulary,
             lexer: Lexer::new(source, vocabulary),
             pos: 0,
-            expression_brackets: Vec::new(),
+            brackets: Vec::new(),
             builder: TreeBuilder::new(),
             diagnostics: Vec::new(),
             line_error: false,
@@ -234,14 +236,31 @@ impl<'a> Parser<'a> {
     }
 
     fn end_region_before(&mut self, index: usize) -> bool {
-        if self.expression_brackets.last() != Some(&true) {
-            return false;
-        }
-        let Some(line) = self.lexer.name_pair_line(index) else {
+        let Some(bracket) = self.brackets.last().copied() else {
             return false;
         };
-        self.lexer.resynchronize(line, self.pos);
-        true
+        if bracket == Bracket::Other {
+            return false;
+        }
+        let Some((line, start)) = self.lexer.suspended_line_at(index) else {
+            return false;
+        };
+        if start.first.kind != SyntaxKind::Ident {
+            return false;
+        }
+        let ends = match bracket {
+            Bracket::Expression => start
+                .rest
+                .iter()
+                .find(|token| !token.kind.is_trivia())
+                .is_some_and(|next| matches!(next.kind, SyntaxKind::Ident | SyntaxKind::AsKw)),
+            Bracket::Bundle { depth, header } => holds_stray_colon(&start, depth, header),
+            Bracket::Other => false,
+        };
+        if ends {
+            self.lexer.resynchronize(line, self.pos);
+        }
+        ends
     }
 
     fn nth(&mut self, n: usize) -> Option<SyntaxKind> {
@@ -345,23 +364,32 @@ impl<'a> Parser<'a> {
         };
         match kind {
             SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::InterpStart => {
-                let expression = self.builder.open_kind().is_some_and(|open| {
-                    matches!(
-                        open,
+                let bracket = match self.builder.open_kind() {
+                    Some(
                         SyntaxKind::ArrayLit
-                            | SyntaxKind::ParenExpr
-                            | SyntaxKind::ArgList
-                            | SyntaxKind::IndexExpr
-                            | SyntaxKind::Conversion
-                            | SyntaxKind::Interpolation
-                    )
-                });
-                self.expression_brackets.push(expression);
+                        | SyntaxKind::ParenExpr
+                        | SyntaxKind::ArgList
+                        | SyntaxKind::IndexExpr
+                        | SyntaxKind::Conversion
+                        | SyntaxKind::Interpolation,
+                    ) => Bracket::Expression,
+                    Some(SyntaxKind::Bundle) => Bracket::Bundle {
+                        depth: self.lexer.depth_at(self.pos).unwrap_or(0) + 1,
+                        header: false,
+                    },
+                    _ => Bracket::Other,
+                };
+                self.brackets.push(bracket);
             }
             SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::InterpEnd => {
-                self.expression_brackets.pop();
+                self.brackets.pop();
             }
-            SyntaxKind::Newline => self.expression_brackets.clear(),
+            SyntaxKind::ForKw | SyntaxKind::Colon => {
+                if let Some(Bracket::Bundle { header, .. }) = self.brackets.last_mut() {
+                    *header = kind == SyntaxKind::ForKw;
+                }
+            }
+            SyntaxKind::Newline => self.brackets.clear(),
             _ => {}
         }
         let text = self.text_of(self.pos);
@@ -584,4 +612,19 @@ impl<'a> Parser<'a> {
         self.bump();
         self.finish();
     }
+}
+
+fn holds_stray_colon(line: &LineStart<'_>, depth: u32, mut header: bool) -> bool {
+    for (token, token_depth) in line.rest.iter().zip(line.rest_depths) {
+        if *token_depth != depth {
+            continue;
+        }
+        match token.kind {
+            SyntaxKind::ForKw => header = true,
+            SyntaxKind::Colon if header => header = false,
+            SyntaxKind::Colon => return true,
+            _ => {}
+        }
+    }
+    false
 }

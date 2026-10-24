@@ -14,6 +14,8 @@ Clip intro | gain=0.9:
     [Note/60 Note/64 Note/67]
     [Note/60 Note as top /64 Note'/67]
     Note/50 (Note/53 | velocity=0.5 accent brightness=wobble)
+    (Note' as m /61 when fill_on | velocity=0.5)
+    Note/(i32(section + 1))
     Note'/62 | velocity=0.7 brightness=wobble
                length=2bars
     Arp/48 | steps=3

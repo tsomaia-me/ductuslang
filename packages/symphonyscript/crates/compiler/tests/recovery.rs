@@ -387,6 +387,11 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a / b when c )] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
     ),
+    (
+        "Clip c:\n    [Note/60\nClip d:\n    Note/1\nClip e:\n    Note ^\n",
+        &[(Code::BundleSyntax, 21, 25), (Code::ReservedToken, 57, 58)],
+        "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note DefaultArg[/ Literal[60]]]] NL] <]]] Placement[Clip d Body[: Block[NL > Placement[Note DefaultArg[/ Literal[1]] NL] <]]] Placement[Clip e Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
+    ),
 ];
 
 #[test]
@@ -425,6 +430,22 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
         (
             "Clip c:\n    [Note/60\nNote Note]\n",
             "Clip c:\n    [Note/60 Note Note]\n",
+        ),
+        (
+            "Clip c:\n    [for i in 0..3:\n    Note/i]\n",
+            "Clip c:\n    [for i in 0..3: Note/i]\n",
+        ),
+        (
+            "Clip c:\n    [for i in\n    xs: Note/i]\n",
+            "Clip c:\n    [for i in xs: Note/i]\n",
+        ),
+        (
+            "Clip c:\n    [for i in xs\n    : Note/i]\n",
+            "Clip c:\n    [for i in xs: Note/i]\n",
+        ),
+        (
+            "Clip c:\n    [Note/60\n    Note for i in xs: Note/i]\n",
+            "Clip c:\n    [Note/60 Note for i in xs: Note/i]\n",
         ),
     ] {
         assert_eq!(support::clean_tree(text), support::clean_tree(one_line));
