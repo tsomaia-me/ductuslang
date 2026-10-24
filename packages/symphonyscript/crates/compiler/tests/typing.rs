@@ -232,12 +232,21 @@ fn a_flexible_argument_of_rand_takes_i64_and_fits_it() {
 }
 
 #[test]
-fn a_literal_a_fixed_type_operand_types_fits_that_type() {
+fn a_literal_or_use_a_fixed_type_operand_types_fits_that_type() {
     support::expect_codes(
         "Clip c:\n    Note/(5i32 + 3000000000)\n",
         &[(Code::DoesNotFit, "3000000000", 0)],
     );
+    support::expect_codes(
+        "let x = 3000000000\nClip c:\n    Note/(5i32 + x)\n",
+        &[(Code::DoesNotFit, "x", 1)],
+    );
     expect(&[
+        ("let x = 5\nClip c:\n    Note/(5i32 + x)\n", &[]),
+        (
+            "Clip c:\n    Note/(2147483647i32 + 1)\n",
+            &[Code::ConstantOverflow],
+        ),
         ("Clip c:\n    Note/(5i32 + 2147483642)\n", &[]),
         (
             "Clip c:\n    Note/(5i32 + 2147483643)\n",

@@ -8,6 +8,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
+use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
@@ -93,9 +94,8 @@ impl Engine<'_> {
                     .get(&target)
                     .is_some_and(|(int, float, enumeration)| (*int && *float) || *enumeration)
             {
-                uses.entry(target)
-                    .or_default()
-                    .push((*node, *ty, value.clone()));
+                let value = self.before_unit_reading(*node, target, *ty, value);
+                uses.entry(target).or_default().push((*node, *ty, value));
             }
         }
         for (_, mut evaluations) in uses {
@@ -148,6 +148,22 @@ impl Engine<'_> {
                 );
             }
         }
+    }
+
+    fn before_unit_reading(&self, node: NodeId, target: NodeId, ty: EvalTy, value: &CVal) -> CVal {
+        if !self.memo.default_scales.contains_key(&node) {
+            return value.clone();
+        }
+        let own = self
+            .memo
+            .sigs
+            .get(&node)
+            .map_or(ty, |sig| own_type(sig, ty));
+        self.memo
+            .evals
+            .get(&(target, own))
+            .cloned()
+            .unwrap_or_else(|| value.clone())
     }
 
     pub(super) fn consistent_shapes(&mut self) {

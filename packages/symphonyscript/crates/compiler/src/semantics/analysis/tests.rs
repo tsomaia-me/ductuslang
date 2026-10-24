@@ -94,7 +94,9 @@ fn envelope_vocabulary() -> Vocabulary {
         .family(&time, "ms")
         .attr::<f32>("release")
         .default(0.0)
-        .family(&time, "ms");
+        .family(&time, "ms")
+        .attr::<i32>("pitch")
+        .default(0);
     v.build().expect("the envelope vocabulary builds")
 }
 
@@ -181,6 +183,45 @@ fn a_plain_value_reads_in_the_default_unit_as_a_literal_with_its_suffix_would() 
     let (diagnostics, found) = analyzed("Clip c:\n    Note | length=2bars + 1\n", first_value);
     assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
     assert_eq!(found, Some((CVal::F64(9.0), Kind::Int)));
+    for (text, value) in [
+        ("Env e | attack=(3i32 * 2.5)\n", 0.0075),
+        ("Env e | attack=(3i32 * 2)\n", 0.006),
+    ] {
+        let (diagnostics, found) = analyzed_with(&envelope, text, first_value);
+        assert_eq!(diagnostics, Vec::<Diagnostic>::new(), "{text}");
+        assert_eq!(
+            found.map(|(found, _)| found),
+            Some(CVal::F64(value)),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn uses_of_a_flexible_value_compare_before_the_unit_reading() {
+    let envelope = envelope_vocabulary();
+    for (text, attack) in [
+        ("let p = 3\nEnv e | attack=p pitch=p\n", 0.003),
+        ("let p = 3\nEnv e | attack=(p + 1s) pitch=p\n", 1.0 + 0.003),
+    ] {
+        let (diagnostics, found) = analyzed_with(&envelope, text, |engine| {
+            (
+                attr_value(engine, "attack", EvalTy::F64),
+                attr_value(engine, "pitch", EvalTy::I32),
+            )
+        });
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
+        assert_eq!(
+            found,
+            (Some(CVal::F64(attack)), Some(CVal::Int(3))),
+            "{text}"
+        );
+    }
+    let (diagnostics, ()) = analyzed(
+        "let q = 2 ** -1\nOsc o | freq=q\nClip c:\n    Note/q\n",
+        |_| (),
+    );
+    assert_eq!(error_codes(&diagnostics), vec![Code::InconsistentUses]);
 }
 
 fn bar_vocabulary() -> Vocabulary {
@@ -391,6 +432,27 @@ fn compile_time_values_follow_the_types_that_flow_into_them() {
     let r = "fn r(n): if n < 1 then 1bars else r(n - 1) + 1\n";
     let q = "fn q(n): if n < 1 then 1bars else q(n - 1)\n";
     let rows: Vec<(&Vocabulary, String, &str, EvalTy, CVal)> = vec![
+        (
+            &example,
+            "Clip c | gain=(16777217 / 2i32)\n".into(),
+            "gain",
+            EvalTy::F32,
+            CVal::F32(8388608.0),
+        ),
+        (
+            &example,
+            "Clip c | gain=(16777217i32 / 2)\n".into(),
+            "gain",
+            EvalTy::F32,
+            CVal::F32(8388608.0),
+        ),
+        (
+            &example,
+            "let x = 5\nClip c:\n    Note/(5i32 + x)\n".into(),
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(10),
+        ),
         (
             &example,
             "Clip c | gain=((16777216 + 1) / 2)\n".into(),

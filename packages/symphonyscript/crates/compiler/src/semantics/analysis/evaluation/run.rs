@@ -92,12 +92,13 @@ impl Engine<'_> {
             }
         } else {
             let value = self.compute(node, own, ctx, need)?;
-            self.scaled(node, value)
+            let target = if is_float_ty(ty) { ty } else { own };
+            self.scaled(node, value, target)
         };
         if sig.kind == Kind::Int
             && sig.width == Width::Flexible
             && int_bits(ty).is_some()
-            && self.is_literal(node)
+            && self.takes_a_type(node)
         {
             return Some(self.fit(node, value, ty));
         }
@@ -150,9 +151,9 @@ impl Engine<'_> {
         }
     }
 
-    fn is_literal(&self, node: NodeId) -> bool {
+    fn takes_a_type(&self, node: NodeId) -> bool {
         match self.node(node).op {
-            Op::Number(..) => true,
+            Op::Number(..) | Op::Use(_) => true,
             Op::Unary(UnaryOp::Neg, operand) => matches!(self.node(operand).op, Op::Number(..)),
             Op::Const(_)
             | Op::Bool(_)
@@ -163,7 +164,6 @@ impl Engine<'_> {
             | Op::Pi
             | Op::NodeRef(_)
             | Op::Read(_)
-            | Op::Use(_)
             | Op::Arg(_)
             | Op::Unary(UnaryOp::Not, _)
             | Op::Binary(..)
@@ -898,11 +898,10 @@ impl Engine<'_> {
             _ => own_type(&sig, EvalTy::Exact),
         };
         let value = self.child(operand, ty, ctx, need)?;
-        let value = if flexible && int_bits(ty).is_some() {
-            self.fit(operand, value, ty)
-        } else {
-            value
-        };
+        if flexible && int_bits(ty).is_some() {
+            let value = self.fit(operand, value, ty);
+            return Some(self.convert_integer(operand, false, value, own));
+        }
         Some(self.integer_to_float(operand, value, own))
     }
 
@@ -956,23 +955,23 @@ impl Engine<'_> {
         converted
     }
 
-    fn scaled(&mut self, node: NodeId, value: CVal) -> CVal {
+    fn scaled(&mut self, node: NodeId, value: CVal, target: EvalTy) -> CVal {
         if matches!(self.node(node).op, Op::Number(..)) {
             return value;
         }
         let Some(scale) = self.memo.default_scales.get(&node).copied() else {
             return value;
         };
-        map_leaves(value, |leaf| self.scaled_leaf(node, scale, leaf))
+        map_leaves(value, |leaf| self.scaled_leaf(node, scale, leaf, target))
     }
 
-    fn scaled_leaf(&mut self, node: NodeId, scale: f64, value: CVal) -> CVal {
+    fn scaled_leaf(&mut self, node: NodeId, scale: f64, value: CVal, target: EvalTy) -> CVal {
         match value {
             CVal::Int(value) if scale.fract() == 0.0 && scale.abs() < 1e38 => {
                 self.integer(node, EvalTy::Exact, value.checked_mul(scale as i128))
             }
-            CVal::F32(value) => CVal::F32(value * scale as f32),
-            CVal::F64(value) => CVal::F64(value * scale),
+            CVal::F32(value) => scaled_float(f64::from(value), scale, target),
+            CVal::F64(value) => scaled_float(value, scale, target),
             CVal::Int(_)
             | CVal::Bool(_)
             | CVal::Enum(..)
@@ -1014,6 +1013,27 @@ fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> CVal {
     };
     let exact = FloatLit::from_integer(integer).scaled(scale);
     if is_f32(ty) {
+        CVal::F32(exact.to_f32())
+    } else {
+        CVal::F64(exact.to_f64())
+    }
+}
+
+fn scaled_float(value: f64, scale: f64, target: EvalTy) -> CVal {
+    if !value.is_finite() {
+        return if is_f32(target) {
+            CVal::F32((value * scale) as f32)
+        } else {
+            CVal::F64(value * scale)
+        };
+    }
+    let magnitude = FloatLit::from_integer(1).scaled(value.abs()).scaled(scale);
+    let exact = if value.is_sign_negative() {
+        magnitude.negated()
+    } else {
+        magnitude
+    };
+    if is_f32(target) {
         CVal::F32(exact.to_f32())
     } else {
         CVal::F64(exact.to_f64())
