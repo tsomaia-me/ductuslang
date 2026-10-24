@@ -1858,6 +1858,78 @@ fn the_count_before_inlining_is_the_count_of_every_construct() {
     assert_eq!(bodies, 0);
 }
 
+fn million_inlinings(f0_notes: usize, declarations: &str, values: &[&str]) -> String {
+    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    for level in 1..=18 {
+        let below = level - 1;
+        text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
+    }
+    text.push_str(declarations);
+    text.push_str("Clip c:\n");
+    for level in [18, 17, 16, 15, 13, 8, 5] {
+        text.push_str(&format!("    Note/(f{level}(i))\n"));
+    }
+    for _ in 0..f0_notes {
+        text.push_str("    Note/(f0(i))\n");
+    }
+    for value in values {
+        text.push_str(&format!("    Note/({value})\n"));
+    }
+    text
+}
+
+#[test]
+fn a_crossing_of_the_inline_limit_is_reported_at_the_call_that_crosses_it() {
+    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let (diagnostics, (_, counted)) = measure(&million_inlinings(7, "", &[]));
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    assert_eq!(counted, 1_000_000);
+    let wide = "fn r(n): if n < 1 then f0(n) + 3000000000 else r(n - 1)\n";
+    let past = million_inlinings(7, wide, &["r(0)"]);
+    let (diagnostics, (bodies, _)) = measure(&past);
+    let call = past.find("r(0)").unwrap_or(usize::MAX);
+    assert_eq!(
+        located(&past, &diagnostics),
+        vec![(Code::InlineLimit, call, vec![])]
+    );
+    assert_eq!(bodies, 0);
+    let under = million_inlinings(4, wide, &["r(0)"]);
+    let (diagnostics, (_, counted)) = measure(&under);
+    let call = under.find("r(0)").unwrap_or(usize::MAX);
+    assert_eq!(
+        located(&under, &diagnostics),
+        vec![(Code::DoesNotFit, call, vec![])]
+    );
+    assert_eq!(counted, 999_998);
+    let defaulted = "fn r(n, k = f0(1)): if n < 1 then k else r(n - 1)\n";
+    let late = million_inlinings(7, defaulted, &["r(1, 2)"]);
+    let (diagnostics, _) = measure(&late);
+    let crossing = late.find("r(n - 1)").unwrap_or(usize::MAX);
+    let call = late.find("r(1, 2)").unwrap_or(usize::MAX);
+    assert_eq!(
+        located(&late, &diagnostics),
+        vec![(Code::InlineLimit, crossing, vec![call])]
+    );
+}
+
+#[test]
+fn a_call_in_a_recursive_body_counts_once() {
+    let recursive = "fn r(n): if n < 1 then f0(n) else r(n - 1)\n";
+    let accepted = million_inlinings(6, recursive, &["r(0)", "r(3)"]);
+    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let (diagnostics, (_, counted)) = measure(&accepted);
+    assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
+    assert_eq!(counted, 1_000_000);
+    let past = million_inlinings(7, recursive, &["r(0)", "r(3)"]);
+    let (diagnostics, (bodies, _)) = measure(&past);
+    let call = past.find("r(0)").unwrap_or(usize::MAX);
+    assert_eq!(
+        located(&past, &diagnostics),
+        vec![(Code::InlineLimit, call, vec![])]
+    );
+    assert_eq!(bodies, 0);
+}
+
 #[test]
 fn expansion_stops_after_a_million_iterations_and_uses_whatever_the_loop_bounds() {
     let mut chain = String::new();

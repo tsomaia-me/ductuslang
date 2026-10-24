@@ -353,12 +353,46 @@ impl Engine<'_> {
         if self.inline_limit_reported {
             return Ok(false);
         }
-        if self.inside_inlined_body(scope)? {
+        if self.inside_function_body(scope)? {
             return Ok(true);
         }
-        self.inlined = self
-            .inlined
-            .saturating_add(self.inline_count(function, sources)?);
+        let count = self.inline_count(function, sources)?;
+        self.charge_inlined(count, function, loc, scope)
+    }
+
+    pub(in crate::semantics::analysis) fn charge_evaluated(
+        &mut self,
+        function: FnId,
+        defaulted: &[usize],
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        let mut count = 0u64;
+        if self.evaluated_bodies.insert(function) {
+            count = self.collected.inline.body(function)?;
+        }
+        for param in defaulted {
+            if self.evaluated_defaults.insert((function, *param)) {
+                count = count.saturating_add(self.collected.inline.default(function, *param)?);
+            }
+        }
+        if count > 0 {
+            self.charge_inlined(count, function, loc, scope)?;
+        }
+        Ok(())
+    }
+
+    fn charge_inlined(
+        &mut self,
+        count: u64,
+        function: FnId,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
+        if self.inline_limit_reported {
+            return Ok(false);
+        }
+        self.inlined = self.inlined.saturating_add(count);
         if self.inlined <= INLINE_LIMIT {
             return Ok(true);
         }
@@ -401,21 +435,29 @@ impl Engine<'_> {
             .name
             .as_ref()
             .map_or(String::new(), |name| name.text.clone());
-        self.error(
+        let path = self
+            .chain(scope)?
+            .outermost_paths()
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        self.report.error_with(
+            self.hir,
             Code::InlineLimit,
             loc,
-            scope,
+            &path,
             format!("this call of `{name}` makes the compilation inline more than 1,000,000 calls"),
-        )
+        );
+        Ok(())
     }
 
-    pub(super) fn inside_inlined_body(&self, scope: ScopeId) -> Result<bool, Internal> {
+    pub(super) fn inside_function_body(&self, scope: ScopeId) -> Result<bool, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
             let record = self.scope_of(id)?;
             match &record.kind {
                 ScopeKind::Locals(locals) => {
-                    return Ok(matches!(locals.owner, LocalsOwner::Fn(_)) && !locals.recursive);
+                    return Ok(matches!(locals.owner, LocalsOwner::Fn(_)));
                 }
                 ScopeKind::ParamPrefix { locals, .. } => current = Some(*locals),
                 ScopeKind::Global { .. } => return Ok(false),

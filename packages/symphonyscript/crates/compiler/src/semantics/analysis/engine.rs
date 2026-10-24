@@ -32,7 +32,7 @@ use super::wire::Wire;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Collected, Variants};
-use crate::semantics::ir::{Hir, Loc, PlacementId};
+use crate::semantics::ir::{FnId, Hir, Loc, PlacementId};
 use crate::semantics::reporting::Report;
 
 pub(crate) struct Engine<'a> {
@@ -74,6 +74,8 @@ pub(crate) struct Engine<'a> {
     pub frame_pushed: bool,
     pub call_count: usize,
     pub inlined: u64,
+    pub evaluated_bodies: FastSet<FnId>,
+    pub evaluated_defaults: FastSet<(FnId, usize)>,
     pub inline_limit_reported: bool,
     pub call_limit_reported: bool,
     pub typing: super::infer::Typing,
@@ -131,6 +133,8 @@ impl<'a> Engine<'a> {
             frame_pushed: false,
             call_count: 0,
             inlined: 0,
+            evaluated_bodies: FastSet::default(),
+            evaluated_defaults: FastSet::default(),
             inline_limit_reported: false,
             call_limit_reported: false,
             typing: super::infer::Typing::default(),

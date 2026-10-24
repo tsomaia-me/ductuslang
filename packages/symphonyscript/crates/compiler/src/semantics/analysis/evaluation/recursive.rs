@@ -235,6 +235,13 @@ impl Engine<'_> {
             };
             params.push(source);
         }
+        let defaulted: Vec<usize> = shapes
+            .iter()
+            .enumerate()
+            .filter(|(_, shape)| matches!(shape, ArgShape::Default))
+            .map(|(position, _)| position)
+            .collect();
+        self.charge_evaluated(function, &defaulted, loc, caller)?;
         self.call_scope(function, params, loc, caller, true)
     }
 

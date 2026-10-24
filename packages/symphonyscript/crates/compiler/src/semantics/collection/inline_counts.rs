@@ -15,12 +15,14 @@ enum Visit {
 struct Site {
     callee: FnId,
     defaulted: Vec<usize>,
+    recursive: bool,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct InlineCounts {
     body: Vec<u64>,
     defaults: Vec<Vec<u64>>,
+    callees: Vec<Vec<FnId>>,
 }
 
 impl InlineCounts {
@@ -38,6 +40,7 @@ impl InlineCounts {
                 .iter()
                 .map(|decl| vec![0; decl.params.len()])
                 .collect(),
+            callees: vec![Vec::new(); count],
         };
         let sites = |index: usize, roots: Vec<ExprId>| -> Result<Vec<Site>, Internal> {
             let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
@@ -70,7 +73,7 @@ impl InlineCounts {
                     let mut pending: Vec<usize> = Vec::new();
                     for site in body_sites.iter().chain(default_sites.iter().flatten()) {
                         let callee = site.callee.index();
-                        if visit_of(&state, callee)? == Visit::New {
+                        if !site.recursive && visit_of(&state, callee)? == Visit::New {
                             pending.push(callee);
                         }
                     }
@@ -83,6 +86,11 @@ impl InlineCounts {
                 if visit_of(&state, index)? == Visit::Done {
                     continue;
                 }
+                *counts
+                    .callees
+                    .get_mut(index)
+                    .ok_or(Internal::missed("function"))? =
+                    body_sites.iter().map(|site| site.callee).collect();
                 let body = counts.total(&body_sites)?;
                 let defaults: Vec<u64> = default_sites
                     .iter()
@@ -103,9 +111,34 @@ impl InlineCounts {
     }
 
     fn total(&self, sites: &[Site]) -> Result<u64, Internal> {
-        sites.iter().try_fold(0u64, |total, site| {
-            Ok(total.saturating_add(self.call(site.callee, &site.defaulted)?))
-        })
+        sites
+            .iter()
+            .filter(|site| !site.recursive)
+            .try_fold(0u64, |total, site| {
+                Ok(total.saturating_add(self.call(site.callee, &site.defaulted)?))
+            })
+    }
+
+    pub fn body(&self, function: FnId) -> Result<u64, Internal> {
+        self.body
+            .get(function.index())
+            .copied()
+            .ok_or(Internal::missed("function"))
+    }
+
+    pub fn default(&self, function: FnId, param: usize) -> Result<u64, Internal> {
+        self.defaults
+            .get(function.index())
+            .and_then(|defaults| defaults.get(param))
+            .copied()
+            .ok_or(Internal::missed("parameter default"))
+    }
+
+    pub fn callees(&self, function: FnId) -> Result<&[FnId], Internal> {
+        self.callees
+            .get(function.index())
+            .map(Vec::as_slice)
+            .ok_or(Internal::missed("function"))
     }
 
     pub fn call(&self, callee: FnId, defaulted: &[usize]) -> Result<u64, Internal> {
@@ -156,13 +189,13 @@ fn call_sites(
             && let ExprKind::Name(name) = &hir.expr(*callee)?.kind
             && !locals.contains(name.as_str())
             && let Some(Decl::Fn(target)) = namespace.get(name)
-            && !*recursive
-                .get(target.index())
-                .ok_or(Internal::missed("function"))?
         {
             found.push(Site {
                 callee: target,
                 defaulted: defaulted(hir.fn_decl(target)?, args),
+                recursive: *recursive
+                    .get(target.index())
+                    .ok_or(Internal::missed("function"))?,
             });
         }
         stack.extend(kind.children());
