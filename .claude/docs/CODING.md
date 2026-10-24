@@ -30,6 +30,320 @@ The owner's bar: "I don't need trivial behaviors tested, like 'does useState wor
 - Every guarded path has a refusal test: the test that proves the guard refuses what it must, because a guard without one can be removed silently and every test stays green.
 - An edge test imports the route it tests, not the Worker entry, so the import graph selects only its tests; the routing, middleware and auth chain are tested through the Worker entry.
 
+## Good patterns
+
+How good code looks in a `no_std` core with bit-identical results on every target, a commit path that never allocates or panics, and a lock-free kernel shared between threads. Each pattern gives its reason, the **Good** form and its **Bad** counterpart.
+
+### Types
+
+**Make invalid states unrepresentable.** A state the type cannot hold needs no check and no test.
+
+**Good**
+```rust
+enum Voice { Idle, Playing { note: Note, started: Tick } }
+```
+**Bad**
+```rust
+struct Voice { playing: bool, note: Option<Note>, started: Option<Tick> }
+```
+
+**Newtypes for ids and units.** The compiler refuses a node id passed as an edge id and ticks passed as frames.
+
+**Good**
+```rust
+pub struct NodeId(u32);
+pub fn connect(from: NodeId, to: NodeId, delay: Ticks) -> Result<EdgeId, GraphError>
+```
+**Bad**
+```rust
+pub fn connect(from: u32, to: u32, delay: u64) -> Result<u32, GraphError>
+```
+
+**Parse, don't validate.** Check once at the boundary and return a type that carries the proof, so no later code checks again.
+
+**Good**
+```rust
+pub struct Velocity(u8);
+impl Velocity {
+    pub fn new(raw: u8) -> Result<Self, OutOfRange> {
+        (raw <= 127).then_some(Velocity(raw)).ok_or(OutOfRange { raw })
+    }
+}
+pub fn note_on(pitch: Pitch, velocity: Velocity) -> Event
+```
+**Bad**
+```rust
+pub fn is_valid_velocity(raw: u8) -> bool { raw <= 127 }
+pub fn note_on(pitch: u8, velocity: u8) -> Event
+```
+
+**Exhaustive matches on our own enums.** A new variant fails to compile at every site that must decide what it means.
+
+**Good**
+```rust
+match event {
+    Event::NoteOn(note) => voices.start(note),
+    Event::NoteOff(note) => voices.release(note),
+    Event::Tempo(tempo) => clock.set_tempo(tempo),
+}
+```
+**Bad**
+```rust
+match event { Event::NoteOn(note) => voices.start(note), _ => {} }
+```
+
+### Ownership
+
+**Borrow in the widest form.** A function that only reads takes `&[T]` or `&str`, so no caller clones to call it.
+
+**Good**
+```rust
+fn total_length(notes: &[Note]) -> Ticks
+let length = total_length(&score.notes);
+```
+**Bad**
+```rust
+fn total_length(notes: Vec<Note>) -> Ticks
+let length = total_length(score.notes.clone());
+```
+
+**Ids into an arena, not shared pointers.** Nodes held in a `Vec` and linked by id borrow one field at a time, so the borrow checker agrees without `RefCell`, and they copy, compare and hash as integers.
+
+**Good**
+```rust
+struct Graph { nodes: Vec<Node>, edges: Vec<Edge> }
+struct Edge { from: NodeId, to: NodeId }
+```
+**Bad**
+```rust
+struct Node { inputs: Vec<Rc<RefCell<Node>>>, parent: Weak<RefCell<Node>> }
+```
+
+### Errors
+
+**Errors as values with context.** A typed error names what failed and where, so the caller matches it and the user reads it.
+
+**Good**
+```rust
+pub enum ParseError { UnexpectedToken { found: TokenKind, at: Span }, UnclosedBlock { opened: Span } }
+```
+**Bad**
+```rust
+return Err(String::from("parse error"));
+```
+
+**No panics in library code.** A lookup that can miss returns an error the caller handles; `unwrap`, `expect` and indexing stay out of library code.
+
+**Good**
+```rust
+let voice = self.voices.get_mut(id.index()).ok_or(KernelError::UnknownVoice(id))?;
+```
+**Bad**
+```rust
+let voice = &mut self.voices[id.index()];
+let tempo = self.tempo_map.at(tick).unwrap();
+```
+
+**Checked conversions and arithmetic.** `as` truncates silently and `+` overflows differently in debug and release; `try_from` and `checked_*` turn the overflow into an error.
+
+**Good**
+```rust
+let count = u16::try_from(events.len()).map_err(|_| EncodeError::TooManyEvents)?;
+let end = start.checked_add(length).ok_or(TimeError::Overflow)?;
+```
+**Bad**
+```rust
+let count = events.len() as u16;
+let end = start + length;
+```
+
+### Functions
+
+**Small, pure functions.** A result computed from the inputs alone is tested with one table, reused anywhere and the same on every target.
+
+**Good**
+```rust
+fn ticks_to_frames(ticks: Ticks, tempo: Tempo, rate: SampleRate) -> Result<Frames, TimeError>
+```
+**Bad**
+```rust
+fn advance(&mut self) { self.frames = self.convert(); self.dirty = true; }
+```
+
+**Early returns.** The refusals come first and the main path stays unindented.
+
+**Good**
+```rust
+let node = graph.node(id).ok_or(GraphError::UnknownNode(id))?;
+let port = node.input(index).ok_or(GraphError::UnknownPort(id, index))?;
+port.connect(source)
+```
+**Bad**
+```rust
+if let Some(node) = graph.node(id) {
+    if let Some(port) = node.input(index) { port.connect(source) }
+    else { Err(GraphError::UnknownPort(id, index)) }
+} else { Err(GraphError::UnknownNode(id)) }
+```
+
+**Tables instead of branching ladders.** Data reads at a glance and changes in one row.
+
+**Good**
+```rust
+const MAJOR_STEPS: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
+let step = MAJOR_STEPS.get(degree).ok_or(ScaleError::Degree(degree))?;
+```
+**Bad**
+```rust
+let step = if degree == 0 { 0 } else if degree == 1 { 2 } else if degree == 2 { 4 }
+    else if degree == 3 { 5 } else if degree == 4 { 7 } else if degree == 5 { 9 } else { 11 };
+```
+
+### Determinism
+
+**Ordered maps wherever order reaches the output.** `BTreeMap` iterates in key order on every target and run; `HashMap` order follows its hasher. Anything else that reaches the output is sorted first.
+
+**Good**
+```rust
+let ports: BTreeMap<PortName, NodeId> = collect_ports(&graph);
+diagnostics.sort_by_key(|diagnostic| diagnostic.span);
+```
+**Bad**
+```rust
+let ports: HashMap<PortName, NodeId> = collect_ports(&graph);
+```
+
+**One float implementation everywhere.** Every transcendental goes through one software implementation, because the platform's `sin` and `exp` differ in the last bit between targets.
+
+**Good**
+```rust
+let value = libm::sin(phase);
+```
+**Bad**
+```rust
+let value = phase.sin();
+```
+
+**Integer time.** Time counts ticks and frames as integers and becomes seconds only at the edge, because a float accumulator drifts with the block size.
+
+**Good**
+```rust
+struct Clock { now: Frame, rate: SampleRate }
+fn seconds(&self) -> Seconds { self.rate.seconds_at(self.now) }
+```
+**Bad**
+```rust
+struct Clock { seconds: f64, step: f64 }
+fn tick(&mut self) { self.seconds += self.step; }
+```
+
+### Hot paths
+
+**Preallocate when built, reuse when running.** Capacity is reserved once from the graph's limits; the commit path clears and refills it and writes into the slice the caller gives, so it allocates nothing.
+
+**Good**
+```rust
+fn new(limits: &Limits) -> Self { Self { events: Vec::with_capacity(limits.events_per_block) } }
+pub fn commit(&mut self, out: &mut [Sample]) -> Result<(), KernelError>
+```
+**Bad**
+```rust
+pub fn commit(&mut self) -> Vec<Sample>
+let events: Vec<Event> = self.pending().collect();
+```
+
+**Lock-free handoff between threads.** The audio thread never waits on a lock: commands cross through a preallocated bounded queue that refuses when full instead of growing, and an atomic publishes with `Release` and reads with `Acquire`, so what the writer wrote before the store is visible after the load.
+
+**Good**
+```rust
+producer.try_push(Command::SetGain(node, gain)).map_err(|_| ControlError::QueueFull)?;
+self.ready.store(index, Ordering::Release);
+let index = self.ready.load(Ordering::Acquire);
+```
+**Bad**
+```rust
+self.commands.lock().unwrap().push(Command::SetGain(node, gain));
+self.ready.store(index, Ordering::Relaxed);
+let index = self.ready.load(Ordering::Relaxed);
+```
+
+### Deep data
+
+**Explicit stacks where depth is unbounded.** The input decides the depth of a tree, and recursion on it overflows the thread's stack; a `Vec` stack grows on the heap. Walks, clones, comparisons, hashes, printing and `Drop` all take this form, because a derived drop of an owned tree recurses once per level.
+
+**Good**
+```rust
+let mut stack = vec![root];
+while let Some(id) = stack.pop() {
+    let node = tree.node(id);
+    visit(node);
+    stack.extend(node.children.iter().rev());
+}
+```
+**Bad**
+```rust
+fn walk(tree: &Tree, id: NodeId) {
+    tree.node(id).children.iter().for_each(|&child| walk(tree, child));
+}
+```
+
+### Tests
+
+**Expected values from the specification.** The expected value comes from the spec, the standard or a derivation by hand, never from the code's own output or its formula, because a value copied back passes whatever the code does.
+
+**Good**
+```rust
+assert_eq!(pitch_to_hz(Pitch::A4), 440.0);
+assert_eq!(pitch_to_hz(Pitch::A5), 880.0);
+```
+**Bad**
+```rust
+assert_eq!(pitch_to_hz(Pitch::A4), 440.0 * libm::pow(2.0, (69.0 - 69.0) / 12.0));
+```
+
+**One table per behaviour, holding its boundaries.** Each row is a boundary or a distinct outcome, so the table fails exactly where the rule changes.
+
+**Good**
+```rust
+for (raw, expected) in [(0, Ok(0)), (127, Ok(127)), (128, Err(OutOfRange { raw: 128 }))] {
+    assert_eq!(Velocity::new(raw).map(Velocity::get), expected, "raw {raw}");
+}
+```
+**Bad**
+```rust
+#[test] fn velocity_0() { assert!(Velocity::new(0).is_ok()); }
+#[test] fn velocity_64() { assert!(Velocity::new(64).is_ok()); }
+#[test] fn velocity_100() { assert!(Velocity::new(100).is_ok()); }
+```
+
+**Tests through the public surface.** A test calls what a caller calls, so a refactor that keeps the behaviour keeps the test green.
+
+**Good**
+```rust
+assert_eq!(compile("tempo 0"), Err(CompileError::TempoOutOfRange { at: Span::new(6, 7) }));
+```
+**Bad**
+```rust
+assert_eq!(lexer::scan_number(&mut Cursor::new("0")), Some(0));
+```
+
+### Names
+
+**Names that say what a thing is.** Full words in the domain's terms, units in the type, a bool read as a question, and a test named for the behaviour it proves, so a failure says what broke without opening it.
+
+**Good**
+```rust
+let releasing_voices = voices.iter().filter(|voice| voice.is_releasing());
+fn tempo_at(&self, tick: Tick) -> Tempo
+#[test] fn note_off_releases_only_the_matching_voice()
+```
+**Bad**
+```rust
+let tmp = voices.iter().filter(|v| v.flag2);
+fn process(&self, t: u64) -> u32
+#[test] fn test_voices_2()
+```
+
 ## When this file is wrong
 
 If a rule here forces worse code in a real case, write the better code, say why in the PR or the hand-back, and name the rule in a `Papercut candidate:` line.
