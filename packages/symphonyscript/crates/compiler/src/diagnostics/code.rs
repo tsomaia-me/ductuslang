@@ -386,7 +386,7 @@ impl Code {
 
     pub fn section(self) -> &'static str {
         match self {
-            Code::UnexpectedCharacter => "2",
+            Code::UnexpectedCharacter => "2.1",
             Code::TabIndentation | Code::DedentMismatch | Code::ClauseColumn | Code::Semicolon => {
                 "2.2"
             }
@@ -418,7 +418,8 @@ impl Code {
             Code::InlinePlacement => "7.7",
             Code::BundleSyntax => "7.8",
             Code::ForSyntax => "7.9",
-            Code::WireSyntax | Code::MisplacedWire => "8.1",
+            Code::WireSyntax => "8.1",
+            Code::MisplacedWire => "7.8",
             Code::WhenSyntax => "9.2",
             Code::DuplicateName => "6.5",
             Code::VariantName => "6.5",
@@ -443,7 +444,7 @@ impl Code {
             Code::RaggedArray => "3.2",
             Code::MatchScrutinee => "5.4",
             Code::DeclarationCycle => "6.2",
-            Code::NotAValue => "6.5",
+            Code::NotAValue => "14",
             Code::NotCallable => "5.7",
             Code::NamedBuiltinArguments => "5.7",
             Code::ArgumentCount => "5.7",
