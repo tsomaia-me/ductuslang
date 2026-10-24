@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::diagnostics::Code;
 use crate::semantics::analysis::destination::Destination;
@@ -6,7 +6,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::entry::Entry;
 use crate::semantics::analysis::ids::InstanceId;
 use crate::semantics::analysis::item_ref::ItemRef;
-use crate::semantics::ir::Loc;
+use crate::semantics::ir::{Loc, PlacementId};
 
 impl Engine<'_> {
     pub(super) fn reachability(&mut self) {
@@ -68,6 +68,11 @@ impl Engine<'_> {
                 }
             }
         }
+        let sites: HashMap<InstanceId, PlacementId> = self
+            .top_instances
+            .iter()
+            .map(|(placement, instance)| (*instance, *placement))
+            .collect();
         for instance in self.top_level.clone() {
             if reached.contains(&instance) {
                 continue;
@@ -76,11 +81,7 @@ impl Engine<'_> {
             let placement = self.hir.placement(record.placement);
             let loc = placement.name.as_ref().map_or(record.loc, |name| name.loc);
             let label = self.instance_label(instance);
-            let top = self
-                .top_instances
-                .iter()
-                .find(|(_, id)| **id == instance)
-                .map(|(pid, _)| *pid);
+            let top = sites.get(&instance).copied();
             let loc = match top {
                 Some(pid) => self
                     .hir
