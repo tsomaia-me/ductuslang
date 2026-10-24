@@ -33,7 +33,7 @@ impl Engine<'_> {
             if !self.typing.checked.insert((node, expected)) {
                 continue;
             }
-            let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
+            let sig = self.known_sig(node)?;
             if sig.is_error() {
                 continue;
             }
@@ -70,7 +70,7 @@ impl Engine<'_> {
                     | BinaryOp::IsNot => {
                         self.synth(lhs)?;
                         self.synth(rhs)?;
-                        let pair = self.pair(lhs, rhs);
+                        let pair = self.pair(lhs, rhs)?;
                         stack.push((lhs, pair));
                         stack.push((rhs, pair));
                     }
@@ -214,23 +214,21 @@ impl Engine<'_> {
     }
 
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
-        let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
+        let sig = self.known_sig(node)?;
         if sig.reactive || sig.is_error() {
             return Ok(None);
         }
         Ok(Some(self.demand_cval(node, ty)?))
     }
 
-    fn pair(&mut self, lhs: NodeId, rhs: NodeId) -> Option<Scalar> {
-        let left = self.memo.sigs.get(&lhs).copied().unwrap_or(Sig::ERROR);
-        let right = self.memo.sigs.get(&rhs).copied().unwrap_or(Sig::ERROR);
-        match (left.kind, right.kind) {
-            (Kind::Bool, _) => return Some(Scalar::Bool),
-            (Kind::Str, _) => return Some(Scalar::Str),
-            (Kind::Enum(id), _) | (_, Kind::Enum(id)) => return Some(Scalar::Enum(id)),
-            _ => {}
-        }
-        self.combine(&[lhs, rhs])
+    fn pair(&mut self, lhs: NodeId, rhs: NodeId) -> Result<Option<Scalar>, Internal> {
+        let (left, right) = (self.known_sig(lhs)?, self.known_sig(rhs)?);
+        Ok(match (left.kind, right.kind) {
+            (Kind::Bool, _) => Some(Scalar::Bool),
+            (Kind::Str, _) => Some(Scalar::Str),
+            (Kind::Enum(id), _) | (_, Kind::Enum(id)) => Some(Scalar::Enum(id)),
+            _ => self.combine(&[lhs, rhs]),
+        })
     }
 
     fn compatible(

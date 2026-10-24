@@ -316,6 +316,14 @@ impl<'a> Engine<'a> {
         found
     }
 
+    pub fn known_sig(&self, node: NodeId) -> Result<Sig, Internal> {
+        self.memo
+            .sigs
+            .get(&node)
+            .copied()
+            .ok_or(Internal::missed("signature"))
+    }
+
     pub fn cval(&self, query: Query, need: &mut Vec<Query>) -> Option<CVal> {
         if self.poisoned(query) {
             return Some(CVal::Error);
@@ -602,7 +610,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    fn cycle(
+    pub(super) fn cycle(
         &mut self,
         stack: &[(Query, Option<usize>)],
         top: usize,
@@ -610,10 +618,11 @@ impl<'a> Engine<'a> {
     ) -> Result<(), Internal> {
         let mut path = Vec::new();
         let mut current = Some(top);
-        while let Some(position) = current {
-            let Some(&(query, parent)) = stack.get(position) else {
-                break;
-            };
+        loop {
+            let position = current.ok_or(Internal::missed("cycle dependency"))?;
+            let &(query, parent) = stack
+                .get(position)
+                .ok_or(Internal::missed("demand stack entry"))?;
             path.push(query);
             if query == dep {
                 break;
@@ -641,13 +650,12 @@ impl<'a> Engine<'a> {
                 locs.push(loc);
             }
         }
-        let Some(first) = names.first().cloned() else {
-            return Ok(());
-        };
+        let first = names
+            .first()
+            .cloned()
+            .ok_or(Internal::missed("cycle declaration"))?;
         names.push(first);
-        let Some(&loc) = locs.first() else {
-            return Ok(());
-        };
+        let &loc = locs.first().ok_or(Internal::missed("cycle declaration"))?;
         let message = format!("these declarations reach themselves: {}", names.join(" → "));
         let secondary = locs.get(1..).unwrap_or_default();
         self.report

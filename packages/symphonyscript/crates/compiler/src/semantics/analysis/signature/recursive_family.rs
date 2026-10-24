@@ -28,7 +28,7 @@ impl Engine<'_> {
             args: args
                 .iter()
                 .map(|arg| self.family_shape(arg.as_ref()))
-                .collect(),
+                .collect::<Result<_, _>>()?,
         };
         loop {
             match self.memo.rec_families.get(&key).copied() {
@@ -125,24 +125,28 @@ impl Engine<'_> {
         Ok(Some(self.boxed_body(body, scope, &val)?))
     }
 
-    fn family_shape(&self, arg: Option<&Val>) -> ArgShape {
+    fn family_shape(&self, arg: Option<&Val>) -> Result<ArgShape, Internal> {
         let sig_of = |node: &NodeId| {
-            let sig = self.memo.sigs.get(node).copied().unwrap_or(Sig::ERROR);
-            ArgSig {
+            let sig = self.known_sig(*node)?;
+            Ok(ArgSig {
                 kind: sig.kind,
                 width: Width::Flexible,
                 family: sig.family,
-            }
+            })
         };
-        match arg {
+        Ok(match arg {
             None => ArgShape::Default,
-            Some(Val::Scalar(node)) => ArgShape::Scalar(sig_of(node)),
+            Some(Val::Scalar(node)) => ArgShape::Scalar(sig_of(node)?),
             Some(Val::Array(array)) => ArgShape::Array(
                 array.shape.lengths(),
-                array.elements.iter().map(sig_of).collect(),
+                array
+                    .elements
+                    .iter()
+                    .map(sig_of)
+                    .collect::<Result<_, Internal>>()?,
             ),
             Some(Val::Error) => ArgShape::Default,
-        }
+        })
     }
 }
 

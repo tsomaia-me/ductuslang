@@ -1989,6 +1989,65 @@ fn a_lookup_that_misses_is_an_internal_error() {
     }
 }
 
+pub(super) fn with_engine<R>(text: &str, run: impl FnOnce(&mut Engine<'_>) -> R) -> R {
+    let vocabulary = vocabulary();
+    let variants = Variants::of(&vocabulary);
+    let hir = built(&vocabulary, text);
+    let mut report = Report::default();
+    let collected =
+        collect(&hir, &vocabulary, &variants, &mut report).expect("the program collects");
+    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
+    run(&mut engine)
+}
+
+#[test]
+fn a_type_check_that_meets_a_node_with_no_signature_is_an_internal_error() {
+    with_engine("input i = 1\nClip c:\n    Note/(i + 1)\n", |engine| {
+        assert_eq!(engine.analyze(), Ok(()));
+        let operand = engine
+            .nodes
+            .iter()
+            .find_map(|node| {
+                if let Op::Binary(symphonyscript_core::BinaryOp::Add, _, operand) = node.op {
+                    Some(operand)
+                } else {
+                    None
+                }
+            })
+            .expect("the program holds the sum");
+        engine.memo.sigs.remove(&operand);
+        engine.typing = super::infer::Typing::default();
+        assert_eq!(engine.infer(), Err(Internal::missed("signature")));
+    });
+}
+
+#[test]
+fn a_cycle_walk_that_misses_is_an_internal_error() {
+    with_engine("Session s\n", |engine| {
+        engine.run_query = |_, query, need| {
+            if query == Query::Sig(NodeId(0)) {
+                need.push(Query::Sig(NodeId(1)));
+            } else {
+                need.push(Query::Sig(NodeId(0)));
+            }
+            Ok(false)
+        };
+        assert_eq!(
+            engine.demand(Query::Sig(NodeId(0))),
+            Err(Internal::missed("cycle declaration"))
+        );
+        let dep = Query::Sig(NodeId(1));
+        assert_eq!(
+            engine.cycle(&[(Query::Sig(NodeId(0)), None)], 0, dep),
+            Err(Internal::missed("cycle dependency"))
+        );
+        assert_eq!(
+            engine.cycle(&[], 0, dep),
+            Err(Internal::missed("demand stack entry"))
+        );
+    });
+}
+
 #[derive(Clone, Copy)]
 enum Stage {
     Expand,

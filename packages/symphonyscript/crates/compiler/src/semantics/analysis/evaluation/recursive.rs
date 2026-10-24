@@ -69,13 +69,11 @@ impl Engine<'_> {
     pub(super) fn recursive(
         &mut self,
         node: NodeId,
+        (function, args): (FnId, Vec<Option<Val>>),
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let Op::Recursive { function, args } = self.node(node)?.op.clone() else {
-            return Ok(Some(CVal::Error));
-        };
         let mut keys = Vec::new();
         let mut values = Vec::new();
         let mut shapes = Vec::new();
@@ -144,7 +142,7 @@ impl Engine<'_> {
         }
         let feeds = match ctx {
             Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
-            Ctx::Frame(frame) => self.frame_feeds(frame),
+            Ctx::Frame(frame) => self.frame(frame)?.feeds.clone(),
         };
         let key = CallKey {
             function,
@@ -191,7 +189,7 @@ impl Engine<'_> {
         } else {
             own_type(&sig, own)
         };
-        let value = some!(self.child(arg, ty, ctx, need));
+        let value = some!(self.child(arg, ty, ctx, need)?);
         let (lengths, values) = match &value {
             CVal::Array(array) => (array.lengths(), array.leaves()),
             leaf => (Vec::new(), vec![leaf.clone()]),
@@ -290,11 +288,7 @@ impl Engine<'_> {
         call: NodeId,
         function: FnId,
     ) -> Result<bool, Internal> {
-        let kind = self
-            .memo
-            .sigs
-            .get(&root)
-            .map_or(Kind::Error, |sig| sig.kind);
+        let kind = self.known_sig(root)?.kind;
         let not_numeric = matches!(
             own,
             EvalTy::Bool | EvalTy::Str | EvalTy::Enum(_) | EvalTy::Node
@@ -363,7 +357,7 @@ impl Engine<'_> {
                 if !self.within_call_limit(node, call.function)? {
                     return Ok(Some(CVal::Error));
                 }
-                let ty = self.body_type(root, own);
+                let ty = self.body_type(root, own)?;
                 Machine {
                     frames: vec![Frame {
                         key: call.key.clone(),
@@ -383,16 +377,13 @@ impl Engine<'_> {
         let root_key = call.key;
         self.active = Some(machine);
         loop {
-            let Some(&(frame, current, ty)) =
-                self.active.as_ref().and_then(|machine| machine.work.last())
-            else {
-                self.active = None;
-                return Ok(Some(CVal::Error));
-            };
-            if self.frame_value(frame, current, ty).is_some() {
-                if let Some(machine) = self.active.as_mut() {
-                    machine.work.pop();
-                }
+            let &(frame, current, ty) = self
+                .machine_mut()?
+                .work
+                .last()
+                .ok_or(Internal::missed("evaluation work"))?;
+            if self.frame_value(frame, current, ty)?.is_some() {
+                self.machine_mut()?.work.pop();
                 continue;
             }
             self.frame_need.clear();
@@ -400,13 +391,12 @@ impl Engine<'_> {
             let mut outer = Vec::new();
             match self.evaluate(current, ty, Ctx::Frame(frame), &mut outer)? {
                 Some(value) => {
-                    let Some(machine) = self.active.as_mut() else {
-                        return Ok(Some(CVal::Error));
-                    };
+                    let machine = self.machine_mut()?;
                     machine.work.pop();
-                    let Some(record) = machine.frames.get_mut(frame) else {
-                        return Ok(Some(CVal::Error));
-                    };
+                    let record = machine
+                        .frames
+                        .get_mut(frame)
+                        .ok_or(Internal::missed("evaluation frame"))?;
                     record.memo.insert((current, ty), value.clone());
                     if record.root == current && record.ty == ty {
                         let (key, call, expected) =
@@ -426,17 +416,17 @@ impl Engine<'_> {
                     }
                     if !self.frame_need.is_empty() {
                         let pending: Vec<(NodeId, EvalTy)> = std::mem::take(&mut self.frame_need);
-                        if let Some(machine) = self.active.as_mut() {
-                            machine
-                                .work
-                                .extend(pending.into_iter().map(|(node, ty)| (frame, node, ty)));
-                        }
+                        self.machine_mut()?
+                            .work
+                            .extend(pending.into_iter().map(|(node, ty)| (frame, node, ty)));
                         continue;
                     }
                     need.extend(outer);
-                    if let Some(machine) = self.active.take() {
-                        self.machines.insert(root_key, machine);
-                    }
+                    let machine = self
+                        .active
+                        .take()
+                        .ok_or(Internal::missed("evaluation machine"))?;
+                    self.machines.insert(root_key, machine);
                     return Ok(None);
                 }
             }
@@ -450,17 +440,15 @@ impl Engine<'_> {
         own: EvalTy,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let depth = self
-            .active
-            .as_ref()
-            .map_or(0, |machine| machine.frames.len());
+        let depth = self.machine_mut()?.frames.len();
         if depth >= DEPTH_LIMIT {
             let mut names: Vec<String> = Vec::new();
             let functions: Vec<FnId> = self
-                .active
-                .as_ref()
-                .map(|machine| machine.frames.iter().map(|frame| frame.function).collect())
-                .unwrap_or_default();
+                .machine_mut()?
+                .frames
+                .iter()
+                .map(|frame| frame.function)
+                .collect();
             for function in functions {
                 let name = self.function_name(function)?;
                 if names.last() != Some(&name) {
@@ -488,10 +476,8 @@ impl Engine<'_> {
         if !self.within_call_limit(node, call.function)? {
             return Ok(Some(CVal::Error));
         }
-        let ty = self.body_type(root, own);
-        let Some(machine) = self.active.as_mut() else {
-            return Ok(Some(CVal::Error));
-        };
+        let ty = self.body_type(root, own)?;
+        let machine = self.machine_mut()?;
         let index = machine.frames.len();
         machine.frames.push(Frame {
             key: call.key,
@@ -509,17 +495,13 @@ impl Engine<'_> {
         Ok(None)
     }
 
-    fn body_type(&self, root: NodeId, expected: EvalTy) -> EvalTy {
-        let integer = self
-            .memo
-            .sigs
-            .get(&root)
-            .is_some_and(|sig| sig.kind == Kind::Int);
-        if integer && is_float_ty(expected) {
+    fn body_type(&self, root: NodeId, expected: EvalTy) -> Result<EvalTy, Internal> {
+        let integer = self.known_sig(root)?.kind == Kind::Int;
+        Ok(if integer && is_float_ty(expected) {
             EvalTy::Exact
         } else {
             expected
-        }
+        })
     }
 
     fn call_result(
@@ -532,11 +514,7 @@ impl Engine<'_> {
         if !is_float_ty(expected) {
             return Ok(value);
         }
-        let flexible = self
-            .memo
-            .sigs
-            .get(&root)
-            .is_some_and(|sig| sig.width == Width::Flexible);
+        let flexible = self.known_sig(root)?.width == Width::Flexible;
         map_leaves(value, |leaf| {
             self.convert_integer(call, flexible, leaf, expected)
         })
@@ -561,31 +539,37 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    pub(super) fn frame_value(&self, frame: usize, node: NodeId, ty: EvalTy) -> Option<CVal> {
+    fn machine_mut(&mut self) -> Result<&mut Machine, Internal> {
         self.active
-            .as_ref()?
+            .as_mut()
+            .ok_or(Internal::missed("evaluation machine"))
+    }
+
+    fn frame(&self, frame: usize) -> Result<&Frame, Internal> {
+        self.active
+            .as_ref()
+            .ok_or(Internal::missed("evaluation machine"))?
             .frames
-            .get(frame)?
-            .memo
-            .get(&(node, ty))
-            .cloned()
+            .get(frame)
+            .ok_or(Internal::missed("evaluation frame"))
     }
 
-    fn frame_feeds(&self, frame: usize) -> Vec<Feed> {
-        self.active
-            .as_ref()
-            .and_then(|machine| machine.frames.get(frame))
-            .map(|record| record.feeds.clone())
-            .unwrap_or_default()
+    pub(super) fn frame_value(
+        &self,
+        frame: usize,
+        node: NodeId,
+        ty: EvalTy,
+    ) -> Result<Option<CVal>, Internal> {
+        Ok(self.frame(frame)?.memo.get(&(node, ty)).cloned())
     }
 
-    pub(super) fn frame_arg(&self, frame: usize, slot: u32) -> CVal {
-        self.active
-            .as_ref()
-            .and_then(|machine| machine.frames.get(frame))
-            .and_then(|record| record.args.get(slot as usize))
+    pub(super) fn frame_arg(&self, frame: usize, slot: u32) -> Result<CVal, Internal> {
+        let slot = usize::try_from(slot).map_err(|_| Internal::missed("argument"))?;
+        self.frame(frame)?
+            .args
+            .get(slot)
             .cloned()
-            .unwrap_or(CVal::Error)
+            .ok_or(Internal::missed("argument"))
     }
 
     fn function_name(&self, function: FnId) -> Result<String, Internal> {

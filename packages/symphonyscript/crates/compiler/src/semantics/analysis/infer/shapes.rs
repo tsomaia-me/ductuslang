@@ -9,7 +9,6 @@ use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::shape_parts::shape_parts;
-use crate::semantics::analysis::sig::Sig;
 use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
@@ -94,7 +93,7 @@ impl Engine<'_> {
             if self.typing.shapes.contains_key(&(node, ty)) {
                 continue;
             }
-            let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
+            let sig = self.known_sig(node)?;
             if sig.is_error() {
                 self.typing.shapes.insert((node, ty), None);
                 continue;

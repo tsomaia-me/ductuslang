@@ -18,7 +18,7 @@ impl Engine<'_> {
             if self.typing.synth.contains_key(&node) {
                 continue;
             }
-            let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
+            let sig = self.known_sig(node)?;
             if !sig.reactive {
                 let ty = match sig.width {
                     Width::Fixed(scalar) => Some(scalar),

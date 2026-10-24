@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use symphonyscript_core::Scalar;
 
 use super::branch_width_of::branch_width_of;
+use super::operand::operand;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -25,18 +26,10 @@ impl Engine<'_> {
     pub(super) fn match_sig(
         &mut self,
         node: NodeId,
-        op: &Op,
-        operands: &[NodeId],
+        (scrutinee_node, arms, otherwise): (NodeId, &[(NodeId, NodeId)], Option<NodeId>),
         sigs: &[Sig],
     ) -> Result<Sig, Internal> {
-        let Op::Match {
-            arms, otherwise, ..
-        } = op
-        else {
-            return Ok(Sig::ERROR);
-        };
-        let scrutinee = sigs.first().copied().unwrap_or(Sig::ERROR);
-        let scrutinee_node = operands.first().copied().unwrap_or(node);
+        let scrutinee = operand(sigs, 0)?;
         if !matches!(scrutinee.kind, Kind::Enum(_) | Kind::Int | Kind::Bool) {
             self.error_at_node(
                 Code::MatchScrutinee,
@@ -100,12 +93,10 @@ impl Engine<'_> {
         }
         let mut values: Vec<(NodeId, Sig)> = Vec::new();
         for (position, (_, value)) in arms.iter().enumerate() {
-            let sig = sigs.get(2 + position * 2).copied().unwrap_or(Sig::ERROR);
-            values.push((*value, sig));
+            values.push((*value, operand(sigs, 2 + position * 2)?));
         }
         if let Some(otherwise) = otherwise {
-            let sig = sigs.last().copied().unwrap_or(Sig::ERROR);
-            values.push((*otherwise, sig));
+            values.push((otherwise, operand(sigs, 1 + arms.len() * 2)?));
         }
         let mut kind = values.first().map_or(Kind::Error, |(_, sig)| sig.kind);
         let mut width = values.first().map_or(Width::Flexible, |(_, sig)| sig.width);
@@ -138,7 +129,7 @@ impl Engine<'_> {
                 self.variants.position(id, name).map(Label::Variant)
             }
             (Op::Bool(value), Kind::Bool) => Some(Label::Bool(*value)),
-            (Op::Number(Number::Int(_), suffix), Kind::Int) => {
+            (Op::Number(Number::Int(value), suffix), Kind::Int) => {
                 let family = match suffix {
                     Suffix::Unit { family, .. } => Some(*family),
                     Suffix::Type(scalar) if !matches!(scalar, Scalar::I32 | Scalar::I64) => {
@@ -149,7 +140,7 @@ impl Engine<'_> {
                 if family.is_some() && family != scrutinee.family {
                     return self.bad_label(label, scrutinee);
                 }
-                self.exact_label(&op)?.map(Label::Int)
+                self.exact_label(*value, *suffix)?.map(Label::Int)
             }
             _ => None,
         };
@@ -159,19 +150,16 @@ impl Engine<'_> {
         Ok(found)
     }
 
-    fn exact_label(&self, op: &Op) -> Result<Option<i128>, Internal> {
-        let Op::Number(Number::Int(value), suffix) = op else {
-            return Ok(None);
-        };
+    fn exact_label(&self, value: i128, suffix: Suffix) -> Result<Option<i128>, Internal> {
         Ok(match suffix {
             Suffix::Unit { family, unit } => {
-                let scale = self.unit_decl(*family, *unit)?.scale;
+                let scale = self.unit_decl(family, unit)?.scale;
                 if scale.fract() != 0.0 || scale.abs() >= 1e38 {
                     return Ok(None);
                 }
                 value.checked_mul(scale as i128)
             }
-            Suffix::None | Suffix::Type(_) => Some(*value),
+            Suffix::None | Suffix::Type(_) => Some(value),
         })
     }
 

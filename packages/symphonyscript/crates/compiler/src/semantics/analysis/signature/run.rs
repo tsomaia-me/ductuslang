@@ -65,7 +65,11 @@ impl Engine<'_> {
         let reactive = sigs.iter().any(|operand| operand.reactive);
         let errors = sigs.iter().any(Sig::is_error);
         let mut sig = if let Op::Arg(_) = op {
-            self.memo.arg_sigs.get(&node).copied().unwrap_or(Sig::ERROR)
+            self.memo
+                .arg_sigs
+                .get(&node)
+                .copied()
+                .ok_or(Internal::missed("argument signature"))?
         } else if let (Op::Recursive { function, args }, false) = (&op, reactive) {
             if errors {
                 Sig::ERROR

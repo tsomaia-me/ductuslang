@@ -4,6 +4,7 @@ use super::arith_width::arith_width;
 use super::branch_width::branch_width;
 use super::branch_width_of::branch_width_of;
 use super::extra::Extra;
+use super::operand::operand;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -43,8 +44,7 @@ impl Engine<'_> {
         extra: Extra,
     ) -> Result<Sig, Internal> {
         let reactive = sigs.iter().any(|sig| sig.reactive);
-        let first = sigs.first().copied().unwrap_or(Sig::ERROR);
-        let second = sigs.get(1).copied().unwrap_or(Sig::ERROR);
+        let at = |position| operand(sigs, position);
         Ok(match op {
             Op::Number(number, suffix) => self.number_sig(number, *suffix)?,
             Op::Const(value) => {
@@ -71,13 +71,16 @@ impl Engine<'_> {
             Op::Bare(_) => Sig::of(Kind::Bare, Width::Flexible, false, None),
             Op::Pi => Sig::of(Kind::Float, Width::Flexible, false, None),
             Op::NodeRef(_) => Sig::of(Kind::Node, Width::Flexible, false, None),
-            Op::Use(_) => first,
-            Op::Arg(_) => Sig::ERROR,
+            Op::Use(_) => at(0)?,
+            Op::Arg(_) => return Err(Internal::missed("argument signature")),
             Op::Read(binding) => match extra {
                 Extra::Read(init) => self.read_sig(*binding, init)?,
-                Extra::None | Extra::ToRead { .. } => Sig::ERROR,
+                Extra::None | Extra::ToRead { .. } => {
+                    return Err(Internal::missed("read signature"));
+                }
             },
             Op::Unary(UnaryOp::Neg, _) => {
+                let first = at(0)?;
                 if !first.is_numeric() {
                     self.error_at_node(Code::OperandType, node, "unary `-` takes a number")?;
                     return Ok(Sig::ERROR);
@@ -85,26 +88,25 @@ impl Engine<'_> {
                 first
             }
             Op::Unary(UnaryOp::Not, _) => {
-                if !matches!(first.kind, Kind::Bool | Kind::Any) {
+                if !matches!(at(0)?.kind, Kind::Bool | Kind::Any) {
                     self.error_at_node(Code::OperandType, node, "`not` takes a `bool`")?;
                     return Ok(Sig::ERROR);
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
             Op::Binary(op, lhs, rhs) => {
-                self.binary_sig(node, *op, (*lhs, first), (*rhs, second))?
+                self.binary_sig(node, *op, (*lhs, at(0)?), (*rhs, at(1)?))?
             }
-            Op::If(_, then, otherwise) => {
-                if !matches!(first.kind, Kind::Bool | Kind::Any) {
-                    let condition = operands.first().copied().unwrap_or(node);
+            Op::If(condition, then, otherwise) => {
+                let (second, third) = (at(1)?, at(2)?);
+                if !matches!(at(0)?.kind, Kind::Bool | Kind::Any) {
                     self.error_at_node(
                         Code::ConditionType,
-                        condition,
+                        *condition,
                         "the condition is a `bool`",
                     )?;
                     return Ok(Sig::ERROR);
                 }
-                let third = sigs.get(2).copied().unwrap_or(Sig::ERROR);
                 let Some(kind) = unify_kinds(second.kind, third.kind) else {
                     self.error_at_node(
                         Code::TypeMismatch,
@@ -121,14 +123,18 @@ impl Engine<'_> {
                 let width = branch_width(kind, &second, &third);
                 Sig::of(kind, width, reactive, family)
             }
-            Op::Match { .. } => self.match_sig(node, op, operands, sigs)?,
-            Op::Pick { items, .. } => {
+            Op::Match {
+                scrutinee,
+                arms,
+                otherwise,
+            } => self.match_sig(node, (*scrutinee, arms, *otherwise), sigs)?,
+            Op::Pick { index, items } => {
+                let first = at(0)?;
                 if !matches!(first.kind, Kind::Int | Kind::Any) {
-                    let index = operands.first().copied().unwrap_or(node);
-                    self.error_at_node(Code::IndexType, index, "an index is an integer")?;
+                    self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
                     return Ok(Sig::ERROR);
                 }
-                let item_sigs = sigs.get(1..).unwrap_or(&[]);
+                let item_sigs = sigs.get(1..).ok_or(Internal::missed("operand signature"))?;
                 let Some((kind, width, family)) = self.elements_sig(node, items, item_sigs)? else {
                     return Ok(Sig::ERROR);
                 };
@@ -139,10 +145,10 @@ impl Engine<'_> {
                 };
                 Sig::of(kind, width, reactive, family)
             }
-            Op::Element { .. } => {
+            Op::Element { index, .. } => {
+                let (first, second) = (at(0)?, at(1)?);
                 if !matches!(second.kind, Kind::Int | Kind::Any) {
-                    let index = operands.get(1).copied().unwrap_or(node);
-                    self.error_at_node(Code::IndexType, index, "an index is an integer")?;
+                    self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
                     return Ok(Sig::ERROR);
                 }
                 let width = if second.reactive {
@@ -159,6 +165,7 @@ impl Engine<'_> {
                 Sig::of(kind, width, reactive, family)
             }
             Op::Convert(target, _) => {
+                let first = at(0)?;
                 if !first.is_numeric() {
                     let message = match first.kind {
                         Kind::Bool | Kind::Enum(_) | Kind::Bare => {
@@ -185,7 +192,7 @@ impl Engine<'_> {
                 kind_of(*target),
                 Width::Fixed(*target),
                 reactive,
-                first.family,
+                at(0)?.family,
             ),
             Op::Builtin(builtin, _) => self.builtin_sig(node, *builtin, operands, sigs)?,
             Op::Recursive { .. } => {
@@ -206,8 +213,12 @@ impl Engine<'_> {
         items: &[NodeId],
         item_sigs: &[Sig],
     ) -> Result<Option<(Kind, Width, Option<FamilyId>)>, Internal> {
-        let mut kind = item_sigs.first().map_or(Kind::Error, |sig| sig.kind);
-        let mut width = item_sigs.first().map_or(Width::Flexible, |sig| sig.width);
+        if items.len() != item_sigs.len() {
+            return Err(Internal::missed("operand signature"));
+        }
+        let first = operand(item_sigs, 0)?;
+        let mut kind = first.kind;
+        let mut width = first.width;
         for sig in item_sigs.iter().skip(1) {
             let Some(unified) = unify_kinds(kind, sig.kind) else {
                 self.error_at_node(
@@ -479,39 +490,37 @@ impl Engine<'_> {
         }
         let pairs: Vec<(NodeId, Sig)> =
             operands.iter().copied().zip(sigs.iter().copied()).collect();
-        let combined =
-            sigs.iter()
-                .skip(1)
-                .fold(sigs.first().copied().unwrap_or(Sig::ERROR), |acc, sig| {
-                    Sig::of(
-                        numeric_kind(acc.kind, sig.kind),
-                        arith_width(&acc, sig),
-                        reactive,
-                        None,
-                    )
-                });
+        let first = operand(sigs, 0)?;
+        let combined = sigs.iter().skip(1).fold(first, |acc, sig| {
+            Sig::of(
+                numeric_kind(acc.kind, sig.kind),
+                arith_width(&acc, sig),
+                reactive,
+                None,
+            )
+        });
         Ok(match builtin {
-            Builtin::Abs => sigs.first().copied().unwrap_or(Sig::ERROR),
+            Builtin::Abs => first,
             Builtin::Min | Builtin::Max | Builtin::Clamp => {
                 let Some(family) = self.one_family(node, &pairs)? else {
                     return Ok(Sig::ERROR);
                 };
                 Sig::of(combined.kind, combined.width, reactive, family)
             }
-            Builtin::Floor | Builtin::Ceil | Builtin::Round => {
-                let first = sigs.first().copied().unwrap_or(Sig::ERROR);
-                Sig::of(
-                    Kind::Float,
-                    float_width(first.width),
-                    reactive,
-                    first.family,
-                )
-            }
+            Builtin::Floor | Builtin::Ceil | Builtin::Round => Sig::of(
+                Kind::Float,
+                float_width(first.width),
+                reactive,
+                first.family,
+            ),
             Builtin::Lerp => {
-                let Some(family) = self.one_family(node, pairs.get(..2).unwrap_or(&[]))? else {
+                let interval = pairs
+                    .get(..2)
+                    .ok_or(Internal::missed("operand signature"))?;
+                let Some(family) = self.one_family(node, interval)? else {
                     return Ok(Sig::ERROR);
                 };
-                if sigs.get(2).is_some_and(|sig| sig.family.is_some()) {
+                if operand(sigs, 2)?.family.is_some() {
                     self.error_at_node(
                         Code::UnitOperation,
                         node,

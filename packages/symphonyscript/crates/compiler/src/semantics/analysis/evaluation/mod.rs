@@ -20,6 +20,8 @@ mod pair_type;
 mod recursive;
 mod represents;
 mod run;
+#[cfg(test)]
+mod tests;
 mod text;
 mod ty_name;
 mod with_point;
