@@ -227,6 +227,31 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub(crate) fn name_pair_line(&self, token: usize) -> Option<usize> {
+        if self.depths.get(token).copied().unwrap_or(0) == 0 {
+            return None;
+        }
+        let index = self
+            .suspended
+            .binary_search_by_key(&token, |line| line.first_token)
+            .ok()?;
+        let line = self.suspended.get(index)?;
+        let top = self
+            .regions
+            .get(line.region)
+            .and_then(|region| self.stacks.get(region.stack))
+            .and_then(|stack| stack.last().copied())
+            .unwrap_or(0);
+        if line.column > top {
+            return None;
+        }
+        let start = self.line_start_of(line)?;
+        let next = start.rest.iter().find(|token| !token.kind.is_trivia())?;
+        let pair = start.first.kind == SyntaxKind::Ident
+            && matches!(next.kind, SyntaxKind::Ident | SyntaxKind::AsKw);
+        pair.then_some(index)
+    }
+
     fn line_start_of(&self, line: &Suspension) -> Option<LineStart<'_>> {
         let first = self.tokens.get(line.first_token)?;
         let line_end = self
@@ -967,28 +992,17 @@ impl<'a> Lexer<'a> {
             .and_then(|region| self.stacks.get(region.stack))
             .and_then(|stack| stack.last().copied())
             .unwrap_or(0);
-        column <= top && self.starts_item_strictly()
+        column <= top && self.starts_with_item_keyword()
     }
 
-    fn starts_item_strictly(&self) -> bool {
+    fn starts_with_item_keyword(&self) -> bool {
         let rest = self.text.get(self.pos..).unwrap_or_default();
-        let first = word(rest);
-        match SyntaxKind::keyword(first) {
+        matches!(
+            SyntaxKind::keyword(word(rest)),
             Some(
-                SyntaxKind::InputKw | SyntaxKind::LetKw | SyntaxKind::FnKw | SyntaxKind::PatternKw,
-            ) => true,
-            Some(_) => false,
-            None if first.is_empty() => false,
-            None => {
-                let after = rest
-                    .get(first.len()..)
-                    .unwrap_or_default()
-                    .trim_start_matches([' ', '\t']);
-                let second = word(after);
-                !second.is_empty()
-                    && SyntaxKind::keyword(second).is_none_or(|kind| kind == SyntaxKind::AsKw)
-            }
-        }
+                SyntaxKind::InputKw | SyntaxKind::LetKw | SyntaxKind::FnKw | SyntaxKind::PatternKw
+            )
+        )
     }
 
     fn line_stack_snapshot(&mut self) -> usize {

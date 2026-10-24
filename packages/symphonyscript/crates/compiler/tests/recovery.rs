@@ -379,6 +379,14 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[LetDecl[let a = ArrayLit[[] NL] Placement[Clip c Body[: Block[NL > Placement[Note NL] <]]] Placement[Clip d Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
+    (
+        "Clip c:\n    Note/(1 2\n    a/b when c)\nlet b = )\n",
+        &[
+            (Code::DefaultArgSyntax, 20, 21),
+            (Code::ExpressionSyntax, 46, 47),
+        ],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( Literal[1]]] ErrorNode[2 a / b when c )] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
 ];
 
 #[test]
@@ -401,6 +409,26 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
          Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ ParenExpr[( BinaryExpr[Literal[1] + Literal[2]] )]]] \
          ParenPlacement[( Placement[Note Gate[when NameRef[x]]] )] NL] <]]]]"
     );
+    for (text, one_line) in [
+        (
+            "Clip c:\n    [Note/60\n    Note as hook /64]\n",
+            "Clip c:\n    [Note/60 Note as hook /64]\n",
+        ),
+        (
+            "Clip c:\n    [Note/60\n    Note Note]\n",
+            "Clip c:\n    [Note/60 Note Note]\n",
+        ),
+        (
+            "Clip c:\n    (Note | velocity=0.7\n    accent brightness=0.5)\n",
+            "Clip c:\n    (Note | velocity=0.7 accent brightness=0.5)\n",
+        ),
+        (
+            "Clip c:\n    [Note/60\nNote Note]\n",
+            "Clip c:\n    [Note/60 Note Note]\n",
+        ),
+    ] {
+        assert_eq!(support::clean_tree(text), support::clean_tree(one_line));
+    }
 }
 
 #[test]

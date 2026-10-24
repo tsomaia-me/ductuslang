@@ -29,6 +29,7 @@ pub(crate) struct Parser<'a> {
     vocabulary: &'a Vocabulary,
     lexer: Lexer<'a>,
     pos: usize,
+    expression_brackets: Vec<bool>,
     builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
     line_error: bool,
@@ -43,6 +44,7 @@ impl<'a> Parser<'a> {
             vocabulary,
             lexer: Lexer::new(source, vocabulary),
             pos: 0,
+            expression_brackets: Vec::new(),
             builder: TreeBuilder::new(),
             diagnostics: Vec::new(),
             line_error: false,
@@ -217,6 +219,10 @@ impl<'a> Parser<'a> {
         let mut index = self.pos;
         while let Some(kind) = self.kind_at(index) {
             if !kind.is_trivia() {
+                if seen == 0 && self.end_region_before(index) {
+                    index = self.pos;
+                    continue;
+                }
                 if seen == n {
                     return Some(index);
                 }
@@ -225,6 +231,17 @@ impl<'a> Parser<'a> {
             index += 1;
         }
         None
+    }
+
+    fn end_region_before(&mut self, index: usize) -> bool {
+        if self.expression_brackets.last() != Some(&true) {
+            return false;
+        }
+        let Some(line) = self.lexer.name_pair_line(index) else {
+            return false;
+        };
+        self.lexer.resynchronize(line, self.pos);
+        true
     }
 
     fn nth(&mut self, n: usize) -> Option<SyntaxKind> {
@@ -326,6 +343,27 @@ impl<'a> Parser<'a> {
         let Some(kind) = self.kind_at(self.pos) else {
             return;
         };
+        match kind {
+            SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::InterpStart => {
+                let expression = self.builder.open_kind().is_some_and(|open| {
+                    matches!(
+                        open,
+                        SyntaxKind::ArrayLit
+                            | SyntaxKind::ParenExpr
+                            | SyntaxKind::ArgList
+                            | SyntaxKind::IndexExpr
+                            | SyntaxKind::Conversion
+                            | SyntaxKind::Interpolation
+                    )
+                });
+                self.expression_brackets.push(expression);
+            }
+            SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::InterpEnd => {
+                self.expression_brackets.pop();
+            }
+            SyntaxKind::Newline => self.expression_brackets.clear(),
+            _ => {}
+        }
         let text = self.text_of(self.pos);
         self.builder.token(kind, text);
         self.pos += 1;

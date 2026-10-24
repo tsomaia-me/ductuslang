@@ -26,6 +26,10 @@ impl TreeBuilder {
         self.parents.push((kind, self.children.len()));
     }
 
+    pub(super) fn open_kind(&self) -> Option<SyntaxKind> {
+        self.parents.last().map(|(kind, _)| *kind)
+    }
+
     pub(super) fn checkpoint(&self) -> Checkpoint {
         Checkpoint(self.children.len())
     }

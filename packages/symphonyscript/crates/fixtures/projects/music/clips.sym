@@ -12,6 +12,8 @@ pattern Arp(default root, steps = 4, gap = 4):
 Clip intro | gain=0.9:
     Note/48 Note/52 Note/55
     [Note/60 Note/64 Note/67]
+    [Note/60 Note as top /64 Note'/67]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=wobble)
     Note'/62 | velocity=0.7 brightness=wobble
                length=2bars
     Arp/48 | steps=3
