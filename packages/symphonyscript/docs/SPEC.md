@@ -83,7 +83,7 @@ A semicolon outside strings and comments is an error.
 
 ### 2.3 Comments
 
-`//` starts a comment that runs to the end of the line. There is no other comment form. Inside a string, `//` is text.
+`//` starts a comment that runs to the end of the line. There is no other comment form. Inside a string and outside its interpolations, `//` is text.
 
 ### 2.4 Identifiers
 
@@ -886,12 +886,13 @@ A count is exactly *n*, at least *n*, at most *n*, between *n* and *m*, or any n
 A vocabulary is invalid, and no program compiles against it, when:
 
 - a name it declares is not an ASCII identifier (§2.4), or is a keyword or reserved word (§2.5), a built-in name (§5.7) or a variant of one of its enums;
-- two of its declarations share a name, or a kind declares two attributes of one name;
+- two of its declarations share a name, a node kind or wire kind declares two attributes of one name, or an enum declares two variants of one name;
 - a kind has two default attributes, two of its attributes share a flag character, or a flag character is outside the set of §7.4 or flags an attribute that is not `bool`;
 - a count's minimum exceeds its maximum;
 - a declaration refers to a kind of another vocabulary;
 - an enum has no variants or more than 65,536, or an enum attribute's default is not one of its variants;
-- a unit's scale is not a positive finite number, a unit name repeats across families, an attribute's default unit is not in its family, or a unit name begins with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
+- an array attribute has a length of 0 at any level (§3.2);
+- a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
 - an integer attribute belongs to a family with a unit whose scale is not an integer;
 - the prelude fails to parse or to resolve its names.
 
