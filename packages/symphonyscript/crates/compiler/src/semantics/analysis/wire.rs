@@ -1,11 +1,8 @@
-use std::rc::Rc;
-
 use symphonyscript_core::{Segment, WireKind};
 
 use super::attr_source::AttrSource;
 use super::chain::Chain;
-use super::condition::Condition;
-use super::ids::{InstanceId, ScopeId};
+use super::ids::{ConditionsId, InstanceId, ScopeId};
 use super::path_parent::PathParent;
 use crate::semantics::ir::{Loc, WireId as HirWireId};
 
@@ -20,7 +17,7 @@ pub(crate) struct Wire {
     pub path_parent: Option<PathParent>,
     pub source: InstanceId,
     pub uses: Chain,
-    pub conditions: Rc<Vec<Condition>>,
+    pub conditions: Option<ConditionsId>,
     pub attrs: Vec<AttrSource>,
     pub loc: Loc,
 }

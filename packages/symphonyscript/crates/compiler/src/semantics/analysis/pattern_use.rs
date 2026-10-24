@@ -1,10 +1,7 @@
-use std::rc::Rc;
-
 use symphonyscript_core::Segment;
 
 use super::chain::Chain;
-use super::condition::Condition;
-use super::ids::{InstanceId, ScopeId};
+use super::ids::{ConditionsId, InstanceId, ScopeId};
 use super::path_parent::PathParent;
 use crate::semantics::ir::{Loc, PatternId, PlacementId};
 
@@ -20,6 +17,6 @@ pub(crate) struct PatternUse {
     pub path_parent: Option<PathParent>,
     pub owner: InstanceId,
     pub uses: Chain,
-    pub conditions: Rc<Vec<Condition>>,
+    pub conditions: Option<ConditionsId>,
     pub loc: Loc,
 }

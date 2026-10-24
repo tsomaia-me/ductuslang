@@ -23,6 +23,9 @@ impl Engine<'_> {
             })
             .collect();
         if entries.is_empty() {
+            if self.unknown_placement {
+                return;
+            }
             let loc = Loc {
                 file: u32::try_from(self.hir.prelude.files).unwrap_or(0),
                 start: 0,
@@ -34,6 +37,9 @@ impl Engine<'_> {
                 loc,
                 "the program places no instance of an entry kind, so nothing reaches its instances",
             );
+            return;
+        }
+        if self.unknown_wires || !self.unknown_destinations.is_empty() {
             return;
         }
         let mut reached: HashSet<InstanceId> = HashSet::new();

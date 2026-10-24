@@ -1062,6 +1062,54 @@ fn section_text(section: &str) -> String {
 }
 
 #[test]
+fn a_count_an_unknown_placement_or_destination_could_change_draws_no_diagnostic() {
+    let rows = [
+        bounded(
+            "10.2",
+            "",
+            "unknown-kind",
+            "Root r:\n    Itme\n    Link: r\n",
+        ),
+        bounded(
+            "10.2",
+            "",
+            "unknown-name",
+            "Root r:\n    Item\n    Link: nosuch\n",
+        ),
+        bounded(
+            "10.2",
+            "",
+            "unknown-kind",
+            "Rot r:\n    Item\n    Link: r\n",
+        ),
+        bounded(
+            "10.2",
+            "",
+            "unknown-name",
+            "Root r:\n    for i in 0..nothing:\n        Item\n    Link: r\n",
+        ),
+        rule("10.2", "", "unknown-kind", "Clip c:\n    [Nte/60]\n"),
+        rule(
+            "10.2",
+            "",
+            "unknown-kind",
+            "Session s:\n    Track\nClip lonely:\n    Nte:\n        Starts: lonely\n",
+        ),
+    ];
+    let mut failures = Vec::new();
+    for rule in &rows {
+        let found: Vec<&str> = diagnostics(rule)
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        if found != [rule.code] {
+            failures.push(format!("{:?} gives {found:?}", rule.program));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn every_rule_sentence_stands_in_its_section_of_the_spec() {
     for rule in RULES {
         let text = section_text(rule.section);

@@ -7,9 +7,8 @@ use crate::diagnostics::Code;
 use crate::semantics::analysis::attr_source::{AttrSource, AttrValueSource};
 use crate::semantics::analysis::bound::{Bound, BoundVal};
 use crate::semantics::analysis::chain::Chain;
-use crate::semantics::analysis::condition::Condition;
 use crate::semantics::analysis::engine::{Engine, index};
-use crate::semantics::analysis::ids::{InstanceId, ScopeId, UseId, WireId};
+use crate::semantics::analysis::ids::{ConditionsId, InstanceId, ScopeId, UseId, WireId};
 use crate::semantics::analysis::instance::Instance;
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::node::Op;
@@ -25,7 +24,7 @@ pub(crate) const EXPANSION_LIMIT: usize = 1_000_000;
 pub(crate) struct Context {
     pub owner: Option<InstanceId>,
     pub path_parent: Option<PathParent>,
-    pub conditions: Rc<Vec<Condition>>,
+    pub conditions: Option<ConditionsId>,
     pub uses: Chain,
 }
 
@@ -144,7 +143,7 @@ impl<'a> Engine<'a> {
             path_parent: context.path_parent,
             owner: context.owner,
             uses: context.uses.clone(),
-            conditions: context.conditions.clone(),
+            conditions: context.conditions,
             attrs,
             sequence: Vec::new(),
             body_scope: None,
@@ -182,7 +181,7 @@ impl<'a> Engine<'a> {
             path_parent: context.path_parent,
             source,
             uses: context.uses.clone(),
-            conditions: context.conditions.clone(),
+            conditions: context.conditions,
             attrs,
             loc,
         });
@@ -217,7 +216,7 @@ impl<'a> Engine<'a> {
                 path_parent: context.path_parent,
                 owner,
                 uses: context.uses.clone(),
-                conditions: context.conditions.clone(),
+                conditions: context.conditions,
                 loc,
             });
         Some(id)
@@ -367,6 +366,29 @@ impl<'a> Engine<'a> {
             .get(pattern.index())
             .copied()
             .flatten()
+    }
+
+    pub(in crate::semantics::analysis) fn stand_in_target(
+        &self,
+        mut pattern: PatternId,
+    ) -> Option<PlacementId> {
+        loop {
+            let placement = match self.stand_in(pattern)? {
+                StandIn::Node(placement) => return Some(placement),
+                StandIn::Use(placement) => placement,
+            };
+            let kind = self.hir.placement(placement).kind.as_ref()?;
+            let global = if self.hir.is_prelude_pattern(pattern) {
+                self.prelude_global
+            } else {
+                self.source_global
+            };
+            match self.kind_decl(global, &kind.text)? {
+                Decl::Pattern(next) if !self.is_cyclic(next) => pattern = next,
+                Decl::Node(_) => return Some(placement),
+                _ => return None,
+            }
+        }
     }
 
     pub(in crate::semantics::analysis) fn is_cyclic(&self, pattern: PatternId) -> bool {

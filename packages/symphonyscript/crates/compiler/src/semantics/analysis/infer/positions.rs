@@ -43,6 +43,9 @@ impl Engine<'_> {
             self.demand(Query::Destination(wire));
             self.item_positions(ItemRef::Wire(wire), &mut positions);
         }
+        for (expr, scope) in self.gates.clone() {
+            positions.push(self.gate_position(expr, scope));
+        }
         let mut scope = 0;
         while scope < self.scopes.len() {
             let id = ScopeId(u32::try_from(scope).unwrap_or(u32::MAX));
@@ -137,45 +140,37 @@ impl Engine<'_> {
                 });
             }
         }
-        let (gate, conditions) = match item {
+        let gate = match item {
             ItemRef::Instance(id) => {
                 let record = self.instance(id);
-                (
-                    self.hir
-                        .placement(record.placement)
-                        .gate
-                        .map(|gate| (gate, record.scope)),
-                    record.conditions.clone(),
-                )
+                self.hir
+                    .placement(record.placement)
+                    .gate
+                    .map(|gate| (gate, record.scope))
             }
             ItemRef::Wire(id) => {
                 let record = self.wire(id);
-                (
-                    self.hir
-                        .wire(record.wire)
-                        .gate
-                        .map(|gate| (gate, record.clause_scope)),
-                    record.conditions.clone(),
-                )
+                self.hir
+                    .wire(record.wire)
+                    .gate
+                    .map(|gate| (gate, record.clause_scope))
             }
-            ItemRef::Use(_) => return,
+            ItemRef::Use(_) => None,
         };
-        let mut gates: Vec<(ExprId, ScopeId)> = gate.into_iter().collect();
-        gates.extend(
-            conditions
-                .iter()
-                .map(|condition| (condition.expr, condition.scope)),
-        );
-        for (expr, scope) in gates {
-            let val = self.demand_val(Query::Expr(expr, scope));
-            positions.push(Position {
-                val,
-                ty: Ty::BOOL,
-                unit: None,
-                role: Role::Gate,
-                loc: self.hir.expr(expr).loc,
-                scope,
-            });
+        if let Some((expr, scope)) = gate {
+            positions.push(self.gate_position(expr, scope));
+        }
+    }
+
+    fn gate_position(&mut self, expr: ExprId, scope: ScopeId) -> Position {
+        let val = self.demand_val(Query::Expr(expr, scope));
+        Position {
+            val,
+            ty: Ty::BOOL,
+            unit: None,
+            role: Role::Gate,
+            loc: self.hir.expr(expr).loc,
+            scope,
         }
     }
 }

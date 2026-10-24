@@ -1,12 +1,9 @@
-use std::rc::Rc;
-
 use symphonyscript_core::{NodeKind, Segment};
 
 use super::attr_source::AttrSource;
 use super::chain::Chain;
-use super::condition::Condition;
 use super::entry::Entry;
-use super::ids::{InstanceId, ScopeId};
+use super::ids::{ConditionsId, InstanceId, ScopeId};
 use super::path_parent::PathParent;
 use crate::semantics::ir::{Loc, PlacementId};
 
@@ -20,7 +17,7 @@ pub(crate) struct Instance {
     pub path_parent: Option<PathParent>,
     pub owner: Option<InstanceId>,
     pub uses: Chain,
-    pub conditions: Rc<Vec<Condition>>,
+    pub conditions: Option<ConditionsId>,
     pub attrs: Vec<AttrSource>,
     pub sequence: Vec<Entry>,
     pub body_scope: Option<ScopeId>,

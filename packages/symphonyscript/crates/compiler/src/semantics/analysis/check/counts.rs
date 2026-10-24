@@ -12,6 +12,20 @@ use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
     pub(crate) fn check_program(&mut self) {
+        let unknown: Vec<WireKind> = self
+            .wires
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                let wire = WireId(u32::try_from(*index).unwrap_or(u32::MAX));
+                !matches!(
+                    self.memo.destinations.get(&wire),
+                    Some(Destination::Fixed(_) | Destination::Select { .. })
+                )
+            })
+            .map(|(_, record)| record.kind)
+            .collect();
+        self.unknown_destinations.extend(unknown);
         self.top_level_counts();
         for index in 0..self.instances.len() {
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
@@ -92,7 +106,7 @@ impl Engine<'_> {
                     ),
                 );
             }
-            if found.len() < count.min() as usize {
+            if found.len() < count.min() as usize && !self.unknown_top {
                 let loc = Loc {
                     file: u32::try_from(self.hir.prelude.files).unwrap_or(0),
                     start: 0,
@@ -178,7 +192,7 @@ impl Engine<'_> {
                     ),
                 );
             }
-            if found.len() < count.min() as usize {
+            if found.len() < count.min() as usize && !self.unknown_children.contains(&parent) {
                 let loc = self.instance(parent).loc;
                 self.item_error(
                     Code::CountBelowMinimum,
@@ -261,7 +275,15 @@ impl Engine<'_> {
                     .get(&(instance, *wire_kind))
                     .cloned()
                     .unwrap_or_default();
-                self.wire_bounds(instance, *wire_kind, *count, &found, &found, "outgoing");
+                let known = !self.unknown_children.contains(&instance);
+                self.wire_bounds(
+                    instance,
+                    *wire_kind,
+                    *count,
+                    &found,
+                    known.then_some(&found[..]),
+                    "outgoing",
+                );
             }
             for (wire_kind, count) in &decl.incoming {
                 let any = incoming_any
@@ -272,7 +294,15 @@ impl Engine<'_> {
                     .get(&(instance, *wire_kind))
                     .cloned()
                     .unwrap_or_default();
-                self.wire_bounds(instance, *wire_kind, *count, &any, &fixed, "incoming");
+                let known = !self.unknown_wires && !self.unknown_destinations.contains(wire_kind);
+                self.wire_bounds(
+                    instance,
+                    *wire_kind,
+                    *count,
+                    &any,
+                    known.then_some(&fixed[..]),
+                    "incoming",
+                );
             }
         }
     }
@@ -283,7 +313,7 @@ impl Engine<'_> {
         wire_kind: WireKind,
         count: Count,
         toward_max: &[WireId],
-        toward_min: &[WireId],
+        toward_min: Option<&[WireId]>,
         direction: &str,
     ) {
         let name = self.wire_kind_name(wire_kind);
@@ -303,7 +333,9 @@ impl Engine<'_> {
                 ),
             );
         }
-        if toward_min.len() < count.min() as usize {
+        if let Some(toward_min) = toward_min
+            && toward_min.len() < count.min() as usize
+        {
             let loc = self.instance(instance).loc;
             self.item_error(
                 Code::CountBelowMinimum,

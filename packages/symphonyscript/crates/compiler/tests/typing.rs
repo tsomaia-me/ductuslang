@@ -133,6 +133,28 @@ fn a_recursive_call_computes_flexible_integer_arguments_exactly() {
 }
 
 #[test]
+fn every_guard_and_use_gate_is_checked_whether_or_not_it_gates_an_item() {
+    expect(&[
+        (
+            "Clip c:\n    when 5:\n        for i in 0..0:\n            Note\n",
+            &[Code::ConditionType],
+        ),
+        (
+            "pattern P():\n    for i in 0..0:\n        Note\nClip c:\n    P when 5\n",
+            &[Code::ConditionType],
+        ),
+        (
+            "Clip c:\n    when:\n        true: Note\n        5: Note\n",
+            &[Code::ConditionType],
+        ),
+        (
+            "input fill_on = false\ninput section = 0\nClip verse:\n    Note/60\n    when fill_on:\n        Note/62 Note/64\n    else:\n        Note/62\n    when:\n        section is 0: Note/67\n        section is 1: Note/69\n        else: Note/71\n",
+            &[],
+        ),
+    ]);
+}
+
+#[test]
 fn a_recursive_result_and_body_follow_the_unit_rules() {
     expect(&[
         (

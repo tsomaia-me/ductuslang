@@ -642,3 +642,102 @@ fn an_index_known_at_compile_time_reads_the_elements_own_binding() {
         .collect();
     assert_eq!(notes, expected);
 }
+
+fn note_conditions(engine: &Engine<'_>, text: &str) -> Vec<Vec<(String, bool)>> {
+    engine
+        .instances
+        .iter()
+        .filter(|instance| {
+            engine
+                .vocabulary
+                .node_kind(instance.kind)
+                .is_some_and(|decl| decl.name == "Note")
+        })
+        .map(|instance| {
+            engine
+                .conditions_of(instance.conditions)
+                .into_iter()
+                .map(|condition| {
+                    let loc = engine.hir.expr(condition.expr).loc;
+                    let guard = text
+                        .get(loc.start as usize..loc.end as usize)
+                        .unwrap_or_default()
+                        .to_string();
+                    (guard, condition.holds)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn an_arm_is_active_when_its_guard_holds_and_no_earlier_guard_does() {
+    let text = "input fill_on = false\ninput section = 0\nClip verse:\n    Note/60\n    when fill_on:\n        Note/62 Note/64\n    else:\n        Note/62\n    when:\n        section is 0: Note/67\n        section is 1: Note/69\n        else: Note/71\n";
+    let (diagnostics, found) = analyzed(text, |engine| note_conditions(engine, text));
+    assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+    let held = |guard: &str, holds: bool| (guard.to_string(), holds);
+    assert_eq!(
+        found,
+        vec![
+            vec![],
+            vec![held("fill_on", true)],
+            vec![held("fill_on", true)],
+            vec![held("fill_on", false)],
+            vec![held("section is 0", true)],
+            vec![held("section is 0", false), held("section is 1", true)],
+            vec![held("section is 0", false), held("section is 1", false)],
+        ]
+    );
+    let deep = deep_projects()
+        .into_iter()
+        .find(|project| project.name == "deep bodies")
+        .expect("the deep bodies project exists");
+    let deep_text = deep
+        .files
+        .first()
+        .map(|file| file.text.clone())
+        .unwrap_or_default();
+    let (_, conditions) = std::thread::scope(|threads| {
+        std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn_scoped(threads, || {
+                analyzed(&deep_text, |engine| {
+                    let notes = note_conditions(engine, &deep_text);
+                    let last = notes.last().cloned().unwrap_or_default();
+                    let links = engine.condition_links.len();
+                    (last, links)
+                })
+            })
+            .expect("the thread starts")
+            .join()
+            .expect("the deep bodies analyze")
+    });
+    let (last, links) = conditions;
+    assert_eq!(last.len(), 2000);
+    assert!(last.iter().all(|(guard, holds)| guard == "x" && *holds));
+    assert!(links <= 4000, "{links} condition links");
+}
+
+#[test]
+fn guard_arms_cost_linear_time_and_memory() {
+    let size = |arms: usize| {
+        let mut text = String::from("input x = 0\nClip c:\n    when:\n");
+        for arm in 0..arms {
+            text.push_str(&format!("        x is {arm}: Note/{arm}\n"));
+        }
+        let (diagnostics, size) = analyzed(&text, |engine| {
+            engine.nodes.len() + engine.condition_links.len() + engine.gates.len()
+        });
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+        size
+    };
+    let sizes: Vec<usize> = [1000, 2000, 4000, 8000].into_iter().map(size).collect();
+    for pair in sizes.windows(2) {
+        if let [smaller, larger] = pair {
+            assert!(
+                *larger * 10 <= *smaller * 22,
+                "{sizes:?} grows faster than 2.2 per doubling"
+            );
+        }
+    }
+}

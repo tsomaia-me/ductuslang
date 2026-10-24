@@ -10,7 +10,7 @@ use crate::semantics::analysis::chain::Chain;
 use crate::semantics::analysis::condition::Condition;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::entry::Entry;
-use crate::semantics::analysis::ids::{InstanceId, ScopeId, UseId};
+use crate::semantics::analysis::ids::{ConditionsId, InstanceId, ScopeId, UseId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::path_parent::PathParent;
 use crate::semantics::analysis::scope::ScopeKind;
@@ -23,7 +23,7 @@ use crate::semantics::ir::{BlockId, BodyItem, Loc, PatternId, PlacementId, Top};
 struct Walk {
     owner: InstanceId,
     path_parent: PathParent,
-    conditions: Rc<Vec<Condition>>,
+    conditions: Option<ConditionsId>,
     uses: Chain,
     bundle: Option<usize>,
 }
@@ -87,7 +87,7 @@ impl Engine<'_> {
         let context = Context {
             owner: None,
             path_parent: None,
-            conditions: Rc::default(),
+            conditions: None,
             uses: Chain::default(),
         };
         let segment = Some(Segment::Named(name.text.clone()));
@@ -110,6 +110,7 @@ impl Engine<'_> {
             }
             Some(Decl::Pattern(pattern)) => {
                 if self.is_cyclic(pattern) {
+                    self.unknown_items(None, site.body);
                     return;
                 }
                 if self.stand_in(pattern).is_none() {
@@ -119,6 +120,7 @@ impl Engine<'_> {
                         global,
                         "only a pattern that stands in for a single node placement is used at top level",
                     );
+                    self.unknown_items(None, site.body);
                     return;
                 }
                 self.stand_in_instance(
@@ -132,9 +134,12 @@ impl Engine<'_> {
             }
             _ => None,
         };
-        if let Some(instance) = instance {
-            self.top_instances.insert(placement, instance);
-            self.top_level.push(instance);
+        match instance {
+            Some(instance) => {
+                self.top_instances.insert(placement, instance);
+                self.top_level.push(instance);
+            }
+            None => self.unknown_items(None, site.body),
         }
     }
 
@@ -147,16 +152,20 @@ impl Engine<'_> {
         segment: Option<Segment>,
         context: &Context,
     ) -> Option<InstanceId> {
-        let mut conditions: Vec<Condition> = context.conditions.as_ref().clone();
+        let mut conditions = context.conditions;
         let mut uses: Chain = context.uses.clone();
         loop {
             let site = self.hir.placement(placement);
             if let Some(gate) = site.gate {
-                conditions.push(Condition {
-                    expr: gate,
-                    scope: caller,
-                    holds: true,
-                });
+                self.register_gate(gate, caller);
+                conditions = self.push_condition(
+                    conditions,
+                    Condition {
+                        expr: gate,
+                        scope: caller,
+                        holds: true,
+                    },
+                );
             }
             if !self.count_step(site.loc, caller) {
                 return None;
@@ -178,7 +187,7 @@ impl Engine<'_> {
                     let inner = Context {
                         owner: context.owner,
                         path_parent: context.path_parent,
-                        conditions: Rc::new(conditions),
+                        conditions,
                         uses,
                     };
                     let id = self.new_instance(kind, single, body, name, segment, &inner)?;
@@ -206,7 +215,7 @@ impl Engine<'_> {
         let walk = Walk {
             owner: instance,
             path_parent: PathParent::Instance(instance),
-            conditions: Rc::default(),
+            conditions: None,
             uses: self.instance(instance).uses.clone(),
             bundle: None,
         };
@@ -351,7 +360,7 @@ impl Engine<'_> {
         let context = Context {
             owner: Some(owner),
             path_parent: Some(path_parent),
-            conditions: Rc::default(),
+            conditions: None,
             uses,
         };
         let owner_kind = self.instance(owner).kind;
@@ -640,7 +649,7 @@ impl Engine<'_> {
                     Some(ItemRef::Wire(existing)) => {
                         let existing = *existing;
                         if let Some(record) = self.wires.get_mut(existing.index()) {
-                            record.conditions = walk.conditions.clone();
+                            record.conditions = walk.conditions;
                         }
                         Some(existing)
                     }
@@ -661,7 +670,14 @@ impl Engine<'_> {
                 }
             }
             BodyItem::Bundle { members, each, loc } => {
-                if walk.bundle.is_some() {
+                if let Some(collector) = walk.bundle {
+                    self.error(
+                        Code::BundleMember,
+                        loc,
+                        scope,
+                        "a bundle is not a member of a bundle",
+                    );
+                    self.broken_bundles.insert(collector);
                     return;
                 }
                 let collector = collectors.len();
@@ -674,16 +690,20 @@ impl Engine<'_> {
                 });
                 let mut inner = walk.clone();
                 inner.bundle = Some(collector);
-                if let Some(each) = each
-                    && let Some(iteration) = self.iteration(each.iterable, scope)
-                {
-                    frames.push(Frame::For {
-                        var: each.var.map(|var| var.text),
-                        iteration,
-                        body: ForBody::Members(each.members),
-                        scope,
-                        walk: inner.clone(),
-                    });
+                if let Some(each) = each {
+                    match self.iteration(each.iterable, scope) {
+                        Some(iteration) => frames.push(Frame::For {
+                            var: each.var.map(|var| var.text),
+                            iteration,
+                            body: ForBody::Members(each.members),
+                            scope,
+                            walk: inner.clone(),
+                        }),
+                        None => {
+                            self.broken_bundles.insert(collector);
+                            self.unknown_items(Some(walk.owner), None);
+                        }
+                    }
                 }
                 frames.push(Frame::Members {
                     members,
@@ -697,45 +717,52 @@ impl Engine<'_> {
                 iterable,
                 body,
                 ..
-            } => {
-                if let Some(iteration) = self.iteration(iterable, scope) {
-                    frames.push(Frame::For {
-                        var: var.map(|var| var.text),
-                        iteration,
-                        body: ForBody::Block(body),
-                        scope,
-                        walk: walk.clone(),
-                    });
+            } => match self.iteration(iterable, scope) {
+                Some(iteration) => frames.push(Frame::For {
+                    var: var.map(|var| var.text),
+                    iteration,
+                    body: ForBody::Block(body),
+                    scope,
+                    walk: walk.clone(),
+                }),
+                None => {
+                    if let Some(collector) = walk.bundle {
+                        self.broken_bundles.insert(collector);
+                    }
+                    self.unknown_items(Some(walk.owner), Some(body));
                 }
-            }
+            },
             BodyItem::When {
                 arms, otherwise, ..
             } => {
                 let mut pending = Vec::new();
-                let mut earlier: Vec<Condition> = Vec::new();
+                let mut earlier = walk.conditions;
                 for arm in &arms {
-                    let mut conditions = walk.conditions.as_ref().clone();
-                    conditions.extend(earlier.iter().copied());
-                    conditions.push(Condition {
-                        expr: arm.guard,
-                        scope,
-                        holds: true,
-                    });
-                    earlier.push(Condition {
-                        expr: arm.guard,
-                        scope,
-                        holds: false,
-                    });
-                    pending.push((arm.body, conditions));
+                    self.register_gate(arm.guard, scope);
+                    let holds = self.push_condition(
+                        earlier,
+                        Condition {
+                            expr: arm.guard,
+                            scope,
+                            holds: true,
+                        },
+                    );
+                    earlier = self.push_condition(
+                        earlier,
+                        Condition {
+                            expr: arm.guard,
+                            scope,
+                            holds: false,
+                        },
+                    );
+                    pending.push((arm.body, holds));
                 }
                 if let Some(otherwise) = otherwise {
-                    let mut conditions = walk.conditions.as_ref().clone();
-                    conditions.extend(earlier.iter().copied());
-                    pending.push((otherwise, conditions));
+                    pending.push((otherwise, earlier));
                 }
                 for (block, conditions) in pending.into_iter().rev() {
                     let mut inner = walk.clone();
-                    inner.conditions = Rc::new(conditions);
+                    inner.conditions = conditions;
                     frames.push(Frame::Block {
                         block,
                         next: 0,
@@ -777,24 +804,17 @@ impl Engine<'_> {
             }
             Some(Decl::Pattern(pattern)) => {
                 if self.is_cyclic(pattern) {
+                    if let Some(collector) = walk.bundle {
+                        self.broken_bundles.insert(collector);
+                    }
+                    self.unknown_items(Some(walk.owner), None);
                     return;
                 }
-                if let Some(stand_in) = self.stand_in(pattern) {
-                    let existing = self.reuse(id, scope, walk);
-                    let instance = match existing {
-                        Some(existing) => Some(existing),
-                        None => {
-                            let segment = Some(self.segment(
-                                Some(walk.path_parent),
-                                None,
-                                kind.text.as_str(),
-                            ));
-                            let context = self.context(walk);
-                            self.stand_in_instance(id, pattern, scope, None, segment, &context)
-                        }
-                    };
+                if self.stand_in(pattern).is_some() {
                     if let Some(collector) = walk.bundle
-                        && self.hir.placement(stand_in.placement()).body.is_some()
+                        && self
+                            .stand_in_target(pattern)
+                            .is_some_and(|target| self.hir.placement(target).body.is_some())
                     {
                         let loc = self.hir.placement(id).loc;
                         self.error(
@@ -806,13 +826,25 @@ impl Engine<'_> {
                         self.broken_bundles.insert(collector);
                         return;
                     }
-                    instance
+                    let existing = self.reuse(id, scope, walk);
+                    match existing {
+                        Some(existing) => Some(existing),
+                        None => {
+                            let segment = Some(self.segment(
+                                Some(walk.path_parent),
+                                None,
+                                kind.text.as_str(),
+                            ));
+                            let context = self.context(walk);
+                            self.stand_in_instance(id, pattern, scope, None, segment, &context)
+                        }
+                    }
                 } else {
                     let use_id = match self.prebuilt.get(&(Site::Placement(id), scope)) {
                         Some(ItemRef::Use(existing)) => {
                             let existing = *existing;
                             if let Some(record) = self.uses.get_mut(existing.index()) {
-                                record.conditions = walk.conditions.clone();
+                                record.conditions = walk.conditions;
                             }
                             existing
                         }
@@ -834,18 +866,22 @@ impl Engine<'_> {
                         let record = self.pattern_use(use_id);
                         (self.hir.placement(id).gate, record.loc, record.uses.clone())
                     };
-                    let mut conditions = walk.conditions.as_ref().clone();
+                    let mut conditions = walk.conditions;
                     if let Some(gate) = gate {
-                        conditions.push(Condition {
-                            expr: gate,
-                            scope,
-                            holds: true,
-                        });
+                        self.register_gate(gate, scope);
+                        conditions = self.push_condition(
+                            conditions,
+                            Condition {
+                                expr: gate,
+                                scope,
+                                holds: true,
+                            },
+                        );
                     }
                     let inner = Walk {
                         owner: walk.owner,
                         path_parent: PathParent::Use(use_id),
-                        conditions: Rc::new(conditions),
+                        conditions,
                         uses: uses.push(loc),
                         bundle: walk.bundle,
                     };
@@ -861,6 +897,10 @@ impl Engine<'_> {
             _ => None,
         };
         let Some(instance) = instance else {
+            if let Some(collector) = walk.bundle {
+                self.broken_bundles.insert(collector);
+            }
+            self.unknown_items(Some(walk.owner), self.hir.placement(id).body);
             return;
         };
         match walk.bundle {
@@ -894,10 +934,10 @@ impl Engine<'_> {
         else {
             return None;
         };
+        let own = self.instance(existing).conditions;
+        let conditions = self.joined_conditions(walk.conditions, own);
         if let Some(record) = self.instances.get_mut(existing.index()) {
-            let mut conditions = walk.conditions.as_ref().clone();
-            conditions.extend(record.conditions.iter().copied());
-            record.conditions = Rc::new(conditions);
+            record.conditions = conditions;
         }
         Some(existing)
     }
@@ -906,7 +946,7 @@ impl Engine<'_> {
         Context {
             owner: Some(walk.owner),
             path_parent: Some(walk.path_parent),
-            conditions: walk.conditions.clone(),
+            conditions: walk.conditions,
             uses: walk.uses.clone(),
         }
     }

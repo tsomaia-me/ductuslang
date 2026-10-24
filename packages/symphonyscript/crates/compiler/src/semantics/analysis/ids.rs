@@ -6,3 +6,4 @@ index_type!(BindingId);
 index_type!(InstanceId);
 index_type!(WireId);
 index_type!(UseId);
+index_type!(ConditionsId);
