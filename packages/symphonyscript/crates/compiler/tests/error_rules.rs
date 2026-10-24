@@ -325,7 +325,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.6",
-        "Exceeding either limit is an error naming the call or the expansion.",
+        "Exceeding a limit is an error naming the call or the expansion.",
         "expansion-limit",
         "Clip c:\n    for i in 0..1000001:\n        Note\n",
     ),
@@ -541,7 +541,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
-        "Two local `let`s with one name, or a local `let` named like a parameter, are an error.",
+        "or a local `let` named like a parameter, are an error.",
         "duplicate-local",
         "fn f(x):\n    let x = 1\n    x\n",
     ),
@@ -577,7 +577,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.4",
-        "Two `let`s with one name, or a `let` named like a parameter, are an error.",
+        "or a `let` named like a parameter, are an error.",
         "duplicate-local",
         "pattern P(root):\n    let root = 1\n    Note/root\n",
     ),
