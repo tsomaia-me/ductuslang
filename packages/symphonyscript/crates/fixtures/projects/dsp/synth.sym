@@ -1,0 +1,20 @@
+input cutoff = 0.5
+input shape = Wave::Saw
+input depth = 0.25
+input bright = true
+
+Synth lead:
+    Osc as carrier /220 | wave=shape:
+        Feeds: low
+    Osc as lfo /2 | rate=0.5 wave=Sine:
+        Modulates /depth: low
+    Filter as low /(cutoff * 4000):
+        Feeds: mix
+        Feeds when bright: master
+    Mixer as mix
+    Output as out
+
+Osc sub /55 | wave=Square:
+    Feeds: lead.low
+
+Output master

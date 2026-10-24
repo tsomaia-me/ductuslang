@@ -1,0 +1,13 @@
+Session main /128:
+    Track as keys | label="keys":
+        Piano
+        Starts: intro
+    Includes: rhythm
+
+Track rhythm | label="rhythm":
+    Synth
+    Starts: intro
+
+Kit drums:
+    for i in 0..4:
+        Sampler | file="kit/{i}.wav"

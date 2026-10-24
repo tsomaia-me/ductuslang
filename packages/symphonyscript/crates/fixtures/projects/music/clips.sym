@@ -1,0 +1,28 @@
+input section = 0
+input fill_on = false
+input cutoff = 0.5
+
+let wobble = cutoff * 0.8
+let sections = [verse, chorus]
+
+pattern Arp(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip intro | gain=0.9:
+    Note/48 Note/52 Note/55
+    [Note/60 Note/64 Note/67]
+    Note'/62 | velocity=0.7 brightness=wobble
+               length=2bars
+    Arp/48 | steps=3
+    Plays | transpose=5: verse
+    Starts: sections[section]
+
+Clip verse:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_on
+    Plays: chorus
+
+Clip chorus | gain=verse.gain * 1.2:
+    Note/72 | velocity=verse.hook.velocity
+    Plays as back | transpose=-2: verse
