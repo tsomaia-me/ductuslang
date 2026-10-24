@@ -147,10 +147,10 @@ impl Parser<'_> {
     }
 
     pub(super) fn fn_after_params(&mut self) {
-        if self.expect(SyntaxKind::Colon, Code::FnSyntax, "`:` and the body") {
+        if self.colon_or_skip(Code::FnSyntax, "`:` and the body") {
+            self.bump();
             self.then([Task::FnBody, Task::Finish]);
         } else {
-            self.finish_line(Code::FnSyntax);
             self.finish();
         }
     }
@@ -189,7 +189,8 @@ impl Parser<'_> {
     }
 
     pub(super) fn pattern_after_params(&mut self) {
-        if self.expect(SyntaxKind::Colon, Code::PatternSyntax, "`:` and the body") {
+        if self.colon_or_skip(Code::PatternSyntax, "`:` and the body") {
+            self.bump();
             if self.at(SyntaxKind::Newline) {
                 self.then([Task::Block { pattern: true }, Task::Finish]);
             } else {
@@ -202,7 +203,6 @@ impl Parser<'_> {
                 self.finish();
             }
         } else {
-            self.finish_line(Code::PatternSyntax);
             self.finish();
         }
     }

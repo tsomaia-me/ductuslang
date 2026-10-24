@@ -102,10 +102,10 @@ impl Parser<'_> {
     }
 
     pub(super) fn for_after_iterable(&mut self) {
-        if self.expect(SyntaxKind::Colon, Code::ForSyntax, "`:` and the body") {
+        if self.colon_or_skip(Code::ForSyntax, "`:` and the body") {
+            self.bump();
             self.then([Task::Block { pattern: false }, Task::Finish]);
         } else {
-            self.finish_line(Code::ForSyntax);
             self.finish();
         }
     }
@@ -170,24 +170,20 @@ impl Parser<'_> {
 
     pub(super) fn guard_after(&mut self, arms: usize) {
         let next = Task::WhenArms { arms: arms + 1 };
-        if self.expect(SyntaxKind::Colon, Code::WhenSyntax, "`:` after the guard") {
+        if self.colon_or_skip(Code::WhenSyntax, "`:` after the guard") {
+            self.bump();
             self.then([Task::Block { pattern: false }, Task::Finish, next]);
         } else {
-            self.finish_line(Code::WhenSyntax);
             self.finish();
             self.then([next]);
         }
     }
 
     pub(super) fn when_after_condition(&mut self) {
-        if self.expect(
-            SyntaxKind::Colon,
-            Code::WhenSyntax,
-            "`:` after the condition",
-        ) {
+        if self.colon_or_skip(Code::WhenSyntax, "`:` after the condition") {
+            self.bump();
             self.then([Task::Block { pattern: false }, Task::WhenElseOptional]);
         } else {
-            self.finish_line(Code::WhenSyntax);
             self.finish();
         }
     }
@@ -203,10 +199,10 @@ impl Parser<'_> {
     pub(super) fn when_else(&mut self) {
         self.start(SyntaxKind::WhenElse);
         self.bump();
-        if self.expect(SyntaxKind::Colon, Code::WhenSyntax, "`:` after `else`") {
+        if self.colon_or_skip(Code::WhenSyntax, "`:` after `else`") {
+            self.bump();
             self.then([Task::Block { pattern: false }, Task::Finish]);
         } else {
-            self.finish_line(Code::WhenSyntax);
             self.finish();
         }
     }

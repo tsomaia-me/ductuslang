@@ -132,12 +132,13 @@ impl Parser<'_> {
     }
 
     pub(super) fn placement_tail_body(&mut self) {
-        if self.at(SyntaxKind::Colon) {
+        if self.eat(SyntaxKind::Newline) || self.at_end() || self.at(SyntaxKind::Dedent) {
+            return;
+        }
+        if self.colon_or_skip(Code::PlacementSyntax, "the end of the line") {
             self.start(SyntaxKind::Body);
             self.bump();
             self.then([Task::Block { pattern: false }, Task::Finish]);
-        } else {
-            self.finish_line(Code::PlacementSyntax);
         }
     }
 

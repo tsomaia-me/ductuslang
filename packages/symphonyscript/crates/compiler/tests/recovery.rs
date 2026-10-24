@@ -665,6 +665,84 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[Placement[Clip c Body[: Block[NL > Placement[Note Attrs[| AttrEntry[velocity = ParenExpr[( Literal[1]]]] NL] <]]] Placement[Note Attrs[|] NL]]",
     ),
+    (
+        "Clip c 2:\n    Note |\n    Note/60\n",
+        &[
+            (Code::PlacementSyntax, 7, 8),
+            (Code::AttributeSyntax, 20, 21),
+        ],
+        "File[Placement[Clip c ErrorNode[2] Body[: Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]]]]",
+    ),
+    (
+        "Clip c | gain=1 2:\n    Note |\n    Note/60\n",
+        &[
+            (Code::PlacementSyntax, 16, 17),
+            (Code::AttributeSyntax, 29, 30),
+        ],
+        "File[Placement[Clip c Attrs[| AttrEntry[gain = Literal[1]]] ErrorNode[2] Body[: Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]]]]",
+    ),
+    (
+        "Clip c when x y:\n    Note |\n    Note/60\n",
+        &[
+            (Code::PlacementSyntax, 14, 15),
+            (Code::AttributeSyntax, 27, 28),
+        ],
+        "File[Placement[Clip c Gate[when NameRef[x]] ErrorNode[y] Body[: Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]]]]",
+    ),
+    (
+        "Clip c | gain=1 ^:\n    Note |\n    Note/60\n",
+        &[
+            (Code::ReservedToken, 16, 17),
+            (Code::AttributeSyntax, 29, 30),
+        ],
+        "File[Placement[Clip c Attrs[| AttrEntry[gain = Literal[1]]] ErrorNode[^] Body[: Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]]]]",
+    ),
+    (
+        "Clip h:\n    for i in 0..3 4:\n        Note |\n        Note/60\n",
+        &[(Code::ForSyntax, 26, 27), (Code::AttributeSyntax, 43, 44)],
+        "File[Placement[Clip h Body[: Block[NL > ForBlock[for i in RangeExpr[Literal[0] .. Literal[3]] ErrorNode[4] : Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]] <]]]]",
+    ),
+    (
+        "Clip h:\n    when x y:\n        Note |\n        Note/60\n",
+        &[(Code::WhenSyntax, 19, 20), (Code::AttributeSyntax, 36, 37)],
+        "File[Placement[Clip h Body[: Block[NL > WhenBlock[when NameRef[x] ErrorNode[y] : Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]] <]]]]",
+    ),
+    (
+        "Clip h:\n    when:\n        x y:\n            Note |\n            Note/60\n",
+        &[(Code::WhenSyntax, 28, 29), (Code::AttributeSyntax, 49, 50)],
+        "File[Placement[Clip h Body[: Block[NL > WhenBlock[when : NL > GuardArm[NameRef[x] ErrorNode[y] : Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]] <] <]]]]",
+    ),
+    (
+        "pattern P(a b):\n    Note |\n    Note/60\n",
+        &[
+            (Code::PatternSyntax, 12, 13),
+            (Code::AttributeSyntax, 26, 27),
+        ],
+        "File[PatternDecl[pattern P PatternParamList[( PatternParam[a]] ErrorNode[b )] : Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]]]",
+    ),
+    (
+        "fn f(a b):\n    let x = )\n    x\n",
+        &[(Code::FnSyntax, 7, 8), (Code::ExpressionSyntax, 23, 24)],
+        "File[FnDecl[fn f ParamList[( Param[a]] ErrorNode[b )] : FnBody[NL > LocalLet[let x = ErrorNode[)] NL] NameRef[x] NL <]]]",
+    ),
+    (
+        "Clip c | gain=:\n    Note |\n",
+        &[
+            (Code::ExpressionSyntax, 14, 15),
+            (Code::AttributeSyntax, 26, 27),
+        ],
+        "File[Placement[Clip c Attrs[| AttrEntry[gain =]] Body[: Block[NL > Placement[Note Attrs[|] NL] <]]]]",
+    ),
+    (
+        "Clip h:\n    Plays verse:\n        Note\n",
+        &[(Code::WireSyntax, 18, 23)],
+        "File[Placement[Clip h Body[: Block[NL > WirePlacement[Plays ErrorNode[verse :] NL] ErrorNode[> Note NL <] <]]]]",
+    ),
+    (
+        "Clip c 2:\nlet b = 1\n",
+        &[(Code::PlacementSyntax, 7, 8)],
+        "File[Placement[Clip c ErrorNode[2 :] NL] LetDecl[let b = Literal[1] NL]]",
+    ),
 ];
 
 #[test]

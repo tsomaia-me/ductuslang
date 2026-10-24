@@ -591,6 +591,58 @@ impl<'a> Parser<'a> {
         self.finish();
     }
 
+    fn colon_or_skip(&mut self, code: Code, what: &str) -> bool {
+        if self.at(SyntaxKind::Colon) {
+            return true;
+        }
+        let found = self.describe();
+        self.error(code, format!("expected {what}, found {found}"));
+        if self.skip_to_final_colon() {
+            return true;
+        }
+        self.eat(SyntaxKind::Newline);
+        false
+    }
+
+    fn skip_to_final_colon(&mut self) -> bool {
+        let Some(colon) = self.final_colon() else {
+            self.skip_line();
+            return false;
+        };
+        self.start(SyntaxKind::ErrorNode);
+        while self.significant(0).is_some_and(|index| index < colon)
+            && !self.at_any(&[SyntaxKind::Newline, SyntaxKind::Dedent])
+        {
+            self.bump();
+        }
+        self.finish();
+        if self.significant(0) == Some(colon) && self.at(SyntaxKind::Colon) {
+            return true;
+        }
+        self.skip_line();
+        false
+    }
+
+    fn final_colon(&mut self) -> Option<usize> {
+        let mut index = self.significant(0)?;
+        let mut last = None;
+        loop {
+            match self.kind_at(index)? {
+                SyntaxKind::Newline => break,
+                SyntaxKind::Indent | SyntaxKind::Dedent => return None,
+                kind if !kind.is_trivia() => last = Some(index),
+                _ => {}
+            }
+            index += 1;
+        }
+        let colon = last.filter(|last| self.kind_at(*last) == Some(SyntaxKind::Colon))?;
+        let mut next = index + 1;
+        while self.kind_at(next).is_some_and(SyntaxKind::is_trivia) {
+            next += 1;
+        }
+        (self.kind_at(next) == Some(SyntaxKind::Indent)).then_some(colon)
+    }
+
     fn skip_block(&mut self) {
         self.start(SyntaxKind::ErrorNode);
         let mut depth = 0usize;
