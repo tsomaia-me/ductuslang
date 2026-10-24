@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem;
 
-use rowan::{GreenNode, NodeOrToken};
+use rowan::{GreenNode, GreenNodeData, NodeOrToken};
 
 use super::ast::{AstNode, File};
 use super::node_view::NodeView;
@@ -42,16 +42,14 @@ impl PartialEq for Parsed {
         if self.diagnostics != other.diagnostics {
             return false;
         }
-        let mut pending = vec![(self.green.clone(), other.green.clone())];
+        let mut pending: Vec<(&GreenNodeData, &GreenNodeData)> = vec![(&self.green, &other.green)];
         while let Some((left, right)) = pending.pop() {
             if left.kind() != right.kind() || left.children().len() != right.children().len() {
                 return false;
             }
             for pair in left.children().zip(right.children()) {
                 match pair {
-                    (NodeOrToken::Node(a), NodeOrToken::Node(b)) => {
-                        pending.push((a.to_owned(), b.to_owned()));
-                    }
+                    (NodeOrToken::Node(a), NodeOrToken::Node(b)) => pending.push((a, b)),
                     (NodeOrToken::Token(a), NodeOrToken::Token(b))
                         if a.kind() == b.kind() && a.text() == b.text() => {}
                     _ => return false,
