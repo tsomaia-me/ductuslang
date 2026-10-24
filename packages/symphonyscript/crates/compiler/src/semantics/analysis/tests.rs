@@ -2120,3 +2120,24 @@ fn every_evaluation_path_checks_the_shape_of_its_value() {
         assert_eq!(found, value, "{text}");
     }
 }
+
+#[test]
+fn a_recursive_call_settles_to_a_string_through_concatenation() {
+    let rows = [("s(n - 1) + \"b\"", "abb"), ("\"b\" + s(n - 1)", "bba")];
+    for (step, expected) in rows {
+        let text = format!(
+            "fn s(n): if n < 1 then \"a\" else {step}\nKit k:\n    Sampler | file=(s(2))\n"
+        );
+        let (diagnostics, found) =
+            analyzed(&text, |engine| attr_values(engine, "file", EvalTy::Str));
+        assert_eq!(error_codes(&diagnostics), Vec::<Code>::new(), "{text}");
+        assert_eq!(found, vec![CVal::Str(expected.into())], "{text}");
+    }
+    for text in [
+        "Clip c:\n    Note/(1 + true)\n",
+        "Kit k:\n    Sampler | file=(\"a\" + 1)\n",
+    ] {
+        let (diagnostics, ()) = analyzed(text, |_| ());
+        assert_eq!(error_codes(&diagnostics), vec![Code::OperandType], "{text}");
+    }
+}

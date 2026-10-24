@@ -283,7 +283,7 @@ impl Engine<'_> {
         let reactive = a.reactive || b.reactive;
         let numeric = a.is_numeric() && b.is_numeric();
         Ok(match op {
-            BinaryOp::Add if a.kind == Kind::Str && b.kind == Kind::Str => {
+            BinaryOp::Add if concatenates(&a, &b) => {
                 if reactive {
                     self.error_at_node(
                         Code::ReactiveString,
@@ -601,4 +601,9 @@ impl Engine<'_> {
         };
         Ok(Sig::of(kind_of(scalar), width, reactive, family))
     }
+}
+
+fn concatenates(a: &Sig, b: &Sig) -> bool {
+    let string_or_open = |sig: &Sig| sig.kind == Kind::Str || sig.open;
+    string_or_open(a) && string_or_open(b) && (a.kind == Kind::Str || b.kind == Kind::Str)
 }
