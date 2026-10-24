@@ -62,3 +62,33 @@ fn every_sym_example_uses_undeclared_exactly_the_names_its_entry_lists() {
         assert_eq!(undeclared, listed, "{}", example.name());
     }
 }
+
+#[test]
+fn every_sym_error_example_is_rejected() {
+    use symphonyscript_fixtures::spec_examples;
+
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let rejected: Vec<String> = spec_examples()
+        .into_iter()
+        .filter(|example| example.tag == "sym-error")
+        .map(|example| {
+            let source = Source {
+                path: "example.sym".into(),
+                text: example.text.clone(),
+            };
+            let errors = support::errors(compiler.check(&[source]));
+            assert!(!errors.is_empty(), "{} is accepted", example.name());
+            example.name()
+        })
+        .collect();
+    assert_eq!(rejected, ["spec-4.1-sym-error-1"]);
+}
+
+#[test]
+fn the_sym_error_example_of_4_1_is_rejected_for_the_reason_beside_it() {
+    let text = "Clip melody:\n    Note/300000000000\n";
+    assert_eq!(
+        support::check_codes(text),
+        vec![(symphonyscript::Code::DoesNotFit, 22, 34)]
+    );
+}

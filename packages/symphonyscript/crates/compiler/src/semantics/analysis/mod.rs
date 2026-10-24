@@ -33,3 +33,6 @@ mod val;
 mod wire;
 
 pub(crate) use engine::Engine;
+
+#[cfg(test)]
+mod tests;
