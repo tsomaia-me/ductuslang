@@ -1178,11 +1178,6 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             vec![],
         ),
         (
-            format!("{CHORD_FN}input f = true\nlet x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"),
-            vec![Code::TypeMismatch],
-            vec![],
-        ),
-        (
             "fn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nClip c:\n    Note/(rev([1, 2], 3)[0])\n"
                 .into(),
             vec![],
@@ -1510,6 +1505,140 @@ fn a_recursive_result_has_the_kind_its_body_gives_it() {
         if error_codes(&diagnostics) != [code] {
             failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
         }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+const GRID_FN: &str = "fn grid(k): if k < 1 then [[1, 2], [3, 4]] else grid(k - 1)\n";
+
+type DefaultShapeRow<'a> = (String, &'a str, usize, Vec<(EvalTy, CVal)>);
+
+fn element_types(engine: &Engine<'_>, name: &str) -> Vec<Option<Scalar>> {
+    engine
+        .bindings
+        .iter()
+        .enumerate()
+        .filter(|(_, binding)| binding.name == name)
+        .map(|(position, _)| {
+            u32::try_from(position)
+                .ok()
+                .and_then(|position| engine.typing.own.get(&BindingId(position)).copied())
+        })
+        .collect()
+}
+
+#[test]
+fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape() {
+    let row = |values: &[i128]| {
+        CVal::Array(CArray::new(
+            values.iter().map(|value| CVal::Int(*value)).collect(),
+        ))
+    };
+    let accepted: Vec<DefaultShapeRow<'_>> = vec![
+        (
+            format!(
+                "{CHORD_FN}input f = true\nlet x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"
+            ),
+            "x",
+            3,
+            vec![
+                (EvalTy::I32, row(&[62, 65, 69])),
+                (EvalTy::I32, row(&[60, 64, 67])),
+            ],
+        ),
+        (
+            format!(
+                "{CHORD_FN}fn first(a): a[0]\ninput f = true\nClip c:\n    Note/(first(if f then chord(1) else chord(2)))\n"
+            ),
+            "a",
+            3,
+            vec![
+                (EvalTy::I32, row(&[62, 65, 69])),
+                (EvalTy::I32, row(&[60, 64, 67])),
+            ],
+        ),
+        (
+            format!("{GRID_FN}input i = 0\nlet row = grid(2)[i]\nClip c:\n    Note/(row[1])\n"),
+            "row",
+            2,
+            vec![(
+                EvalTy::I32,
+                CVal::Array(CArray::new(vec![row(&[1, 2]), row(&[3, 4])])),
+            )],
+        ),
+        (
+            format!(
+                "{R_FN}input f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nClip c | gain=(w[0])\n"
+            ),
+            "w",
+            1,
+            vec![
+                (EvalTy::F32, CVal::Array(CArray::new(vec![CVal::F32(0.1)]))),
+                (EvalTy::F32, CVal::Array(CArray::new(vec![CVal::F32(0.1)]))),
+            ],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (text, name, elements, results) in accepted {
+        let (diagnostics, (types, found, holes)) = analyzed(&text, |engine| {
+            (
+                element_types(engine, name),
+                recursive_results(engine),
+                placeholders(engine),
+            )
+        });
+        let used = results.first().map(|(ty, _)| match ty {
+            EvalTy::F32 => Scalar::F32,
+            _ => Scalar::I32,
+        });
+        let computed = results.iter().all(|result| found.contains(result));
+        if !errors_of(&diagnostics).is_empty()
+            || types.len() != elements
+            || !types.contains(&used)
+            || !computed
+            || !holes.is_empty()
+        {
+            failures.push(format!(
+                "{text:?}: {types:?} {found:?} {holes:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+    }
+    let annotated = format!(
+        "{CHORD_FN}input f = true\nlet x: i32[3] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[2])\n"
+    );
+    let (diagnostics, (types, holes)) = analyzed(&annotated, |engine| {
+        (element_types(engine, "x"), placeholders(engine))
+    });
+    if !errors_of(&diagnostics).is_empty() || types != [Some(Scalar::I32); 3] || !holes.is_empty() {
+        failures.push(format!(
+            "{annotated:?}: {types:?} {holes:?} with {:?}",
+            error_codes(&diagnostics)
+        ));
+    }
+    let other = "fn other(k): if k < 1 then [1, 2] else other(k - 1)\n";
+    for text in [
+        format!(
+            "{CHORD_FN}input f = true\nlet x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
+        ),
+        format!(
+            "{CHORD_FN}{other}input f = true\nlet x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
+        ),
+    ] {
+        let (diagnostics, ()) = analyzed(&text, |_| ());
+        if error_codes(&diagnostics) != [Code::TypeMismatch] {
+            failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
+        }
+    }
+    let rejected = format!(
+        "{R_FN}input f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n"
+    );
+    let (diagnostics, ()) = analyzed(&rejected, |_| ());
+    let used = rejected.find("w[0]").unwrap_or(0);
+    let declared = rejected.find("let w").unwrap_or(0);
+    let found = located(&rejected, &diagnostics);
+    if found != [(Code::InconsistentShapes, used, vec![declared])] {
+        failures.push(format!("{rejected:?}: found {found:?}"));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

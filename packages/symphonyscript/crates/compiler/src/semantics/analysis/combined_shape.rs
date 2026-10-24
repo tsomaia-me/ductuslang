@@ -1,0 +1,69 @@
+use super::ids::NodeId;
+use super::op::Op;
+use super::shape_fault::ShapeFault;
+use crate::diagnostics::Code;
+
+pub(crate) fn combined_shape(
+    node: NodeId,
+    op: &Op,
+    shapes: &[Vec<u32>],
+) -> Result<Vec<u32>, ShapeFault> {
+    let first = shapes.first().cloned().unwrap_or_default();
+    let agree = shapes.iter().all(|shape| *shape == first);
+    match op {
+        Op::Element { base, .. } => {
+            let mut lengths = first;
+            match lengths.pop() {
+                Some(_) => Ok(lengths),
+                None => Err(ShapeFault {
+                    node: *base,
+                    code: Code::NotAnArray,
+                    message: "only an array is indexed",
+                }),
+            }
+        }
+        Op::If(..) | Op::Match { .. } => {
+            if agree {
+                Ok(first)
+            } else {
+                Err(ShapeFault {
+                    node,
+                    code: Code::TypeMismatch,
+                    message: "the branches hold arrays of different shapes",
+                })
+            }
+        }
+        Op::Array(elements) => {
+            if !agree {
+                return Err(ShapeFault {
+                    node,
+                    code: Code::RaggedArray,
+                    message: "the elements of an array are arrays of one length, or all single values",
+                });
+            }
+            let mut lengths = first;
+            lengths.push(u32::try_from(elements.len()).unwrap_or(u32::MAX));
+            Ok(lengths)
+        }
+        Op::Use(_)
+        | Op::Annotate(..)
+        | Op::Number(..)
+        | Op::Const(_)
+        | Op::Bool(_)
+        | Op::Str(_)
+        | Op::Concat(_)
+        | Op::Variant(..)
+        | Op::Bare(_)
+        | Op::Pi
+        | Op::NodeRef(_)
+        | Op::Read(_)
+        | Op::Arg(_)
+        | Op::Unary(..)
+        | Op::Binary(..)
+        | Op::Pick { .. }
+        | Op::Convert(..)
+        | Op::Builtin(..)
+        | Op::Recursive { .. }
+        | Op::ToRead { .. } => Ok(first),
+    }
+}

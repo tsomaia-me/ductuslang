@@ -37,6 +37,7 @@ pub(crate) struct Memo {
     pub probes: super::fast_hash::FastSet<ScopeId>,
     pub call_feeds: FastMap<NodeId, Vec<super::feed::Feed>>,
     pub shapes: FastMap<NodeId, super::shape_need::ShapeNeed>,
+    pub defaulted: FastMap<NodeId, Vec<super::ids::BindingId>>,
     pub boxes: FastMap<(ExprId, ScopeId), NodeId>,
     pub projections: FastMap<NodeId, Vec<NodeId>>,
     pub named_sites: FastMap<

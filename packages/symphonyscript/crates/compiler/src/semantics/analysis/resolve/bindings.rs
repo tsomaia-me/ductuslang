@@ -11,12 +11,16 @@ use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
+use crate::semantics::analysis::combined_shape::combined_shape;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
+use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::kind_of::kind_of;
+use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::op::Op;
@@ -24,11 +28,13 @@ use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::shape::Shape;
+use crate::semantics::analysis::shape_fault::ShapeFault;
+use crate::semantics::analysis::shape_parts::shape_parts;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
-use crate::semantics::ir::{ExprId, InputId, LetDecl, TypeBase, TypeRef};
+use crate::semantics::ir::{ExprId, InputId, LetDecl, Loc, TypeBase, TypeRef};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_let(
@@ -44,23 +50,30 @@ impl Engine<'_> {
         let Some(val) = self.val(Query::Expr(decl.value, scope), need) else {
             return false;
         };
-        let Some(sigs) = self.element_sigs(&val, need) else {
-            return false;
-        };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
+        let loc = decl.loc;
         let name = decl
             .name
             .as_ref()
             .map(|name| name.text.clone())
             .unwrap_or_default();
+        let Some((val, defaulted)) =
+            self.reactive_elements(val, annotation.as_ref(), loc, scope, need)
+        else {
+            return false;
+        };
+        let Some(sigs) = self.element_sigs(&val, need) else {
+            return false;
+        };
         let spec = BindSpec {
             kind: BindingKind::Let,
             annotation: annotation.as_ref(),
             name: &name,
-            loc: decl.loc,
+            loc,
             scope,
         };
         let bound = self.bind(&val, &sigs, &spec);
+        self.note_defaulted(defaulted, &bound);
         self.memo.lets.insert((scope, local), bound);
         true
     }
@@ -143,6 +156,9 @@ impl Engine<'_> {
         let Some(val) = val else {
             return false;
         };
+        let Some((val, defaulted)) = self.reactive_elements(val, None, loc, scope, need) else {
+            return false;
+        };
         let Some(sigs) = self.element_sigs(&val, need) else {
             return false;
         };
@@ -154,6 +170,7 @@ impl Engine<'_> {
             scope,
         };
         let bound = self.bind(&val, &sigs, &spec);
+        self.note_defaulted(defaulted, &bound);
         self.memo.params.insert((scope, index), bound);
         true
     }
@@ -386,6 +403,140 @@ impl Engine<'_> {
         Some(Val::array(shape, nodes))
     }
 
+    fn reactive_elements(
+        &mut self,
+        val: Val,
+        annotation: Option<&Annotation>,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Option<(Val, Option<NodeId>)> {
+        let Val::Scalar(node) = val else {
+            return Some((val, None));
+        };
+        if !self.arrays.contains(&node) || !self.sig(node, need)?.reactive {
+            return Some((val, None));
+        }
+        if let Some(annotation) = annotation {
+            if annotation.lengths.is_empty() {
+                return Some((val, None));
+            }
+            let shape = Shape::from_lengths(&annotation.lengths);
+            let nodes = self.projected(
+                node,
+                &shape,
+                (Code::TypeMismatch, ANNOTATED_SHAPE),
+                loc,
+                scope,
+            );
+            return Some((Val::array(shape, nodes), None));
+        }
+        let lengths = match self.default_shape(node, need)? {
+            Ok(lengths) => lengths,
+            Err(fault) => {
+                if let Some(fault) = fault {
+                    self.error_at_node(fault.code, fault.node, fault.message);
+                }
+                return Some((Val::Error, None));
+            }
+        };
+        if lengths.is_empty() {
+            return Some((val, None));
+        }
+        let shape = Shape::from_lengths(&lengths);
+        let nodes = self.projected(
+            node,
+            &shape,
+            (Code::InconsistentShapes, DEFAULT_SHAPE),
+            loc,
+            scope,
+        );
+        Some((Val::array(shape, nodes), Some(node)))
+    }
+
+    fn default_shape(
+        &self,
+        root: NodeId,
+        need: &mut Vec<Query>,
+    ) -> Option<Result<Vec<u32>, Option<ShapeFault>>> {
+        let mut shapes: FastMap<NodeId, Result<Vec<u32>, Option<ShapeFault>>> = FastMap::default();
+        let mut stack = vec![(root, false)];
+        let mut missing = false;
+        while let Some((node, ready)) = stack.pop() {
+            if shapes.contains_key(&node) {
+                continue;
+            }
+            let Some(sig) = self.sig(node, need) else {
+                missing = true;
+                continue;
+            };
+            if sig.is_error() {
+                shapes.insert(node, Err(None));
+                continue;
+            }
+            if !sig.reactive {
+                let Some(value) = self.cval(Query::Eval(node, EvalTy::Default), need) else {
+                    missing = true;
+                    continue;
+                };
+                let shape = if value.is_error() {
+                    Err(None)
+                } else {
+                    Ok(lengths_of(&value))
+                };
+                shapes.insert(node, shape);
+                continue;
+            }
+            let op = &self.node(node).op;
+            let parts = shape_parts(self, op);
+            if !self.arrays.contains(&node) || parts.is_empty() {
+                shapes.insert(node, Ok(Vec::new()));
+                continue;
+            }
+            if !ready {
+                stack.push((node, true));
+                stack.extend(parts.iter().map(|part| (*part, false)));
+                continue;
+            }
+            let mut found = Vec::new();
+            let mut failed = None;
+            for part in &parts {
+                match shapes.get(part) {
+                    Some(Ok(lengths)) => found.push(lengths.clone()),
+                    Some(Err(fault)) => {
+                        failed = Some(*fault);
+                        break;
+                    }
+                    None => missing = true,
+                }
+            }
+            let shape = match failed {
+                Some(fault) => Err(fault),
+                None => combined_shape(node, op, &found).map_err(Some),
+            };
+            shapes.insert(node, shape);
+        }
+        if missing {
+            return None;
+        }
+        shapes.remove(&root)
+    }
+
+    fn note_defaulted(&mut self, base: Option<NodeId>, bound: &BoundVal) {
+        let (Some(base), BoundVal::Array(array)) = (base, bound) else {
+            return;
+        };
+        let elements = array
+            .1
+            .iter()
+            .filter_map(|item| match item {
+                Bound::Cell(binding) => Some(*binding),
+                Bound::Value(_) => None,
+            })
+            .collect();
+        self.memo.defaulted.insert(base, elements);
+    }
+
     fn attr_elements(&mut self, val: Val, lengths: &[u32], expr: ExprId, scope: ScopeId) -> Val {
         let Val::Scalar(node) = val else {
             return val;
@@ -580,3 +731,8 @@ fn annotated(sig: &Sig, target: Scalar) -> bool {
 }
 
 const ATTRIBUTE_SHAPE: &str = "the value's array shape differs from the attribute's type";
+
+const ANNOTATED_SHAPE: &str = "the value's shape differs from its annotated type";
+
+const DEFAULT_SHAPE: &str =
+    "a use yields this value in another shape than the defaults give its recursive call";

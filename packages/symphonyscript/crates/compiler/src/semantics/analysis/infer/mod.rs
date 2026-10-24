@@ -90,7 +90,6 @@ impl Engine<'_> {
             }
         }
         self.values(&roots);
-        self.reactive_array_bindings();
         self.reactive_shapes();
         self.input_fits();
         self.consistency();
