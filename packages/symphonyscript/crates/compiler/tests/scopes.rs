@@ -166,6 +166,25 @@ fn a_cycle_among_the_lets_of_an_unused_function_or_pattern_is_reported() {
 }
 
 #[test]
+fn a_local_cycle_is_reported_once() {
+    let g = "fn g(x): x\n";
+    let through_a_call = "fn f():\n    let a = g(a)\n    a\n";
+    let rows = [
+        format!("{g}{through_a_call}Clip c:\n    Note/(f())\nSession s\n"),
+        format!("{g}{through_a_call}Session s\n"),
+        "fn f():\n    let a = b\n    let b = a\n    a\nSession s\n".to_string(),
+        "fn f(): a\nlet a = f()\nSession s\n".to_string(),
+    ];
+    for text in &rows {
+        let found: Vec<Code> = support::checked(text)
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(found, vec![Code::DeclarationCycle], "{text}");
+    }
+}
+
+#[test]
 fn parameters_with_defaults_come_last_and_one_is_marked_default() {
     support::expect_codes("fn f(a = 1, b): a + b\n", &[(Code::ParameterOrder, "b", 0)]);
     support::expect_codes(

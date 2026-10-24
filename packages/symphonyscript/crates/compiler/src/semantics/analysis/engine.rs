@@ -544,11 +544,16 @@ impl<'a> Engine<'a> {
             current = parent;
         }
         path.reverse();
-        let local_lets = path.iter().all(|query| match query {
-            Query::Let(_, LetRef::Local(_)) => true,
-            other => self.declaration(*other).is_none(),
+        let through_local_let = path
+            .iter()
+            .any(|query| matches!(query, Query::Let(_, LetRef::Local(_))));
+        let through_top_level = path.iter().any(|query| {
+            matches!(
+                query,
+                Query::Let(_, LetRef::Top(_)) | Query::Input(_) | Query::Attr(..)
+            )
         });
-        if local_lets {
+        if through_local_let && !through_top_level {
             return;
         }
         let mut names = Vec::new();
