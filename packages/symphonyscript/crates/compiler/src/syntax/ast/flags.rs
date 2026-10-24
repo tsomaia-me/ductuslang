@@ -1,20 +1,20 @@
 use super::ast_node::AstNode;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Flags(SyntaxNode);
+pub struct Flags<'p>(NodeView<'p>);
 
-impl AstNode for Flags {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for Flags<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::Flags).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }
 
-impl Flags {
+impl<'p> Flags<'p> {
     pub fn chars(&self) -> Vec<char> {
         self.0
             .children_with_tokens()

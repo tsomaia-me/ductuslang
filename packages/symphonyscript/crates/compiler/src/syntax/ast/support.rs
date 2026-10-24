@@ -1,69 +1,74 @@
 use super::ast_node::AstNode;
 use super::expr::Expr;
 use super::name::Name;
-use crate::syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
+use crate::syntax::{ElementView, NodeView, SyntaxKind, TokenView};
 
-pub(super) fn child<N: AstNode>(node: &SyntaxNode) -> Option<N> {
+pub(super) fn child<'p, N: AstNode<'p>>(node: &NodeView<'p>) -> Option<N> {
     node.children().find_map(N::cast)
 }
 
-pub(super) fn children<N: AstNode>(node: &SyntaxNode) -> impl Iterator<Item = N> + use<N> {
+pub(super) fn children<'p, N: AstNode<'p>>(
+    node: &NodeView<'p>,
+) -> impl Iterator<Item = N> + use<'p, N> {
     node.children().filter_map(N::cast)
 }
 
-pub(super) fn tokens(
-    node: &SyntaxNode,
+pub(super) fn tokens<'p>(
+    node: &NodeView<'p>,
     kind: SyntaxKind,
-) -> impl Iterator<Item = SyntaxToken> + use<> {
+) -> impl Iterator<Item = TokenView<'p>> + use<'p> {
     node.children_with_tokens()
-        .filter_map(|element| element.into_token())
+        .filter_map(ElementView::into_token)
         .filter(move |token| token.kind() == kind)
 }
 
-pub(super) fn token(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
+pub(super) fn token<'p>(node: &NodeView<'p>, kind: SyntaxKind) -> Option<TokenView<'p>> {
     tokens(node, kind).next()
 }
 
-pub(super) fn name_at(node: &SyntaxNode, position: usize) -> Option<Name> {
+pub(super) fn name_at<'p>(node: &NodeView<'p>, position: usize) -> Option<Name<'p>> {
     tokens(node, SyntaxKind::Ident).nth(position).map(Name::new)
 }
 
-pub(super) fn expr_before(node: &SyntaxNode, marker: impl Fn(SyntaxKind) -> bool) -> Option<Expr> {
+pub(super) fn expr_before<'p>(
+    node: &NodeView<'p>,
+    marker: impl Fn(SyntaxKind) -> bool,
+) -> Option<Expr<'p>> {
     for element in node.children_with_tokens() {
         match element {
-            rowan::NodeOrToken::Token(token) if marker(token.kind()) => return None,
-            rowan::NodeOrToken::Node(child) => {
+            ElementView::Token(token) if marker(token.kind()) => return None,
+            ElementView::Node(child) => {
                 if let Some(expr) = Expr::cast(child) {
                     return Some(expr);
                 }
             }
-            rowan::NodeOrToken::Token(_) => {}
+            ElementView::Token(_) => {}
         }
     }
     None
 }
 
-pub(super) fn expr_after(
-    node: &SyntaxNode,
+pub(super) fn expr_after<'p>(
+    node: &NodeView<'p>,
     marker: impl Fn(SyntaxKind) -> bool,
     stop: impl Fn(SyntaxKind) -> bool,
-) -> Option<Expr> {
+) -> Option<Expr<'p>> {
     let mut started = false;
     for element in node.children_with_tokens() {
         match element {
-            rowan::NodeOrToken::Token(token) => {
+            ElementView::Token(token) => {
                 if !started && marker(token.kind()) {
                     started = true;
                 } else if started && stop(token.kind()) {
                     return None;
                 }
             }
-            rowan::NodeOrToken::Node(child) if started => {
+            ElementView::Node(child) if started => {
                 if let Some(expr) = Expr::cast(child) {
                     return Some(expr);
                 }
             }
-            rowan::NodeOrToken::Node(_) => {}
+            ElementView::Node(_) => {}
         }
     }
     None

@@ -1,13 +1,13 @@
-use rowan::TextRange;
+use std::ops::Range;
 
-use crate::syntax::SyntaxToken;
+use crate::syntax::TokenView;
 use crate::syntax::nfc::nfc;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Name(SyntaxToken);
+pub struct Name<'p>(TokenView<'p>);
 
-impl Name {
-    pub(crate) fn new(token: SyntaxToken) -> Self {
+impl<'p> Name<'p> {
+    pub(crate) fn new(token: TokenView<'p>) -> Self {
         Self(token)
     }
 
@@ -15,11 +15,11 @@ impl Name {
         nfc(self.0.text()).into_owned()
     }
 
-    pub fn token(&self) -> &SyntaxToken {
+    pub fn token(&self) -> &TokenView<'p> {
         &self.0
     }
 
-    pub fn range(&self) -> TextRange {
-        self.0.text_range()
+    pub fn range(&self) -> Range<u32> {
+        self.0.range()
     }
 }

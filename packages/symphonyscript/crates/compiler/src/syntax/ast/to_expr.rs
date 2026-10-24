@@ -1,15 +1,15 @@
 use super::ast_node::AstNode;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct ToExpr(SyntaxNode);
+pub struct ToExpr<'p>(NodeView<'p>);
 
-impl AstNode for ToExpr {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for ToExpr<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::ToExpr).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }

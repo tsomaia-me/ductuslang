@@ -269,7 +269,7 @@ fn broken_sources_yield_a_tree_and_diagnostics_at_their_spans() {
     for (text, diagnostics, tree) in BROKEN {
         assert_eq!(support::codes(text), *diagnostics, "{text:?}");
         assert_eq!(support::tree(text), *tree, "{text:?}");
-        assert_eq!(support::parsed(text).syntax().to_string(), *text);
+        assert_eq!(support::parsed(text).root().to_string(), *text);
     }
 }
 

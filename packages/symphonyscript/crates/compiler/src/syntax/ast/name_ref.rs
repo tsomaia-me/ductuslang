@@ -1,23 +1,23 @@
 use super::ast_node::AstNode;
 use super::name::Name;
 use super::support::name_at;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct NameRef(SyntaxNode);
+pub struct NameRef<'p>(NodeView<'p>);
 
-impl AstNode for NameRef {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for NameRef<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::NameRef).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }
 
-impl NameRef {
-    pub fn name(&self) -> Option<Name> {
+impl<'p> NameRef<'p> {
+    pub fn name(&self) -> Option<Name<'p>> {
         name_at(&self.0, 0)
     }
 }

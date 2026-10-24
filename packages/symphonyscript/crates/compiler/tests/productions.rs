@@ -400,7 +400,7 @@ fn every_production_case_parses_to_its_tree() {
     for (production, text, expected) in CASES {
         assert_eq!(support::clean_tree(text), *expected, "{production}");
         assert_eq!(
-            support::parsed(text).syntax().to_string(),
+            support::parsed(text).root().to_string(),
             *text,
             "{production}"
         );

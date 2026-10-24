@@ -1,23 +1,23 @@
 use super::ast_node::AstNode;
 use super::expr::Expr;
 use super::support::child;
-use crate::syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
+use crate::syntax::{NodeView, SyntaxKind, TokenView};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Conversion(SyntaxNode);
+pub struct Conversion<'p>(NodeView<'p>);
 
-impl AstNode for Conversion {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for Conversion<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::Conversion).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }
 
-impl Conversion {
-    pub fn target(&self) -> Option<SyntaxToken> {
+impl<'p> Conversion<'p> {
+    pub fn target(&self) -> Option<TokenView<'p>> {
         self.0
             .children_with_tokens()
             .filter_map(|element| element.into_token())
@@ -29,7 +29,7 @@ impl Conversion {
             })
     }
 
-    pub fn operand(&self) -> Option<Expr> {
+    pub fn operand(&self) -> Option<Expr<'p>> {
         child(&self.0)
     }
 }

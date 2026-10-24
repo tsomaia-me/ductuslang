@@ -1,6 +1,6 @@
-use crate::syntax::SyntaxNode;
+use crate::syntax::NodeView;
 
-pub trait AstNode: Sized {
-    fn cast(node: SyntaxNode) -> Option<Self>;
-    fn syntax(&self) -> &SyntaxNode;
+pub trait AstNode<'p>: Sized {
+    fn cast(node: NodeView<'p>) -> Option<Self>;
+    fn syntax(&self) -> &NodeView<'p>;
 }

@@ -1,0 +1,11 @@
+error[E0597]: `parsed` does not live long enough
+  --> tests/ui/view_outlives_parsed.rs:14:16
+   |
+13 |         let parsed = parse(&source, &vocab);
+   |             ------ binding `parsed` declared here
+14 |         view = parsed.root();
+   |                ^^^^^^ borrowed value does not live long enough
+15 |     }
+   |     - `parsed` dropped here while still borrowed
+16 |     println!("{view}");
+   |                ---- borrow later used here

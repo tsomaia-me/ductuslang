@@ -4,19 +4,19 @@ use super::line::Line;
 use super::placement::Placement;
 use super::when_block::WhenBlock;
 use super::wire_placement::WirePlacement;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum BodyItem {
-    Placement(Placement),
-    Wire(WirePlacement),
-    Line(Line),
-    For(ForBlock),
-    When(WhenBlock),
+pub enum BodyItem<'p> {
+    Placement(Placement<'p>),
+    Wire(WirePlacement<'p>),
+    Line(Line<'p>),
+    For(ForBlock<'p>),
+    When(WhenBlock<'p>),
 }
 
-impl AstNode for BodyItem {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for BodyItem<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         match node.kind() {
             SyntaxKind::Placement => Placement::cast(node).map(BodyItem::Placement),
             SyntaxKind::WirePlacement => WirePlacement::cast(node).map(BodyItem::Wire),
@@ -27,7 +27,7 @@ impl AstNode for BodyItem {
         }
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         match self {
             BodyItem::Placement(node) => node.syntax(),
             BodyItem::Wire(node) => node.syntax(),

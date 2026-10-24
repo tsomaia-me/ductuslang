@@ -1,23 +1,23 @@
 use super::ast_node::AstNode;
 use super::member::Member;
 use super::support::children;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Members(SyntaxNode);
+pub struct Members<'p>(NodeView<'p>);
 
-impl AstNode for Members {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for Members<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::Members).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }
 
-impl Members {
-    pub fn members(&self) -> impl Iterator<Item = Member> + use<> {
+impl<'p> Members<'p> {
+    pub fn members(&self) -> impl Iterator<Item = Member<'p>> + use<'p> {
         children(&self.0)
     }
 }

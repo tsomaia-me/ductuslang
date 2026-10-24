@@ -4,6 +4,7 @@ use std::mem;
 use rowan::{GreenNode, NodeOrToken};
 
 use super::ast::{AstNode, File};
+use super::node_view::NodeView;
 use super::syntax_kind::SyntaxKind;
 use super::syntax_node::SyntaxNode;
 use crate::diagnostics::Diagnostic;
@@ -18,12 +19,12 @@ impl Parsed {
         Self { green, diagnostics }
     }
 
-    pub fn syntax(&self) -> SyntaxNode {
-        SyntaxNode::new_root(self.green.clone())
+    pub fn root(&self) -> NodeView<'_> {
+        NodeView::new(SyntaxNode::new_root(self.green.clone()))
     }
 
-    pub fn file(&self) -> Option<File> {
-        File::cast(self.syntax())
+    pub fn file(&self) -> Option<File<'_>> {
+        File::cast(self.root())
     }
 }
 

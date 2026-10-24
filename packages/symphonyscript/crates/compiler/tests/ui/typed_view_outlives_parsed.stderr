@@ -1,0 +1,8 @@
+error[E0515]: cannot return value referencing local variable `parsed`
+  --> tests/ui/typed_view_outlives_parsed.rs:13:5
+   |
+13 |     parsed.file().expect("a file")
+   |     ------^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     returns a value referencing data owned by the current function
+   |     `parsed` is borrowed here

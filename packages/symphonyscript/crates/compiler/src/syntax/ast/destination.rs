@@ -2,27 +2,27 @@ use super::ast_node::AstNode;
 use super::expr::Expr;
 use super::match_block::MatchBlock;
 use super::support::child;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Destination(SyntaxNode);
+pub struct Destination<'p>(NodeView<'p>);
 
-impl AstNode for Destination {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for Destination<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::Destination).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }
 
-impl Destination {
-    pub fn value(&self) -> Option<Expr> {
+impl<'p> Destination<'p> {
+    pub fn value(&self) -> Option<Expr<'p>> {
         child(&self.0)
     }
 
-    pub fn match_block(&self) -> Option<MatchBlock> {
+    pub fn match_block(&self) -> Option<MatchBlock<'p>> {
         child(&self.0)
     }
 }

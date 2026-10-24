@@ -13,28 +13,28 @@ use super::prefix_expr::PrefixExpr;
 use super::string_lit::StringLit;
 use super::to_expr::ToExpr;
 use super::variant_ref::VariantRef;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum Expr {
-    If(IfExpr),
-    Binary(BinaryExpr),
-    Prefix(PrefixExpr),
-    Paren(ParenExpr),
-    Literal(Literal),
-    String(StringLit),
-    NameRef(NameRef),
-    VariantRef(VariantRef),
-    To(ToExpr),
-    Conversion(Conversion),
-    Array(ArrayLit),
-    Field(FieldExpr),
-    Index(IndexExpr),
-    Call(CallExpr),
+pub enum Expr<'p> {
+    If(IfExpr<'p>),
+    Binary(BinaryExpr<'p>),
+    Prefix(PrefixExpr<'p>),
+    Paren(ParenExpr<'p>),
+    Literal(Literal<'p>),
+    String(StringLit<'p>),
+    NameRef(NameRef<'p>),
+    VariantRef(VariantRef<'p>),
+    To(ToExpr<'p>),
+    Conversion(Conversion<'p>),
+    Array(ArrayLit<'p>),
+    Field(FieldExpr<'p>),
+    Index(IndexExpr<'p>),
+    Call(CallExpr<'p>),
 }
 
-impl AstNode for Expr {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for Expr<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         match node.kind() {
             SyntaxKind::IfExpr => IfExpr::cast(node).map(Expr::If),
             SyntaxKind::BinaryExpr => BinaryExpr::cast(node).map(Expr::Binary),
@@ -54,7 +54,7 @@ impl AstNode for Expr {
         }
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         match self {
             Expr::If(node) => node.syntax(),
             Expr::Binary(node) => node.syntax(),

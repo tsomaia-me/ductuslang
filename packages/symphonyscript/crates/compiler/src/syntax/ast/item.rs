@@ -5,20 +5,20 @@ use super::let_decl::LetDecl;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
 use super::wire_placement::WirePlacement;
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum Item {
-    Input(InputDecl),
-    Let(LetDecl),
-    Fn(FnDecl),
-    Pattern(PatternDecl),
-    Placement(Placement),
-    Wire(WirePlacement),
+pub enum Item<'p> {
+    Input(InputDecl<'p>),
+    Let(LetDecl<'p>),
+    Fn(FnDecl<'p>),
+    Pattern(PatternDecl<'p>),
+    Placement(Placement<'p>),
+    Wire(WirePlacement<'p>),
 }
 
-impl AstNode for Item {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for Item<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         match node.kind() {
             SyntaxKind::InputDecl => InputDecl::cast(node).map(Item::Input),
             SyntaxKind::LetDecl => LetDecl::cast(node).map(Item::Let),
@@ -30,7 +30,7 @@ impl AstNode for Item {
         }
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         match self {
             Item::Input(node) => node.syntax(),
             Item::Let(node) => node.syntax(),

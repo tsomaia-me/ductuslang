@@ -26,7 +26,7 @@ fn round_trip(text: String, clean: bool) {
         "{:?}",
         parsed.diagnostics.first()
     );
-    let tree = parsed.syntax();
+    let tree = parsed.root();
     assert_eq!(tree.to_string(), text);
     assert!(support::sexp(&tree).starts_with("File["));
     drop(tree);
@@ -131,6 +131,64 @@ fn the_typed_view_walks_a_deep_tree() {
         drop(value);
         drop(decl);
         drop(file);
+        drop(parsed);
+    });
+}
+
+#[test]
+fn views_of_a_deep_parse_drop_before_their_parse_result() {
+    use symphonyscript::syntax::{ElementView, NodeView, Walk};
+    on_small_stack(|| {
+        let text = format!("let a = {}\n", nested("[", "1", "]"));
+        let parsed = support::parsed(&text);
+        let root = parsed.root();
+        let nodes: Vec<NodeView<'_>> = root
+            .preorder()
+            .filter_map(|event| match event {
+                Walk::Enter(ElementView::Node(node)) => Some(node),
+                _ => None,
+            })
+            .collect();
+        assert!(nodes.len() > DEPTH);
+        let deepest = nodes.last().expect("a deepest node").clone();
+        assert_eq!(deepest.ancestors().count(), DEPTH + 3);
+        let offset = deepest.range().start;
+        let tokens = root.token_at_offset(offset);
+        assert!(!tokens.is_empty());
+        let first = root.first_token().expect("a first token");
+        let last = root.last_token().expect("a last token");
+        let inner = deepest.first_token().expect("the innermost token");
+        assert_eq!(inner.text(), "1");
+        assert_eq!(
+            inner
+                .prev_token()
+                .map(|token| token.text().to_string())
+                .as_deref(),
+            Some("[")
+        );
+        assert_eq!(
+            inner
+                .next_token()
+                .map(|token| token.text().to_string())
+                .as_deref(),
+            Some("]")
+        );
+        assert_eq!(first.text(), "let");
+        assert_eq!(last.text(), "\n");
+        assert_eq!(
+            deepest
+                .last_token()
+                .map(|token| token.text().to_string())
+                .as_deref(),
+            Some("1")
+        );
+        drop((first, last, inner));
+        let parent = deepest.parent().expect("a parent");
+        drop(parent);
+        drop(tokens);
+        drop(deepest);
+        drop(nodes);
+        drop(root);
         drop(parsed);
     });
 }

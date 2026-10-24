@@ -1,35 +1,38 @@
 mod support;
 
-use symphonyscript::syntax::SyntaxKind;
 use symphonyscript::syntax::ast::{
-    AstNode, BodyItem, Expr, File, Item, Iterable, Member, Name, StringPart,
+    AstNode, BodyItem, Expr, Item, Iterable, Member, Name, StringPart,
 };
+use symphonyscript::syntax::{Parsed, SyntaxKind};
 
-fn file(text: &str) -> File {
+fn clean(text: &str) -> Parsed {
     let parsed = support::parsed(text);
     assert_eq!(parsed.diagnostics, vec![], "{text:?}");
-    parsed.file().expect("the root is a file")
+    parsed
 }
 
-fn text(name: Option<Name>) -> String {
+fn items<'p>(parsed: &'p Parsed) -> Vec<Item<'p>> {
+    parsed.file().expect("the root is a file").items().collect()
+}
+
+fn text(name: Option<Name<'_>>) -> String {
     name.map(|name| name.text()).unwrap_or_default()
 }
 
-fn source(expr: Option<Expr>) -> String {
+fn source(expr: Option<Expr<'_>>) -> String {
     expr.map(|expr| expr.syntax().to_string().trim().to_string())
         .unwrap_or_default()
 }
 
 #[test]
 fn declarations_expose_their_parts() {
-    let items: Vec<Item> = file(
+    let parsed = clean(
         "input fine: f32[2] = 0\n\
          let level = match wave:\n    Sine: 1.0\n    -1: 0.5\n    else: 0.6\n\
          fn scale(degree, root = 60):\n    let octave = degree div 7\n    root + octave\n\
          pattern Arp(default root, steps = 4):\n    let k = steps\n    Note/root\n",
-    )
-    .items()
-    .collect();
+    );
+    let items = items(&parsed);
     let Item::Input(input) = &items[0] else {
         panic!("an input");
     };
@@ -87,7 +90,7 @@ fn declarations_expose_their_parts() {
 
 #[test]
 fn placements_expose_their_parts() {
-    let items: Vec<Item> = file(
+    let parsed = clean(
         "Clip as verse | gain=0.8:\n\
          \x20   Note'* as hook /65 when on | velocity=0.9 accent !accent\n\
          \x20   Plays as back /0.5 | transpose=-2: [verse, verse][0]\n\
@@ -95,9 +98,8 @@ fn placements_expose_their_parts() {
          \x20   for s in list: Note\n\
          \x20   when on:\n        Note\n    else: Note\n\
          \x20   when:\n        a: Note\n        else: Note\n",
-    )
-    .items()
-    .collect();
+    );
+    let items = items(&parsed);
     let Item::Placement(verse) = &items[0] else {
         panic!("a placement");
     };
@@ -195,13 +197,12 @@ fn placements_expose_their_parts() {
 
 #[test]
 fn expressions_expose_their_parts() {
-    let items: Vec<Item> = file(
+    let parsed = clean(
         "let a = if c then x is not y else -z\n\
          let b = f(1, 2)[0].gain + g(n=1)\n\
          let c = [\"kit/{i}.wav\", Wave::Saw, i32(q), (p)]\n",
-    )
-    .items()
-    .collect();
+    );
+    let items = items(&parsed);
     let value = |index: usize| match &items[index] {
         Item::Let(decl) => decl.value().expect("a value"),
         _ => panic!("a let"),
@@ -285,9 +286,8 @@ fn expressions_expose_their_parts() {
 
 #[test]
 fn names_compare_in_nfc() {
-    let items: Vec<Item> = file("Clip Cafe\u{301}\nClip Caf\u{e9}x\n")
-        .items()
-        .collect();
+    let parsed = clean("Clip Cafe\u{301}\nClip Caf\u{e9}x\n");
+    let items = items(&parsed);
     let Item::Placement(first) = &items[0] else {
         panic!("a placement");
     };
@@ -301,9 +301,8 @@ fn names_compare_in_nfc() {
 
 #[test]
 fn literals_and_to_are_tokens_of_their_nodes() {
-    let items: Vec<Item> = file("Clip c:\n    Plays | gain=to.gain: c\nlet t = true\n")
-        .items()
-        .collect();
+    let parsed = clean("Clip c:\n    Plays | gain=to.gain: c\nlet t = true\n");
+    let items = items(&parsed);
     let Item::Let(decl) = &items[1] else {
         panic!("a let");
     };
@@ -331,14 +330,14 @@ fn literals_and_to_are_tokens_of_their_nodes() {
     assert!(matches!(field.receiver(), Some(Expr::To(_))));
 }
 
-fn broken_file(text: &str) -> File {
+fn parse_broken(text: &str) -> Parsed {
     let parsed = support::parsed(text);
     assert!(!parsed.diagnostics.is_empty(), "{text:?}");
-    parsed.file().expect("the root is a file")
+    parsed
 }
 
-fn let_value(file: &File, index: usize) -> Expr {
-    match file.items().nth(index) {
+fn let_value(parsed: &Parsed, index: usize) -> Expr<'_> {
+    match items(parsed).into_iter().nth(index) {
         Some(Item::Let(decl)) => decl.value().expect("a value"),
         other => panic!("a let, found {other:?}"),
     }
@@ -346,7 +345,7 @@ fn let_value(file: &File, index: usize) -> Expr {
 
 #[test]
 fn a_missing_operand_leaves_the_others_in_place() {
-    let broken = broken_file("let a = if then 1 else 2\nlet b = 1 +\nlet c = * 2\nlet d = a[]\n");
+    let broken = parse_broken("let a = if then 1 else 2\nlet b = 1 +\nlet c = * 2\nlet d = a[]\n");
     let Expr::If(choice) = let_value(&broken, 0) else {
         panic!("an if");
     };
@@ -369,7 +368,7 @@ fn a_missing_operand_leaves_the_others_in_place() {
     assert_eq!(source(index.base()), "a");
     assert!(index.index().is_none());
 
-    let broken = broken_file("let e = if c then else 3\n");
+    let broken = parse_broken("let e = if c then else 3\n");
     let Expr::If(choice) = let_value(&broken, 0) else {
         panic!("an if");
     };
@@ -380,8 +379,8 @@ fn a_missing_operand_leaves_the_others_in_place() {
 
 #[test]
 fn a_missing_range_bound_or_arm_label_leaves_the_other_in_place() {
-    let broken = broken_file("Clip c:\n    for i in ..3:\n        Note\n");
-    let Some(Item::Placement(clip)) = broken.items().next() else {
+    let broken = parse_broken("Clip c:\n    for i in ..3:\n        Note\n");
+    let Some(Item::Placement(clip)) = items(&broken).into_iter().next() else {
         panic!("a placement");
     };
     let block = clip.body().and_then(|body| body.block()).expect("a block");
@@ -394,8 +393,8 @@ fn a_missing_range_bound_or_arm_label_leaves_the_other_in_place() {
     assert!(range.start().is_none());
     assert_eq!(source(range.end()), "3");
 
-    let broken = broken_file("let a = match b:\n    : 1\n    else: 2\n");
-    let Some(Item::Let(decl)) = broken.items().next() else {
+    let broken = parse_broken("let a = match b:\n    : 1\n    else: 2\n");
+    let Some(Item::Let(decl)) = items(&broken).into_iter().next() else {
         panic!("a let");
     };
     let arm = decl

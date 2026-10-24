@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use rowan::{NodeOrToken, WalkEvent};
-use symphonyscript::syntax::{Parsed, SyntaxKind, SyntaxNode, parse};
+use symphonyscript::syntax::{ElementView, NodeView, Parsed, SyntaxKind, Walk, parse};
 use symphonyscript::{Code, Source};
 use symphonyscript_fixtures::vocabulary;
 
@@ -31,25 +30,25 @@ pub fn codes(text: &str) -> Vec<(Code, u32, u32)> {
 }
 
 pub fn tree(text: &str) -> String {
-    sexp(&parsed(text).syntax())
+    sexp(&parsed(text).root())
 }
 
 pub fn clean_tree(text: &str) -> String {
     let result = parsed(text);
     assert_eq!(result.diagnostics, vec![], "{text:?}");
-    sexp(&result.syntax())
+    sexp(&result.root())
 }
 
-pub fn sexp(node: &SyntaxNode) -> String {
+pub fn sexp(node: &NodeView<'_>) -> String {
     let mut out = String::new();
     let mut first = vec![true];
-    for event in node.preorder_with_tokens() {
+    for event in node.preorder() {
         match event {
-            WalkEvent::Enter(element) => {
+            Walk::Enter(element) => {
                 let opens = element.as_node().is_some();
                 let piece = match &element {
-                    NodeOrToken::Node(child) => format!("{:?}[", child.kind()),
-                    NodeOrToken::Token(token) => match token.kind() {
+                    ElementView::Node(child) => format!("{:?}[", child.kind()),
+                    ElementView::Token(token) => match token.kind() {
                         kind if kind.is_trivia() => continue,
                         SyntaxKind::Newline => "NL".to_string(),
                         SyntaxKind::Indent => ">".to_string(),
@@ -68,11 +67,11 @@ pub fn sexp(node: &SyntaxNode) -> String {
                     first.push(true);
                 }
             }
-            WalkEvent::Leave(NodeOrToken::Node(_)) => {
+            Walk::Leave(ElementView::Node(_)) => {
                 first.pop();
                 out.push(']');
             }
-            WalkEvent::Leave(NodeOrToken::Token(_)) => {}
+            Walk::Leave(ElementView::Token(_)) => {}
         }
     }
     out

@@ -1,8 +1,8 @@
 use super::interpolation::Interpolation;
-use crate::syntax::SyntaxToken;
+use crate::syntax::TokenView;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum StringPart {
-    Text(SyntaxToken),
-    Interpolation(Interpolation),
+pub enum StringPart<'p> {
+    Text(TokenView<'p>),
+    Interpolation(Interpolation<'p>),
 }

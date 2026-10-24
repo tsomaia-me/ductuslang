@@ -4,7 +4,7 @@ use symphonyscript_fixtures::{dsp_project, music_project, spec_examples};
 
 fn round_trips(text: &str) {
     let parsed = support::parsed(text);
-    assert_eq!(parsed.syntax().to_string(), text, "{text:?}");
+    assert_eq!(parsed.root().to_string(), text, "{text:?}");
     for diagnostic in &parsed.diagnostics {
         let range = &diagnostic.span.range;
         assert!(

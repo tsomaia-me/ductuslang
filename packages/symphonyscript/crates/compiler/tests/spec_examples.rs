@@ -19,7 +19,7 @@ fn every_sym_example_parses() {
             example.line
         );
         assert_eq!(
-            parsed.syntax().to_string(),
+            parsed.root().to_string(),
             example.text,
             "{}",
             example.name()
@@ -35,7 +35,7 @@ fn every_sym_error_example_is_extracted() {
         .map(|example| {
             assert!(!example.text.is_empty(), "{}", example.name());
             assert_eq!(
-                support::parsed(&example.text).syntax().to_string(),
+                support::parsed(&example.text).root().to_string(),
                 example.text
             );
             example.name()

@@ -1,7 +1,9 @@
 use rowan::{GreenNodeBuilder, Language};
 
 use super::{AstNode, BodyItem, Expr, Item};
-use crate::syntax::{SymphonyLanguage, SyntaxKind, SyntaxNode};
+use crate::syntax::symphony_language::SymphonyLanguage;
+use crate::syntax::syntax_node::SyntaxNode;
+use crate::syntax::{NodeView, SyntaxKind};
 
 fn tree(shape: &[(Option<SyntaxKind>, SyntaxKind, &str)]) -> SyntaxNode {
     let mut builder = GreenNodeBuilder::new();
@@ -50,7 +52,7 @@ fn the_typed_view_reads_a_hand_built_tree() {
         end,
     ]);
     assert_eq!(root.to_string(), "Clip Cafe\u{301}:\n    Note/60\n");
-    let file = super::File::cast(root).expect("a file");
+    let file = super::File::cast(NodeView::new(root.clone())).expect("a file");
     let items: Vec<Item> = file.items().collect();
     let Some(Item::Placement(clip)) = items.first() else {
         panic!("a placement");

@@ -1,0 +1,16 @@
+error[E0505]: cannot move out of `parsed` because it is borrowed
+  --> tests/ui/drop_parsed_while_viewed.rs:13:10
+   |
+11 |     let parsed = parse(&source, &vocab);
+   |         ------ binding `parsed` declared here
+12 |     let root = parsed.root();
+   |                ------ borrow of `parsed` occurs here
+13 |     drop(parsed);
+   |          ^^^^^^ move out of `parsed` occurs here
+14 |     println!("{root}");
+   |                ---- borrow later used here
+   |
+help: consider cloning the value if the performance cost is acceptable
+   |
+12 |     let root = parsed.clone().root();
+   |                      ++++++++

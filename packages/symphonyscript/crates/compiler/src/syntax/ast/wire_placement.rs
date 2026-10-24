@@ -6,27 +6,27 @@ use super::flags::Flags;
 use super::gate::Gate;
 use super::name::Name;
 use super::support::{child, name_at, token};
-use crate::syntax::{SyntaxKind, SyntaxNode};
+use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct WirePlacement(SyntaxNode);
+pub struct WirePlacement<'p>(NodeView<'p>);
 
-impl AstNode for WirePlacement {
-    fn cast(node: SyntaxNode) -> Option<Self> {
+impl<'p> AstNode<'p> for WirePlacement<'p> {
+    fn cast(node: NodeView<'p>) -> Option<Self> {
         (node.kind() == SyntaxKind::WirePlacement).then_some(Self(node))
     }
 
-    fn syntax(&self) -> &SyntaxNode {
+    fn syntax(&self) -> &NodeView<'p> {
         &self.0
     }
 }
 
-impl WirePlacement {
-    pub fn kind(&self) -> Option<Name> {
+impl<'p> WirePlacement<'p> {
+    pub fn kind(&self) -> Option<Name<'p>> {
         name_at(&self.0, 0)
     }
 
-    pub fn flags(&self) -> Option<Flags> {
+    pub fn flags(&self) -> Option<Flags<'p>> {
         child(&self.0)
     }
 
@@ -34,23 +34,23 @@ impl WirePlacement {
         token(&self.0, SyntaxKind::AsKw).is_some()
     }
 
-    pub fn name(&self) -> Option<Name> {
+    pub fn name(&self) -> Option<Name<'p>> {
         name_at(&self.0, 1)
     }
 
-    pub fn default_arg(&self) -> Option<DefaultArg> {
+    pub fn default_arg(&self) -> Option<DefaultArg<'p>> {
         child(&self.0)
     }
 
-    pub fn gate(&self) -> Option<Gate> {
+    pub fn gate(&self) -> Option<Gate<'p>> {
         child(&self.0)
     }
 
-    pub fn attrs(&self) -> Option<Attrs> {
+    pub fn attrs(&self) -> Option<Attrs<'p>> {
         child(&self.0)
     }
 
-    pub fn destination(&self) -> Option<Destination> {
+    pub fn destination(&self) -> Option<Destination<'p>> {
         child(&self.0)
     }
 }
