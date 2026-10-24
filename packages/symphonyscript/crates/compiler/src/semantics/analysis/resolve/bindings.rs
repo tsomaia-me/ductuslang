@@ -10,7 +10,9 @@ use crate::semantics::analysis::binding::Binding;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
@@ -26,7 +28,7 @@ use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
-use crate::semantics::ir::{InputId, LetDecl, TypeBase, TypeRef};
+use crate::semantics::ir::{ExprId, InputId, LetDecl, TypeBase, TypeRef};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_let(
@@ -183,6 +185,10 @@ impl Engine<'_> {
         let Some(val) = self.val(Query::Expr(decl.value, global), need) else {
             return false;
         };
+        let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
+        let Some(val) = self.input_elements(val, annotation.as_ref(), decl.value, need) else {
+            return false;
+        };
         let Some(sigs) = self.element_sigs(&val, need) else {
             return false;
         };
@@ -224,7 +230,6 @@ impl Engine<'_> {
             self.memo.inputs.insert(input, BoundVal::Error);
             return true;
         }
-        let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
         if let Some(annotation) = &annotation
             && annotation.lengths != val.shape().lengths()
         {
@@ -294,6 +299,7 @@ impl Engine<'_> {
                 let Some(val) = self.val(Query::Expr(expr, scope), need) else {
                     return false;
                 };
+                let val = self.attr_elements(val, &decl.ty.lengths, expr, scope);
                 let Some(sigs) = self.element_sigs(&val, need) else {
                     return false;
                 };
@@ -344,6 +350,62 @@ impl Engine<'_> {
         };
         self.memo.attrs.insert((item, attr), bound);
         true
+    }
+
+    fn input_elements(
+        &mut self,
+        val: Val,
+        annotation: Option<&Annotation>,
+        expr: ExprId,
+        need: &mut Vec<Query>,
+    ) -> Option<Val> {
+        let Val::Scalar(node) = val else {
+            return Some(val);
+        };
+        if !self.arrays.contains(&node) {
+            return Some(val);
+        }
+        let ty = eval_ty_of(annotation.map(|annotation| annotation.scalar));
+        let value = self.cval(Query::Eval(node, ty), need)?;
+        let CVal::Array(array) = value else {
+            return Some(val);
+        };
+        let shape = Shape::from_lengths(&array.lengths());
+        let loc = self.hir.expr(expr).loc;
+        let scope = self.source_global;
+        let nodes = self.projected(
+            node,
+            &shape,
+            (
+                Code::TypeMismatch,
+                "the initializer's shape differs from the input's type",
+            ),
+            loc,
+            scope,
+        );
+        Some(Val::array(shape, nodes))
+    }
+
+    fn attr_elements(&mut self, val: Val, lengths: &[u32], expr: ExprId, scope: ScopeId) -> Val {
+        let Val::Scalar(node) = val else {
+            return val;
+        };
+        if !self.arrays.contains(&node) {
+            return val;
+        }
+        if lengths.is_empty() {
+            return val;
+        }
+        let shape = Shape::from_lengths(lengths);
+        let loc = self.hir.expr(expr).loc;
+        let nodes = self.projected(
+            node,
+            &shape,
+            (Code::TypeMismatch, ATTRIBUTE_SHAPE),
+            loc,
+            scope,
+        );
+        Val::array(shape, nodes)
     }
 
     fn bind_attr(&mut self, val: &Val, sigs: &[Sig], spec: &BindSpec<'_>) -> BoundVal {
@@ -412,6 +474,7 @@ impl Engine<'_> {
         if let Some(annotation) = annotation
             && annotation.lengths != val.shape().lengths()
             && !matches!(val, Val::Error)
+            && !self.holds_array(val)
         {
             self.error(
                 Code::TypeMismatch,
@@ -457,7 +520,20 @@ impl Engine<'_> {
         };
         match val {
             Val::Scalar(node) => match sigs.first() {
-                Some(sig) => BoundVal::Scalar(one(self, *node, sig, false)),
+                Some(sig) => {
+                    let bound = one(self, *node, sig, false);
+                    if let (Some(annotation), Bound::Value(annotated)) = (annotation, bound)
+                        && self.arrays.contains(node)
+                    {
+                        self.require_shape(
+                            annotated,
+                            annotation.lengths.clone(),
+                            Code::TypeMismatch,
+                            "the value's shape differs from its annotated type",
+                        );
+                    }
+                    BoundVal::Scalar(bound)
+                }
                 None => BoundVal::Error,
             },
             Val::Array(array) => {
@@ -502,3 +578,5 @@ fn annotated(sig: &Sig, target: Scalar) -> bool {
     };
     fits && widens_into
 }
+
+const ATTRIBUTE_SHAPE: &str = "the value's array shape differs from the attribute's type";

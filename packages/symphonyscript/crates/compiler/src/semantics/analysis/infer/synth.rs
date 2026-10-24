@@ -117,7 +117,8 @@ impl Engine<'_> {
                 values.extend(otherwise.iter().copied());
                 self.combine(&values)
             }
-            Op::Pick { items, .. } => self.combine(items),
+            Op::Pick { items, .. } | Op::Array(items) => self.combine(items),
+            Op::Element { base, .. } => self.known(*base).0,
             Op::Convert(target, _) | Op::Annotate(target, _) => Some(*target),
             Op::Builtin(builtin, args) => match builtin {
                 Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp => self.combine(args),

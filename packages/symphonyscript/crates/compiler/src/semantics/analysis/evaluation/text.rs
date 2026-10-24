@@ -13,6 +13,6 @@ pub(super) fn text(
         CVal::Bool(value) => value.to_string(),
         CVal::Enum(id, index) => variant(*id, *index),
         CVal::Str(text) => text.to_string(),
-        CVal::Node(_) | CVal::Error => return None,
+        CVal::Node(_) | CVal::Array(_) | CVal::Error => return None,
     })
 }

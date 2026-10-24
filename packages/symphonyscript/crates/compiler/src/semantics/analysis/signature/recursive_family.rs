@@ -105,10 +105,8 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Option<Option<NodeId>> {
         let body = self.hir.fn_decl(function).value;
-        match self.val(Query::Expr(body, scope), need)? {
-            Val::Scalar(root) => Some(Some(root)),
-            Val::Array(_) | Val::Error => Some(None),
-        }
+        let val = self.val(Query::Expr(body, scope), need)?;
+        Some(self.boxed_body(body, scope, &val))
     }
 
     fn family_shape(&self, arg: Option<&Val>) -> ArgShape {

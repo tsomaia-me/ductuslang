@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use symphonyscript_core::EnumId;
 
+use super::c_array::CArray;
 use super::item_ref::ItemRef;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -13,6 +14,7 @@ pub(crate) enum CVal {
     Enum(EnumId, u16),
     Str(Rc<str>),
     Node(ItemRef),
+    Array(CArray),
     Error,
 }
 

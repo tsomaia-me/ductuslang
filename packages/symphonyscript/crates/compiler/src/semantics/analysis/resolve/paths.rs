@@ -81,6 +81,8 @@ impl Engine<'_> {
             | Op::If(..)
             | Op::Match { .. }
             | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
             | Op::Convert(..)
             | Op::Annotate(..)
             | Op::Builtin(..)
@@ -116,6 +118,7 @@ impl Engine<'_> {
                     | CVal::Bool(_)
                     | CVal::Enum(..)
                     | CVal::Str(_)
+                    | CVal::Array(_)
                     | CVal::Error => return Some(Val::Error),
                 }
             }
@@ -216,6 +219,11 @@ impl Engine<'_> {
         let base_val = self.val(Query::Expr(base, scope), need);
         let index_val = self.val(Query::Expr(index, scope), need);
         let (base_val, index_val) = (base_val?, index_val?);
+        self.single_operand(
+            &index_val,
+            Code::IndexType,
+            "an index is an integer, not an array",
+        );
         let index_node = match index_val {
             Val::Scalar(node) => node,
             Val::Array(_) => {
@@ -229,6 +237,15 @@ impl Engine<'_> {
             }
             Val::Error => return Some(Val::Error),
         };
+        if let Val::Scalar(base_node) = base_val
+            && self.arrays.contains(&base_node)
+        {
+            let element = Op::Element {
+                base: base_node,
+                index: index_node,
+            };
+            return Some(self.scalar(element, loc, scope));
+        }
         let array = match &base_val {
             Val::Array(array) => array.clone(),
             Val::Scalar(_) => {
@@ -265,6 +282,7 @@ impl Engine<'_> {
                 | CVal::Enum(..)
                 | CVal::Str(_)
                 | CVal::Node(_)
+                | CVal::Array(_)
                 | CVal::Error => return Some(Val::Error),
             };
             if (0..i128::from(outer)).contains(&position) {
@@ -403,6 +421,8 @@ impl Engine<'_> {
                 | Op::Convert(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
                 | Op::ToRead { .. } => {}
             }
         }

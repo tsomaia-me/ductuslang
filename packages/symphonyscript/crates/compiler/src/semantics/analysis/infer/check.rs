@@ -158,6 +158,14 @@ impl Engine<'_> {
                         None => stack.extend(items.into_iter().map(|item| (item, ty))),
                     }
                 }
+                Op::Element { base, index } => {
+                    let index_ty = self.synth(index);
+                    stack.push((index, index_ty));
+                    stack.push((base, ty));
+                }
+                Op::Array(elements) => {
+                    stack.extend(elements.into_iter().map(|element| (element, ty)));
+                }
                 Op::Convert(target, operand) => {
                     let operand_ty = if is_float(target) {
                         Some(target)

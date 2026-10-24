@@ -8,6 +8,7 @@ use super::Engine;
 use super::attr_value_source::AttrValueSource;
 use super::binding_kind::BindingKind;
 use super::bound_val::BoundVal;
+use super::c_array::CArray;
 use super::c_val::CVal;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
@@ -685,6 +686,19 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
         assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
         assert_eq!(found, Vec::<String>::new(), "{text}");
     }
+    let recursive_arrays = [
+        format!("{CHORD_FN}Clip c:\n    [Note/(chord(3)[0]) Note/(chord(3)[1]) Note/(chord(3)[2])]\n"),
+        format!("{R_FN}Clip c | gain=(r(0.1, 3)[0])\nOsc o | freq=(r(0.1, 3)[0])\n"),
+        format!("{CHORD_FN}Clip c:\n    for p in chord(3):\n        Note/p\n"),
+        format!("{CHORD_FN}let v: i32[3] = chord(1)\nlet x = [chord(1), chord(2)]\nClip c:\n    Note/(v[2] + x[1][2])\n"),
+        format!("{CHORD_FN}input f = true\ninput a = 1\ninput i = 0\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
+        "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\nfn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nfn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(g(2)[1][2] + rev([1, 2], 3)[0] + grow(3)[0])\n".into(),
+    ];
+    for text in &recursive_arrays {
+        let (diagnostics, found) = analyzed(text, placeholders);
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
+        assert_eq!(found, Vec::<String>::new(), "{text}");
+    }
 }
 
 fn errors_of(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {
@@ -909,4 +923,435 @@ fn equal_calls_in_different_positions_are_inlined_separately() {
         assert_eq!(error_codes(&diagnostics), Vec::<Code>::new(), "{text}");
         assert_eq!(found, (Some(CVal::Int(8)), Some(CVal::Int(5))), "{text}");
     }
+}
+
+const R_FN: &str =
+    "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\n";
+
+const CHORD_FN: &str =
+    "fn chord(k): if k is 0 then [60, 64, 67] else if k is 1 then [62, 65, 69] else chord(k - 2)\n";
+
+fn recursive_results(engine: &Engine<'_>) -> Vec<(EvalTy, CVal)> {
+    let mut found: Vec<(EvalTy, CVal)> = engine
+        .memo
+        .evals
+        .iter()
+        .filter(|((node, _), _)| matches!(engine.node(*node).op, Op::Recursive { .. }))
+        .map(|((_, ty), value)| (*ty, value.clone()))
+        .collect();
+    found.sort_by_key(|(ty, _)| format!("{ty:?}"));
+    found
+}
+
+fn located(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, usize, Vec<usize>)> {
+    errors_of(diagnostics)
+        .iter()
+        .map(|diagnostic| {
+            let at = |start: u32| usize::try_from(start).unwrap_or(usize::MAX);
+            (
+                diagnostic.code,
+                at(diagnostic.span.range.start),
+                diagnostic
+                    .secondary
+                    .iter()
+                    .map(|span| at(span.range.start))
+                    .filter(|start| *start < text.len())
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expects() {
+    let mut failures = Vec::new();
+    let shared = format!("{R_FN}let v = r(0.1, 3)\nClip c | gain=(v[0])\nOsc o | freq=(v[0])\n");
+    let (diagnostics, ()) = analyzed(&shared, |_| ());
+    let first = shared.find("v[0]").unwrap_or(0);
+    let second = shared.rfind("v[0]").unwrap_or(0);
+    let found = located(&shared, &diagnostics);
+    if found != [(Code::InconsistentShapes, first, vec![second])] {
+        failures.push(format!("{shared:?}: found {found:?}"));
+    }
+    let uses = [
+        ("Clip a | gain=({})\n", true),
+        ("Clip b | level=({})\n", true),
+        ("Osc d | rate=({})\n", true),
+        ("Osc e | freq=({})\n", false),
+        ("Session s | tempo=({})\n", false),
+    ];
+    for (one, one_f32) in uses {
+        for (other, other_f32) in uses {
+            if one == other {
+                continue;
+            }
+            let held = format!(
+                "{R_FN}let v = r(0.1, 3)\n{}{}",
+                one.replace("{}", "v[0]"),
+                other.replace("{}", "v[0]")
+            );
+            let expected = if one_f32 == other_f32 {
+                Vec::new()
+            } else {
+                vec![Code::InconsistentShapes]
+            };
+            let (diagnostics, ()) = analyzed(&held, |_| ());
+            if error_codes(&diagnostics) != expected {
+                failures.push(format!("{held:?}: found {:?}", error_codes(&diagnostics)));
+            }
+            let separate = format!(
+                "{R_FN}{}{}",
+                one.replace("{}", "r(0.1, 3)[0]"),
+                other.replace("{}", "r(0.1, 3)[0]")
+            );
+            let (diagnostics, ()) = analyzed(&separate, |_| ());
+            if !errors_of(&diagnostics).is_empty() {
+                failures.push(format!(
+                    "{separate:?}: found {:?}",
+                    error_codes(&diagnostics)
+                ));
+            }
+        }
+    }
+    let separate = format!("{R_FN}Clip c | gain=(r(0.1, 3)[0])\nOsc o | freq=(r(0.1, 3)[0])\n");
+    let (diagnostics, (results, gain, freq)) = analyzed(&separate, |engine| {
+        (
+            recursive_results(engine),
+            attr_values(engine, "gain", EvalTy::F32),
+            attr_values(engine, "freq", EvalTy::F64),
+        )
+    });
+    let tenth = 0.1;
+    let expected = vec![
+        (EvalTy::F32, CVal::Array(CArray::new(vec![CVal::F32(0.1)]))),
+        (
+            EvalTy::F64,
+            CVal::Array(CArray::new(vec![CVal::F64(tenth), CVal::F64(tenth)])),
+        ),
+    ];
+    if !errors_of(&diagnostics).is_empty()
+        || results != expected
+        || gain != [CVal::F32(0.1)]
+        || freq != [CVal::F64(tenth)]
+    {
+        failures.push(format!(
+            "{separate:?}: {results:?}, {gain:?}, {freq:?} with {:?}",
+            error_codes(&diagnostics)
+        ));
+    }
+    let chords = [[60, 64, 67], [62, 65, 69]];
+    for depth in 0..6usize {
+        let mut text = format!("{CHORD_FN}Clip c:\n    [");
+        for position in 0..3 {
+            text.push_str(&format!("Note/(chord({depth})[{position}]) "));
+        }
+        text.push_str("]\n");
+        let (diagnostics, pitches) =
+            analyzed(&text, |engine| attr_values(engine, "pitch", EvalTy::I32));
+        let expected: Vec<CVal> = chords
+            .get(depth % 2)
+            .map(|chord| chord.iter().map(|pitch| CVal::Int(*pitch)).collect())
+            .unwrap_or_default();
+        if !errors_of(&diagnostics).is_empty() || pitches != expected {
+            failures.push(format!(
+                "{text:?}: {pitches:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+        let past = format!("{CHORD_FN}Clip c:\n    Note/(chord({depth})[3])\n");
+        let (diagnostics, ()) = analyzed(&past, |_| ());
+        let index = past.rfind("[3]").map_or(0, |at| at + 1);
+        let found = located(&past, &diagnostics);
+        if found != [(Code::IndexOutOfRange, index, Vec::new())] {
+            failures.push(format!("{past:?}: found {found:?}"));
+        }
+    }
+    let grid = "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\n";
+    for row in 0..2 {
+        for column in 0..3 {
+            let text = format!("{grid}Clip c:\n    Note/(g(2)[{row}][{column}])\n");
+            let (diagnostics, pitches) =
+                analyzed(&text, |engine| attr_values(engine, "pitch", EvalTy::I32));
+            let expected = [CVal::Int(1 + 3 * row + column)];
+            if !errors_of(&diagnostics).is_empty() || pitches != expected {
+                failures.push(format!("{text:?}: {pitches:?}"));
+            }
+        }
+    }
+    let rows: Vec<(String, Vec<Code>, Vec<i128>)> = vec![
+        (
+            format!("{grid}Clip c:\n    Note/(g(2)[0][3])\n"),
+            vec![Code::IndexOutOfRange],
+            vec![],
+        ),
+        (
+            format!("{grid}Clip c:\n    Note/(g(2)[2][0])\n"),
+            vec![Code::IndexOutOfRange],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}Clip c:\n    Note/(chord(1))\n"),
+            vec![Code::TypeMismatch],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}Clip c:\n    Note/(chord(1) + 1)\n"),
+            vec![Code::ArrayOperand],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}input a = 1\nClip c:\n    Note/(a + chord(1))\n"),
+            vec![Code::ArrayOperand],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}Clip c:\n    Note/(abs(chord(1)))\n"),
+            vec![Code::ArrayOperand],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}Clip c:\n    Note/([1, 2][chord(1)])\n"),
+            vec![Code::IndexType],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}Kit k:\n    Sampler | file=\"{{chord(1)}}\"\n"),
+            vec![Code::InterpolationType],
+            vec![],
+        ),
+        (
+            "fn b(k): if k < 1 then [true, false] else b(k - 1)\nClip c:\n    Note when b(1)\n"
+                .into(),
+            vec![Code::ConditionType],
+            vec![],
+        ),
+        (
+            "fn b(k): if k < 1 then [true, false] else b(k - 1)\nClip c:\n    Note/60 when b(1)[0]\n"
+                .into(),
+            vec![],
+            vec![60],
+        ),
+        (
+            "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\nClip c:\n    Note/(fib(3)[0])\n"
+                .into(),
+            vec![Code::NotAnArray],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}let v: i32[3] = chord(1)\nClip c:\n    Note/(v[2])\n"),
+            vec![],
+            vec![69],
+        ),
+        (
+            format!("{CHORD_FN}let v: i32[2] = chord(1)\nClip c:\n    Note/(v[1])\n"),
+            vec![Code::TypeMismatch],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}Clip c:\n    for p in chord(3):\n        Note/p\n"),
+            vec![],
+            vec![62, 65, 69],
+        ),
+        (
+            format!("{CHORD_FN}let x = [chord(1), chord(2)]\nClip c:\n    Note/(x[1][2])\n"),
+            vec![],
+            vec![67],
+        ),
+        (
+            format!("{CHORD_FN}input f = true\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n"),
+            vec![],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}input f = true\nClip c:\n    Note/((if f then chord(1) else [1, 2])[0])\n"),
+            vec![Code::TypeMismatch],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}input a = 1\nClip c:\n    Note/([a, chord(3)[0]][1])\n"),
+            vec![],
+            vec![62],
+        ),
+        (
+            format!("{CHORD_FN}input i = 0\nClip c:\n    Note/(chord(3)[i])\n"),
+            vec![],
+            vec![],
+        ),
+        (
+            format!("{CHORD_FN}input f = true\nlet x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"),
+            vec![Code::TypeMismatch],
+            vec![],
+        ),
+        (
+            "fn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nClip c:\n    Note/(rev([1, 2], 3)[0])\n"
+                .into(),
+            vec![],
+            vec![2],
+        ),
+        (
+            "fn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(grow(3)[0])\n"
+                .into(),
+            vec![],
+            vec![3],
+        ),
+        (
+            "fn pair(k): if k < 1 then [1, 2] else [pair(k - 1)[1], 3]\nClip c:\n    Note/(pair(1)[0])\n    Note/(pair(2)[0])\n"
+                .into(),
+            vec![],
+            vec![2, 3],
+        ),
+    ];
+    for (text, codes, pitches) in rows {
+        let (diagnostics, found) =
+            analyzed(&text, |engine| attr_values(engine, "pitch", EvalTy::I32));
+        let found: Vec<i128> = found
+            .iter()
+            .filter_map(|value| match value {
+                CVal::Int(pitch) => Some(*pitch),
+                _ => None,
+            })
+            .collect();
+        if error_codes(&diagnostics) != codes || (codes.is_empty() && found != pitches) {
+            failures.push(format!(
+                "{text:?}: {found:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn chord_vocabulary() -> Vocabulary {
+    let mut v = Vocabulary::builder("chords");
+    let chord = v.node("Chord");
+    v.kind(chord)
+        .top_level(Count::Any)
+        .attr::<[i32; 3]>("notes")
+        .default([0, 0, 0])
+        .attr::<[[i32; 3]; 2]>("grid")
+        .default([[0, 0, 0], [0, 0, 0]]);
+    v.build().expect("the chord vocabulary builds")
+}
+
+#[test]
+fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
+    let chords = chord_vocabulary();
+    let grid = "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\n";
+    let row = |values: &[i128]| {
+        CVal::Array(CArray::new(
+            values.iter().map(|value| CVal::Int(*value)).collect(),
+        ))
+    };
+    let rows: Vec<(String, &str, Vec<Code>, Option<CVal>)> = vec![
+        (
+            format!("{CHORD_FN}Chord a | notes=(chord(1))\n"),
+            "notes",
+            vec![],
+            Some(row(&[62, 65, 69])),
+        ),
+        (
+            format!("{CHORD_FN}Chord a | notes=(chord(1)[0])\n"),
+            "notes",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            format!(
+                "{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else chord(2))\n"
+            ),
+            "notes",
+            vec![],
+            None,
+        ),
+        (
+            format!("{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else [1, 2])\n"),
+            "notes",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            format!("{grid}Chord a | grid=(g(1))\n"),
+            "grid",
+            vec![],
+            Some(CVal::Array(CArray::new(vec![
+                row(&[1, 2, 3]),
+                row(&[4, 5, 6]),
+            ]))),
+        ),
+        (
+            format!("{grid}Chord a | grid=(g(1)[1])\n"),
+            "grid",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            format!(
+                "{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else chord(2)[0])\n"
+            ),
+            "notes",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            format!("{grid}input i = 0\nChord a | notes=(g(1)[i])\n"),
+            "notes",
+            vec![],
+            None,
+        ),
+        (
+            format!("{grid}input i = 0\nChord a | notes=(g(1)[i][0])\n"),
+            "notes",
+            vec![Code::TypeMismatch],
+            None,
+        ),
+        (
+            format!("{grid}input f = true\nChord a | grid=(if f then g(1) else g(2))\n"),
+            "grid",
+            vec![],
+            None,
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (text, attr, codes, value) in rows {
+        let (diagnostics, (found, holes)) = analyzed_with(&chords, &text, |engine| {
+            (attr_values(engine, attr, EvalTy::I32), placeholders(engine))
+        });
+        let found = found.into_iter().next();
+        let clean = !codes.is_empty() || holes.is_empty();
+        if error_codes(&diagnostics) != codes || (value.is_some() && found != value) || !clean {
+            failures.push(format!(
+                "{text:?}: {found:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+    }
+    let annotated = format!("{CHORD_FN}input v: i32[3] = chord(1)\nClip c:\n    Note/(v[2])\n");
+    let (diagnostics, holes) = analyzed(&annotated, placeholders);
+    if !errors_of(&diagnostics).is_empty() || !holes.is_empty() {
+        failures.push(format!(
+            "{annotated:?}: {holes:?} with {:?}",
+            error_codes(&diagnostics)
+        ));
+    }
+    let wrong = format!("{CHORD_FN}input v: i32[2] = chord(1)\nClip c:\n    Note/(v[1])\n");
+    let (diagnostics, ()) = analyzed(&wrong, |_| ());
+    if error_codes(&diagnostics) != [Code::TypeMismatch] {
+        failures.push(format!("{wrong:?}: {:?}", error_codes(&diagnostics)));
+    }
+    let input = format!("{CHORD_FN}input v = chord(1)\nClip c:\n    Note/(v[2])\n");
+    let (_, slots) = analyzed(&input, |engine| {
+        engine
+            .memo
+            .inputs
+            .values()
+            .map(|bound| match bound {
+                BoundVal::Array(array) => array.1.len(),
+                BoundVal::Scalar(_) | BoundVal::Error => 1,
+            })
+            .collect::<Vec<usize>>()
+    });
+    if slots != [3] {
+        failures.push(format!("{input:?}: input slots {slots:?}"));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

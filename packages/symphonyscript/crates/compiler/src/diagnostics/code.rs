@@ -131,6 +131,7 @@ codes!(
     PlainInFamily,
     ConflictingUnits,
     InconsistentUses,
+    InconsistentShapes,
     IntegerInput,
     NotTopLevel,
     CountExceeded,
@@ -260,6 +261,7 @@ impl Code {
             Code::PlainInFamily => "plain-in-family",
             Code::ConflictingUnits => "conflicting-units",
             Code::InconsistentUses => "inconsistent-uses",
+            Code::InconsistentShapes => "inconsistent-shapes",
             Code::IntegerInput => "integer-input",
             Code::NotTopLevel => "not-top-level",
             Code::CountExceeded => "count-exceeded",
@@ -383,6 +385,7 @@ impl Code {
             Code::PlainInFamily => "3.6",
             Code::ConflictingUnits => "3.6",
             Code::InconsistentUses => "4.1",
+            Code::InconsistentShapes => "4.6",
             Code::IntegerInput => "4.4",
             Code::NotTopLevel => "10.2",
             Code::CountExceeded => "10.2",
@@ -515,6 +518,7 @@ impl Code {
             | Code::PlainInFamily
             | Code::ConflictingUnits
             | Code::InconsistentUses
+            | Code::InconsistentShapes
             | Code::NotTopLevel
             | Code::CountExceeded
             | Code::CountBelowMinimum

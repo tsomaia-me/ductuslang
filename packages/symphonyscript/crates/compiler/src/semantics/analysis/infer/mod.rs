@@ -4,6 +4,7 @@ mod order;
 mod position;
 mod positions;
 mod role;
+mod shapes;
 mod synth;
 mod typing;
 mod units;
@@ -24,6 +25,20 @@ impl Engine<'_> {
         for position in positions {
             let lengths = match &position.val {
                 Val::Array(array) => array.shape.lengths(),
+                Val::Scalar(node) if self.arrays.contains(node) => {
+                    let (code, message) = match position.role {
+                        role::Role::Gate => (
+                            Code::ConditionType,
+                            "a gate or a guard is a `bool`, not an array",
+                        ),
+                        role::Role::Attribute | role::Role::Initializer => (
+                            Code::TypeMismatch,
+                            "the value's array shape differs from the attribute's type",
+                        ),
+                    };
+                    self.require_shape(*node, position.ty.lengths.clone(), code, message);
+                    position.ty.lengths.clone()
+                }
                 Val::Scalar(_) => Vec::new(),
                 Val::Error => continue,
             };
@@ -75,8 +90,11 @@ impl Engine<'_> {
             }
         }
         self.values(&roots);
+        self.reactive_array_bindings();
+        self.reactive_shapes();
         self.input_fits();
         self.consistency();
+        self.consistent_shapes();
         self.integer_inputs();
     }
 }

@@ -13,4 +13,6 @@ pub(crate) struct Typing {
     pub expected_seen: FastSet<(NodeId, Option<Scalar>)>,
     pub checked: FastSet<(NodeId, Option<Scalar>)>,
     pub natural: FastMap<BindingId, Option<Scalar>>,
+    pub shapes: FastMap<(NodeId, Option<Scalar>), Option<Vec<u32>>>,
+    pub held: FastSet<BindingId>,
 }

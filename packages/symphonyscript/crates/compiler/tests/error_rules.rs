@@ -361,6 +361,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.6",
+        "a value that holds the call and has different shapes at two of its uses is an error naming both",
+        "inconsistent-shapes",
+        "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\nlet v = r(0.1, 3)\nClip c | gain=(v[0])\nOsc o | freq=(v[0])\n",
+    ),
+    rule(
+        "4.6",
         "The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`.",
         "range-bound",
         "Clip c:\n    for i in 0..0.5:\n        Note\n",

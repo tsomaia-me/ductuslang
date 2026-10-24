@@ -120,32 +120,32 @@ impl Engine<'_> {
                     return Sig::ERROR;
                 }
                 let item_sigs = sigs.get(1..).unwrap_or(&[]);
-                let mut kind = item_sigs.first().map_or(Kind::Error, |sig| sig.kind);
-                let mut width = item_sigs.first().map_or(Width::Flexible, |sig| sig.width);
-                for sig in item_sigs.iter().skip(1) {
-                    let Some(unified) = unify_kinds(kind, sig.kind) else {
-                        self.error_at_node(
-                            Code::TypeMismatch,
-                            node,
-                            "the elements of the array hold values of different types",
-                        );
-                        return Sig::ERROR;
-                    };
-                    kind = unified;
-                    width = branch_width_of(kind, width, sig.width);
-                }
-                let pairs: Vec<(NodeId, Sig)> = items
-                    .iter()
-                    .copied()
-                    .zip(item_sigs.iter().copied())
-                    .collect();
-                let Some(family) = self.one_family(node, &pairs) else {
+                let Some((kind, width, family)) = self.elements_sig(node, items, item_sigs) else {
                     return Sig::ERROR;
                 };
                 let width = if first.reactive {
                     Width::Adaptive
                 } else {
                     width
+                };
+                Sig::of(kind, width, reactive, family)
+            }
+            Op::Element { .. } => {
+                if !matches!(second.kind, Kind::Int | Kind::Any) {
+                    let index = operands.get(1).copied().unwrap_or(node);
+                    self.error_at_node(Code::IndexType, index, "an index is an integer");
+                    return Sig::ERROR;
+                }
+                let width = if second.reactive {
+                    Width::Adaptive
+                } else {
+                    first.width
+                };
+                Sig::of(first.kind, width, reactive, first.family)
+            }
+            Op::Array(elements) => {
+                let Some((kind, width, family)) = self.elements_sig(node, elements, sigs) else {
+                    return Sig::ERROR;
                 };
                 Sig::of(kind, width, reactive, family)
             }
@@ -189,6 +189,35 @@ impl Engine<'_> {
             }
             Op::ToRead { attrs, .. } => self.destination_read_sig(node, attrs, extra),
         }
+    }
+
+    fn elements_sig(
+        &mut self,
+        node: NodeId,
+        items: &[NodeId],
+        item_sigs: &[Sig],
+    ) -> Option<(Kind, Width, Option<FamilyId>)> {
+        let mut kind = item_sigs.first().map_or(Kind::Error, |sig| sig.kind);
+        let mut width = item_sigs.first().map_or(Width::Flexible, |sig| sig.width);
+        for sig in item_sigs.iter().skip(1) {
+            let Some(unified) = unify_kinds(kind, sig.kind) else {
+                self.error_at_node(
+                    Code::TypeMismatch,
+                    node,
+                    "the elements of the array hold values of different types",
+                );
+                return None;
+            };
+            kind = unified;
+            width = branch_width_of(kind, width, sig.width);
+        }
+        let pairs: Vec<(NodeId, Sig)> = items
+            .iter()
+            .copied()
+            .zip(item_sigs.iter().copied())
+            .collect();
+        let family = self.one_family(node, &pairs)?;
+        Some((kind, width, family))
     }
 
     fn number_sig(&self, number: &Number, suffix: Suffix) -> Sig {

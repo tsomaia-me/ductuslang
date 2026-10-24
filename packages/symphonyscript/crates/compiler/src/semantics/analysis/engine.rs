@@ -39,6 +39,7 @@ pub(crate) struct Engine<'a> {
     pub report: Report,
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
+    pub arrays: FastSet<NodeId>,
     pub bindings: Vec<Binding>,
     pub instances: Vec<Instance>,
     pub wires: Vec<Wire>,
@@ -96,6 +97,7 @@ impl<'a> Engine<'a> {
             report: Report::default(),
             scopes: Vec::new(),
             nodes: Vec::new(),
+            arrays: FastSet::default(),
             bindings: Vec::new(),
             instances: Vec::new(),
             wires: Vec::new(),
@@ -378,8 +380,48 @@ impl<'a> Engine<'a> {
 
     pub fn push_node(&mut self, op: Op, loc: Loc, scope: ScopeId) -> NodeId {
         let id = NodeId(index(self.nodes.len()));
+        if self.may_hold_array(&op) {
+            self.arrays.insert(id);
+        }
         self.nodes.push(Node { op, loc, scope });
         id
+    }
+
+    pub fn holds_array(&self, val: &Val) -> bool {
+        matches!(val, Val::Scalar(node) if self.arrays.contains(node))
+    }
+
+    fn may_hold_array(&self, op: &Op) -> bool {
+        match op {
+            Op::Recursive { .. } | Op::Element { .. } | Op::Array(_) => true,
+            Op::Use(operand) | Op::Annotate(_, operand) => self.arrays.contains(operand),
+            Op::Read(binding) => self.arrays.contains(&self.binding(*binding).init),
+            Op::If(_, then, otherwise) => {
+                self.arrays.contains(then) || self.arrays.contains(otherwise)
+            }
+            Op::Match {
+                arms, otherwise, ..
+            } => {
+                arms.iter().any(|(_, value)| self.arrays.contains(value))
+                    || otherwise.is_some_and(|value| self.arrays.contains(&value))
+            }
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::Pick { .. }
+            | Op::Convert(..)
+            | Op::Builtin(..)
+            | Op::ToRead { .. } => false,
+        }
     }
 
     pub fn push_binding(&mut self, binding: Binding) -> BindingId {

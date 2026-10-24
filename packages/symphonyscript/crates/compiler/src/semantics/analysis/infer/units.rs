@@ -315,7 +315,8 @@ impl Engine<'_> {
                             arms.iter().any(|(_, value)| floats.contains(value))
                                 || otherwise.is_some_and(|value| floats.contains(&value))
                         }
-                        Op::Pick { items, .. } => any(items),
+                        Op::Pick { items, .. } | Op::Array(items) => any(items),
+                        Op::Element { base, .. } => any(&[*base]),
                         Op::Builtin(
                             Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp,
                             args,

@@ -32,6 +32,11 @@ pub(crate) enum Op {
         index: NodeId,
         items: Vec<NodeId>,
     },
+    Element {
+        base: NodeId,
+        index: NodeId,
+    },
+    Array(Vec<NodeId>),
     Convert(Scalar, NodeId),
     Annotate(Scalar, NodeId),
     Builtin(Builtin, Vec<NodeId>),
@@ -91,7 +96,8 @@ impl Op {
                 operands.extend(items.iter().copied());
                 operands
             }
-            Op::Builtin(_, args) => args.clone(),
+            Op::Element { base, index } => vec![*base, *index],
+            Op::Array(elements) | Op::Builtin(_, elements) => elements.clone(),
             Op::Recursive { args, .. } => args.iter().flatten().flat_map(Val::nodes).collect(),
         }
     }

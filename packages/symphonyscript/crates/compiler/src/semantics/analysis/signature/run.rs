@@ -46,6 +46,8 @@ impl Engine<'_> {
             | Op::If(..)
             | Op::Match { .. }
             | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
             | Op::Convert(..)
             | Op::Annotate(..)
             | Op::Builtin(..)
@@ -135,6 +137,8 @@ fn joins(op: &Op) -> bool {
         | Op::If(..)
         | Op::Match { .. }
         | Op::Pick { .. }
+        | Op::Element { .. }
+        | Op::Array(_)
         | Op::Convert(..)
         | Op::Annotate(..) => true,
         Op::Binary(op, _, _) => matches!(

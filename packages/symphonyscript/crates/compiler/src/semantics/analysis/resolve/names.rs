@@ -99,6 +99,8 @@ impl Engine<'_> {
             | Op::If(..)
             | Op::Match { .. }
             | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
             | Op::Convert(..)
             | Op::Annotate(..)
             | Op::Builtin(..)

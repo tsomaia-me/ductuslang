@@ -21,6 +21,7 @@ use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::feed::Feed;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
@@ -32,6 +33,27 @@ use crate::semantics::ir::FnId;
 
 const CALL_LIMIT: usize = 1_000_000;
 const DEPTH_LIMIT: usize = 1_024;
+
+struct Argument {
+    leaves: Vec<(ArgKey, ArgSig)>,
+    lengths: Vec<u32>,
+    values: Vec<CVal>,
+}
+
+impl Argument {
+    fn keyed(&self) -> (ArgKey, ArgShape) {
+        match (self.lengths.is_empty(), self.leaves.first()) {
+            (true, Some((key, sig))) => (key.clone(), ArgShape::Scalar(*sig)),
+            _ => {
+                let (keys, sigs) = self.leaves.iter().cloned().unzip();
+                (
+                    ArgKey::Array(keys),
+                    ArgShape::Array(self.lengths.clone(), sigs),
+                )
+            }
+        }
+    }
+}
 
 struct Call {
     key: CallKey,
@@ -63,28 +85,51 @@ impl Engine<'_> {
                     shapes.push(ArgShape::Default);
                 }
                 Some(Val::Scalar(arg)) => match self.argument(*arg, own, ctx, need) {
-                    Some((key, sig, value)) => {
+                    Some(argument) => {
+                        values.extend(argument.values.iter().cloned());
+                        let (key, shape) = argument.keyed();
                         keys.push(key);
-                        shapes.push(ArgShape::Scalar(sig));
-                        values.push(value);
+                        shapes.push(shape);
                     }
                     None => missing = true,
                 },
                 Some(Val::Array(array)) => {
-                    let mut element_keys = Vec::new();
-                    let mut sigs = Vec::new();
+                    let mut parts = Vec::new();
                     for element in &array.elements {
                         match self.argument(*element, own, ctx, need) {
-                            Some((key, sig, value)) => {
-                                element_keys.push(key);
-                                sigs.push(sig);
-                                values.push(value);
-                            }
+                            Some(argument) => parts.push(argument),
                             None => missing = true,
                         }
                     }
+                    if missing {
+                        continue;
+                    }
+                    let inner = parts
+                        .first()
+                        .map(|part| part.lengths.clone())
+                        .unwrap_or_default();
+                    if parts.iter().any(|part| part.lengths != inner) {
+                        self.error_at_node(
+                            Code::RaggedArray,
+                            node,
+                            "the elements of an array are arrays of one length, or all single values",
+                        );
+                        keys.push(ArgKey::Error);
+                        continue;
+                    }
+                    let mut lengths = inner;
+                    lengths.extend(array.shape.lengths());
+                    let mut element_keys = Vec::new();
+                    let mut sigs = Vec::new();
+                    for part in parts {
+                        for (key, sig) in part.leaves {
+                            element_keys.push(key);
+                            sigs.push(sig);
+                        }
+                        values.extend(part.values);
+                    }
                     keys.push(ArgKey::Array(element_keys));
-                    shapes.push(ArgShape::Array(array.shape.lengths(), sigs));
+                    shapes.push(ArgShape::Array(lengths, sigs));
                 }
                 Some(Val::Error) => keys.push(ArgKey::Error),
             }
@@ -128,19 +173,15 @@ impl Engine<'_> {
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
-    ) -> Option<(ArgKey, ArgSig, CVal)> {
+    ) -> Option<Argument> {
         let sig = self.sig(arg, need)?;
         if sig.kind == Kind::Bare {
             self.unplaced_variant(arg);
-            return Some((
-                ArgKey::Error,
-                ArgSig {
-                    kind: Kind::Error,
-                    width: Width::Flexible,
-                    family: None,
-                },
-                CVal::Error,
-            ));
+            return Some(Argument {
+                leaves: vec![arg_key(&CVal::Error, false, own, None)],
+                lengths: Vec::new(),
+                values: vec![CVal::Error],
+            });
         }
         let flexible = sig.width == Width::Flexible;
         let ty = if flexible && sig.kind == Kind::Int {
@@ -149,55 +190,19 @@ impl Engine<'_> {
             own_type(&sig, own)
         };
         let value = self.child(arg, ty, ctx, need)?;
-        let family = sig.family;
-        let arg_sig = |kind, width| ArgSig {
-            kind,
-            width,
-            family,
+        let (lengths, values) = match &value {
+            CVal::Array(array) => (array.lengths(), array.leaves()),
+            leaf => (Vec::new(), vec![leaf.clone()]),
         };
-        let (key, shape) = match &value {
-            CVal::Int(value) if flexible => (
-                ArgKey::Int(*value, EvalTy::Exact),
-                arg_sig(Kind::Int, Width::Flexible),
-            ),
-            CVal::Int(value) => {
-                let scalar = if ty == EvalTy::I32 {
-                    symphonyscript_core::Scalar::I32
-                } else {
-                    symphonyscript_core::Scalar::I64
-                };
-                (
-                    ArgKey::Int(*value, ty),
-                    arg_sig(Kind::Int, Width::Fixed(scalar)),
-                )
-            }
-            CVal::F32(value) => (
-                ArgKey::F32(value.to_bits()),
-                arg_sig(Kind::Float, Width::Fixed(symphonyscript_core::Scalar::F32)),
-            ),
-            CVal::F64(value) => (
-                ArgKey::F64(value.to_bits()),
-                arg_sig(Kind::Float, Width::Fixed(symphonyscript_core::Scalar::F64)),
-            ),
-            CVal::Bool(value) => (
-                ArgKey::Bool(*value),
-                arg_sig(Kind::Bool, Width::Fixed(symphonyscript_core::Scalar::Bool)),
-            ),
-            CVal::Enum(id, index) => (
-                ArgKey::Enum(*id, *index),
-                arg_sig(
-                    Kind::Enum(*id),
-                    Width::Fixed(symphonyscript_core::Scalar::Enum(*id)),
-                ),
-            ),
-            CVal::Str(text) => (
-                ArgKey::Str(text.clone()),
-                arg_sig(Kind::Str, Width::Fixed(symphonyscript_core::Scalar::Str)),
-            ),
-            CVal::Node(item) => (ArgKey::Node(*item), arg_sig(Kind::Node, Width::Flexible)),
-            CVal::Error => (ArgKey::Error, arg_sig(Kind::Error, Width::Flexible)),
-        };
-        Some((key, shape, value))
+        let leaves = values
+            .iter()
+            .map(|value| arg_key(value, flexible, ty, sig.family))
+            .collect();
+        Some(Argument {
+            leaves,
+            lengths,
+            values,
+        })
     }
 
     pub(in crate::semantics::analysis) fn instantiate(
@@ -257,7 +262,7 @@ impl Engine<'_> {
         };
         let body = self.hir.fn_decl(function).value;
         let val = self.val(Query::Expr(body, scope), need)?;
-        let Val::Scalar(root) = val else {
+        let Some(root) = self.boxed_body(body, scope, &val) else {
             return Some(None);
         };
         let sig = self.sig(root, need)?;
@@ -504,7 +509,7 @@ impl Engine<'_> {
     }
 
     fn call_result(&mut self, call: NodeId, root: NodeId, expected: EvalTy, value: CVal) -> CVal {
-        if !is_float_ty(expected) || !matches!(value, CVal::Int(_)) {
+        if !is_float_ty(expected) {
             return value;
         }
         let flexible = self
@@ -512,7 +517,9 @@ impl Engine<'_> {
             .sigs
             .get(&root)
             .is_some_and(|sig| sig.width == Width::Flexible);
-        self.convert_integer(call, flexible, value, expected)
+        map_leaves(value, |leaf| {
+            self.convert_integer(call, flexible, leaf, expected)
+        })
     }
 
     fn within_call_limit(&mut self, node: NodeId, function: FnId) -> bool {
@@ -578,4 +585,54 @@ fn unit_set(feeds: &[Feed]) -> Vec<(FamilyId, usize)> {
     units.sort_by_key(|(family, unit)| (family.index(), *unit));
     units.dedup();
     units
+}
+
+fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -> (ArgKey, ArgSig) {
+    let arg_sig = |kind, width| ArgSig {
+        kind,
+        width,
+        family,
+    };
+    match value {
+        CVal::Int(value) if flexible => (
+            ArgKey::Int(*value, EvalTy::Exact),
+            arg_sig(Kind::Int, Width::Flexible),
+        ),
+        CVal::Int(value) => {
+            let scalar = if ty == EvalTy::I32 {
+                symphonyscript_core::Scalar::I32
+            } else {
+                symphonyscript_core::Scalar::I64
+            };
+            (
+                ArgKey::Int(*value, ty),
+                arg_sig(Kind::Int, Width::Fixed(scalar)),
+            )
+        }
+        CVal::F32(value) => (
+            ArgKey::F32(value.to_bits()),
+            arg_sig(Kind::Float, Width::Fixed(symphonyscript_core::Scalar::F32)),
+        ),
+        CVal::F64(value) => (
+            ArgKey::F64(value.to_bits()),
+            arg_sig(Kind::Float, Width::Fixed(symphonyscript_core::Scalar::F64)),
+        ),
+        CVal::Bool(value) => (
+            ArgKey::Bool(*value),
+            arg_sig(Kind::Bool, Width::Fixed(symphonyscript_core::Scalar::Bool)),
+        ),
+        CVal::Enum(id, index) => (
+            ArgKey::Enum(*id, *index),
+            arg_sig(
+                Kind::Enum(*id),
+                Width::Fixed(symphonyscript_core::Scalar::Enum(*id)),
+            ),
+        ),
+        CVal::Str(text) => (
+            ArgKey::Str(text.clone()),
+            arg_sig(Kind::Str, Width::Fixed(symphonyscript_core::Scalar::Str)),
+        ),
+        CVal::Node(item) => (ArgKey::Node(*item), arg_sig(Kind::Node, Width::Flexible)),
+        CVal::Array(_) | CVal::Error => (ArgKey::Error, arg_sig(Kind::Error, Width::Flexible)),
+    }
 }

@@ -1,3 +1,5 @@
+use symphonyscript_core::Value;
+
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
@@ -5,6 +7,7 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::shape::Shape;
+use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Loc, StrPart};
 
@@ -58,7 +61,7 @@ impl Engine<'_> {
                 let (then, otherwise) = self.siblings(*then, *otherwise, scope, need);
                 match (condition, then, otherwise) {
                     (Some(condition), Some(then), Some(otherwise)) => {
-                        Some(self.if_val(condition, then, otherwise, loc, scope))
+                        self.if_val(condition, then, otherwise, (loc, scope), need)
                     }
                     _ => None,
                 }
@@ -117,7 +120,14 @@ impl Engine<'_> {
             match part {
                 StrPart::Text(text) => pieces.push(Piece::Text(text.clone())),
                 StrPart::Hole(_) => match holes.next() {
-                    Some((_, Some(Val::Scalar(node)))) => pieces.push(Piece::Value(node)),
+                    Some((_, Some(Val::Scalar(node)))) => {
+                        self.single_operand(
+                            &Val::Scalar(node),
+                            Code::InterpolationType,
+                            "an interpolation holds a single value, not an array",
+                        );
+                        pieces.push(Piece::Value(node));
+                    }
                     Some((hole, Some(Val::Array(_)))) => {
                         let hole_loc = self.hir.expr(hole).loc;
                         self.error(
@@ -175,6 +185,7 @@ impl Engine<'_> {
         scope: ScopeId,
         op: impl Fn(NodeId) -> Op,
     ) -> Val {
+        self.single_operand(&operand, Code::ArrayOperand, OPERAND);
         match operand {
             Val::Scalar(operand) => self.scalar(op(operand), loc, scope),
             Val::Array(_) => {
@@ -198,6 +209,8 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
     ) -> Val {
+        self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
+        self.single_operand(&rhs, Code::ArrayOperand, OPERAND);
         match (lhs, rhs) {
             (Val::Scalar(lhs), Val::Scalar(rhs)) => {
                 self.scalar(Op::Binary(op, lhs, rhs), loc, scope)
@@ -220,9 +233,14 @@ impl Engine<'_> {
         condition: Val,
         then: Val,
         otherwise: Val,
-        loc: Loc,
-        scope: ScopeId,
-    ) -> Val {
+        (loc, scope): (Loc, ScopeId),
+        need: &mut Vec<Query>,
+    ) -> Option<Val> {
+        self.single_operand(
+            &condition,
+            Code::ConditionType,
+            "the condition of an `if` is a `bool`, not an array",
+        );
         let condition = match condition {
             Val::Scalar(condition) => condition,
             Val::Array(_) => {
@@ -232,12 +250,21 @@ impl Engine<'_> {
                     scope,
                     "the condition of an `if` is a `bool`, not an array",
                 );
-                return Val::Error;
+                return Some(Val::Error);
             }
-            Val::Error => return Val::Error,
+            Val::Error => return Some(Val::Error),
         };
-        let Some((shape, pairs)) = self.zip_shapes(&[then, otherwise], loc, scope) else {
-            return Val::Error;
+        let vals = match self.branches(vec![then, otherwise], condition, (loc, scope), need)? {
+            Branches::Whole(nodes) => {
+                let (Some(then), Some(otherwise)) = (nodes.first(), nodes.get(1)) else {
+                    return Some(Val::Error);
+                };
+                return Some(self.scalar(Op::If(condition, *then, *otherwise), loc, scope));
+            }
+            Branches::Each(vals) => vals,
+        };
+        let Some((shape, pairs)) = self.zip_shapes(&vals, loc, scope) else {
+            return Some(Val::Error);
         };
         let elements: Vec<NodeId> = pairs
             .into_iter()
@@ -247,7 +274,156 @@ impl Engine<'_> {
                 self.push_node(Op::If(condition, then, otherwise), loc, scope)
             })
             .collect();
-        self.shaped(shape, elements)
+        Some(self.shaped(shape, elements))
+    }
+
+    fn branches(
+        &mut self,
+        vals: Vec<Val>,
+        selector: NodeId,
+        (loc, scope): (Loc, ScopeId),
+        need: &mut Vec<Query>,
+    ) -> Option<Branches> {
+        if vals.iter().any(|val| matches!(val, Val::Error)) {
+            return Some(Branches::Each(vals));
+        }
+        let opaque = vals.iter().any(|val| self.holds_array(val));
+        let first = vals.first().map(Val::shape).unwrap_or_default();
+        let differ = vals.iter().any(|val| val.shape() != first);
+        let recursive_body = self.template_of(scope).is_some();
+        let irregular = opaque || (differ && recursive_body);
+        if !irregular {
+            return Some(Branches::Each(vals));
+        }
+        if !self.sig(selector, need)?.reactive {
+            let nodes = vals
+                .iter()
+                .filter_map(|val| self.boxed(val, loc, scope))
+                .collect();
+            return Some(Branches::Whole(nodes));
+        }
+        let Some(shape) = vals
+            .iter()
+            .find(|val| !self.holds_array(val))
+            .map(Val::shape)
+        else {
+            return Some(Branches::Each(vals));
+        };
+        let mut each = Vec::new();
+        for val in vals {
+            let Val::Scalar(node) = val else {
+                each.push(val);
+                continue;
+            };
+            if !self.arrays.contains(&node) {
+                each.push(val);
+                continue;
+            }
+            let nodes = self.projected(node, &shape, (Code::TypeMismatch, BRANCHES), loc, scope);
+            each.push(self.shaped(shape.clone(), nodes));
+        }
+        Some(Branches::Each(each))
+    }
+
+    pub(in crate::semantics::analysis) fn require_shape(
+        &mut self,
+        node: NodeId,
+        lengths: Vec<u32>,
+        code: Code,
+        message: &'static str,
+    ) {
+        self.memo.shapes.entry(node).or_insert(ShapeNeed {
+            lengths,
+            code,
+            message,
+        });
+    }
+
+    pub(in crate::semantics::analysis) fn single_operand(
+        &mut self,
+        val: &Val,
+        code: Code,
+        message: &'static str,
+    ) {
+        if let Val::Scalar(node) = val
+            && self.arrays.contains(node)
+        {
+            self.require_shape(*node, Vec::new(), code, message);
+        }
+    }
+
+    pub(in crate::semantics::analysis) fn projected(
+        &mut self,
+        node: NodeId,
+        shape: &Shape,
+        need: (Code, &'static str),
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Vec<NodeId> {
+        if let Some(nodes) = self.memo.projections.get(&node) {
+            return nodes.clone();
+        }
+        let lengths = shape.lengths();
+        self.require_shape(node, lengths.clone(), need.0, need.1);
+        let mut level = vec![node];
+        for length in lengths.iter().rev() {
+            let mut next = Vec::new();
+            for parent in &level {
+                for position in 0..*length {
+                    let index =
+                        self.push_node(Op::Const(Value::I64(i64::from(position))), loc, scope);
+                    next.push(self.push_node(
+                        Op::Element {
+                            base: *parent,
+                            index,
+                        },
+                        loc,
+                        scope,
+                    ));
+                }
+            }
+            level = next;
+        }
+        self.memo.projections.insert(node, level.clone());
+        level
+    }
+
+    pub(in crate::semantics::analysis) fn boxed_body(
+        &mut self,
+        body: ExprId,
+        scope: ScopeId,
+        val: &Val,
+    ) -> Option<NodeId> {
+        if let Some(node) = self.memo.boxes.get(&(body, scope)) {
+            return Some(*node);
+        }
+        let node = self.boxed(val, self.hir.expr(body).loc, scope)?;
+        if matches!(val, Val::Array(_)) {
+            self.memo.boxes.insert((body, scope), node);
+        }
+        Some(node)
+    }
+
+    pub(in crate::semantics::analysis) fn boxed(
+        &mut self,
+        val: &Val,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Option<NodeId> {
+        let array = match val {
+            Val::Scalar(node) => return Some(*node),
+            Val::Error => return None,
+            Val::Array(array) => array,
+        };
+        let mut level = array.elements.clone();
+        for length in array.shape.lengths() {
+            let width = usize::try_from(length).unwrap_or(1).max(1);
+            level = level
+                .chunks(width)
+                .map(|chunk| self.push_node(Op::Array(chunk.to_vec()), loc, scope))
+                .collect();
+        }
+        level.first().copied()
     }
 
     pub(in crate::semantics::analysis) fn shaped(
@@ -276,12 +452,7 @@ impl Engine<'_> {
         }
         let shape = vals.first().map(Val::shape).unwrap_or_default();
         if vals.iter().any(|val| val.shape() != shape) {
-            self.error(
-                Code::TypeMismatch,
-                loc,
-                scope,
-                "the branches hold arrays of different shapes",
-            );
+            self.error(Code::TypeMismatch, loc, scope, BRANCHES);
             return None;
         }
         let columns: Vec<Vec<NodeId>> = vals.iter().map(Val::nodes).collect();
@@ -315,19 +486,48 @@ impl Engine<'_> {
         if vals.iter().any(|val| matches!(val, Val::Error)) {
             return Some(Val::Error);
         }
+        if vals.iter().any(|val| self.holds_array(val)) {
+            return Some(self.opaque_array(vals, loc, scope));
+        }
         let inner = vals.first().map(Val::shape).unwrap_or_default();
         if vals.iter().any(|val| val.shape() != inner) {
-            self.error(
-                Code::RaggedArray,
-                loc,
-                scope,
-                "the elements of an array are arrays of one length, or all single values",
-            );
+            self.error(Code::RaggedArray, loc, scope, RAGGED);
             return Some(Val::Error);
         }
         let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
         let elements = vals.iter().flat_map(Val::nodes).collect();
         Some(Val::array(shape, elements))
+    }
+
+    fn opaque_array(&mut self, vals: Vec<Val>, loc: Loc, scope: ScopeId) -> Val {
+        let Some(inner) = vals
+            .iter()
+            .find(|val| !self.holds_array(val))
+            .map(Val::shape)
+        else {
+            let nodes = vals
+                .iter()
+                .filter_map(|val| self.boxed(val, loc, scope))
+                .collect();
+            return self.scalar(Op::Array(nodes), loc, scope);
+        };
+        let mut elements = Vec::new();
+        for val in &vals {
+            match val {
+                Val::Scalar(node) if self.arrays.contains(node) => {
+                    let projected =
+                        self.projected(*node, &inner, (Code::RaggedArray, RAGGED), loc, scope);
+                    elements.extend(projected);
+                }
+                other if other.shape() != inner => {
+                    self.error(Code::RaggedArray, loc, scope, RAGGED);
+                    return Val::Error;
+                }
+                other => elements.extend(other.nodes()),
+            }
+        }
+        let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
+        Val::array(shape, elements)
     }
 
     fn match_val(
@@ -372,6 +572,13 @@ impl Engine<'_> {
         {
             return None;
         }
+        if let Some(scrutinee_val) = &scrutinee_val {
+            self.single_operand(
+                scrutinee_val,
+                Code::MatchScrutinee,
+                "a `match` selects by a single value, not an array",
+            );
+        }
         let scrutinee_node = match scrutinee_val {
             Some(Val::Scalar(node)) => node,
             Some(Val::Array(_)) => {
@@ -402,6 +609,22 @@ impl Engine<'_> {
         if let Some(Some(value)) = otherwise_val {
             all.push(value);
         }
+        let all = match self.branches(all, scrutinee_node, (loc, scope), need)? {
+            Branches::Whole(mut nodes) => {
+                let otherwise = if has_otherwise { nodes.pop() } else { None };
+                let arms = label_nodes.iter().copied().zip(nodes).collect();
+                return Some(self.scalar(
+                    Op::Match {
+                        scrutinee: scrutinee_node,
+                        arms,
+                        otherwise,
+                    },
+                    loc,
+                    scope,
+                ));
+            }
+            Branches::Each(vals) => vals,
+        };
         let Some((shape, rows)) = self.zip_shapes(&all, loc, scope) else {
             return Some(Val::Error);
         };
@@ -424,4 +647,15 @@ impl Engine<'_> {
             .collect();
         Some(self.shaped(shape, elements))
     }
+}
+
+const OPERAND: &str = "operators and conversions apply to single values, not arrays";
+
+const RAGGED: &str = "the elements of an array are arrays of one length, or all single values";
+
+const BRANCHES: &str = "the branches hold arrays of different shapes";
+
+enum Branches {
+    Whole(Vec<NodeId>),
+    Each(Vec<Val>),
 }

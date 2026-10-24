@@ -98,6 +98,13 @@ impl Engine<'_> {
                     stack.push((index, None));
                     stack.extend(items.into_iter().map(|item| (item, expected)));
                 }
+                Op::Element { base, index } => {
+                    stack.push((index, None));
+                    stack.push((base, expected));
+                }
+                Op::Array(elements) => {
+                    stack.extend(elements.into_iter().map(|element| (element, expected)));
+                }
                 Op::Convert(target, operand) => {
                     stack.push((operand, is_float(target).then_some(target)));
                 }

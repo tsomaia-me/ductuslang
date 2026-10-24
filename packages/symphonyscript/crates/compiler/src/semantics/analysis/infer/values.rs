@@ -7,29 +7,18 @@ use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::ir::{InputId, Loc};
-
-fn eval_ty(scalar: Option<Scalar>) -> EvalTy {
-    match scalar {
-        Some(Scalar::I32) => EvalTy::I32,
-        Some(Scalar::I64) => EvalTy::I64,
-        Some(Scalar::F32) => EvalTy::F32,
-        Some(Scalar::F64) => EvalTy::F64,
-        Some(Scalar::Bool) => EvalTy::Bool,
-        Some(Scalar::Enum(id)) => EvalTy::Enum(id),
-        Some(Scalar::Str) => EvalTy::Str,
-        None => EvalTy::Default,
-    }
-}
 
 impl Engine<'_> {
     pub(super) fn values(&mut self, roots: &[(NodeId, Option<Scalar>)]) {
         for (node, scalar) in roots {
-            let ty = eval_ty(*scalar);
+            let ty = eval_ty_of(*scalar);
             let value = self.demand_cval(*node, ty);
             if !value.is_error() {
                 self.fit(*node, value, ty);
@@ -47,7 +36,7 @@ impl Engine<'_> {
             let Some(own) = self.typing.own.get(&binding).copied() else {
                 continue;
             };
-            let value = self.demand_cval(record.init, eval_ty(Some(own)));
+            let value = self.demand_cval(record.init, eval_ty_of(Some(own)));
             let expectations = self
                 .typing
                 .expectations
@@ -161,6 +150,41 @@ impl Engine<'_> {
         }
     }
 
+    pub(super) fn consistent_shapes(&mut self) {
+        let mut uses: BTreeMap<NodeId, Vec<(NodeId, Vec<u32>)>> = BTreeMap::new();
+        for ((node, _), value) in &self.memo.evals {
+            if let Op::Use(target) = self.node(*node).op
+                && self.arrays.contains(&target)
+                && !value.is_error()
+            {
+                uses.entry(target)
+                    .or_default()
+                    .push((*node, lengths_of(value)));
+            }
+        }
+        for (_, mut shapes) in uses {
+            shapes.sort();
+            let Some((first, lengths)) = shapes.first().cloned() else {
+                continue;
+            };
+            let Some((other, _)) = shapes.iter().find(|(_, shape)| *shape != lengths) else {
+                continue;
+            };
+            let other_loc = self.node(*other).loc;
+            let (loc, scope) = {
+                let record = self.node(first);
+                (record.loc, record.scope)
+            };
+            self.error_with_chain(
+                Code::InconsistentShapes,
+                loc,
+                vec![other_loc],
+                scope,
+                "this value holds a recursive call's array result, and its uses give that result different shapes",
+            );
+        }
+    }
+
     pub(super) fn integer_inputs(&mut self) {
         let mut inputs: BTreeMap<InputId, (usize, usize, Loc)> = BTreeMap::new();
         for index in 0..self.bindings.len() {
@@ -220,6 +244,14 @@ impl Engine<'_> {
 }
 
 fn same_number(int: &CVal, float: &CVal) -> bool {
+    if let (CVal::Array(ints), CVal::Array(floats)) = (int, float) {
+        let (ints, floats) = (ints.leaves(), floats.leaves());
+        return ints.len() == floats.len()
+            && ints
+                .iter()
+                .zip(&floats)
+                .all(|(int, float)| same_number(int, float));
+    }
     match (int, float) {
         (CVal::Int(value), CVal::F32(other)) => (*value as f32).to_bits() == other.to_bits(),
         (CVal::Int(value), CVal::F64(other)) => (*value as f64).to_bits() == other.to_bits(),

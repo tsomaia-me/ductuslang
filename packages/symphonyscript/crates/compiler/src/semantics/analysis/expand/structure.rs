@@ -6,8 +6,9 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, ExprKind, Iterable, Number, Suffix};
+use crate::semantics::ir::{ExprId, ExprKind, Iterable, Loc, Number, Suffix};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn iteration(
@@ -29,16 +30,12 @@ impl Engine<'_> {
             Iterable::Values(expr) => {
                 let val = self.demand_val(Query::Expr(expr, scope));
                 let loc = self.hir.expr(expr).loc;
+                let val = self.iterated(val, loc, scope)?;
                 let array = match &val {
                     Val::Array(array) if array.shape.depth() == 1 => array.clone(),
                     Val::Error => return None,
                     Val::Array(_) | Val::Scalar(_) => {
-                        self.error(
-                            Code::IterableType,
-                            loc,
-                            scope,
-                            "a `for` iterates over a range or an array of single values",
-                        );
+                        self.error(Code::IterableType, loc, scope, ITERABLE);
                         return None;
                     }
                 };
@@ -76,6 +73,29 @@ impl Engine<'_> {
                 })
             }
         }
+    }
+
+    fn iterated(&mut self, val: Val, loc: Loc, scope: ScopeId) -> Option<Val> {
+        let Val::Scalar(node) = val else {
+            return Some(val);
+        };
+        if !self.arrays.contains(&node) {
+            return Some(val);
+        }
+        let array = match self.demand_cval(node, EvalTy::Default) {
+            CVal::Array(array) => array,
+            CVal::Error => return None,
+            CVal::Int(_)
+            | CVal::F32(_)
+            | CVal::F64(_)
+            | CVal::Bool(_)
+            | CVal::Enum(..)
+            | CVal::Str(_)
+            | CVal::Node(_) => return Some(val),
+        };
+        let shape = Shape::from_lengths(&array.lengths());
+        let nodes = self.projected(node, &shape, (Code::IterableType, ITERABLE), loc, scope);
+        Some(Val::array(shape, nodes))
     }
 
     fn range_bound(&mut self, expr: ExprId, scope: ScopeId) -> Option<i128> {
@@ -160,7 +180,10 @@ impl Engine<'_> {
             | CVal::Enum(..)
             | CVal::Str(_)
             | CVal::Node(_)
+            | CVal::Array(_)
             | CVal::Error => None,
         }
     }
 }
+
+const ITERABLE: &str = "a `for` iterates over a range or an array of single values";
