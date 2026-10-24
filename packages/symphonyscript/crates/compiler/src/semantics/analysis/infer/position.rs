@@ -1,0 +1,22 @@
+use symphonyscript_core::{AttrUnit, Ty};
+
+use crate::semantics::analysis::ids::ScopeId;
+use crate::semantics::analysis::val::Val;
+use crate::semantics::ir::Loc;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Role {
+    Attribute,
+    Gate,
+    Initializer,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Position {
+    pub val: Val,
+    pub ty: Ty,
+    pub unit: Option<AttrUnit>,
+    pub role: Role,
+    pub loc: Loc,
+    pub scope: ScopeId,
+}

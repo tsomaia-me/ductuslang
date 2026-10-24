@@ -17,3 +17,6 @@ publish = false
 symphonyscript-core = { path = "crates/core" }
 symphonyscript = { path = "crates/compiler" }
 symphonyscript-fixtures = { path = "crates/fixtures" }
+
+[profile.dev]
+opt-level = 1

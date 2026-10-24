@@ -38,9 +38,15 @@ fn every_code_names_a_section_of_the_spec() {
 }
 
 #[test]
-fn every_lexer_and_parser_code_is_an_error() {
+fn the_warnings_are_the_three_the_spec_names_and_every_other_code_is_an_error() {
+    let warnings = ["integer-input", "unreachable-instance", "no-entry-instance"];
     for code in Code::ALL {
-        assert_eq!(code.severity(), Severity::Error, "{code}");
+        let expected = if warnings.contains(&code.as_str()) {
+            Severity::Warning
+        } else {
+            Severity::Error
+        };
+        assert_eq!(code.severity(), expected, "{code}");
         assert_eq!(code.to_string(), code.as_str());
     }
 }

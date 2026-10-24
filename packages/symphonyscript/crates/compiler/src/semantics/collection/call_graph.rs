@@ -1,0 +1,63 @@
+use std::collections::BTreeSet;
+
+use super::decl::Decl;
+use super::namespace::Namespace;
+use super::strongly_connected::strongly_connected;
+use crate::semantics::ir::{ExprId, ExprKind, FnId, Hir};
+
+pub(crate) fn recursive_functions(hir: &Hir, source: &Namespace, prelude: &Namespace) -> Vec<bool> {
+    let mut edges: Vec<Vec<usize>> = Vec::with_capacity(hir.fns.len());
+    for (index, decl) in hir.fns.iter().enumerate() {
+        let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
+        let namespace = if hir.is_prelude_fn(id) {
+            prelude
+        } else {
+            source
+        };
+        let locals: BTreeSet<&str> = decl
+            .params
+            .iter()
+            .filter_map(|param| param.name.as_ref())
+            .chain(decl.lets.iter().filter_map(|local| local.name.as_ref()))
+            .map(|name| name.text.as_str())
+            .collect();
+        let mut roots: Vec<ExprId> = decl
+            .params
+            .iter()
+            .filter_map(|param| param.default)
+            .collect();
+        roots.extend(decl.lets.iter().map(|local| local.value));
+        roots.push(decl.value);
+        let mut targets = BTreeSet::new();
+        let mut stack = roots;
+        while let Some(expr) = stack.pop() {
+            let kind = &hir.expr(expr).kind;
+            if let ExprKind::Call(callee, _) = kind
+                && let ExprKind::Name(name) = &hir.expr(*callee).kind
+                && !locals.contains(name.as_str())
+                && let Some(Decl::Fn(target)) = namespace.get(name)
+            {
+                targets.insert(target.index());
+            }
+            stack.extend(kind.children());
+        }
+        edges.push(targets.into_iter().collect());
+    }
+    let mut recursive = vec![false; hir.fns.len()];
+    for component in strongly_connected(&edges) {
+        let cyclic = component.len() > 1
+            || component.first().is_some_and(|only| {
+                edges
+                    .get(*only)
+                    .is_some_and(|targets| targets.contains(only))
+            });
+        if cyclic {
+            for member in component {
+                if let Some(flag) = recursive.get_mut(member) {
+                    *flag = true;
+                }
+            }
+        }
+    }
+    recursive
+}

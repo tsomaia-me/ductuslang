@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use symphonyscript::syntax::{ElementView, NodeView, Parsed, SyntaxKind, Walk, parse};
-use symphonyscript::{Code, Source};
+use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_fixtures::vocabulary;
 
 pub fn source(text: &str) -> Source {
@@ -75,4 +75,71 @@ pub fn sexp(node: &NodeView<'_>) -> String {
         }
     }
     out
+}
+
+pub fn checked(text: &str) -> Vec<Diagnostic> {
+    errors(checked_all(text))
+}
+
+pub fn checked_all(text: &str) -> Vec<Diagnostic> {
+    checked_files_all(&[("test.sym", text)])
+}
+
+pub fn errors(diagnostics: Vec<Diagnostic>) -> Vec<Diagnostic> {
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .collect()
+}
+
+pub fn checked_files(files: &[(&str, &str)]) -> Vec<Diagnostic> {
+    errors(checked_files_all(files))
+}
+
+pub fn checked_files_all(files: &[(&str, &str)]) -> Vec<Diagnostic> {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let sources: Vec<Source> = files
+        .iter()
+        .map(|(path, text)| Source {
+            path: (*path).into(),
+            text: (*text).into(),
+        })
+        .collect();
+    compiler.check(&sources)
+}
+
+pub fn check_codes(text: &str) -> Vec<(Code, u32, u32)> {
+    checked(text)
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.code,
+                diagnostic.span.range.start,
+                diagnostic.span.range.end,
+            )
+        })
+        .collect()
+}
+
+pub fn at(text: &str, needle: &str, occurrence: usize) -> (u32, u32) {
+    let mut from = 0;
+    let mut found = None;
+    for _ in 0..=occurrence {
+        let index = text[from..].find(needle).map(|offset| from + offset);
+        found = index;
+        from = index.expect("the needle occurs") + needle.len();
+    }
+    let start = found.expect("the needle occurs");
+    (start as u32, (start + needle.len()) as u32)
+}
+
+pub fn expect_codes(text: &str, expected: &[(Code, &str, usize)]) {
+    let expected: Vec<(Code, u32, u32)> = expected
+        .iter()
+        .map(|(code, needle, occurrence)| {
+            let (start, end) = at(text, needle, *occurrence);
+            (*code, start, end)
+        })
+        .collect();
+    assert_eq!(check_codes(text), expected, "{text}");
 }

@@ -1,0 +1,373 @@
+use std::collections::{BTreeMap, VecDeque};
+
+use symphonyscript_core::Vocabulary;
+
+use super::binding::Binding;
+use super::bound::{Bound, BoundVal};
+use super::chain::Chain;
+use super::cval::CVal;
+use super::destination::Destination;
+use super::fast_hash::{FastMap, FastSet};
+use super::ids::{BindingId, InstanceId, NodeId, ScopeId};
+use super::instance::Instance;
+use super::item_ref::ItemRef;
+use super::memo::Memo;
+use super::node::{Node, Op};
+use super::path_parent::PathParent;
+use super::pattern_use::PatternUse;
+use super::query::Query;
+use super::scope::{Scope, ScopeKind};
+use super::sig::Sig;
+use super::site::Site;
+use super::val::Val;
+use super::wire::Wire;
+use crate::diagnostics::Code;
+use crate::semantics::collection::Collected;
+use crate::semantics::ir::{Hir, Loc, PlacementId};
+use crate::semantics::reporting::Report;
+
+pub(crate) struct Engine<'a> {
+    pub hir: &'a Hir,
+    pub vocabulary: &'a Vocabulary,
+    pub collected: &'a Collected,
+    pub report: Report,
+    pub scopes: Vec<Scope>,
+    pub nodes: Vec<Node>,
+    pub bindings: Vec<Binding>,
+    pub instances: Vec<Instance>,
+    pub wires: Vec<Wire>,
+    pub uses: Vec<PatternUse>,
+    pub top_instances: BTreeMap<PlacementId, InstanceId>,
+    pub top_level: Vec<InstanceId>,
+    pub source_global: ScopeId,
+    pub prelude_global: ScopeId,
+    pub memo: Memo,
+    pub prebuilt: FastMap<(Site, ScopeId), ItemRef>,
+    pub counters: FastMap<(PathParent, String), u32>,
+    pub body_queue: VecDeque<InstanceId>,
+    pub expanded: usize,
+    pub limit_reached: bool,
+    pub broken_bundles: FastSet<usize>,
+    pub active: Option<super::evaluation::Machine>,
+    pub machines: FastMap<super::call_key::CallKey, super::evaluation::Machine>,
+    pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
+    pub frame_pushed: bool,
+    pub call_count: usize,
+    pub call_limit_reported: bool,
+    pub typing: super::infer::Typing,
+    waiting: FastSet<Query>,
+    cyclic: FastSet<(Query, Query)>,
+    current: Option<Query>,
+}
+
+impl<'a> Engine<'a> {
+    pub fn new(hir: &'a Hir, vocabulary: &'a Vocabulary, collected: &'a Collected) -> Self {
+        let mut engine = Self {
+            hir,
+            vocabulary,
+            collected,
+            report: Report::default(),
+            scopes: Vec::new(),
+            nodes: Vec::new(),
+            bindings: Vec::new(),
+            instances: Vec::new(),
+            wires: Vec::new(),
+            uses: Vec::new(),
+            top_instances: BTreeMap::new(),
+            top_level: Vec::new(),
+            source_global: ScopeId(0),
+            prelude_global: ScopeId(1),
+            memo: Memo::default(),
+            prebuilt: FastMap::default(),
+            counters: FastMap::default(),
+            body_queue: VecDeque::new(),
+            expanded: 0,
+            limit_reached: false,
+            broken_bundles: FastSet::default(),
+            active: None,
+            machines: FastMap::default(),
+            frame_need: Vec::new(),
+            frame_pushed: false,
+            call_count: 0,
+            call_limit_reported: false,
+            typing: super::infer::Typing::default(),
+            waiting: FastSet::default(),
+            cyclic: FastSet::default(),
+            current: None,
+        };
+        engine.source_global =
+            engine.scope(ScopeKind::Global { prelude: false }, None, Chain::default());
+        engine.prelude_global =
+            engine.scope(ScopeKind::Global { prelude: true }, None, Chain::default());
+        engine
+    }
+
+    pub fn demand(&mut self, query: Query) {
+        let mut stack = vec![query];
+        let mut stalled = 0;
+        while let Some(top) = stack.last().copied() {
+            if self.is_done(top) {
+                stack.pop();
+                self.waiting.remove(&top);
+                stalled = 0;
+                continue;
+            }
+            let mut need = Vec::new();
+            self.current = Some(top);
+            let done = self.run(top, &mut need);
+            self.current = None;
+            if done {
+                stack.pop();
+                self.waiting.remove(&top);
+                stalled = 0;
+                continue;
+            }
+            self.waiting.insert(top);
+            let mut progressed = false;
+            for dep in need {
+                if self.waiting.contains(&dep) {
+                    if self.cyclic.insert((top, dep)) {
+                        self.cycle(&stack, dep);
+                        progressed = true;
+                    }
+                } else if !self.is_done(dep) {
+                    stack.push(dep);
+                    progressed = true;
+                }
+            }
+            if progressed {
+                stalled = 0;
+            } else {
+                stalled += 1;
+                if stalled > 2 {
+                    stack.pop();
+                    self.waiting.remove(&top);
+                    stalled = 0;
+                }
+            }
+        }
+    }
+
+    fn is_done(&self, query: Query) -> bool {
+        let memo = &self.memo;
+        match query {
+            Query::Expr(expr, scope) => memo.exprs.contains_key(&(expr, scope)),
+            Query::Let(scope, local) => memo.lets.contains_key(&(scope, local)),
+            Query::Param(scope, index) => memo.params.contains_key(&(scope, index)),
+            Query::Input(input) => memo.inputs.contains_key(&input),
+            Query::Attr(item, attr) => memo.attrs.contains_key(&(item, attr)),
+            Query::Destination(wire) => memo.destinations.contains_key(&wire),
+            Query::Sig(node) => memo.sigs.contains_key(&node),
+            Query::Eval(node, ty) => memo.evals.contains_key(&(node, ty)),
+        }
+    }
+
+    fn run(&mut self, query: Query, need: &mut Vec<Query>) -> bool {
+        match query {
+            Query::Expr(expr, scope) => self.run_expr(expr, scope, need),
+            Query::Let(scope, local) => self.run_let(scope, local, need),
+            Query::Param(scope, index) => self.run_param(scope, index, need),
+            Query::Input(input) => self.run_input(input, need),
+            Query::Attr(item, attr) => self.run_attr(item, attr, need),
+            Query::Destination(wire) => self.run_destination(wire, need),
+            Query::Sig(node) => self.run_sig(node, need),
+            Query::Eval(node, ty) => self.run_eval(node, ty, need),
+        }
+    }
+
+    fn poisoned(&self, dep: Query) -> bool {
+        self.current
+            .is_some_and(|current| self.cyclic.contains(&(current, dep)))
+    }
+
+    pub fn val(&self, query: Query, need: &mut Vec<Query>) -> Option<Val> {
+        if self.poisoned(query) {
+            return Some(Val::Error);
+        }
+        let Query::Expr(expr, scope) = query else {
+            return Some(Val::Error);
+        };
+        let found = self.memo.exprs.get(&(expr, scope)).cloned();
+        if found.is_none() {
+            need.push(query);
+        }
+        found
+    }
+
+    pub fn bound(&self, query: Query, need: &mut Vec<Query>) -> Option<BoundVal> {
+        if self.poisoned(query) {
+            return Some(BoundVal::Error);
+        }
+        let memo = &self.memo;
+        let found = match query {
+            Query::Let(scope, local) => memo.lets.get(&(scope, local)).cloned(),
+            Query::Param(scope, index) => memo.params.get(&(scope, index)).cloned(),
+            Query::Input(input) => memo.inputs.get(&input).cloned(),
+            Query::Attr(item, attr) => memo.attrs.get(&(item, attr)).cloned(),
+            _ => Some(BoundVal::Error),
+        };
+        if found.is_none() {
+            need.push(query);
+        }
+        found
+    }
+
+    pub fn destination(&self, query: Query, need: &mut Vec<Query>) -> Option<Destination> {
+        if self.poisoned(query) {
+            return Some(Destination::Error);
+        }
+        let Query::Destination(wire) = query else {
+            return Some(Destination::Error);
+        };
+        let found = self.memo.destinations.get(&wire).cloned();
+        if found.is_none() {
+            need.push(query);
+        }
+        found
+    }
+
+    pub fn sig(&self, node: NodeId, need: &mut Vec<Query>) -> Option<Sig> {
+        let query = Query::Sig(node);
+        if self.poisoned(query) {
+            return Some(Sig::ERROR);
+        }
+        let found = self.memo.sigs.get(&node).copied();
+        if found.is_none() {
+            need.push(query);
+        }
+        found
+    }
+
+    pub fn cval(&self, query: Query, need: &mut Vec<Query>) -> Option<CVal> {
+        if self.poisoned(query) {
+            return Some(CVal::Error);
+        }
+        let Query::Eval(node, ty) = query else {
+            return Some(CVal::Error);
+        };
+        let found = self.memo.evals.get(&(node, ty)).cloned();
+        if found.is_none() {
+            need.push(query);
+        }
+        found
+    }
+
+    pub fn demand_val(&mut self, query: Query) -> Val {
+        self.demand(query);
+        let mut need = Vec::new();
+        self.val(query, &mut need).unwrap_or(Val::Error)
+    }
+
+    pub fn demand_sig(&mut self, node: NodeId) -> Sig {
+        self.demand(Query::Sig(node));
+        self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR)
+    }
+
+    pub fn demand_cval(&mut self, node: NodeId, ty: super::eval_ty::EvalTy) -> CVal {
+        self.demand(Query::Eval(node, ty));
+        self.memo
+            .evals
+            .get(&(node, ty))
+            .cloned()
+            .unwrap_or(CVal::Error)
+    }
+
+    pub fn scope(&mut self, kind: ScopeKind, parent: Option<ScopeId>, chain: Chain) -> ScopeId {
+        let id = ScopeId(index(self.scopes.len()));
+        self.scopes.push(Scope {
+            kind,
+            parent,
+            chain,
+        });
+        id
+    }
+
+    pub fn scope_of(&self, id: ScopeId) -> &Scope {
+        &self.scopes[id.index()]
+    }
+
+    pub fn node(&self, id: NodeId) -> &Node {
+        &self.nodes[id.index()]
+    }
+
+    pub fn binding(&self, id: BindingId) -> &Binding {
+        &self.bindings[id.index()]
+    }
+
+    pub fn push_node(&mut self, op: Op, loc: Loc, scope: ScopeId) -> NodeId {
+        let id = NodeId(index(self.nodes.len()));
+        self.nodes.push(Node { op, loc, scope });
+        id
+    }
+
+    pub fn push_binding(&mut self, binding: Binding) -> BindingId {
+        let id = BindingId(index(self.bindings.len()));
+        self.bindings.push(binding);
+        id
+    }
+
+    pub fn chain(&self, scope: ScopeId) -> Chain {
+        self.scope_of(scope).chain.clone()
+    }
+
+    pub fn error(&mut self, code: Code, loc: Loc, scope: ScopeId, message: impl Into<String>) {
+        let chain = self.chain(scope).to_vec();
+        self.report.error_with(self.hir, code, loc, &chain, message);
+    }
+
+    pub fn error_at_node(&mut self, code: Code, node: NodeId, message: impl Into<String>) {
+        let (loc, scope) = {
+            let node = self.node(node);
+            (node.loc, node.scope)
+        };
+        self.error(code, loc, scope, message);
+    }
+
+    pub fn read(&mut self, bound: &BoundVal, loc: Loc, scope: ScopeId) -> Val {
+        match bound {
+            BoundVal::Scalar(item) => Val::Scalar(self.read_one(*item, loc, scope)),
+            BoundVal::Array(array) => {
+                let (shape, items) = array.as_ref();
+                let elements = items
+                    .iter()
+                    .map(|item| self.read_one(*item, loc, scope))
+                    .collect();
+                Val::array(shape.clone(), elements)
+            }
+            BoundVal::Error => Val::Error,
+        }
+    }
+
+    fn read_one(&mut self, item: Bound, loc: Loc, scope: ScopeId) -> NodeId {
+        match item {
+            Bound::Cell(binding) => self.push_node(Op::Read(binding), loc, scope),
+            Bound::Value(node) => self.push_node(Op::Use(node), loc, scope),
+        }
+    }
+
+    fn cycle(&mut self, stack: &[Query], dep: Query) {
+        let start = stack.iter().position(|query| *query == dep).unwrap_or(0);
+        let mut names = Vec::new();
+        let mut locs = Vec::new();
+        for query in stack.iter().skip(start) {
+            if let Some((name, loc)) = self.declaration(*query) {
+                names.push(name);
+                locs.push(loc);
+            }
+        }
+        let Some(first) = names.first().cloned() else {
+            return;
+        };
+        names.push(first);
+        let Some(&loc) = locs.first() else {
+            return;
+        };
+        let message = format!("these declarations reach themselves: {}", names.join(" → "));
+        self.report
+            .error_with(self.hir, Code::DeclarationCycle, loc, &locs[1..], message);
+    }
+}
+
+pub(crate) fn index(length: usize) -> u32 {
+    u32::try_from(length).unwrap_or(u32::MAX)
+}
