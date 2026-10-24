@@ -1,4 +1,4 @@
-use symphonyscript_core::{Count, Vocabulary};
+use symphonyscript_core::{Count, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
     Project, ProjectFile, deep_projects, dsp_project, music_project, spec_examples, spec_projects,
     vocabulary,
@@ -12,7 +12,7 @@ use super::c_array::CArray;
 use super::c_val::CVal;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
-use super::ids::{NodeId, ScopeId};
+use super::ids::{BindingId, NodeId, ScopeId};
 use super::kind::Kind;
 use super::op::Op;
 use super::val::Val;
@@ -1352,6 +1352,164 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
     });
     if slots != [3] {
         failures.push(format!("{input:?}: input slots {slots:?}"));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+const FIB_FN: &str = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
+
+fn notes_and_pitches(engine: &Engine<'_>) -> (usize, Vec<CVal>) {
+    let notes = engine
+        .instances
+        .iter()
+        .filter(|instance| {
+            engine
+                .vocabulary
+                .node_kind(instance.kind)
+                .is_some_and(|decl| decl.name == "Note")
+        })
+        .count();
+    (notes, attr_values(engine, "pitch", EvalTy::I32))
+}
+
+fn cell_type_and_value(engine: &Engine<'_>, name: &str) -> Option<(Scalar, CVal)> {
+    let position = engine
+        .bindings
+        .iter()
+        .position(|binding| binding.name == name)?;
+    let binding = BindingId(u32::try_from(position).ok()?);
+    let own = *engine.typing.own.get(&binding)?;
+    let ty = match own {
+        Scalar::I32 => EvalTy::I32,
+        Scalar::I64 => EvalTy::I64,
+        Scalar::F32 => EvalTy::F32,
+        Scalar::F64 => EvalTy::F64,
+        Scalar::Bool | Scalar::Enum(_) | Scalar::Str => return None,
+    };
+    let init = engine.binding(binding).init;
+    let value = engine.memo.evals.get(&(init, ty)).cloned()?;
+    Some((own, value))
+}
+
+#[test]
+fn a_recursive_result_has_the_kind_its_body_gives_it() {
+    let arp = "pattern Arp(default root, steps = 4, gap = 4):\n    for i in 0..steps:\n        Note/(root + i * gap)\n";
+    let pitches = |values: &[i128]| values.iter().map(|value| CVal::Int(*value)).collect();
+    let structural: Vec<(String, usize, Vec<CVal>)> = vec![
+        (
+            format!("{FIB_FN}Clip c:\n    for i in 0..fib(5):\n        Note/(60 + i)\n"),
+            5,
+            pitches(&[60, 61, 62, 63, 64]),
+        ),
+        (
+            format!("{FIB_FN}let k = fib(4)\nClip c:\n    for i in 0..k:\n        Note\n"),
+            3,
+            Vec::new(),
+        ),
+        (
+            format!("{FIB_FN}{arp}Clip c:\n    Arp/48 | steps=fib(4)\n"),
+            3,
+            pitches(&[48, 52, 56]),
+        ),
+        (
+            format!("{FIB_FN}Clip c:\n    Note/([60, 62, 64][fib(3)])\n"),
+            1,
+            pitches(&[64]),
+        ),
+        (
+            format!("{FIB_FN}let v = match fib(4):\n    3: 1\n    else: 2\nClip c:\n    Note/v\n"),
+            1,
+            pitches(&[1]),
+        ),
+        (
+            format!("{FIB_FN}let v = match fib(3):\n    2: 1\n    else: 2\nClip c:\n    Note/v\n"),
+            1,
+            pitches(&[1]),
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (text, count, expected) in structural {
+        let (diagnostics, (found, holes)) = analyzed(&text, |engine| {
+            (notes_and_pitches(engine), placeholders(engine))
+        });
+        if !errors_of(&diagnostics).is_empty() || found != (count, expected) || !holes.is_empty() {
+            failures.push(format!(
+                "{text:?}: {found:?} {holes:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+    }
+    let cells: Vec<(String, &str, Scalar, Option<CVal>)> = vec![
+        (
+            format!("{FIB_FN}input n = fib(3)\nClip c:\n    Note/n\n"),
+            "n",
+            Scalar::I64,
+            Some(CVal::Int(2)),
+        ),
+        (
+            "fn h(n): if n < 1 then 0.5 else h(n - 1)\ninput m = h(2)\nClip c | gain=m\n".into(),
+            "m",
+            Scalar::F64,
+            Some(CVal::F64(0.5)),
+        ),
+        (
+            "fn d(n): if n < 1 then 1 else d(n - 1) / 2\ninput q = d(2)\nClip c | gain=q\n".into(),
+            "q",
+            Scalar::F64,
+            Some(CVal::F64(0.25)),
+        ),
+        (
+            format!(
+                "{FIB_FN}input f = true\nlet x = if f then fib(3) else fib(4)\nClip c:\n    Note/x\n"
+            ),
+            "x",
+            Scalar::I32,
+            None,
+        ),
+    ];
+    for (text, name, own, value) in cells {
+        let (diagnostics, (typed, holes)) = analyzed(&text, |engine| {
+            let own = engine
+                .bindings
+                .iter()
+                .position(|binding| binding.name == name)
+                .and_then(|position| u32::try_from(position).ok())
+                .and_then(|position| engine.typing.own.get(&BindingId(position)).copied());
+            (
+                (
+                    own,
+                    cell_type_and_value(engine, name).map(|(_, value)| value),
+                ),
+                placeholders(engine),
+            )
+        });
+        let value_holds = value.is_none() || typed.1 == value;
+        if !errors_of(&diagnostics).is_empty()
+            || typed.0 != Some(own)
+            || !value_holds
+            || !holes.is_empty()
+        {
+            failures.push(format!(
+                "{text:?}: {typed:?} {holes:?} with {:?}",
+                error_codes(&diagnostics)
+            ));
+        }
+    }
+    let rejected = [
+        (
+            "Clip c:\n    for i in 0..0.5:\n        Note\n".to_string(),
+            Code::RangeBound,
+        ),
+        (
+            "fn f(x): if x < 1 then x div 2 else f(x - 1)\nClip c:\n    Note/(f(0.5))\n".into(),
+            Code::OperandType,
+        ),
+    ];
+    for (text, code) in rejected {
+        let (diagnostics, ()) = analyzed(&text, |_| ());
+        if error_codes(&diagnostics) != [code] {
+            failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
+        }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

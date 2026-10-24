@@ -8,6 +8,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::rec_family::RecFamily;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
@@ -40,37 +41,50 @@ impl Engine<'_> {
                     let Some(root) = self.template_root(function, scope, need)? else {
                         self.memo
                             .rec_families
-                            .insert(key.clone(), RecFamily::Known(None));
+                            .insert(key.clone(), RecFamily::Known(Kind::Any, None));
                         continue;
                     };
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
                         return self.pending(root, Sig::open(false), need);
                     };
                     let family = if sig.open { None } else { sig.family };
+                    let kind = if sig.is_error() { Kind::Any } else { sig.kind };
                     let settled = self.instantiate(function, &key.args, node);
                     self.memo.rec_families.insert(
                         key.clone(),
                         RecFamily::Settling {
+                            kind,
                             family,
                             scope: settled,
                         },
                     );
                 }
-                Some(RecFamily::Settling { family, scope }) => {
+                Some(RecFamily::Settling {
+                    kind,
+                    family,
+                    scope,
+                }) => {
                     let Some(root) = self.template_root(function, scope, need)? else {
                         self.memo
                             .rec_families
-                            .insert(key.clone(), RecFamily::Known(family));
+                            .insert(key.clone(), RecFamily::Known(kind, family));
                         continue;
                     };
-                    let assumed = Sig::of(Kind::Any, Width::Flexible, false, family);
+                    let assumed = Sig::of(kind, Width::Flexible, false, family);
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
                         return self.pending(root, assumed, need);
                     };
                     let state = if sig.is_error() {
                         RecFamily::Failed
+                    } else if rises(kind, sig.kind) && (sig.open || sig.family == family) {
+                        let settled = self.instantiate(function, &key.args, node);
+                        RecFamily::Settling {
+                            kind: sig.kind,
+                            family,
+                            scope: settled,
+                        }
                     } else if sig.open || sig.family == family {
-                        RecFamily::Known(family)
+                        RecFamily::Known(kind, family)
                     } else {
                         self.error_at_node(
                             Code::MixedFamilies,
@@ -81,8 +95,8 @@ impl Engine<'_> {
                     };
                     self.memo.rec_families.insert(key.clone(), state);
                 }
-                Some(RecFamily::Known(family)) => {
-                    return Some(Sig::of(Kind::Any, Width::Flexible, false, family));
+                Some(RecFamily::Known(kind, family)) => {
+                    return Some(Sig::of(kind, Width::Flexible, false, family));
                 }
                 Some(RecFamily::Failed) => return Some(Sig::ERROR),
             }
@@ -128,4 +142,8 @@ impl Engine<'_> {
             Some(Val::Error) => ArgShape::Default,
         }
     }
+}
+
+fn rises(assumed: Kind, found: Kind) -> bool {
+    found != assumed && unify_kinds(assumed, found) == Some(found)
 }
