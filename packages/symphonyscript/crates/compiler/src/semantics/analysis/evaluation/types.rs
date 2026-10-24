@@ -1,7 +1,9 @@
 use symphonyscript_core::{Builtin, Scalar};
 
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::sig::{Kind, Sig, Width, common, is_integer, meet_flexible};
+use crate::semantics::analysis::sig::{
+    Kind, Sig, Width, common, float_for, is_integer, meet_flexible,
+};
 
 pub(super) fn of_scalar(scalar: Scalar) -> EvalTy {
     match scalar {
@@ -26,6 +28,13 @@ pub(super) fn is_float_ty(ty: EvalTy) -> bool {
 pub(crate) fn own_type(sig: &Sig, ty: EvalTy) -> EvalTy {
     match sig.width {
         Width::Fixed(scalar) => of_scalar(scalar),
+        Width::Widened(scalar) => {
+            if is_float_ty(ty) {
+                ty
+            } else {
+                of_scalar(float_for(scalar))
+            }
+        }
         _ => match sig.kind {
             Kind::Int => {
                 if is_float_ty(ty) {
@@ -65,6 +74,7 @@ pub(super) fn pair_type(a: &Sig, b: &Sig) -> Pair {
     }
     let fixed = |sig: &Sig| match sig.width {
         Width::Fixed(scalar) => Some(scalar),
+        Width::Widened(scalar) => Some(float_for(scalar)),
         _ => None,
     };
     match (fixed(a), fixed(b)) {

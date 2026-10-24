@@ -243,7 +243,7 @@ impl Engine<'_> {
             );
             return false;
         }
-        if let Width::Fixed(scalar) = sig.width
+        if let Width::Fixed(scalar) | Width::Widened(scalar) = sig.width
             && !is_cell
             && (is_integer(scalar) || is_float(scalar))
             && !widens(scalar, expected)

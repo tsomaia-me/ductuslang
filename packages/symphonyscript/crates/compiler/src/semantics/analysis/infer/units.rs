@@ -7,7 +7,7 @@ use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{Kind, Sig};
+use crate::semantics::analysis::sig::{Kind, Sig, Width, is_integer};
 use crate::semantics::ir::Loc;
 
 type Feed = (FamilyId, usize, Loc);
@@ -227,10 +227,15 @@ impl Engine<'_> {
                     };
                 if becomes_float {
                     floats.insert(node);
+                    let width = match sig.width {
+                        Width::Fixed(scalar) if is_integer(scalar) => Width::Widened(scalar),
+                        other => other,
+                    };
                     self.memo.sigs.insert(
                         node,
                         Sig {
                             kind: Kind::Float,
+                            width,
                             ..sig
                         },
                     );

@@ -4,7 +4,9 @@ use symphonyscript_core::{BinaryOp, Builtin, SpecFloat, UnaryOp, Value};
 
 use super::exact::{exact_binary, fits, represents};
 use super::format::text;
-use super::types::{Pair, int_bits, is_float_builtin, is_float_ty, is_int_ty, own_type, pair_type};
+use super::types::{
+    Pair, int_bits, is_float_builtin, is_float_ty, is_int_ty, of_scalar, own_type, pair_type,
+};
 use crate::diagnostics::Code;
 use crate::semantics::analysis::bound::{Bound, BoundVal};
 use crate::semantics::analysis::cval::CVal;
@@ -51,6 +53,12 @@ impl Engine<'_> {
             return Some(CVal::Error);
         }
         let own = own_type(&sig, ty);
+        if let Width::Widened(integer) = sig.width
+            && let Some(scale) = self.memo.default_scales.get(&node).copied()
+        {
+            let value = self.compute(node, of_scalar(integer), ctx, need)?;
+            return Some(convert_to(scaled_into(value, scale, own), ty));
+        }
         let value = if own == EvalTy::Default && sig.kind == Kind::Float {
             match self.child(node, EvalTy::F64, ctx, need)? {
                 CVal::F64(value) if !value.is_nan() && !(value as f32).is_finite() => {
@@ -256,7 +264,12 @@ impl Engine<'_> {
                 .family(family)
                 .and_then(|decl| decl.units.get(unit))
                 .map(|unit| unit.scale),
-            _ => self.memo.default_scales.get(&node).copied(),
+            _ => self
+                .memo
+                .default_scales
+                .get(&node)
+                .copied()
+                .filter(|scale| is_float_ty(own) || scale.fract() == 0.0),
         };
         if is_int_ty(own) {
             let Number::Int(value) = number else {
@@ -640,6 +653,17 @@ impl Engine<'_> {
             CVal::F64(value) => CVal::F64(value * scale),
             _ => CVal::Error,
         }
+    }
+}
+
+fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> CVal {
+    let CVal::Int(integer) = value else {
+        return CVal::Error;
+    };
+    let exact = FloatLit::from_integer(integer).scaled(scale);
+    match ty {
+        EvalTy::F32 => CVal::F32(exact.to_f32()),
+        _ => CVal::F64(exact.to_f64()),
     }
 }
 

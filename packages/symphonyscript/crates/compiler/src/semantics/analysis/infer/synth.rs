@@ -16,6 +16,7 @@ impl Engine<'_> {
             if !sig.reactive {
                 let ty = match sig.width {
                     Width::Fixed(scalar) => Some(scalar),
+                    Width::Widened(scalar) => Some(float_for(scalar)),
                     _ => None,
                 };
                 self.typing.synth.insert(node, ty);

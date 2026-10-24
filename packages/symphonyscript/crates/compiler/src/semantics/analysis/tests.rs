@@ -12,7 +12,7 @@ use super::bound::BoundVal;
 use super::cval::CVal;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
-use super::ids::ScopeId;
+use super::ids::{NodeId, ScopeId};
 use super::node::Op;
 use super::sig::Kind;
 use super::val::Val;
@@ -89,6 +89,9 @@ fn envelope_vocabulary() -> Vocabulary {
         .top_level(Count::Any)
         .attr::<f64>("attack")
         .default(0.0)
+        .family(&time, "ms")
+        .attr::<f32>("release")
+        .default(0.0)
         .family(&time, "ms");
     v.build().expect("the envelope vocabulary builds")
 }
@@ -100,16 +103,88 @@ const IN_DEFAULT_UNITS: &[&str] = &[
     "Env e | attack=(1s + 3ms)\n",
 ];
 
-fn first_value(engine: &Engine<'_>) -> Option<(CVal, Kind)> {
+const FIXED_IN_DEFAULT_UNITS: &[&str] = &[
+    "Env e | attack=3i64\n",
+    "Env e | attack=i64(3)\n",
+    "Env e | attack=(1s + 3i32)\n",
+    "Env e | attack=(if 1s + 3i32 > 2s then 1s else 2s)\n",
+    "Env e | release=3i32\n",
+];
+
+fn first_node(engine: &Engine<'_>) -> Option<NodeId> {
     let instance = engine.instances.last()?;
     let AttrValueSource::Expr(expr, scope) = instance.attrs.first()?.value else {
         return None;
     };
-    let Some(Val::Scalar(node)) = engine.memo.exprs.get(&(expr, scope)) else {
-        return None;
+    match engine.memo.exprs.get(&(expr, scope)) {
+        Some(Val::Scalar(node)) => Some(*node),
+        _ => None,
+    }
+}
+
+fn first_value_in(engine: &Engine<'_>, ty: EvalTy) -> Option<(CVal, Kind)> {
+    let node = first_node(engine)?;
+    let value = engine.memo.evals.get(&(node, ty))?.clone();
+    Some((value, engine.memo.sigs.get(&node)?.kind))
+}
+
+fn first_value(engine: &Engine<'_>) -> Option<(CVal, Kind)> {
+    first_value_in(engine, EvalTy::F64)
+}
+
+fn compared_in(engine: &Engine<'_>) -> Vec<EvalTy> {
+    let Some(node) = first_node(engine) else {
+        return Vec::new();
     };
-    let value = engine.memo.evals.get(&(*node, EvalTy::F64))?.clone();
-    Some((value, engine.memo.sigs.get(node)?.kind))
+    let Op::If(condition, _, _) = engine.node(node).op else {
+        return Vec::new();
+    };
+    let Op::Binary(_, lhs, _) = engine.node(condition).op else {
+        return Vec::new();
+    };
+    let mut types: Vec<EvalTy> = engine
+        .memo
+        .evals
+        .keys()
+        .filter(|(evaluated, _)| *evaluated == lhs)
+        .map(|(_, ty)| *ty)
+        .collect();
+    types.sort_by_key(|ty| format!("{ty:?}"));
+    types
+}
+
+#[test]
+fn a_fixed_type_integer_read_in_a_fractional_unit_is_the_float_it_widens_into() {
+    let envelope = envelope_vocabulary();
+    let expected = [
+        CVal::F64(0.003),
+        CVal::F64(0.003),
+        CVal::F64(1.0 + 0.003),
+        CVal::F64(2.0),
+    ];
+    for (text, value) in FIXED_IN_DEFAULT_UNITS.iter().zip(expected) {
+        let (diagnostics, found) = analyzed_with(&envelope, text, first_value);
+        assert_eq!(diagnostics, Vec::<Diagnostic>::new(), "{text}");
+        assert_eq!(found.map(|(value, _)| value), Some(value), "{text}");
+    }
+    let (_, types) = analyzed_with(&envelope, FIXED_IN_DEFAULT_UNITS[3], compared_in);
+    assert_eq!(types, vec![EvalTy::F32]);
+    let (diagnostics, found) = analyzed_with(&envelope, "Env e | release=3i32\n", |engine| {
+        first_value_in(engine, EvalTy::F32)
+    });
+    assert_eq!(diagnostics, Vec::<Diagnostic>::new());
+    assert_eq!(found.map(|(value, _)| value), Some(CVal::F32(0.003)));
+    let codes = |vocabulary: &Vocabulary, text: &str| -> Vec<Code> {
+        analyzed_with(vocabulary, text, |_| ())
+            .0
+            .iter()
+            .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+            .map(|diagnostic| diagnostic.code)
+            .collect()
+    };
+    let gain = codes(&vocabulary(), "Clip c | gain=3i64\n");
+    assert_eq!(gain, vec![Code::TypeMismatch]);
+    assert_eq!(codes(&envelope, "Env e | release=3i64\n"), gain);
 }
 
 #[test]
@@ -230,7 +305,7 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
         "{clean} runs drew no error"
     );
     let envelope = envelope_vocabulary();
-    for text in IN_DEFAULT_UNITS {
+    for text in IN_DEFAULT_UNITS.iter().chain(FIXED_IN_DEFAULT_UNITS) {
         let (diagnostics, found) = analyzed_with(&envelope, text, placeholders);
         assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
         assert_eq!(found, Vec::<String>::new(), "{text}");

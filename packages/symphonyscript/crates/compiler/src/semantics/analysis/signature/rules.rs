@@ -11,12 +11,17 @@ use crate::semantics::analysis::sig::{
 use crate::semantics::ir::{Number, Suffix};
 
 pub(super) fn arith_width(a: &Sig, b: &Sig) -> Width {
-    match (a.width, b.width) {
+    let settled = |width| match width {
+        Width::Widened(scalar) => Width::Fixed(float_for(scalar)),
+        other => other,
+    };
+    match (settled(a.width), settled(b.width)) {
         (Width::Adaptive, _) | (_, Width::Adaptive) => Width::Adaptive,
         (Width::Fixed(x), Width::Fixed(y)) => Width::Fixed(common(x, y).unwrap_or(x)),
         (Width::Fixed(x), Width::Flexible) => Width::Fixed(meet_flexible(x, b.kind)),
         (Width::Flexible, Width::Fixed(y)) => Width::Fixed(meet_flexible(y, a.kind)),
         (Width::Flexible, Width::Flexible) => Width::Flexible,
+        (Width::Widened(x), _) | (_, Width::Widened(x)) => Width::Fixed(float_for(x)),
     }
 }
 

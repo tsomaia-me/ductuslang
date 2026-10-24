@@ -17,6 +17,7 @@ pub(crate) enum Kind {
 pub(crate) enum Width {
     Flexible,
     Fixed(Scalar),
+    Widened(Scalar),
     Adaptive,
 }
 
