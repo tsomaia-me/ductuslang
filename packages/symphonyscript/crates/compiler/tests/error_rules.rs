@@ -435,7 +435,7 @@ const RULES: &[Rule] = &[
         "5.5",
         "A compile-time index outside the array is an error.",
         "index-out-of-range",
-        "let a = [1, 2, 3][5]\n",
+        "Clip c:\n    Note/([1, 2, 3][5])\n",
     ),
     rule(
         "5.5",

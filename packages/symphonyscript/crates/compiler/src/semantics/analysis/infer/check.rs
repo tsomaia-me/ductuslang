@@ -1,7 +1,10 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
 use crate::diagnostics::Code;
+use crate::semantics::analysis::cval::CVal;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::sig::{Kind, Sig, Width, is_float, is_integer, widens};
@@ -75,8 +78,15 @@ impl Engine<'_> {
                 },
                 Op::If(condition, then, otherwise) => {
                     stack.push((condition, Some(Scalar::Bool)));
-                    stack.push((then, ty));
-                    stack.push((otherwise, ty));
+                    match self.chosen(condition, EvalTy::Bool) {
+                        Some(CVal::Bool(true)) => stack.push((then, ty)),
+                        Some(CVal::Bool(false)) => stack.push((otherwise, ty)),
+                        Some(_) => {}
+                        None => {
+                            stack.push((then, ty));
+                            stack.push((otherwise, ty));
+                        }
+                    }
                 }
                 Op::Match {
                     scrutinee,
@@ -85,15 +95,57 @@ impl Engine<'_> {
                 } => {
                     let scrutinee_ty = self.synth(scrutinee);
                     stack.push((scrutinee, scrutinee_ty));
-                    for (_, value) in arms {
-                        stack.push((value, ty));
+                    let label_ty = self
+                        .memo
+                        .sigs
+                        .get(&scrutinee)
+                        .map_or(EvalTy::Exact, |sig| own_type(sig, EvalTy::Exact));
+                    match self.chosen(scrutinee, label_ty) {
+                        Some(CVal::Error) => {}
+                        Some(value) => {
+                            let chosen = arms
+                                .iter()
+                                .find(|(label, _)| self.demand_cval(*label, label_ty) == value)
+                                .map(|(_, arm)| *arm)
+                                .or(otherwise);
+                            stack.extend(chosen.map(|arm| (arm, ty)));
+                        }
+                        None => {
+                            for (_, value) in arms {
+                                stack.push((value, ty));
+                            }
+                            stack.extend(otherwise.map(|value| (value, ty)));
+                        }
                     }
-                    stack.extend(otherwise.map(|value| (value, ty)));
                 }
                 Op::Pick { index, items } => {
                     let index_ty = self.synth(index);
                     stack.push((index, index_ty));
-                    stack.extend(items.into_iter().map(|item| (item, ty)));
+                    let position_ty = self
+                        .memo
+                        .sigs
+                        .get(&index)
+                        .map_or(EvalTy::Exact, |sig| own_type(sig, EvalTy::Exact));
+                    match self.chosen(index, position_ty) {
+                        Some(CVal::Int(position)) => {
+                            match usize::try_from(position)
+                                .ok()
+                                .and_then(|position| items.get(position))
+                            {
+                                Some(item) => stack.push((*item, ty)),
+                                None => self.error_at_node(
+                                    Code::IndexOutOfRange,
+                                    index,
+                                    format!(
+                                        "the index {position} is outside the array of length {}",
+                                        items.len()
+                                    ),
+                                ),
+                            }
+                        }
+                        Some(_) => {}
+                        None => stack.extend(items.into_iter().map(|item| (item, ty))),
+                    }
                 }
                 Op::Convert(target, operand) => {
                     let operand_ty = if is_float(target) {
@@ -119,6 +171,14 @@ impl Engine<'_> {
                 }
             }
         }
+    }
+
+    fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Option<CVal> {
+        let sig = self.memo.sigs.get(&node).copied().unwrap_or(Sig::ERROR);
+        if sig.reactive || sig.is_error() {
+            return None;
+        }
+        Some(self.demand_cval(node, ty))
     }
 
     fn pair(&mut self, lhs: NodeId, rhs: NodeId) -> Option<Scalar> {

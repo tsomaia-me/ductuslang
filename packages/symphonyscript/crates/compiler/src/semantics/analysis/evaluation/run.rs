@@ -96,7 +96,32 @@ impl Engine<'_> {
     ) -> Option<CVal> {
         let op = self.node(node).op.clone();
         Some(match op {
-            Op::Read(_) | Op::Pick { .. } => CVal::Error,
+            Op::Read(_) => CVal::Error,
+            Op::Pick { index, items } => {
+                let index_sig = self.sig(index, need)?;
+                let index_ty = own_type(&index_sig, EvalTy::Exact);
+                let position = match self.child(index, index_ty, ctx, need)? {
+                    CVal::Int(position) => position,
+                    _ => return Some(CVal::Error),
+                };
+                let item = usize::try_from(position)
+                    .ok()
+                    .and_then(|position| items.get(position).copied());
+                match item {
+                    Some(item) => self.child(item, own, ctx, need)?,
+                    None => {
+                        self.error_at_node(
+                            Code::IndexOutOfRange,
+                            index,
+                            format!(
+                                "the index {position} is outside the array of length {}",
+                                items.len()
+                            ),
+                        );
+                        CVal::Error
+                    }
+                }
+            }
             Op::Arg(slot) => match ctx {
                 Ctx::Frame(frame) => self.frame_arg(frame, slot),
                 Ctx::Global => CVal::Error,

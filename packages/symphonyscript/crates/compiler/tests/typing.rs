@@ -124,6 +124,30 @@ fn an_annotation_fixes_a_type_outright() {
 }
 
 #[test]
+fn only_the_chosen_branch_of_a_compile_time_choice_is_checked_for_fit_and_index_range() {
+    expect(&[
+        (
+            "Clip c:\n    Note/(if true then [1, 2][0] else [1, 2][5])\n",
+            &[],
+        ),
+        (
+            "Clip c:\n    Note/(if false then [1, 2][0] else [1, 2][5])\n",
+            &[Code::IndexOutOfRange],
+        ),
+        ("Clip c:\n    Note/(if true then 1 else 3000000000)\n", &[]),
+        (
+            "Clip c:\n    Note/(if false then 1 else 3000000000)\n",
+            &[Code::DoesNotFit],
+        ),
+        (
+            "input b = true\nClip c:\n    Note/(if b then 1 else 3000000000)\n",
+            &[Code::DoesNotFit],
+        ),
+        ("input i = 0\nClip c:\n    Note/([1, 2][i + 5])\n", &[]),
+    ]);
+}
+
+#[test]
 fn enums_strings_and_bools_take_their_own_types() {
     expect(&[
         ("Synth s:\n    Osc | wave=Saw\n", &[]),

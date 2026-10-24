@@ -23,7 +23,7 @@ pub(super) fn is_float_ty(ty: EvalTy) -> bool {
     matches!(ty, EvalTy::F32 | EvalTy::F64)
 }
 
-pub(super) fn own_type(sig: &Sig, ty: EvalTy) -> EvalTy {
+pub(crate) fn own_type(sig: &Sig, ty: EvalTy) -> EvalTy {
     match sig.width {
         Width::Fixed(scalar) => of_scalar(scalar),
         _ => match sig.kind {

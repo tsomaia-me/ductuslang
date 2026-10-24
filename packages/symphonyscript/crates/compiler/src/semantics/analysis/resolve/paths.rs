@@ -218,16 +218,9 @@ impl Engine<'_> {
                 CVal::Int(position) => position,
                 _ => return Some(Val::Error),
             };
-            if position < 0 || position >= i128::from(outer) {
-                self.error(
-                    Code::IndexOutOfRange,
-                    self.node(index_node).loc,
-                    scope,
-                    format!("the index {position} is outside the array of length {outer}"),
-                );
-                return Some(Val::Error);
+            if (0..i128::from(outer)).contains(&position) {
+                return Some(base_val.slice(usize::try_from(position).unwrap_or(0)));
             }
-            return Some(base_val.slice(usize::try_from(position).unwrap_or(0)));
         }
         let rows: Vec<Val> = (0..outer as usize).map(|row| base_val.slice(row)).collect();
         let inner = array.shape.inner();
