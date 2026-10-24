@@ -25,7 +25,7 @@ packages/symphonyscript/
 | `symphonyscript` | `std` | the compiler, `compile`, `eval`, diagnostics, Rust code generation | core |
 | `symphonyscript-tool` | `std` | the framework tool: CLI, watch loop, language server | compiler |
 | `symphonyscript-kernel` | `std` | the `Consumer` for synaptic-kernel | core, synaptic-kernel |
-| `symphonyscript-fixtures` | `std`, tests only | the example vocabulary of SPEC §1.3, the fixture projects (PLAN Phase 1) | core |
+| `symphonyscript-fixtures` | `std`, tests only | the example vocabulary of SPEC §1.3, the fixture projects (PLAN M1 and M3) | core |
 
 Only `symphonyscript-core` runs on devices. Everything in it builds without `std`, and its float functions come from `libm` on every target, so desktop and device compute bit-identical values (SPEC §12.5).
 
@@ -382,4 +382,4 @@ Strides are uniform per store: the meta stride and the attribute stride are the 
 
 ### 10.3 Capacity and reload
 
-`load` sizes the kernel from the Program's counts plus headroom equal to those counts. A removed slot counts until the engine has acknowledged the publishes that follow its removal, so `reload` publishes first, which lets the slots the previous reload freed be reclaimed, and then inserts added nodes, removes removed ones together with their children's chains, writes changes and publishes. A reload that replaces every node and synapse fits without `grow` once the engine has acknowledged the previous reload's publishes; a reload that outgrows capacity calls `grow`, and capacity only grows. Kept and reordered nodes move to their new chain positions with `move_node_after` and `move_node_before`, which keep a node's slot, synapses and cells and preserve the kernel's invariants. The adapter requires these from synaptic-kernel, and PLAN Phase 8 adds them.
+`load` sizes the kernel from the Program's counts plus headroom equal to those counts. A removed slot counts until the engine has acknowledged the publishes that follow its removal, so `reload` publishes first, which lets the slots the previous reload freed be reclaimed, and then inserts added nodes, removes removed ones together with their children's chains, writes changes and publishes. A reload that replaces every node and synapse fits without `grow` once the engine has acknowledged the previous reload's publishes; a reload that outgrows capacity calls `grow`, and capacity only grows. Kept and reordered nodes move to their new chain positions with `move_node_after` and `move_node_before`, which keep a node's slot, synapses and cells and preserve the kernel's invariants. The adapter requires these from synaptic-kernel, and PLAN M5 adds them.

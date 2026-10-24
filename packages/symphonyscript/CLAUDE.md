@@ -9,7 +9,7 @@ The compiler is written in Rust. It compiles a project against one vocabulary in
 1. This file.
 2. `docs/SPEC.md` §1, then the sections your task touches. The SPEC is normative.
 3. `docs/ARCHITECTURE.md`, the sections your task touches.
-4. `docs/PLAN.md`, the current phase.
+4. `docs/PLAN.md`: § How the work runs, and the current milestone.
 
 Read a document by its sections, not whole, unless your task spans all of it.
 
@@ -19,7 +19,8 @@ Everything this project needs is inside `packages/symphonyscript`. The kernel ad
 
 ## Hard rules
 
-- **The SPEC decides.** Code follows `docs/SPEC.md`. A gap or a contradiction in the SPEC goes to the owner as a question; never resolve it in code. A change to the language changes the SPEC first, on the owner's ruling, and the code after.
+- **The SPEC decides.** Code follows `docs/SPEC.md`. A gap or a contradiction in the documents is never resolved silently in code: it is decided as `docs/PLAN.md` § How the work runs says, the documents change first, and the code after.
+- **An implementer makes no call on a gap.** It records every gap in its progress file, keeps working on what the gap does not block, and hands back to the head.
 - **Language design belongs to the owner.** A design question states the background, the problem, the options with SymphonyScript examples, and a recommendation with its reason.
 - **`symphonyscript-core` builds without `std`.** It uses `alloc` and `libm` and nothing else.
 - **`commit` never allocates.** Allocation happens in `Runtime::new` and `reload` only.
