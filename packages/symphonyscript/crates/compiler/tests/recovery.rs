@@ -648,6 +648,15 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         ],
         "File[LetDecl[let a = ParenExpr[( Literal[1]] ErrorNode[2 ( 3 ) )] NL] LetDecl[let b = ErrorNode[)] NL]]",
     ),
+    (
+        "let a = 1 & (2,\nClip c:\n    Note |\nlet b = )\n",
+        &[
+            (Code::UnexpectedCharacter, 10, 11),
+            (Code::AttributeSyntax, 34, 35),
+            (Code::ExpressionSyntax, 43, 44),
+        ],
+        "File[LetDecl[let a = Literal[1] ErrorNode[& ( 2 ,] NL] Placement[Clip c Body[: Block[NL > Placement[Note Attrs[|] NL] <]]] LetDecl[let b = ErrorNode[)] NL]]",
+    ),
 ];
 
 #[test]

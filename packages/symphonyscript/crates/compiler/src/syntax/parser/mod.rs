@@ -399,9 +399,15 @@ impl<'a> Parser<'a> {
             SyntaxKind::Newline => self.brackets.clear(),
             _ => {}
         }
+        let opens_region = matches!(kind, SyntaxKind::LParen | SyntaxKind::LBracket)
+            && self.line_error
+            && self.lexer.depth_at(self.pos) == Some(0);
         let text = self.text_of(self.pos);
         self.builder.token(kind, text);
         self.pos += 1;
+        if opens_region {
+            self.resync_at(self.pos - 1);
+        }
     }
 
     fn flush_trivia(&mut self) {
@@ -524,9 +530,12 @@ impl<'a> Parser<'a> {
     }
 
     fn resync(&mut self) {
-        let Some(current) = self.significant(0) else {
-            return;
-        };
+        if let Some(current) = self.significant(0) {
+            self.resync_at(current);
+        }
+    }
+
+    fn resync_at(&mut self, current: usize) {
         let (text, vocabulary) = (self.source.text.as_str(), self.vocabulary);
         let starts = |line: &LineStart<'_>| starts_line(line, text, vocabulary);
         if let Some(line) = self.lexer.resync_line(current, starts) {

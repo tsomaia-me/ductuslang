@@ -428,6 +428,49 @@ const TEMPLATES: &[(Context, Lines, Hole, &str, Open)] = &[
 
 const ROWS: &[(Code, Context, Lines, &str, Open)] = &[
     (
+        Code::UnexpectedCharacter,
+        TopLevel,
+        One,
+        "let a = 1 ⟦&⟧ (2,\n",
+        AfterFault,
+    ),
+    (
+        Code::TopLevelSyntax,
+        TopLevel,
+        One,
+        "⟦1⟧ + (2,\n",
+        AfterFault,
+    ),
+    (
+        Code::InputSyntax,
+        TopLevel,
+        One,
+        "input ⟦=⟧ [1,\n",
+        AfterFault,
+    ),
+    (Code::LetSyntax, TopLevel, One, "let ⟦=⟧ (1,\n", AfterFault),
+    (
+        Code::UnexpectedCharacter,
+        Body,
+        One,
+        "    Note ⟦&⟧ (Note\n",
+        AfterFault,
+    ),
+    (
+        Code::PlacementSyntax,
+        Body,
+        One,
+        "    Note: ⟦5⟧ [1,\n",
+        AfterFault,
+    ),
+    (
+        Code::ExpressionSyntax,
+        Body,
+        One,
+        "    Note | velocity=⟦)⟧ (1,\n",
+        AfterFault,
+    ),
+    (
         Code::TabIndentation,
         TopLevel,
         Across,
