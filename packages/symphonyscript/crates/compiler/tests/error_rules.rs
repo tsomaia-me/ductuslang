@@ -307,7 +307,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.1",
-        "otherwise it is an error naming both uses",
+        "When one flexible value has an integer use and a float use, the float use's value, before §3.6 reads it in a unit, equals the integer use's value converted to the float type; otherwise it is an error naming both uses.",
         "inconsistent-uses",
         "let q = 2 ** -1\nSynth s:\n    Osc/q\nClip c:\n    Note/q\n",
     ),
@@ -370,6 +370,12 @@ const RULES: &[Rule] = &[
         "a value that holds the call and has different shapes at two of its uses is an error naming both",
         "inconsistent-shapes",
         "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\nlet v = r(0.1, 3)\nClip c | gain=(v[0])\nOsc o | freq=(v[0])\n",
+    ),
+    rule(
+        "4.6",
+        "A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.",
+        "inconsistent-shapes",
+        "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\ninput f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n",
     ),
     rule(
         "4.6",
@@ -640,6 +646,12 @@ const RULES: &[Rule] = &[
         "A declaration that reaches itself through `let`s, inputs, attribute reads or function bodies is an error naming the cycle",
         "declaration-cycle",
         "input a = b\nlet b = a + 1\n",
+    ),
+    rule(
+        "6.2",
+        "A declaration that reaches itself through `let`s, inputs, attribute reads or function bodies is an error naming the cycle",
+        "declaration-cycle",
+        "fn g(x): x\nfn f():\n    let a = g(a)\n    a\nClip c:\n    Note/(f())\n",
     ),
     rule(
         "6.2",
