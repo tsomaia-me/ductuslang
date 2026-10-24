@@ -5,4 +5,11 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+rowan = "0.16"
 symphonyscript-core.workspace = true
+unicode-ident = "1"
+unicode-normalization = "0.1"
+unicode-width = "0.2"
+
+[dev-dependencies]
+symphonyscript-fixtures.workspace = true
