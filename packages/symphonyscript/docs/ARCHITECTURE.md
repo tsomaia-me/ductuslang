@@ -204,7 +204,7 @@ for change in rt.changes() {
 }
 ```
 
-- `Runtime::new` validates the Program (ids in range, cells in dependency order, operand types consistent) and returns an error for one that fails. It then evaluates every cell, computes every activation and target, and allocates every buffer the runtime ever uses.
+- `Runtime::new` validates the Program (ids in range, cells in dependency order, operand types consistent) and returns an error for one that fails. A Program that passes it evaluates, commits and reloads without a panic. It then evaluates every cell, computes every activation and target, and allocates every buffer the runtime ever uses.
 - `commit` never allocates. It walks the cells in index order, evaluating only cells marked dirty, and marks readers dirty when a value changes bit-for-bit. It fills the change buffer, whose capacity is the number of reportable items, in the order of SPEC §12.3. `changes` reads that buffer until the next commit.
 - Each input, cell and gate has a precomputed list of the attributes, gates and targets that read it, so changes are reported without searching.
 - Effective activation is computed parents first, so a gate change reaches every descendant in one pass.
@@ -216,7 +216,8 @@ for change in rt.changes() {
 ## 5. Reload
 
 ```rust
-match rt.prepare_reload(new_program) {
+let snapshot = rt.reload_snapshot();
+match snapshot.prepare(new_program) {
     Ok(pending) => {
         let report = pending.report();
         for item in report.structure() {
@@ -235,7 +236,7 @@ match rt.prepare_reload(new_program) {
 }
 ```
 
-`structure()` covers instances, bundles and wires (`Item::Instance`, `Item::Bundle` and `Item::Wire`); `Reordered` names a parent instance, a bundle or `Parent::Top`. `prepare_reload`:
+`structure()` covers instances, bundles and wires (`Item::Instance`, `Item::Bundle` and `Item::Wire`); `Reordered` names a parent instance, a bundle or `Parent::Top`. `reload_snapshot` copies what preparing reads, the old Program by reference and the input values with their written marks, on the runtime's thread between commits; the snapshot is `Send`, so `prepare` runs on any thread while the runtime keeps committing. `prepare`:
 
 1. Refuses a Program with a different vocabulary stamp (`Refused::Vocabulary`), or one that fails `Runtime::new`'s validation (`Refused::Invalid`).
 2. Carries input values over by name, following SPEC §13.2. Each input element records whether the host has written it.
@@ -243,7 +244,7 @@ match rt.prepare_reload(new_program) {
 4. Builds the new state and evaluates every cell.
 5. Reports the structure, the staged writes it dropped, and the attribute, activation and target differences of matched items.
 
-`install` replaces the running state with the pending one. Dropping a `PendingReload` instead leaves the runtime on the old Program. Preparing may allocate; installing swaps buffers and does not. Input handles are stable: the runtime keeps a registry from input names to handles across reloads, adds handles for new names, marks handles of removed inputs dead, and revives a dead handle when an input of its name returns.
+`install` replaces the running state with the pending one, between two commits, after staging again against the new Program, by input name, the writes staged and committed since the snapshot, as SPEC §13.2 does for writes staged before a reload, so the next commit applies them. Dropping a `PendingReload` instead leaves the runtime on the old Program. Preparing may allocate; installing swaps buffers and does not. Input handles are stable: the runtime keeps a registry from input names to handles across reloads, adds handles for new names, marks handles of removed inputs dead, and revives a dead handle when an input of its name returns.
 
 ## 6. The Consumer trait
 
@@ -287,7 +288,7 @@ The compiler performs no file I/O; the caller supplies every source. This keeps 
 5. **Resolve.** Names, paths and `to` in the expanded program; calls to non-recursive functions are inlined with their parameters bound (SPEC §6.3); each argument is bound once and shared by every use of its parameter, so nested calls grow the program linearly; two equal calls that are the operands of one operator or the arms of one `if`, with the same names or paths as arguments, share one inlined body, since they meet the same expected type and feed the same attributes; SPEC §4.6's inline limit is found before any body is inlined, by counting each value's calls over the call graph once Expand is done, so a compilation past it costs no inlining; each value is classified as compile-time or reactive by what it reads. Cycles among declarations (SPEC §6.2) are found here, before Infer. A bare name that names no declaration is left for Infer to resolve as a variant.
 6. **Infer.** Types and unit families over the whole program (SPEC §3.6, §4), bare variants from their expected types, and then the remaining calls to recursive functions, evaluated in the types inference gives them. Recursive calls are memoized by argument values, argument types and expected type, which is what SPEC §4.6's limit counts. A recursive call whose result is an array is evaluated in the element type its use expects, or with the defaults where it expects none, before that use is typed, and takes the shape of the value it yields; a reactive value whose shape comes from such a call alone takes the shape the call yields with the defaults, found when Resolve builds its bindings. A recursive call's kind and family follow from its body under its arguments' kinds and families, settled over the call graph before cell types are found. Exact compile-time integers never grow past SPEC §4.6's bound: an operation whose result would reach 2¹²⁷ reports the error before computing it, so `2 ** 1000000` costs no more than `2 ** 200`.
 7. **Check.** The vocabulary checks (SPEC §10.2), cycles among wires, fit checks, and the warnings of SPEC §4.4 and §10.2.
-8. **Lower.** Constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program.
+8. **Lower.** Constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program. Lower folds and lowers each node of a shared `Expr` once, so a Program grows with its distinct nodes, not with the paths through them, and its output depends on the sources and the vocabulary alone, never on hash or allocation order.
 
 Diagnostics carry a stable code in kebab-case (`unknown-attribute`, `count-exceeded`), a primary span, secondary spans (for a pattern use: the use and the line in the pattern; for an error inside an inlined function body: the calls, innermost first), a plain-language message, and a hint when one exists. Every code is a variant of the compiler's `Code` enum, whose `section` method returns the SPEC section of its rule. The tests keep a table mapping each error rule of the SPEC, by section and sentence, to its code; a test checks that every code appears in the table and every code in the table exists. A lookup that misses inside the compiler is a compiler defect: it returns an error, and the run draws one `internal-error` diagnostic, the one code no SPEC rule names and the table leaves out, and fails. The compiler collects every diagnostic of a run instead of stopping at the first. Diagnostics that differ only in the calls or pattern uses between their fault and the outermost call or use merge into one, which names the first such chain found, so a fault draws one diagnostic per outermost call or use however its bodies are shared. It returns them in source order: by file in top-level order, then by span start, span end and code. A name, type or unit family that an error leaves unknown takes an error placeholder that every later stage accepts without a diagnostic, so one fault draws one diagnostic; a placeholder arises only where a diagnostic is reported, so a program that draws no error holds none.
 

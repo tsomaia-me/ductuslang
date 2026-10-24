@@ -102,7 +102,7 @@ Steps:
 1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order.
 2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, writes (SPEC §12, ARCHITECTURE §4).
 3. `eval` and the `Consumer` trait.
-4. Reload: `prepare_reload` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
+4. Reload: `reload_snapshot`, `prepare` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
 5. Fixture pairs of projects, before and after an edit, for the reload tests.
 
 Exit:
@@ -113,6 +113,9 @@ Exit:
 - A test for each rule of SPEC §13.
 - Inserting one anonymous note into a playing clip reports exactly one addition.
 - M2's deep sources lower, load, commit, reload, compare, clone, dump and drop on a thread with a 1 MiB stack.
+- Compiling a fixture project repeatedly, with its sources in any order, gives equal Programs and equal dumps.
+- A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
+- A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
 
 ## M4: Delivery and tooling
 
