@@ -176,7 +176,7 @@ pub struct Cell {
 - An `AttrId` indexes its kind's attribute list.
 - `gate` combines the item's own `when` with the `when` arm conditions around it in one binding (SPEC §11).
 - `Select` keeps the candidates in the order of SPEC §8.2; `index` is an integer binding, clamped to them.
-- `Expr` is a tree of constants, input and cell reads, typed unary and binary operators, `if`, `match`, `Pick` (indexing with a runtime index, clamped), conversions and built-in calls. Every operator node carries its operand type, and every read of a cell that its use reads in another type carries an explicit conversion (SPEC §4.4). Functions, patterns, units and compile-time values are already resolved; nothing in `Expr` names a source declaration.
+- `Expr` is a list of nodes: constants, input and cell reads, typed unary and binary operators, `if`, `match`, `Pick` (indexing with a runtime index, clamped), conversions and built-in calls. A node's operands come before it in the list, so one node may be the operand of several, and equality, hashing, printing and dropping go over the list once. Every operator node carries its operand type, and every read of a cell that its use reads in another type carries an explicit conversion (SPEC §4.4). Functions, patterns, units and compile-time values are already resolved; nothing in `Expr` names a source declaration.
 - `Value` is `I32`, `I64`, `F32`, `F64`, `Bool`, `Enum(EnumId, u16)` or `Str(StrId)`. A `StrId` indexes `strings`, which holds each string attribute value once.
 - `Span` is a file, named by its `Source.path`, and a byte range, used in diagnostics and tooling. `span` is where an item is written; `expanded_from` holds the pattern uses that produced it, innermost first, and is empty outside patterns.
 
@@ -208,7 +208,7 @@ for change in rt.changes() {
 - `commit` never allocates. It walks the cells in index order, evaluating only cells marked dirty, and marks readers dirty when a value changes bit-for-bit. It fills the change buffer, whose capacity is the number of reportable items, in the order of SPEC §12.3. `changes` reads that buffer until the next commit.
 - Each input, cell and gate has a precomputed list of the attributes, gates and targets that read it, so changes are reported without searching.
 - Effective activation is computed parents first, so a gate change reaches every descendant in one pass.
-- `Expr` is evaluated without recursion, on a stack sized in `Runtime::new` for the deepest expression, so no Program overflows the native stack.
+- `Expr` is evaluated without recursion, each node at most once per evaluation, into buffers sized in `Runtime::new` for the largest expression, so no Program overflows the native stack and a shared node is computed once.
 - `write`, `write_element` and `write_array` return an error for a write SPEC §12.1 rejects and for a dead handle. Nothing in the runtime panics.
 - `program` returns the loaded Program.
 - The runtime is `Send` and is used from one thread. Consumers move changes to other threads themselves.

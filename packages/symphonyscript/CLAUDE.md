@@ -15,7 +15,7 @@ Read a document by its sections, not whole, unless your task spans all of it.
 
 ## Scope
 
-Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. Read nothing else in the repository for this project.
+Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. Implementers also read `.claude/docs/CODING.md` and reviewers `.claude/docs/REVIEWING.md` (`docs/PLAN.md` § How the work runs). Read nothing else in the repository for this project.
 
 ## Hard rules
 
