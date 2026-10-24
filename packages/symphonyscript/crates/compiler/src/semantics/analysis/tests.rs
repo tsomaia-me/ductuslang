@@ -891,3 +891,22 @@ fn equal_sibling_calls_share_one_inlined_body() {
     assert_eq!(eighteen.1 - twelve.1, twelve.1 - six.1, "scopes");
     assert_eq!(eighteen.2, (1 << 19) - 1, "inlined calls");
 }
+
+#[test]
+fn equal_calls_in_different_positions_are_inlined_separately() {
+    let bars = bar_vocabulary();
+    let g = "fn g(): 1bars + 1\n";
+    for text in [
+        format!("{g}Bar b | len=(g()) beat_len=(g())\n"),
+        format!("{g}let x = g()\nlet y = g()\nBar b | len=x beat_len=y\n"),
+    ] {
+        let (diagnostics, found) = analyzed_with(&bars, &text, |engine| {
+            (
+                attr_value(engine, "len", EvalTy::I64),
+                attr_value(engine, "beat_len", EvalTy::I64),
+            )
+        });
+        assert_eq!(error_codes(&diagnostics), Vec::<Code>::new(), "{text}");
+        assert_eq!(found, (Some(CVal::Int(8)), Some(CVal::Int(5))), "{text}");
+    }
+}
