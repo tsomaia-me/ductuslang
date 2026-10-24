@@ -743,6 +743,32 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         &[(Code::PlacementSyntax, 7, 8)],
         "File[Placement[Clip c ErrorNode[2 :] NL] LetDecl[let b = Literal[1] NL]]",
     ),
+    (
+        "Clip c:\n    Plays 2: match x:\n        0: verse\n        else: |\n",
+        &[(Code::WireSyntax, 18, 19), (Code::ExpressionSyntax, 61, 62)],
+        "File[Placement[Clip c Body[: Block[NL > WirePlacement[Plays ErrorNode[2] : Destination[MatchBlock[match NameRef[x] : NL > MatchArm[Literal[0] : NameRef[verse] NL] ElseArm[else : ErrorNode[|] NL] <]]] <]]]]",
+    ),
+    (
+        "let a 2 = match b:\n    0: 1\n    else: )\n",
+        &[(Code::LetSyntax, 6, 7), (Code::ExpressionSyntax, 38, 39)],
+        "File[LetDecl[let a ErrorNode[2] = MatchBlock[match NameRef[b] : NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : ErrorNode[)] NL] <]]]",
+    ),
+    (
+        "let a = match b c:\n    0: 1\n    else: )\n",
+        &[
+            (Code::MatchSyntax, 16, 17),
+            (Code::ExpressionSyntax, 38, 39),
+        ],
+        "File[LetDecl[let a = MatchBlock[match NameRef[b] ErrorNode[c :] NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : ErrorNode[)] NL] <]]]",
+    ),
+    (
+        "fn f():\n    match a b:\n        0: 1\n        else: )\n",
+        &[
+            (Code::MatchSyntax, 20, 21),
+            (Code::ExpressionSyntax, 50, 51),
+        ],
+        "File[FnDecl[fn f ParamList[( )] : FnBody[NL > MatchBlock[match NameRef[a] ErrorNode[b :] NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : ErrorNode[)] NL] <] <]]]",
+    ),
 ];
 
 #[test]

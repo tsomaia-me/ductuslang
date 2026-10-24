@@ -58,11 +58,13 @@ impl Parser<'_> {
     }
 
     pub(super) fn wire_after_attrs(&mut self) {
-        if self.expect(
-            SyntaxKind::Colon,
-            Code::WireSyntax,
-            "`:` and the wire's destination",
-        ) {
+        if self.eat(SyntaxKind::Colon)
+            || self.match_after_fault(
+                SyntaxKind::Colon,
+                Code::WireSyntax,
+                "`:` and the wire's destination",
+            )
+        {
             self.start(SyntaxKind::Destination);
             if self.at(SyntaxKind::MatchKw) {
                 self.then([Task::MatchBlock, Task::Finish, Task::Finish]);

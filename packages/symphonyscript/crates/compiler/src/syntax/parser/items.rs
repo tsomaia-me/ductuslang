@@ -70,7 +70,9 @@ impl Parser<'_> {
         if kind == SyntaxKind::LetDecl && self.eat(SyntaxKind::Colon) {
             self.type_ref();
         }
-        self.expect(SyntaxKind::Eq, Code::LetSyntax, "`=` and the value");
+        if !self.eat(SyntaxKind::Eq) {
+            self.match_after_fault(SyntaxKind::Eq, Code::LetSyntax, "`=` and the value");
+        }
         if self.at(SyntaxKind::MatchKw) {
             self.then([Task::MatchBlock, Task::Finish]);
         } else {

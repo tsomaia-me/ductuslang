@@ -604,18 +604,60 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn skip_to_final_colon(&mut self) -> bool {
-        let Some(colon) = self.final_colon() else {
-            self.skip_line();
+    fn match_after_fault(&mut self, anchor: SyntaxKind, code: Code, what: &str) -> bool {
+        let found = self.describe();
+        self.error(code, format!("expected {what}, found {found}"));
+        let Some(index) = self.match_anchor(anchor) else {
             return false;
         };
+        self.skip_to(index);
+        if self.significant(0) == Some(index) && self.at(anchor) {
+            self.bump();
+            return true;
+        }
+        false
+    }
+
+    fn match_anchor(&mut self, anchor: SyntaxKind) -> Option<usize> {
+        self.final_colon()?;
+        let mut index = self.significant(0)?;
+        loop {
+            let kind = self.kind_at(index)?;
+            if kind == SyntaxKind::Newline {
+                return None;
+            }
+            if kind == anchor && self.lexer.depth_at(index) == Some(0) {
+                let mut next = index + 1;
+                while self.kind_at(next).is_some_and(SyntaxKind::is_trivia) {
+                    next += 1;
+                }
+                if self.kind_at(next) == Some(SyntaxKind::MatchKw) {
+                    return Some(index);
+                }
+            }
+            index += 1;
+        }
+    }
+
+    fn skip_to(&mut self, index: usize) {
+        if self.significant(0).is_some_and(|current| current >= index) {
+            return;
+        }
         self.start(SyntaxKind::ErrorNode);
-        while self.significant(0).is_some_and(|index| index < colon)
+        while self.significant(0).is_some_and(|current| current < index)
             && !self.at_any(&[SyntaxKind::Newline, SyntaxKind::Dedent])
         {
             self.bump();
         }
         self.finish();
+    }
+
+    fn skip_to_final_colon(&mut self) -> bool {
+        let Some(colon) = self.final_colon() else {
+            self.skip_line();
+            return false;
+        };
+        self.skip_to(colon);
         if self.significant(0) == Some(colon) && self.at(SyntaxKind::Colon) {
             return true;
         }

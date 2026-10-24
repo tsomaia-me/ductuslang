@@ -19,6 +19,59 @@ const FAULTY_HOSTS: &[(Code, &str, usize)] = &[
     (Code::WhenSyntax, "Clip host:\n    when x ⟦y⟧:\n", 8),
 ];
 
+const MATCH_HOST: (Code, &str) = (Code::WireSyntax, "    Plays ⟦2⟧: match x:\n");
+
+const VALID_ARMS: &[&str] = &[
+    "        0: verse\n",
+    "        Sine: chorus\n",
+    "        -1: intro\n",
+];
+
+const FAULTY_ARMS: &[(Code, &str)] = &[
+    (Code::ExpressionSyntax, "        0: ⟦)⟧\n"),
+    (Code::MatchSyntax, "        ⟦+⟧: verse\n"),
+    (Code::MatchSyntax, "        0 ⟦verse⟧\n"),
+    (Code::ExpressionSyntax, "        else: ⟦|⟧\n"),
+];
+
+const ELSE_ARM: &str = "        else: verse\n";
+
+fn match_hosts(vocabulary: &Vocabulary) -> Vec<Candidate> {
+    let faulty = FAULTY_ARMS.iter().map(|(code, arm)| {
+        let mut pieces = vec![MATCH_HOST, (*code, VALID_ARMS[0]), (*code, *arm)];
+        if !arm.trim_start().starts_with("else") {
+            pieces.push((*code, ELSE_ARM));
+        }
+        (format!("match host with {code}"), pieces)
+    });
+    let valid = VALID_ARMS
+        .iter()
+        .map(|arm| (Code::WireSyntax, *arm))
+        .chain([(Code::WireSyntax, ELSE_ARM)]);
+    let all_valid = (
+        String::from("match host"),
+        std::iter::once(MATCH_HOST).chain(valid).collect(),
+    );
+    faulty
+        .chain([all_valid])
+        .map(|(label, pieces)| {
+            let mut text = String::new();
+            let mut faults = Vec::new();
+            for (code, marked) in pieces {
+                let (piece, piece_faults) = unmark(code, marked);
+                let offset = text.len() as u32;
+                faults.extend(
+                    piece_faults
+                        .into_iter()
+                        .map(|(code, range)| (code, offset + range.start..offset + range.end)),
+                );
+                text.push_str(&piece);
+            }
+            Candidate::new(label, &text, faults, Open::Closed, vocabulary)
+        })
+        .collect()
+}
+
 const REGION_LINES: &[&str] = &[
     "a/b c",
     "x/2,",
@@ -203,6 +256,7 @@ impl Pool {
                         vocabulary,
                     )
                 })
+                .chain(match_hosts(vocabulary))
                 .collect(),
             top: valid.top.iter().map(valid_candidate).collect(),
             body: valid.body.iter().map(valid_candidate).collect(),
