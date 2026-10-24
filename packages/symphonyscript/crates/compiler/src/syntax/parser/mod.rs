@@ -162,8 +162,8 @@ impl<'a> Parser<'a> {
             Task::ParenAfterGate => self.paren_after_gate(),
             Task::ParenFinishPlacement => self.paren_finish_placement(),
             Task::PlacementHead => self.placement_head(),
-            Task::DefaultArg => self.default_arg(),
-            Task::DefaultAfterAtom => self.default_after_atom(),
+            Task::DefaultArg { kind } => self.default_arg(kind),
+            Task::DefaultAfterAtom { kind, atom } => self.default_after_atom(kind, atom),
             Task::Atom => self.atom(),
             Task::Gate => self.gate(),
             Task::Attrs => self.attrs(),
@@ -253,6 +253,41 @@ impl<'a> Parser<'a> {
         self.range_at(index)
             .and_then(|range| source.text.get(range.start as usize..range.end as usize))
             .unwrap_or("")
+    }
+
+    fn text_through_group(&mut self, first: usize) -> &'a str {
+        let source = self.source;
+        let start = self.range_at(first).map_or(0, |range| range.start);
+        let Some(open) = self.significant(0) else {
+            return "";
+        };
+        let open_start = self.range_at(open).map_or(start, |range| range.start) as usize;
+        let line_end = source
+            .text
+            .get(open_start..)
+            .and_then(|rest| rest.find('\n'))
+            .map_or(source.text.len(), |offset| open_start + offset);
+        let mut depth = 0usize;
+        let mut end = start;
+        let mut index = open;
+        while let (Some(kind), Some(range)) = (self.kind_at(index), self.range_at(index)) {
+            if range.start as usize >= line_end {
+                break;
+            }
+            match kind {
+                SyntaxKind::LParen | SyntaxKind::LBracket => depth += 1,
+                SyntaxKind::RParen | SyntaxKind::RBracket => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+            if !kind.is_trivia() {
+                end = range.end;
+            }
+            if depth == 0 {
+                break;
+            }
+            index += 1;
+        }
+        source.text.get(start as usize..end as usize).unwrap_or("")
     }
 
     fn current_text(&mut self) -> &'a str {

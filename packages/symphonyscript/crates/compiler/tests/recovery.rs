@@ -303,3 +303,28 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
          ParenPlacement[( Placement[Note Gate[when NameRef[x]]] )] NL] <]]]]"
     );
 }
+
+#[test]
+fn the_parenthesize_hint_shows_the_written_value() {
+    for (text, hint) in [
+        (
+            "Clip c:\n    Note/f(1)\n",
+            "parenthesize the whole value, as in `Note/(f(1))`",
+        ),
+        (
+            "Clip c:\n    Note/a[0]\n",
+            "parenthesize the whole value, as in `Note/(a[0])`",
+        ),
+        (
+            "Clip c:\n    Plays/to.gain[i + 1]: d\n",
+            "parenthesize the whole value, as in `Plays/(to.gain[i + 1])`",
+        ),
+    ] {
+        let hints: Vec<Option<String>> = support::parsed(text)
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.hint.clone())
+            .collect();
+        assert_eq!(hints, [Some(hint.to_string())], "{text:?}");
+    }
+}

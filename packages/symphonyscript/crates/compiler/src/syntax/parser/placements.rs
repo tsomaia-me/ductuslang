@@ -22,21 +22,23 @@ const MEMBER_START: &[SyntaxKind] = &[SyntaxKind::Ident, SyntaxKind::LParen, Syn
 impl Parser<'_> {
     pub(super) fn top_placement(&mut self) {
         self.start(SyntaxKind::Placement);
+        let kind = self.kind_token();
         self.bump();
         self.flags();
         self.eat(SyntaxKind::AsKw);
         self.expect_name(Code::PlacementSyntax, "the top-level instance's name");
-        self.then([Task::DefaultArg, Task::PlacementTail, Task::Finish]);
+        self.then([Task::DefaultArg { kind }, Task::PlacementTail, Task::Finish]);
     }
 
     pub(super) fn wire_placement(&mut self) {
         self.start(SyntaxKind::WirePlacement);
+        let kind = self.kind_token();
         self.bump();
         self.flags();
         if self.eat(SyntaxKind::AsKw) {
             self.expect_name(Code::WireSyntax, "the wire's name");
         }
-        self.then([Task::DefaultArg, Task::WireAfterDefault]);
+        self.then([Task::DefaultArg { kind }, Task::WireAfterDefault]);
     }
 
     pub(super) fn wire_after_default(&mut self) {
@@ -213,12 +215,13 @@ impl Parser<'_> {
                 format!("`{name}` is a wire kind; a wire placement stands on its own line"),
             );
         }
+        let kind = self.kind_token();
         self.bump();
         self.flags();
         if self.eat(SyntaxKind::AsKw) {
             self.expect_name(Code::PlacementSyntax, "the name after `as`");
         }
-        self.then([Task::DefaultArg]);
+        self.then([Task::DefaultArg { kind }]);
     }
 
     fn flags(&mut self) {
@@ -244,7 +247,11 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn default_arg(&mut self) {
+    fn kind_token(&mut self) -> usize {
+        self.significant(0).unwrap_or(self.pos)
+    }
+
+    pub(super) fn default_arg(&mut self, kind: usize) {
         if !self.at(SyntaxKind::Slash) {
             return;
         }
@@ -263,19 +270,27 @@ impl Parser<'_> {
                 Task::Finish,
             ]);
         } else {
-            self.then([Task::Atom, Task::DefaultAfterAtom]);
+            let atom = self.significant(0).unwrap_or(self.pos);
+            self.then([Task::Atom, Task::DefaultAfterAtom { kind, atom }]);
         }
     }
 
-    pub(super) fn default_after_atom(&mut self) {
-        if self.adjacent() && self.at_any(&[SyntaxKind::LBracket, SyntaxKind::LParen]) {
+    pub(super) fn default_after_atom(&mut self, kind: usize, atom: usize) {
+        if !self.line_error
+            && self.adjacent()
+            && self.at_any(&[SyntaxKind::LBracket, SyntaxKind::LParen])
+        {
             let found = self.describe();
+            let kind = self.text_of(kind);
+            let value = self.text_through_group(atom);
             let diagnostic = Diagnostic::new(
                 Code::DefaultArgSyntax,
                 self.current_span(),
                 format!("an unparenthesized `/` value ends before {found}"),
             )
-            .with_hint("parenthesize the whole value, as in `Note/(a[0])`");
+            .with_hint(format!(
+                "parenthesize the whole value, as in `{kind}/({value})`"
+            ));
             self.error_with(diagnostic);
         }
         self.finish();

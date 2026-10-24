@@ -83,8 +83,13 @@ pub(super) enum Task {
     ParenAfterGate,
     ParenFinishPlacement,
     PlacementHead,
-    DefaultArg,
-    DefaultAfterAtom,
+    DefaultArg {
+        kind: usize,
+    },
+    DefaultAfterAtom {
+        kind: usize,
+        atom: usize,
+    },
     Atom,
     Gate,
     Attrs,
