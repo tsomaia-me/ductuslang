@@ -133,21 +133,36 @@ fn a_functions_local_lets_are_visible_throughout_its_body() {
     support::expect_codes(&format!("{later}    Note/(f(1))\n"), &[]);
     let text = format!("{later}    Note/(f(2147483647))\n");
     support::expect_codes(&text, &[(Code::DoesNotFit, "a", 1)]);
-    let text = "fn f():\n    let a = b\n    let b = a\n    a\nClip c:\n    Note/(f())\n";
+    expect_a_cycle_of_a_and_b(
+        "fn f():\n    let a = b\n    let b = a\n    a\nClip c:\n    Note/(f())\n",
+    );
+}
+
+fn expect_a_cycle_of_a_and_b(text: &str) {
     let diagnostics = support::checked(text);
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].code, Code::DeclarationCycle);
+    assert_eq!(diagnostics.len(), 1, "{text}: {diagnostics:?}");
+    assert_eq!(diagnostics[0].code, Code::DeclarationCycle, "{text}");
     let name_in = |line| {
         let (start, _) = support::at(text, line, 0);
         start..start + 1
     };
-    assert_eq!(diagnostics[0].span.range, name_in("a = b"));
+    assert_eq!(diagnostics[0].span.range, name_in("a = b"), "{text}");
     let secondary: Vec<_> = diagnostics[0]
         .secondary
         .iter()
         .map(|span| span.range.clone())
         .collect();
-    assert_eq!(secondary, vec![name_in("b = a")]);
+    assert_eq!(secondary, vec![name_in("b = a")], "{text}");
+}
+
+#[test]
+fn a_cycle_among_the_lets_of_an_unused_function_or_pattern_is_reported() {
+    expect_a_cycle_of_a_and_b("fn f():\n    let a = b\n    let b = a\n    a\nSession s\n");
+    expect_a_cycle_of_a_and_b(
+        "pattern P():\n    let a = b\n    let b = a\n    Note/a\nSession s\n",
+    );
+    let acyclic = "fn g():\n    let a = 1\n    let b = a\n    b\nSession s\n";
+    assert_eq!(support::checked_all(acyclic), vec![]);
 }
 
 #[test]

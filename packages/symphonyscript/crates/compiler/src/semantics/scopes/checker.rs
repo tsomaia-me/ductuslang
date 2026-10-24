@@ -6,10 +6,17 @@ use super::frame::{Frame, FrameKind};
 use crate::diagnostics::Code;
 use crate::semantics::collection::{Decl, Namespace, variant_owner};
 use crate::semantics::ir::{
-    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, Loc, PatternId,
-    PlacementId, TypeBase, TypeRef,
+    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
+    PatternId, PlacementId, TypeBase, TypeRef,
 };
 use crate::semantics::reporting::Report;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Visit {
+    New,
+    Open,
+    Done,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -73,6 +80,7 @@ impl<'a> Checker<'a> {
             self.expr(local.value, Some(locals), false);
         }
         self.expr(decl.value, Some(locals), false);
+        self.let_cycles(&decl.lets);
     }
 
     pub fn pattern(&mut self, id: PatternId) {
@@ -107,6 +115,95 @@ impl<'a> Checker<'a> {
             self.expr(local.value, Some(locals), false);
         }
         self.blocks(vec![(decl.body, Some(locals), Mode::Body)]);
+        self.let_cycles(&decl.lets);
+    }
+
+    fn let_cycles(&mut self, lets: &[LetDecl]) {
+        let mut positions: BTreeMap<&str, usize> = BTreeMap::new();
+        for (position, local) in lets.iter().enumerate() {
+            if let Some(name) = &local.name {
+                positions.entry(name.text.as_str()).or_insert(position);
+            }
+        }
+        let reads: Vec<Vec<usize>> = lets
+            .iter()
+            .map(|local| {
+                let mut found = Vec::new();
+                let mut stack = vec![local.value];
+                while let Some(id) = stack.pop() {
+                    let kind = &self.hir.expr(id).kind;
+                    if let ExprKind::Name(name) = kind
+                        && let Some(position) = positions.get(name.as_str())
+                    {
+                        found.push(*position);
+                    }
+                    stack.extend(kind.children());
+                }
+                found.sort_unstable();
+                found.dedup();
+                found
+            })
+            .collect();
+        let mut state = vec![Visit::New; lets.len()];
+        for start in 0..lets.len() {
+            if state.get(start) != Some(&Visit::New) {
+                continue;
+            }
+            let mut path: Vec<(usize, usize)> = vec![(start, 0)];
+            if let Some(slot) = state.get_mut(start) {
+                *slot = Visit::Open;
+            }
+            while let Some((node, next)) = path.last().copied() {
+                let Some(&target) = reads.get(node).and_then(|targets| targets.get(next)) else {
+                    if let Some(slot) = state.get_mut(node) {
+                        *slot = Visit::Done;
+                    }
+                    path.pop();
+                    continue;
+                };
+                if let Some(top) = path.last_mut() {
+                    top.1 += 1;
+                }
+                match state.get(target) {
+                    Some(Visit::New) => {
+                        if let Some(slot) = state.get_mut(target) {
+                            *slot = Visit::Open;
+                        }
+                        path.push((target, 0));
+                    }
+                    Some(Visit::Open) => {
+                        let from = path
+                            .iter()
+                            .position(|(position, _)| *position == target)
+                            .unwrap_or(0);
+                        let cycle: Vec<&Ident> = path
+                            .get(from..)
+                            .unwrap_or_default()
+                            .iter()
+                            .filter_map(|(position, _)| lets.get(*position)?.name.as_ref())
+                            .collect();
+                        self.cycle(&cycle);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn cycle(&mut self, names: &[&Ident]) {
+        let Some(first) = names.first() else {
+            return;
+        };
+        let mut text: Vec<&str> = names.iter().map(|name| name.text.as_str()).collect();
+        text.push(first.text.as_str());
+        let secondary: Vec<Loc> = names.iter().skip(1).map(|name| name.loc).collect();
+        self.report.error_with(
+            self.hir,
+            Code::DeclarationCycle,
+            first.loc,
+            &secondary,
+            format!("these declarations reach themselves: {}", text.join(" → ")),
+        );
     }
 
     pub fn top_placement(&mut self, id: PlacementId) {

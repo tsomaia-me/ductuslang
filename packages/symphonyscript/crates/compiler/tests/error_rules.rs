@@ -685,6 +685,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.5",
+        "A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2)",
+        "declaration-cycle",
+        "fn f():\n    let a = b\n    let b = a\n    a\n",
+    ),
+    rule(
+        "6.5",
         "Every other name resolves in scope.",
         "unknown-name",
         "let a = b\n",

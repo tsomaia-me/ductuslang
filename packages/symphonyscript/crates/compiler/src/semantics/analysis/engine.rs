@@ -15,7 +15,7 @@ use super::memo::Memo;
 use super::node::{Node, Op};
 use super::path_parent::PathParent;
 use super::pattern_use::PatternUse;
-use super::query::Query;
+use super::query::{LetRef, Query};
 use super::scope::{Scope, ScopeKind};
 use super::sig::Sig;
 use super::site::Site;
@@ -362,6 +362,13 @@ impl<'a> Engine<'a> {
             current = parent;
         }
         path.reverse();
+        let local_lets = path.iter().all(|query| match query {
+            Query::Let(_, LetRef::Local(_)) => true,
+            other => self.declaration(*other).is_none(),
+        });
+        if local_lets {
+            return;
+        }
         let mut names = Vec::new();
         let mut locs = Vec::new();
         for query in path {
