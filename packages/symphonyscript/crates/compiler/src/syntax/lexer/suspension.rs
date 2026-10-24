@@ -1,7 +1,7 @@
 #[derive(Clone)]
-pub(crate) struct Suspension {
-    pub(crate) offset: usize,
-    pub(crate) first: usize,
-    pub(crate) column: u32,
-    pub(crate) stack: Vec<u32>,
+pub(super) struct Suspension {
+    pub(super) offset: usize,
+    pub(super) first_token: usize,
+    pub(super) column: u32,
+    pub(super) region: usize,
 }

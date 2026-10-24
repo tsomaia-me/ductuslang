@@ -262,6 +262,24 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         &[(Code::DefaultArgSyntax, 18, 19)],
         "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ NameRef[f]]] ParenPlacement[(] ErrorNode[1 )] NL] <]]]]",
     ),
+    (
+        "input a 1_\nlet b = 2\n",
+        &[
+            (Code::InputSyntax, 8, 10),
+            (Code::MisplacedUnderscore, 9, 10),
+        ],
+        "File[InputDecl[input a Literal[1_] NL] LetDecl[let b = Literal[2] NL]]",
+    ),
+    (
+        "let a = [1 @\n2, 3]\nlet b = 4\n",
+        &[(Code::ExpressionSyntax, 11, 12)],
+        "File[LetDecl[let a = ArrayLit[[ Literal[1]] ErrorNode[@ 2 , 3 ]] NL] LetDecl[let b = Literal[4] NL]]",
+    ),
+    (
+        "Clip c:\n    Note/(1 +\n    when x: Note\n",
+        &[(Code::ExpressionSyntax, 26, 30)],
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ ParenExpr[( BinaryExpr[Literal[1] +]]] NL] WhenBlock[when NameRef[x] : Block[Members[Placement[Note]] NL]] <]]]]",
+    ),
 ];
 
 #[test]

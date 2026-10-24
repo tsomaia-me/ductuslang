@@ -4,7 +4,11 @@ mod expressions;
 mod items;
 mod placements;
 mod task;
+#[cfg(test)]
+mod tests;
 mod tree_builder;
+
+use std::ops::Range;
 
 use rowan::GreenNode;
 use symphonyscript_core::{Span, Vocabulary};
@@ -12,21 +16,16 @@ use symphonyscript_core::{Span, Vocabulary};
 use self::checkpoint::Checkpoint;
 use self::task::Task;
 use self::tree_builder::TreeBuilder;
-use super::lexed::Lexed;
-use super::lexer::{Layout, Lexer, Suspension};
+use super::lexer::Lexer;
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
-use super::token::Token;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::source::Source;
 
 pub(crate) struct Parser<'a> {
     source: &'a Source,
     vocabulary: &'a Vocabulary,
-    tokens: Vec<Token>,
-    depths: Vec<u32>,
-    suspended: Vec<Suspension>,
-    lexer_diagnostics: Vec<Diagnostic>,
+    lexer: Lexer<'a>,
     pos: usize,
     builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
@@ -36,19 +35,11 @@ pub(crate) struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(
-        source: &'a Source,
-        vocabulary: &'a Vocabulary,
-        lexed: Lexed,
-        layout: Layout,
-    ) -> Self {
+    pub(crate) fn new(source: &'a Source, vocabulary: &'a Vocabulary) -> Self {
         Self {
             source,
             vocabulary,
-            tokens: lexed.tokens,
-            depths: layout.depths,
-            suspended: layout.suspended,
-            lexer_diagnostics: lexed.diagnostics,
+            lexer: Lexer::new(source, vocabulary),
             pos: 0,
             builder: TreeBuilder::new(),
             diagnostics: Vec::new(),
@@ -58,22 +49,51 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(crate) fn run(mut self) -> (GreenNode, Vec<Diagnostic>) {
+    pub(crate) fn run(self) -> (GreenNode, Vec<Diagnostic>) {
+        let (green, diagnostics, _) = self.run_counting();
+        (green, diagnostics)
+    }
+
+    fn run_counting(mut self) -> (GreenNode, Vec<Diagnostic>, usize) {
         self.builder.start_node(SyntaxKind::File);
         self.tasks.push(Task::File);
         while let Some(task) = self.tasks.pop() {
             self.step(task);
         }
         self.flush_trivia();
-        while self.pos < self.tokens.len() {
+        while self.fill(self.pos) {
             self.raw_bump();
         }
         self.builder.finish_node();
         let green = self.builder.finish();
-        let mut diagnostics = self.lexer_diagnostics;
+        let work = self.lexer.work();
+        let mut diagnostics = self.lexer.into_diagnostics();
         diagnostics.extend(self.diagnostics);
         diagnostics.sort_by_key(|diagnostic| diagnostic.span.range.start);
-        (green, diagnostics)
+        (green, diagnostics, work)
+    }
+
+    fn fill(&mut self, index: usize) -> bool {
+        while self.lexer.settled() <= index {
+            if !self.lexer.advance() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn kind_at(&mut self, index: usize) -> Option<SyntaxKind> {
+        if !self.fill(index) {
+            return None;
+        }
+        self.lexer.token_at(index).map(|token| token.kind)
+    }
+
+    fn range_at(&mut self, index: usize) -> Option<Range<u32>> {
+        if !self.fill(index) {
+            return None;
+        }
+        self.lexer.token_at(index).map(|token| token.range.clone())
     }
 
     fn then<const N: usize>(&mut self, tasks: [Task; N]) {
@@ -188,56 +208,61 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn significant(&self, n: usize) -> Option<usize> {
+    fn significant(&mut self, n: usize) -> Option<usize> {
         let mut seen = 0;
-        for index in self.pos..self.tokens.len() {
-            if self.tokens[index].kind.is_trivia() {
-                continue;
+        let mut index = self.pos;
+        while let Some(kind) = self.kind_at(index) {
+            if !kind.is_trivia() {
+                if seen == n {
+                    return Some(index);
+                }
+                seen += 1;
             }
-            if seen == n {
-                return Some(index);
-            }
-            seen += 1;
+            index += 1;
         }
         None
     }
 
-    fn nth(&self, n: usize) -> Option<SyntaxKind> {
-        self.significant(n).map(|index| self.tokens[index].kind)
+    fn nth(&mut self, n: usize) -> Option<SyntaxKind> {
+        let index = self.significant(n)?;
+        self.kind_at(index)
     }
 
-    fn peek(&self) -> Option<SyntaxKind> {
+    fn peek(&mut self) -> Option<SyntaxKind> {
         self.nth(0)
     }
 
-    fn at(&self, kind: SyntaxKind) -> bool {
+    fn at(&mut self, kind: SyntaxKind) -> bool {
         self.peek() == Some(kind)
     }
 
-    fn at_any(&self, kinds: &[SyntaxKind]) -> bool {
+    fn at_any(&mut self, kinds: &[SyntaxKind]) -> bool {
         self.peek().is_some_and(|kind| kinds.contains(&kind))
     }
 
-    fn at_end(&self) -> bool {
+    fn at_end(&mut self) -> bool {
         self.peek().is_none()
     }
 
-    fn adjacent(&self) -> bool {
-        self.tokens
-            .get(self.pos)
-            .is_some_and(|token| !token.kind.is_trivia())
+    fn adjacent(&mut self) -> bool {
+        self.kind_at(self.pos).is_some_and(|kind| !kind.is_trivia())
     }
 
-    fn text_of(&self, index: usize) -> &'a str {
-        let range = &self.tokens[index].range;
-        &self.source.text[range.start as usize..range.end as usize]
+    fn text_of(&mut self, index: usize) -> &'a str {
+        let source = self.source;
+        self.range_at(index)
+            .and_then(|range| source.text.get(range.start as usize..range.end as usize))
+            .unwrap_or("")
     }
 
-    fn current_text(&self) -> &'a str {
-        self.significant(0).map_or("", |index| self.text_of(index))
+    fn current_text(&mut self) -> &'a str {
+        match self.significant(0) {
+            Some(index) => self.text_of(index),
+            None => "",
+        }
     }
 
-    fn at_wire_kind(&self) -> bool {
+    fn at_wire_kind(&mut self) -> bool {
         self.at(SyntaxKind::Ident)
             && self
                 .vocabulary
@@ -246,28 +271,25 @@ impl<'a> Parser<'a> {
     }
 
     fn raw_bump(&mut self) {
-        let token = &self.tokens[self.pos];
-        let text = &self.source.text[token.range.start as usize..token.range.end as usize];
-        self.builder.token(token.kind, text);
+        let Some(kind) = self.kind_at(self.pos) else {
+            return;
+        };
+        let text = self.text_of(self.pos);
+        self.builder.token(kind, text);
         self.pos += 1;
     }
 
     fn flush_trivia(&mut self) {
-        while self
-            .tokens
-            .get(self.pos)
-            .is_some_and(|token| token.kind.is_trivia())
-        {
+        while self.kind_at(self.pos).is_some_and(SyntaxKind::is_trivia) {
             self.raw_bump();
         }
     }
 
     fn bump(&mut self) {
         self.flush_trivia();
-        if self.pos >= self.tokens.len() {
+        let Some(kind) = self.kind_at(self.pos) else {
             return;
-        }
-        let kind = self.tokens[self.pos].kind;
+        };
         self.raw_bump();
         if kind == SyntaxKind::Newline {
             self.previous_line_error = self.line_error;
@@ -302,19 +324,9 @@ impl<'a> Parser<'a> {
         self.builder.start_node_at(checkpoint, kind);
     }
 
-    fn current_span(&self) -> Span {
+    fn current_span(&mut self) -> Span {
         let range = match self.significant(0) {
-            Some(index) => {
-                let mut range = self.tokens[index].range.clone();
-                if self.tokens[index].kind == SyntaxKind::Indent
-                    && let Some(next) = self.tokens[index..]
-                        .iter()
-                        .find(|token| !token.range.is_empty() && !token.kind.is_trivia())
-                {
-                    range = next.range.clone();
-                }
-                range
-            }
+            Some(index) => self.visible_range(index),
             None => {
                 let end = self.source.text.len() as u32;
                 end..end
@@ -326,8 +338,25 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn visible_range(&mut self, index: usize) -> Range<u32> {
+        let range = self.range_at(index).unwrap_or_default();
+        if self.kind_at(index) != Some(SyntaxKind::Indent) {
+            return range;
+        }
+        let mut next = index;
+        while let Some(kind) = self.kind_at(next) {
+            let candidate = self.range_at(next).unwrap_or_default();
+            if !candidate.is_empty() && !kind.is_trivia() {
+                return candidate;
+            }
+            next += 1;
+        }
+        range
+    }
+
     fn error(&mut self, code: Code, message: impl Into<String>) {
-        self.error_with(Diagnostic::new(code, self.current_span(), message));
+        let span = self.current_span();
+        self.error_with(Diagnostic::new(code, span, message));
     }
 
     fn error_with(&mut self, diagnostic: Diagnostic) {
@@ -335,21 +364,23 @@ impl<'a> Parser<'a> {
             return;
         }
         self.line_error = true;
-        if !self.at(SyntaxKind::Error) && !self.lexer_error_on_line(diagnostic.span.range.start) {
+        if !self.at(SyntaxKind::Error) && !self.same_fault_as_lexer(diagnostic.span.range.start) {
             self.diagnostics.push(diagnostic);
         }
         self.resync();
     }
 
-    fn lexer_error_on_line(&self, at: u32) -> bool {
-        let text = &self.source.text;
-        let at = (at as usize).min(text.len());
-        let start = text[..at].rfind('\n').map_or(0, |index| index + 1);
-        let end = text[at..].find('\n').map_or(text.len(), |index| at + index);
-        self.lexer_diagnostics.iter().any(|diagnostic| {
-            let position = diagnostic.span.range.start as usize;
-            position >= start && position <= end
-        })
+    fn same_fault_as_lexer(&mut self, at: u32) -> bool {
+        if self.lexer.faulted_at(at) {
+            return true;
+        }
+        let Some(before) = self.lexer.token_before(at) else {
+            return false;
+        };
+        let Some(range) = self.range_at(before) else {
+            return false;
+        };
+        self.lexer.faulted_within(range)
     }
 
     pub(super) fn abandon_bracket(&mut self) {
@@ -363,53 +394,21 @@ impl<'a> Parser<'a> {
         let Some(current) = self.significant(0) else {
             return;
         };
-        if self.depths.get(current).copied().unwrap_or(0) == 0 {
-            return;
+        if let Some(line) = self.lexer.resync_line(current, starts_line) {
+            self.lexer.resynchronize(line, self.pos);
         }
-        let from = self.tokens[current].range.start as usize;
-        let region_end = (current..self.tokens.len())
-            .find(|index| self.depths[*index] == 0)
-            .map_or(self.source.text.len(), |index| {
-                self.tokens[index].range.start as usize
-            });
-        let Some(line) = self
-            .suspended
-            .iter()
-            .find(|line| {
-                line.first >= from
-                    && line.first < region_end
-                    && line.column <= line.stack.last().copied().unwrap_or(0)
-            })
-            .cloned()
-        else {
-            return;
-        };
-        let Some(cut) = (self.pos..self.tokens.len())
-            .find(|index| self.tokens[*index].range.start as usize >= line.offset)
-        else {
-            return;
-        };
-        let (lexed, layout) =
-            Lexer::resume(self.source, self.vocabulary, line.offset, line.stack).run_with_layout();
-        self.tokens.truncate(cut);
-        self.tokens.extend(lexed.tokens);
-        self.depths.truncate(cut);
-        self.depths.extend(layout.depths);
-        self.suspended
-            .retain(|suspension| suspension.offset < line.offset);
-        self.suspended.extend(layout.suspended);
-        self.lexer_diagnostics
-            .retain(|diagnostic| (diagnostic.span.range.start as usize) < line.offset);
-        self.lexer_diagnostics.extend(lexed.diagnostics);
     }
 
-    fn describe(&self) -> String {
+    fn describe(&mut self) -> String {
         match self.peek() {
             None => String::from("the end of the file"),
             Some(SyntaxKind::Newline) => String::from("the end of the line"),
             Some(SyntaxKind::Indent) => String::from("an indented line"),
             Some(SyntaxKind::Dedent) => String::from("the end of the block"),
-            Some(_) => format!("`{}`", self.current_text()),
+            Some(_) => {
+                let text = self.current_text();
+                format!("`{text}`")
+            }
         }
     }
 
@@ -485,4 +484,19 @@ impl<'a> Parser<'a> {
         self.bump();
         self.finish();
     }
+}
+
+fn starts_line(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::InputKw
+            | SyntaxKind::LetKw
+            | SyntaxKind::FnKw
+            | SyntaxKind::PatternKw
+            | SyntaxKind::Ident
+            | SyntaxKind::LParen
+            | SyntaxKind::LBracket
+            | SyntaxKind::ForKw
+            | SyntaxKind::WhenKw
+    )
 }

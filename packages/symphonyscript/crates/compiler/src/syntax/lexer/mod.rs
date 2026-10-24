@@ -1,18 +1,22 @@
 mod clause;
-mod layout;
 mod mode;
+mod region;
 mod scan;
 mod suspension;
+#[cfg(test)]
+mod tests;
 
 use symphonyscript_core::{RESERVED_WORDS, Span, Vocabulary};
 use unicode_width::UnicodeWidthChar;
 
+use std::ops::Range;
+
 use self::clause::Clause;
-pub(crate) use self::layout::Layout;
 use self::mode::Mode;
+use self::region::Region;
 pub(crate) use self::scan::is_ident_continue;
 use self::scan::is_ident_start;
-pub(crate) use self::suspension::Suspension;
+use self::suspension::Suspension;
 use super::lexed::Lexed;
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
@@ -37,6 +41,12 @@ pub(crate) struct Lexer<'a> {
     clause_pending: bool,
     depths: Vec<u32>,
     suspended: Vec<Suspension>,
+    regions: Vec<Region>,
+    faults: Vec<Range<u32>>,
+    reach: Vec<u32>,
+    resume_line: Option<usize>,
+    finished: bool,
+    work: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -58,31 +68,36 @@ impl<'a> Lexer<'a> {
             clause_pending: false,
             depths: Vec::new(),
             suspended: Vec::new(),
+            regions: Vec::new(),
+            faults: Vec::new(),
+            reach: Vec::new(),
+            resume_line: None,
+            finished: false,
+            work: 0,
         }
     }
 
-    pub(crate) fn resume(
-        source: &'a Source,
-        vocabulary: &'a Vocabulary,
-        offset: usize,
-        stack: Vec<u32>,
-    ) -> Self {
-        let mut lexer = Self::new(source, vocabulary);
-        lexer.pos = offset;
-        lexer.line_start = offset;
-        lexer.stack = stack;
-        lexer.push(SyntaxKind::Newline, offset);
-        lexer
-    }
-
-    pub(crate) fn run(self) -> Lexed {
-        self.run_with_layout().0
-    }
-
-    pub(crate) fn run_with_layout(mut self) -> (Lexed, Layout) {
-        while self.pos < self.text.len() {
-            self.line();
+    pub(crate) fn run(mut self) -> Lexed {
+        while self.advance() {}
+        Lexed {
+            tokens: self.tokens,
+            diagnostics: self.diagnostics,
         }
+    }
+
+    pub(crate) fn advance(&mut self) -> bool {
+        if let Some(line_start) = self.resume_line.take() {
+            self.line_at(line_start);
+            return true;
+        }
+        if self.pos < self.text.len() {
+            self.line_at(self.pos);
+            return true;
+        }
+        if self.finished {
+            return false;
+        }
+        self.finished = true;
         if self.line_has_token {
             self.push(SyntaxKind::Newline, self.pos);
         }
@@ -90,19 +105,153 @@ impl<'a> Lexer<'a> {
             self.stack.pop();
             self.push(SyntaxKind::Dedent, self.pos);
         }
-        let lexed = Lexed {
-            tokens: self.tokens,
-            diagnostics: self.diagnostics,
-        };
-        let layout = Layout {
-            depths: self.depths,
-            suspended: self.suspended,
-        };
-        (lexed, layout)
+        true
     }
 
-    fn line(&mut self) {
-        self.line_start = self.pos;
+    pub(crate) fn settled(&self) -> usize {
+        match self.pending_newline {
+            Some(index) if !self.finished => index,
+            _ => self.tokens.len(),
+        }
+    }
+
+    pub(crate) fn token_at(&self, index: usize) -> Option<&Token> {
+        self.tokens.get(index)
+    }
+
+    pub(crate) fn work(&self) -> usize {
+        self.work
+    }
+
+    pub(crate) fn into_diagnostics(self) -> Vec<Diagnostic> {
+        self.diagnostics
+    }
+
+    pub(crate) fn faulted_at(&mut self, offset: u32) -> bool {
+        let work = &mut self.work;
+        let before = self.faults.partition_point(|fault| {
+            *work += 1;
+            fault.start <= offset
+        });
+        before
+            .checked_sub(1)
+            .and_then(|index| self.reach.get(index))
+            .is_some_and(|reach| *reach > offset)
+    }
+
+    pub(crate) fn faulted_within(&mut self, range: Range<u32>) -> bool {
+        let work = &mut self.work;
+        let first = self.faults.partition_point(|fault| {
+            *work += 1;
+            fault.start < range.start
+        });
+        self.faults
+            .get(first)
+            .is_some_and(|fault| fault.start < range.end)
+    }
+
+    pub(crate) fn token_before(&mut self, offset: u32) -> Option<usize> {
+        let work = &mut self.work;
+        let mut index = self.tokens.partition_point(|token| {
+            *work += 1;
+            token.range.start < offset
+        });
+        while index > 0 {
+            index -= 1;
+            self.work += 1;
+            let token = self.tokens.get(index)?;
+            if !token.kind.is_trivia() && !token.range.is_empty() {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    pub(crate) fn resync_line(
+        &mut self,
+        token: usize,
+        starts_line: fn(SyntaxKind) -> bool,
+    ) -> Option<usize> {
+        if self.depths.get(token).copied().unwrap_or(0) == 0 {
+            return None;
+        }
+        let start = self.tokens.get(token)?.range.start as usize;
+        let region = self
+            .regions
+            .partition_point(|region| region.open <= start)
+            .checked_sub(1)?;
+        let top = self.regions.get(region)?.stack.last().copied().unwrap_or(0);
+        let mut next = self
+            .suspended
+            .partition_point(|line| line.first_token < token);
+        loop {
+            match self.suspended.get(next) {
+                Some(line) if line.region != region => return None,
+                Some(line) => {
+                    let first = self.tokens.get(line.first_token).map(|token| token.kind);
+                    if line.column <= top && first.is_some_and(starts_line) {
+                        return Some(next);
+                    }
+                    next += 1;
+                }
+                None => {
+                    let open = self.depth > 0 && self.regions.len() == region + 1;
+                    if !open || !self.advance() {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn resynchronize(&mut self, line: usize, consumed: usize) {
+        let Some(suspension) = self.suspended.get(line).cloned() else {
+            return;
+        };
+        let keep = self
+            .tokens
+            .partition_point(|token| (token.range.start as usize) < suspension.offset)
+            .max(consumed);
+        let from = keep
+            .checked_sub(1)
+            .and_then(|index| self.tokens.get(index))
+            .map_or(suspension.offset, |token| {
+                (token.range.end as usize).max(suspension.offset)
+            });
+        let stack = self
+            .regions
+            .get(suspension.region)
+            .map_or_else(|| vec![0], |region| region.stack.clone());
+        self.tokens.truncate(keep);
+        self.depths.truncate(keep);
+        let offset = suspension.offset as u32;
+        let kept = self
+            .diagnostics
+            .partition_point(|diagnostic| diagnostic.span.range.start < offset);
+        self.diagnostics.truncate(kept);
+        let kept = self.faults.partition_point(|fault| fault.start < offset);
+        self.faults.truncate(kept);
+        self.reach.truncate(kept);
+        self.suspended.truncate(line);
+        self.regions.truncate(suspension.region + 1);
+        self.pos = from;
+        self.line_start = suspension.offset;
+        self.stack = stack;
+        self.depth = 0;
+        self.modes.clear();
+        self.line_has_token = false;
+        self.pending_newline = None;
+        self.clause = None;
+        self.clause_pending = false;
+        self.finished = false;
+        self.push(SyntaxKind::Newline, from);
+        self.resume_line = Some(suspension.offset);
+    }
+
+    fn line_at(&mut self, line_start: usize) {
+        let begin = self.pos;
+        let first_diagnostic = self.diagnostics.len();
+        self.line_start = line_start;
         let rest = &self.text[self.pos..];
         let indent = rest.len() - rest.trim_start_matches([' ', '\t']).len();
         let after = &rest[indent..];
@@ -111,14 +260,34 @@ impl<'a> Lexer<'a> {
             || after.starts_with("\r\n")
             || after.starts_with("//");
         if indent > 0 {
+            let start = self.pos;
             self.pos += indent;
-            self.push(SyntaxKind::Whitespace, self.line_start);
+            self.push(SyntaxKind::Whitespace, start);
         }
         if !blank {
             self.layout();
         }
         self.rest_of_line();
         self.line_break();
+        self.record_faults(first_diagnostic);
+        self.work += self.pos - begin;
+    }
+
+    fn record_faults(&mut self, first: usize) {
+        let mut ranges: Vec<Range<u32>> = self
+            .diagnostics
+            .get(first..)
+            .unwrap_or_default()
+            .iter()
+            .map(|diagnostic| diagnostic.span.range.clone())
+            .collect();
+        ranges.sort_by_key(|range| range.start);
+        for range in ranges {
+            let end = range.end.max(range.start.saturating_add(1));
+            let reach = self.reach.last().copied().unwrap_or(0).max(end);
+            self.faults.push(range);
+            self.reach.push(reach);
+        }
     }
 
     fn layout(&mut self) {
@@ -126,9 +295,9 @@ impl<'a> Lexer<'a> {
         if self.depth > 0 {
             self.suspended.push(Suspension {
                 offset: self.line_start,
-                first: self.pos,
+                first_token: self.tokens.len(),
                 column: leading.chars().count() as u32,
-                stack: self.stack.clone(),
+                region: self.regions.len().saturating_sub(1),
             });
             return;
         }
@@ -700,7 +869,15 @@ impl<'a> Lexer<'a> {
                     self.clause = None;
                     self.clause_pending = false;
                 }
-                SyntaxKind::LParen | SyntaxKind::LBracket => self.depth += 1,
+                SyntaxKind::LParen | SyntaxKind::LBracket => {
+                    if self.depth == 0 {
+                        self.regions.push(Region {
+                            open: start,
+                            stack: self.stack.clone(),
+                        });
+                    }
+                    self.depth += 1;
+                }
                 SyntaxKind::RParen | SyntaxKind::RBracket => {
                     self.depth = self.depth.saturating_sub(1);
                 }
