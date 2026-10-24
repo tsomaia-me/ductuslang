@@ -38,23 +38,27 @@ impl Chain {
         locs
     }
 
-    pub fn paths(&self) -> Vec<Vec<Loc>> {
-        let mut paths = vec![Vec::new()];
+    pub fn outermost_paths(&self) -> Vec<Vec<Loc>> {
+        let mut inner = Vec::new();
         let mut current = self.0.as_ref();
         while let Some(link) = current {
-            let also = link.also.borrow();
-            let mut next = Vec::with_capacity(paths.len() * (1 + also.len()));
-            for path in &paths {
-                for loc in std::iter::once(&link.loc).chain(also.iter()) {
-                    let mut extended = path.clone();
-                    extended.push(*loc);
-                    next.push(extended);
+            match link.rest.0.as_ref() {
+                Some(_) => inner.push(link.loc),
+                None => {
+                    let also = link.also.borrow();
+                    return std::iter::once(&link.loc)
+                        .chain(also.iter())
+                        .map(|outermost| {
+                            let mut path = inner.clone();
+                            path.push(*outermost);
+                            path
+                        })
+                        .collect();
                 }
             }
-            paths = next;
             current = link.rest.0.as_ref();
         }
-        paths
+        vec![inner]
     }
 }
 

@@ -72,11 +72,11 @@ impl Engine<'_> {
                 .vocabulary
                 .wire_kind(kind)
                 .map_or(String::new(), |decl| decl.name.clone());
-            self.report.error_with(
-                self.hir,
+            self.defer(
                 Code::WireCycle,
                 loc,
-                &uses.to_vec(),
+                Vec::new(),
+                uses,
                 format!(
                     "this `{kind_name}` wire closes a cycle of wires, {}, and `{kind_name}` wires form no cycles",
                     names.join(" → ")

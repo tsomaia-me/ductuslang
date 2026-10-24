@@ -1642,3 +1642,67 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+fn doubled_calls(levels: usize, body: &str) -> String {
+    let mut text = format!("input i = 1\nfn g0(x): {body}\n");
+    for level in 1..=levels {
+        let below = level - 1;
+        text.push_str(&format!("fn g{level}(x): g{below}(x) + g{below}(x)\n"));
+    }
+    text.push_str(&format!("Clip c:\n    Note/(g{levels}(i))\n"));
+    text
+}
+
+#[test]
+fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
+    let measure = |text: &str| {
+        let start = std::time::Instant::now();
+        let (diagnostics, sizes) = analyzed(text, |engine| {
+            (
+                engine.nodes.len(),
+                engine.scopes.len(),
+                engine.bindings.len(),
+            )
+        });
+        (start.elapsed(), diagnostics, sizes)
+    };
+    let faulty = doubled_calls(18, "x div 0.5");
+    let clean = doubled_calls(18, "x div 2");
+    let mut faulty_time = std::time::Duration::MAX;
+    let mut clean_time = std::time::Duration::MAX;
+    let mut runs = Vec::new();
+    for _ in 0..5 {
+        let (elapsed, diagnostics, faulty_sizes) = measure(&faulty);
+        faulty_time = faulty_time.min(elapsed);
+        let (elapsed, clean_diagnostics, clean_sizes) = measure(&clean);
+        clean_time = clean_time.min(elapsed);
+        runs.push((diagnostics, faulty_sizes, clean_diagnostics, clean_sizes));
+    }
+    let Some((diagnostics, faulty_sizes, clean_diagnostics, clean_sizes)) = runs.pop() else {
+        return;
+    };
+    assert_eq!(error_codes(&clean_diagnostics), Vec::<Code>::new());
+    let errors = errors_of(&diagnostics);
+    assert_eq!(error_codes(&diagnostics), vec![Code::OperandType]);
+    let chain: Vec<String> = errors
+        .first()
+        .map(|diagnostic| {
+            diagnostic
+                .secondary
+                .iter()
+                .filter_map(|span| faulty.get(span.range.start as usize..span.range.end as usize))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut expected: Vec<String> = (0..18).map(|level| format!("g{level}(x)")).collect();
+    expected.push("g18(i)".into());
+    assert_eq!(chain, expected);
+    assert!(
+        faulty_time <= clean_time * 2,
+        "{faulty_time:?} against {clean_time:?}"
+    );
+    assert!(faulty_sizes.0 <= clean_sizes.0 * 2, "nodes");
+    assert!(faulty_sizes.1 <= clean_sizes.1 * 2, "scopes");
+    assert!(faulty_sizes.2 <= clean_sizes.2 * 2, "bindings");
+}

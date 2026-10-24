@@ -63,31 +63,83 @@ fn an_error_in_an_inlined_body_names_its_calls_innermost_first() {
             vec!["loud(m)".to_string(), "twice(2000000000)".to_string()]
         )]
     );
-    let shared =
-        "fn pick(n): [1, 2][n]\nfn both(x): pick(x) + pick(x)\nClip c:\n    Note/(both(5))\n";
-    let out_of_range = |call: &str| {
+}
+
+fn doubled_patterns(levels: usize, uses: usize) -> String {
+    let mut text = String::from("pattern P0():\n    Note/300000000000\n");
+    for level in 1..levels {
+        let below = level - 1;
+        text.push_str(&format!(
+            "pattern P{level}():\n    P{below}\n    P{below}\n"
+        ));
+    }
+    text.push_str("Clip c:\n");
+    for _ in 0..uses {
+        text.push_str(&format!("    P{}\n", levels - 1));
+    }
+    text
+}
+
+#[test]
+fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
+    let fit = |chain: &[&str]| {
+        (
+            Code::DoesNotFit,
+            "300000000000".to_string(),
+            chain
+                .iter()
+                .map(|call| call.to_string())
+                .collect::<Vec<_>>(),
+        )
+    };
+    let once = doubled_patterns(12, 1);
+    let uses: Vec<String> = (0..12).map(|level| format!("P{level}")).collect();
+    let chain: Vec<&str> = uses.iter().map(String::as_str).collect();
+    assert_eq!(spans(&once, &support::checked(&once)), vec![fit(&chain)]);
+    let twice = doubled_patterns(12, 2);
+    let found = spans(&twice, &support::checked(&twice));
+    assert_eq!(found, vec![fit(&chain), fit(&chain)]);
+    let positions: Vec<Option<u32>> = support::checked(&twice)
+        .iter()
+        .map(|diagnostic| diagnostic.secondary.last().map(|span| span.range.start))
+        .collect();
+    assert_ne!(positions.first(), positions.last());
+    let out_of_range = |chain: &[&str]| {
         (
             Code::IndexOutOfRange,
             "n".to_string(),
-            vec![call.to_string(), "both(5)".to_string()],
+            chain
+                .iter()
+                .map(|call| call.to_string())
+                .collect::<Vec<_>>(),
         )
     };
-    let mut found = spans(shared, &support::checked(shared));
-    found.sort();
+    let shared_inner =
+        "fn pick(n): [1, 2][n]\nfn both(x): pick(x) + pick(x)\nClip c:\n    Note/(both(5))\n";
+    let diagnostics = support::checked(shared_inner);
+    assert_eq!(
+        spans(shared_inner, &diagnostics),
+        vec![out_of_range(&["pick(x)", "both(5)"])]
+    );
+    let first_pick = shared_inner
+        .find("pick(x)")
+        .and_then(|at| u32::try_from(at).ok());
+    assert_eq!(
+        diagnostics
+            .first()
+            .and_then(|diagnostic| diagnostic.secondary.first())
+            .map(|span| span.range.start),
+        first_pick
+    );
+    let siblings = "fn pick(n): [1, 2][n]\nClip c:\n    Note/(pick(5) + pick(5))\n";
+    let found = spans(siblings, &support::checked(siblings));
     assert_eq!(
         found,
-        vec![out_of_range("pick(x)"), out_of_range("pick(x)")]
+        vec![out_of_range(&["pick(5)"]), out_of_range(&["pick(5)"])]
     );
-    let positions: Vec<Vec<u32>> = support::checked(shared)
+    let starts: Vec<Option<u32>> = support::checked(siblings)
         .iter()
-        .map(|diagnostic| {
-            diagnostic
-                .secondary
-                .iter()
-                .map(|span| span.range.start)
-                .collect()
-        })
+        .map(|diagnostic| diagnostic.secondary.first().map(|span| span.range.start))
         .collect();
-    assert_eq!(positions.len(), 2);
-    assert_ne!(positions.first(), positions.last());
+    assert_ne!(starts.first(), starts.last());
 }

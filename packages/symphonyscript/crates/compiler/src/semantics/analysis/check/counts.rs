@@ -43,8 +43,7 @@ impl Engine<'_> {
             ItemRef::Use(id) => self.pattern_use(id).map(|record| record.uses.clone()),
         }
         .unwrap_or_default();
-        self.report
-            .error_with(self.hir, code, loc, &uses.to_vec(), message);
+        self.defer(code, loc, Vec::new(), uses, message);
     }
 
     pub(crate) fn kind_name(&self, kind: NodeKind) -> String {

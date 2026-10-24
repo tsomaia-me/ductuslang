@@ -453,6 +453,17 @@ impl<'a> Engine<'a> {
         message: impl Into<String>,
     ) {
         let chain = self.chain(scope);
+        self.defer(code, loc, before, chain, message);
+    }
+
+    pub fn defer(
+        &mut self,
+        code: Code,
+        loc: Loc,
+        before: Vec<Loc>,
+        chain: Chain,
+        message: impl Into<String>,
+    ) {
         self.deferred.push(super::deferred::Deferred {
             code,
             loc,
@@ -463,8 +474,19 @@ impl<'a> Engine<'a> {
     }
 
     pub fn flush_diagnostics(&mut self) {
+        let mut reported: FastSet<Merged> = FastSet::default();
         for deferred in std::mem::take(&mut self.deferred) {
-            for path in deferred.chain.paths() {
+            for path in deferred.chain.outermost_paths() {
+                let key = Merged {
+                    code: deferred.code,
+                    loc: deferred.loc,
+                    before: deferred.before.clone(),
+                    message: deferred.message.clone(),
+                    outermost: path.last().copied(),
+                };
+                if !reported.insert(key) {
+                    continue;
+                }
                 let mut secondary = deferred.before.clone();
                 secondary.extend(path);
                 self.report.error_with(
@@ -549,4 +571,13 @@ impl<'a> Engine<'a> {
         self.report
             .error_with(self.hir, Code::DeclarationCycle, loc, secondary, message);
     }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct Merged {
+    code: Code,
+    loc: Loc,
+    before: Vec<Loc>,
+    message: String,
+    outermost: Option<Loc>,
 }
