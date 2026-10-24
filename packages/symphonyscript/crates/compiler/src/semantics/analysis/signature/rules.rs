@@ -4,9 +4,9 @@ use super::run::Extra;
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::{Op, Piece};
+use crate::semantics::analysis::node::Op;
 use crate::semantics::analysis::sig::{
-    Kind, Sig, Width, common, float_for, is_integer, kind_of, meet_flexible, unify_kinds,
+    Kind, Sig, Width, common, float_for, kind_of, meet_flexible, unify_kinds,
 };
 use crate::semantics::ir::{Number, Suffix};
 
@@ -68,7 +68,7 @@ impl Engine<'_> {
             }
             Op::Bool(_) => Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), false, None),
             Op::Str(_) => Sig::of(Kind::Str, Width::Fixed(Scalar::Str), false, None),
-            Op::Concat(pieces) => self.concat_sig(node, pieces, operands, sigs),
+            Op::Concat(_) => self.concat_sig(operands, sigs),
             Op::Variant(id, _) => Sig::of(
                 Kind::Enum(*id),
                 Width::Fixed(Scalar::Enum(*id)),
@@ -219,14 +219,7 @@ impl Engine<'_> {
         }
     }
 
-    fn concat_sig(
-        &mut self,
-        node: NodeId,
-        pieces: &[Piece],
-        operands: &[NodeId],
-        sigs: &[Sig],
-    ) -> Sig {
-        let _ = pieces;
+    fn concat_sig(&mut self, operands: &[NodeId], sigs: &[Sig]) -> Sig {
         for (operand, sig) in operands.iter().zip(sigs) {
             if sig.reactive {
                 self.error_at_node(
@@ -246,7 +239,6 @@ impl Engine<'_> {
                 return Sig::ERROR;
             }
         }
-        let _ = node;
         Sig::of(Kind::Str, Width::Fixed(Scalar::Str), false, None)
     }
 
@@ -568,8 +560,4 @@ pub(super) fn branch_width_of(kind: Kind, a: Width, b: Width) -> Width {
         Kind::Enum(id) => Width::Fixed(Scalar::Enum(id)),
         _ => Width::Flexible,
     }
-}
-
-pub(super) fn _integer(scalar: Scalar) -> bool {
-    is_integer(scalar)
 }

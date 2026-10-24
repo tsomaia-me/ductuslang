@@ -36,7 +36,7 @@ impl Builder<'_> {
                 Frame::Enter(None, loc) => built.push(self.push(ExprKind::Error, loc)),
                 Frame::Enter(Some(expr), _) => {
                     let loc = self.loc(expr.syntax().range());
-                    let (shape, children) = self.shape(&expr, loc);
+                    let (shape, children) = self.shape(&expr);
                     frames.push(Frame::Exit(shape, loc, children.len()));
                     frames.extend(
                         children
@@ -85,7 +85,7 @@ impl Builder<'_> {
         )
     }
 
-    fn shape<'p>(&self, expr: &ast::Expr<'p>, loc: Loc) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+    fn shape<'p>(&self, expr: &ast::Expr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
         match expr {
             ast::Expr::If(node) => (
                 Shape::If,
@@ -172,7 +172,6 @@ impl Builder<'_> {
                     names.push(name);
                     children.push(arg.value());
                 }
-                let _ = loc;
                 (Shape::Named(names), children)
             }
         }
