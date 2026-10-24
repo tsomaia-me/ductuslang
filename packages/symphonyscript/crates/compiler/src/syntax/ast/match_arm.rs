@@ -1,6 +1,6 @@
 use super::ast_node::AstNode;
 use super::expr::Expr;
-use super::support::children;
+use super::support::{expr_after, expr_before};
 use crate::syntax::{SyntaxKind, SyntaxNode};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -18,10 +18,10 @@ impl AstNode for MatchArm {
 
 impl MatchArm {
     pub fn label(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).next()
+        expr_before(&self.0, |kind| kind == SyntaxKind::Colon)
     }
 
     pub fn value(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).nth(1)
+        expr_after(&self.0, |kind| kind == SyntaxKind::Colon, |_| false)
     }
 }

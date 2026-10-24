@@ -1,6 +1,6 @@
 use super::ast_node::AstNode;
 use super::expr::Expr;
-use super::support::{children, token};
+use super::support::{expr_after, expr_before, token};
 use crate::syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -18,11 +18,11 @@ impl AstNode for BinaryExpr {
 
 impl BinaryExpr {
     pub fn lhs(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).next()
+        expr_before(&self.0, |kind| !kind.is_trivia())
     }
 
     pub fn rhs(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).nth(1)
+        expr_after(&self.0, |kind| !kind.is_trivia(), |_| false)
     }
 
     pub fn op(&self) -> Option<SyntaxToken> {

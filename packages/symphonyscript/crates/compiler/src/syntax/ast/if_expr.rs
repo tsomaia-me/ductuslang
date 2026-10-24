@@ -1,6 +1,6 @@
 use super::ast_node::AstNode;
 use super::expr::Expr;
-use super::support::children;
+use super::support::expr_after;
 use crate::syntax::{SyntaxKind, SyntaxNode};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -18,14 +18,22 @@ impl AstNode for IfExpr {
 
 impl IfExpr {
     pub fn condition(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).next()
+        expr_after(
+            &self.0,
+            |kind| kind == SyntaxKind::IfKw,
+            |kind| kind == SyntaxKind::ThenKw || kind == SyntaxKind::ElseKw,
+        )
     }
 
     pub fn then_branch(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).nth(1)
+        expr_after(
+            &self.0,
+            |kind| kind == SyntaxKind::ThenKw,
+            |kind| kind == SyntaxKind::ElseKw,
+        )
     }
 
     pub fn else_branch(&self) -> Option<Expr> {
-        children::<Expr>(&self.0).nth(2)
+        expr_after(&self.0, |kind| kind == SyntaxKind::ElseKw, |_| false)
     }
 }

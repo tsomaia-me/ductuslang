@@ -330,3 +330,78 @@ fn literals_and_to_are_tokens_of_their_nodes() {
     };
     assert!(matches!(field.receiver(), Some(Expr::To(_))));
 }
+
+fn broken_file(text: &str) -> File {
+    let parsed = support::parsed(text);
+    assert!(!parsed.diagnostics.is_empty(), "{text:?}");
+    parsed.file().expect("the root is a file")
+}
+
+fn let_value(file: &File, index: usize) -> Expr {
+    match file.items().nth(index) {
+        Some(Item::Let(decl)) => decl.value().expect("a value"),
+        other => panic!("a let, found {other:?}"),
+    }
+}
+
+#[test]
+fn a_missing_operand_leaves_the_others_in_place() {
+    let broken = broken_file("let a = if then 1 else 2\nlet b = 1 +\nlet c = * 2\nlet d = a[]\n");
+    let Expr::If(choice) = let_value(&broken, 0) else {
+        panic!("an if");
+    };
+    assert!(choice.condition().is_none());
+    assert_eq!(source(choice.then_branch()), "1");
+    assert_eq!(source(choice.else_branch()), "2");
+    let Expr::Binary(sum) = let_value(&broken, 1) else {
+        panic!("a sum");
+    };
+    assert_eq!(source(sum.lhs()), "1");
+    assert!(sum.rhs().is_none());
+    let Expr::Binary(product) = let_value(&broken, 2) else {
+        panic!("a product");
+    };
+    assert!(product.lhs().is_none());
+    assert_eq!(source(product.rhs()), "2");
+    let Expr::Index(index) = let_value(&broken, 3) else {
+        panic!("an index");
+    };
+    assert_eq!(source(index.base()), "a");
+    assert!(index.index().is_none());
+
+    let broken = broken_file("let e = if c then else 3\n");
+    let Expr::If(choice) = let_value(&broken, 0) else {
+        panic!("an if");
+    };
+    assert_eq!(source(choice.condition()), "c");
+    assert!(choice.then_branch().is_none());
+    assert_eq!(source(choice.else_branch()), "3");
+}
+
+#[test]
+fn a_missing_range_bound_or_arm_label_leaves_the_other_in_place() {
+    let broken = broken_file("Clip c:\n    for i in ..3:\n        Note\n");
+    let Some(Item::Placement(clip)) = broken.items().next() else {
+        panic!("a placement");
+    };
+    let block = clip.body().and_then(|body| body.block()).expect("a block");
+    let Some(BodyItem::For(each)) = block.items().next() else {
+        panic!("a for");
+    };
+    let Some(Iterable::Range(range)) = each.iterable() else {
+        panic!("a range");
+    };
+    assert!(range.start().is_none());
+    assert_eq!(source(range.end()), "3");
+
+    let broken = broken_file("let a = match b:\n    : 1\n    else: 2\n");
+    let Some(Item::Let(decl)) = broken.items().next() else {
+        panic!("a let");
+    };
+    let arm = decl
+        .match_block()
+        .and_then(|block| block.arms().next())
+        .expect("an arm");
+    assert!(arm.label().is_none());
+    assert_eq!(source(arm.value()), "1");
+}
