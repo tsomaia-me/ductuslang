@@ -1,16 +1,8 @@
-use symphonyscript_core::{AttrId, Scalar};
+use symphonyscript_core::Scalar;
 
+use super::binding_kind::BindingKind;
 use super::ids::NodeId;
-use super::item_ref::ItemRef;
-use crate::semantics::ir::{InputId, Loc};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum BindingKind {
-    Input { input: InputId, element: u32 },
-    Let,
-    Param,
-    Attr { item: ItemRef, attr: AttrId },
-}
+use crate::semantics::ir::Loc;
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Binding {

@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use symphonyscript_core::Segment;
 
+use super::context::Context;
 use super::iteration::Iteration;
-use super::records::Context;
 use crate::diagnostics::Code;
 use crate::semantics::analysis::chain::Chain;
 use crate::semantics::analysis::condition::Condition;
@@ -13,7 +13,7 @@ use crate::semantics::analysis::entry::Entry;
 use crate::semantics::analysis::ids::{ConditionsId, InstanceId, ScopeId, UseId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::path_parent::PathParent;
-use crate::semantics::analysis::scope::ScopeKind;
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
@@ -583,7 +583,7 @@ impl Engine<'_> {
                                 continue;
                             }
                             let node = self.push_node(
-                                crate::semantics::analysis::node::Op::Number(
+                                crate::semantics::analysis::op::Op::Number(
                                     crate::semantics::ir::Number::Int(next),
                                     crate::semantics::ir::Suffix::None,
                                 ),

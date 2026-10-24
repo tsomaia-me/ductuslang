@@ -1,18 +1,18 @@
 use symphonyscript_core::AttrId;
+use symphonyscript_core::FamilyId;
 
-use super::bound::BoundVal;
+use super::bound_val::BoundVal;
+use super::c_val::CVal;
 use super::call_key::CallKey;
-use super::cval::CVal;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
 use super::fast_hash::FastMap;
 use super::ids::{NodeId, ScopeId, WireId};
 use super::item_ref::ItemRef;
-use super::query::LetRef;
+use super::let_ref::LetRef;
 use super::sig::Sig;
 use super::val::Val;
 use crate::semantics::ir::{ExprId, InputId};
-use symphonyscript_core::FamilyId;
 
 #[derive(Default)]
 pub(crate) struct Memo {
@@ -42,10 +42,10 @@ pub(crate) struct Memo {
     >,
     pub pattern_names: FastMap<
         crate::semantics::ir::PatternId,
-        std::rc::Rc<std::collections::BTreeMap<String, super::scope::LocalName>>,
+        std::rc::Rc<std::collections::BTreeMap<String, super::local_name::LocalName>>,
     >,
     pub local_names: FastMap<
         crate::semantics::ir::FnId,
-        std::rc::Rc<std::collections::BTreeMap<String, super::scope::LocalName>>,
+        std::rc::Rc<std::collections::BTreeMap<String, super::local_name::LocalName>>,
     >,
 }

@@ -2,8 +2,10 @@ use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{Kind, is_float, is_integer};
+use crate::semantics::analysis::is_float::is_float;
+use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::ir::Loc;
 
 impl Engine<'_> {

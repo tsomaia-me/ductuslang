@@ -1,7 +1,8 @@
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
-use crate::semantics::analysis::node::{Op, Piece};
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::val::Val;
@@ -324,7 +325,7 @@ impl Engine<'_> {
             );
             return Some(Val::Error);
         }
-        let shape = inner.wrap(crate::semantics::analysis::engine::index(vals.len()));
+        let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
         let elements = vals.iter().flat_map(Val::nodes).collect();
         Some(Val::array(shape, elements))
     }

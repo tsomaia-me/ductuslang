@@ -3,13 +3,8 @@ use symphonyscript_core::AttrId;
 use super::eval_ty::EvalTy;
 use super::ids::{NodeId, ScopeId, WireId};
 use super::item_ref::ItemRef;
-use crate::semantics::ir::{ExprId, InputId, LetId};
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) enum LetRef {
-    Top(LetId),
-    Local(u32),
-}
+use super::let_ref::LetRef;
+use crate::semantics::ir::{ExprId, InputId};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Query {

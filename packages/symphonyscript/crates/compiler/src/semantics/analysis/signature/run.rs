@@ -1,18 +1,16 @@
 use symphonyscript_core::{BinaryOp, Builtin, UnaryOp};
 
-use crate::semantics::analysis::bound::{Bound, BoundVal};
+use super::extra::Extra;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::kind_of::kind_of;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::sig::{Sig, Width, kind_of};
-
-pub(super) enum Extra {
-    None,
-    Read(Sig),
-    ToRead { reactive: bool },
-}
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_sig(

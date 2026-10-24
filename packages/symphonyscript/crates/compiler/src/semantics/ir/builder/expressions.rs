@@ -1,7 +1,8 @@
 use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
-use super::Builder;
+use super::hir_builder::HirBuilder;
 use super::number_literal::number_literal;
+use super::scalar_type::scalar_type;
 use crate::semantics::ir::{Args, ExprId, ExprKind, Ident, Loc, MatchArm, StrPart};
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
@@ -27,7 +28,7 @@ enum Frame<'p> {
     Exit(Shape, Loc, usize),
 }
 
-impl Builder<'_> {
+impl HirBuilder<'_> {
     pub(super) fn expr(&mut self, root: Option<ast::Expr<'_>>, fallback: Loc) -> ExprId {
         let mut frames = vec![Frame::Enter(root, fallback)];
         let mut built: Vec<ExprId> = Vec::new();
@@ -138,10 +139,12 @@ impl Builder<'_> {
                 (Shape::Leaf(kind), Vec::new())
             }
             ast::Expr::To(_) => (Shape::Leaf(ExprKind::To), Vec::new()),
-            ast::Expr::Conversion(node) => match node.target().and_then(|token| scalar(&token)) {
-                Some(target) => (Shape::Convert(target), vec![node.operand()]),
-                None => (Shape::Leaf(ExprKind::Error), Vec::new()),
-            },
+            ast::Expr::Conversion(node) => {
+                match node.target().and_then(|token| scalar_type(&token)) {
+                    Some(target) => (Shape::Convert(target), vec![node.operand()]),
+                    None => (Shape::Leaf(ExprKind::Error), Vec::new()),
+                }
+            }
             ast::Expr::Array(node) => {
                 let elements: Vec<_> = node.elements().map(Some).collect();
                 (Shape::Array(elements.len()), elements)
@@ -348,14 +351,6 @@ const BINARY_OPS: [(SyntaxKind, BinaryOp); 14] = [
     (SyntaxKind::OrKw, BinaryOp::Or),
 ];
 
-const SCALAR_KEYWORDS: [(SyntaxKind, Scalar); 5] = [
-    (SyntaxKind::I32Kw, Scalar::I32),
-    (SyntaxKind::I64Kw, Scalar::I64),
-    (SyntaxKind::F32Kw, Scalar::F32),
-    (SyntaxKind::F64Kw, Scalar::F64),
-    (SyntaxKind::BoolKw, Scalar::Bool),
-];
-
 fn binary_op(token: &TokenView<'_>, node: &ast::BinaryExpr<'_>) -> Option<BinaryOp> {
     let kind = token.kind();
     if kind == SyntaxKind::IsKw && node.is_not() {
@@ -365,18 +360,6 @@ fn binary_op(token: &TokenView<'_>, node: &ast::BinaryExpr<'_>) -> Option<Binary
         .iter()
         .find(|(token, _)| *token == kind)
         .map(|(_, op)| *op)
-}
-
-fn scalar(token: &TokenView<'_>) -> Option<Scalar> {
-    let kind = token.kind();
-    SCALAR_KEYWORDS
-        .iter()
-        .find(|(keyword, _)| *keyword == kind)
-        .map(|(_, scalar)| *scalar)
-}
-
-pub(super) fn scalar_type(token: &TokenView<'_>) -> Option<Scalar> {
-    scalar(token)
 }
 
 fn unescape(text: &str) -> Option<String> {

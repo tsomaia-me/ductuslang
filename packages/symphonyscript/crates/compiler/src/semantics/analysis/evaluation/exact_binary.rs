@@ -69,15 +69,3 @@ fn exact_pow(base: i128, exponent: i128) -> Option<i128> {
     let exponent = u32::try_from(exponent).ok()?;
     base.checked_pow(exponent)
 }
-
-pub(super) fn fits(value: i128, bits: u32) -> bool {
-    let max = (1i128 << (bits - 1)) - 1;
-    let min = -(1i128 << (bits - 1));
-    (min..=max).contains(&value)
-}
-
-const TWO_TO_THE_127: f64 = 170_141_183_460_469_231_731_687_303_715_884_105_728.0;
-
-pub(crate) fn represents(integer: i128, float: f64) -> bool {
-    float.is_finite() && float.abs() < TWO_TO_THE_127 && float as i128 == integer
-}

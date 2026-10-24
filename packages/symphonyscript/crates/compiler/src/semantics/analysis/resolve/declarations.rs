@@ -1,7 +1,8 @@
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::item_ref::ItemRef;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::scope::{LocalsOwner, ScopeKind};
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::ir::Loc;
 
 impl Engine<'_> {

@@ -1,20 +1,19 @@
+use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{
     Project, ProjectFile, deep_projects, dsp_project, music_project, spec_examples, spec_projects,
     vocabulary,
 };
 
 use super::Engine;
-use super::attr_source::AttrValueSource;
-use symphonyscript_core::{Count, Vocabulary};
-
-use super::binding::BindingKind;
-use super::bound::BoundVal;
-use super::cval::CVal;
+use super::attr_value_source::AttrValueSource;
+use super::binding_kind::BindingKind;
+use super::bound_val::BoundVal;
+use super::c_val::CVal;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
 use super::ids::{NodeId, ScopeId};
-use super::node::Op;
-use super::sig::Kind;
+use super::kind::Kind;
+use super::op::Op;
 use super::val::Val;
 use crate::compiler::Compiler;
 use crate::diagnostics::{Code, Diagnostic, Severity};

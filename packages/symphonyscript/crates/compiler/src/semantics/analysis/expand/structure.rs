@@ -1,11 +1,11 @@
 use super::iteration::Iteration;
 use crate::diagnostics::Code;
-use crate::semantics::analysis::cval::CVal;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::sig::Kind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Iterable, Number, Suffix};
 

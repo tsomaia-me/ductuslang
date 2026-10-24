@@ -1,14 +1,17 @@
 use symphonyscript_core::Ty;
 
-use super::position::{Position, Role};
-use crate::semantics::analysis::attr_source::AttrValueSource;
-use crate::semantics::analysis::bound::BoundVal;
+use super::position::Position;
+use super::role::Role;
+use crate::semantics::analysis::attr_value_source::AttrValueSource;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{InstanceId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
-use crate::semantics::analysis::query::{LetRef, Query};
-use crate::semantics::analysis::scope::{LocalsOwner, ScopeKind};
-use crate::semantics::analysis::sig::Kind;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::let_ref::LetRef;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
+use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, Top};
 

@@ -1,21 +1,9 @@
+use super::bundle_for::BundleFor;
 use super::ident::Ident;
-use super::ids::{BlockId, ExprId, PlacementId, WireId};
+use super::ids::{BlockId, PlacementId, WireId};
 use super::iterable::Iterable;
 use super::loc::Loc;
-
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) struct BundleFor {
-    pub var: Option<Ident>,
-    pub iterable: Iterable,
-    pub members: Vec<PlacementId>,
-    pub loc: Loc,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) struct WhenArm {
-    pub guard: ExprId,
-    pub body: BlockId,
-}
+use super::when_arm::WhenArm;
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) enum BodyItem {

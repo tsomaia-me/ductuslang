@@ -1,21 +1,16 @@
+use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::query::{LetRef, Query};
-use crate::semantics::analysis::scope::{LocalName, ScopeKind};
+use crate::semantics::analysis::let_ref::LetRef;
+use crate::semantics::analysis::local_name::LocalName;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::Loc;
-
-pub(crate) enum Found {
-    Val(Val),
-    Query(Query),
-    Item(ItemRef),
-    Decl(Decl),
-    Nothing,
-}
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn find(&mut self, name: &str, scope: ScopeId) -> Found {

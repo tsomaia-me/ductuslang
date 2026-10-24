@@ -1,7 +1,8 @@
 use crate::semantics::analysis::condition::Condition;
 use crate::semantics::analysis::condition_link::ConditionLink;
-use crate::semantics::analysis::engine::{Engine, index};
+use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{ConditionsId, InstanceId, ScopeId};
+use crate::semantics::analysis::index::index;
 use crate::semantics::ir::{BlockId, BodyItem, ExprId};
 
 impl Engine<'_> {

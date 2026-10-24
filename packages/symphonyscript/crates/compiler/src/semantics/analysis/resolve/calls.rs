@@ -3,13 +3,17 @@ use std::rc::Rc;
 
 use symphonyscript_core::Builtin;
 
-use super::names::Found;
+use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::ScopeId;
-use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::local_name::LocalName;
+use crate::semantics::analysis::locals::Locals;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::scope::{LocalName, Locals, LocalsOwner, ParamSource, ScopeKind};
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnId, Loc, Param};
@@ -191,7 +195,7 @@ impl Engine<'_> {
                 .bound(
                     Query::Let(
                         call_scope,
-                        crate::semantics::analysis::query::LetRef::Local(index_of(index)),
+                        crate::semantics::analysis::let_ref::LetRef::Local(index_of(index)),
                     ),
                     need,
                 )
@@ -411,7 +415,7 @@ impl Engine<'_> {
             self.chain(caller).push(loc)
         };
         let template = if recursive {
-            Some(ScopeId(crate::semantics::analysis::engine::index(
+            Some(ScopeId(crate::semantics::analysis::index::index(
                 self.scopes.len(),
             )))
         } else {
@@ -531,7 +535,7 @@ fn builtin_arity(builtin: Builtin) -> usize {
     }
 }
 
-pub(crate) const INLINE_LIMIT: u64 = 1_000_000;
+const INLINE_LIMIT: u64 = 1_000_000;
 
 fn index_of(position: usize) -> u32 {
     u32::try_from(position).unwrap_or(u32::MAX)

@@ -10,6 +10,7 @@ use super::let_decl::LetDecl;
 use super::loc::Loc;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
+use super::prelude_end::PreludeEnd;
 use super::top::Top;
 use super::wire::Wire;
 
@@ -26,15 +27,6 @@ pub(crate) struct Hir {
     pub patterns: Vec<PatternDecl>,
     pub top: Vec<Top>,
     pub prelude: PreludeEnd,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct PreludeEnd {
-    pub top: usize,
-    pub files: usize,
-    pub fns: usize,
-    pub patterns: usize,
-    pub lets: usize,
 }
 
 const NOWHERE: Loc = Loc {

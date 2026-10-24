@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hasher};
+use std::hash::Hasher;
 
 const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
 
@@ -56,6 +55,3 @@ impl Hasher for FastHasher {
         self.add(value as u64);
     }
 }
-
-pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
-pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FastHasher>>;

@@ -1,4 +1,5 @@
-use super::{Builder, index};
+use super::hir_builder::HirBuilder;
+use super::index::index;
 use crate::semantics::ir::{
     Attr, AttrValue, Block, BlockId, BodyItem, BundleFor, ExprKind, Iterable, Loc, Placement,
     PlacementId, WhenArm, Wire, WireId,
@@ -49,7 +50,7 @@ fn head(node: &NodeView<'_>) -> std::ops::Range<u32> {
     range.start..end.max(range.start)
 }
 
-impl<'p> Builder<'_> {
+impl<'p> HirBuilder<'_> {
     pub(super) fn top_placement(&mut self, node: &ast::Placement<'p>) -> PlacementId {
         let mut pending = Vec::new();
         let id = self.placement(node, false, &mut pending);

@@ -2,16 +2,16 @@ use symphonyscript_core::{AttrDecl, AttrId};
 
 use crate::diagnostics::Code;
 use crate::semantics::analysis::attr_source::AttrSource;
-use crate::semantics::analysis::cval::CVal;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
-use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::scope::ScopeKind;
-use crate::semantics::analysis::sig::Kind;
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Ident, Loc};
 

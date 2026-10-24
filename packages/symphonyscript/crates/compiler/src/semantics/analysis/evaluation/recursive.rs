@@ -1,28 +1,37 @@
 use std::rc::Rc;
 
-use super::machine::{Frame, Machine};
-use super::run::Ctx;
-use super::types::{is_float_ty, own_type};
+use symphonyscript_core::FamilyId;
+
+use super::ctx::Ctx;
+use super::frame::Frame;
+use super::is_float_ty::is_float_ty;
+use super::machine::Machine;
+use super::own_type::own_type;
 use crate::diagnostics::Code;
-use crate::semantics::analysis::bound::{Bound, BoundVal};
-use crate::semantics::analysis::call_key::{ArgKey, CallKey};
-use crate::semantics::analysis::cval::CVal;
+use crate::semantics::analysis::arg_key::ArgKey;
+use crate::semantics::analysis::arg_shape::ArgShape;
+use crate::semantics::analysis::arg_sig::ArgSig;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::c_val::CVal;
+use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::feed::Feed;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
-use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::scope::ParamSource;
-use crate::semantics::analysis::sig::{Kind, Sig, Width};
-use crate::semantics::analysis::template_key::{ArgShape, ArgSig, TemplateKey};
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::template_key::TemplateKey;
 use crate::semantics::analysis::val::Val;
+use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
-use symphonyscript_core::FamilyId;
 
-pub(crate) const CALL_LIMIT: usize = 1_000_000;
-pub(crate) const DEPTH_LIMIT: usize = 1_024;
+const CALL_LIMIT: usize = 1_000_000;
+const DEPTH_LIMIT: usize = 1_024;
 
 struct Call {
     key: CallKey,

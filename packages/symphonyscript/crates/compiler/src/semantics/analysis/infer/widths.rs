@@ -1,11 +1,15 @@
 use symphonyscript_core::Scalar;
 
 use crate::diagnostics::Code;
-use crate::semantics::analysis::binding::BindingKind;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::BindingId;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{Kind, Width, is_float, is_integer, rank};
+use crate::semantics::analysis::is_float::is_float;
+use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::rank::rank;
+use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
     pub(super) fn own_type(&mut self, binding: BindingId) -> Option<Scalar> {

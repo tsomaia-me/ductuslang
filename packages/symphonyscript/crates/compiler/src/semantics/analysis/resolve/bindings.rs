@@ -2,34 +2,31 @@ use std::rc::Rc;
 
 use symphonyscript_core::{AttrDefault, AttrId, Scalar};
 
+use super::annotation::Annotation;
+use super::bind_spec::BindSpec;
 use crate::diagnostics::Code;
-use crate::semantics::analysis::attr_source::AttrValueSource;
-use crate::semantics::analysis::binding::{Binding, BindingKind};
-use crate::semantics::analysis::bound::{Bound, BoundVal};
+use crate::semantics::analysis::attr_value_source::AttrValueSource;
+use crate::semantics::analysis::binding::Binding;
+use crate::semantics::analysis::binding_kind::BindingKind;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::query::{LetRef, Query};
-use crate::semantics::analysis::scope::{LocalsOwner, ParamSource, ScopeKind};
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::kind_of::kind_of;
+use crate::semantics::analysis::let_ref::LetRef;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::param_source::ParamSource;
+use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::shape::Shape;
-use crate::semantics::analysis::sig::{Kind, Sig, Width, kind_of, widens};
+use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{InputId, LetDecl, Loc, TypeBase, TypeRef};
-
-pub(crate) struct BindSpec<'n> {
-    pub kind: BindingKind,
-    pub annotation: Option<&'n Annotation>,
-    pub name: &'n str,
-    pub loc: Loc,
-    pub scope: ScopeId,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) struct Annotation {
-    pub scalar: Scalar,
-    pub lengths: Vec<u32>,
-}
+use crate::semantics::analysis::widens::widens;
+use crate::semantics::analysis::width::Width;
+use crate::semantics::ir::{InputId, LetDecl, TypeBase, TypeRef};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_let(

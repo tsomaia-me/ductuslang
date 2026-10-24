@@ -1,11 +1,11 @@
 mod builtin_name;
-mod call_graph;
 mod collect;
 mod collected;
 mod decl;
 mod inline_counts;
 mod namespace;
 mod pattern_graph;
+mod recursive_functions;
 mod stand_in;
 mod strongly_connected;
 mod variants;

@@ -2,12 +2,15 @@ use std::collections::BTreeSet;
 
 use symphonyscript_core::Scalar;
 
-use super::rules::branch_width_of;
+use super::branch_width_of::branch_width_of;
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{Kind, Sig, Width, unify_kinds};
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::unify_kinds::unify_kinds;
+use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{Number, Suffix};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]

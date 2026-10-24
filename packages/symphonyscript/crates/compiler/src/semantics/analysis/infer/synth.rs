@@ -1,9 +1,14 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
+use crate::semantics::analysis::common::common;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::float_for::float_for;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{Kind, Sig, Width, common, float_for, is_integer};
+use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
     pub(super) fn synth(&mut self, root: NodeId) -> Option<Scalar> {

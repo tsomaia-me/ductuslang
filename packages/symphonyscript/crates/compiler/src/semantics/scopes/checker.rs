@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use symphonyscript_core::Vocabulary;
 
-use super::frame::{Frame, FrameKind};
+use super::frame::Frame;
+use super::frame_kind::FrameKind;
 use crate::diagnostics::Code;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{

@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use super::array::Array;
 use super::ids::NodeId;
 use super::shape::Shape;
 
@@ -8,12 +9,6 @@ pub(crate) enum Val {
     Scalar(NodeId),
     Array(Rc<Array>),
     Error,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub(crate) struct Array {
-    pub shape: Shape,
-    pub elements: Vec<NodeId>,
 }
 
 impl Val {

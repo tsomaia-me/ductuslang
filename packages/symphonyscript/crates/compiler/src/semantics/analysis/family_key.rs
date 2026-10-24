@@ -1,4 +1,4 @@
-use super::template_key::ArgShape;
+use super::arg_shape::ArgShape;
 use crate::semantics::ir::FnId;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

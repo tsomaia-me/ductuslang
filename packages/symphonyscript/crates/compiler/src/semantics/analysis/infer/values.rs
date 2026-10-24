@@ -3,16 +3,17 @@ use std::collections::BTreeMap;
 use symphonyscript_core::Scalar;
 
 use crate::diagnostics::Code;
-use crate::semantics::analysis::binding::BindingKind;
-use crate::semantics::analysis::cval::CVal;
+use crate::semantics::analysis::binding_kind::BindingKind;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{is_float, is_integer};
+use crate::semantics::analysis::is_float::is_float;
+use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::ir::{InputId, Loc};
 
-pub(super) fn eval_ty(scalar: Option<Scalar>) -> EvalTy {
+fn eval_ty(scalar: Option<Scalar>) -> EvalTy {
     match scalar {
         Some(Scalar::I32) => EvalTy::I32,
         Some(Scalar::I64) => EvalTy::I64,

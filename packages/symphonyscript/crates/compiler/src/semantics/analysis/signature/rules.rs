@@ -1,29 +1,20 @@
 use symphonyscript_core::{BinaryOp, Builtin, FamilyId, Scalar, UnaryOp, Value};
 
-use super::run::Extra;
+use super::arith_width::arith_width;
+use super::branch_width::branch_width;
+use super::branch_width_of::branch_width_of;
+use super::extra::Extra;
 use crate::diagnostics::Code;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::float_for::float_for;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{
-    Kind, Sig, Width, common, float_for, kind_of, meet_flexible, unify_kinds,
-};
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::kind_of::kind_of;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::unify_kinds::unify_kinds;
+use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{Number, Suffix};
-
-pub(super) fn arith_width(a: &Sig, b: &Sig) -> Width {
-    let settled = |width| match width {
-        Width::Widened(scalar) => Width::Fixed(float_for(scalar)),
-        other => other,
-    };
-    match (settled(a.width), settled(b.width)) {
-        (Width::Adaptive, _) | (_, Width::Adaptive) => Width::Adaptive,
-        (Width::Fixed(x), Width::Fixed(y)) => Width::Fixed(common(x, y).unwrap_or(x)),
-        (Width::Fixed(x), Width::Flexible) => Width::Fixed(meet_flexible(x, b.kind)),
-        (Width::Flexible, Width::Fixed(y)) => Width::Fixed(meet_flexible(y, a.kind)),
-        (Width::Flexible, Width::Flexible) => Width::Flexible,
-        (Width::Widened(x), _) | (_, Width::Widened(x)) => Width::Fixed(float_for(x)),
-    }
-}
 
 fn float_width(width: Width) -> Width {
     match width {
@@ -571,23 +562,5 @@ impl Engine<'_> {
             Width::Fixed(scalar)
         };
         Sig::of(kind_of(scalar), width, reactive, family)
-    }
-}
-
-pub(super) fn branch_width(kind: Kind, a: &Sig, b: &Sig) -> Width {
-    branch_width_of(kind, a.width, b.width)
-}
-
-pub(super) fn branch_width_of(kind: Kind, a: Width, b: Width) -> Width {
-    match kind {
-        Kind::Int | Kind::Float => {
-            let left = Sig::of(kind, a, false, None);
-            let right = Sig::of(kind, b, false, None);
-            arith_width(&left, &right)
-        }
-        Kind::Bool => Width::Fixed(Scalar::Bool),
-        Kind::Str => Width::Fixed(Scalar::Str),
-        Kind::Enum(id) => Width::Fixed(Scalar::Enum(id)),
-        Kind::Node | Kind::Bare | Kind::Any | Kind::Error => Width::Flexible,
     }
 }

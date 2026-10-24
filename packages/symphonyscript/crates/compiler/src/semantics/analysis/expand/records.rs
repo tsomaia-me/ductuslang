@@ -3,30 +3,31 @@ use std::rc::Rc;
 
 use symphonyscript_core::{AttrId, NodeKind, Segment, WireKind};
 
+use super::context::Context;
+use super::item_kind::ItemKind;
 use crate::diagnostics::Code;
-use crate::semantics::analysis::attr_source::{AttrSource, AttrValueSource};
-use crate::semantics::analysis::bound::{Bound, BoundVal};
-use crate::semantics::analysis::chain::Chain;
-use crate::semantics::analysis::engine::{Engine, index};
-use crate::semantics::analysis::ids::{ConditionsId, InstanceId, ScopeId, UseId, WireId};
+use crate::semantics::analysis::attr_source::AttrSource;
+use crate::semantics::analysis::attr_value_source::AttrValueSource;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::ids::{InstanceId, ScopeId, UseId, WireId};
+use crate::semantics::analysis::index::index;
 use crate::semantics::analysis::instance::Instance;
 use crate::semantics::analysis::item_ref::ItemRef;
-use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::local_name::LocalName;
+use crate::semantics::analysis::locals::Locals;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::path_parent::PathParent;
 use crate::semantics::analysis::pattern_use::PatternUse;
-use crate::semantics::analysis::scope::{LocalName, Locals, LocalsOwner, ParamSource, ScopeKind};
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::wire::Wire;
 use crate::semantics::collection::{Decl, StandIn};
 use crate::semantics::ir::{AttrValue, Loc, PatternId, PlacementId, WireId as HirWireId};
 
-pub(crate) const EXPANSION_LIMIT: usize = 1_000_000;
-
-pub(crate) struct Context {
-    pub owner: Option<InstanceId>,
-    pub path_parent: Option<PathParent>,
-    pub conditions: Option<ConditionsId>,
-    pub uses: Chain,
-}
+const EXPANSION_LIMIT: usize = 1_000_000;
 
 impl<'a> Engine<'a> {
     pub(in crate::semantics::analysis) fn instance(&self, id: InstanceId) -> Option<&Instance> {
@@ -618,10 +619,4 @@ impl<'a> Engine<'a> {
             }
         }
     }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum ItemKind {
-    Node(NodeKind),
-    Wire(WireKind),
 }

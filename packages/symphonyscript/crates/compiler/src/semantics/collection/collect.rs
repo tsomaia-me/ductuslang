@@ -3,12 +3,12 @@ use std::collections::BTreeMap;
 use symphonyscript_core::Vocabulary;
 
 use super::builtin_name::BuiltinName;
-use super::call_graph::recursive_functions;
 use super::collected::Collected;
 use super::decl::Decl;
 use super::inline_counts::InlineCounts;
 use super::namespace::Namespace;
-use super::pattern_graph::pattern_graph;
+use super::pattern_graph::PatternGraph;
+use super::recursive_functions::recursive_functions;
 use super::variants::Variants;
 use crate::diagnostics::Code;
 use crate::semantics::ir::{Hir, Ident, Loc, Top};
@@ -80,7 +80,7 @@ pub(crate) fn collect(
     }
     let recursive = recursive_functions(hir, &source, &prelude);
     let inline = InlineCounts::of(hir, &source, &prelude, &recursive);
-    let graph = pattern_graph(hir, &source, &prelude, report);
+    let graph = PatternGraph::of(hir, &source, &prelude, report);
     Collected {
         source,
         prelude,

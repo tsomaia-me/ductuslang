@@ -2,29 +2,40 @@ use std::rc::Rc;
 
 use symphonyscript_core::{BinaryOp, Builtin, SpecFloat, UnaryOp, Value};
 
-use super::exact::{exact_binary, fits, represents};
-use super::format::text;
-use super::types::{
-    Pair, int_bits, is_chosen_float, is_f32, is_float_builtin, is_float_ty, is_int_ty, of_scalar,
-    own_type, pair_type,
-};
+use super::convert::convert;
+use super::convert_to::convert_to;
+use super::ctx::Ctx;
+use super::exact_binary::exact_binary;
+use super::fits::fits;
+use super::int_bits::int_bits;
+use super::is_chosen_float::is_chosen_float;
+use super::is_f32::is_f32;
+use super::is_float_builtin::is_float_builtin;
+use super::is_float_ty::is_float_ty;
+use super::is_int_ty::is_int_ty;
+use super::of_scalar::of_scalar;
+use super::own_type::own_type;
+use super::pair::Pair;
+use super::pair_type::pair_type;
+use super::represents::represents;
+use super::text::text;
+use super::ty_name::ty_name;
 use crate::diagnostics::Code;
-use crate::semantics::analysis::bound::{Bound, BoundVal};
-use crate::semantics::analysis::cval::CVal;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::{Op, Piece};
+use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::sig::{Kind, Sig, Width, is_integer};
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{FloatLit, Number, Suffix};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Ctx {
-    Global,
-    Frame(usize),
-}
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_eval(
@@ -977,51 +988,4 @@ fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
         | BinaryOp::Or => return CVal::Error,
     };
     CVal::Bool(result)
-}
-
-pub(super) fn convert(value: CVal, target: EvalTy) -> CVal {
-    let target = match target {
-        EvalTy::DefaultF32 => EvalTy::F32,
-        EvalTy::DefaultF64 => EvalTy::F64,
-        other => other,
-    };
-    match (value, target) {
-        (CVal::Int(value), EvalTy::I32) => {
-            CVal::Int(value.clamp(i128::from(i32::MIN), i128::from(i32::MAX)))
-        }
-        (CVal::Int(value), EvalTy::I64) => {
-            CVal::Int(value.clamp(i128::from(i64::MIN), i128::from(i64::MAX)))
-        }
-        (CVal::Int(value), EvalTy::F32) => CVal::F32(value as f32),
-        (CVal::Int(value), EvalTy::F64) => CVal::F64(value as f64),
-        (CVal::F32(value), EvalTy::I32) => CVal::Int(i128::from(value as i32)),
-        (CVal::F32(value), EvalTy::I64) => CVal::Int(i128::from(value as i64)),
-        (CVal::F64(value), EvalTy::I32) => CVal::Int(i128::from(value as i32)),
-        (CVal::F64(value), EvalTy::I64) => CVal::Int(i128::from(value as i64)),
-        (CVal::F32(value), EvalTy::F64) => CVal::F64(f64::from(value)),
-        (CVal::F64(value), EvalTy::F32) => CVal::F32(value as f32),
-        (value, _) => value,
-    }
-}
-
-pub(super) fn convert_to(value: CVal, ty: EvalTy) -> CVal {
-    match (&value, ty) {
-        (CVal::Int(_), ty) if is_float_ty(ty) => convert(value, ty),
-        (CVal::F32(_), EvalTy::F64 | EvalTy::DefaultF64) => convert(value, ty),
-        (CVal::F32(_) | CVal::F64(_), EvalTy::I32 | EvalTy::I64 | EvalTy::Exact) => CVal::Error,
-        _ => value,
-    }
-}
-
-pub(super) fn ty_name(ty: EvalTy) -> &'static str {
-    match ty {
-        EvalTy::I32 => "i32",
-        EvalTy::I64 => "i64",
-        EvalTy::F32 | EvalTy::DefaultF32 => "f32",
-        EvalTy::F64 | EvalTy::DefaultF64 => "f64",
-        EvalTy::Bool => "bool",
-        EvalTy::Exact | EvalTy::Default | EvalTy::Enum(_) | EvalTy::Str | EvalTy::Node => {
-            "the type"
-        }
-    }
 }

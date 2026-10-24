@@ -1,13 +1,18 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
 use crate::diagnostics::Code;
-use crate::semantics::analysis::cval::CVal;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::node::Op;
-use crate::semantics::analysis::sig::{Kind, Sig, Width, is_float, is_integer, widens};
+use crate::semantics::analysis::is_float::is_float;
+use crate::semantics::analysis::is_integer::is_integer;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::widens::widens;
+use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
     pub(super) fn check(
@@ -275,7 +280,7 @@ impl Engine<'_> {
     }
 }
 
-pub(super) fn scalar_name(engine: &Engine<'_>, scalar: Scalar) -> String {
+fn scalar_name(engine: &Engine<'_>, scalar: Scalar) -> String {
     match scalar {
         Scalar::I32 => "i32".into(),
         Scalar::I64 => "i64".into(),

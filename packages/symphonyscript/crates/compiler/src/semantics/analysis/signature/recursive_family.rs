@@ -1,12 +1,15 @@
 use crate::diagnostics::Code;
+use crate::semantics::analysis::arg_shape::ArgShape;
+use crate::semantics::analysis::arg_sig::ArgSig;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::rec_family::RecFamily;
-use crate::semantics::analysis::sig::{Kind, Sig, Width};
-use crate::semantics::analysis::template_key::{ArgShape, ArgSig};
+use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::val::Val;
+use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
 
 impl Engine<'_> {

@@ -1,3 +1,7 @@
+mod arith_width;
+mod branch_width;
+mod branch_width_of;
+mod extra;
 mod families;
 mod matches;
 mod recursive_family;

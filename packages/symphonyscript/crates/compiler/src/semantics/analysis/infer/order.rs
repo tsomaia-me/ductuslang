@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
-use crate::semantics::analysis::node::Op;
+use crate::semantics::analysis::op::Op;
 
 impl Engine<'_> {
     pub(super) fn reads_of(&self, root: NodeId) -> Vec<BindingId> {

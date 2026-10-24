@@ -3,6 +3,7 @@ mod expectations;
 mod order;
 mod position;
 mod positions;
+mod role;
 mod synth;
 mod typing;
 mod units;
@@ -62,7 +63,7 @@ impl Engine<'_> {
         let mut roots = Vec::new();
         for position in &valid {
             for node in position.val.nodes() {
-                let condition = position.role == position::Role::Gate;
+                let condition = position.role == role::Role::Gate;
                 self.check(node, Some(position.ty.scalar), condition, &mut roots);
             }
         }

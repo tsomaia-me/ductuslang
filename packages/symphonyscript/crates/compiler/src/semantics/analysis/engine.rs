@@ -3,20 +3,25 @@ use std::collections::{BTreeMap, VecDeque};
 use symphonyscript_core::Vocabulary;
 
 use super::binding::Binding;
-use super::bound::{Bound, BoundVal};
+use super::bound::Bound;
+use super::bound_val::BoundVal;
+use super::c_val::CVal;
 use super::chain::Chain;
-use super::cval::CVal;
 use super::destination::Destination;
 use super::fast_hash::{FastMap, FastSet};
 use super::ids::{BindingId, InstanceId, NodeId, ScopeId};
+use super::index::index;
 use super::instance::Instance;
 use super::item_ref::ItemRef;
+use super::let_ref::LetRef;
 use super::memo::Memo;
-use super::node::{Node, Op};
+use super::node::Node;
+use super::op::Op;
 use super::path_parent::PathParent;
 use super::pattern_use::PatternUse;
-use super::query::{LetRef, Query};
-use super::scope::{Scope, ScopeKind};
+use super::query::Query;
+use super::scope::Scope;
+use super::scope_kind::ScopeKind;
 use super::sig::Sig;
 use super::site::Site;
 use super::val::Val;
@@ -140,7 +145,7 @@ impl<'a> Engine<'a> {
                 scope: ScopeId(0),
             },
             missing_binding: Binding {
-                kind: super::binding::BindingKind::Let,
+                kind: super::binding_kind::BindingKind::Let,
                 init: NodeId(u32::MAX),
                 annotation: None,
                 name: String::new(),
@@ -502,8 +507,4 @@ impl<'a> Engine<'a> {
         self.report
             .error_with(self.hir, Code::DeclarationCycle, loc, secondary, message);
     }
-}
-
-pub(crate) fn index(length: usize) -> u32 {
-    u32::try_from(length).unwrap_or(u32::MAX)
 }
