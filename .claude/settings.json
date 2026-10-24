@@ -124,6 +124,8 @@
       "Bash(git -C * push* -f*)",
       "Bash(git -C * push origin main)",
       "Bash(git -C * push origin HEAD:main)",
+      "Bash(git push origin main:main*)",
+      "Bash(git push origin main *)",
       "Bash(git -C * reset --hard*)"
     ]
   },
