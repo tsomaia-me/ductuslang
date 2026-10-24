@@ -99,6 +99,23 @@ fn flexible_integers_compute_exactly_below_two_to_the_127() {
 }
 
 #[test]
+fn an_unused_compile_time_let_is_never_computed() {
+    expect(&[
+        ("let e = 2 ** 2 ** 2 ** 2 ** 2\n", &[]),
+        ("let x = [1, 2][5]\n", &[]),
+        ("let y = 1 + true\n", &[Code::OperandType]),
+        (
+            "let e = 2 ** 2 ** 2 ** 2 ** 2\nClip c:\n    Note/e\n",
+            &[Code::IntegerOverflow],
+        ),
+        (
+            "let x = [1, 2][5]\nClip c:\n    Note/x\n",
+            &[Code::IndexOutOfRange],
+        ),
+    ]);
+}
+
+#[test]
 fn an_expected_type_flows_into_operands_and_fixed_types_only_widen() {
     expect(&[
         (

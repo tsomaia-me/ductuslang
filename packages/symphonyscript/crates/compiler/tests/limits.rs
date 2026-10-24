@@ -38,3 +38,20 @@ fn a_million_iterations_and_uses_in_all_are_accepted_and_one_more_is_not() {
         format!("{million}    for k in 0..1:\n        for j in 0..0:\n            Note\n");
     assert_eq!(codes(&one_more), vec![Code::ExpansionLimit]);
 }
+
+#[test]
+fn an_integer_that_would_reach_two_to_the_127_is_reported_before_it_is_computed() {
+    let just_under = "170141183460469231731687303715884105727";
+    let programs = [
+        "Clip c:\n    Note/(2 ** 1000000000)\n".to_string(),
+        "let e = 2 ** 2 ** 2 ** 2 ** 2\nClip c:\n    Note/e\n".to_string(),
+        format!("Clip c:\n    Note/({just_under} * {just_under})\n"),
+    ];
+    for text in &programs {
+        let start = Instant::now();
+        let found = codes(text);
+        let elapsed = start.elapsed();
+        assert_eq!(found, vec![Code::IntegerOverflow], "{text}");
+        assert!(elapsed < Duration::from_secs(1), "{elapsed:?}: {text}");
+    }
+}
