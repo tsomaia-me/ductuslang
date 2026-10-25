@@ -50,33 +50,43 @@ class JudgeSamplingTest(unittest.TestCase):
 
     def test_one_novel_program_is_judged_per_k_generated_and_a_key_only_once(self):
         judge = self.judge(Recorder(answer("accept")))
-        self.assertTrue(judge.consider("0", CLEAN, []))
-        self.assertFalse(judge.consider("1", "Clip a:\n    Note/1 when true\n", []))
-        self.assertFalse(judge.consider("2", "Clp a:\n", None))
-        self.assertFalse(judge.consider("3", "Clip b:\n    Note/2\n", []))
-        self.assertTrue(judge.consider("4", "Clp a:\n", ERRORS))
-        self.assertFalse(judge.consider("5", "Clp b:\n", ERRORS))
-        self.assertFalse(judge.consider("6", "Clp c:\n", None))
-        self.assertTrue(judge.consider("7", "Clip a:\n    Note/1 when true\n", []))
+        self.assertTrue(judge.consider("0", CLEAN, [], True))
+        self.assertFalse(judge.consider("1", "Clip a:\n    Note/1 when true\n", [], True))
+        self.assertFalse(judge.consider("2", "Clp a:\n", None, True))
+        self.assertFalse(judge.consider("3", "Clip b:\n    Note/2\n", [], True))
+        self.assertTrue(judge.consider("4", "Clp a:\n", ERRORS, True))
+        self.assertFalse(judge.consider("5", "Clp b:\n", ERRORS, True))
+        self.assertFalse(judge.consider("6", "Clp c:\n", None, True))
+        self.assertTrue(judge.consider("7", "Clip a:\n    Note/1 when true\n", [], True))
         judge.close()
         self.assertEqual(len(judge.client.sent), 6)
         self.assertEqual([json.loads(line)["id"] for line in (self.root / "000.jsonl").read_text().splitlines()],
                          ["0", "4", "7"])
 
+    def test_a_program_that_does_not_parse_is_never_judged_and_its_key_stays_open(self):
+        judge = self.judge(Recorder(answer("accept")), every=1)
+        self.assertFalse(judge.consider("0", "Clp a:\n", ERRORS, False))
+        self.assertFalse(judge.consider("1", CLEAN, [], False))
+        self.assertTrue(judge.consider("2", "Clp a:\n", ERRORS, True))
+        judge.close()
+        self.assertEqual(len(judge.client.sent), 2)
+        self.assertEqual([json.loads(line)["id"] for line in (self.root / "000.jsonl").read_text().splitlines()],
+                         ["2"])
+
     def test_workers_share_the_judged_keys_and_a_restart_keeps_its_budget(self):
         first = self.judge(Recorder(answer("accept")))
-        self.assertTrue(first.consider("0", CLEAN, []))
+        self.assertTrue(first.consider("0", CLEAN, [], True))
         first.close()
         other = self.judge(Recorder(answer("accept")), worker="001")
-        self.assertFalse(other.consider("0", "Clip other:\n    Note/9\n", []))
+        self.assertFalse(other.consider("0", "Clip other:\n    Note/9\n", [], True))
         restarted = self.judge(Recorder(answer("accept")), generated=1)
         self.assertEqual(restarted.judged, 1)
-        self.assertFalse(restarted.consider("1", "Clp a:\n", ERRORS))
+        self.assertFalse(restarted.consider("1", "Clp a:\n", ERRORS, True))
         restarted.close()
 
     def test_a_judge_call_sends_the_spec_alone_as_the_system_prompt(self):
         judge = self.judge(Recorder(answer("accept")))
-        judge.consider("0", CLEAN, [])
+        judge.consider("0", CLEAN, [], True)
         judge.close()
         first, second = judge.client.sent
         for sent in (first, second):
@@ -119,7 +129,7 @@ class JudgeAgreementOnFakeProxyTest(unittest.TestCase):
         oracle = breaker.Oracle(EVOLVE_BIN / "evolve-check", EVOLVE_BIN / "evolve-shrink", findings)
         judge = SpecJudge(self.proxy(replies), SPEC, oracle.keep, self.root / f"judged-{len(self.proxies)}",
                           self.root / f"log-{len(self.proxies)}.jsonl", 20)
-        self.assertTrue(judge.consider("p", text, errors))
+        self.assertTrue(judge.consider("p", text, errors, True))
         judge.close()
         return [json.loads(path.read_text()) for path in sorted(findings.glob("verdict-*.json"))]
 

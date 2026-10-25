@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use symphonyscript::syntax::parse;
 use symphonyscript::{Code, Compiler, Diagnostic, Failed};
 use symphonyscript_core::Vocabulary;
 
@@ -59,10 +60,24 @@ impl Checker {
         guarded(self.budget, move || compiler.check(&sources))
     }
 
+    pub fn parses(&self, program: &Program) -> bool {
+        let vocabulary = self.vocabulary.clone();
+        let sources = program.compiler_sources();
+        matches!(
+            guarded(self.budget, move || {
+                sources
+                    .iter()
+                    .all(|source| parse(source, &vocabulary).diagnostics.is_empty())
+            }),
+            Guarded::Finished { value: true, .. }
+        )
+    }
+
     pub fn verdict(&self, program: &Program) -> Verdict {
         let compiled = self.compile(program);
         let mut verdict = Verdict {
             id: program.id.clone(),
+            parses: self.parses(program),
             diagnostics: Vec::new(),
             signals: Vec::new(),
             findings: Vec::new(),

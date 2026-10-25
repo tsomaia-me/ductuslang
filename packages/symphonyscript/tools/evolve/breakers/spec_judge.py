@@ -76,9 +76,9 @@ class SpecJudge:
         except FileExistsError:
             return False
 
-    def consider(self, program_id, text, errors):
+    def consider(self, program_id, text, errors, parses):
         self.generated += 1
-        if errors is None or self.judged * self.every >= self.generated:
+        if not parses or errors is None or self.judged * self.every >= self.generated:
             return False
         key = novelty(text, errors, self.keywords)
         if not self.claim(key):

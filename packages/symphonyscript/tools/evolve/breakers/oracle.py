@@ -53,9 +53,9 @@ class Oracle:
         return self.keep(f"{signal}-{digest(result['key'])}.json", {**result, "original_sources": original})
 
     def judge(self, program_id, text):
-        result, message, errors = self.verdict_of(program_id, text)
+        result, message, errors, parses = self.verdict_of(program_id, text)
         if self.spec_judge is not None:
-            self.spec_judge.consider(program_id, text, errors)
+            self.spec_judge.consider(program_id, text, errors, parses)
         return result, message
 
     def verdict_of(self, program_id, text):
@@ -69,15 +69,15 @@ class Oracle:
                 self.keep(f"process-{-checked.returncode}-{digest(text)}.json",
                           {"signal": f"process exited on signal {-checked.returncode}", "id": program_id,
                            "sources": entry["sources"]})
-                return FResult.ERROR, f"evolve-check exited on signal {-checked.returncode}", None
+                return FResult.ERROR, f"evolve-check exited on signal {-checked.returncode}", None, False
             if checked.returncode != 0:
-                return FResult.FAILURE, checked.stderr, None
+                return FResult.FAILURE, checked.stderr, None, False
             verdict = json.loads((work / "verdicts.jsonl").read_text())
             if verdict["signals"]:
                 for signal in verdict["signals"]:
                     self.record(work, entry, signal)
-                return FResult.ERROR, json.dumps(verdict["findings"]), None
+                return FResult.ERROR, json.dumps(verdict["findings"]), None, False
         errors = [d for d in verdict["diagnostics"] if d["code"] not in WARNING_CODES]
         if errors:
-            return FResult.FAILURE, " ".join(d["code"] for d in errors), errors
-        return FResult.SAFE, "", errors
+            return FResult.FAILURE, " ".join(d["code"] for d in errors), errors, verdict["parses"]
+        return FResult.SAFE, "", errors, verdict["parses"]
