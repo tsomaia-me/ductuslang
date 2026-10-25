@@ -93,6 +93,7 @@ Exit:
 - Diagnostics for expanded patterns point at the use and the pattern line.
 - M1's deep sources, a 100,000-deep array type and a chain of 10,000 functions each calling the next pass every stage through Check on a thread with a 1 MiB stack.
 - A chain of 40 calls of a function that uses its parameter twice, each call the argument of the next and the innermost reading an input, passes Check in time and memory linear in the chain.
+- Every resource limit is a field of `Limits` with its default in one constants file, and a test sets each limit below and above its default and sees the compiler follow it.
 
 ## M3: Runtime and reload
 
@@ -116,6 +117,7 @@ Exit:
 - Compiling a fixture project repeatedly, with its sources in any order, gives equal Programs and equal dumps.
 - A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
 - A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
+- Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
 
 ## M4: Delivery and tooling
 
@@ -135,6 +137,7 @@ Exit:
 - Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects.
 - The extension starts the language server for a sample project.
 - `codegen` and the language server handle M2's deep sources on a thread with a 1 MiB stack.
+- `symphony.toml`'s `[limits]` and `--limit` reach the compiler, the runtime and the language server, a flag overriding the file.
 
 ## M5: Kernel adapter
 

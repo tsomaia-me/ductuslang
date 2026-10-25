@@ -244,7 +244,7 @@ match snapshot.prepare(new_program) {
 4. Builds the new state and evaluates every cell.
 5. Reports the structure, the staged writes it dropped, and the attribute, activation and target differences of matched items.
 
-`install` replaces the running state with the pending one, between two commits, after staging again against the new Program, by input name, the writes staged and committed since the snapshot, as SPEC §13.2 does for writes staged before a reload, so the next commit applies them. Dropping a `PendingReload` instead leaves the runtime on the old Program. Preparing may allocate; installing swaps buffers and does not. Input handles are stable: the runtime keeps a registry from input names to handles across reloads, adds handles for new names, marks handles of removed inputs dead, and revives a dead handle when an input of its name returns.
+`install` replaces the running state with the pending one, between two commits, after staging again against the new Program, by input name, the writes staged and committed since the snapshot, as SPEC §13.2 does for writes staged before a reload, so the next commit applies them. `Runtime::with_limits(program, limits)` sets the reload search bound of SPEC §13.3, and `Runtime::new` uses the default. Dropping a `PendingReload` instead leaves the runtime on the old Program. Preparing may allocate; installing swaps buffers and does not. Input handles are stable: the runtime keeps a registry from input names to handles across reloads, adds handles for new names, marks handles of removed inputs dead, and revives a dead handle when an input of its name returns.
 
 ## 6. The Consumer trait
 
@@ -266,6 +266,7 @@ pub struct Compiler { /* the vocabulary and its parsed, resolved prelude */ }
 
 impl Compiler {
     pub fn new(vocab: &Vocabulary) -> Result<Compiler, Failed>;
+    pub fn with_limits(vocab: &Vocabulary, limits: Limits) -> Result<Compiler, Failed>;
     pub fn compile(&self, sources: &[Source]) -> Result<Compiled, Failed>;
 }
 
@@ -277,7 +278,7 @@ pub struct Compiled { pub program: Program, pub warnings: Vec<Diagnostic> }
 pub struct Failed { pub diagnostics: Vec<Diagnostic> }
 ```
 
-`Compiler::new` parses and resolves the prelude once and reports its errors as vocabulary errors (SPEC §10.1). The tool and the language server keep one `Compiler`; `compile` and `eval` build one for a single call. `Source.path` is relative to the project's source root, with `/` separators.
+`Compiler::new` parses and resolves the prelude once and reports its errors as vocabulary errors (SPEC §10.1). The tool and the language server keep one `Compiler`; `compile` and `eval` build one for a single call. `Source.path` is relative to the project's source root, with `/` separators. `Limits`, in `symphonyscript-core`, holds every resource limit of SPEC §4.6, §6.3 and §13.3: recursive calls, nesting depth, inlined calls, expansion steps, expanded items and the reload search bound. `Limits::default()` takes each default from one file of constants in core; `Compiler::new`, `compile` and `eval` use the defaults, and `Compiler::with_limits` takes others.
 
 The compiler performs no file I/O; the caller supplies every source. This keeps the compiler usable in editors, build scripts and WebAssembly. Stages:
 
@@ -365,7 +366,7 @@ fn play(project: &Project, args: &[String]) -> Result<(), ToolError> {
 - **Projects.** A `Project` holds its root, the settings of its `symphony.toml`, and its sources: every `.sym` file under `source`, found recursively, each with its path relative to `source`. Those paths fix the top-level order (SPEC §2.1).
 - **Single files.** `check`, `dump` and the framework's subcommands accept a lone `.sym` file in place of a project; it is a project of one source whose path is the file's name.
 - **Watch.** `watch(project, vocab, consumer)` recompiles on save, prepares a reload, lets the consumer accept it, installs it, and drives the consumer (§5, §6). Frameworks call it from their own commands.
-- **`symphony.toml`** holds `tool`, the name of the framework's binary, and `source`, the source root (default `src`).
+- **`symphony.toml`** holds `tool`, the name of the framework's binary, `source`, the source root (default `src`), and an optional `[limits]` table, each key a field of `Limits` (§7). Every tool command, the language server's included, takes `--limit <name>=<value>`; a flag overrides the file, and the file the default.
 - **Editor.** One VS Code extension: a static syntax grammar plus a language client that reads `symphony.toml` and starts `<tool> lsp`. For a lone `.sym` file it starts the tool named in its `symphonyscript.tool` setting; with no setting it stays inactive and says why. Other editors use their own language-client configuration.
 - **Language server.** Diagnostics; completion of attributes after `|`, accepted child kinds in a body, valid destinations after a wire's `:`, enum variants where an enum is expected; hover with documentation and inferred types with their origin, where a compile-time value shows its value and the type each use chose, and a cell shows that it is reactive, its one type and the inputs it reads; go to definition; find references; rename of instances, patterns, functions, inputs and `let`s; an outline of top-level items; semantic tokens, which mark inputs and reactive `let`s apart from compile-time values.
 
