@@ -174,6 +174,7 @@ impl<'a> Engine<'a> {
     pub fn analyze(&mut self) -> Result<(), Internal> {
         let outcome = self.stages();
         if self.ids_exhausted {
+            self.flush_diagnostics();
             return Ok(());
         }
         outcome
@@ -536,7 +537,12 @@ impl<'a> Engine<'a> {
         Ok(id)
     }
 
-    fn claim_id(&mut self, taken: usize, space: &str, loc: Loc) -> Result<(), Internal> {
+    pub(in crate::semantics::analysis) fn claim_id(
+        &mut self,
+        taken: usize,
+        space: &str,
+        loc: Loc,
+    ) -> Result<(), Internal> {
         if u64::try_from(taken).is_ok_and(|taken| taken < self.id_space) {
             return Ok(());
         }

@@ -187,6 +187,7 @@ impl<'a> Engine<'a> {
         if !self.count_item(loc, scope)? {
             return Ok(None);
         }
+        self.claim_id(self.instances.len(), "instances", loc)?;
         let id = InstanceId(index(self.instances.len()));
         let attrs = self.placement_attrs(ItemKind::Node(kind), placement, scope)?;
         self.instances.push(Instance {
@@ -222,6 +223,7 @@ impl<'a> Engine<'a> {
         if !self.count_item(loc, scope)? {
             return Ok(None);
         }
+        self.claim_id(self.wires.len(), "wires", loc)?;
         let id = WireId(index(self.wires.len()));
         let chain = self.chain(scope)?;
         let clause_scope = self.scope(ScopeKind::WireClause { wire: id }, Some(scope), chain)?;
@@ -258,6 +260,7 @@ impl<'a> Engine<'a> {
             return Ok(None);
         }
         let locals = self.use_locals(pattern, placement, caller)?;
+        self.claim_id(self.uses.len(), "pattern uses", loc)?;
         let id = UseId(index(self.uses.len()));
         self.uses
             .push(crate::semantics::analysis::pattern_use::PatternUse {

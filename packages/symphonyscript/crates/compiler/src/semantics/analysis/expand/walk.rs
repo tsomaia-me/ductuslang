@@ -178,7 +178,7 @@ impl Engine<'_> {
                         scope: caller,
                         holds: true,
                     },
-                );
+                )?;
             }
             if !self.count_step(site.loc, caller)? {
                 return Ok(None);
@@ -809,7 +809,7 @@ impl Engine<'_> {
                             scope,
                             holds: true,
                         },
-                    );
+                    )?;
                     earlier = self.push_condition(
                         earlier,
                         Condition {
@@ -817,7 +817,7 @@ impl Engine<'_> {
                             scope,
                             holds: false,
                         },
-                    );
+                    )?;
                     pending.push((arm.body, holds));
                 }
                 if let Some(otherwise) = otherwise {
@@ -941,7 +941,7 @@ impl Engine<'_> {
                                 scope,
                                 holds: true,
                             },
-                        );
+                        )?;
                     }
                     let inner = Walk {
                         owner: walk.owner,

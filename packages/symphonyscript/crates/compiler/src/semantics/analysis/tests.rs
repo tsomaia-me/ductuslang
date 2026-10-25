@@ -2284,6 +2284,56 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
         );
     });
 
+    let mut gated = String::from("input a = true\npattern P():\n");
+    for level in 1..=20 {
+        gated.push_str(&format!("{}when a:\n", "    ".repeat(level)));
+    }
+    gated.push_str(&format!(
+        "{}Note\nClip c:\n    for k in 0..100:\n        P\n",
+        "    ".repeat(21)
+    ));
+    with_engine_within(&gated, unbounded, |engine| {
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(error_codes(&engine.report.diagnostics), Vec::<Code>::new());
+    });
+    with_engine_within(&gated, unbounded, |engine| {
+        engine.id_space = 1_000;
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(
+            found(engine),
+            vec![(
+                Code::ExpansionLimit,
+                "the compilation needs more than 1,000 gate conditions, the most its ids number"
+                    .to_string()
+            )]
+        );
+    });
+
+    let faulty = "input i = 1\nfn f(x): x + x\npattern P(n):\n    for k in 0..(10 / n):\n        Note\nClip c:\n    P(0)\n    for j in 0..100:\n        Note/(f(i + j))\n";
+    let codes_and_bound = |engine: &Engine<'_>| -> (Vec<Code>, bool) {
+        let mut codes = error_codes(&engine.report.diagnostics);
+        codes.sort_by_key(|code| code.as_str());
+        let named = found(engine).iter().any(|(code, message)| {
+            *code == Code::ExpansionLimit && message.contains("more than 300 ")
+        });
+        (codes, named)
+    };
+    let mut expected = vec![Code::MissingArgument, Code::ExpansionLimit];
+    expected.sort_by_key(|code| code.as_str());
+    with_engine_within(faulty, unbounded, |engine| {
+        engine.id_space = 300;
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(codes_and_bound(engine), (expected.clone(), true));
+    });
+    let fifty_steps = Limits {
+        expansion_steps: 50,
+        ..unbounded
+    };
+    with_engine_within(faulty, fifty_steps, |engine| {
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(codes_and_bound(engine).0, expected);
+    });
+
     let spaces = ["scopes", "values", "cells"];
     for space in spaces {
         for room in [1, 0] {

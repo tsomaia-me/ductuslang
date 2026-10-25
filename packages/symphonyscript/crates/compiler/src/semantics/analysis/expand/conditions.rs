@@ -12,10 +12,12 @@ impl Engine<'_> {
         &mut self,
         rest: Option<ConditionsId>,
         condition: Condition,
-    ) -> Option<ConditionsId> {
+    ) -> Result<Option<ConditionsId>, Internal> {
+        let loc = self.hir.expr(condition.expr)?.loc;
+        self.claim_id(self.condition_links.len(), "gate conditions", loc)?;
         let id = ConditionsId(index(self.condition_links.len()));
         self.condition_links.push(ConditionLink { condition, rest });
-        Some(id)
+        Ok(Some(id))
     }
 
     pub(in crate::semantics::analysis) fn conditions_of(
@@ -43,7 +45,7 @@ impl Engine<'_> {
     ) -> Result<Option<ConditionsId>, Internal> {
         let mut head = base;
         for condition in self.conditions_of(extra)? {
-            head = self.push_condition(head, condition);
+            head = self.push_condition(head, condition)?;
         }
         Ok(head)
     }
