@@ -1,0 +1,28 @@
+fuzzing:
+  output_folder: runs/fuzz4all
+  num: 100000
+  total_time: 24
+  log_level: 1
+  otf: true
+  resume: true
+  evaluate: false
+  use_hand_written_prompt: false
+  no_input_prompt: false
+  prompt_strategy: 2
+
+target:
+  language: symphonyscript
+  path_documentation: ../../../docs/SPEC.md
+  path_example_code:
+  trigger_to_generate_input: "// Please create a short SymphonyScript program which uses SymphonyScript features in a complex way"
+  input_hint: ""
+  path_hand_written_prompt:
+  target_string: ""
+
+llm:
+  temperature: 1
+  batch_size: 30
+  device: cpu
+  model_name: claude-haiku-5-5
+  autoprompt_model_name: claude-sonnet-5-5
+  max_length: 1024
