@@ -2260,6 +2260,91 @@ fn codes_in_every_order(rows: &[CodeRow], check: fn(&str) -> Vec<Diagnostic>) ->
     failures
 }
 
+#[test]
+fn a_pattern_whose_block_a_fault_leaves_missing_is_a_placeholder_for_its_uses() {
+    let rows: [CodeRow; 10] = [
+        (
+            &[
+                "Session s",
+                "pattern Loop(default root):",
+                "Loop low /36",
+                "Loop high /48",
+            ],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &[
+                "Session s",
+                "pattern Loop(default root, again):",
+                "Loop low /36 | again=low",
+                "Clip c:\n    Plays: low",
+            ],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &["Session s", "pattern P(x):", "P p1 | x=1"],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &["Session s", "pattern P(x):\n    = 3", "P p1 | x=1"],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &[
+                "Session s",
+                "pattern P(x):",
+                "pattern Q(y):\n    P | x=y",
+                "Q q1 | y=1",
+            ],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &[
+                "Session s",
+                "pattern P(x):",
+                "Clip c:\n    P as p1 | x=1\n    Note | velocity=p1.n.velocity",
+            ],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &[
+                "Session s",
+                "pattern P(x):",
+                "Clip d",
+                "Clip c:\n    P as p1 | x=1\n    Plays: p1",
+            ],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &["Session s", "pattern P(x):", "P p1 | x=1 y=2"],
+            &[Code::PlacementSyntax, Code::UnknownParameter],
+        ),
+        (
+            &["Session s", "pattern P(x):", "Clip c:\n    P | x=1"],
+            &[Code::PlacementSyntax],
+        ),
+        (
+            &[
+                "Session s",
+                "pattern P(x):\n    Note/x\n    Note/x",
+                "P p1 | x=1",
+                "P p2 | x=2",
+            ],
+            &[Code::TopLevelPattern, Code::TopLevelPattern],
+        ),
+    ];
+    let mut failures = codes_in_every_order(&rows, support::checked);
+    let unknown_children: [CodeRow; 1] = [(
+        &["Session s:\n    P | x=1", "pattern P(x):", "Track t"],
+        &[Code::PlacementSyntax],
+    )];
+    failures.extend(codes_in_every_order(
+        &unknown_children,
+        support::checked_all,
+    ));
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 const FAULTY_LINES: [&str; 51] = [
     "pattern P(:",
     "fn f(x, ): 1",

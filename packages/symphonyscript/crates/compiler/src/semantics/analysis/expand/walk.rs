@@ -116,6 +116,11 @@ impl Engine<'_> {
                     self.unknown_items(None, true);
                     return Ok(());
                 }
+                if self.is_placeholder(pattern)? {
+                    self.use_locals(pattern, placement, global)?;
+                    self.unknown_items(None, true);
+                    return Ok(());
+                }
                 if self.stand_in(pattern)?.is_none() {
                     self.error(
                         Code::TopLevelPattern,
@@ -903,6 +908,12 @@ impl Engine<'_> {
                         }
                     }
                 } else {
+                    if self.is_placeholder(pattern)? {
+                        if let Some(collector) = walk.bundle {
+                            self.broken_bundles.insert(collector);
+                        }
+                        self.unknown_items(Some(walk.owner), walk.bundle.is_none());
+                    }
                     let use_id = match self.prebuilt.get(&(Site::Placement(id), scope)) {
                         Some(ItemRef::Use(existing)) => {
                             let existing = *existing;

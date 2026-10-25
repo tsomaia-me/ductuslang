@@ -10,4 +10,5 @@ pub(crate) struct Collected {
     pub inline: InlineCounts,
     pub cyclic_patterns: Vec<bool>,
     pub stand_ins: Vec<Option<StandIn>>,
+    pub placeholder_patterns: Vec<bool>,
 }

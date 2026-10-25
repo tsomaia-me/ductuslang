@@ -13,6 +13,7 @@ use crate::semantics::reporting::Report;
 pub(crate) struct PatternGraph {
     pub cyclic: Vec<bool>,
     pub stand_ins: Vec<Option<StandIn>>,
+    pub placeholders: Vec<bool>,
 }
 
 impl PatternGraph {
@@ -42,6 +43,7 @@ impl PatternGraph {
         }
         let mut cyclic = vec![false; hir.patterns.len()];
         let mut stand_ins = vec![None; hir.patterns.len()];
+        let mut placeholders = vec![false; hir.patterns.len()];
         for component in strongly_connected(&edges)? {
             if is_cycle(&component, &edges)? {
                 Self::report_cycle(hir, &component, report)?;
@@ -59,7 +61,12 @@ impl PatternGraph {
             } else {
                 source
             };
+            let mut placeholder = false;
             let stand_in = match hir.block(hir.pattern(id)?.body)?.items.as_slice() {
+                [] => {
+                    placeholder = true;
+                    None
+                }
                 [BodyItem::Placement(placement)] => {
                     match hir
                         .placement(*placement)?
@@ -68,11 +75,16 @@ impl PatternGraph {
                         .and_then(|kind| namespace.get(&kind.text))
                     {
                         Some(Decl::Node(_)) => Some(StandIn::Node(*placement)),
-                        Some(Decl::Pattern(target)) => stand_ins
-                            .get(target.index())
-                            .ok_or(Internal::missed("pattern"))?
-                            .as_ref()
-                            .map(|_| StandIn::Use(*placement)),
+                        Some(Decl::Pattern(target)) => {
+                            placeholder = *placeholders
+                                .get(target.index())
+                                .ok_or(Internal::missed("pattern"))?;
+                            stand_ins
+                                .get(target.index())
+                                .ok_or(Internal::missed("pattern"))?
+                                .as_ref()
+                                .map(|_| StandIn::Use(*placement))
+                        }
                         Some(
                             Decl::Input(_)
                             | Decl::Let(_)
@@ -90,8 +102,15 @@ impl PatternGraph {
             *stand_ins
                 .get_mut(member)
                 .ok_or(Internal::missed("pattern"))? = stand_in;
+            *placeholders
+                .get_mut(member)
+                .ok_or(Internal::missed("pattern"))? = placeholder;
         }
-        Ok(PatternGraph { cyclic, stand_ins })
+        Ok(PatternGraph {
+            cyclic,
+            stand_ins,
+            placeholders,
+        })
     }
 
     fn report_cycle(hir: &Hir, component: &[usize], report: &mut Report) -> Result<(), Internal> {

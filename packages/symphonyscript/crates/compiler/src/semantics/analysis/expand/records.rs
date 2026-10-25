@@ -453,6 +453,27 @@ impl<'a> Engine<'a> {
         }
     }
 
+    pub(in crate::semantics::analysis) fn is_placeholder(
+        &self,
+        pattern: PatternId,
+    ) -> Result<bool, Internal> {
+        self.collected
+            .placeholder_patterns
+            .get(pattern.index())
+            .copied()
+            .ok_or(Internal::missed("pattern"))
+    }
+
+    pub(in crate::semantics::analysis) fn names_unknown(
+        &self,
+        item: ItemRef,
+    ) -> Result<bool, Internal> {
+        match item {
+            ItemRef::Use(id) => self.is_placeholder(self.pattern_use(id)?.pattern),
+            ItemRef::Instance(_) | ItemRef::Wire(_) => Ok(false),
+        }
+    }
+
     pub(in crate::semantics::analysis) fn is_cyclic(
         &self,
         pattern: PatternId,

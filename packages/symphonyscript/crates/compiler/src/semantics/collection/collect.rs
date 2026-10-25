@@ -89,6 +89,7 @@ pub(crate) fn collect(
         inline,
         cyclic_patterns: graph.cyclic,
         stand_ins: graph.stand_ins,
+        placeholder_patterns: graph.placeholders,
     })
 }
 
