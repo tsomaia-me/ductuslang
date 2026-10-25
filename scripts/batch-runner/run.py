@@ -42,7 +42,7 @@ def read_keys(env_path):
         sys.exit("no ~/.env file: create it with ANTHROPIC_API_KEYS=<key 1>,<key 2>,...")
     value = None
     for line in env_path.read_text().splitlines():
-        match = re.match(r"\s*(?:export\s+)?ANTHROPIC_API_KEYS\s*=\s*(.*)$", line)
+        match = re.match(r"\s*(?:export\s+)?ANTHROPIC_API_KEYS?\s*=\s*(.*)$", line)
         if match:
             value = match.group(1).strip().strip("'\"")
     if value is None:

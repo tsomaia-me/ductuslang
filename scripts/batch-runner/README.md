@@ -16,7 +16,7 @@ Put the keys in `~/.env` as one comma-separated variable, used in the order list
 ANTHROPIC_API_KEYS=<key 1>,<key 2>,<key 3>
 ```
 
-If `~/.env` is missing, has no `ANTHROPIC_API_KEYS`, or lists no key, `run.py` and `proxy.py` print one line saying which and exit with status 1.
+`ANTHROPIC_API_KEY` is read the same way when `ANTHROPIC_API_KEYS` is absent. If `~/.env` is missing, has neither, or lists no key, `run.py` and `proxy.py` print one line saying which and exit with status 1.
 
 ## Usage
 
