@@ -8,34 +8,38 @@ const SHUFFLE_SEEDS: [u64; 3] = [1, 2, 3];
 const SINGLE_FILE_PATH: &str = "main.sym";
 
 pub fn reordered(program: &Program, vocabulary: &Vocabulary) -> Vec<Program> {
-    let ordered = program.ordered_sources();
-    let items: Vec<Item> = ordered
-        .iter()
-        .flat_map(|source| top_level_items(source, vocabulary))
+    let files: Vec<(&ProgramSource, Vec<Item>)> = program
+        .ordered_sources()
+        .into_iter()
+        .map(|source| (source, top_level_items(source, vocabulary)))
         .collect();
-    if items.len() < 2 {
+    if files.iter().map(|(_, items)| items.len()).sum::<usize>() < 2 {
         return Vec::new();
     }
-    let path = ordered
-        .first()
-        .map_or(SINGLE_FILE_PATH, |source| source.path.as_str())
-        .to_string();
-    let single = |permuted: Vec<Item>| {
-        program.with_sources(vec![ProgramSource {
-            path: path.clone(),
-            text: joined(&placements_in_place(&items, permuted)),
-        }])
+    let permuted_files = |permute: &dyn Fn(&[Item]) -> Vec<Item>| {
+        program.with_sources(
+            files
+                .iter()
+                .map(|(source, items)| ProgramSource {
+                    path: source.path.clone(),
+                    text: joined(&placements_in_place(items, permute(items))),
+                })
+                .collect(),
+        )
     };
-    let mut variants = vec![single(items.iter().rev().cloned().collect())];
+    let mut variants = vec![permuted_files(&|items| {
+        items.iter().rev().cloned().collect()
+    })];
     variants.extend(
         SHUFFLE_SEEDS
             .iter()
-            .map(|seed| single(shuffled(&items, *seed))),
+            .map(|seed| permuted_files(&|items| shuffled(items, *seed))),
     );
     variants.push(
         program.with_sources(
-            items
+            files
                 .iter()
+                .flat_map(|(_, items)| items)
                 .enumerate()
                 .map(|(index, item)| ProgramSource {
                     path: format!("item-{index:06}.sym"),
