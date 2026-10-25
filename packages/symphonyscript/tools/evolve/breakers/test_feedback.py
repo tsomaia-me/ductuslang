@@ -230,7 +230,7 @@ class WorkerRestartTest(unittest.TestCase):
         self.assertEqual([log.count(f"resuming from {n})") for n in (0, 2, 4, 6)], [1, 1, 1, 0])
         models = [json.loads(line)["result"]["message"]["model"]
                   for line in (self.root / "proxy" / "results.jsonl").read_text().splitlines()]
-        self.assertEqual(models.count("claude-haiku-5-5"), 4 * 2 + 6)
+        self.assertEqual(models.count("claude-sonnet-5-5"), 4 * 2 + 6)
         self.assertGreater(models.count(JUDGE_MODEL), 0)
         self.assertTrue((folder / "seed.sym").read_text())
 

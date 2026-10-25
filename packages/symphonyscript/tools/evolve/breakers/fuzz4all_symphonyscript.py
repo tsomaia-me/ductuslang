@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import json
 import os
 import random
@@ -22,7 +23,7 @@ from Fuzz4All.target.target import FResult, Target
 from Fuzz4All.util.util import load_config_file
 
 from oracle import Oracle
-from proxy_llm import ProxyClient, ProxyRefused, make_model_factory, request_engine
+from proxy_llm import ProxyClient, ProxyRefused, generation_system, make_model_factory, request_engine
 from spec_judge import SpecJudge
 
 HERE = Path(__file__).resolve().parent
@@ -84,10 +85,12 @@ def configured(config_path, folder, example=None):
     return config
 
 
-def make_target(config, oracle, proxy_url):
+def make_target(config, oracle, proxy_url, samples):
     client = ProxyClient(proxy_url)
-    fuzz4all_target.make_model = make_model_factory(client)
-    fuzz4all_target.request_engine = partial(request_engine, client, config["llm"]["autoprompt_model_name"])
+    spec = Path(config["target"]["path_documentation"]).read_text()
+    fuzz4all_target.make_model = make_model_factory(client, generation_system(spec, samples))
+    fuzz4all_target.request_engine = partial(
+        request_engine, client, itertools.cycle(config["llm"]["autoprompt_model_names"]))
     llm, fuzzing = config["llm"], config["fuzzing"]
     os.makedirs(fuzzing["output_folder"], exist_ok=True)
     return SymphonyScriptTarget(
@@ -135,7 +138,7 @@ def autoprompt(args, oracle):
     folder = Path(args.run_dir) / "autoprompt"
     best = folder / "prompts" / "best_prompt.txt"
     if not best.exists():
-        make_target(configured(args.config, folder), oracle, args.proxy).initialize()
+        make_target(configured(args.config, folder), oracle, args.proxy, args.samples).initialize()
     return best
 
 
@@ -199,7 +202,7 @@ class Workers:
                     [sys.executable, __file__, "worker", "--index", str(index), "--seed", str(seed),
                      "--until", str(done + args.restart_every), "--hours", str((self.deadline - time.time()) / 3600),
                      "--judge-every", str(args.judge_every), "--proxy", args.proxy, "--run-dir", args.run_dir,
-                     "--config", args.config, "--evolve-bin", args.evolve_bin],
+                     "--config", args.config, "--evolve-bin", args.evolve_bin, "--samples", args.samples],
                     stdout=log, stderr=subprocess.STDOUT)
             code = self.running[index].wait()
             if code != 0 or programs_done(folder) == done:
@@ -249,7 +252,7 @@ def worker(args):
     spec = Path(config["target"]["path_documentation"]).read_text()
     oracle.spec_judge = SpecJudge(ProxyClient(args.proxy), spec, oracle.keep, Path(args.run_dir) / "judged",
                                   folder / "judged.jsonl", args.judge_every, done)
-    target = make_target(config, oracle, args.proxy)
+    target = make_target(config, oracle, args.proxy, args.samples)
     fuzzing = config["fuzzing"]
     try:
         fuzz(target=target, number_of_iterations=min(fuzzing["num"], args.until),
@@ -267,6 +270,7 @@ def main(argv=None):
     parser.add_argument("--proxy", default="http://127.0.0.1:8787")
     parser.add_argument("--run-dir", default=str(HERE / "runs" / "fuzz4all"))
     parser.add_argument("--config", default=str(HERE / "symphonyscript.yaml"))
+    parser.add_argument("--samples", default=str(HERE / "samples"))
     parser.add_argument("--evolve-bin", default=str(HERE.parent / "target" / "release"))
     parser.add_argument("--workers", type=int, default=32)
     parser.add_argument("--index", type=int)
@@ -278,6 +282,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     args.run_dir = str(Path(args.run_dir).resolve())
     args.config = str(Path(args.config).resolve())
+    args.samples = str(Path(args.samples).resolve())
     if args.command == "start":
         start(args)
     else:
