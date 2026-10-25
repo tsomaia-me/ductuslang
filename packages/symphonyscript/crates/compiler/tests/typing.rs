@@ -564,6 +564,15 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
             0,
         )],
     );
+    support::expect_codes(
+        &format!("{held}let y = x\nClip c:\n    Note when y is 1\n"),
+        &[(Code::TypeMismatch, "let y = x\n", 0)],
+    );
+    let named = "let t = if x is Wave::Saw then \"a\" else \"b\"\n";
+    support::expect_codes(
+        &format!("{held}{named}Kit k:\n    Sampler | file=t\n"),
+        &[(Code::ReactiveString, named, 0)],
+    );
     let typed = format!("{held}Osc o | wave=x\n");
     support::expect_codes(
         &format!("{typed}Clip c:\n    Note/(x + 1)\n"),

@@ -44,10 +44,22 @@ impl Engine<'_> {
                 self.no_single_enum(binding)?;
             }
         }
+        let mut read_by_untyped = FastSet::default();
+        let untyped: Vec<BindingId> = self.typing.untyped.iter().copied().collect();
+        for binding in untyped {
+            read_by_untyped.extend(self.reads_of(self.binding(binding)?.init)?);
+        }
         for binding in pending {
-            if waiting.contains(&binding) {
+            if !waiting.contains(&binding) {
+                continue;
+            }
+            let unread = !self.typing.reads.contains_key(&binding);
+            if unread && read_by_untyped.contains(&binding) {
+                self.typing.untyped.insert(binding);
+            } else {
                 self.no_single_enum(binding)?;
             }
+            read_by_untyped.extend(self.reads_of(self.binding(binding)?.init)?);
         }
         Ok(())
     }
