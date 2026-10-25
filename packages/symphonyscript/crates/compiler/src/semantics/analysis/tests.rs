@@ -2232,6 +2232,22 @@ fn a_lookup_that_misses_is_an_internal_error() {
             "{text}"
         );
     }
+
+    with_engine("Session s\nlet a = [1, 2]\n", |engine| {
+        assert_eq!(engine.analyze(), Ok(()));
+        let (&(expr, _), &group) = engine
+            .memo
+            .literal_groups
+            .iter()
+            .next()
+            .expect("the program holds a literal");
+        let unknown = ScopeId(u32::MAX);
+        engine.memo.literal_groups.insert((expr, unknown), group);
+        assert_eq!(
+            engine.held(expr, Some(Val::Error), unknown, &mut Vec::new()),
+            Err(Internal::missed("scope"))
+        );
+    });
 }
 
 pub(super) fn with_engine<R>(text: &str, run: impl FnOnce(&mut Engine<'_>) -> R) -> R {
@@ -2925,6 +2941,32 @@ fn a_compile_time_index_read_costs_nothing_per_passed_over_element() {
         size
     };
     let (smaller, larger) = (size(2000), size(4000));
+    assert!(
+        larger * 10 <= smaller * 22,
+        "{smaller} and {larger} grow faster than 2.2 per doubling"
+    );
+}
+
+#[test]
+fn a_whole_read_of_an_array_let_costs_constant_work() {
+    let size = |length: usize| {
+        let table: Vec<String> = (0..length).map(|value| value.to_string()).collect();
+        let text = format!(
+            "Session s\nfn f(x, i): x[i]\nlet a = [{}]\nClip c:\n    for i in 0..{length}:\n        Note/(f(a, i))\n",
+            table.join(", ")
+        );
+        let (diagnostics, size) = analyzed(&text, |engine| {
+            engine.nodes.len()
+                + engine
+                    .nodes
+                    .iter()
+                    .map(|node| node.op.operands().len())
+                    .sum::<usize>()
+        });
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+        size
+    };
+    let (smaller, larger) = (size(1000), size(2000));
     assert!(
         larger * 10 <= smaller * 22,
         "{smaller} and {larger} grow faster than 2.2 per doubling"

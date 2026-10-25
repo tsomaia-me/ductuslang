@@ -4,6 +4,7 @@ use symphonyscript_core::{AttrDefault, AttrId, Scalar};
 
 use super::annotation::Annotation;
 use super::bind_spec::BindSpec;
+use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
@@ -36,7 +37,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
-use crate::semantics::ir::{ExprId, InputId, LetDecl, Loc, TypeBase, TypeRef};
+use crate::semantics::ir::{ExprId, ExprKind, InputId, LetDecl, Loc, TypeBase, TypeRef};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_let(
@@ -148,6 +149,26 @@ impl Engine<'_> {
                 expr,
                 scope: caller,
             } => {
+                match self.shared_array(expr, caller, need)? {
+                    Shared::Pending => return Ok(false),
+                    Shared::Array(query, array) => {
+                        let loc = self.hir.expr(expr)?.loc;
+                        let group = self.bound_group(query, &array, loc)?;
+                        let param = Query::Param(scope, index);
+                        self.memo.bound_groups.insert(param, group);
+                        if let Some(held) = self
+                            .bound_value(query)?
+                            .and_then(|value| self.memo.literal_groups.get(&value).copied())
+                        {
+                            self.memo.literal_groups.insert((expr, caller), held);
+                        }
+                        self.memo
+                            .params
+                            .insert((scope, index), BoundVal::Array(array));
+                        return Ok(true);
+                    }
+                    Shared::Declined => {}
+                }
                 let loc = self.hir.expr(expr)?.loc;
                 (self.val(Query::Expr(expr, caller), need), loc)
             }
@@ -181,6 +202,28 @@ impl Engine<'_> {
         self.note_defaulted(defaulted, &bound);
         self.memo.params.insert((scope, index), bound);
         Ok(true)
+    }
+
+    fn shared_array(
+        &mut self,
+        expr: ExprId,
+        caller: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Shared, Internal> {
+        let ExprKind::Name(name) = &self.hir.expr(expr)?.kind else {
+            return Ok(Shared::Declined);
+        };
+        let query = match self.find(name, caller)? {
+            Found::Query(query @ (Query::Let(..) | Query::Param(..))) => query,
+            Found::Query(_) | Found::Val(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
+                return Ok(Shared::Declined);
+            }
+        };
+        Ok(match self.bound(query, need) {
+            None => Shared::Pending,
+            Some(BoundVal::Array(array)) => Shared::Array(query, array),
+            Some(BoundVal::Scalar(_) | BoundVal::Error) => Shared::Declined,
+        })
     }
 
     pub(super) fn prefix_scope(
@@ -278,6 +321,7 @@ impl Engine<'_> {
         }
         if let Some(annotation) = &annotation
             && annotation.lengths != val.shape().lengths()
+            && !matches!(val, Val::Error)
         {
             self.error(
                 Code::TypeMismatch,
@@ -791,3 +835,9 @@ const ANNOTATED_SHAPE: &str = "the value's shape differs from its annotated type
 
 const DEFAULT_SHAPE: &str =
     "a use yields this value in another shape than the defaults give its recursive call";
+
+enum Shared {
+    Pending,
+    Array(Query, Rc<(Shape, Vec<Bound>)>),
+    Declined,
+}

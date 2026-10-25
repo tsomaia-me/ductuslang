@@ -160,7 +160,10 @@ impl Engine<'_> {
             for source in &sources {
                 match source {
                     ParamSource::Arg { expr, scope } => {
-                        let val = self.val(Query::Expr(*expr, *scope), need);
+                        let val = match self.val(Query::Expr(*expr, *scope), need) {
+                            Some(val) => Some(self.held_reads(*expr, val, *scope)?),
+                            None => None,
+                        };
                         missing |= val.is_none();
                         vals.push(val);
                     }
@@ -217,6 +220,14 @@ impl Engine<'_> {
         let value = self.val(Query::Expr(decl.value, call_scope), need);
         if !locals_ready {
             return Ok(None);
+        }
+        if let Some(group) = self
+            .memo
+            .literal_groups
+            .get(&(decl.value, call_scope))
+            .copied()
+        {
+            self.memo.literal_groups.insert((expr, scope), group);
         }
         Ok(value)
     }

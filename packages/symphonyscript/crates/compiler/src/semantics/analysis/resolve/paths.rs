@@ -322,6 +322,7 @@ impl Engine<'_> {
             .map(|row| base_val.slice(row))
             .collect::<Result<_, _>>()?;
         let inner = array.shape.inner();
+        let group = self.existing_group(base, &base_val, scope)?;
         let columns: Vec<Vec<NodeId>> = rows.iter().map(Val::nodes).collect();
         let width = columns.first().map_or(0, Vec::len);
         let elements = (0..width)
@@ -335,16 +336,20 @@ impl Engine<'_> {
                             .ok_or(Internal::missed("array element"))
                     })
                     .collect::<Result<_, _>>()?;
-                self.push_node(
+                let pick = self.push_node(
                     Op::Pick {
                         index: index_node,
                         items,
                     },
                     loc,
                     scope,
-                )
+                )?;
+                if let Some(group) = group {
+                    self.memo.groups.insert(pick, group);
+                }
+                Ok(pick)
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, Internal>>()?;
         Ok(Some(self.shaped(inner, elements)))
     }
 
@@ -616,7 +621,7 @@ impl Engine<'_> {
         Ok(group)
     }
 
-    fn bound_value(&self, query: Query) -> Result<Option<(ExprId, ScopeId)>, Internal> {
+    pub(super) fn bound_value(&self, query: Query) -> Result<Option<(ExprId, ScopeId)>, Internal> {
         Ok(match query {
             Query::Let(scope, local) => {
                 self.let_decl(scope, local)?.map(|decl| (decl.value, scope))
@@ -671,21 +676,35 @@ impl Engine<'_> {
         val: &Val,
         scope: ScopeId,
     ) -> Result<NodeId, Internal> {
-        if let Some(group) = self.memo.literal_groups.get(&(base, scope)) {
-            return Ok(*group);
-        }
-        let leaves = val.nodes();
-        if matches!(
-            self.hir.expr(base)?.kind,
-            ExprKind::Index(..) | ExprKind::Name(_)
-        ) && let Some(group) = leaves.first().and_then(|leaf| self.memo.groups.get(leaf))
-        {
-            return Ok(*group);
+        if let Some(group) = self.existing_group(base, val, scope)? {
+            return Ok(group);
         }
         let loc = self.hir.expr(base)?.loc;
-        let group = self.push_node(Op::Array(leaves), loc, scope)?;
+        let group = self.push_node(Op::Array(val.nodes()), loc, scope)?;
         self.memo.group_list.push(group);
         Ok(group)
+    }
+
+    fn existing_group(
+        &self,
+        base: ExprId,
+        val: &Val,
+        scope: ScopeId,
+    ) -> Result<Option<NodeId>, Internal> {
+        if let Some(group) = self.memo.literal_groups.get(&(base, scope)) {
+            return Ok(Some(*group));
+        }
+        if !matches!(
+            self.hir.expr(base)?.kind,
+            ExprKind::Index(..) | ExprKind::Name(_)
+        ) {
+            return Ok(None);
+        }
+        Ok(val
+            .nodes()
+            .first()
+            .and_then(|leaf| self.memo.groups.get(leaf))
+            .copied())
     }
 
     pub(in crate::semantics::analysis) fn run_destination(

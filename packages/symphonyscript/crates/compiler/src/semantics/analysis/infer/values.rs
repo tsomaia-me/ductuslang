@@ -133,7 +133,7 @@ impl Engine<'_> {
     }
 
     fn flexible_use(&self, node: NodeId) -> Result<Option<NodeId>, Internal> {
-        let Op::Use(target) = self.node(node)?.op else {
+        let (Op::Use(target) | Op::Chosen(target)) = self.node(node)?.op else {
             return Ok(None);
         };
         Ok((self.known_sig(target)?.width == Width::Flexible).then_some(target))

@@ -71,7 +71,8 @@ impl Engine<'_> {
         let sigs: Vec<Sig> = sigs.into_iter().flatten().collect();
         let open = sigs.iter().any(|operand| operand.open);
         let reactive = sigs.iter().any(|operand| operand.reactive);
-        let errors = sigs.iter().any(Sig::is_error);
+        let errors = sigs.iter().any(Sig::is_error)
+            || matches!(op, Op::Pick { .. }) && group.is_some_and(|group| group.is_error());
         let mut sig = if let Op::Arg(_) = op {
             self.memo
                 .arg_sigs
@@ -147,7 +148,7 @@ impl Engine<'_> {
 }
 
 fn element_of(own: Sig, group: Sig) -> Sig {
-    if own.reactive {
+    if own.reactive || own.open {
         return own;
     }
     if own.is_error() || group.is_error() {

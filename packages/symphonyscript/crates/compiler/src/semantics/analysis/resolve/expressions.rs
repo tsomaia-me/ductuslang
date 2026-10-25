@@ -30,7 +30,7 @@ impl Engine<'_> {
             }
             ExprKind::Bool(value) => Some(self.scalar(Op::Bool(*value), loc, scope)?),
             ExprKind::Str(parts) => self.string(parts, loc, scope, need)?,
-            ExprKind::Name(name) => self.lookup(name, loc, scope, need)?,
+            ExprKind::Name(name) => self.lookup(expr, name, loc, scope, need)?,
             ExprKind::Variant {
                 enumeration,
                 variant,
@@ -66,8 +66,8 @@ impl Engine<'_> {
                 let condition = self.val(Query::Expr(*condition, scope), need);
                 let (then_expr, otherwise_expr) = (*then, *otherwise);
                 let (then, otherwise) = self.siblings(then_expr, otherwise_expr, scope, need)?;
-                let then = self.unless_faulty(then_expr, then, scope, need);
-                let otherwise = self.unless_faulty(otherwise_expr, otherwise, scope, need);
+                let then = self.held(then_expr, then, scope, need)?;
+                let otherwise = self.held(otherwise_expr, otherwise, scope, need)?;
                 match (condition, then, otherwise) {
                     (Some(condition), Some(then), Some(otherwise)) => {
                         self.if_val(condition, then, otherwise, (loc, scope), need)?
@@ -512,9 +512,10 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         if vals.iter().any(|val| self.holds_array(val)) {
-            let val = self.opaque_array(vals, loc, scope)?;
-            if let Val::Array(array) = &val {
-                self.literal_group(expr, array.elements.clone(), loc, scope)?;
+            let val = self.opaque_array(vals.clone(), loc, scope)?;
+            if matches!(val, Val::Array(_)) {
+                let members = self.members(elements, &vals, scope)?;
+                self.literal_group(expr, members, loc, scope)?;
             }
             return Ok(Some(val));
         }
@@ -523,38 +524,93 @@ impl Engine<'_> {
             self.error(Code::RaggedArray, loc, scope, RAGGED)?;
             return Ok(Some(Val::Error));
         }
-        let mut members = Vec::with_capacity(vals.len());
-        for (element, val) in elements.iter().zip(&vals) {
-            match self.memo.literal_groups.get(&(*element, scope)) {
-                Some(group) if matches!(val, Val::Array(_)) => members.push(*group),
-                Some(_) | None => members.extend(val.nodes()),
-            }
-        }
+        let members = self.members(elements, &vals, scope)?;
         self.literal_group(expr, members, loc, scope)?;
         let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
         let elements = vals.iter().flat_map(Val::nodes).collect();
         Ok(Some(Val::array(shape, elements)))
     }
 
-    fn unless_faulty(
-        &self,
+    pub(in crate::semantics::analysis) fn held(
+        &mut self,
         expr: ExprId,
         val: Option<Val>,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Option<Val> {
-        let val = val?;
-        let Some(group) = self.memo.literal_groups.get(&(expr, scope)) else {
-            return Some(val);
+    ) -> Result<Option<Val>, Internal> {
+        let Some(val) = val else {
+            return Ok(None);
         };
-        if self
-            .scope_of(scope)
-            .map_or(true, |record| record.template.is_some())
-        {
-            return Some(val);
+        let Some(group) = self.memo.literal_groups.get(&(expr, scope)).copied() else {
+            return Ok(Some(val));
+        };
+        if self.template_of(scope)?.is_none() {
+            let Some(sig) = self.sig(group, need) else {
+                return Ok(None);
+            };
+            if sig.is_error() {
+                return Ok(Some(Val::Error));
+            }
         }
-        let sig = self.sig(*group, need)?;
-        Some(if sig.is_error() { Val::Error } else { val })
+        Ok(Some(self.group_reads(group, val)?))
+    }
+
+    pub(in crate::semantics::analysis) fn held_reads(
+        &mut self,
+        expr: ExprId,
+        val: Val,
+        scope: ScopeId,
+    ) -> Result<Val, Internal> {
+        match self.memo.literal_groups.get(&(expr, scope)).copied() {
+            Some(group) => self.group_reads(group, val),
+            None => Ok(val),
+        }
+    }
+
+    fn group_reads(&mut self, group: NodeId, val: Val) -> Result<Val, Internal> {
+        let Val::Array(array) = &val else {
+            return Ok(val);
+        };
+        if array
+            .elements
+            .iter()
+            .all(|leaf| self.memo.groups.contains_key(leaf))
+        {
+            return Ok(val);
+        }
+        let mut reads = Vec::with_capacity(array.elements.len());
+        for leaf in &array.elements {
+            let (loc, scope) = {
+                let record = self.node(*leaf)?;
+                (record.loc, record.scope)
+            };
+            reads.push(self.chosen_read(*leaf, group, loc, scope)?);
+        }
+        Ok(Val::array(array.shape.clone(), reads))
+    }
+
+    fn members(
+        &self,
+        elements: &[ExprId],
+        vals: &[Val],
+        scope: ScopeId,
+    ) -> Result<Vec<NodeId>, Internal> {
+        let mut members = Vec::with_capacity(vals.len());
+        for (element, val) in elements.iter().zip(vals) {
+            match (self.memo.literal_groups.get(&(*element, scope)), val) {
+                (Some(group), Val::Array(_)) => members.push(*group),
+                (_, Val::Scalar(node)) if self.arrays.contains(node) => members.extend(
+                    self.memo
+                        .projections
+                        .get(node)
+                        .ok_or(Internal::missed("projection"))?
+                        .iter()
+                        .copied(),
+                ),
+                _ => members.extend(val.nodes()),
+            }
+        }
+        Ok(members)
     }
 
     fn literal_group(
@@ -634,12 +690,15 @@ impl Engine<'_> {
             };
             labels.push(label);
             let value = self.val(Query::Expr(arm.value, scope), need);
-            values.push(self.unless_faulty(arm.value, value, scope, need));
+            values.push(self.held(arm.value, value, scope, need)?);
         }
-        let otherwise_val = otherwise.map(|expr| {
-            let value = self.val(Query::Expr(expr, scope), need);
-            self.unless_faulty(expr, value, scope, need)
-        });
+        let otherwise_val = match otherwise {
+            Some(expr) => {
+                let value = self.val(Query::Expr(expr, scope), need);
+                Some(self.held(expr, value, scope, need)?)
+            }
+            None => None,
+        };
         if scrutinee_val.is_none()
             || labels.iter().any(Option::is_none)
             || values.iter().any(Option::is_none)

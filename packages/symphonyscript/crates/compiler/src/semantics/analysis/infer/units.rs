@@ -83,11 +83,15 @@ impl Engine<'_> {
             .map(|(node, family)| (*node, *family))
             .collect();
         takers.sort();
+        let placeholders = self.under_placeholders()?;
         for (node, family) in takers {
             if self.template_of(self.node(node)?.scope)?.is_some() {
                 continue;
             }
             let units = units_of(feeds.get(&node).map_or(&[], Vec::as_slice), family);
+            if units.is_empty() && placeholders.contains(&node) {
+                continue;
+            }
             self.resolve_taker(node, family, &units)?;
         }
         let mut cells: Vec<(BindingId, Vec<Feed>)> = binding_feeds.into_iter().collect();
@@ -125,6 +129,23 @@ impl Engine<'_> {
             }
         }
         Ok(())
+    }
+
+    fn under_placeholders(&self) -> Result<HashSet<NodeId>, Internal> {
+        let mut reached = HashSet::new();
+        let mut stack: Vec<NodeId> = self
+            .memo
+            .sigs
+            .iter()
+            .filter(|(_, sig)| sig.is_error())
+            .map(|(node, _)| *node)
+            .collect();
+        while let Some(node) = stack.pop() {
+            if reached.insert(node) {
+                stack.extend(self.carried_operands(node)?);
+            }
+        }
+        Ok(reached)
     }
 
     fn carries(&self, node: NodeId, family: FamilyId) -> Result<bool, Internal> {

@@ -13,7 +13,7 @@ use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
-use crate::semantics::ir::Loc;
+use crate::semantics::ir::{ExprId, Loc};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn find(
@@ -165,12 +165,14 @@ impl Engine<'_> {
 
     pub(in crate::semantics::analysis) fn lookup(
         &mut self,
+        expr: ExprId,
         name: &str,
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
         Ok(match self.find(name, scope)? {
+            Found::Val(Val::Scalar(node)) => Some(self.scalar(Op::Chosen(node), loc, scope)?),
             Found::Val(val) => Some(val),
             Found::Query(query) => {
                 let bound = some!(self.bound(query, need));
@@ -181,6 +183,12 @@ impl Engine<'_> {
                     for read in val.nodes() {
                         self.memo.groups.insert(read, group);
                     }
+                }
+                if let Some(group) = self
+                    .bound_value(query)?
+                    .and_then(|value| self.memo.literal_groups.get(&value).copied())
+                {
+                    self.memo.literal_groups.insert((expr, scope), group);
                 }
                 Some(val)
             }

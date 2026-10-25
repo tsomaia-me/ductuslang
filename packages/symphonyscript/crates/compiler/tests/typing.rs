@@ -1338,21 +1338,21 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             }
         }
     }
-    for (iterated, iterable, indexed) in [
+    for (iterated, read, indexed) in [
         (
             "Session s\nClip c:\n    for e in [60, 2.5]:\n        Note/(e)\n",
-            "[60, 2.5]",
+            "e",
             "Session s\nClip c:\n    for k in 0..2:\n        Note/([60, 2.5][k])\n",
         ),
         (
             "Session s\nlet a = [60, 2.5]\nClip c:\n    for e in a:\n        Note/(e)\n",
-            "a",
+            "e",
             "Session s\nlet a = [60, 2.5]\nClip c:\n    for k in 0..2:\n        Note/(a[k])\n",
         ),
     ] {
         let by_element = fixture_errors(iterated);
         let by_index = codes(indexed);
-        if by_element != [(Code::TypeMismatch, iterable.to_string())]
+        if by_element != [(Code::TypeMismatch, read.to_string())]
             || by_index != [Code::TypeMismatch]
         {
             failures.push(format!(
@@ -1365,7 +1365,17 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
 
 #[test]
 fn an_array_an_error_leaves_without_elements_draws_nothing_more() {
-    let rows: [Row; 9] = [
+    let rows: [Row; 13] = [
+        (&["input k: i32[2] = []"], &[(Code::ExpressionSyntax, "]")]),
+        (
+            &["input k: i32[2][2] = [[], []]"],
+            &[(Code::ExpressionSyntax, "]")],
+        ),
+        (&["input k: i32[2] = [1, 2]"], &[]),
+        (
+            &["input k: i32[3] = [1, 2]"],
+            &[(Code::TypeMismatch, "[1, 2]")],
+        ),
         (
             &["let v = [[]]", "Clip c:\n    Note/(v[0][0])"],
             &[(Code::ExpressionSyntax, "]")],
@@ -1425,4 +1435,654 @@ fn an_array_an_error_leaves_without_elements_draws_nothing_more() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+type Located = Vec<(Code, String, Vec<String>)>;
+
+type LocatedRow = (
+    &'static [&'static str],
+    &'static [(Code, &'static str, &'static [&'static str])],
+);
+
+fn located_errors(text: &str) -> Located {
+    let excerpt = |range: &std::ops::Range<u32>| {
+        let at = usize::try_from(range.start).unwrap_or(0)..usize::try_from(range.end).unwrap_or(0);
+        text.get(at).unwrap_or("").to_string()
+    };
+    let mut found: Located = support::checked(text)
+        .iter()
+        .map(|diagnostic| {
+            let secondary = diagnostic
+                .secondary
+                .iter()
+                .map(|span| excerpt(&span.range))
+                .collect();
+            (diagnostic.code, excerpt(&diagnostic.span.range), secondary)
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+fn first_order_failing<W: PartialEq + std::fmt::Debug>(
+    items: &[&'static str],
+    wanted: &W,
+    found: impl Fn(&str) -> W,
+) -> Option<String> {
+    let all: Vec<&'static str> = std::iter::once("Session s")
+        .chain(items.iter().copied())
+        .collect();
+    permutations(&all).into_iter().find_map(|order| {
+        let text = format!("{}\n", order.join("\n"));
+        let found = found(&text);
+        (found != *wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
+    })
+}
+
+fn expect_in_every_order(rows: &[Row]) {
+    let failures: Vec<String> = rows
+        .iter()
+        .filter_map(|(items, wanted)| {
+            let mut wanted: Errors = wanted
+                .iter()
+                .map(|(code, span)| (*code, (*span).to_string()))
+                .collect();
+            wanted.sort();
+            first_order_failing(items, &wanted, fixture_errors)
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn expect_located_in_every_order(rows: &[LocatedRow]) {
+    let failures: Vec<String> = rows
+        .iter()
+        .filter_map(|(items, wanted)| {
+            let mut wanted: Located = wanted
+                .iter()
+                .map(|(code, span, secondary)| {
+                    (
+                        *code,
+                        (*span).to_string(),
+                        secondary.iter().map(|span| (*span).to_string()).collect(),
+                    )
+                })
+                .collect();
+            wanted.sort();
+            first_order_failing(items, &wanted, located_errors)
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+    const H: &str = "fn h(): [1, \"s\"]";
+    const R: &str = "fn r(n): if n < 1 then [1, \"s\"] else r(n - 1)";
+    const R_OK: &str = "fn r(n): if n < 1 then [1, 2] else r(n - 1)";
+    const LITERAL: &str = "[1, \"s\"]";
+    let at_literal_of_h: &[(Code, &str, &[&str])] = &[(Code::TypeMismatch, LITERAL, &["h()"])];
+    let at_literal_of_r: &[(Code, &str, &[&str])] = &[(Code::TypeMismatch, LITERAL, &["r(2)"])];
+    const F: &str = "fn f(n, a): if n < 1 then a[0] else f(n - 1, a)";
+    let rows: [LocatedRow; 45] = [
+        (&[H, "Clip c:\n    Note/(h()[0])"], at_literal_of_h),
+        (
+            &[H, "input f = true", "let q = if f then h() else [1, 2, 3]"],
+            at_literal_of_h,
+        ),
+        (&[H, "input k = h()"], at_literal_of_h),
+        (
+            &[
+                H,
+                "let q = match true:\n    true: h()\n    false: [1, 2]",
+                "Clip c:\n    Note/(q[0])",
+            ],
+            at_literal_of_h,
+        ),
+        (&[H, F, "Clip c:\n    Note/(f(2, h()))"], at_literal_of_h),
+        (
+            &[
+                F,
+                "Clip c:\n    for i in 0..f(2, [1, \"s\"]):\n        Note",
+            ],
+            &[(Code::TypeMismatch, LITERAL, &[])],
+        ),
+        (
+            &[
+                "fn f(n, a): if n < 1 then a else f(n - 1, a)",
+                "Clip c:\n    for e in f(2, [1, \"s\"]):\n        Note",
+            ],
+            &[(Code::TypeMismatch, LITERAL, &[])],
+        ),
+        (
+            &[
+                "fn f(n, a): if n < 1 then a[0][0] else f(n - 1, a)",
+                "Clip c:\n    Note/(f(2, [[1, 2], [3, \"s\"]]))",
+            ],
+            &[(Code::TypeMismatch, "[3, \"s\"]", &[])],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then [1, \"s\"] else (if n < 5 then [3, 4] else r(n - 1))",
+                "Clip c:\n    Note/(r(2)[0])",
+            ],
+            at_literal_of_r,
+        ),
+        (
+            &[
+                "fn r(n):\n    let a = [1, \"s\"]\n    if n < 1 then a else r(n - 1)",
+                "Clip c:\n    Note/(r(2)[0])",
+            ],
+            at_literal_of_r,
+        ),
+        (
+            &[H, "let a = h()", "Clip c:\n    Note/(a[0])"],
+            at_literal_of_h,
+        ),
+        (
+            &[H, "Clip c:\n    for e in h():\n        Note"],
+            at_literal_of_h,
+        ),
+        (&[H, "Clip c:\n    Note/(h())"], at_literal_of_h),
+        (
+            &[H, "input i = 0", "Clip c:\n    Note/(h()[i])"],
+            at_literal_of_h,
+        ),
+        (
+            &["fn h(): [1bars, 2ms]", "Clip c:\n    Note/(h()[0])"],
+            &[(Code::MixedFamilies, "[1bars, 2ms]", &["h()"])],
+        ),
+        (
+            &["fn h(x): [x, 2]", "Clip c:\n    Note/(h(\"s\")[0])"],
+            &[(Code::TypeMismatch, "[x, 2]", &["h(\"s\")"])],
+        ),
+        (
+            &[H, "Clip c:\n    Note/(if true then 1 else h()[0])"],
+            at_literal_of_h,
+        ),
+        (
+            &[
+                H,
+                "input f = true",
+                "let q = if f then h() else [1, 2]",
+                "Clip c:\n    Note/(q[0])",
+            ],
+            at_literal_of_h,
+        ),
+        (
+            &["let a = [1, \"s\"]", "Clip c:\n    Note/(a)"],
+            &[(Code::TypeMismatch, LITERAL, &[])],
+        ),
+        (&[R, "Clip c:\n    Note/(r(2)[0])"], at_literal_of_r),
+        (
+            &[R, "let a = r(2)", "Clip c:\n    Note/(r(2)[0])"],
+            at_literal_of_r,
+        ),
+        (
+            &[
+                "fn r(n):\n    match n < 1:\n        true: [1, \"s\"]\n        false: r(n - 1)",
+                "Clip c:\n    Note/(r(2)[0])",
+            ],
+            at_literal_of_r,
+        ),
+        (
+            &[R, "Clip c:\n    for e in r(2):\n        Note"],
+            at_literal_of_r,
+        ),
+        (
+            &[
+                "fn r(n, x): if n < 1 then [x, 1] else r(n - 1, x)",
+                "Clip c:\n    Note/(r(2, \"s\")[0])",
+            ],
+            &[(Code::TypeMismatch, "[x, 1]", &["r(2, \"s\")"])],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then 0 else [r(n - 1), \"s\"][0]",
+                "Clip c:\n    Note/(r(2))",
+            ],
+            &[(Code::TypeMismatch, "[r(n - 1), \"s\"]", &["r(2)"])],
+        ),
+        (
+            &[F, "Clip c:\n    Note/(f(2, [1, \"s\"]))"],
+            &[(Code::TypeMismatch, LITERAL, &[])],
+        ),
+        (
+            &[
+                R_OK,
+                "let b = [r(1), [3, \"s\"]]",
+                "Clip c:\n    Note/(b[0][0])",
+            ],
+            &[(Code::TypeMismatch, "[3, \"s\"]", &[])],
+        ),
+        (
+            &[
+                R_OK,
+                "let b = [[3, \"s\"], r(1)]",
+                "Clip c:\n    Note/(b[0][0])",
+            ],
+            &[(Code::TypeMismatch, "[3, \"s\"]", &[])],
+        ),
+        (
+            &[
+                R_OK,
+                "let x = r(1)",
+                "let b = [x, [3, \"s\"]]",
+                "Clip c:\n    Note/(b[0][0])",
+            ],
+            &[(Code::TypeMismatch, "[3, \"s\"]", &[])],
+        ),
+        (
+            &[
+                R_OK,
+                "let b = [r(1), [3bars, 4ms]]",
+                "Clip c:\n    Note/(b[0][0])",
+            ],
+            &[(Code::MixedFamilies, "[3bars, 4ms]", &[])],
+        ),
+        (
+            &[H, "Clip c:\n    Note/(h()[0])\n    Note/(h()[1])"],
+            &[
+                (Code::TypeMismatch, LITERAL, &["h()"]),
+                (Code::TypeMismatch, LITERAL, &["h()"]),
+            ],
+        ),
+        (&["fn h(): [1, 2]", "Clip c:\n    Note/(h()[0])"], &[]),
+        (
+            &[
+                "fn h(): [1, 2]",
+                "let a = h()",
+                "Clip c:\n    for e in a:\n        Note/(e)",
+            ],
+            &[],
+        ),
+        (&["fn h(x): x", "Clip c:\n    Note/(h([60, 64])[1])"], &[]),
+        (
+            &["let a = [1, 2]", "Clip c:\n    Note/(a)"],
+            &[(Code::TypeMismatch, "a", &[])],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then [60, 64] else f(n - 1)",
+                "Clip c:\n    for e in f(2):\n        Note/(e)\n    Note/(f(2)[1])",
+            ],
+            &[],
+        ),
+        (&[F, "Clip c:\n    Note/(f(2, [1, 2]))"], &[]),
+        (
+            &[
+                "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)",
+                "Clip c:\n    Note/(fib(6))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                R_OK,
+                "let b = [r(1), [3, 4]]",
+                "Clip c:\n    Note/(b[0][0])\n    Note/(b[1][1])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                R_OK,
+                "let b = [r(1), [\"s\", \"t\"]]",
+                "Clip c:\n    Note/(b[0][0])",
+            ],
+            &[(Code::TypeMismatch, "[r(1), [\"s\", \"t\"]]", &[])],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then [1, 2.5][0] else f(n - 1)",
+                "Clip c:\n    Note/(f(2))",
+            ],
+            &[(Code::TypeMismatch, "f(2)", &[])],
+        ),
+        (
+            &["let a = [60, 64]", "let b = a", "Clip c:\n    Note/(b[1])"],
+            &[],
+        ),
+        (
+            &[
+                "let a = [60, 64]",
+                "let b = [a, a]",
+                "Clip c:\n    Note/(b[1][0])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(x, i): x[i]",
+                "let a = [60, 64]",
+                "Clip c:\n    Note/(f(a, 1))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(x, i): x[i]",
+                "let a = [60, \"s\"]",
+                "Clip c:\n    Note/(f(a, 1))",
+            ],
+            &[(Code::TypeMismatch, "[60, \"s\"]", &[])],
+        ),
+    ];
+    expect_located_in_every_order(&rows);
+}
+
+#[test]
+fn a_plain_element_of_a_unit_literal_in_an_arm_is_read_in_the_unit_its_family_value_reaches() {
+    const Q: &str = "let q = if true then [1bars, 2] else [3bars, 4]";
+    const AT_LENGTH: &str = "Clip k:\n    Note | length=(q[1])";
+    let rows: [Row; 10] = [
+        (&[Q, AT_LENGTH], &[]),
+        (
+            &[
+                "input c = true",
+                "let q = if c then [1bars, 2] else [3bars, 4]",
+                AT_LENGTH,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let q = match true:\n    true: [1bars, 2]\n    false: [3bars, 4]",
+                AT_LENGTH,
+            ],
+            &[],
+        ),
+        (
+            &[Q, "Clip k:\n    for e in q:\n        Note | length=(e)"],
+            &[],
+        ),
+        (&[Q, "let r = q", "Clip k:\n    Note | length=(r[1])"], &[]),
+        (
+            &[Q, "input i = 0", "Clip k:\n    Note | length=(q[i])"],
+            &[],
+        ),
+        (
+            &[
+                "let q = if true then 2 else 3bars",
+                "Clip k:\n    Note | length=q",
+            ],
+            &[],
+        ),
+        (
+            &[Q, "Clip k:\n    Note/(q[1])"],
+            &[
+                (Code::PlainInFamily, "2"),
+                (Code::PlainInFamily, "4"),
+                (Code::UnitMismatch, "q"),
+            ],
+        ),
+        (
+            &["let q = if true then [1bars, 2] else [3ms, 4]"],
+            &[(Code::MixedFamilies, "if true then [1bars, 2] else [3ms, 4]")],
+        ),
+        (
+            &["let q = if true then [1bars, 2] else [3ms, 4]", AT_LENGTH],
+            &[(Code::MixedFamilies, "if true then [1bars, 2] else [3ms, 4]")],
+        ),
+    ];
+    expect_in_every_order(&rows);
+}
+
+#[test]
+fn a_for_elements_uses_are_the_uses_of_one_flexible_value() {
+    let rows: [LocatedRow; 9] = [
+        (
+            &[
+                "let a = [2 ** -1, 1]",
+                "Clip c:\n    for e in a:\n        Note/(e) | brightness=(e)",
+            ],
+            &[(Code::InconsistentUses, "e", &["e"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1, 1]",
+                "Clip c:\n    for k in 0..2:\n        Note/(a[k]) | brightness=(a[k])",
+            ],
+            &[(Code::InconsistentUses, "a", &["a"])],
+        ),
+        (
+            &["Clip c:\n    for e in [2 ** -1, 1]:\n        Note/(e) | brightness=(e)"],
+            &[(Code::InconsistentUses, "e", &["e"])],
+        ),
+        (
+            &[
+                "pattern P(a):\n    for e in a:\n        Note/(e) | brightness=(e)",
+                "Clip c:\n    P | a=[2 ** -1, 1]",
+            ],
+            &[(Code::InconsistentUses, "e", &["e", "P | a=[2 ** -1, 1]"])],
+        ),
+        (
+            &["Clip c:\n    for e in [2 ** -1, 1]:\n        Note/(e + 0) | brightness=(e + 0)"],
+            &[(Code::InconsistentUses, "e", &["e"])],
+        ),
+        (
+            &["Clip c:\n    for e in [2 ** 1, 1]:\n        Note/(e) | brightness=(e)"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    for e in [1, 2]:\n        Note/(e) | brightness=(e)"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    for k in 0..2:\n        Note/(k) | brightness=(k)"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    for e in [2 ** -1, 1]:\n        Note | brightness=(e) length=(e)"],
+            &[],
+        ),
+    ];
+    expect_located_in_every_order(&rows);
+}
+
+#[test]
+fn a_diagnostic_about_one_iterations_value_points_where_the_body_reads_it() {
+    const FLOAT_AT_PITCH: Code = Code::TypeMismatch;
+    let rows: [LocatedRow; 34] = [
+        (
+            &["Clip c:\n    for e in [60, 2.5]:\n        Note/(e)\n        Note/(e)"],
+            &[(FLOAT_AT_PITCH, "e", &[]), (FLOAT_AT_PITCH, "e", &[])],
+        ),
+        (
+            &[
+                "Clip c:\n    for k in 0..2:\n        Note/([60, 2.5][k])\n        Note/([60, 2.5][k])",
+            ],
+            &[
+                (FLOAT_AT_PITCH, "[60, 2.5][k]", &[]),
+                (FLOAT_AT_PITCH, "[60, 2.5][k]", &[]),
+            ],
+        ),
+        (
+            &["Clip c:\n    for e in [1, 3000000000]:\n        Note/(e)"],
+            &[(Code::DoesNotFit, "e", &[])],
+        ),
+        (
+            &["Clip c:\n    for k in 0..2:\n        Note/([1, 3000000000][k])"],
+            &[(Code::DoesNotFit, "[1, 3000000000][k]", &[])],
+        ),
+        (
+            &["Clip c:\n    for p in [2, 9]:\n        Note/([60, 64, 67, 71][p])"],
+            &[(Code::IndexOutOfRange, "p", &[])],
+        ),
+        (
+            &["Clip c:\n    for k in 0..2:\n        Note/([60, 64, 67, 71][[2, 9][k]])"],
+            &[(Code::IndexOutOfRange, "[2, 9][k]", &[])],
+        ),
+        (
+            &["Clip c:\n    for e in [60, 2.5]:\n        Note/(e + 1)"],
+            &[(FLOAT_AT_PITCH, "e + 1", &[])],
+        ),
+        (
+            &["Clip c:\n    for k in 0..2:\n        Note/([60, 2.5][k] + 1)"],
+            &[(FLOAT_AT_PITCH, "[60, 2.5][k] + 1", &[])],
+        ),
+        (
+            &["Clip c:\n    for e in [2147483647, 2147483648]:\n        Note/(e)"],
+            &[(Code::DoesNotFit, "e", &[])],
+        ),
+        (
+            &["Clip c:\n    for k in 0..2:\n        Note/([2147483647, 2147483648][k])"],
+            &[(Code::DoesNotFit, "[2147483647, 2147483648][k]", &[])],
+        ),
+        (
+            &["Clip c:\n    for e in [1ms, 2ms]:\n        Note | length=e"],
+            &[(Code::UnitMismatch, "e", &[])],
+        ),
+        (
+            &["Clip c:\n    for k in 0..2:\n        Note | length=([1ms, 2ms][k])"],
+            &[(Code::UnitMismatch, "[1ms, 2ms][k]", &[])],
+        ),
+        (
+            &[
+                "let a = [60, 2.5]",
+                "Clip c:\n    for e in a:\n        Note/(e)",
+            ],
+            &[(FLOAT_AT_PITCH, "e", &[])],
+        ),
+        (
+            &[
+                "let a = [60, 2.5]",
+                "Clip c:\n    for k in 0..2:\n        Note/(a[k])",
+            ],
+            &[(FLOAT_AT_PITCH, "a", &[])],
+        ),
+        (
+            &["Clip c:\n    for e in [60, 64]:\n        Note/(e) | velocity=e"],
+            &[],
+        ),
+        (
+            &[
+                "Clip c:\n    for e in [60, 64]:\n        Note/(e)",
+                "Synth y:\n    for e in [60.5, 64]:\n        Osc | freq=e",
+            ],
+            &[],
+        ),
+        (
+            &["Kit k:\n    for f in [\"a\", \"b\"]:\n        Sampler | file=\"{f}.wav\""],
+            &[],
+        ),
+        (
+            &["Kit k:\n    for f in [\"a.wav\", \"b.wav\"]:\n        Sampler | file=f"],
+            &[],
+        ),
+        (
+            &[
+                "Synth y:\n    for w in [Wave::Sine, Wave::Saw]:\n        Osc | wave=w\n        Osc | rate=(if w is Saw then 1 else 2)",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "Clip a:\n    Note",
+                "Clip b:\n    Note",
+                "Clip c | gain=0.5:\n    for t in [a, b]:\n        Note | velocity=t.gain",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern P(target):\n    Plays: target",
+                "Clip a:\n    for t in [b, c]:\n        P | target=t",
+                "Clip b:\n    Note",
+                "Clip c:\n    Note",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "Clip a:\n    for t in [b, c]:\n        Plays: t\n    Plays: [b, c][1]",
+                "Clip b:\n    Note",
+                "Clip c:\n    Note",
+            ],
+            &[],
+        ),
+        (
+            &["Clip a:\n    for p in [60, 64]:\n        for q in [p, 67]:\n            Note/(q)"],
+            &[],
+        ),
+        (
+            &["Clip a:\n    for p in [60, 64]:\n        for i in 0..p:\n            Note"],
+            &[],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then 0 else r(n - 1) + 1",
+                "Clip a:\n    for p in [2, 3]:\n        Note/(r(p))",
+            ],
+            &[],
+        ),
+        (
+            &["Clip a:\n    for p in [2, 3]:\n        Note/([60, 64, 67, 71][p])"],
+            &[],
+        ),
+        (
+            &["Kit k:\n    for f in [\"a\", \"b\"]:\n        Sampler | file=f + \".wav\""],
+            &[],
+        ),
+        (
+            &[
+                "pattern P(default n):\n    Note/(n)",
+                "Clip a:\n    for p in [60, 64]:\n        P/(p)",
+            ],
+            &[],
+        ),
+        (
+            &["Clip a:\n    for w in [Wave::Sine, Wave::Saw]:\n        Note when w is Saw"],
+            &[],
+        ),
+        (
+            &[
+                "let m = 3",
+                "Clip a:\n    for p in [m, 64]:\n        Note/(p)",
+            ],
+            &[],
+        ),
+        (
+            &["Clip a:\n    for p in [1, 2]:\n        Note/(p) | length=(p * 1bars)"],
+            &[],
+        ),
+        (
+            &["Clip a:\n    for p in [true, false]:\n        Note when p\n        Note | accent=p"],
+            &[],
+        ),
+        (
+            &[
+                "let sections = [b, c]",
+                "Clip a:\n    for t in sections:\n        Plays: t",
+                "Clip b:\n    Note",
+                "Clip c:\n    Note",
+            ],
+            &[],
+        ),
+        (
+            &["Synth y:\n    for e in [16777217, 1.5]:\n        Osc | rate=e"],
+            &[(Code::DoesNotFit, "16777217", &[])],
+        ),
+    ];
+    expect_located_in_every_order(&rows);
+}
+
+#[test]
+fn a_default_no_call_takes_and_a_for_body_that_runs_no_iteration_are_unchecked() {
+    let rows: [Row; 4] = [
+        (
+            &["fn f(a = [1, \"s\"]): 1", "Clip c:\n    Note/(f(2))"],
+            &[],
+        ),
+        (&["fn f(a = \"s\" + 1): 1", "Clip c:\n    Note/(f(2))"], &[]),
+        (
+            &["Clip c:\n    for i in 0..0:\n        Note/(i + \"s\")"],
+            &[],
+        ),
+        (
+            &["fn f(a = [1, \"s\"]): 1", "Clip c:\n    Note/(f())"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+    ];
+    expect_in_every_order(&rows);
 }
