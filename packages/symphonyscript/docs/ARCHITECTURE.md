@@ -327,13 +327,13 @@ A fault's region is the rest of its line and the block indented under that line,
 
 An unclosed bracket ends before the first of its lines, at or left of its column, that cannot continue its innermost open bracket, and that line starts an item. The missing closer is a fault reported at the line's first token, unless the bracket already holds a fault, to which it then belongs:
 
-- in any bracket, a line whose first word is `input`, `let`, `fn` or `pattern`;
-- in an expression bracket (an array, a parenthesized expression, arguments, an index or a conversion), a line that begins with a name followed by a name or `as`;
+- in any bracket, a line whose first word is `input`, `let`, `state`, `fn` or `pattern`;
+- in an expression bracket (an array, a parenthesized expression, arguments, an index, a conversion or a history read), a line that begins with a name followed by a name or `as`;
 - in a bundle, a line holding a `:` at the bundle's depth that closes no pending `for` header of the bundle.
 
 A bracket holds a fault when a parser complaint falls inside it, its opener included, when an unterminated string does, or when it opens in the skipped rest of a faulty line; a lexer diagnostic on a token the parser accepts is no such fault. The parser then resynchronizes at the first of the bracket's lines that begins at or after the fault, sits at or left of the bracket's column, and starts an item:
 
-- a line that begins with `input`, `let`, `fn`, `pattern`, `(`, `[`, `for` or `when`;
+- a line that begins with `input`, `let`, `state`, `fn`, `pattern`, `(`, `[`, `for` or `when`;
 - at column 0, a line that begins with a name followed by a name, `as`, an adjacent flag or nothing;
 - in a body, a line that begins with a name followed by a name, `as`, an adjacent flag, `|`, `when` or `:`; with a node or wire kind followed by `/`; or with another name directly followed by `/` and a value SPEC §7.5 allows there that ends the line or meets `|`, `when` or `:`, on a line that holds no closer at the bracket's outermost depth.
 

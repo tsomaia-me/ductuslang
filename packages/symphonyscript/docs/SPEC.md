@@ -256,7 +256,7 @@ When one flexible value has an integer use and a float use, the float use's valu
 
 ### 4.2 Expected types
 
-The type a position requires flows into the expression filling it: through operators, `if` and `match` arms, array literals and function arguments, down to the flexible values inside. It stops at the operands of comparisons, at an index, and at the operands of `div` when it is a float type; those take their types from each other or from the defaults of §4.5, and the result then widens into the position. An integer type flows through `div`, so with `input n = 4`, `Note/(n div 2)` reads `n` as an `i32`. A fixed-type operand meeting an expected type widens into it (§4.3), a cell is read in it as §4.4 says, and any other fixed-type operand is an error.
+The type a position requires flows into the expression filling it: through operators, `if` and `match` arms, array literals and function arguments, down to the flexible values inside. It stops at the operands of comparisons, at an index, and at the operands of `div` when it is a float type; those take their types from each other or from the defaults of §4.5, and the result then widens into the position. An integer type flows through `div`, so with `input n = 4`, `Note/(n div 2)` reads `n` as an `i32`. A fixed-type operand meeting an expected type widens into it (§4.3), a cell is read in it as §4.4 says, and any other fixed-type operand is an error. An annotation (§4.5) is the type its initializer's position requires, so `input w: Wave = Saw` takes `Saw` in `Wave`.
 
 ```sym
 input cutoff = 0.5
