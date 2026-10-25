@@ -1,7 +1,7 @@
 use symphonyscript_core::{Count, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
-    Project, ProjectFile, deep_projects, dsp_project, music_project, spec_examples, spec_projects,
-    vocabulary,
+    Project, ProjectFile, bar_vocabulary, deep_projects, dsp_project, envelope_vocabulary,
+    music_project, spec_examples, spec_projects, vocabulary,
 };
 
 use super::Engine;
@@ -82,23 +82,6 @@ fn analyzed_with<R>(
     };
     let (diagnostics, found) = compiler.analyzed(&[source], inspect);
     (diagnostics, found.expect("the run meets no internal error"))
-}
-
-fn envelope_vocabulary() -> Vocabulary {
-    let mut v = Vocabulary::builder("envelope");
-    let time = v.unit_family("time").base("s").unit("ms", 0.001);
-    let envelope = v.node("Env");
-    v.kind(envelope)
-        .top_level(Count::Any)
-        .attr::<f64>("attack")
-        .default(0.0)
-        .family(&time, "ms")
-        .attr::<f32>("release")
-        .default(0.0)
-        .family(&time, "ms")
-        .attr::<i32>("pitch")
-        .default(0);
-    v.build().expect("the envelope vocabulary builds")
 }
 
 const IN_DEFAULT_UNITS: &[&str] = &[
@@ -245,23 +228,6 @@ fn uses_of_a_flexible_value_compare_before_the_unit_reading() {
         |_| (),
     );
     assert_eq!(error_codes(&diagnostics), vec![Code::InconsistentUses]);
-}
-
-fn bar_vocabulary() -> Vocabulary {
-    let mut v = Vocabulary::builder("bars");
-    let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
-    let bar = v.node("Bar");
-    v.kind(bar)
-        .top_level(Count::Any)
-        .attr::<i64>("len")
-        .default(0)
-        .family(&beats, "bars")
-        .attr::<i64>("beat_len")
-        .default(0)
-        .family(&beats, "beats")
-        .attr::<i64>("plain")
-        .default(0);
-    v.build().expect("the bar vocabulary builds")
 }
 
 fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
