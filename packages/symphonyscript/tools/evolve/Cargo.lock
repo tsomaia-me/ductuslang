@@ -173,6 +173,7 @@ dependencies = [
  "symphonyscript",
  "symphonyscript-core",
  "symphonyscript-fixtures",
+ "unicode-normalization",
 ]
 
 [[package]]

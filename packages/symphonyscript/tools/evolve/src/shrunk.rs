@@ -2,9 +2,9 @@ use symphonyscript::Source;
 use symphonyscript::syntax::{NodeView, SyntaxKind, parse};
 
 use crate::checker::Checker;
+use crate::finding::Finding;
 use crate::items::top_level_items;
 use crate::program::{Program, ProgramSource};
-use crate::signal::Signal;
 
 const EXPRESSIONS: &[SyntaxKind] = &[
     SyntaxKind::BinaryExpr,
@@ -27,8 +27,8 @@ const OPERANDS: &[SyntaxKind] = &[
     SyntaxKind::VariantRef,
 ];
 
-pub fn shrunk(checker: &Checker, program: &Program, signal: Signal) -> Program {
-    let holds = |candidate: &Program| checker.holds(candidate, signal);
+pub fn shrunk(checker: &Checker, program: &Program, finding: &Finding) -> Program {
+    let holds = |candidate: &Program| checker.reproduces(candidate, finding);
     let mut current = program.clone();
     loop {
         let size = current.size();
@@ -39,7 +39,7 @@ pub fn shrunk(checker: &Checker, program: &Program, signal: Signal) -> Program {
             .flat_map(|(index, source)| {
                 top_level_items(source, checker.vocabulary())
                     .into_iter()
-                    .map(move |item| (index, item))
+                    .map(move |item| (index, item.text))
             })
             .collect();
         current = rebuilt(

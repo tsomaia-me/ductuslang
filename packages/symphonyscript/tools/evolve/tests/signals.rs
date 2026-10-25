@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use symphonyscript_evolve::{
-    Checker, DEFAULT_BUDGET, Guarded, Program, ProgramSource, Signal, dedup_key, guarded, shrunk,
+    Checker, DEFAULT_BUDGET, Finding, Guarded, Program, ProgramSource, Signal, dedup_key,
+    differing_codes, guarded, shrunk,
 };
 
 const CLEAN: &str = "input cutoff = 0.5
@@ -30,6 +31,24 @@ Session b/90
 Track t
 ";
 
+const CYCLE: &str = "let a = b + 1
+let b = a * 2
+";
+
+const BODILESS_PATTERN: &str = "Session main /128:
+pattern Arp(default root, steps = 4, gap = 4):
+Clip intro | gain=0.9:
+";
+
+const BODILESS_PATTERN_PADDED: &str = "input cutoff = 0.5
+let wobble = cutoff * 0.8
+Session main /128:
+pattern Arp(default root, steps = 4, gap = 4):
+Track lead | label=\"lead\"
+Clip intro | gain=0.9:
+let spare = wobble + 3
+";
+
 fn program(files: &[(&str, &str)]) -> Program {
     Program {
         id: serde_json::json!("test"),
@@ -48,6 +67,10 @@ fn checker(budget: Duration) -> Checker {
         Ok(checker) => checker,
         Err(failed) => panic!("the fixture vocabulary does not compile: {failed:?}"),
     }
+}
+
+fn codes(codes: &[&str]) -> Vec<String> {
+    codes.iter().map(|code| (*code).to_string()).collect()
 }
 
 #[test]
@@ -69,20 +92,65 @@ fn programs_whose_diagnostics_do_not_vary_draw_no_signal() {
 }
 
 #[test]
-fn a_diagnostic_that_follows_top_level_order_draws_the_order_signal() {
+fn diagnostics_the_spec_ties_to_top_level_order_draw_no_order_signal() {
     let checker = checker(DEFAULT_BUDGET);
-    let program = program(&[("main.sym", TWO_SESSIONS)]);
-    let verdict = checker.verdict(&program);
-    assert_eq!(verdict.signals, vec![Signal::Order]);
-    assert!(checker.holds(&program, Signal::Order));
+    for (name, text) in [("two sessions", TWO_SESSIONS), ("cycle", CYCLE)] {
+        let program = program(&[("main.sym", text)]);
+        assert_eq!(checker.finding(&program, Signal::Order), None, "{name}");
+    }
+}
+
+#[test]
+fn codes_that_change_when_only_declarations_move_draw_the_order_signal() {
+    let checker = checker(DEFAULT_BUDGET);
+    let program = program(&[("main.sym", BODILESS_PATTERN)]);
+    assert_eq!(
+        checker.finding(&program, Signal::Order),
+        Some(Finding {
+            signal: Signal::Order,
+            codes: codes(&["unreachable-instance"]),
+        })
+    );
+}
+
+#[test]
+fn differing_codes_are_the_codes_whose_counts_differ() {
+    for (baseline, variant, expected) in [
+        (vec!["unknown-name"], vec!["unknown-name"], vec![]),
+        (vec![], vec![], vec![]),
+        (vec!["unknown-name"], vec![], vec!["unknown-name"]),
+        (vec![], vec!["wire-cycle"], vec!["wire-cycle"]),
+        (
+            vec!["unknown-name", "unknown-name", "wire-cycle"],
+            vec!["unknown-name", "wire-cycle"],
+            vec!["unknown-name"],
+        ),
+        (
+            vec!["duplicate-name", "unknown-name"],
+            vec!["unknown-name", "wire-cycle"],
+            vec!["duplicate-name", "wire-cycle"],
+        ),
+    ] {
+        assert_eq!(
+            differing_codes(&codes(&baseline), &codes(&variant)),
+            codes(&expected),
+            "{baseline:?} against {variant:?}"
+        );
+    }
 }
 
 #[test]
 fn renaming_every_declared_name_keeps_the_diagnostics_of_equal_programs() {
     let checker = checker(DEFAULT_BUDGET);
-    for text in [CLEAN, FAULTY, TWO_SESSIONS] {
-        assert!(
-            !checker.holds(&program(&[("main.sym", text)]), Signal::Rename),
+    for text in [
+        CLEAN,
+        FAULTY,
+        TWO_SESSIONS,
+        "let e\u{301} = 1\nlet b = \u{e9} + 1\n",
+    ] {
+        assert_eq!(
+            checker.finding(&program(&[("main.sym", text)]), Signal::Rename),
+            None,
             "{text}"
         );
     }
@@ -91,9 +159,17 @@ fn renaming_every_declared_name_keeps_the_diagnostics_of_equal_programs() {
 #[test]
 fn an_unused_let_at_the_end_keeps_the_diagnostics_of_equal_programs() {
     let checker = checker(DEFAULT_BUDGET);
-    for text in [CLEAN, FAULTY, TWO_SESSIONS, "let evolvenoise0 = 1"] {
-        assert!(
-            !checker.holds(&program(&[("main.sym", text)]), Signal::Noise),
+    for text in [
+        CLEAN,
+        FAULTY,
+        TWO_SESSIONS,
+        "let evolvenoise0 = 1",
+        "Clip c:\n    Note/1\nlet a = [\n",
+        "let a = match 1:\n",
+    ] {
+        assert_eq!(
+            checker.finding(&program(&[("main.sym", text)]), Signal::Noise),
+            None,
             "{text}"
         );
     }
@@ -139,48 +215,54 @@ fn guarded_work_that_overruns_its_budget_times_out() {
 fn a_program_without_a_panic_or_an_internal_error_draws_no_crash_signal() {
     let checker = checker(DEFAULT_BUDGET);
     for text in [CLEAN, FAULTY] {
-        assert!(
-            !checker.holds(&program(&[("main.sym", text)]), Signal::Crash),
+        assert_eq!(
+            checker.finding(&program(&[("main.sym", text)]), Signal::Crash),
+            None,
             "{text}"
         );
     }
 }
 
 #[test]
-fn shrinking_keeps_the_signal_and_removes_what_it_does_not_need() {
+fn shrinking_ends_at_a_smaller_program_with_the_same_finding_codes() {
     let checker = checker(DEFAULT_BUDGET);
-    let original = program(&[("main.sym", TWO_SESSIONS)]);
-    let smallest = shrunk(&checker, &original, Signal::Order);
-    assert!(checker.holds(&smallest, Signal::Order));
+    let original = program(&[("main.sym", BODILESS_PATTERN_PADDED)]);
+    let Some(finding) = checker.finding(&original, Signal::Order) else {
+        panic!("the padded program draws no order finding");
+    };
+    let smallest = shrunk(&checker, &original, &finding);
+    assert!(checker.reproduces(&smallest, &finding));
     assert!(smallest.size() < original.size());
+    let key = dedup_key(&finding, &smallest);
+    assert!(
+        key.starts_with(&format!("order|{}|", finding.codes.join(","))),
+        "{key}"
+    );
 }
 
 #[test]
 fn shrinking_a_signal_every_program_shows_leaves_an_empty_program() {
     let checker = checker(Duration::ZERO);
-    let smallest = shrunk(&checker, &program(&[("main.sym", CLEAN)]), Signal::Slow);
-    assert_eq!(smallest.size(), 0);
+    let original = program(&[("main.sym", CLEAN)]);
+    let Some(finding) = checker.finding(&original, Signal::Slow) else {
+        panic!("a zero budget draws no slow finding");
+    };
+    assert_eq!(shrunk(&checker, &original, &finding).size(), 0);
 }
 
 #[test]
 fn the_dedup_key_holds_the_signal_the_sorted_codes_and_the_text_hash() {
-    let codes = vec!["unknown-name".to_string(), "duplicate-name".to_string()];
-    let first = dedup_key(
-        Signal::Order,
-        &codes,
-        &program(&[("main.sym", "let x = 1\n")]),
-    );
-    let reversed: Vec<String> = codes.iter().rev().cloned().collect();
-    let same = dedup_key(
-        Signal::Order,
-        &reversed,
-        &program(&[("main.sym", "let x = 1\n")]),
-    );
-    let other = dedup_key(
-        Signal::Order,
-        &codes,
-        &program(&[("main.sym", "let x = 2\n")]),
-    );
+    let finding = Finding {
+        signal: Signal::Order,
+        codes: codes(&["unknown-name", "duplicate-name"]),
+    };
+    let reversed = Finding {
+        signal: Signal::Order,
+        codes: codes(&["duplicate-name", "unknown-name"]),
+    };
+    let first = dedup_key(&finding, &program(&[("main.sym", "let x = 1\n")]));
+    let same = dedup_key(&reversed, &program(&[("main.sym", "let x = 1\n")]));
+    let other = dedup_key(&finding, &program(&[("main.sym", "let x = 2\n")]));
     assert_eq!(first, same);
     assert!(first.starts_with("order|duplicate-name,unknown-name|"));
     assert_ne!(first, other);

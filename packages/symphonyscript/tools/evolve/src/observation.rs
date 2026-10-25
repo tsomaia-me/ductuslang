@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use symphonyscript::Diagnostic;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::program::Program;
 
@@ -32,7 +33,8 @@ pub fn observed(
                     text.get(start..end)
                 })
                 .unwrap_or_default();
-            (diagnostic.code.as_str().to_string(), restore(covered))
+            let normalized: String = covered.nfc().collect();
+            (diagnostic.code.as_str().to_string(), restore(&normalized))
         })
         .collect();
     seen.sort();

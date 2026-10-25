@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use symphonyscript::Source;
 use symphonyscript::syntax::{ElementView, SyntaxKind, Walk, parse};
 use symphonyscript_core::{BUILTINS, KEYWORDS, RESERVED_WORDS, Vocabulary};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::program::{Program, ProgramSource};
 
@@ -106,7 +107,7 @@ fn identifiers(program: &Program, vocabulary: &Vocabulary) -> Identifiers {
             if token.kind() != SyntaxKind::Ident {
                 continue;
             }
-            let text = token.text().to_string();
+            let text: String = token.text().nfc().collect();
             let declares = token
                 .parent()
                 .is_some_and(|parent| DECLARATIONS.contains(&parent.kind()));

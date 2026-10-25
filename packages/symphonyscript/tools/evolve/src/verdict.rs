@@ -1,6 +1,7 @@
 use serde::Serialize;
 use symphonyscript::Diagnostic;
 
+use crate::finding::Finding;
 use crate::signal::Signal;
 
 #[derive(Clone, PartialEq, Debug, Serialize)]
@@ -8,6 +9,7 @@ pub struct Verdict {
     pub id: serde_json::Value,
     pub diagnostics: Vec<DiagnosticRecord>,
     pub signals: Vec<Signal>,
+    pub findings: Vec<Finding>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panic: Option<String>,
     pub elapsed_ms: Option<f64>,

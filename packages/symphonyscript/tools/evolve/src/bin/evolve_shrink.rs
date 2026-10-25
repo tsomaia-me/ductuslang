@@ -40,16 +40,15 @@ fn run() -> Result<(), String> {
         serde_json::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
     let checker = Checker::new(arguments.budget)
         .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?;
-    if !checker.holds(&program, signal) {
-        return Err(format!("the program does not show the signal `{signal}`"));
-    }
-    let smallest = shrunk(&checker, &program, signal);
-    let codes = checker.codes(&smallest);
+    let finding = checker
+        .finding(&program, signal)
+        .ok_or_else(|| format!("the program does not show the signal `{signal}`"))?;
+    let smallest = shrunk(&checker, &program, &finding);
     let result = Shrunk {
         id: smallest.id.clone(),
+        key: dedup_key(&finding, &smallest),
         signal,
-        key: dedup_key(signal, &codes, &smallest),
-        codes,
+        codes: finding.codes,
         sources: smallest.sources,
     };
     let encoded = serde_json::to_string(&result).map_err(|error| error.to_string())?;

@@ -12,6 +12,7 @@ serde_json = "1"
 symphonyscript = { path = "../../crates/compiler" }
 symphonyscript-core = { path = "../../crates/core" }
 symphonyscript-fixtures = { path = "../../crates/fixtures" }
+unicode-normalization = "0.1"
 
 [[bin]]
 name = "evolve-check"
