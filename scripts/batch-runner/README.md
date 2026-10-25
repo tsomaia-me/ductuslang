@@ -32,6 +32,20 @@ Each line of `requests.jsonl` is `{"custom_id": "...", "params": {...Messages AP
 - `--max-usd` stops submitting new batches once the spend from the results so far passes the limit; it is checked between batches, so set `--batch-size` to bound the overshoot. Spend uses the batch prices in `PRICES` (half the standard prices), with every cache write priced at the 1-hour rate.
 - The summary prints requests done, failed and not run, tokens per key (uncached input, cache writes, cache reads, output) and the spend.
 
+## Proxy
+
+```sh
+.venv/bin/python proxy.py runs/proxy [--max-usd 50] [--batch-requests 1000] [--batch-seconds 60] [--port 8787]
+```
+
+A local server that takes Messages API calls (`POST /v1/messages`, the API's JSON, no key) one at a time and answers them from batches, so a client that calls the API concurrently runs on batches unchanged: point it at `http://127.0.0.1:8787` with any key and a timeout as long as a batch takes (up to 24 hours).
+
+- Held calls are submitted through the runner as one batch when `--batch-requests` are queued or `--batch-seconds` have passed since the first; one batch is in flight at a time, and calls that arrive meanwhile wait for the next.
+- The runner's rules apply: key rotation, the 1-hour cache on the system prompt and `--max-usd`, checked before each batch, so the overshoot is at most one batch. Once the cap is passed, or every key is exhausted, calls are answered with 402 `billing_error`.
+- A succeeded request is answered with its message; an errored one with its error and the matching status. Streaming is refused.
+- `<run-dir>` holds the runner's `state.json` and `results.jsonl`; restarting on the same directory collects a batch left in flight before submitting the next.
+- `fake_backend.py <run-dir> <replies.json>` serves the same proxy on a fake batch backend that answers each call with the next string of the JSON array, for a dry run without the API.
+
 ## Tests
 
 ```sh

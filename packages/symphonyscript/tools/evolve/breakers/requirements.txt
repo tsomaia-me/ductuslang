@@ -1,0 +1,6 @@
+torch==2.14.1
+transformers==5.20.2
+rich==15.0.0
+click==8.5.0
+PyYAML==6.0.3
+openai==3.37.0
