@@ -10,12 +10,13 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Put the keys in `~/.env`, numbered from 1:
+Put the keys in `~/.env` as one comma-separated variable, used in the order listed (whitespace around a key and empty entries are ignored):
 
 ```
-ANTHROPIC_API_KEY_1=...
-ANTHROPIC_API_KEY_2=...
+ANTHROPIC_API_KEYS=<key 1>,<key 2>,<key 3>
 ```
+
+If `~/.env` is missing, has no `ANTHROPIC_API_KEYS`, or lists no key, `run.py` and `proxy.py` print one line saying which and exit with status 1.
 
 ## Usage
 

@@ -176,8 +176,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     keys = read_keys(Path.home() / ".env")
-    if not keys:
-        sys.exit("no ANTHROPIC_API_KEY_1 in ~/.env")
     clients = {n: anthropic.Anthropic(api_key=key) for n, key in enumerate(keys, start=1)}
     runner = Runner(clients, args.run_dir, max_usd=args.max_usd)
     proxy = Proxy(runner, batch_requests=args.batch_requests, batch_seconds=args.batch_seconds)
