@@ -80,6 +80,32 @@ impl Engine<'_> {
         Ok(positions)
     }
 
+    pub(super) fn carried_input_positions(&mut self) -> Result<Vec<Position>, Internal> {
+        let hir = self.hir;
+        let mut positions = Vec::new();
+        for (position, top) in hir.top.iter().enumerate() {
+            let Top::Input(input) = *top else {
+                continue;
+            };
+            if hir.is_prelude_top(position) {
+                continue;
+            }
+            let decl = hir.input(input)?;
+            let val = self.demand_val(Query::Expr(decl.value, self.source_global))?;
+            let carried = match val.nodes().first() {
+                Some(node) => self.demand_sig(*node)?.kind == Kind::Bare,
+                None => false,
+            };
+            if !carried {
+                continue;
+            }
+            if let Some(position) = self.input_position(input)? {
+                positions.push(position);
+            }
+        }
+        Ok(positions)
+    }
+
     fn input_position(
         &mut self,
         input: crate::semantics::ir::InputId,
@@ -131,7 +157,8 @@ impl Engine<'_> {
             Kind::Float => Some(symphonyscript_core::Scalar::F64),
             Kind::Bool => Some(symphonyscript_core::Scalar::Bool),
             Kind::Enum(id) => Some(symphonyscript_core::Scalar::Enum(id)),
-            Kind::Str | Kind::Node | Kind::Bare | Kind::Any | Kind::Error => None,
+            Kind::Bare => self.typing.own.get(&binding).copied(),
+            Kind::Str | Kind::Node | Kind::Any | Kind::Error => None,
         })
     }
 

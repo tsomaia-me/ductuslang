@@ -263,14 +263,20 @@ impl Engine<'_> {
     fn concat_sig(&mut self, operands: &[NodeId], sigs: &[Sig]) -> Result<Sig, Internal> {
         for (operand, sig) in operands.iter().zip(sigs) {
             if sig.reactive {
-                self.error_at_node(
+                let reads = self.untypable_reads(*operand)?;
+                self.typing.read_by_faults.extend(reads);
+                let record = self.node(*operand)?;
+                let (loc, scope) = (record.loc, record.scope);
+                self.error(
                     Code::ReactiveString,
-                    *operand,
+                    loc,
+                    scope,
                     "a string exists only at compile time, and this interpolation reads a cell",
                 )?;
                 return Ok(Sig::ERROR);
             }
-            if matches!(sig.kind, Kind::Node | Kind::Bare) {
+            let named = matches!(self.node(*operand)?.op, Op::Use(_));
+            if sig.kind == Kind::Node || (sig.kind == Kind::Bare && !named) {
                 let message = if sig.kind == Kind::Node {
                     "an interpolation holds a number, a `bool`, an enum value or a string, not an instance"
                 } else {
@@ -292,6 +298,8 @@ impl Engine<'_> {
     ) -> Result<Sig, Internal> {
         let (a, b) = (lhs.1, rhs.1);
         let reactive = a.reactive || b.reactive;
+        let named = matches!(self.node(lhs.0)?.op, Op::Use(_))
+            || matches!(self.node(rhs.0)?.op, Op::Use(_));
         let numeric = a.is_numeric() && b.is_numeric();
         Ok(match op {
             BinaryOp::Add if concatenates(&a, &b) => {
@@ -437,7 +445,7 @@ impl Engine<'_> {
                         (Kind::Bool, Kind::Bool) | (Kind::Str, Kind::Str) => true,
                         (Kind::Enum(x), Kind::Enum(y)) => x == y,
                         (Kind::Enum(_), Kind::Bare) | (Kind::Bare, Kind::Enum(_)) => true,
-                        (Kind::Bare, Kind::Bare) => reactive,
+                        (Kind::Bare, Kind::Bare) => reactive || named,
                         _ => false,
                     };
                 if !comparable {

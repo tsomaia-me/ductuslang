@@ -20,6 +20,7 @@ pub(crate) struct Memo {
     pub exprs: FastMap<(ExprId, ScopeId), Val>,
     pub bare_matches: Vec<NodeId>,
     pub bare_scrutinees: FastMap<NodeId, EnumId>,
+    pub bare_enums: FastMap<NodeId, EnumId>,
     pub lets: FastMap<(ScopeId, LetRef), BoundVal>,
     pub params: FastMap<(ScopeId, u32), BoundVal>,
     pub inputs: FastMap<InputId, BoundVal>,

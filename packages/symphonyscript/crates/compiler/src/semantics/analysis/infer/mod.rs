@@ -1,7 +1,7 @@
 mod bare_scrutinees;
 mod check;
+mod compile_time_enums;
 mod enum_bindings;
-mod enum_uses;
 mod expectations;
 mod order;
 mod position;
@@ -79,8 +79,14 @@ impl Engine<'_> {
                 self.expect(init, Some(own))?;
             }
         }
-        self.enum_bindings()?;
-        self.bare_scrutinees(&valid)?;
+        self.enum_bindings(&valid)?;
+        self.bare_scrutinees()?;
+        for position in self.carried_input_positions()? {
+            for node in position.val.nodes() {
+                self.expect(node, Some(position.ty.scalar))?;
+            }
+            valid.push(position);
+        }
         let mut roots = Vec::new();
         for position in &valid {
             for node in position.val.nodes() {
@@ -99,7 +105,6 @@ impl Engine<'_> {
         self.reactive_shapes()?;
         self.input_fits()?;
         self.consistency()?;
-        self.enum_uses()?;
         self.consistent_shapes()?;
         self.integer_inputs()?;
         Ok(())

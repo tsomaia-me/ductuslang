@@ -6,6 +6,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::some::some;
@@ -59,7 +60,9 @@ impl Engine<'_> {
                 }
                 let mut bare = false;
                 for node in &array.elements {
-                    if self.demand_sig(*node)?.kind == Kind::Bare {
+                    if self.demand_sig(*node)?.kind == Kind::Bare
+                        && !matches!(self.node(*node)?.op, Op::Use(_))
+                    {
                         self.unplaced_variant(*node)?;
                         bare = true;
                     }

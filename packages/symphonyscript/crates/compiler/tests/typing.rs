@@ -931,7 +931,7 @@ fn a_match_waits_for_its_scrutinees_enum() {
     );
     support::expect_codes(
         &format!("Session s\nlet a = Sine\n{arms}{unused}"),
-        &[(Code::MatchScrutinee, "a", 2)],
+        &[(Code::TypeMismatch, "let a = Sine\n", 0)],
     );
     support::expect_codes(
         &format!("Session s\nlet a = Sine\nlet l = match a:\n    Low: 1.0\n    else: 0.5\n{used}"),
@@ -945,4 +945,92 @@ fn a_match_waits_for_its_scrutinees_enum() {
             0,
         )],
     );
+}
+
+fn fixture_errors(text: &str) -> Errors {
+    let mut found: Errors = support::checked(text)
+        .iter()
+        .map(|diagnostic| {
+            let range = diagnostic.span.range.clone();
+            let at =
+                usize::try_from(range.start).unwrap_or(0)..usize::try_from(range.end).unwrap_or(0);
+            (diagnostic.code, text.get(at).unwrap_or("").to_string())
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+#[test]
+fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer() {
+    let typed = "Synth s:\n    Osc | wave=x";
+    let consumers: [&[&'static str]; 8] = [
+        &["input k = x"],
+        &["Clip c:\n    for e in [x]:\n        Note/60"],
+        &["let y = x", "input k = y"],
+        &["Track t | label=\"{x}\""],
+        &["Osc p when x is Saw"],
+        &["let y = Saw", "Osc p when x is y"],
+        &[
+            "input f = true",
+            "let v = if f then x else Saw",
+            "Osc p when v is Saw",
+        ],
+        &[
+            "input f = true",
+            "let v = if f then x else x",
+            "Osc p when v is Saw",
+        ],
+    ];
+    let mut failures = Vec::new();
+    for consumer in consumers {
+        for written in ["let x = Sine", "let x = Wave::Sine"] {
+            let items: Vec<&'static str> = std::iter::once(written)
+                .chain(consumer.iter().copied())
+                .chain(std::iter::once(typed))
+                .collect();
+            for order in permutations(&items) {
+                let text = format!("{}\n", order.join("\n"));
+                let found = fixture_errors(&text);
+                if !found.is_empty() {
+                    failures.push(format!("{text}found {found:?}"));
+                    break;
+                }
+            }
+        }
+    }
+    let untyped: [&[&'static str]; 4] = [
+        &["input k = x"],
+        &["Clip c:\n    for e in [x]:\n        Note/60"],
+        &["Track t | label=\"{x}\""],
+        &["Clip c:\n    Note when x"],
+    ];
+    for consumer in untyped {
+        let items: Vec<&'static str> = std::iter::once("let x = Sine")
+            .chain(consumer.iter().copied())
+            .collect();
+        for order in permutations(&items) {
+            let text = format!("{}\n", order.join("\n"));
+            let found = fixture_errors(&text);
+            if found != [(Code::TypeMismatch, "let x = Sine\n".to_string())] {
+                failures.push(format!("{text}found {found:?}"));
+                break;
+            }
+        }
+    }
+    let compared = ["let x = Sine", "let y = Saw", "Osc p when x is y"];
+    for order in permutations(&compared) {
+        let text = format!("{}\n", order.join("\n"));
+        let first = order
+            .iter()
+            .find(|item| item.starts_with("let"))
+            .map(|item| format!("{item}\n"))
+            .unwrap_or_default();
+        let found = fixture_errors(&text);
+        if found != [(Code::TypeMismatch, first)] {
+            failures.push(format!("{text}found {found:?}"));
+            break;
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

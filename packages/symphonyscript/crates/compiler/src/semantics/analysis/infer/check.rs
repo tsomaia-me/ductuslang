@@ -237,12 +237,9 @@ impl Engine<'_> {
         if kind != Kind::Bare {
             return Ok(kind);
         }
-        let Op::Read(binding) = self.node(self.through_uses(node)?)?.op else {
-            return Ok(kind);
-        };
-        Ok(match self.typing.own.get(&binding) {
-            Some(Scalar::Enum(id)) => Kind::Enum(*id),
-            Some(_) | None => kind,
+        Ok(match self.carried_enum_of(node)? {
+            Some(id) => Kind::Enum(id),
+            None => kind,
         })
     }
 

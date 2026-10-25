@@ -15,6 +15,10 @@ impl Engine<'_> {
                 continue;
             }
             let op = &self.node(current)?.op;
+            if let Op::Bare(_) = op {
+                found.push(current);
+                continue;
+            }
             if let Op::Use(inner) = op {
                 let target = self.through_uses(*inner)?;
                 if self

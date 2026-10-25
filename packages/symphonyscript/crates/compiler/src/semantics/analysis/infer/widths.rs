@@ -16,7 +16,13 @@ impl Engine<'_> {
     pub(super) fn own_type(&mut self, binding: BindingId) -> Result<Option<Scalar>, Internal> {
         let record = self.binding(binding)?.clone();
         match record.kind {
-            BindingKind::Input { .. } => return self.input_type(binding),
+            BindingKind::Input { .. } => {
+                let own = self.input_type(binding)?;
+                if own.is_none() && self.demand_sig(record.init)?.kind == Kind::Bare {
+                    self.typing.awaiting_enum.push(binding);
+                }
+                return Ok(own);
+            }
             BindingKind::Attr { .. } => return Ok(record.annotation),
             BindingKind::Let | BindingKind::Param => {}
         }

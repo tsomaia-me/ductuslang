@@ -231,13 +231,12 @@ impl Engine<'_> {
             self.memo.inputs.insert(input, BoundVal::Error);
             return Ok(true);
         }
-        let bare: Vec<NodeId> = val
-            .nodes()
-            .into_iter()
-            .zip(&sigs)
-            .filter(|(_, sig)| sig.kind == Kind::Bare)
-            .map(|(node, _)| node)
-            .collect();
+        let mut bare: Vec<NodeId> = Vec::new();
+        for (node, sig) in val.nodes().into_iter().zip(&sigs) {
+            if sig.kind == Kind::Bare && !matches!(self.node(node)?.op, Op::Use(_)) {
+                bare.push(node);
+            }
+        }
         if !bare.is_empty() {
             for node in bare {
                 self.unplaced_variant(node)?;

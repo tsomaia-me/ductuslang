@@ -333,7 +333,13 @@ impl Engine<'_> {
                 | EvalTy::DefaultF64
                 | EvalTy::Bool
                 | EvalTy::Str
-                | EvalTy::Node => CVal::Error,
+                | EvalTy::Node => match self.memo.bare_enums.get(&node) {
+                    Some(id) => match self.variants.position(*id, &name)? {
+                        Some(index) => CVal::Enum(*id, index),
+                        None => CVal::Error,
+                    },
+                    None => CVal::Error,
+                },
             },
             Op::Concat(pieces) => return self.concat(&pieces, ctx, need),
             Op::Unary(UnaryOp::Not, operand) => {
@@ -595,7 +601,16 @@ impl Engine<'_> {
                 let a_sig = self.sig(lhs, need);
                 let b_sig = self.sig(rhs, need);
                 let (a_sig, b_sig) = (some!(a_sig), some!(b_sig));
-                let ty = match pair_type(&a_sig, &b_sig) {
+                let carried = match (a_sig.kind, b_sig.kind) {
+                    (Kind::Bare, Kind::Bare) => {
+                        self.carried_enum_of(lhs)?.or(self.carried_enum_of(rhs)?)
+                    }
+                    _ => None,
+                };
+                let ty = match carried.map_or_else(
+                    || pair_type(&a_sig, &b_sig),
+                    |id| Pair::Ty(EvalTy::Enum(id)),
+                ) {
                     Pair::Ty(ty) => ty,
                     Pair::FlexibleFloat => {
                         let a = self.child(lhs, EvalTy::DefaultF64, ctx, need)?;
