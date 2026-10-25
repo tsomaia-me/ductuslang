@@ -112,21 +112,11 @@ fn diagnostics_the_spec_ties_to_top_level_order_draw_no_order_signal() {
 }
 
 #[test]
-fn codes_that_change_when_only_declarations_move_draw_the_order_signal() {
+fn files_that_start_with_indented_lines_draw_no_order_signal_for_the_two_file_program() {
     let checker = checker(DEFAULT_BUDGET);
     let program = program(&[("clips.sym", OPEN_CLIP), ("main.sym", INDENTED_START)]);
-    assert_eq!(
-        checker.finding(&program, Signal::Order),
-        Some(Finding {
-            signal: Signal::Order,
-            codes: codes(&[
-                "child-not-accepted",
-                "unexpected-indent",
-                "wire-cycle",
-                "wire-endpoint",
-            ]),
-        })
-    );
+    assert_eq!(checker.finding(&program, Signal::Order), None);
+    assert!(!checker.verdict(&program).signals.contains(&Signal::Order));
 }
 
 #[test]
@@ -145,6 +135,11 @@ fn differing_codes_are_the_codes_whose_counts_differ() {
             vec!["duplicate-name", "unknown-name"],
             vec!["unknown-name", "wire-cycle"],
             vec!["duplicate-name", "wire-cycle"],
+        ),
+        (
+            vec!["child-not-accepted", "wire-cycle", "wire-endpoint"],
+            vec!["wire-cycle", "wire-endpoint"],
+            vec!["child-not-accepted"],
         ),
     ] {
         assert_eq!(
@@ -241,22 +236,19 @@ fn a_program_without_a_panic_or_an_internal_error_draws_no_crash_signal() {
 
 #[test]
 fn shrinking_ends_at_a_smaller_program_with_the_same_finding_codes() {
-    let checker = checker(DEFAULT_BUDGET);
+    let checker = checker(Duration::ZERO);
     let original = program(&[
         ("clips.sym", OPEN_CLIP_PADDED),
         ("main.sym", INDENTED_START_PADDED),
     ]);
-    let Some(finding) = checker.finding(&original, Signal::Order) else {
-        panic!("the padded program draws no order finding");
+    let Some(finding) = checker.finding(&original, Signal::Slow) else {
+        panic!("a zero budget draws no slow finding");
     };
     let smallest = shrunk(&checker, &original, &finding);
     assert!(checker.reproduces(&smallest, &finding));
     assert!(smallest.size() < original.size());
     let key = dedup_key(&finding, &smallest);
-    assert!(
-        key.starts_with(&format!("order|{}|", finding.codes.join(","))),
-        "{key}"
-    );
+    assert!(key.starts_with("slow||"), "{key}");
 }
 
 #[test]
