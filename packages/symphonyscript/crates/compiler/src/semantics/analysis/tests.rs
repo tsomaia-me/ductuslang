@@ -1899,13 +1899,13 @@ fn a_crossing_of_the_inline_limit_is_reported_at_the_call_that_crosses_it() {
     assert_eq!(counted, 999_998);
     let defaulted = "fn r(n, k = f0(1)): if n < 1 then k else r(n - 1)\n";
     let late = million_inlinings(7, defaulted, &["r(1, 2)"]);
-    let (diagnostics, _) = measure(&late);
-    let crossing = late.find("r(n - 1)").unwrap_or(usize::MAX);
+    let (diagnostics, (bodies, _)) = measure(&late);
     let call = late.find("r(1, 2)").unwrap_or(usize::MAX);
     assert_eq!(
         located(&late, &diagnostics),
-        vec![(Code::InlineLimit, crossing, vec![call])]
+        vec![(Code::InlineLimit, call, vec![])]
     );
+    assert_eq!(bodies, 0);
 }
 
 #[test]
@@ -1924,6 +1924,101 @@ fn a_call_in_a_recursive_body_counts_once() {
         vec![(Code::InlineLimit, call, vec![])]
     );
     assert_eq!(bodies, 0);
+}
+
+fn chains(f_levels: usize, g_levels: usize, declarations: &str, notes: &[&str]) -> String {
+    let mut text = String::from("input i = 1\nfn f0(x): x\nfn g0(x): x\n");
+    for level in 1..=f_levels {
+        let below = level - 1;
+        text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
+    }
+    for level in 1..=g_levels {
+        let below = level - 1;
+        text.push_str(&format!(
+            "fn g{level}(x): g{below}(x * 2) + g{below}(x * 3)\n"
+        ));
+    }
+    text.push_str(declarations);
+    text.push_str("Clip c:\n");
+    for note in notes {
+        text.push_str(&format!("    {note}\n"));
+    }
+    text
+}
+
+#[test]
+fn the_count_before_inlining_follows_the_defaults_each_call_leaves_open() {
+    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let failures = std::cell::RefCell::new(Vec::new());
+    let rejected_at = |text: &str, call: &str| {
+        let (diagnostics, (bodies, _)) = measure(text);
+        let at = text.rfind(call).unwrap_or(usize::MAX);
+        let found = (located(text, &diagnostics), bodies);
+        if found != (vec![(Code::InlineLimit, at, vec![])], 0) {
+            failures
+                .borrow_mut()
+                .push(format!("{call}: found {found:?}"));
+        }
+    };
+    let accepted = |text: &str, label: &str, expected: u64| {
+        let (diagnostics, (_, counted)) = measure(text);
+        let found = (error_codes(&diagnostics), counted);
+        if found != (Vec::new(), expected) {
+            failures
+                .borrow_mut()
+                .push(format!("{label}: found {found:?}"));
+        }
+    };
+    let defaulted = "fn r(n, d = f17(n)): if n < 1 then d else r(n - 1)\n";
+    for call in ["r(3)", "r(3, 1)"] {
+        let note = format!("Note/({call})");
+        let text = chains(
+            17,
+            10,
+            defaulted,
+            &["for j in 0..400:", "    Note/(g10(i + j))", &note],
+        );
+        rejected_at(&text, call);
+    }
+    let base = [
+        "Note/(f18(i))",
+        "Note/(f16(i))",
+        "Note/(f15(i))",
+        "Note/(f13(i))",
+        "Note/(f8(i))",
+        "Note/(f5(i))",
+        "Note/(f2(i))",
+    ];
+    for calls in [&["r(3)"][..], &["r(3, 1)"], &["r(3, 1)", "r(3)"]] {
+        let mut notes: Vec<String> = base.iter().map(|note| (*note).to_string()).collect();
+        notes.extend(calls.iter().map(|call| format!("Note/({call})")));
+        let held: Vec<&str> = notes.iter().map(String::as_str).collect();
+        accepted(
+            &chains(18, 0, defaulted, &held),
+            &format!("{calls:?}"),
+            1_000_000,
+        );
+        let mut past = held.clone();
+        past.push("Note/(f0(i))");
+        rejected_at(&chains(18, 0, defaulted, &past), "f0(i)");
+    }
+    let reaching = concat!(
+        "fn r(n): if n < 1 then 0 else r(n - 1) + f19(n)\n",
+        "fn g(x, d = r(1)): f18(x) + d\n",
+        "fn k(x): g(x)\n",
+        "fn s(n, d = r(1)): if n < 1 then d else s(n - 1)\n",
+    );
+    for call in ["g(1)", "k(1)", "s(1)"] {
+        let note = format!("Note/({call})");
+        rejected_at(&chains(19, 0, reaching, &[&note]), call);
+    }
+    accepted(
+        &chains(19, 0, reaching, &["Note/(g(1, 2))"]),
+        "g(1, 2)",
+        1 << 19,
+    );
+    let failures = failures.into_inner();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]

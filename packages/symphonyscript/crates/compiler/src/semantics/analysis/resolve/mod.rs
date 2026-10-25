@@ -6,6 +6,7 @@ mod bound_sources;
 mod calls;
 mod count_inlining;
 mod declarations;
+mod defaulted;
 mod expressions;
 mod found;
 mod names;

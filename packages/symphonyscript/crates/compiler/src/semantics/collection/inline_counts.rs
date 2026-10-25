@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use super::call_site::CallSite;
 use super::decl::Decl;
 use super::namespace::Namespace;
 use crate::semantics::Internal;
@@ -12,17 +13,12 @@ enum Visit {
     Done,
 }
 
-struct Site {
-    callee: FnId,
-    defaulted: Vec<usize>,
-    recursive: bool,
-}
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct InlineCounts {
     body: Vec<u64>,
     defaults: Vec<Vec<u64>>,
-    callees: Vec<Vec<FnId>>,
+    body_sites: Vec<Vec<CallSite>>,
+    default_sites: Vec<Vec<Vec<CallSite>>>,
 }
 
 impl InlineCounts {
@@ -40,9 +36,14 @@ impl InlineCounts {
                 .iter()
                 .map(|decl| vec![0; decl.params.len()])
                 .collect(),
-            callees: vec![Vec::new(); count],
+            body_sites: vec![Vec::new(); count],
+            default_sites: hir
+                .fns
+                .iter()
+                .map(|decl| vec![Vec::new(); decl.params.len()])
+                .collect(),
         };
-        let sites = |index: usize, roots: Vec<ExprId>| -> Result<Vec<Site>, Internal> {
+        let sites = |index: usize, roots: Vec<ExprId>| -> Result<Vec<CallSite>, Internal> {
             let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
             let namespace = if hir.is_prelude_fn(id) {
                 prelude
@@ -63,7 +64,7 @@ impl InlineCounts {
                 let mut roots: Vec<ExprId> = decl.lets.iter().map(|local| local.value).collect();
                 roots.push(decl.value);
                 let body_sites = sites(index, roots)?;
-                let default_sites: Vec<Vec<Site>> = decl
+                let default_sites: Vec<Vec<CallSite>> = decl
                     .params
                     .iter()
                     .map(|param| sites(index, param.default.into_iter().collect()))
@@ -86,11 +87,6 @@ impl InlineCounts {
                 if visit_of(&state, index)? == Visit::Done {
                     continue;
                 }
-                *counts
-                    .callees
-                    .get_mut(index)
-                    .ok_or(Internal::missed("function"))? =
-                    body_sites.iter().map(|site| site.callee).collect();
                 let body = counts.total(&body_sites)?;
                 let defaults: Vec<u64> = default_sites
                     .iter()
@@ -104,13 +100,21 @@ impl InlineCounts {
                     .defaults
                     .get_mut(index)
                     .ok_or(Internal::missed("function"))? = defaults;
+                *counts
+                    .body_sites
+                    .get_mut(index)
+                    .ok_or(Internal::missed("function"))? = body_sites;
+                *counts
+                    .default_sites
+                    .get_mut(index)
+                    .ok_or(Internal::missed("function"))? = default_sites;
                 *visit_mut(&mut state, index)? = Visit::Done;
             }
         }
         Ok(counts)
     }
 
-    fn total(&self, sites: &[Site]) -> Result<u64, Internal> {
+    fn total(&self, sites: &[CallSite]) -> Result<u64, Internal> {
         sites
             .iter()
             .filter(|site| !site.recursive)
@@ -134,11 +138,19 @@ impl InlineCounts {
             .ok_or(Internal::missed("parameter default"))
     }
 
-    pub fn callees(&self, function: FnId) -> Result<&[FnId], Internal> {
-        self.callees
+    pub fn body_sites(&self, function: FnId) -> Result<&[CallSite], Internal> {
+        self.body_sites
             .get(function.index())
             .map(Vec::as_slice)
             .ok_or(Internal::missed("function"))
+    }
+
+    pub fn default_sites(&self, function: FnId, param: usize) -> Result<&[CallSite], Internal> {
+        self.default_sites
+            .get(function.index())
+            .and_then(|sites| sites.get(param))
+            .map(Vec::as_slice)
+            .ok_or(Internal::missed("parameter default"))
     }
 
     pub fn call(&self, callee: FnId, defaulted: &[usize]) -> Result<u64, Internal> {
@@ -173,7 +185,7 @@ fn call_sites(
     namespace: &Namespace,
     recursive: &[bool],
     roots: Vec<ExprId>,
-) -> Result<Vec<Site>, Internal> {
+) -> Result<Vec<CallSite>, Internal> {
     let locals: BTreeSet<&str> = decl
         .params
         .iter()
@@ -190,7 +202,7 @@ fn call_sites(
             && !locals.contains(name.as_str())
             && let Some(Decl::Fn(target)) = namespace.get(name)
         {
-            found.push(Site {
+            found.push(CallSite {
                 callee: target,
                 defaulted: defaulted(hir.fn_decl(target)?, args),
                 recursive: *recursive

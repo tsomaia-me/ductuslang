@@ -5,6 +5,7 @@ use symphonyscript_core::Builtin;
 
 use super::bind_fault::BindFault;
 use super::bound_sources::bound_sources;
+use super::defaulted::defaulted;
 use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -413,13 +414,7 @@ impl Engine<'_> {
         function: FnId,
         sources: &[ParamSource],
     ) -> Result<u64, Internal> {
-        let defaulted: Vec<usize> = sources
-            .iter()
-            .enumerate()
-            .filter(|(_, source)| matches!(source, ParamSource::Default))
-            .map(|(position, _)| position)
-            .collect();
-        self.collected.inline.call(function, &defaulted)
+        self.collected.inline.call(function, &defaulted(sources))
     }
 
     pub(super) fn report_inline_limit(

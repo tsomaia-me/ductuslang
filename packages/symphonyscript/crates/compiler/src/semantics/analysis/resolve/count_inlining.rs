@@ -1,5 +1,6 @@
 use super::bound_sources::bound_sources;
 use super::calls::INLINE_LIMIT;
+use super::defaulted::defaulted;
 use super::found::Found;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
@@ -14,16 +15,21 @@ use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnId, Top};
 
 enum Called {
-    Inlined(FnId, u64),
-    Recursive(FnId, Vec<usize>),
+    Function(FnId, Vec<usize>),
     Evaluated,
     Unresolved,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Reached {
+    Body(FnId),
+    Default(FnId, usize),
 }
 
 struct Counted {
     bodies: FastSet<FnId>,
     defaults: FastSet<(FnId, usize)>,
-    reached: FastSet<FnId>,
+    reached: FastSet<Reached>,
 }
 
 impl Engine<'_> {
@@ -52,21 +58,24 @@ impl Engine<'_> {
                     stack.extend(node.kind.children().into_iter().rev());
                     continue;
                 };
-                let (function, count) = match self.called(*callee, args, scope)? {
-                    Called::Inlined(function, count) => (function, count),
-                    Called::Recursive(function, defaulted) => (
-                        function,
-                        self.reached_defaults(function, &defaulted, &mut counted)?,
-                    ),
+                let (function, defaulted) = match self.called(*callee, args, scope)? {
+                    Called::Function(function, defaulted) => (function, defaulted),
                     Called::Evaluated => {
                         stack.extend(args.values().into_iter().rev());
                         continue;
                     }
                     Called::Unresolved => continue,
                 };
-                total = total
-                    .saturating_add(count)
-                    .saturating_add(self.reached_bodies(function, &mut counted)?);
+                let inlined = if self.is_recursive(function)? {
+                    0
+                } else {
+                    self.collected.inline.call(function, &defaulted)?
+                };
+                total = total.saturating_add(inlined).saturating_add(self.reached(
+                    function,
+                    &defaulted,
+                    &mut counted,
+                )?);
                 if total > INLINE_LIMIT {
                     return self.report_inline_limit(function, node.loc, scope);
                 }
@@ -95,18 +104,8 @@ impl Engine<'_> {
                     .any(|source| matches!(source, ParamSource::Missing))
                 {
                     Called::Unresolved
-                } else if self.is_recursive(function)? {
-                    Called::Recursive(
-                        function,
-                        sources
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, source)| matches!(source, ParamSource::Default))
-                            .map(|(position, _)| position)
-                            .collect(),
-                    )
                 } else {
-                    Called::Inlined(function, self.inline_count(function, &sources)?)
+                    Called::Function(function, defaulted(&sources))
                 }
             }
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
@@ -115,32 +114,46 @@ impl Engine<'_> {
         })
     }
 
-    fn reached_defaults(
+    fn reached(
         &self,
-        function: FnId,
+        start: FnId,
         defaulted: &[usize],
         counted: &mut Counted,
     ) -> Result<u64, Internal> {
+        let inline = &self.collected.inline;
         let mut count = 0u64;
-        for param in defaulted {
-            if counted.defaults.insert((function, *param)) {
-                count = count.saturating_add(self.collected.inline.default(function, *param)?);
-            }
-        }
-        Ok(count)
-    }
-
-    fn reached_bodies(&self, start: FnId, counted: &mut Counted) -> Result<u64, Internal> {
-        let mut count = 0u64;
-        let mut stack = vec![start];
-        while let Some(function) = stack.pop() {
-            if !counted.reached.insert(function) {
+        let mut stack = vec![Reached::Body(start)];
+        stack.extend(
+            defaulted
+                .iter()
+                .map(|param| Reached::Default(start, *param)),
+        );
+        while let Some(reached) = stack.pop() {
+            if !counted.reached.insert(reached) {
                 continue;
             }
-            if self.is_recursive(function)? && counted.bodies.insert(function) {
-                count = count.saturating_add(self.collected.inline.body(function)?);
+            let sites = match reached {
+                Reached::Body(function) => {
+                    if self.is_recursive(function)? && counted.bodies.insert(function) {
+                        count = count.saturating_add(inline.body(function)?);
+                    }
+                    inline.body_sites(function)?
+                }
+                Reached::Default(function, param) => {
+                    if self.is_recursive(function)? && counted.defaults.insert((function, param)) {
+                        count = count.saturating_add(inline.default(function, param)?);
+                    }
+                    inline.default_sites(function, param)?
+                }
+            };
+            for site in sites {
+                stack.push(Reached::Body(site.callee));
+                stack.extend(
+                    site.defaulted
+                        .iter()
+                        .map(|param| Reached::Default(site.callee, *param)),
+                );
             }
-            stack.extend(self.collected.inline.callees(function)?.iter().rev());
         }
         Ok(count)
     }
