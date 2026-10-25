@@ -7,7 +7,7 @@ use symphonyscript_evolve::{
     Checker, Program, ProgramSource, Signal, arguments, dedup_key, shrunk,
 };
 
-const USAGE: &str = "usage: evolve-shrink [--budget <seconds>] <program.json> <signal>";
+const USAGE: &str = "usage: evolve-shrink [--budget <seconds>] [--memory-bound <bytes per source byte>] <program.json> <signal>";
 
 #[derive(Serialize)]
 struct Shrunk {
@@ -39,7 +39,8 @@ fn run() -> Result<(), String> {
     let program: Program =
         serde_json::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
     let checker = Checker::new(arguments.budget)
-        .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?;
+        .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?
+        .with_memory_bound(arguments.memory_bound);
     let finding = checker
         .finding(&program, signal)
         .ok_or_else(|| format!("the program does not show the signal `{signal}`"))?;

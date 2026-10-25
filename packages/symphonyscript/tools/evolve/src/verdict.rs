@@ -13,6 +13,8 @@ pub struct Verdict {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panic: Option<String>,
     pub elapsed_ms: Option<f64>,
+    pub allocations: Option<u64>,
+    pub peak_bytes: Option<u64>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]

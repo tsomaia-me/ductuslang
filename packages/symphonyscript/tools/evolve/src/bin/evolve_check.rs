@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use symphonyscript_evolve::{Checker, Program, arguments};
 
-const USAGE: &str = "usage: evolve-check [--budget <seconds>] <programs.jsonl> <verdicts.jsonl>";
+const USAGE: &str = "usage: evolve-check [--budget <seconds>] [--memory-bound <bytes per source byte>] <programs.jsonl> <verdicts.jsonl>";
 
 fn main() -> ExitCode {
     std::panic::set_hook(Box::new(|_| {}));
@@ -26,7 +26,8 @@ fn run() -> Result<(), String> {
         return Err(USAGE.to_string());
     };
     let checker = Checker::new(arguments.budget)
-        .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?;
+        .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?
+        .with_memory_bound(arguments.memory_bound);
     let reader = BufReader::new(File::open(input).map_err(|error| format!("{input}: {error}"))?);
     let mut writer =
         BufWriter::new(File::create(output).map_err(|error| format!("{output}: {error}"))?);

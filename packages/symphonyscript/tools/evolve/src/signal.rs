@@ -11,15 +11,19 @@ pub enum Signal {
     Order,
     Rename,
     Noise,
+    Scaling,
+    Memory,
 }
 
 impl Signal {
-    pub const ALL: [Signal; 5] = [
+    pub const ALL: [Signal; 7] = [
         Signal::Crash,
         Signal::Slow,
         Signal::Order,
         Signal::Rename,
         Signal::Noise,
+        Signal::Scaling,
+        Signal::Memory,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -29,6 +33,8 @@ impl Signal {
             Signal::Order => "order",
             Signal::Rename => "rename",
             Signal::Noise => "noise",
+            Signal::Scaling => "scaling",
+            Signal::Memory => "memory",
         }
     }
 }
