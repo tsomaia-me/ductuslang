@@ -1,0 +1,25 @@
+[package]
+name = "symphonyscript-evolve"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+symphonyscript = { path = "../../crates/compiler" }
+symphonyscript-core = { path = "../../crates/core" }
+symphonyscript-fixtures = { path = "../../crates/fixtures" }
+
+[[bin]]
+name = "evolve-check"
+path = "src/bin/evolve_check.rs"
+
+[[bin]]
+name = "evolve-shrink"
+path = "src/bin/evolve_shrink.rs"
+
+[profile.dev]
+opt-level = 1
