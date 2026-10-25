@@ -1,0 +1,32 @@
+input beat = 0
+input note = 60
+input push = false
+input depth = 0.5
+
+state[2] drift = note - note{2}
+state newest = (newest{1, []} + [note])[..4]
+state ring = (ring{1, []} + [note + beat])[^6..]
+state pair = [note, pair{1, [0, 0]}[0]]
+state[3] echo = (ring{3, []} + newest{1, []} + [note])[^5..]
+state[2] swell = if push then depth else swell{1, 0.0} * 0.5 + swell{2, 0.0} * 0.25
+state[1] edge = push and not push{1}
+state[2] late = swell{2, 0.0}
+
+let spread = pair[0] - pair[1]
+let low = ring[0]
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody | gain=swell:
+    Note/(ring[^1]) | velocity=late
+    Note/(newest[^1]) when edge
+    Note/(newest[0] + drift) | brightness=swell
+    Note/(echo[len(echo) div 2]) | length=len(echo) / 4
+    Note/(pair[1] + spread) when push
+    Note/(low + ring[^2]) | velocity=depth
+    Note/(drift + spread + len(ring))

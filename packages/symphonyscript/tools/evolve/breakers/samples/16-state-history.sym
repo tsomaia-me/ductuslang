@@ -1,0 +1,19 @@
+input gate = false
+input level = 0.0
+input note = 60
+
+state rising = gate and not gate{1}
+state held = if rising then level else held{1, 0.0}
+state recent = (recent{1, []} + [note])[^8..]
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody:
+    Note/(recent[^1]) | velocity=held
+    Note/(recent[0]) when rising
+    Note/(recent[^3]) | brightness=len(recent) / 8

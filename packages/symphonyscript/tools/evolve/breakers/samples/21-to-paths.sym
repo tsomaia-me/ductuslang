@@ -1,0 +1,49 @@
+input section = 0
+input fill_on = false
+input shift = 0
+
+pattern Lick(default root, bite = 0.8):
+    Note as hook /root | velocity=bite
+    Note/(root + 7)
+
+Session main:
+    Includes: band
+
+Track band:
+    Piano
+    Starts: verse
+
+Clip verse | gain=0.9:
+    Note as hook /65 | velocity=0.9
+    Lick as lk /48 | bite=0.6
+    Plays as back | gain=to.hook.velocity transpose=to.hook.pitch - 60: chorus
+    Plays/to.lk.hook.velocity when to.hook.accent: [chorus, bridge][section]
+    Plays | gain=to.hook.velocity * verse.hook.velocity
+            transpose=to.hook.pitch - shift: if fill_on then bridge else chorus
+    Plays/to.hook.velocity: match section:
+        0: chorus
+        1: bridge
+        else: outro
+
+Clip chorus | gain=verse.back.gain + verse.hook.velocity:
+    Note as hook /72 | velocity=0.9
+    Lick as lk /60 | bite=0.7
+    Plays | transpose=chorus.lk.hook.pitch - 60: bridge
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6 accent
+    Lick as lk /55
+    Plays when to.hook.accent: outro
+
+Clip outro:
+    Note as hook /60 | velocity=chorus.hook.velocity * 0.5
+    Lick as lk /36 | bite=bridge.lk.hook.velocity
+    Plays as again when to.lk.hook.velocity > 0.5 | gain=to.lk.hook.velocity: coda
+
+pattern Section(default root, next):
+    Clip:
+        Note as hook /root | velocity=0.7
+        Lick as lk /(root + 5) | bite=0.4
+        Plays as onward | gain=to.hook.velocity transpose=to.lk.hook.pitch - root: next
+
+Section coda /50 | next=outro

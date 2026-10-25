@@ -1,0 +1,95 @@
+input gate = false
+input note = 60
+input code: u8 = 96
+input held: i32[..8] = []
+input packet: u8[..4] = []
+input section = 0
+input cut = 0
+input swing_on = false
+
+state rising = gate and not gate{1}
+state[2] stride = note - note{2}
+state recent = (recent{1, []} + [note])[^8..]
+state front = (front{1, []} + [note])[..4]
+state memory = if rising then held else memory{1, []}
+state[3] trail = (recent{3, []} + front{1, []} + [note])[^5..]
+state[2] hot = if rising then peak(0) else hot{1, 0} div 2 + hot{2, 0} div 4
+state pair = [note, pair{1, [60, 60]}[0]]
+
+fn peak(i) bounded 8 else 0:
+    if i >= len(held) then 0 else max(held[i], peak(i + 1))
+
+fn above(i, limit) bounded 8 else 0:
+    let hit = if recent[i] > limit then 1 else 0
+    if i >= len(recent) then 0 else hit + above(i + 1, limit)
+
+fn tri(n): if n < 2 then n else n + tri(n - 1)
+
+let level = f32(code) / 255
+let loud = code > 200u8
+let tagged = bytes("SYM") + packet
+let ids = bytes(tagged)
+let playing = if rising then held + [note] else []
+let trimmed = held[..cut] + held[cut + 1..]
+let route = len(playing) % 2
+let busy = above(0, 64) > tri(3)
+
+fn tier(n):
+    match n:
+        0: 0.3
+        1: 0.6
+        else: 0.9
+
+fn climb(n, p) bounded 4 else p:
+    if n < 1 then p else climb(n - 1, p + 2)
+
+pattern Lick(default root, bite = 0.8):
+    Note as hook /root | velocity=bite
+    Note/(root + 7)
+
+pattern Fill(default root, count = 3, lift = 0):
+    for i in 0..count:
+        Note/(root + i * 2 + lift) | velocity=0.4 + i / 10
+
+Session main:
+    Includes: band
+    Includes: synth_t
+
+Track band:
+    Piano
+    Starts: verse
+
+Track synth_t | label="arranger {tri(4)}":
+    Synth:
+        Osc as carrier/(110 * 2 ** (stride / 12)) | rate=level:
+            Feeds: lp
+        Filter as lp/(f32(hot) * 20 + 200):
+            Feeds: out
+        Output as out
+    Starts: verse
+
+Clip verse | gain=level:
+    Note as hook /(recent[^1]) | velocity=level
+    Lick as lk /(memory[0]) | bite=hot / 127
+    Note/(trimmed[^1]) when len(trimmed) > 2
+    Note/(trail[len(trail) div 2]) | length=len(trail) / 4
+    Note/(pair[1] + stride) | brightness=f32(ids[0]) / 255
+    Note/(ids[^1]) when swing_on or loud
+    Plays as next | gain=to.hook.velocity: [chorus, bridge][route]
+    Plays/to.lk.hook.velocity when to.hook.accent: [chorus, bridge][section % 2]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9 accent
+    Lick as lk /(front[0] + 12)
+    Note/(playing[len(playing) div 2]) when busy
+    Plays | transpose=to.hook.pitch - 60 gain=verse.next.gain: bridge
+
+Clip bridge:
+    Note as hook /(hot + 40) | velocity=0.5
+    Lick as lk /55 | bite=chorus.lk.hook.velocity
+    Note/(climb(section, peak(0))) | velocity=tier(2)
+    Fill/(peak(0)) | count=tri(3) lift=stride
+    when rising:
+        Note/(hot + 12)
+    else:
+        Note/(hot + 7) | velocity=tier(section)

@@ -1,0 +1,45 @@
+input code: u8 = 100
+input packet: u8[..6] = []
+input chord: u8[3] = [60u8, 64u8, 67u8]
+input wide = 300
+input offset = 0
+
+let magic = bytes("RIFF")
+let loud = code > 200u8
+let level = f32(code) / 255
+let wrapped = u8(wide)
+let shrunk = code - 120u8
+let stream = packet + chord
+let raw = bytes(stream)
+let widened = bytes([300, 2, 3])
+let head = packet[..2] + magic[2..]
+let tone = fold(0, 0u8)
+let cap = if loud then packet else []
+
+fn fold(i, acc) bounded 6 else acc:
+    if i >= len(stream) then acc else fold(i + 1, u8(i32(acc) + i32(stream[i]) div 2))
+
+pattern Hit(default pitch, vel = 100u8, hold = 0.25):
+    Note/pitch | velocity=f32(vel) / 255 length=hold
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody | level=level:
+    Note/(magic[0]) | velocity=level
+    Note/(magic[^1] + 1) when loud
+    Note/(chord[offset % 3] + 12)
+    Note/(i32(wrapped) + 1) | brightness=f32(shrunk) / 255
+    Note/(raw[^1]) when len(raw) > 3
+    Note/(widened[0]) | length=f64(len(head)) / 4
+    Note/(head[offset]) | velocity=f32(packet[0]) / 255
+    Note/(u8(code + 5u8) + 5u8) when not loud
+    Note/(3u8 + 5u8 + 60) | accent=code is 255u8
+    Note/(40 + tone div 8) | velocity=level
+    Hit/(cap[0] + 24) | vel=code hold=len(cap) / 4
+    Hit/(chord[0] + 24) | vel=head[0]
+    Hit/72 | vel=200u8
