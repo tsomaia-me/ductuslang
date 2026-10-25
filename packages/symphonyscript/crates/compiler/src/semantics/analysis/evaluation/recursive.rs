@@ -173,6 +173,26 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Argument>, Internal> {
         let sig = some!(self.sig(arg, need));
+        let settled = match sig.kind {
+            Kind::Bare => self.carried_enum_of(arg)?,
+            Kind::Int
+            | Kind::Float
+            | Kind::Bool
+            | Kind::Str
+            | Kind::Node
+            | Kind::Enum(_)
+            | Kind::Any
+            | Kind::Error => None,
+        };
+        if let Some(id) = settled {
+            let value = some!(self.child(arg, EvalTy::Enum(id), ctx, need)?);
+            let leaves = vec![arg_key(&value, false, EvalTy::Enum(id), None)];
+            return Ok(Some(Argument {
+                leaves,
+                lengths: Vec::new(),
+                values: vec![value],
+            }));
+        }
         if sig.kind == Kind::Bare {
             self.unplaced_variant(arg)?;
             return Ok(Some(Argument {

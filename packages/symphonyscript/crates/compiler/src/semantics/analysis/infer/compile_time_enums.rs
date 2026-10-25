@@ -35,6 +35,9 @@ impl Engine<'_> {
             if !seen.insert((node, expected)) {
                 continue;
             }
+            if let Some(siblings) = self.memo.siblings.get(&node) {
+                stack.extend(siblings.iter().map(|sibling| (*sibling, expected)));
+            }
             match self.node(node)?.op.clone() {
                 Op::Use(inner) => {
                     if let Some(id) = expected {

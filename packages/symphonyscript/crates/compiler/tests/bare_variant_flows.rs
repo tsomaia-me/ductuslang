@@ -91,6 +91,13 @@ const POSITIONS: &[Position] = &[
         )),
     },
     Position {
+        name: "an array element the index passes over",
+        items: &["Osc o{n} | wave=([{x}, Wave::Square][1])"],
+        reactive: Effect::Gives("Wave"),
+        compile_time: Effect::Gives("Wave"),
+        foreign: None,
+    },
+    Position {
         name: "a pick",
         items: &["Osc o{n} | wave=([{x}, Wave::Saw][i])"],
         reactive: Effect::Gives("Wave"),
@@ -164,17 +171,21 @@ enum Route {
     Alias,
     Carrier,
     Writing,
+    WritingCompiled,
     Compared,
+    Partnered,
     Typed,
     Cycle,
 }
 
-const ROUTES: [Route; 7] = [
+const ROUTES: [Route; 9] = [
     Route::Direct,
     Route::Alias,
     Route::Carrier,
     Route::Writing,
+    Route::WritingCompiled,
     Route::Compared,
+    Route::Partnered,
     Route::Typed,
     Route::Cycle,
 ];
@@ -200,10 +211,15 @@ impl Flow {
             vec!["Sine"]
         };
         match self.route {
-            Route::Writing => variants.push("Square"),
+            Route::Writing | Route::WritingCompiled => variants.push("Square"),
             Route::Compared if self.reactive => variants.extend(["Saw", "Square"]),
             Route::Compared => variants.push("Saw"),
-            Route::Direct | Route::Alias | Route::Carrier | Route::Typed | Route::Cycle => {}
+            Route::Direct
+            | Route::Alias
+            | Route::Carrier
+            | Route::Partnered
+            | Route::Typed
+            | Route::Cycle => {}
         }
         variants
     }
@@ -214,6 +230,12 @@ impl Flow {
             (Route::Alias, _) => vec!["let y = x"],
             (Route::Carrier, _) => vec!["let y = if f then x else x"],
             (Route::Writing, _) => vec!["let z = if f then x else Square"],
+            (Route::WritingCompiled, _) => vec!["let z = [x, Square][1]"],
+            (Route::Partnered, true) => vec![
+                "let z = if f then Saw else Square",
+                "Osc oz when x is z | wave=z",
+            ],
+            (Route::Partnered, false) => vec!["let z = Saw", "Osc oz when x is z | wave=z"],
             (Route::Compared, true) => {
                 vec!["let z = if f then Saw else Square", "Osc oz when x is z"]
             }
@@ -226,7 +248,10 @@ impl Flow {
 
     fn writers(&self) -> Vec<String> {
         let mut writers = vec![self.writer().to_string()];
-        if matches!(self.route, Route::Writing | Route::Compared) {
+        if matches!(
+            self.route,
+            Route::Writing | Route::WritingCompiled | Route::Compared
+        ) {
             writers.extend(
                 self.route_items()
                     .into_iter()
@@ -239,14 +264,20 @@ impl Flow {
 
     fn read(&self) -> &'static str {
         match self.route {
-            Route::Direct | Route::Compared | Route::Cycle => "x",
+            Route::Direct | Route::Compared | Route::Partnered | Route::Cycle => "x",
             Route::Alias | Route::Carrier => "y",
-            Route::Writing | Route::Typed => "z",
+            Route::Writing | Route::WritingCompiled | Route::Typed => "z",
         }
     }
 
     fn reads_a_cell(&self) -> bool {
-        self.reactive || matches!(self.route, Route::Carrier | Route::Writing | Route::Typed)
+        match self.route {
+            Route::WritingCompiled => false,
+            Route::Carrier | Route::Writing | Route::Typed => true,
+            Route::Direct | Route::Alias | Route::Compared | Route::Partnered | Route::Cycle => {
+                self.reactive
+            }
+        }
     }
 }
 
@@ -334,7 +365,10 @@ fn expected(flow: &Flow, vocab: &Vocab, uses: &[&Position], text: &str) -> Found
             enums.push(name);
         }
     }
-    let used = flow.route == Route::Compared
+    if flow.route == Route::Partnered && enums.is_empty() {
+        enums.push("Wave");
+    }
+    let used = matches!(flow.route, Route::Compared | Route::Partnered)
         || effects
             .iter()
             .any(|(effect, _)| !matches!(effect, Effect::Inert(..)));
@@ -343,6 +377,9 @@ fn expected(flow: &Flow, vocab: &Vocab, uses: &[&Position], text: &str) -> Found
             if let Effect::Rejects(code, span) = effect {
                 found.push((*code, at(span)));
             }
+        }
+        if flow.route == Route::Partnered && *single == "Mode" {
+            found.push((Code::OperandType, "x is z".to_string()));
         }
         if *single == "Mode" && !vocab.shared {
             for variant in flow.written() {
@@ -466,43 +503,68 @@ fn cases(flow: &Flow, shared: bool) -> Vec<Vec<&'static Position>> {
             found.push(pair);
         }
     }
+    if shared && flow.route == Route::Direct {
+        let unanchored: Vec<&Position> = POSITIONS
+            .iter()
+            .filter(|position| gives(position, reactive).is_none())
+            .collect();
+        for (first, position) in unanchored.iter().enumerate() {
+            for other in unanchored.iter().skip(first) {
+                found.push(vec![*position, *other]);
+            }
+        }
+    }
     found
 }
 
 fn every_flow_meets_its_uses(reactive: bool, shared: bool) {
-    let vocab = vocabulary(shared);
-    let compiler = Compiler::new(&vocab.vocabulary).expect("the vocabulary compiles");
-    let mut failures = Vec::new();
-    for route in ROUTES {
-        let flow = Flow { reactive, route };
-        if reactive && route == Route::Carrier {
-            continue;
-        }
-        for uses in cases(&flow, shared) {
-            let items = program(&flow, &vocab, &uses);
-            for order in orders(items.len()) {
-                let text: String = order
-                    .iter()
-                    .map(|index| format!("{}\n", items[*index]))
-                    .collect();
-                let wanted = expected(&flow, &vocab, &uses, &text);
-                let found = errors_of(&compiler, &text);
-                if found != wanted {
-                    let names: Vec<&str> = uses.iter().map(|position| position.name).collect();
-                    failures.push(format!(
-                        "{route:?} {names:?}:\n{text}expected {wanted:?}\nfound {found:?}"
-                    ));
-                    break;
-                }
-            }
-        }
-    }
+    let failures: Vec<String> = std::thread::scope(|threads| {
+        let routes: Vec<_> = ROUTES
+            .into_iter()
+            .filter(|route| !(reactive && *route == Route::Carrier))
+            .map(|route| threads.spawn(move || route_meets_its_uses(reactive, shared, route)))
+            .collect();
+        routes
+            .into_iter()
+            .flat_map(|route| {
+                route
+                    .join()
+                    .unwrap_or_else(|_| vec!["a route panicked".to_string()])
+            })
+            .collect()
+    });
     assert!(
         failures.is_empty(),
         "{} failures:\n{}",
         failures.len(),
         failures.join("\n")
     );
+}
+
+fn route_meets_its_uses(reactive: bool, shared: bool, route: Route) -> Vec<String> {
+    let vocab = vocabulary(shared);
+    let compiler = Compiler::new(&vocab.vocabulary).expect("the vocabulary compiles");
+    let flow = Flow { reactive, route };
+    let mut failures = Vec::new();
+    for uses in cases(&flow, shared) {
+        let items = program(&flow, &vocab, &uses);
+        for order in orders(items.len()) {
+            let text: String = order
+                .iter()
+                .map(|index| format!("{}\n", items[*index]))
+                .collect();
+            let wanted = expected(&flow, &vocab, &uses, &text);
+            let found = errors_of(&compiler, &text);
+            if found != wanted {
+                let names: Vec<&str> = uses.iter().map(|position| position.name).collect();
+                failures.push(format!(
+                    "{route:?} {names:?}:\n{text}expected {wanted:?}\nfound {found:?}"
+                ));
+                break;
+            }
+        }
+    }
+    failures
 }
 
 #[test]
@@ -533,8 +595,99 @@ fn distinct_vocabulary() -> Vocabulary {
     v.kind(both)
         .top_level(Count::Any)
         .attr_enum("wave", &wave, "Sine")
-        .attr_enum("color", &color, "Red");
+        .attr_enum("color", &color, "Red")
+        .attr::<bool>("on")
+        .default(false);
     v.build().expect("the distinct vocabulary builds")
+}
+
+fn located_of(compiler: &Compiler, text: &str) -> Vec<(Code, String, Vec<String>)> {
+    let source = Source {
+        path: "test.sym".into(),
+        text: text.into(),
+    };
+    let span = |range: std::ops::Range<u32>| {
+        let at = usize::try_from(range.start).unwrap_or(0)..usize::try_from(range.end).unwrap_or(0);
+        text.get(at).unwrap_or("").to_string()
+    };
+    compiler
+        .check(&[source])
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .map(|diagnostic| {
+            let mut secondary: Vec<String> = diagnostic
+                .secondary
+                .iter()
+                .map(|loc| span(loc.range.clone()))
+                .collect();
+            secondary.sort();
+            (
+                diagnostic.code,
+                span(diagnostic.span.range.clone()),
+                secondary,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_comparison_across_two_enums_and_a_compile_time_flows_lets_are_located_in_every_order() {
+    let compiler = Compiler::new(&distinct_vocabulary()).expect("the vocabulary compiles");
+    let at = |code: Code, primary: &str, secondary: &[&str]| {
+        vec![(
+            code,
+            primary.to_string(),
+            secondary
+                .iter()
+                .map(|span| (*span).to_string())
+                .collect::<Vec<_>>(),
+        )]
+    };
+    let mut failures = Vec::new();
+    for (items, wanted) in [
+        (
+            vec![
+                "let a = Sine",
+                "let b = Red",
+                "K k1 | wave=a color=b on=(a is b)",
+            ],
+            at(Code::OperandType, "a is b", &[]),
+        ),
+        (
+            vec!["let a = Sine", "let b = Saw", "K k1 | wave=a on=(a is b)"],
+            Vec::new(),
+        ),
+        (
+            vec!["let a = Sine", "let b = a", "K k1 | wave=a color=b"],
+            at(Code::TypeMismatch, "let a = Sine\n", &["let b = a\n"]),
+        ),
+        (
+            vec![
+                "let a = Sine",
+                "let b = a",
+                "let c = b",
+                "K k1 | wave=a color=c",
+            ],
+            at(
+                Code::TypeMismatch,
+                "let a = Sine\n",
+                &["let b = a\n", "let c = b\n"],
+            ),
+        ),
+    ] {
+        for order in orders(items.len()) {
+            let text: String = order
+                .iter()
+                .map(|index| format!("{}\n", items[*index]))
+                .collect();
+            let found = located_of(&compiler, &text);
+            if found != wanted {
+                failures.push(format!("{text}found {found:?}"));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]

@@ -18,6 +18,7 @@ mod combined_shape;
 mod common;
 mod condition;
 mod condition_link;
+mod crossed_enums;
 mod deferred;
 mod destination;
 mod engine;

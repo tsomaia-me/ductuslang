@@ -19,7 +19,7 @@ pub(crate) use typing::Typing;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::BindingId;
+use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::val::Val;
 
 impl Engine<'_> {
@@ -63,6 +63,10 @@ impl Engine<'_> {
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             self.demand_sig(self.binding(binding)?.init)?;
+        }
+        let siblings: Vec<NodeId> = self.memo.siblings.values().flatten().copied().collect();
+        for node in siblings {
+            self.demand_sig(node)?;
         }
         self.units(&valid)?;
         self.read_in_default_units()?;

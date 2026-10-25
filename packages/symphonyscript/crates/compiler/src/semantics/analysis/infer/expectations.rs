@@ -48,6 +48,9 @@ impl Engine<'_> {
             if !self.typing.expected_seen.insert((node, expected)) {
                 continue;
             }
+            if let Some(siblings) = self.memo.siblings.get(&node) {
+                stack.extend(siblings.iter().map(|sibling| (*sibling, expected)));
+            }
             let reactive = self.known_sig(node)?.reactive;
             if !reactive {
                 continue;

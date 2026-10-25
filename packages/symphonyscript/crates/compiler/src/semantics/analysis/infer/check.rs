@@ -68,6 +68,11 @@ impl Engine<'_> {
                     | BinaryOp::Ge
                     | BinaryOp::Is
                     | BinaryOp::IsNot => {
+                        if matches!(op, BinaryOp::Is | BinaryOp::IsNot)
+                            && self.crossed_enums(node, lhs, rhs)?
+                        {
+                            continue;
+                        }
                         self.synth(lhs)?;
                         self.synth(rhs)?;
                         let pair = self.pair(lhs, rhs)?;

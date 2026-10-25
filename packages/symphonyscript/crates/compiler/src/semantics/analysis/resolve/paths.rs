@@ -290,7 +290,18 @@ impl Engine<'_> {
             if (0..i128::from(outer)).contains(&position) {
                 let position =
                     usize::try_from(position).map_err(|_| Internal::missed("array element"))?;
-                return Ok(Some(base_val.slice(position)?));
+                let chosen = base_val.slice(position)?;
+                let chosen_nodes = chosen.nodes();
+                for row in 0..outer as usize {
+                    if row == position {
+                        continue;
+                    }
+                    let others = base_val.slice(row)?.nodes();
+                    for (node, other) in chosen_nodes.iter().zip(others) {
+                        self.memo.siblings.entry(*node).or_default().push(other);
+                    }
+                }
+                return Ok(Some(chosen));
             }
         }
         let rows: Vec<Val> = (0..outer as usize)

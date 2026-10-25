@@ -1034,3 +1034,44 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn an_array_literals_expected_type_reaches_every_element() {
+    let mut failures = Vec::new();
+    for (written, items) in [
+        (
+            "let x = Sine",
+            vec!["Synth y:\n    Osc | wave=([x, Wave::Square][1])"],
+        ),
+        (
+            "let x = Sine",
+            vec!["Synth y:\n    Osc | wave=([x, Square][1])"],
+        ),
+        (
+            "let x = Sine",
+            vec!["let z = [x, Square][1]", "Synth y:\n    Osc | wave=z"],
+        ),
+        (
+            "let x = Sine",
+            vec!["Synth y:\n    Osc | wave=([x, Wave::Square][0])"],
+        ),
+        (
+            "let x = if f then Sine else Saw",
+            vec![
+                "input f = true",
+                "Synth y:\n    Osc | wave=([x, Wave::Square][1])",
+            ],
+        ),
+    ] {
+        let all: Vec<&'static str> = ["Session s", written].into_iter().chain(items).collect();
+        for order in permutations(&all) {
+            let text = format!("{}\n", order.join("\n"));
+            let found = fixture_errors(&text);
+            if !found.is_empty() {
+                failures.push(format!("{text}found {found:?}"));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

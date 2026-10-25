@@ -2664,3 +2664,84 @@ fn a_recursive_call_settles_to_a_string_through_concatenation() {
         assert_eq!(error_codes(&diagnostics), vec![Code::OperandType], "{text}");
     }
 }
+
+#[test]
+fn a_recursive_argument_reads_a_settled_enum() {
+    let typed = "Session s\nlet x = Sine\nSynth s2:\n    Osc | wave=x\n";
+    let tested = "fn r(n, w): if n < 1 then (if w is Saw then 1 else 2) else r(n - 1, w)\n";
+    let returned = "fn r(n, w): if n < 1 then w else r(n - 1, w)\n";
+    let first = "fn r(w, n): if n < 1 then w else r(w, n - 1)\n";
+    let mut failures = Vec::new();
+    for (function, call, attr, ty) in [
+        (
+            tested,
+            "Clip c:\n    Note/(r(2, {}))\n",
+            "pitch",
+            EvalTy::I32,
+        ),
+        (
+            returned,
+            "Synth s3:\n    Osc | wave=(r(2, {}))\n",
+            "wave",
+            EvalTy::Default,
+        ),
+        (
+            first,
+            "Synth s3:\n    Osc | wave=(r({}, 2))\n",
+            "wave",
+            EvalTy::Default,
+        ),
+    ] {
+        let probe = |argument: &str| {
+            let text = format!("{typed}{function}{}", call.replace("{}", argument));
+            analyzed(&text, |engine| {
+                let ty = match (attr, ty) {
+                    ("wave", _) => engine
+                        .memo
+                        .evals
+                        .keys()
+                        .find_map(|(_, ty)| matches!(ty, EvalTy::Enum(_)).then_some(*ty))
+                        .unwrap_or(ty),
+                    _ => ty,
+                };
+                (attr_value(engine, attr, ty), engine.memo.calls.len())
+            })
+        };
+        let (diagnostics, (value, calls)) = probe("x");
+        let (qualified_diagnostics, (qualified, qualified_calls)) = probe("Wave::Sine");
+        let found = (error_codes(&diagnostics), value.clone(), calls);
+        let wanted = (
+            error_codes(&qualified_diagnostics),
+            qualified.clone(),
+            qualified_calls,
+        );
+        if found != wanted || qualified.is_none() {
+            failures.push(format!("{function}: found {found:?}, wanted {wanted:?}"));
+        }
+        let text = format!(
+            "{typed}{function}{}{}",
+            call.replace("{}", "x"),
+            call.replace("{}", "Wave::Sine")
+                .replace("s3", "s4")
+                .replace("c:", "d:")
+        );
+        let (diagnostics, shared) = analyzed(&text, |engine| engine.memo.calls.len());
+        if error_codes(&diagnostics) != Vec::<Code>::new() || shared != qualified_calls {
+            failures.push(format!(
+                "{function}: shared {shared} against {qualified_calls}"
+            ));
+        }
+    }
+    let untyped = format!("Session s\nlet x = Sine\n{tested}Clip c:\n    Note/(r(2, x))\n");
+    let (diagnostics, ()) = analyzed(&untyped, |_| ());
+    if located(&untyped, &diagnostics)
+        != vec![(
+            Code::TypeMismatch,
+            untyped.find("let x").unwrap_or(0),
+            vec![],
+        )]
+    {
+        failures.push(format!("untyped: {:?}", error_codes(&diagnostics)));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

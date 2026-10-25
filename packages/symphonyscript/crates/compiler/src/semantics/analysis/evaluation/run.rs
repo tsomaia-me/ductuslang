@@ -601,6 +601,11 @@ impl Engine<'_> {
                 let a_sig = self.sig(lhs, need);
                 let b_sig = self.sig(rhs, need);
                 let (a_sig, b_sig) = (some!(a_sig), some!(b_sig));
+                if matches!(op, BinaryOp::Is | BinaryOp::IsNot)
+                    && self.crossed_enums(node, lhs, rhs)?
+                {
+                    return Ok(Some(CVal::Error));
+                }
                 let carried = match (a_sig.kind, b_sig.kind) {
                     (Kind::Bare, Kind::Bare) => {
                         self.carried_enum_of(lhs)?.or(self.carried_enum_of(rhs)?)

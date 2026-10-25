@@ -4,6 +4,8 @@ use super::position::Position;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
@@ -387,6 +389,16 @@ impl Engine<'_> {
                 };
                 for bare in self.value_bares(node)? {
                     self.memo.bare_enums.insert(bare, id);
+                    let Op::Bare(name) = &self.node(bare)?.op else {
+                        continue;
+                    };
+                    if self.variants.position(id, name)?.is_none() {
+                        let message = format!(
+                            "`{name}` is not a variant of `{}`",
+                            self.enum_decl(id)?.name
+                        );
+                        self.error_at_node(Code::UnknownName, bare, message)?;
+                    }
                 }
                 return Ok(());
             }
@@ -436,12 +448,18 @@ impl Engine<'_> {
             match op {
                 Op::Bare(_) => found.push(node),
                 Op::Use(_) | Op::Read(_) => {}
-                _ => stack.extend(Self::value_parts(op)),
+                _ => stack.extend(self.value_parts_of(node, op)),
             }
         }
         found.sort();
         found.dedup();
         Ok(found)
+    }
+
+    fn value_parts_of(&self, node: NodeId, op: &Op) -> Vec<NodeId> {
+        let mut parts = Self::value_parts(op);
+        parts.extend(self.memo.siblings.get(&node).into_iter().flatten().copied());
+        parts
     }
 
     fn value_parts(op: &Op) -> Vec<NodeId> {
@@ -509,7 +527,7 @@ impl Engine<'_> {
                         reads.push(read);
                     }
                 }
-                None => stack.extend(Self::value_parts(op)),
+                None => stack.extend(self.value_parts_of(node, op)),
             }
         }
         reads.sort();
@@ -543,7 +561,7 @@ impl Engine<'_> {
                 );
                 continue;
             }
-            let parts = Self::value_parts(&op);
+            let parts = self.value_parts_of(node, &op);
             if !ready && !parts.is_empty() {
                 stack.push((node, true));
                 stack.extend(parts.into_iter().map(|part| (part, false)));
@@ -676,6 +694,15 @@ impl Engine<'_> {
                 continue;
             };
             let mut secondary: Vec<Loc> = others.iter().map(|(_, loc, _, _)| *loc).collect();
+            for (_, writer, member, _) in &located {
+                if let Member::Value(node) = member {
+                    for alias in self.alias_lets(*node)? {
+                        if alias != *writer && alias != *loc {
+                            secondary.push(alias);
+                        }
+                    }
+                }
+            }
             secondary.sort();
             secondary.dedup();
             self.report_flow(*first, *loc, *scope, secondary)?;
@@ -717,6 +744,38 @@ impl Engine<'_> {
             }
         }
         Ok(false)
+    }
+
+    fn alias_lets(&self, source: NodeId) -> Result<Vec<Loc>, Internal> {
+        let mut found = Vec::new();
+        let entries: Vec<_> = self
+            .memo
+            .lets
+            .iter()
+            .map(|(key, bound)| (*key, bound.clone()))
+            .collect();
+        for ((scope, local), bound) in entries {
+            let values: Vec<NodeId> = match &bound {
+                BoundVal::Scalar(Bound::Value(node)) => vec![*node],
+                BoundVal::Array(array) => array
+                    .1
+                    .iter()
+                    .filter_map(|item| match item {
+                        Bound::Value(node) => Some(*node),
+                        Bound::Cell(_) => None,
+                    })
+                    .collect(),
+                BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Error => Vec::new(),
+            };
+            let mut aliased = false;
+            for value in values {
+                aliased |= self.through_uses(value)? == source;
+            }
+            if aliased && let Some(decl) = self.let_decl(scope, local)? {
+                found.push(decl.loc);
+            }
+        }
+        Ok(found)
     }
 
     fn writer_of(&self, source: NodeId) -> Result<Option<Loc>, Internal> {
