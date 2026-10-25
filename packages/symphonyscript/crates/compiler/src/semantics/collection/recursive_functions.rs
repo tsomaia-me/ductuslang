@@ -7,12 +7,15 @@ use super::strongly_connected::strongly_connected;
 use crate::semantics::Internal;
 use crate::semantics::ir::{ExprId, ExprKind, FnId, Hir};
 
+type Recursion = (Vec<bool>, Vec<bool>, Vec<bool>);
+
 pub(crate) fn recursive_functions(
     hir: &Hir,
     source: &Namespace,
     prelude: &Namespace,
-) -> Result<Vec<bool>, Internal> {
+) -> Result<Recursion, Internal> {
     let mut edges: Vec<Vec<usize>> = Vec::with_capacity(hir.fns.len());
+    let mut unresolved = Vec::with_capacity(hir.fns.len());
     for (index, decl) in hir.fns.iter().enumerate() {
         let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
         let namespace = if hir.is_prelude_fn(id) {
@@ -34,30 +37,47 @@ pub(crate) fn recursive_functions(
             .collect();
         roots.extend(decl.lets.iter().map(|local| local.value));
         roots.push(decl.value);
+        roots.extend(decl.bound.iter().map(|bound| bound.fallback));
         let mut targets = BTreeSet::new();
+        let mut unsure = false;
         let mut stack = roots;
         while let Some(expr) = stack.pop() {
             let kind = &hir.expr(expr)?.kind;
             if let ExprKind::Call(callee, _) = kind
                 && let ExprKind::Name(name) = &hir.expr(*callee)?.kind
                 && !locals.contains(name.as_str())
-                && let Some(Decl::Fn(target)) = namespace.get(name)
             {
-                targets.insert(target.index());
+                match namespace.get(name) {
+                    Some(Decl::Fn(target)) => {
+                        targets.insert(target.index());
+                    }
+                    Some(_) => {}
+                    None => unsure = true,
+                }
             }
             stack.extend(kind.children());
         }
         edges.push(targets.into_iter().collect());
+        unresolved.push(unsure);
     }
     let mut recursive = vec![false; hir.fns.len()];
+    let mut bounded = vec![false; hir.fns.len()];
     for component in strongly_connected(&edges)? {
         if is_cycle(&component, &edges)? {
+            let mut every = true;
+            for member in &component {
+                let decl = hir.fns.get(*member).ok_or(Internal::missed("function"))?;
+                every &= decl.bound.is_some();
+            }
             for member in component {
                 *recursive
                     .get_mut(member)
                     .ok_or(Internal::missed("function"))? = true;
+                *bounded
+                    .get_mut(member)
+                    .ok_or(Internal::missed("function"))? = every;
             }
         }
     }
-    Ok(recursive)
+    Ok((recursive, bounded, unresolved))
 }

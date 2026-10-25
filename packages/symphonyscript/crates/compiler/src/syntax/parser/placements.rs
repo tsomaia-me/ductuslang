@@ -355,6 +355,12 @@ impl Parser<'_> {
                 );
                 self.expect_name(Code::DefaultArgSyntax, "the name after `to.`");
                 self.finish();
+                while self.at(SyntaxKind::Dot) && self.nth(1) == Some(SyntaxKind::Ident) {
+                    self.start_at(checkpoint, SyntaxKind::FieldExpr);
+                    self.bump();
+                    self.bump();
+                    self.finish();
+                }
             }
             _ => {
                 let found = self.describe();

@@ -12,4 +12,5 @@ pub(crate) struct CallKey {
     pub shapes: Vec<ArgShape>,
     pub expected: EvalTy,
     pub units: Vec<(FamilyId, usize)>,
+    pub nesting: u64,
 }

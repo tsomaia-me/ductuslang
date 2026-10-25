@@ -12,7 +12,7 @@ pub(crate) fn common(a: Scalar, b: Scalar) -> Option<Scalar> {
     let numeric = |scalar| {
         matches!(
             scalar,
-            Scalar::I32 | Scalar::I64 | Scalar::F32 | Scalar::F64
+            Scalar::U8 | Scalar::I32 | Scalar::I64 | Scalar::F32 | Scalar::F64
         )
     };
     (numeric(a) && numeric(b)).then_some(Scalar::F64)

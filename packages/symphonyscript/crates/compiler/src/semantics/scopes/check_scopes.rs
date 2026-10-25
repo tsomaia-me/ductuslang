@@ -39,6 +39,7 @@ pub(crate) fn check_scopes(
                 }
                 checker.expr(decl.value, None, false)?;
             }
+            Top::State(id) => checker.state(id)?,
             Top::Fn(id) => checker.function(id)?,
             Top::Pattern(id) => {
                 let stand_in = collected.stand_ins.get(id.index()).copied().flatten();

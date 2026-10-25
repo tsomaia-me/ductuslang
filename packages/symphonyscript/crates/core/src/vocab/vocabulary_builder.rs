@@ -8,6 +8,10 @@ use super::enum_builder::EnumBuilder;
 use super::enum_decl::EnumDecl;
 use super::family_decl::FamilyDecl;
 use super::invalid_vocabulary::InvalidVocabulary;
+use super::native_decl::NativeDecl;
+use super::native_fn::NativeFn;
+use super::native_signature::NativeSignature;
+use super::native_type::NativeType;
 use super::node_draft::NodeDraft;
 use super::node_kind_builder::NodeKindBuilder;
 use super::owner::Owner;
@@ -18,7 +22,7 @@ use super::vocabulary::Vocabulary;
 use super::vocabulary_error::VocabularyError;
 use super::wire_draft::WireDraft;
 use super::wire_kind_builder::WireKindBuilder;
-use crate::ids::{EnumId, FamilyId, NodeKind, VocabularyToken, WireKind};
+use crate::ids::{EnumId, FamilyId, NativeId, NodeKind, VocabularyToken, WireKind};
 use crate::types::{Scalar, Ty};
 
 pub struct VocabularyBuilder {
@@ -29,6 +33,7 @@ pub struct VocabularyBuilder {
     pub(crate) enums: Vec<Rc<RefCell<EnumDecl>>>,
     pub(crate) families: Vec<Rc<RefCell<FamilyDecl>>>,
     pub(crate) prelude: Vec<PreludeFile>,
+    pub(crate) natives: Vec<NativeDecl>,
     pub(crate) errors: Vec<VocabularyError>,
 }
 
@@ -42,6 +47,7 @@ impl VocabularyBuilder {
             enums: Vec::new(),
             families: Vec::new(),
             prelude: Vec::new(),
+            natives: Vec::new(),
             errors: Vec::new(),
         }
     }
@@ -110,6 +116,38 @@ impl VocabularyBuilder {
             path: String::from(path),
             text: String::from(text),
         });
+    }
+
+    pub fn native(
+        &mut self,
+        name: &str,
+        signature: NativeSignature,
+        function: NativeFn,
+    ) -> NativeId {
+        let id = NativeId::new(self.natives.len() as u32);
+        let types = signature
+            .params
+            .iter()
+            .chain(core::iter::once(&signature.result));
+        let enums: Vec<EnumId> = types
+            .filter_map(|ty| match ty {
+                NativeType::Value(ty) | NativeType::Open(ty) | NativeType::CapacityOf(ty, _) => {
+                    match ty.scalar {
+                        Scalar::Enum(id) => Some(id),
+                        _ => None,
+                    }
+                }
+            })
+            .collect();
+        for enumeration in enums {
+            self.own_enum(enumeration, None);
+        }
+        self.natives.push(NativeDecl {
+            name: String::from(name),
+            signature,
+            function,
+        });
+        id
     }
 
     pub fn build(self) -> Result<Vocabulary, InvalidVocabulary> {

@@ -236,7 +236,7 @@ fn expressions_expose_their_parts() {
     let Some(Expr::Index(index)) = field.receiver() else {
         panic!("an index");
     };
-    assert_eq!(source(index.index()), "0");
+    assert_eq!(source(index.index().and_then(|bound| bound.value())), "0");
     let Some(Expr::Call(call)) = index.base() else {
         panic!("a call");
     };

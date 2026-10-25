@@ -49,6 +49,7 @@ impl Engine<'_> {
             Op::Number(number, suffix) => self.number_sig(number, *suffix)?,
             Op::Const(value) => {
                 let scalar = match value {
+                    Value::U8(_) => Scalar::U8,
                     Value::I32(_) => Scalar::I32,
                     Value::I64(_) => Scalar::I64,
                     Value::F32(_) => Scalar::F32,
@@ -75,10 +76,47 @@ impl Engine<'_> {
             Op::Arg(_) => return Err(Internal::missed("argument signature")),
             Op::Read(binding) => match extra {
                 Extra::Read(init) => self.read_sig(*binding, init)?,
-                Extra::None | Extra::ToRead { .. } => {
+                Extra::None | Extra::ToRead { .. } | Extra::History(_) => {
                     return Err(Internal::missed("read signature"));
                 }
             },
+            Op::History { fallback, .. } => match (fallback, extra) {
+                (Some(_), _) => {
+                    let fallback = at(0)?;
+                    Sig::of(fallback.kind, Width::Adaptive, true, fallback.family)
+                }
+                (None, Extra::History(sig)) => sig,
+                (None, Extra::None | Extra::Read(_) | Extra::ToRead { .. }) => {
+                    return Err(Internal::missed("history signature"));
+                }
+            },
+            Op::Join(lhs, rhs) => {
+                let Some((kind, width, family)) = self.elements_sig(node, &[*lhs, *rhs], sigs)?
+                else {
+                    return Ok(Sig::ERROR);
+                };
+                Sig::of(kind, width, reactive, family)
+            }
+            Op::Slice { lower, upper, .. } => {
+                for (bound, _) in lower.iter().chain(upper.iter()) {
+                    let bound_sig = self.known_sig(*bound)?;
+                    if !matches!(bound_sig.kind, Kind::Int | Kind::Any) {
+                        self.error_at_node(Code::IndexType, *bound, "a slice bound is an integer")?;
+                        return Ok(Sig::ERROR);
+                    }
+                    if bound_sig.family.is_some() {
+                        self.error_at_node(
+                            Code::UnitOperation,
+                            *bound,
+                            "a slice bound is a plain number",
+                        )?;
+                        return Ok(Sig::ERROR);
+                    }
+                }
+                let base = at(0)?;
+                Sig::of(base.kind, base.width, reactive, base.family)
+            }
+            Op::Native { native, .. } => self.native_sig(node, *native, sigs)?,
             Op::Unary(UnaryOp::Neg, _) => {
                 let first = at(0)?;
                 if !first.is_numeric() {
@@ -108,11 +146,12 @@ impl Engine<'_> {
                     return Ok(Sig::ERROR);
                 }
                 let Some(kind) = unify_kinds(second.kind, third.kind) else {
-                    self.error_at_node(
-                        Code::TypeMismatch,
-                        node,
-                        "the branches of an `if` hold values of different types",
-                    )?;
+                    let message = if self.memo.fallback_joins.contains(&node) {
+                        "the fallback of a bounded function and its body yield values of different types"
+                    } else {
+                        "the branches of an `if` hold values of different types"
+                    };
+                    self.error_at_node(Code::TypeMismatch, node, message)?;
                     return Ok(Sig::ERROR);
                 };
                 let Some(family) =
@@ -195,6 +234,9 @@ impl Engine<'_> {
                 at(0)?.family,
             ),
             Op::Builtin(builtin, _) => self.builtin_sig(node, *builtin, operands, sigs)?,
+            Op::Recursive { function, .. } if self.hir.fn_decl(*function)?.faulty_head => {
+                Sig::ERROR
+            }
             Op::Recursive { .. } => {
                 self.error_at_node(
                     Code::ReactiveRecursion,
@@ -217,7 +259,7 @@ impl Engine<'_> {
             return Err(Internal::missed("operand signature"));
         }
         let Some(first) = item_sigs.first().copied() else {
-            return Ok(None);
+            return Ok(Some((Kind::Any, Width::Flexible, None)));
         };
         let mut kind = first.kind;
         let mut width = first.width;
@@ -491,6 +533,43 @@ impl Engine<'_> {
         sigs: &[Sig],
     ) -> Result<Sig, Internal> {
         let reactive = sigs.iter().any(|sig| sig.reactive);
+        match builtin {
+            Builtin::Len => {
+                return Ok(Sig::of(
+                    Kind::Int,
+                    Width::Fixed(Scalar::I32),
+                    reactive,
+                    None,
+                ));
+            }
+            Builtin::Bytes => {
+                let first = operand(sigs, 0)?;
+                if !matches!(first.kind, Kind::Int | Kind::Str | Kind::Any) {
+                    self.error_at_node(
+                        Code::OperandType,
+                        node,
+                        "`bytes` takes a string or an integer array",
+                    )?;
+                    return Ok(Sig::ERROR);
+                }
+                return Ok(Sig::of(Kind::Int, Width::Fixed(Scalar::U8), reactive, None));
+            }
+            Builtin::Abs
+            | Builtin::Min
+            | Builtin::Max
+            | Builtin::Clamp
+            | Builtin::Floor
+            | Builtin::Ceil
+            | Builtin::Round
+            | Builtin::Sqrt
+            | Builtin::Sin
+            | Builtin::Cos
+            | Builtin::Tan
+            | Builtin::Exp
+            | Builtin::Log
+            | Builtin::Lerp
+            | Builtin::Rand => {}
+        }
         if sigs.iter().any(|sig| !sig.is_numeric()) {
             self.error_at_node(
                 Code::OperandType,
@@ -555,6 +634,7 @@ impl Engine<'_> {
                 }
                 Sig::of(Kind::Float, Width::Fixed(Scalar::F32), reactive, None)
             }
+            Builtin::Len | Builtin::Bytes => return Err(Internal::missed("array built-in")),
             Builtin::Sqrt
             | Builtin::Sin
             | Builtin::Cos
@@ -572,6 +652,45 @@ impl Engine<'_> {
                 Sig::of(Kind::Float, float_width(combined.width), reactive, None)
             }
         })
+    }
+
+    fn native_sig(
+        &mut self,
+        node: NodeId,
+        native: symphonyscript_core::NativeId,
+        sigs: &[Sig],
+    ) -> Result<Sig, Internal> {
+        let reactive = sigs.iter().any(|sig| sig.reactive);
+        let decl = self
+            .vocabulary
+            .native(native)
+            .ok_or(Internal::missed("native function"))?;
+        let signature = &decl.signature;
+        let types = signature
+            .params
+            .iter()
+            .chain(std::iter::once(&signature.result));
+        let takes_text = types
+            .map(crate::semantics::analysis::evaluation::native_ty)
+            .any(|ty| ty.scalar == Scalar::Str);
+        if takes_text && reactive {
+            self.error_at_node(
+                Code::CompileTimeNative,
+                node,
+                format!(
+                    "`{}` takes or returns a string, so it runs only at compile time, and an argument here reads a cell",
+                    decl.name
+                ),
+            )?;
+            return Ok(Sig::ERROR);
+        }
+        let scalar = crate::semantics::analysis::evaluation::native_ty(&signature.result).scalar;
+        Ok(Sig::of(
+            kind_of(scalar),
+            Width::Fixed(scalar),
+            reactive,
+            None,
+        ))
     }
 
     fn destination_read_sig(

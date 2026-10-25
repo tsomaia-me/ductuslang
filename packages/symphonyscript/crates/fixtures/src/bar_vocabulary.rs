@@ -6,7 +6,7 @@ pub fn bar_vocabulary() -> Vocabulary {
     let bar = v.node("Bar");
     v.kind(bar)
         .top_level(Count::Any)
-        .attr::<i64>("len")
+        .attr::<i64>("bar_len")
         .default(0)
         .family(&beats, "bars")
         .attr::<i64>("beat_len")

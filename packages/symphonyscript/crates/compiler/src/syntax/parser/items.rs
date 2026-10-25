@@ -23,6 +23,7 @@ impl Parser<'_> {
         match self.peek() {
             Some(SyntaxKind::InputKw) => self.then([Task::InputDecl]),
             Some(SyntaxKind::LetKw) => self.then([Task::LetDecl(SyntaxKind::LetDecl)]),
+            Some(SyntaxKind::StateKw) => self.then([Task::LetDecl(SyntaxKind::StateDecl)]),
             Some(SyntaxKind::FnKw) => self.then([Task::FnDecl]),
             Some(SyntaxKind::PatternKw) => self.then([Task::PatternDecl]),
             Some(SyntaxKind::Ident) if self.at_wire_kind() => {
@@ -64,20 +65,52 @@ impl Parser<'_> {
     }
 
     pub(super) fn let_decl(&mut self, kind: SyntaxKind) {
+        let state = kind == SyntaxKind::StateDecl;
+        let code = if state {
+            Code::StateSyntax
+        } else {
+            Code::LetSyntax
+        };
         self.start(kind);
         self.bump();
-        self.expect_name(Code::LetSyntax, "the let's name");
-        if kind == SyntaxKind::LetDecl && self.eat(SyntaxKind::Colon) {
+        if state && self.eat(SyntaxKind::LBracket) {
+            self.digits(code, "the deepest offset in digits");
+            self.expect(SyntaxKind::RBracket, code, "`]`");
+        }
+        if state {
+            self.expect_name(code, "the state's name");
+        } else {
+            self.expect_name(code, "the let's name");
+        }
+        if kind != SyntaxKind::LocalLet && self.eat(SyntaxKind::Colon) {
             self.type_ref();
         }
         if !self.eat(SyntaxKind::Eq) {
-            self.match_after_fault(SyntaxKind::Eq, Code::LetSyntax, "`=` and the value");
+            self.match_after_fault(SyntaxKind::Eq, code, "`=` and the value");
         }
         if self.at(SyntaxKind::MatchKw) {
             self.then([Task::MatchBlock, Task::Finish]);
         } else {
-            self.then([Task::Expr, Task::FinishLineFinish(Code::LetSyntax)]);
+            self.then([Task::Expr, Task::FinishLineFinish(code)]);
         }
+    }
+
+    fn digits(&mut self, code: Code, what: &str) -> bool {
+        let plain = self.at(SyntaxKind::Number)
+            && self
+                .current_text()
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || byte == b'_');
+        if plain {
+            self.bump();
+            return true;
+        }
+        let found = self.describe();
+        self.error(code, format!("expected {what}, found {found}"));
+        if self.at(SyntaxKind::Number) {
+            self.bump();
+        }
+        false
     }
 
     pub(super) fn fn_decl(&mut self) {
@@ -149,6 +182,32 @@ impl Parser<'_> {
     }
 
     pub(super) fn fn_after_params(&mut self) {
+        if !self.at(SyntaxKind::BoundedKw) {
+            self.fn_colon();
+            return;
+        }
+        self.start(SyntaxKind::Bounded);
+        self.bump();
+        let zero = self.at(SyntaxKind::Number)
+            && self
+                .current_text()
+                .bytes()
+                .all(|byte| byte == b'0' || byte == b'_');
+        if zero {
+            self.error(Code::FnSyntax, "a bound is a positive integer");
+            self.bump();
+        } else {
+            self.digits(Code::FnSyntax, "the bound, a positive integer in digits");
+        }
+        self.expect(
+            SyntaxKind::ElseKw,
+            Code::FnSyntax,
+            "`else` and the fallback",
+        );
+        self.then([Task::Expr, Task::Finish, Task::FnColon]);
+    }
+
+    pub(super) fn fn_colon(&mut self) {
         if self.colon_or_skip(Code::FnSyntax, "`:` and the body") {
             self.bump();
             self.then([Task::FnBody, Task::Finish]);
@@ -229,6 +288,7 @@ impl Parser<'_> {
     pub(super) fn type_ref(&mut self) {
         self.start(SyntaxKind::TypeRef);
         if self.at_any(&[
+            SyntaxKind::U8Kw,
             SyntaxKind::I32Kw,
             SyntaxKind::I64Kw,
             SyntaxKind::F32Kw,
@@ -241,24 +301,22 @@ impl Parser<'_> {
             let found = self.describe();
             self.error(Code::TypeSyntax, format!("expected a type, found {found}"));
         }
-        while self.eat(SyntaxKind::LBracket) {
-            let plain = self.at(SyntaxKind::Number)
-                && self
-                    .current_text()
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || byte == b'_');
-            if plain {
+        while self.at(SyntaxKind::LBracket) {
+            if self.nth(1) == Some(SyntaxKind::Dot2) {
                 self.bump();
-            } else {
-                let found = self.describe();
-                self.error(
-                    Code::TypeSyntax,
-                    format!("expected an array length in digits, found {found}"),
-                );
-                if self.at(SyntaxKind::Number) {
-                    self.bump();
+                self.bump();
+                self.digits(Code::TypeSyntax, "a capacity in digits");
+                self.expect(SyntaxKind::RBracket, Code::TypeSyntax, "`]`");
+                if self.at(SyntaxKind::LBracket) {
+                    self.error(
+                        Code::TypeSyntax,
+                        "only the last, outermost length of a type may be a capacity",
+                    );
                 }
+                break;
             }
+            self.bump();
+            self.digits(Code::TypeSyntax, "an array length in digits");
             self.expect(SyntaxKind::RBracket, Code::TypeSyntax, "`]`");
         }
         self.finish();

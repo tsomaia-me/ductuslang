@@ -139,6 +139,7 @@ impl<'a> Parser<'a> {
             Task::Param { pattern } => self.param(pattern),
             Task::ParamAfter { pattern } => self.param_after(pattern),
             Task::FnAfterParams => self.fn_after_params(),
+            Task::FnColon => self.fn_colon(),
             Task::FnBody => self.fn_body(),
             Task::FnLets => self.fn_lets(),
             Task::FnBodyBlockEnd => self.fn_body_block_end(),
@@ -220,6 +221,11 @@ impl<'a> Parser<'a> {
             Task::PostfixLoop(checkpoint) => self.postfix_loop(checkpoint),
             Task::ArrayLit => self.array_lit(),
             Task::ArrayLoop => self.array_loop(),
+            Task::IndexBody => self.index_body(),
+            Task::IndexAfterBound => self.index_after_bound(),
+            Task::SliceUpper => self.slice_upper(),
+            Task::Bound => self.bound(),
+            Task::HistoryAfterOffset => self.history_after_offset(),
             Task::ArgList => self.arg_list(),
             Task::ArgItem { named_call } => self.arg_item(named_call),
             Task::ArgAfter { named_call } => self.arg_after(named_call),
@@ -378,7 +384,10 @@ impl<'a> Parser<'a> {
             return;
         };
         match kind {
-            SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::InterpStart => {
+            SyntaxKind::LParen
+            | SyntaxKind::LBracket
+            | SyntaxKind::LBrace
+            | SyntaxKind::InterpStart => {
                 let bracket = match self.builder.open_kind() {
                     Some(
                         SyntaxKind::ArrayLit
@@ -396,7 +405,10 @@ impl<'a> Parser<'a> {
                 };
                 self.brackets.push(bracket);
             }
-            SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::InterpEnd => {
+            SyntaxKind::RParen
+            | SyntaxKind::RBracket
+            | SyntaxKind::RBrace
+            | SyntaxKind::InterpEnd => {
                 self.brackets.pop();
             }
             SyntaxKind::ForKw | SyntaxKind::Colon => {
@@ -407,8 +419,10 @@ impl<'a> Parser<'a> {
             SyntaxKind::Newline => self.brackets.clear(),
             _ => {}
         }
-        let opens_region = matches!(kind, SyntaxKind::LParen | SyntaxKind::LBracket)
-            && self.line_error
+        let opens_region = matches!(
+            kind,
+            SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::LBrace
+        ) && self.line_error
             && self.lexer.depth_at(self.pos) == Some(0);
         let text = self.text_of(self.pos);
         self.builder.token(kind, text);
@@ -500,7 +514,16 @@ impl<'a> Parser<'a> {
 
     fn error(&mut self, code: Code, message: impl Into<String>) {
         let span = self.current_span();
-        self.error_with(Diagnostic::new(code, span, message));
+        let diagnostic = if self.at(SyntaxKind::Caret) {
+            Diagnostic::new(
+                Code::MisplacedCaret,
+                span,
+                "`^` counts from an array's end and stands only at the start of an index or a slice bound",
+            )
+        } else {
+            Diagnostic::new(code, span, message)
+        };
+        self.error_with(diagnostic);
     }
 
     fn missing_block(&mut self, code: Code, message: impl Into<String>) {

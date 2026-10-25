@@ -12,6 +12,7 @@ mod bound_val;
 mod c_array;
 mod c_val;
 mod call_key;
+mod capacity;
 mod carried_enum_of;
 mod chain;
 mod check;
@@ -32,6 +33,7 @@ mod family_key;
 mod fast_hash;
 mod feed;
 mod float_for;
+mod history_cell;
 mod ids;
 mod index;
 mod infer;
@@ -41,6 +43,7 @@ mod is_integer;
 mod item_ref;
 mod kind;
 mod kind_of;
+mod layout;
 mod lengths_of;
 mod let_ref;
 mod local_name;
@@ -51,6 +54,7 @@ mod meet_flexible;
 mod memo;
 mod node;
 mod op;
+mod outside_i64;
 mod param_source;
 mod path_parent;
 mod pattern_use;
@@ -82,5 +86,7 @@ mod wire;
 
 pub(crate) use engine::Engine;
 
+#[cfg(test)]
+mod addition_tests;
 #[cfg(test)]
 mod tests;

@@ -142,12 +142,14 @@ impl Engine<'_> {
             Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
             Ctx::Frame(frame) => self.frame(frame)?.feeds.clone(),
         };
+        let nesting = self.call_nesting(function, node, ctx)?;
         let key = CallKey {
             function,
             args: keys,
             shapes: shapes.clone(),
             expected: own,
             units: unit_set(&feeds),
+            nesting,
         };
         if let Some(value) = self.memo.calls.get(&key) {
             return Ok(Some(value.clone()));
@@ -163,6 +165,45 @@ impl Engine<'_> {
             Ctx::Global => self.run_machine(call, node, own, need),
             Ctx::Frame(_) => self.push_frame(call, node, own, need),
         }
+    }
+
+    fn call_nesting(&self, function: FnId, node: NodeId, ctx: Ctx) -> Result<u64, Internal> {
+        if self.limit_of(function)?.is_none() {
+            return Ok(0);
+        }
+        let (outer, chain) = match ctx {
+            Ctx::Global => (node, 0),
+            Ctx::Frame(frame) => {
+                let machine = self
+                    .active
+                    .as_ref()
+                    .ok_or(Internal::missed("evaluation machine"))?;
+                let chain = machine
+                    .frames
+                    .get(..=frame)
+                    .ok_or(Internal::missed("evaluation frame"))?;
+                let outer = chain
+                    .first()
+                    .ok_or(Internal::missed("evaluation frame"))?
+                    .call;
+                let own = chain
+                    .iter()
+                    .filter(|record| record.function == function)
+                    .count();
+                (outer, u64::try_from(own).unwrap_or(u64::MAX))
+            }
+        };
+        let base = self.nesting_in(self.node(outer)?.scope, function)?;
+        Ok(base.saturating_add(chain))
+    }
+
+    fn limit_of(&self, function: FnId) -> Result<Option<u64>, Internal> {
+        Ok(self
+            .hir
+            .fn_decl(function)?
+            .bound
+            .as_ref()
+            .and_then(|bound| bound.bound))
     }
 
     fn argument(
@@ -268,7 +309,7 @@ impl Engine<'_> {
         function: FnId,
         shapes: &[ArgShape],
         feeds: &[Feed],
-        call: NodeId,
+        (call, nesting): (NodeId, u64),
         need: &mut Vec<Query>,
     ) -> Result<Option<Option<NodeId>>, Internal> {
         let key = TemplateKey {
@@ -285,12 +326,19 @@ impl Engine<'_> {
                 scope
             }
         };
-        let body = self.hir.fn_decl(function)?.value;
+        let decl = self.hir.fn_decl(function)?;
+        let body = match (decl.bound.as_ref(), self.limit_of(function)?) {
+            (Some(bound), Some(limit)) if nesting >= limit => bound.fallback,
+            _ => decl.value,
+        };
         let val = some!(self.val(Query::Expr(body, scope), need));
         let Some(root) = self.boxed_body(body, scope, &val)? else {
             return Ok(Some(None));
         };
         let sig = some!(self.sig(root, need));
+        if sig.reactive && self.hir.fn_decl(function)?.faulty_head {
+            return Ok(Some(None));
+        }
         if sig.reactive {
             self.error_at_node(
                 Code::ReactiveRecursion,
@@ -370,7 +418,7 @@ impl Engine<'_> {
                     call.function,
                     &call.shapes,
                     &call.feeds,
-                    node,
+                    (node, call.key.nesting),
                     need
                 )?) {
                     Some(root) if self.result_fits(root, own, node, call.function)? => root,
@@ -383,6 +431,7 @@ impl Engine<'_> {
                     return Ok(Some(CVal::Error));
                 }
                 let ty = self.body_type(root, own)?;
+                let unbounded = u64::from(self.limit_of(call.function)?.is_none());
                 Machine {
                     frames: vec![Frame {
                         key: call.key.clone(),
@@ -394,6 +443,7 @@ impl Engine<'_> {
                         expected: own,
                         feeds: call.feeds,
                         memo: FastMap::default(),
+                        unbounded,
                     }],
                     work: vec![(0, root, ty)],
                 }
@@ -465,8 +515,13 @@ impl Engine<'_> {
         own: EvalTy,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let depth = self.machine_mut()?.frames.len();
-        if u64::try_from(depth).map_or(true, |depth| depth >= self.limits.nesting_depth) {
+        let bounded = self.limit_of(call.function)?.is_some();
+        let depth = self
+            .machine_mut()?
+            .frames
+            .last()
+            .map_or(0, |frame| frame.unbounded);
+        if !bounded && depth >= self.limits.nesting_depth {
             let mut names: Vec<String> = Vec::new();
             let functions: Vec<FnId> = self
                 .machine_mut()?
@@ -491,14 +546,19 @@ impl Engine<'_> {
             )?;
             return Ok(Some(CVal::Error));
         }
-        let root =
-            match some!(self.template(call.function, &call.shapes, &call.feeds, node, need)?) {
-                Some(root) if self.result_fits(root, own, node, call.function)? => root,
-                _ => {
-                    self.memo.calls.insert(call.key, CVal::Error);
-                    return Ok(Some(CVal::Error));
-                }
-            };
+        let root = match some!(self.template(
+            call.function,
+            &call.shapes,
+            &call.feeds,
+            (node, call.key.nesting),
+            need
+        )?) {
+            Some(root) if self.result_fits(root, own, node, call.function)? => root,
+            _ => {
+                self.memo.calls.insert(call.key, CVal::Error);
+                return Ok(Some(CVal::Error));
+            }
+        };
         if !self.within_call_limit(node, call.function)? {
             return Ok(Some(CVal::Error));
         }
@@ -515,6 +575,7 @@ impl Engine<'_> {
             expected: own,
             feeds: call.feeds,
             memo: FastMap::default(),
+            unbounded: depth.saturating_add(u64::from(!bounded)),
         });
         machine.work.push((index, root, ty));
         self.frame_pushed = true;

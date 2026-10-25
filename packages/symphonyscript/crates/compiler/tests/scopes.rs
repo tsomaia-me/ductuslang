@@ -215,7 +215,7 @@ fn placements_in_a_for_body_are_anonymous() {
 }
 
 #[test]
-fn to_stands_only_in_a_wire_clause_with_one_name() {
+fn to_stands_only_in_a_wire_clause_and_ends_at_an_attribute() {
     let cases: &[Case] = &[
         ("let a = to.gain\n", &[(Code::MisplacedTo, "to", 0)]),
         ("fn f(x): to.gain\n", &[(Code::MisplacedTo, "to", 0)]),
@@ -229,7 +229,15 @@ fn to_stands_only_in_a_wire_clause_with_one_name() {
         ),
         (
             "Clip a:\n    Note\nClip c:\n    Plays | gain=to.a.b: a\n",
-            &[(Code::MisplacedTo, "to.a.b", 0)],
+            &[(Code::UnknownAttribute, "a", 3)],
+        ),
+        (
+            "Clip a:\n    Note as n\nClip c:\n    Plays | gain=to.n: a\n",
+            &[(Code::MisplacedTo, "n", 2)],
+        ),
+        (
+            "Clip a:\n    Note as n\nClip c:\n    Plays | gain=to.n.velocity: a\n",
+            &[],
         ),
         (
             "Clip a:\n    Note\nClip c:\n    Plays | gain=to.gain: a\n",

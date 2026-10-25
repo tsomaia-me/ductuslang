@@ -24,6 +24,7 @@ codes!(
     InvalidIdentifier,
     ReservedWord,
     ReservedToken,
+    MisplacedCaret,
     MisplacedUnderscore,
     FloatDigits,
     FloatTypeSuffix,
@@ -46,6 +47,14 @@ codes!(
     LetSyntax,
     FnSyntax,
     PatternSyntax,
+    StateSyntax,
+    MisplacedHistory,
+    HistoryTarget,
+    HistoryFallback,
+    HistoryOffset,
+    HistoryDepth,
+    StateValue,
+    UnboundedState,
     PlacementSyntax,
     TopLevelWire,
     FlagSyntax,
@@ -60,6 +69,7 @@ codes!(
     DuplicateName,
     VariantName,
     PreludeItem,
+    CompileTimeNative,
     RecursivePattern,
     UnknownName,
     UnknownKind,
@@ -67,11 +77,15 @@ codes!(
     ForVariableClash,
     DuplicateLocal,
     ParameterOrder,
+    NeedlessBound,
     DuplicateDefaultParameter,
     NamedInFor,
     MisplacedTo,
     UnknownType,
     ZeroLength,
+    LengthLimit,
+    VariableArray,
+    CapacityExceeded,
     InterpolationType,
     UnknownVariant,
     ArrayOperand,
@@ -155,6 +169,7 @@ impl Code {
             Code::InvalidIdentifier => "invalid-identifier",
             Code::ReservedWord => "reserved-word",
             Code::ReservedToken => "reserved-token",
+            Code::MisplacedCaret => "misplaced-caret",
             Code::MisplacedUnderscore => "misplaced-underscore",
             Code::FloatDigits => "float-digits",
             Code::FloatTypeSuffix => "float-type-suffix",
@@ -177,6 +192,14 @@ impl Code {
             Code::LetSyntax => "let-syntax",
             Code::FnSyntax => "fn-syntax",
             Code::PatternSyntax => "pattern-syntax",
+            Code::StateSyntax => "state-syntax",
+            Code::MisplacedHistory => "misplaced-history",
+            Code::HistoryTarget => "history-target",
+            Code::HistoryFallback => "history-fallback",
+            Code::HistoryOffset => "history-offset",
+            Code::HistoryDepth => "history-depth",
+            Code::StateValue => "state-value",
+            Code::UnboundedState => "unbounded-state",
             Code::PlacementSyntax => "placement-syntax",
             Code::TopLevelWire => "top-level-wire",
             Code::FlagSyntax => "flag-syntax",
@@ -191,6 +214,7 @@ impl Code {
             Code::DuplicateName => "duplicate-name",
             Code::VariantName => "variant-name",
             Code::PreludeItem => "prelude-item",
+            Code::CompileTimeNative => "compile-time-native",
             Code::RecursivePattern => "recursive-pattern",
             Code::UnknownName => "unknown-name",
             Code::UnknownKind => "unknown-kind",
@@ -198,11 +222,15 @@ impl Code {
             Code::ForVariableClash => "for-variable-clash",
             Code::DuplicateLocal => "duplicate-local",
             Code::ParameterOrder => "parameter-order",
+            Code::NeedlessBound => "needless-bound",
             Code::DuplicateDefaultParameter => "duplicate-default-parameter",
             Code::NamedInFor => "named-in-for",
             Code::MisplacedTo => "misplaced-to",
             Code::UnknownType => "unknown-type",
             Code::ZeroLength => "zero-length",
+            Code::LengthLimit => "length-limit",
+            Code::VariableArray => "variable-array",
+            Code::CapacityExceeded => "capacity-exceeded",
             Code::InterpolationType => "interpolation-type",
             Code::UnknownVariant => "unknown-variant",
             Code::ArrayOperand => "array-operand",
@@ -397,6 +425,20 @@ impl Code {
             Code::WireCycle => "8.4",
             Code::UnreachableInstance => "10.2",
             Code::NoEntryInstance => "10.2",
+            Code::MisplacedCaret => "2.5",
+            Code::StateSyntax => "6.6",
+            Code::LengthLimit => "3.2",
+            Code::MisplacedHistory => "6.6",
+            Code::VariableArray => "3.7",
+            Code::HistoryTarget => "6.6",
+            Code::HistoryFallback => "6.6",
+            Code::HistoryOffset => "6.6",
+            Code::HistoryDepth => "6.6",
+            Code::StateValue => "6.6",
+            Code::UnboundedState => "6.6",
+            Code::CapacityExceeded => "3.7",
+            Code::NeedlessBound => "6.3",
+            Code::CompileTimeNative => "10.1",
             Code::InternalError => return None,
         };
         Some(section)
@@ -529,6 +571,20 @@ impl Code {
             | Code::ChildNotAccepted
             | Code::WireEndpoint
             | Code::WireCycle
+            | Code::MisplacedCaret
+            | Code::StateSyntax
+            | Code::LengthLimit
+            | Code::MisplacedHistory
+            | Code::VariableArray
+            | Code::HistoryTarget
+            | Code::HistoryFallback
+            | Code::HistoryOffset
+            | Code::HistoryDepth
+            | Code::StateValue
+            | Code::UnboundedState
+            | Code::CapacityExceeded
+            | Code::NeedlessBound
+            | Code::CompileTimeNative
             | Code::InternalError => Severity::Error,
         }
     }

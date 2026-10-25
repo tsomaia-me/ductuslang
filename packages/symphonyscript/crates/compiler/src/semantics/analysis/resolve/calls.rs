@@ -52,6 +52,9 @@ impl Engine<'_> {
             Found::Decl(Decl::Fn(function)) => {
                 self.function_call(function, args, expr, loc, scope, need)?
             }
+            Found::Decl(Decl::Native(native)) => {
+                self.native_call(native, args, loc, scope, need)?
+            }
             Found::Nothing => {
                 if self.variants.owner(name).is_some() {
                     self.unplaced_variant_at(Some(name), callee_expr.loc, scope)?;
@@ -98,6 +101,34 @@ impl Engine<'_> {
             return Ok(None);
         }
         let arity = builtin_arity(builtin);
+        if vals.len() == arity
+            && matches!(builtin, Builtin::Len | Builtin::Bytes)
+            && let Some(val) = vals.into_iter().flatten().next()
+        {
+            return match builtin {
+                Builtin::Len => self.length_val(val, loc, scope, need),
+                Builtin::Abs
+                | Builtin::Min
+                | Builtin::Max
+                | Builtin::Clamp
+                | Builtin::Floor
+                | Builtin::Ceil
+                | Builtin::Round
+                | Builtin::Sqrt
+                | Builtin::Sin
+                | Builtin::Cos
+                | Builtin::Tan
+                | Builtin::Exp
+                | Builtin::Log
+                | Builtin::Lerp
+                | Builtin::Rand
+                | Builtin::Bytes => Ok(Some(self.bytes_val(val, loc, scope)?)),
+            };
+        }
+        let vals: Vec<Option<Val>> = values
+            .iter()
+            .map(|value| self.val(Query::Expr(*value, scope), need))
+            .collect();
         if vals.len() != arity {
             self.error(
                 Code::ArgumentCount,
@@ -154,6 +185,15 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         };
         let recursive = self.is_recursive(function)?;
+        if recursive && self.bounded_cycle(function)? {
+            match self.call_reads_cell(function, &sources, need)? {
+                None => return Ok(None),
+                Some(true) => {
+                    return self.expand_bounded(function, sources, expr, loc, scope, need);
+                }
+                Some(false) => {}
+            }
+        }
         if recursive {
             let mut vals = Vec::new();
             let mut missing = false;
@@ -203,6 +243,67 @@ impl Engine<'_> {
                 created
             }
         };
+        self.inlined_value(decl.value, (expr, scope), call_scope, need)
+    }
+
+    fn expand_bounded(
+        &mut self,
+        function: FnId,
+        sources: Vec<ParamSource>,
+        expr: ExprId,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
+        let decl = self.hir.fn_decl(function)?;
+        let Some(bound) = decl.bound.as_ref() else {
+            return Err(Internal::missed("bound"));
+        };
+        let Some(limit) = bound.bound else {
+            return Ok(Some(Val::Error));
+        };
+        let nesting = self.nesting_in(scope, function)?;
+        let body = if nesting >= limit {
+            bound.fallback
+        } else {
+            decl.value
+        };
+        let call_scope = match self.memo.call_scopes.get(&(expr, scope)) {
+            Some(existing) => *existing,
+            None => {
+                let count = self.inline_count(function, &sources)?;
+                if !self.charge_inlined(count, function, loc, scope)? {
+                    return Ok(Some(Val::Error));
+                }
+                let created = self.call_scope(function, sources, loc, scope, false)?;
+                self.deepen(created, function, nesting.saturating_add(1))?;
+                self.memo.call_scopes.insert((expr, scope), created);
+                created
+            }
+        };
+        self.inlined_value(body, (expr, scope), call_scope, need)
+    }
+
+    fn inlined_value(
+        &mut self,
+        body: ExprId,
+        (expr, scope): (ExprId, ScopeId),
+        call_scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
+        let fallback = self
+            .hir
+            .fn_decl(self.owner_of(call_scope)?)?
+            .bound
+            .as_ref()
+            .is_some_and(|bound| bound.fallback == body);
+        let ScopeKind::Locals(locals) = &self.scope_of(call_scope)?.kind else {
+            return Err(Internal::missed("locals scope"));
+        };
+        let LocalsOwner::Fn(function) = locals.owner else {
+            return Err(Internal::missed("function scope"));
+        };
+        let decl = self.hir.fn_decl(function)?;
         let mut locals_ready = true;
         for index in 0..decl.params.len() {
             locals_ready &= self
@@ -210,6 +311,9 @@ impl Engine<'_> {
                 .is_some();
         }
         for index in 0..decl.lets.len() {
+            if fallback {
+                break;
+            }
             locals_ready &= self
                 .bound(
                     Query::Let(
@@ -220,16 +324,11 @@ impl Engine<'_> {
                 )
                 .is_some();
         }
-        let value = self.val(Query::Expr(decl.value, call_scope), need);
+        let value = self.val(Query::Expr(body, call_scope), need);
         if !locals_ready {
             return Ok(None);
         }
-        if let Some(group) = self
-            .memo
-            .literal_groups
-            .get(&(decl.value, call_scope))
-            .copied()
-        {
+        if let Some(group) = self.memo.literal_groups.get(&(body, call_scope)).copied() {
             self.memo.literal_groups.insert((expr, scope), group);
         }
         Ok(value)
@@ -398,7 +497,7 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn charge_inlined(
+    pub(super) fn charge_inlined(
         &mut self,
         count: u64,
         function: FnId,
@@ -414,6 +513,112 @@ impl Engine<'_> {
         }
         self.report_inline_limit(function, loc, scope)?;
         Ok(false)
+    }
+
+    fn bounded_cycle(&self, function: FnId) -> Result<bool, Internal> {
+        self.collected
+            .bounded_cycle
+            .get(function.index())
+            .copied()
+            .ok_or(Internal::missed("function"))
+    }
+
+    fn call_reads_cell(
+        &mut self,
+        function: FnId,
+        sources: &[ParamSource],
+        need: &mut Vec<Query>,
+    ) -> Result<Option<bool>, Internal> {
+        let mut reads = false;
+        let mut missing = false;
+        for source in sources {
+            let ParamSource::Arg { expr, scope } = source else {
+                continue;
+            };
+            let Some(val) = self.val(Query::Expr(*expr, *scope), need) else {
+                missing = true;
+                continue;
+            };
+            for node in val.nodes() {
+                match self.sig(node, need) {
+                    Some(sig) => reads |= sig.reactive,
+                    None => missing = true,
+                }
+            }
+        }
+        if missing {
+            return Ok(None);
+        }
+        if reads {
+            return Ok(Some(true));
+        }
+        self.body_reads_cell(function, need)
+    }
+
+    pub(in crate::semantics::analysis) fn nesting_in(
+        &self,
+        scope: ScopeId,
+        function: FnId,
+    ) -> Result<u64, Internal> {
+        Ok(self
+            .nesting_of(scope)?
+            .iter()
+            .find(|(owner, _)| *owner == function)
+            .map_or(0, |(_, depth)| *depth))
+    }
+
+    pub(in crate::semantics::analysis) fn in_expansion(
+        &self,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
+        Ok(!self.nesting_of(scope)?.is_empty())
+    }
+
+    fn nesting_of(&self, scope: ScopeId) -> Result<Rc<Vec<(FnId, u64)>>, Internal> {
+        let mut current = Some(scope);
+        while let Some(id) = current {
+            let record = self.scope_of(id)?;
+            match &record.kind {
+                ScopeKind::Locals(locals) => return Ok(locals.nesting.clone()),
+                ScopeKind::ParamPrefix { locals, .. } => current = Some(*locals),
+                ScopeKind::Global { .. } => break,
+                ScopeKind::Body { .. }
+                | ScopeKind::ForVar { .. }
+                | ScopeKind::WireClause { .. } => {
+                    current = record.parent;
+                }
+            }
+        }
+        Ok(Rc::new(Vec::new()))
+    }
+
+    fn owner_of(&self, scope: ScopeId) -> Result<FnId, Internal> {
+        let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
+            return Err(Internal::missed("locals scope"));
+        };
+        let LocalsOwner::Fn(function) = locals.owner else {
+            return Err(Internal::missed("function scope"));
+        };
+        Ok(function)
+    }
+
+    fn deepen(&mut self, scope: ScopeId, function: FnId, depth: u64) -> Result<(), Internal> {
+        let record = self
+            .scopes
+            .get_mut(scope.index())
+            .ok_or(Internal::missed("scope"))?;
+        let ScopeKind::Locals(locals) = &mut record.kind else {
+            return Err(Internal::missed("locals scope"));
+        };
+        let mut nesting: Vec<(FnId, u64)> = locals
+            .nesting
+            .iter()
+            .copied()
+            .filter(|(owner, _)| *owner != function)
+            .collect();
+        nesting.push((function, depth));
+        locals.nesting = Rc::new(nesting);
+        Ok(())
     }
 
     pub(super) fn is_recursive(&self, function: FnId) -> Result<bool, Internal> {
@@ -522,12 +727,18 @@ impl Engine<'_> {
         } else {
             self.template_of(caller)?
         };
+        let nesting = if recursive {
+            Rc::new(Vec::new())
+        } else {
+            self.nesting_of(caller)?
+        };
         self.scope_in(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Fn(function),
                 params,
                 names,
                 recursive,
+                nesting,
             }),
             Some(global),
             chain,
@@ -614,7 +825,9 @@ fn builtin_arity(builtin: Builtin) -> usize {
         | Builtin::Cos
         | Builtin::Tan
         | Builtin::Exp
-        | Builtin::Log => 1,
+        | Builtin::Log
+        | Builtin::Len
+        | Builtin::Bytes => 1,
         Builtin::Min | Builtin::Max | Builtin::Rand => 2,
         Builtin::Clamp | Builtin::Lerp => 3,
     }

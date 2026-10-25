@@ -87,6 +87,12 @@ pub enum VocabularyError {
         attribute: String,
         unit: String,
     },
+    NativeTypeOutsideSpec {
+        native: String,
+    },
+    NativeCapacityUnstated {
+        native: String,
+    },
 }
 
 impl fmt::Display for VocabularyError {
@@ -117,7 +123,7 @@ impl fmt::Display for VocabularyError {
             ),
             VocabularyError::EmptyArrayAttribute { owner, attribute } => write!(
                 f,
-                "the array attribute `{owner}.{attribute}` has a length of 0"
+                "the array attribute `{owner}.{attribute}` has a length or capacity of 0"
             ),
             VocabularyError::DuplicateDefaultAttribute { owner } => {
                 write!(f, "`{owner}` has two default attributes")
@@ -190,6 +196,14 @@ impl fmt::Display for VocabularyError {
             } => write!(
                 f,
                 "the integer attribute `{owner}.{attribute}` belongs to a family whose unit `{unit}` has a scale that is not an integer"
+            ),
+            VocabularyError::NativeTypeOutsideSpec { native } => write!(
+                f,
+                "the native function `{native}` has a parameter or result whose type is not a SymphonyScript type"
+            ),
+            VocabularyError::NativeCapacityUnstated { native } => write!(
+                f,
+                "the native function `{native}` returns a variable array without stating its capacity as a number or as an array parameter's"
             ),
         }
     }

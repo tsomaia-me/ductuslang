@@ -509,7 +509,11 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
-            | Op::ToRead { .. } => Vec::new(),
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => Vec::new(),
         }
     }
 

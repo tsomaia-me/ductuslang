@@ -404,6 +404,8 @@ fn every_operator_and_built_in_has_a_distinct_name() {
         Builtin::Log,
         Builtin::Lerp,
         Builtin::Rand,
+        Builtin::Len,
+        Builtin::Bytes,
     ];
     let mut names: Vec<&str> = binary.iter().map(|op| op.name()).collect();
     names.extend([UnaryOp::Neg.name(), UnaryOp::Not.name()]);

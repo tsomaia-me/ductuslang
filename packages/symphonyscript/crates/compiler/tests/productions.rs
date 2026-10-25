@@ -10,8 +10,8 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "TopItem",
-        "input a = 1\nlet b = 2\nfn f(x): x\npattern P():\n    Note\nClip c\n",
-        "File[InputDecl[input a = Literal[1] NL] LetDecl[let b = Literal[2] NL] FnDecl[fn f ParamList[( Param[x] )] : FnBody[NameRef[x] NL]] PatternDecl[pattern P PatternParamList[( )] : Block[NL > Placement[Note NL] <]] Placement[Clip c NL]]",
+        "input a = 1\nlet b = 2\nstate s = 3\nfn f(x): x\npattern P():\n    Note\nClip c\n",
+        "File[InputDecl[input a = Literal[1] NL] LetDecl[let b = Literal[2] NL] StateDecl[state s = Literal[3] NL] FnDecl[fn f ParamList[( Param[x] )] : FnBody[NameRef[x] NL]] PatternDecl[pattern P PatternParamList[( )] : Block[NL > Placement[Note NL] <]] Placement[Clip c NL]]",
     ),
     (
         "NumberLit",
@@ -80,8 +80,8 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "TypeSuffix",
-        "let a = [5i32, 5i64, 0.5f32, 0.5f64]\n",
-        "File[LetDecl[let a = ArrayLit[[ Literal[5i32] , Literal[5i64] , Literal[0.5f32] , Literal[0.5f64] ]] NL]]",
+        "let a = [5u8, 5i32, 5i64, 0.5f32, 0.5f64]\n",
+        "File[LetDecl[let a = ArrayLit[[ Literal[5u8] , Literal[5i32] , Literal[5i64] , Literal[0.5f32] , Literal[0.5f64] ]] NL]]",
     ),
     (
         "UnitSuffix",
@@ -110,13 +110,13 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "Type",
-        "input a: f32[2][3] = 0\ninput w: Wave = Wave::Saw\n",
-        "File[InputDecl[input a : TypeRef[f32 [ 2 ] [ 3 ]] = Literal[0] NL] InputDecl[input w : TypeRef[Wave] = VariantRef[Wave :: Saw] NL]]",
+        "input a: f32[2][3] = 0\ninput w: Wave = Wave::Saw\ninput h: u8[2][..4] = []\n",
+        "File[InputDecl[input a : TypeRef[f32 [ 2 ] [ 3 ]] = Literal[0] NL] InputDecl[input w : TypeRef[Wave] = VariantRef[Wave :: Saw] NL] InputDecl[input h : TypeRef[u8 [ 2 ] [ .. 4 ]] = ArrayLit[[ ]] NL]]",
     ),
     (
         "ScalarType",
-        "input a: i32 = 0\ninput b: i64 = 0\ninput c: f32 = 0\ninput d: f64 = 0\ninput e: bool = true\n",
-        "File[InputDecl[input a : TypeRef[i32] = Literal[0] NL] InputDecl[input b : TypeRef[i64] = Literal[0] NL] InputDecl[input c : TypeRef[f32] = Literal[0] NL] InputDecl[input d : TypeRef[f64] = Literal[0] NL] InputDecl[input e : TypeRef[bool] = Literal[true] NL]]",
+        "input z: u8 = 0\ninput a: i32 = 0\ninput b: i64 = 0\ninput c: f32 = 0\ninput d: f64 = 0\ninput e: bool = true\n",
+        "File[InputDecl[input z : TypeRef[u8] = Literal[0] NL] InputDecl[input a : TypeRef[i32] = Literal[0] NL] InputDecl[input b : TypeRef[i64] = Literal[0] NL] InputDecl[input c : TypeRef[f32] = Literal[0] NL] InputDecl[input d : TypeRef[f64] = Literal[0] NL] InputDecl[input e : TypeRef[bool] = Literal[true] NL]]",
     ),
     (
         "Expr",
@@ -176,7 +176,17 @@ const CASES: &[(&str, &str, &str)] = &[
     (
         "Postfix",
         "let a = f(1)[0].gain\n",
-        "File[LetDecl[let a = FieldExpr[IndexExpr[CallExpr[NameRef[f] ArgList[( Literal[1] )]] [ Literal[0] ]] . gain] NL]]",
+        "File[LetDecl[let a = FieldExpr[IndexExpr[CallExpr[NameRef[f] ArgList[( Literal[1] )]] [ Bound[Literal[0]] ]] . gain] NL]]",
+    ),
+    (
+        "Index",
+        "let b = xs[^1] + xs[1..^2] + xs[..2] + xs[3..] + xs[..]\n",
+        "File[LetDecl[let b = BinaryExpr[BinaryExpr[BinaryExpr[BinaryExpr[IndexExpr[NameRef[xs] [ Bound[^ Literal[1]] ]] + IndexExpr[NameRef[xs] [ Bound[Literal[1]] .. Bound[^ Literal[2]] ]]] + IndexExpr[NameRef[xs] [ .. Bound[Literal[2]] ]]] + IndexExpr[NameRef[xs] [ Bound[Literal[3]] .. ]]] + IndexExpr[NameRef[xs] [ .. ]]] NL]]",
+    ),
+    (
+        "Bound",
+        "let c = xs[^n - 1]\n",
+        "File[LetDecl[let c = IndexExpr[NameRef[xs] [ Bound[^ BinaryExpr[NameRef[n] - Literal[1]]] ]] NL]]",
     ),
     (
         "Primary",
@@ -185,8 +195,8 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "ArrayLit",
-        "let a = [1, 2, 3,]\nlet b = [[1], [2]]\n",
-        "File[LetDecl[let a = ArrayLit[[ Literal[1] , Literal[2] , Literal[3] , ]] NL] LetDecl[let b = ArrayLit[[ ArrayLit[[ Literal[1] ]] , ArrayLit[[ Literal[2] ]] ]] NL]]",
+        "let a = [1, 2, 3,]\nlet b = [[1], [2]]\nlet c = []\n",
+        "File[LetDecl[let a = ArrayLit[[ Literal[1] , Literal[2] , Literal[3] , ]] NL] LetDecl[let b = ArrayLit[[ ArrayLit[[ Literal[1] ]] , ArrayLit[[ Literal[2] ]] ]] NL] LetDecl[let c = ArrayLit[[ ]] NL]]",
     ),
     (
         "Args",
@@ -215,8 +225,8 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "Conversion",
-        "let a = i32(x) + i64(x) + f32(x) + f64(x)\n",
-        "File[LetDecl[let a = BinaryExpr[BinaryExpr[BinaryExpr[Conversion[i32 ( NameRef[x] )] + Conversion[i64 ( NameRef[x] )]] + Conversion[f32 ( NameRef[x] )]] + Conversion[f64 ( NameRef[x] )]] NL]]",
+        "let a = u8(x) + i32(x) + i64(x) + f32(x) + f64(x)\n",
+        "File[LetDecl[let a = BinaryExpr[BinaryExpr[BinaryExpr[BinaryExpr[Conversion[u8 ( NameRef[x] )] + Conversion[i32 ( NameRef[x] )]] + Conversion[i64 ( NameRef[x] )]] + Conversion[f32 ( NameRef[x] )]] + Conversion[f64 ( NameRef[x] )]] NL]]",
     ),
     (
         "InputDecl",
@@ -232,6 +242,21 @@ const CASES: &[(&str, &str, &str)] = &[
         "FnDecl",
         "fn f(): 1\nfn g(x):\n    x\n",
         "File[FnDecl[fn f ParamList[( )] : FnBody[Literal[1] NL]] FnDecl[fn g ParamList[( Param[x] )] : FnBody[NL > NameRef[x] NL <]]]",
+    ),
+    (
+        "Bounded",
+        "fn f(n) bounded 10 else 0: f(n + 1)\n",
+        "File[FnDecl[fn f ParamList[( Param[n] )] Bounded[bounded 10 else Literal[0]] : FnBody[CallExpr[NameRef[f] ArgList[( BinaryExpr[NameRef[n] + Literal[1]] )]] NL]]]",
+    ),
+    (
+        "StateDecl",
+        "state[2] s: f32 = s{2, 0.0}\nstate m = match k:\n    0: 1\n    else: 2\n",
+        "File[StateDecl[state [ 2 ] s : TypeRef[f32] = History[s { Literal[2] , Literal[0.0] }] NL] StateDecl[state m = MatchBlock[match NameRef[k] : NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : Literal[2] NL] <]]]",
+    ),
+    (
+        "History",
+        "state s = s{1, 0} + t{2}\n",
+        "File[StateDecl[state s = BinaryExpr[History[s { Literal[1] , Literal[0] }] + History[t { Literal[2] }]] NL]]",
     ),
     (
         "FnBody",
@@ -315,8 +340,8 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "Atom",
-        "Clip c:\n    Note/-1\n    Note/true\n    Note/\"s\"\n    Note/a.b.c\n    Note/Wave::Saw\n    Plays/to.gain: c\n",
-        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ PrefixExpr[- Literal[1]]] NL] Placement[Note DefaultArg[/ Literal[true]] NL] Placement[Note DefaultArg[/ StringLit[\" s \"]] NL] Placement[Note DefaultArg[/ FieldExpr[FieldExpr[NameRef[a] . b] . c]] NL] Placement[Note DefaultArg[/ VariantRef[Wave :: Saw]] NL] WirePlacement[Plays DefaultArg[/ FieldExpr[ToExpr[to] . gain]] : Destination[NameRef[c] NL]] <]]]]",
+        "Clip c:\n    Note/-1\n    Note/true\n    Note/\"s\"\n    Note/a.b.c\n    Note/Wave::Saw\n    Plays/to.gain: c\n    Plays/to.hook.velocity: c\n",
+        "File[Placement[Clip c Body[: Block[NL > Placement[Note DefaultArg[/ PrefixExpr[- Literal[1]]] NL] Placement[Note DefaultArg[/ Literal[true]] NL] Placement[Note DefaultArg[/ StringLit[\" s \"]] NL] Placement[Note DefaultArg[/ FieldExpr[FieldExpr[NameRef[a] . b] . c]] NL] Placement[Note DefaultArg[/ VariantRef[Wave :: Saw]] NL] WirePlacement[Plays DefaultArg[/ FieldExpr[ToExpr[to] . gain]] : Destination[NameRef[c] NL]] WirePlacement[Plays DefaultArg[/ FieldExpr[FieldExpr[ToExpr[to] . hook] . velocity]] : Destination[NameRef[c] NL]] <]]]]",
     ),
     (
         "Attrs",

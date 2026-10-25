@@ -45,6 +45,24 @@ pub(crate) fn combined_shape(
             lengths.push(u32::try_from(elements.len()).unwrap_or(u32::MAX));
             Ok(lengths)
         }
+        Op::Join(..) => {
+            let second = shapes.get(1).cloned().unwrap_or_default();
+            match (first.split_last(), second.split_last()) {
+                (Some((left, left_inner)), Some((right, right_inner)))
+                    if left_inner == right_inner =>
+                {
+                    let mut lengths = left_inner.to_vec();
+                    lengths.push(left.saturating_add(*right));
+                    Ok(lengths)
+                }
+                _ => Err(ShapeFault {
+                    node,
+                    code: Code::RaggedArray,
+                    message: "the rows of the joined arrays have different shapes",
+                }),
+            }
+        }
+        Op::Slice { .. } | Op::History { .. } | Op::Native { .. } => Ok(first),
         Op::Use(_)
         | Op::Chosen(_)
         | Op::Annotate(..)

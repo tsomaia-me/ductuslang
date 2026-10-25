@@ -70,6 +70,11 @@ impl Engine<'_> {
                     if let Op::Read(binding) = &self.node(current)?.op {
                         binding_feeds.entry(*binding).or_default().push(feed);
                     }
+                    if matches!(self.node(current)?.op, Op::History { .. }) {
+                        for binding in self.history_bindings(current)? {
+                            binding_feeds.entry(binding).or_default().push(feed);
+                        }
+                    }
                     if self.carries(current, feed.0)? {
                         stack.extend(self.carried_operands(current)?);
                     }
@@ -165,7 +170,8 @@ impl Engine<'_> {
         Ok(match &self.node(node)?.op {
             Op::Read(binding) => vec![self.binding(*binding)?.init],
             Op::Pick { items, .. } => items.clone(),
-            Op::Element { base, .. } => vec![*base],
+            Op::Element { base, .. } | Op::Slice { base, .. } => vec![*base],
+            Op::Native { .. } | Op::Builtin(Builtin::Len | Builtin::Bytes, _) => Vec::new(),
             op => op.operands(),
         })
     }
@@ -372,6 +378,11 @@ impl Engine<'_> {
                             args,
                         ) => any(args),
                         Op::Read(binding) => floats.contains(&self.binding(*binding)?.init),
+                        Op::Join(lhs, rhs) => any(&[*lhs, *rhs]),
+                        Op::Slice { base, .. } => any(&[*base]),
+                        Op::History { fallback, .. } => {
+                            fallback.is_some_and(|value| floats.contains(&value))
+                        }
                         Op::Number(..)
                         | Op::Const(_)
                         | Op::Bool(_)
@@ -409,11 +420,14 @@ impl Engine<'_> {
                             | Builtin::Exp
                             | Builtin::Log
                             | Builtin::Lerp
-                            | Builtin::Rand,
+                            | Builtin::Rand
+                            | Builtin::Len
+                            | Builtin::Bytes,
                             _,
                         )
                         | Op::Recursive { .. }
-                        | Op::ToRead { .. } => false,
+                        | Op::ToRead { .. }
+                        | Op::Native { .. } => false,
                     };
                 if becomes_float {
                     floats.insert(node);

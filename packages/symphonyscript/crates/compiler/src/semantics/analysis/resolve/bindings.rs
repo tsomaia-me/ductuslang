@@ -5,6 +5,7 @@ use symphonyscript_core::{AttrDefault, AttrId, Scalar};
 use super::annotation::Annotation;
 use super::bind_spec::BindSpec;
 use super::found::Found;
+use super::length_limit::LENGTH_LIMIT;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
@@ -22,6 +23,7 @@ use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::kind_of::kind_of;
+use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
@@ -38,6 +40,8 @@ use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{ExprId, ExprKind, InputId, LetDecl, Loc, TypeBase, TypeRef};
+
+type Whole = (Val, Layout, Option<u32>);
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_let(
@@ -62,10 +66,48 @@ impl Engine<'_> {
             .as_ref()
             .map(|name| name.text.clone())
             .unwrap_or_default();
-        let Some((val, defaulted)) =
-            self.reactive_elements(val, annotation.as_ref(), loc, within, need)?
-        else {
+        let Some(val) = self.as_bytes(val, annotation.as_ref(), loc, within, need)? else {
             return Ok(false);
+        };
+        let Some(whole) = self.whole_value(&val, annotation.as_ref(), loc, within, need)? else {
+            return Ok(false);
+        };
+        if let Some((Val::Scalar(node), _, Some(capacity))) = &whole {
+            let Some(sig) = self.sig(*node, need) else {
+                return Ok(false);
+            };
+            if !sig.reactive {
+                let Some(found) = self.layout_of(*node, need)? else {
+                    return Ok(false);
+                };
+                if let Ok(Some(layout)) = found.shaped
+                    && !layout.variable
+                    && let Some(length) = layout.outer()
+                    && length > *capacity
+                {
+                    self.error(
+                        Code::CapacityExceeded,
+                        loc,
+                        within,
+                        format!(
+                            "`{name}` holds {length} elements, more than its annotated capacity {capacity}"
+                        ),
+                    )?;
+                    self.memo.lets.insert((scope, local), BoundVal::Error);
+                    return Ok(true);
+                }
+            }
+        }
+        let (val, defaulted, layout) = match whole {
+            Some((val, layout, capacity)) => (val, None, Some((layout, capacity))),
+            None => {
+                let Some((val, defaulted)) =
+                    self.reactive_elements(val, annotation.as_ref(), loc, within, need)?
+                else {
+                    return Ok(false);
+                };
+                (val, defaulted, None)
+            }
         };
         let Some(sigs) = self.element_sigs(&val, need) else {
             return Ok(false);
@@ -82,6 +124,18 @@ impl Engine<'_> {
             scope: within,
         };
         let bound = self.bind(&val, &sigs, &spec)?;
+        if let (BoundVal::Scalar(Bound::Cell(binding)), Some(_), Some(annotation)) =
+            (&bound, &layout, annotation.as_ref())
+            && annotation.capacity.is_none()
+            && !annotation.lengths.is_empty()
+        {
+            self.memo.fixed_annotations.insert(*binding);
+        }
+        self.note_whole(
+            &bound,
+            layout.as_ref().map(|(layout, _)| layout.clone()),
+            layout.and_then(|(_, capacity)| capacity),
+        );
         self.note_defaulted(defaulted, &bound);
         self.memo.lets.insert((scope, local), bound);
         Ok(true)
@@ -202,8 +256,18 @@ impl Engine<'_> {
         let Some(val) = val else {
             return Ok(false);
         };
-        let Some((val, defaulted)) = self.reactive_elements(val, None, loc, scope, need)? else {
+        let Some(whole) = self.whole_value(&val, None, loc, scope, need)? else {
             return Ok(false);
+        };
+        let (val, defaulted, layout) = match whole {
+            Some((val, layout, capacity)) => (val, None, Some((layout, capacity))),
+            None => {
+                let Some((val, defaulted)) = self.reactive_elements(val, None, loc, scope, need)?
+                else {
+                    return Ok(false);
+                };
+                (val, defaulted, None)
+            }
         };
         let Some(sigs) = self.element_sigs(&val, need) else {
             return Ok(false);
@@ -216,6 +280,11 @@ impl Engine<'_> {
             scope,
         };
         let bound = self.bind(&val, &sigs, &spec)?;
+        self.note_whole(
+            &bound,
+            layout.as_ref().map(|(layout, _)| layout.clone()),
+            layout.and_then(|(_, capacity)| capacity),
+        );
         self.note_defaulted(defaulted, &bound);
         self.memo.params.insert((scope, index), bound);
         Ok(true)
@@ -276,6 +345,10 @@ impl Engine<'_> {
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
         let unusable = decl.ty.is_some() && annotation.is_none();
+        let value_loc = self.hir.expr(decl.value)?.loc;
+        let Some(val) = self.as_bytes(val, annotation.as_ref(), value_loc, global, need)? else {
+            return Ok(false);
+        };
         let Some(val) = self.input_elements(val, annotation.as_ref(), decl.value, need)? else {
             return Ok(false);
         };
@@ -337,6 +410,16 @@ impl Engine<'_> {
             return Ok(true);
         }
         if let Some(annotation) = &annotation
+            && let Some(capacity) = annotation.capacity
+        {
+            let name = decl
+                .name
+                .as_ref()
+                .map(|name| name.text.clone())
+                .unwrap_or_default();
+            return self.variable_input(input, (&val, annotation, capacity), name, loc);
+        }
+        if let Some(annotation) = &annotation
             && annotation.lengths != val.shape().lengths()
             && !matches!(val, Val::Error)
         {
@@ -388,6 +471,78 @@ impl Engine<'_> {
         Ok(true)
     }
 
+    fn variable_input(
+        &mut self,
+        input: InputId,
+        (val, annotation, capacity): (&Val, &Annotation, u32),
+        name: String,
+        loc: Loc,
+    ) -> Result<bool, Internal> {
+        let global = self.source_global;
+        let (inner, length) = match val {
+            Val::Array(array) => (
+                array.shape.inner().lengths(),
+                array.shape.outer().unwrap_or(0),
+            ),
+            Val::Scalar(_) => {
+                self.error(
+                    Code::TypeMismatch,
+                    loc,
+                    global,
+                    "a variable-array input's initializer is an array",
+                )?;
+                self.memo.inputs.insert(input, BoundVal::Error);
+                return Ok(true);
+            }
+            Val::Error => {
+                self.memo.inputs.insert(input, BoundVal::Error);
+                return Ok(true);
+            }
+        };
+        if inner != annotation.lengths && length > 0 {
+            self.error(
+                Code::TypeMismatch,
+                loc,
+                global,
+                "the initializer's rows differ from the input's type",
+            )?;
+            self.memo.inputs.insert(input, BoundVal::Error);
+            return Ok(true);
+        }
+        if length > capacity {
+            self.error(
+                Code::CapacityExceeded,
+                loc,
+                global,
+                format!(
+                    "the initializer holds {length} elements, more than the capacity {capacity}"
+                ),
+            )?;
+            self.memo.inputs.insert(input, BoundVal::Error);
+            return Ok(true);
+        }
+        let Some(init) = self.boxed(val, loc, global)? else {
+            self.memo.inputs.insert(input, BoundVal::Error);
+            return Ok(true);
+        };
+        let decl_loc = self.hir.input(input)?.loc;
+        let binding = self.push_binding(Binding {
+            kind: BindingKind::Input { input, element: 0 },
+            init,
+            annotation: Some(annotation.scalar),
+            name,
+            loc: decl_loc,
+        })?;
+        self.memo
+            .binding_layouts
+            .insert(binding, Layout::variable(annotation.lengths.clone()));
+        self.memo.binding_capacities.insert(binding, capacity);
+        self.memo
+            .inputs
+            .insert(input, BoundVal::Scalar(Bound::Cell(binding)));
+        Ok(true)
+    }
+
     pub(in crate::semantics::analysis) fn run_attr(
         &mut self,
         item: ItemRef,
@@ -411,6 +566,24 @@ impl Engine<'_> {
                 let Some(val) = self.val(Query::Expr(expr, scope), need) else {
                     return Ok(false);
                 };
+                let expected = Annotation {
+                    scalar,
+                    lengths: decl.ty.lengths.clone(),
+                    capacity: decl.ty.capacity,
+                };
+                let value_loc = self.hir.expr(expr)?.loc;
+                let Some(val) = self.as_bytes(val, Some(&expected), value_loc, scope, need)? else {
+                    return Ok(false);
+                };
+                if decl.ty.capacity.is_some() {
+                    let Some(bound) =
+                        self.variable_attr(&val, &decl, (item, attr), expr, scope, need)?
+                    else {
+                        return Ok(false);
+                    };
+                    self.memo.attrs.insert((item, attr), bound);
+                    return Ok(true);
+                }
                 let val = self.attr_elements(val, &decl.ty.lengths, expr, scope)?;
                 let Some(sigs) = self.element_sigs(&val, need) else {
                     return Ok(false);
@@ -421,6 +594,7 @@ impl Engine<'_> {
                     let annotation = Annotation {
                         scalar,
                         lengths: decl.ty.lengths.clone(),
+                        capacity: decl.ty.capacity,
                     };
                     let loc = self.hir.expr(expr)?.loc;
                     let spec = BindSpec {
@@ -463,6 +637,53 @@ impl Engine<'_> {
         };
         self.memo.attrs.insert((item, attr), bound);
         Ok(true)
+    }
+
+    fn variable_attr(
+        &mut self,
+        val: &Val,
+        decl: &symphonyscript_core::AttrDecl,
+        (item, attr): (ItemRef, AttrId),
+        expr: ExprId,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<BoundVal>, Internal> {
+        let loc = self.hir.expr(expr)?.loc;
+        let agrees = match val {
+            Val::Array(array) => {
+                array.shape.inner().lengths() == decl.ty.lengths || array.elements.is_empty()
+            }
+            Val::Scalar(node) => self.arrays.contains(node),
+            Val::Error => false,
+        };
+        if !agrees {
+            return Ok(Some(BoundVal::Error));
+        }
+        let Some(node) = self.boxed(val, loc, scope)? else {
+            return Ok(Some(BoundVal::Error));
+        };
+        let Some(sig) = self.sig(node, need) else {
+            return Ok(None);
+        };
+        let annotation = Annotation {
+            scalar: decl.ty.scalar,
+            lengths: decl.ty.lengths.clone(),
+            capacity: decl.ty.capacity,
+        };
+        let spec = BindSpec {
+            kind: BindingKind::Attr { item, attr },
+            annotation: Some(&annotation),
+            name: &decl.name,
+            loc,
+            scope,
+        };
+        let bound = self.bind_attr(&Val::Scalar(node), &[sig], &spec)?;
+        self.note_whole(
+            &bound,
+            Some(Layout::variable(decl.ty.lengths.clone())),
+            decl.ty.capacity,
+        );
+        Ok(Some(bound))
     }
 
     fn input_elements(
@@ -619,6 +840,66 @@ impl Engine<'_> {
             .remove(&root)
             .map(Some)
             .ok_or(Internal::missed("shape"))
+    }
+
+    fn whole_value(
+        &mut self,
+        val: &Val,
+        annotation: Option<&Annotation>,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<Whole>>, Internal> {
+        if let Some(annotation) = annotation
+            && annotation.capacity.is_some()
+        {
+            let Some(node) = self.boxed(val, loc, scope)? else {
+                return Ok(Some(None));
+            };
+            return Ok(Some(Some((
+                Val::Scalar(node),
+                Layout::variable(annotation.lengths.clone()),
+                annotation.capacity,
+            ))));
+        }
+        let Val::Scalar(node) = val else {
+            return Ok(Some(None));
+        };
+        if !self.arrays.contains(node) {
+            return Ok(Some(None));
+        }
+        let Some(sig) = self.sig(*node, need) else {
+            return Ok(None);
+        };
+        if !sig.reactive {
+            return Ok(Some(None));
+        }
+        let Some(found) = self.layout_of(*node, need)? else {
+            return Ok(None);
+        };
+        match found.shaped {
+            Ok(Some(layout)) if layout.variable || !found.certain => {
+                Ok(Some(Some((val.clone(), layout, None))))
+            }
+            Ok(_) => Ok(Some(None)),
+            Err(fault) => {
+                if let Some(fault) = fault {
+                    self.error_at_node(fault.code, fault.node, fault.message)?;
+                }
+                Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))))
+            }
+        }
+    }
+
+    fn note_whole(&mut self, bound: &BoundVal, layout: Option<Layout>, capacity: Option<u32>) {
+        if let (BoundVal::Scalar(Bound::Cell(binding)), Some(layout)) = (bound, layout)
+            && !self.memo.binding_layouts.contains_key(binding)
+        {
+            self.memo.binding_layouts.insert(*binding, layout);
+            if let Some(capacity) = capacity {
+                self.memo.binding_capacities.insert(*binding, capacity);
+            }
+        }
     }
 
     fn note_defaulted(&mut self, base: Option<NodeId>, bound: &BoundVal) {
@@ -789,6 +1070,7 @@ impl Engine<'_> {
                     let bound = one(self, *node, sig, false)?;
                     if let (Some(annotation), Bound::Value(annotated)) = (annotation, bound)
                         && self.arrays.contains(node)
+                        && annotation.capacity.is_none()
                     {
                         self.require_shape(
                             annotated,
@@ -826,9 +1108,19 @@ impl Engine<'_> {
         let lengths = ty
             .lengths
             .iter()
-            .map(|(length, _)| length.filter(|length| *length > 0))
+            .map(|(length, _)| length.filter(|length| (1..LENGTH_LIMIT).contains(length)))
             .collect::<Option<Vec<u32>>>()?;
-        Some(Annotation { scalar, lengths })
+        let capacity = match &ty.capacity {
+            Some((capacity, _)) => {
+                Some(capacity.filter(|capacity| (1..LENGTH_LIMIT).contains(capacity))?)
+            }
+            None => None,
+        };
+        Some(Annotation {
+            scalar,
+            lengths,
+            capacity,
+        })
     }
 }
 

@@ -2,12 +2,13 @@ use super::block::Block;
 use super::body_item::BodyItem;
 use super::expr::Expr;
 use super::fn_decl::FnDecl;
-use super::ids::{BlockId, ExprId, FnId, InputId, LetId, PatternId, PlacementId, WireId};
+use super::ids::{BlockId, ExprId, FnId, InputId, LetId, PatternId, PlacementId, StateId, WireId};
 use super::input::Input;
 use super::let_decl::LetDecl;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
 use super::prelude_end::PreludeEnd;
+use super::state_decl::StateDecl;
 use super::top::Top;
 use super::unknown_names::UnknownNames;
 use super::wire::Wire;
@@ -22,6 +23,7 @@ pub(crate) struct Hir {
     pub wires: Vec<Wire>,
     pub inputs: Vec<Input>,
     pub lets: Vec<LetDecl>,
+    pub states: Vec<StateDecl>,
     pub fns: Vec<FnDecl>,
     pub patterns: Vec<PatternDecl>,
     pub top: Vec<Top>,
@@ -56,6 +58,10 @@ impl Hir {
 
     pub fn let_decl(&self, id: LetId) -> Result<&LetDecl, Internal> {
         self.lets.get(id.index()).ok_or(Internal::missed("let"))
+    }
+
+    pub fn state(&self, id: StateId) -> Result<&StateDecl, Internal> {
+        self.states.get(id.index()).ok_or(Internal::missed("state"))
     }
 
     pub fn fn_decl(&self, id: FnId) -> Result<&FnDecl, Internal> {

@@ -8,6 +8,9 @@ pub(super) fn convert(value: CVal, target: EvalTy) -> CVal {
         other => other,
     };
     match (value, target) {
+        (CVal::Int(value), EvalTy::U8) => CVal::Int(value.clamp(0, i128::from(u8::MAX))),
+        (CVal::F32(value), EvalTy::U8) => CVal::Int(i128::from(value as u8)),
+        (CVal::F64(value), EvalTy::U8) => CVal::Int(i128::from(value as u8)),
         (CVal::Int(value), EvalTy::I32) => {
             CVal::Int(value.clamp(i128::from(i32::MIN), i128::from(i32::MAX)))
         }

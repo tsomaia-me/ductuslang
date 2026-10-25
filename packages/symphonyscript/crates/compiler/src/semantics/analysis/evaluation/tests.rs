@@ -14,7 +14,7 @@ use crate::semantics::ir::{FnId, Loc};
 
 #[test]
 fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
-    with_engine("Session s\n", |engine| {
+    with_engine("fn f(n): f(n)\nSession s\n", |engine| {
         let scope = engine.source_global;
         let function = FnId(0);
         let call = engine
@@ -33,6 +33,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             shapes: Vec::new(),
             expected: EvalTy::Exact,
             units: Vec::new(),
+            nesting: 0,
         };
         let mut need = Vec::new();
         let mut evaluated = |engine: &mut crate::semantics::analysis::Engine<'_>, ctx| {
@@ -76,6 +77,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 expected: EvalTy::Exact,
                 feeds: Vec::new(),
                 memo: FastMap::default(),
+                unbounded: 1,
             }],
             work: Vec::new(),
         });

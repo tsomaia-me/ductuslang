@@ -5,6 +5,7 @@ use super::ident::Ident;
 use super::ids::ExprId;
 use super::match_arm::MatchArm;
 use super::number::Number;
+use super::slice_bound::SliceBound;
 use super::str_part::StrPart;
 use super::suffix::Suffix;
 
@@ -24,6 +25,17 @@ pub(crate) enum ExprKind {
     Array(Vec<ExprId>),
     Field(ExprId, Ident),
     Index(ExprId, ExprId),
+    IndexFromEnd(ExprId, ExprId),
+    Slice {
+        base: ExprId,
+        lower: Option<SliceBound>,
+        upper: Option<SliceBound>,
+    },
+    History {
+        target: Ident,
+        offset: ExprId,
+        fallback: Option<ExprId>,
+    },
     Call(ExprId, Args),
     Unary(UnaryOp, ExprId),
     Binary(BinaryOp, ExprId, ExprId),
@@ -55,7 +67,21 @@ impl ExprKind {
             | ExprKind::Field(operand, _)
             | ExprKind::Unary(_, operand) => vec![*operand],
             ExprKind::Array(elements) => elements.clone(),
-            ExprKind::Index(base, index) => vec![*base, *index],
+            ExprKind::Index(base, index) | ExprKind::IndexFromEnd(base, index) => {
+                vec![*base, *index]
+            }
+            ExprKind::Slice { base, lower, upper } => {
+                let mut children = vec![*base];
+                children.extend(lower.iter().chain(upper.iter()).map(|bound| bound.value));
+                children
+            }
+            ExprKind::History {
+                offset, fallback, ..
+            } => {
+                let mut children = vec![*offset];
+                children.extend(fallback.iter().copied());
+                children
+            }
             ExprKind::Call(callee, args) => {
                 let mut children = vec![*callee];
                 children.extend(args.values());

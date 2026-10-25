@@ -2,13 +2,14 @@ use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_core::{Count, Vocabulary};
-use symphonyscript_fixtures::{SPEC, vocabulary};
+use symphonyscript_fixtures::{SPEC, native_vocabulary, vocabulary};
 
 #[derive(Clone, Copy)]
 enum Setup {
     Example,
     Prelude,
     Bounded,
+    Natives,
 }
 
 struct Rule {
@@ -49,6 +50,21 @@ const fn bounded(
     }
 }
 
+const fn natives(
+    section: &'static str,
+    sentence: &'static str,
+    code: &'static str,
+    program: &'static str,
+) -> Rule {
+    Rule {
+        section,
+        sentence,
+        code,
+        setup: Setup::Natives,
+        program,
+    }
+}
+
 const fn prelude(
     section: &'static str,
     sentence: &'static str,
@@ -73,7 +89,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "2.1",
-        "TopItem ::= InputDecl | LetDecl | FnDecl | PatternDecl | TopPlacement",
+        "TopItem ::= InputDecl | LetDecl | StateDecl | FnDecl | PatternDecl | TopPlacement",
         "top-level-syntax",
         "5\n",
     ),
@@ -121,9 +137,15 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "2.5",
-        "The tokens `^`, `==` and `!=` are reserved and rejected by the lexer",
+        "The tokens `==` and `!=` are reserved and rejected by the lexer",
         "reserved-token",
         "let a = 1 == 2\n",
+    ),
+    rule(
+        "2.5",
+        "`^` stands only at the start of an index or a slice bound (§5.5); anywhere else it is an error.",
+        "misplaced-caret",
+        "let a = 2 ^ 3\n",
     ),
     rule(
         "2.6",
@@ -187,7 +209,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "3.2",
-        "A length in a type is at least 1.",
+        "A length or capacity in a type is at least 1",
         "zero-length",
         "input a: i32[0] = [1]\n",
     ),
@@ -196,6 +218,30 @@ const RULES: &[Rule] = &[
         "Elements may themselves be arrays of equal length",
         "ragged-array",
         "let a = [1, [2]]\n",
+    ),
+    rule(
+        "3.2",
+        "An array's length and capacity are below 2³¹.",
+        "length-limit",
+        "input a: i32[..2147483648] = []\n",
+    ),
+    rule(
+        "3.2",
+        "An array's length and capacity are below 2³¹.",
+        "length-limit",
+        "input a: i32[2147483648] = 0\n",
+    ),
+    rule(
+        "3.2",
+        "A length or capacity in a type is at least 1",
+        "zero-length",
+        "input a: i32[..0] = []\n",
+    ),
+    rule(
+        "3.2",
+        "only the last, the outermost, may be a capacity",
+        "type-syntax",
+        "input a: i32[..2][3] = []\n",
     ),
     rule(
         "3.3",
@@ -379,13 +425,13 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.6",
-        "The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`.",
+        "The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`.",
         "range-bound",
         "Clip c:\n    for i in 0..0.5:\n        Note\n",
     ),
     rule(
         "4.6",
-        "The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`.",
+        "The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`.",
         "index-out-of-range",
         "Clip c:\n    Note/([1, 2][2 ** 70])\n",
     ),
@@ -535,15 +581,15 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "5.5",
-        "A compile-time index outside the array is an error.",
+        "A compile-time index outside a fixed array is an error.",
         "index-out-of-range",
         "Clip c:\n    Note/([1, 2, 3][5])\n",
     ),
     rule(
         "5.5",
-        "Operators apply to scalars only. `[1, 2] + [3, 4]` is an error.",
+        "Every other operator takes scalars only, and `+` of an array and a scalar is an error.",
         "array-operand",
-        "let a = [1, 2] + [3, 4]\n",
+        "let a = [1, 2] + 3\n",
     ),
     rule(
         "5.6",
@@ -565,7 +611,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "5.7",
-        "A call invokes a built-in, a prelude function or a source function (§6.3).",
+        "A call invokes a built-in, a prelude function, native functions included (§10.1), or a source function (§6.3).",
         "not-callable",
         "let a = 1(2)\n",
     ),
@@ -577,7 +623,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "5.7",
-        "Built-ins take positional arguments only.",
+        "Built-ins and native functions take positional arguments only.",
         "named-builtin-arguments",
         "let a = sin(x=1)\n",
     ),
@@ -589,7 +635,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "5.8",
-        "Conversion ::= ('i32' | 'i64' | 'f32' | 'f64') '(' Expr ')'",
+        "Conversion ::= ('u8' | 'i32' | 'i64' | 'f32' | 'f64') '(' Expr ')'",
         "conversion-syntax",
         "let a = i32 1\n",
     ),
@@ -661,7 +707,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
-        "FnDecl ::= 'fn' Name '(' Params? ')' ':' (Expr NEWLINE | NEWLINE INDENT FnBody DEDENT)",
+        "FnDecl ::= 'fn' Name '(' Params? ')' Bounded? ':' (Expr NEWLINE | NEWLINE INDENT FnBody DEDENT)",
         "fn-syntax",
         "fn (x): x\n",
     ),
@@ -697,13 +743,13 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
-        "A recursive function whose body reads a cell is an error, and so are a call to one with an argument that reads a cell",
+        "A call that reads a cell, to a recursive function that is not bounded or that shares a cycle of calls with one that is not, is an error.",
         "reactive-recursion",
         "input i = 1\nfn f(n): if n < 1 then 0 else f(n - 1)\nClip c:\n    Note/(f(i))\n",
     ),
     rule(
         "6.3",
-        "A recursive function whose body reads a cell is an error",
+        "A call to a recursive function reads a cell when one of its arguments does, or when the body of its function, or of a function it calls, does.",
         "reactive-recursion",
         "input i = 1\nfn f(n): if n < 1 then i else f(n - 1)\nClip c:\n    Note/(f(3))\n",
     ),
@@ -856,6 +902,174 @@ const RULES: &[Rule] = &[
         "Anywhere else it is qualified with the enum's name: `Wave::Saw`.",
         "unknown-name",
         "Clip c | gain=Saw(1)\n",
+    ),
+    rule(
+        "3.7",
+        "a variable array where a fixed array is expected is an error",
+        "variable-array",
+        "input a: i32[..4] = []\nlet b: i32[2] = a\n",
+    ),
+    natives(
+        "3.7",
+        "It binds to a variable-array attribute (§10.1) of its element type whose capacity is at least its own",
+        "capacity-exceeded",
+        "input held: i32[..10] = []\nClip c | sequence=held:\n    Note\n",
+    ),
+    natives(
+        "3.7",
+        "a fixed array binds to one when its length is at most the capacity",
+        "capacity-exceeded",
+        "Clip c | sequence=[1, 2, 3, 4, 5, 6, 7, 8, 9]:\n    Note\n",
+    ),
+    rule(
+        "3.7",
+        "| an input or annotation `T[..N]` | N |",
+        "capacity-exceeded",
+        "input a: i32[..4] = []\nlet b: i32[..2] = a\n",
+    ),
+    rule(
+        "3.7",
+        "| an input or annotation `T[..N]` | N |",
+        "capacity-exceeded",
+        "input a: i32[..2] = [1, 2, 3]\n",
+    ),
+    rule(
+        "4.6",
+        "The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`.",
+        "index-out-of-range",
+        "Clip c:\n    Note/([1, 2][2 ** 70..][0])\n",
+    ),
+    natives(
+        "5.7",
+        "Built-ins and native functions take positional arguments only.",
+        "named-builtin-arguments",
+        "let a = checksum(text=\"x\")\n",
+    ),
+    rule(
+        "6.3",
+        "a bound on a function that is not recursive is an error",
+        "needless-bound",
+        "fn f(x) bounded 3 else 0: x\n",
+    ),
+    rule(
+        "6.3",
+        "Bounded  ::= 'bounded' Digits 'else' Expr",
+        "fn-syntax",
+        "fn f(x) bounded else 0: f(x)\n",
+    ),
+    rule(
+        "6.3",
+        "with N a positive integer",
+        "fn-syntax",
+        "fn f(x) bounded 0 else 0: f(x)\n",
+    ),
+    rule(
+        "6.5",
+        "A child or wire name equal to a pattern parameter, a pattern `let` or a `for` variable visible where it is declared is an error",
+        "child-name-clash",
+        "pattern P(default n):\n    Note as n\n    Note\nClip c:\n    P/1\n",
+    ),
+    rule(
+        "6.5",
+        "A child or wire name equal to a pattern parameter, a pattern `let` or a `for` variable visible where it is declared is an error",
+        "child-name-clash",
+        "Track t:\n    for i in 0..2:\n        Synth:\n            Osc as i\n",
+    ),
+    rule(
+        "6.5",
+        "and so is a pattern `let` equal to a child or wire name of its body",
+        "child-name-clash",
+        "pattern P():\n    let k = 1\n    Note as k\n    Note\nClip c:\n    P\n",
+    ),
+    rule(
+        "6.6",
+        "StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? '=' (Expr NEWLINE | MatchBlock)",
+        "state-syntax",
+        "state = 1\n",
+    ),
+    rule(
+        "6.6",
+        "History   ::= Name '{' Expr (',' Expr)? '}'",
+        "expression-syntax",
+        "input a = 1\nstate s = a{}\n",
+    ),
+    rule(
+        "6.6",
+        "a state that reads its own present value does (§6.2)",
+        "declaration-cycle",
+        "state s = s + 1\n",
+    ),
+    rule(
+        "6.6",
+        "States are declared at top level.",
+        "state-syntax",
+        "Clip c:\n    state x = 1\n    Note\n",
+    ),
+    rule(
+        "6.6",
+        "History reads stand only in a state's initializer, so `let`s and functions stay pure.",
+        "misplaced-history",
+        "input a = 1\nlet b = a{1}\n",
+    ),
+    rule(
+        "6.6",
+        "History reads stand only in a state's initializer, so `let`s and functions stay pure.",
+        "misplaced-history",
+        "input a = 1\nfn f(x): a{1} + x\nlet b = f(1)\n",
+    ),
+    rule(
+        "6.6",
+        "The offset `k` is a positive integer known at compile time.",
+        "history-offset",
+        "input a = 1\nstate s = a{0}\n",
+    ),
+    rule(
+        "6.6",
+        "The offset `k` is a positive integer known at compile time.",
+        "history-offset",
+        "input a = 1\nstate s = a{a}\n",
+    ),
+    rule(
+        "6.6",
+        "A history read names an input, a state or a reactive `let`.",
+        "history-target",
+        "let a = 1\nstate s = a{1, 0}\n",
+    ),
+    rule(
+        "6.6",
+        "Its fallback has the cell's type, and is required except for an input, whose fallback is its initial value.",
+        "history-fallback",
+        "state s = s{1} + 1\n",
+    ),
+    rule(
+        "6.6",
+        "Its fallback has the cell's type, and is required except for an input, whose fallback is its initial value.",
+        "type-mismatch",
+        "input a = 1\nstate s = a{1, true}\n",
+    ),
+    rule(
+        "6.6",
+        "`[N]` states the deepest offset the state reads; a deeper offset is an error whose diagnostic gives the N that covers it.",
+        "history-depth",
+        "input a = 1\nstate[1] s = a{2}\n",
+    ),
+    rule(
+        "6.6",
+        "A state holds no string and no node reference.",
+        "state-value",
+        "state s = \"x\"\n",
+    ),
+    rule(
+        "6.6",
+        "A state holds no string and no node reference.",
+        "state-value",
+        "Clip c:\n    Note\nstate s = c\n",
+    ),
+    rule(
+        "6.6",
+        "A state with no such capacity is an error, whose diagnostic shows the slice that bounds it.",
+        "unbounded-state",
+        "input note = 60\nstate recent = recent{1, []} + [note]\n",
     ),
     rule(
         "7.1",
@@ -1015,27 +1229,33 @@ const RULES: &[Rule] = &[
     ),
     bounded(
         "8.3",
-        "every candidate has `name` with the same type and unit family",
+        "every candidate has the path, ending at an attribute of the same type and unit family",
         "to-candidates",
         "input i = 0\nA one\nB two\nRoot r:\n    Item\n    Link: r\n    Pick | level=to.x: [one, two][i]\n",
     ),
     rule(
         "8.3",
-        "`to.a.b`, `to` alone, and `to` written outside a wire placement are errors",
+        "`to` alone, a `to` path that ends at an instance or a wire, and `to` written outside a wire placement are errors",
         "misplaced-to",
         "let a = to.gain\n",
     ),
     rule(
         "8.3",
-        "`to.a.b`, `to` alone, and `to` written outside a wire placement are errors",
+        "`to` alone, a `to` path that ends at an instance or a wire, and `to` written outside a wire placement are errors",
         "misplaced-to",
-        "Clip a:\n    Note\nClip c:\n    Plays | gain=to.a.b: a\n",
+        "Clip a:\n    Note as n\nClip c:\n    Plays | gain=to.n: a\n",
     ),
     rule(
         "8.3",
-        "`to.a.b`, `to` alone, and `to` written outside a wire placement are errors",
+        "`to` alone, a `to` path that ends at an instance or a wire, and `to` written outside a wire placement are errors",
         "misplaced-to",
         "Clip c:\n    Plays | gain=to: c\n",
+    ),
+    rule(
+        "8.3",
+        "`to` alone, a `to` path that ends at an instance or a wire, and `to` written outside a wire placement are errors",
+        "misplaced-to",
+        "Clip a:\n    Note\n    Plays as w: a\nClip c:\n    Plays | gain=to.w: a\n",
     ),
     rule(
         "8.4",
@@ -1066,6 +1286,12 @@ const RULES: &[Rule] = &[
         "the prelude fails to parse or to resolve its names",
         "unknown-name",
         "let a = b\n",
+    ),
+    natives(
+        "10.1",
+        "a native function with a string parameter or result runs only at compile time, and a call to one with an argument that reads a cell is an error",
+        "compile-time-native",
+        "input i = 0\nClip c:\n    Note/(text_length(i))\n",
     ),
     rule(
         "10.2",
@@ -1211,6 +1437,9 @@ fn diagnostics(rule: &Rule) -> Vec<Diagnostic> {
             .check(&[source]),
         Setup::Bounded => Compiler::new(&bounded_vocabulary())
             .expect("the bounded vocabulary compiles")
+            .check(&[source]),
+        Setup::Natives => Compiler::new(&native_vocabulary())
+            .expect("the native vocabulary compiles")
             .check(&[source]),
         Setup::Prelude => match Compiler::new(&with_prelude(rule.program)) {
             Ok(_) => Vec::new(),

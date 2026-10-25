@@ -9,9 +9,11 @@ use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
     AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
-    PatternId, PlacementId, TypeBase, TypeRef, UnknownNames,
+    PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
 };
 use crate::semantics::reporting::Report;
+
+const LENGTH_LIMIT: u32 = 1 << 31;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Visit {
@@ -34,6 +36,7 @@ pub(super) struct Checker<'a> {
     namespace: &'a Namespace,
     frames: Vec<Frame>,
     unknown_bodies: BTreeSet<BlockId>,
+    in_state: bool,
     report: &'a mut Report,
 }
 
@@ -52,8 +55,20 @@ impl<'a> Checker<'a> {
             namespace,
             frames: Vec::new(),
             unknown_bodies: BTreeSet::new(),
+            in_state: false,
             report,
         }
+    }
+
+    pub fn state(&mut self, id: StateId) -> Result<(), Internal> {
+        let decl = self.hir.state(id)?;
+        if let Some(ty) = &decl.ty {
+            self.type_ref(ty);
+        }
+        self.in_state = true;
+        let checked = self.expr(decl.value, None, false);
+        self.in_state = false;
+        checked
     }
 
     pub fn function(&mut self, id: FnId) -> Result<(), Internal> {
@@ -88,6 +103,9 @@ impl<'a> Checker<'a> {
             self.expr(local.value, Some(locals), false)?;
         }
         self.expr(decl.value, Some(locals), false)?;
+        if let Some(bound) = &decl.bound {
+            self.expr(bound.fallback, Some(locals), false)?;
+        }
         self.let_cycles(&decl.lets)?;
         Ok(())
     }
@@ -240,14 +258,21 @@ impl<'a> Checker<'a> {
                 format!("`{}` is not an enum of the vocabulary", name.text),
             );
         }
-        for (length, loc) in &ty.lengths {
-            if *length == Some(0) || length.is_none() {
-                self.report.error(
+        for (length, loc) in ty.lengths.iter().chain(ty.capacity.iter()) {
+            match length {
+                Some(0) => self.report.error(
                     self.hir,
                     Code::ZeroLength,
                     *loc,
-                    "an array length in a type is at least 1",
-                );
+                    "an array length or capacity in a type is at least 1",
+                ),
+                Some(length) if *length < LENGTH_LIMIT => {}
+                Some(_) | None => self.report.error(
+                    self.hir,
+                    Code::LengthLimit,
+                    *loc,
+                    "an array length or capacity is below 2³¹",
+                ),
             }
         }
     }
@@ -390,6 +415,23 @@ impl<'a> Checker<'a> {
         Ok(None)
     }
 
+    fn visible_local(&self, frame: Option<usize>, name: &str) -> Result<Option<Loc>, Internal> {
+        let mut current = frame;
+        while let Some(index) = current {
+            let frame = self
+                .frames
+                .get(index)
+                .ok_or(Internal::missed("scope frame"))?;
+            if matches!(frame.kind, FrameKind::Locals | FrameKind::ForVar)
+                && let Some(loc) = frame.names.get(name)
+            {
+                return Ok(Some(*loc));
+            }
+            current = frame.parent;
+        }
+        Ok(None)
+    }
+
     pub fn expr(
         &mut self,
         root: ExprId,
@@ -426,25 +468,35 @@ impl<'a> Checker<'a> {
                             self.hir,
                             Code::MisplacedTo,
                             expr.loc,
-                            "`to` takes exactly one name, as in `to.gain`",
+                            "`to` starts a path that ends at an attribute, as in `to.gain`",
                         );
                     }
                 }
-                ExprKind::Field(base, _) => {
-                    let base_expr = &self.hir.expr(*base)?.kind;
-                    if let ExprKind::Field(inner, _) = base_expr
-                        && matches!(self.hir.expr(*inner)?.kind, ExprKind::To)
-                        && wire_clause
+                ExprKind::Field(base, _) => stack.push((*base, true)),
+                ExprKind::History {
+                    target,
+                    offset,
+                    fallback,
+                } => {
+                    if !self.in_state {
+                        self.report.error(
+                            self.hir,
+                            Code::MisplacedHistory,
+                            expr.loc,
+                            "a history read stands only in a state's initializer",
+                        );
+                    } else if !self.visible(frame, &target.text)?
+                        && !self.may_declare(frame, &target.text)?
                     {
                         self.report.error(
                             self.hir,
-                            Code::MisplacedTo,
-                            expr.loc,
-                            "`to` takes exactly one name, as in `to.gain`",
+                            Code::UnknownName,
+                            target.loc,
+                            format!("`{}` names nothing in scope", target.text),
                         );
-                        continue;
                     }
-                    stack.push((*base, true));
+                    stack.push((*offset, false));
+                    stack.extend(fallback.iter().map(|value| (*value, false)));
                 }
                 ExprKind::Match {
                     scrutinee,
@@ -755,6 +807,19 @@ impl<'a> Checker<'a> {
         found.sort_by_key(|name| name.loc);
         for name in found {
             self.declared(&name)?;
+            if let Some(local) = self.visible_local(parent, &name.text)? {
+                self.report.error_with(
+                    self.hir,
+                    Code::ChildNameClash,
+                    name.loc,
+                    &[local],
+                    format!(
+                        "`{}` names a pattern parameter, a pattern `let` or a `for` variable visible here",
+                        name.text
+                    ),
+                );
+                continue;
+            }
             let clash = match names.get(&name.text) {
                 Some(loc) => Some(*loc),
                 None => self.enclosing_body_name(parent, &name.text)?,

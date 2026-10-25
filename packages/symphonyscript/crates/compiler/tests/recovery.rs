@@ -166,9 +166,9 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > WhenBlock[when : NL > WhenElse[else : Block[Members[Placement[Note]] NL]] GuardArm[NameRef[a] : Block[Members[Placement[Note]] NL]] <] <]]]]",
     ),
     (
-        "let a = [ ]\n",
+        "let a = [ , ]\n",
         &[(Code::ExpressionSyntax, 10, 11)],
-        "File[LetDecl[let a = ArrayLit[[ ]] NL]]",
+        "File[LetDecl[let a = ArrayLit[[ , ]] NL]]",
     ),
     (
         "Clip c: 5\n",
@@ -375,7 +375,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "let a = [\nClip c:\n    Note\nClip d:\n    Note ^\n",
         &[
             (Code::ExpressionSyntax, 10, 14),
-            (Code::ReservedToken, 44, 45),
+            (Code::MisplacedCaret, 44, 45),
         ],
         "File[LetDecl[let a = ArrayLit[[] NL] Placement[Clip c Body[: Block[NL > Placement[Note NL] <]]] Placement[Clip d Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
@@ -389,7 +389,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     ),
     (
         "Clip c:\n    [Note/60\nClip d:\n    Note/1\nClip e:\n    Note ^\n",
-        &[(Code::BundleSyntax, 21, 25), (Code::ReservedToken, 57, 58)],
+        &[(Code::BundleSyntax, 21, 25), (Code::MisplacedCaret, 57, 58)],
         "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note DefaultArg[/ Literal[60]]]] NL] <]]] Placement[Clip d Body[: Block[NL > Placement[Note DefaultArg[/ Literal[1]] NL] <]]] Placement[Clip e Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
     (
@@ -490,7 +490,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "let a = (\nClip as c:\n    Note ^\n",
         &[
             (Code::ExpressionSyntax, 10, 14),
-            (Code::ReservedToken, 30, 31),
+            (Code::MisplacedCaret, 30, 31),
         ],
         "File[LetDecl[let a = ParenExpr[(] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
@@ -498,7 +498,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "let a = f(\nClip as c:\n    Note ^\n",
         &[
             (Code::ExpressionSyntax, 11, 15),
-            (Code::ReservedToken, 31, 32),
+            (Code::MisplacedCaret, 31, 32),
         ],
         "File[LetDecl[let a = CallExpr[NameRef[f] ArgList[(]] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
@@ -506,7 +506,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "let a = b[\nClip as c:\n    Note ^\n",
         &[
             (Code::ExpressionSyntax, 11, 15),
-            (Code::ReservedToken, 31, 32),
+            (Code::MisplacedCaret, 31, 32),
         ],
         "File[LetDecl[let a = IndexExpr[NameRef[b] [] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
@@ -514,7 +514,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "let a = i32(\nClip as c:\n    Note ^\n",
         &[
             (Code::ExpressionSyntax, 13, 17),
-            (Code::ReservedToken, 33, 34),
+            (Code::MisplacedCaret, 33, 34),
         ],
         "File[LetDecl[let a = Conversion[i32 (] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
@@ -522,7 +522,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "let a = [\nClip as c:\n    Note ^\n",
         &[
             (Code::ExpressionSyntax, 10, 14),
-            (Code::ReservedToken, 30, 31),
+            (Code::MisplacedCaret, 30, 31),
         ],
         "File[LetDecl[let a = ArrayLit[[] NL] Placement[Clip as c Body[: Block[NL > Placement[Note ErrorNode[^] NL] <]]]]",
     ),
@@ -692,7 +692,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     (
         "Clip c | gain=1 ^:\n    Note |\n    Note/60\n",
         &[
-            (Code::ReservedToken, 16, 17),
+            (Code::MisplacedCaret, 16, 17),
             (Code::AttributeSyntax, 29, 30),
         ],
         "File[Placement[Clip c Attrs[| AttrEntry[gain = Literal[1]]] ErrorNode[^] Body[: Block[NL > Placement[Note Attrs[|] NL] Placement[Note DefaultArg[/ Literal[60]] NL] <]]]]",
@@ -923,7 +923,8 @@ fn a_name_and_slash_resynchronize_only_with_a_default_value_spec_7_5_allows() {
         ("x::y::z", false),
         ("to.gain", true),
         ("to", false),
-        ("to.gain.x", false),
+        ("to.gain.x", true),
+        ("to.gain.", false),
         ("b.c::d", false),
         ("b.c.d", true),
         ("-3", true),

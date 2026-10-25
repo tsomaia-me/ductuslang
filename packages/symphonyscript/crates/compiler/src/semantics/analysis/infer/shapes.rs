@@ -33,7 +33,10 @@ impl Engine<'_> {
                 self.defaulted_uses(node, &need)?;
                 continue;
             }
-            for ty in types.remove(&node).ok_or(Internal::missed("checked use"))? {
+            let Some(uses) = types.remove(&node) else {
+                continue;
+            };
+            for ty in uses {
                 if self
                     .shape_at(node, ty)?
                     .is_some_and(|lengths| lengths != need.lengths)
@@ -105,6 +108,15 @@ impl Engine<'_> {
                 let value = self.demand_cval(node, eval_ty_of(ty))?;
                 let shape = (!value.is_error()).then(|| lengths_of(&value));
                 self.typing.shapes.insert((node, ty), shape);
+                continue;
+            }
+            if self.arrays.contains(&node)
+                && let Ok(Some(layout)) = self.known_layout(node)?.shaped
+                && layout.variable
+            {
+                let mut lengths = layout.inner().to_vec();
+                lengths.push(u32::MAX);
+                self.typing.shapes.insert((node, ty), Some(lengths));
                 continue;
             }
             let op = self.node(node)?.op.clone();

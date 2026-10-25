@@ -8,8 +8,9 @@ use super::index::index;
 use super::scalar_type::scalar_type;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
-    Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
-    PatternDecl, PatternId, PlacementId, Top, TypeBase, TypeRef, UnknownNames,
+    Expr, ExprId, ExprKind, FnBound, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc,
+    Param, PatternDecl, PatternId, PlacementId, StateDecl, StateId, Top, TypeBase, TypeRef,
+    UnknownNames,
 };
 use crate::syntax::ast::{self, AstNode, Item, Name};
 use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
@@ -74,6 +75,31 @@ impl HirBuilder<'_> {
                 self.hir.lets.push(decl);
                 self.hir.top.push(Top::Let(id));
             }
+            Item::State(node) => {
+                let loc = self.loc(node.syntax().range());
+                let value = match node.match_block() {
+                    Some(block) => self.match_block(&block),
+                    None => self.expr(node.value(), loc),
+                };
+                let depth = node.depth().map(|token| {
+                    let value = if self.faults.touch(token.range()) {
+                        None
+                    } else {
+                        digits_value(token.text())
+                    };
+                    (value, self.loc(token.range()))
+                });
+                let decl = StateDecl {
+                    name: self.ident(node.name()),
+                    depth,
+                    ty: node.ty().map(|ty| self.type_ref(&ty)),
+                    value,
+                    loc,
+                };
+                let id = StateId(index(self.hir.states.len()));
+                self.hir.states.push(decl);
+                self.hir.top.push(Top::State(id));
+            }
             Item::Fn(node) => {
                 let loc = self.loc(node.syntax().range());
                 let params = node
@@ -98,13 +124,26 @@ impl HirBuilder<'_> {
                     }
                     None => (Vec::new(), self.push(ExprKind::Error, loc)),
                 };
+                let bound = node.bounded().map(|bounded| {
+                    let bound_loc = self.loc(bounded.syntax().range());
+                    let bound = bounded
+                        .bound()
+                        .filter(|token| !self.faults.touch(token.range()))
+                        .and_then(|token| digits_value(token.text()))
+                        .filter(|bound| *bound > 0);
+                    FnBound {
+                        bound,
+                        fallback: self.expr(bounded.fallback(), bound_loc),
+                        loc: bound_loc,
+                    }
+                });
+                let regions = param_regions(node.syntax(), SyntaxKind::ParamList);
                 let decl = FnDecl {
                     name: self.ident(node.name()),
                     params,
-                    skipped_params: skipped_params(&param_regions(
-                        node.syntax(),
-                        SyntaxKind::ParamList,
-                    )),
+                    bound,
+                    skipped_params: skipped_params(&regions),
+                    faulty_head: !regions.is_empty(),
                     lets,
                     value,
                     loc,
@@ -186,12 +225,17 @@ impl HirBuilder<'_> {
         };
         let lengths = node
             .lengths()
-            .map(|token| {
-                let digits: String = token.text().chars().filter(|c| *c != '_').collect();
-                (digits.parse::<u32>().ok(), self.loc(token.range()))
-            })
+            .map(|token| (length_value(token.text()), self.loc(token.range())))
             .collect();
-        TypeRef { base, lengths, loc }
+        let capacity = node
+            .capacity()
+            .map(|token| (length_value(token.text()), self.loc(token.range())));
+        TypeRef {
+            base,
+            lengths,
+            capacity,
+            loc,
+        }
     }
 
     pub(super) fn ident(&self, name: Option<Name<'_>>) -> Option<Ident> {
@@ -214,4 +258,17 @@ impl HirBuilder<'_> {
         self.hir.exprs.push(Expr { kind, loc });
         id
     }
+}
+
+fn digits_value(text: &str) -> Option<u64> {
+    let digits: String = text.chars().filter(|c| *c != '_').collect();
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some(digits.parse::<u64>().unwrap_or(u64::MAX))
+}
+
+fn length_value(text: &str) -> Option<u32> {
+    let digits: String = text.chars().filter(|c| *c != '_').collect();
+    digits.parse::<u32>().ok()
 }

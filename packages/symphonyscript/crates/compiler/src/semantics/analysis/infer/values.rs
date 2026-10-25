@@ -80,7 +80,7 @@ impl Engine<'_> {
             {
                 let entry = kinds.entry(target).or_default();
                 match ty {
-                    EvalTy::I32 | EvalTy::I64 | EvalTy::Exact => entry.0 = true,
+                    EvalTy::U8 | EvalTy::I32 | EvalTy::I64 | EvalTy::Exact => entry.0 = true,
                     EvalTy::F32 | EvalTy::F64 | EvalTy::DefaultF32 | EvalTy::DefaultF64 => {
                         entry.1 = true
                     }
@@ -104,9 +104,9 @@ impl Engine<'_> {
         }
         for (_, mut evaluations) in uses {
             evaluations.sort_by_key(|(node, _, _)| *node);
-            let integer = evaluations
-                .iter()
-                .find(|(_, ty, _)| matches!(ty, EvalTy::I32 | EvalTy::I64 | EvalTy::Exact));
+            let integer = evaluations.iter().find(|(_, ty, _)| {
+                matches!(ty, EvalTy::U8 | EvalTy::I32 | EvalTy::I64 | EvalTy::Exact)
+            });
             let float = evaluations.iter().find(|(node, ty, value)| {
                 matches!(
                     ty,

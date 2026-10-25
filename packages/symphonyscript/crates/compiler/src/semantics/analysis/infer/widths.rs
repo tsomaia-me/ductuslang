@@ -24,7 +24,7 @@ impl Engine<'_> {
                 return Ok(own);
             }
             BindingKind::Attr { .. } => return Ok(record.annotation),
-            BindingKind::Let | BindingKind::Param => {}
+            BindingKind::Let | BindingKind::Param | BindingKind::State { .. } => {}
         }
         if let Some(annotation) = record.annotation {
             return Ok(Some(annotation));
@@ -97,7 +97,9 @@ impl Engine<'_> {
             let fixed = match record.kind {
                 BindingKind::Input { .. } => Some(self.input_type(binding)?),
                 BindingKind::Attr { .. } => Some(record.annotation),
-                BindingKind::Let | BindingKind::Param => record.annotation.map(Some),
+                BindingKind::Let | BindingKind::Param | BindingKind::State { .. } => {
+                    record.annotation.map(Some)
+                }
             };
             if let Some(fixed) = fixed {
                 let fixed = fixed.filter(|scalar| is_integer(*scalar));
@@ -147,7 +149,11 @@ impl Engine<'_> {
                     | Op::Annotate(..)
                     | Op::Builtin(..)
                     | Op::Recursive { .. }
-                    | Op::ToRead { .. } => match self.known_sig(node)?.width {
+                    | Op::ToRead { .. }
+                    | Op::Join(..)
+                    | Op::Slice { .. }
+                    | Op::History { .. }
+                    | Op::Native { .. } => match self.known_sig(node)?.width {
                         Width::Fixed(scalar) if is_integer(scalar) => Some(scalar),
                         Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => {
                             None

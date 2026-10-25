@@ -121,6 +121,9 @@ impl Engine<'_> {
             | ExprKind::Array(_)
             | ExprKind::Field(..)
             | ExprKind::Index(..)
+            | ExprKind::IndexFromEnd(..)
+            | ExprKind::Slice { .. }
+            | ExprKind::History { .. }
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)

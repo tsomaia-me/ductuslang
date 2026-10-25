@@ -89,7 +89,7 @@ impl Engine<'_> {
             return Ok(Called::Unresolved);
         };
         Ok(match self.find(name, scope)? {
-            Found::Decl(Decl::Builtin(BuiltinName::Function(_))) => match args {
+            Found::Decl(Decl::Builtin(BuiltinName::Function(_)) | Decl::Native(_)) => match args {
                 Args::Positional(_) => Called::Evaluated,
                 Args::Named(_) => Called::Unresolved,
             },
@@ -168,6 +168,7 @@ impl Engine<'_> {
             match *top {
                 Top::Input(input) => roots.push((hir.input(input)?.value, global)),
                 Top::Let(id) => roots.push((hir.let_decl(id)?.value, global)),
+                Top::State(id) => roots.push((hir.state(id)?.value, global)),
                 Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
             }
         }

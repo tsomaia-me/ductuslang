@@ -2,6 +2,7 @@ use crate::ids::EnumId;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Scalar {
+    U8,
     I32,
     I64,
     F32,

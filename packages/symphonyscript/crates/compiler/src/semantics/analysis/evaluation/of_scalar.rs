@@ -4,6 +4,7 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 
 pub(super) fn of_scalar(scalar: Scalar) -> EvalTy {
     match scalar {
+        Scalar::U8 => EvalTy::U8,
         Scalar::I32 => EvalTy::I32,
         Scalar::I64 => EvalTy::I64,
         Scalar::F32 => EvalTy::F32,

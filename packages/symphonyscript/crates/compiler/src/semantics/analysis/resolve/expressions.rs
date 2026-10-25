@@ -23,6 +23,22 @@ impl Engine<'_> {
         let hir = self.hir;
         let node = hir.expr(expr)?;
         let loc = node.loc;
+        if matches!(node.kind, ExprKind::If(..) | ExprKind::Match { .. })
+            && self.in_expansion(scope)?
+        {
+            match self.selected(&node.kind, scope, need)? {
+                None => return Ok(false),
+                Some(Some(branch)) => {
+                    let value = self.val(Query::Expr(branch, scope), need);
+                    let Some(value) = self.held(branch, value, scope, need)? else {
+                        return Ok(false);
+                    };
+                    self.memo.exprs.insert((expr, scope), value);
+                    return Ok(true);
+                }
+                Some(None) => {}
+            }
+        }
         let val = match &node.kind {
             ExprKind::Error | ExprKind::To => Some(Val::Error),
             ExprKind::Number(number, suffix) => {
@@ -48,6 +64,17 @@ impl Engine<'_> {
             ExprKind::Array(elements) => self.array(expr, elements, loc, scope, need)?,
             ExprKind::Field(base, name) => self.field(*base, name, loc, scope, need)?,
             ExprKind::Index(base, index) => self.index(*base, *index, loc, scope, need)?,
+            ExprKind::IndexFromEnd(base, offset) => {
+                self.index_from_end(*base, *offset, loc, scope, need)?
+            }
+            ExprKind::Slice { base, lower, upper } => {
+                self.slice(*base, (*lower, *upper), loc, scope, need)?
+            }
+            ExprKind::History {
+                target,
+                offset,
+                fallback,
+            } => self.history(expr, (target, *offset, *fallback), loc, scope, need)?,
             ExprKind::Call(callee, args) => self.call(*callee, args, expr, loc, scope, need)?,
             ExprKind::Unary(op, operand) => match self.val(Query::Expr(*operand, scope), need) {
                 Some(operand) => {
@@ -58,7 +85,9 @@ impl Engine<'_> {
             ExprKind::Binary(op, lhs, rhs) => {
                 let (lhs, rhs) = self.siblings(*lhs, *rhs, scope, need)?;
                 match (lhs, rhs) {
-                    (Some(lhs), Some(rhs)) => Some(self.binary_val(*op, lhs, rhs, loc, scope)?),
+                    (Some(lhs), Some(rhs)) => {
+                        Some(self.binary_val(expr, *op, (lhs, rhs), loc, scope)?)
+                    }
                     _ => None,
                 }
             }
@@ -197,6 +226,15 @@ impl Engine<'_> {
     ) -> Result<Val, Internal> {
         self.single_operand(&operand, Code::ArrayOperand, OPERAND);
         Ok(match operand {
+            Val::Scalar(operand) if self.definite_array(operand)? => {
+                self.error(
+                    Code::ArrayOperand,
+                    loc,
+                    scope,
+                    "operators and conversions apply to single values, not arrays",
+                )?;
+                Val::Error
+            }
             Val::Scalar(operand) => self.scalar(op(operand), loc, scope)?,
             Val::Array(_) => {
                 self.error(
@@ -213,12 +251,40 @@ impl Engine<'_> {
 
     fn binary_val(
         &mut self,
+        expr: ExprId,
         op: symphonyscript_core::BinaryOp,
-        lhs: Val,
-        rhs: Val,
+        (lhs, rhs): (Val, Val),
         loc: Loc,
         scope: ScopeId,
     ) -> Result<Val, Internal> {
+        if matches!(lhs, Val::Error) || matches!(rhs, Val::Error) {
+            return Ok(Val::Error);
+        }
+        let arrays = (self.is_array_val(&lhs)?, self.is_array_val(&rhs)?);
+        if arrays.0 || arrays.1 {
+            if op != symphonyscript_core::BinaryOp::Add {
+                self.error(
+                    Code::ArrayOperand,
+                    loc,
+                    scope,
+                    "only `+` takes arrays, which it joins; every other operator takes single values",
+                )?;
+                return Ok(Val::Error);
+            }
+            let whole = |engine: &Self, val: &Val| -> bool {
+                matches!(val, Val::Scalar(node) if engine.arrays.contains(node))
+            };
+            if !(arrays.0 || whole(self, &lhs)) || !(arrays.1 || whole(self, &rhs)) {
+                self.error(
+                    Code::ArrayOperand,
+                    loc,
+                    scope,
+                    "`+` joins two arrays, and one of these is a single value",
+                )?;
+                return Ok(Val::Error);
+            }
+            return self.join_val(expr, (lhs, rhs), loc, scope);
+        }
         self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
         self.single_operand(&rhs, Code::ArrayOperand, OPERAND);
         Ok(match (lhs, rhs) {
@@ -307,16 +373,30 @@ impl Engine<'_> {
         let first = vals.first().map(Val::shape).unwrap_or_default();
         let differ = vals.iter().any(|val| val.shape() != first);
         let recursive_body = self.template_of(scope)?.is_some();
-        let irregular = opaque || (differ && recursive_body);
-        if !irregular {
+        if !opaque && !differ {
             return Ok(Some(Branches::Each(vals)));
         }
-        if !some!(self.sig(selector, need)).reactive {
-            let mut nodes = Vec::with_capacity(vals.len());
-            for val in &vals {
-                nodes.extend(self.boxed(val, loc, scope)?);
+        let reactive = some!(self.sig(selector, need)).reactive;
+        if !opaque {
+            let rows_agree = vals.iter().all(|val| match val {
+                Val::Array(array) => array.shape.inner() == first.inner(),
+                Val::Scalar(_) | Val::Error => false,
+            });
+            if !rows_agree && !recursive_body {
+                return Ok(Some(Branches::Each(vals)));
             }
-            return Ok(Some(Branches::Whole(nodes)));
+            return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
+        }
+        let mut definite = false;
+        for val in &vals {
+            if let Val::Scalar(node) = val
+                && self.definite_array(*node)?
+            {
+                definite = true;
+            }
+        }
+        if !reactive || definite {
+            return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
         }
         let Some(shape) = vals
             .iter()
@@ -339,6 +419,19 @@ impl Engine<'_> {
             each.push(self.shaped(shape.clone(), nodes));
         }
         Ok(Some(Branches::Each(each)))
+    }
+
+    fn boxed_all(
+        &mut self,
+        vals: &[Val],
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<Vec<NodeId>, Internal> {
+        let mut nodes = Vec::with_capacity(vals.len());
+        for val in vals {
+            nodes.extend(self.boxed(val, loc, scope)?);
+        }
+        Ok(nodes)
     }
 
     pub(in crate::semantics::analysis) fn require_shape(
@@ -431,15 +524,36 @@ impl Engine<'_> {
             Val::Error => return Ok(None),
             Val::Array(array) => array,
         };
-        let mut level = array.elements.clone();
-        for length in array.shape.lengths() {
-            let width = usize::try_from(length).unwrap_or(1).max(1);
-            level = level
-                .chunks(width)
-                .map(|chunk| self.push_node(Op::Array(chunk.to_vec()), loc, scope))
-                .collect::<Result<_, _>>()?;
+        let lengths = array.shape.lengths();
+        let key = (array.elements.clone(), lengths.clone());
+        if let Some(known) = self.memo.boxings.get(&key) {
+            return Ok(Some(*known));
         }
-        Ok(level.first().copied())
+        let mut level = array.elements.clone();
+        for (depth, length) in lengths.iter().enumerate() {
+            let groups = lengths.get(depth + 1..).unwrap_or_default().iter().fold(
+                1usize,
+                |count, length| {
+                    count.saturating_mul(usize::try_from(*length).unwrap_or(usize::MAX))
+                },
+            );
+            let width = usize::try_from(*length).unwrap_or(usize::MAX);
+            let mut next = Vec::with_capacity(groups);
+            for group in 0..groups {
+                let start = group.saturating_mul(width);
+                let chunk = level
+                    .get(start..start.saturating_add(width))
+                    .ok_or(Internal::missed("array element"))?
+                    .to_vec();
+                next.push(self.push_node(Op::Array(chunk), loc, scope)?);
+            }
+            level = next;
+        }
+        let root = level.first().copied();
+        if let Some(root) = root {
+            self.memo.boxings.insert(key, root);
+        }
+        Ok(root)
     }
 
     pub(in crate::semantics::analysis) fn shaped(
@@ -498,7 +612,7 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
         if elements.is_empty() {
-            return Ok(Some(Val::Error));
+            return Ok(Some(Val::array(Shape::scalar().wrap(0), Vec::new())));
         }
         let vals: Vec<Option<Val>> = elements
             .iter()
@@ -684,6 +798,9 @@ impl Engine<'_> {
                 | ExprKind::Array(_)
                 | ExprKind::Field(..)
                 | ExprKind::Index(..)
+                | ExprKind::IndexFromEnd(..)
+                | ExprKind::Slice { .. }
+                | ExprKind::History { .. }
                 | ExprKind::Call(..)
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)

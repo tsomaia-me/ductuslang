@@ -5,6 +5,7 @@ use crate::ids::{EnumId, StrId};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Value {
+    U8(u8),
     I32(i32),
     I64(i64),
     F32(f32),
@@ -17,6 +18,7 @@ pub enum Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Value::U8(a), Value::U8(b)) => a == b,
             (Value::I32(a), Value::I32(b)) => a == b,
             (Value::I64(a), Value::I64(b)) => a == b,
             (Value::F32(a), Value::F32(b)) => a.to_bits() == b.to_bits(),
@@ -35,6 +37,7 @@ impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         discriminant(self).hash(state);
         match self {
+            Value::U8(v) => v.hash(state),
             Value::I32(v) => v.hash(state),
             Value::I64(v) => v.hash(state),
             Value::F32(v) => v.to_bits().hash(state),

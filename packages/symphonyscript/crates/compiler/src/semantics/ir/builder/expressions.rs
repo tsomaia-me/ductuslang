@@ -3,7 +3,7 @@ use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 use super::hir_builder::HirBuilder;
 use super::number_literal::number_literal;
 use super::scalar_type::scalar_type;
-use crate::semantics::ir::{Args, ExprId, ExprKind, Ident, Loc, MatchArm, StrPart};
+use crate::semantics::ir::{Args, ExprId, ExprKind, Ident, Loc, MatchArm, SliceBound, StrPart};
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
 
@@ -17,6 +17,15 @@ enum Shape {
     Array(usize),
     Field(Ident),
     Index,
+    IndexFromEnd,
+    Slice {
+        lower: Option<bool>,
+        upper: Option<bool>,
+    },
+    History {
+        target: Ident,
+        fallback: bool,
+    },
     Positional(usize),
     Named(Vec<Ident>),
     Str(Vec<Option<String>>),
@@ -148,7 +157,50 @@ impl HirBuilder<'_> {
                 Some(field) => (Shape::Field(field), vec![node.receiver()]),
                 None => (Shape::Leaf(ExprKind::Error), Vec::new()),
             },
-            ast::Expr::Index(node) => (Shape::Index, vec![node.base(), node.index()]),
+            ast::Expr::Index(node) => {
+                if !node.is_slice() {
+                    let bound = node.index();
+                    let from_end = bound.as_ref().is_some_and(ast::Bound::from_end);
+                    let shape = if from_end {
+                        Shape::IndexFromEnd
+                    } else {
+                        Shape::Index
+                    };
+                    return (
+                        shape,
+                        vec![node.base(), bound.and_then(|bound| bound.value())],
+                    );
+                }
+                let lower = node.lower();
+                let upper = node.upper();
+                let mut children = vec![node.base()];
+                children.extend(lower.iter().map(ast::Bound::value));
+                children.extend(upper.iter().map(ast::Bound::value));
+                (
+                    Shape::Slice {
+                        lower: lower.as_ref().map(ast::Bound::from_end),
+                        upper: upper.as_ref().map(ast::Bound::from_end),
+                    },
+                    children,
+                )
+            }
+            ast::Expr::History(node) => match self.ident(node.name()) {
+                Some(target) => {
+                    let fallback = node.fallback();
+                    let mut children = vec![node.offset()];
+                    if fallback.is_some() {
+                        children.push(fallback);
+                    }
+                    (
+                        Shape::History {
+                            target,
+                            fallback: children.len() > 1,
+                        },
+                        children,
+                    )
+                }
+                None => (Shape::Leaf(ExprKind::Error), Vec::new()),
+            },
             ast::Expr::Call(node) => {
                 let Some(args) = node.args() else {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
@@ -219,6 +271,35 @@ impl HirBuilder<'_> {
                 let index = next(self);
                 self.push(ExprKind::Index(base, index), loc)
             }
+            Shape::IndexFromEnd => {
+                let base = next(self);
+                let index = next(self);
+                self.push(ExprKind::IndexFromEnd(base, index), loc)
+            }
+            Shape::Slice { lower, upper } => {
+                let base = next(self);
+                let lower = lower.map(|from_end| SliceBound {
+                    value: next(self),
+                    from_end,
+                });
+                let upper = upper.map(|from_end| SliceBound {
+                    value: next(self),
+                    from_end,
+                });
+                self.push(ExprKind::Slice { base, lower, upper }, loc)
+            }
+            Shape::History { target, fallback } => {
+                let offset = next(self);
+                let fallback = fallback.then(|| next(self));
+                self.push(
+                    ExprKind::History {
+                        target,
+                        offset,
+                        fallback,
+                    },
+                    loc,
+                )
+            }
             Shape::Positional(count) => {
                 let callee = next(self);
                 let args = (0..count).map(|_| next(self)).collect();
@@ -264,6 +345,9 @@ impl HirBuilder<'_> {
             | ExprKind::Array(_)
             | ExprKind::Field(..)
             | ExprKind::Index(..)
+            | ExprKind::IndexFromEnd(..)
+            | ExprKind::Slice { .. }
+            | ExprKind::History { .. }
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)

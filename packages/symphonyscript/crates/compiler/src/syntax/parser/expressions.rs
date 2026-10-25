@@ -196,7 +196,7 @@ impl Parser<'_> {
                 self.start_at(checkpoint, SyntaxKind::IndexExpr);
                 self.bump();
                 self.then([
-                    Task::Expr,
+                    Task::IndexBody,
                     Task::Close {
                         kind: SyntaxKind::RBracket,
                         code: Code::ExpressionSyntax,
@@ -227,6 +227,12 @@ impl Parser<'_> {
                 self.variant_ref();
                 self.then([rest]);
             }
+            Some(SyntaxKind::Ident) if self.nth(1) == Some(SyntaxKind::LBrace) => {
+                self.start(SyntaxKind::History);
+                self.bump();
+                self.bump();
+                self.then([Task::Expr, Task::HistoryAfterOffset, rest]);
+            }
             Some(SyntaxKind::Ident) => {
                 self.start(SyntaxKind::NameRef);
                 self.bump();
@@ -239,7 +245,13 @@ impl Parser<'_> {
                 self.finish();
                 self.then([rest]);
             }
-            Some(SyntaxKind::I32Kw | SyntaxKind::I64Kw | SyntaxKind::F32Kw | SyntaxKind::F64Kw) => {
+            Some(
+                SyntaxKind::U8Kw
+                | SyntaxKind::I32Kw
+                | SyntaxKind::I64Kw
+                | SyntaxKind::F32Kw
+                | SyntaxKind::F64Kw,
+            ) => {
                 self.start(SyntaxKind::Conversion);
                 self.bump();
                 if self.expect(
@@ -308,13 +320,58 @@ impl Parser<'_> {
         self.start(SyntaxKind::ArrayLit);
         self.bump();
         if self.at(SyntaxKind::RBracket) {
-            self.error(
-                Code::ExpressionSyntax,
-                "an array holds at least one element",
-            );
             self.then([ARRAY_CLOSE]);
         } else {
             self.then([Task::Expr, Task::ArrayLoop]);
+        }
+    }
+
+    pub(super) fn index_body(&mut self) {
+        if self.eat(SyntaxKind::Dot2) {
+            self.then([Task::SliceUpper]);
+        } else {
+            self.then([Task::Bound, Task::IndexAfterBound]);
+        }
+    }
+
+    pub(super) fn index_after_bound(&mut self) {
+        if self.eat(SyntaxKind::Dot2) {
+            self.then([Task::SliceUpper]);
+        }
+    }
+
+    pub(super) fn slice_upper(&mut self) {
+        if !self.at(SyntaxKind::RBracket) {
+            self.then([Task::Bound]);
+        }
+    }
+
+    pub(super) fn bound(&mut self) {
+        let absent = [
+            SyntaxKind::RBracket,
+            SyntaxKind::Newline,
+            SyntaxKind::Indent,
+            SyntaxKind::Dedent,
+        ];
+        if self.at_end() || absent.into_iter().any(|kind| self.at(kind)) {
+            self.then([Task::Expr]);
+            return;
+        }
+        self.start(SyntaxKind::Bound);
+        self.eat(SyntaxKind::Caret);
+        self.then([Task::Expr, Task::Finish]);
+    }
+
+    pub(super) fn history_after_offset(&mut self) {
+        let close = Task::Close {
+            kind: SyntaxKind::RBrace,
+            code: Code::ExpressionSyntax,
+            what: "`,` or `}`",
+        };
+        if self.eat(SyntaxKind::Comma) {
+            self.then([Task::Expr, close]);
+        } else {
+            self.then([close]);
         }
     }
 

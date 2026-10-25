@@ -4,12 +4,13 @@ use alloc::vec::Vec;
 
 use super::enum_decl::EnumDecl;
 use super::family_decl::FamilyDecl;
+use super::native_decl::NativeDecl;
 use super::node_kind_decl::NodeKindDecl;
 use super::prelude_file::PreludeFile;
 use super::vocabulary_builder::VocabularyBuilder;
 use super::vocabulary_stamp::VocabularyStamp;
 use super::wire_kind_decl::WireKindDecl;
-use crate::ids::{EnumId, FamilyId, NodeKind, VocabularyToken, WireKind};
+use crate::ids::{EnumId, FamilyId, NativeId, NodeKind, VocabularyToken, WireKind};
 
 #[derive(Clone, Debug)]
 pub struct Vocabulary {
@@ -20,10 +21,12 @@ pub struct Vocabulary {
     enums: Vec<EnumDecl>,
     families: Vec<FamilyDecl>,
     prelude: Vec<PreludeFile>,
+    natives: Vec<NativeDecl>,
     node_names: BTreeMap<String, u32>,
     wire_names: BTreeMap<String, u32>,
     enum_names: BTreeMap<String, u32>,
     unit_names: BTreeMap<String, (u32, usize)>,
+    native_names: BTreeMap<String, u32>,
 }
 
 impl Vocabulary {
@@ -38,7 +41,7 @@ impl Vocabulary {
         wire_kinds: Vec<WireKindDecl>,
         enums: Vec<EnumDecl>,
         families: Vec<FamilyDecl>,
-        prelude: Vec<PreludeFile>,
+        (prelude, natives): (Vec<PreludeFile>, Vec<NativeDecl>),
     ) -> Self {
         let indexed = |names: &mut dyn Iterator<Item = &String>| {
             names
@@ -49,6 +52,7 @@ impl Vocabulary {
         let node_names = indexed(&mut node_kinds.iter().map(|kind| &kind.name));
         let wire_names = indexed(&mut wire_kinds.iter().map(|kind| &kind.name));
         let enum_names = indexed(&mut enums.iter().map(|decl| &decl.name));
+        let native_names = indexed(&mut natives.iter().map(|decl| &decl.name));
         let mut unit_names = BTreeMap::new();
         for (family, decl) in families.iter().enumerate() {
             for (unit, unit_decl) in decl.units.iter().enumerate() {
@@ -63,10 +67,12 @@ impl Vocabulary {
             enums,
             families,
             prelude,
+            natives,
             node_names,
             wire_names,
             enum_names,
             unit_names,
+            native_names,
         }
     }
 
@@ -96,6 +102,23 @@ impl Vocabulary {
 
     pub fn prelude(&self) -> &[PreludeFile] {
         &self.prelude
+    }
+
+    pub fn natives(&self) -> &[NativeDecl] {
+        &self.natives
+    }
+
+    pub fn native(&self, id: NativeId) -> Option<&NativeDecl> {
+        self.natives.get(id.index())
+    }
+
+    pub fn native_at(&self, index: usize) -> Option<NativeId> {
+        (index < self.natives.len()).then(|| NativeId::new(index as u32))
+    }
+
+    pub fn native_named(&self, name: &str) -> Option<NativeId> {
+        let index = *self.native_names.get(name)?;
+        Some(NativeId::new(index))
     }
 
     pub fn node_kind(&self, kind: NodeKind) -> Option<&NodeKindDecl> {

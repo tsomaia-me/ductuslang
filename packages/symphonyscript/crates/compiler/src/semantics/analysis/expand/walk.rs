@@ -143,7 +143,9 @@ impl Engine<'_> {
             Some(
                 Decl::Input(_)
                 | Decl::Let(_)
+                | Decl::State(_)
                 | Decl::Fn(_)
+                | Decl::Native(_)
                 | Decl::Instance(_)
                 | Decl::Builtin(_)
                 | Decl::Wire(_)
@@ -223,7 +225,9 @@ impl Engine<'_> {
                 Some(
                     Decl::Input(_)
                     | Decl::Let(_)
+                    | Decl::State(_)
                     | Decl::Fn(_)
+                    | Decl::Native(_)
                     | Decl::Pattern(_)
                     | Decl::Instance(_)
                     | Decl::Builtin(_)
@@ -480,7 +484,9 @@ impl Engine<'_> {
                         Some(
                             Decl::Input(_)
                             | Decl::Let(_)
+                            | Decl::State(_)
                             | Decl::Fn(_)
+                            | Decl::Native(_)
                             | Decl::Pattern(_)
                             | Decl::Instance(_)
                             | Decl::Builtin(_)
@@ -499,7 +505,9 @@ impl Engine<'_> {
                         Some(
                             Decl::Input(_)
                             | Decl::Let(_)
+                            | Decl::State(_)
                             | Decl::Fn(_)
+                            | Decl::Native(_)
                             | Decl::Pattern(_)
                             | Decl::Instance(_)
                             | Decl::Builtin(_)
@@ -975,7 +983,9 @@ impl Engine<'_> {
             Some(
                 Decl::Input(_)
                 | Decl::Let(_)
+                | Decl::State(_)
                 | Decl::Fn(_)
+                | Decl::Native(_)
                 | Decl::Instance(_)
                 | Decl::Builtin(_)
                 | Decl::Wire(_)

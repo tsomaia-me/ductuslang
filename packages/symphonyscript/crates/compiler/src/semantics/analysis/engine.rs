@@ -287,6 +287,7 @@ impl<'a> Engine<'a> {
             Query::Let(scope, local) => memo.lets.contains_key(&(scope, local)),
             Query::Param(scope, index) => memo.params.contains_key(&(scope, index)),
             Query::Input(input) => memo.inputs.contains_key(&input),
+            Query::State(state) => memo.states.contains_key(&state),
             Query::Attr(item, attr) => memo.attrs.contains_key(&(item, attr)),
             Query::Destination(wire) => memo.destinations.contains_key(&wire),
             Query::Sig(node) => memo.sigs.contains_key(&node),
@@ -310,6 +311,7 @@ impl<'a> Engine<'a> {
             Query::Let(scope, local) => self.run_let(scope, local, need),
             Query::Param(scope, index) => self.run_param(scope, index, need),
             Query::Input(input) => self.run_input(input, need),
+            Query::State(state) => self.run_state(state, need),
             Query::Attr(item, attr) => self.run_attr(item, attr, need),
             Query::Destination(wire) => self.run_destination(wire, need),
             Query::Sig(node) => self.run_sig(node, need),
@@ -345,6 +347,7 @@ impl<'a> Engine<'a> {
             Query::Let(scope, local) => memo.lets.get(&(scope, local)).cloned(),
             Query::Param(scope, index) => memo.params.get(&(scope, index)).cloned(),
             Query::Input(input) => memo.inputs.get(&input).cloned(),
+            Query::State(state) => memo.states.get(&state).cloned(),
             Query::Attr(item, attr) => memo.attrs.get(&(item, attr)).cloned(),
             Query::Expr(..) | Query::Destination(_) | Query::Sig(_) | Query::Eval(..) => {
                 Some(BoundVal::Error)
@@ -540,7 +543,17 @@ impl<'a> Engine<'a> {
 
     fn may_hold_array(&self, op: &Op) -> Result<bool, Internal> {
         Ok(match op {
-            Op::Recursive { .. } | Op::Element { .. } | Op::Array(_) => true,
+            Op::Recursive { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::Builtin(symphonyscript_core::Builtin::Bytes, _) => true,
+            Op::History { fallback, cell, .. } => match fallback {
+                Some(fallback) => self.arrays.contains(fallback),
+                None => self.history_holds_array(*cell)?,
+            },
+            Op::Native { native, .. } => self.native_returns_array(*native)?,
             Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => {
                 self.arrays.contains(operand)
             }
@@ -810,7 +823,7 @@ impl<'a> Engine<'a> {
         let through_top_level = path.iter().any(|query| {
             matches!(
                 query,
-                Query::Let(_, LetRef::Top(_)) | Query::Input(_) | Query::Attr(..)
+                Query::Let(_, LetRef::Top(_)) | Query::Input(_) | Query::State(_) | Query::Attr(..)
             )
         });
         if through_local_let && !through_top_level {
@@ -851,7 +864,11 @@ impl<'a> Engine<'a> {
             .extend(path.iter().copied().filter(|query| {
                 matches!(
                     query,
-                    Query::Let(..) | Query::Param(..) | Query::Input(_) | Query::Attr(..)
+                    Query::Let(..)
+                        | Query::Param(..)
+                        | Query::Input(_)
+                        | Query::State(_)
+                        | Query::Attr(..)
                 )
             }));
         let first = names
@@ -928,6 +945,9 @@ impl<'a> Engine<'a> {
             }
             Query::Input(input) => {
                 memo.inputs.insert(input, BoundVal::Error);
+            }
+            Query::State(state) => {
+                memo.states.insert(state, BoundVal::Error);
             }
             Query::Attr(item, attr) => {
                 memo.attrs.insert((item, attr), BoundVal::Error);

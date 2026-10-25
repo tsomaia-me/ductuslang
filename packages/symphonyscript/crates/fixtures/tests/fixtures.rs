@@ -88,15 +88,27 @@ fn the_listed_undeclared_names_appear_in_their_examples() {
 fn the_spec_has_sym_and_sym_error_examples() {
     let examples = spec_examples();
     let count = |tag: &str| examples.iter().filter(|example| example.tag == tag).count();
-    assert_eq!(count("sym"), 28);
-    assert_eq!(count("sym-error"), 1);
+    assert_eq!(count("sym"), 31);
     assert!(count("ebnf") > 0);
-    let error = examples
+    let errors: Vec<(&str, &str)> = examples
         .iter()
-        .find(|example| example.tag == "sym-error")
-        .expect("one sym-error example");
-    assert_eq!(error.section, "4.1");
-    assert_eq!(error.text, "Clip melody:\n    Note/300000000000\n");
+        .filter(|example| example.tag == "sym-error")
+        .map(|example| (example.section.as_str(), example.text.as_str()))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            ("4.1", "Clip melody:\n    Note/300000000000\n"),
+            (
+                "6.3",
+                "input n = 5\n\nfn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n\nClip c:\n    Note/(fib(n))\n"
+            ),
+            (
+                "6.6",
+                "input note = 60\n\nstate recent = recent{1, []} + [note]\n"
+            ),
+        ]
+    );
 }
 
 #[test]

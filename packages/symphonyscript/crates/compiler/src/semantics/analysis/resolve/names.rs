@@ -63,6 +63,7 @@ impl Engine<'_> {
                     };
                     return Ok(match namespace.get(name) {
                         Some(Decl::Input(input)) => Found::Query(Query::Input(input)),
+                        Some(Decl::State(state)) => Found::Query(Query::State(state)),
                         Some(Decl::Let(id)) => {
                             let global = self.global_of_let(id);
                             Found::Query(Query::Let(global, LetRef::Top(id)))
@@ -120,7 +121,11 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
-            | Op::ToRead { .. } => None,
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => None,
         };
         let message = self.unplaced_message(name.as_deref())?;
         let unless_values = self.untypable_values(node)?;
@@ -196,12 +201,16 @@ impl Engine<'_> {
             Found::Decl(Decl::Builtin(BuiltinName::Pi)) => Some(self.scalar(Op::Pi, loc, scope)?),
             Found::Decl(decl) => {
                 let what = match decl {
-                    Decl::Fn(_) | Decl::Builtin(_) => "a function, which is only called",
+                    Decl::Fn(_) | Decl::Native(_) | Decl::Builtin(_) => {
+                        "a function, which is only called"
+                    }
                     Decl::Pattern(_) => "a pattern, which is only placed",
                     Decl::Node(_) => "a node kind, which is only placed",
                     Decl::Wire(_) => "a wire kind, which is only placed",
                     Decl::Enum(_) => "an enum, whose variants are written `Enum::Variant`",
-                    Decl::Input(_) | Decl::Let(_) | Decl::Instance(_) => "not a value",
+                    Decl::Input(_) | Decl::Let(_) | Decl::State(_) | Decl::Instance(_) => {
+                        "not a value"
+                    }
                 };
                 self.error(Code::NotAValue, loc, scope, format!("`{name}` is {what}"))?;
                 Some(Val::Error)

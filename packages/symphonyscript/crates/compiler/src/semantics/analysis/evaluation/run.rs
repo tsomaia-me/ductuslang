@@ -6,8 +6,7 @@ use super::convert::convert;
 use super::convert_to::convert_to;
 use super::ctx::Ctx;
 use super::exact_binary::exact_binary;
-use super::fits::fits;
-use super::int_bits::int_bits;
+use super::int_range::int_range;
 use super::is_chosen_float::is_chosen_float;
 use super::is_f32::is_f32;
 use super::is_float_builtin::is_float_builtin;
@@ -108,7 +107,7 @@ impl Engine<'_> {
         };
         if sig.kind == Kind::Int
             && sig.width == Width::Flexible
-            && int_bits(ty).is_some()
+            && int_range(ty).is_some()
             && self.takes_a_type(node)?
         {
             let value = self.shape_checked(node, value)?;
@@ -195,7 +194,11 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
-            | Op::ToRead { .. } => false,
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => false,
         })
     }
 
@@ -228,7 +231,20 @@ impl Engine<'_> {
     ) -> Result<Option<CVal>, Internal> {
         let op = self.node(node)?.op.clone();
         Ok(Some(match op {
-            Op::Read(_) => CVal::Error,
+            Op::Read(_) | Op::History { .. } => CVal::Error,
+            Op::Join(lhs, rhs) => return self.join((lhs, rhs), own, ctx, need),
+            Op::Slice { base, lower, upper } => {
+                return self.sliced(base, (lower, upper), own, ctx, need);
+            }
+            Op::Native { native, args } => return self.native(native, &args, ctx, need),
+            Op::Builtin(Builtin::Len, args) => {
+                let operand = *args.first().ok_or(Internal::missed("len operand"))?;
+                return self.length(operand, ctx, need);
+            }
+            Op::Builtin(Builtin::Bytes, args) => {
+                let operand = *args.first().ok_or(Internal::missed("bytes operand"))?;
+                return self.bytes(operand, ctx, need);
+            }
             Op::Pick { index, items } => {
                 let index_sig = some!(self.sig(index, need));
                 let index_ty = own_type(&index_sig, EvalTy::Exact);
@@ -274,7 +290,10 @@ impl Engine<'_> {
                 if values.iter().any(CVal::is_error) {
                     return Ok(Some(CVal::Error));
                 }
-                let inner = lengths_of(values.first().ok_or(Internal::missed("array element"))?);
+                let Some(first) = values.first() else {
+                    return Ok(Some(CVal::Array(CArray::new(Vec::new()))));
+                };
+                let inner = lengths_of(first);
                 if values.iter().any(|value| lengths_of(value) != inner) {
                     self.error_at_node(
                         Code::RaggedArray,
@@ -291,6 +310,7 @@ impl Engine<'_> {
             },
             Op::Number(number, suffix) => self.literal(node, &number, suffix, own)?,
             Op::Const(value) => match value {
+                Value::U8(value) => CVal::Int(i128::from(value)),
                 Value::I32(value) => CVal::Int(i128::from(value)),
                 Value::I64(value) => CVal::Int(i128::from(value)),
                 Value::F32(value) => CVal::F32(value),
@@ -326,6 +346,7 @@ impl Engine<'_> {
                 },
                 EvalTy::Exact
                 | EvalTy::Default
+                | EvalTy::U8
                 | EvalTy::I32
                 | EvalTy::I64
                 | EvalTy::F32
@@ -444,14 +465,11 @@ impl Engine<'_> {
             }
             Op::ToRead { wire, attrs, .. } => {
                 let destination = some!(self.destination(Query::Destination(wire), need));
-                let Destination::Fixed(item) = destination else {
+                let Destination::Fixed(_) = destination else {
                     return Ok(Some(CVal::Error));
                 };
-                let (_, attr) = attrs
-                    .iter()
-                    .find(|(candidate, _)| *candidate == item)
-                    .ok_or(Internal::missed("attribute"))?;
-                match some!(self.bound(Query::Attr(item, *attr), need)) {
+                let (item, attr) = attrs.first().ok_or(Internal::missed("attribute"))?;
+                match some!(self.bound(Query::Attr(*item, *attr), need)) {
                     BoundVal::Scalar(Bound::Value(value)) => {
                         some!(self.child(value, own, ctx, need)?)
                     }
@@ -498,8 +516,8 @@ impl Engine<'_> {
                 )?;
                 return Ok(CVal::Error);
             };
-            if let Some(bits) = int_bits(own)
-                && !fits(value, bits)
+            if let Some(range) = int_range(own)
+                && !range.contains(&value)
             {
                 self.error_at_node(
                     Code::DoesNotFit,
@@ -565,8 +583,8 @@ impl Engine<'_> {
             )?;
             return Ok(CVal::Error);
         };
-        if let Some(bits) = int_bits(own)
-            && !fits(value, bits)
+        if let Some(range) = int_range(own)
+            && !range.contains(&value)
         {
             self.error_at_node(
                 Code::ConstantOverflow,
@@ -906,6 +924,7 @@ impl Engine<'_> {
         match ty {
             EvalTy::Exact => self.fit(node, value, EvalTy::I64),
             EvalTy::Default
+            | EvalTy::U8
             | EvalTy::I32
             | EvalTy::I64
             | EvalTy::F32
@@ -964,7 +983,7 @@ impl Engine<'_> {
             _ => own_type(&sig, EvalTy::Exact),
         };
         let value = some!(self.child(operand, ty, ctx, need)?);
-        if flexible && int_bits(ty).is_some() {
+        if flexible && int_range(ty).is_some() {
             let value = self.fit(operand, value, ty)?;
             return Ok(Some(self.convert_integer(operand, false, value, own)?));
         }
@@ -1067,8 +1086,9 @@ fn int_position(value: CVal) -> Option<i128> {
 
 fn fits_in(value: &CVal, ty: EvalTy) -> bool {
     match (value, ty) {
-        (CVal::Int(value), EvalTy::I32) => fits(*value, 32),
-        (CVal::Int(value), EvalTy::I64) => fits(*value, 64),
+        (CVal::Int(value), EvalTy::U8 | EvalTy::I32 | EvalTy::I64) => {
+            int_range(ty).is_some_and(|range| range.contains(value))
+        }
         (CVal::F32(value), EvalTy::F32 | EvalTy::DefaultF32) => value.is_finite(),
         (CVal::F64(value), EvalTy::F64 | EvalTy::DefaultF64) => value.is_finite(),
         _ => true,

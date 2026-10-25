@@ -127,5 +127,15 @@ fn skip_to_value<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Optio
     if rest.next()?.kind != SyntaxKind::Dot || rest.next()?.kind != SyntaxKind::Ident {
         return None;
     }
-    Some(rest.next())
+    loop {
+        let Some(separator) = rest.next() else {
+            return Some(None);
+        };
+        if separator.kind != SyntaxKind::Dot {
+            return Some(Some(separator));
+        }
+        if rest.next()?.kind != SyntaxKind::Ident {
+            return None;
+        }
+    }
 }

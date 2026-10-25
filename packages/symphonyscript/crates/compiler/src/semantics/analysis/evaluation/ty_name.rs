@@ -2,6 +2,7 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 
 pub(super) fn ty_name(ty: EvalTy) -> &'static str {
     match ty {
+        EvalTy::U8 => "u8",
         EvalTy::I32 => "i32",
         EvalTy::I64 => "i64",
         EvalTy::F32 | EvalTy::DefaultF32 => "f32",

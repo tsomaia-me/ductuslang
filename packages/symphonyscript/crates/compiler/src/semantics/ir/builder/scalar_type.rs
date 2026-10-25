@@ -2,7 +2,8 @@ use symphonyscript_core::Scalar;
 
 use crate::syntax::{SyntaxKind, TokenView};
 
-const SCALAR_KEYWORDS: [(SyntaxKind, Scalar); 5] = [
+const SCALAR_KEYWORDS: [(SyntaxKind, Scalar); 6] = [
+    (SyntaxKind::U8Kw, Scalar::U8),
     (SyntaxKind::I32Kw, Scalar::I32),
     (SyntaxKind::I64Kw, Scalar::I64),
     (SyntaxKind::F32Kw, Scalar::F32),

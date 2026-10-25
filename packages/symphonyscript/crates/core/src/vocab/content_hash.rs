@@ -4,6 +4,8 @@ use super::count::Count;
 use super::enum_decl::EnumDecl;
 use super::family_decl::FamilyDecl;
 use super::fnv::Fnv;
+use super::native_decl::NativeDecl;
+use super::native_type::NativeType;
 use super::node_kind_decl::NodeKindDecl;
 use super::prelude_file::PreludeFile;
 use super::wire_kind_decl::WireKindDecl;
@@ -16,6 +18,7 @@ pub(crate) fn content_hash(
     enums: &[EnumDecl],
     families: &[FamilyDecl],
     prelude: &[PreludeFile],
+    natives: &[NativeDecl],
 ) -> u64 {
     let mut fnv = Fnv::new();
     fnv.str("symphonyscript-vocabulary-1");
@@ -76,7 +79,36 @@ pub(crate) fn content_hash(
     for file in prelude {
         fnv.str(&file.text.replace("\r\n", "\n"));
     }
+    if !natives.is_empty() {
+        fnv.len(natives.len());
+        for native in natives {
+            fnv.str(&native.name);
+            fnv.len(native.signature.params.len());
+            for param in &native.signature.params {
+                native_type(&mut fnv, param);
+            }
+            native_type(&mut fnv, &native.signature.result);
+        }
+    }
     fnv.finish()
+}
+
+fn native_type(fnv: &mut Fnv, native: &NativeType) {
+    match native {
+        NativeType::Value(value) => {
+            fnv.byte(0);
+            ty(fnv, value);
+        }
+        NativeType::Open(element) => {
+            fnv.byte(1);
+            ty(fnv, element);
+        }
+        NativeType::CapacityOf(element, param) => {
+            fnv.byte(2);
+            ty(fnv, element);
+            fnv.len(*param);
+        }
+    }
 }
 
 fn attrs(fnv: &mut Fnv, attrs: &[AttrDecl], default_attr: Option<AttrId>) {
@@ -124,11 +156,16 @@ fn attrs(fnv: &mut Fnv, attrs: &[AttrDecl], default_attr: Option<AttrId>) {
 }
 
 fn ty(fnv: &mut Fnv, ty: &Ty) {
+    if let Some(capacity) = ty.capacity {
+        fnv.byte(8);
+        fnv.u32(capacity);
+    }
     for length in ty.lengths.iter().rev() {
         fnv.byte(7);
         fnv.u32(*length);
     }
     match ty.scalar {
+        Scalar::U8 => fnv.byte(9),
         Scalar::I32 => fnv.byte(0),
         Scalar::I64 => fnv.byte(1),
         Scalar::F32 => fnv.byte(2),
@@ -144,6 +181,10 @@ fn ty(fnv: &mut Fnv, ty: &Ty) {
 
 fn value(fnv: &mut Fnv, value: Value) {
     match value {
+        Value::U8(v) => {
+            fnv.byte(7);
+            fnv.byte(v);
+        }
         Value::I32(v) => {
             fnv.byte(0);
             fnv.bytes(&v.to_le_bytes());

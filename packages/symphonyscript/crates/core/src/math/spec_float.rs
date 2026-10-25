@@ -99,7 +99,9 @@ macro_rules! spec_float {
                         | Builtin::Exp
                         | Builtin::Log
                         | Builtin::Lerp
-                        | Builtin::Rand,
+                        | Builtin::Rand
+                        | Builtin::Len
+                        | Builtin::Bytes,
                         _,
                     ) => return None,
                 })

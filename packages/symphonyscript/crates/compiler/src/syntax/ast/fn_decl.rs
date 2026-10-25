@@ -1,4 +1,5 @@
 use super::ast_node::AstNode;
+use super::bounded::Bounded;
 use super::fn_body::FnBody;
 use super::name::Name;
 use super::param::Param;
@@ -28,6 +29,10 @@ impl<'p> FnDecl<'p> {
         child::<ParamList>(&self.0)
             .into_iter()
             .flat_map(|list| children::<Param>(list.syntax()))
+    }
+
+    pub fn bounded(&self) -> Option<Bounded<'p>> {
+        child(&self.0)
     }
 
     pub fn body(&self) -> Option<FnBody<'p>> {

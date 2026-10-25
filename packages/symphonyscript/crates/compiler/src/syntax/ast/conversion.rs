@@ -24,7 +24,11 @@ impl<'p> Conversion<'p> {
             .find(|token| {
                 matches!(
                     token.kind(),
-                    SyntaxKind::I32Kw | SyntaxKind::I64Kw | SyntaxKind::F32Kw | SyntaxKind::F64Kw
+                    SyntaxKind::U8Kw
+                        | SyntaxKind::I32Kw
+                        | SyntaxKind::I64Kw
+                        | SyntaxKind::F32Kw
+                        | SyntaxKind::F64Kw
                 )
             })
     }

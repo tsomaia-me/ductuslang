@@ -1340,12 +1340,12 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
 }
 
 #[test]
-fn an_array_an_error_leaves_without_elements_draws_nothing_more() {
-    let rows: [Row; 13] = [
-        (&["input k: i32[2] = []"], &[(Code::ExpressionSyntax, "]")]),
+fn an_empty_array_has_length_zero_and_a_compile_time_index_into_it_is_outside() {
+    let rows: [Row; 14] = [
+        (&["input k: i32[2] = []"], &[(Code::TypeMismatch, "[]")]),
         (
             &["input k: i32[2][2] = [[], []]"],
-            &[(Code::ExpressionSyntax, "]")],
+            &[(Code::TypeMismatch, "[[], []]")],
         ),
         (&["input k: i32[2] = [1, 2]"], &[]),
         (
@@ -1354,19 +1354,23 @@ fn an_array_an_error_leaves_without_elements_draws_nothing_more() {
         ),
         (
             &["let v = [[]]", "Clip c:\n    Note/(v[0][0])"],
-            &[(Code::ExpressionSyntax, "]")],
+            &[(Code::IndexOutOfRange, "0")],
         ),
         (
             &["let v = [[]]", "Clip c:\n    Note/(v[0])"],
-            &[(Code::ExpressionSyntax, "]")],
+            &[(Code::TypeMismatch, "v[0]")],
         ),
         (
             &["Clip c:\n    Note/([[]][0][0])"],
-            &[(Code::ExpressionSyntax, "]")],
+            &[(Code::IndexOutOfRange, "0")],
         ),
         (
             &["let v = [[], []]", "Clip c:\n    Note/(v[1][0])"],
-            &[(Code::ExpressionSyntax, "]")],
+            &[(Code::IndexOutOfRange, "0")],
+        ),
+        (
+            &["input i = 0", "let v = [[]]", "Clip c:\n    Note/(v[0][i])"],
+            &[],
         ),
         (
             &["input k: i32[0] = 1", "Clip c:\n    Note/(k[0])"],
@@ -2146,7 +2150,7 @@ fn a_literals_family_value_reaches_every_attribute_a_read_of_it_reaches() {
         ),
     ];
     expect_in_every_order(&rows);
-    let items = [A, "Bar b1 | len=(a[0])", "Bar b2 | beat_len=(a[0])"];
+    let items = [A, "Bar b1 | bar_len=(a[0])", "Bar b2 | beat_len=(a[0])"];
     let wanted: Located = vec![(
         Code::ConflictingUnits,
         "2".to_string(),
@@ -2873,7 +2877,7 @@ fn a_family_feed_stays_out_of_an_index_and_a_plain_cell_conflicts_once() {
             &[
                 I,
                 "let a = [1bars, 2bars]",
-                "Bar b1 | len=(a[i])",
+                "Bar b1 | bar_len=(a[i])",
                 "Bar b2 | beat_len=(a[i])",
             ],
             &[],
@@ -2882,31 +2886,34 @@ fn a_family_feed_stays_out_of_an_index_and_a_plain_cell_conflicts_once() {
             &[
                 I,
                 "let a = [1bars, 2]",
-                "Bar b1 | len=(a[i])",
+                "Bar b1 | bar_len=(a[i])",
                 "Bar b2 | beat_len=(a[i])",
             ],
             &[(Code::ConflictingUnits, "2", &["a[i]", "a[i]"])],
         ),
-        (&[I, "let a = [1bars, 2]", "Bar b1 | len=(a[i])"], &[]),
+        (&[I, "let a = [1bars, 2]", "Bar b1 | bar_len=(a[i])"], &[]),
         (
-            &[I, "let a = [1bars, 2]", "Bar b1 | len=(a[i]) plain=i"],
+            &[I, "let a = [1bars, 2]", "Bar b1 | bar_len=(a[i]) plain=i"],
             &[],
         ),
         (
-            &[X, "Bar b1 | len=x", "Bar b2 | beat_len=x"],
+            &[X, "Bar b1 | bar_len=x", "Bar b2 | beat_len=x"],
             &[(Code::ConflictingUnits, "x", &["x"])],
         ),
         (
-            &[X, XA, "Bar b1 | len=(a[0])", "Bar b2 | beat_len=(a[0])"],
+            &[X, XA, "Bar b1 | bar_len=(a[0])", "Bar b2 | beat_len=(a[0])"],
             &[(Code::ConflictingUnits, "x", &["a[0]", "a[0]"])],
         ),
         (
-            &[X, XA, "Bar b1 | len=(a[1])", "Bar b2 | beat_len=(a[1])"],
+            &[X, XA, "Bar b1 | bar_len=(a[1])", "Bar b2 | beat_len=(a[1])"],
             &[(Code::ConflictingUnits, "x", &["a[1]", "a[1]"])],
         ),
-        (&[X, XA, "Bar b1 | len=(a[0])", "Bar b2 | len=(a[1])"], &[]),
-        (&[X, XA, "Bar b1 | len=(a[1])"], &[]),
-        (&[X, XA, "Bar b1 | len=(a[0])"], &[]),
+        (
+            &[X, XA, "Bar b1 | bar_len=(a[0])", "Bar b2 | bar_len=(a[1])"],
+            &[],
+        ),
+        (&[X, XA, "Bar b1 | bar_len=(a[1])"], &[]),
+        (&[X, XA, "Bar b1 | bar_len=(a[0])"], &[]),
     ];
     expect_located_with(&rows, as_given, bar_errors);
 }

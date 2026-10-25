@@ -5,5 +5,6 @@ use super::type_base::TypeBase;
 pub(crate) struct TypeRef {
     pub base: TypeBase,
     pub lengths: Vec<(Option<u32>, Loc)>,
+    pub capacity: Option<(Option<u32>, Loc)>,
     pub loc: Loc,
 }

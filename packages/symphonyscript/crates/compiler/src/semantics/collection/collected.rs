@@ -7,6 +7,7 @@ pub(crate) struct Collected {
     pub source: Namespace,
     pub prelude: Namespace,
     pub recursive: Vec<bool>,
+    pub bounded_cycle: Vec<bool>,
     pub inline: InlineCounts,
     pub cyclic_patterns: Vec<bool>,
     pub stand_ins: Vec<Option<StandIn>>,

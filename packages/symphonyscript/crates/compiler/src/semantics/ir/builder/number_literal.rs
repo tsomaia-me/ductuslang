@@ -93,6 +93,7 @@ fn prefixed_radix(bytes: &[u8]) -> Option<u32> {
 fn suffix(text: &str, vocabulary: &Vocabulary) -> Option<Suffix> {
     let suffix = match text {
         "" => Suffix::None,
+        "u8" => Suffix::Type(Scalar::U8),
         "i32" => Suffix::Type(Scalar::I32),
         "i64" => Suffix::Type(Scalar::I64),
         "f32" => Suffix::Type(Scalar::F32),

@@ -4,6 +4,7 @@ use symphonyscript_core::EnumId;
 pub(crate) enum EvalTy {
     Exact,
     Default,
+    U8,
     I32,
     I64,
     F32,

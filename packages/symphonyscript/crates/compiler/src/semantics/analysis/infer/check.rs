@@ -11,6 +11,7 @@ use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::outside_i64::outside_i64;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
@@ -251,6 +252,9 @@ impl Engine<'_> {
                     let index_ty = self.synth(index)?;
                     stack.push((index, index_ty, selection));
                     stack.push((base, ty, selection));
+                    if selection == Selection::Chosen {
+                        self.fixed_cell_index(base, index)?;
+                    }
                 }
                 Op::Array(elements) => {
                     stack.extend(elements.into_iter().map(|element| (element, ty, selection)));
@@ -281,8 +285,47 @@ impl Engine<'_> {
                         | Builtin::Exp
                         | Builtin::Log
                         | Builtin::Lerp => ty,
+                        Builtin::Len | Builtin::Bytes => {
+                            for arg in args {
+                                let arg_ty = self.synth(arg)?;
+                                stack.push((arg, arg_ty, selection));
+                            }
+                            continue;
+                        }
                     };
                     stack.extend(args.into_iter().map(|arg| (arg, operands, selection)));
+                }
+                Op::Join(lhs, rhs) => {
+                    stack.push((lhs, ty, selection));
+                    stack.push((rhs, ty, selection));
+                }
+                Op::Slice { base, lower, upper } => {
+                    for (bound, _) in lower.iter().chain(upper.iter()) {
+                        let bound_ty = self.synth(*bound)?;
+                        stack.push((*bound, bound_ty, selection));
+                        if selection != Selection::Chosen {
+                            continue;
+                        }
+                        let position_ty = own_type(&self.known_sig(*bound)?, EvalTy::Exact);
+                        if let Some(CVal::Int(value)) = self.chosen(*bound, position_ty)?
+                            && i64::try_from(value).is_err()
+                        {
+                            self.error_at_node(Code::IndexOutOfRange, *bound, outside_i64(value))?;
+                        }
+                    }
+                    stack.push((base, ty, selection));
+                }
+                Op::History { fallback, .. } => {
+                    if let Some(fallback) = fallback {
+                        let cell_ty = self.history_type(node)?.or(ty);
+                        stack.push((fallback, cell_ty, selection));
+                    }
+                }
+                Op::Native { native, args } => {
+                    let params = self.native_params(native)?;
+                    for (arg, param) in args.into_iter().zip(params) {
+                        stack.push((arg, param, selection));
+                    }
                 }
                 other => {
                     for operand in other.operands() {
@@ -293,6 +336,29 @@ impl Engine<'_> {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn history_type(&self, node: NodeId) -> Result<Option<Scalar>, Internal> {
+        Ok(self
+            .history_bindings(node)?
+            .first()
+            .and_then(|binding| self.typing.own.get(binding).copied()))
+    }
+
+    pub(super) fn native_params(
+        &self,
+        native: symphonyscript_core::NativeId,
+    ) -> Result<Vec<Option<Scalar>>, Internal> {
+        let decl = self
+            .vocabulary
+            .native(native)
+            .ok_or(Internal::missed("native function"))?;
+        Ok(decl
+            .signature
+            .params
+            .iter()
+            .map(|param| Some(crate::semantics::analysis::evaluation::native_ty(param).scalar))
+            .collect())
     }
 
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
@@ -334,9 +400,11 @@ impl Engine<'_> {
         expected: Scalar,
         condition: bool,
     ) -> Result<bool, Internal> {
-        let is_cell = matches!(self.node(self.through_uses(node)?)?.op, Op::Read(_))
-            || matches!(sig.width, Width::Adaptive)
-                && matches!(self.node(node)?.op, Op::ToRead { .. });
+        let is_cell = matches!(
+            self.node(self.through_uses(node)?)?.op,
+            Op::Read(_) | Op::History { .. }
+        ) || matches!(sig.width, Width::Adaptive)
+            && matches!(self.node(node)?.op, Op::ToRead { .. });
         let fits_kind = match (self.carried_kind(node, sig.kind)?, expected) {
             (Kind::Bool, Scalar::Bool) | (Kind::Str, Scalar::Str) => true,
             (Kind::Enum(id), Scalar::Enum(other)) => id == other,
@@ -394,6 +462,30 @@ impl Engine<'_> {
         }
         Ok(true)
     }
+
+    fn fixed_cell_index(&mut self, base: NodeId, index: NodeId) -> Result<(), Internal> {
+        if !self.known_sig(base)?.reactive {
+            return Ok(());
+        }
+        let found = self.known_layout(base)?;
+        let (Ok(Some(layout)), true) = (found.shaped, found.certain) else {
+            return Ok(());
+        };
+        let (false, Some(length)) = (layout.variable, layout.outer()) else {
+            return Ok(());
+        };
+        let position_ty = own_type(&self.known_sig(index)?, EvalTy::Exact);
+        if let Some(CVal::Int(position)) = self.chosen(index, position_ty)?
+            && !(0..i128::from(length)).contains(&position)
+        {
+            self.error_at_node(
+                Code::IndexOutOfRange,
+                index,
+                format!("the index {position} is outside the array of length {length}"),
+            )?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -405,6 +497,7 @@ enum Selection {
 
 fn scalar_name(engine: &Engine<'_>, scalar: Scalar) -> Result<String, Internal> {
     Ok(match scalar {
+        Scalar::U8 => "u8".into(),
         Scalar::I32 => "i32".into(),
         Scalar::I64 => "i64".into(),
         Scalar::F32 => "f32".into(),

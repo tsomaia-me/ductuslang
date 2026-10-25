@@ -98,7 +98,9 @@ impl PatternGraph {
                         Some(
                             Decl::Input(_)
                             | Decl::Let(_)
+                            | Decl::State(_)
                             | Decl::Fn(_)
+                            | Decl::Native(_)
                             | Decl::Instance(_)
                             | Decl::Builtin(_)
                             | Decl::Wire(_)

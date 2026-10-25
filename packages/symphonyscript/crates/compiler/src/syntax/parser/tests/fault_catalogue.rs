@@ -78,7 +78,8 @@ const TOKEN_FAULTS: &[(Code, Hole, &str)] = &[
     (Code::ReservedWord, Name, "⟦from⟧"),
     (Code::InvalidEscape, Text, "\"a⟦\\q⟧b\""),
     (Code::UnexpectedCharacter, Stray, "⟦&⟧"),
-    (Code::ReservedToken, Stray, "⟦^⟧"),
+    (Code::MisplacedCaret, Stray, "⟦^⟧"),
+    (Code::ReservedToken, Stray, "⟦==⟧"),
     (Code::Semicolon, Stray, "⟦;⟧"),
     (Code::UnterminatedString, LineEnd, "⟦\"abc⟧"),
 ];
@@ -1097,6 +1098,14 @@ const ROWS: &[(Code, Context, Lines, &str, Open)] = &[
     ),
     (Code::InputSyntax, TopLevel, One, "input ⟦=⟧ 5\n", Closed),
     (Code::LetSyntax, TopLevel, One, "let ⟦=⟧ 5\n", Closed),
+    (Code::StateSyntax, TopLevel, One, "state ⟦=⟧ 5\n", Closed),
+    (
+        Code::StateSyntax,
+        Body,
+        One,
+        "    ⟦state⟧ a = 1\n    Note\n",
+        Closed,
+    ),
     (
         Code::LetSyntax,
         Body,

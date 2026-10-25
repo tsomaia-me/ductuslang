@@ -1,4 +1,5 @@
 mod annotation;
+mod arrays;
 mod bind_fault;
 mod bind_spec;
 mod bindings;
@@ -9,5 +10,15 @@ mod declarations;
 mod defaulted;
 mod expressions;
 mod found;
+mod history;
+mod layout_found;
+mod length_limit;
 mod names;
+mod native_layout;
+mod natives;
 mod paths;
+mod reads_cell;
+mod selection;
+mod shaped;
+
+pub(crate) use layout_found::LayoutFound;

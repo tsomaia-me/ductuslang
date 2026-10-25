@@ -278,7 +278,11 @@ impl<'a> Lexer<'a> {
             .and_then(|depths| depths.get(..length))
             .unwrap_or_default();
         let closes_region = rest.iter().zip(rest_depths).any(|(token, depth)| {
-            *depth == 1 && matches!(token.kind, SyntaxKind::RParen | SyntaxKind::RBracket)
+            *depth == 1
+                && matches!(
+                    token.kind,
+                    SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace
+                )
         });
         Some(LineStart {
             first,
@@ -531,15 +535,22 @@ impl<'a> Lexer<'a> {
     fn unterminated_start(&self) -> Option<usize> {
         self.modes.iter().find_map(|mode| match mode {
             Mode::String { start, .. } => Some(*start),
-            Mode::Interp { .. } => None,
+            Mode::Interp { .. } | Mode::Brace => None,
         })
     }
 
     fn close_strings(&mut self) {
-        if let Some(Mode::String { depth, .. }) = self.modes.first() {
+        let Some(outermost) = self
+            .modes
+            .iter()
+            .position(|mode| matches!(mode, Mode::String { .. }))
+        else {
+            return;
+        };
+        if let Some(Mode::String { depth, .. }) = self.modes.get(outermost) {
             self.depth = *depth;
         }
-        self.modes.clear();
+        self.modes.truncate(outermost);
     }
 
     fn token(&mut self) {
@@ -580,6 +591,16 @@ impl<'a> Lexer<'a> {
                     self.depth = depth;
                 }
                 self.push(SyntaxKind::InterpEnd, start);
+            }
+            '{' => {
+                self.pos += 1;
+                self.push(SyntaxKind::LBrace, start);
+                self.modes.push(Mode::Brace);
+            }
+            '}' if matches!(self.modes.last(), Some(Mode::Brace)) => {
+                self.pos += 1;
+                self.modes.pop();
+                self.push(SyntaxKind::RBrace, start);
             }
             '0'..='9' => self.number(),
             '.' if next.is_some_and(|n| n.is_ascii_digit()) => self.leading_point(),
@@ -786,13 +807,13 @@ impl<'a> Lexer<'a> {
         let text = &self.text[start..self.pos];
         let name = nfc(text);
         match name.as_ref() {
-            "i32" | "i64" if float => self.error(
+            "u8" | "i32" | "i64" if float => self.error(
                 Code::FloatTypeSuffix,
                 start,
                 self.pos,
                 format!("`{name}` is an integer type; a float literal cannot take it"),
             ),
-            "i32" | "i64" | "f32" | "f64" => {}
+            "u8" | "i32" | "i64" | "f32" | "f64" => {}
             unit if self.vocabulary.unit_named(unit).is_some() => {}
             _ => self.error(
                 Code::UnknownSuffix,
@@ -894,12 +915,7 @@ impl<'a> Lexer<'a> {
                 self.push(SyntaxKind::Error, start);
                 return;
             }
-            ('^', _) => {
-                self.pos += 1;
-                self.error(Code::ReservedToken, start, self.pos, "`^` is reserved");
-                self.push(SyntaxKind::Error, start);
-                return;
-            }
+            ('^', _) => (SyntaxKind::Caret, 1),
             (';', _) => {
                 self.pos += 1;
                 self.error(
@@ -986,14 +1002,14 @@ impl<'a> Lexer<'a> {
                     self.clause = None;
                     self.clause_pending = false;
                 }
-                SyntaxKind::LParen | SyntaxKind::LBracket => {
+                SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::LBrace => {
                     if self.depth == 0 {
                         let stack = self.line_stack_snapshot();
                         self.regions.push(Region { open: start, stack });
                     }
                     self.depth += 1;
                 }
-                SyntaxKind::RParen | SyntaxKind::RBracket => {
+                SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => {
                     self.depth = self.depth.saturating_sub(1);
                 }
                 _ => {}

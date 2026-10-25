@@ -36,6 +36,7 @@ impl Engine<'_> {
                     let global = self.source_global;
                     self.demand(Query::Let(global, LetRef::Top(id)))?;
                 }
+                Top::State(id) => self.demand(Query::State(id))?,
                 Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
             }
         }
@@ -112,7 +113,8 @@ impl Engine<'_> {
     ) -> Result<Option<Position>, Internal> {
         let decl = self.hir.input(input)?;
         let global = self.source_global;
-        let val = self.demand_val(Query::Expr(decl.value, global))?;
+        let found = self.demand_val(Query::Expr(decl.value, global))?;
+        let val = self.as_converted(found);
         let bound = self
             .memo
             .inputs
@@ -174,7 +176,8 @@ impl Engine<'_> {
             };
             self.demand(Query::Attr(item, source.attr))?;
             if let AttrValueSource::Expr(expr, scope) = source.value {
-                let mut val = self.demand_val(Query::Expr(expr, scope))?;
+                let found = self.demand_val(Query::Expr(expr, scope))?;
+                let mut val = self.as_converted(found);
                 if let Some(group) = self.memo.literal_groups.get(&(expr, scope)).copied()
                     && self.demand_sig(group)?.is_error()
                 {
@@ -218,7 +221,8 @@ impl Engine<'_> {
         {
             self.typing.gate_positions += 1;
         }
-        let val = self.demand_val(Query::Expr(expr, scope))?;
+        let found = self.demand_val(Query::Expr(expr, scope))?;
+        let val = self.as_converted(found);
         Ok(Position {
             val,
             ty: Ty::BOOL,
@@ -227,5 +231,14 @@ impl Engine<'_> {
             loc: self.hir.expr(expr)?.loc,
             scope,
         })
+    }
+
+    fn as_converted(&self, val: Val) -> Val {
+        match val {
+            Val::Scalar(node) => {
+                Val::Scalar(self.memo.string_bytes.get(&node).copied().unwrap_or(node))
+            }
+            other => other,
+        }
     }
 }

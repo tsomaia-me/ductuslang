@@ -17,16 +17,18 @@ pub use compiled::{
     Program, Target, UnaryOp, Wire, dump,
 };
 pub use ids::{
-    AttrId, CellId, EnumId, FamilyId, InputSlot, InstanceId, NodeKind, StrId, WireId, WireKind,
+    AttrId, CellId, EnumId, FamilyId, InputSlot, InstanceId, NativeId, NodeKind, StrId, WireId,
+    WireKind,
 };
 pub use language::{BUILTINS, FLAG_CHARS, KEYWORDS, RESERVED_WORDS};
 pub use math::{SpecFloat, rand};
 pub use resource::Limits;
 pub use source::{Path, Segment, Span};
-pub use types::{Scalar, Ty, Value, canonical_f32, canonical_f64};
+pub use types::{Bounded, Scalar, Ty, Value, canonical_f32, canonical_f64};
 pub use vocab::{
     ArrayElement, AttrBuilder, AttrDecl, AttrDefault, AttrType, AttrUnit, Count, EnumAttr,
-    EnumBuilder, EnumDecl, FamilyDecl, InvalidVocabulary, NodeKindBuilder, NodeKindDecl, Numeric,
-    PreludeFile, UnitDecl, UnitFamilyBuilder, UnitFamilyStart, Vocabulary, VocabularyBuilder,
-    VocabularyError, VocabularyStamp, WireKindBuilder, WireKindDecl,
+    EnumBuilder, EnumDecl, FamilyDecl, InvalidVocabulary, NativeArg, NativeDecl, NativeFn,
+    NativeOut, NativeSignature, NativeType, NodeKindBuilder, NodeKindDecl, Numeric, PreludeFile,
+    UnitDecl, UnitFamilyBuilder, UnitFamilyStart, Vocabulary, VocabularyBuilder, VocabularyError,
+    VocabularyStamp, WireKindBuilder, WireKindDecl,
 };

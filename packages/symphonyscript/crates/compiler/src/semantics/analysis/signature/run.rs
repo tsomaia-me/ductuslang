@@ -41,6 +41,27 @@ impl Engine<'_> {
                 self.sig(init, need).map(Extra::Read)
             }
             Op::ToRead { wire, attrs, .. } => self.destination_read_reactive(*wire, attrs, need),
+            Op::History {
+                cell: crate::semantics::analysis::history_cell::HistoryCell::Input(input),
+                fallback: None,
+                ..
+            } => match self.bound(Query::Input(*input), need) {
+                Some(bound) => match self.first_binding(&bound) {
+                    Some(binding) => {
+                        let init = self.binding(binding)?.init;
+                        let record = self.binding(binding)?.clone();
+                        self.sig(init, need).map(|init| {
+                            let kind = match record.annotation {
+                                Some(annotation) => kind_of(annotation),
+                                None => self.cell_kind(&record, init.kind),
+                            };
+                            Extra::History(Sig::of(kind, Width::Adaptive, true, init.family))
+                        })
+                    }
+                    None => Some(Extra::History(Sig::ERROR)),
+                },
+                None => None,
+            },
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
@@ -63,7 +84,11 @@ impl Engine<'_> {
             | Op::Convert(..)
             | Op::Annotate(..)
             | Op::Builtin(..)
-            | Op::Recursive { .. } => Some(Extra::None),
+            | Op::Recursive { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => Some(Extra::None),
         };
         if sigs.iter().any(Option::is_none) {
             return Ok(false);
@@ -140,6 +165,20 @@ impl Engine<'_> {
         (!missing).then_some(Extra::ToRead { reactive })
     }
 
+    fn first_binding(
+        &self,
+        bound: &BoundVal,
+    ) -> Option<crate::semantics::analysis::ids::BindingId> {
+        match bound {
+            BoundVal::Scalar(Bound::Cell(binding)) => Some(*binding),
+            BoundVal::Array(array) => array.1.iter().find_map(|item| match item {
+                Bound::Cell(binding) => Some(*binding),
+                Bound::Value(_) => None,
+            }),
+            BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error => None,
+        }
+    }
+
     pub(super) fn read_sig(
         &self,
         binding: crate::semantics::analysis::ids::BindingId,
@@ -163,6 +202,7 @@ impl Engine<'_> {
             BindingKind::Input { .. }
             | BindingKind::Let
             | BindingKind::Param
+            | BindingKind::State { .. }
             | BindingKind::Attr { .. } => own,
         }
     }
@@ -238,6 +278,10 @@ fn joins(op: &Op) -> bool {
         | Op::Arg(_)
         | Op::Unary(UnaryOp::Not, _)
         | Op::Recursive { .. }
-        | Op::ToRead { .. } => false,
+        | Op::ToRead { .. }
+        | Op::Join(..)
+        | Op::Slice { .. }
+        | Op::History { .. }
+        | Op::Native { .. } => false,
     }
 }

@@ -24,6 +24,13 @@ pub(crate) fn collect(
     let base = base_namespace(vocabulary)?;
     let mut prelude = base.clone();
     let mut source = base.clone();
+    for (index, native) in vocabulary.natives().iter().enumerate() {
+        let id = vocabulary
+            .native_at(index)
+            .ok_or(Internal::missed("native function"))?;
+        prelude.insert(native.name.clone(), Decl::Native(id));
+        source.insert(native.name.clone(), Decl::Native(id));
+    }
     let mut first: BTreeMap<String, Loc> = BTreeMap::new();
     let mut prelude_first: BTreeMap<String, Loc> = BTreeMap::new();
     for (position, top) in hir.top.iter().enumerate() {
@@ -43,6 +50,19 @@ pub(crate) fn collect(
                 (hir.input(id)?.name.clone(), Decl::Input(id))
             }
             Top::Let(id) => (hir.let_decl(id)?.name.clone(), Decl::Let(id)),
+            Top::State(id) => {
+                if in_prelude {
+                    let loc = hir.state(id)?.loc;
+                    report.error(
+                        hir,
+                        Code::PreludeItem,
+                        loc,
+                        "the prelude holds `let`, `fn` and `pattern` declarations only",
+                    );
+                    continue;
+                }
+                (hir.state(id)?.name.clone(), Decl::State(id))
+            }
             Top::Fn(id) => (hir.fn_decl(id)?.name.clone(), Decl::Fn(id)),
             Top::Pattern(id) => (hir.pattern(id)?.name.clone(), Decl::Pattern(id)),
             Top::Placement(id) => {
@@ -64,6 +84,15 @@ pub(crate) fn collect(
         };
         variant_name(hir, vocabulary, variants, &name, report)?;
         if in_prelude {
+            if let Some(Decl::Native(_)) = prelude.get(&name.text) {
+                report.error(
+                    hir,
+                    Code::DuplicateName,
+                    name.loc,
+                    format!("`{}` is a native function of the vocabulary", name.text),
+                );
+                continue;
+            }
             if declare(
                 hir,
                 &base,
@@ -79,13 +108,31 @@ pub(crate) fn collect(
             declare(hir, &base, &mut source, &mut first, &name, decl, report);
         }
     }
-    let recursive = recursive_functions(hir, &source, &prelude)?;
+    let (recursive, bounded_cycle, unresolved) = recursive_functions(hir, &source, &prelude)?;
+    for (index, decl) in hir.fns.iter().enumerate() {
+        let (Some(bound), Some(false), Some(false)) =
+            (&decl.bound, recursive.get(index), unresolved.get(index))
+        else {
+            continue;
+        };
+        let name = decl
+            .name
+            .as_ref()
+            .map_or(String::new(), |name| name.text.clone());
+        report.error(
+            hir,
+            Code::NeedlessBound,
+            bound.loc,
+            format!("a bound applies to a recursive function, and `{name}` reaches itself through no call"),
+        );
+    }
     let inline = InlineCounts::of(hir, &source, &prelude, &recursive)?;
     let graph = PatternGraph::of(hir, &source, &prelude, report)?;
     Ok(Collected {
         source,
         prelude,
         recursive,
+        bounded_cycle,
         inline,
         cyclic_patterns: graph.cyclic,
         stand_ins: graph.stand_ins,
@@ -132,9 +179,13 @@ fn declare(
             Decl::Node(_) => "a node kind of the vocabulary",
             Decl::Wire(_) => "a wire kind of the vocabulary",
             Decl::Enum(_) => "an enum of the vocabulary",
-            Decl::Input(_) | Decl::Let(_) | Decl::Fn(_) | Decl::Pattern(_) | Decl::Instance(_) => {
-                "already declared"
-            }
+            Decl::Input(_)
+            | Decl::Let(_)
+            | Decl::State(_)
+            | Decl::Fn(_)
+            | Decl::Native(_)
+            | Decl::Pattern(_)
+            | Decl::Instance(_) => "already declared",
         };
         report.error(
             hir,

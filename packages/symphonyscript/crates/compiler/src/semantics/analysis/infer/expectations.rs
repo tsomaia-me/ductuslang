@@ -161,8 +161,46 @@ impl Engine<'_> {
                         | Builtin::Exp
                         | Builtin::Log
                         | Builtin::Lerp => float,
+                        Builtin::Len | Builtin::Bytes => None,
                     };
                     stack.extend(args.into_iter().map(|arg| (arg, operands)));
+                }
+                Op::Join(lhs, rhs) => {
+                    stack.push((lhs, expected));
+                    stack.push((rhs, expected));
+                }
+                Op::Slice { base, lower, upper } => {
+                    stack.push((base, expected));
+                    stack.extend(
+                        lower
+                            .iter()
+                            .chain(upper.iter())
+                            .map(|(bound, _)| (*bound, None)),
+                    );
+                }
+                Op::History { fallback, .. } => {
+                    if !self.memo.own_history.contains(&node) {
+                        for binding in self.history_bindings(node)? {
+                            self.typing.reads.entry(binding).or_default().push(loc);
+                            if let Some(expected) = expected {
+                                if matches!(expected, Scalar::Enum(_)) {
+                                    self.typing.enum_expected.push(binding);
+                                }
+                                self.typing
+                                    .expectations
+                                    .entry(binding)
+                                    .or_default()
+                                    .push((expected, loc));
+                            }
+                        }
+                    }
+                    stack.extend(fallback.map(|fallback| (fallback, expected)));
+                }
+                Op::Native { native, args } => {
+                    let params = self.native_params(native)?;
+                    for (arg, param) in args.into_iter().zip(params) {
+                        stack.push((arg, param.filter(|scalar| *scalar != Scalar::Str)));
+                    }
                 }
                 other => stack.extend(other.operands().into_iter().map(|operand| (operand, None))),
             }

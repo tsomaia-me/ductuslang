@@ -6,7 +6,7 @@ pub(crate) enum BuiltinName {
     Pi,
 }
 
-const FUNCTIONS: [Builtin; 15] = [
+const FUNCTIONS: [Builtin; 17] = [
     Builtin::Abs,
     Builtin::Min,
     Builtin::Max,
@@ -22,6 +22,8 @@ const FUNCTIONS: [Builtin; 15] = [
     Builtin::Log,
     Builtin::Lerp,
     Builtin::Rand,
+    Builtin::Len,
+    Builtin::Bytes,
 ];
 
 impl BuiltinName {

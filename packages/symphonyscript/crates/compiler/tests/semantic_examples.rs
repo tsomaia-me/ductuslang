@@ -81,7 +81,14 @@ fn every_sym_error_example_is_rejected() {
             example.name()
         })
         .collect();
-    assert_eq!(rejected, ["spec-4.1-sym-error-1"]);
+    assert_eq!(
+        rejected,
+        [
+            "spec-4.1-sym-error-1",
+            "spec-6.3-sym-error-1",
+            "spec-6.6-sym-error-1"
+        ]
+    );
 }
 
 #[test]

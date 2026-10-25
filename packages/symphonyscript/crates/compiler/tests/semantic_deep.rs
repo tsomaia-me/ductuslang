@@ -151,3 +151,34 @@ fn deeply_nested_kinds_pass_check_on_a_small_stack() {
         assert_eq!(support::errors(diagnostics), vec![]);
     });
 }
+
+#[test]
+fn a_bounded_function_expanded_100000_levels_deep_passes_check_on_a_small_stack() {
+    on_small_stack(|| {
+        let expanded = format!(
+            "input held: i32[..4] = []\nfn walk(i) bounded {DEPTH} else 0:\n    if i >= len(held) then 0 else held[i] + walk(i + 1)\nClip c:\n    Note/(walk(0))\n"
+        );
+        assert_eq!(code_counts(&expanded), BTreeMap::new());
+        let evaluated = format!(
+            "fn count(i) bounded {DEPTH} else 0: count(i + 1) + 1\nClip c:\n    Note/(count(0) - {DEPTH})\n"
+        );
+        assert_eq!(code_counts(&evaluated), BTreeMap::new());
+    });
+}
+
+#[test]
+fn a_chain_of_100000_slices_passes_check_on_a_small_stack() {
+    on_small_stack(|| {
+        let chained = format!(
+            "input held: i32[..4] = []\nlet s = held{}\nClip c:\n    Note/(s[0])\n",
+            "[1..]".repeat(DEPTH)
+        );
+        assert_eq!(code_counts(&chained), BTreeMap::new());
+        let mut lets = String::from("input held: i32[..4] = []\nlet s0 = held\n");
+        for level in 1..=DEPTH {
+            lets.push_str(&format!("let s{level} = s{}[1..]\n", level - 1));
+        }
+        lets.push_str(&format!("Clip c:\n    Note/(s{DEPTH}[0])\n"));
+        assert_eq!(code_counts(&lets), BTreeMap::new());
+    });
+}

@@ -413,6 +413,7 @@ impl<'a> Engine<'a> {
                 params,
                 names,
                 recursive: false,
+                nesting: std::rc::Rc::new(Vec::new()),
             }),
             Some(global),
             chain,
@@ -450,7 +451,9 @@ impl<'a> Engine<'a> {
                 Decl::Node(_) => return Ok(Some(placement)),
                 Decl::Input(_)
                 | Decl::Let(_)
+                | Decl::State(_)
                 | Decl::Fn(_)
+                | Decl::Native(_)
                 | Decl::Pattern(_)
                 | Decl::Instance(_)
                 | Decl::Builtin(_)

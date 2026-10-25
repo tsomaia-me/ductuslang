@@ -17,6 +17,10 @@ pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, I
             parts
         }
         Op::Array(elements) => elements.clone(),
+        Op::Join(lhs, rhs) => vec![*lhs, *rhs],
+        Op::Slice { base, .. } => vec![*base],
+        Op::History { fallback, .. } => fallback.iter().copied().collect(),
+        Op::Native { .. } => Vec::new(),
         Op::Number(..)
         | Op::Const(_)
         | Op::Bool(_)

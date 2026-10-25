@@ -103,6 +103,12 @@ impl Engine<'_> {
 fn enum_of(scalar: Scalar) -> Option<EnumId> {
     match scalar {
         Scalar::Enum(id) => Some(id),
-        Scalar::I32 | Scalar::I64 | Scalar::F32 | Scalar::F64 | Scalar::Bool | Scalar::Str => None,
+        Scalar::U8
+        | Scalar::I32
+        | Scalar::I64
+        | Scalar::F32
+        | Scalar::F64
+        | Scalar::Bool
+        | Scalar::Str => None,
     }
 }

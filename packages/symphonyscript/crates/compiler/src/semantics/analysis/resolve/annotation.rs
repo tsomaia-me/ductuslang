@@ -4,4 +4,5 @@ use symphonyscript_core::Scalar;
 pub(crate) struct Annotation {
     pub scalar: Scalar,
     pub lengths: Vec<u32>,
+    pub capacity: Option<u32>,
 }

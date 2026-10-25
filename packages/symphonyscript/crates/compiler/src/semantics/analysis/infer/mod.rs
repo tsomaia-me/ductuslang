@@ -1,8 +1,11 @@
+mod array_checks;
 mod bare_scrutinees;
+mod capacities;
 mod check;
 mod compile_time_enums;
 mod enum_bindings;
 mod expectations;
+mod history_reads;
 mod order;
 mod position;
 mod positions;
@@ -16,6 +19,8 @@ mod widths;
 
 pub(crate) use typing::Typing;
 
+use array_checks::ArrayPosition;
+
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -26,7 +31,20 @@ impl Engine<'_> {
     pub(crate) fn infer(&mut self) -> Result<(), Internal> {
         let positions = self.positions()?;
         let mut valid = Vec::new();
+        let mut variable_positions = Vec::new();
         for position in positions {
+            match self.array_position(&position)? {
+                ArrayPosition::Usual => {}
+                ArrayPosition::Faulty => continue,
+                ArrayPosition::Variable => {
+                    for node in position.val.nodes() {
+                        self.demand_sig(node)?;
+                    }
+                    variable_positions.push(position.clone());
+                    valid.push(position);
+                    continue;
+                }
+            }
             let lengths = match &position.val {
                 Val::Array(array) => array.shape.lengths(),
                 Val::Scalar(node) if self.arrays.contains(node) => {
@@ -67,6 +85,7 @@ impl Engine<'_> {
         for group in self.memo.group_list.clone() {
             self.demand_sig(group)?;
         }
+        self.mark_own_history()?;
         self.units(&valid)?;
         self.read_in_default_units()?;
         for position in &valid {
@@ -105,6 +124,10 @@ impl Engine<'_> {
             }
         }
         self.values(&roots)?;
+        self.capacities()?;
+        self.capacity_checks(&variable_positions)?;
+        self.state_checks()?;
+        self.annotated_capacities()?;
         self.reactive_shapes()?;
         self.input_fits()?;
         self.consistency()?;

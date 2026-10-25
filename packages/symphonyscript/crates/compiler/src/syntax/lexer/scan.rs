@@ -12,6 +12,7 @@ pub(super) fn is_unexpected(c: char, crlf: bool) -> bool {
         ' ' | '\t'
             | '\n'
             | '"'
+            | '{'
             | '}'
             | '('
             | ')'

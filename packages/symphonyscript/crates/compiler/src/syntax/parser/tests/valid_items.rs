@@ -19,6 +19,14 @@ const BODY_ITEMS: &[SyntaxKind] = &[
     SyntaxKind::WhenBlock,
 ];
 
+const ADDITION_ITEMS: &[&str] = &[
+    "let u = u8(3) + 2u8\n",
+    "input k: u8[..4] = []\n",
+    "fn f(i) bounded 2 else 0: f(i + 1)\n",
+    "let s = [1, 2, 3][^2..][..1]\n",
+    "state[2] s = s{2, 0} + 1\n",
+];
+
 pub(super) struct ValidItems {
     pub(super) top: Vec<String>,
     pub(super) body: Vec<String>,
@@ -35,7 +43,8 @@ pub(super) fn valid_items(vocabulary: &Vocabulary) -> ValidItems {
         .map(|file| file.text);
     let mut top = BTreeSet::new();
     let mut body = BTreeSet::new();
-    for text in examples.chain(files) {
+    let additions = ADDITION_ITEMS.iter().map(|item| item.to_string());
+    for text in examples.chain(files).chain(additions) {
         let parsed = parse(&source(&text), vocabulary);
         assert_eq!(parsed.diagnostics, vec![], "{text:?}");
         for item in parsed.root().children() {

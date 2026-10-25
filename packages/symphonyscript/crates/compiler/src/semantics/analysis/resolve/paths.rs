@@ -39,11 +39,12 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
+        if let Some(mut segments) = self.to_path(base)? {
+            segments.push(name.clone());
+            return self.destination_read(&segments, loc, scope, need);
+        }
         match &self.hir.expr(base)?.kind {
-            ExprKind::To => return self.destination_read(name, loc, scope, need),
-            ExprKind::Field(inner, _) if matches!(self.hir.expr(*inner)?.kind, ExprKind::To) => {
-                return Ok(Some(Val::Error));
-            }
+            ExprKind::To => return Ok(Some(Val::Error)),
             ExprKind::Error
             | ExprKind::Number(..)
             | ExprKind::Bool(_)
@@ -54,6 +55,9 @@ impl Engine<'_> {
             | ExprKind::Array(_)
             | ExprKind::Field(..)
             | ExprKind::Index(..)
+            | ExprKind::IndexFromEnd(..)
+            | ExprKind::Slice { .. }
+            | ExprKind::History { .. }
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
@@ -103,7 +107,11 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
-            | Op::ToRead { .. } => {
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => {
                 let sig = some!(self.sig(node, need));
                 if sig.is_error() {
                     return Ok(Some(Val::Error));
@@ -172,9 +180,26 @@ impl Engine<'_> {
         })
     }
 
+    fn to_path(&self, base: ExprId) -> Result<Option<Vec<Ident>>, Internal> {
+        let mut segments = Vec::new();
+        let mut current = base;
+        loop {
+            match &self.hir.expr(current)?.kind {
+                ExprKind::To => break,
+                ExprKind::Field(inner, segment) => {
+                    segments.push(segment.clone());
+                    current = *inner;
+                }
+                _ => return Ok(None),
+            }
+        }
+        segments.reverse();
+        Ok(Some(segments))
+    }
+
     fn destination_read(
         &mut self,
-        name: &Ident,
+        path: &[Ident],
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
@@ -190,17 +215,65 @@ impl Engine<'_> {
         {
             return Ok(Some(Val::Error));
         }
+        let Some((last, steps)) = path.split_last() else {
+            return Ok(Some(Val::Error));
+        };
+        let text: Vec<&str> = path.iter().map(|segment| segment.text.as_str()).collect();
         let mut attrs = Vec::new();
+        let missing = if candidates.len() > 1 {
+            Code::ToCandidates
+        } else {
+            Code::UnknownAttribute
+        };
         for candidate in candidates {
-            match self.attr_named(candidate, &name.text)? {
-                Some(attr) => attrs.push((candidate, attr)),
+            let mut item = candidate;
+            for step in steps {
+                match self.child_named(item, &step.text)? {
+                    Some(child) => item = child,
+                    None if self.may_name(item, &step.text)? => return Ok(Some(Val::Error)),
+                    None => {
+                        let owner = self.item_description(item)?;
+                        self.error(
+                            missing,
+                            step.loc,
+                            scope,
+                            format!(
+                                "{owner} has no named child, wire or pattern use `{}`, so `to.{}` reads nothing there",
+                                step.text,
+                                text.join(".")
+                            ),
+                        )?;
+                        return Ok(Some(Val::Error));
+                    }
+                }
+            }
+            if self.child_named(item, &last.text)?.is_some() {
+                self.error(
+                    Code::MisplacedTo,
+                    last.loc,
+                    scope,
+                    format!(
+                        "`to.{}` ends at an instance or a wire; a `to` path ends at an attribute",
+                        text.join(".")
+                    ),
+                )?;
+                return Ok(Some(Val::Error));
+            }
+            match self.attr_named(item, &last.text)? {
+                Some(attr) => attrs.push((item, attr)),
+                None if self.may_name(item, &last.text)? => return Ok(Some(Val::Error)),
                 None => {
-                    let owner = self.item_description(candidate)?;
+                    let owner = self.item_description(item)?;
+                    let code = if steps.is_empty() {
+                        Code::UnknownAttribute
+                    } else {
+                        missing
+                    };
                     self.error(
-                        Code::UnknownAttribute,
-                        name.loc,
+                        code,
+                        last.loc,
                         scope,
-                        format!("the destination {owner} has no attribute `{}`", name.text),
+                        format!("the destination {owner} has no attribute `{}`", last.text),
                     )?;
                     return Ok(Some(Val::Error));
                 }
@@ -212,7 +285,7 @@ impl Engine<'_> {
         Ok(Some(self.scalar(
             Op::ToRead {
                 wire,
-                attr: name.text.clone(),
+                attr: text.join("."),
                 attrs,
             },
             loc,
@@ -266,6 +339,62 @@ impl Engine<'_> {
             }
             Val::Error => return Ok(Some(Val::Error)),
         };
+        self.index_val(base, base_val, index_node, loc, scope, need)
+    }
+
+    pub(in crate::semantics::analysis) fn index_from_end(
+        &mut self,
+        base: ExprId,
+        offset: ExprId,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
+        let base_val = self.val(Query::Expr(base, scope), need);
+        let offset_val = self.val(Query::Expr(offset, scope), need);
+        let (base_val, offset_val) = (some!(base_val), some!(offset_val));
+        self.single_operand(
+            &offset_val,
+            Code::IndexType,
+            "an index is an integer, not an array",
+        );
+        let offset_node = match offset_val {
+            Val::Scalar(node) => node,
+            Val::Array(_) => {
+                self.error(
+                    Code::IndexType,
+                    loc,
+                    scope,
+                    "an index is an integer, not an array",
+                )?;
+                return Ok(Some(Val::Error));
+            }
+            Val::Error => return Ok(Some(Val::Error)),
+        };
+        if matches!(base_val, Val::Error) {
+            return Ok(Some(Val::Error));
+        }
+        let index_node = match self.memo.from_ends.get(&(offset, scope)) {
+            Some(known) => *known,
+            None => {
+                let created =
+                    some!(self.counted_from_end(&base_val, offset_node, loc, scope, need)?);
+                self.memo.from_ends.insert((offset, scope), created);
+                created
+            }
+        };
+        self.index_val(base, base_val, index_node, loc, scope, need)
+    }
+
+    fn index_val(
+        &mut self,
+        base: ExprId,
+        base_val: Val,
+        index_node: NodeId,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
         if let Val::Scalar(base_node) = base_val
             && self.arrays.contains(&base_node)
         {
@@ -332,7 +461,7 @@ impl Engine<'_> {
         let inner = array.shape.inner();
         let group = self.existing_group(base, &base_val, scope)?;
         let columns: Vec<Vec<NodeId>> = rows.iter().map(Val::nodes).collect();
-        let width = columns.first().map_or(0, Vec::len);
+        let width = inner.count();
         let elements = (0..width)
             .map(|position| {
                 let items = columns
@@ -384,6 +513,7 @@ impl Engine<'_> {
                 Some(self.bound_group(slice.query, &slice.array, slice.loc)?)
             }
             Query::Input(_)
+            | Query::State(_)
             | Query::Expr(..)
             | Query::Attr(..)
             | Query::Destination(_)
@@ -436,6 +566,9 @@ impl Engine<'_> {
                 | ExprKind::Convert(..)
                 | ExprKind::Array(_)
                 | ExprKind::Field(..)
+                | ExprKind::IndexFromEnd(..)
+                | ExprKind::Slice { .. }
+                | ExprKind::History { .. }
                 | ExprKind::Call(..)
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)
@@ -610,6 +743,7 @@ impl Engine<'_> {
                 (self.param_value_loc(scope, index)?.unwrap_or(read), scope)
             }
             Query::Input(_)
+            | Query::State(_)
             | Query::Expr(..)
             | Query::Attr(..)
             | Query::Destination(_)
@@ -652,6 +786,7 @@ impl Engine<'_> {
                 }
             }
             Query::Input(_)
+            | Query::State(_)
             | Query::Expr(..)
             | Query::Attr(..)
             | Query::Destination(_)
@@ -830,7 +965,11 @@ impl Engine<'_> {
                 | Op::Recursive { .. }
                 | Op::Element { .. }
                 | Op::Array(_)
-                | Op::ToRead { .. } => {}
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => {}
             }
         }
         Ok(found)

@@ -288,7 +288,7 @@ fn a_plain_value_reads_in_the_unit_its_family_value_reaches() {
         ),
         (
             &bars,
-            format!("let k = ({family}) div 1bars\nBar b | len=k\n"),
+            format!("let k = ({family}) div 1bars\nBar b | bar_len=k\n"),
         ),
         (
             &example,
@@ -497,15 +497,15 @@ fn compile_time_values_follow_the_types_that_flow_into_them() {
         ),
         (
             &bars,
-            format!("{q}Bar b | len=(q(0))\n"),
-            "len",
+            format!("{q}Bar b | bar_len=(q(0))\n"),
+            "bar_len",
             EvalTy::I64,
             CVal::Int(4),
         ),
         (
             &bars,
-            format!("{r}Bar b | len=(r(2))\n"),
-            "len",
+            format!("{r}Bar b | bar_len=(r(2))\n"),
+            "bar_len",
             EvalTy::I64,
             CVal::Int(12),
         ),
@@ -518,29 +518,29 @@ fn compile_time_values_follow_the_types_that_flow_into_them() {
         ),
         (
             &bars,
-            format!("{r}Bar b | len=(r(2)) beat_len=(r(2))\n"),
-            "len",
+            format!("{r}Bar b | bar_len=(r(2)) beat_len=(r(2))\n"),
+            "bar_len",
             EvalTy::I64,
             CVal::Int(12),
         ),
         (
             &bars,
-            format!("{r}Bar b | len=(r(2)) beat_len=(r(2))\n"),
+            format!("{r}Bar b | bar_len=(r(2)) beat_len=(r(2))\n"),
             "beat_len",
             EvalTy::I64,
             CVal::Int(6),
         ),
         (
             &bars,
-            format!("{r}Bar b | len=(r(0) + 1)\n"),
-            "len",
+            format!("{r}Bar b | bar_len=(r(0) + 1)\n"),
+            "bar_len",
             EvalTy::I64,
             CVal::Int(8),
         ),
         (
             &bars,
-            "Bar b | len=(1bars + 1)\n".into(),
-            "len",
+            "Bar b | bar_len=(1bars + 1)\n".into(),
+            "bar_len",
             EvalTy::I64,
             CVal::Int(8),
         ),
@@ -604,30 +604,30 @@ fn unit_rules_cover_recursive_results_and_bodies() {
             format!("{q}Bar b | plain=(q(0))\n"),
             vec![Code::UnitMismatch],
         ),
-        (format!("{q}Bar b | len=(q(0))\n"), vec![]),
-        ("let d = 2bars + 1\nBar b | len=d\n".into(), vec![]),
+        (format!("{q}Bar b | bar_len=(q(0))\n"), vec![]),
+        ("let d = 2bars + 1\nBar b | bar_len=d\n".into(), vec![]),
         (
-            "let d = 2bars + 1\nBar b | len=d beat_len=d\n".into(),
+            "let d = 2bars + 1\nBar b | bar_len=d beat_len=d\n".into(),
             vec![Code::ConflictingUnits],
         ),
         (
-            "Bar b | len=42535295865117307932921825928971026432\n".into(),
+            "Bar b | bar_len=42535295865117307932921825928971026432\n".into(),
             vec![Code::IntegerOverflow],
         ),
         (
-            "Bar b | len=(42535295865117307932921825928971026432 + 0)\n".into(),
+            "Bar b | bar_len=(42535295865117307932921825928971026432 + 0)\n".into(),
             vec![Code::IntegerOverflow],
         ),
         (
-            "Bar b | len=42535295865117307932921825928971026431\n".into(),
+            "Bar b | bar_len=42535295865117307932921825928971026431\n".into(),
             vec![Code::DoesNotFit],
         ),
         (
-            "Bar b | len=(-42535295865117307932921825928971026432 + 0)\n".into(),
+            "Bar b | bar_len=(-42535295865117307932921825928971026432 + 0)\n".into(),
             vec![Code::IntegerOverflow],
         ),
         (
-            "Bar b | len=(-42535295865117307932921825928971026431 + 0)\n".into(),
+            "Bar b | bar_len=(-42535295865117307932921825928971026431 + 0)\n".into(),
             vec![Code::DoesNotFit],
         ),
     ];
@@ -1008,12 +1008,12 @@ fn equal_calls_in_different_positions_are_inlined_separately() {
     let bars = bar_vocabulary();
     let g = "fn g(): 1bars + 1\n";
     for text in [
-        format!("{g}Bar b | len=(g()) beat_len=(g())\n"),
-        format!("{g}let x = g()\nlet y = g()\nBar b | len=x beat_len=y\n"),
+        format!("{g}Bar b | bar_len=(g()) beat_len=(g())\n"),
+        format!("{g}let x = g()\nlet y = g()\nBar b | bar_len=x beat_len=y\n"),
     ] {
         let (diagnostics, found) = analyzed_with(&bars, &text, |engine| {
             (
-                attr_value(engine, "len", EvalTy::I64),
+                attr_value(engine, "bar_len", EvalTy::I64),
                 attr_value(engine, "beat_len", EvalTy::I64),
             )
         });
@@ -1493,6 +1493,7 @@ fn cell_type_and_value(engine: &Engine<'_>, name: &str) -> Option<(Scalar, CVal)
     let binding = BindingId(u32::try_from(position).ok()?);
     let own = *engine.typing.own.get(&binding)?;
     let ty = match own {
+        Scalar::U8 => EvalTy::U8,
         Scalar::I32 => EvalTy::I32,
         Scalar::I64 => EvalTy::I64,
         Scalar::F32 => EvalTy::F32,
@@ -1734,19 +1735,20 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
             error_codes(&diagnostics)
         ));
     }
+    let mismatched = format!(
+        "{CHORD_FN}input f = true\nlet x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
+    );
+    let (diagnostics, ()) = analyzed(&mismatched, |_| ());
+    if error_codes(&diagnostics) != [Code::TypeMismatch] {
+        failures.push(format!("{mismatched:?}: {:?}", error_codes(&diagnostics)));
+    }
     let other = "fn other(k): if k < 1 then [1, 2] else other(k - 1)\n";
-    for text in [
-        format!(
-            "{CHORD_FN}input f = true\nlet x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
-        ),
-        format!(
-            "{CHORD_FN}{other}input f = true\nlet x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
-        ),
-    ] {
-        let (diagnostics, ()) = analyzed(&text, |_| ());
-        if error_codes(&diagnostics) != [Code::TypeMismatch] {
-            failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
-        }
+    let variable = format!(
+        "{CHORD_FN}{other}input f = true\nlet x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
+    );
+    let (diagnostics, ()) = analyzed(&variable, |_| ());
+    if !errors_of(&diagnostics).is_empty() {
+        failures.push(format!("{variable:?}: {:?}", error_codes(&diagnostics)));
     }
     let rejected = format!(
         "{R_FN}input f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n"
@@ -3065,7 +3067,12 @@ fn input_cells(engine: &Engine<'_>, name: &str) -> (Vec<u32>, Vec<(Scalar, CVal)
         let ty = match own {
             Scalar::I64 => EvalTy::I64,
             Scalar::F64 => EvalTy::F64,
-            Scalar::I32 | Scalar::F32 | Scalar::Bool | Scalar::Enum(_) | Scalar::Str => continue,
+            Scalar::U8
+            | Scalar::I32
+            | Scalar::F32
+            | Scalar::Bool
+            | Scalar::Enum(_)
+            | Scalar::Str => continue,
         };
         if let Some(value) = engine.memo.evals.get(&(binding.init, ty)) {
             cells.push((own, value.clone()));

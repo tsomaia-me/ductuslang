@@ -4,4 +4,5 @@ pub(super) enum Extra {
     None,
     Read(Sig),
     ToRead { reactive: bool },
+    History(Sig),
 }

@@ -250,20 +250,19 @@ fn reserved_tokens_are_errors_with_hints() {
         vec![
             (Code::ReservedToken, 2, Some("compare with `is`")),
             (Code::ReservedToken, 7, Some("compare with `is not`")),
-            (Code::ReservedToken, 12, None),
         ]
     );
     assert_eq!(
         render("a == b != c ^ d", &lexed.tokens),
-        "Ident(a) _ Error(==) _ Ident(b) _ Error(!=) _ Ident(c) _ Error(^) _ Ident(d) NL"
+        "Ident(a) _ Error(==) _ Ident(b) _ Error(!=) _ Ident(c) _ Caret _ Ident(d) NL"
     );
 }
 
 #[test]
 fn punctuation_lexes_greedily() {
     assert_eq!(
-        clean("( ) [ ] , : :: = | / . .. + - * ** % < <= > >= ! ' ? ~ @ $"),
-        "LParen _ RParen _ LBracket _ RBracket _ Comma _ Colon _ Colon2 _ Eq _ Pipe _ Slash _ Dot _ Dot2 _ Plus _ Minus _ Star _ Star2 _ Percent _ Lt _ Le _ Gt _ Ge _ Bang _ Quote _ Question _ Tilde _ At _ Dollar NL"
+        clean("( ) [ ] { } , : :: = | / . .. + - * ** % < <= > >= ! ' ? ~ @ $ ^"),
+        "LParen _ RParen _ LBracket _ RBracket _ LBrace _ RBrace _ Comma _ Colon _ Colon2 _ Eq _ Pipe _ Slash _ Dot _ Dot2 _ Plus _ Minus _ Star _ Star2 _ Percent _ Lt _ Le _ Gt _ Ge _ Bang _ Quote _ Question _ Tilde _ At _ Dollar _ Caret NL"
     );
     assert_eq!(
         clean("Note'/65 n-1 0..8"),
@@ -274,7 +273,7 @@ fn punctuation_lexes_greedily() {
 #[test]
 fn unexpected_characters_are_one_error_per_run() {
     assert_eq!(
-        diagnostics("a &&& b { } \\"),
+        diagnostics("a &&& b ` ` \\"),
         vec![
             (Code::UnexpectedCharacter, 2, 5),
             (Code::UnexpectedCharacter, 8, 9),

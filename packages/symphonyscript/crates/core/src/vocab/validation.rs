@@ -12,6 +12,8 @@ use super::count::Count;
 use super::enum_decl::EnumDecl;
 use super::family_decl::FamilyDecl;
 use super::invalid_vocabulary::InvalidVocabulary;
+use super::native_decl::NativeDecl;
+use super::native_type::NativeType;
 use super::node_kind_decl::NodeKindDecl;
 use super::vocabulary::Vocabulary;
 use super::vocabulary_builder::VocabularyBuilder;
@@ -108,6 +110,10 @@ pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, Invalid
             }
         }
     }
+    for native in &builder.natives {
+        check.name(&native.name);
+        check.native(native);
+    }
     let mut declared = BTreeSet::new();
     let declarations = builder
         .nodes
@@ -115,7 +121,8 @@ pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, Invalid
         .map(|node| &node.name)
         .chain(builder.wires.iter().map(|wire| &wire.name))
         .chain(enums.iter().map(|decl| &decl.name))
-        .chain(families.iter().map(|family| &family.name));
+        .chain(families.iter().map(|family| &family.name))
+        .chain(builder.natives.iter().map(|native| &native.name));
     for name in declarations {
         if !declared.insert(name.as_str()) {
             check
@@ -175,6 +182,7 @@ pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, Invalid
         &enums,
         &families,
         &builder.prelude,
+        &builder.natives,
     );
     let stamp = VocabularyStamp {
         name: builder.name,
@@ -187,7 +195,7 @@ pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, Invalid
         wire_kinds,
         enums,
         families,
-        builder.prelude,
+        (builder.prelude, builder.natives),
     ))
 }
 
@@ -223,6 +231,37 @@ impl Checker<'_> {
         if self.word(name) && self.variants.contains(name) {
             self.errors.push(VocabularyError::VariantName {
                 name: String::from(name),
+            });
+        }
+    }
+
+    fn native(&mut self, native: &NativeDecl) {
+        let signature = &native.signature;
+        let outside = signature.params.iter().any(|param| !param_in_spec(param))
+            || !result_in_spec(&signature.result);
+        if outside {
+            self.errors.push(VocabularyError::NativeTypeOutsideSpec {
+                native: native.name.clone(),
+            });
+            return;
+        }
+        let stated = match &signature.result {
+            NativeType::Value(_) => true,
+            NativeType::Open(_) => false,
+            NativeType::CapacityOf(_, position) => {
+                signature
+                    .params
+                    .get(*position)
+                    .is_some_and(|param| match param {
+                        NativeType::Value(ty) => !ty.is_scalar() && ty.scalar != Scalar::Str,
+                        NativeType::Open(_) => true,
+                        NativeType::CapacityOf(..) => false,
+                    })
+            }
+        };
+        if !stated {
+            self.errors.push(VocabularyError::NativeCapacityUnstated {
+                native: native.name.clone(),
             });
         }
     }
@@ -363,11 +402,34 @@ fn assemble_attrs(
 }
 
 fn has_empty_array(ty: &Ty) -> bool {
-    ty.lengths.contains(&0)
+    ty.lengths.contains(&0) || ty.capacity == Some(0)
 }
 
 fn is_integer(ty: &Ty) -> bool {
-    matches!(ty.scalar, Scalar::I32 | Scalar::I64)
+    matches!(ty.scalar, Scalar::U8 | Scalar::I32 | Scalar::I64)
+}
+
+fn type_in_spec(ty: &Ty) -> bool {
+    !has_empty_array(ty) && (ty.scalar != Scalar::Str || ty.is_scalar())
+}
+
+fn param_in_spec(param: &NativeType) -> bool {
+    match param {
+        NativeType::Value(ty) => type_in_spec(ty),
+        NativeType::Open(ty) => {
+            ty.capacity.is_none() && ty.scalar != Scalar::Str && type_in_spec(ty)
+        }
+        NativeType::CapacityOf(..) => false,
+    }
+}
+
+fn result_in_spec(result: &NativeType) -> bool {
+    match result {
+        NativeType::Value(ty) => type_in_spec(ty),
+        NativeType::Open(ty) | NativeType::CapacityOf(ty, _) => {
+            ty.capacity.is_none() && ty.scalar != Scalar::Str && type_in_spec(ty)
+        }
+    }
 }
 
 fn is_integral(scale: f64) -> bool {

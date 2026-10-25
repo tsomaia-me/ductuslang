@@ -306,6 +306,7 @@ impl Printer<'_> {
 
     fn ty(&mut self, ty: &Ty) -> fmt::Result {
         match ty.scalar {
+            Scalar::U8 => self.out.push_str("u8"),
             Scalar::I32 => self.out.push_str("i32"),
             Scalar::I64 => self.out.push_str("i64"),
             Scalar::F32 => self.out.push_str("f32"),
@@ -317,11 +318,15 @@ impl Printer<'_> {
         for length in &ty.lengths {
             write!(self.out, "[{length}]")?;
         }
+        if let Some(capacity) = ty.capacity {
+            write!(self.out, "[..{capacity}]")?;
+        }
         Ok(())
     }
 
     fn value(&mut self, value: Value) -> fmt::Result {
         match value {
+            Value::U8(v) => write!(self.out, "u8 {v}"),
             Value::I32(v) => write!(self.out, "i32 {v}"),
             Value::I64(v) => write!(self.out, "i64 {v}"),
             Value::F32(v) => {

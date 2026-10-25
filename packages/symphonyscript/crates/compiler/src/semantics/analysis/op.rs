@@ -1,5 +1,6 @@
-use symphonyscript_core::{AttrId, BinaryOp, Builtin, EnumId, Scalar, UnaryOp, Value};
+use symphonyscript_core::{AttrId, BinaryOp, Builtin, EnumId, NativeId, Scalar, UnaryOp, Value};
 
+use super::history_cell::HistoryCell;
 use super::ids::{BindingId, NodeId, WireId};
 use super::item_ref::ItemRef;
 use super::piece::Piece;
@@ -50,6 +51,21 @@ pub(crate) enum Op {
         attr: String,
         attrs: Vec<(ItemRef, AttrId)>,
     },
+    Join(NodeId, NodeId),
+    Slice {
+        base: NodeId,
+        lower: Option<(NodeId, bool)>,
+        upper: Option<(NodeId, bool)>,
+    },
+    History {
+        cell: HistoryCell,
+        offset: u64,
+        fallback: Option<NodeId>,
+    },
+    Native {
+        native: NativeId,
+        args: Vec<NodeId>,
+    },
 }
 
 impl Op {
@@ -66,6 +82,14 @@ impl Op {
             | Op::Read(_)
             | Op::Arg(_)
             | Op::ToRead { .. } => Vec::new(),
+            Op::Join(lhs, rhs) => vec![*lhs, *rhs],
+            Op::Slice { base, lower, upper } => {
+                let mut operands = vec![*base];
+                operands.extend(lower.iter().chain(upper.iter()).map(|(bound, _)| *bound));
+                operands
+            }
+            Op::History { fallback, .. } => fallback.iter().copied().collect(),
+            Op::Native { args, .. } => args.clone(),
             Op::Concat(pieces) => pieces
                 .iter()
                 .filter_map(|piece| match piece {

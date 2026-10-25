@@ -15,6 +15,8 @@ pub enum Builtin {
     Log,
     Lerp,
     Rand,
+    Len,
+    Bytes,
 }
 
 impl Builtin {
@@ -35,6 +37,8 @@ impl Builtin {
             Builtin::Log => "log",
             Builtin::Lerp => "lerp",
             Builtin::Rand => "rand",
+            Builtin::Len => "len",
+            Builtin::Bytes => "bytes",
         }
     }
 }

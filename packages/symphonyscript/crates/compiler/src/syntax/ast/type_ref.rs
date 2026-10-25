@@ -24,7 +24,8 @@ impl<'p> TypeRef<'p> {
             .find(|token| {
                 matches!(
                     token.kind(),
-                    SyntaxKind::I32Kw
+                    SyntaxKind::U8Kw
+                        | SyntaxKind::I32Kw
                         | SyntaxKind::I64Kw
                         | SyntaxKind::F32Kw
                         | SyntaxKind::F64Kw
@@ -39,6 +40,23 @@ impl<'p> TypeRef<'p> {
     }
 
     pub fn lengths(&self) -> impl Iterator<Item = TokenView<'p>> + use<'p> {
-        tokens(&self.0, SyntaxKind::Number)
+        let capacity = self.capacity();
+        tokens(&self.0, SyntaxKind::Number).filter(move |token| Some(token) != capacity.as_ref())
+    }
+
+    pub fn capacity(&self) -> Option<TokenView<'p>> {
+        let mut after_range = false;
+        for token in self
+            .0
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+        {
+            match token.kind() {
+                SyntaxKind::Dot2 => after_range = true,
+                SyntaxKind::Number if after_range => return Some(token),
+                _ => {}
+            }
+        }
+        None
     }
 }

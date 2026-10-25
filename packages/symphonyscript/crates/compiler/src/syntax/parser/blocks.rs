@@ -61,6 +61,12 @@ impl Parser<'_> {
                 Task::LetDecl(SyntaxKind::LocalLet),
                 Task::BlockItems { pattern, items },
             ]);
+        } else if self.at(SyntaxKind::StateKw) {
+            self.error(Code::StateSyntax, "a state is declared at top level");
+            self.then([
+                Task::LetDecl(SyntaxKind::StateDecl),
+                Task::BlockItems { pattern, items },
+            ]);
         } else {
             self.then([
                 Task::BodyItem,

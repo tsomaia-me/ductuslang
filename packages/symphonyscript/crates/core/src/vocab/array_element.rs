@@ -8,6 +8,7 @@ pub trait ArrayElement: Sealed + Sized {
     fn push_elements(self, out: &mut Vec<Value>);
 }
 
+impl Sealed for u8 {}
 impl Sealed for i32 {}
 impl Sealed for i64 {}
 impl Sealed for f32 {}
@@ -15,6 +16,16 @@ impl Sealed for f64 {}
 impl Sealed for bool {}
 impl Sealed for &'static str {}
 impl<T: ArrayElement, const N: usize> Sealed for [T; N] {}
+
+impl ArrayElement for u8 {
+    fn element_ty() -> Ty {
+        Ty::U8
+    }
+
+    fn push_elements(self, out: &mut Vec<Value>) {
+        out.push(Value::U8(self));
+    }
+}
 
 impl ArrayElement for i32 {
     fn element_ty() -> Ty {

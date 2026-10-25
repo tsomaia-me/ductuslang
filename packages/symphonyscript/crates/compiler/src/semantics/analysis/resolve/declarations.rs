@@ -36,6 +36,10 @@ impl Engine<'_> {
                 let name = some!(self.hir.input(input)?.name.as_ref());
                 Some((name.text.clone(), name.loc))
             }
+            Query::State(state) => {
+                let name = some!(self.hir.state(state)?.name.as_ref());
+                Some((name.text.clone(), name.loc))
+            }
             Query::Attr(item, attr) => {
                 let decl = some!(self.attr_decl(item, attr)?);
                 let owner = match item {

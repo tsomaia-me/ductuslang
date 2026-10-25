@@ -61,6 +61,33 @@ impl Engine<'_> {
         Ok((self.synthesized(node)?, self.known_sig(node)?.kind))
     }
 
+    fn history_bindings_type(&self, op: &Op) -> Result<Option<Scalar>, Internal> {
+        let Op::History { cell, .. } = op else {
+            return Ok(None);
+        };
+        use crate::semantics::analysis::bound::Bound;
+        use crate::semantics::analysis::bound_val::BoundVal;
+        use crate::semantics::analysis::history_cell::HistoryCell;
+        use crate::semantics::analysis::let_ref::LetRef;
+        let bound = match cell {
+            HistoryCell::Input(input) => self.memo.inputs.get(input),
+            HistoryCell::Let(id) => self
+                .memo
+                .lets
+                .get(&(self.global_of_let(*id), LetRef::Top(*id))),
+            HistoryCell::State(state) => self.memo.states.get(state),
+        };
+        let binding = match bound {
+            Some(BoundVal::Scalar(Bound::Cell(binding))) => Some(*binding),
+            Some(BoundVal::Array(array)) => array.1.iter().find_map(|item| match item {
+                Bound::Cell(binding) => Some(*binding),
+                Bound::Value(_) => None,
+            }),
+            Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => None,
+        };
+        Ok(binding.and_then(|binding| self.typing.own.get(&binding).copied()))
+    }
+
     pub(super) fn combine(&self, operands: &[NodeId]) -> Result<Option<Scalar>, Internal> {
         let mut known: Option<Scalar> = None;
         let mut flexible_float = false;
@@ -141,7 +168,29 @@ impl Engine<'_> {
                 | Builtin::Exp
                 | Builtin::Log
                 | Builtin::Lerp => self.combine(args)?.map(float_for),
+                Builtin::Len => Some(Scalar::I32),
+                Builtin::Bytes => Some(Scalar::U8),
             },
+            Op::Join(lhs, rhs) => self.combine(&[*lhs, *rhs])?,
+            Op::Slice { base, .. } => self.known(*base)?.0,
+            Op::History { fallback, .. } => {
+                let node_ty = self.history_bindings_type(op)?;
+                match (node_ty, fallback) {
+                    (Some(scalar), _) => Some(scalar),
+                    (None, Some(fallback)) => self.known(*fallback)?.0,
+                    (None, None) => None,
+                }
+            }
+            Op::Native { native, .. } => {
+                let decl = self
+                    .vocabulary
+                    .native(*native)
+                    .ok_or(Internal::missed("native function"))?;
+                Some(
+                    crate::semantics::analysis::evaluation::native_ty(&decl.signature.result)
+                        .scalar,
+                )
+            }
             Op::ToRead { attrs, .. } => {
                 let (item, attr) = attrs.first().ok_or(Internal::missed("attribute"))?;
                 self.attr_decl(*item, *attr)?.map(|decl| decl.ty.scalar)

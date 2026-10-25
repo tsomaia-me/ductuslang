@@ -4,7 +4,7 @@ use super::eval_ty::EvalTy;
 use super::ids::{NodeId, ScopeId, WireId};
 use super::item_ref::ItemRef;
 use super::let_ref::LetRef;
-use crate::semantics::ir::{ExprId, InputId};
+use crate::semantics::ir::{ExprId, InputId, StateId};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Query {
@@ -12,6 +12,7 @@ pub(crate) enum Query {
     Let(ScopeId, LetRef),
     Param(ScopeId, u32),
     Input(InputId),
+    State(StateId),
     Attr(ItemRef, AttrId),
     Destination(WireId),
     Sig(NodeId),

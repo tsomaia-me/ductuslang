@@ -1,18 +1,19 @@
+mod arrays;
 mod convert;
 mod convert_to;
 mod ctx;
 mod exact_binary;
-mod fits;
 mod float32_text;
 mod float_text;
 mod frame;
-mod int_bits;
+mod int_range;
 mod is_chosen_float;
 mod is_f32;
 mod is_float_builtin;
 mod is_float_ty;
 mod is_int_ty;
 mod machine;
+mod native;
 mod of_scalar;
 mod own_type;
 mod pair;
@@ -27,4 +28,5 @@ mod ty_name;
 mod with_point;
 
 pub(crate) use machine::Machine;
+pub(crate) use native::native_ty;
 pub(crate) use own_type::own_type;
