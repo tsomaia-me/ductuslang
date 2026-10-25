@@ -10,6 +10,8 @@ mod pattern_graph;
 mod recursive_functions;
 mod stand_in;
 mod strongly_connected;
+#[cfg(test)]
+mod tests;
 mod variants;
 
 pub(crate) use builtin_name::BuiltinName;

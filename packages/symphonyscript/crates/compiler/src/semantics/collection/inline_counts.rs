@@ -13,12 +13,16 @@ enum Visit {
     Done,
 }
 
+type FnSites = (Vec<CallSite>, Vec<Vec<CallSite>>);
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct InlineCounts {
     body: Vec<u64>,
     defaults: Vec<Vec<u64>>,
     body_sites: Vec<Vec<CallSite>>,
     default_sites: Vec<Vec<Vec<CallSite>>>,
+    #[cfg(test)]
+    pub walked: u64,
 }
 
 impl InlineCounts {
@@ -42,8 +46,11 @@ impl InlineCounts {
                 .iter()
                 .map(|decl| vec![Vec::new(); decl.params.len()])
                 .collect(),
+            #[cfg(test)]
+            walked: 0,
         };
-        let sites = |index: usize, roots: Vec<ExprId>| -> Result<Vec<CallSite>, Internal> {
+        let mut walked = 0u64;
+        let mut sites = |index: usize, roots: Vec<ExprId>| -> Result<Vec<CallSite>, Internal> {
             let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
             let namespace = if hir.is_prelude_fn(id) {
                 prelude
@@ -51,26 +58,38 @@ impl InlineCounts {
                 source
             };
             let decl = hir.fns.get(index).ok_or(Internal::missed("function"))?;
-            call_sites(hir, decl, namespace, recursive, roots)
+            call_sites(hir, decl, namespace, recursive, roots, &mut walked)
         };
         let mut state = vec![Visit::New; count];
+        let mut found: Vec<Option<FnSites>> = vec![None; count];
         for start in 0..count {
             if visit_of(&state, start)? != Visit::New {
                 continue;
             }
             let mut stack = vec![start];
             while let Some(&index) = stack.last() {
-                let decl = hir.fns.get(index).ok_or(Internal::missed("function"))?;
-                let mut roots: Vec<ExprId> = decl.lets.iter().map(|local| local.value).collect();
-                roots.push(decl.value);
-                let body_sites = sites(index, roots)?;
-                let default_sites: Vec<Vec<CallSite>> = decl
-                    .params
-                    .iter()
-                    .map(|param| sites(index, param.default.into_iter().collect()))
-                    .collect::<Result<_, _>>()?;
-                if visit_of(&state, index)? == Visit::New {
-                    *visit_mut(&mut state, index)? = Visit::Open;
+                let visit = visit_of(&state, index)?;
+                if visit == Visit::Done {
+                    stack.pop();
+                    continue;
+                }
+                let slot = found.get_mut(index).ok_or(Internal::missed("function"))?;
+                if slot.is_none() {
+                    let decl = hir.fns.get(index).ok_or(Internal::missed("function"))?;
+                    let mut roots: Vec<ExprId> =
+                        decl.lets.iter().map(|local| local.value).collect();
+                    roots.push(decl.value);
+                    let body_sites = sites(index, roots)?;
+                    let default_sites: Vec<Vec<CallSite>> = decl
+                        .params
+                        .iter()
+                        .map(|param| sites(index, param.default.into_iter().collect()))
+                        .collect::<Result<_, _>>()?;
+                    *slot = Some((body_sites, default_sites));
+                }
+                let (body_sites, default_sites) =
+                    slot.as_ref().ok_or(Internal::missed("call sites"))?;
+                if visit == Visit::New {
                     let mut pending: Vec<usize> = Vec::new();
                     for site in body_sites.iter().chain(default_sites.iter().flatten()) {
                         let callee = site.callee.index();
@@ -78,15 +97,17 @@ impl InlineCounts {
                             pending.push(callee);
                         }
                     }
+                    *visit_mut(&mut state, index)? = Visit::Open;
                     if !pending.is_empty() {
                         stack.extend(pending);
                         continue;
                     }
                 }
                 stack.pop();
-                if visit_of(&state, index)? == Visit::Done {
-                    continue;
-                }
+                let (body_sites, default_sites) = found
+                    .get_mut(index)
+                    .and_then(Option::take)
+                    .ok_or(Internal::missed("call sites"))?;
                 let body = counts.total(&body_sites)?;
                 let defaults: Vec<u64> = default_sites
                     .iter()
@@ -110,6 +131,10 @@ impl InlineCounts {
                     .ok_or(Internal::missed("function"))? = default_sites;
                 *visit_mut(&mut state, index)? = Visit::Done;
             }
+        }
+        #[cfg(test)]
+        {
+            counts.walked = walked;
         }
         Ok(counts)
     }
@@ -185,6 +210,7 @@ fn call_sites(
     namespace: &Namespace,
     recursive: &[bool],
     roots: Vec<ExprId>,
+    walked: &mut u64,
 ) -> Result<Vec<CallSite>, Internal> {
     let locals: BTreeSet<&str> = decl
         .params
@@ -196,6 +222,7 @@ fn call_sites(
     let mut found = Vec::new();
     let mut stack = roots;
     while let Some(expr) = stack.pop() {
+        *walked = walked.saturating_add(1);
         let kind = &hir.expr(expr)?.kind;
         if let ExprKind::Call(callee, args) = kind
             && let ExprKind::Name(name) = &hir.expr(*callee)?.kind
