@@ -6,16 +6,19 @@ use symphonyscript_fixtures::{
 
 use super::Engine;
 use super::attr_value_source::AttrValueSource;
+use super::binding::Binding;
 use super::binding_kind::BindingKind;
 use super::bound_val::BoundVal;
 use super::c_array::CArray;
 use super::c_val::CVal;
+use super::chain::Chain;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
 use super::ids::{BindingId, NodeId, ScopeId};
 use super::kind::Kind;
 use super::op::Op;
 use super::query::Query;
+use super::scope_kind::ScopeKind;
 use super::val::Val;
 use crate::compiler::Compiler;
 use crate::diagnostics::{Code, Diagnostic, Severity};
@@ -2232,14 +2235,141 @@ fn a_lookup_that_misses_is_an_internal_error() {
 }
 
 pub(super) fn with_engine<R>(text: &str, run: impl FnOnce(&mut Engine<'_>) -> R) -> R {
+    with_engine_within(text, Limits::default(), run)
+}
+
+fn with_engine_within<R>(text: &str, limits: Limits, run: impl FnOnce(&mut Engine<'_>) -> R) -> R {
     let vocabulary = vocabulary();
     let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let hir = built(&vocabulary, text);
     let mut report = Report::default();
     let collected =
         collect(&hir, &vocabulary, &variants, &mut report).expect("the program collects");
-    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants, Limits::default());
+    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants, limits);
     run(&mut engine)
+}
+
+#[test]
+fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
+    let unbounded = Limits {
+        expanded_items: u64::MAX,
+        inlined_calls: u64::MAX,
+        ..Limits::default()
+    };
+    let found = |engine: &Engine<'_>| -> Vec<(Code, String)> {
+        engine
+            .report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.message.clone()))
+            .collect()
+    };
+    let program =
+        "input i = 1\nfn f(x): x + x\nClip c:\n    for j in 0..100:\n        Note/(f(i + j))\n";
+    with_engine_within(program, unbounded, |engine| {
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(error_codes(&engine.report.diagnostics), Vec::<Code>::new());
+    });
+    with_engine_within(program, unbounded, |engine| {
+        engine.id_space = 300;
+        assert_eq!(engine.analyze(), Ok(()));
+        let diagnostics = found(engine);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(
+            diagnostics
+                .iter()
+                .all(|(code, message)| *code == Code::ExpansionLimit
+                    && message.contains("more than 300 ")),
+            "{diagnostics:?}"
+        );
+    });
+
+    let spaces = ["scopes", "values", "cells"];
+    for space in spaces {
+        for room in [1, 0] {
+            with_engine_within("Session s\n", unbounded, |engine| {
+                let scope = engine.source_global;
+                let taken = match space {
+                    "scopes" => engine.scopes.len(),
+                    "values" => engine.nodes.len(),
+                    _ => engine.bindings.len(),
+                };
+                engine.id_space = u64::try_from(taken).expect("the arena is small") + room;
+                let claimed = match space {
+                    "scopes" => engine
+                        .scope(
+                            ScopeKind::Global { prelude: false },
+                            Some(scope),
+                            Chain::default(),
+                        )
+                        .map(|_| ()),
+                    "values" => engine
+                        .push_node(Op::Bool(true), Loc::default(), scope)
+                        .map(|_| ()),
+                    _ => engine
+                        .push_binding(Binding {
+                            kind: BindingKind::Let,
+                            init: NodeId(0),
+                            annotation: None,
+                            name: "x".into(),
+                            loc: Loc::default(),
+                        })
+                        .map(|_| ()),
+                };
+                if room == 1 {
+                    assert_eq!(claimed, Ok(()), "{space}");
+                    assert_eq!(found(engine), vec![], "{space}");
+                } else {
+                    assert_eq!(claimed, Err(Internal::missed("id")), "{space}");
+                    assert_eq!(
+                        found(engine),
+                        vec![(
+                            Code::ExpansionLimit,
+                            format!(
+                                "the compilation needs more than {taken} {space}, the most its ids number"
+                            )
+                        )],
+                        "{space}"
+                    );
+                }
+            });
+        }
+    }
+
+    with_engine_within("Session s\n", unbounded, |engine| {
+        let scope = engine.source_global;
+        engine.id_space = 2;
+        assert_eq!(engine.count_item(Loc::default(), scope), Ok(true));
+        assert_eq!(engine.count_item(Loc::default(), scope), Ok(true));
+        assert_eq!(engine.count_item(Loc::default(), scope), Ok(false));
+        engine.flush_diagnostics();
+        assert_eq!(
+            found(engine),
+            vec![(
+                Code::ExpansionLimit,
+                "the expansion yields more than 2 instances and wires".to_string()
+            )]
+        );
+    });
+    let unbounded_steps = Limits {
+        expansion_steps: u64::MAX,
+        ..unbounded
+    };
+    with_engine_within("Session s\n", unbounded_steps, |engine| {
+        let scope = engine.source_global;
+        engine.id_space = 2;
+        assert_eq!(engine.count_step(Loc::default(), scope), Ok(true));
+        assert_eq!(engine.count_step(Loc::default(), scope), Ok(true));
+        assert_eq!(engine.count_step(Loc::default(), scope), Ok(false));
+        engine.flush_diagnostics();
+        assert_eq!(
+            found(engine),
+            vec![(
+                Code::ExpansionLimit,
+                "the expansion runs more than 2 `for` iterations and pattern uses".to_string()
+            )]
+        );
+    });
 }
 
 #[test]

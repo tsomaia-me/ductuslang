@@ -32,6 +32,7 @@ use crate::semantics::analysis::template_key::TemplateKey;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
+use crate::semantics::reporting::grouped;
 
 struct Argument {
     leaves: Vec<(ArgKey, ArgSig)>,
@@ -464,7 +465,7 @@ impl Engine<'_> {
                 node,
                 format!(
                     "the evaluation goes deeper than {} nested calls: {}",
-                    self.limits.nesting_depth,
+                    grouped(self.limits.nesting_depth),
                     names.join(" → ")
                 ),
             )?;
@@ -538,7 +539,7 @@ impl Engine<'_> {
                 format!(
                     "this call of `{}` exceeds the {} distinct recursive calls a compilation evaluates",
                     self.function_name(function)?,
-                    self.limits.recursive_calls
+                    grouped(self.limits.recursive_calls)
                 ),
             )?;
         }

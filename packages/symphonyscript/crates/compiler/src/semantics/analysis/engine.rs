@@ -33,7 +33,9 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Collected, Variants};
 use crate::semantics::ir::{FnId, Hir, Loc, PlacementId};
-use crate::semantics::reporting::Report;
+use crate::semantics::reporting::{Report, grouped};
+
+const ID_SPACE: u64 = 1 << 32;
 
 pub(crate) struct Engine<'a> {
     pub hir: &'a Hir,
@@ -41,6 +43,8 @@ pub(crate) struct Engine<'a> {
     pub collected: &'a Collected,
     pub variants: &'a Variants,
     pub limits: Limits,
+    pub id_space: u64,
+    pub ids_exhausted: bool,
     pub report: Report,
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
@@ -103,6 +107,8 @@ impl<'a> Engine<'a> {
             collected,
             variants,
             limits,
+            id_space: ID_SPACE,
+            ids_exhausted: false,
             report: Report::default(),
             scopes: Vec::new(),
             nodes: Vec::new(),
@@ -150,13 +156,13 @@ impl<'a> Engine<'a> {
             cyclic: FastSet::default(),
             current: None,
         };
-        engine.source_global = engine.scope_in(
+        engine.source_global = engine.push_scope(
             ScopeKind::Global { prelude: false },
             None,
             Chain::default(),
             None,
         );
-        engine.prelude_global = engine.scope_in(
+        engine.prelude_global = engine.push_scope(
             ScopeKind::Global { prelude: true },
             None,
             Chain::default(),
@@ -166,6 +172,14 @@ impl<'a> Engine<'a> {
     }
 
     pub fn analyze(&mut self) -> Result<(), Internal> {
+        let outcome = self.stages();
+        if self.ids_exhausted {
+            return Ok(());
+        }
+        outcome
+    }
+
+    fn stages(&mut self) -> Result<(), Internal> {
         self.expand()?;
         self.count_inlining()?;
         self.infer()?;
@@ -387,10 +401,22 @@ impl<'a> Engine<'a> {
             Some(parent) => self.scope_of(parent)?.template,
             None => None,
         };
-        Ok(self.scope_in(kind, parent, chain, template))
+        self.scope_in(kind, parent, chain, template)
     }
 
     pub fn scope_in(
+        &mut self,
+        kind: ScopeKind,
+        parent: Option<ScopeId>,
+        chain: Chain,
+        template: Option<ScopeId>,
+    ) -> Result<ScopeId, Internal> {
+        let loc = self.nodes.last().map_or(Loc::default(), |node| node.loc);
+        self.claim_id(self.scopes.len(), "scopes", loc)?;
+        Ok(self.push_scope(kind, parent, chain, template))
+    }
+
+    fn push_scope(
         &mut self,
         kind: ScopeKind,
         parent: Option<ScopeId>,
@@ -457,6 +483,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn push_node(&mut self, op: Op, loc: Loc, scope: ScopeId) -> Result<NodeId, Internal> {
+        self.claim_id(self.nodes.len(), "values", loc)?;
         let id = NodeId(index(self.nodes.len()));
         if self.may_hold_array(&op)? {
             self.arrays.insert(id);
@@ -502,10 +529,30 @@ impl<'a> Engine<'a> {
         })
     }
 
-    pub fn push_binding(&mut self, binding: Binding) -> BindingId {
+    pub fn push_binding(&mut self, binding: Binding) -> Result<BindingId, Internal> {
+        self.claim_id(self.bindings.len(), "cells", binding.loc)?;
         let id = BindingId(index(self.bindings.len()));
         self.bindings.push(binding);
-        id
+        Ok(id)
+    }
+
+    fn claim_id(&mut self, taken: usize, space: &str, loc: Loc) -> Result<(), Internal> {
+        if u64::try_from(taken).is_ok_and(|taken| taken < self.id_space) {
+            return Ok(());
+        }
+        if !self.ids_exhausted {
+            self.ids_exhausted = true;
+            self.report.error(
+                self.hir,
+                Code::ExpansionLimit,
+                loc,
+                format!(
+                    "the compilation needs more than {} {space}, the most its ids number",
+                    grouped(self.id_space)
+                ),
+            );
+        }
+        Err(Internal::missed("id"))
     }
 
     pub fn chain(&self, scope: ScopeId) -> Result<Chain, Internal> {

@@ -110,36 +110,94 @@ fn variant_lookups_cost_constant_time_per_name() {
     );
 }
 
-fn errors_within(limits: Limits, text: &str) -> Vec<Code> {
+fn errors_within(limits: Limits, text: &str) -> Vec<(Code, String)> {
     let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     support::errors(compiler.check(&[support::source(text)]))
-        .iter()
-        .map(|diagnostic| diagnostic.code)
+        .into_iter()
+        .map(|diagnostic| (diagnostic.code, diagnostic.message))
         .collect()
 }
 
-fn repeated(line: &str, times: usize) -> String {
-    line.repeat(times)
+fn follows(code: Code, rows: &[(Limits, String, Option<String>)]) {
+    for (limits, text, refusal) in rows {
+        let errors = errors_within(*limits, text);
+        match refusal {
+            None => assert_eq!(errors, vec![], "{limits:?}\n{text}"),
+            Some(fragment) => assert!(
+                matches!(errors.as_slice(), [(found, message)] if *found == code && message.contains(fragment.as_str())),
+                "{errors:?} against {fragment:?} for {limits:?}\n{text}"
+            ),
+        }
+    }
 }
 
-fn doubling_chain(levels: usize) -> String {
+fn sizes_totalling(total: u64) -> Vec<u32> {
+    let mut remaining = total;
+    let mut levels = Vec::new();
+    for level in (0..20).rev() {
+        let size = (1 << (level + 1)) - 1;
+        while remaining >= size {
+            remaining -= size;
+            levels.push(level);
+        }
+    }
+    levels
+}
+
+fn inlining(total: u64) -> String {
     let mut text = String::from("input i = 1\nfn f0(x): x\n");
-    for level in 1..=levels {
+    for level in 1..20 {
         let below = level - 1;
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
     }
-    text.push_str(&format!("Clip c:\n    Note/(f{levels}(i))\n"));
+    text.push_str("Clip c:\n");
+    for level in sizes_totalling(total) {
+        text.push_str(&format!("    Note/(f{level}(i))\n"));
+    }
     text
+}
+
+fn recursing(total: u64) -> String {
+    let mut text = String::from(
+        "fn g(t, a, b): if a < 1 then 0 else g(t, a - 1, 2 * b) + g(t, a - 1, 2 * b + 1)\nClip c:\n",
+    );
+    for (tree, level) in sizes_totalling(total).into_iter().enumerate() {
+        text.push_str(&format!("    Note/(g({tree}, {level}, 0))\n"));
+    }
+    text
+}
+
+fn nested(calls: u64) -> String {
+    format!(
+        "fn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r({}))\n",
+        calls - 1
+    )
+}
+
+fn iterations(count: u64) -> String {
+    format!("Clip c:\n    for i in 0..{count}:\n        Note\n")
+}
+
+fn empty_iterations(count: u64) -> String {
+    format!("Clip c:\n    for i in 0..{count}:\n        for j in 0..0:\n            Note\n")
+}
+
+fn uses(count: u64) -> String {
+    format!(
+        "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n    for i in 0..{count}:\n        P\n"
+    )
+}
+
+fn wires(count: usize) -> String {
+    format!("Clip c:\n{}Clip d\n", "    Plays: d\n".repeat(count))
+}
+
+fn refused(fragment: &str) -> Option<String> {
+    Some(fragment.to_string())
 }
 
 #[test]
 fn the_inline_limit_follows_the_compilations_limits() {
-    let calls = |count: usize| {
-        format!(
-            "input i = 1\nfn f(x): x\nClip c:\n{}",
-            repeated("    Note/(f(i))\n", count)
-        )
-    };
     let ten = Limits {
         inlined_calls: 10,
         ..Limits::default()
@@ -148,30 +206,26 @@ fn the_inline_limit_follows_the_compilations_limits() {
         inlined_calls: 2_000_000,
         ..Limits::default()
     };
-    let rows = [
-        (ten, calls(10), vec![]),
-        (ten, calls(11), vec![Code::InlineLimit]),
-        (Limits::default(), calls(11), vec![]),
-        (
-            Limits::default(),
-            doubling_chain(19),
-            vec![Code::InlineLimit],
-        ),
-        (two_million, doubling_chain(19), vec![]),
-    ];
-    for (limits, text, expected) in rows {
-        assert_eq!(errors_within(limits, &text), expected, "{limits:?}\n{text}");
-    }
+    let default = Limits::default();
+    let refusal = |bound: &str| refused(&format!("inline more than {bound} calls"));
+    follows(
+        Code::InlineLimit,
+        &[
+            (ten, inlining(10), None),
+            (ten, inlining(11), refusal("10")),
+            (default, inlining(11), None),
+            (default, inlining(1_000_000), None),
+            (default, inlining(1_000_001), refusal("1,000,000")),
+            (default, inlining(1_048_575), refusal("1,000,000")),
+            (two_million, inlining(1_048_575), None),
+            (two_million, inlining(2_000_000), None),
+            (two_million, inlining(2_000_001), refusal("2,000,000")),
+        ],
+    );
 }
 
 #[test]
 fn the_nesting_depth_follows_the_compilations_limits() {
-    let deep = |calls: usize| {
-        format!(
-            "fn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r({}))\n",
-            calls - 1
-        )
-    };
     let five = Limits {
         nesting_depth: 5,
         ..Limits::default()
@@ -180,57 +234,50 @@ fn the_nesting_depth_follows_the_compilations_limits() {
         nesting_depth: 1_500,
         ..Limits::default()
     };
-    let rows = [
-        (five, deep(5), vec![]),
-        (five, deep(6), vec![Code::RecursionDepth]),
-        (Limits::default(), deep(6), vec![]),
-        (Limits::default(), deep(1_024), vec![]),
-        (Limits::default(), deep(1_025), vec![Code::RecursionDepth]),
-        (fifteen_hundred, deep(1_500), vec![]),
-        (fifteen_hundred, deep(1_501), vec![Code::RecursionDepth]),
-    ];
-    for (limits, text, expected) in rows {
-        assert_eq!(errors_within(limits, &text), expected, "{limits:?}\n{text}");
-    }
+    let default = Limits::default();
+    let refusal = |bound: &str| refused(&format!("deeper than {bound} nested calls"));
+    follows(
+        Code::RecursionDepth,
+        &[
+            (five, nested(5), None),
+            (five, nested(6), refusal("5")),
+            (default, nested(6), None),
+            (default, nested(1_024), None),
+            (default, nested(1_025), refusal("1,024")),
+            (fifteen_hundred, nested(1_500), None),
+            (fifteen_hundred, nested(1_501), refusal("1,500")),
+        ],
+    );
 }
 
 #[test]
 fn the_recursive_call_limit_follows_the_compilations_limits() {
-    let chain = |calls: usize| {
-        format!(
-            "fn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r({}))\n",
-            calls - 1
-        )
-    };
-    let tree = "fn g(a, b): if a < 1 then 0 else g(a - 1, 2 * b) + g(a - 1, 2 * b + 1)\nClip c:\n    Note/(g(19, 0))\n".to_string();
     let five = Limits {
         recursive_calls: 5,
         ..Limits::default()
     };
-    let whole_tree = Limits {
+    let raised = Limits {
         recursive_calls: 1_048_575,
         ..Limits::default()
     };
-    let rows = [
-        (five, chain(5), vec![]),
-        (five, chain(6), vec![Code::RecursionLimit]),
-        (Limits::default(), chain(6), vec![]),
-        (Limits::default(), tree.clone(), vec![Code::RecursionLimit]),
-        (whole_tree, tree, vec![]),
-    ];
-    for (limits, text, expected) in rows {
-        assert_eq!(errors_within(limits, &text), expected, "{limits:?}\n{text}");
-    }
+    let default = Limits::default();
+    let refusal = |bound: &str| refused(&format!("exceeds the {bound} distinct recursive calls"));
+    follows(
+        Code::RecursionLimit,
+        &[
+            (five, recursing(5), None),
+            (five, recursing(6), refusal("5")),
+            (default, recursing(6), None),
+            (default, recursing(1_000_000), None),
+            (default, recursing(1_000_001), refusal("1,000,000")),
+            (raised, recursing(1_048_575), None),
+            (raised, recursing(1_048_576), refusal("1,048,575")),
+        ],
+    );
 }
 
 #[test]
 fn the_expansion_step_limit_follows_the_compilations_limits() {
-    let iterations = |count: usize| format!("Clip c:\n    for i in 0..{count}:\n        Note\n");
-    let uses = |count: usize| {
-        format!(
-            "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n    for i in 0..{count}:\n        P\n"
-        )
-    };
     let ten = Limits {
         expansion_steps: 10,
         ..Limits::default()
@@ -239,56 +286,57 @@ fn the_expansion_step_limit_follows_the_compilations_limits() {
         expansion_steps: 2_000_000,
         ..Limits::default()
     };
-    let rows = [
-        (ten, iterations(10), vec![]),
-        (ten, iterations(11), vec![Code::ExpansionLimit]),
-        (ten, uses(5), vec![]),
-        (ten, uses(6), vec![Code::ExpansionLimit]),
-        (Limits::default(), iterations(11), vec![]),
-        (
-            Limits::default(),
-            uses(1_000_000),
-            vec![Code::ExpansionLimit],
-        ),
-        (two_million, uses(1_000_000), vec![]),
-        (two_million, uses(1_000_001), vec![Code::ExpansionLimit]),
-    ];
-    for (limits, text, expected) in rows {
-        assert_eq!(errors_within(limits, &text), expected, "{limits:?}\n{text}");
-    }
+    let default = Limits::default();
+    let refusal = |bound: &str| {
+        refused(&format!(
+            "runs more than {bound} `for` iterations and pattern uses"
+        ))
+    };
+    follows(
+        Code::ExpansionLimit,
+        &[
+            (ten, iterations(10), None),
+            (ten, iterations(11), refusal("10")),
+            (ten, uses(5), None),
+            (ten, uses(6), refusal("10")),
+            (default, iterations(11), None),
+            (default, empty_iterations(1_000_000), None),
+            (default, empty_iterations(1_000_001), refusal("1,000,000")),
+            (two_million, empty_iterations(2_000_000), None),
+            (
+                two_million,
+                empty_iterations(2_000_001),
+                refusal("2,000,000"),
+            ),
+        ],
+    );
 }
 
 #[test]
 fn the_expanded_item_limit_follows_the_compilations_limits() {
-    let notes = |count: usize| format!("Clip c:\n    for i in 0..{count}:\n        Note\n");
-    let wires = |count: usize| format!("Clip c:\n{}Clip d\n", repeated("    Plays: d\n", count));
     let ten = Limits {
         expanded_items: 10,
         ..Limits::default()
     };
-    let million_and_one = Limits {
+    let raised = Limits {
         expanded_items: 1_000_001,
+        expansion_steps: 2_000_000,
         ..Limits::default()
     };
-    let rows = [
-        (ten, notes(9), vec![]),
-        (ten, notes(10), vec![Code::ExpansionLimit]),
-        (ten, wires(8), vec![]),
-        (ten, wires(9), vec![Code::ExpansionLimit]),
-        (Limits::default(), notes(10), vec![]),
-        (
-            Limits::default(),
-            notes(1_000_000),
-            vec![Code::ExpansionLimit],
-        ),
-        (million_and_one, notes(1_000_000), vec![]),
-        (
-            million_and_one,
-            notes(1_000_001),
-            vec![Code::ExpansionLimit],
-        ),
-    ];
-    for (limits, text, expected) in rows {
-        assert_eq!(errors_within(limits, &text), expected, "{limits:?}\n{text}");
-    }
+    let default = Limits::default();
+    let refusal = |bound: &str| refused(&format!("yields more than {bound} instances and wires"));
+    follows(
+        Code::ExpansionLimit,
+        &[
+            (ten, iterations(9), None),
+            (ten, iterations(10), refusal("10")),
+            (ten, wires(8), None),
+            (ten, wires(9), refusal("10")),
+            (default, iterations(10), None),
+            (default, iterations(999_999), None),
+            (default, iterations(1_000_000), refusal("1,000,000")),
+            (raised, iterations(1_000_000), None),
+            (raised, iterations(1_000_001), refusal("1,000,001")),
+        ],
+    );
 }

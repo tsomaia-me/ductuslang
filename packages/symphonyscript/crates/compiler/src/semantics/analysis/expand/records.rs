@@ -28,6 +28,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::wire::Wire;
 use crate::semantics::collection::{Decl, StandIn};
 use crate::semantics::ir::{AttrValue, Loc, PatternId, PlacementId, WireId as HirWireId};
+use crate::semantics::reporting::grouped;
 
 impl<'a> Engine<'a> {
     pub(in crate::semantics::analysis) fn instance(
@@ -109,14 +110,17 @@ impl<'a> Engine<'a> {
             return Ok(false);
         }
         self.expanded += 1;
-        if self.expanded > self.limits.expanded_items {
+        let bound = self.limits.expanded_items.min(self.id_space);
+        if self.expanded > bound {
             self.limit_reached = true;
-            let limit = self.limits.expanded_items;
             self.error(
                 Code::ExpansionLimit,
                 loc,
                 scope,
-                format!("the expansion yields more than {limit} instances and wires"),
+                format!(
+                    "the expansion yields more than {} instances and wires",
+                    grouped(bound)
+                ),
             )?;
             return Ok(false);
         }
@@ -132,14 +136,17 @@ impl<'a> Engine<'a> {
             return Ok(false);
         }
         self.steps += 1;
-        if self.steps > self.limits.expansion_steps {
+        let bound = self.limits.expansion_steps.min(self.id_space);
+        if self.steps > bound {
             self.limit_reached = true;
-            let limit = self.limits.expansion_steps;
             self.error(
                 Code::ExpansionLimit,
                 loc,
                 scope,
-                format!("the expansion runs more than {limit} `for` iterations and pattern uses"),
+                format!(
+                    "the expansion runs more than {} `for` iterations and pattern uses",
+                    grouped(bound)
+                ),
             )?;
             return Ok(false);
         }

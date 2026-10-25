@@ -21,6 +21,7 @@ use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnId, Loc, Param};
+use crate::semantics::reporting::grouped;
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn call(
@@ -436,7 +437,7 @@ impl Engine<'_> {
             .into_iter()
             .next()
             .unwrap_or_default();
-        let limit = self.limits.inlined_calls;
+        let limit = grouped(self.limits.inlined_calls);
         self.report.error_with(
             self.hir,
             Code::InlineLimit,
@@ -515,7 +516,7 @@ impl Engine<'_> {
         } else {
             self.template_of(caller)?
         };
-        Ok(self.scope_in(
+        self.scope_in(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Fn(function),
                 params,
@@ -525,7 +526,7 @@ impl Engine<'_> {
             Some(global),
             chain,
             template,
-        ))
+        )
     }
 
     pub(in crate::semantics::analysis) fn bind_arguments(

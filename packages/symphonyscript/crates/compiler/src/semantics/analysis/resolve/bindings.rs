@@ -194,7 +194,7 @@ impl Engine<'_> {
             parent,
             chain,
             template,
-        );
+        )?;
         self.memo.prefix_scopes.insert((locals, count), created);
         Ok(created)
     }
@@ -276,16 +276,18 @@ impl Engine<'_> {
             .unwrap_or_default();
         let scalar = annotation.as_ref().map(|annotation| annotation.scalar);
         let make = |engine: &mut Self, element: u32, init: NodeId| {
-            Bound::Cell(engine.push_binding(Binding {
-                kind: BindingKind::Input { input, element },
-                init,
-                annotation: scalar,
-                name: name.clone(),
-                loc: decl.loc,
-            }))
+            engine
+                .push_binding(Binding {
+                    kind: BindingKind::Input { input, element },
+                    init,
+                    annotation: scalar,
+                    name: name.clone(),
+                    loc: decl.loc,
+                })
+                .map(Bound::Cell)
         };
         let bound = match &val {
-            Val::Scalar(node) => BoundVal::Scalar(make(self, 0, *node)),
+            Val::Scalar(node) => BoundVal::Scalar(make(self, 0, *node)?),
             Val::Array(array) => {
                 let items = array
                     .elements
@@ -294,7 +296,7 @@ impl Engine<'_> {
                     .map(|(element, node)| {
                         make(self, u32::try_from(element).unwrap_or(u32::MAX), *node)
                     })
-                    .collect();
+                    .collect::<Result<_, Internal>>()?;
                 BoundVal::Array(Rc::new((array.shape.clone(), items)))
             }
             Val::Error => BoundVal::Error,
@@ -606,7 +608,7 @@ impl Engine<'_> {
                 annotation: Some(annotation.scalar),
                 name: name.to_string(),
                 loc,
-            })))
+            })?))
         };
         Ok(match val {
             Val::Scalar(node) => {
@@ -696,7 +698,7 @@ impl Engine<'_> {
                     annotation: scalar,
                     name: name.to_string(),
                     loc,
-                })))
+                })?))
             };
         Ok(match val {
             Val::Scalar(node) => match sigs.first() {
