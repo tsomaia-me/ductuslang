@@ -145,6 +145,7 @@ fn declare(
         return false;
     }
     if let Some(earlier) = first.get(&name.text) {
+        namespace.duplicate(&name.text);
         report.error_with(
             hir,
             Code::DuplicateName,

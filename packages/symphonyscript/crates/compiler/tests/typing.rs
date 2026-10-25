@@ -2470,6 +2470,102 @@ fn a_use_of_a_name_a_skipped_region_may_declare_draws_nothing_more() {
     expect_in_every_order(&rows);
 }
 
+#[test]
+fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
+    let rows: [Row; 14] = [
+        (
+            &["input i = 0", "input i = i"],
+            &[(Code::DuplicateName, "i")],
+        ),
+        (
+            &["fn f(): 1", "fn f(x): x", "Clip c:\n    Note/(f(1))"],
+            &[(Code::DuplicateName, "f")],
+        ),
+        (
+            &[
+                "input w = Wave::Saw",
+                "input w = Wave::Sine",
+                "Synth y:\n    Osc | wave=w",
+            ],
+            &[(Code::DuplicateName, "w")],
+        ),
+        (
+            &["input a = 2", "let c = a", "input a = c"],
+            &[(Code::DuplicateName, "a")],
+        ),
+        (
+            &[
+                "pattern Riff(default root, velocity = 0.8):\n    Clip:\n        Plays: Riff",
+                "pattern Riff.fill(default root):\n    Clip:",
+                "Riff high /48 | velocity=bright",
+            ],
+            &[
+                (Code::DuplicateName, "Riff"),
+                (Code::PatternSyntax, "."),
+                (Code::PlacementSyntax, ""),
+                (Code::UnknownName, "bright"),
+            ],
+        ),
+        (
+            &[
+                "input swing = 0.1",
+                "let groove = swing",
+                "Clip groove:\n    Plays: groove",
+            ],
+            &[(Code::DuplicateName, "groove")],
+        ),
+        (
+            &[
+                "fn lead(root, octave): root",
+                "Track lead:\n    Plays: lead",
+            ],
+            &[(Code::DuplicateName, "lead")],
+        ),
+        (
+            &[
+                "pattern ascent():\n    Note",
+                "Clip ascent:\n    Plays: ascent",
+            ],
+            &[(Code::DuplicateName, "ascent")],
+        ),
+        (
+            &[
+                "input a = 1",
+                "Clip c:\n    Note | velocity=a",
+                "input a = 0.8",
+            ],
+            &[(Code::DuplicateName, "a")],
+        ),
+        (
+            &[
+                "pattern P():\n    Riff",
+                "pattern Riff():\n    Note",
+                "fn Riff(): 1",
+                "P p1",
+            ],
+            &[(Code::DuplicateName, "Riff")],
+        ),
+        (
+            &[
+                "pattern Q(x):\n    Note/x",
+                "fn Q(): 1",
+                "Clip c:\n    Q | x=1",
+            ],
+            &[(Code::DuplicateName, "Q")],
+        ),
+        (&["input i = i"], &[(Code::DeclarationCycle, "i")]),
+        (
+            &["input i = 0", "input j = i"],
+            &[(Code::ReactiveInitializer, "i")],
+        ),
+        (
+            &["input i = 0", "input i = 1", "input j = j"],
+            &[(Code::DeclarationCycle, "j"), (Code::DuplicateName, "i")],
+        ),
+    ];
+    expect_in_every_order(&rows);
+}
+
 const FAULTY_LINES: [&str; 51] = [
     "pattern P(:",
     "fn f(x, ): 1",

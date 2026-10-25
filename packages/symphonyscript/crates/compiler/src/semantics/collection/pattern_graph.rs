@@ -63,6 +63,16 @@ impl PatternGraph {
             };
             let mut placeholder = false;
             let stand_in = match hir.block(hir.pattern(id)?.body)?.items.as_slice() {
+                [BodyItem::Placement(placement)]
+                    if hir
+                        .placement(*placement)?
+                        .kind
+                        .as_ref()
+                        .is_some_and(|kind| namespace.is_duplicated(&kind.text)) =>
+                {
+                    placeholder = true;
+                    None
+                }
                 [] => {
                     placeholder = true;
                     None

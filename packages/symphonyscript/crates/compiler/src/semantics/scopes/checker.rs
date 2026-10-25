@@ -357,7 +357,7 @@ impl<'a> Checker<'a> {
             }
             current = frame.parent;
         }
-        Ok(self.namespace.get(name).is_some())
+        Ok(self.namespace.get(name).is_some() || self.namespace.is_duplicated(name))
     }
 
     fn enclosing_body_name(
@@ -490,7 +490,9 @@ impl<'a> Checker<'a> {
                 if let Some(body) = placement.body {
                     self.unknown_bodies.insert(body);
                 }
-                if in_unknown && self.visible(frame, &kind.text)? {
+                if (in_unknown && self.visible(frame, &kind.text)?)
+                    || self.namespace.is_duplicated(&kind.text)
+                {
                     return Ok(());
                 }
                 let message = match found {
