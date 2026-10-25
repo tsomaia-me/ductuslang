@@ -70,7 +70,7 @@ impl Naming {
         for name in identifiers
             .declared
             .iter()
-            .filter(|name| !self.reserved.contains(*name))
+            .filter(|name| !self.reserved.contains(*name) && is_identifier(name))
         {
             let lead: String = name.chars().take(1).collect();
             let replacement = loop {
@@ -108,7 +108,7 @@ pub fn restored(text: &str, originals: &BTreeMap<String, String>) -> String {
     let mut result = String::new();
     let mut word = String::new();
     for character in text.chars().chain(['\0']) {
-        if character.is_alphanumeric() || character == '_' {
+        if continues_identifier(character) {
             word.push(character);
             continue;
         }
@@ -182,6 +182,15 @@ fn replaced(
     }
     result.push_str(text.get(copied..).unwrap_or_default());
     result
+}
+
+fn continues_identifier(character: char) -> bool {
+    character.is_alphanumeric() || character == '_' || character == '#'
+}
+
+fn is_identifier(name: &str) -> bool {
+    name.chars()
+        .any(|character| character != '_' && character != '#')
 }
 
 fn vocabulary_names(vocabulary: &Vocabulary) -> BTreeSet<String> {

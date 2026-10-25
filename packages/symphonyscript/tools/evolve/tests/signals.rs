@@ -171,6 +171,10 @@ fn renaming_every_declared_name_keeps_the_diagnostics_of_equal_programs() {
         FAULTY,
         TWO_SESSIONS,
         "let e\u{301} = 1\nlet b = \u{e9} + 1\n",
+        "# Vocabulary: music\ninputs\ncommit on_change\n        master.gain = 1.0\n",
+        "# Prelude functions used below: scale_degrees, arp, swing\nuse vocabulary music\nlet base_key   = Key\nlet shape      = arp(scale_degrees, steps = 8)\n}\n",
+        "# Drum-and-bass style session built from prelude patterns\n        if step % 2 == 1 then amount else 0.0\nsession main\n                pattern = kick_grid\n",
+        "let #a = 1\nlet b = #a + \"s\"\nClip c:\n    Note/b\n",
     ] {
         assert_eq!(
             checker.finding(&program(&[("main.sym", text)]), Signal::Rename),
