@@ -25,6 +25,7 @@ class Oracle:
         self.shrink = str(shrink)
         self.findings = Path(findings)
         self.findings.mkdir(parents=True, exist_ok=True)
+        self.spec_judge = None
 
     def keep(self, name, record):
         path = self.findings / name
@@ -52,6 +53,12 @@ class Oracle:
         return self.keep(f"{signal}-{digest(result['key'])}.json", {**result, "original_sources": original})
 
     def judge(self, program_id, text):
+        result, message, errors = self.verdict_of(program_id, text)
+        if self.spec_judge is not None:
+            self.spec_judge.consider(program_id, text, errors)
+        return result, message
+
+    def verdict_of(self, program_id, text):
         entry = program(program_id, text)
         with tempfile.TemporaryDirectory(dir=self.findings.parent) as directory:
             work = Path(directory)
@@ -62,15 +69,15 @@ class Oracle:
                 self.keep(f"process-{-checked.returncode}-{digest(text)}.json",
                           {"signal": f"process exited on signal {-checked.returncode}", "id": program_id,
                            "sources": entry["sources"]})
-                return FResult.ERROR, f"evolve-check exited on signal {-checked.returncode}"
+                return FResult.ERROR, f"evolve-check exited on signal {-checked.returncode}", None
             if checked.returncode != 0:
-                return FResult.FAILURE, checked.stderr
+                return FResult.FAILURE, checked.stderr, None
             verdict = json.loads((work / "verdicts.jsonl").read_text())
             if verdict["signals"]:
                 for signal in verdict["signals"]:
                     self.record(work, entry, signal)
-                return FResult.ERROR, json.dumps(verdict["findings"])
-        errors = [d["code"] for d in verdict["diagnostics"] if d["code"] not in WARNING_CODES]
+                return FResult.ERROR, json.dumps(verdict["findings"]), None
+        errors = [d for d in verdict["diagnostics"] if d["code"] not in WARNING_CODES]
         if errors:
-            return FResult.FAILURE, " ".join(errors)
-        return FResult.SAFE, ""
+            return FResult.FAILURE, " ".join(d["code"] for d in errors), errors
+        return FResult.SAFE, "", errors
