@@ -8,12 +8,22 @@ pub(super) struct Faults {
 
 impl Faults {
     pub fn new(diagnostics: &[Diagnostic], detached: &[Range<u32>]) -> Self {
-        let mut ranges: Vec<Range<u32>> = diagnostics
+        let key = |range: &Range<u32>| (range.start, range.end);
+        let mut all: Vec<Range<u32>> = diagnostics
             .iter()
             .map(|diagnostic| diagnostic.span.range.clone())
-            .filter(|range| !detached.contains(range))
             .collect();
-        ranges.sort_by_key(|range| range.start);
+        all.sort_by_key(key);
+        let mut unmarked = detached.to_vec();
+        unmarked.sort_by_key(key);
+        let mut unmarked = unmarked.into_iter().peekable();
+        let mut ranges = Vec::with_capacity(all.len());
+        for range in all {
+            while unmarked.next_if(|skip| key(skip) < key(&range)).is_some() {}
+            if unmarked.next_if(|skip| *skip == range).is_none() {
+                ranges.push(range);
+            }
+        }
         let mut furthest = 0;
         let marks = ranges
             .iter()

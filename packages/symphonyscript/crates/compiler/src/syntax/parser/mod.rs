@@ -504,13 +504,12 @@ impl<'a> Parser<'a> {
     }
 
     fn missing_block(&mut self, code: Code, message: impl Into<String>) {
-        let reported = self.diagnostics.len();
-        self.error(code, message);
-        if self.diagnostics.len() > reported
-            && let Some(diagnostic) = self.diagnostics.last()
-        {
-            self.detached.push(diagnostic.span.range.clone());
+        if self.line_error {
+            return;
         }
+        let diagnostic = Diagnostic::new(code, self.current_span(), message);
+        self.detached.push(diagnostic.span.range.clone());
+        self.diagnostics.push(diagnostic);
     }
 
     fn error_with(&mut self, diagnostic: Diagnostic) {

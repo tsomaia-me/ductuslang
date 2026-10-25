@@ -1,6 +1,6 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Source};
+use symphonyscript::{Code, Compiler, Diagnostic, Source};
 use symphonyscript_core::{Count, Vocabulary};
 
 fn codes(text: &str) -> Vec<Code> {
@@ -756,7 +756,7 @@ fn two_enum_vocabulary() -> Vocabulary {
     v.build().expect("the two-enum vocabulary builds")
 }
 
-fn permutations(items: &[&'static str]) -> Vec<Vec<&'static str>> {
+fn permutations<T: Copy>(items: &[T]) -> Vec<Vec<T>> {
     let mut found = Vec::new();
     let mut order: Vec<usize> = (0..items.len()).collect();
     let mut counters = vec![0; items.len()];
@@ -2233,13 +2233,20 @@ fn a_construct_missing_its_block_draws_the_same_diagnostics_in_every_order() {
             &[Code::PlacementSyntax],
         ),
     ];
+    let failures = codes_in_every_order(&rows, support::checked_all);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+type CodeRow = (&'static [&'static str], &'static [Code]);
+
+fn codes_in_every_order(rows: &[CodeRow], check: fn(&str) -> Vec<Diagnostic>) -> Vec<String> {
     let mut failures = Vec::new();
     for (items, wanted) in rows {
         let mut wanted = wanted.to_vec();
         wanted.sort();
         for order in permutations(items) {
             let text = format!("{}\n", order.join("\n"));
-            let mut found: Vec<Code> = support::checked_all(&text)
+            let mut found: Vec<Code> = check(&text)
                 .iter()
                 .map(|diagnostic| diagnostic.code)
                 .collect();
@@ -2249,6 +2256,177 @@ fn a_construct_missing_its_block_draws_the_same_diagnostics_in_every_order() {
                 break;
             }
         }
+    }
+    failures
+}
+
+const FAULTY_LINES: [&str; 51] = [
+    "pattern P(:",
+    "fn f(x, ): 1",
+    "let = 3",
+    "input : i32 = 1",
+    "Clip d | =1",
+    "Plays: c",
+    "for i in :",
+    "when x:",
+    "let a: = 1",
+    "let a: i32[ = 1",
+    "Session s | tempo=1 velocity",
+    "Clip d | gain=(1",
+    "Clip d | gain=[1, 2",
+    "fn f(x) 1",
+    "fn (x): 1",
+    "pattern (x):",
+    "input x",
+    "let a",
+    "Clip",
+    "Clip d |",
+    "Clip d when",
+    "Clip d when:",
+    "Clip d/",
+    "Clip d/(1",
+    "Session s:",
+    "Clip d: Note",
+    "Clip d | gain=\"{",
+    "let a = match",
+    "let a = if 1 then",
+    "let a = [",
+    "fn f(x = ): 1",
+    "Clip d !",
+    "Clip d '",
+    "input x: Wave = Sine",
+    "let a = Wave::",
+    "let a = x.",
+    "Clip d as",
+    "Session s | tempo=1 |",
+    "fn f(a, a): a",
+    "let a = (1, 2)",
+    "Clip d: Note Note |",
+    "Kit k: [Sampler",
+    "Synth y: Osc | wave=Saw:",
+    "Clip d | gain=1 when",
+    "let a = 1 +",
+    "let a = 1 + * 2",
+    "let a = -",
+    "let a = f(",
+    "let a = f(1,",
+    "let a = a[",
+    "let a = 1..2",
+];
+
+#[test]
+fn a_line_after_a_missing_block_reports_its_own_faults() {
+    let rows: [Row; 11] = [
+        (
+            &["Clip c:\nlet = 3"],
+            &[(Code::PlacementSyntax, "let"), (Code::LetSyntax, "=")],
+        ),
+        (
+            &["pattern P(x):\nlet = 3"],
+            &[(Code::PlacementSyntax, "let"), (Code::LetSyntax, "=")],
+        ),
+        (
+            &["fn f(x):\nlet = 3"],
+            &[(Code::FnSyntax, "let"), (Code::LetSyntax, "=")],
+        ),
+        (
+            &["let m = match 1:\nlet = 3"],
+            &[(Code::MatchSyntax, "let"), (Code::LetSyntax, "=")],
+        ),
+        (
+            &["Clip k:\n    when true:\n    Note |"],
+            &[
+                (Code::PlacementSyntax, "Note"),
+                (Code::AttributeSyntax, "\n"),
+            ],
+        ),
+        (
+            &["Clip c:\nClip d | gain="],
+            &[
+                (Code::PlacementSyntax, "Clip"),
+                (Code::ExpressionSyntax, "\n"),
+            ],
+        ),
+        (
+            &["Clip c:\nfn f(x, ): 1"],
+            &[(Code::PlacementSyntax, "fn"), (Code::FnSyntax, ")")],
+        ),
+        (
+            &["Clip c:\n= 3"],
+            &[(Code::PlacementSyntax, "="), (Code::TopLevelSyntax, "=")],
+        ),
+        (
+            &["Clip c:\n__ x"],
+            &[
+                (Code::PlacementSyntax, "__"),
+                (Code::InvalidIdentifier, "__"),
+            ],
+        ),
+        (
+            &["Clip c:\nClip d\n    Note"],
+            &[
+                (Code::PlacementSyntax, "Clip"),
+                (Code::UnexpectedIndent, "Note"),
+            ],
+        ),
+        (
+            &[
+                "pattern Riff(default root):\n    Clip:\n\nRiff low 36",
+                "Riff high /48",
+            ],
+            &[
+                (Code::PlacementSyntax, ""),
+                (Code::PlacementSyntax, "36"),
+                (Code::MissingArgument, "Riff low 36"),
+            ],
+        ),
+    ];
+    expect_in_every_order(&rows);
+    let counted: [CodeRow; 3] = [
+        (
+            &["Session s", "Clip c:\nSession s s"],
+            &[
+                Code::PlacementSyntax,
+                Code::PlacementSyntax,
+                Code::CountExceeded,
+                Code::DuplicateName,
+            ],
+        ),
+        (
+            &["Clip c:\nClip d:", "Session s"],
+            &[Code::PlacementSyntax, Code::PlacementSyntax],
+        ),
+        (
+            &["Clip c:\nClip d:\nClip e:", "Session s"],
+            &[
+                Code::PlacementSyntax,
+                Code::PlacementSyntax,
+                Code::PlacementSyntax,
+            ],
+        ),
+    ];
+    let mut failures = codes_in_every_order(&counted, support::checked);
+    for line in FAULTY_LINES {
+        let first = line
+            .split(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or("");
+        let after_missing = format!("Clip c:\n{line}");
+        let after_valid = format!("Clip c:\n    Note\n{line}");
+        let failure = permutations(&[0, 1, 2]).into_iter().find_map(|order| {
+            let text = |faulty: &str| {
+                let items = [faulty, "Session s", "Clip e:\n    Note"];
+                let ordered: Vec<&str> = order.iter().map(|index| items[*index]).collect();
+                format!("{}\n", ordered.join("\n"))
+            };
+            let (missing, valid) = (text(&after_missing), text(&after_valid));
+            let mut wanted = fixture_errors(&valid);
+            wanted.push((Code::PlacementSyntax, first.to_string()));
+            wanted.sort();
+            let found = fixture_errors(&missing);
+            (found != wanted).then(|| format!("{missing}expected {wanted:?}\nfound {found:?}"))
+        });
+        failures.extend(failure);
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

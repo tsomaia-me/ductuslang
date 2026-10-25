@@ -39,6 +39,8 @@ const FAULTY_ARMS: &[(Code, &str)] = &[
 
 const ELSE_ARM: &str = "        else: verse\n";
 
+const MISSING_BLOCK_HOST: &str = "Clip lacking:\n";
+
 fn match_hosts(vocabulary: &Vocabulary) -> Vec<Candidate> {
     MATCH_HOSTS
         .iter()
@@ -214,6 +216,7 @@ pub(super) struct Pool {
     top: Vec<Candidate>,
     body: Vec<Candidate>,
     hosts: Vec<Host>,
+    missing_block: Candidate,
 }
 
 impl Pool {
@@ -272,6 +275,13 @@ impl Pool {
             top: valid.top.iter().map(valid_candidate).collect(),
             body: valid.body.iter().map(valid_candidate).collect(),
             hosts: std::iter::once(plain).chain(faulty).collect(),
+            missing_block: Candidate::new(
+                String::from("missing block"),
+                MISSING_BLOCK_HOST,
+                Vec::new(),
+                Open::Closed,
+                vocabulary,
+            ),
         }
     }
 }
@@ -385,6 +395,25 @@ impl<'p> Writer<'p> {
         }
     }
 
+    fn after_missing_block(&mut self, fault: &'p Candidate) {
+        let pool = self.pool;
+        while !pool.missing_block.follows(self.pending) {
+            self.follower(false);
+        }
+        self.host = None;
+        self.emit(&pool.missing_block);
+        let offset = self.out.text.len() as u32;
+        let first = &fault.shape.first_token;
+        self.out.expected.push((
+            Code::PlacementSyntax,
+            offset + first.start..offset + first.end,
+        ));
+        self.emit(fault);
+        if fault.open == Open::AfterFault {
+            self.region_lines(fault.column());
+        }
+    }
+
     fn region_lines(&mut self, column: usize) {
         let pool = self.pool;
         for _ in 0..self.random.below(3) {
@@ -471,8 +500,12 @@ pub(super) fn generate(seed: u64, fault_count: usize, pool: &Pool) -> Generated 
         for _ in 0..writer.random.below(3) {
             writer.valid();
         }
-        let fault = order.pop().expect("the order is refilled when empty");
-        writer.place(&pool.faults[fault]);
+        let fault = &pool.faults[order.pop().expect("the order is refilled when empty")];
+        if !fault.body && writer.random.below(4) == 0 {
+            writer.after_missing_block(fault);
+        } else {
+            writer.place(fault);
+        }
     }
     if !matches!(writer.pending, None | Some(Open::Closed)) {
         writer.follower(false);
