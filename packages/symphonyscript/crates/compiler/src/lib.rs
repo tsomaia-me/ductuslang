@@ -8,6 +8,6 @@ mod source;
 pub mod syntax;
 
 pub use compiler::Compiler;
-pub use diagnostics::{Code, Diagnostic, Severity};
+pub use diagnostics::{Code, Diagnostic, Related, Severity};
 pub use failed::Failed;
 pub use source::Source;

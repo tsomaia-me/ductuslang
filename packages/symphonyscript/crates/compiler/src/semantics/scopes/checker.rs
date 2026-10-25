@@ -227,12 +227,16 @@ impl<'a> Checker<'a> {
         };
         let mut text: Vec<&str> = names.iter().map(|name| name.text.as_str()).collect();
         text.push(first.text.as_str());
-        let secondary: Vec<Loc> = names.iter().skip(1).map(|name| name.loc).collect();
+        let related: Vec<(Loc, String)> = names
+            .iter()
+            .skip(1)
+            .map(|name| (name.loc, "a declaration on the cycle".to_string()))
+            .collect();
         self.report.error_with(
             self.hir,
             Code::DeclarationCycle,
             first.loc,
-            &secondary,
+            &related,
             format!("these declarations reach themselves: {}", text.join(" → ")),
         );
     }
@@ -290,7 +294,7 @@ impl<'a> Checker<'a> {
                     self.hir,
                     Code::DuplicateLocal,
                     param.loc,
-                    &[earlier],
+                    &[(earlier, "the first parameter".to_string())],
                     format!("`{}` names two parameters", param.text),
                 );
                 continue;
@@ -306,7 +310,7 @@ impl<'a> Checker<'a> {
                     self.hir,
                     Code::DuplicateLocal,
                     local.loc,
-                    &[earlier],
+                    &[(earlier, "first declared here".to_string())],
                     format!("`{}` is declared twice in one body", local.text),
                 );
                 continue;
@@ -812,7 +816,7 @@ impl<'a> Checker<'a> {
                     self.hir,
                     Code::ChildNameClash,
                     name.loc,
-                    &[local],
+                    &[(local, "the name it repeats".to_string())],
                     format!(
                         "`{}` names a pattern parameter, a pattern `let` or a `for` variable visible here",
                         name.text
@@ -829,7 +833,7 @@ impl<'a> Checker<'a> {
                     self.hir,
                     Code::ChildNameClash,
                     name.loc,
-                    &[earlier],
+                    &[(earlier, "the other name".to_string())],
                     format!(
                         "`{}` names another child or wire of this body or of an enclosing one",
                         name.text

@@ -657,8 +657,9 @@ fn located_of(compiler: &Compiler, text: &str) -> Vec<(Code, String, Vec<String>
         .filter(|diagnostic| diagnostic.severity() == Severity::Error)
         .map(|diagnostic| {
             let mut secondary: Vec<String> = diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|loc| span(loc.range.clone()))
                 .collect();
             secondary.sort();

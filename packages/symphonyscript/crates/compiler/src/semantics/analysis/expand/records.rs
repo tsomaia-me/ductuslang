@@ -406,7 +406,9 @@ impl<'a> Engine<'a> {
         } else {
             self.source_global
         };
-        let chain = self.chain(caller)?.push(site.loc);
+        let chain = self
+            .chain(caller)?
+            .push(site.loc, "in this use of the pattern");
         self.scope(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Pattern(pattern),
@@ -595,7 +597,7 @@ impl<'a> Engine<'a> {
                 engine.error_with_chain(
                     Code::DuplicateAttribute,
                     source.loc,
-                    vec![earlier],
+                    vec![(earlier, "first set here".to_string())],
                     scope,
                     format!("the attribute `{name}` is set twice"),
                 )?;

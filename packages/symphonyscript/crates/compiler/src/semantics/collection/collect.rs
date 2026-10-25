@@ -201,7 +201,7 @@ fn declare(
             hir,
             Code::DuplicateName,
             name.loc,
-            &[*earlier],
+            &[(*earlier, "first declared here".to_string())],
             format!("`{}` is declared twice", name.text),
         );
         return false;

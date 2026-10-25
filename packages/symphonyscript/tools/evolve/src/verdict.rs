@@ -32,7 +32,7 @@ impl From<&Diagnostic> for DiagnosticRecord {
             code: diagnostic.code.as_str().to_string(),
             file: diagnostic.span.file.clone(),
             span: [diagnostic.span.range.start, diagnostic.span.range.end],
-            message: diagnostic.message.clone(),
+            message: diagnostic.summary.clone(),
         }
     }
 }

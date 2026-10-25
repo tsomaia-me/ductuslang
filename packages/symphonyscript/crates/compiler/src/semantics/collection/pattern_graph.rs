@@ -145,7 +145,12 @@ impl PatternGraph {
         let others: Vec<_> = decls
             .iter()
             .skip(1)
-            .map(|other| other.name.as_ref().map_or(other.loc, |name| name.loc))
+            .map(|other| {
+                (
+                    other.name.as_ref().map_or(other.loc, |name| name.loc),
+                    "a pattern on the cycle".to_string(),
+                )
+            })
             .collect();
         let message = if names.len() == 1 {
             format!("the pattern {} uses itself", names.join(""))

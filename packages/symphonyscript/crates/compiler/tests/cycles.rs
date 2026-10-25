@@ -31,7 +31,7 @@ fn chain_of(diagnostic: &Diagnostic) -> BTreeSet<String> {
         return BTreeSet::new();
     }
     let chain = diagnostic
-        .message
+        .summary
         .rsplit_once(": ")
         .map_or("", |(_, chain)| chain);
     chain.split(" → ").map(str::to_string).collect()
@@ -320,8 +320,9 @@ fn secondary_spans(compiler: &Compiler, text: &str) -> Vec<Vec<(u32, u32)>> {
         .filter(|diagnostic| diagnostic.code == Code::RecursionDepth)
         .map(|diagnostic| {
             diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|span| (span.range.start, span.range.end))
                 .collect()
         })

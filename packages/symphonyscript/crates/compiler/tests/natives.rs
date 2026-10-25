@@ -43,6 +43,41 @@ fn a_native_call_is_typed_by_its_signature() {
 }
 
 #[test]
+fn an_array_parameter_of_a_fixed_length_or_a_capacity_bounds_its_argument() {
+    let rows: &[(&str, &[Code])] = &[
+        ("Clip c:\n    Note/(pair_sum([1, 2]))\n", &[]),
+        (
+            "Clip c:\n    Note/(pair_sum([1, 2, 3]))\n",
+            &[Code::TypeMismatch],
+        ),
+        (
+            "input held: i32[..2] = []\nClip c:\n    Note/(pair_sum(held))\n",
+            &[Code::VariableArray],
+        ),
+        (
+            "Clip c:\n    Note/(pair_sum([[1], [2]]))\n",
+            &[Code::TypeMismatch],
+        ),
+        ("Clip c:\n    Note/(first_of([1, 2, 3, 4]))\n", &[]),
+        (
+            "Clip c:\n    Note/(first_of([1, 2, 3, 4, 5]))\n",
+            &[Code::CapacityExceeded],
+        ),
+        (
+            "input held: i32[..4] = []\nClip c:\n    Note/(first_of(held))\n",
+            &[],
+        ),
+        (
+            "input held: i32[..5] = []\nClip c:\n    Note/(first_of(held))\n",
+            &[Code::CapacityExceeded],
+        ),
+    ];
+    for (text, expected) in rows {
+        assert_eq!(codes(text), *expected, "{text}");
+    }
+}
+
+#[test]
 fn a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string() {
     let rows: &[(&str, &[Code])] = &[
         (

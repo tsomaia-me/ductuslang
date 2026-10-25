@@ -681,8 +681,9 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
                     diagnostic.code,
                     diagnostic.span.range.start,
                     diagnostic
-                        .secondary
+                        .related
                         .iter()
+                        .map(|related| &related.span)
                         .map(|span| span.range.start)
                         .collect(),
                 )
@@ -1433,8 +1434,9 @@ fn located_errors(text: &str) -> Located {
         .iter()
         .map(|diagnostic| {
             let secondary = diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|span| excerpt(&span.range))
                 .collect();
             (diagnostic.code, excerpt(&diagnostic.span.range), secondary)
@@ -2105,8 +2107,9 @@ fn bar_errors(text: &str) -> Located {
         .iter()
         .map(|diagnostic| {
             let secondary = diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|span| excerpt(&span.range))
                 .collect();
             (diagnostic.code, excerpt(&diagnostic.span.range), secondary)
@@ -3069,8 +3072,9 @@ fn a_recursive_bodys_faulty_literal_holding_a_recursive_result_draws_one_diagnos
 fn no_secondary_repeats_the_primary(text: &str) -> bool {
     support::checked(text).iter().all(|diagnostic| {
         diagnostic
-            .secondary
+            .related
             .iter()
+            .map(|related| &related.span)
             .all(|span| span.range != diagnostic.span.range)
     })
 }
@@ -3198,8 +3202,9 @@ fn inconsistent_uses_name_each_use_with_its_calls() {
         .iter()
         .map(|diagnostic| {
             let mut ranges: Vec<(u32, u32)> = diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|span| (span.range.start, span.range.end))
                 .collect();
             ranges.sort();

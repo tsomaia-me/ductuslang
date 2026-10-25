@@ -7,6 +7,6 @@ pub(crate) struct Stop {
     pub inferred: bool,
     pub code: Code,
     pub loc: Loc,
-    pub secondary: Vec<Loc>,
+    pub related: Vec<(Loc, String)>,
     pub message: String,
 }

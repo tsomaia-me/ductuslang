@@ -41,8 +41,9 @@ fn checked(compiler: &Compiler, text: &str) -> (Duration, Vec<(Code, String, Vec
         .filter(|diagnostic| diagnostic.severity() == Severity::Error)
         .map(|diagnostic| {
             let mut secondary: Vec<String> = diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|loc| span(loc.range.clone()))
                 .collect();
             secondary.sort();

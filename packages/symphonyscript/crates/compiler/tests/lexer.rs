@@ -159,7 +159,7 @@ fn a_line_aligned_only_on_screen_is_an_error_and_continues_the_clause() {
         .collect();
     let level = text.find("level").unwrap() as u32;
     assert_eq!(codes, vec![(Code::ClauseColumn, level, level + 1)]);
-    assert!(found.diagnostics[0].message.contains("column 11"));
+    assert!(found.diagnostics[0].summary.contains("column 11"));
     assert_eq!(
         render(text, &found.tokens),
         "Ident(Clip) _ Ident(音楽) _ Pipe _ Ident(gain) Eq Number(1) _ _ Ident(level) Eq Number(2) NL"
@@ -243,7 +243,7 @@ fn reserved_tokens_are_errors_with_hints() {
     let found: Vec<(Code, u32, Option<&str>)> = lexed
         .diagnostics
         .iter()
-        .map(|d| (d.code, d.span.range.start, d.hint.as_deref()))
+        .map(|d| (d.code, d.span.range.start, d.help.as_deref()))
         .collect();
     assert_eq!(
         found,

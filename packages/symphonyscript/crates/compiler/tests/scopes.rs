@@ -41,7 +41,7 @@ fn a_kind_names_a_node_kind_or_a_pattern() {
     assert_eq!(diagnostics[0].code, Code::UnknownKind);
     assert_eq!(diagnostics[0].span.range, 17..21);
     assert_eq!(
-        diagnostics[0].hint.as_deref(),
+        diagnostics[0].help.as_deref(),
         Some("to name the placement, write `Note as hook`")
     );
 }
@@ -148,8 +148,9 @@ fn expect_a_cycle_of_a_and_b(text: &str) {
     };
     assert_eq!(diagnostics[0].span.range, name_in("a = b"), "{text}");
     let secondary: Vec<_> = diagnostics[0]
-        .secondary
+        .related
         .iter()
+        .map(|related| &related.span)
         .map(|span| span.range.clone())
         .collect();
     assert_eq!(secondary, vec![name_in("b = a")], "{text}");

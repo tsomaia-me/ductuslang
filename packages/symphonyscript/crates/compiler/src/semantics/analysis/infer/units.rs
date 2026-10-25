@@ -135,7 +135,7 @@ impl Engine<'_> {
                         self.hir,
                         Code::ConflictingUnits,
                         *first,
-                        &[*second],
+                        &[(*second, "the other attribute".to_string())],
                         message,
                     );
                 }
@@ -211,7 +211,10 @@ impl Engine<'_> {
                 self.error_with_chain(
                     Code::ConflictingUnits,
                     loc,
-                    vec![*first, *second],
+                    vec![
+                        (*first, "one attribute".to_string()),
+                        (*second, "the other attribute".to_string()),
+                    ],
                     scope,
                     "this plain value feeds two attributes of one unit family with different default units",
                 )?;

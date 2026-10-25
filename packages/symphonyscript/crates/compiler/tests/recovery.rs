@@ -899,7 +899,7 @@ fn the_parenthesize_hint_shows_the_written_value() {
         let hints: Vec<Option<String>> = support::parsed(text)
             .diagnostics
             .iter()
-            .map(|diagnostic| diagnostic.hint.clone())
+            .map(|diagnostic| diagnostic.help.clone())
             .collect();
         assert_eq!(hints, [Some(hint.to_string())], "{text:?}");
     }
@@ -964,7 +964,7 @@ fn a_missing_closer_names_the_token_it_underlines() {
         let messages: Vec<String> = support::parsed(text)
             .diagnostics
             .iter()
-            .map(|diagnostic| diagnostic.message.clone())
+            .map(|diagnostic| diagnostic.summary.clone())
             .collect();
         assert_eq!(
             messages.first().map(String::as_str),

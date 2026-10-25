@@ -123,13 +123,13 @@ impl Engine<'_> {
                     let record = self.node(*float_node)?;
                     (record.loc, record.scope)
                 };
-                let mut float_use: Vec<Loc> = (float_loc != loc)
-                    .then_some(float_loc)
+                let mut float_use: Vec<(Loc, String)> = (float_loc != loc)
+                    .then_some((float_loc, "the float use".to_string()))
                     .into_iter()
                     .collect();
-                let float_calls = self.chain(float_scope)?.to_vec();
-                if float_calls != self.chain(scope)?.to_vec() {
-                    float_use.extend(float_calls);
+                let float_calls = self.chain(float_scope)?;
+                if float_calls.to_vec() != self.chain(scope)?.to_vec() {
+                    float_use.extend(float_calls.labelled());
                 }
                 self.error_with_chain(
                     Code::InconsistentUses,
@@ -194,7 +194,7 @@ impl Engine<'_> {
             self.error_with_chain(
                 Code::InconsistentShapes,
                 loc,
-                vec![other_loc],
+                vec![(other_loc, "a use that gives another shape".to_string())],
                 scope,
                 "this value holds a recursive call's array result, and its uses give that result different shapes",
             )?;

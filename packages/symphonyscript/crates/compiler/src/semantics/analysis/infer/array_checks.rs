@@ -329,4 +329,95 @@ impl Engine<'_> {
         }
         Ok(())
     }
+
+    pub(super) fn native_arg_checks(
+        &mut self,
+        native: symphonyscript_core::NativeId,
+        args: &[crate::semantics::analysis::ids::NodeId],
+    ) -> Result<(), Internal> {
+        use symphonyscript_core::{NativeType, Scalar};
+        let params = self
+            .vocabulary
+            .native(native)
+            .ok_or(Internal::missed("native function"))?
+            .signature
+            .params
+            .clone();
+        for (arg, param) in args.iter().zip(params) {
+            let (ty, open) = match param {
+                NativeType::Value(ty) => (ty, false),
+                NativeType::Open(ty) => (ty, true),
+                NativeType::CapacityOf(..) => continue,
+            };
+            if (ty.is_scalar() && !open) || ty.scalar == Scalar::Str {
+                continue;
+            }
+            let found = self.known_layout(*arg)?;
+            let Ok(Some(layout)) = found.shaped else {
+                continue;
+            };
+            let (rows, length) = if open || ty.capacity.is_some() {
+                (ty.lengths.clone(), None)
+            } else {
+                match ty.lengths.split_last() {
+                    Some((length, rows)) => (rows.to_vec(), Some(*length)),
+                    None => (Vec::new(), None),
+                }
+            };
+            let loc = self.node(*arg)?.loc;
+            let scope = self.node(*arg)?.scope;
+            if layout.inner() != rows.as_slice() {
+                self.error(
+                    Code::TypeMismatch,
+                    loc,
+                    scope,
+                    "the argument's rows differ from the parameter's type",
+                )?;
+                continue;
+            }
+            if let Some(length) = length {
+                if layout.variable {
+                    self.error(
+                        Code::VariableArray,
+                        loc,
+                        scope,
+                        format!(
+                            "this argument is a variable array, and the parameter takes a fixed array of {length} elements"
+                        ),
+                    )?;
+                } else if let Some(held) = layout.outer()
+                    && held != length
+                {
+                    self.error(
+                        Code::TypeMismatch,
+                        loc,
+                        scope,
+                        format!(
+                            "this argument holds {held} elements, and the parameter takes {length}"
+                        ),
+                    )?;
+                }
+                continue;
+            }
+            if let Some(capacity) = ty.capacity {
+                let holds = match self.extent(*arg)? {
+                    Some(held) => Some(held),
+                    None => self.fixed_length(*arg)?,
+                };
+                if let Some(holds) = holds
+                    && holds > capacity
+                {
+                    self.error(
+                        Code::CapacityExceeded,
+                        loc,
+                        scope,
+                        format!(
+                            "this argument holds up to {holds} elements, more than the parameter's capacity {capacity}"
+                        ),
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
 }

@@ -1070,8 +1070,9 @@ fn located(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, usize, Vec<usiz
                 diagnostic.code,
                 at(diagnostic.span.range.start),
                 diagnostic
-                    .secondary
+                    .related
                     .iter()
+                    .map(|related| &related.span)
                     .map(|span| at(span.range.start))
                     .filter(|start| *start < text.len())
                     .collect(),
@@ -2109,8 +2110,9 @@ fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
         .first()
         .map(|diagnostic| {
             diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .filter_map(|span| faulty.get(span.range.start as usize..span.range.end as usize))
                 .map(str::to_string)
                 .collect()
@@ -2289,7 +2291,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
             .report
             .diagnostics
             .iter()
-            .map(|diagnostic| (diagnostic.code, diagnostic.message.clone()))
+            .map(|diagnostic| (diagnostic.code, diagnostic.summary.clone()))
             .collect()
     };
     let program =
@@ -3558,7 +3560,7 @@ fn a_patterns_lets_see_the_names_of_its_body() {
         .filter(|diagnostic| diagnostic.code == Code::DeclarationCycle)
         .flat_map(|diagnostic| {
             let chain = diagnostic
-                .message
+                .summary
                 .rsplit_once(": ")
                 .map_or("", |(_, chain)| chain);
             chain.split(" → ")

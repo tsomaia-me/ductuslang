@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
-use symphonyscript_core::{Count, Vocabulary};
-use symphonyscript_fixtures::{SPEC, native_vocabulary, vocabulary};
+use symphonyscript_fixtures::{
+    SPEC, bounded_vocabulary, native_vocabulary, prelude_vocabulary, vocabulary,
+};
 
 #[derive(Clone, Copy)]
 enum Setup {
@@ -1379,53 +1380,6 @@ const RULES: &[Rule] = &[
     ),
 ];
 
-fn bounded_vocabulary() -> Vocabulary {
-    let mut v = Vocabulary::builder("bounded");
-    let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
-    let root = v.node("Root");
-    let item = v.node("Item");
-    let first = v.node("A");
-    let second = v.node("B");
-    let link = v.wire("Link");
-    let pick = v.wire("Pick");
-    v.kind(root)
-        .top_level(Count::Exactly(1))
-        .entry()
-        .children(item, Count::Between(1, 2))
-        .outgoing(link, Count::AtMost(1))
-        .incoming(link, Count::AtLeast(1));
-    v.kind(item);
-    v.kind(first)
-        .top_level(Count::Any)
-        .attr::<i32>("x")
-        .default(0)
-        .attr::<f64>("long")
-        .default(0.0)
-        .family(&beats, "bars");
-    v.kind(second)
-        .top_level(Count::Any)
-        .attr::<f32>("x")
-        .default(0.0)
-        .attr::<f64>("short")
-        .default(0.0)
-        .family(&beats, "beats");
-    v.wire_kind(link).connects(root, root).cyclic();
-    v.wire_kind(pick)
-        .connects(root, first)
-        .connects(root, second)
-        .attr::<f32>("level")
-        .default(1.0);
-    v.build().expect("the bounded vocabulary builds")
-}
-
-fn with_prelude(text: &str) -> Vocabulary {
-    let mut v = Vocabulary::builder("preluded");
-    let clip = v.node("Clip");
-    v.kind(clip).top_level(Count::Any);
-    v.prelude("prelude.sym", text);
-    v.build().expect("the vocabulary builds")
-}
-
 fn diagnostics(rule: &Rule) -> Vec<Diagnostic> {
     let source = Source {
         path: "rule.sym".into(),
@@ -1441,7 +1395,7 @@ fn diagnostics(rule: &Rule) -> Vec<Diagnostic> {
         Setup::Natives => Compiler::new(&native_vocabulary())
             .expect("the native vocabulary compiles")
             .check(&[source]),
-        Setup::Prelude => match Compiler::new(&with_prelude(rule.program)) {
+        Setup::Prelude => match Compiler::new(&prelude_vocabulary(rule.program)) {
             Ok(_) => Vec::new(),
             Err(failed) => failed.diagnostics,
         },
@@ -1643,6 +1597,32 @@ fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it() {
                     .map(|diagnostic| diagnostic.code.as_str())
                     .collect::<Vec<_>>()
             ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn every_diagnostic_of_a_rule_program_has_a_summary_of_one_to_three_lines() {
+    let mut failures = Vec::new();
+    for rule in RULES {
+        for diagnostic in diagnostics(rule) {
+            let lines = diagnostic.summary.lines().count();
+            let blank = diagnostic
+                .summary
+                .lines()
+                .any(|line| line.trim().is_empty());
+            let help_lines = diagnostic
+                .help
+                .as_deref()
+                .map_or(1, |help| help.lines().count());
+            let labelled = diagnostic
+                .related
+                .iter()
+                .all(|related| !related.label.trim().is_empty());
+            if !(1..=3).contains(&lines) || blank || help_lines != 1 || !labelled {
+                failures.push(format!("{:?}: {diagnostic:?}", rule.program));
+            }
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));

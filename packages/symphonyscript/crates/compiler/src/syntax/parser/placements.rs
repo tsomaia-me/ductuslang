@@ -305,7 +305,7 @@ impl Parser<'_> {
                 self.current_span(),
                 format!("an unparenthesized `/` value ends before {found}"),
             )
-            .with_hint(format!("parenthesize the whole value, as in `{example}`"));
+            .with_help(format!("parenthesize the whole value, as in `{example}`"));
             self.error_with(diagnostic);
         }
         self.finish();

@@ -114,7 +114,7 @@ fn errors_within(limits: Limits, text: &str) -> Vec<(Code, String)> {
     let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
-        .map(|diagnostic| (diagnostic.code, diagnostic.message))
+        .map(|diagnostic| (diagnostic.code, diagnostic.summary))
         .collect()
 }
 

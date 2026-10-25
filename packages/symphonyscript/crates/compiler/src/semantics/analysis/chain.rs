@@ -9,14 +9,16 @@ pub(crate) struct Chain(Option<Rc<Link>>);
 
 struct Link {
     loc: Loc,
+    label: &'static str,
     also: RefCell<Vec<Loc>>,
     rest: Chain,
 }
 
 impl Chain {
-    pub fn push(&self, loc: Loc) -> Chain {
+    pub fn push(&self, loc: Loc, label: &'static str) -> Chain {
         Chain(Some(Rc::new(Link {
             loc,
+            label,
             also: RefCell::new(Vec::new()),
             rest: self.clone(),
         })))
@@ -38,19 +40,29 @@ impl Chain {
         locs
     }
 
-    pub fn outermost_paths(&self) -> Vec<Vec<Loc>> {
+    pub fn labelled(&self) -> Vec<(Loc, String)> {
+        let mut locs = Vec::new();
+        let mut current = self.0.as_ref();
+        while let Some(link) = current {
+            locs.push((link.loc, link.label.to_string()));
+            current = link.rest.0.as_ref();
+        }
+        locs
+    }
+
+    pub fn outermost_paths(&self) -> Vec<Vec<(Loc, String)>> {
         let mut inner = Vec::new();
         let mut current = self.0.as_ref();
         while let Some(link) = current {
             match link.rest.0.as_ref() {
-                Some(_) => inner.push(link.loc),
+                Some(_) => inner.push((link.loc, link.label.to_string())),
                 None => {
                     let also = link.also.borrow();
                     return std::iter::once(&link.loc)
                         .chain(also.iter())
                         .map(|outermost| {
                             let mut path = inner.clone();
-                            path.push(*outermost);
+                            path.push((*outermost, link.label.to_string()));
                             path
                         })
                         .collect();

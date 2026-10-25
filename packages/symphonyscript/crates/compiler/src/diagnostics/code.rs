@@ -444,6 +444,14 @@ impl Code {
         Some(section)
     }
 
+    pub fn help(self) -> Option<&'static str> {
+        super::help::help(self)
+    }
+
+    pub fn lesson(self) -> &'static str {
+        super::lesson::lesson(self)
+    }
+
     pub fn severity(self) -> Severity {
         match self {
             Code::IntegerInput | Code::UnreachableInstance | Code::NoEntryInstance => {

@@ -15,8 +15,9 @@ fn spans(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, String, Vec<Strin
                 diagnostic.code,
                 piece(&diagnostic.span.range),
                 diagnostic
-                    .secondary
+                    .related
                     .iter()
+                    .map(|related| &related.span)
                     .map(|span| piece(&span.range))
                     .collect(),
             )
@@ -101,7 +102,13 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
     assert_eq!(found, vec![fit(&chain), fit(&chain)]);
     let positions: Vec<Option<u32>> = support::checked(&twice)
         .iter()
-        .map(|diagnostic| diagnostic.secondary.last().map(|span| span.range.start))
+        .map(|diagnostic| {
+            diagnostic
+                .related
+                .last()
+                .map(|related| &related.span)
+                .map(|span| span.range.start)
+        })
         .collect();
     assert_ne!(positions.first(), positions.last());
     let out_of_range = |chain: &[&str]| {
@@ -127,7 +134,7 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
     assert_eq!(
         diagnostics
             .first()
-            .and_then(|diagnostic| diagnostic.secondary.first())
+            .and_then(|diagnostic| diagnostic.related.first().map(|related| &related.span))
             .map(|span| span.range.start),
         first_pick
     );
@@ -139,7 +146,13 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
     );
     let starts: Vec<Option<u32>> = support::checked(siblings)
         .iter()
-        .map(|diagnostic| diagnostic.secondary.first().map(|span| span.range.start))
+        .map(|diagnostic| {
+            diagnostic
+                .related
+                .first()
+                .map(|related| &related.span)
+                .map(|span| span.range.start)
+        })
         .collect();
     assert_ne!(starts.first(), starts.last());
 }

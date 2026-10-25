@@ -1,5 +1,5 @@
 use super::span::span;
-use crate::diagnostics::{Code, Diagnostic};
+use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::ir::{Hir, Loc};
 
 #[derive(Default)]
@@ -8,9 +8,9 @@ pub(crate) struct Report {
 }
 
 impl Report {
-    pub fn error(&mut self, hir: &Hir, code: Code, loc: Loc, message: impl Into<String>) {
+    pub fn error(&mut self, hir: &Hir, code: Code, loc: Loc, summary: impl Into<String>) {
         self.diagnostics
-            .push(Diagnostic::new(code, span(hir, loc), message));
+            .push(Diagnostic::new(code, span(hir, loc), summary));
     }
 
     pub fn error_with(
@@ -18,11 +18,11 @@ impl Report {
         hir: &Hir,
         code: Code,
         loc: Loc,
-        secondary: &[Loc],
-        message: impl Into<String>,
+        related: &[(Loc, String)],
+        summary: impl Into<String>,
     ) {
-        let mut diagnostic = Diagnostic::new(code, span(hir, loc), message);
-        diagnostic.secondary = secondary.iter().map(|other| span(hir, *other)).collect();
+        let diagnostic =
+            Diagnostic::new(code, span(hir, loc), summary).with_related(labelled(hir, related));
         self.diagnostics.push(diagnostic);
     }
 
@@ -31,12 +31,13 @@ impl Report {
         hir: &Hir,
         code: Code,
         loc: Loc,
-        secondary: &[Loc],
-        message: impl Into<String>,
-        hint: impl Into<String>,
+        related: &[(Loc, String)],
+        summary: impl Into<String>,
+        help: impl Into<String>,
     ) {
-        let mut diagnostic = Diagnostic::new(code, span(hir, loc), message).with_hint(hint);
-        diagnostic.secondary = secondary.iter().map(|other| span(hir, *other)).collect();
+        let diagnostic = Diagnostic::new(code, span(hir, loc), summary)
+            .with_help(help)
+            .with_related(labelled(hir, related));
         self.diagnostics.push(diagnostic);
     }
 
@@ -48,7 +49,24 @@ impl Report {
     }
 }
 
-type OrderKey = (usize, u32, u32, Code, String, Vec<(String, u32, u32)>);
+fn labelled(hir: &Hir, related: &[(Loc, String)]) -> Vec<Related> {
+    related
+        .iter()
+        .map(|(loc, label)| Related {
+            span: span(hir, *loc),
+            label: label.clone(),
+        })
+        .collect()
+}
+
+type OrderKey = (
+    usize,
+    u32,
+    u32,
+    Code,
+    String,
+    Vec<(String, u32, u32, String)>,
+);
 
 fn order(files: &[String], diagnostic: &Diagnostic) -> OrderKey {
     let file = files
@@ -60,11 +78,18 @@ fn order(files: &[String], diagnostic: &Diagnostic) -> OrderKey {
         diagnostic.span.range.start,
         diagnostic.span.range.end,
         diagnostic.code,
-        diagnostic.message.clone(),
+        diagnostic.summary.clone(),
         diagnostic
-            .secondary
+            .related
             .iter()
-            .map(|span| (span.file.clone(), span.range.start, span.range.end))
+            .map(|related| {
+                (
+                    related.span.file.clone(),
+                    related.span.range.start,
+                    related.span.range.end,
+                    related.label.clone(),
+                )
+            })
             .collect(),
     )
 }

@@ -322,6 +322,7 @@ impl Engine<'_> {
                     }
                 }
                 Op::Native { native, args } => {
+                    self.native_arg_checks(native, &args)?;
                     let params = self.native_params(native)?;
                     for (arg, param) in args.into_iter().zip(params) {
                         stack.push((arg, param, selection));

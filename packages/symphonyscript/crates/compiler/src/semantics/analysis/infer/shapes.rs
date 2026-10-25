@@ -81,7 +81,7 @@ impl Engine<'_> {
                 self.error_with_chain(
                     need.code,
                     loc,
-                    vec![site],
+                    vec![(site, format!("`{name}` is declared here"))],
                     scope,
                     format!(
                         "`{name}` takes the shape its recursive call yields with the defaults, and this use yields another shape"

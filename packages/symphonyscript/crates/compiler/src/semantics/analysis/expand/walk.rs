@@ -190,7 +190,7 @@ impl Engine<'_> {
             if !self.count_step(site.loc, caller)? {
                 return Ok(None);
             }
-            uses = uses.push(site.loc);
+            uses = uses.push(site.loc, USE);
             let locals = self.use_locals(pattern, placement, caller)?;
             let chain = self.chain(locals)?;
             let body = self.scope(
@@ -330,7 +330,13 @@ impl Engine<'_> {
         self.memo.pattern_bodies.insert(locals, scope);
         let sites = self.named_sites(self.hir.pattern(pattern)?.body)?;
         if !sites.is_empty() {
-            self.prebuild(&sites, scope, owner, PathParent::Use(id), uses.push(loc))?;
+            self.prebuild(
+                &sites,
+                scope,
+                owner,
+                PathParent::Use(id),
+                uses.push(loc, USE),
+            )?;
         }
         Ok(scope)
     }
@@ -968,7 +974,7 @@ impl Engine<'_> {
                         owner: walk.owner,
                         path_parent: PathParent::Use(use_id),
                         conditions,
-                        uses: uses.push(loc),
+                        uses: uses.push(loc, USE),
                         bundle: walk.bundle,
                     };
                     frames.push(Frame::Block {
@@ -1062,3 +1068,4 @@ impl Engine<'_> {
         }
     }
 }
+const USE: &str = "in this use of the pattern";

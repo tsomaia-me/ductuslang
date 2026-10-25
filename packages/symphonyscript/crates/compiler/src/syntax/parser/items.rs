@@ -208,7 +208,13 @@ impl Parser<'_> {
     }
 
     pub(super) fn fn_colon(&mut self) {
-        if self.colon_or_skip(Code::FnSyntax, "`:` and the body") {
+        let equals = self.at(SyntaxKind::Eq);
+        let reported = self.diagnostics.len();
+        let colon = self.colon_or_skip(Code::FnSyntax, "`:` and the body");
+        if equals && let Some(diagnostic) = self.diagnostics.get_mut(reported) {
+            diagnostic.help = Some(FN_COLON.to_string());
+        }
+        if colon {
             self.bump();
             self.then([Task::FnBody, Task::Finish]);
         } else {
@@ -322,3 +328,5 @@ impl Parser<'_> {
         self.finish();
     }
 }
+
+const FN_COLON: &str = "write `:` before a function's body, as in `fn double(x): x * 2`";

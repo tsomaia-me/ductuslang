@@ -733,20 +733,24 @@ impl Engine<'_> {
             let Some(((_, loc, first, scope), others)) = located.split_first() else {
                 continue;
             };
-            let mut secondary: Vec<Loc> = others.iter().map(|(_, loc, _, _)| *loc).collect();
+            let mut related: Vec<Loc> = others.iter().map(|(_, loc, _, _)| *loc).collect();
             for (_, writer, member, _) in &located {
                 if let Member::Value(node) = member {
                     for alias in flows.lets.aliases.get(node).into_iter().flatten() {
                         if alias != writer && alias != loc {
-                            secondary.push(*alias);
+                            related.push(*alias);
                         }
                     }
                 }
             }
-            secondary.retain(|other| other != loc);
-            secondary.sort();
-            secondary.dedup();
-            self.report_flow(*first, *loc, *scope, secondary)?;
+            related.retain(|other| other != loc);
+            related.sort();
+            related.dedup();
+            let related = related
+                .into_iter()
+                .map(|other| (other, "another use of the value".to_string()))
+                .collect();
+            self.report_flow(*first, *loc, *scope, related)?;
         }
         Ok(())
     }
@@ -756,7 +760,7 @@ impl Engine<'_> {
         member: Member,
         loc: Loc,
         scope: ScopeId,
-        secondary: Vec<Loc>,
+        related: Vec<(Loc, String)>,
     ) -> Result<(), Internal> {
         self.mark_untyped(member)?;
         if self.in_probe(scope)? {
@@ -765,7 +769,7 @@ impl Engine<'_> {
         self.error_with_chain(
             Code::TypeMismatch,
             loc,
-            secondary,
+            related,
             scope,
             "this value names a variant, and its uses expect no single enum",
         )

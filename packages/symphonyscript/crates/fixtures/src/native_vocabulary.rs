@@ -37,6 +37,22 @@ pub fn native_vocabulary() -> Vocabulary {
         ),
         mirror,
     );
+    v.native(
+        "pair_sum",
+        NativeSignature::new(
+            [NativeType::Value(Ty::I32.array(2))],
+            NativeType::Value(Ty::I32),
+        ),
+        pair_sum,
+    );
+    v.native(
+        "first_of",
+        NativeSignature::new(
+            [NativeType::Value(Ty::I32.variable(4))],
+            NativeType::Value(Ty::I32),
+        ),
+        first_of,
+    );
     v.build().expect("the native vocabulary builds")
 }
 
@@ -66,4 +82,24 @@ fn mirror(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
             out.push(*item);
         }
     }
+}
+
+fn pair_sum(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let mut sum = 0i32;
+    if let Some(NativeArg::Elements(items)) = args.first() {
+        for item in *items {
+            if let Value::I32(value) = item {
+                sum = sum.saturating_add(*value);
+            }
+        }
+    }
+    out.set(Value::I32(sum));
+}
+
+fn first_of(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let first = match args.first() {
+        Some(NativeArg::Elements(items)) => items.first().copied(),
+        Some(NativeArg::Value(_) | NativeArg::Text(_)) | None => None,
+    };
+    out.set(first.unwrap_or(Value::I32(0)));
 }

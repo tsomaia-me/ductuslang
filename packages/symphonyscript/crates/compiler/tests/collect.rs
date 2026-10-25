@@ -31,8 +31,12 @@ fn a_top_level_name_declared_twice_is_an_error_naming_both() {
         let diagnostic = &diagnostics[0];
         assert_eq!(diagnostic.code, Code::DuplicateName, "{text:?}");
         assert_eq!(diagnostic.span.range, *second..second + 1, "{text:?}");
-        assert_eq!(diagnostic.secondary.len(), 1, "{text:?}");
-        assert_eq!(diagnostic.secondary[0].range, *first..first + 1, "{text:?}");
+        assert_eq!(diagnostic.related.len(), 1, "{text:?}");
+        assert_eq!(
+            diagnostic.related[0].span.range,
+            *first..first + 1,
+            "{text:?}"
+        );
     }
 }
 
@@ -42,7 +46,7 @@ fn files_meet_in_byte_order_of_their_paths() {
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!(diagnostics[0].code, Code::DuplicateName);
     assert_eq!(diagnostics[0].span.file, "b.sym");
-    assert_eq!(diagnostics[0].secondary[0].file, "a.sym");
+    assert_eq!(diagnostics[0].related[0].span.file, "a.sym");
 }
 
 #[test]
@@ -133,5 +137,5 @@ fn a_pattern_that_reaches_itself_through_uses_is_an_error() {
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!(diagnostics[0].code, Code::RecursivePattern);
     assert_eq!(diagnostics[0].span.range, 8..9);
-    assert_eq!(diagnostics[0].secondary[0].range, 27..28);
+    assert_eq!(diagnostics[0].related[0].span.range, 27..28);
 }

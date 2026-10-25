@@ -83,7 +83,7 @@ fn assert_reported_once(generated: &Generated, seed: u64) -> Cost {
         let message = diagnostics
             .iter()
             .find(|diagnostic| diagnostic.span.range == *span)
-            .map(|diagnostic| diagnostic.message.as_str());
+            .map(|diagnostic| diagnostic.summary.as_str());
         assert!(
             message.is_some_and(|message| message.ends_with(named.as_str())),
             "seed {seed}: the missing closer at {span:?} says {message:?}, not {named:?}"

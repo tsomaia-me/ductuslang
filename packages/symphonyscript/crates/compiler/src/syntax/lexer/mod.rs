@@ -445,7 +445,7 @@ impl<'a> Lexer<'a> {
                             clause.column + 1
                         ),
                     )
-                    .with_hint(format!(
+                    .with_help(format!(
                         "wide characters before the clause make column {} show at display column {}",
                         clause.column + 1,
                         clause.display + 1
@@ -897,7 +897,7 @@ impl<'a> Lexer<'a> {
                         self.span(start, self.pos),
                         "`==` is reserved",
                     )
-                    .with_hint("compare with `is`"),
+                    .with_help("compare with `is`"),
                 );
                 self.push(SyntaxKind::Error, start);
                 return;
@@ -910,7 +910,7 @@ impl<'a> Lexer<'a> {
                         self.span(start, self.pos),
                         "`!=` is reserved",
                     )
-                    .with_hint("compare with `is not`"),
+                    .with_help("compare with `is not`"),
                 );
                 self.push(SyntaxKind::Error, start);
                 return;

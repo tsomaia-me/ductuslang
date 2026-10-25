@@ -14,8 +14,9 @@ fn a_diagnostic_in_an_expanded_pattern_points_at_the_pattern_line_and_every_use(
     let inner = support::at(text, "Inner/root", 0);
     let outer = support::at(text, "Outer/60", 0);
     let secondary: Vec<_> = diagnostic
-        .secondary
+        .related
         .iter()
+        .map(|related| &related.span)
         .map(|span| span.range.clone())
         .collect();
     assert_eq!(secondary, vec![inner.0..inner.1, outer.0..outer.1]);
@@ -32,8 +33,9 @@ fn a_vocabulary_check_on_an_expanded_placement_points_at_the_pattern_line_and_th
     let (use_start, _) = support::at(text, "Voice\n", 0);
     assert_eq!(
         diagnostics[0]
-            .secondary
+            .related
             .iter()
+            .map(|related| &related.span)
             .map(|span| span.range.clone())
             .collect::<Vec<_>>(),
         vec![use_start..use_start + 5]
@@ -61,8 +63,9 @@ fn each_use_of_a_pattern_reports_its_own_expansion() {
         let (start, end) = support::at(text, written, 0);
         assert_eq!(
             diagnostic
-                .secondary
+                .related
                 .iter()
+                .map(|related| &related.span)
                 .map(|span| span.range.clone())
                 .collect::<Vec<_>>(),
             vec![start..end]
@@ -94,8 +97,9 @@ fn a_bundle_a_pattern_supplies_inside_a_bundle_is_no_member() {
     let (use_start, _) = support::at(both, "[P]", 0);
     assert_eq!(
         diagnostics[0]
-            .secondary
+            .related
             .iter()
+            .map(|related| &related.span)
             .map(|span| span.range.clone())
             .collect::<Vec<_>>(),
         vec![use_start + 1..use_start + 2]

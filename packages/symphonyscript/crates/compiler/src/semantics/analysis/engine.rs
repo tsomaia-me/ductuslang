@@ -207,7 +207,7 @@ impl<'a> Engine<'a> {
         if self.stop.is_some() {
             return Ok(());
         }
-        let secondary = match scope {
+        let related = match scope {
             Some(scope) => self
                 .chain(scope)?
                 .outermost_paths()
@@ -222,7 +222,7 @@ impl<'a> Engine<'a> {
             inferred: self.inferred,
             code,
             loc,
-            secondary,
+            related,
             message,
         });
         Ok(())
@@ -638,7 +638,7 @@ impl<'a> Engine<'a> {
         &mut self,
         code: Code,
         loc: Loc,
-        before: Vec<Loc>,
+        before: Vec<(Loc, String)>,
         scope: ScopeId,
         message: impl Into<String>,
     ) -> Result<(), Internal> {
@@ -651,7 +651,7 @@ impl<'a> Engine<'a> {
         &mut self,
         code: Code,
         loc: Loc,
-        before: Vec<Loc>,
+        before: Vec<(Loc, String)>,
         chain: Chain,
         message: impl Into<String>,
     ) {
@@ -696,25 +696,25 @@ impl<'a> Engine<'a> {
                     loc: deferred.loc,
                     before: deferred.before.clone(),
                     message: deferred.message.clone(),
-                    outermost: path.last().copied(),
+                    outermost: path.last().map(|(loc, _)| *loc),
                 };
                 if !reported.insert(key) {
                     continue;
                 }
-                let mut secondary = deferred.before.clone();
-                secondary.extend(path);
+                let mut related = deferred.before.clone();
+                related.extend(path);
                 self.report.error_with(
                     self.hir,
                     deferred.code,
                     deferred.loc,
-                    &secondary,
+                    &related,
                     deferred.message.clone(),
                 );
             }
         }
         if let Some(stop) = stop {
             self.report
-                .error_with(self.hir, stop.code, stop.loc, &stop.secondary, stop.message);
+                .error_with(self.hir, stop.code, stop.loc, &stop.related, stop.message);
         }
     }
 
@@ -878,9 +878,14 @@ impl<'a> Engine<'a> {
         names.push(first);
         let &loc = locs.first().ok_or(Internal::missed("cycle declaration"))?;
         let message = format!("these declarations reach themselves: {}", names.join(" → "));
-        let secondary = locs.get(1..).ok_or(Internal::missed("cycle declaration"))?;
+        let related: Vec<(Loc, String)> = locs
+            .get(1..)
+            .ok_or(Internal::missed("cycle declaration"))?
+            .iter()
+            .map(|other| (*other, "a declaration on the cycle".to_string()))
+            .collect();
         self.report
-            .error_with(self.hir, Code::DeclarationCycle, loc, secondary, message);
+            .error_with(self.hir, Code::DeclarationCycle, loc, &related, message);
         Ok(())
     }
 
@@ -911,14 +916,14 @@ impl<'a> Engine<'a> {
             grouped(self.limits.nesting_depth),
             names.join(" → ")
         );
-        let mut secondary = Vec::new();
+        let mut related = Vec::new();
         if let Some(outer) = outer {
             let (loc, scope) = {
                 let record = self.node(outer)?;
                 (record.loc, record.scope)
             };
-            secondary.push(loc);
-            secondary.extend(
+            related.push((loc, "the outermost call the evaluation ends".to_string()));
+            related.extend(
                 self.chain(scope)?
                     .outermost_paths()
                     .into_iter()
@@ -927,7 +932,7 @@ impl<'a> Engine<'a> {
             );
         }
         self.report
-            .error_with(self.hir, Code::RecursionDepth, loc, &secondary, message);
+            .error_with(self.hir, Code::RecursionDepth, loc, &related, message);
         Ok(())
     }
 
@@ -961,7 +966,7 @@ impl<'a> Engine<'a> {
 struct Merged {
     code: Code,
     loc: Loc,
-    before: Vec<Loc>,
+    before: Vec<(Loc, String)>,
     message: String,
     outermost: Option<Loc>,
 }

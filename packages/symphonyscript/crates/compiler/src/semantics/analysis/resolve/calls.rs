@@ -718,7 +718,7 @@ impl Engine<'_> {
         let chain = if recursive && inside_recursion {
             self.chain(caller)?
         } else {
-            self.chain(caller)?.push(loc)
+            self.chain(caller)?.push(loc, "in this call")
         };
         let template = if recursive {
             Some(ScopeId(crate::semantics::analysis::index::index(
