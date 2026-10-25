@@ -520,7 +520,7 @@ impl<'a> Engine<'a> {
         self.error_with_chain(code, loc, Vec::new(), scope, message)
     }
 
-    fn in_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
+    pub(super) fn in_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
         Ok(self
             .template_of(scope)?
             .is_some_and(|template| self.memo.probes.contains(&template)))

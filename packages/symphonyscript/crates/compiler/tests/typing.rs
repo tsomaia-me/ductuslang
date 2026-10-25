@@ -566,7 +566,7 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
     );
     support::expect_codes(
         &format!("{held}let y = x\nClip c:\n    Note when y is 1\n"),
-        &[(Code::TypeMismatch, "let y = x\n", 0)],
+        &[(Code::TypeMismatch, the_let, 0)],
     );
     let named = "let t = if x is Wave::Saw then \"a\" else \"b\"\n";
     support::expect_codes(
@@ -586,6 +586,75 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
         "Clip c:\n    Note when 1 is true\n",
         &[(Code::OperandType, "1 is true", 0)],
     );
+}
+
+#[test]
+fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
+    let held = "Session s\ninput f = true\ninput g = true\nlet x = if f then Sine else Saw\n";
+    let the_let = "let x = if f then Sine else Saw\n";
+    let other = "let w = if f then Saw else Square\n";
+    let failures: Vec<String> = [
+        (
+            "let y = x\n",
+            "    Note when y + true\n",
+            vec![(the_let, vec!["let y"])],
+        ),
+        (
+            "let y = x\nlet z = y\n",
+            "    Note when z + true\n",
+            vec![(the_let, vec!["let y", "let z"])],
+        ),
+        (
+            "let y = x\n",
+            "    Note when x + true\n    Note when y + true\n",
+            vec![(the_let, vec!["let y"])],
+        ),
+        (
+            "let y = x\nlet z = x\n",
+            "    Note when y + true\n    Note when z + true\n",
+            vec![(the_let, vec!["let y", "let z"])],
+        ),
+        (
+            "let w = if f then Saw else Square\nlet y = if g then x else w\n",
+            "    Note when y + true\n",
+            vec![(the_let, vec!["let y"]), (other, vec!["let y"])],
+        ),
+        (
+            "let y = if g then x else Square\n",
+            "    Note when y + true\n",
+            vec![(the_let, vec!["let y"]), ("let y", vec![])],
+        ),
+        ("", "    Note when x + true\n", vec![(the_let, vec![])]),
+    ]
+    .into_iter()
+    .filter_map(|(lets, uses, expected)| {
+        let text = format!("{held}{lets}Clip c:\n{uses}");
+        let start = |needle: &str| support::at(&text, needle, 0).0;
+        let expected: Vec<(Code, u32, Vec<u32>)> = expected
+            .iter()
+            .map(|(primary, secondary)| {
+                let secondary = secondary.iter().map(|needle| start(needle)).collect();
+                (Code::TypeMismatch, start(primary), secondary)
+            })
+            .collect();
+        let found: Vec<(Code, u32, Vec<u32>)> = support::checked(&text)
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code,
+                    diagnostic.span.range.start,
+                    diagnostic
+                        .secondary
+                        .iter()
+                        .map(|span| span.range.start)
+                        .collect(),
+                )
+            })
+            .collect();
+        (found != expected).then(|| format!("{text}expected {expected:?}, found {found:?}"))
+    })
+    .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
