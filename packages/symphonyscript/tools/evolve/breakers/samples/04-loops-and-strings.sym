@@ -1,0 +1,25 @@
+input steps = [true, false, false, true, false, false, true, false]
+input pitches = [36, 36, 43, 36, 41, 36, 43, 48]
+let names = ["kick", "snare", "hat"]
+let sections = [seq, fills]
+
+Session main:
+    for name in names:
+        Track | label="voice " + name + " {name}"
+    Includes: groove
+
+Track groove | label="groove \"{1 + 1}\"\t\{1}":
+    Piano
+    for s in sections:
+        Starts: s
+
+Clip seq:
+    for i in 0..8:
+        Note/(pitches[i]) when steps[i]
+    for k in [0, 2, 4]:
+        Note/(60 + k) | velocity=0.5 + k / 10
+    [for j in 0..3: Note/(72 + j * 4)]
+
+Clip fills:
+    for p in [60, 64, 67]: Note/p
+    [for q in [0, 4, 7]: Note/(48 + q)]

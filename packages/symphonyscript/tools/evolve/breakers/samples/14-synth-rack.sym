@@ -1,0 +1,70 @@
+input route = 0
+input cutoff = 0.5
+input shape: Wave = Wave::Saw
+input detune = 0.0
+input mix_on = true
+
+let hz = cutoff * 6000 + 200
+let drive = tilt(shape) * (1 - cutoff / 2)
+let partials = [1, 2, 3, 5]
+let wiggle = detune * 100
+let pulse = 500ms / 1s
+let base_hz = 110f64
+
+fn semitone(n): 2 ** (n / 12)
+
+fn tilt(w):
+    match w:
+        Sine: 1.0
+        Saw: 0.8
+        else: 0.5
+
+fn stack(k, base): if k < 2 then base else base + stack(k - 1, base / 2)
+
+fn bright(k): if k < 1 then 1.0 else 1.0 / k + dim(k - 1)
+fn dim(k): if k < 1 then 0.0 else 0.5 / k + bright(k - 1)
+
+pattern Voice(default base, sink, kind = Sine, bend = 0):
+    let tuned = base * semitone(bend)
+    Osc as osc/tuned | wave=kind rate=drive:
+        Feeds: lp
+    Filter as lp/hz:
+        Feeds: sink[route]
+
+pattern Choir(default base, sink):
+    for w in [Wave::Sine, Wave::Saw, Wave::Square]:
+        Osc/(base * 2) | wave=w rate=bright(3):
+            Feeds: sink
+
+Session rack | tempo=100:
+    Includes: rack_t
+    Includes: fx_t
+
+Track rack_t | label="rack {stack(3, 100)} {Wave::Square}":
+    Synth as rig:
+        Mixer as bus
+        Output as out
+        Voice as v1/220 | sink=[bus, out]
+        Voice as v2/(220 * semitone(7)) | sink=[out, bus] kind=Saw bend=wiggle
+        Voice as v3/base_hz | sink=[bus, out] kind=Square
+        for p in partials:
+            Voice/(55 * p) | sink=[bus, out]
+        Voice as v4/(v1.osc.freq * 2) when route is 2 | sink=[bus, bus]
+        Choir/330 | sink=bus
+        Osc as lfo/(0.2 * semitone(12)) | rate=pulse:
+            Modulates | depth=to.cutoff / 4000: [v1.lp, v2.lp, v3.lp][route]
+            Modulates/0.25: v4.lp
+            Feeds as tap when mix_on: bus
+    Starts: line
+
+Track fx_t | label="fx":
+    Synth:
+        Filter as hp/(hz / 4)
+        Mixer as wet
+        Output as sink_out
+    Starts: line
+
+Clip line | gain=drive:
+    Note/60 | velocity=drive
+    Note/(60 + 7) | brightness=cutoff
+    Plays: line

@@ -1,0 +1,28 @@
+input section = 0
+input fill_on = false
+
+Session main:
+    Includes: band
+
+Track band:
+    Piano
+    Starts: verse
+
+Clip verse | level=0.9:
+    Note/60
+    Plays | gain=to.level: [chorus, bridge][section]
+    Plays/to.gain when to.level > 0.5: match section:
+        0: chorus
+        1: bridge
+        else: outro
+    Plays: if fill_on then outro else chorus
+
+Clip chorus | level=0.8 gain=verse.level:
+    Note/72
+    Plays | transpose=7: bridge
+
+Clip bridge | level=0.4:
+    Note/65 Note/67
+
+Clip outro | gain=0.6 level=chorus.gain:
+    Note/48

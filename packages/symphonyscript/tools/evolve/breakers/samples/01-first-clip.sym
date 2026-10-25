@@ -1,0 +1,9 @@
+Session main | tempo=120:
+    Includes: melody
+
+Track melody:
+    Piano
+    Starts: theme
+
+Clip theme:
+    Note/60 Note/64 Note/67

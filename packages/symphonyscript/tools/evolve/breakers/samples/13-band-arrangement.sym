@@ -1,0 +1,75 @@
+input section = 0
+input fill_on = false
+input energy = 0.6
+input master: f32 = 1
+input chords: i32[3][2] = [[48, 52, 55], [53, 57, 60]]
+input accents: bool[4] = [true, false, true, false]
+
+let drive = energy * 0.5 + 0.25
+let tonic = chords[section % 2][0]
+let sections = [intro, chorus]
+
+fn degree(n, base = 48): base + [0, 2, 4, 5, 7, 9, 11][n % 7] + 12 * (n div 7)
+fn swing(i, amount = 0.1): if i % 2 is 1 then amount else 0.0
+fn tri(n): if n < 1 then 0 else n + tri(n - 1)
+fn fade(i, n = 4): lerp(1.0, 0.2, i / n)
+
+let steps = tri(3)
+
+pattern Stab(default root, third = 4, loud = false):
+    [(Note/root | accent=loud) Note/(root + third) Note/(root + 7)]
+
+pattern Walk(default base, count = 4):
+    for i in 0..count:
+        Note/(degree(i, base)) | length=0.5 + swing(i) velocity=fade(i, count)
+
+pattern Bass(default root, octave = 1, busy = false):
+    let low = root - 12 * octave
+    Note/low | length=2bars
+    when busy:
+        Note/(low + 7) Note/(low + 5)
+    else:
+        Note/(low + 7)
+
+pattern Verse(default base, next, vel = 0.8):
+    Clip:
+        Walk/base | count=steps
+        Stab/(base + 12) | loud=accents[0]
+        Note/(base - 12) | velocity=vel
+        Plays | gain=to.level: next
+
+Session song | tempo=110:
+    Track as lead_t | label="lead {steps}":
+        Piano
+        Starts: intro
+    Track as pad_t | label="pad":
+        Synth
+        Starts when fill_on: [chorus, bridge][section % 2]
+    Track as bass_t | label="bass":
+        Piano
+        for s in sections:
+            Starts when master > 0.5: s
+    Includes: aux
+
+Track aux | label="aux":
+    Piano
+    Starts: outro
+
+Verse intro /tonic | next=chorus
+
+Verse chorus /(tonic + 5) | next=bridge vel=0.9
+
+Clip bridge | level=drive:
+    Note/(tonic - 5) | velocity=drive
+    Note/(tonic - 3) when accents[1]
+    Bass/tonic | busy
+    Plays: match section:
+        0: intro
+        1: chorus
+        else: outro
+    Plays when fill_on | gain=0.5: outro
+
+Clip outro | level=0.4 gain=bridge.level:
+    Note/(degree(steps)) | length=2bars
+    Stab/(tonic - 12) | loud
+    Bass/(tonic - 7) | octave=2 !busy

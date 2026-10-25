@@ -1,0 +1,28 @@
+input section = 0
+input fill_on = false
+
+let mood = if section is 0 then 0.2 else if section is 1 then 0.5 else 0.8
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: verse
+
+Clip verse:
+    Note/60 | brightness=mood
+    when fill_on:
+        Note/62 Note/64
+    else:
+        Note/62
+    when:
+        section is 0: Note/67
+        section is 1: Note/69
+        else: Note/71
+    when section > 1 and not fill_on:
+        Note/55 | velocity=0.3
+        [Note/57 Note/60]
+        Plays: verse
+        when fill_on or section > 3:
+            Note as extra /50
