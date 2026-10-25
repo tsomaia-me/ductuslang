@@ -66,7 +66,7 @@ A project is a set of `.sym` files compiled together. All files share one namesp
 
 ```ebnf
 File    ::= TopItem*
-TopItem ::= InputDecl | LetDecl | FnDecl | PatternDecl | TopPlacement
+TopItem ::= InputDecl | LetDecl | StateDecl | FnDecl | PatternDecl | TopPlacement
 ```
 
 ### 2.2 Layout
@@ -75,7 +75,7 @@ Indentation is significant. Leading whitespace consists of spaces; a tab in lead
 
 The lexer keeps a stack of indentation columns, starting with column 0. A line indented deeper than the top of the stack pushes its column and emits `INDENT`. A line indented less pops columns, emitting one `DEDENT` per popped column, and must land exactly on a column still on the stack. Every line holding a token ends with `NEWLINE`, including a last line with no line break after it. At end of input the lexer emits a `DEDENT` for every column on the stack above 0.
 
-Inside `( )` and `[ ]`, layout is suspended: newlines are whitespace and no layout tokens are emitted.
+Inside `( )`, `[ ]` and a history read's `{ }` (§6.6), layout is suspended: newlines are whitespace and no layout tokens are emitted.
 
 An attribute clause (§7.6) continues onto each following line whose first token sits exactly at the column of the clause's first entry, while that column is deeper than the top of the stack and no `:` has closed the clause; `::` closes nothing. The line break before such a line emits no `NEWLINE`, and the line emits no `INDENT` or `DEDENT`. The lexer tracks each clause's first-entry column for this rule, and a line that misses the column only by the display width of wide characters is an error whose diagnostic shows the column.
 
@@ -96,13 +96,13 @@ By convention, kinds, patterns and enum variants are written in PascalCase, and 
 Keywords are never names:
 
 ```text
-input let fn pattern default
+input let state fn pattern default bounded
 if then else match when for in as
 is not and or div to true false
-i32 i64 f32 f64 bool
+u8 i32 i64 f32 f64 bool
 ```
 
-The words `from`, `recurrent` and `string` are reserved and are never names. The tokens `^`, `==` and `!=` are reserved and rejected by the lexer; the diagnostic for `==` and `!=` points to `is` and `is not`.
+The words `from`, `recurrent` and `string` are reserved and are never names. The tokens `==` and `!=` are reserved and rejected by the lexer, and their diagnostic points to `is` and `is not`. `^` stands only at the start of an index or a slice bound (§5.5); anywhere else it is an error.
 
 ### 2.6 Literals
 
@@ -120,7 +120,7 @@ HexDigit    ::= Digit | 'a' … 'f' | 'A' … 'F'
 BinDigit    ::= '0' | '1'
 OctDigit    ::= '0' … '7'
 Suffix      ::= TypeSuffix | UnitSuffix
-TypeSuffix  ::= 'i32' | 'i64' | 'f32' | 'f64'
+TypeSuffix  ::= 'u8' | 'i32' | 'i64' | 'f32' | 'f64'
 UnitSuffix  ::= Name
 BoolLit     ::= 'true' | 'false'
 StringLit   ::= '"' (Char | Escape | '{' Expr '}')* '"'
@@ -144,6 +144,7 @@ Escape      ::= '\"' | '\\' | '\n' | '\t' | '\{'
 
 | Type | Values |
 |---|---|
+| `u8` | 8-bit unsigned integers, 0 to 255 |
 | `i32` | 32-bit signed integers |
 | `i64` | 64-bit signed integers |
 | `f32` | 32-bit IEEE 754 floats |
@@ -152,20 +153,22 @@ Escape      ::= '\"' | '\\' | '\n' | '\t' | '\{'
 
 ### 3.2 Arrays
 
-An array has a fixed length of at least 1 and one element type. `[60, 64, 67]` has length 3, and its element type follows §4. Elements may themselves be arrays of equal length: `[[60, 64, 67], [62, 65, 69]]` holds two rows of three, and with `i32` elements its type is written `i32[3][2]`.
+An array has one element type and a length. A fixed array's length is fixed at compile time: `[60, 64, 67]` has length 3, and its element type follows §4. Elements may themselves be arrays of equal length: `[[60, 64, 67], [62, 65, 69]]` holds two rows of three, and with `i32` elements its type is written `i32[3][2]`. A variable array's length changes at runtime, up to a capacity fixed at compile time (§3.7). An array's length and capacity are below 2³¹.
 
-An array's length is fixed at compile time. Its contents may change at runtime when its elements are reactive (§5.5).
+`[]` is the empty array, of length 0; each use gives it its element type, as a flexible value's use does (§4.1).
+
+A fixed array's contents may change at runtime when its elements are reactive (§5.5).
 
 ```ebnf
-Type       ::= (ScalarType | Name) ('[' Digits ']')*
-ScalarType ::= 'i32' | 'i64' | 'f32' | 'f64' | 'bool'
+Type       ::= (ScalarType | Name) ('[' Digits ']')* ('[' '..' Digits ']')?
+ScalarType ::= 'u8' | 'i32' | 'i64' | 'f32' | 'f64' | 'bool'
 ```
 
-A `Name` in a type is a vocabulary enum. A length in a type is at least 1.
+A `Name` in a type is a vocabulary enum. A length or capacity in a type is at least 1, and only the last, the outermost, may be a capacity: `i32[3][..10]` holds up to 10 rows of 3.
 
 ### 3.3 Strings
 
-Strings exist only at compile time. They are written as literals, built with `+` and interpolation (§5.9), and bound to string attributes the vocabulary declares. No input, cell or runtime value is a string, and a string expression that reads a cell is an error.
+Strings exist only at compile time. They are written as literals, built with `+` and interpolation (§5.9), and bound to string attributes the vocabulary declares. No input, cell or runtime value is a string, and a string expression that reads a cell is an error. A string where a `u8` array is expected is the array of its UTF-8 bytes, a fixed array of their number: a native function's `u8[..]` parameter given `"GET"` receives `[71, 69, 84]`. A string converts to bytes nowhere else.
 
 ```sym
 Kit drums:
@@ -202,6 +205,21 @@ Clip intro:
 ```
 
 The first note lasts 8 beats; the second lasts 0.5 beats, the attribute's default unit.
+
+### 3.7 Variable arrays
+
+A variable array holds from 0 up to its capacity of elements, and its live length changes at runtime. Its type writes `..` before the capacity: `i32[..10]` holds up to ten `i32`s. A value is a variable array when its length depends on a cell: an input annotated with such a type (§6.1), a join or slice whose length reads a cell (§5.5), an `if` or `match` that chooses at runtime among arms of different lengths, a state that holds one (§6.6), and any value built from these. A compile-time array has a known length and is a fixed array.
+
+| Value | Capacity |
+|---|---|
+| a fixed array | its length |
+| an input or annotation `T[..N]` | N |
+| `a + b` | the sum of the capacities of `a` and `b` |
+| a slice `xs[a..b]` | the most elements it holds for any live length of `xs` up to its capacity and any value of its bounds that read cells: `xs[^8..]` holds at most 8, and `xs[1..]` one fewer than `xs` |
+| `if` and `match` | the largest capacity among the arms |
+| a state | §6.6 |
+
+A variable array is one cell (§4.4), held whole rather than element by element. It binds to a variable-array attribute (§10.1) of its element type whose capacity is at least its own, and a fixed array binds to one when its length is at most the capacity; a variable array where a fixed array is expected is an error. An index past its live length reads its last live element (§5.5), and an index into an empty array yields the element type's zero: `0`, `0.0`, `false` or the enum's first variant.
 
 ## 4. Type inference
 
@@ -253,7 +271,7 @@ The operands of `is` and `is not` give each other their expected type, so in `wa
 
 ### 4.3 Widening
 
-These implicit widenings exist, and no others: `i32` to `i64`, `i32` to `f32`, `i32` to `f64`, `i64` to `f64`, `f32` to `f64`. A value never narrows implicitly, and a float never becomes an integer implicitly; conversions are explicit (§5.8). Widening `i32` to `f32` and `i64` to `f64` rounds integers beyond the float's exact range: an `i32` cell holding 16777217 reaches an `f32` attribute as 16777216.
+These implicit widenings exist, and no others: `u8` to `i32`, `i64`, `f32` and `f64`, `i32` to `i64`, `i32` to `f32`, `i32` to `f64`, `i64` to `f64`, `f32` to `f64`. A value never narrows implicitly, and a float never becomes an integer implicitly; conversions are explicit (§5.8). Widening `i32` to `f32` and `i64` to `f64` rounds integers beyond the float's exact range: an `i32` cell holding 16777217 reaches an `f32` attribute as 16777216.
 
 When an operator's operands have different fixed types, both widen to the smallest type both widen into. With no such type, the expression is an error. A flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand and `f32` for an `i32` one, and the integer widens into it: with `input n = 4`, `n * 0.5 > 1` computes in `f64`. Built-ins widen their operands as operators do.
 
@@ -289,7 +307,7 @@ Clip c:
 
 `b` is a float `let` with the default width `f32`, and its initializer reads `a`, an `i64` input, as an `f32`.
 
-An array `let` whose elements read cells is an array of bindings (§5.5), not one cell. An element read with an index known at compile time, such as a literal, a compile-time `let` or a `for` variable, is its own binding with its own type; an element read through a runtime index is read in that read's type.
+A fixed array `let` whose elements read cells is an array of bindings (§5.5), not one cell; a variable array (§3.7) and a state (§6.6) are each one cell. An element read with an index known at compile time, such as a literal, a compile-time `let` or a `for` variable, is its own binding with its own type; an element read through a runtime index is read in that read's type.
 
 The compiler resolves cell types once over the whole program. This always terminates, because cells form no cycles (§6.2).
 
@@ -305,10 +323,10 @@ An annotation fixes a type outright: `input fine: f32 = 0` is a float input stor
 
 A compile-time value is computed by the rules of §5, except that a flexible integer computes exactly and a fixed-type integer operation that saturates is an error; a conversion saturates as §5.8 says and is no error. A flexible integer whose magnitude reaches 2¹²⁷, positive or negative, is an error. A float type that flows into a flexible value (§4.2) makes it a float of that type from its literals up, so `2 ** -1` is 0.5 where a frequency expects it (§4.1) and `16777216 + 1` is 16777216 where an `f32` does; a flexible float computes in the type its use chooses.
 
-- The bounds of a range in a `for`, and an index known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
+- The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 1,000,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type, and the default unit its plain values are read in (§3.6) are all equal. Exceeding a limit is an error naming the call or the expansion. Each number here, and §6.3's nesting depth, is a default limit that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
+- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 1,000,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type, the default unit its plain values are read in (§3.6), and for a bounded function (§6.3) the number of its function's calls it is nested in, are all equal. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
 
@@ -343,10 +361,10 @@ AddExpr   ::= MulExpr (('+' | '-') MulExpr)*
 MulExpr   ::= UnaryExpr (('*' | '/' | 'div' | '%') UnaryExpr)*
 UnaryExpr ::= '-' UnaryExpr | PowExpr
 PowExpr   ::= Postfix ('**' UnaryExpr)?
-Postfix   ::= Primary ('.' Name | '[' Expr ']' | '(' Args? ')')*
-Primary   ::= NumberLit | BoolLit | StringLit | Name | Name '::' Name
+Postfix   ::= Primary ('.' Name | '[' Index ']' | '(' Args? ')')*
+Primary   ::= NumberLit | BoolLit | StringLit | Name | Name '::' Name | History
             | 'to' | Conversion | ArrayLit | '(' Expr ')'
-ArrayLit  ::= '[' Expr (',' Expr)* ','? ']'
+ArrayLit  ::= '[' (Expr (',' Expr)* ','?)? ']'
 Args      ::= Expr (',' Expr)* | NamedArg (',' NamedArg)*
 NamedArg  ::= Name '=' Expr
 ```
@@ -357,7 +375,7 @@ Expressions evaluate the same way at compile time and at runtime; §4.6 states t
 
 ### 5.2 Arithmetic
 
-`+`, `-` and `*` take numeric operands of one type after widening; `+` also concatenates strings (§5.9). Every integer operation saturates at the type's bounds: `2147483647 + 1` in `i32` is 2147483647, and negating −2147483648 in `i32` yields 2147483647.
+`+`, `-` and `*` take numeric operands of one type after widening; `+` also concatenates strings (§5.9) and joins arrays (§5.5). Every integer operation saturates at the type's bounds: `2147483647 + 1` in `i32` is 2147483647, negating −2147483648 in `i32` yields 2147483647, and in `u8`, `3 - 5` is 0.
 
 `/` always yields a float. Integer operands convert to the result's float type: the expected type when one exists, otherwise `f64` if either operand is `i64` or `f64`, otherwise `f32`. `1 / 4` is 0.25.
 
@@ -405,7 +423,16 @@ ElseArm    ::= 'else' ':' Expr NEWLINE
 
 ### 5.5 Arrays and indexing
 
-`a[i]` reads element `i`, counting from 0. The index is an integer of either width, and a flexible index takes the defaults of §4.5. An index below 0 reads the first element, and an index past the end reads the last. A compile-time index outside the array is an error.
+```ebnf
+Index ::= Bound | Bound? '..' Bound?
+Bound ::= '^'? Expr
+```
+
+`a[i]` reads element `i`, counting from 0. The index is an integer of either width, and a flexible index takes the defaults of §4.5. An index below 0 reads the first element, and an index past the live length reads the last live element. A compile-time index outside a fixed array is an error.
+
+`^k` at the start of an index or a slice bound of `xs` stands for `len(xs) - k`, counting from the live end: with `xs = [10, 20, 30, 40, 50]`, `xs[^1]` is 50 and `xs[^2..]` is `[40, 50]`.
+
+`xs[a..b]` is the slice of `xs` from element `a` up to but excluding element `b`; `xs[a..]` runs to the end and `xs[..b]` starts at 0. Each bound is clamped to between 0 and the live length, and a slice whose upper bound is not above its lower one is empty, so a slice never fails: `xs[1..^1]` drops the first and the last element, and `xs[..i] + xs[i + 1..]` removes element `i`. A slice of a fixed array whose bounds are known at compile time is a fixed array; any other slice is a variable array (§3.7).
 
 An array literal whose elements read cells is reactive, and each element is bound separately:
 
@@ -420,16 +447,27 @@ let c = [a, b, a + b]
 - `c[2]` is a cell of its own, computed from `a` and `b`.
 - `c[i]` depends on `i` and on every element.
 
-An array-valued expression that reads cells is evaluated element by element. With `let row = grid[i]`, `row[1]` is `grid[i][1]`, and `if flag then [60, 64] else [62, 65]` chooses each element separately.
+A fixed-array expression that reads cells is evaluated element by element; a variable array is evaluated whole (§3.7). With `let row = grid[i]`, `row[1]` is `grid[i][1]`, and `if flag then [60, 64] else [62, 65]` chooses each element separately.
 
-Operators apply to scalars only. `[1, 2] + [3, 4]` is an error.
+`a + b` with two arrays joins them, the elements of `a` followed by those of `b`. Their elements unify as an array literal's do (§4.2), and their rows have one shape. The join of two fixed arrays is a fixed array, `[1, 2] + [3]` being `[1, 2, 3]`; any other join is a variable array. Every other operator takes scalars only, and `+` of an array and a scalar is an error.
+
+```sym
+input held: i32[..10] = []
+input step = 0
+input note = 60
+
+let played = held + [note]
+
+Clip arp:
+    Note/(played[step % len(played)])
+```
 
 ### 5.6 Attribute reads
 
 `x.name` reads attribute `name` of the instance or wire `x`. The read is the same binding the attribute holds: a constant, an input, a cell, or the vocabulary default when the source sets none.
 
 - A path starts at a name in scope (§6.5), a node-reference parameter or `let` included, or at a node reference chosen at compile time by an index or an `if`: `sections[0].gain`. It steps through children, named wires and the names inside named pattern uses: `chorus.back`, `lead.v1.osc`.
-- A path whose start is chosen at runtime is an error; `to.name` reads an attribute of a wire's destination, which may be chosen at runtime (§8.3).
+- A path whose start is chosen at runtime is an error; `to.path` reads an attribute along a path from a wire's destination, which may be chosen at runtime (§8.3).
 - Reading an attribute the kind does not declare is an error.
 - Reads that form a cycle are an error naming the cycle.
 - Reads ignore gates, and activation is not readable (§9.3).
@@ -448,7 +486,7 @@ Clip outro | gain=chorus.back.transpose:
 
 ### 5.7 Calls and built-ins
 
-A call invokes a built-in, a prelude function or a source function (§6.3). Arguments are all positional or all named, as in `scale(3, 48)` or `scale(degree=3, root=48)`; mixing them in one call is an error. Built-ins take positional arguments only. Built-in names are top-level names (§6.5).
+A call invokes a built-in, a prelude function, native functions included (§10.1), or a source function (§6.3). Arguments are all positional or all named, as in `scale(3, 48)` or `scale(degree=3, root=48)`; mixing them in one call is an error. Built-ins and native functions take positional arguments only. Built-in names are top-level names (§6.5).
 
 | Built-in | Result |
 |---|---|
@@ -458,6 +496,8 @@ A call invokes a built-in, a prelude function or a source function (§6.3). Argu
 | `lerp(a, b, t)` | float, `a + (b - a) * t` |
 | `rand(seed, n)` | `f32` in [0, 1), a fixed function of two integers (§12.5) |
 | `pi` | the float constant π |
+| `len(xs)` | the live length of the array `xs`: on a fixed array its length, a flexible integer known at compile time; on a variable array an `i32` |
+| `bytes(x)` | a `u8` array: a string's UTF-8 bytes, a `u8` array itself, and any other integer array element by element as `u8(x)` converts |
 
 - A call whose arguments are all flexible is flexible (§4.1), and `pi` is flexible. `rand` always yields `f32`.
 - Integer arguments to float built-ins convert as `/` does.
@@ -470,10 +510,10 @@ Domain functions, such as converting a note number to a frequency, come from the
 ### 5.8 Conversions
 
 ```ebnf
-Conversion ::= ('i32' | 'i64' | 'f32' | 'f64') '(' Expr ')'
+Conversion ::= ('u8' | 'i32' | 'i64' | 'f32' | 'f64') '(' Expr ')'
 ```
 
-`i32(x)`, `i64(x)`, `f32(x)` and `f64(x)` convert a number explicitly. Float to integer truncates toward zero; a value outside an integer type's range saturates to its bounds, and NaN becomes 0. A float converted to `f32` rounds to the nearest `f32` (§5.2), so a value beyond its range becomes an infinity. Converting a `bool` or an enum value is an error.
+`u8(x)`, `i32(x)`, `i64(x)`, `f32(x)` and `f64(x)` convert a number explicitly. Float to integer truncates toward zero; a value outside an integer type's range saturates to its bounds, and NaN becomes 0. A float converted to `f32` rounds to the nearest `f32` (§5.2), so a value beyond its range becomes an infinity. Converting a `bool` or an enum value is an error.
 
 ### 5.9 Strings
 
@@ -492,7 +532,7 @@ Conversion ::= ('i32' | 'i64' | 'f32' | 'f64') '(' Expr ')'
 InputDecl ::= 'input' Name (':' Type)? '=' Expr NEWLINE
 ```
 
-An input is a cell the host writes (§12.1). Its initializer is a compile-time value and gives the input its type (§4.4). An input may be an array; the host then writes single elements or the whole array.
+An input is a cell the host writes (§12.1). Its initializer is a compile-time value and gives the input its type (§4.4). An input may be an array; the host then writes single elements or the whole array. An input annotated with a variable array type (§3.7) takes an initializer no longer than its capacity: `input held: i32[..10] = []`.
 
 ```sym
 input cutoff = 0.5
@@ -525,7 +565,8 @@ Clip outro:
 ### 6.3 Functions
 
 ```ebnf
-FnDecl   ::= 'fn' Name '(' Params? ')' ':' (Expr NEWLINE | NEWLINE INDENT FnBody DEDENT)
+FnDecl   ::= 'fn' Name '(' Params? ')' Bounded? ':' (Expr NEWLINE | NEWLINE INDENT FnBody DEDENT)
+Bounded  ::= 'bounded' Digits 'else' Expr
 FnBody   ::= LocalLet* (Expr NEWLINE | MatchBlock)
 LocalLet ::= 'let' Name '=' (Expr NEWLINE | MatchBlock)
 Params   ::= Param (',' Param)*
@@ -547,13 +588,36 @@ fn scale(degree, root = 60):
     root + [0, 2, 4, 5, 7, 9, 11][degree % 7] + 12 * octave
 ```
 
-A function that reaches itself through calls, directly or through other functions, is recursive. Every call to a recursive function has compile-time arguments, and the compiler evaluates it to a value (§4.6). A recursive function whose body reads a cell is an error, and so are a call to one with an argument that reads a cell and evaluation deeper than the nesting limit, 1,024 nested calls by default (§4.6); these diagnostics name the chain of calls.
+A function that reaches itself through calls, directly or through other functions, is recursive. A call to a recursive function reads a cell when one of its arguments does, or when the body of its function, or of a function it calls, does. A call that reads no cell is evaluated by the compiler to a value (§4.6), and evaluation deeper than the nesting limit, 1,024 nested calls by default (§4.6), is an error.
+
+A recursive function may declare a bound, `bounded N else fallback`, with N a positive integer; a bound on a function that is not recursive is an error. A call nested inside N calls of its own function yields the fallback instead of evaluating the body; the fallback is evaluated in the function's scope with that call's arguments, and it unifies with the body as an `if` arm does (§4.2). The bound replaces the nesting limit for its function, and it lets a call that reads a cell run: such a call is expanded into the program, each level an inlined call (§4.6) and each compile-time condition expanding only its chosen branch, so it allocates nothing and never fails (§12.4). A call that reads a cell, to a recursive function that is not bounded or that shares a cycle of calls with one that is not, is an error. These diagnostics name the chain of calls.
 
 ```sym
 fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
 
 let lengths = [fib(3), fib(4), fib(5), fib(6)]
 ```
+
+```sym
+input held: i32[..10] = []
+
+fn lowest(i) bounded 10 else 127:
+    if i >= len(held) then 127 else min(held[i], lowest(i + 1))
+
+Clip c:
+    Note/(lowest(0))
+```
+
+```sym-error
+input n = 5
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Clip c:
+    Note/(fib(n))
+```
+
+This is an error: `fib` has no bound, and its argument reads the input `n`.
 
 ### 6.4 Patterns
 
@@ -610,13 +674,48 @@ Patterns never appear in the Program.
 
 ### 6.5 Names and scope
 
-All top-level names share one namespace across the project: inputs, `let`s, functions, patterns, top-level instances, the built-ins (§5.7), and the vocabulary's kinds, enums and prelude declarations. A duplicate is an error naming both declarations; a source declaration shadows a prelude declaration of its name (§10.1). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
+All top-level names share one namespace across the project: inputs, `let`s, states, functions, patterns, top-level instances, the built-ins (§5.7), and the vocabulary's kinds, enums and prelude declarations. A duplicate is an error naming both declarations; a source declaration shadows a prelude declaration of its name (§10.1). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
 
-Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's `let`s do.
+Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern `let` or a `for` variable visible where it is declared is an error, and so is a pattern `let` equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's `let`s do.
 
 A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. So do a parameter default that no call takes and the body of a `for` that runs no iteration, since nothing expands them. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported.
 
 A bare name that is a variant of the enum its position expects resolves to that variant (§3.4). Every other name resolves in scope.
+
+### 6.6 States
+
+```ebnf
+StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? '=' (Expr NEWLINE | MatchBlock)
+History   ::= Name '{' Expr (',' Expr)? '}'
+```
+
+A state is a cell that remembers: its initializer may read the past values of cells. `x{k, fallback}` in a state's initializer reads `x` as it was k steps of that state ago, and yields `fallback` until the state has taken k steps. A state takes a step each time it is evaluated (§12.2): at load, and at each commit that changes a cell it reads in the present, a history read being no present read. A history read yields the value its cell held at the end of the commit of that step, so a state that reads its own history, or states that read one another's, form no cycle; a state that reads its own present value does (§6.2).
+
+```sym
+input gate = false
+input level = 0.0
+input note = 60
+
+state rising = gate and not gate{1}
+state held = if rising then level else held{1, 0.0}
+state recent = (recent{1, []} + [note])[^8..]
+```
+
+`rising` is true at the commit where `gate` turns true, `held` keeps the `level` of that commit, and `recent` holds the last eight notes, the oldest falling off; `(recent{1, []} + [note])[..8]` keeps the first eight instead.
+
+- States are declared at top level. History reads stand only in a state's initializer, so `let`s and functions stay pure.
+- The offset `k` is a positive integer known at compile time. A history read names an input, a state or a reactive `let`. Its fallback has the cell's type, and is required except for an input, whose fallback is its initial value.
+- `[N]` states the deepest offset the state reads; a deeper offset is an error whose diagnostic gives the N that covers it.
+- A state is typed as a reactive `let` is (§4.4, §4.5); its own history reads count as their fallbacks for its kind and are no uses of it. A state holds no string and no node reference.
+- A state that holds an array holds a fixed array when, each of its history reads of a state holding an array of its fallback's length, its initializer is a fixed array of that length. Otherwise it holds a variable array whose capacity is the least for which its initializer's capacity is at most its own, each history read of a state having that state's capacity or its fallback's, whichever is larger; states whose history reads reach one another take their capacities together. A state with no such capacity is an error, whose diagnostic shows the slice that bounds it.
+
+```sym-error
+input note = 60
+
+state recent = recent{1, []} + [note]
+```
+
+This is an error: `recent` grows by one element at every step, so no capacity holds it; `[^8..]` keeps the newest eight.
 
 ## 7. Placements
 
@@ -676,7 +775,7 @@ FlagChar ::= "'" | '!' | '?' | '*' | '+' | '~' | '@' | '$'
 
 ```ebnf
 DefaultArg ::= '/' (Atom | '(' Expr ')')
-Atom       ::= '-'? NumberLit | BoolLit | StringLit | Name ('.' Name)* | Name '::' Name | 'to' '.' Name
+Atom       ::= '-'? NumberLit | BoolLit | StringLit | Name ('.' Name)* | Name '::' Name | 'to' ('.' Name)+
 ```
 
 `/expr` sets the kind's default attribute, which the vocabulary designates (§10.1): `Note/60` sets the pitch. Unparenthesized, the value is a single atom: a literal, optionally negative, a name, a dotted path, a qualified variant or `to.name`. Anything else is parenthesized: `Note/(base + 7)`. `/expr` on a kind without a default attribute is an error.
@@ -808,15 +907,23 @@ Clip chorus:
 
 ### 8.3 `to`
 
-Inside a wire placement's `/expr`, gate and attribute clause, `to.name` reads attribute `name` of the wire's destination.
+Inside a wire placement's `/expr`, gate and attribute clause, `to` starts a path at the wire's destination (§5.6): `to.name` reads attribute `name` of the destination, and `to.hook.velocity` reads attribute `velocity` of its child named `hook`. The path steps through named children, named wires and the names inside named pattern uses, and ends at an attribute.
 
-- With a fixed destination, `to.name` is that instance's attribute.
-- With a destination chosen at runtime, every candidate has `name` with the same type and unit family, and `to.name` makes the same choice among the candidates' attributes, in the gate as in the attribute clause.
-- `to` takes exactly one name. `to.a.b`, `to` alone, and `to` written outside a wire placement are errors; a function body is outside every wire placement.
+- With a fixed destination, `to.path` reads that instance's path.
+- With a destination chosen at runtime, every candidate has the path, ending at an attribute of the same type and unit family, and `to.path` makes the same choice among the candidates' attributes, in the gate as in the attribute clause.
+- `to` alone, a `to` path that ends at an instance or a wire, and `to` written outside a wire placement are errors; a function body is outside every wire placement.
 
 ```sym
+input section = 0
+
 Clip verse:
-    Plays | gain=to.level: [chorus, bridge][section]
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
 ```
 
 ### 8.4 Cycles
@@ -879,7 +986,7 @@ An instance or wire is active when its own gate, the conditions of the `when` bl
 | Attribute | name; type; default; unit family and default unit; flag character; whether it is its kind's default attribute |
 | Enum | name; variants |
 | Unit family | name; base unit; units and their scales |
-| Prelude | SymphonyScript source: functions, patterns and named values such as note names |
+| Prelude | functions, patterns and named values such as note names, in SymphonyScript source, and native functions, implemented in Rust |
 
 A count is exactly *n*, at least *n*, at most *n*, between *n* and *m*, or any number. A child kind absent from a kind's accepted list is not accepted. A wire kind connects only the source and destination kinds it lists; a node kind bounds how many wires of each kind it takes, and takes any number where it states no count. Each kind has at most one default attribute, and its flag characters are distinct.
 
@@ -891,12 +998,15 @@ A vocabulary is invalid, and no program compiles against it, when:
 - a count's minimum exceeds its maximum;
 - a declaration refers to a kind of another vocabulary;
 - an enum has no variants or more than 65,536, or an enum attribute's default is not one of its variants;
-- an array attribute has a length of 0 at any level (§3.2);
+- an array attribute has a length or capacity of 0 at any level;
 - a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `_`, or with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
 - an integer attribute belongs to a family with a unit whose scale is not an integer;
+- a native function's signature holds a type outside §3, or a variable-array result whose capacity it does not state;
 - the prelude fails to parse or to resolve its names.
 
-The prelude is ordinary source compiled with the program. It holds `let`, `fn` and `pattern` declarations only, and its declarations share the top-level namespace (§6.5). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A source declaration with a prelude declaration's name shadows it in the program's source. Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
+The prelude's source is ordinary source compiled with the program. It holds `let`, `fn` and `pattern` declarations only, and its declarations and native functions share the top-level namespace (§6.5). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A source declaration with a prelude declaration's name shadows it in the program's source. Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
+
+A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values is evaluated by the compiler, and any other call runs at runtime; a native function with a string parameter or result runs only at compile time, and a call to one with an argument that reads a cell is an error. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, and the compiler and the runtime rely on it.
 
 ### 10.2 Checks against the vocabulary
 
@@ -944,7 +1054,7 @@ Every instance and wire has a path, with segments joined by `.`:
 
 The host writes inputs by handle. A write stages a value until the next commit and has no other effect. Writes accumulate between commits, and the last write to each element wins.
 
-A write takes a value of the input's kind (§4.4): `I32` or `I64` for an integer input, `F32` or `F64` for a float input, `Bool` for a `bool` input, and a variant of its enum for an enum input. The runtime converts it to the input's type, a float rounding and an integer saturating. A write is rejected with an error when its value is of another kind, when its element index is outside the array, when its enum value belongs to another enum or names no variant, or when a whole-array write has the wrong length. A scalar input takes single writes, and an array input takes single-element and whole-array writes; any other form of write is rejected. An accepted write marks the elements it writes as written by the host (§13.2), whether or not their values change. Elements are numbered row by row: element `k` of an `i32[3][2]` input is row `k div 3`, position `k % 3`, and change reports number array attributes the same way (§12.3). An input in a unit family is written in the family's base unit (§3.6). A written NaN is stored as the canonical NaN (§12.5).
+A write takes a value of the input's kind (§4.4): `U8`, `I32` or `I64` for an integer input, `F32` or `F64` for a float input, `Bool` for a `bool` input, and a variant of its enum for an enum input. The runtime converts it to the input's type, a float rounding and an integer saturating. A write is rejected with an error when its value is of another kind, when its element index is outside the array, when its enum value belongs to another enum or names no variant, or when a whole-array write has the wrong length. A variable array input takes whole-array writes of any length up to its capacity, which set its live length, and single-element writes within its live length; a longer write is rejected with an error naming the capacity, and the input keeps its value. An accepted write to a variable array marks the whole array written. A scalar input takes single writes, and an array input takes single-element and whole-array writes; any other form of write is rejected. An accepted write marks the elements it writes as written by the host (§13.2), whether or not their values change. Elements are numbered row by row: element `k` of an `i32[3][2]` input is row `k div 3`, position `k % 3`, and change reports number array attributes the same way (§12.3). An input in a unit family is written in the family's base unit (§3.6). A written NaN is stored as the canonical NaN (§12.5).
 
 ### 12.2 Commit
 
@@ -953,11 +1063,12 @@ A commit applies staged writes and brings every cell up to date:
 1. Each input whose staged value differs bit for bit from its current value changes.
 2. Each cell that reads a changed value is evaluated, in dependency order, at most once per commit.
 3. A cell whose new value is bit-for-bit equal to its previous value is unchanged, and its readers are not evaluated because of it.
-4. Activation (§9.3) and destination choices (§8.2) are recomputed.
+4. Each state evaluated in the commit records, for each of its history reads, the value the read's cell holds at the end of the commit (§6.6).
+5. Activation (§9.3) and destination choices (§8.2) are recomputed.
 
 After a commit, every value the runtime holds reflects the same set of inputs, and no read from the runtime sees part of a commit. A consumer that copies values elsewhere states what its own readers see.
 
-Every cell is a pure function of the inputs, and no cell carries state from one commit to the next. Time-dependent behaviour comes from inputs the host writes, such as `bar`, `beat` and `time`, combined with pure functions and `rand`.
+A state carries its value and its history from one commit to the next (§6.6); every other cell is a pure function of the inputs and the states. Time-dependent behaviour comes from inputs the host writes, such as `bar`, `beat` and `time`, combined with pure functions, states and `rand`.
 
 ### 12.3 Changes
 
@@ -969,7 +1080,7 @@ A commit reports what changed, in the terms consumers use:
 - a wire's activation;
 - a wire's chosen destination.
 
-Each is reported only when its value differs bit for bit from its value before the commit, and a chosen destination only when the chosen instance differs. Instance changes come first and wire changes after them, each in Program order (§11); for one item, attribute changes come in the order the vocabulary declares the attributes, element by element, then its activation, then a wire's chosen destination. Loading a Program evaluates every cell, activation and destination choice, and the first commit reports changes relative to that loaded state.
+Each is reported only when its value differs bit for bit from its value before the commit, and a chosen destination only when the chosen instance differs. A variable array attribute's live length is one more value, reported before its elements. Instance changes come first and wire changes after them, each in Program order (§11); for one item, attribute changes come in the order the vocabulary declares the attributes, element by element, then its activation, then a wire's chosen destination. Loading a Program evaluates every cell, activation and destination choice, and the first commit reports changes relative to that loaded state.
 
 ### 12.4 Evaluation never fails
 
@@ -992,6 +1103,10 @@ rand = (z >> 40) / 2^24
 
 `rand(0, 0)` is 14819496 / 2²⁴, and `rand(1, 2)` is 11759674 / 2²⁴.
 
+### 12.6 Memory
+
+A Program needs a fixed amount of memory, known when it compiles. Loading it allocates every buffer the runtime uses, and nothing allocates while it runs: variable arrays, joins, slices and histories hold their capacities (§3.7, §6.6), and bounded calls are expanded when the program compiles (§6.3). The compiler reports the memory in bytes, and a program whose memory exceeds the memory limit, 1,073,741,824 bytes by default (§4.6), is an error.
+
 ## 13. Reload
 
 A reload replaces a running Program with a newly compiled one.
@@ -1008,7 +1123,7 @@ Each input of the new Program takes its value by the first of these rules that a
 2. An input whose kind changed (§4.4), or whose shape changed other than in its outermost length, takes its initial value. An enum input moved to another enum changes kind, and a scalar input that becomes an array changes shape.
 3. Otherwise each element both lengths share keeps its old value, converted to the new type as a write is (§12.1), when the host has written it, and takes the new initial value when the host has not; elements beyond the old length take the new initial values.
 
-Whether the host has written an element is tracked per element, and a kept element stays written. A removed input is dropped, and a handle to it rejects writes. A handle stays valid across reloads while an input of its name exists, and becomes valid again when a reload brings one back. Writes staged before the reload stay staged against the new Program by input name and apply at the next commit, which marks their elements written; a staged write that the new input rejects (§12.1), or whose input is gone, is dropped and listed in the report (§13.4).
+A variable array input that the host has written keeps its live length, cut to its new capacity, and its live elements, converted to the new type as a write is; a change between a fixed and a variable array is a change of shape. Whether the host has written an element is tracked per element, and a kept element stays written. A removed input is dropped, and a handle to it rejects writes. A handle stays valid across reloads while an input of its name exists, and becomes valid again when a reload brings one back. Writes staged before the reload stay staged against the new Program by input name and apply at the next commit, which marks their elements written; a staged write that the new input rejects (§12.1), or whose input is gone, is dropped and listed in the report (§13.4).
 
 ### 13.3 Matching
 
@@ -1023,20 +1138,24 @@ Items under an unmatched parent, named members of an unmatched bundle among them
 
 ### 13.4 Report
 
-A reload reports, for instances, bundles and wires, the matched pairs (old and new), additions, removals, and the parents whose sequence order changed, and it lists the staged writes it dropped (§13.2). The top level counts as a parent, and a sequence's order changed when matched items changed their relative order. It then reports the attribute, activation and destination changes of matched items in the form a commit uses (§12.3); a destination compares by path. Cells are recomputed from the new Program (§12.2).
+A reload reports, for instances, bundles and wires, the matched pairs (old and new), additions, removals, and the parents whose sequence order changed, and it lists the staged writes it dropped (§13.2). The top level counts as a parent, and a sequence's order changed when matched items changed their relative order. It then reports the attribute, activation and destination changes of matched items in the form a commit uses (§12.3); a destination compares by path. Cells other than kept states (§13.5) are recomputed from the new Program (§12.2).
+
+### 13.5 States
+
+A state of the new Program keeps its value and its history when the old Program has a state of its name, kind and shape, a variable array's capacity apart, its value then cut to the new capacity. Its history keeps the records of history reads whose cell keeps its name, kind and shape, up to their new depths; a history read that is new, or deeper than before, yields its fallback until the state has stepped as often as its offset. A kept state is not evaluated by the reload and steps at the next commit that changes what it reads. Every other state takes its first step at the reload.
 
 ## 14. Not part of SymphonyScript
 
 SymphonyScript has none of the following:
 
 - **Declared kinds or types.** Node kinds, wire kinds, enums and units come from the vocabulary (§10). There are no records, tuples, maps, or enums with data (§3).
-- **Mutation and loops.** Bindings never change. The only loop is the compile-time `for` (§7.9), patterns do not recurse (§6.4), and functions recurse only at compile time (§6.3).
-- **State across commits** (§12.2).
+- **Mutation and loops.** Bindings never change, and a state changes only by taking a step (§6.6). The only loop is the compile-time `for` (§7.9), patterns do not recurse (§6.4), and a function recurses at runtime only within its bound (§6.3).
 - **Varying structure.** Gates vary activation (§9), and destinations vary among fixed candidates (§8.2). A different structure is a different Program, loaded by reload (§13).
 - **Runtime strings** (§3.3) and **node references held at runtime** (§3.5).
 - **Closures.** No construct takes a function as a value.
 - **Modules.** There are no imports, exports or visibility levels; one namespace spans the project (§6.5).
 - **Metadata attributes.** No construct attaches metadata to a declaration.
-- **Bitwise operators.** `^` is reserved (§2.5).
+- **Bitwise operators.** `^` only counts from an array's end (§5.5).
 - **Readable gate state** (§9.3).
 - **Aborting evaluation** (§12.4).
+- **Allocation while running** (§12.6).

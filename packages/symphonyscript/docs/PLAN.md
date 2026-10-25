@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M3 and M5 and `high` for M1 and M4. In M2, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
+- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M3 and M5 and `high` for M1 and M4. In M2, M2b, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
 ### Decisions
 
@@ -47,7 +47,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - One public entity per file, the file named after it; modules are folders.
 - No comments in authored files (repository CLAUDE.md).
 - Code follows `.claude/docs/CODING.md` § Good patterns. Where another rule of that file names another product's tools or conflicts with this plan, this plan decides.
-- Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
+- Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; the IntelliJ Platform Gradle Plugin for the JetBrains plugin; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
 
 ## M1: Front end
 
@@ -95,6 +95,25 @@ Exit:
 - A chain of 40 calls of a function that uses its parameter twice, each call the argument of the next and the innermost reading an input, passes Check in time and memory linear in the chain.
 - Every resource limit is a field of `Limits` with its default in one constants file, and a test sets each limit below and above its default and sees the compiler follow it.
 
+## M2b: Language additions
+
+States and history reads, bounded recursion, variable arrays with joins, slices and `len`, `u8` and strings as bytes, native functions, `to` paths, and teaching diagnostics: lexing, parsing and the semantics through Check, and a lesson for every code. M3 builds their runtime.
+
+Steps:
+1. The lexer and the parser for `state`, history reads, `bounded`, `[]`, `T[..N]`, slices and `^`, `u8`, and `to` paths, with the tests over SPEC.md's examples and rule sentences passing again.
+2. Collect and Resolve: states and their history reads, bounded functions, calls that read cells into recursive functions, the expansion of bounded calls, and `to` paths.
+3. Infer: fixed and variable arrays, capacities, joins, slices, `len` and `^`, history reads, the types and capacities of states, bounded compile-time evaluation, `u8`, strings as bytes and `bytes`, variable-array attributes, and native functions: the builder's `native`, their signatures, and their compile-time calls.
+4. Check: the errors of the new rules.
+5. Diagnostics: a summary, a help and labelled related spans on every diagnostic, and a lesson for every code.
+
+Exit:
+- M2's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
+- Each row of SPEC §3.7's capacity table and each state rule of §6.6 has tests whose capacities are derived by hand, and a state bounded by `[^1000000000..]` finds its capacity in work that does not depend on the bound.
+- A bounded call expands in work linear in its levels times its body; a bounded function expanded 100,000 levels deep and a chain of 100,000 slices pass every stage through Check on a thread with a 1 MiB stack.
+- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
+- A fixture vocabulary's native functions, one taking a string, are typed by their signatures, called at compile time with compile-time arguments, and refused with an argument that reads a cell where they take a string; a variable-array attribute accepts a value up to its capacity and refuses a larger one.
+
 ## M3: Runtime and reload
 
 Lowering, the runtime, `eval`, the `Consumer` trait and reload.
@@ -121,7 +140,7 @@ Exit:
 
 ## M4: Delivery and tooling
 
-Generated Rust, the tool, the watch loop, the language server and the VS Code extension.
+Generated Rust, the tool, the watch loop, the language server, the VS Code extension and the JetBrains plugin.
 
 Steps:
 1. `codegen::generate` and a fixture framework's `build.rs` that uses it.
@@ -129,6 +148,7 @@ Steps:
 3. The watch loop: recompile, prepare, consumer acceptance, install.
 4. The language server on `lsp-server`.
 5. The VS Code extension: the static grammar and the language client.
+6. The JetBrains plugin: highlighting from the grammar or the server's semantic tokens, and the language client on the IntelliJ Platform's LSP API.
 
 Exit:
 - Every fixture project compiled through the library and through `codegen` gives equal Programs and equal commit traces.
@@ -136,6 +156,7 @@ Exit:
 - End-to-end tests for `new`, `check` and `dump`, and for single-file mode.
 - Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects.
 - The extension starts the language server for a sample project.
+- The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
 - `codegen` and the language server handle M2's deep sources on a thread with a 1 MiB stack.
 - `symphony.toml`'s `[limits]` and `--limit` reach the compiler, the runtime and the language server, a flag overriding the file.
 
@@ -156,4 +177,4 @@ Exit:
 
 ## Order
 
-M1, M2 and M3 run in order. M4 and M5 each need M3 and run one after the other, M4 first.
+M1, M2, M2b and M3 run in order. M4 and M5 each need M3 and run one after the other, M4 first.
