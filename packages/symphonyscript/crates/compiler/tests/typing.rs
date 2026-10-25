@@ -1149,7 +1149,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
             &[],
         ),
     ];
-    let enum_rows: [Row; 9] = [
+    let enum_rows: [Row; 13] = [
         (
             &["Osc o | wave=([Sine, Red][0])"],
             &[(Code::UnknownName, "Red")],
@@ -1185,7 +1185,26 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
             ],
             &[(Code::UnknownName, "Red")],
         ),
+        (
+            &["Osc o | freq=(if true then 1.0 else (if Wave::Sine is Red then 1.0 else 2.0))"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &["Osc o | freq=([1.0, (if Wave::Sine is Red then 1.0 else 2.0)][0])"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &[
+                "let q = match true:\n    true: Sine\n    false: Red",
+                "Osc o | wave=q",
+            ],
+            &[(Code::UnknownName, "Red")],
+        ),
         (&["Osc o | wave=(if true then Sine else Saw)"], &[]),
+        (
+            &["Osc o | freq=(if true then 1.0 else (if Wave::Sine is Saw then 1.0 else 2.0))"],
+            &[],
+        ),
     ];
     let mut failures = Vec::new();
     for (vocabulary, rows) in [("fixture", &fixture_rows[..]), ("enums", &enum_rows[..])] {

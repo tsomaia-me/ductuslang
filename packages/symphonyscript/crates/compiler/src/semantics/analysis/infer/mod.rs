@@ -12,7 +12,6 @@ mod synth;
 mod typing;
 mod units;
 mod values;
-mod variants_fit;
 mod widths;
 
 pub(crate) use typing::Typing;

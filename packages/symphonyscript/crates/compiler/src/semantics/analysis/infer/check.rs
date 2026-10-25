@@ -32,6 +32,7 @@ impl Engine<'_> {
             }
             let fresh = match selection {
                 Selection::Chosen => self.typing.checked.insert((node, expected)),
+                Selection::Evaluated => self.typing.evaluated.insert((node, expected)),
                 Selection::PassedOver => self.typing.passed_over.insert((node, expected)),
             };
             if !fresh {
@@ -55,24 +56,43 @@ impl Engine<'_> {
                 None => sig,
             };
             let as_condition = std::mem::take(&mut condition_root);
-            if let Some(expected) = expected
-                && !self.compatible(node, &sig, expected, as_condition)?
-            {
-                continue;
-            }
-            if let Some(Scalar::Enum(id)) = expected {
-                self.variants_fit(node, id)?;
-            }
-            if !sig.reactive {
-                if selection == Selection::Chosen {
-                    roots.push((node, expected));
+            if selection != Selection::Evaluated {
+                if let Some(expected) = expected
+                    && !self.compatible(node, &sig, expected, as_condition)?
+                {
+                    continue;
                 }
-                continue;
+                if let (Some(Scalar::Enum(id)), Op::Bare(name)) = (expected, &self.node(node)?.op)
+                    && self.variants.position(id, name)?.is_none()
+                {
+                    let message = format!(
+                        "`{name}` is not a variant of `{}`",
+                        self.enum_decl(id)?.name
+                    );
+                    self.error_at_node(Code::UnknownName, node, message)?;
+                }
             }
+            let selection = match (sig.reactive, selection) {
+                (false, Selection::Chosen) => {
+                    roots.push((node, expected));
+                    Selection::Evaluated
+                }
+                (true, _) | (false, Selection::Evaluated | Selection::PassedOver) => selection,
+            };
             let ty = match expected {
                 Some(expected) => Some(expected),
                 None => self.synth(node)?,
             };
+            if let Some(group) = self.memo.groups.get(&node).copied()
+                && self.typing.passed_over_groups.insert((group, ty))
+                && let Op::Array(elements) = &self.node(group)?.op
+            {
+                stack.extend(
+                    elements
+                        .iter()
+                        .map(|element| (*element, ty, Selection::PassedOver)),
+                );
+            }
             let op = self.node(node)?.op.clone();
             let passed_over = Selection::PassedOver;
             match op {
@@ -94,6 +114,7 @@ impl Engine<'_> {
                     | BinaryOp::Is
                     | BinaryOp::IsNot => {
                         if matches!(op, BinaryOp::Is | BinaryOp::IsNot)
+                            && selection != Selection::Evaluated
                             && self.crossed_enums(node, lhs, rhs)?
                         {
                             continue;
@@ -125,7 +146,9 @@ impl Engine<'_> {
                 Op::If(condition, then, otherwise) => {
                     stack.push((condition, Some(Scalar::Bool), selection));
                     let chosen = match selection {
-                        Selection::Chosen => self.chosen(condition, EvalTy::Bool)?,
+                        Selection::Chosen | Selection::Evaluated => {
+                            self.chosen(condition, EvalTy::Bool)?
+                        }
                         Selection::PassedOver => None,
                     };
                     match chosen {
@@ -153,10 +176,12 @@ impl Engine<'_> {
                     stack.push((scrutinee, scrutinee_ty, selection));
                     let scrutinee_sig = self.known_sig(scrutinee)?;
                     let chosen = match (selection, self.scrutinee_ty(scrutinee, &scrutinee_sig)) {
-                        (Selection::Chosen, Some(label_ty)) => self
+                        (Selection::Chosen | Selection::Evaluated, Some(label_ty)) => self
                             .chosen(scrutinee, label_ty)?
                             .map(|value| (value, label_ty)),
-                        (Selection::Chosen | Selection::PassedOver, _) => None,
+                        (Selection::Chosen | Selection::Evaluated | Selection::PassedOver, _) => {
+                            None
+                        }
                     };
                     let values = arms.iter().map(|(_, value)| *value).chain(otherwise);
                     match chosen {
@@ -184,7 +209,9 @@ impl Engine<'_> {
                     stack.push((index, index_ty, selection));
                     let position_ty = own_type(&self.known_sig(index)?, EvalTy::Exact);
                     let chosen = match selection {
-                        Selection::Chosen => self.chosen(index, position_ty)?,
+                        Selection::Chosen | Selection::Evaluated => {
+                            self.chosen(index, position_ty)?
+                        }
                         Selection::PassedOver => None,
                     };
                     match chosen {
@@ -199,6 +226,7 @@ impl Engine<'_> {
                             }
                             match picked.and_then(|position| items.get(position)) {
                                 Some(item) => stack.push((*item, ty, selection)),
+                                None if selection == Selection::Evaluated => {}
                                 None => self.error_at_node(
                                     Code::IndexOutOfRange,
                                     index,
@@ -365,6 +393,7 @@ impl Engine<'_> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
     Chosen,
+    Evaluated,
     PassedOver,
 }
 
