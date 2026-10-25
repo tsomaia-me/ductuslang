@@ -249,7 +249,7 @@ Clip melody:
 
 With `brightness` of type `f32`, `0.8` is an `f32`, and `cutoff` is read as one.
 
-The operands of `is` and `is not` give each other their expected type, so in `wave is Saw` the variant resolves in `wave`'s enum. A `let` whose initializer needs an expected type, such as a bare variant, takes it from its uses when they all expect one type, whether it is compile-time or reactive; a bare variant is no flexible value (§4.1).
+The operands of `is` and `is not` give each other their expected type, so in `wave is Saw` the variant resolves in `wave`'s enum. A `let` whose initializer needs an expected type, such as a bare variant, takes it from those of its uses that expect a type, when they all expect one, whether it is compile-time or reactive, and a use that expects no type reads it in that type; a bare variant is no flexible value (§4.1).
 
 ### 4.3 Widening
 
