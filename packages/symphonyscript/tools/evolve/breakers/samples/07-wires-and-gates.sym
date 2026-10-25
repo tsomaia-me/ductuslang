@@ -1,0 +1,28 @@
+input looping = true
+input fill_on = false
+input section = 0
+
+Session main:
+    Includes: band
+
+Track band:
+    Piano
+    Starts: verse
+
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+    Plays as main when looping: chorus
+    Plays as back | gain=0.5 transpose=-12: bridge
+    Plays: [chorus, bridge, outro][section]
+
+Clip chorus | gain=verse.main.gain + 0.1:
+    Note/72
+    Plays: if fill_on then verse else bridge
+
+Clip bridge | level=verse.back.transpose + 12:
+    Note/65 Note/67
+    Starts when not looping: outro
+
+Clip outro:
+    Note/48

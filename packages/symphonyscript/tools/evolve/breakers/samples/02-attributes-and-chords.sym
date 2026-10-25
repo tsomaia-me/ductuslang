@@ -1,0 +1,14 @@
+Session demo | tempo=96:
+    Track as lead:
+        Piano
+        Starts: riff
+
+Clip riff:
+    Note/60 | velocity=0.8 length=2bars
+    Note'/64
+    [Note as root /67 Note/71 Note/74]
+    Note/72 Note/71 (Note/69 | velocity=0.4)
+    Note as top /76
+    Note/77 | velocity=0.9
+              brightness=0.7
+              accent

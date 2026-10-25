@@ -1,0 +1,100 @@
+input bar = 0
+input beat = 0
+input intensity = 0.5
+input swing_on = false
+input mode = Wave::Saw
+input lag = 12ms
+input kick_mask: bool[8] = [true, false, false, false, true, false, false, true]
+input scale_steps: i32[7] = [0, 2, 4, 5, 7, 9, 11]
+
+let phase = (beat % 4) / 4
+let wobble = 0.5 + 0.5 * sin(2 * pi * phase)
+let swing_amt = if swing_on then 0.15 else 0.0
+let section = bar div 8 % 3
+let lag_ratio = lag / 1s
+let sections = [intro, build, drop]
+let progression = [48, 53, 55, 0x30]
+let grid = [[0, 4, 7], [0, 3, 7], [0, 5, 9]]
+let flipped = mirror(3, [60, 67])
+
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+fn hops(n): if n < 1 then 0 else 1 + skips(n - 1)
+fn skips(n): if n < 1 then 0 else 2 + hops(n - 1)
+
+fn mirror(n, a): if n < 1 then a else mirror(n - 1, [a[1], a[0]])
+
+fn shift(pitch, steps = 0, octaves = 0): pitch + steps + 12 * octaves
+
+fn gap_of(w):
+    let base = 0.25
+    match w:
+        Sine: base
+        Saw: base * 2
+        Square: base * 3
+
+pattern Hit(default pitch, loud = false):
+    Note/pitch | accent=loud
+
+pattern Arp(default root, count = 4, hold = 0.25):
+    let top = root + 12
+    let step = (top - root) div count
+    for i in 0..count:
+        Note/(root + i * step) | length=hold
+    [Note/top Note/(top + 7)]
+
+pattern Drums(default per_bar, hat = true):
+    for i in 0..per_bar:
+        Hit/(36 + i % 2 * 6) | loud=kick_mask[i % 8]
+    when hat:
+        for j in 0..per_bar:
+            Note/(42 + j % 3) | velocity=0.3 + wobble * 0.2
+
+pattern Section(default root, next, vel = 0.7):
+    Clip:
+        Arp/root | count=fib(5) hold=gap_of(mode)
+        (Note/(root - 12) | velocity=vel)
+        Plays as onward | gain=to.level transpose=shift(0, 0, 1): next
+
+Session show | tempo=124:
+    Track as drum_t | label="drums {fib(6)} {250ms / 1s}":
+        Piano
+        Starts: sections[section]
+    Track as lead_t | label="lead " + "{250ms} {Wave::Square}":
+        Synth as rig:
+            for w in [Wave::Sine, Wave::Saw, Wave::Square]:
+                Osc/(110 * 2 ** (fib(4) / 12)) | wave=w rate=intensity
+            Osc as lfo/0.5 | wave=Square:
+                Modulates | depth=wobble: lp
+                Feeds: out
+            Filter as lp/(intensity * 4000 + 200):
+                Feeds: out
+            Output as out
+        Starts when bar > 4 or swing_on: build
+    Includes: aux_t
+
+Track aux_t | label="aux":
+    Piano
+    Starts: drop
+    Starts when bar is not 0 and not swing_on: intro
+
+Section intro /(progression[0]) | next=build vel=0.4
+Section build /(progression[1]) | next=drop
+
+Clip drop | level=intensity gain=build.onward.gain:
+    Drums/8 | hat=swing_on
+    Arp/(shift(progression[2], scale_steps[bar % 7], 1)) | hold=swing_amt + 0.25
+    [for g in grid[1]: Note/(48 + g)]
+    [Note/(progression[3]) (Note/(flipped[0]) when beat is 0) Note/(flipped[1])]
+    Note/(48 + i32(floor(wobble * 3)) + i32(ceil(intensity * 2))) | velocity=abs(wobble - 0.5) + sqrt(intensity)
+    Note/52 | velocity=sections[1].level
+    for k in 0..hops(4):
+        Note/(60 + k) | velocity=rand(bar, k) length=gap_of(Wave::Sine) + swing_amt
+    when:
+        section is 0: Note/55
+        section is 1 or lag_ratio > 0.01: Note/57
+        else: Note/59
+    Plays: match section:
+        0: intro
+        1: build
+        else: drop

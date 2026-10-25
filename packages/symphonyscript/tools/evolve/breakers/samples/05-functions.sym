@@ -1,0 +1,38 @@
+input step = 2
+input detune = 0.37
+let leap = step + 2
+
+fn scale(degree, root = 60):
+    let octave = degree div 7
+    root + [0, 2, 4, 5, 7, 9, 11][degree % 7] + 12 * octave
+
+fn db(x): 10 ** (x / 20)
+
+fn blend(a, b, mix = 0.5): lerp(a, b, mix)
+
+fn dyad(lo, hi = lo + 7): [lo, hi]
+
+fn curve(x): clamp(exp(-x) + log(1 + x) * tan(0.1), 0, 1)
+
+fn feel(n):
+    match n:
+        0: 0.2
+        1: 0.5
+        else: 0.9
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody | gain=db(-6):
+    Note/(scale(0))
+    Note/(scale(step, 48))
+    Note/(scale(degree=leap, root=55)) | velocity=feel(step)
+    Note/(scale(root=40, degree=4)) | velocity=blend(0.2, 0.9)
+    Note/(scale(9)) | brightness=blend(a=0.1, b=step / 10, mix=0.25)
+    Note/(scale(1) + i32(round(detune * 4))) | length=f64(leap) / 4
+    Note/(dyad(60)[1]) | brightness=curve(f32(step) / 10)
+    Note/(dyad(hi=72, lo=65)[0] + i32(i64(step) * 2)) | brightness=f32(step) / 10

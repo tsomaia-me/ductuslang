@@ -1,0 +1,15 @@
+input cutoff = 0.5
+input amount = 3
+let wobble = cutoff * 0.8
+let pitch = 48 + amount
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody | gain=cutoff:
+    Note/pitch | brightness=wobble
+    Note/(pitch + 7) | brightness=wobble * 0.5

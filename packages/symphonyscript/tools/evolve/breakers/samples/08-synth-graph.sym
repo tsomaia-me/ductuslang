@@ -1,0 +1,27 @@
+input shape = Wave::Saw
+input bright = 0.6
+let base = 220
+
+let level = match shape:
+    Sine: 1.0
+    Saw: 0.8
+    else: 0.6
+
+Session main:
+    Includes: lead
+
+Track lead:
+    Synth as voice:
+        Osc as carrier/base | wave=shape rate=level:
+            Feeds: lp
+            Modulates | depth=0.3: lp
+        Osc as wobble/(base * 2) | wave=Square rate=0.5:
+            Modulates/0.7: lp
+            Feeds: mix
+        Osc as sub/(base / 2) when shape is Saw | wave=Wave::Sine:
+            Feeds: mix
+        Filter as lp/(bright * 4000):
+            Feeds: mix
+            Feeds: out
+        Mixer as mix
+        Output as out

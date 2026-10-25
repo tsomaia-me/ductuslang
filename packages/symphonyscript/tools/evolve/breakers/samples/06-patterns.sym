@@ -1,0 +1,42 @@
+pattern Arp(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Chord(default root, third = 4, fifth = 7):
+    [Note/root Note/(root + third) Note/(root + fifth)]
+
+pattern Hit(default root, loud = false):
+    Note/root | accent=loud
+
+pattern Phrase(default root, rise = 2):
+    let peak = root + rise * 3
+    Note as bottom /root
+    Note as top /peak | velocity=0.9
+    Arp/peak | steps=rise
+
+pattern Riff(default root):
+    Clip:
+        Note/root Note/(root + 7) Note/(root + 12)
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: verse
+    Starts: low
+    Starts: high
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+    Chord/55
+    Chord/52 | third=3
+    Hit/60 | loud
+    Hit/62 | !loud
+    Arp as run /36 | steps=2
+    Phrase as ph /67 | rise=3
+    Note/(ph.top.pitch - 12) | velocity=ph.bottom.velocity
+
+Riff low /36
+Riff high /48

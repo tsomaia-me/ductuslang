@@ -1,0 +1,29 @@
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+fn even(n): if n is 0 then true else odd(n - 1)
+fn odd(n): if n is 0 then false else even(n - 1)
+
+fn decay(n, v): if n < 1 then v else decay(n - 1, v * 0.5)
+
+fn gcd(a, b): if b is 0 then a else gcd(b, a % b)
+
+fn mirror(n, a): if n < 1 then a else mirror(n - 1, [a[1], a[0]])
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+let swapped = mirror(3, [60, 67])
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody:
+    for i in 0..fib(5):
+        Note/(48 + i) | velocity=decay(i, 1.0)
+    for k in lengths:
+        Note/(60 + gcd(k, 6)) when even(k)
+    for j in 0..3:
+        Note/(72 + j) when odd(j)
+    Note/(swapped[0]) Note/(swapped[1])

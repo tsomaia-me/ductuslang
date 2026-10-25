@@ -1,0 +1,26 @@
+input span = 1bars
+input push = 5ms
+input trim: f32 = 0
+let late = push * 2
+let skew = late / 1s * 100
+let half = span / 2
+let gap = 250ms / 1s
+let ticks = 1_000
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: groove
+
+Clip groove | gain=0.5f32 + trim:
+    Note/0x3C | length=2bars + 1
+    Note/62 | length=half
+    Note/64 | length=max(span, 1)
+    Note/65 | length=clamp(span * 2, 1, 6bars)
+    Note/67 | length=if span > 2bars then 0.5bars else 1.5
+    Note/69 | velocity=gap brightness=skew / 100
+    Note/71 | length=span - 1 + 1bars
+    Note/(ticks div 20) | length=2e3 / ticks + 1000ms / 1s
+    Note/0b1000101 | length=1.5 * span
