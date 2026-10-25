@@ -23,6 +23,6 @@ llm:
   temperature: 1
   batch_size: 30
   device: cpu
-  model_name: claude-haiku-5-5
-  autoprompt_model_name: claude-sonnet-5-5
-  max_length: 1024
+  model_name: claude-sonnet-5-5
+  autoprompt_model_names: [claude-opus-5-5, claude-fable-5-1]
+  max_length: 32000

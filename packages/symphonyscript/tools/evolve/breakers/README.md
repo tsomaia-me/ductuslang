@@ -26,12 +26,16 @@ cd packages/symphonyscript/tools/evolve/breakers
 `start` does three things in `<run-dir>`:
 
 1. `seeds/`: every `sym` example of `docs/SPEC.md` that `evolve-check` passes with no error and no signal.
-2. `autoprompt/`: Fuzz4All's autoprompting, once: a greedy and three sampled summaries of the SPEC from Claude Sonnet 5.5, each scored by generating `batch_size` programs with Claude Haiku 5.5; the best goes to `prompts/best_prompt.txt`.
+2. `autoprompt/`: Fuzz4All's autoprompting, once: a greedy and three sampled candidate requirement prompts distilled from the SPEC, from Claude Opus 5.5 and Claude Fable 5.1 in turn (Opus first), each scored by generating `batch_size` programs with Claude Sonnet 5.5; the best goes to `prompts/best_prompt.txt`.
 3. `workers/NNN/`: the workers, each running Fuzz4All's loop with its first example drawn as § Seeds from findings says and written to `seed.sym`; its programs are `N.fuzz`, its output `worker.log` and Fuzz4All's logs, and its judged programs `judged.jsonl`.
 
 Each round of a worker sends `batch_size` (30) calls at once, so 32 workers hold up to 960 calls in the proxy.
 
-The configuration is `symphonyscript.yaml` in Fuzz4All's format, with `llm.autoprompt_model_name` added.
+The configuration is `symphonyscript.yaml` in Fuzz4All's format, with `llm.autoprompt_model_names` (the list the requirement prompts alternate over) added. `llm.max_length` is the `max_tokens` of every program call.
+
+## Program generation
+
+Claude Sonnet 5.5 writes every program, with `output_config: {"effort": "high"}` and `max_tokens` 32000, so a high-effort answer that thinks first is not cut off; no `thinking` setting is sent. Opus and Fable write requirements only. The system prompt of every generation request is the whole of `docs/SPEC.md`, then each `samples/*.sym` file (`--samples` names another directory) in sorted order, each introduced by a line `Valid program <name>:`; it is identical in every request, so the proxy's 1-hour cache mark covers it. Fuzz4All's own prompt, the requirement prompt and the example, is the user message. The prompt is built once per process, so add samples before starting.
 
 ## Findings
 
@@ -68,9 +72,9 @@ Ctrl-C on `start` stops the workers; Ctrl-C on the proxy stops it and prints the
 
 No file of Fuzz4All changes. `fuzz4all_symphonyscript.py` builds the target itself, since `make_target` knows only Fuzz4All's languages, and calls Fuzz4All's own `fuzz` loop. It replaces two names in `Fuzz4All.target.target`, the module's only LLM calls:
 
-- `request_engine` (autoprompting, written for OpenAI's chat API) by `proxy_llm.request_engine`: the system message becomes the Messages API `system`, the model is `llm.autoprompt_model_name` in place of the hard-coded `gpt-4`, and `max_tokens` stays.
-- `make_model` (a local StarCoder) by `proxy_llm.ProxyModel`, whose `generate` sends `batch_size` concurrent calls of the prompt with the stop strings Fuzz4All gives StarCoder as `stop_sequences`, a system prompt that asks for a completion as source only, and takes the code block of the reply as Fuzz4All's Ollama path does.
+- `request_engine` (autoprompting, written for OpenAI's chat API) by `proxy_llm.request_engine`: the system message becomes the Messages API `system`, the model is the next of `llm.autoprompt_model_names` in place of the hard-coded `gpt-4`, and `max_tokens` stays.
+- `make_model` (a local StarCoder) by `proxy_llm.ProxyModel`, whose `generate` sends `batch_size` concurrent calls of the prompt on `llm.model_name`, with `llm.max_length` in place of the length Fuzz4All passes, with the stop strings Fuzz4All gives StarCoder as `stop_sequences`, that system prompt, and takes the code block of the reply as Fuzz4All's Ollama path does.
 
-Forced by the models: Claude Sonnet 5.5 and Claude Haiku 5.5 refuse a temperature other than the default 1, so no temperature is sent and the greedy autoprompt is sampled too; thinking is off (`between_tools` for Sonnet, `disabled` for Haiku) so `max_tokens` bounds the text as it did for the original models. `OPENAI_API_KEY` is set to a placeholder only because Fuzz4All builds an OpenAI client on import; it never calls it.
+Forced by the models: they take a temperature of the default 1 only, so no temperature is sent and the greedy autoprompt is sampled too; thinking is off (`disabled`) for the requirement prompts so that Fuzz4All's `max_tokens` of 500 bounds the text as it did for GPT-4. `OPENAI_API_KEY` is set to a placeholder only because Fuzz4All builds an OpenAI client on import; it never calls it.
 
 Two choices at the edge: `SymphonyScriptTarget.initialize` starts the loop from the worker's seed through Fuzz4All's own `update`, as if that seed were its first valid program, where Fuzz4All reads `path_example_code` and never uses it; and a program is valid (`SAFE`) when it has no error diagnostic, ignoring warnings. A worker's random seed is its index and the count it resumes from, so a restart does not replay the previous run's choices.
