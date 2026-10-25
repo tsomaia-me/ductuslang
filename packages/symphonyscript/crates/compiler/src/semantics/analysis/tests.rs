@@ -204,6 +204,7 @@ fn uses_of_a_flexible_value_compare_before_the_unit_reading() {
     for (text, attack) in [
         ("let p = 3\nEnv e | attack=p pitch=p\n", 0.003),
         ("let p = 3\nEnv e | attack=(p + 1s) pitch=p\n", 1.0 + 0.003),
+        ("let p = 3i32\nEnv e | attack=p pitch=p\n", 0.003),
     ] {
         let (diagnostics, found) = analyzed_with(&envelope, text, |engine| {
             (
@@ -218,6 +219,27 @@ fn uses_of_a_flexible_value_compare_before_the_unit_reading() {
             "{text}"
         );
     }
+    let (diagnostics, attacks) = analyzed_with(
+        &envelope,
+        "let p = 3i32\nlet c = p > 1\nEnv e | attack=p\nEnv f | attack=(if c then 1s else 2s)\n",
+        |engine| attr_values(engine, "attack", EvalTy::F64),
+    );
+    assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+    assert_eq!(attacks, vec![CVal::F64(0.003), CVal::F64(1.0)]);
+    let (diagnostics, found) = analyzed(
+        "let p = 16777217i32\nClip c | gain=p:\n    Note/p\n",
+        |engine| {
+            (
+                attr_values(engine, "gain", EvalTy::F32),
+                attr_values(engine, "pitch", EvalTy::I32),
+            )
+        },
+    );
+    assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+    assert_eq!(
+        found,
+        (vec![CVal::F32(16777216.0)], vec![CVal::Int(16777217)])
+    );
     let (diagnostics, ()) = analyzed(
         "let q = 2 ** -1\nOsc o | freq=q\nClip c:\n    Note/q\n",
         |_| (),

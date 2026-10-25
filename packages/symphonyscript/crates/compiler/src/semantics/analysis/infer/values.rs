@@ -9,12 +9,12 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
-use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{InputId, Loc};
 
 impl Engine<'_> {
@@ -75,7 +75,7 @@ impl Engine<'_> {
         let mut kinds: crate::semantics::analysis::fast_hash::FastMap<NodeId, (bool, bool, bool)> =
             crate::semantics::analysis::fast_hash::FastMap::default();
         for ((node, ty), value) in &self.memo.evals {
-            if let Op::Use(target) = self.node(*node)?.op
+            if let Some(target) = self.flexible_use(*node)?
                 && !value.is_error()
             {
                 let entry = kinds.entry(target).or_default();
@@ -91,14 +91,14 @@ impl Engine<'_> {
         }
         let mut uses: BTreeMap<NodeId, Vec<(NodeId, EvalTy, CVal)>> = BTreeMap::new();
         for ((node, ty), value) in &self.memo.evals {
-            if let Op::Use(target) = self.node(*node)?.op
+            if let Some(target) = self.flexible_use(*node)?
                 && !value.is_error()
                 && kinds
                     .get(&target)
                     .ok_or(Internal::missed("use kinds"))
                     .map(|(int, float, enumeration)| (*int && *float) || *enumeration)?
             {
-                let value = self.before_unit_reading(*node, target, *ty, value)?;
+                let value = self.before_unit_reading(*node, *ty, value)?;
                 uses.entry(target).or_default().push((*node, *ty, value));
             }
         }
@@ -155,22 +155,27 @@ impl Engine<'_> {
         Ok(())
     }
 
+    fn flexible_use(&self, node: NodeId) -> Result<Option<NodeId>, Internal> {
+        let Op::Use(target) = self.node(node)?.op else {
+            return Ok(None);
+        };
+        Ok((self.known_sig(target)?.width == Width::Flexible).then_some(target))
+    }
+
     fn before_unit_reading(
         &self,
         node: NodeId,
-        target: NodeId,
         ty: EvalTy,
         value: &CVal,
     ) -> Result<CVal, Internal> {
         if !self.memo.default_scales.contains_key(&node) {
             return Ok(value.clone());
         }
-        let own = own_type(&self.known_sig(node)?, ty);
         self.memo
-            .evals
-            .get(&(target, own))
+            .before_unit_reading
+            .get(&(node, ty))
             .cloned()
-            .ok_or(Internal::missed("compile-time value"))
+            .ok_or(Internal::missed("value before its unit reading"))
     }
 
     pub(super) fn consistent_shapes(&mut self) -> Result<(), Internal> {

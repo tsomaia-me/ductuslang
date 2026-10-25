@@ -96,6 +96,13 @@ impl Engine<'_> {
             }
         } else {
             let value = some!(self.compute(node, own, ctx, need)?);
+            if matches!(self.node(node)?.op, Op::Use(_))
+                && self.memo.default_scales.contains_key(&node)
+            {
+                self.memo
+                    .before_unit_reading
+                    .insert((node, ty), value.clone());
+            }
             let target = if is_float_ty(ty) { ty } else { own };
             self.scaled(node, value, target)?
         };

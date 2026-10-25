@@ -24,6 +24,7 @@ pub(crate) struct Memo {
     pub destinations: FastMap<WireId, Destination>,
     pub sigs: FastMap<NodeId, Sig>,
     pub evals: FastMap<(NodeId, EvalTy), CVal>,
+    pub before_unit_reading: FastMap<(NodeId, EvalTy), CVal>,
     pub call_scopes: FastMap<(ExprId, ScopeId), ScopeId>,
     pub prefix_scopes: FastMap<(ScopeId, u32), ScopeId>,
     pub takes_family: FastMap<NodeId, FamilyId>,
