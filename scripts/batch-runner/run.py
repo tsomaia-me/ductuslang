@@ -38,14 +38,18 @@ TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input
 
 
 def read_keys(env_path):
-    values = {}
+    if not env_path.is_file():
+        sys.exit("no ~/.env file: create it with ANTHROPIC_API_KEYS=<key 1>,<key 2>,...")
+    value = None
     for line in env_path.read_text().splitlines():
-        match = re.match(r"\s*(?:export\s+)?(ANTHROPIC_API_KEY_\d+)\s*=\s*(.*)$", line)
+        match = re.match(r"\s*(?:export\s+)?ANTHROPIC_API_KEYS\s*=\s*(.*)$", line)
         if match:
-            values[match.group(1)] = match.group(2).strip().strip("'\"")
-    keys = []
-    while f"ANTHROPIC_API_KEY_{len(keys) + 1}" in values:
-        keys.append(values[f"ANTHROPIC_API_KEY_{len(keys) + 1}"])
+            value = match.group(1).strip().strip("'\"")
+    if value is None:
+        sys.exit("no ANTHROPIC_API_KEYS in ~/.env: add ANTHROPIC_API_KEYS=<key 1>,<key 2>,...")
+    keys = [key.strip() for key in value.split(",") if key.strip()]
+    if not keys:
+        sys.exit("ANTHROPIC_API_KEYS in ~/.env lists no key: set it to <key 1>,<key 2>,...")
     return keys
 
 
@@ -220,8 +224,6 @@ def main(argv=None):
         if unknown:
             sys.exit(f"--max-usd needs a price for: {', '.join(unknown)}")
     keys = read_keys(Path.home() / ".env")
-    if not keys:
-        sys.exit("no ANTHROPIC_API_KEY_1 in ~/.env")
     clients = {n: anthropic.Anthropic(api_key=key) for n, key in enumerate(keys, start=1)}
     runner = Runner(clients, args.run_dir, max_usd=args.max_usd, batch_size=min(args.batch_size, MAX_BATCH_REQUESTS))
     runner.run(requests)

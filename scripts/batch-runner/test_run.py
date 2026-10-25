@@ -149,11 +149,30 @@ class CacheControlTest(unittest.TestCase):
 
 
 class ReadKeysTest(unittest.TestCase):
-    def test_reads_numbered_keys_in_order(self):
+    def read(self, content):
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / ".env"
-            env.write_text('ANTHROPIC_API_KEY_2="two"\nOTHER=x\nexport ANTHROPIC_API_KEY_1=one\nANTHROPIC_API_KEY_4=four\n')
-            self.assertEqual(read_keys(env), ["one", "two"])
+            if content is not None:
+                env.write_text(content)
+            return read_keys(env)
+
+    def test_reads_comma_separated_keys_in_order(self):
+        self.assertEqual(self.read("OTHER=x\nANTHROPIC_API_KEYS= one , two,,three ,\nANTHROPIC_API_KEY_1=old\n"), ["one", "two", "three"])
+
+    def test_missing_file_exits_with_one_line(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.read(None)
+        self.assertIn("no ~/.env file", str(raised.exception))
+
+    def test_missing_variable_exits_with_one_line(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.read("ANTHROPIC_API_KEY_1=old\n")
+        self.assertIn("no ANTHROPIC_API_KEYS", str(raised.exception))
+
+    def test_empty_list_exits_with_one_line(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.read("ANTHROPIC_API_KEYS= , ,\n")
+        self.assertIn("lists no key", str(raised.exception))
 
 
 if __name__ == "__main__":
