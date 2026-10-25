@@ -614,7 +614,7 @@ All top-level names share one namespace across the project: inputs, `let`s, func
 
 Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's `let`s do.
 
-A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported.
+A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. So do a parameter default that no call takes and the body of a `for` that runs no iteration, since nothing expands them. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported.
 
 A bare name that is a variant of the enum its position expects resolves to that variant (§3.4). Every other name resolves in scope.
 
