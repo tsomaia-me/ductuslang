@@ -70,11 +70,11 @@ impl Engine<'_> {
                 if bare {
                     return Ok(None);
                 }
-                let values = array
-                    .elements
-                    .iter()
-                    .map(|node| Val::Scalar(*node))
-                    .collect();
+                let group = self.value_group(expr, &val, scope)?;
+                let mut values = Vec::with_capacity(array.elements.len());
+                for element in &array.elements {
+                    values.push(Val::Scalar(self.chosen_read(*element, group, loc, scope)?));
+                }
                 Some(Iteration::Values {
                     values,
                     next: 0,

@@ -216,7 +216,9 @@ impl Engine<'_> {
         if items.len() != item_sigs.len() {
             return Err(Internal::missed("operand signature"));
         }
-        let first = operand(item_sigs, 0)?;
+        let Some(first) = item_sigs.first().copied() else {
+            return Ok(None);
+        };
         let mut kind = first.kind;
         let mut width = first.width;
         for sig in item_sigs.iter().skip(1) {

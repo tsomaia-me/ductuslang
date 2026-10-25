@@ -7,7 +7,10 @@ use crate::semantics::Internal;
 
 impl Engine<'_> {
     pub(super) fn carried_enum_of(&self, node: NodeId) -> Result<Option<EnumId>, Internal> {
-        let source = self.through_uses(node)?;
+        let mut source = self.through_uses(node)?;
+        while let Op::Chosen(inner) = self.node(source)?.op {
+            source = self.through_uses(inner)?;
+        }
         Ok(match self.node(source)?.op {
             Op::Read(binding) => match self.typing.own.get(&binding) {
                 Some(Scalar::Enum(id)) => Some(*id),

@@ -814,3 +814,45 @@ fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_writer_in_every_orde
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn a_flows_secondary_spans_never_repeat_its_primary_and_name_each_let_once() {
+    let compiler = Compiler::new(&distinct_vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for items in [
+        vec!["let a = [Sine, Red]", "K k1 | wave=(a[0]) color=(a[1])"],
+        vec![
+            "let x = Sine",
+            "let z = [x, Saw][1]",
+            "K k1 | color=x wave=z",
+        ],
+    ] {
+        let lets: Vec<&str> = items
+            .iter()
+            .copied()
+            .filter(|item| item.starts_with("let"))
+            .collect();
+        for order in orders(items.len()) {
+            let text: String = order
+                .iter()
+                .map(|index| format!("{}\n", items[*index]))
+                .collect();
+            let mut written: Vec<&str> = lets.clone();
+            written.sort_by_key(|item| text.find(&format!("{item}\n")));
+            let wanted = vec![(
+                Code::TypeMismatch,
+                format!("{}\n", written[0]),
+                written[1..]
+                    .iter()
+                    .map(|item| format!("{item}\n"))
+                    .collect::<Vec<_>>(),
+            )];
+            let found = located_of(&compiler, &text);
+            if found != wanted {
+                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

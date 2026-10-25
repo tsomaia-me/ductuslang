@@ -313,13 +313,7 @@ impl Engine<'_> {
                 let group = self.value_group(base, &base_val, scope)?;
                 let mut reads = Vec::new();
                 for leaf in chosen.nodes() {
-                    let op = match self.node(leaf)?.op {
-                        Op::Read(binding) => Op::Read(binding),
-                        _ => Op::Chosen(leaf),
-                    };
-                    let read = self.push_node(op, loc, scope)?;
-                    self.memo.groups.insert(read, group);
-                    reads.push(read);
+                    reads.push(self.chosen_read(leaf, group, loc, scope)?);
                 }
                 return Ok(Some(self.shaped(chosen.shape(), reads)));
             }
@@ -562,7 +556,23 @@ impl Engine<'_> {
         }))
     }
 
-    fn bound_group(
+    pub(in crate::semantics::analysis) fn chosen_read(
+        &mut self,
+        leaf: NodeId,
+        group: NodeId,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<NodeId, Internal> {
+        let op = match self.node(leaf)?.op {
+            Op::Read(binding) => Op::Read(binding),
+            _ => Op::Chosen(leaf),
+        };
+        let read = self.push_node(op, loc, scope)?;
+        self.memo.groups.insert(read, group);
+        Ok(read)
+    }
+
+    pub(in crate::semantics::analysis) fn bound_group(
         &mut self,
         query: Query,
         array: &(Shape, Vec<Bound>),
@@ -570,6 +580,13 @@ impl Engine<'_> {
     ) -> Result<NodeId, Internal> {
         if let Some(group) = self.memo.bound_groups.get(&query) {
             return Ok(*group);
+        }
+        if let Some(group) = self
+            .bound_value(query)?
+            .and_then(|value| self.memo.literal_groups.get(&value).copied())
+        {
+            self.memo.bound_groups.insert(query, group);
+            return Ok(group);
         }
         let (loc, scope) = match query {
             Query::Let(scope, local) => match self.let_decl(scope, local)? {
@@ -599,6 +616,37 @@ impl Engine<'_> {
         Ok(group)
     }
 
+    fn bound_value(&self, query: Query) -> Result<Option<(ExprId, ScopeId)>, Internal> {
+        Ok(match query {
+            Query::Let(scope, local) => {
+                self.let_decl(scope, local)?.map(|decl| (decl.value, scope))
+            }
+            Query::Param(scope, index) => {
+                let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
+                    return Err(Internal::missed("locals scope"));
+                };
+                let params = match locals.owner {
+                    LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
+                    LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
+                };
+                match locals.params.get(index as usize) {
+                    Some(ParamSource::Arg { expr, scope }) => Some((*expr, *scope)),
+                    Some(ParamSource::Default) => params
+                        .get(index as usize)
+                        .and_then(|param| param.default)
+                        .zip(self.memo.prefix_scopes.get(&(scope, index)).copied()),
+                    Some(ParamSource::Missing | ParamSource::Bound(_)) | None => None,
+                }
+            }
+            Query::Input(_)
+            | Query::Expr(..)
+            | Query::Attr(..)
+            | Query::Destination(_)
+            | Query::Sig(_)
+            | Query::Eval(..) => None,
+        })
+    }
+
     fn param_value_loc(&self, scope: ScopeId, index: u32) -> Result<Option<Loc>, Internal> {
         let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
             return Err(Internal::missed("locals scope"));
@@ -617,10 +665,20 @@ impl Engine<'_> {
         expr.map(|expr| Ok(self.hir.expr(expr)?.loc)).transpose()
     }
 
-    fn value_group(&mut self, base: ExprId, val: &Val, scope: ScopeId) -> Result<NodeId, Internal> {
+    pub(in crate::semantics::analysis) fn value_group(
+        &mut self,
+        base: ExprId,
+        val: &Val,
+        scope: ScopeId,
+    ) -> Result<NodeId, Internal> {
+        if let Some(group) = self.memo.literal_groups.get(&(base, scope)) {
+            return Ok(*group);
+        }
         let leaves = val.nodes();
-        if matches!(self.hir.expr(base)?.kind, ExprKind::Index(..))
-            && let Some(group) = leaves.first().and_then(|leaf| self.memo.groups.get(leaf))
+        if matches!(
+            self.hir.expr(base)?.kind,
+            ExprKind::Index(..) | ExprKind::Name(_)
+        ) && let Some(group) = leaves.first().and_then(|leaf| self.memo.groups.get(leaf))
         {
             return Ok(*group);
         }

@@ -204,8 +204,9 @@ impl Engine<'_> {
                 used.insert(target);
             }
         }
+        let read: FastSet<NodeId> = self.memo.groups.values().copied().collect();
         for group in &self.memo.group_list {
-            if self.is_bare_value(*group)? {
+            if read.contains(group) && self.is_bare_value(*group)? {
                 members.insert(Member::Value(*group));
             }
         }
@@ -738,6 +739,7 @@ impl Engine<'_> {
                     }
                 }
             }
+            secondary.retain(|other| other != loc);
             secondary.sort();
             secondary.dedup();
             self.report_flow(*first, *loc, *scope, secondary)?;

@@ -45,7 +45,7 @@ impl Engine<'_> {
                     None => None,
                 }
             }
-            ExprKind::Array(elements) => self.array(elements, loc, scope, need)?,
+            ExprKind::Array(elements) => self.array(expr, elements, loc, scope, need)?,
             ExprKind::Field(base, name) => self.field(*base, name, loc, scope, need)?,
             ExprKind::Index(base, index) => self.index(*base, *index, loc, scope, need)?,
             ExprKind::Call(callee, args) => self.call(*callee, args, expr, loc, scope, need)?,
@@ -64,7 +64,10 @@ impl Engine<'_> {
             }
             ExprKind::If(condition, then, otherwise) => {
                 let condition = self.val(Query::Expr(*condition, scope), need);
-                let (then, otherwise) = self.siblings(*then, *otherwise, scope, need)?;
+                let (then_expr, otherwise_expr) = (*then, *otherwise);
+                let (then, otherwise) = self.siblings(then_expr, otherwise_expr, scope, need)?;
+                let then = self.unless_faulty(then_expr, then, scope, need);
+                let otherwise = self.unless_faulty(otherwise_expr, otherwise, scope, need);
                 match (condition, then, otherwise) {
                     (Some(condition), Some(then), Some(otherwise)) => {
                         self.if_val(condition, then, otherwise, (loc, scope), need)?
@@ -488,11 +491,15 @@ impl Engine<'_> {
 
     fn array(
         &mut self,
+        expr: ExprId,
         elements: &[ExprId],
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
+        if elements.is_empty() {
+            return Ok(Some(Val::Error));
+        }
         let vals: Vec<Option<Val>> = elements
             .iter()
             .map(|element| self.val(Query::Expr(*element, scope), need))
@@ -505,16 +512,62 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         if vals.iter().any(|val| self.holds_array(val)) {
-            return Ok(Some(self.opaque_array(vals, loc, scope)?));
+            let val = self.opaque_array(vals, loc, scope)?;
+            if let Val::Array(array) = &val {
+                self.literal_group(expr, array.elements.clone(), loc, scope)?;
+            }
+            return Ok(Some(val));
         }
         let inner = vals.first().map(Val::shape).unwrap_or_default();
         if vals.iter().any(|val| val.shape() != inner) {
             self.error(Code::RaggedArray, loc, scope, RAGGED)?;
             return Ok(Some(Val::Error));
         }
+        let mut members = Vec::with_capacity(vals.len());
+        for (element, val) in elements.iter().zip(&vals) {
+            match self.memo.literal_groups.get(&(*element, scope)) {
+                Some(group) if matches!(val, Val::Array(_)) => members.push(*group),
+                Some(_) | None => members.extend(val.nodes()),
+            }
+        }
+        self.literal_group(expr, members, loc, scope)?;
         let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
         let elements = vals.iter().flat_map(Val::nodes).collect();
         Ok(Some(Val::array(shape, elements)))
+    }
+
+    fn unless_faulty(
+        &self,
+        expr: ExprId,
+        val: Option<Val>,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Option<Val> {
+        let val = val?;
+        let Some(group) = self.memo.literal_groups.get(&(expr, scope)) else {
+            return Some(val);
+        };
+        if self
+            .scope_of(scope)
+            .map_or(true, |record| record.template.is_some())
+        {
+            return Some(val);
+        }
+        let sig = self.sig(*group, need)?;
+        Some(if sig.is_error() { Val::Error } else { val })
+    }
+
+    fn literal_group(
+        &mut self,
+        expr: ExprId,
+        members: Vec<NodeId>,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        let group = self.push_node(Op::Array(members), loc, scope)?;
+        self.memo.literal_groups.insert((expr, scope), group);
+        self.memo.group_list.push(group);
+        Ok(())
     }
 
     fn opaque_array(&mut self, vals: Vec<Val>, loc: Loc, scope: ScopeId) -> Result<Val, Internal> {
@@ -580,9 +633,13 @@ impl Engine<'_> {
                 | ExprKind::Match { .. } => self.val(Query::Expr(arm.label, scope), need),
             };
             labels.push(label);
-            values.push(self.val(Query::Expr(arm.value, scope), need));
+            let value = self.val(Query::Expr(arm.value, scope), need);
+            values.push(self.unless_faulty(arm.value, value, scope, need));
         }
-        let otherwise_val = otherwise.map(|expr| self.val(Query::Expr(expr, scope), need));
+        let otherwise_val = otherwise.map(|expr| {
+            let value = self.val(Query::Expr(expr, scope), need);
+            self.unless_faulty(expr, value, scope, need)
+        });
         if scrutinee_val.is_none()
             || labels.iter().any(Option::is_none)
             || values.iter().any(Option::is_none)

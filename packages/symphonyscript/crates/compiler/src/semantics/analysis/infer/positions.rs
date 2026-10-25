@@ -174,7 +174,12 @@ impl Engine<'_> {
             };
             self.demand(Query::Attr(item, source.attr))?;
             if let AttrValueSource::Expr(expr, scope) = source.value {
-                let val = self.demand_val(Query::Expr(expr, scope))?;
+                let mut val = self.demand_val(Query::Expr(expr, scope))?;
+                if let Some(group) = self.memo.literal_groups.get(&(expr, scope)).copied()
+                    && self.demand_sig(group)?.is_error()
+                {
+                    val = Val::Error;
+                }
                 positions.push(Position {
                     val,
                     ty: decl.ty.clone(),

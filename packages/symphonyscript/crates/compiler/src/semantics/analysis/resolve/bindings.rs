@@ -53,6 +53,7 @@ impl Engine<'_> {
             return Ok(false);
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
+        let unusable = decl.ty.is_some() && annotation.is_none();
         let loc = decl.loc;
         let name = decl
             .name
@@ -67,6 +68,10 @@ impl Engine<'_> {
         let Some(sigs) = self.element_sigs(&val, need) else {
             return Ok(false);
         };
+        if unusable {
+            self.memo.lets.insert((scope, local), BoundVal::Error);
+            return Ok(true);
+        }
         let spec = BindSpec {
             kind: BindingKind::Let,
             annotation: annotation.as_ref(),
@@ -210,12 +215,26 @@ impl Engine<'_> {
             return Ok(false);
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
+        let unusable = decl.ty.is_some() && annotation.is_none();
         let Some(val) = self.input_elements(val, annotation.as_ref(), decl.value, need)? else {
             return Ok(false);
         };
         let Some(sigs) = self.element_sigs(&val, need) else {
             return Ok(false);
         };
+        if unusable {
+            self.memo.inputs.insert(input, BoundVal::Error);
+            return Ok(true);
+        }
+        if let Some(group) = self.memo.literal_groups.get(&(decl.value, global)).copied() {
+            let Some(sig) = self.sig(group, need) else {
+                return Ok(false);
+            };
+            if sig.is_error() {
+                self.memo.inputs.insert(input, BoundVal::Error);
+                return Ok(true);
+            }
+        }
         let loc = self.hir.expr(decl.value)?.loc;
         if sigs.iter().any(|sig| sig.reactive) {
             for node in val.nodes() {

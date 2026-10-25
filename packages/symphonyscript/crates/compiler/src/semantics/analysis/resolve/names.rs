@@ -1,6 +1,7 @@
 use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
@@ -173,7 +174,15 @@ impl Engine<'_> {
             Found::Val(val) => Some(val),
             Found::Query(query) => {
                 let bound = some!(self.bound(query, need));
-                Some(self.read(&bound, loc, scope)?)
+                let val = self.read(&bound, loc, scope)?;
+                if let (BoundVal::Array(array), Query::Let(..) | Query::Param(..)) = (&bound, query)
+                {
+                    let group = self.bound_group(query, array, loc)?;
+                    for read in val.nodes() {
+                        self.memo.groups.insert(read, group);
+                    }
+                }
+                Some(val)
             }
             Found::Item(item) => Some(self.scalar(Op::NodeRef(item), loc, scope)?),
             Found::Decl(Decl::Builtin(BuiltinName::Pi)) => Some(self.scalar(Op::Pi, loc, scope)?),

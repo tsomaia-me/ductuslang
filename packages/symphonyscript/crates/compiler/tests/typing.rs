@@ -1112,11 +1112,11 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
                 "let g = [[1, 2], [3, \"s\"]]",
                 "Clip c:\n    Note/(g[0][1])",
             ],
-            &[(Code::TypeMismatch, "[[1, 2], [3, \"s\"]]")],
+            &[(Code::TypeMismatch, "[3, \"s\"]")],
         ),
         (
             &["Clip c:\n    Note/([[1, 2], [3, \"s\"]][0][0])"],
-            &[(Code::TypeMismatch, "[[1, 2], [3, \"s\"]]")],
+            &[(Code::TypeMismatch, "[3, \"s\"]")],
         ),
         (
             &["Clip c:\n    Note/([1, 2.5][0])"],
@@ -1240,6 +1240,189 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
         .collect();
     if !warned.is_empty() {
         failures.push(format!("{passed_over}warned {warned:?}"));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands() {
+    let rows: [Row; 18] = [
+        (
+            &["let a = [1, \"s\"]"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (&["let a = [Sine, 3]"], &[(Code::TypeMismatch, "[Sine, 3]")]),
+        (
+            &["let a = [1bars, 2ms]"],
+            &[(Code::MixedFamilies, "[1bars, 2ms]")],
+        ),
+        (
+            &["Clip c:\n    for e in [1, \"s\"]:\n        Note"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &[
+                "let a = [1, \"s\"]",
+                "Clip c:\n    for e in a:\n        Note",
+            ],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["let g = [[1, 2], [3, \"s\"]]"],
+            &[(Code::TypeMismatch, "[3, \"s\"]")],
+        ),
+        (
+            &["let a = [1, 2]", "let b = [\"s\", \"t\"]", "let c = [a, b]"],
+            &[(Code::TypeMismatch, "[a, b]")],
+        ),
+        (
+            &["let a = [1, \"s\"]", "let b = [a, a]"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["fn f(a): a[0]", "Clip c:\n    Note/(f([1, \"s\"]))"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["fn f(a = [1, \"s\"]): a[0]", "Clip c:\n    Note/(f())"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &[
+                "pattern P(a):\n    Note/(a[0])",
+                "Clip c:\n    P | a=[1, \"s\"]",
+            ],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["Clip c | gain=([1, \"s\"][0])"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["input k = [1, Wave::Saw]"],
+            &[(Code::TypeMismatch, "[1, Wave::Saw]")],
+        ),
+        (
+            &["Clip c:\n    Note/(if true then [1, \"s\"][0] else 2)"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["input f = true", "let q = if f then [1, \"s\"] else [1, 2]"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &["let q = match true:\n    true: [1, \"s\"]\n    false: [1, 2]"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (&["let a = [1, 2.5]"], &[]),
+        (
+            &["let a = [1, 3000000000]", "Clip c:\n    Note/(a[0])"],
+            &[],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, wanted) in rows {
+        let wanted: Errors = wanted
+            .iter()
+            .map(|(code, span)| (*code, (*span).to_string()))
+            .collect();
+        let all: Vec<&'static str> = std::iter::once("Session s")
+            .chain(items.iter().copied())
+            .collect();
+        for order in permutations(&all) {
+            let text = format!("{}\n", order.join("\n"));
+            let found = fixture_errors(&text);
+            if found != wanted {
+                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                break;
+            }
+        }
+    }
+    for (iterated, iterable, indexed) in [
+        (
+            "Session s\nClip c:\n    for e in [60, 2.5]:\n        Note/(e)\n",
+            "[60, 2.5]",
+            "Session s\nClip c:\n    for k in 0..2:\n        Note/([60, 2.5][k])\n",
+        ),
+        (
+            "Session s\nlet a = [60, 2.5]\nClip c:\n    for e in a:\n        Note/(e)\n",
+            "a",
+            "Session s\nlet a = [60, 2.5]\nClip c:\n    for k in 0..2:\n        Note/(a[k])\n",
+        ),
+    ] {
+        let by_element = fixture_errors(iterated);
+        let by_index = codes(indexed);
+        if by_element != [(Code::TypeMismatch, iterable.to_string())]
+            || by_index != [Code::TypeMismatch]
+        {
+            failures.push(format!(
+                "{iterated}drew {by_element:?}\n{indexed}drew {by_index:?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn an_array_an_error_leaves_without_elements_draws_nothing_more() {
+    let rows: [Row; 9] = [
+        (
+            &["let v = [[]]", "Clip c:\n    Note/(v[0][0])"],
+            &[(Code::ExpressionSyntax, "]")],
+        ),
+        (
+            &["let v = [[]]", "Clip c:\n    Note/(v[0])"],
+            &[(Code::ExpressionSyntax, "]")],
+        ),
+        (
+            &["Clip c:\n    Note/([[]][0][0])"],
+            &[(Code::ExpressionSyntax, "]")],
+        ),
+        (
+            &["let v = [[], []]", "Clip c:\n    Note/(v[1][0])"],
+            &[(Code::ExpressionSyntax, "]")],
+        ),
+        (
+            &["input k: i32[0] = 1", "Clip c:\n    Note/(k[0])"],
+            &[(Code::ZeroLength, "0")],
+        ),
+        (
+            &["let k: i32[0] = 1", "Clip c:\n    Note/(k[0])"],
+            &[(Code::ZeroLength, "0")],
+        ),
+        (
+            &[
+                "let a = [[60, 64], [67, 71]]",
+                "Clip c:\n    Note/(a[1][0])\n    Note/(a[0][1])",
+            ],
+            &[],
+        ),
+        (
+            &["let a = [[60], [67, 71]]"],
+            &[(Code::RaggedArray, "[[60], [67, 71]]")],
+        ),
+        (
+            &["Clip c:\n    Note/([[60], [67, 71]][0][0])"],
+            &[(Code::RaggedArray, "[[60], [67, 71]]")],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, wanted) in rows {
+        let wanted: Errors = wanted
+            .iter()
+            .map(|(code, span)| (*code, (*span).to_string()))
+            .collect();
+        let all: Vec<&'static str> = std::iter::once("Session s")
+            .chain(items.iter().copied())
+            .collect();
+        for order in permutations(&all) {
+            let text = format!("{}\n", order.join("\n"));
+            let found = fixture_errors(&text);
+            if found != wanted {
+                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                break;
+            }
+        }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
