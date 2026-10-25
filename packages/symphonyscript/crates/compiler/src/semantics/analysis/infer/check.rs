@@ -111,10 +111,16 @@ impl Engine<'_> {
                 } => {
                     let scrutinee_ty = self.synth(scrutinee)?;
                     stack.push((scrutinee, scrutinee_ty));
-                    let label_ty = own_type(&self.known_sig(scrutinee)?, EvalTy::Exact);
-                    match self.chosen(scrutinee, label_ty)? {
-                        Some(CVal::Error) => {}
-                        Some(value) => {
+                    let scrutinee_sig = self.known_sig(scrutinee)?;
+                    let chosen = match self.scrutinee_ty(scrutinee, &scrutinee_sig) {
+                        Some(label_ty) => self
+                            .chosen(scrutinee, label_ty)?
+                            .map(|value| (value, label_ty)),
+                        None => None,
+                    };
+                    match chosen {
+                        Some((CVal::Error, _)) => {}
+                        Some((value, label_ty)) => {
                             let mut chosen = otherwise;
                             for (label, arm) in &arms {
                                 if self.demand_cval(*label, label_ty)? == value {

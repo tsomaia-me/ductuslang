@@ -385,7 +385,9 @@ impl Engine<'_> {
                 otherwise,
             } => {
                 let scrutinee_sig = some!(self.sig(scrutinee, need));
-                let scrutinee_ty = own_type(&scrutinee_sig, EvalTy::Exact);
+                let Some(scrutinee_ty) = self.scrutinee_ty(scrutinee, &scrutinee_sig) else {
+                    return Ok(Some(CVal::Error));
+                };
                 let value = some!(self.child(scrutinee, scrutinee_ty, ctx, need)?);
                 let value = self.default_fit(scrutinee, value)?;
                 if value.is_error() {

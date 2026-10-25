@@ -77,6 +77,7 @@ pub(crate) struct Engine<'a> {
     pub evaluated_bodies: FastSet<FnId>,
     pub evaluated_defaults: FastSet<(FnId, usize)>,
     pub inline_limit_reported: bool,
+    pub cycle_spans: Vec<Loc>,
     pub call_limit_reported: bool,
     pub typing: super::infer::Typing,
     pub deferred: Vec<super::deferred::Deferred>,
@@ -136,6 +137,7 @@ impl<'a> Engine<'a> {
             evaluated_bodies: FastSet::default(),
             evaluated_defaults: FastSet::default(),
             inline_limit_reported: false,
+            cycle_spans: Vec::new(),
             call_limit_reported: false,
             typing: super::infer::Typing::default(),
             deferred: Vec::new(),
@@ -673,6 +675,14 @@ impl<'a> Engine<'a> {
         }
         let mut names = Vec::new();
         let mut locs = Vec::new();
+        for query in &path {
+            if let Query::Let(scope, local) = *query
+                && let Some(decl) = self.let_decl(scope, local)?
+            {
+                let span = self.hir.expr(decl.value)?.loc;
+                self.cycle_spans.push(span);
+            }
+        }
         for query in path {
             if let Some((name, loc)) = self.declaration(query)? {
                 names.push(name);

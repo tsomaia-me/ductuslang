@@ -311,6 +311,15 @@ impl Engine<'_> {
         for binding in &untyped {
             read_by_untyped.extend(self.reads_of(self.binding(*binding)?.init)?);
         }
+        if !self.cycle_spans.is_empty() {
+            for node in &self.nodes {
+                if let Op::Read(binding) = node.op
+                    && self.cycle_spans.iter().any(|span| span.contains(node.loc))
+                {
+                    read_by_untyped.insert(binding);
+                }
+            }
+        }
         let members: FastSet<BindingId> = remaining.iter().copied().collect();
         let mut locs: FastMap<BindingId, Loc> = FastMap::default();
         let mut writers = FastSet::default();

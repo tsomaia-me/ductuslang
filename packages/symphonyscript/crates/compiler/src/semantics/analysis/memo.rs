@@ -1,4 +1,5 @@
 use symphonyscript_core::AttrId;
+use symphonyscript_core::EnumId;
 use symphonyscript_core::FamilyId;
 
 use super::bound_val::BoundVal;
@@ -17,6 +18,8 @@ use crate::semantics::ir::{ExprId, InputId};
 #[derive(Default)]
 pub(crate) struct Memo {
     pub exprs: FastMap<(ExprId, ScopeId), Val>,
+    pub bare_matches: Vec<NodeId>,
+    pub bare_scrutinees: FastMap<NodeId, EnumId>,
     pub lets: FastMap<(ScopeId, LetRef), BoundVal>,
     pub params: FastMap<(ScopeId, u32), BoundVal>,
     pub inputs: FastMap<InputId, BoundVal>,

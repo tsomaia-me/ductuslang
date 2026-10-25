@@ -30,66 +30,17 @@ impl Engine<'_> {
         sigs: &[Sig],
     ) -> Result<Sig, Internal> {
         let scrutinee = operand(sigs, 0)?;
-        if !matches!(scrutinee.kind, Kind::Enum(_) | Kind::Int | Kind::Bool) {
+        if scrutinee.kind == Kind::Bare {
+            self.memo.bare_matches.push(node);
+        } else if !matches!(scrutinee.kind, Kind::Enum(_) | Kind::Int | Kind::Bool) {
             self.error_at_node(
                 Code::MatchScrutinee,
                 scrutinee_node,
                 "a `match` selects by an enum value, an integer or a `bool`",
             )?;
             return Ok(Sig::ERROR);
-        }
-        let mut seen: BTreeSet<Label> = BTreeSet::new();
-        for (label, _) in arms {
-            let Some(value) = self.label(*label, &scrutinee)? else {
-                return Ok(Sig::ERROR);
-            };
-            if !seen.insert(value) {
-                self.error_at_node(
-                    Code::DuplicateArm,
-                    *label,
-                    "this label repeats an earlier one",
-                )?;
-                return Ok(Sig::ERROR);
-            }
-        }
-        let total = match scrutinee.kind {
-            Kind::Enum(id) => Some(self.enum_decl(id)?.variants.len()),
-            Kind::Bool => Some(2),
-            Kind::Int
-            | Kind::Float
-            | Kind::Str
-            | Kind::Node
-            | Kind::Bare
-            | Kind::Any
-            | Kind::Error => None,
-        };
-        let complete = total.is_some_and(|total| seen.len() >= total);
-        match (otherwise.is_some(), complete, total.is_some()) {
-            (false, false, true) => {
-                self.error_at_node(
-                    Code::MatchIncomplete,
-                    node,
-                    "this `match` covers some values only and ends with no `else:`",
-                )?;
-                return Ok(Sig::ERROR);
-            }
-            (false, _, false) => {
-                self.error_at_node(
-                    Code::MatchIncomplete,
-                    node,
-                    "a `match` on an integer ends with `else:`",
-                )?;
-                return Ok(Sig::ERROR);
-            }
-            (true, true, true) => {
-                self.error_at_node(
-                    Code::RedundantElse,
-                    node,
-                    "the arms cover every value, so `else:` never applies",
-                )?;
-                return Ok(Sig::ERROR);
-            }
-            _ => {}
+        } else if !self.match_labels(node, arms, otherwise, &scrutinee)? {
+            return Ok(Sig::ERROR);
         }
         let mut values: Vec<(NodeId, Sig)> = Vec::new();
         for (position, (_, value)) in arms.iter().enumerate() {
@@ -121,6 +72,69 @@ impl Engine<'_> {
             width = Width::Adaptive;
         }
         Ok(Sig::of(kind, width, reactive, family))
+    }
+
+    pub(in crate::semantics::analysis) fn match_labels(
+        &mut self,
+        node: NodeId,
+        arms: &[(NodeId, NodeId)],
+        otherwise: Option<NodeId>,
+        scrutinee: &Sig,
+    ) -> Result<bool, Internal> {
+        let mut seen: BTreeSet<Label> = BTreeSet::new();
+        for (label, _) in arms {
+            let Some(value) = self.label(*label, scrutinee)? else {
+                return Ok(false);
+            };
+            if !seen.insert(value) {
+                self.error_at_node(
+                    Code::DuplicateArm,
+                    *label,
+                    "this label repeats an earlier one",
+                )?;
+                return Ok(false);
+            }
+        }
+        let total = match scrutinee.kind {
+            Kind::Enum(id) => Some(self.enum_decl(id)?.variants.len()),
+            Kind::Bool => Some(2),
+            Kind::Int
+            | Kind::Float
+            | Kind::Str
+            | Kind::Node
+            | Kind::Bare
+            | Kind::Any
+            | Kind::Error => None,
+        };
+        let complete = total.is_some_and(|total| seen.len() >= total);
+        match (otherwise.is_some(), complete, total.is_some()) {
+            (false, false, true) => {
+                self.error_at_node(
+                    Code::MatchIncomplete,
+                    node,
+                    "this `match` covers some values only and ends with no `else:`",
+                )?;
+                return Ok(false);
+            }
+            (false, _, false) => {
+                self.error_at_node(
+                    Code::MatchIncomplete,
+                    node,
+                    "a `match` on an integer ends with `else:`",
+                )?;
+                return Ok(false);
+            }
+            (true, true, true) => {
+                self.error_at_node(
+                    Code::RedundantElse,
+                    node,
+                    "the arms cover every value, so `else:` never applies",
+                )?;
+                return Ok(false);
+            }
+            _ => {}
+        }
+        Ok(true)
     }
 
     fn label(&mut self, label: NodeId, scrutinee: &Sig) -> Result<Option<Label>, Internal> {

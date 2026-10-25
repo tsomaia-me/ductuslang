@@ -737,7 +737,7 @@ fn two_enum_vocabulary() -> Vocabulary {
     let mut v = Vocabulary::builder("enums");
     let wave = v.enumeration("Wave", ["Sine", "Saw", "Square"]);
     let mode = v.enumeration("Mode", ["Low", "High"]);
-    let color = v.enumeration("Color", ["Red", "Green"]);
+    let color = v.enumeration("Color", ["Red", "Green", "Blue"]);
     let osc = v.node("Osc");
     let filter = v.node("Filt");
     let both = v.node("K");
@@ -841,7 +841,16 @@ fn a_carried_enum_meets_every_use_in_every_order() {
         "let y = if f then a else b",
         "K k1 | wave=a color=b",
     ];
+    let colored = "let b = match a:\n    Red: Blue\n    Blue: Red\n    else: Green";
     let accepted = [
+        vec!["let a = Red", colored, "K k1 | color=a", "K k2 | color=b"],
+        vec![
+            "input f = true",
+            "let a = if f then Red else Blue",
+            colored,
+            "K k1 | color=a",
+            "K k2 | color=b",
+        ],
         with(&carried, &["Osc p | wave=v"]),
         with(
             &carried,
@@ -853,6 +862,15 @@ fn a_carried_enum_meets_every_use_in_every_order() {
     let mut failures = Vec::new();
     let mut cases: Vec<(Vec<&'static str>, Option<Errors>)> =
         rejected.into_iter().map(|items| (items, None)).collect();
+    cases.push((
+        vec![
+            "input f = true",
+            "let a = if f then Sine else Saw",
+            "let b = if f then a else b",
+            "K k1 | wave=b",
+        ],
+        Some(vec![(Code::DeclarationCycle, "b".to_string())]),
+    ));
     cases.push((
         joined.to_vec(),
         Some(vec![(Code::TypeMismatch, "if f then a else b".to_string())]),
@@ -893,4 +911,38 @@ fn unit_values_keep_their_family() {
         ("Clip c:\n    Note | length=(2bars / 1bars)\n", &[]),
         ("Synth s:\n    Osc | freq=(1s / 1ms)\n", &[]),
     ]);
+}
+
+#[test]
+fn a_match_waits_for_its_scrutinees_enum() {
+    let arms = "let l = match a:\n    Sine: 1.0\n    else: 0.5\n";
+    let used = "Synth y:\n    Osc | wave=a rate=l\n";
+    for held in [
+        "Session s\nlet a = Sine\n",
+        "Session s\ninput a = Wave::Saw\n",
+        "Session s\ninput f = true\nlet a = if f then Sine else Saw\n",
+    ] {
+        support::expect_codes(&format!("{held}{arms}{used}"), &[]);
+    }
+    let unused = "Synth y:\n    Osc | rate=l\n";
+    support::expect_codes(
+        &format!("Session s\ninput f = true\nlet a = if f then Sine else Saw\n{arms}{unused}"),
+        &[(Code::TypeMismatch, "let a = if f then Sine else Saw\n", 0)],
+    );
+    support::expect_codes(
+        &format!("Session s\nlet a = Sine\n{arms}{unused}"),
+        &[(Code::MatchScrutinee, "a", 2)],
+    );
+    support::expect_codes(
+        &format!("Session s\nlet a = Sine\nlet l = match a:\n    Low: 1.0\n    else: 0.5\n{used}"),
+        &[(Code::MatchLabel, "Low", 0)],
+    );
+    support::expect_codes(
+        &format!("Session s\nlet a = Sine\nlet l = match a:\n    Sine: 1.0\n    Saw: 0.5\n{used}"),
+        &[(
+            Code::MatchIncomplete,
+            "match a:\n    Sine: 1.0\n    Saw: 0.5\n",
+            0,
+        )],
+    );
 }

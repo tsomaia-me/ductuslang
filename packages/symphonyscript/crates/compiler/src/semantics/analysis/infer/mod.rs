@@ -1,3 +1,4 @@
+mod bare_scrutinees;
 mod check;
 mod enum_bindings;
 mod expectations;
@@ -78,6 +79,7 @@ impl Engine<'_> {
             }
         }
         self.enum_bindings()?;
+        self.bare_scrutinees(&valid)?;
         let mut roots = Vec::new();
         for position in &valid {
             for node in position.val.nodes() {

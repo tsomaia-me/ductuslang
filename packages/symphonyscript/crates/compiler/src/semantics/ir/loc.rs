@@ -14,6 +14,10 @@ impl Loc {
         }
     }
 
+    pub fn contains(self, other: Loc) -> bool {
+        self.file == other.file && self.start <= other.start && other.end <= self.end
+    }
+
     pub fn to(self, other: Loc) -> Loc {
         Loc {
             file: self.file,
