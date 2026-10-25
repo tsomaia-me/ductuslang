@@ -14,6 +14,17 @@ impl Engine<'_> {
     pub(super) fn enum_bindings(&mut self) -> Result<(), Internal> {
         let pending = std::mem::take(&mut self.typing.awaiting_enum);
         let mut waiting: FastSet<BindingId> = pending.iter().copied().collect();
+        let mut carried: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
+        let mut carriers: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
+        for &binding in &pending {
+            let Some(reads) = self.carried_reads(self.binding(binding)?.init)? else {
+                continue;
+            };
+            for read in &reads {
+                carriers.entry(*read).or_default().push(binding);
+            }
+            carried.insert(binding, reads);
+        }
         let mut queue: VecDeque<BindingId> = std::mem::take(&mut self.typing.enum_expected)
             .into_iter()
             .collect();
@@ -26,20 +37,21 @@ impl Engine<'_> {
                 self.no_single_enum(binding, Vec::new())?;
                 continue;
             };
-            self.typing.own.insert(binding, own);
             decided.push(binding);
-            let init = self.binding(binding)?.init;
-            self.expect(init, Some(own))?;
-            let partners = self
-                .typing
-                .equal_to
-                .get(&binding)
-                .cloned()
-                .unwrap_or_default();
-            for partner in partners {
-                self.expect(partner, Some(own))?;
+            self.take_enum(binding, own, &mut queue)?;
+            let mut typed = vec![binding];
+            while let Some(read) = typed.pop() {
+                for carrier in carriers.get(&read).into_iter().flatten() {
+                    let reads = carried.get(carrier).map(Vec::as_slice).unwrap_or_default();
+                    let carries = reads
+                        .iter()
+                        .all(|read| self.typing.own.get(read) == Some(&own));
+                    if carries && waiting.remove(carrier) {
+                        self.take_enum(*carrier, own, &mut queue)?;
+                        typed.push(*carrier);
+                    }
+                }
             }
-            queue.extend(std::mem::take(&mut self.typing.enum_expected));
         }
         for binding in decided {
             if self.single_enum(binding)?.is_none() {
@@ -53,6 +65,73 @@ impl Engine<'_> {
         self.flows_without_enum(&remaining)
     }
 
+    fn take_enum(
+        &mut self,
+        binding: BindingId,
+        own: Scalar,
+        queue: &mut VecDeque<BindingId>,
+    ) -> Result<(), Internal> {
+        self.typing.own.insert(binding, own);
+        let init = self.binding(binding)?.init;
+        self.expect(init, Some(own))?;
+        let partners = self
+            .typing
+            .equal_to
+            .get(&binding)
+            .cloned()
+            .unwrap_or_default();
+        for partner in partners {
+            self.expect(partner, Some(own))?;
+        }
+        queue.extend(std::mem::take(&mut self.typing.enum_expected));
+        Ok(())
+    }
+
+    fn carried_reads(&self, init: NodeId) -> Result<Option<Vec<BindingId>>, Internal> {
+        let mut reads = Vec::new();
+        let mut seen = FastSet::default();
+        let mut stack = vec![init];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Read(binding) => reads.push(*binding),
+                Op::Use(inner) => stack.push(*inner),
+                Op::If(_, then, otherwise) => stack.extend([*then, *otherwise]),
+                Op::Match {
+                    arms, otherwise, ..
+                } => {
+                    stack.extend(arms.iter().map(|(_, value)| *value));
+                    stack.extend(*otherwise);
+                }
+                Op::Pick { items, .. } => stack.extend(items.iter().copied()),
+                Op::Element { base, .. } => stack.push(*base),
+                Op::Array(elements) => stack.extend(elements.iter().copied()),
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. } => return Ok(None),
+            }
+        }
+        reads.sort();
+        reads.dedup();
+        Ok((!reads.is_empty()).then_some(reads))
+    }
+
     fn flows_without_enum(&mut self, remaining: &[BindingId]) -> Result<(), Internal> {
         let mut read_by_untyped = FastSet::default();
         let untyped: Vec<BindingId> = self.typing.untyped.iter().copied().collect();
@@ -61,89 +140,79 @@ impl Engine<'_> {
         }
         let members: FastSet<BindingId> = remaining.iter().copied().collect();
         let mut locs: FastMap<BindingId, Loc> = FastMap::default();
-        let mut readers: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
-        let mut upstream: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
-        let mut sources = FastSet::default();
+        let mut neighbours: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
+        let mut read_by_member = FastSet::default();
         for &binding in remaining {
             let record = self.binding(binding)?;
             let (loc, init) = (record.loc, record.init);
             locs.insert(binding, loc);
-            let mut reads = self.reads_of(init)?;
-            reads.sort();
-            reads.dedup();
-            reads.retain(|read| *read != binding && members.contains(read));
-            if reads.is_empty() || self.writes_variant(init)? {
-                sources.insert(binding);
+            let mut met = Vec::new();
+            for read in self.reads_of(init)? {
+                if read != binding && members.contains(&read) {
+                    read_by_member.insert(read);
+                    met.push(read);
+                }
             }
-            for read in &reads {
-                readers.entry(*read).or_default().push(binding);
+            let partners = self
+                .typing
+                .equal_to
+                .get(&binding)
+                .cloned()
+                .unwrap_or_default();
+            for partner in partners {
+                if let Op::Read(other) = self.node(self.through_uses(partner)?)?.op
+                    && other != binding
+                    && members.contains(&other)
+                {
+                    met.push(other);
+                }
             }
-            upstream.insert(binding, reads);
-        }
-        for list in readers.values_mut() {
-            list.sort_by_key(|reader| locs.get(reader).copied());
-        }
-        let mut live = FastSet::default();
-        let mut stack: Vec<BindingId> = remaining
-            .iter()
-            .copied()
-            .filter(|binding| {
-                self.typing.reads.contains_key(binding)
-                    || (!readers.contains_key(binding) && !read_by_untyped.contains(binding))
-            })
-            .collect();
-        while let Some(binding) = stack.pop() {
-            if live.insert(binding) {
-                stack.extend(upstream.get(&binding).into_iter().flatten().copied());
+            for other in met {
+                neighbours.entry(binding).or_default().push(other);
+                neighbours.entry(other).or_default().push(binding);
             }
         }
         for &binding in remaining {
             self.typing.untyped.insert(binding);
         }
-        for &source in remaining {
-            if !sources.contains(&source) || !live.contains(&source) {
+        let mut seen = FastSet::default();
+        for &start in remaining {
+            if !seen.insert(start) {
                 continue;
             }
-            let mut secondary = Vec::new();
-            let mut seen = FastSet::default();
-            let mut queue: VecDeque<BindingId> = readers
-                .get(&source)
-                .into_iter()
-                .flatten()
-                .copied()
-                .collect();
-            while let Some(reader) = queue.pop_front() {
-                if !live.contains(&reader) || !seen.insert(reader) {
-                    continue;
-                }
-                secondary.push(
-                    locs.get(&reader)
-                        .copied()
-                        .ok_or(Internal::missed("binding"))?,
-                );
-                if !sources.contains(&reader) {
-                    queue.extend(readers.get(&reader).into_iter().flatten().copied());
+            let mut flow = vec![start];
+            let mut stack = vec![start];
+            while let Some(binding) = stack.pop() {
+                for other in neighbours.get(&binding).into_iter().flatten() {
+                    if seen.insert(*other) {
+                        flow.push(*other);
+                        stack.push(*other);
+                    }
                 }
             }
-            self.no_single_enum(source, secondary)?;
+            let live = flow.iter().any(|binding| {
+                self.typing.reads.contains_key(binding)
+                    || (!read_by_member.contains(binding) && !read_by_untyped.contains(binding))
+            });
+            if !live {
+                continue;
+            }
+            let mut located = Vec::with_capacity(flow.len());
+            for binding in flow {
+                let loc = locs
+                    .get(&binding)
+                    .copied()
+                    .ok_or(Internal::missed("binding"))?;
+                located.push((loc, binding));
+            }
+            located.sort();
+            let Some(((_, first), others)) = located.split_first() else {
+                continue;
+            };
+            let secondary = others.iter().map(|(loc, _)| *loc).collect();
+            self.no_single_enum(*first, secondary)?;
         }
         Ok(())
-    }
-
-    fn writes_variant(&self, init: NodeId) -> Result<bool, Internal> {
-        let mut seen = FastSet::default();
-        let mut stack = vec![init];
-        while let Some(node) = stack.pop() {
-            if !seen.insert(node) {
-                continue;
-            }
-            match &self.node(node)?.op {
-                Op::Bare(_) => return Ok(true),
-                Op::Read(_) => {}
-                op => stack.extend(op.operands()),
-            }
-        }
-        Ok(false)
     }
 
     fn single_enum(&self, binding: BindingId) -> Result<Option<Scalar>, Internal> {

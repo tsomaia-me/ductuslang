@@ -617,12 +617,22 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
         (
             "let w = if f then Saw else Square\nlet y = if g then x else w\n",
             "    Note when y + true\n",
-            vec![(the_let, vec!["let y"]), (other, vec!["let y"])],
+            vec![(the_let, vec![other, "let y"])],
         ),
         (
-            "let y = if g then x else Square\n",
+            "let y = if f then x else Square\n",
             "    Note when y + true\n",
-            vec![(the_let, vec!["let y"]), ("let y", vec![])],
+            vec![(the_let, vec!["let y"])],
+        ),
+        (
+            "let w = if f then Saw else Square\n",
+            "    Note when x is w\n",
+            vec![(the_let, vec![other])],
+        ),
+        (
+            "let w = if f then Saw else Square\n",
+            "    Note when x + true\n    Note when w + true\n",
+            vec![(the_let, vec![]), (other, vec![])],
         ),
         ("", "    Note when x + true\n", vec![(the_let, vec![])]),
     ]
@@ -655,6 +665,32 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
     })
     .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_let_that_reads_a_typed_enum_takes_its_type() {
+    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let typed = "Synth s2:\n    Osc | wave=x\n";
+    support::expect_codes(
+        "Session s\ninput w = Wave::Saw\nlet y = w\nClip c:\n    Note when y\n",
+        &[(Code::ConditionType, "y", 1)],
+    );
+    support::expect_codes(
+        &format!("{held}let y = x\nClip c:\n    Note when y\n{typed}"),
+        &[(Code::ConditionType, "y", 1)],
+    );
+    support::expect_codes(
+        &format!("{held}let y = x\nlet z = if f then y else x\nClip c:\n    Note when z\n{typed}"),
+        &[(Code::ConditionType, "z", 1)],
+    );
+    support::expect_codes(
+        &format!("{held}let y = x\nClip c:\n    Note when y is Saw\n{typed}"),
+        &[],
+    );
+    support::expect_codes(
+        &format!("{held}let y = x\nClip c:\n    Note when y + true\n"),
+        &[(Code::TypeMismatch, "let x = if f then Sine else Saw\n", 0)],
+    );
 }
 
 #[test]
