@@ -204,6 +204,34 @@ fn renaming_every_declared_name_keeps_the_diagnostics_of_equal_programs() {
     }
 }
 
+const CONTINUED: &str = "Clip riff:
+    Note as p /60 | velocity=0.8
+                    brightness=0.7
+                    accent
+";
+
+#[test]
+fn a_continued_attribute_clause_after_a_declared_name_draws_no_rename_signal() {
+    let checker = checker(DEFAULT_BUDGET);
+    assert_eq!(
+        checker.finding(&program(&[("main.sym", CONTINUED)]), Signal::Rename),
+        None
+    );
+}
+
+#[test]
+fn a_wide_name_keeps_its_column_count_in_a_continued_attribute_clause() {
+    let checker = checker(DEFAULT_BUDGET);
+    let text = format!(
+        "Clip riff:\n    Note as \u{65e5} /60 | velocity=0.8\n{}brightness=0.7\n",
+        " ".repeat(20)
+    );
+    assert_eq!(
+        checker.finding(&program(&[("main.sym", &text)]), Signal::Rename),
+        None
+    );
+}
+
 #[test]
 fn an_unused_let_at_the_end_keeps_the_diagnostics_of_equal_programs() {
     let checker = checker(DEFAULT_BUDGET);

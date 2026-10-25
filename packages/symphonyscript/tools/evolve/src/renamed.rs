@@ -34,23 +34,27 @@ struct Identifiers {
 struct Naming {
     reserved: BTreeSet<String>,
     taken: BTreeSet<String>,
-    counter: usize,
+    counters: BTreeMap<(bool, usize), usize>,
 }
 
-pub fn renamed(program: &Program, vocabulary: &Vocabulary) -> Renamed {
+pub fn renamed(program: &Program, vocabulary: &Vocabulary) -> Option<Renamed> {
     let identifiers = identifiers(program, vocabulary);
-    let fresh = Naming::new(&identifiers, vocabulary).fresh(&identifiers);
-    Renamed {
+    let fresh = Naming::new(&identifiers, vocabulary).fresh(&identifiers)?;
+    Some(Renamed {
         program: rewritten(program, &identifiers, &fresh),
         originals: fresh.into_iter().map(|(old, new)| (new, old)).collect(),
-    }
+    })
 }
 
 pub fn renamed_copies(program: &Program, vocabulary: &Vocabulary, count: usize) -> Vec<Program> {
     let identifiers = identifiers(program, vocabulary);
     let mut naming = Naming::new(&identifiers, vocabulary);
     (0..count)
-        .map(|_| rewritten(program, &identifiers, &naming.fresh(&identifiers)))
+        .map_while(|_| {
+            naming
+                .fresh(&identifiers)
+                .map(|fresh| rewritten(program, &identifiers, &fresh))
+        })
         .collect()
 }
 
@@ -61,30 +65,58 @@ impl Naming {
         Naming {
             reserved,
             taken,
-            counter: 0,
+            counters: BTreeMap::new(),
         }
     }
 
-    fn fresh(&mut self, identifiers: &Identifiers) -> BTreeMap<String, String> {
+    fn fresh(&mut self, identifiers: &Identifiers) -> Option<BTreeMap<String, String>> {
         let mut fresh = BTreeMap::new();
-        for name in identifiers
+        let names: Vec<&String> = identifiers
             .declared
             .iter()
             .filter(|name| !self.reserved.contains(*name) && is_identifier(name))
-        {
-            let lead: String = name.chars().take(1).collect();
-            let replacement = loop {
-                let candidate = format!("{lead}ev{}", self.counter);
-                self.counter += 1;
-                if !self.taken.contains(&candidate) {
-                    break candidate;
-                }
-            };
+            .collect();
+        for name in names {
+            let replacement = self.replacement(name)?;
             self.taken.insert(replacement.clone());
             fresh.insert(name.clone(), replacement);
         }
-        fresh
+        Some(fresh)
     }
+
+    fn replacement(&mut self, name: &str) -> Option<String> {
+        let width = name.chars().count();
+        if width == 0 {
+            return None;
+        }
+        let upper = name.starts_with(|character: char| character.is_ascii_uppercase());
+        let counter = self.counters.entry((upper, width)).or_insert(0);
+        let letters = if upper { UPPER } else { LOWER };
+        let tail = (width - 1) as u32;
+        let limit = LOWER.len().saturating_mul(36usize.saturating_pow(tail));
+        while *counter < limit {
+            let candidate = candidate(letters, *counter, width);
+            *counter += 1;
+            if !self.taken.contains(&candidate) {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+}
+
+const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+const UPPER: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const DIGITS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+
+fn candidate(letters: &[u8], index: usize, width: usize) -> String {
+    let mut result = vec![letters[index % letters.len()]];
+    let mut rest = index / letters.len();
+    for _ in 1..width {
+        result.push(DIGITS[rest % DIGITS.len()]);
+        rest /= DIGITS.len();
+    }
+    result.iter().map(|byte| char::from(*byte)).collect()
 }
 
 fn rewritten(
