@@ -215,11 +215,28 @@ impl Engine<'_> {
 
     fn pair(&mut self, lhs: NodeId, rhs: NodeId) -> Result<Option<Scalar>, Internal> {
         let (left, right) = (self.known_sig(lhs)?, self.known_sig(rhs)?);
-        Ok(match (left.kind, right.kind) {
+        let (left_kind, right_kind) = (
+            self.carried_kind(lhs, left.kind)?,
+            self.carried_kind(rhs, right.kind)?,
+        );
+        Ok(match (left_kind, right_kind) {
             (Kind::Bool, _) => Some(Scalar::Bool),
             (Kind::Str, _) => Some(Scalar::Str),
             (Kind::Enum(id), _) | (_, Kind::Enum(id)) => Some(Scalar::Enum(id)),
             _ => self.combine(&[lhs, rhs])?,
+        })
+    }
+
+    fn carried_kind(&self, node: NodeId, kind: Kind) -> Result<Kind, Internal> {
+        if kind != Kind::Bare {
+            return Ok(kind);
+        }
+        let Op::Read(binding) = self.node(self.through_uses(node)?)?.op else {
+            return Ok(kind);
+        };
+        Ok(match self.typing.own.get(&binding) {
+            Some(Scalar::Enum(id)) => Kind::Enum(*id),
+            Some(_) | None => kind,
         })
     }
 
@@ -233,7 +250,7 @@ impl Engine<'_> {
         let is_cell = matches!(self.node(self.through_uses(node)?)?.op, Op::Read(_))
             || matches!(sig.width, Width::Adaptive)
                 && matches!(self.node(node)?.op, Op::ToRead { .. });
-        let fits_kind = match (sig.kind, expected) {
+        let fits_kind = match (self.carried_kind(node, sig.kind)?, expected) {
             (Kind::Bool, Scalar::Bool) | (Kind::Str, Scalar::Str) => true,
             (Kind::Enum(id), Scalar::Enum(other)) => id == other,
             (Kind::Bare, Scalar::Enum(_)) | (Kind::Any, _) => true,

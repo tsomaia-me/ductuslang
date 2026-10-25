@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::Code;
+use symphonyscript::{Code, Compiler, Source};
+use symphonyscript_core::{Count, Vocabulary};
 
 fn codes(text: &str) -> Vec<Code> {
     support::checked(text)
@@ -593,52 +594,78 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
     let held = "Session s\ninput f = true\ninput g = true\nlet x = if f then Sine else Saw\n";
     let the_let = "let x = if f then Sine else Saw\n";
     let other = "let w = if f then Saw else Square\n";
+    let bare = "Session s\ninput f = true\ninput g = true\n";
     let failures: Vec<String> = [
         (
+            held,
             "let y = x\n",
             "    Note when y + true\n",
             vec![(the_let, vec!["let y"])],
         ),
         (
+            held,
             "let y = x\nlet z = y\n",
             "    Note when z + true\n",
             vec![(the_let, vec!["let y", "let z"])],
         ),
         (
+            held,
             "let y = x\n",
             "    Note when x + true\n    Note when y + true\n",
             vec![(the_let, vec!["let y"])],
         ),
         (
+            held,
             "let y = x\nlet z = x\n",
             "    Note when y + true\n    Note when z + true\n",
             vec![(the_let, vec!["let y", "let z"])],
         ),
         (
+            held,
             "let w = if f then Saw else Square\nlet y = if g then x else w\n",
             "    Note when y + true\n",
             vec![(the_let, vec![other, "let y"])],
         ),
         (
+            held,
             "let y = if f then x else Square\n",
             "    Note when y + true\n",
             vec![(the_let, vec!["let y"])],
         ),
         (
+            held,
             "let w = if f then Saw else Square\n",
             "    Note when x is w\n",
             vec![(the_let, vec![other])],
         ),
         (
+            held,
             "let w = if f then Saw else Square\n",
             "    Note when x + true\n    Note when w + true\n",
             vec![(the_let, vec![]), (other, vec![])],
         ),
-        ("", "    Note when x + true\n", vec![(the_let, vec![])]),
+        (
+            held,
+            "",
+            "    Note when x + true\n",
+            vec![(the_let, vec![])],
+        ),
+        (
+            bare,
+            "let v = w\nlet w = if f then Saw else Sine\n",
+            "    Note/60\n",
+            vec![("let w", vec!["let v"])],
+        ),
+        (
+            bare,
+            "let u = if f then v else v\nlet v = w\nlet w = if f then Saw else Sine\n",
+            "    Note/60\n",
+            vec![("let w", vec!["let u", "let v"])],
+        ),
     ]
     .into_iter()
-    .filter_map(|(lets, uses, expected)| {
-        let text = format!("{held}{lets}Clip c:\n{uses}");
+    .filter_map(|(prefix, lets, uses, expected)| {
+        let text = format!("{prefix}{lets}Clip c:\n{uses}");
         let start = |needle: &str| support::at(&text, needle, 0).0;
         let expected: Vec<(Code, u32, Vec<u32>)> = expected
             .iter()
@@ -687,10 +714,167 @@ fn a_let_that_reads_a_typed_enum_takes_its_type() {
         &format!("{held}let y = x\nClip c:\n    Note when y is Saw\n{typed}"),
         &[],
     );
+    for (lets, held) in [
+        ("let y = if f then x else Square\n", held),
+        ("input i = 0\nlet y = [x, Square][i]\n", held),
+        (
+            "let y = if f then w else Square\n",
+            "Session s\ninput f = true\ninput w = Wave::Saw\nlet x = if f then Sine else Saw\n",
+        ),
+    ] {
+        support::expect_codes(
+            &format!("{held}{lets}Clip c:\n    Note when y\n{typed}"),
+            &[(Code::ConditionType, "y", 1)],
+        );
+    }
     support::expect_codes(
         &format!("{held}let y = x\nClip c:\n    Note when y + true\n"),
         &[(Code::TypeMismatch, "let x = if f then Sine else Saw\n", 0)],
     );
+}
+
+fn two_enum_vocabulary() -> Vocabulary {
+    let mut v = Vocabulary::builder("enums");
+    let wave = v.enumeration("Wave", ["Sine", "Saw", "Square"]);
+    let mode = v.enumeration("Mode", ["Low", "High"]);
+    let color = v.enumeration("Color", ["Red", "Green"]);
+    let osc = v.node("Osc");
+    let filter = v.node("Filt");
+    let both = v.node("K");
+    v.kind(osc)
+        .top_level(Count::Any)
+        .attr_enum("wave", &wave, "Sine")
+        .attr::<f64>("freq")
+        .default(440.0);
+    v.kind(filter)
+        .top_level(Count::Any)
+        .attr_enum("mode", &mode, "Low");
+    v.kind(both)
+        .top_level(Count::Any)
+        .attr_enum("wave", &wave, "Sine")
+        .attr_enum("color", &color, "Red");
+    v.build().expect("the two-enum vocabulary builds")
+}
+
+fn permutations(items: &[&'static str]) -> Vec<Vec<&'static str>> {
+    let mut found = Vec::new();
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    let mut counters = vec![0; items.len()];
+    found.push(order.iter().map(|index| items[*index]).collect());
+    let mut level = 0;
+    while level < items.len() {
+        if counters[level] < level {
+            if level % 2 == 0 {
+                order.swap(0, level);
+            } else {
+                order.swap(counters[level], level);
+            }
+            found.push(order.iter().map(|index| items[*index]).collect());
+            counters[level] += 1;
+            level = 0;
+        } else {
+            counters[level] = 0;
+            level += 1;
+        }
+    }
+    found
+}
+
+type Errors = Vec<(Code, String)>;
+
+#[test]
+fn a_carried_enum_meets_every_use_in_every_order() {
+    let compiler = Compiler::new(&two_enum_vocabulary()).expect("the vocabulary compiles");
+    let errors_in = |text: &str| -> Errors {
+        let source = Source {
+            path: "test.sym".into(),
+            text: text.into(),
+        };
+        let mut found: Errors = support::errors(compiler.check(&[source]))
+            .iter()
+            .map(|diagnostic| {
+                let range = diagnostic.span.range.clone();
+                let at = usize::try_from(range.start).unwrap_or(0)
+                    ..usize::try_from(range.end).unwrap_or(0);
+                (diagnostic.code, text.get(at).unwrap_or("").to_string())
+            })
+            .collect();
+        found.sort();
+        found
+    };
+    let carried = [
+        "input f = true",
+        "let w = if f then Saw else Sine",
+        "let v = if f then w else w",
+    ];
+    let held = [
+        "input f = true",
+        "let a = if f then Sine else Saw",
+        "let b = a",
+    ];
+    let with = |base: &[&'static str], items: &[&'static str]| -> Vec<&'static str> {
+        base.iter().chain(items).copied().collect()
+    };
+    let rejected = [
+        with(&carried, &["Osc o | wave=w", "Filt g | mode=v"]),
+        with(&carried, &["Osc p | wave=v", "Filt g | mode=v"]),
+        with(
+            &carried,
+            &[
+                "let u = if f then v else v",
+                "Osc o | wave=w",
+                "Filt g | mode=u",
+            ],
+        ),
+        with(
+            &carried,
+            &["Osc o | wave=w freq=(if v is Mode::Low then 1 else 2)"],
+        ),
+        with(&held, &["K k1 | wave=a color=b"]),
+        with(&held, &["K k1 | wave=a", "K k2 | color=b", "K k3 | wave=b"]),
+        with(&held, &["let c = b", "K k1 | wave=a color=c"]),
+    ];
+    let joined = [
+        "input f = true",
+        "let a = if f then Sine else Saw",
+        "let b = if f then Red else Green",
+        "let y = if f then a else b",
+        "K k1 | wave=a color=b",
+    ];
+    let accepted = [
+        with(&carried, &["Osc p | wave=v"]),
+        with(
+            &carried,
+            &["Osc p | wave=v freq=(if v is Saw then 1 else 2)"],
+        ),
+        with(&carried, &["Osc o | wave=w", "Osc p | wave=v"]),
+        with(&held, &["K k1 | wave=a", "K k2 | wave=b"]),
+    ];
+    let mut failures = Vec::new();
+    let mut cases: Vec<(Vec<&'static str>, Option<Errors>)> =
+        rejected.into_iter().map(|items| (items, None)).collect();
+    cases.push((
+        joined.to_vec(),
+        Some(vec![(Code::TypeMismatch, "if f then a else b".to_string())]),
+    ));
+    cases.extend(accepted.into_iter().map(|items| (items, Some(Vec::new()))));
+    for (items, expected) in cases {
+        let mut first: Option<Errors> = None;
+        for order in permutations(&items) {
+            let text = format!("{}\n", order.join("\n"));
+            let found = errors_in(&text);
+            let wrong = match &expected {
+                Some(expected) => found != *expected,
+                None => found.is_empty() || first.as_ref().is_some_and(|first| *first != found),
+            };
+            if wrong {
+                failures.push(format!("{text}found {found:?}"));
+                break;
+            }
+            first.get_or_insert(found);
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
