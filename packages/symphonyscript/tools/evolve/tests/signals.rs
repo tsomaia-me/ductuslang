@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use symphonyscript_evolve::{
-    Checker, DEFAULT_BUDGET, Finding, Guarded, Program, ProgramSource, Signal, dedup_key,
-    differing_codes, guarded, shrunk,
+    Checker, DEFAULT_BUDGET, Finding, Guarded, Measured, Program, ProgramSource, Signal, Work,
+    dedup_key, differing_codes, guarded, over_memory_bound, scaled, shrunk, superlinear,
 };
 
 const CLEAN: &str = "input cutoff = 0.5
@@ -58,6 +58,19 @@ const INDENTED_START_PADDED: &str = "    Track as keys | label=\"keys\":
 Track rhythm | label=\"rhythm\":
     Starts: intro
 let spare = wobble + 3
+";
+
+const LINEAR: &str = "input swell = 0.5
+let wobble = swell * 0.8
+fn db(x): 10 ** (x / 20)
+let base = 48
+Clip melody:
+    Note/(base + 7)
+    Note/62 | velocity=0.7 brightness=wobble
+    Plays: refrain
+Clip refrain:
+    Note/65
+    Plays: melody
 ";
 
 fn program(files: &[(&str, &str)]) -> Program {
@@ -277,4 +290,157 @@ fn the_dedup_key_holds_the_signal_the_sorted_codes_and_the_text_hash() {
     assert_eq!(first, same);
     assert!(first.starts_with("order|duplicate-name,unknown-name|"));
     assert_ne!(first, other);
+}
+
+fn measured_work<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Work {
+    match guarded(DEFAULT_BUDGET, work) {
+        Guarded::Finished { work, .. } => work,
+        Guarded::Panicked { message } => panic!("the workload panicked: {message}"),
+        Guarded::TimedOut => panic!("the workload timed out"),
+    }
+}
+
+fn boxed(count: usize) -> Work {
+    measured_work(move || (0..count).map(Box::new).collect::<Vec<_>>().len())
+}
+
+fn measured(codes_drawn: &[&str], work: Work) -> Measured {
+    Measured {
+        distinct_codes: codes(codes_drawn),
+        work,
+    }
+}
+
+fn distinct_codes(checker: &Checker, program: &Program) -> Vec<String> {
+    let mut drawn: Vec<String> = checker
+        .verdict(program)
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    drawn.sort();
+    drawn.dedup();
+    drawn
+}
+
+#[test]
+fn a_compilation_counts_the_same_allocations_and_peak_bytes_on_every_run() {
+    let checker = checker(DEFAULT_BUDGET);
+    for text in [CLEAN, FAULTY, LINEAR] {
+        let program = program(&[("main.sym", text)]);
+        let first = checker.verdict(&program);
+        let second = checker.verdict(&program);
+        assert!(first.allocations.is_some_and(|count| count > 0), "{text}");
+        assert!(first.peak_bytes.is_some_and(|bytes| bytes > 0), "{text}");
+        assert_eq!(
+            (first.allocations, first.peak_bytes),
+            (second.allocations, second.peak_bytes),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn growth_is_superlinear_past_eight_times_above_the_floor_with_the_same_codes() {
+    let work = |allocations, peak_bytes| Work {
+        allocations,
+        peak_bytes,
+    };
+    let same = ["duplicate-name"];
+    let other = ["duplicate-name", "wire-cycle"];
+    for (name, once, doubled, quadrupled, expected) in [
+        (
+            "eight times",
+            work(1_000, 100),
+            work(2_000, 200),
+            work(8_000, 800),
+            false,
+        ),
+        (
+            "allocations past eight times",
+            work(1_000, 100),
+            work(2_000, 200),
+            work(8_001, 800),
+            true,
+        ),
+        (
+            "peak bytes past eight times",
+            work(1_000, 100),
+            work(2_000, 200),
+            work(8_000, 801),
+            true,
+        ),
+        (
+            "under the floor",
+            work(999, 100),
+            work(1_000_000, 1_000_000),
+            work(1_000_000, 1_000_000),
+            false,
+        ),
+    ] {
+        assert_eq!(
+            superlinear(
+                &measured(&same, once),
+                &measured(&same, doubled),
+                &measured(&same, quadrupled)
+            ),
+            expected,
+            "{name}"
+        );
+    }
+    let once = work(1_000, 100);
+    let grown = work(1_000_000, 1_000_000);
+    for (name, doubled_codes, quadrupled_codes) in [
+        ("new codes at four times", same.as_slice(), other.as_slice()),
+        ("new codes at two times", other.as_slice(), same.as_slice()),
+    ] {
+        assert!(
+            !superlinear(
+                &measured(&same, once),
+                &measured(doubled_codes, grown),
+                &measured(quadrupled_codes, grown)
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_workload_that_allocates_quadratically_grows_superlinearly_and_a_linear_one_does_not() {
+    let linear = |scale: usize| measured(&[], boxed(2_000 * scale));
+    let quadratic = |scale: usize| measured(&[], boxed((50 * scale).pow(2)));
+    assert!(!superlinear(&linear(1), &linear(2), &linear(4)));
+    assert!(superlinear(&quadratic(1), &quadratic(2), &quadratic(4)));
+}
+
+#[test]
+fn a_program_that_compiles_in_linear_work_draws_no_scaling_signal() {
+    let checker = checker(DEFAULT_BUDGET);
+    let program = program(&[("main.sym", LINEAR)]);
+    let verdict = checker.verdict(&program);
+    assert!(verdict.allocations.is_some_and(|count| count >= 1_000));
+    assert_eq!(
+        distinct_codes(&checker, &scaled(&program, checker.vocabulary(), 4)),
+        distinct_codes(&checker, &program)
+    );
+    assert!(!verdict.signals.contains(&Signal::Scaling));
+}
+
+#[test]
+fn peak_bytes_past_the_bound_per_source_byte_and_the_floor_draw_the_memory_bound() {
+    let floor = 64 * 1024 * 1024;
+    for (peak_bytes, source_bytes, bound, expected) in [
+        (floor, 1, 50_000, false),
+        (floor + 1, 1, 50_000, true),
+        (100_000_000, 2_000, 50_000, false),
+        (100_000_001, 2_000, 50_000, true),
+    ] {
+        assert_eq!(
+            over_memory_bound(peak_bytes, source_bytes, bound),
+            expected,
+            "{peak_bytes} bytes for {source_bytes} source bytes at {bound} per byte"
+        );
+    }
+    let workload = measured_work(|| vec![1u8; 80 * 1024 * 1024].len());
+    assert!(over_memory_bound(workload.peak_bytes, 1, 50_000));
 }

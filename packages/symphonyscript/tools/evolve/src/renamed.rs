@@ -31,41 +31,77 @@ struct Identifiers {
     seen: BTreeSet<String>,
 }
 
+struct Naming {
+    reserved: BTreeSet<String>,
+    taken: BTreeSet<String>,
+    counter: usize,
+}
+
 pub fn renamed(program: &Program, vocabulary: &Vocabulary) -> Renamed {
     let identifiers = identifiers(program, vocabulary);
-    let reserved = vocabulary_names(vocabulary);
-    let mut taken: BTreeSet<String> = identifiers.seen.union(&reserved).cloned().collect();
-    let mut fresh: BTreeMap<String, String> = BTreeMap::new();
-    let mut counter = 0usize;
-    for name in identifiers
-        .declared
-        .iter()
-        .filter(|name| !reserved.contains(*name))
-    {
-        let lead: String = name.chars().take(1).collect();
-        let replacement = loop {
-            let candidate = format!("{lead}ev{counter}");
-            counter += 1;
-            if !taken.contains(&candidate) {
-                break candidate;
-            }
-        };
-        taken.insert(replacement.clone());
-        fresh.insert(name.clone(), replacement);
+    let fresh = Naming::new(&identifiers, vocabulary).fresh(&identifiers);
+    Renamed {
+        program: rewritten(program, &identifiers, &fresh),
+        originals: fresh.into_iter().map(|(old, new)| (new, old)).collect(),
     }
+}
+
+pub fn renamed_copies(program: &Program, vocabulary: &Vocabulary, count: usize) -> Vec<Program> {
+    let identifiers = identifiers(program, vocabulary);
+    let mut naming = Naming::new(&identifiers, vocabulary);
+    (0..count)
+        .map(|_| rewritten(program, &identifiers, &naming.fresh(&identifiers)))
+        .collect()
+}
+
+impl Naming {
+    fn new(identifiers: &Identifiers, vocabulary: &Vocabulary) -> Naming {
+        let reserved = vocabulary_names(vocabulary);
+        let taken = identifiers.seen.union(&reserved).cloned().collect();
+        Naming {
+            reserved,
+            taken,
+            counter: 0,
+        }
+    }
+
+    fn fresh(&mut self, identifiers: &Identifiers) -> BTreeMap<String, String> {
+        let mut fresh = BTreeMap::new();
+        for name in identifiers
+            .declared
+            .iter()
+            .filter(|name| !self.reserved.contains(*name))
+        {
+            let lead: String = name.chars().take(1).collect();
+            let replacement = loop {
+                let candidate = format!("{lead}ev{}", self.counter);
+                self.counter += 1;
+                if !self.taken.contains(&candidate) {
+                    break candidate;
+                }
+            };
+            self.taken.insert(replacement.clone());
+            fresh.insert(name.clone(), replacement);
+        }
+        fresh
+    }
+}
+
+fn rewritten(
+    program: &Program,
+    identifiers: &Identifiers,
+    fresh: &BTreeMap<String, String>,
+) -> Program {
     let sources = program
         .sources
         .iter()
         .zip(&identifiers.occurrences)
         .map(|(source, occurrences)| ProgramSource {
             path: source.path.clone(),
-            text: replaced(&source.text, occurrences, &fresh),
+            text: replaced(&source.text, occurrences, fresh),
         })
         .collect();
-    Renamed {
-        program: program.with_sources(sources),
-        originals: fresh.into_iter().map(|(old, new)| (new, old)).collect(),
-    }
+    program.with_sources(sources)
 }
 
 pub fn restored(text: &str, originals: &BTreeMap<String, String>) -> String {

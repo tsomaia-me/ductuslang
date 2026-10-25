@@ -7,19 +7,27 @@ use symphonyscript_core::Vocabulary;
 use crate::differing_codes::differing_codes;
 use crate::finding::Finding;
 use crate::guarded::{Guarded, guarded};
+use crate::measured::Measured;
 use crate::observation::{Observation, observed};
+use crate::over_memory_bound::{DEFAULT_MEMORY_BOUND, over_memory_bound};
 use crate::program::Program;
 use crate::renamed::{renamed, restored};
+use crate::scaled::scaled;
 use crate::signal::Signal;
+use crate::superlinear::{SCALING_FLOOR, superlinear};
 use crate::variants::{reordered, with_noise};
 use crate::verdict::{DiagnosticRecord, Verdict};
+use crate::work::Work;
 
 pub const DEFAULT_BUDGET: Duration = Duration::from_secs(5);
+const DOUBLED: usize = 2;
+const QUADRUPLED: usize = 4;
 
 pub struct Checker {
     compiler: Arc<Compiler>,
     vocabulary: Vocabulary,
     budget: Duration,
+    memory_bound: u64,
 }
 
 impl Checker {
@@ -30,7 +38,15 @@ impl Checker {
             compiler: Arc::new(compiler),
             vocabulary,
             budget,
+            memory_bound: DEFAULT_MEMORY_BOUND,
         })
+    }
+
+    pub fn with_memory_bound(self, bytes_per_source_byte: u64) -> Checker {
+        Checker {
+            memory_bound: bytes_per_source_byte,
+            ..self
+        }
     }
 
     pub fn vocabulary(&self) -> &Vocabulary {
@@ -52,10 +68,18 @@ impl Checker {
             findings: Vec::new(),
             panic: None,
             elapsed_ms: None,
+            allocations: None,
+            peak_bytes: None,
         };
         match &compiled {
-            Guarded::Finished { value, elapsed } => {
+            Guarded::Finished {
+                value,
+                elapsed,
+                work,
+            } => {
                 verdict.elapsed_ms = Some(elapsed.as_secs_f64() * 1000.0);
+                verdict.allocations = Some(work.allocations);
+                verdict.peak_bytes = Some(work.peak_bytes);
                 verdict.diagnostics = value.iter().map(DiagnosticRecord::from).collect();
             }
             Guarded::Panicked { message } => verdict.panic = Some(message.clone()),
@@ -90,10 +114,10 @@ impl Checker {
         compiled: &Guarded<Vec<Diagnostic>>,
         signal: Signal,
     ) -> Vec<Vec<String>> {
-        let diagnostics = match (signal, compiled) {
+        let (diagnostics, work) = match (signal, compiled) {
             (Signal::Crash, Guarded::Panicked { message }) => return vec![vec![message.clone()]],
             (Signal::Slow, Guarded::TimedOut) => return vec![Vec::new()],
-            (_, Guarded::Finished { value, .. }) => value,
+            (_, Guarded::Finished { value, work, .. }) => (value, *work),
             _ => return Vec::new(),
         };
         let codes = sorted_codes(diagnostics);
@@ -132,6 +156,15 @@ impl Checker {
                 let differs = self.differs(&baseline, &with_noise(program), str::to_string);
                 differs.then_some(unique).into_iter().collect()
             }
+            Signal::Scaling => self
+                .scales_superlinearly(program, &unique, work)
+                .then_some(unique)
+                .into_iter()
+                .collect(),
+            Signal::Memory => over_memory_bound(work.peak_bytes, program.size(), self.memory_bound)
+                .then_some(unique)
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -147,6 +180,37 @@ impl Checker {
             Guarded::TimedOut => return false,
         };
         observation != *baseline
+    }
+
+    fn scales_superlinearly(&self, program: &Program, unique: &[String], work: Work) -> bool {
+        if work.allocations < SCALING_FLOOR {
+            return false;
+        }
+        let once = Measured {
+            distinct_codes: unique.to_vec(),
+            work,
+        };
+        let (Some(doubled), Some(quadrupled)) = (
+            self.measured_scaled(program, DOUBLED),
+            self.measured_scaled(program, QUADRUPLED),
+        ) else {
+            return false;
+        };
+        superlinear(&once, &doubled, &quadrupled)
+    }
+
+    fn measured_scaled(&self, program: &Program, factor: usize) -> Option<Measured> {
+        let Guarded::Finished { value, work, .. } =
+            self.compile(&scaled(program, &self.vocabulary, factor))
+        else {
+            return None;
+        };
+        let mut distinct_codes = sorted_codes(&value);
+        distinct_codes.dedup();
+        Some(Measured {
+            distinct_codes,
+            work,
+        })
     }
 }
 
