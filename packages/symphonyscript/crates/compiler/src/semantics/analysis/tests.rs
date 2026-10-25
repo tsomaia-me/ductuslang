@@ -2334,6 +2334,114 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
         assert_eq!(codes_and_bound(engine).0, expected);
     });
 
+    let cut_flow = "Session s\nlet c = Square\nSynth y:\n    Osc | wave=c ** 2bars\ninput i = 1\nfn f(x): x + x\nClip k:\n    for j in 0..100:\n        Note/(f(i + j))\n";
+    with_engine_within(cut_flow, unbounded, |engine| {
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(
+            error_codes(&engine.report.diagnostics),
+            vec![Code::TypeMismatch]
+        );
+    });
+    for space in 200..=500 {
+        with_engine_within(cut_flow, unbounded, |engine| {
+            engine.id_space = space;
+            assert_eq!(engine.analyze(), Ok(()));
+            assert_eq!(
+                error_codes(&engine.report.diagnostics),
+                vec![Code::ExpansionLimit],
+                "{space}"
+            );
+        });
+    }
+    let notes = format!("Clip c:\n{}", "    Note/60\n".repeat(50));
+    with_engine_within(&notes, unbounded, |engine| {
+        engine.id_space = 50;
+        assert_eq!(engine.analyze(), Ok(()));
+        assert_eq!(
+            found(engine),
+            vec![(
+                Code::ExpansionLimit,
+                "the expansion yields more than 50 instances and wires".to_string()
+            )]
+        );
+    });
+
+    with_engine_within("Session s\n", unbounded, |engine| {
+        let scope = engine.source_global;
+        engine.id_space = 2;
+        for _ in 0..3 {
+            engine
+                .count_item(Loc::default(), scope)
+                .expect("counting meets no internal error");
+        }
+        let pushed: Vec<bool> = (0..3)
+            .map(|_| {
+                engine
+                    .push_node(Op::Bool(true), Loc::default(), scope)
+                    .is_ok()
+            })
+            .collect();
+        assert_eq!(pushed, vec![true, true, false]);
+        engine.flush_diagnostics();
+        assert_eq!(
+            found(engine),
+            vec![(
+                Code::ExpansionLimit,
+                "the expansion yields more than 2 instances and wires".to_string()
+            )]
+        );
+    });
+
+    let warned = "Session s\nfn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(4))\ninput n = 1\nSynth y:\n    Osc | freq=n\n";
+    let unreached = Code::UnreachableInstance;
+    for (calls, expected) in [
+        (4, vec![Code::RecursionLimit]),
+        (5, vec![Code::IntegerInput, unreached, unreached]),
+    ] {
+        let limits = Limits {
+            recursive_calls: calls,
+            ..Limits::default()
+        };
+        with_engine_within(warned, limits, |engine| {
+            assert_eq!(engine.analyze(), Ok(()));
+            let codes: Vec<Code> = found(engine).into_iter().map(|(code, _)| code).collect();
+            assert_eq!(codes, expected, "{calls}");
+        });
+    }
+    let stopped_early = [
+        (
+            Limits {
+                expanded_items: 4,
+                ..Limits::default()
+            },
+            "Session s\nlet a = Sine\nKit k:\n    Sampler | file=\"{a}\"\nSynth y:\n    Osc | wave=a\n",
+        ),
+        (
+            Limits {
+                inlined_calls: 0,
+                ..Limits::default()
+            },
+            "Session s\nlet a = Sine\nfn g(x): x\nSynth y:\n    Osc | wave=g(a)\n",
+        ),
+    ];
+    for (limits, text) in stopped_early {
+        let before_infer = with_engine_within(text, limits, |engine| {
+            engine.expand().expect("expansion meets no internal error");
+            engine
+                .count_inlining()
+                .expect("the inline count meets no internal error");
+            (engine.nodes.len(), engine.scopes.len())
+        });
+        with_engine_within(text, limits, |engine| {
+            assert_eq!(engine.analyze(), Ok(()));
+            assert_eq!(
+                (engine.nodes.len(), engine.scopes.len()),
+                before_infer,
+                "{text}"
+            );
+        });
+    }
+
     let spaces = ["scopes", "values", "cells"];
     for space in spaces {
         for room in [1, 0] {
@@ -2366,6 +2474,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
                         })
                         .map(|_| ()),
                 };
+                engine.flush_diagnostics();
                 if room == 1 {
                     assert_eq!(claimed, Ok(()), "{space}");
                     assert_eq!(found(engine), vec![], "{space}");

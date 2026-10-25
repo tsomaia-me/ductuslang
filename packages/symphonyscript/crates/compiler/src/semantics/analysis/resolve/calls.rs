@@ -431,21 +431,13 @@ impl Engine<'_> {
             .name
             .as_ref()
             .map_or(String::new(), |name| name.text.clone());
-        let path = self
-            .chain(scope)?
-            .outermost_paths()
-            .into_iter()
-            .next()
-            .unwrap_or_default();
         let limit = grouped(self.limits.inlined_calls);
-        self.report.error_with(
-            self.hir,
+        self.stop(
             Code::InlineLimit,
             loc,
-            &path,
+            Some(scope),
             format!("this call of `{name}` makes the compilation inline more than {limit} calls"),
-        );
-        Ok(())
+        )
     }
 
     pub(super) fn inside_function_body(&self, scope: ScopeId) -> Result<bool, Internal> {

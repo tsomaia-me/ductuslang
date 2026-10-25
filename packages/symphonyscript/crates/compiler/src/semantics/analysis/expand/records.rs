@@ -113,15 +113,11 @@ impl<'a> Engine<'a> {
         let bound = self.limits.expanded_items.min(self.id_space);
         if self.expanded > bound {
             self.limit_reached = true;
-            self.error(
-                Code::ExpansionLimit,
-                loc,
-                scope,
-                format!(
-                    "the expansion yields more than {} instances and wires",
-                    grouped(bound)
-                ),
-            )?;
+            let message = format!(
+                "the expansion yields more than {} instances and wires",
+                grouped(bound)
+            );
+            self.stop(Code::ExpansionLimit, loc, Some(scope), message)?;
             return Ok(false);
         }
         Ok(true)
@@ -139,15 +135,11 @@ impl<'a> Engine<'a> {
         let bound = self.limits.expansion_steps.min(self.id_space);
         if self.steps > bound {
             self.limit_reached = true;
-            self.error(
-                Code::ExpansionLimit,
-                loc,
-                scope,
-                format!(
-                    "the expansion runs more than {} `for` iterations and pattern uses",
-                    grouped(bound)
-                ),
-            )?;
+            let message = format!(
+                "the expansion runs more than {} `for` iterations and pattern uses",
+                grouped(bound)
+            );
+            self.stop(Code::ExpansionLimit, loc, Some(scope), message)?;
             return Ok(false);
         }
         Ok(true)

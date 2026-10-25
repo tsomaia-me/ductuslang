@@ -45,6 +45,8 @@ pub(crate) struct Engine<'a> {
     pub limits: Limits,
     pub id_space: u64,
     pub ids_exhausted: bool,
+    pub stop: Option<super::stop::Stop>,
+    pub inferred: bool,
     pub report: Report,
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
@@ -109,6 +111,8 @@ impl<'a> Engine<'a> {
             limits,
             id_space: ID_SPACE,
             ids_exhausted: false,
+            stop: None,
+            inferred: false,
             report: Report::default(),
             scopes: Vec::new(),
             nodes: Vec::new(),
@@ -173,19 +177,52 @@ impl<'a> Engine<'a> {
 
     pub fn analyze(&mut self) -> Result<(), Internal> {
         let outcome = self.stages();
-        if self.ids_exhausted {
-            self.flush_diagnostics();
-            return Ok(());
+        if !self.ids_exhausted {
+            outcome?;
         }
-        outcome
+        self.flush_diagnostics();
+        Ok(())
     }
 
     fn stages(&mut self) -> Result<(), Internal> {
         self.expand()?;
         self.count_inlining()?;
+        if self.stop.is_some() {
+            return Ok(());
+        }
         self.infer()?;
-        self.check_program()?;
-        self.flush_diagnostics();
+        self.inferred = true;
+        self.check_program()
+    }
+
+    pub(in crate::semantics::analysis) fn stop(
+        &mut self,
+        code: Code,
+        loc: Loc,
+        scope: Option<ScopeId>,
+        message: String,
+    ) -> Result<(), Internal> {
+        if self.stop.is_some() {
+            return Ok(());
+        }
+        let secondary = match scope {
+            Some(scope) => self
+                .chain(scope)?
+                .outermost_paths()
+                .into_iter()
+                .next()
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        self.stop = Some(super::stop::Stop {
+            reported: self.report.diagnostics.len(),
+            deferred: self.deferred.len(),
+            inferred: self.inferred,
+            code,
+            loc,
+            secondary,
+            message,
+        });
         Ok(())
     }
 
@@ -548,18 +585,12 @@ impl<'a> Engine<'a> {
         if u64::try_from(taken).is_ok_and(|taken| taken < self.id_space) {
             return Ok(());
         }
-        if !self.ids_exhausted {
-            self.ids_exhausted = true;
-            self.report.error(
-                self.hir,
-                Code::ExpansionLimit,
-                loc,
-                format!(
-                    "the compilation needs more than {} {space}, the most its ids number",
-                    grouped(self.id_space)
-                ),
-            );
-        }
+        self.ids_exhausted = true;
+        let message = format!(
+            "the compilation needs more than {} {space}, the most its ids number",
+            grouped(self.id_space)
+        );
+        self.stop(Code::ExpansionLimit, loc, None, message)?;
         Err(Internal::missed("id"))
     }
 
@@ -619,6 +650,16 @@ impl<'a> Engine<'a> {
     }
 
     pub fn flush_diagnostics(&mut self) {
+        let stop = self.stop.take();
+        if let Some(stop) = &stop {
+            self.report.diagnostics.truncate(stop.reported);
+            self.deferred.truncate(stop.deferred);
+            if !stop.inferred {
+                self.deferred.retain(|deferred| {
+                    deferred.unless_untyped.is_empty() && deferred.unless_values.is_empty()
+                });
+            }
+        }
         let mut reported: FastSet<Merged> = FastSet::default();
         for deferred in std::mem::take(&mut self.deferred) {
             if deferred
@@ -653,6 +694,10 @@ impl<'a> Engine<'a> {
                     deferred.message.clone(),
                 );
             }
+        }
+        if let Some(stop) = stop {
+            self.report
+                .error_with(self.hir, stop.code, stop.loc, &stop.secondary, stop.message);
         }
     }
 

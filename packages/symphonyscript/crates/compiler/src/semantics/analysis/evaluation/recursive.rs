@@ -553,15 +553,16 @@ impl Engine<'_> {
         }
         if !self.call_limit_reported {
             self.call_limit_reported = true;
-            self.error_at_node(
-                Code::RecursionLimit,
-                node,
-                format!(
-                    "this call of `{}` exceeds the {} distinct recursive calls a compilation evaluates",
-                    self.function_name(function)?,
-                    grouped(self.limits.recursive_calls)
-                ),
-            )?;
+            let message = format!(
+                "this call of `{}` exceeds the {} distinct recursive calls a compilation evaluates",
+                self.function_name(function)?,
+                grouped(self.limits.recursive_calls)
+            );
+            let (loc, scope) = {
+                let record = self.node(node)?;
+                (record.loc, record.scope)
+            };
+            self.stop(Code::RecursionLimit, loc, Some(scope), message)?;
         }
         Ok(false)
     }

@@ -340,3 +340,82 @@ fn the_expanded_item_limit_follows_the_compilations_limits() {
         ],
     );
 }
+
+#[test]
+fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
+    let flow = "Session s\nlet a = Sine\nKit k:\n    Sampler | file=\"{a}\"\n";
+    let typed_past_items = format!("{flow}Synth y:\n    Osc | wave=a\n");
+    let typed_past_steps = format!("{flow}Synth y:\n    for j in 0..1:\n        Osc | wave=a\n");
+    let typed_past_inlining = format!("{flow}fn g(x): x\nSynth y:\n    Osc | wave=g(a)\n");
+    let recursion = format!(
+        "{flow}fn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(4))\nSynth y:\n    Osc | wave=a\n"
+    );
+    let unsupplied = "pattern P(n):\n    Note\nClip d:\n    P\n";
+    let unfitting = "Clip e:\n    Note/300000000000\n";
+    let items = |value| Limits {
+        expanded_items: value,
+        ..Limits::default()
+    };
+    let steps = |value| Limits {
+        expansion_steps: value,
+        ..Limits::default()
+    };
+    let inlined = |value| Limits {
+        inlined_calls: value,
+        ..Limits::default()
+    };
+    let recursive = |value| Limits {
+        recursive_calls: value,
+        ..Limits::default()
+    };
+    let rows = [
+        (
+            items(4),
+            typed_past_items.clone(),
+            vec![Code::ExpansionLimit],
+        ),
+        (items(5), typed_past_items.clone(), vec![]),
+        (items(6), typed_past_items, vec![]),
+        (
+            steps(0),
+            typed_past_steps.clone(),
+            vec![Code::ExpansionLimit],
+        ),
+        (steps(1), typed_past_steps, vec![]),
+        (
+            inlined(0),
+            typed_past_inlining.clone(),
+            vec![Code::InlineLimit],
+        ),
+        (inlined(1), typed_past_inlining, vec![]),
+        (recursive(4), recursion.clone(), vec![Code::RecursionLimit]),
+        (recursive(5), recursion.clone(), vec![]),
+        (
+            recursive(4),
+            format!("{recursion}{unsupplied}"),
+            vec![Code::RecursionLimit, Code::MissingArgument],
+        ),
+        (
+            recursive(4),
+            format!("{recursion}{unfitting}"),
+            vec![Code::RecursionLimit],
+        ),
+        (
+            recursive(4),
+            format!("{unfitting}{recursion}"),
+            vec![Code::DoesNotFit, Code::RecursionLimit],
+        ),
+        (
+            items(4),
+            format!("{unsupplied}Session s\nKit k:\n    Sampler | file=\"x\"\nSynth y\n"),
+            vec![Code::ExpansionLimit, Code::MissingArgument],
+        ),
+    ];
+    for (limits, text, expected) in rows {
+        let codes: Vec<Code> = errors_within(limits, &text)
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect();
+        assert_eq!(codes, expected, "{limits:?}\n{text}");
+    }
+}
