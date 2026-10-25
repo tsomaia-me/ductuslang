@@ -7,6 +7,7 @@ use crate::signal::Signal;
 #[derive(Clone, PartialEq, Debug, Serialize)]
 pub struct Verdict {
     pub id: serde_json::Value,
+    pub parses: bool,
     pub diagnostics: Vec<DiagnosticRecord>,
     pub signals: Vec<Signal>,
     pub findings: Vec<Finding>,

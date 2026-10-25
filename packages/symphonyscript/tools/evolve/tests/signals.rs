@@ -116,6 +116,26 @@ fn programs_whose_diagnostics_do_not_vary_draw_no_signal() {
 }
 
 #[test]
+fn a_program_parses_when_lexing_and_parsing_draw_no_diagnostic() {
+    let checker = checker(DEFAULT_BUDGET);
+    for (name, source, parses) in [
+        ("valid", CLEAN, true),
+        (
+            "semantic errors only",
+            "let x = 1\nlet x = 2.5\nlet y = missing + 1\n",
+            true,
+        ),
+        ("syntax error", "Clip a:\n    Note/(1\n", false),
+    ] {
+        assert_eq!(
+            checker.verdict(&program(&[("main.sym", source)])).parses,
+            parses,
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn diagnostics_the_spec_ties_to_top_level_order_draw_no_order_signal() {
     let checker = checker(DEFAULT_BUDGET);
     for (name, text) in [("two sessions", TWO_SESSIONS), ("cycle", CYCLE)] {
