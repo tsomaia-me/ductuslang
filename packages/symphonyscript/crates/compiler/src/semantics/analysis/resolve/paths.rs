@@ -158,7 +158,7 @@ impl Engine<'_> {
                 let bound = some!(self.bound(Query::Attr(item, attr), need));
                 Some(self.read(&bound, loc, scope)?)
             }
-            None if self.names_unknown(item)? => Some(Val::Error),
+            None if self.may_name(item, &name.text)? => Some(Val::Error),
             None => {
                 let owner = self.item_description(item)?;
                 self.error(
@@ -768,7 +768,7 @@ impl Engine<'_> {
             }
         };
         if let Destination::Fixed(item @ ItemRef::Use(_)) = destination {
-            if self.names_unknown(item)? {
+            if self.stands_for_nothing_known(item)? {
                 self.memo.destinations.insert(wire, Destination::Error);
                 return Ok(true);
             }

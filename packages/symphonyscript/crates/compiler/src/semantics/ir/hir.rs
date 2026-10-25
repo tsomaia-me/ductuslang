@@ -9,6 +9,7 @@ use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
 use super::prelude_end::PreludeEnd;
 use super::top::Top;
+use super::unknown_names::UnknownNames;
 use super::wire::Wire;
 use crate::semantics::Internal;
 
@@ -90,6 +91,30 @@ impl Hir {
 
     pub fn is_prelude_let(&self, id: LetId) -> bool {
         id.index() < self.prelude.lets
+    }
+
+    pub fn body_unknown(&self, root: BlockId) -> Result<UnknownNames, Internal> {
+        let mut unknown = UnknownNames::default();
+        let mut blocks = vec![root];
+        while let Some(block) = blocks.pop() {
+            let block = self.block(block)?;
+            unknown.join(&block.unknown);
+            for item in &block.items {
+                match item {
+                    BodyItem::When {
+                        arms, otherwise, ..
+                    } => {
+                        blocks.extend(arms.iter().map(|arm| arm.body));
+                        blocks.extend(otherwise.iter().copied());
+                    }
+                    BodyItem::Placement(_)
+                    | BodyItem::Wire(_)
+                    | BodyItem::Bundle { .. }
+                    | BodyItem::For { .. } => {}
+                }
+            }
+        }
+        Ok(unknown)
     }
 
     pub fn nested_placements(&self, root: BlockId) -> Result<Vec<PlacementId>, Internal> {

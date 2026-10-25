@@ -3,11 +3,13 @@ use super::ids::ExprId;
 use super::let_decl::LetDecl;
 use super::loc::Loc;
 use super::param::Param;
+use super::unknown_names::UnknownNames;
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct FnDecl {
     pub name: Option<Ident>,
     pub params: Vec<Param>,
+    pub skipped_params: UnknownNames,
     pub lets: Vec<LetDecl>,
     pub value: ExprId,
     pub loc: Loc,

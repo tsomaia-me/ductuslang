@@ -3,10 +3,10 @@ use super::index::index;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
     Attr, AttrValue, Block, BlockId, BodyItem, BundleFor, ExprKind, Iterable, Loc, Placement,
-    PlacementId, WhenArm, Wire, WireId,
+    PlacementId, UnknownNames, WhenArm, Wire, WireId,
 };
-use crate::syntax::ast::{self, AstNode, BodyItem as AstBodyItem, Member};
-use crate::syntax::{ElementView, NodeView, SyntaxKind};
+use crate::syntax::ast::{self, AstNode, BodyItem as AstBodyItem, Member, Name};
+use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
 
 fn significant(kind: SyntaxKind) -> bool {
     !kind.is_trivia()
@@ -14,6 +14,29 @@ fn significant(kind: SyntaxKind) -> bool {
             kind,
             SyntaxKind::Newline | SyntaxKind::Indent | SyntaxKind::Dedent
         )
+}
+
+pub(super) fn skipped_names(node: &NodeView<'_>) -> Vec<String> {
+    node.preorder()
+        .filter_map(|event| match event {
+            Walk::Enter(ElementView::Token(token)) if token.kind() == SyntaxKind::Ident => {
+                Some(Name::new(token).text())
+            }
+            Walk::Enter(_) | Walk::Leave(_) => None,
+        })
+        .collect()
+}
+
+pub(super) fn skipped_block(node: &NodeView<'_>) -> bool {
+    node.kind() == SyntaxKind::ErrorNode
+        && node
+            .children_with_tokens()
+            .find_map(|element| match element {
+                ElementView::Token(token) if token.kind().is_trivia() => None,
+                ElementView::Token(token) => Some(token.kind() == SyntaxKind::Indent),
+                ElementView::Node(_) => Some(false),
+            })
+            .unwrap_or(false)
 }
 
 fn head(node: &NodeView<'_>) -> std::ops::Range<u32> {
@@ -68,6 +91,18 @@ impl<'p> HirBuilder<'_> {
         Ok(id)
     }
 
+    pub(super) fn absent_block(&mut self) -> BlockId {
+        let id = BlockId(index(self.hir.blocks.len()));
+        self.hir.blocks.push(Block {
+            items: Vec::new(),
+            unknown: UnknownNames {
+                every: true,
+                names: Vec::new(),
+            },
+        });
+        id
+    }
+
     pub(super) fn empty_block(&mut self) -> BlockId {
         let id = BlockId(index(self.hir.blocks.len()));
         self.hir.blocks.push(Block::default());
@@ -80,20 +115,63 @@ impl<'p> HirBuilder<'_> {
     ) -> Result<(), Internal> {
         while let Some((node, id)) = pending.pop() {
             let mut items = Vec::new();
-            for item in node.items() {
-                self.body_item(item, &mut items, &mut pending);
+            let mut skipped = Vec::new();
+            let mut previous = None;
+            for child in node.syntax().children() {
+                if child.kind() == SyntaxKind::ErrorNode {
+                    match previous.take() {
+                        Some(placement) if skipped_block(&child) => {
+                            self.skip_block_of(placement, skipped_names(&child))?;
+                        }
+                        _ => skipped.extend(skipped_names(&child)),
+                    }
+                } else if let Some(item) = AstBodyItem::cast(child.clone()) {
+                    let lone = matches!(item, AstBodyItem::Placement(_));
+                    let before = items.len();
+                    self.dropped = false;
+                    self.body_item(item, &mut items, &mut pending);
+                    if self.dropped {
+                        skipped.extend(skipped_names(&child));
+                    }
+                    previous = match items.get(before..) {
+                        Some([BodyItem::Placement(placement)]) if lone => Some(*placement),
+                        _ => None,
+                    };
+                }
             }
             if let Some(members) = node.members() {
                 for (position, member) in members.members().enumerate() {
+                    let syntax = member.syntax().clone();
+                    self.dropped = false;
                     self.member(member, position > 0, &mut items, &mut pending);
+                    if self.dropped {
+                        skipped.extend(skipped_names(&syntax));
+                    }
                 }
             }
-            self.hir
+            let mut unknown = UnknownNames::of(skipped);
+            unknown.every = items.is_empty();
+            let block = self
+                .hir
                 .blocks
                 .get_mut(id.index())
-                .ok_or(Internal::missed("block"))?
-                .items = items;
+                .ok_or(Internal::missed("block"))?;
+            block.items = items;
+            block.unknown = unknown;
         }
+        Ok(())
+    }
+
+    pub(super) fn skip_block_of(
+        &mut self,
+        placement: PlacementId,
+        names: Vec<String>,
+    ) -> Result<(), Internal> {
+        self.hir
+            .placements
+            .get_mut(placement.index())
+            .ok_or(Internal::missed("placement"))?
+            .skipped_block = UnknownNames::of(names);
         Ok(())
     }
 
@@ -109,11 +187,10 @@ impl<'p> HirBuilder<'_> {
                     items.push(BodyItem::Placement(id));
                 }
             }
-            AstBodyItem::Wire(node) => {
-                if let Some(id) = self.wire(&node) {
-                    items.push(BodyItem::Wire(id));
-                }
-            }
+            AstBodyItem::Wire(node) => match self.wire(&node) {
+                Some(id) => items.push(BodyItem::Wire(id)),
+                None => self.dropped = true,
+            },
             AstBodyItem::Line(node) => {
                 for (position, member) in node.members().enumerate() {
                     self.member(member, position > 0, items, pending);
@@ -169,16 +246,18 @@ impl<'p> HirBuilder<'_> {
                     items.push(BodyItem::Placement(id));
                 }
             }
-            Member::Paren(node) => {
-                if let Some(placement) = node.placement()
-                    && let Some(id) = self.node_placement(&placement, inline, pending)
-                {
-                    items.push(BodyItem::Placement(id));
+            Member::Paren(node) => match node.placement() {
+                Some(placement) => {
+                    if let Some(id) = self.node_placement(&placement, inline, pending) {
+                        items.push(BodyItem::Placement(id));
+                    }
                 }
-            }
+                None => self.dropped = true,
+            },
             Member::Bundle(node) => {
                 let range = node.syntax().range();
                 if self.faults.touch(range.start..range.start + 1) {
+                    self.dropped = true;
                     return;
                 }
                 let loc = self.loc(range.clone());
@@ -188,12 +267,14 @@ impl<'p> HirBuilder<'_> {
                     .is_some_and(|token| token.kind() == SyntaxKind::RBracket);
                 let faulty = !closed || self.faults.touch(range);
                 let Some(members) = self.bundle_members(node.members(), pending) else {
+                    self.dropped = true;
                     return;
                 };
                 let each = match node.bundle_for() {
                     Some(each) => {
                         let each_loc = self.loc(each.syntax().range());
                         let Some(members) = self.bundle_members(each.members(), pending) else {
+                            self.dropped = true;
                             return;
                         };
                         Some(BundleFor {
@@ -238,10 +319,11 @@ impl<'p> HirBuilder<'_> {
         node: Option<ast::Block<'p>>,
         pending: &mut Vec<(ast::Block<'p>, BlockId)>,
     ) -> BlockId {
+        let Some(node) = node else {
+            return self.absent_block();
+        };
         let id = self.empty_block();
-        if let Some(node) = node {
-            pending.push((node, id));
-        }
+        pending.push((node, id));
         id
     }
 
@@ -251,8 +333,12 @@ impl<'p> HirBuilder<'_> {
         inline: bool,
         pending: &mut Vec<(ast::Block<'p>, BlockId)>,
     ) -> Option<PlacementId> {
-        let kind = node.kind()?;
+        let Some(kind) = node.kind() else {
+            self.dropped = true;
+            return None;
+        };
         if self.faults.touch(kind.range()) {
+            self.dropped = true;
             return None;
         }
         Some(self.placement(node, inline, pending))
@@ -280,6 +366,7 @@ impl<'p> HirBuilder<'_> {
             gate,
             attrs,
             body,
+            skipped_block: UnknownNames::default(),
             inline,
             loc,
         };

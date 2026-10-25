@@ -53,6 +53,8 @@ pub(crate) struct Memo {
     pub defaulted: FastMap<NodeId, Vec<super::ids::BindingId>>,
     pub boxes: FastMap<(ExprId, ScopeId), NodeId>,
     pub projections: FastMap<NodeId, Vec<NodeId>>,
+    pub unknown_bodies:
+        FastMap<crate::semantics::ir::BlockId, std::rc::Rc<crate::semantics::ir::UnknownNames>>,
     pub named_sites: FastMap<
         crate::semantics::ir::BlockId,
         std::rc::Rc<[(super::site::Site, crate::semantics::ir::Loc)]>,

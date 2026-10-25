@@ -307,6 +307,7 @@ impl<'a> Engine<'a> {
                         scope: caller,
                     });
                 }
+                None if decl.skipped_default => {}
                 None => {
                     let loc = self.hir.expr(default)?.loc;
                     self.error(
@@ -325,12 +326,14 @@ impl<'a> Engine<'a> {
                     .as_ref()
                     .is_some_and(|name| name.text == attr.name.text)
             }) else {
-                self.error(
-                    Code::UnknownParameter,
-                    attr.name.loc,
-                    caller,
-                    format!("the pattern has no parameter `{}`", attr.name.text),
-                )?;
+                if !decl.skipped_params.holds(&attr.name.text) {
+                    self.error(
+                        Code::UnknownParameter,
+                        attr.name.loc,
+                        caller,
+                        format!("the pattern has no parameter `{}`", attr.name.text),
+                    )?;
+                }
                 continue;
             };
             let source = match attr.value {
@@ -362,13 +365,17 @@ impl<'a> Engine<'a> {
                 Some(source) => source,
                 None if param.default.is_some() => ParamSource::Default,
                 None => {
-                    let name = param.name.as_ref().map_or("", |name| name.text.as_str());
-                    self.error(
-                        Code::MissingArgument,
-                        site.loc,
-                        caller,
-                        format!("the parameter `{name}` has no default and no argument"),
-                    )?;
+                    if let Some(name) = &param.name {
+                        self.error(
+                            Code::MissingArgument,
+                            site.loc,
+                            caller,
+                            format!(
+                                "the parameter `{}` has no default and no argument",
+                                name.text
+                            ),
+                        )?;
+                    }
                     ParamSource::Missing
                 }
             });
@@ -464,7 +471,7 @@ impl<'a> Engine<'a> {
             .ok_or(Internal::missed("pattern"))
     }
 
-    pub(in crate::semantics::analysis) fn names_unknown(
+    pub(in crate::semantics::analysis) fn stands_for_nothing_known(
         &self,
         item: ItemRef,
     ) -> Result<bool, Internal> {
@@ -472,6 +479,39 @@ impl<'a> Engine<'a> {
             ItemRef::Use(id) => self.is_placeholder(self.pattern_use(id)?.pattern),
             ItemRef::Instance(_) | ItemRef::Wire(_) => Ok(false),
         }
+    }
+
+    pub(in crate::semantics::analysis) fn may_name(
+        &mut self,
+        item: ItemRef,
+        name: &str,
+    ) -> Result<bool, Internal> {
+        if self.stands_for_nothing_known(item)? {
+            return Ok(true);
+        }
+        let body = match item {
+            ItemRef::Use(id) => self.hir.pattern(self.pattern_use(id)?.pattern)?.body,
+            ItemRef::Instance(id) => {
+                let placement = self.hir.placement(self.instance(id)?.placement)?;
+                if placement.skipped_block.holds(name) {
+                    return Ok(true);
+                }
+                let Some(body) = placement.body else {
+                    return Ok(false);
+                };
+                body
+            }
+            ItemRef::Wire(_) => return Ok(false),
+        };
+        let unknown = match self.memo.unknown_bodies.get(&body) {
+            Some(unknown) => unknown.clone(),
+            None => {
+                let unknown = Rc::new(self.hir.body_unknown(body)?);
+                self.memo.unknown_bodies.insert(body, unknown.clone());
+                unknown
+            }
+        };
+        Ok(unknown.holds(name))
     }
 
     pub(in crate::semantics::analysis) fn is_cyclic(

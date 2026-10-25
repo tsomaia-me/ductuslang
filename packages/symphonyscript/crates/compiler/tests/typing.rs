@@ -2345,6 +2345,123 @@ fn a_pattern_whose_block_a_fault_leaves_missing_is_a_placeholder_for_its_uses() 
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+#[test]
+fn a_use_of_a_name_a_skipped_region_may_declare_draws_nothing_more() {
+    let rows: [Row; 17] = [
+        (
+            &[
+                "Clip lead: Note __ as low",
+                "Clip c:\n    Note | velocity=lead.low.velocity",
+            ],
+            &[(Code::InvalidIdentifier, "__")],
+        ),
+        (
+            &[
+                "Clip lead: Note Note | velocity=1 Note as low",
+                "Clip c:\n    Note | velocity=lead.low.velocity",
+            ],
+            &[(Code::InlinePlacement, "|")],
+        ),
+        (
+            &["pattern P(+ x):\n    Note", "Clip c:\n    P | x=1"],
+            &[(Code::PatternSyntax, "+")],
+        ),
+        (
+            &["fn f(x, + y):\n    x", "Clip c:\n    Note/(f(x=1))"],
+            &[(Code::FnSyntax, "+")],
+        ),
+        (
+            &[
+                "Synth y:\n    Filter as f\n        Osc as o",
+                "Osc sub:\n    Feeds: y.f.o",
+            ],
+            &[(Code::UnexpectedIndent, "Osc")],
+        ),
+        (
+            &[
+                "Synth lead:\n    __ as low\n    Filter as f",
+                "Osc sub:\n    Feeds: lead.low",
+            ],
+            &[(Code::InvalidIdentifier, "__")],
+        ),
+        (
+            &[
+                "pattern P(default root + true, steps = 4):\n    Note/root",
+                "Clip c:\n    P/1 | steps=2",
+            ],
+            &[(Code::PatternSyntax, "+")],
+        ),
+        (
+            &[
+                "pattern P(default root + true, steps = 4):\n    for i in 0..steps:\n        Note/root",
+                "Clip c:\n    P/1",
+            ],
+            &[(Code::PatternSyntax, "+")],
+        ),
+        (
+            &[
+                "pattern P(x + default root):\n    Note/x",
+                "Clip c:\n    P/1 | x=2",
+            ],
+            &[(Code::PatternSyntax, "+")],
+        ),
+        (
+            &[
+                "fn f(x, + y):\n    x + y",
+                "Clip c:\n    Note/(f(1, 2, 3))\n    Note/(f(x=1, y=2))",
+            ],
+            &[(Code::FnSyntax, "+")],
+        ),
+        (
+            &[
+                "Synth lead\n    Filter as low",
+                "Osc sub:\n    Feeds: lead.low",
+            ],
+            &[(Code::UnexpectedIndent, "Filter")],
+        ),
+        (
+            &[
+                "Synth lead:\n    = Filter as low",
+                "Osc sub:\n    Feeds: lead.low",
+            ],
+            &[(Code::PlacementSyntax, "=")],
+        ),
+        (
+            &["Synth lead:\n    = Filter as low\n    Osc:\n        Feeds: low"],
+            &[(Code::PlacementSyntax, "=")],
+        ),
+        (
+            &[
+                "Synth lead:\n    Filter as low",
+                "Osc sub:\n    Feeds: lead.low",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern P(default root):\n    Note/root",
+                "Clip c:\n    P/1 | zork=2",
+            ],
+            &[(Code::UnknownParameter, "zork")],
+        ),
+        (
+            &[
+                "Synth lead\n    Filter as low",
+                "Osc sub:\n    Feeds: lead.zork",
+            ],
+            &[
+                (Code::UnexpectedIndent, "Filter"),
+                (Code::UnknownAttribute, "zork"),
+            ],
+        ),
+        (
+            &["Clip lead:\n    = Note as low\n    Note | velocity=zz"],
+            &[(Code::PlacementSyntax, "="), (Code::UnknownName, "zz")],
+        ),
+    ];
+    expect_in_every_order(&rows);
+}
+
 const FAULTY_LINES: [&str; 51] = [
     "pattern P(:",
     "fn f(x, ): 1",

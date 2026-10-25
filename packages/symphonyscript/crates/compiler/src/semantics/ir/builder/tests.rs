@@ -29,6 +29,7 @@ fn a_write_into_a_block_the_builder_never_allocated_is_an_internal_error() {
         file: 0,
         faults: Faults::new(&parsed.diagnostics, &parsed.detached),
         vocabulary: &vocabulary,
+        dropped: false,
     };
     assert_eq!(
         builder.fill(vec![(block.clone(), BlockId(0))]),

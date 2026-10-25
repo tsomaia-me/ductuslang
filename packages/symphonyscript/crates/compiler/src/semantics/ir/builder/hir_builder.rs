@@ -2,25 +2,49 @@ use std::ops::Range;
 
 use symphonyscript_core::Vocabulary;
 
+use super::bodies::skipped_names;
 use super::faults::Faults;
 use super::index::index;
 use super::scalar_type::scalar_type;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
     Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
-    PatternDecl, PatternId, Top, TypeBase, TypeRef,
+    PatternDecl, PatternId, PlacementId, Top, TypeBase, TypeRef, UnknownNames,
 };
 use crate::syntax::ast::{self, AstNode, Item, Name};
+use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
 
 pub(crate) struct HirBuilder<'h> {
     pub(super) hir: &'h mut Hir,
     pub(super) file: u32,
     pub(super) faults: Faults,
     pub(super) vocabulary: &'h Vocabulary,
+    pub(super) dropped: bool,
+}
+
+fn param_regions<'p>(decl: &NodeView<'p>, list: SyntaxKind) -> Vec<NodeView<'p>> {
+    let inside = decl
+        .children()
+        .filter(|child| child.kind() == list)
+        .flat_map(|list| list.children());
+    decl.children()
+        .chain(inside)
+        .filter(|child| child.kind() == SyntaxKind::ErrorNode)
+        .collect()
+}
+
+fn holds_default(region: &NodeView<'_>) -> bool {
+    region.preorder().any(|event| {
+        matches!(event, Walk::Enter(ElementView::Token(token)) if token.kind() == SyntaxKind::DefaultKw)
+    })
+}
+
+fn skipped_params(regions: &[NodeView<'_>]) -> UnknownNames {
+    UnknownNames::of(regions.iter().flat_map(skipped_names).collect())
 }
 
 impl HirBuilder<'_> {
-    pub(super) fn item(&mut self, item: Item<'_>) -> Result<(), Internal> {
+    pub(super) fn item(&mut self, item: Item<'_>) -> Result<Option<PlacementId>, Internal> {
         match item {
             Item::Input(node) => {
                 let loc = self.loc(node.syntax().range());
@@ -77,6 +101,10 @@ impl HirBuilder<'_> {
                 let decl = FnDecl {
                     name: self.ident(node.name()),
                     params,
+                    skipped_params: skipped_params(&param_regions(
+                        node.syntax(),
+                        SyntaxKind::ParamList,
+                    )),
                     lets,
                     value,
                     loc,
@@ -87,6 +115,7 @@ impl HirBuilder<'_> {
             }
             Item::Pattern(node) => {
                 let loc = self.loc(node.syntax().range());
+                let regions = param_regions(node.syntax(), SyntaxKind::PatternParamList);
                 let params = node
                     .params()
                     .map(|param| Param {
@@ -103,11 +132,13 @@ impl HirBuilder<'_> {
                         let lets = block.lets().map(|local| self.local_let(&local)).collect();
                         (lets, self.block(block)?)
                     }
-                    None => (Vec::new(), self.empty_block()),
+                    None => (Vec::new(), self.absent_block()),
                 };
                 let decl = PatternDecl {
                     name: self.ident(node.name()),
                     params,
+                    skipped_params: skipped_params(&regions),
+                    skipped_default: regions.iter().any(holds_default),
                     lets,
                     body,
                     loc,
@@ -119,10 +150,11 @@ impl HirBuilder<'_> {
             Item::Placement(node) => {
                 let id = self.top_placement(&node)?;
                 self.hir.top.push(Top::Placement(id));
+                return Ok(Some(id));
             }
             Item::Wire(_) => {}
         }
-        Ok(())
+        Ok(None)
     }
 
     pub(super) fn local_let(&mut self, node: &ast::LocalLet<'_>) -> LetDecl {

@@ -9,7 +9,7 @@ use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
     AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
-    PatternId, PlacementId, TypeBase, TypeRef,
+    PatternId, PlacementId, TypeBase, TypeRef, UnknownNames,
 };
 use crate::semantics::reporting::Report;
 
@@ -83,6 +83,7 @@ impl<'a> Checker<'a> {
             decl.params.iter().filter_map(|param| param.name.as_ref()),
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
         )?;
+        self.leave_unknown(locals, decl.skipped_params.clone())?;
         for local in &decl.lets {
             self.expr(local.value, Some(locals), false)?;
         }
@@ -119,6 +120,7 @@ impl<'a> Checker<'a> {
             decl.params.iter().filter_map(|param| param.name.as_ref()),
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
         )?;
+        self.leave_unknown(locals, decl.skipped_params.clone())?;
         for local in &decl.lets {
             self.expr(local.value, Some(locals), false)?;
         }
@@ -294,6 +296,7 @@ impl<'a> Checker<'a> {
             names,
             parent,
             kind,
+            unknown: UnknownNames::default(),
         });
         self.frames.len() - 1
     }
@@ -317,6 +320,29 @@ impl<'a> Checker<'a> {
             );
         }
         Ok(())
+    }
+
+    fn leave_unknown(&mut self, frame: usize, unknown: UnknownNames) -> Result<(), Internal> {
+        self.frames
+            .get_mut(frame)
+            .ok_or(Internal::missed("scope frame"))?
+            .unknown = unknown;
+        Ok(())
+    }
+
+    fn may_declare(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
+        let mut current = frame;
+        while let Some(index) = current {
+            let frame = self
+                .frames
+                .get(index)
+                .ok_or(Internal::missed("scope frame"))?;
+            if frame.unknown.holds(name) {
+                return Ok(true);
+            }
+            current = frame.parent;
+        }
+        Ok(false)
     }
 
     fn visible(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
@@ -369,7 +395,10 @@ impl<'a> Checker<'a> {
             let expr = self.hir.expr(id)?;
             match &expr.kind {
                 ExprKind::Name(name) => {
-                    if !self.visible(frame, name)? && self.variants.owner(name).is_none() {
+                    if !self.visible(frame, name)?
+                        && self.variants.owner(name).is_none()
+                        && !self.may_declare(frame, name)?
+                    {
                         self.report.error(
                             self.hir,
                             Code::UnknownName,
@@ -504,7 +533,10 @@ impl<'a> Checker<'a> {
             let frame = match mode {
                 Mode::Body => {
                     let names = self.body_names(block, parent)?;
-                    Some(self.frame(names, parent, FrameKind::Body))
+                    let frame = self.frame(names, parent, FrameKind::Body);
+                    let unknown = self.hir.body_unknown(block)?;
+                    self.leave_unknown(frame, unknown)?;
+                    Some(frame)
                 }
                 Mode::Arm => parent,
                 Mode::Anonymous => {

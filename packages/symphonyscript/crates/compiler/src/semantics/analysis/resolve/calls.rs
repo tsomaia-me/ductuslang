@@ -20,7 +20,7 @@ use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
-use crate::semantics::ir::{Args, ExprId, ExprKind, FnId, Loc, Param};
+use crate::semantics::ir::{Args, ExprId, ExprKind, FnDecl, FnId, Loc};
 use crate::semantics::reporting::grouped;
 
 impl Engine<'_> {
@@ -150,7 +150,7 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
         let decl = self.hir.fn_decl(function)?;
-        let Some(sources) = self.bind_arguments(&decl.params, args, loc, scope)? else {
+        let Some(sources) = self.bind_arguments(decl, args, loc, scope)? else {
             return Ok(Some(Val::Error));
         };
         let recursive = self.is_recursive(function)?;
@@ -534,13 +534,20 @@ impl Engine<'_> {
 
     pub(in crate::semantics::analysis) fn bind_arguments(
         &mut self,
-        params: &[Param],
+        decl: &FnDecl,
         args: &Args,
         loc: Loc,
         scope: ScopeId,
     ) -> Result<Option<Vec<ParamSource>>, Internal> {
+        let params = decl.params.as_slice();
         let sources = match bound_sources(params, args, scope) {
             Ok(sources) => sources,
+            Err(BindFault::TooMany { .. }) if !decl.skipped_params.is_empty() => {
+                return Ok(None);
+            }
+            Err(BindFault::Unknown(name)) if decl.skipped_params.holds(&name.text) => {
+                return Ok(None);
+            }
             Err(BindFault::TooMany { given }) => {
                 self.error(
                     Code::ArgumentCount,
@@ -575,13 +582,17 @@ impl Engine<'_> {
         let mut complete = true;
         for (param, source) in params.iter().zip(&sources) {
             if matches!(source, ParamSource::Missing) {
-                let name = param.name.as_ref().map_or("", |name| name.text.as_str());
-                self.error(
-                    Code::MissingArgument,
-                    loc,
-                    scope,
-                    format!("the parameter `{name}` has no default and no argument"),
-                )?;
+                if let Some(name) = &param.name {
+                    self.error(
+                        Code::MissingArgument,
+                        loc,
+                        scope,
+                        format!(
+                            "the parameter `{}` has no default and no argument",
+                            name.text
+                        ),
+                    )?;
+                }
                 complete = false;
             }
         }

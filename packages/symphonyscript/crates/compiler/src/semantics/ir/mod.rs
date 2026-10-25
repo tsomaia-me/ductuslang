@@ -27,6 +27,7 @@ mod suffix;
 mod top;
 mod type_base;
 mod type_ref;
+mod unknown_names;
 mod when_arm;
 mod wire;
 
@@ -60,5 +61,6 @@ pub(crate) use suffix::Suffix;
 pub(crate) use top::Top;
 pub(crate) use type_base::TypeBase;
 pub(crate) use type_ref::TypeRef;
+pub(crate) use unknown_names::UnknownNames;
 pub(crate) use when_arm::WhenArm;
 pub(crate) use wire::Wire;
