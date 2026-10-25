@@ -277,7 +277,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn in_progress(&self, query: Query) -> bool {
-        self.waiting.contains(&query)
+        self.current == Some(query) || self.waiting.contains(&query)
     }
 
     fn is_done(&self, query: Query) -> bool {
@@ -798,10 +798,10 @@ impl<'a> Engine<'a> {
                 .get(position)
                 .ok_or(Internal::missed("demand stack entry"))?;
             path.push(query);
+            current = parent;
             if query == dep {
                 break;
             }
-            current = parent;
         }
         path.reverse();
         let through_local_let = path
@@ -833,7 +833,19 @@ impl<'a> Engine<'a> {
             }
         }
         if names.is_empty() {
-            return self.endless_evaluation(&path);
+            let mut outer = None;
+            while let Some(position) = current {
+                let &(query, parent) = stack
+                    .get(position)
+                    .ok_or(Internal::missed("demand stack entry"))?;
+                if let Query::Eval(node, _) = query
+                    && matches!(self.node(node)?.op, Op::Recursive { .. })
+                {
+                    outer = Some(node);
+                }
+                current = parent;
+            }
+            return self.endless_evaluation(&path, outer);
         }
         self.cycle_members
             .extend(path.iter().copied().filter(|query| {
@@ -855,7 +867,11 @@ impl<'a> Engine<'a> {
         Ok(())
     }
 
-    fn endless_evaluation(&mut self, path: &[Query]) -> Result<(), Internal> {
+    fn endless_evaluation(
+        &mut self,
+        path: &[Query],
+        outer: Option<NodeId>,
+    ) -> Result<(), Internal> {
         let mut calls = Vec::new();
         for query in path {
             if let Query::Eval(node, _) = *query
@@ -878,8 +894,23 @@ impl<'a> Engine<'a> {
             grouped(self.limits.nesting_depth),
             names.join(" → ")
         );
+        let mut secondary = Vec::new();
+        if let Some(outer) = outer {
+            let (loc, scope) = {
+                let record = self.node(outer)?;
+                (record.loc, record.scope)
+            };
+            secondary.push(loc);
+            secondary.extend(
+                self.chain(scope)?
+                    .outermost_paths()
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default(),
+            );
+        }
         self.report
-            .error_with(self.hir, Code::RecursionDepth, loc, &[], message);
+            .error_with(self.hir, Code::RecursionDepth, loc, &secondary, message);
         Ok(())
     }
 

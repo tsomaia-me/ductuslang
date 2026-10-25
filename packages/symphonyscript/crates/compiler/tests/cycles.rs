@@ -60,7 +60,32 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
         "fn b(n): if n < 1 then a(1) else b(n - 1)",
         "Clip c:\n    Note/(a(1))",
     ];
+    let endless =
+        |function: &'static str, use_line: &'static str| -> (Vec<&'static str>, Vec<Named>) {
+            (
+                vec![function, use_line],
+                vec![(
+                    Code::RecursionDepth,
+                    BTreeSet::from([function[3..4].to_string()]),
+                )],
+            )
+        };
     let rows: Vec<(Vec<&str>, Vec<Named>)> = vec![
+        endless("fn f(): f()", "Clip c:\n    Note/(f())"),
+        endless("fn f(n = 1): f()", "Clip c:\n    Note/(f())"),
+        endless("fn h(): 1 + h()", "Clip c:\n    Note/(h())"),
+        endless("fn k(): if true then k() else 0", "Clip c:\n    Note/(k())"),
+        endless("fn f(n): f(n + 1)", "Clip c:\n    Note/(f(0))"),
+        endless("fn f(n): f(n + 1) + 1", "Clip c:\n    Note/(f(0))"),
+        endless("fn f(n): n + f(n - 1)", "Clip c:\n    Note/(f(3))"),
+        endless(
+            "fn f(n): if n < 1 then 0 else f(n + 1)",
+            "Clip c:\n    Note/(f(1))",
+        ),
+        (
+            vec!["fn f(): f()", "let x = f()", "Clip c:\n    Note/60"],
+            vec![],
+        ),
         (
             vec![
                 "fn f(n): if n < 1 then f(0) else 1",
@@ -281,5 +306,93 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order() {
             .collect()
     });
     assert_eq!(cycles.len(), 211);
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+fn secondary_spans(compiler: &Compiler, text: &str) -> Vec<Vec<(u32, u32)>> {
+    let source = Source {
+        path: "test.sym".into(),
+        text: text.into(),
+    };
+    compiler
+        .check(&[source])
+        .iter()
+        .filter(|diagnostic| diagnostic.code == Code::RecursionDepth)
+        .map(|diagnostic| {
+            diagnostic
+                .secondary
+                .iter()
+                .map(|span| (span.range.start, span.range.end))
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
+    let rows: [(&[&str], &str, &str, Limits); 4] = [
+        (
+            &[
+                "fn f(n): if n < 1 then f(0) else 1",
+                "Clip c:\n    Note/(f(1))\n    Note/(f(0))",
+            ],
+            "Note/(f(0))",
+            "f(0)",
+            Limits::default(),
+        ),
+        (
+            &[
+                "fn a(n): if n < 1 then b(1) else a(n - 1)",
+                "fn b(n): if n < 1 then a(1) else b(n - 1)",
+                "Clip c:\n    Note/(a(1))",
+            ],
+            "Note/(a(1))",
+            "a(1)",
+            Limits::default(),
+        ),
+        (
+            &[
+                "fn down(n): if n < 1 then 0 else down(n - 1)",
+                "Clip c:\n    Note/(down(1024))",
+            ],
+            "Note/(down(1024))",
+            "down(1024)",
+            Limits::default(),
+        ),
+        (
+            &[
+                "fn even(n): if n < 1 then true else odd(n - 1)",
+                "fn odd(n): if n < 1 then false else even(n - 1)",
+                "Clip c:\n    Note/(if even(10) then 1 else 2)",
+            ],
+            "Note/(if even(10) then 1 else 2)",
+            "even(10)",
+            Limits {
+                nesting_depth: 6,
+                ..Limits::default()
+            },
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, use_line, call, limits) in rows {
+        let compiler =
+            Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+        for order in support::permutations(items) {
+            let text = format!("{}\n", order.join("\n"));
+            let (line, _) = support::at(&text, use_line, 0);
+            let offset = use_line.find(call).and_then(|at| u32::try_from(at).ok());
+            let length = u32::try_from(call.len()).ok();
+            let wanted: Vec<Vec<(u32, u32)>> = offset
+                .zip(length)
+                .map(|(offset, length)| vec![(line + offset, line + offset + length)])
+                .into_iter()
+                .collect();
+            let found = secondary_spans(&compiler, &text);
+            if found != wanted {
+                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                break;
+            }
+        }
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }

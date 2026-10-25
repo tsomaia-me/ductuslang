@@ -126,8 +126,9 @@ impl<'a> Checker<'a> {
         )?;
         self.leave_unknown(locals, decl.skipped_params.clone())?;
         let body = self.body_frame(decl.body, Some(locals), stand_in)?;
+        let skipped = self.skipped_only(body)?;
         for local in &decl.lets {
-            self.expr(local.value, Some(body), false)?;
+            self.expr(local.value, Some(skipped), false)?;
         }
         self.blocks(vec![(decl.body, Some(body), Mode::Arm)])?;
         self.let_cycles(&decl.lets)?;
@@ -633,6 +634,17 @@ impl<'a> Checker<'a> {
         let unknown = self.hir.body_unknown(block)?;
         self.leave_unknown(frame, unknown)?;
         Ok(frame)
+    }
+
+    fn skipped_only(&mut self, frame: usize) -> Result<usize, Internal> {
+        let mut copy = self
+            .frames
+            .get(frame)
+            .cloned()
+            .ok_or(Internal::missed("scope frame"))?;
+        copy.unknown.every = false;
+        self.frames.push(copy);
+        Ok(self.frames.len() - 1)
     }
 
     fn iterable(&mut self, iterable: Iterable, frame: Option<usize>) -> Result<(), Internal> {

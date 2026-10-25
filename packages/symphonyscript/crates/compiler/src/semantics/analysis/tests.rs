@@ -3275,6 +3275,14 @@ fn a_recursive_call_reuses_only_a_finished_calls_value() {
         ),
         (
             vec![
+                "fn z(): 5",
+                "fn two(): z() + z()",
+                "Clip c:\n    Note/(two())",
+            ],
+            pitches(&[10]),
+        ),
+        (
+            vec![
                 "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)",
                 "let k = fib(5)",
                 "let k2 = fib(6)",
@@ -3514,6 +3522,24 @@ fn a_patterns_lets_see_the_names_of_its_body() {
                 "Clip c:\n    P",
             ],
             vec![(Code::UnknownName, "n")],
+            vec![],
+        ),
+        (
+            vec!["pattern P():\n    let a = nope", "Clip c:\n    P"],
+            vec![(Code::UnknownName, "nope"), (Code::PlacementSyntax, "")],
+            vec![],
+        ),
+        (
+            vec!["pattern P():\n    let a = nope"],
+            vec![(Code::UnknownName, "nope"), (Code::PlacementSyntax, "")],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern P():\n    let a = k.velocity\n    = Note as k\n    Note",
+                "Clip c:\n    P",
+            ],
+            vec![(Code::PlacementSyntax, "=")],
             vec![],
         ),
     ];
