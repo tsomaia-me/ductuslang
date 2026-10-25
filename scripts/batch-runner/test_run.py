@@ -32,6 +32,8 @@ class FakeBatches:
         self.log = log
         self.errors = list(errors)
         self.created = {}
+        self.retrieve_errors = []
+        self.result_errors = []
 
     def create(self, requests):
         self.log.append(("create", self.name, [r["custom_id"] for r in requests]))
@@ -42,13 +44,22 @@ class FakeBatches:
         return SimpleNamespace(id=batch_id)
 
     def retrieve(self, batch_id):
+        if self.retrieve_errors:
+            raise self.retrieve_errors.pop(0)
         return SimpleNamespace(processing_status="ended")
 
     def results(self, batch_id):
         self.log.append(("results", self.name, batch_id))
         message = {"model": "claude-opus-5-5", "usage": USAGE}
-        return [SimpleNamespace(custom_id=r["custom_id"], result=Result({"type": "succeeded", "message": message}))
-                for r in self.created[batch_id]]
+        items = [SimpleNamespace(custom_id=r["custom_id"], result=Result({"type": "succeeded", "message": message}))
+                 for r in self.created[batch_id]]
+        return self.stream(items)
+
+    def stream(self, items):
+        for index, item in enumerate(items):
+            if self.result_errors and index == 1:
+                raise self.result_errors.pop(0)
+            yield item
 
 
 def fake_client(name, log, errors=()):
@@ -119,6 +130,45 @@ class RunnerTest(unittest.TestCase):
         creates = [entry for entry in self.log if entry[0] == "create"]
         self.assertEqual(creates, [("create", "k2", ["r2", "r3"])])
         self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1", "r2", "r3"])
+
+    def timeout(self):
+        return anthropic.APITimeoutError(httpx.Request("GET", "https://api.anthropic.com/v1/messages/batches"))
+
+    def test_retries_retrieve_on_transient_errors(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients)
+        self.assertTrue(runner.run(requests(2)))
+        self.run_dir.joinpath("results.jsonl").unlink()
+        batch = runner.state["batches"][0]
+        batch["done"] = False
+        clients[1].messages.batches.retrieve_errors = [self.timeout(), self.timeout()]
+        self.sleeps.clear()
+        runner.collect(batch)
+        self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1"])
+        self.assertEqual(len(self.sleeps), 2)
+
+    def test_retries_results_stream_without_duplicates(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients, batch_size=3)
+        self.assertTrue(runner.run(requests(3)))
+        self.run_dir.joinpath("results.jsonl").unlink()
+        batch = runner.state["batches"][0]
+        batch["done"] = False
+        clients[1].messages.batches.result_errors = [
+            anthropic.APIConnectionError(request=httpx.Request("GET", "https://api.anthropic.com"))]
+        runner.collect(batch)
+        self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1", "r2"])
+
+    def test_non_transient_error_while_collecting_raises(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients)
+        self.assertTrue(runner.run(requests(1)))
+        batch = runner.state["batches"][0]
+        batch["done"] = False
+        clients[1].messages.batches.retrieve_errors = [
+            api_error(anthropic.BadRequestError, 400, "bad", "invalid_request_error")]
+        with self.assertRaises(anthropic.BadRequestError):
+            runner.collect(batch)
 
     def test_max_usd_stops_new_batches(self):
         clients = {1: fake_client("k1", self.log)}

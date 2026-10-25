@@ -12,6 +12,7 @@ MAX_BATCH_REQUESTS = 100_000
 MAX_BATCH_BYTES = 250 * 1024 * 1024
 POLL_SECONDS = 60
 RATE_LIMIT_SECONDS = 60
+TRANSIENT_ERRORS = (anthropic.APIConnectionError, anthropic.InternalServerError, anthropic.RateLimitError)
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 
 PRICES = {
@@ -134,14 +135,21 @@ class Runner:
 
     def collect(self, batch):
         client = self.clients[batch["key"]]
-        while client.messages.batches.retrieve(batch["id"]).processing_status != "ended":
-            self.sleep(self.poll_seconds)
         written = {entry["custom_id"] for entry in self.read_results()}
-        with self.results_path.open("a") as out:
-            for entry in client.messages.batches.results(batch["id"]):
-                if entry.custom_id not in written:
-                    out.write(json.dumps({"custom_id": entry.custom_id, "key": batch["key"],
-                                          "result": entry.result.to_dict(mode="json")}) + "\n")
+        while True:
+            try:
+                while client.messages.batches.retrieve(batch["id"]).processing_status != "ended":
+                    self.sleep(self.poll_seconds)
+                with self.results_path.open("a") as out:
+                    for entry in client.messages.batches.results(batch["id"]):
+                        if entry.custom_id not in written:
+                            out.write(json.dumps({"custom_id": entry.custom_id, "key": batch["key"],
+                                                  "result": entry.result.to_dict(mode="json")}) + "\n")
+                            written.add(entry.custom_id)
+                break
+            except TRANSIENT_ERRORS as error:
+                self.log(f"key-{batch['key']}: {type(error).__name__} while collecting {batch['id']}; retrying")
+                self.sleep(self.poll_seconds)
         batch["done"] = True
         self.save()
         self.log(f"batch {batch['id']} done (key-{batch['key']})")
