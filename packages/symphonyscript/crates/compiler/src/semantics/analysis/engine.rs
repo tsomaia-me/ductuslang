@@ -556,6 +556,7 @@ impl<'a> Engine<'a> {
             chain,
             message: message.into(),
             unless_untyped: Vec::new(),
+            unless_values: Vec::new(),
         });
     }
 
@@ -566,6 +567,10 @@ impl<'a> Engine<'a> {
                 .unless_untyped
                 .iter()
                 .any(|binding| self.typing.untyped.contains(binding))
+                || deferred
+                    .unless_values
+                    .iter()
+                    .any(|value| self.typing.untyped_values.contains(value))
             {
                 continue;
             }
@@ -607,6 +612,7 @@ impl<'a> Engine<'a> {
             return Ok(());
         }
         let unless_untyped = self.untypable_reads(node)?;
+        let unless_values = self.untypable_values(node)?;
         let chain = self.chain(scope)?;
         self.deferred.push(super::deferred::Deferred {
             code,
@@ -615,6 +621,31 @@ impl<'a> Engine<'a> {
             chain,
             message: message.into(),
             unless_untyped,
+            unless_values,
+        });
+        Ok(())
+    }
+
+    pub fn error_unless_values(
+        &mut self,
+        code: Code,
+        loc: Loc,
+        scope: ScopeId,
+        message: impl Into<String>,
+        unless_values: Vec<NodeId>,
+    ) -> Result<(), Internal> {
+        if self.in_probe(scope)? {
+            return Ok(());
+        }
+        let chain = self.chain(scope)?;
+        self.deferred.push(super::deferred::Deferred {
+            code,
+            loc,
+            before: Vec::new(),
+            chain,
+            message: message.into(),
+            unless_untyped: Vec::new(),
+            unless_values,
         });
         Ok(())
     }

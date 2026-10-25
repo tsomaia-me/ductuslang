@@ -1,6 +1,7 @@
 mod bare_scrutinees;
 mod check;
 mod enum_bindings;
+mod enum_uses;
 mod expectations;
 mod order;
 mod position;
@@ -98,6 +99,7 @@ impl Engine<'_> {
         self.reactive_shapes()?;
         self.input_fits()?;
         self.consistency()?;
+        self.enum_uses()?;
         self.consistent_shapes()?;
         self.integer_inputs()?;
         Ok(())

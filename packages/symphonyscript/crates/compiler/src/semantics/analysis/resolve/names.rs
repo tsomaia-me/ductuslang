@@ -116,7 +116,9 @@ impl Engine<'_> {
             | Op::Recursive { .. }
             | Op::ToRead { .. } => None,
         };
-        self.unplaced_variant_at(name.as_deref(), loc, scope)
+        let message = self.unplaced_message(name.as_deref())?;
+        let unless_values = self.untypable_values(node)?;
+        self.error_unless_values(Code::UnknownName, loc, scope, message, unless_values)
     }
 
     pub(in crate::semantics::analysis) fn unplaced_variant_at(
@@ -125,7 +127,12 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
     ) -> Result<(), Internal> {
-        let message = match name {
+        let message = self.unplaced_message(name)?;
+        self.error(Code::UnknownName, loc, scope, message)
+    }
+
+    fn unplaced_message(&self, name: Option<&str>) -> Result<String, Internal> {
+        Ok(match name {
             Some(name) => {
                 let owner = match self.variants.owner(name) {
                     Some(id) => self.enum_decl(id)?.name.as_str(),
@@ -136,8 +143,7 @@ impl Engine<'_> {
                 )
             }
             None => "this value names a variant, and nothing here expects an enum".to_string(),
-        };
-        self.error(Code::UnknownName, loc, scope, message)
+        })
     }
 
     pub(in crate::semantics::analysis) fn global_of_let(

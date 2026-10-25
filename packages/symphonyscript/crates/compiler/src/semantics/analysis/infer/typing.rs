@@ -11,6 +11,7 @@ pub(crate) struct Typing {
     pub own: FastMap<BindingId, Scalar>,
     pub untyped: FastSet<BindingId>,
     pub read_by_faults: FastSet<BindingId>,
+    pub untyped_values: FastSet<NodeId>,
     pub awaiting_enum: Vec<BindingId>,
     pub enum_expected: Vec<BindingId>,
     pub equal_to: FastMap<BindingId, Vec<NodeId>>,

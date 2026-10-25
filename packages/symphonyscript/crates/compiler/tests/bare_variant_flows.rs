@@ -185,6 +185,8 @@ fn expected(reactive: bool, read: &str, uses: &[&Position]) -> Found {
         } else if used {
             found.push((Code::TypeMismatch, format!("{REACTIVE}\n")));
         }
+    } else if enums.len() > 1 {
+        found.push((Code::TypeMismatch, format!("{COMPILE_TIME}\n")));
     } else {
         for effect in &effects {
             match effect {
@@ -323,4 +325,57 @@ fn a_compile_time_value_meets_its_uses_in_every_order() {
 #[test]
 fn a_compile_time_value_through_a_let_meets_its_uses_in_every_order() {
     every_flow_meets_its_uses(false, true);
+}
+
+#[test]
+fn a_compile_time_value_takes_one_enum_from_its_uses_in_every_order() {
+    let compiler = Compiler::new(&class_vocabulary()).expect("the vocabulary compiles");
+    let written = "let w = Saw";
+    let conflict = vec![(Code::TypeMismatch, format!("{written}\n"))];
+    let cases: [(&[&str], Found); 6] = [
+        (&["Osc o | wave=w", "Osc p | mode=w"], conflict.clone()),
+        (&["Osc o | wave=w", "Osc p | wave=w"], Vec::new()),
+        (
+            &[
+                "let l = match w:\n    Saw: 1.0\n    else: 0.5",
+                "Osc o | freq=l",
+            ],
+            vec![(Code::MatchScrutinee, "w".to_string())],
+        ),
+        (
+            &["Osc o | wave=w", "Osc p | mode=w", "Osc q when w"],
+            conflict.clone(),
+        ),
+        (
+            &["Osc o | wave=w", "Osc p | mode=w", "input k = w"],
+            conflict.clone(),
+        ),
+        (
+            &[
+                "Osc o | wave=w",
+                "Osc p | mode=w",
+                "let l = match w:\n    Saw: 1.0\n    else: 0.5",
+                "Osc q | freq=l",
+            ],
+            conflict,
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (uses, wanted) in cases {
+        let items: Vec<&str> = std::iter::once(written)
+            .chain(uses.iter().copied())
+            .collect();
+        for order in orders(items.len()) {
+            let text: String = order
+                .iter()
+                .map(|index| format!("{}\n", items[*index]))
+                .collect();
+            let found = errors_of(&compiler, &text);
+            if found != wanted {
+                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
