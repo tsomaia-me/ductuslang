@@ -1,4 +1,4 @@
-use symphonyscript_core::Vocabulary;
+use symphonyscript_core::{Limits, Vocabulary};
 
 use super::internal_error::internal_error;
 use crate::semantics::Internal;
@@ -12,10 +12,11 @@ pub(crate) fn program<R>(
     hir: &Hir,
     vocabulary: &Vocabulary,
     variants: &Variants,
+    limits: Limits,
     report: &mut Report,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> Option<R> {
-    match analyzed(hir, vocabulary, variants, report, inspect) {
+    match analyzed(hir, vocabulary, variants, limits, report, inspect) {
         Ok(found) => Some(found),
         Err(internal) => {
             internal_error(hir, report, internal);
@@ -28,12 +29,13 @@ fn analyzed<R>(
     hir: &Hir,
     vocabulary: &Vocabulary,
     variants: &Variants,
+    limits: Limits,
     report: &mut Report,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> Result<R, Internal> {
     let collected = collect(hir, vocabulary, variants, report)?;
     check_scopes(hir, &collected, vocabulary, variants, false, report)?;
-    let mut engine = Engine::new(hir, vocabulary, &collected, variants);
+    let mut engine = Engine::new(hir, vocabulary, &collected, variants, limits);
     let outcome = engine.analyze();
     report.diagnostics.append(&mut engine.report.diagnostics);
     outcome?;

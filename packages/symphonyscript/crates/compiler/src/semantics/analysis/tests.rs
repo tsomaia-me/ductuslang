@@ -1,4 +1,4 @@
-use symphonyscript_core::{Count, Scalar, Vocabulary};
+use symphonyscript_core::{Count, Limits, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
     Project, ProjectFile, bar_vocabulary, deep_projects, dsp_project, envelope_vocabulary,
     music_project, spec_examples, spec_projects, vocabulary,
@@ -46,7 +46,7 @@ fn graph_size(calls: usize) -> (usize, usize) {
     let mut report = Report::default();
     let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("the chain collects");
-    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
+    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants, Limits::default());
     engine.analyze().expect("the chain meets no internal error");
     let errors: Vec<_> = engine
         .report
@@ -2044,6 +2044,7 @@ fn expansion_stops_after_a_million_iterations_and_uses_whatever_the_loop_bounds(
             "{text}"
         );
         assert_eq!(steps, 1_000_001, "{text}");
+        let work = u64::try_from(work).expect("the work count fits u64");
         assert!(work <= 3 * steps + 16, "{work} for {steps} steps: {text}");
     }
 }
@@ -2138,7 +2139,14 @@ fn a_lookup_that_misses_is_an_internal_error() {
     let mut hir = built(&vocabulary, "Session s\n");
     hir.top.push(Top::Input(foreign_input));
     let mut report = Report::default();
-    let found = analyze::program(&hir, &vocabulary, &variants, &mut report, |_| ());
+    let found = analyze::program(
+        &hir,
+        &vocabulary,
+        &variants,
+        Limits::default(),
+        &mut report,
+        |_| (),
+    );
     let codes: Vec<Code> = report
         .finish(&hir.files)
         .iter()
@@ -2154,7 +2162,7 @@ fn a_lookup_that_misses_is_an_internal_error() {
     let hir = built(&vocabulary, "Session s\n");
     let mut report = Report::default();
     let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("collects");
-    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
+    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants, Limits::default());
     engine
         .analyze()
         .expect("the program meets no internal error");
@@ -2230,7 +2238,7 @@ pub(super) fn with_engine<R>(text: &str, run: impl FnOnce(&mut Engine<'_>) -> R)
     let mut report = Report::default();
     let collected =
         collect(&hir, &vocabulary, &variants, &mut report).expect("the program collects");
-    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants);
+    let mut engine = Engine::new(&hir, &vocabulary, &collected, &variants, Limits::default());
     run(&mut engine)
 }
 
@@ -2388,7 +2396,7 @@ fn staged(
     let hir = built(vocabulary, text);
     let mut report = Report::default();
     let collected = collect(&hir, vocabulary, &variants, &mut report)?;
-    let mut engine = Engine::new(&hir, vocabulary, &collected, &variants);
+    let mut engine = Engine::new(&hir, vocabulary, &collected, &variants, Limits::default());
     match stage {
         Stage::Expand => {
             engine.vocabulary = swapped;

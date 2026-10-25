@@ -8,7 +8,7 @@
     )
 )]
 
-use symphonyscript_core::Vocabulary;
+use symphonyscript_core::{Limits, Vocabulary};
 
 use crate::diagnostics::{Diagnostic, Severity};
 use crate::failed::Failed;
@@ -24,10 +24,15 @@ pub struct Compiler {
     vocabulary: Vocabulary,
     variants: Variants,
     prelude: Hir,
+    limits: Limits,
 }
 
 impl Compiler {
     pub fn new(vocab: &Vocabulary) -> Result<Compiler, Failed> {
+        Self::with_limits(vocab, Limits::default())
+    }
+
+    pub fn with_limits(vocab: &Vocabulary, limits: Limits) -> Result<Compiler, Failed> {
         let mut hir = Hir::default();
         let mut report = Report::default();
         let mut files: Vec<Source> = vocab
@@ -73,6 +78,7 @@ impl Compiler {
             vocabulary: vocab.clone(),
             variants,
             prelude: hir,
+            limits,
         })
     }
 
@@ -99,8 +105,14 @@ impl Compiler {
                 return (report.finish(&hir.files), None);
             }
         }
-        let inspected =
-            analyze::program(&hir, &self.vocabulary, &self.variants, &mut report, inspect);
+        let inspected = analyze::program(
+            &hir,
+            &self.vocabulary,
+            &self.variants,
+            self.limits,
+            &mut report,
+            inspect,
+        );
         (report.finish(&hir.files), inspected)
     }
 }

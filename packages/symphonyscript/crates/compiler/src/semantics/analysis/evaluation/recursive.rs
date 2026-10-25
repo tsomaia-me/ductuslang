@@ -33,9 +33,6 @@ use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
 
-const CALL_LIMIT: usize = 1_000_000;
-const DEPTH_LIMIT: usize = 1_024;
-
 struct Argument {
     leaves: Vec<(ArgKey, ArgSig)>,
     lengths: Vec<u32>,
@@ -448,7 +445,7 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let depth = self.machine_mut()?.frames.len();
-        if depth >= DEPTH_LIMIT {
+        if u64::try_from(depth).map_or(true, |depth| depth >= self.limits.nesting_depth) {
             let mut names: Vec<String> = Vec::new();
             let functions: Vec<FnId> = self
                 .machine_mut()?
@@ -466,7 +463,8 @@ impl Engine<'_> {
                 Code::RecursionDepth,
                 node,
                 format!(
-                    "the evaluation goes deeper than 1,024 nested calls: {}",
+                    "the evaluation goes deeper than {} nested calls: {}",
+                    self.limits.nesting_depth,
                     names.join(" → ")
                 ),
             )?;
@@ -529,7 +527,7 @@ impl Engine<'_> {
 
     fn within_call_limit(&mut self, node: NodeId, function: FnId) -> Result<bool, Internal> {
         self.call_count += 1;
-        if self.call_count <= CALL_LIMIT {
+        if self.call_count <= self.limits.recursive_calls {
             return Ok(true);
         }
         if !self.call_limit_reported {
@@ -538,8 +536,9 @@ impl Engine<'_> {
                 Code::RecursionLimit,
                 node,
                 format!(
-                    "this call of `{}` exceeds the 1,000,000 distinct recursive calls a compilation evaluates",
-                    self.function_name(function)?
+                    "this call of `{}` exceeds the {} distinct recursive calls a compilation evaluates",
+                    self.function_name(function)?,
+                    self.limits.recursive_calls
                 ),
             )?;
         }

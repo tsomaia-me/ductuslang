@@ -7,6 +7,7 @@ mod compiled;
 mod ids;
 mod language;
 mod math;
+mod resource;
 mod source;
 mod types;
 mod vocab;
@@ -20,6 +21,7 @@ pub use ids::{
 };
 pub use language::{BUILTINS, FLAG_CHARS, KEYWORDS, RESERVED_WORDS};
 pub use math::{SpecFloat, rand};
+pub use resource::Limits;
 pub use source::{Path, Segment, Span};
 pub use types::{Scalar, Ty, Value, canonical_f32, canonical_f64};
 pub use vocab::{

@@ -709,7 +709,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
-        "evaluation deeper than 1,024 nested calls",
+        "evaluation deeper than the nesting limit, 1,024 nested calls by default",
         "recursion-depth",
         "fn f(n): if n < 1 then 0 else f(n - 1) + 1\nClip c:\n    Note/(f(2000))\n",
     ),

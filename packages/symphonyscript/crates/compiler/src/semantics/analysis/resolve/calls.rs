@@ -394,7 +394,7 @@ impl Engine<'_> {
             return Ok(false);
         }
         self.inlined = self.inlined.saturating_add(count);
-        if self.inlined <= INLINE_LIMIT {
+        if self.inlined <= self.limits.inlined_calls {
             return Ok(true);
         }
         self.report_inline_limit(function, loc, scope)?;
@@ -436,12 +436,13 @@ impl Engine<'_> {
             .into_iter()
             .next()
             .unwrap_or_default();
+        let limit = self.limits.inlined_calls;
         self.report.error_with(
             self.hir,
             Code::InlineLimit,
             loc,
             &path,
-            format!("this call of `{name}` makes the compilation inline more than 1,000,000 calls"),
+            format!("this call of `{name}` makes the compilation inline more than {limit} calls"),
         );
         Ok(())
     }
@@ -600,8 +601,6 @@ fn builtin_arity(builtin: Builtin) -> usize {
         Builtin::Clamp | Builtin::Lerp => 3,
     }
 }
-
-pub(super) const INLINE_LIMIT: u64 = 1_000_000;
 
 fn index_of(position: usize) -> u32 {
     u32::try_from(position).unwrap_or(u32::MAX)

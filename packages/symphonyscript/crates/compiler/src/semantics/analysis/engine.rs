@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use symphonyscript_core::{
-    EnumDecl, EnumId, FamilyDecl, FamilyId, NodeKind, NodeKindDecl, UnitDecl, Vocabulary, WireKind,
-    WireKindDecl,
+    EnumDecl, EnumId, FamilyDecl, FamilyId, Limits, NodeKind, NodeKindDecl, UnitDecl, Vocabulary,
+    WireKind, WireKindDecl,
 };
 
 use super::binding::Binding;
@@ -40,6 +40,7 @@ pub(crate) struct Engine<'a> {
     pub vocabulary: &'a Vocabulary,
     pub collected: &'a Collected,
     pub variants: &'a Variants,
+    pub limits: Limits,
     pub report: Report,
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
@@ -56,8 +57,8 @@ pub(crate) struct Engine<'a> {
     pub prebuilt: FastMap<(Site, ScopeId), ItemRef>,
     pub counters: FastMap<(PathParent, &'a str), u32>,
     pub body_queue: VecDeque<InstanceId>,
-    pub expanded: usize,
-    pub steps: usize,
+    pub expanded: u64,
+    pub steps: u64,
     pub limit_reached: bool,
     pub broken_bundles: FastSet<usize>,
     pub condition_links: Vec<super::condition_link::ConditionLink>,
@@ -72,7 +73,7 @@ pub(crate) struct Engine<'a> {
     pub machines: FastMap<super::call_key::CallKey, super::evaluation::Machine>,
     pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
     pub frame_pushed: bool,
-    pub call_count: usize,
+    pub call_count: u64,
     pub inlined: u64,
     pub evaluated_bodies: FastSet<FnId>,
     pub evaluated_defaults: FastSet<(FnId, usize)>,
@@ -94,12 +95,14 @@ impl<'a> Engine<'a> {
         vocabulary: &'a Vocabulary,
         collected: &'a Collected,
         variants: &'a Variants,
+        limits: Limits,
     ) -> Self {
         let mut engine = Self {
             hir,
             vocabulary,
             collected,
             variants,
+            limits,
             report: Report::default(),
             scopes: Vec::new(),
             nodes: Vec::new(),

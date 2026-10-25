@@ -1,5 +1,4 @@
 use super::bound_sources::bound_sources;
-use super::calls::INLINE_LIMIT;
 use super::defaulted::defaulted;
 use super::found::Found;
 use crate::semantics::Internal;
@@ -76,7 +75,7 @@ impl Engine<'_> {
                     &defaulted,
                     &mut counted,
                 )?);
-                if total > INLINE_LIMIT {
+                if total > self.limits.inlined_calls {
                     return self.report_inline_limit(function, node.loc, scope);
                 }
                 stack.extend(args.values().into_iter().rev());
