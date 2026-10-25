@@ -19,6 +19,7 @@ pub(crate) enum Op {
     NodeRef(ItemRef),
     Read(BindingId),
     Use(NodeId),
+    Chosen(NodeId),
     Arg(u32),
     Unary(UnaryOp, NodeId),
     Binary(BinaryOp, NodeId, NodeId),
@@ -75,7 +76,8 @@ impl Op {
             Op::Unary(_, operand)
             | Op::Convert(_, operand)
             | Op::Annotate(_, operand)
-            | Op::Use(operand) => vec![*operand],
+            | Op::Use(operand)
+            | Op::Chosen(operand) => vec![*operand],
             Op::Binary(_, lhs, rhs) => vec![*lhs, *rhs],
             Op::If(condition, then, otherwise) => vec![*condition, *then, *otherwise],
             Op::Match {

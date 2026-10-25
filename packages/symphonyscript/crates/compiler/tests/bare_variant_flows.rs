@@ -6,6 +6,7 @@ enum Effect {
     Gives(&'static str),
     Needs,
     Rejects(Code, &'static str),
+    Clashes(&'static str, Code, &'static str),
     Inert(Code, &'static str),
 }
 
@@ -109,7 +110,43 @@ const POSITIONS: &[Position] = &[
         items: &["Osc o{n} | mode=([{x}, Mode::{m}][0])"],
         reactive: Effect::Gives("Mode"),
         compile_time: Effect::Gives("Mode"),
-        foreign: Some((Code::TypeMismatch, "{x}")),
+        foreign: Some((Code::TypeMismatch, "[{x}, Mode::{m}]")),
+    },
+    Position {
+        name: "a variant of the other enum the index passes over",
+        items: &["Osc o{n} | wave=([{x}, Mode::{m}][0])"],
+        reactive: Effect::Clashes("Wave", Code::TypeMismatch, "[{x}, Mode::{m}][0]"),
+        compile_time: Effect::Clashes("Wave", Code::TypeMismatch, "[{x}, Mode::{m}][0]"),
+        foreign: Some((Code::TypeMismatch, "[{x}, Mode::{m}]")),
+    },
+    Position {
+        name: "a number the index passes over",
+        items: &["Osc o{n} | wave=([{x}, 3][0])"],
+        reactive: Effect::Clashes("Wave", Code::TypeMismatch, "[{x}, 3]"),
+        compile_time: Effect::Clashes("Wave", Code::TypeMismatch, "[{x}, 3]"),
+        foreign: None,
+    },
+    Position {
+        name: "a string the index passes over",
+        items: &["Osc o{n} | wave=([{x}, \"s\"][0])"],
+        reactive: Effect::Clashes("Wave", Code::TypeMismatch, "[{x}, \"s\"]"),
+        compile_time: Effect::Clashes("Wave", Code::TypeMismatch, "[{x}, \"s\"]"),
+        foreign: None,
+    },
+    Position {
+        name: "an `if` whose untaken branch holds the other enum",
+        items: &["Osc o{n} | wave=(if true then {x} else Mode::{m})"],
+        reactive: Effect::Clashes(
+            "Wave",
+            Code::TypeMismatch,
+            "if true then {x} else Mode::{m}",
+        ),
+        compile_time: Effect::Clashes(
+            "Wave",
+            Code::TypeMismatch,
+            "if true then {x} else Mode::{m}",
+        ),
+        foreign: None,
     },
     Position {
         name: "a function argument used in the body",
@@ -351,6 +388,10 @@ fn expected(flow: &Flow, vocab: &Vocab, uses: &[&Position], text: &str) -> Found
                         found.push((code, at(span)));
                     }
                 }
+                Effect::Clashes(_, code, span) => {
+                    let (code, span) = position.foreign.unwrap_or((*code, span));
+                    found.push((code, at(span)));
+                }
                 Effect::Rejects(code, span) => found.push((*code, at(span))),
             }
         }
@@ -359,7 +400,7 @@ fn expected(flow: &Flow, vocab: &Vocab, uses: &[&Position], text: &str) -> Found
     }
     let mut enums: Vec<&str> = Vec::new();
     for (effect, _) in &effects {
-        if let Effect::Gives(name) = effect
+        if let Effect::Gives(name) | Effect::Clashes(name, ..) = effect
             && !enums.contains(name)
         {
             enums.push(name);
@@ -374,7 +415,7 @@ fn expected(flow: &Flow, vocab: &Vocab, uses: &[&Position], text: &str) -> Found
             .any(|(effect, _)| !matches!(effect, Effect::Inert(..)));
     if let [single] = enums.as_slice() {
         for (effect, _) in &effects {
-            if let Effect::Rejects(code, span) = effect {
+            if let Effect::Rejects(code, span) | Effect::Clashes(_, code, span) = effect {
                 found.push((*code, at(span)));
             }
         }
@@ -470,7 +511,7 @@ fn gives(position: &Position, reactive: bool) -> Option<&'static str> {
     } else {
         position.compile_time
     } {
-        Effect::Gives(name) => Some(name),
+        Effect::Gives(name) | Effect::Clashes(name, ..) => Some(name),
         Effect::Needs | Effect::Rejects(..) | Effect::Inert(..) => None,
     }
 }

@@ -500,7 +500,9 @@ impl<'a> Engine<'a> {
     fn may_hold_array(&self, op: &Op) -> Result<bool, Internal> {
         Ok(match op {
             Op::Recursive { .. } | Op::Element { .. } | Op::Array(_) => true,
-            Op::Use(operand) | Op::Annotate(_, operand) => self.arrays.contains(operand),
+            Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => {
+                self.arrays.contains(operand)
+            }
             Op::Read(binding) => self.arrays.contains(&self.binding(*binding)?.init),
             Op::If(_, then, otherwise) => {
                 self.arrays.contains(then) || self.arrays.contains(otherwise)
@@ -721,7 +723,12 @@ impl<'a> Engine<'a> {
         })
     }
 
-    fn read_one(&mut self, item: Bound, loc: Loc, scope: ScopeId) -> Result<NodeId, Internal> {
+    pub(in crate::semantics::analysis) fn read_one(
+        &mut self,
+        item: Bound,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<NodeId, Internal> {
         match item {
             Bound::Cell(binding) => self.push_node(Op::Read(binding), loc, scope),
             Bound::Value(node) => self.push_node(Op::Use(node), loc, scope),

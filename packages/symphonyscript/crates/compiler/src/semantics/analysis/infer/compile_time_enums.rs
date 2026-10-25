@@ -35,8 +35,14 @@ impl Engine<'_> {
             if !seen.insert((node, expected)) {
                 continue;
             }
-            if let Some(siblings) = self.memo.siblings.get(&node) {
-                stack.extend(siblings.iter().map(|sibling| (*sibling, expected)));
+            if let Some(group) = self.memo.groups.get(&node).copied() {
+                if let Some(id) = expected {
+                    let enums = given.entry(group).or_default();
+                    if !enums.contains(&id) {
+                        enums.push(id);
+                    }
+                }
+                stack.push((group, expected));
             }
             match self.node(node)?.op.clone() {
                 Op::Use(inner) => {
@@ -49,6 +55,7 @@ impl Engine<'_> {
                     }
                     stack.push((inner, expected));
                 }
+                Op::Chosen(inner) => stack.push((inner, expected)),
                 Op::If(condition, then, otherwise) => {
                     stack.extend([(condition, None), (then, expected), (otherwise, expected)]);
                 }

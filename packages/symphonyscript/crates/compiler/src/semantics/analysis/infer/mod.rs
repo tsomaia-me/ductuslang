@@ -12,6 +12,7 @@ mod synth;
 mod typing;
 mod units;
 mod values;
+mod variants_fit;
 mod widths;
 
 pub(crate) use typing::Typing;
@@ -19,7 +20,7 @@ pub(crate) use typing::Typing;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::{BindingId, NodeId};
+use crate::semantics::analysis::ids::BindingId;
 use crate::semantics::analysis::val::Val;
 
 impl Engine<'_> {
@@ -64,9 +65,8 @@ impl Engine<'_> {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             self.demand_sig(self.binding(binding)?.init)?;
         }
-        let siblings: Vec<NodeId> = self.memo.siblings.values().flatten().copied().collect();
-        for node in siblings {
-            self.demand_sig(node)?;
+        for group in self.memo.group_list.clone() {
+            self.demand_sig(group)?;
         }
         self.units(&valid)?;
         self.read_in_default_units()?;

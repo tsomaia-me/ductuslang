@@ -1,8 +1,12 @@
 use symphonyscript_core::{AttrDecl, AttrId};
 
+use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_source::AttrSource;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_slice::BoundSlice;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
@@ -10,12 +14,21 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
+use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Ident, Loc};
+
+enum Shortcut<T> {
+    Pending,
+    Declined,
+    Read(T),
+}
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn field(
@@ -77,6 +90,7 @@ impl Engine<'_> {
             | Op::Pi
             | Op::Read(_)
             | Op::Use(_)
+            | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
             | Op::Binary(..)
@@ -218,6 +232,11 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
+        match self.bound_element(base, index, scope, need)? {
+            Shortcut::Pending => return Ok(None),
+            Shortcut::Read(val) => return Ok(Some(val)),
+            Shortcut::Declined => {}
+        }
         let base_val = self.val(Query::Expr(base, scope), need);
         let index_val = self.val(Query::Expr(index, scope), need);
         let (base_val, index_val) = (some!(base_val), some!(index_val));
@@ -291,17 +310,18 @@ impl Engine<'_> {
                 let position =
                     usize::try_from(position).map_err(|_| Internal::missed("array element"))?;
                 let chosen = base_val.slice(position)?;
-                let chosen_nodes = chosen.nodes();
-                for row in 0..outer as usize {
-                    if row == position {
-                        continue;
-                    }
-                    let others = base_val.slice(row)?.nodes();
-                    for (node, other) in chosen_nodes.iter().zip(others) {
-                        self.memo.siblings.entry(*node).or_default().push(other);
-                    }
+                let group = self.value_group(base, &base_val, scope)?;
+                let mut reads = Vec::new();
+                for leaf in chosen.nodes() {
+                    let op = match self.node(leaf)?.op {
+                        Op::Read(binding) => Op::Read(binding),
+                        _ => Op::Chosen(leaf),
+                    };
+                    let read = self.push_node(op, loc, scope)?;
+                    self.memo.groups.insert(read, group);
+                    reads.push(read);
                 }
-                return Ok(Some(chosen));
+                return Ok(Some(self.shaped(chosen.shape(), reads)));
             }
         }
         let rows: Vec<Val> = (0..outer as usize)
@@ -332,6 +352,282 @@ impl Engine<'_> {
             })
             .collect::<Result<_, _>>()?;
         Ok(Some(self.shaped(inner, elements)))
+    }
+
+    fn bound_element(
+        &mut self,
+        base: ExprId,
+        index: ExprId,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Shortcut<Val>, Internal> {
+        let slice = match self.bound_slice(base, index, scope, need)? {
+            Shortcut::Pending => return Ok(Shortcut::Pending),
+            Shortcut::Declined => return Ok(Shortcut::Declined),
+            Shortcut::Read(slice) => slice,
+        };
+        let items = slice
+            .offset
+            .checked_add(slice.shape.count())
+            .and_then(|end| slice.array.1.get(slice.offset..end))
+            .ok_or(Internal::missed("array element"))?
+            .to_vec();
+        let group = match slice.query {
+            Query::Let(..) | Query::Param(..) => {
+                Some(self.bound_group(slice.query, &slice.array, slice.loc)?)
+            }
+            Query::Input(_)
+            | Query::Expr(..)
+            | Query::Attr(..)
+            | Query::Destination(_)
+            | Query::Sig(_)
+            | Query::Eval(..) => None,
+        };
+        let mut reads = Vec::with_capacity(items.len());
+        for item in items {
+            let read = self.read_one(item, slice.loc, scope)?;
+            if let Some(group) = group {
+                self.memo.groups.insert(read, group);
+            }
+            reads.push(read);
+        }
+        Ok(Shortcut::Read(self.shaped(slice.shape, reads)))
+    }
+
+    fn bound_slice(
+        &mut self,
+        base: ExprId,
+        index: ExprId,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Shortcut<BoundSlice>, Internal> {
+        let hir = self.hir;
+        let mut levels = vec![index];
+        let mut root = base;
+        let below = loop {
+            match &hir.expr(root)?.kind {
+                ExprKind::Index(inner, position) => {
+                    if let Some(known) = self.memo.bound_slices.get(&(*position, scope)) {
+                        break known.clone();
+                    }
+                    levels.push(*position);
+                    root = *inner;
+                }
+                ExprKind::Name(name) => {
+                    match self.root_slice(name, hir.expr(root)?.loc, scope, need)? {
+                        Shortcut::Pending => return Ok(Shortcut::Pending),
+                        Shortcut::Declined => break None,
+                        Shortcut::Read(slice) => break Some(slice),
+                    }
+                }
+                ExprKind::Error
+                | ExprKind::Number(..)
+                | ExprKind::Bool(_)
+                | ExprKind::Str(_)
+                | ExprKind::Variant { .. }
+                | ExprKind::To
+                | ExprKind::Convert(..)
+                | ExprKind::Array(_)
+                | ExprKind::Field(..)
+                | ExprKind::Call(..)
+                | ExprKind::Unary(..)
+                | ExprKind::Binary(..)
+                | ExprKind::If(..)
+                | ExprKind::Match { .. } => break None,
+            }
+        };
+        let mut current = below;
+        let mut pending = false;
+        for position in levels.into_iter().rev() {
+            if pending {
+                self.request_position(position, scope, need);
+                continue;
+            }
+            let Some(slice) = current.take() else {
+                self.memo.bound_slices.insert((position, scope), None);
+                continue;
+            };
+            match self.narrowed(slice, position, scope, need)? {
+                Shortcut::Pending => pending = true,
+                Shortcut::Declined => {
+                    self.memo.bound_slices.insert((position, scope), None);
+                }
+                Shortcut::Read(next) => {
+                    self.memo
+                        .bound_slices
+                        .insert((position, scope), Some(next.clone()));
+                    current = Some(next);
+                }
+            }
+        }
+        if pending {
+            return Ok(Shortcut::Pending);
+        }
+        Ok(match current {
+            Some(slice) => Shortcut::Read(slice),
+            None => Shortcut::Declined,
+        })
+    }
+
+    fn root_slice(
+        &mut self,
+        name: &str,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Shortcut<BoundSlice>, Internal> {
+        let Found::Query(query) = self.find(name, scope)? else {
+            return Ok(Shortcut::Declined);
+        };
+        let Some(bound) = self.bound(query, need) else {
+            return Ok(Shortcut::Pending);
+        };
+        let BoundVal::Array(array) = bound else {
+            return Ok(Shortcut::Declined);
+        };
+        let mut strides = Vec::new();
+        let mut stride = 1usize;
+        for length in array.0.lengths() {
+            strides.push(stride);
+            stride = stride.saturating_mul(usize::try_from(length).unwrap_or(usize::MAX));
+        }
+        strides.reverse();
+        Ok(Shortcut::Read(BoundSlice {
+            query,
+            loc,
+            shape: array.0.clone(),
+            array,
+            strides: strides.into(),
+            level: 0,
+            offset: 0,
+        }))
+    }
+
+    fn request_position(&self, position: ExprId, scope: ScopeId, need: &mut Vec<Query>) {
+        let Some(Val::Scalar(node)) = self.val(Query::Expr(position, scope), need) else {
+            return;
+        };
+        if let Some(sig) = self.sig(node, need)
+            && !sig.reactive
+            && !sig.frame
+            && sig.kind == Kind::Int
+        {
+            self.cval(Query::Eval(node, EvalTy::Exact), need);
+        }
+    }
+
+    fn narrowed(
+        &mut self,
+        slice: BoundSlice,
+        position: ExprId,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Shortcut<BoundSlice>, Internal> {
+        let Some(val) = self.val(Query::Expr(position, scope), need) else {
+            return Ok(Shortcut::Pending);
+        };
+        let (Val::Scalar(node), Some(length)) = (val, slice.shape.outer()) else {
+            return Ok(Shortcut::Declined);
+        };
+        let Some(sig) = self.sig(node, need) else {
+            return Ok(Shortcut::Pending);
+        };
+        if sig.is_error() || sig.reactive || sig.frame || sig.kind != Kind::Int {
+            return Ok(Shortcut::Declined);
+        }
+        let Some(value) = self.cval(Query::Eval(node, EvalTy::Exact), need) else {
+            return Ok(Shortcut::Pending);
+        };
+        let CVal::Int(element) = value else {
+            return Ok(Shortcut::Declined);
+        };
+        if !(0..i128::from(length)).contains(&element) {
+            return Ok(Shortcut::Declined);
+        }
+        let stride = slice
+            .strides
+            .get(slice.level)
+            .copied()
+            .ok_or(Internal::missed("array stride"))?;
+        let offset = usize::try_from(element)
+            .ok()
+            .and_then(|element| element.checked_mul(stride))
+            .and_then(|step| step.checked_add(slice.offset))
+            .ok_or(Internal::missed("array element"))?;
+        Ok(Shortcut::Read(BoundSlice {
+            level: slice.level + 1,
+            offset,
+            shape: slice.shape.inner(),
+            ..slice
+        }))
+    }
+
+    fn bound_group(
+        &mut self,
+        query: Query,
+        array: &(Shape, Vec<Bound>),
+        read: Loc,
+    ) -> Result<NodeId, Internal> {
+        if let Some(group) = self.memo.bound_groups.get(&query) {
+            return Ok(*group);
+        }
+        let (loc, scope) = match query {
+            Query::Let(scope, local) => match self.let_decl(scope, local)? {
+                Some(decl) => (self.hir.expr(decl.value)?.loc, scope),
+                None => (read, scope),
+            },
+            Query::Param(scope, index) => {
+                (self.param_value_loc(scope, index)?.unwrap_or(read), scope)
+            }
+            Query::Input(_)
+            | Query::Expr(..)
+            | Query::Attr(..)
+            | Query::Destination(_)
+            | Query::Sig(_)
+            | Query::Eval(..) => return Err(Internal::missed("array binding")),
+        };
+        let mut elements = Vec::with_capacity(array.1.len());
+        for item in &array.1 {
+            elements.push(match item {
+                Bound::Value(node) => *node,
+                Bound::Cell(binding) => self.push_node(Op::Read(*binding), loc, scope)?,
+            });
+        }
+        let group = self.push_node(Op::Array(elements), loc, scope)?;
+        self.memo.bound_groups.insert(query, group);
+        self.memo.group_list.push(group);
+        Ok(group)
+    }
+
+    fn param_value_loc(&self, scope: ScopeId, index: u32) -> Result<Option<Loc>, Internal> {
+        let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
+            return Err(Internal::missed("locals scope"));
+        };
+        let params = match locals.owner {
+            LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
+            LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
+        };
+        let expr = match locals.params.get(index as usize) {
+            Some(ParamSource::Arg { expr, .. }) => Some(*expr),
+            Some(ParamSource::Default) => {
+                params.get(index as usize).and_then(|param| param.default)
+            }
+            Some(ParamSource::Missing | ParamSource::Bound(_)) | None => None,
+        };
+        expr.map(|expr| Ok(self.hir.expr(expr)?.loc)).transpose()
+    }
+
+    fn value_group(&mut self, base: ExprId, val: &Val, scope: ScopeId) -> Result<NodeId, Internal> {
+        let leaves = val.nodes();
+        if matches!(self.hir.expr(base)?.kind, ExprKind::Index(..))
+            && let Some(group) = leaves.first().and_then(|leaf| self.memo.groups.get(leaf))
+        {
+            return Ok(*group);
+        }
+        let loc = self.hir.expr(base)?.loc;
+        let group = self.push_node(Op::Array(leaves), loc, scope)?;
+        self.memo.group_list.push(group);
+        Ok(group)
     }
 
     pub(in crate::semantics::analysis) fn run_destination(
@@ -427,7 +723,7 @@ impl Engine<'_> {
                     stack.extend(otherwise.iter().copied());
                     stack.extend(arms.iter().rev().map(|(_, value)| *value));
                 }
-                Op::Annotate(_, inner) | Op::Use(inner) => stack.push(*inner),
+                Op::Annotate(_, inner) | Op::Use(inner) | Op::Chosen(inner) => stack.push(*inner),
                 Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)

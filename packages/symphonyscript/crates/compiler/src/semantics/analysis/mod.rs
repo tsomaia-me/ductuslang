@@ -7,6 +7,7 @@ mod attr_value_source;
 mod binding;
 mod binding_kind;
 mod bound;
+mod bound_slice;
 mod bound_val;
 mod c_array;
 mod c_val;

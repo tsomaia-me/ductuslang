@@ -6,7 +6,7 @@ use crate::semantics::Internal;
 pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, Internal> {
     Ok(match op {
         Op::Read(binding) => vec![engine.binding(*binding)?.init],
-        Op::Use(operand) | Op::Annotate(_, operand) => vec![*operand],
+        Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => vec![*operand],
         Op::Element { base, .. } => vec![*base],
         Op::If(_, then, otherwise) => vec![*then, *otherwise],
         Op::Match {

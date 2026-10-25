@@ -1075,3 +1075,152 @@ fn an_array_literals_expected_type_reaches_every_element() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+type Row = (&'static [&'static str], &'static [(Code, &'static str)]);
+
+#[test]
+fn a_compile_time_choice_type_checks_what_it_does_not_select() {
+    let enums = Compiler::new(&two_enum_vocabulary()).expect("the vocabulary compiles");
+    let enum_errors = |text: &str| -> Errors {
+        let source = Source {
+            path: "test.sym".into(),
+            text: text.into(),
+        };
+        let mut found: Errors = support::errors(enums.check(&[source]))
+            .iter()
+            .map(|diagnostic| {
+                let range = diagnostic.span.range.clone();
+                let at = usize::try_from(range.start).unwrap_or(0)
+                    ..usize::try_from(range.end).unwrap_or(0);
+                (diagnostic.code, text.get(at).unwrap_or("").to_string())
+            })
+            .collect();
+        found.sort();
+        found
+    };
+    let fixture_rows: [Row; 11] = [
+        (
+            &["Clip c:\n    Note/([60, \"s\"][0])"],
+            &[(Code::TypeMismatch, "[60, \"s\"]")],
+        ),
+        (
+            &["let a = [1, \"s\"]", "Clip c:\n    Note/(a[0])"],
+            &[(Code::TypeMismatch, "[1, \"s\"]")],
+        ),
+        (
+            &[
+                "let g = [[1, 2], [3, \"s\"]]",
+                "Clip c:\n    Note/(g[0][1])",
+            ],
+            &[(Code::TypeMismatch, "[[1, 2], [3, \"s\"]]")],
+        ),
+        (
+            &["Clip c:\n    Note/([[1, 2], [3, \"s\"]][0][0])"],
+            &[(Code::TypeMismatch, "[[1, 2], [3, \"s\"]]")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2.5][0])"],
+            &[(Code::TypeMismatch, "[1, 2.5][0]")],
+        ),
+        (
+            &["let a = [1, 2.5]", "Clip c:\n    Note/(a[0])"],
+            &[(Code::TypeMismatch, "a")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2.5][0] + 1)"],
+            &[(Code::TypeMismatch, "[1, 2.5][0] + 1")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2i64][0])"],
+            &[(Code::TypeMismatch, "[1, 2i64][0]")],
+        ),
+        (&["Clip c:\n    Note | pitch=([1, 2][0])"], &[]),
+        (
+            &[
+                "input a = 1",
+                "input b = 3000000000",
+                "let c = [a, b]",
+                "Clip m:\n    Note/(c[0])",
+            ],
+            &[],
+        ),
+        (
+            &["let a = [1, 3000000000]", "Clip c:\n    Note/(a[0])"],
+            &[],
+        ),
+    ];
+    let enum_rows: [Row; 9] = [
+        (
+            &["Osc o | wave=([Sine, Red][0])"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &["Osc o | wave=([Sine, Color::Red][0])"],
+            &[(Code::TypeMismatch, "[Sine, Color::Red][0]")],
+        ),
+        (
+            &["Osc o | wave=([Sine, 3][0])"],
+            &[(Code::TypeMismatch, "[Sine, 3]")],
+        ),
+        (
+            &["let a = [Sine, Red]", "Osc o | wave=(a[0])"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &["let x = Sine", "let z = [x, Red][0]", "Osc o | wave=z"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &["Osc o | wave=(if true then Sine else Red)"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &["Osc o | wave=(if false then Red else Sine)"],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (
+            &[
+                "input w = Wave::Saw",
+                "Osc o | wave=(if true then w else Red)",
+            ],
+            &[(Code::UnknownName, "Red")],
+        ),
+        (&["Osc o | wave=(if true then Sine else Saw)"], &[]),
+    ];
+    let mut failures = Vec::new();
+    for (vocabulary, rows) in [("fixture", &fixture_rows[..]), ("enums", &enum_rows[..])] {
+        for (items, wanted) in rows.iter() {
+            let wanted: Errors = wanted
+                .iter()
+                .map(|(code, span)| (*code, (*span).to_string()))
+                .collect();
+            let mut all: Vec<&'static str> = items.to_vec();
+            if vocabulary == "fixture" {
+                all.insert(0, "Session s");
+            }
+            for order in permutations(&all) {
+                let text = format!("{}\n", order.join("\n"));
+                let found = if vocabulary == "fixture" {
+                    fixture_errors(&text)
+                } else {
+                    enum_errors(&text)
+                };
+                if found != wanted {
+                    failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                    break;
+                }
+            }
+        }
+    }
+    let passed_over =
+        "Session s\ninput a = 1.5\ninput b = 2\nlet c = [a, b]\nSynth y:\n    Osc | freq=(c[0])\n";
+    let warned: Vec<Code> = support::checked_all(passed_over)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .filter(|code| *code == Code::IntegerInput)
+        .collect();
+    if !warned.is_empty() {
+        failures.push(format!("{passed_over}warned {warned:?}"));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

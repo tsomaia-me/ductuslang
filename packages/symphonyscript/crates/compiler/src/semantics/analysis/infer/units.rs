@@ -302,7 +302,9 @@ impl Engine<'_> {
                 let any = |nodes: &[NodeId]| nodes.iter().any(|node| floats.contains(node));
                 let becomes_float = fractional.contains(&node)
                     || match &self.node(node)?.op {
-                        Op::Use(operand) | Op::Unary(UnaryOp::Neg, operand) => any(&[*operand]),
+                        Op::Use(operand)
+                        | Op::Chosen(operand)
+                        | Op::Unary(UnaryOp::Neg, operand) => any(&[*operand]),
                         Op::Binary(
                             BinaryOp::Add
                             | BinaryOp::Sub

@@ -182,6 +182,7 @@ impl Engine<'_> {
             | Op::Pi
             | Op::NodeRef(_)
             | Op::Read(_)
+            | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(UnaryOp::Not, _)
             | Op::Binary(..)
@@ -298,7 +299,7 @@ impl Engine<'_> {
                 Value::Enum(id, index) => CVal::Enum(id, index),
                 Value::Str(_) => CVal::Error,
             },
-            Op::Use(target) => some!(self.child(target, own, ctx, need)?),
+            Op::Use(target) | Op::Chosen(target) => some!(self.child(target, own, ctx, need)?),
             Op::Bool(value) => CVal::Bool(value),
             Op::Str(text) => CVal::Str(Rc::from(text.as_str())),
             Op::Variant(id, index) => CVal::Enum(id, index),

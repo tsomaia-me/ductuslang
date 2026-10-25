@@ -134,6 +134,7 @@ impl Engine<'_> {
                     | Op::Pi
                     | Op::NodeRef(_)
                     | Op::Use(_)
+                    | Op::Chosen(_)
                     | Op::Arg(_)
                     | Op::Unary(..)
                     | Op::Binary(..)

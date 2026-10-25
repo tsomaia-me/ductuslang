@@ -2,6 +2,7 @@ use symphonyscript_core::AttrId;
 use symphonyscript_core::EnumId;
 use symphonyscript_core::FamilyId;
 
+use super::bound_slice::BoundSlice;
 use super::bound_val::BoundVal;
 use super::c_val::CVal;
 use super::call_key::CallKey;
@@ -11,6 +12,7 @@ use super::fast_hash::FastMap;
 use super::ids::{NodeId, ScopeId, WireId};
 use super::item_ref::ItemRef;
 use super::let_ref::LetRef;
+use super::query::Query;
 use super::sig::Sig;
 use super::val::Val;
 use crate::semantics::ir::{ExprId, InputId};
@@ -21,7 +23,10 @@ pub(crate) struct Memo {
     pub bare_matches: Vec<NodeId>,
     pub bare_scrutinees: FastMap<NodeId, EnumId>,
     pub bare_enums: FastMap<NodeId, EnumId>,
-    pub siblings: FastMap<NodeId, Vec<NodeId>>,
+    pub groups: FastMap<NodeId, NodeId>,
+    pub bound_groups: FastMap<Query, NodeId>,
+    pub bound_slices: FastMap<(ExprId, ScopeId), Option<BoundSlice>>,
+    pub group_list: Vec<NodeId>,
     pub lets: FastMap<(ScopeId, LetRef), BoundVal>,
     pub params: FastMap<(ScopeId, u32), BoundVal>,
     pub inputs: FastMap<InputId, BoundVal>,

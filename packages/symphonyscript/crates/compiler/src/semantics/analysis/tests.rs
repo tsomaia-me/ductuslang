@@ -2795,3 +2795,29 @@ fn a_recursive_argument_reads_a_settled_enum() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn a_compile_time_index_read_costs_nothing_per_passed_over_element() {
+    let size = |length: usize| {
+        let table: Vec<String> = (0..length).map(|value| value.to_string()).collect();
+        let text = format!(
+            "Session s\nlet a = [{}]\nClip c:\n    for i in 0..{length}:\n        Note/(a[i])\n",
+            table.join(", ")
+        );
+        let (diagnostics, size) = analyzed(&text, |engine| {
+            engine.nodes.len()
+                + engine.scopes.len()
+                + engine.memo.evals.len()
+                + engine.memo.groups.len()
+                + engine.typing.expected_seen.len()
+                + engine.typing.checks
+        });
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+        size
+    };
+    let (smaller, larger) = (size(2000), size(4000));
+    assert!(
+        larger * 10 <= smaller * 22,
+        "{smaller} and {larger} grow faster than 2.2 per doubling"
+    );
+}

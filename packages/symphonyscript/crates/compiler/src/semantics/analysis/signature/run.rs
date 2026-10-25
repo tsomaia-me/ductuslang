@@ -25,6 +25,13 @@ impl Engine<'_> {
             .iter()
             .map(|operand| self.sig(*operand, need))
             .collect();
+        let group = match self.memo.groups.get(&node) {
+            Some(group) => match self.sig(*group, need) {
+                Some(sig) => Some(sig),
+                None => return Ok(false),
+            },
+            None => None,
+        };
         let extra = match &op {
             Op::Read(binding) => {
                 let init = self.binding(*binding)?.init;
@@ -41,6 +48,7 @@ impl Engine<'_> {
             | Op::Pi
             | Op::NodeRef(_)
             | Op::Use(_)
+            | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
             | Op::Binary(..)
@@ -92,6 +100,9 @@ impl Engine<'_> {
             }
             sig
         };
+        if let Some(group) = group {
+            sig = element_of(sig, group);
+        }
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);
         Ok(true)
@@ -135,9 +146,29 @@ impl Engine<'_> {
     }
 }
 
+fn element_of(own: Sig, group: Sig) -> Sig {
+    if own.reactive {
+        return own;
+    }
+    if own.is_error() || group.is_error() {
+        return Sig::ERROR;
+    }
+    let width = match group.width {
+        Width::Adaptive => own.width,
+        Width::Flexible | Width::Fixed(_) | Width::Widened(_) => group.width,
+    };
+    Sig {
+        kind: group.kind,
+        width,
+        family: group.family.or(own.family),
+        ..own
+    }
+}
+
 fn joins(op: &Op) -> bool {
     match op {
         Op::Use(_)
+        | Op::Chosen(_)
         | Op::Unary(UnaryOp::Neg, _)
         | Op::If(..)
         | Op::Match { .. }

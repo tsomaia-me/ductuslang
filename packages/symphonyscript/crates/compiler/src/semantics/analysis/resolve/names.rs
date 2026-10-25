@@ -90,7 +90,11 @@ impl Engine<'_> {
             let record = self.node(node)?;
             (record.loc, record.scope)
         };
-        let name = match &self.node(node)?.op {
+        let mut source = node;
+        while let Op::Chosen(inner) = self.node(source)?.op {
+            source = inner;
+        }
+        let name = match &self.node(source)?.op {
             Op::Bare(name) => Some(name.clone()),
             Op::Number(..)
             | Op::Const(_)
@@ -102,6 +106,7 @@ impl Engine<'_> {
             | Op::NodeRef(_)
             | Op::Read(_)
             | Op::Use(_)
+            | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
             | Op::Binary(..)

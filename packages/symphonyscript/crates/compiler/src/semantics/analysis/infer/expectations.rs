@@ -48,8 +48,8 @@ impl Engine<'_> {
             if !self.typing.expected_seen.insert((node, expected)) {
                 continue;
             }
-            if let Some(siblings) = self.memo.siblings.get(&node) {
-                stack.extend(siblings.iter().map(|sibling| (*sibling, expected)));
+            if let (Some(group), Some(Scalar::Enum(_))) = (self.memo.groups.get(&node), expected) {
+                stack.push((*group, expected));
             }
             let reactive = self.known_sig(node)?.reactive;
             if !reactive {
@@ -74,7 +74,7 @@ impl Engine<'_> {
                             .push((expected, loc));
                     }
                 }
-                Op::Use(inner) => stack.push((inner, expected)),
+                Op::Use(inner) | Op::Chosen(inner) => stack.push((inner, expected)),
                 Op::Unary(UnaryOp::Neg, operand) => stack.push((operand, numeric)),
                 Op::Unary(UnaryOp::Not, operand) => stack.push((operand, None)),
                 Op::Binary(

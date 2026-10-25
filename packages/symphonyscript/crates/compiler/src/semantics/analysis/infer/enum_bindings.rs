@@ -33,6 +33,12 @@ struct Flows {
     given: FastMap<NodeId, Vec<EnumId>>,
     inputs: FastSet<BindingId>,
     used: FastSet<NodeId>,
+    lets: LetWriters,
+}
+
+struct LetWriters {
+    aliases: FastMap<NodeId, Vec<Loc>>,
+    values: Vec<(Loc, Loc)>,
 }
 
 impl Engine<'_> {
@@ -149,7 +155,7 @@ impl Engine<'_> {
         }
         for member in by_uses {
             if self.member_expected(member, &flows, &pushed).len() > 1 {
-                let (loc, scope) = self.member_site(member)?;
+                let (loc, scope) = self.member_site(member, &flows.lets)?;
                 self.report_flow(member, loc, scope, Vec::new())?;
             }
         }
@@ -196,6 +202,11 @@ impl Engine<'_> {
                 && !self.cycle_spans.iter().any(|span| span.contains(node.loc))
             {
                 used.insert(target);
+            }
+        }
+        for group in &self.memo.group_list {
+            if self.is_bare_value(*group)? {
+                members.insert(Member::Value(*group));
             }
         }
         let mut values = FastMap::default();
@@ -254,6 +265,7 @@ impl Engine<'_> {
             given: self.compile_time_enums(valid)?,
             inputs,
             used,
+            lets: self.let_writers()?,
         })
     }
 
@@ -295,7 +307,7 @@ impl Engine<'_> {
         }
     }
 
-    fn member_site(&self, member: Member) -> Result<(Loc, ScopeId), Internal> {
+    fn member_site(&self, member: Member, lets: &LetWriters) -> Result<(Loc, ScopeId), Internal> {
         Ok(match member {
             Member::Cell(binding) => {
                 let record = self.binding(binding)?;
@@ -303,7 +315,10 @@ impl Engine<'_> {
             }
             Member::Value(node) => {
                 let record = self.node(node)?;
-                (self.writer_of(node)?.unwrap_or(record.loc), record.scope)
+                (
+                    writer_of(lets, record.loc).unwrap_or(record.loc),
+                    record.scope,
+                )
             }
         })
     }
@@ -458,13 +473,13 @@ impl Engine<'_> {
 
     fn value_parts_of(&self, node: NodeId, op: &Op) -> Vec<NodeId> {
         let mut parts = Self::value_parts(op);
-        parts.extend(self.memo.siblings.get(&node).into_iter().flatten().copied());
+        parts.extend(self.memo.groups.get(&node).copied());
         parts
     }
 
     fn value_parts(op: &Op) -> Vec<NodeId> {
         match op {
-            Op::Use(inner) => vec![*inner],
+            Op::Use(inner) | Op::Chosen(inner) => vec![*inner],
             Op::If(_, then, otherwise) => vec![*then, *otherwise],
             Op::Match {
                 arms, otherwise, ..
@@ -510,6 +525,11 @@ impl Engine<'_> {
             if !seen.insert(node) {
                 continue;
             }
+            if let Some(group) = self.memo.groups.get(&node)
+                && members.contains(&Member::Value(*group))
+            {
+                reads.push(Member::Value(*group));
+            }
             let op = &self.node(node)?.op;
             let read = match op {
                 Op::Read(binding) => Some(Member::Cell(*binding)),
@@ -518,6 +538,9 @@ impl Engine<'_> {
                     members
                         .contains(&Member::Value(target))
                         .then_some(Member::Value(target))
+                }
+                _ if node != root && members.contains(&Member::Value(node)) => {
+                    Some(Member::Value(node))
                 }
                 _ => None,
             };
@@ -552,8 +575,20 @@ impl Engine<'_> {
                         .contains(&Member::Value(target))
                         .then(|| self.member_enum(Member::Value(target)))
                 }
+                _ if node != root && flows.members.contains(&Member::Value(node)) => {
+                    Some(self.member_enum(Member::Value(node)))
+                }
                 _ => None,
             };
+            let leaf = leaf.map(|value| {
+                value.or_else(|| {
+                    self.memo
+                        .groups
+                        .get(&node)
+                        .filter(|group| flows.members.contains(&Member::Value(**group)))
+                        .and_then(|group| self.member_enum(Member::Value(*group)))
+                })
+            });
             if let Some(value) = leaf {
                 values.insert(
                     node,
@@ -686,7 +721,7 @@ impl Engine<'_> {
             }
             let mut located = Vec::with_capacity(flow.len());
             for member in flow {
-                let (loc, scope) = self.member_site(member)?;
+                let (loc, scope) = self.member_site(member, &flows.lets)?;
                 located.push((!writers.contains(&member), loc, member, scope));
             }
             located.sort();
@@ -696,9 +731,9 @@ impl Engine<'_> {
             let mut secondary: Vec<Loc> = others.iter().map(|(_, loc, _, _)| *loc).collect();
             for (_, writer, member, _) in &located {
                 if let Member::Value(node) = member {
-                    for alias in self.alias_lets(*node)? {
-                        if alias != *writer && alias != *loc {
-                            secondary.push(alias);
+                    for alias in flows.lets.aliases.get(node).into_iter().flatten() {
+                        if alias != writer && alias != loc {
+                            secondary.push(*alias);
                         }
                     }
                 }
@@ -746,16 +781,15 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    fn alias_lets(&self, source: NodeId) -> Result<Vec<Loc>, Internal> {
-        let mut found = Vec::new();
-        let entries: Vec<_> = self
-            .memo
-            .lets
-            .iter()
-            .map(|(key, bound)| (*key, bound.clone()))
-            .collect();
-        for ((scope, local), bound) in entries {
-            let values: Vec<NodeId> = match &bound {
+    fn let_writers(&self) -> Result<LetWriters, Internal> {
+        let mut aliases: FastMap<NodeId, Vec<Loc>> = FastMap::default();
+        let mut values = Vec::with_capacity(self.memo.lets.len());
+        for ((scope, local), bound) in &self.memo.lets {
+            let Some(decl) = self.let_decl(*scope, *local)? else {
+                continue;
+            };
+            values.push((self.hir.expr(decl.value)?.loc, decl.loc));
+            let items: Vec<NodeId> = match bound {
                 BoundVal::Scalar(Bound::Value(node)) => vec![*node],
                 BoundVal::Array(array) => array
                     .1
@@ -767,36 +801,32 @@ impl Engine<'_> {
                     .collect(),
                 BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Error => Vec::new(),
             };
-            let mut aliased = false;
-            for value in values {
-                aliased |= self.through_uses(value)? == source;
+            let mut sources = Vec::with_capacity(items.len());
+            for item in items {
+                sources.push(self.through_uses(item)?);
             }
-            if aliased && let Some(decl) = self.let_decl(scope, local)? {
-                found.push(decl.loc);
+            sources.sort();
+            sources.dedup();
+            for source in sources {
+                aliases.entry(source).or_default().push(decl.loc);
             }
         }
-        Ok(found)
+        for locs in aliases.values_mut() {
+            locs.sort();
+            locs.dedup();
+        }
+        values.sort();
+        values.dedup();
+        Ok(LetWriters { aliases, values })
     }
+}
 
-    fn writer_of(&self, source: NodeId) -> Result<Option<Loc>, Internal> {
-        let at = self.node(source)?.loc;
-        let mut found: Option<(u32, Loc)> = None;
-        let keys: Vec<_> = self.memo.lets.keys().copied().collect();
-        for (scope, local) in keys {
-            let Some(decl) = self.let_decl(scope, local)? else {
-                continue;
-            };
-            let value = self.hir.expr(decl.value)?.loc;
-            if !value.contains(at) {
-                continue;
-            }
-            let width = value.end.saturating_sub(value.start);
-            if found.is_none_or(|(best, _)| width < best) {
-                found = Some((width, decl.loc));
-            }
-        }
-        Ok(found.map(|(_, loc)| loc))
-    }
+fn writer_of(lets: &LetWriters, at: Loc) -> Option<Loc> {
+    let after = lets
+        .values
+        .partition_point(|(value, _)| (value.file, value.start) <= (at.file, at.start));
+    let (value, decl) = lets.values.get(after.checked_sub(1)?)?;
+    value.contains(at).then_some(*decl)
 }
 
 fn is_input(member: Member, flows: &Flows) -> bool {

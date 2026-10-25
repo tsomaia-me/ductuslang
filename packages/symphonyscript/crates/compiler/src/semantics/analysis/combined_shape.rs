@@ -46,6 +46,7 @@ pub(crate) fn combined_shape(
             Ok(lengths)
         }
         Op::Use(_)
+        | Op::Chosen(_)
         | Op::Annotate(..)
         | Op::Number(..)
         | Op::Const(_)

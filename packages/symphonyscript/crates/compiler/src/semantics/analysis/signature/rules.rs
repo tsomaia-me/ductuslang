@@ -71,7 +71,7 @@ impl Engine<'_> {
             Op::Bare(_) => Sig::of(Kind::Bare, Width::Flexible, false, None),
             Op::Pi => Sig::of(Kind::Float, Width::Flexible, false, None),
             Op::NodeRef(_) => Sig::of(Kind::Node, Width::Flexible, false, None),
-            Op::Use(_) => at(0)?,
+            Op::Use(_) | Op::Chosen(_) => at(0)?,
             Op::Arg(_) => return Err(Internal::missed("argument signature")),
             Op::Read(binding) => match extra {
                 Extra::Read(init) => self.read_sig(*binding, init)?,

@@ -91,7 +91,9 @@ impl Engine<'_> {
         }
         Ok(match op {
             Op::Read(binding) => self.typing.own.get(binding).copied(),
-            Op::Use(inner) | Op::Unary(UnaryOp::Neg, inner) => self.known(*inner)?.0,
+            Op::Use(inner) | Op::Chosen(inner) | Op::Unary(UnaryOp::Neg, inner) => {
+                self.known(*inner)?.0
+            }
             Op::Unary(UnaryOp::Not, _) => Some(Scalar::Bool),
             Op::Binary(op, lhs, rhs) => {
                 let combined = self.combine(&[*lhs, *rhs])?;
