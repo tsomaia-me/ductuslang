@@ -12,6 +12,7 @@ impl Faults {
         let mut all: Vec<Range<u32>> = diagnostics
             .iter()
             .map(|diagnostic| diagnostic.span.range.clone())
+            .filter(|range| !range.is_empty())
             .collect();
         all.sort_by_key(key);
         let mut unmarked = detached.to_vec();

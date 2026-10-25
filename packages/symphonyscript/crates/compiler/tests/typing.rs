@@ -2678,7 +2678,14 @@ const FAULTY_LINES: [&str; 51] = [
 
 #[test]
 fn a_line_after_a_missing_block_reports_its_own_faults() {
-    let rows: [Row; 11] = [
+    let rows: [Row; 12] = [
+        (
+            &["fn f(x):\n    let y = x", "Track t:\n    Note"],
+            &[
+                (Code::ExpressionSyntax, ""),
+                (Code::ChildNotAccepted, "Note"),
+            ],
+        ),
         (
             &["Clip c:\nlet = 3"],
             &[(Code::PlacementSyntax, "let"), (Code::LetSyntax, "=")],
