@@ -2,7 +2,7 @@ use symphonyscript_core::Vocabulary;
 
 use super::checker::Checker;
 use crate::semantics::Internal;
-use crate::semantics::collection::{Collected, Variants};
+use crate::semantics::collection::{Collected, StandIn, Variants};
 use crate::semantics::ir::{Hir, Top};
 use crate::semantics::reporting::Report;
 
@@ -40,7 +40,10 @@ pub(crate) fn check_scopes(
                 checker.expr(decl.value, None, false)?;
             }
             Top::Fn(id) => checker.function(id)?,
-            Top::Pattern(id) => checker.pattern(id)?,
+            Top::Pattern(id) => {
+                let stand_in = collected.stand_ins.get(id.index()).copied().flatten();
+                checker.pattern(id, stand_in.map(StandIn::placement))?
+            }
             Top::Placement(id) => checker.top_placement(id)?,
         }
     }

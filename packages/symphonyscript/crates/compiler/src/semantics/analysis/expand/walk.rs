@@ -198,6 +198,7 @@ impl Engine<'_> {
                 Some(locals),
                 chain,
             )?;
+            self.memo.pattern_bodies.insert(locals, body);
             let single = some!(self.stand_in(pattern)?).placement();
             let kind = some!(self.hir.placement(single)?.kind.clone());
             match self.kind_decl(body, &kind.text)? {
@@ -322,6 +323,7 @@ impl Engine<'_> {
             chain,
         )?;
         self.pattern_use_mut(id)?.body = Some(scope);
+        self.memo.pattern_bodies.insert(locals, scope);
         let sites = self.named_sites(self.hir.pattern(pattern)?.body)?;
         if !sites.is_empty() {
             self.prebuild(&sites, scope, owner, PathParent::Use(id), uses.push(loc))?;

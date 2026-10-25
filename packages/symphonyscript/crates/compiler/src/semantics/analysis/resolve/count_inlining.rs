@@ -230,7 +230,7 @@ impl Engine<'_> {
                 let decl = self
                     .let_decl(id, local)?
                     .ok_or(Internal::missed("local let"))?;
-                roots.push((decl.value, id));
+                roots.push((decl.value, self.let_scope(id, local)));
             }
         }
         Ok(roots)

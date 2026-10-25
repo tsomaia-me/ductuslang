@@ -3295,3 +3295,231 @@ fn a_recursive_call_reuses_only_a_finished_calls_value() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
+    let functions = [
+        "fn q(n): if n < 1 then 0 else q(n - 1)",
+        "fn r(n, m = 2): if n < 1 then m else r(n - 1, m)",
+    ];
+    let pattern = "pattern P(n):\n    for i in 0..n:\n        Note";
+    let positions: [(&[&str], &str); 6] = [
+        (&[], "Clip c:\n    for i in 0..X:\n        Note"),
+        (&[], "Clip c:\n    for i in X..3:\n        Note"),
+        (&[], "Clip c:\n    for i in [X]:\n        Note"),
+        (&[], "Clip c:\n    [for i in 0..X: Note]"),
+        (&[pattern], "Clip c:\n    P | n=X"),
+        (&[], "input zz = [1, 2, 3][X]"),
+    ];
+    let placeholders_alone = [
+        ("q(nope)", Code::UnknownName, "nope"),
+        ("q(1 +)", Code::ExpressionSyntax, ")"),
+        ("q(to.gain)", Code::MisplacedTo, "to"),
+        ("q(q(nope))", Code::UnknownName, "nope"),
+        ("r(n=nope)", Code::UnknownName, "nope"),
+        ("r(z=1)", Code::UnknownParameter, "z"),
+    ];
+    let counts_and_values: [(&str, [usize; 5], i128); 3] = [
+        ("q(2)", [0, 3, 1, 0, 0], 1),
+        ("r(1)", [2, 1, 1, 2, 2], 3),
+        ("r(n=1)", [2, 1, 1, 2, 2], 3),
+    ];
+    let mut failures = Vec::new();
+    for (position, (extra, line)) in positions.iter().enumerate() {
+        let rows = placeholders_alone
+            .iter()
+            .map(|(argument, code, at)| (*argument, Some((*code, *at)), None))
+            .chain(counts_and_values.iter().map(|(argument, counts, value)| {
+                (
+                    *argument,
+                    None,
+                    Some((counts.get(position).copied(), *value)),
+                )
+            }));
+        for (argument, fault, kept) in rows {
+            if position == 3 && argument == "q(2)" {
+                continue;
+            }
+            let placed = line.replace('X', argument);
+            let items: Vec<&str> = functions
+                .iter()
+                .chain(extra.iter())
+                .copied()
+                .chain([placed.as_str()])
+                .collect();
+            for text in in_every_order(&items) {
+                let (diagnostics, (notes, cells)) = analyzed(&text, |engine| {
+                    (notes_and_pitches(engine).0, input_cells(engine, "zz").1)
+                });
+                let errors: Vec<(Code, &str)> = errors_of(&diagnostics)
+                    .iter()
+                    .map(|diagnostic| {
+                        let range = &diagnostic.span.range;
+                        let at = usize::try_from(range.start).unwrap_or(0)
+                            ..usize::try_from(range.end).unwrap_or(0);
+                        (diagnostic.code, text.get(at).unwrap_or(""))
+                    })
+                    .collect();
+                let holds = match (fault, kept) {
+                    (Some(fault), _) => errors == [fault],
+                    (None, Some((Some(count), _))) => errors.is_empty() && notes == count,
+                    (None, Some((None, value))) => {
+                        errors.is_empty() && cells == [(Scalar::I64, CVal::Int(value))]
+                    }
+                    (None, None) => false,
+                };
+                if !holds {
+                    failures.push(format!("{text:?}: {errors:?}, {notes} notes, {cells:?}"));
+                    break;
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn errors_at(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, String)> {
+    errors_of(diagnostics)
+        .iter()
+        .map(|diagnostic| {
+            let range = &diagnostic.span.range;
+            let at =
+                usize::try_from(range.start).unwrap_or(0)..usize::try_from(range.end).unwrap_or(0);
+            (diagnostic.code, text.get(at).unwrap_or("").to_string())
+        })
+        .collect()
+}
+
+type NamedRow<'a> = (Vec<&'a str>, Vec<(Code, &'a str)>, Vec<CVal>);
+
+fn named_rows_in_every_order(rows: Vec<NamedRow<'_>>) -> Vec<String> {
+    let mut failures = Vec::new();
+    for (items, wanted, velocities) in rows {
+        let wanted: Vec<(Code, String)> = wanted
+            .iter()
+            .map(|(code, at)| (*code, (*at).to_string()))
+            .collect();
+        for text in in_every_order(&items) {
+            let (diagnostics, (found, holes)) = analyzed(&text, |engine| {
+                (
+                    attr_values(engine, "velocity", EvalTy::F32),
+                    placeholders(engine),
+                )
+            });
+            let errors = errors_at(&text, &diagnostics);
+            let clean_holds = !wanted.is_empty() || (holes.is_empty() && found == velocities);
+            if errors != wanted || !clean_holds {
+                failures.push(format!("{text:?}: {errors:?} {found:?} {holes:?}"));
+                break;
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_stand_in_placements_own_name_names_nothing_in_its_pattern() {
+    let velocities = vec![CVal::F32(0.5), CVal::F32(0.5)];
+    let rows: Vec<NamedRow<'_>> = vec![
+        (
+            vec![
+                "pattern Loop():\n    Clip as k:\n        Plays: k",
+                "Loop top",
+                "Session s",
+            ],
+            vec![(Code::UnknownName, "k")],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern P():\n    Note as k | pitch=k.velocity",
+                "Clip c:\n    P",
+            ],
+            vec![(Code::UnknownName, "k")],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern P():\n    Clip as k | gain=k.nothing:\n        Note",
+                "P top",
+            ],
+            vec![(Code::UnknownName, "k")],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern Loop(default root, again):\n    Clip:\n        Note/root Note/(root + 7)\n        Plays: again",
+                "Loop low /36 | again=low",
+            ],
+            vec![],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern R():\n    Clip as k:\n        Note",
+                "R top",
+                "Session s",
+            ],
+            vec![],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern P():\n    Note as n | velocity=0.5\n    Note | velocity=n.velocity",
+                "Clip c:\n    P",
+            ],
+            vec![],
+            velocities,
+        ),
+    ];
+    let failures = named_rows_in_every_order(rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_patterns_lets_see_the_names_of_its_body() {
+    let rows: Vec<NamedRow<'_>> = vec![
+        (
+            vec![
+                "pattern P():\n    let v = n.velocity\n    Note as n | velocity=0.5\n    Note | velocity=v",
+                "Clip c:\n    P",
+            ],
+            vec![],
+            vec![CVal::F32(0.5), CVal::F32(0.5)],
+        ),
+        (
+            vec![
+                "pattern P():\n    let a = n.velocity\n    Note as n | velocity=a\n    Note",
+                "Clip c:\n    P",
+            ],
+            vec![(Code::DeclarationCycle, "velocity=a")],
+            vec![],
+        ),
+        (
+            vec![
+                "pattern P():\n    let v = n.velocity\n    Note as n | velocity=0.5",
+                "Clip c:\n    P",
+            ],
+            vec![(Code::UnknownName, "n")],
+            vec![],
+        ),
+    ];
+    let mut failures = named_rows_in_every_order(rows);
+    let cycle = "pattern P():\n    let a = n.velocity\n    Note as n | velocity=a\n    Note\nClip c:\n    P\n";
+    let (diagnostics, ()) = analyzed(cycle, |_| ());
+    let names: Vec<&str> = errors_of(&diagnostics)
+        .iter()
+        .filter(|diagnostic| diagnostic.code == Code::DeclarationCycle)
+        .flat_map(|diagnostic| {
+            let chain = diagnostic
+                .message
+                .rsplit_once(": ")
+                .map_or("", |(_, chain)| chain);
+            chain.split(" → ")
+        })
+        .collect();
+    if names != ["n.velocity", "a", "n.velocity"] {
+        failures.push(format!("{cycle:?} names {names:?}"));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

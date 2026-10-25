@@ -175,6 +175,9 @@ impl Engine<'_> {
             if missing {
                 return Ok(None);
             }
+            if vals.iter().any(|val| matches!(val, Some(Val::Error))) {
+                return Ok(Some(Val::Error));
+            }
             let args = sources
                 .iter()
                 .zip(vals)

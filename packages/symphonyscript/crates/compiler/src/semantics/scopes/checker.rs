@@ -92,7 +92,11 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    pub fn pattern(&mut self, id: PatternId) -> Result<(), Internal> {
+    pub fn pattern(
+        &mut self,
+        id: PatternId,
+        stand_in: Option<PlacementId>,
+    ) -> Result<(), Internal> {
         let decl = self.hir.pattern(id)?;
         let mut defaults = decl.params.iter().filter(|param| param.is_default);
         defaults.next();
@@ -121,10 +125,11 @@ impl<'a> Checker<'a> {
             decl.lets.iter().filter_map(|local| local.name.as_ref()),
         )?;
         self.leave_unknown(locals, decl.skipped_params.clone())?;
+        let body = self.body_frame(decl.body, Some(locals), stand_in)?;
         for local in &decl.lets {
-            self.expr(local.value, Some(locals), false)?;
+            self.expr(local.value, Some(body), false)?;
         }
-        self.blocks(vec![(decl.body, Some(locals), Mode::Body)])?;
+        self.blocks(vec![(decl.body, Some(body), Mode::Arm)])?;
         self.let_cycles(&decl.lets)?;
         Ok(())
     }
@@ -533,13 +538,7 @@ impl<'a> Checker<'a> {
     fn blocks(&mut self, mut pending: Vec<(BlockId, Option<usize>, Mode)>) -> Result<(), Internal> {
         while let Some((block, parent, mode)) = pending.pop() {
             let frame = match mode {
-                Mode::Body => {
-                    let names = self.body_names(block, parent)?;
-                    let frame = self.frame(names, parent, FrameKind::Body);
-                    let unknown = self.hir.body_unknown(block)?;
-                    self.leave_unknown(frame, unknown)?;
-                    Some(frame)
-                }
+                Mode::Body => Some(self.body_frame(block, parent, None)?),
                 Mode::Arm => parent,
                 Mode::Anonymous => {
                     self.anonymous_names(block)?;
@@ -623,6 +622,19 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
+    fn body_frame(
+        &mut self,
+        block: BlockId,
+        parent: Option<usize>,
+        unnamed: Option<PlacementId>,
+    ) -> Result<usize, Internal> {
+        let names = self.body_names(block, parent, unnamed)?;
+        let frame = self.frame(names, parent, FrameKind::Body);
+        let unknown = self.hir.body_unknown(block)?;
+        self.leave_unknown(frame, unknown)?;
+        Ok(frame)
+    }
+
     fn iterable(&mut self, iterable: Iterable, frame: Option<usize>) -> Result<(), Internal> {
         match iterable {
             Iterable::Range(start, end) => {
@@ -698,6 +710,7 @@ impl<'a> Checker<'a> {
         &mut self,
         block: BlockId,
         parent: Option<usize>,
+        unnamed: Option<PlacementId>,
     ) -> Result<BTreeMap<String, Loc>, Internal> {
         let mut names: BTreeMap<String, Loc> = BTreeMap::new();
         let mut blocks = vec![block];
@@ -705,6 +718,11 @@ impl<'a> Checker<'a> {
         while let Some(block) = blocks.pop() {
             for item in &self.hir.block(block)?.items {
                 match item {
+                    BodyItem::Placement(id) if Some(*id) == unnamed => {
+                        if let Some(name) = &self.hir.placement(*id)?.name {
+                            self.declared(name)?;
+                        }
+                    }
                     BodyItem::Placement(id) => found.extend(self.hir.placement(*id)?.name.clone()),
                     BodyItem::Wire(id) => found.extend(self.hir.wire(*id)?.name.clone()),
                     BodyItem::Bundle { members, .. } => {

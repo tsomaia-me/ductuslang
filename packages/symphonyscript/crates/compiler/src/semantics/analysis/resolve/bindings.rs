@@ -50,7 +50,8 @@ impl Engine<'_> {
             self.memo.lets.insert((scope, local), BoundVal::Error);
             return Ok(true);
         };
-        let Some(val) = self.val(Query::Expr(decl.value, scope), need) else {
+        let within = self.let_scope(scope, local);
+        let Some(val) = self.val(Query::Expr(decl.value, within), need) else {
             return Ok(false);
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
@@ -62,7 +63,7 @@ impl Engine<'_> {
             .map(|name| name.text.clone())
             .unwrap_or_default();
         let Some((val, defaulted)) =
-            self.reactive_elements(val, annotation.as_ref(), loc, scope, need)?
+            self.reactive_elements(val, annotation.as_ref(), loc, within, need)?
         else {
             return Ok(false);
         };
@@ -78,12 +79,28 @@ impl Engine<'_> {
             annotation: annotation.as_ref(),
             name: &name,
             loc,
-            scope,
+            scope: within,
         };
         let bound = self.bind(&val, &sigs, &spec)?;
         self.note_defaulted(defaulted, &bound);
         self.memo.lets.insert((scope, local), bound);
         Ok(true)
+    }
+
+    pub(in crate::semantics::analysis) fn let_scope(
+        &self,
+        scope: ScopeId,
+        local: LetRef,
+    ) -> ScopeId {
+        match local {
+            LetRef::Local(_) => self
+                .memo
+                .pattern_bodies
+                .get(&scope)
+                .copied()
+                .unwrap_or(scope),
+            LetRef::Top(_) => scope,
+        }
     }
 
     pub(in crate::semantics::analysis) fn let_decl(

@@ -603,7 +603,7 @@ impl Engine<'_> {
         }
         let (loc, scope) = match query {
             Query::Let(scope, local) => match self.let_decl(scope, local)? {
-                Some(decl) => (self.hir.expr(decl.value)?.loc, scope),
+                Some(decl) => (self.hir.expr(decl.value)?.loc, self.let_scope(scope, local)),
                 None => (read, scope),
             },
             Query::Param(scope, index) => {
@@ -631,9 +631,9 @@ impl Engine<'_> {
 
     pub(super) fn bound_value(&self, query: Query) -> Result<Option<(ExprId, ScopeId)>, Internal> {
         Ok(match query {
-            Query::Let(scope, local) => {
-                self.let_decl(scope, local)?.map(|decl| (decl.value, scope))
-            }
+            Query::Let(scope, local) => self
+                .let_decl(scope, local)?
+                .map(|decl| (decl.value, self.let_scope(scope, local))),
             Query::Param(scope, index) => {
                 let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
                     return Err(Internal::missed("locals scope"));

@@ -40,6 +40,7 @@ pub(crate) struct Memo {
     pub before_unit_reading: FastMap<(NodeId, EvalTy), CVal>,
     pub call_scopes: FastMap<(ExprId, ScopeId), ScopeId>,
     pub prefix_scopes: FastMap<(ScopeId, u32), ScopeId>,
+    pub pattern_bodies: FastMap<ScopeId, ScopeId>,
     pub takes_family: FastMap<NodeId, FamilyId>,
     pub default_scales: FastMap<NodeId, f64>,
     pub calls: FastMap<CallKey, CVal>,
