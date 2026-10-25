@@ -2948,6 +2948,34 @@ fn a_compile_time_index_read_costs_nothing_per_passed_over_element() {
 }
 
 #[test]
+fn a_cycle_of_recursive_functions_settles_its_kinds_in_work_linear_in_its_length() {
+    let size = |length: usize| {
+        let forwarding: Vec<String> = (1..length)
+            .map(|index| format!("fn f{index}(n): f{}(n)", (index + 1) % length))
+            .collect();
+        let text = format!(
+            "Session s\nfn f0(n): if n < 1 then 0 else [f1(n - 1), 2][0]\n{}\nClip c:\n    Note/(f0(2))\n",
+            forwarding.join("\n")
+        );
+        let (diagnostics, size) = analyzed(&text, |engine| {
+            engine.nodes.len()
+                + engine
+                    .nodes
+                    .iter()
+                    .map(|node| node.op.operands().len())
+                    .sum::<usize>()
+        });
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
+        size
+    };
+    let (smaller, larger) = (size(8), size(16));
+    assert!(
+        larger * 10 <= smaller * 22,
+        "{smaller} and {larger} grow faster than 2.2 per doubling"
+    );
+}
+
+#[test]
 fn a_whole_read_of_an_array_let_costs_constant_work() {
     let size = |length: usize| {
         let table: Vec<String> = (0..length).map(|value| value.to_string()).collect();

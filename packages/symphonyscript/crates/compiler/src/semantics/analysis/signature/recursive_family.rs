@@ -35,6 +35,7 @@ impl Engine<'_> {
                 None => {
                     let scope = self.instantiate(function, &key.args, node)?;
                     self.memo.probes.insert(scope);
+                    self.memo.probing_families.insert(key.clone());
                     self.memo
                         .rec_families
                         .insert(key.clone(), RecFamily::Probing(scope));
@@ -44,6 +45,7 @@ impl Engine<'_> {
                         return Ok(Some(Sig::open(false)));
                     }
                     let Some(root) = some!(self.template_root(function, scope, need)?) else {
+                        self.memo.probing_families.remove(&key);
                         self.memo
                             .rec_families
                             .insert(key.clone(), RecFamily::Known(Kind::Any, None));
@@ -52,6 +54,11 @@ impl Engine<'_> {
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
                         return Ok(self.pending(root, Sig::open(false), need));
                     };
+                    self.memo.probing_families.remove(&key);
+                    if sig.open && !sig.is_error() && !self.memo.probing_families.is_empty() {
+                        self.memo.rec_families.remove(&key);
+                        return Ok(Some(Sig::open(false)));
+                    }
                     let family = if sig.open { None } else { sig.family };
                     let kind = if sig.is_error() { Kind::Any } else { sig.kind };
                     let settled = self.instantiate(function, &key.args, node)?;

@@ -2566,6 +2566,62 @@ fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
     expect_in_every_order(&rows);
 }
 
+#[test]
+fn a_recursive_calls_kind_settles_the_same_way_through_mutual_recursion() {
+    const K: &str = "Clip k:\n    Note/(f(2))";
+    const G: &str = "fn g(n): f(n)";
+    let rows: [Row; 8] = [
+        (
+            &["fn f(n): if n < 1 then 0 else [g(n - 1), \"s\"][0]", G, K],
+            &[(Code::TypeMismatch, "[g(n - 1), \"s\"]")],
+        ),
+        (
+            &["fn f(n): if n < 1 then 0 else [f(n - 1), \"s\"][0]", K],
+            &[(Code::TypeMismatch, "[f(n - 1), \"s\"]")],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then 0 else [g(n - 1), \"s\"][0]",
+                "fn g(n): h(n)",
+                "fn h(n): f(n)",
+                K,
+            ],
+            &[(Code::TypeMismatch, "[g(n - 1), \"s\"]")],
+        ),
+        (
+            &["fn f(n): if n < 1 then 0 else [g(n - 1), 2][0]", G, K],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then 1 else [g(n - 1), 2][0] + 1",
+                G,
+                "Osc o | freq=(f(3))",
+            ],
+            &[],
+        ),
+        (
+            &["fn f(n): if n < 1 then 0 else [g(n - 1), 2.5][0]", G, K],
+            &[(Code::TypeMismatch, "f(2)")],
+        ),
+        (
+            &["fn f(n): if n < 1 then 0 else [g(n - 1), \"s\"][1]", G, K],
+            &[(
+                Code::TypeMismatch,
+                "if n < 1 then 0 else [g(n - 1), \"s\"][1]",
+            )],
+        ),
+        (
+            &["fn f(n): if n < 1 then 0 else [f(n - 1), \"s\"][1]", K],
+            &[(
+                Code::TypeMismatch,
+                "if n < 1 then 0 else [f(n - 1), \"s\"][1]",
+            )],
+        ),
+    ];
+    expect_in_every_order(&rows);
+}
+
 const FAULTY_LINES: [&str; 51] = [
     "pattern P(:",
     "fn f(x, ): 1",

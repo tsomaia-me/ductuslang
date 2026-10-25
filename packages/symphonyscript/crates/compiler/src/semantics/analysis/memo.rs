@@ -47,6 +47,7 @@ pub(crate) struct Memo {
     pub template_feeds: FastMap<ScopeId, Vec<super::feed::Feed>>,
     pub template_takers: FastMap<ScopeId, Vec<NodeId>>,
     pub rec_families: FastMap<super::family_key::FamilyKey, super::rec_family::RecFamily>,
+    pub probing_families: super::fast_hash::FastSet<super::family_key::FamilyKey>,
     pub probes: super::fast_hash::FastSet<ScopeId>,
     pub call_feeds: FastMap<NodeId, Vec<super::feed::Feed>>,
     pub shapes: FastMap<NodeId, super::shape_need::ShapeNeed>,
