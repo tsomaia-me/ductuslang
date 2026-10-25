@@ -756,30 +756,6 @@ fn two_enum_vocabulary() -> Vocabulary {
     v.build().expect("the two-enum vocabulary builds")
 }
 
-fn permutations<T: Copy>(items: &[T]) -> Vec<Vec<T>> {
-    let mut found = Vec::new();
-    let mut order: Vec<usize> = (0..items.len()).collect();
-    let mut counters = vec![0; items.len()];
-    found.push(order.iter().map(|index| items[*index]).collect());
-    let mut level = 0;
-    while level < items.len() {
-        if counters[level] < level {
-            if level % 2 == 0 {
-                order.swap(0, level);
-            } else {
-                order.swap(counters[level], level);
-            }
-            found.push(order.iter().map(|index| items[*index]).collect());
-            counters[level] += 1;
-            level = 0;
-        } else {
-            counters[level] = 0;
-            level += 1;
-        }
-    }
-    found
-}
-
 type Errors = Vec<(Code, String)>;
 
 #[test]
@@ -878,7 +854,7 @@ fn a_carried_enum_meets_every_use_in_every_order() {
     cases.extend(accepted.into_iter().map(|items| (items, Some(Vec::new()))));
     for (items, expected) in cases {
         let mut first: Option<Errors> = None;
-        for order in permutations(&items) {
+        for order in support::permutations(&items) {
             let text = format!("{}\n", order.join("\n"));
             let found = errors_in(&text);
             let wrong = match &expected {
@@ -989,7 +965,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
                 .chain(consumer.iter().copied())
                 .chain(std::iter::once(typed))
                 .collect();
-            for order in permutations(&items) {
+            for order in support::permutations(&items) {
                 let text = format!("{}\n", order.join("\n"));
                 let found = fixture_errors(&text);
                 if !found.is_empty() {
@@ -1009,7 +985,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
         let items: Vec<&'static str> = std::iter::once("let x = Sine")
             .chain(consumer.iter().copied())
             .collect();
-        for order in permutations(&items) {
+        for order in support::permutations(&items) {
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if found != [(Code::TypeMismatch, "let x = Sine\n".to_string())] {
@@ -1019,7 +995,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
         }
     }
     let compared = ["let x = Sine", "let y = Saw", "Osc p when x is y"];
-    for order in permutations(&compared) {
+    for order in support::permutations(&compared) {
         let text = format!("{}\n", order.join("\n"));
         let first = order
             .iter()
@@ -1064,7 +1040,7 @@ fn an_array_literals_expected_type_reaches_every_element() {
         ),
     ] {
         let all: Vec<&'static str> = ["Session s", written].into_iter().chain(items).collect();
-        for order in permutations(&all) {
+        for order in support::permutations(&all) {
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if !found.is_empty() {
@@ -1217,7 +1193,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
             if vocabulary == "fixture" {
                 all.insert(0, "Session s");
             }
-            for order in permutations(&all) {
+            for order in support::permutations(&all) {
                 let text = format!("{}\n", order.join("\n"));
                 let found = if vocabulary == "fixture" {
                     fixture_errors(&text)
@@ -1329,7 +1305,7 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
         let all: Vec<&'static str> = std::iter::once("Session s")
             .chain(items.iter().copied())
             .collect();
-        for order in permutations(&all) {
+        for order in support::permutations(&all) {
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if found != wanted {
@@ -1425,7 +1401,7 @@ fn an_array_an_error_leaves_without_elements_draws_nothing_more() {
         let all: Vec<&'static str> = std::iter::once("Session s")
             .chain(items.iter().copied())
             .collect();
-        for order in permutations(&all) {
+        for order in support::permutations(&all) {
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if found != wanted {
@@ -1475,7 +1451,7 @@ fn first_order_failing<W: PartialEq + std::fmt::Debug>(
     wanted: &W,
     found: impl Fn(&str) -> W,
 ) -> Option<String> {
-    permutations(items).into_iter().find_map(|order| {
+    support::permutations(items).into_iter().find_map(|order| {
         let text = format!("{}\n", order.join("\n"));
         let found = found(&text);
         (found != *wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
@@ -2244,7 +2220,7 @@ fn codes_in_every_order(rows: &[CodeRow], check: fn(&str) -> Vec<Diagnostic>) ->
     for (items, wanted) in rows {
         let mut wanted = wanted.to_vec();
         wanted.sort();
-        for order in permutations(items) {
+        for order in support::permutations(items) {
             let text = format!("{}\n", order.join("\n"));
             let mut found: Vec<Code> = check(&text)
                 .iter()
@@ -2782,19 +2758,21 @@ fn a_line_after_a_missing_block_reports_its_own_faults() {
             .unwrap_or("");
         let after_missing = format!("Clip c:\n{line}");
         let after_valid = format!("Clip c:\n    Note\n{line}");
-        let failure = permutations(&[0, 1, 2]).into_iter().find_map(|order| {
-            let text = |faulty: &str| {
-                let items = [faulty, "Session s", "Clip e:\n    Note"];
-                let ordered: Vec<&str> = order.iter().map(|index| items[*index]).collect();
-                format!("{}\n", ordered.join("\n"))
-            };
-            let (missing, valid) = (text(&after_missing), text(&after_valid));
-            let mut wanted = fixture_errors(&valid);
-            wanted.push((Code::PlacementSyntax, first.to_string()));
-            wanted.sort();
-            let found = fixture_errors(&missing);
-            (found != wanted).then(|| format!("{missing}expected {wanted:?}\nfound {found:?}"))
-        });
+        let failure = support::permutations(&[0, 1, 2])
+            .into_iter()
+            .find_map(|order| {
+                let text = |faulty: &str| {
+                    let items = [faulty, "Session s", "Clip e:\n    Note"];
+                    let ordered: Vec<&str> = order.iter().map(|index| items[*index]).collect();
+                    format!("{}\n", ordered.join("\n"))
+                };
+                let (missing, valid) = (text(&after_missing), text(&after_valid));
+                let mut wanted = fixture_errors(&valid);
+                wanted.push((Code::PlacementSyntax, first.to_string()));
+                wanted.sort();
+                let found = fixture_errors(&missing);
+                (found != wanted).then(|| format!("{missing}expected {wanted:?}\nfound {found:?}"))
+            });
         failures.extend(failure);
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));

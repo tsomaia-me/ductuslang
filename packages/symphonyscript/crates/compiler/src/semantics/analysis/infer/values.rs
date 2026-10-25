@@ -22,7 +22,7 @@ impl Engine<'_> {
         for (node, scalar) in roots {
             let ty = eval_ty_of(*scalar);
             let value = self.demand_cval(*node, ty)?;
-            if !value.is_error() {
+            if !value.is_error() && self.known_sig(*node)?.width == Width::Flexible {
                 self.fit(*node, value, ty)?;
             }
         }

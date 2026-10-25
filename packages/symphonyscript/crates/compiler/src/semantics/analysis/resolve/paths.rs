@@ -183,8 +183,15 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         };
         let destination = some!(self.destination(Query::Destination(wire), need));
+        let candidates = destination.candidates();
+        if candidates
+            .iter()
+            .any(|candidate| !matches!(candidate, ItemRef::Instance(_)))
+        {
+            return Ok(Some(Val::Error));
+        }
         let mut attrs = Vec::new();
-        for candidate in destination.candidates() {
+        for candidate in candidates {
             match self.attr_named(candidate, &name.text)? {
                 Some(attr) => attrs.push((candidate, attr)),
                 None => {

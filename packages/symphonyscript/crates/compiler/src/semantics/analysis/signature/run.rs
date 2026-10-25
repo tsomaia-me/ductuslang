@@ -2,11 +2,14 @@ use symphonyscript_core::{BinaryOp, Builtin, UnaryOp};
 
 use super::extra::Extra;
 use crate::semantics::Internal;
+use crate::semantics::analysis::binding::Binding;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::kind_of::kind_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
@@ -142,9 +145,26 @@ impl Engine<'_> {
         binding: crate::semantics::analysis::ids::BindingId,
         init: Sig,
     ) -> Result<Sig, Internal> {
-        let annotation = self.binding(binding)?.annotation;
-        let kind = annotation.map_or(init.kind, kind_of);
+        let record = self.binding(binding)?;
+        let kind = match record.annotation {
+            Some(annotation) => kind_of(annotation),
+            None => self.cell_kind(record, init.kind),
+        };
         Ok(Sig::of(kind, Width::Adaptive, true, init.family))
+    }
+
+    pub(in crate::semantics::analysis) fn cell_kind(&self, record: &Binding, own: Kind) -> Kind {
+        match record.kind {
+            BindingKind::Input { input, .. }
+                if own == Kind::Int && self.memo.float_inputs.contains(&input) =>
+            {
+                Kind::Float
+            }
+            BindingKind::Input { .. }
+            | BindingKind::Let
+            | BindingKind::Param
+            | BindingKind::Attr { .. } => own,
+        }
     }
 }
 

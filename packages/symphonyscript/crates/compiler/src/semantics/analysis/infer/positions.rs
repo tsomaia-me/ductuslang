@@ -152,7 +152,7 @@ impl Engine<'_> {
             return Ok(Some(annotation));
         }
         let sig = self.demand_sig(record.init)?;
-        Ok(match sig.kind {
+        Ok(match self.cell_kind(&record, sig.kind) {
             Kind::Int => Some(symphonyscript_core::Scalar::I64),
             Kind::Float => Some(symphonyscript_core::Scalar::F64),
             Kind::Bool => Some(symphonyscript_core::Scalar::Bool),

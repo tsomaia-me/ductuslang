@@ -3000,3 +3000,298 @@ fn a_whole_read_of_an_array_let_costs_constant_work() {
         "{smaller} and {larger} grow faster than 2.2 per doubling"
     );
 }
+
+fn in_every_order(items: &[&str]) -> Vec<String> {
+    let text = |order: &[usize]| {
+        let lines: Vec<&str> = order.iter().map(|index| items[*index]).collect();
+        format!("{}\n", lines.join("\n"))
+    };
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    let mut counters = vec![0; items.len()];
+    let mut found = vec![text(&order)];
+    let mut level = 0;
+    while level < items.len() {
+        if counters[level] < level {
+            let other = if level % 2 == 0 { 0 } else { counters[level] };
+            order.swap(other, level);
+            found.push(text(&order));
+            counters[level] += 1;
+            level = 0;
+        } else {
+            counters[level] = 0;
+            level += 1;
+        }
+    }
+    found
+}
+
+fn codes_beside_the_entry_warning(diagnostics: &[Diagnostic]) -> Vec<Code> {
+    let mut codes: Vec<Code> = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .filter(|code| *code != Code::NoEntryInstance)
+        .collect();
+    codes.sort();
+    codes
+}
+
+fn input_cells(engine: &Engine<'_>, name: &str) -> (Vec<u32>, Vec<(Scalar, CVal)>) {
+    let mut lengths = Vec::new();
+    let mut cells = Vec::new();
+    for (position, binding) in engine.bindings.iter().enumerate() {
+        let BindingKind::Input { input, .. } = binding.kind else {
+            continue;
+        };
+        if binding.name != name {
+            continue;
+        }
+        if let Some(BoundVal::Array(array)) = engine.memo.inputs.get(&input) {
+            lengths = array.0.lengths();
+        }
+        let id = BindingId(u32::try_from(position).unwrap_or(u32::MAX));
+        let Some(own) = engine.typing.own.get(&id).copied() else {
+            continue;
+        };
+        let ty = match own {
+            Scalar::I64 => EvalTy::I64,
+            Scalar::F64 => EvalTy::F64,
+            Scalar::I32 | Scalar::F32 | Scalar::Bool | Scalar::Enum(_) | Scalar::Str => continue,
+        };
+        if let Some(value) = engine.memo.evals.get(&(binding.init, ty)) {
+            cells.push((own, value.clone()));
+        }
+    }
+    (lengths, cells)
+}
+
+type InputRow<'a> = (Vec<&'a str>, Vec<u32>, Vec<(Scalar, CVal)>, Vec<Code>);
+
+#[test]
+fn an_array_input_has_one_kind_for_all_its_elements() {
+    let float = |values: &[f64]| -> Vec<(Scalar, CVal)> {
+        values
+            .iter()
+            .map(|value| (Scalar::F64, CVal::F64(*value)))
+            .collect()
+    };
+    let integer = |values: &[i128]| -> Vec<(Scalar, CVal)> {
+        values
+            .iter()
+            .map(|value| (Scalar::I64, CVal::Int(*value)))
+            .collect()
+    };
+    let gains_read = ["Clip c | gain=(gains[0])", "Clip d | gain=(gains[1])"];
+    let rows: Vec<InputRow<'_>> = vec![
+        (
+            [&["input gains = [1, 0.5]"][..], &gains_read].concat(),
+            vec![2],
+            float(&[1.0, 0.5]),
+            vec![],
+        ),
+        (
+            [&["input gains = [0.5, 1]"][..], &gains_read].concat(),
+            vec![2],
+            float(&[0.5, 1.0]),
+            vec![],
+        ),
+        (
+            vec!["input gains = [1, 0.5]", "Clip c:\n    Note/(gains[0])"],
+            vec![2],
+            float(&[1.0, 0.5]),
+            vec![Code::FloatToInteger],
+        ),
+        (
+            vec!["input m = [[1, 2], [3, 0.5]]"],
+            vec![2, 2],
+            float(&[1.0, 2.0, 3.0, 0.5]),
+            vec![],
+        ),
+        (
+            vec!["input k = [1, Wave::Saw]"],
+            vec![],
+            vec![],
+            vec![Code::TypeMismatch],
+        ),
+        (
+            vec!["input k: f64[2] = [1, 2]"],
+            vec![2],
+            float(&[1.0, 2.0]),
+            vec![],
+        ),
+        (
+            vec![
+                "input pitches = [60, 62]",
+                "Clip c:\n    Note/(pitches[0])",
+                "Osc o | freq=(pitches[1])",
+            ],
+            vec![2],
+            integer(&[60, 62]),
+            vec![],
+        ),
+        (
+            [&["input gains = [1, 2]"][..], &gains_read].concat(),
+            vec![2],
+            integer(&[1, 2]),
+            vec![Code::IntegerInput],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, lengths, cells, codes) in rows {
+        let name = items[0]
+            .trim_start_matches("input ")
+            .split([' ', ':'])
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        for text in in_every_order(&items) {
+            let (diagnostics, found) = analyzed(&text, |engine| input_cells(engine, &name));
+            let found_codes = codes_beside_the_entry_warning(&diagnostics);
+            if found_codes != codes || found != (lengths.clone(), cells.clone()) {
+                failures.push(format!("{text:?}: {found:?} with {found_codes:?}"));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_value_of_fixed_or_widened_type_keeps_its_ieee_value_where_it_is_used() {
+    let nan = |value: &CVal| match value {
+        CVal::F32(value) => value.is_nan(),
+        CVal::F64(value) => value.is_nan(),
+        _ => false,
+    };
+    let accepted: Vec<(Vec<&str>, &str, EvalTy, CVal)> = vec![
+        (
+            vec!["Osc o | freq=(1e300f64 * 1e300f64)"],
+            "freq",
+            EvalTy::F64,
+            CVal::F64(f64::INFINITY),
+        ),
+        (
+            vec!["Clip c | gain=(3e38f32 * 2.0)"],
+            "gain",
+            EvalTy::F32,
+            CVal::F32(f32::INFINITY),
+        ),
+        (
+            vec!["Clip c | gain=(f32(1e300f64))"],
+            "gain",
+            EvalTy::F32,
+            CVal::F32(f32::INFINITY),
+        ),
+        (
+            vec!["Clip c | gain=(f32(0.0f64 / 0.0f64))"],
+            "gain",
+            EvalTy::F32,
+            CVal::F32(f32::NAN),
+        ),
+        (
+            vec!["Clip c:\n    Note/(i32(1e300f64))"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(2147483647),
+        ),
+        (
+            vec!["Clip c:\n    Note/(i32(0.0f64 / 0.0f64))"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(0),
+        ),
+        (
+            vec!["let x: f64 = 1e300f64 * 1e300f64", "Osc o | freq=x"],
+            "freq",
+            EvalTy::F64,
+            CVal::F64(f64::INFINITY),
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, attr, ty, expected) in accepted {
+        for text in in_every_order(&items) {
+            let (diagnostics, found) = analyzed(&text, |engine| attr_value(engine, attr, ty));
+            let errors = error_codes(&diagnostics);
+            let holds = match &found {
+                Some(found) if nan(&expected) => nan(found),
+                Some(found) => *found == expected,
+                None => false,
+            };
+            if !errors.is_empty() || !holds {
+                failures.push(format!("{text:?}: {found:?} with {errors:?}"));
+                break;
+            }
+        }
+    }
+    let rejected: [&[&str]; 4] = [
+        &["Osc o | freq=(0.0 / 0.0)"],
+        &["Osc o | freq=(1e300 * 1e300)"],
+        &["input x = 1e300", "Clip c | gain=x"],
+        &["let x: f64 = 1e300 * 1e300", "Osc o | freq=x"],
+    ];
+    for items in rejected {
+        for text in in_every_order(items) {
+            let (diagnostics, ()) = analyzed(&text, |_| ());
+            if error_codes(&diagnostics) != [Code::DoesNotFit] {
+                failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_recursive_call_reuses_only_a_finished_calls_value() {
+    let pitches =
+        |values: &[i128]| -> Vec<CVal> { values.iter().map(|value| CVal::Int(*value)).collect() };
+    let rows: Vec<(Vec<&str>, Vec<CVal>)> = vec![
+        (
+            vec![
+                "fn f(n): if n < 1 then 0 else f(n - 1)",
+                "fn g(n): if n < 1 then f(2) else g(n - 1) + f(2)",
+                "let a = f(3)",
+                "let b = f(3)",
+                "Clip c:\n    Note/(a + b + g(2))",
+            ],
+            pitches(&[0]),
+        ),
+        (
+            vec![
+                "fn even(n): if n < 1 then true else odd(n - 1)",
+                "fn odd(n): if n < 1 then false else even(n - 1)",
+                "Clip c:\n    Note/(if even(10) then 1 else 2)",
+            ],
+            pitches(&[1]),
+        ),
+        (
+            vec![
+                "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)",
+                "let k = fib(5)",
+                "let k2 = fib(6)",
+                "fn g(n): if n < 1 then k else g(n - 1) + h(n)",
+                "fn h(m): if m < 1 then k2 else h(m - 1)",
+                "Clip c:\n    Note/(g(2))\n    Note/(h(1))",
+            ],
+            pitches(&[21, 8]),
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, expected) in rows {
+        for text in in_every_order(&items) {
+            let (diagnostics, (found, holes)) = analyzed(&text, |engine| {
+                (
+                    attr_values(engine, "pitch", EvalTy::I32),
+                    placeholders(engine),
+                )
+            });
+            if !errors_of(&diagnostics).is_empty() || found != expected || !holes.is_empty() {
+                failures.push(format!(
+                    "{text:?}: {found:?} {holes:?} with {:?}",
+                    error_codes(&diagnostics)
+                ));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

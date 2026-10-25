@@ -430,7 +430,11 @@ impl Engine<'_> {
             }
             Op::Annotate(_, operand) => {
                 let value = some!(self.child(operand, own, ctx, need)?);
-                self.fit(node, value, own)?
+                if some!(self.sig(operand, need)).width == Width::Flexible {
+                    self.fit(node, value, own)?
+                } else {
+                    value
+                }
             }
             Op::Builtin(builtin, args) => {
                 return self.builtin(node, builtin, &args, own, ctx, need);

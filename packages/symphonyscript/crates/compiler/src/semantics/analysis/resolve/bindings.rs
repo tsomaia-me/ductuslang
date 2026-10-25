@@ -338,6 +338,9 @@ impl Engine<'_> {
             .map(|name| name.text.clone())
             .unwrap_or_default();
         let scalar = annotation.as_ref().map(|annotation| annotation.scalar);
+        if sigs.iter().any(|sig| sig.kind == Kind::Float) {
+            self.memo.float_inputs.insert(input);
+        }
         let make = |engine: &mut Self, element: u32, init: NodeId| {
             engine
                 .push_binding(Binding {

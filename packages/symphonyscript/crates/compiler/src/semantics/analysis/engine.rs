@@ -92,6 +92,7 @@ pub(crate) struct Engine<'a> {
     pub run_query: fn(&mut Engine<'a>, Query, &mut Vec<Query>) -> Result<bool, Internal>,
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
+    cycle_members: FastSet<Query>,
     current: Option<Query>,
 }
 
@@ -158,6 +159,7 @@ impl<'a> Engine<'a> {
             run_query: Engine::run,
             waiting: FastSet::default(),
             cyclic: FastSet::default(),
+            cycle_members: FastSet::default(),
             current: None,
         };
         engine.source_global = engine.push_scope(
@@ -234,6 +236,7 @@ impl<'a> Engine<'a> {
             if self.is_done(top) {
                 stack.pop();
                 self.waiting.remove(&top);
+                self.settle_cycle_member(top);
                 stalled = 0;
                 continue;
             }
@@ -244,6 +247,7 @@ impl<'a> Engine<'a> {
             if done {
                 stack.pop();
                 self.waiting.remove(&top);
+                self.settle_cycle_member(top);
                 stalled = 0;
                 continue;
             }
@@ -333,7 +337,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn bound(&self, query: Query, need: &mut Vec<Query>) -> Option<BoundVal> {
-        if self.poisoned(query) {
+        if self.poisoned(query) || self.cycle_members.contains(&query) {
             return Some(BoundVal::Error);
         }
         let memo = &self.memo;
@@ -822,12 +826,22 @@ impl<'a> Engine<'a> {
                 self.cycle_spans.push(span);
             }
         }
-        for query in path {
-            if let Some((name, loc)) = self.declaration(query)? {
+        for query in &path {
+            if let Some((name, loc)) = self.declaration(*query)? {
                 names.push(name);
                 locs.push(loc);
             }
         }
+        if names.is_empty() {
+            return self.endless_evaluation(&path);
+        }
+        self.cycle_members
+            .extend(path.iter().copied().filter(|query| {
+                matches!(
+                    query,
+                    Query::Let(..) | Query::Param(..) | Query::Input(_) | Query::Attr(..)
+                )
+            }));
         let first = names
             .first()
             .cloned()
@@ -839,6 +853,56 @@ impl<'a> Engine<'a> {
         self.report
             .error_with(self.hir, Code::DeclarationCycle, loc, secondary, message);
         Ok(())
+    }
+
+    fn endless_evaluation(&mut self, path: &[Query]) -> Result<(), Internal> {
+        let mut calls = Vec::new();
+        for query in path {
+            if let Query::Eval(node, _) = *query
+                && let Op::Recursive { function, .. } = self.node(node)?.op
+            {
+                calls.push((node, function));
+            }
+        }
+        let &(first, _) = calls.first().ok_or(Internal::missed("cycle declaration"))?;
+        let loc = self.node(first)?.loc;
+        let mut names: Vec<String> = Vec::with_capacity(calls.len());
+        for (_, function) in calls {
+            let name = self.function_name(function)?;
+            if names.last() != Some(&name) {
+                names.push(name);
+            }
+        }
+        let message = format!(
+            "the evaluation goes deeper than {} nested calls: {}",
+            grouped(self.limits.nesting_depth),
+            names.join(" → ")
+        );
+        self.report
+            .error_with(self.hir, Code::RecursionDepth, loc, &[], message);
+        Ok(())
+    }
+
+    fn settle_cycle_member(&mut self, query: Query) {
+        if !self.cycle_members.remove(&query) {
+            return;
+        }
+        let memo = &mut self.memo;
+        match query {
+            Query::Let(scope, local) => {
+                memo.lets.insert((scope, local), BoundVal::Error);
+            }
+            Query::Param(scope, index) => {
+                memo.params.insert((scope, index), BoundVal::Error);
+            }
+            Query::Input(input) => {
+                memo.inputs.insert(input, BoundVal::Error);
+            }
+            Query::Attr(item, attr) => {
+                memo.attrs.insert((item, attr), BoundVal::Error);
+            }
+            Query::Expr(..) | Query::Destination(_) | Query::Sig(_) | Query::Eval(..) => {}
+        }
     }
 }
 

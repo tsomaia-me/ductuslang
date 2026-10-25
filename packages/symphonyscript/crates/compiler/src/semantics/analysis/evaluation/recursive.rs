@@ -600,7 +600,10 @@ impl Engine<'_> {
             .ok_or(Internal::missed("argument"))
     }
 
-    fn function_name(&self, function: FnId) -> Result<String, Internal> {
+    pub(in crate::semantics::analysis) fn function_name(
+        &self,
+        function: FnId,
+    ) -> Result<String, Internal> {
         Ok(self
             .hir
             .fn_decl(function)?

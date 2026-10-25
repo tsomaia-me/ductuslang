@@ -32,6 +32,7 @@ pub(crate) struct Memo {
     pub lets: FastMap<(ScopeId, LetRef), BoundVal>,
     pub params: FastMap<(ScopeId, u32), BoundVal>,
     pub inputs: FastMap<InputId, BoundVal>,
+    pub float_inputs: super::fast_hash::FastSet<InputId>,
     pub attrs: FastMap<(ItemRef, AttrId), BoundVal>,
     pub destinations: FastMap<WireId, Destination>,
     pub sigs: FastMap<NodeId, Sig>,

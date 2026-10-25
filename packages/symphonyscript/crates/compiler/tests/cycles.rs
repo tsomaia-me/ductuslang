@@ -1,0 +1,285 @@
+mod support;
+
+use std::collections::BTreeSet;
+
+use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use symphonyscript_core::Limits;
+use symphonyscript_fixtures::vocabulary;
+
+type Named = (Code, BTreeSet<String>);
+
+fn named_errors(compiler: &Compiler, text: &str) -> Vec<Named> {
+    let source = Source {
+        path: "test.sym".into(),
+        text: text.into(),
+    };
+    let mut found: Vec<Named> = compiler
+        .check(&[source])
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .map(|diagnostic| (diagnostic.code, chain_of(diagnostic)))
+        .collect();
+    found.sort();
+    found
+}
+
+fn chain_of(diagnostic: &Diagnostic) -> BTreeSet<String> {
+    if !matches!(
+        diagnostic.code,
+        Code::DeclarationCycle | Code::RecursionDepth
+    ) {
+        return BTreeSet::new();
+    }
+    let chain = diagnostic
+        .message
+        .rsplit_once(": ")
+        .map_or("", |(_, chain)| chain);
+    chain.split(" → ").map(str::to_string).collect()
+}
+
+fn named(code: Code, names: &[&str]) -> Named {
+    (code, names.iter().map(|name| (*name).to_string()).collect())
+}
+
+fn first_order_failing(compiler: &Compiler, items: &[&str], wanted: &[Named]) -> Option<String> {
+    support::permutations(items).into_iter().find_map(|order| {
+        let text = format!("{}\n", order.join("\n"));
+        let found = named_errors(compiler, &text);
+        (found != wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
+    })
+}
+
+#[test]
+fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
+    let k_and_g = ["let k = g(1)", "fn g(n): if n < 1 then k else g(n - 1)"];
+    let through = |reader: &'static str| -> Vec<&'static str> {
+        k_and_g.iter().copied().chain([reader]).collect()
+    };
+    let mutual = [
+        "fn a(n): if n < 1 then b(1) else a(n - 1)",
+        "fn b(n): if n < 1 then a(1) else b(n - 1)",
+        "Clip c:\n    Note/(a(1))",
+    ];
+    let rows: Vec<(Vec<&str>, Vec<Named>)> = vec![
+        (
+            vec![
+                "fn f(n): if n < 1 then f(0) else 1",
+                "Clip c:\n    Note/(f(1))\n    Note/(f(0))",
+            ],
+            vec![named(Code::RecursionDepth, &["f"])],
+        ),
+        (
+            mutual.to_vec(),
+            vec![named(Code::RecursionDepth, &["a", "b"])],
+        ),
+        (
+            through("Clip c:\n    Note/k"),
+            vec![named(Code::DeclarationCycle, &["k", "g"])],
+        ),
+        (
+            through("Clip c:\n    Note/(g(2))"),
+            vec![named(Code::DeclarationCycle, &["k", "g"])],
+        ),
+        (
+            through("Clip c:\n    Note/60"),
+            vec![named(Code::DeclarationCycle, &["k", "g"])],
+        ),
+        (
+            vec![
+                "fn g(n): if n < 1 then c.gain else g(n - 1)",
+                "Clip c | gain=(g(1))",
+            ],
+            vec![named(Code::DeclarationCycle, &["c.gain", "g"])],
+        ),
+        (
+            vec![
+                "fn f(n): if n < 1 then a else f(n - 1)",
+                "let a = f(3)",
+                "Clip c:\n    Note/a",
+            ],
+            vec![named(Code::DeclarationCycle, &["a", "f"])],
+        ),
+        (
+            vec![
+                "fn f(n): if n < 1 then a else f(n - 1)",
+                "let a = c.gain",
+                "Clip c | gain=(f(3))",
+            ],
+            vec![named(Code::DeclarationCycle, &["a", "c.gain", "f"])],
+        ),
+        (
+            vec![
+                "fn f(n, m = a): if n < 1 then m else f(n - 1)",
+                "let a = f(3)",
+                "Clip c:\n    Note/a",
+            ],
+            vec![named(Code::DeclarationCycle, &["a", "f", "m"])],
+        ),
+        (
+            vec![
+                "let x = [1, 2, 3][i32(d(2))]",
+                "fn d(n, z = r(2)): if n < 1 then z else d(n - 1)",
+                "fn r(n): if n < 1 then x else r(n - 1)",
+            ],
+            vec![named(Code::DeclarationCycle, &["x", "d", "z", "r"])],
+        ),
+        (
+            vec![
+                "Clip d | gain=c.w.gain:\n    Note",
+                "Clip c:\n    Plays as w | gain=to.gain: d",
+            ],
+            vec![named(Code::DeclarationCycle, &["d.gain", "w.gain"])],
+        ),
+        (
+            vec!["Clip c:\n    Plays as w | gain=to.gain: w"],
+            vec![named(Code::DestinationType, &[])],
+        ),
+        (
+            vec!["Clip c:\n    Plays as w: w"],
+            vec![named(Code::DestinationType, &[])],
+        ),
+        (
+            vec![
+                "input q = 0",
+                "Clip c:\n    Plays as w | gain=to.gain: [w, c][q]",
+            ],
+            vec![named(Code::DestinationType, &[])],
+        ),
+    ];
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let mut failures: Vec<String> = rows
+        .iter()
+        .filter_map(|(items, wanted)| first_order_failing(&compiler, items, wanted))
+        .collect();
+    let shallow = Limits {
+        nesting_depth: 6,
+        ..Limits::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), shallow).expect("the vocabulary compiles");
+    failures.extend(first_order_failing(
+        &compiler,
+        &mutual,
+        &[named(Code::RecursionDepth, &["a", "b"])],
+    ));
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+const LINKS: [(&[&str], &str); 8] = [
+    (&["let l{k} = {next}"], "l{k}"),
+    (
+        &["fn f{k}(n): if n < 1 then {next} else f{k}(n - 1)"],
+        "f{k}(1)",
+    ),
+    (
+        &["fn d{k}(n, z = {next}): if n < 1 then z else d{k}(n - 1)"],
+        "d{k}(1)",
+    ),
+    (&["Clip i{k} | gain=({next})"], "i{k}.gain"),
+    (
+        &["Clip s{k}:\n    Plays as w{k} | gain=({next}): s{k}"],
+        "s{k}.w{k}.gain",
+    ),
+    (
+        &["Clip o{k} | gain=({next}):\n    Plays as w{k} | gain=to.gain: o{k}"],
+        "o{k}.w{k}.gain",
+    ),
+    (
+        &[
+            "input q{k} = 0",
+            "Clip o{k} | gain=({next}):\n    Plays as w{k} | gain=to.gain: [o{k}, o{k}][q{k}]",
+        ],
+        "o{k}.w{k}.gain",
+    ),
+    (
+        &[
+            "pattern P{k}(x):\n    Clip | gain=x",
+            "P{k} u{k} | x=({next})",
+        ],
+        "u{k}.gain",
+    ),
+];
+
+const FUNCTION_LINKS: [usize; 2] = [1, 2];
+
+fn cycle_items(links: &[usize], closing: Option<&str>) -> Vec<String> {
+    let mut items = Vec::new();
+    for (position, link) in links.iter().enumerate() {
+        let after = (position + 1) % links.len();
+        let next = match closing {
+            Some(literal) if after == 0 => literal.to_string(),
+            _ => LINKS[links[after]].1.replace("{k}", &after.to_string()),
+        };
+        for line in LINKS[*link].0 {
+            items.push(
+                line.replace("{k}", &position.to_string())
+                    .replace("{next}", &next),
+            );
+        }
+    }
+    items
+}
+
+fn cycles_up_to(length: u32) -> Vec<Vec<usize>> {
+    let mut cycles = Vec::new();
+    for links in 1..=length {
+        for code in 0..LINKS.len().pow(links) {
+            let cycle: Vec<usize> = (0..links)
+                .map(|position| code / LINKS.len().pow(position) % LINKS.len())
+                .collect();
+            let first_rotation = (1..cycle.len()).all(|turn| {
+                let rotated: Vec<usize> = cycle[turn..]
+                    .iter()
+                    .chain(&cycle[..turn])
+                    .copied()
+                    .collect();
+                rotated >= cycle
+            });
+            let declares = cycle.iter().any(|link| !FUNCTION_LINKS.contains(link));
+            if first_rotation && declares {
+                cycles.push(cycle);
+            }
+        }
+    }
+    cycles
+}
+
+#[test]
+fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order() {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let cycles = cycles_up_to(3);
+    let failures: Vec<String> = std::thread::scope(|threads| {
+        let runs: Vec<_> = cycles
+            .chunks(cycles.len().div_ceil(8))
+            .map(|chunk| {
+                let compiler = &compiler;
+                threads.spawn(move || {
+                    let mut failures = Vec::new();
+                    for cycle in chunk {
+                        for (closing, wanted) in
+                            [(None, vec![Code::DeclarationCycle]), (Some("1"), vec![])]
+                        {
+                            let items = cycle_items(cycle, closing);
+                            let lines: Vec<&str> = items.iter().map(String::as_str).collect();
+                            let failure =
+                                support::permutations(&lines).into_iter().find_map(|order| {
+                                    let text = format!("{}\n", order.join("\n"));
+                                    let found: Vec<Code> = named_errors(compiler, &text)
+                                        .into_iter()
+                                        .map(|(code, _)| code)
+                                        .collect();
+                                    (found != wanted).then(|| format!("{text}found {found:?}"))
+                                });
+                            failures.extend(failure);
+                        }
+                    }
+                    failures
+                })
+            })
+            .collect();
+        runs.into_iter()
+            .flat_map(|run| run.join().expect("every run finishes"))
+            .collect()
+    });
+    assert_eq!(cycles.len(), 211);
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
