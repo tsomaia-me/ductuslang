@@ -99,7 +99,8 @@
       "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__save_comment",
       "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__get_issue",
       "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_issues",
-      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_comments"
+      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_comments",
+      "Bash(git -C /Users/torniketsomaia/projects/@tsomaia.tech/ductuslang push origin main:symphonyscript/progress)"
     ],
     "deny": [
       "Bash(git push --force*)",
