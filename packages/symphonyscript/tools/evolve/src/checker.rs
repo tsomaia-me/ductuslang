@@ -159,8 +159,10 @@ impl Checker {
                 })
                 .collect(),
             Signal::Rename => {
+                let Some(renamed) = renamed(program, &self.vocabulary) else {
+                    return Vec::new();
+                };
                 let baseline = observed(diagnostics, program, str::to_string);
-                let renamed = renamed(program, &self.vocabulary);
                 let differs = self.differs(&baseline, &renamed.program, |text| {
                     restored(text, &renamed.originals)
                 });
