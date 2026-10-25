@@ -4,9 +4,9 @@ use super::bodies::{skipped_block, skipped_names};
 use super::faults::Faults;
 use super::hir_builder::HirBuilder;
 use crate::semantics::Internal;
-use crate::semantics::ir::Hir;
-use crate::syntax::Parsed;
+use crate::semantics::ir::{Hir, UnknownNames};
 use crate::syntax::ast::{AstNode, Item};
+use crate::syntax::{Parsed, SyntaxKind};
 
 pub(crate) fn build_file(
     hir: &mut Hir,
@@ -27,10 +27,14 @@ pub(crate) fn build_file(
         return Ok(());
     };
     let mut previous = None;
+    let mut skipped = Vec::new();
     for child in root.syntax().children() {
-        if skipped_block(&child) {
-            if let Some(placement) = previous.take() {
-                builder.skip_block_of(placement, skipped_names(&child))?;
+        if child.kind() == SyntaxKind::ErrorNode {
+            match previous.take() {
+                Some(placement) if skipped_block(&child) => {
+                    builder.skip_block_of(placement, skipped_names(&child))?;
+                }
+                _ => skipped.extend(skipped_names(&child)),
             }
         } else if let Some(item) = Item::cast(child) {
             previous = builder.item(item)?;
@@ -38,5 +42,6 @@ pub(crate) fn build_file(
             previous = None;
         }
     }
+    builder.hir.skipped_top.join(&UnknownNames::of(skipped));
     Ok(())
 }

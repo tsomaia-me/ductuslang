@@ -342,7 +342,7 @@ impl<'a> Checker<'a> {
             }
             current = frame.parent;
         }
-        Ok(false)
+        Ok(self.hir.skipped_top.holds(name))
     }
 
     fn visible(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {

@@ -25,6 +25,7 @@ pub(crate) struct Hir {
     pub fns: Vec<FnDecl>,
     pub patterns: Vec<PatternDecl>,
     pub top: Vec<Top>,
+    pub skipped_top: UnknownNames,
     pub prelude: PreludeEnd,
 }
 

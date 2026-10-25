@@ -2347,7 +2347,15 @@ fn a_pattern_whose_block_a_fault_leaves_missing_is_a_placeholder_for_its_uses() 
 
 #[test]
 fn a_use_of_a_name_a_skipped_region_may_declare_draws_nothing_more() {
-    let rows: [Row; 17] = [
+    let rows: [Row; 19] = [
+        (
+            &["1 Clip d", "Clip c:\n    Plays: d"],
+            &[(Code::TopLevelSyntax, "1")],
+        ),
+        (
+            &["1 Clip d", "Clip c:\n    Plays: e"],
+            &[(Code::TopLevelSyntax, "1"), (Code::UnknownName, "e")],
+        ),
         (
             &[
                 "Clip lead: Note __ as low",
