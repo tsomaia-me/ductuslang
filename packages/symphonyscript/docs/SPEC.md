@@ -261,7 +261,7 @@ When an operator's operands have different fixed types, both widen to the smalle
 
 An input, and a `let` that reads an input (a reactive `let`), is a cell: it holds one value at runtime, so it has exactly one type.
 
-An input's type comes from its initializer alone, never from its uses. Its kind is the initializer's (§4.5): integer, float, `bool` or one particular enum, with the initializer's array shape. An integer input is an `i64` and a float input an `f64`, unless an annotation gives the type (§4.5), and the initializer computes in that type. Each use reads the input in the type the use expects: an integer input saturates into a narrower integer type and converts into a float type, rounding beyond the float's exact range, and a float input rounds into `f32`. Where the use expects no type, the input is read in its own type. A float input used where an integer is expected is an error; a conversion (§5.8) states the rounding. The initial value must fit every use.
+An input's type comes from its initializer alone, never from its uses. Its kind is the initializer's (§4.5): integer, float, `bool` or one particular enum, with the initializer's array shape. An array input has one kind for all its elements, a float one when any element is a float one (§3.2). An integer input is an `i64` and a float input an `f64`, unless an annotation gives the type (§4.5), and the initializer computes in that type. Each use reads the input in the type the use expects: an integer input saturates into a narrower integer type and converts into a float type, rounding beyond the float's exact range, and a float input rounds into `f32`. Where the use expects no type, the input is read in its own type. A float input used where an integer is expected is an error; a conversion (§5.8) states the rounding. The initial value must fit every use.
 
 ```sym
 input cutoff = 0.5
@@ -473,7 +473,7 @@ Domain functions, such as converting a note number to a frequency, come from the
 Conversion ::= ('i32' | 'i64' | 'f32' | 'f64') '(' Expr ')'
 ```
 
-`i32(x)`, `i64(x)`, `f32(x)` and `f64(x)` convert a number explicitly. Float to integer truncates toward zero. Values outside the target range saturate to its bounds, and NaN becomes 0. Converting a `bool` or an enum value is an error.
+`i32(x)`, `i64(x)`, `f32(x)` and `f64(x)` convert a number explicitly. Float to integer truncates toward zero; a value outside an integer type's range saturates to its bounds, and NaN becomes 0. A float converted to `f32` rounds to the nearest `f32` (§5.2), so a value beyond its range becomes an infinity. Converting a `bool` or an enum value is an error.
 
 ### 5.9 Strings
 
