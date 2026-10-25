@@ -17,7 +17,7 @@ impl Parser<'_> {
                 }
             } else {
                 let found = self.describe();
-                self.error(
+                self.missing_block(
                     Code::PlacementSyntax,
                     format!("expected an indented block, found {found}"),
                 );
@@ -138,7 +138,7 @@ impl Parser<'_> {
             if self.eat(SyntaxKind::Indent) {
                 self.then([Task::WhenArms { arms: 0 }]);
             } else {
-                self.error(Code::WhenSyntax, "expected the guards, indented");
+                self.missing_block(Code::WhenSyntax, "expected the guards, indented");
                 self.finish();
             }
         } else {
@@ -234,7 +234,7 @@ impl Parser<'_> {
             }]);
         } else {
             if colon {
-                self.error(Code::MatchSyntax, "expected the match arms, indented");
+                self.missing_block(Code::MatchSyntax, "expected the match arms, indented");
             }
             self.finish();
         }

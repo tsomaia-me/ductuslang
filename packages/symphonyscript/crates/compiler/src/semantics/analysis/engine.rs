@@ -313,7 +313,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    fn poisoned(&self, dep: Query) -> bool {
+    pub(super) fn poisoned(&self, dep: Query) -> bool {
         self.current
             .is_some_and(|current| self.cyclic.contains(&(current, dep)))
     }

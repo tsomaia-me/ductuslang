@@ -40,6 +40,9 @@ impl Engine<'_> {
                         .insert(key.clone(), RecFamily::Probing(scope));
                 }
                 Some(RecFamily::Probing(scope)) => {
+                    if self.body_in_progress(function, scope)? {
+                        return Ok(Some(Sig::open(false)));
+                    }
                     let Some(root) = some!(self.template_root(function, scope, need)?) else {
                         self.memo
                             .rec_families
@@ -66,13 +69,16 @@ impl Engine<'_> {
                     family,
                     scope,
                 }) => {
+                    let assumed = Sig::of(kind, Width::Flexible, false, family);
+                    if self.body_in_progress(function, scope)? {
+                        return Ok(Some(assumed));
+                    }
                     let Some(root) = some!(self.template_root(function, scope, need)?) else {
                         self.memo
                             .rec_families
                             .insert(key.clone(), RecFamily::Known(kind, family));
                         continue;
                     };
-                    let assumed = Sig::of(kind, Width::Flexible, false, family);
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
                         return Ok(self.pending(root, assumed, need));
                     };
@@ -112,6 +118,11 @@ impl Engine<'_> {
         }
         need.push(query);
         None
+    }
+
+    fn body_in_progress(&self, function: FnId, scope: ScopeId) -> Result<bool, Internal> {
+        let body = self.hir.fn_decl(function)?.value;
+        Ok(self.poisoned(Query::Expr(body, scope)))
     }
 
     fn template_root(

@@ -1,5 +1,6 @@
 use std::fmt;
 use std::mem;
+use std::ops::Range;
 
 use rowan::{GreenNode, GreenNodeData, NodeOrToken};
 
@@ -12,11 +13,20 @@ use crate::diagnostics::Diagnostic;
 pub struct Parsed {
     green: GreenNode,
     pub diagnostics: Vec<Diagnostic>,
+    pub(crate) detached: Vec<Range<u32>>,
 }
 
 impl Parsed {
-    pub(crate) fn new(green: GreenNode, diagnostics: Vec<Diagnostic>) -> Self {
-        Self { green, diagnostics }
+    pub(crate) fn new(
+        green: GreenNode,
+        diagnostics: Vec<Diagnostic>,
+        detached: Vec<Range<u32>>,
+    ) -> Self {
+        Self {
+            green,
+            diagnostics,
+            detached,
+        }
     }
 
     pub fn root(&self) -> NodeView<'_> {
@@ -33,6 +43,7 @@ impl Clone for Parsed {
         Self {
             green: self.green.clone(),
             diagnostics: self.diagnostics.clone(),
+            detached: self.detached.clone(),
         }
     }
 }

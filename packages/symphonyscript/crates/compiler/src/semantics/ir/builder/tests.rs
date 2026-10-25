@@ -27,7 +27,7 @@ fn a_write_into_a_block_the_builder_never_allocated_is_an_internal_error() {
     let mut builder = HirBuilder {
         hir: &mut hir,
         file: 0,
-        faults: Faults::new(&parsed.diagnostics),
+        faults: Faults::new(&parsed.diagnostics, &parsed.detached),
         vocabulary: &vocabulary,
     };
     assert_eq!(

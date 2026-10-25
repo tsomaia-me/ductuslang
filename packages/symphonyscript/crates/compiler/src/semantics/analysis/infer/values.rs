@@ -115,15 +115,26 @@ impl Engine<'_> {
                     .is_some_and(|(other, _, int)| other != node && !same_number(int, value))
             });
             if let (Some((int_node, _, _)), Some((float_node, _, _))) = (integer, float) {
-                let float_loc = self.node(*float_node)?.loc;
                 let (loc, scope) = {
                     let record = self.node(*int_node)?;
                     (record.loc, record.scope)
                 };
+                let (float_loc, float_scope) = {
+                    let record = self.node(*float_node)?;
+                    (record.loc, record.scope)
+                };
+                let mut float_use: Vec<Loc> = (float_loc != loc)
+                    .then_some(float_loc)
+                    .into_iter()
+                    .collect();
+                let float_calls = self.chain(float_scope)?.to_vec();
+                if float_calls != self.chain(scope)?.to_vec() {
+                    float_use.extend(float_calls);
+                }
                 self.error_with_chain(
                     Code::InconsistentUses,
                     loc,
-                    vec![float_loc],
+                    float_use,
                     scope,
                     "this value is an integer here and a different number at its float use",
                 )?;

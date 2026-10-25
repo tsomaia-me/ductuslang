@@ -85,6 +85,7 @@ impl Engine<'_> {
             .collect();
         takers.sort();
         let placeholders = self.under_placeholders()?;
+        let mut conflicted: HashSet<BindingId> = HashSet::new();
         for (node, family) in takers {
             if self.template_of(self.node(node)?.scope)?.is_some() {
                 continue;
@@ -93,11 +94,17 @@ impl Engine<'_> {
             if units.is_empty() && placeholders.contains(&node) {
                 continue;
             }
+            if let ([_, _, ..], Op::Read(binding)) = (units.as_slice(), &self.node(node)?.op) {
+                conflicted.insert(*binding);
+            }
             self.resolve_taker(node, family, &units)?;
         }
         let mut cells: Vec<(BindingId, Vec<Feed>)> = binding_feeds.into_iter().collect();
         cells.sort_by_key(|(binding, _)| *binding);
         for (binding, feeds) in cells {
+            if conflicted.contains(&binding) {
+                continue;
+            }
             let init = self.binding(binding)?.init;
             let sig = self.known_sig(init)?;
             let plain = sig.family.is_none() && sig.is_numeric();
@@ -157,6 +164,8 @@ impl Engine<'_> {
     fn carried_operands(&self, node: NodeId) -> Result<Vec<NodeId>, Internal> {
         Ok(match &self.node(node)?.op {
             Op::Read(binding) => vec![self.binding(*binding)?.init],
+            Op::Pick { items, .. } => items.clone(),
+            Op::Element { base, .. } => vec![*base],
             op => op.operands(),
         })
     }
@@ -270,6 +279,7 @@ impl Engine<'_> {
             if self.carries(node, family)? {
                 stack.extend(self.carried_operands(node)?);
             }
+            stack.extend(self.memo.groups.get(&node).copied());
         }
         Ok(reached)
     }

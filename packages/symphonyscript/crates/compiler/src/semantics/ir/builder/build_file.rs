@@ -17,7 +17,7 @@ pub(crate) fn build_file(
     let mut builder = HirBuilder {
         hir,
         file,
-        faults: Faults::new(&parsed.diagnostics),
+        faults: Faults::new(&parsed.diagnostics, &parsed.detached),
         vocabulary,
     };
     let Some(root) = parsed.file() else {

@@ -42,15 +42,21 @@ impl Engine<'_> {
             if sig.is_error() {
                 continue;
             }
-            let sig = match self.memo.groups.get(&node) {
+            let mut group_of = self.memo.groups.get(&node).copied();
+            let sig = match group_of {
                 Some(group) => {
-                    let group = self.known_sig(*group)?;
+                    let group = self.known_sig(group)?;
                     if group.is_error() {
                         continue;
                     }
-                    Sig {
-                        kind: group.kind,
-                        ..sig
+                    if sig.reactive && sig.is_numeric() && group.is_numeric() {
+                        group_of = None;
+                        sig
+                    } else {
+                        Sig {
+                            kind: group.kind,
+                            ..sig
+                        }
                     }
                 }
                 None => sig,
@@ -83,7 +89,7 @@ impl Engine<'_> {
                 Some(expected) => Some(expected),
                 None => self.synth(node)?,
             };
-            if let Some(group) = self.memo.groups.get(&node).copied()
+            if let Some(group) = group_of
                 && self.typing.passed_over_groups.insert((group, ty))
                 && let Op::Array(elements) = &self.node(group)?.op
             {

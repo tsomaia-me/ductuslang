@@ -96,13 +96,14 @@ impl Engine<'_> {
             Sig::open(reactive)
         } else {
             let mut sig = self.rule(node, &op, &operands, &sigs, extra)?;
-            if open && sig.family.is_none() && sig.is_numeric() && !sig.is_error() {
+            let unsettled = sig.family.is_none() && sig.is_numeric() || matches!(op, Op::Array(_));
+            if open && unsettled && !sig.is_error() {
                 sig.open = true;
             }
             sig
         };
         if let Some(group) = group {
-            sig = element_of(sig, group);
+            sig = element_of(sig, group, self.memo.held_reads.contains(&node));
         }
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);
@@ -147,9 +148,12 @@ impl Engine<'_> {
     }
 }
 
-fn element_of(own: Sig, group: Sig) -> Sig {
+fn element_of(own: Sig, group: Sig, held: bool) -> Sig {
     if own.reactive || own.open {
         return own;
+    }
+    if group.open {
+        return if held { Sig::open(false) } else { own };
     }
     if own.is_error() || group.is_error() {
         return Sig::ERROR;

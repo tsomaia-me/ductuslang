@@ -36,6 +36,7 @@ pub(crate) struct Parser<'a> {
     brackets: Vec<Bracket>,
     builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
+    detached: Vec<Range<u32>>,
     line_error: bool,
     previous_line_error: bool,
     tasks: Vec<Task>,
@@ -51,18 +52,25 @@ impl<'a> Parser<'a> {
             brackets: Vec::new(),
             builder: TreeBuilder::new(),
             diagnostics: Vec::new(),
+            detached: Vec::new(),
             line_error: false,
             previous_line_error: false,
             tasks: Vec::new(),
         }
     }
 
-    pub(crate) fn run(self) -> (GreenNode, Vec<Diagnostic>) {
-        let (green, diagnostics, _) = self.run_counting();
-        (green, diagnostics)
+    pub(crate) fn run(self) -> (GreenNode, Vec<Diagnostic>, Vec<Range<u32>>) {
+        let (green, diagnostics, _, detached) = self.parsed();
+        (green, diagnostics, detached)
     }
 
-    fn run_counting(mut self) -> (GreenNode, Vec<Diagnostic>, Cost) {
+    #[cfg(test)]
+    fn run_counting(self) -> (GreenNode, Vec<Diagnostic>, Cost) {
+        let (green, diagnostics, cost, _) = self.parsed();
+        (green, diagnostics, cost)
+    }
+
+    fn parsed(mut self) -> (GreenNode, Vec<Diagnostic>, Cost, Vec<Range<u32>>) {
         self.builder.start_node(SyntaxKind::File);
         self.tasks.push(Task::File);
         while let Some(task) = self.tasks.pop() {
@@ -81,7 +89,7 @@ impl<'a> Parser<'a> {
         let mut diagnostics = self.lexer.into_diagnostics();
         diagnostics.extend(self.diagnostics);
         diagnostics.sort_by_key(|diagnostic| diagnostic.span.range.start);
-        (green, diagnostics, cost)
+        (green, diagnostics, cost, self.detached)
     }
 
     fn fill(&mut self, index: usize) -> bool {
@@ -493,6 +501,16 @@ impl<'a> Parser<'a> {
     fn error(&mut self, code: Code, message: impl Into<String>) {
         let span = self.current_span();
         self.error_with(Diagnostic::new(code, span, message));
+    }
+
+    fn missing_block(&mut self, code: Code, message: impl Into<String>) {
+        let reported = self.diagnostics.len();
+        self.error(code, message);
+        if self.diagnostics.len() > reported
+            && let Some(diagnostic) = self.diagnostics.last()
+        {
+            self.detached.push(diagnostic.span.range.clone());
+        }
     }
 
     fn error_with(&mut self, diagnostic: Diagnostic) {

@@ -28,6 +28,7 @@ pub(crate) struct Memo {
     pub bound_slices: FastMap<(ExprId, ScopeId), Option<BoundSlice>>,
     pub group_list: Vec<NodeId>,
     pub literal_groups: FastMap<(ExprId, ScopeId), NodeId>,
+    pub held_reads: super::fast_hash::FastSet<NodeId>,
     pub lets: FastMap<(ScopeId, LetRef), BoundVal>,
     pub params: FastMap<(ScopeId, u32), BoundVal>,
     pub inputs: FastMap<InputId, BoundVal>,

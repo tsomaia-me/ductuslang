@@ -7,10 +7,11 @@ pub(super) struct Faults {
 }
 
 impl Faults {
-    pub fn new(diagnostics: &[Diagnostic]) -> Self {
+    pub fn new(diagnostics: &[Diagnostic], detached: &[Range<u32>]) -> Self {
         let mut ranges: Vec<Range<u32>> = diagnostics
             .iter()
             .map(|diagnostic| diagnostic.span.range.clone())
+            .filter(|range| !detached.contains(range))
             .collect();
         ranges.sort_by_key(|range| range.start);
         let mut furthest = 0;

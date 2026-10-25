@@ -163,7 +163,7 @@ impl Parser<'_> {
             if self.eat(SyntaxKind::Indent) {
                 self.then([Task::FnLets]);
             } else {
-                self.error(Code::FnSyntax, "expected the function body, indented");
+                self.missing_block(Code::FnSyntax, "expected the function body, indented");
                 self.finish();
             }
         } else {

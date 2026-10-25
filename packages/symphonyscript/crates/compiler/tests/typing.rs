@@ -1464,15 +1464,18 @@ fn located_errors(text: &str) -> Located {
     found
 }
 
+fn with_session(items: &[&'static str]) -> Vec<&'static str> {
+    std::iter::once("Session s")
+        .chain(items.iter().copied())
+        .collect()
+}
+
 fn first_order_failing<W: PartialEq + std::fmt::Debug>(
     items: &[&'static str],
     wanted: &W,
     found: impl Fn(&str) -> W,
 ) -> Option<String> {
-    let all: Vec<&'static str> = std::iter::once("Session s")
-        .chain(items.iter().copied())
-        .collect();
-    permutations(&all).into_iter().find_map(|order| {
+    permutations(items).into_iter().find_map(|order| {
         let text = format!("{}\n", order.join("\n"));
         let found = found(&text);
         (found != *wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
@@ -1488,13 +1491,21 @@ fn expect_in_every_order(rows: &[Row]) {
                 .map(|(code, span)| (*code, (*span).to_string()))
                 .collect();
             wanted.sort();
-            first_order_failing(items, &wanted, fixture_errors)
+            first_order_failing(&with_session(items), &wanted, fixture_errors)
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn expect_located_in_every_order(rows: &[LocatedRow]) {
+    expect_located_with(rows, with_session, located_errors);
+}
+
+fn expect_located_with(
+    rows: &[LocatedRow],
+    items_of: fn(&[&'static str]) -> Vec<&'static str>,
+    found: fn(&str) -> Located,
+) {
     let failures: Vec<String> = rows
         .iter()
         .filter_map(|(items, wanted)| {
@@ -1509,7 +1520,7 @@ fn expect_located_in_every_order(rows: &[LocatedRow]) {
                 })
                 .collect();
             wanted.sort();
-            first_order_failing(items, &wanted, located_errors)
+            first_order_failing(&items_of(items), &wanted, found)
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -2069,7 +2080,23 @@ fn a_diagnostic_about_one_iterations_value_points_where_the_body_reads_it() {
 
 #[test]
 fn a_default_no_call_takes_and_a_for_body_that_runs_no_iteration_are_unchecked() {
-    let rows: [Row; 4] = [
+    let rows: [Row; 8] = [
+        (
+            &["fn f(a = zz): 1", "Clip c:\n    Note/(f(2))"],
+            &[(Code::UnknownName, "zz")],
+        ),
+        (
+            &["Clip c:\n    for i in 0..0:\n        Note/(zz)"],
+            &[(Code::UnknownName, "zz")],
+        ),
+        (
+            &["pattern P(a = zz):\n    Note", "Clip c:\n    P | a=1"],
+            &[(Code::UnknownName, "zz")],
+        ),
+        (
+            &["Clip c:\n    for i in 0..0:\n        Plays: zz"],
+            &[(Code::UnknownName, "zz")],
+        ),
         (
             &["fn f(a = [1, \"s\"]): 1", "Clip c:\n    Note/(f(2))"],
             &[],
@@ -2149,8 +2176,505 @@ fn a_literals_family_value_reaches_every_attribute_a_read_of_it_reaches() {
         "2".to_string(),
         vec!["a[0]".to_string(), "a[0]".to_string()],
     )];
-    let failure = first_order_failing(&items, &wanted, |text| {
-        bar_errors(&text.replacen("Session s\n", "", 1))
-    });
+    let failure = first_order_failing(&items, &wanted, bar_errors);
     assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
+
+#[test]
+fn a_construct_missing_its_block_draws_the_same_diagnostics_in_every_order() {
+    let rows: [(&[&'static str], &[Code]); 5] = [
+        (
+            &[
+                "Session main /128:",
+                "pattern Arp(default root, steps = 4, gap = 4):",
+                "Clip intro | gain=0.9:",
+            ],
+            &[
+                Code::PlacementSyntax,
+                Code::PlacementSyntax,
+                Code::PlacementSyntax,
+                Code::UnreachableInstance,
+            ],
+        ),
+        (
+            &[
+                "Session main:\n    Includes: t",
+                "Track t",
+                "fn f():",
+                "Clip c:\n    Note",
+                "let a = 1",
+            ],
+            &[Code::FnSyntax, Code::UnreachableInstance],
+        ),
+        (
+            &[
+                "Session main:\n    Includes: t",
+                "Track t",
+                "let m = match 1:",
+                "Clip c:\n    Note",
+            ],
+            &[Code::MatchSyntax, Code::UnreachableInstance],
+        ),
+        (
+            &[
+                "Session main:\n    Includes: t",
+                "Track t",
+                "Clip c:\n    when true:",
+                "Clip d:\n    Note",
+            ],
+            &[
+                Code::PlacementSyntax,
+                Code::UnreachableInstance,
+                Code::UnreachableInstance,
+            ],
+        ),
+        (
+            &["Track t:", "fn g(x): x", "Session s:\n    Includes: t"],
+            &[Code::PlacementSyntax],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, wanted) in rows {
+        let mut wanted = wanted.to_vec();
+        wanted.sort();
+        for order in permutations(items) {
+            let text = format!("{}\n", order.join("\n"));
+            let mut found: Vec<Code> = support::checked_all(&text)
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect();
+            found.sort();
+            if found != wanted {
+                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+    const X: &str = "input x = 1";
+    const C: &str = "input c = true";
+    const Q: &str = "let q = if c then [x, 2.5] else [3, 4]";
+    let rows: [Row; 13] = [
+        (&[X, C, Q], &[]),
+        (&[X, "let a = [x, 2.5]", "Clip k:\n    Note/(a[0])"], &[]),
+        (&[X, C, Q, "Osc o | freq=(q[0])"], &[]),
+        (
+            &[X, C, Q, "Osc o | freq=(q[0])", "Osc p | freq=(q[1])"],
+            &[],
+        ),
+        (
+            &[
+                X,
+                C,
+                "let q = match c:\n    true: [x, 2.5]\n    false: [3, 4]",
+                "Osc o | freq=(q[0])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                X,
+                C,
+                "let q = if c then [[x, 2.5], [1, 2]] else [[3, 4], [5, 6]]",
+                "Osc o | freq=(q[0][0])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                X,
+                C,
+                "fn f(a): a[0]",
+                "Osc o | freq=(f(if c then [x, 2.5] else [3, 4]))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                X,
+                C,
+                "input y = 2.5",
+                "let q = if c then [x, y] else [3, 4]",
+                "Osc o | freq=(q[0])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                X,
+                C,
+                "let q = if true then [x, 2.5] else [3, 4]",
+                "Osc o | freq=(q[0])",
+            ],
+            &[],
+        ),
+        (
+            &[X, C, Q, "Clip k:\n    Note/(q[1])"],
+            &[(Code::FloatToInteger, "q")],
+        ),
+        (&[X, C, "let a = [x, 2.5]", "Osc o | freq=(a[0])"], &[]),
+        (
+            &[
+                X,
+                C,
+                "let q = if c then [x, 2] else [3, 4]",
+                "Osc o | freq=(q[0])",
+            ],
+            &[],
+        ),
+        (
+            &[X, C, "let q = if c then [x, \"s\"] else [3, 4]"],
+            &[(Code::TypeMismatch, "[x, \"s\"]")],
+        ),
+    ];
+    expect_in_every_order(&rows);
+}
+
+fn as_given(items: &[&'static str]) -> Vec<&'static str> {
+    items.to_vec()
+}
+
+#[test]
+fn a_family_feed_stays_out_of_an_index_and_a_plain_cell_conflicts_once() {
+    const I: &str = "input i = 0";
+    const X: &str = "input x = 2";
+    const XA: &str = "let a = [1bars, x]";
+    let rows: [LocatedRow; 10] = [
+        (
+            &[
+                I,
+                "let a = [1bars, 2bars]",
+                "Bar b1 | len=(a[i])",
+                "Bar b2 | beat_len=(a[i])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                I,
+                "let a = [1bars, 2]",
+                "Bar b1 | len=(a[i])",
+                "Bar b2 | beat_len=(a[i])",
+            ],
+            &[(Code::ConflictingUnits, "2", &["a[i]", "a[i]"])],
+        ),
+        (&[I, "let a = [1bars, 2]", "Bar b1 | len=(a[i])"], &[]),
+        (
+            &[I, "let a = [1bars, 2]", "Bar b1 | len=(a[i]) plain=i"],
+            &[],
+        ),
+        (
+            &[X, "Bar b1 | len=x", "Bar b2 | beat_len=x"],
+            &[(Code::ConflictingUnits, "x", &["x"])],
+        ),
+        (
+            &[X, XA, "Bar b1 | len=(a[0])", "Bar b2 | beat_len=(a[0])"],
+            &[(Code::ConflictingUnits, "x", &["a[0]", "a[0]"])],
+        ),
+        (
+            &[X, XA, "Bar b1 | len=(a[1])", "Bar b2 | beat_len=(a[1])"],
+            &[(Code::ConflictingUnits, "x", &["a[1]", "a[1]"])],
+        ),
+        (&[X, XA, "Bar b1 | len=(a[0])", "Bar b2 | len=(a[1])"], &[]),
+        (&[X, XA, "Bar b1 | len=(a[1])"], &[]),
+        (&[X, XA, "Bar b1 | len=(a[0])"], &[]),
+    ];
+    expect_located_with(&rows, as_given, bar_errors);
+}
+
+#[test]
+fn a_literals_family_value_reaches_its_reads_inside_a_recursive_body() {
+    let rows: [Row; 7] = [
+        (
+            &[
+                "fn f(n): if n < 1 then [1bars, 2][0] else f(n - 1)",
+                "Clip k:\n    Note | length=(f(2))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n):\n    let a = [1bars, n]\n    if n < 1 then a[0] else f(n - 1)",
+                "Clip k:\n    Note | length=(f(2))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then [1bars, 2][1] else f(n - 1)",
+                "Clip k:\n    Note | length=(f(2))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then [1bars, 2] else f(n - 1)",
+                "Clip k:\n    Note | length=(f(1)[0])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then [1bars, 2] else f(n - 1)",
+                "Clip k:\n    Note | length=(f(1)[1])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n):\n    let a = [1bars, n]\n    if n < 1 then a[0] + a[1] else f(n - 1)",
+                "Clip k:\n    Note | length=(f(2))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then [1bars, 2][0] else f(n - 1)",
+                "Clip k:\n    Note/(f(2))",
+            ],
+            &[(Code::PlainInFamily, "2"), (Code::UnitMismatch, "f(2)")],
+        ),
+    ];
+    expect_in_every_order(&rows);
+}
+
+#[test]
+fn a_recursive_bodys_faulty_literal_holding_a_recursive_result_draws_one_diagnostic() {
+    const AT_LITERAL: &[(Code, &str, &[&str])] =
+        &[(Code::TypeMismatch, "[r(n - 1), \"s\"]", &["r(2)"])];
+    let rows: [LocatedRow; 11] = [
+        (
+            &[
+                "fn r(n):\n    let a = [r(n - 1), \"s\"]\n    if n < 1 then 0 else a[0]",
+                "Clip c:\n    Note/(r(2))",
+            ],
+            AT_LITERAL,
+        ),
+        (
+            &[
+                "fn r(n):\n    let a = [r(n - 1), Wave::Saw]\n    if n < 1 then 0 else a[0]",
+                "Clip c:\n    Note/(r(2))",
+            ],
+            &[(Code::TypeMismatch, "[r(n - 1), Wave::Saw]", &["r(2)"])],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then [1, 2] else [r(n - 1)[0], \"s\"]",
+                "Clip c:\n    Note/(r(2)[0])",
+            ],
+            &[(Code::TypeMismatch, "[r(n - 1)[0], \"s\"]", &["r(2)"])],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then 0 else g(n)[0]",
+                "fn g(n): if n > 0 then [r(n - 1), \"s\"] else [0, 0]",
+                "Clip c:\n    Note/(r(2))",
+            ],
+            AT_LITERAL,
+        ),
+        (
+            &[
+                "fn r(n):\n    let a = [r(n - 1), \"s\"]\n    if n < 1 then [0, 0] else a",
+                "Clip c:\n    Note/(r(2)[0])",
+            ],
+            AT_LITERAL,
+        ),
+        (
+            &[
+                "fn r(n):\n    let a = [r(n - 1), 2]\n    if n < 1 then 0 else a[0]",
+                "Clip c:\n    Note/(r(2))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then [1, 2] else [r(n - 1)[0], 3]",
+                "Clip c:\n    Note/(r(2)[1])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then 0 else g(n)[0]",
+                "fn g(n): if n > 0 then [r(n - 1), 1] else [0, 0]",
+                "Clip c:\n    Note/(r(2))",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then [1, 2] else r(n - 1)",
+                "Clip c:\n    Note/(r(2)[0])",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn r(n):\n    let a = [r(n - 1), \"s\"]\n    if n < 1 then 0 else a[1]",
+                "Kit k:\n    Sampler | file=(r(2))",
+            ],
+            &[(Code::TypeMismatch, "if n < 1 then 0 else a[1]", &["r(2)"])],
+        ),
+        (
+            &[
+                "fn r(n): if n < 1 then 0 else [r(n - 1), \"s\"][1]",
+                "Kit k:\n    Sampler | file=(r(2))",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if n < 1 then 0 else [r(n - 1), \"s\"][1]",
+                &["r(2)"],
+            )],
+        ),
+    ];
+    expect_located_in_every_order(&rows);
+}
+
+fn no_secondary_repeats_the_primary(text: &str) -> bool {
+    support::checked(text).iter().all(|diagnostic| {
+        diagnostic
+            .secondary
+            .iter()
+            .all(|span| span.range != diagnostic.span.range)
+    })
+}
+
+#[test]
+fn inconsistent_uses_name_each_use_with_its_calls() {
+    const IU: Code = Code::InconsistentUses;
+    let rows: [LocatedRow; 13] = [
+        (
+            &[
+                "let a = [2 ** -1]",
+                "fn f(x): x[0]",
+                "Clip c:\n    Note/(f(a)) | brightness=(f(a))",
+            ],
+            &[(IU, "x", &["f(a)", "f(a)"])],
+        ),
+        (
+            &[
+                "let q = 2 ** -1",
+                "fn f(): q",
+                "Clip c:\n    Note/(f()) | brightness=(f())",
+            ],
+            &[(IU, "q", &["f()", "f()"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1]",
+                "fn f(x): x[0]",
+                "Clip c:\n    Note/(f(a))",
+                "Clip d:\n    Note | brightness=(f(a))",
+            ],
+            &[(IU, "x", &["f(a)", "f(a)"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1]",
+                "fn g(y): y[0]",
+                "fn f(x): g(x)",
+                "Clip c:\n    Note/(f(a)) | brightness=(f(a))",
+            ],
+            &[(IU, "y", &["g(x)", "f(a)", "g(x)", "f(a)"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1]",
+                "fn f(x): x[0]",
+                "Clip c:\n    Note/(f(a))\n    Note/(f(a))",
+                "Clip d:\n    Note | brightness=(f(a))",
+            ],
+            &[(IU, "x", &["f(a)", "f(a)"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1]",
+                "fn f(): a[0]",
+                "Clip c:\n    Note/(f()) | brightness=(f())",
+            ],
+            &[(IU, "a", &["f()", "f()"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1]",
+                "Clip c:\n    Note/(a[0]) | brightness=(a[0])",
+            ],
+            &[(IU, "a", &["a"])],
+        ),
+        (
+            &["let q = 2 ** -1", "Clip c:\n    Note/(q) | brightness=q"],
+            &[(IU, "q", &["q"])],
+        ),
+        (
+            &[
+                "let q = 2 ** -1",
+                "fn f(x): x",
+                "Clip c:\n    Note/(f(q)) | brightness=(f(q))",
+            ],
+            &[(IU, "q", &["q"])],
+        ),
+        (
+            &[
+                "let a = [2 ** -1]",
+                "pattern P(x):\n    Note/(x[0]) | brightness=(x[0])",
+                "Clip c:\n    P | x=a",
+            ],
+            &[(IU, "x", &["x", "P | x=a"])],
+        ),
+        (
+            &[
+                "let q = 2 ** -1",
+                "pattern P():\n    Note/(q)",
+                "Clip c:\n    P",
+                "Clip d:\n    Note | brightness=q",
+            ],
+            &[(IU, "q", &["q", "P"])],
+        ),
+        (
+            &[
+                "pattern P(default n):\n    Note/(n) | velocity=n",
+                "Clip c:\n    for e in [2 ** -1, 1]:\n        P/(e)",
+            ],
+            &[(IU, "n", &["n", "P/(e)"])],
+        ),
+        (
+            &[
+                "let x = 2 ** -1",
+                "Clip c:\n    for e in [x, 1]:\n        Note/(e)\n        Note | velocity=e",
+            ],
+            &[(IU, "e", &["e"])],
+        ),
+    ];
+    expect_located_in_every_order(&rows);
+    let failures: Vec<String> = rows
+        .iter()
+        .filter_map(|(items, _)| {
+            first_order_failing(
+                &with_session(items),
+                &true,
+                no_secondary_repeats_the_primary,
+            )
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let text = "Session s\nlet a = [2 ** -1]\nfn f(x): x[0]\nClip c:\n    Note/(f(a)) | brightness=(f(a))\n";
+    let calls: Vec<Vec<(u32, u32)>> = support::checked(text)
+        .iter()
+        .map(|diagnostic| {
+            let mut ranges: Vec<(u32, u32)> = diagnostic
+                .secondary
+                .iter()
+                .map(|span| (span.range.start, span.range.end))
+                .collect();
+            ranges.sort();
+            ranges
+        })
+        .collect();
+    let mut both = vec![support::at(text, "f(a)", 0), support::at(text, "f(a)", 1)];
+    both.sort();
+    assert_eq!(calls, vec![both]);
 }

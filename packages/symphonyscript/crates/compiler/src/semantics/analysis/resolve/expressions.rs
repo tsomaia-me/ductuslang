@@ -576,6 +576,7 @@ impl Engine<'_> {
             .iter()
             .all(|leaf| self.memo.groups.contains_key(leaf))
         {
+            self.memo.held_reads.extend(array.elements.iter().copied());
             return Ok(val);
         }
         let mut reads = Vec::with_capacity(array.elements.len());
@@ -586,6 +587,7 @@ impl Engine<'_> {
             };
             reads.push(self.chosen_read(*leaf, group, loc, scope)?);
         }
+        self.memo.held_reads.extend(reads.iter().copied());
         Ok(Val::array(array.shape.clone(), reads))
     }
 

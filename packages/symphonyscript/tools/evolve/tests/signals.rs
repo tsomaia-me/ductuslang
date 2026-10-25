@@ -35,17 +35,28 @@ const CYCLE: &str = "let a = b + 1
 let b = a * 2
 ";
 
-const BODILESS_PATTERN: &str = "Session main /128:
-pattern Arp(default root, steps = 4, gap = 4):
-Clip intro | gain=0.9:
+const OPEN_CLIP: &str = "Clip intro | gain=0.9:
+    Plays: chorus
 ";
 
-const BODILESS_PATTERN_PADDED: &str = "input cutoff = 0.5
+const OPEN_CLIP_PADDED: &str = "input cutoff = 0.5
 let wobble = cutoff * 0.8
-Session main /128:
-pattern Arp(default root, steps = 4, gap = 4):
-Track lead | label=\"lead\"
 Clip intro | gain=0.9:
+    Plays: chorus
+";
+
+const INDENTED_START: &str = "    Track as keys | label=\"keys\":
+        Starts: intro
+    Includes: rhythm
+Track rhythm | label=\"rhythm\":
+    Starts: intro
+";
+
+const INDENTED_START_PADDED: &str = "    Track as keys | label=\"keys\":
+        Starts: intro
+    Includes: rhythm
+Track rhythm | label=\"rhythm\":
+    Starts: intro
 let spare = wobble + 3
 ";
 
@@ -103,12 +114,17 @@ fn diagnostics_the_spec_ties_to_top_level_order_draw_no_order_signal() {
 #[test]
 fn codes_that_change_when_only_declarations_move_draw_the_order_signal() {
     let checker = checker(DEFAULT_BUDGET);
-    let program = program(&[("main.sym", BODILESS_PATTERN)]);
+    let program = program(&[("clips.sym", OPEN_CLIP), ("main.sym", INDENTED_START)]);
     assert_eq!(
         checker.finding(&program, Signal::Order),
         Some(Finding {
             signal: Signal::Order,
-            codes: codes(&["unreachable-instance"]),
+            codes: codes(&[
+                "child-not-accepted",
+                "unexpected-indent",
+                "wire-cycle",
+                "wire-endpoint",
+            ]),
         })
     );
 }
@@ -226,7 +242,10 @@ fn a_program_without_a_panic_or_an_internal_error_draws_no_crash_signal() {
 #[test]
 fn shrinking_ends_at_a_smaller_program_with_the_same_finding_codes() {
     let checker = checker(DEFAULT_BUDGET);
-    let original = program(&[("main.sym", BODILESS_PATTERN_PADDED)]);
+    let original = program(&[
+        ("clips.sym", OPEN_CLIP_PADDED),
+        ("main.sym", INDENTED_START_PADDED),
+    ]);
     let Some(finding) = checker.finding(&original, Signal::Order) else {
         panic!("the padded program draws no order finding");
     };
