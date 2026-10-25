@@ -41,6 +41,22 @@ impl Engine<'_> {
                         return Ok(None);
                     }
                 };
+                for node in &array.elements {
+                    let sig = self.demand_sig(*node)?;
+                    if sig.reactive {
+                        for element in &array.elements {
+                            let reads = self.untypable_reads(*element)?;
+                            self.typing.read_by_faults.extend(reads);
+                        }
+                        self.error(
+                            Code::ReactiveIterable,
+                            loc,
+                            scope,
+                            "a `for` iterates over a compile-time value, and this one reads a cell",
+                        )?;
+                        return Ok(None);
+                    }
+                }
                 let mut bare = false;
                 for node in &array.elements {
                     if self.demand_sig(*node)?.kind == Kind::Bare {
@@ -50,18 +66,6 @@ impl Engine<'_> {
                 }
                 if bare {
                     return Ok(None);
-                }
-                for node in &array.elements {
-                    let sig = self.demand_sig(*node)?;
-                    if sig.reactive {
-                        self.error(
-                            Code::ReactiveIterable,
-                            loc,
-                            scope,
-                            "a `for` iterates over a compile-time value, and this one reads a cell",
-                        )?;
-                        return Ok(None);
-                    }
                 }
                 let values = array
                     .elements

@@ -26,12 +26,29 @@ impl Engine<'_> {
         self.typing.enum_expected.clear();
         let reads_first: Vec<BindingId> = readers_first.iter().rev().copied().collect();
         let flows = self.flows(&readers_first)?;
+        let downstream = self.downstream_enums(&readers_first, &flows);
         let mut waiting = flows.members.clone();
+        let mut blocked = FastSet::default();
         let mut by_uses = Vec::new();
         loop {
             let mut changed = false;
             for &binding in &reads_first {
-                if !waiting.contains(&binding) {
+                if !waiting.contains(&binding) || blocked.contains(&binding) {
+                    continue;
+                }
+                let expected = downstream
+                    .get(&binding)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let reads_blocked = flows
+                    .values
+                    .get(&binding)
+                    .into_iter()
+                    .flatten()
+                    .any(|read| blocked.contains(read));
+                if expected.len() > 1 || reads_blocked {
+                    blocked.insert(binding);
+                    changed = true;
                     continue;
                 }
                 match self.carried_enum(self.binding(binding)?.init)? {
@@ -46,19 +63,36 @@ impl Engine<'_> {
                         changed = true;
                     }
                     Carried::Open => {
-                        changed |=
-                            self.enum_of_uses(binding, &mut waiting, &mut by_uses, &flows)?;
+                        if let [own] = expected {
+                            waiting.remove(&binding);
+                            by_uses.push(binding);
+                            self.take_enum(binding, *own, &flows)?;
+                            changed = true;
+                        }
                     }
                 }
             }
             for &binding in &readers_first {
-                if waiting.contains(&binding) {
-                    changed |= self.enum_of_uses(binding, &mut waiting, &mut by_uses, &flows)?;
+                if !waiting.contains(&binding) || blocked.contains(&binding) {
+                    continue;
+                }
+                match self.enums_expected(binding).as_slice() {
+                    [] => {}
+                    [own] => {
+                        waiting.remove(&binding);
+                        by_uses.push(binding);
+                        self.take_enum(binding, *own, &flows)?;
+                        changed = true;
+                    }
+                    _ => {
+                        blocked.insert(binding);
+                        changed = true;
+                    }
                 }
             }
             let mut compared = Vec::new();
             for &binding in &readers_first {
-                if !waiting.contains(&binding) {
+                if !waiting.contains(&binding) || blocked.contains(&binding) {
                     continue;
                 }
                 let enums = distinct_enums(
@@ -75,11 +109,15 @@ impl Engine<'_> {
                 }
             }
             for (binding, enums) in compared {
-                waiting.remove(&binding);
                 changed = true;
                 match enums.as_slice() {
-                    [own] => self.take_enum(binding, *own, &flows)?,
-                    _ => self.no_single_enum(binding, Vec::new())?,
+                    [own] => {
+                        waiting.remove(&binding);
+                        self.take_enum(binding, *own, &flows)?;
+                    }
+                    _ => {
+                        blocked.insert(binding);
+                    }
                 }
             }
             if !changed {
@@ -96,6 +134,34 @@ impl Engine<'_> {
             .filter(|binding| waiting.contains(binding))
             .collect();
         self.flows_without_enum(&remaining, &flows)
+    }
+
+    fn downstream_enums(
+        &self,
+        readers_first: &[BindingId],
+        flows: &Flows,
+    ) -> FastMap<BindingId, Vec<Scalar>> {
+        let mut readers: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
+        for (reader, reads) in &flows.values {
+            for read in reads {
+                if read != reader && flows.members.contains(read) {
+                    readers.entry(*read).or_default().push(*reader);
+                }
+            }
+        }
+        let mut downstream: FastMap<BindingId, Vec<Scalar>> = FastMap::default();
+        for &binding in readers_first {
+            let from_readers: Vec<Scalar> = readers
+                .get(&binding)
+                .into_iter()
+                .flatten()
+                .flat_map(|reader| downstream.get(reader).cloned().unwrap_or_default())
+                .collect();
+            let enums =
+                distinct_enums(self.enums_expected(binding).into_iter().chain(from_readers));
+            downstream.insert(binding, enums);
+        }
+        downstream
     }
 
     fn flows(&self, pending: &[BindingId]) -> Result<Flows, Internal> {
@@ -139,26 +205,6 @@ impl Engine<'_> {
                 .flatten()
                 .map(|(scalar, _)| *scalar),
         )
-    }
-
-    fn enum_of_uses(
-        &mut self,
-        binding: BindingId,
-        waiting: &mut FastSet<BindingId>,
-        by_uses: &mut Vec<BindingId>,
-        flows: &Flows,
-    ) -> Result<bool, Internal> {
-        let enums = self.enums_expected(binding);
-        match enums.as_slice() {
-            [] => return Ok(false),
-            [own] => {
-                by_uses.push(binding);
-                self.take_enum(binding, *own, flows)?;
-            }
-            _ => self.no_single_enum(binding, Vec::new())?,
-        }
-        waiting.remove(&binding);
-        Ok(true)
     }
 
     fn take_enum(
@@ -311,6 +357,7 @@ impl Engine<'_> {
         for binding in &untyped {
             read_by_untyped.extend(self.reads_of(self.binding(*binding)?.init)?);
         }
+        read_by_untyped.extend(self.typing.read_by_faults.iter().copied());
         if !self.cycle_spans.is_empty() {
             for node in &self.nodes {
                 if let Op::Read(binding) = node.op

@@ -128,29 +128,6 @@ impl Engine<'_> {
                     "this value is an integer here and a different number at its float use",
                 )?;
             }
-            let enums: Vec<&(NodeId, EvalTy, CVal)> = evaluations
-                .iter()
-                .filter(|(_, ty, _)| matches!(ty, EvalTy::Enum(_)))
-                .collect();
-            if let (Some(first), Some(other)) = (
-                enums.first(),
-                enums
-                    .iter()
-                    .find(|(_, ty, _)| Some(ty) != enums.first().map(|(_, first, _)| first)),
-            ) {
-                let other_loc = self.node(other.0)?.loc;
-                let (loc, scope) = {
-                    let record = self.node(first.0)?;
-                    (record.loc, record.scope)
-                };
-                self.error_with_chain(
-                    Code::TypeMismatch,
-                    loc,
-                    vec![other_loc],
-                    scope,
-                    "this variant takes its enum from its uses, and they expect different enums",
-                )?;
-            }
         }
         Ok(())
     }

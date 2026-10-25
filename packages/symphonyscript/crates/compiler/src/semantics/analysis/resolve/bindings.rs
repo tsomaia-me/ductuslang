@@ -218,6 +218,10 @@ impl Engine<'_> {
         };
         let loc = self.hir.expr(decl.value)?.loc;
         if sigs.iter().any(|sig| sig.reactive) {
+            for node in val.nodes() {
+                let reads = self.untypable_reads(node)?;
+                self.typing.read_by_faults.extend(reads);
+            }
             self.error(
                 Code::ReactiveInitializer,
                 loc,
