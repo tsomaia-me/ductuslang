@@ -2086,3 +2086,71 @@ fn a_default_no_call_takes_and_a_for_body_that_runs_no_iteration_are_unchecked()
     ];
     expect_in_every_order(&rows);
 }
+
+fn bar_errors(text: &str) -> Located {
+    let compiler = Compiler::new(&symphonyscript_fixtures::bar_vocabulary())
+        .expect("the bar vocabulary compiles");
+    let excerpt = |range: &std::ops::Range<u32>| {
+        let at = usize::try_from(range.start).unwrap_or(0)..usize::try_from(range.end).unwrap_or(0);
+        text.get(at).unwrap_or("").to_string()
+    };
+    let mut found: Located = support::errors(compiler.check(&[support::source(text)]))
+        .iter()
+        .map(|diagnostic| {
+            let secondary = diagnostic
+                .secondary
+                .iter()
+                .map(|span| excerpt(&span.range))
+                .collect();
+            (diagnostic.code, excerpt(&diagnostic.span.range), secondary)
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+#[test]
+fn a_literals_family_value_reaches_every_attribute_a_read_of_it_reaches() {
+    const A: &str = "let a = [1bars, 2]";
+    const Q: &str = "let q = if true then [1bars, 2] else [3bars, 4]";
+    let rows: [Row; 9] = [
+        (&[A, "Clip k:\n    Note | length=(a[0])"], &[]),
+        (&[Q, "Clip k:\n    Note | length=(q[0])"], &[]),
+        (
+            &[A, "Clip k:\n    for e in a:\n        Note | length=(e)"],
+            &[],
+        ),
+        (
+            &[A, "input i = 0", "Clip k:\n    Note | length=(a[i])"],
+            &[],
+        ),
+        (
+            &["fn f(x): x[0]", A, "Clip k:\n    Note | length=(f(a))"],
+            &[],
+        ),
+        (&["Clip k:\n    Note | length=([1bars, 2][0])"], &[]),
+        (
+            &[
+                "let g = [[1bars, 2], [3bars, 4]]",
+                "Clip k:\n    Note | length=(g[1][0])",
+            ],
+            &[],
+        ),
+        (&[A], &[(Code::PlainInFamily, "2")]),
+        (
+            &[Q],
+            &[(Code::PlainInFamily, "2"), (Code::PlainInFamily, "4")],
+        ),
+    ];
+    expect_in_every_order(&rows);
+    let items = [A, "Bar b1 | len=(a[0])", "Bar b2 | beat_len=(a[0])"];
+    let wanted: Located = vec![(
+        Code::ConflictingUnits,
+        "2".to_string(),
+        vec!["a[0]".to_string(), "a[0]".to_string()],
+    )];
+    let failure = first_order_failing(&items, &wanted, |text| {
+        bar_errors(&text.replacen("Session s\n", "", 1))
+    });
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}

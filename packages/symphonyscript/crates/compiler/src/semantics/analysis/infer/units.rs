@@ -73,6 +73,7 @@ impl Engine<'_> {
                     if self.carries(current, feed.0)? {
                         stack.extend(self.carried_operands(current)?);
                     }
+                    stack.extend(self.memo.groups.get(&current).copied());
                 }
             }
         }
