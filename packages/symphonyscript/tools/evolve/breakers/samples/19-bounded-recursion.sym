@@ -1,0 +1,41 @@
+input held: i32[..10] = []
+input steps = 3
+input base = 48
+input fade = 0.5
+
+fn lowest(i) bounded 10 else 127:
+    if i >= len(held) then 127 else min(held[i], lowest(i + 1))
+
+fn total(i) bounded 10 else 0:
+    if i >= len(held) then 0 else held[i] + total(i + 1)
+
+fn climb(n, p) bounded 4 else p + 100:
+    if n < 1 then p else climb(n - 1, p + 2)
+
+fn decay(n, v) bounded 6 else v * 0.1:
+    if n < 1 then v else decay(n - 1, v * fade)
+
+fn tri(n): if n < 2 then n else n + tri(n - 1)
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let width = fib(6) - tri(4)
+let sizes = [tri(2), tri(3), tri(4)]
+let floor_note = lowest(0)
+let sum_note = total(0) div 4
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: melody
+
+Clip melody:
+    Note/floor_note | velocity=decay(steps, 1.0)
+    Note/(sum_note + 12) | brightness=decay(2, fade)
+    Note/(climb(steps, base)) | length=width / 4
+    Note/(climb(2, base + 7)) | velocity=decay(1, 0.9)
+    for s in sizes:
+        Note/(60 + s) when s < fib(5)
+    for i in 0..tri(3):
+        Note/(lowest(i) + i) when total(i) > 0

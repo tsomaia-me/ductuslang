@@ -1,0 +1,29 @@
+input held: i32[..8] = []
+input note = 60
+input step = 0
+input cut = 0
+input shifted = false
+
+let played = held + [note]
+let removed = held[..cut] + held[cut + 1..]
+let tail = held[^3..]
+let inner = held[1..^1]
+let pool = if shifted then played else removed
+let silent = if len(held) > 0 then tail else []
+let count = len(pool)
+
+Session main:
+    Includes: keys
+
+Track keys:
+    Piano
+    Starts: arp
+
+Clip arp:
+    Note/(played[step % len(played)])
+    Note/(removed[step]) | velocity=count / 10
+    Note/(tail[0]) when len(held) > 2
+    Note/(inner[^1]) | brightness=len(inner) / 6
+    Note/(pool[^2]) when count > 1
+    Note/(silent[step]) | length=len(silent) / 4
+    Note/(held[1..][0] + held[..1][0])
