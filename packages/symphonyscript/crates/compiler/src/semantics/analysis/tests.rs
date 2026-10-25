@@ -644,9 +644,11 @@ fn unit_rules_cover_recursive_results_and_bodies() {
 
 fn placeholders(engine: &Engine<'_>) -> Vec<String> {
     let memo = &engine.memo;
+    let held = |scope: ScopeId| !engine.in_probe(scope).unwrap_or(false);
+    let node_held = |node: NodeId| engine.node(node).map_or(true, |node| held(node.scope));
     let mut found = Vec::new();
-    for ((expr, _), val) in &memo.exprs {
-        if matches!(val, Val::Error) {
+    for ((expr, scope), val) in &memo.exprs {
+        if matches!(val, Val::Error) && held(*scope) {
             found.push(format!(
                 "value of {:?}",
                 engine.hir.expr(*expr).map(|expr| expr.loc)
@@ -654,7 +656,7 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
         }
     }
     for (node, sig) in &memo.sigs {
-        if sig.is_error() {
+        if sig.is_error() && node_held(*node) {
             found.push(format!(
                 "type of {:?}",
                 engine.node(*node).map(|node| node.loc)
@@ -662,7 +664,7 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
         }
     }
     for ((node, _), value) in &memo.evals {
-        if value.is_error() {
+        if value.is_error() && node_held(*node) {
             found.push(format!(
                 "evaluation of {:?}",
                 engine.node(*node).map(|node| node.loc)
@@ -674,10 +676,18 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
             found.push(format!("result of {call:?}"));
         }
     }
-    let bounds = memo
+    let locals = memo
         .lets
-        .values()
-        .chain(memo.params.values())
+        .iter()
+        .map(|((scope, _), bound)| (*scope, bound))
+        .chain(
+            memo.params
+                .iter()
+                .map(|((scope, _), bound)| (*scope, bound)),
+        )
+        .filter(|(scope, _)| held(*scope))
+        .map(|(_, bound)| bound);
+    let bounds = locals
         .chain(memo.inputs.values())
         .chain(memo.attrs.values());
     for bound in bounds {
@@ -3337,10 +3347,13 @@ fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
                 )
             }));
         for (argument, fault, kept) in rows {
-            if position == 3 && argument == "q(2)" {
-                continue;
-            }
             let placed = line.replace('X', argument);
+            let empty_bundle = "[for i in 0..q(2): Note]";
+            let fault = if placed.ends_with(empty_bundle) {
+                Some((Code::EmptyBundle, empty_bundle))
+            } else {
+                fault
+            };
             let items: Vec<&str> = functions
                 .iter()
                 .chain(extra.iter())
@@ -3522,4 +3535,67 @@ fn a_patterns_lets_see_the_names_of_its_body() {
         failures.push(format!("{cycle:?} names {names:?}"));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[path = "../../../tests/robustness_corpus/mod.rs"]
+mod robustness_corpus;
+
+#[test]
+fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() {
+    let mut failures = Vec::new();
+    let mut clean = 0;
+    for (vocabulary, texts) in robustness_corpus::corpora() {
+        let compiler = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        for text in &texts {
+            let source = Source {
+                path: "mutant.sym".into(),
+                text: text.clone(),
+            };
+            let tokens: Vec<(usize, usize)> = crate::syntax::lex(&source, &vocabulary)
+                .tokens
+                .iter()
+                .filter_map(|token| {
+                    let start = usize::try_from(token.range.start).ok()?;
+                    let end = usize::try_from(token.range.end).ok()?;
+                    Some((start, end))
+                })
+                .collect();
+            for mutant in robustness_corpus::mutants(text, &tokens) {
+                let sources = [Source {
+                    path: "mutant.sym".into(),
+                    text: mutant.clone(),
+                }];
+                let (diagnostics, found) = compiler.analyzed(&sources, placeholders);
+                let Some(found) = found else {
+                    continue;
+                };
+                if !errors_of(&diagnostics).is_empty() {
+                    continue;
+                }
+                clean += 1;
+                if !found.is_empty() {
+                    failures.push(format!("{mutant:?}: {found:?}"));
+                }
+            }
+        }
+    }
+    assert!(clean > 1_000, "{clean} mutants drew no error");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn the_evaluation_of_expanded_code_reports_what_a_kind_probe_meets() {
+    let items = [
+        "fn fib(n): if n < 2 then n else fib+(n - 1)",
+        "Clip c:
+    Note/(fib(3))",
+    ];
+    for text in in_every_order(&items) {
+        let (diagnostics, ()) = analyzed(&text, |_| ());
+        assert_eq!(
+            errors_at(&text, &diagnostics),
+            [(Code::NotAValue, "fib".to_string())],
+            "{text:?}"
+        );
+    }
 }

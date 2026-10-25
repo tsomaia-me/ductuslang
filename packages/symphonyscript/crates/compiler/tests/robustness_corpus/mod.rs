@@ -1,0 +1,66 @@
+use symphonyscript_core::Vocabulary;
+use symphonyscript_fixtures::{
+    bar_vocabulary, dsp_project, envelope_vocabulary, music_project, spec_examples, vocabulary,
+};
+
+const INSERTED: &[&str] = &[
+    "(", ")", "[", "]", ":", ",", "+", "-", "/", "x", "1", "when ", "\n",
+];
+
+const ENVELOPE_PROGRAMS: &[&str] = &[
+    "Env e | attack=(1s + 3)\n",
+    "Env e | attack=((1s + 3) / 2)\n",
+    "Env e | attack=(1s + 3ms)\n",
+    "Env e | attack=3i64\n",
+    "Env e | attack=i64(3)\n",
+    "Env e | attack=(1s + 3i32)\n",
+    "Env e | release=3i32\n",
+    "Env e | attack=(3i32 * 2.5)\n",
+    "let p = 3\nEnv e | attack=(p + 1s) pitch=p\n",
+    "let p = 3i32\nlet c = p > 1\nEnv e | attack=p pitch=p\nEnv f | attack=(if c then 1s else 2s)\n",
+    "input d = 5ms\nlet e = d * 2\nEnv a | attack=e release=(d + 1)\n",
+];
+
+const BAR_PROGRAMS: &[&str] = &[
+    "Bar b | len=(1bars + 1)\n",
+    "let d = 2bars + 1\nBar b | len=d beat_len=d\n",
+    "let k = (2bars + 1) div 1bars\nBar b | len=k\n",
+    "let p = 3i64\nBar b | len=p beat_len=p plain=p\n",
+    "fn g(): 1bars + 1\nlet x = g()\nBar b | len=(g()) beat_len=x\n",
+    "fn r(n): if n < 1 then 2bars + 1 else r(n - 1)\nBar b | len=(r(2)) beat_len=(r(0) + 1)\n",
+    "input n = 2\nBar b | len=(n + 1bars) beat_len=n\n",
+];
+
+pub fn corpora() -> Vec<(Vocabulary, Vec<String>)> {
+    let mut texts: Vec<String> = spec_examples()
+        .into_iter()
+        .filter(|example| example.tag == "sym")
+        .map(|example| example.text)
+        .collect();
+    for project in [music_project(), dsp_project()] {
+        texts.extend(project.files.into_iter().map(|file| file.text));
+    }
+    let owned = |programs: &[&str]| programs.iter().map(|text| text.to_string()).collect();
+    vec![
+        (vocabulary(), texts),
+        (envelope_vocabulary(), owned(ENVELOPE_PROGRAMS)),
+        (bar_vocabulary(), owned(BAR_PROGRAMS)),
+    ]
+}
+
+pub fn mutants(text: &str, tokens: &[(usize, usize)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for &(start, end) in tokens {
+        if start < end {
+            let mut deleted = text.to_string();
+            deleted.replace_range(start..end, "");
+            found.push(deleted);
+        }
+        for inserted in INSERTED {
+            let mut grown = text.to_string();
+            grown.insert_str(start, inserted);
+            found.push(grown);
+        }
+    }
+    found
+}
