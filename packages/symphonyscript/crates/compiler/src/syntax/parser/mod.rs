@@ -609,7 +609,18 @@ impl<'a> Parser<'a> {
             return true;
         }
         let found = self.describe();
+        let ended_by_line = matches!(
+            kind,
+            SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace
+        ) && (self.at_end()
+            || self.at_any(&[SyntaxKind::Newline, SyntaxKind::Indent, SyntaxKind::Dedent]));
+        let reported = self.diagnostics.len();
         self.error(code, format!("expected {what}, found {found}"));
+        if ended_by_line
+            && let Some(diagnostic) = self.diagnostics.get(reported..).and_then(<[_]>::first)
+        {
+            self.detached.push(diagnostic.span.range.clone());
+        }
         false
     }
 

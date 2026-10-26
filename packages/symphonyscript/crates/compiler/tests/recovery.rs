@@ -1072,3 +1072,92 @@ fn the_text_after_a_faulty_bracket_lexes_as_it_would_after_a_correct_one() {
         assert_eq!(found, vec![Code::ExpressionSyntax], "{text}");
     }
 }
+
+#[test]
+fn a_name_inside_a_faulty_part_of_a_kept_item_is_a_placeholder_wherever_it_is_used() {
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "Clip c:\n    Note/60 as n\n    Note | velocity=c.n.velocity\n",
+                "Clip d | gain=c.n.velocity:\n    Note\n",
+            ],
+            &[(Code::PlacementSyntax, "as")],
+        ),
+        (
+            &["Synth s:\n    Osc/220 as o\n    Filter:\n        Feeds: o\n"],
+            &[(Code::PlacementSyntax, "as")],
+        ),
+        (
+            &["Clip c:\n    Plays/0.5 as w: c\n    Note | velocity=c.w.gain\n"],
+            &[(Code::WireSyntax, "as")],
+        ),
+        (
+            &["Clip c:\n    [Note/60 as n, Note]\n    Note | velocity=c.n.velocity\n"],
+            &[(Code::BundleSyntax, "as")],
+        ),
+        (
+            &["Clip c as k:\n    Note\n", "Clip d:\n    Plays: k\n"],
+            &[(Code::PlacementSyntax, "as")],
+        ),
+        (
+            &["Clip c:\n    Note as n /60\n    Note | velocity=c.n.velocity\n"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    Note\n    Note | velocity=c.m.velocity\n"],
+            &[(Code::UnknownAttribute, "m")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
+    let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    type Row<'a> = (&'a [&'a str], &'a [Code], &'a [(Code, &'a str)]);
+    let rows: [Row; 4] = [
+        (
+            &["Clip c:\n    Note/(1 + 2\n", "Clip d:\n    Note | loud=1\n"],
+            &[Code::DefaultArgSyntax, Code::UnknownAttribute],
+            &[(Code::UnknownAttribute, "loud")],
+        ),
+        (
+            &["let a = (1 + 2\n", "Clip z:\n    Note | loud=1\n"],
+            &[Code::ExpressionSyntax, Code::UnknownAttribute],
+            &[(Code::UnknownAttribute, "loud")],
+        ),
+        (
+            &[
+                "Clip c:\n    Note/(1 +\n    Note/2\n",
+                "Clip d:\n    Note\n",
+            ],
+            &[Code::DefaultArgSyntax],
+            &[],
+        ),
+        (
+            &[
+                "Clip c:\n    Note/(1 +\n        2)\n",
+                "Clip d:\n    Note\n",
+            ],
+            &[],
+            &[],
+        ),
+    ];
+    for (items, codes, spanned) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::error_texts(&compiler, &text);
+            let mut found_codes: Vec<Code> = found.iter().map(|(code, _)| *code).collect();
+            found_codes.sort();
+            let mut wanted = codes.to_vec();
+            wanted.sort();
+            assert_eq!(found_codes, wanted, "{text}");
+            for (code, piece) in spanned {
+                assert!(
+                    found.contains(&(*code, (*piece).to_string())),
+                    "{text}{found:?}"
+                );
+            }
+        }
+    }
+}

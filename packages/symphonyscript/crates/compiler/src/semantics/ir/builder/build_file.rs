@@ -1,6 +1,6 @@
 use symphonyscript_core::Vocabulary;
 
-use super::bodies::{skipped_block, skipped_names};
+use super::bodies::{error_names, skipped_block, skipped_names};
 use super::faults::Faults;
 use super::hir_builder::HirBuilder;
 use crate::semantics::Internal;
@@ -16,15 +16,15 @@ pub(crate) fn build_file(
 ) -> Result<(), Internal> {
     let file = u32::try_from(hir.files.len()).unwrap_or(u32::MAX);
     hir.files.push(path.to_string());
+    let Some(root) = parsed.file() else {
+        return Ok(());
+    };
     let mut builder = HirBuilder {
         hir,
         file,
-        faults: Faults::new(&parsed.diagnostics, &parsed.detached),
+        faults: Faults::new(&parsed.diagnostics, &parsed.detached, root.syntax()),
         vocabulary,
         dropped: false,
-    };
-    let Some(root) = parsed.file() else {
-        return Ok(());
     };
     let mut previous = None;
     let mut skipped = Vec::new();
@@ -36,7 +36,8 @@ pub(crate) fn build_file(
                 }
                 _ => skipped.extend(skipped_names(&child)),
             }
-        } else if let Some(item) = Item::cast(child) {
+        } else if let Some(item) = Item::cast(child.clone()) {
+            skipped.extend(error_names(&child));
             previous = builder.item(item)?;
         } else {
             previous = None;

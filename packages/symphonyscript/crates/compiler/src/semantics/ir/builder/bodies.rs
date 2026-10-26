@@ -27,6 +27,19 @@ pub(super) fn skipped_names(node: &NodeView<'_>) -> Vec<String> {
         .collect()
 }
 
+pub(super) fn error_names(node: &NodeView<'_>) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut stack: Vec<NodeView<'_>> = node.children().collect();
+    while let Some(current) = stack.pop() {
+        match current.kind() {
+            SyntaxKind::ErrorNode => names.extend(skipped_names(&current)),
+            SyntaxKind::Body => {}
+            _ => stack.extend(current.children()),
+        }
+    }
+    names
+}
+
 pub(super) fn skipped_block(node: &NodeView<'_>) -> bool {
     node.kind() == SyntaxKind::ErrorNode
         && node
@@ -132,6 +145,8 @@ impl<'p> HirBuilder<'_> {
                     self.body_item(item, &mut items, &mut pending);
                     if self.dropped {
                         skipped.extend(skipped_names(&child));
+                    } else {
+                        skipped.extend(error_names(&child));
                     }
                     previous = match items.get(before..) {
                         Some([BodyItem::Placement(placement)]) if lone => Some(*placement),
@@ -146,6 +161,8 @@ impl<'p> HirBuilder<'_> {
                     self.member(member, position > 0, &mut items, &mut pending);
                     if self.dropped {
                         skipped.extend(skipped_names(&syntax));
+                    } else {
+                        skipped.extend(error_names(&syntax));
                     }
                 }
             }
