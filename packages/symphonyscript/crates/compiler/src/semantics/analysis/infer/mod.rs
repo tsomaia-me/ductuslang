@@ -24,8 +24,9 @@ use array_checks::ArrayPosition;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::BindingId;
+use crate::semantics::analysis::ids::{BindingId, WireId};
 use crate::semantics::analysis::val::Val;
 
 impl Engine<'_> {
@@ -124,6 +125,12 @@ impl Engine<'_> {
             if let Some(own) = self.typing.own.get(&binding).copied() {
                 let init = self.binding(binding)?.init;
                 self.check(init, Some(own), false, &mut roots)?;
+            }
+        }
+        for index in 0..self.wires.len() {
+            let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
+            if let Some(Destination::Select { node, .. }) = self.memo.destinations.get(&wire) {
+                self.destination_labels(*node)?;
             }
         }
         self.values(&roots)?;

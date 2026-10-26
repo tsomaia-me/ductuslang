@@ -5,6 +5,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_float::is_float;
@@ -15,6 +16,7 @@ use crate::semantics::analysis::outside_i64::outside_i64;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
+use crate::semantics::ir::Suffix;
 
 impl Engine<'_> {
     pub(super) fn check(
@@ -182,6 +184,11 @@ impl Engine<'_> {
                     let scrutinee_ty = self.synth(scrutinee)?;
                     stack.push((scrutinee, scrutinee_ty, selection));
                     let scrutinee_sig = self.known_sig(scrutinee)?;
+                    if scrutinee_sig.kind == Kind::Int {
+                        for (label, _) in &arms {
+                            self.label_fit(*label, scrutinee_ty)?;
+                        }
+                    }
                     let chosen = match (selection, self.scrutinee_ty(scrutinee, &scrutinee_sig)) {
                         (Selection::Chosen | Selection::Evaluated, Some(label_ty)) => self
                             .chosen(scrutinee, label_ty)?
@@ -402,6 +409,46 @@ impl Engine<'_> {
             return Ok(None);
         }
         Ok(Some(self.demand_cval(node, ty)?))
+    }
+
+    pub(super) fn destination_labels(&mut self, root: NodeId) -> Result<(), Internal> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            match self.node(node)?.op.clone() {
+                Op::If(_, then, otherwise) => stack.extend([then, otherwise]),
+                Op::Pick { items, .. } => stack.extend(items),
+                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => stack.push(inner),
+                Op::Match {
+                    scrutinee,
+                    arms,
+                    otherwise,
+                } => {
+                    if self.known_sig(scrutinee)?.kind == Kind::Int {
+                        let scrutinee_ty = self.synth(scrutinee)?;
+                        for (label, _) in &arms {
+                            self.label_fit(*label, scrutinee_ty)?;
+                        }
+                    }
+                    stack.extend(arms.iter().map(|(_, value)| *value).chain(otherwise));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn label_fit(&mut self, label: NodeId, scrutinee: Option<Scalar>) -> Result<(), Internal> {
+        let Op::Number(_, suffix) = self.node(label)?.op else {
+            return Ok(());
+        };
+        let ty = match suffix {
+            Suffix::Type(scalar) => scalar,
+            Suffix::None | Suffix::Unit { .. } => scrutinee
+                .filter(|scalar| is_integer(*scalar))
+                .unwrap_or(Scalar::I64),
+        };
+        self.demand_cval(label, eval_ty_of(Some(ty)))?;
+        Ok(())
     }
 
     fn pair(&mut self, lhs: NodeId, rhs: NodeId) -> Result<Option<Scalar>, Internal> {

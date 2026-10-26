@@ -3709,6 +3709,86 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
 }
 
 #[test]
+fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
+    let byte = "input b: u8 = 3\n";
+    let int = "input b: i32 = 3\n";
+    let wide = "input b = 3\n";
+    let read = "Clip c:\n    Note/(v)\n";
+    let labelled = |scrutinee: &str, label: &str| {
+        format!("let v = match {scrutinee}:\n    {label}: 1\n    else: 2\n")
+    };
+    let suffixed = labelled("b", "300u8");
+    let past = labelled("b", "300");
+    let negative = labelled("b", "-1");
+    let past_i32 = labelled("b", "3000000000");
+    let past_suffixed = labelled("b", "3000000000i32");
+    let past_i64 = labelled("b", "9223372036854775808");
+    let through_let = labelled("s", "300");
+    let top = labelled("b", "255u8");
+    let top_flexible = labelled("b", "255");
+    let zero = labelled("b", "0");
+    let other = labelled("b", "3i32");
+    let rows: &[support::Row] = &[
+        (&[byte, &suffixed, read], &[(Code::DoesNotFit, "300u8")]),
+        (&[byte, &past, read], &[(Code::DoesNotFit, "300")]),
+        (&[byte, &negative, read], &[(Code::DoesNotFit, "-1")]),
+        (&[int, &past_i32, read], &[(Code::DoesNotFit, "3000000000")]),
+        (
+            &[int, &past_suffixed, read],
+            &[(Code::DoesNotFit, "3000000000i32")],
+        ),
+        (
+            &[wide, &past_i64, read],
+            &[(Code::DoesNotFit, "9223372036854775808")],
+        ),
+        (
+            &["let b = u8(3)\n", &past, read],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[byte, "let s = b\n", &through_let, read],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                byte,
+                "fn pick(x):\n    match x:\n        300: 1\n        else: 2\n",
+                "Clip c:\n    Note/(pick(b))\n",
+            ],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                byte,
+                "Clip a:\n    Note\n    Plays: match b:\n        300: a\n        else: a\n",
+            ],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                "let b = u8(3)\n",
+                "Clip a:\n    Note\n    Plays: match b:\n        300: a\n        else: a\n",
+            ],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (&[byte, &top, read], &[]),
+        (&[byte, &top_flexible, read], &[]),
+        (&[byte, &zero, read], &[]),
+        (&[wide, &past_i32, read], &[]),
+        (&[byte, &other, read], &[(Code::MatchLabel, "3i32")]),
+        (
+            &[
+                "input wave = Wave::Saw\n",
+                "let level = match wave:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\n",
+                "Clip c | gain=level:\n    Note\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn an_annotation_is_its_initializers_expected_type() {
     let rows: &[support::Row] = &[
         (&["input w: Wave = Saw\n", "Osc o | wave=w\n"], &[]),
