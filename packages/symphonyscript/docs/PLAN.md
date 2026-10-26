@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M3 and M5 and `high` for M1 and M4. In M2, M2b, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
+- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
 ### Decisions
 
@@ -25,7 +25,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 ### Work and checks
 
 - Commits go directly on `main` in the main checkout, one step at a time, each step passing the checks. There are no pull requests. At the end of each milestone the implementer pushes `main` to the branch `symphonyscript/progress` on `origin` with `git push origin main:symphonyscript/progress`, never forced, so no work is lost; the owner pushes `main`.
-- One implementer runs at a time. The head commits its document edits on `main` only while no implementer runs.
+- One implementer runs on `main` at a time. M4a's implementer runs beside M3's in a git worktree of its own, committing on a branch that the head merges into `main` with a merge commit; every other rule of this section binds it. The head commits its document edits on `main` only while no implementer runs there.
 - The implementer keeps its progress in `.memory/symphonyscript/M<n>.md`: steps done, the gaps it found, and the next step. After a compaction it continues from the repository and that file.
 - Checks, run by the implementer before every commit and by the reviewer at review: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo build -p symphonyscript-core --target thumbv7em-none-eabihf`.
 - The implementer adds no dependency this plan does not name; another dependency is a gap.
@@ -138,27 +138,39 @@ Exit:
 - A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
 
-## M4: Delivery and tooling
+## M4a: Language server and editors
 
-Generated Rust, the tool, the watch loop, the language server, the VS Code extension and the JetBrains plugin.
+The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It runs beside M3 (§ Order).
+
+Steps:
+1. The tool: `Tool::new`, framework commands, `Project`, `new`, `check` and single-file mode (ARCHITECTURE §9), and the `lsp` command.
+2. The language server on `lsp-server`.
+3. The VS Code extension: the static grammar and the language client.
+4. The JetBrains plugin: highlighting from the grammar or the server's semantic tokens, and the language client on the IntelliJ Platform's LSP API.
+
+Exit:
+- End-to-end tests for `new` and `check`, and for single-file mode.
+- Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects.
+- The extension starts the language server for a sample project.
+- The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
+- The language server handles M2's deep sources on a thread with a 1 MiB stack.
+- `symphony.toml`'s `[limits]` and `--limit` reach the compiler and the language server, a flag overriding the file.
+
+## M4b: Delivery
+
+Generated Rust, `dump`, the watch loop, and what of the tool needs the runtime.
 
 Steps:
 1. `codegen::generate` and a fixture framework's `build.rs` that uses it.
-2. The tool: `Tool::new`, framework commands, `Project`, `new`, `check`, `dump`, single-file mode (ARCHITECTURE §9).
+2. The tool's `dump`.
 3. The watch loop: recompile, prepare, consumer acceptance, install.
-4. The language server on `lsp-server`.
-5. The VS Code extension: the static grammar and the language client.
-6. The JetBrains plugin: highlighting from the grammar or the server's semantic tokens, and the language client on the IntelliJ Platform's LSP API.
 
 Exit:
 - Every fixture project compiled through the library and through `codegen` gives equal Programs and equal commit traces.
 - A generated Program builds for `thumbv7em-none-eabihf`.
-- End-to-end tests for `new`, `check` and `dump`, and for single-file mode.
-- Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects.
-- The extension starts the language server for a sample project.
-- The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
-- `codegen` and the language server handle M2's deep sources on a thread with a 1 MiB stack.
-- `symphony.toml`'s `[limits]` and `--limit` reach the compiler, the runtime and the language server, a flag overriding the file.
+- End-to-end tests for `dump`.
+- `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
+- `symphony.toml`'s `[limits]` and `--limit` reach the runtime, a flag overriding the file.
 
 ## M5: Kernel adapter
 
@@ -177,4 +189,4 @@ Exit:
 
 ## Order
 
-M1, M2, M2b and M3 run in order. M4 and M5 each need M3 and run one after the other, M4 first.
+M1, M2, M2b and M3 run in order. M4a needs M2b and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.
