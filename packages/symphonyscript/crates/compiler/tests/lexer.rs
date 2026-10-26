@@ -457,6 +457,36 @@ fn every_sym_example_lexes_without_errors() {
 }
 
 #[test]
+fn every_sym_example_lexes_alike_after_a_history_read() {
+    let prefix = "input x = 1\nstate s = x{1, 0}\n";
+    for example in spec_examples() {
+        if example.tag == "sym" || example.tag == "sym-error" {
+            let joined = format!("{prefix}{}", example.text);
+            let lexed = lex(&source(&joined), &vocabulary());
+            let after: Vec<String> = lexed
+                .tokens
+                .iter()
+                .skip_while(|token| (token.range.start as usize) < prefix.len())
+                .map(|token| {
+                    let range = token.range.start as usize..token.range.end as usize;
+                    format!("{:?}({})", token.kind, &joined[range])
+                })
+                .collect();
+            let alone = lex(&source(&example.text), &vocabulary());
+            let expected: Vec<String> = alone
+                .tokens
+                .iter()
+                .map(|token| {
+                    let range = token.range.start as usize..token.range.end as usize;
+                    format!("{:?}({})", token.kind, &example.text[range])
+                })
+                .collect();
+            assert_eq!(after, expected, "{}", example.name());
+        }
+    }
+}
+
+#[test]
 fn keyword_and_word_lists_agree_with_core() {
     for keyword in symphonyscript_core::KEYWORDS {
         assert!(SyntaxKind::keyword(keyword).is_some(), "{keyword}");

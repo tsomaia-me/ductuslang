@@ -535,7 +535,7 @@ impl<'a> Lexer<'a> {
     fn unterminated_start(&self) -> Option<usize> {
         self.modes.iter().find_map(|mode| match mode {
             Mode::String { start, .. } => Some(*start),
-            Mode::Interp { .. } | Mode::Brace => None,
+            Mode::Interp { .. } | Mode::Brace { .. } => None,
         })
     }
 
@@ -594,12 +594,19 @@ impl<'a> Lexer<'a> {
             }
             '{' => {
                 self.pos += 1;
+                let depth = self.depth;
                 self.push(SyntaxKind::LBrace, start);
-                self.modes.push(Mode::Brace);
+                self.modes.push(Mode::Brace { depth });
             }
-            '}' if matches!(self.modes.last(), Some(Mode::Brace)) => {
+            '}' if matches!(self.modes.last(), Some(Mode::Brace { .. })) => {
                 self.pos += 1;
-                self.modes.pop();
+                if let Some(Mode::Brace { depth }) = self.modes.pop() {
+                    self.depth = depth.saturating_add(1);
+                }
+                self.push(SyntaxKind::RBrace, start);
+            }
+            '}' if self.depth > 0 => {
+                self.pos += 1;
                 self.push(SyntaxKind::RBrace, start);
             }
             '0'..='9' => self.number(),
@@ -1011,6 +1018,11 @@ impl<'a> Lexer<'a> {
                 }
                 SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => {
                     self.depth = self.depth.saturating_sub(1);
+                    while let Some(Mode::Brace { depth }) = self.modes.last()
+                        && *depth >= self.depth
+                    {
+                        self.modes.pop();
+                    }
                 }
                 _ => {}
             }

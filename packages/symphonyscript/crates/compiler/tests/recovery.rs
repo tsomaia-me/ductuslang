@@ -1,6 +1,8 @@
 mod support;
 
 use symphonyscript::Code;
+use symphonyscript::syntax::{SyntaxKind, lex};
+use symphonyscript_fixtures::vocabulary;
 
 type Expected = &'static [(Code, u32, u32)];
 
@@ -1011,5 +1013,62 @@ fn recovery_resynchronizes_at_state_lines_and_treats_a_history_read_as_an_expres
             .map(|diagnostic| diagnostic.code)
             .collect();
         assert_eq!(codes, vec![*code], "{text}");
+    }
+}
+
+#[test]
+fn the_text_after_a_faulty_bracket_lexes_as_it_would_after_a_correct_one() {
+    let clips: String = (1..=3)
+        .map(|n| format!("Clip c{n}:\n    Note/62 | velocity=0.7\n              brightness=0.5\n"))
+        .collect();
+    let rows: &[(&str, &str, &str, &str)] = &[
+        ("input x = 1\nstate s = ", "x{1]", "x{1}", "]"),
+        ("input x = 1\nstate s = ", "x{1)", "x{1}", ")"),
+        ("input x = 1\nstate s = ", "x{(1}", "x{(1)}", "}"),
+        ("input x = 1\nstate s = ", "(x{1}]", "(x{1})", "]"),
+        ("input x = 1\nstate s = ", "[x{1})", "[x{1}]", ")"),
+        ("input x = 1\nlet z = ", "x{1]", "x{1}", "]"),
+        ("input x = 1\nlet z = ", "x{(1}", "x{(1)}", "}"),
+        ("input x = 1\nlet z = ", "(1}", "(1)", "}"),
+    ];
+    for (before, faulty, correct, closer) in rows {
+        for (head, tail) in [
+            (format!("{before}{faulty}\nlet y = 2\n"), clips.clone()),
+            (
+                format!("let y = 2\n{}{before}{faulty}\n", &clips[..clips.len() / 3]),
+                clips[clips.len() / 3..].to_string(),
+            ),
+        ] {
+            let text = format!("{head}{tail}");
+            let fixed = format!("{}{tail}", head.replacen(faulty, correct, 1));
+            let after = |text: &str, from: usize| -> Vec<(SyntaxKind, String)> {
+                lex(&support::source(text), &vocabulary())
+                    .tokens
+                    .iter()
+                    .filter(|token| token.range.start as usize >= from)
+                    .map(|token| {
+                        let range = token.range.start as usize..token.range.end as usize;
+                        (token.kind, text[range].to_string())
+                    })
+                    .collect()
+            };
+            assert_eq!(
+                after(&text, head.len()),
+                after(&fixed, fixed.len() - tail.len()),
+                "{text}"
+            );
+            let start = head.find(faulty).unwrap_or(0) + faulty.rfind(closer).unwrap_or(0);
+            let parsed: Vec<(Code, u32, u32)> = support::codes(&text);
+            assert_eq!(parsed.len(), 1, "{text}{parsed:?}");
+            assert_eq!(parsed[0].1 as usize, start, "{text}{parsed:?}");
+        }
+    }
+    for faulty in ["x{1]", "x{1)", "x{(1}"] {
+        let text = format!("input x = 1\nstate s = {faulty}\nlet y = 2\n{clips}");
+        let found: Vec<Code> = support::checked(&text)
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(found, vec![Code::ExpressionSyntax], "{text}");
     }
 }
