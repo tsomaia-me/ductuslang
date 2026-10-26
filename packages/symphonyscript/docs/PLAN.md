@@ -162,13 +162,13 @@ Generated Rust, `dump`, the watch loop, and what of the tool needs the runtime.
 
 Steps:
 1. `codegen::generate` and a fixture framework's `build.rs` that uses it.
-2. The tool's `dump`.
+2. The tool's `dump`, and `check` printing the memory figure (SPEC §12.6).
 3. The watch loop: recompile, prepare, consumer acceptance, install.
 
 Exit:
 - Every fixture project compiled through the library and through `codegen` gives equal Programs and equal commit traces.
 - A generated Program builds for `thumbv7em-none-eabihf`.
-- End-to-end tests for `dump`.
+- End-to-end tests for `dump`, and for `check` printing the memory figure.
 - `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
 - `symphony.toml`'s `[limits]` and `--limit` reach the runtime, a flag overriding the file.
 
