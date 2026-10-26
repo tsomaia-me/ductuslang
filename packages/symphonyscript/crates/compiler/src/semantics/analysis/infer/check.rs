@@ -126,11 +126,11 @@ impl Engine<'_> {
                         {
                             continue;
                         }
-                        self.synth(lhs)?;
-                        self.synth(rhs)?;
+                        let left = self.synth(lhs)?;
+                        let right = self.synth(rhs)?;
                         let pair = self.pair(lhs, rhs)?;
-                        stack.push((lhs, pair, selection));
-                        stack.push((rhs, pair, selection));
+                        stack.push((lhs, compared(left, pair), selection));
+                        stack.push((rhs, compared(right, pair), selection));
                     }
                     BinaryOp::IntDiv if ty.is_some_and(is_float) => {
                         self.synth(lhs)?;
@@ -536,6 +536,14 @@ impl Engine<'_> {
             )?;
         }
         Ok(())
+    }
+}
+
+fn compared(own: Option<Scalar>, pair: Option<Scalar>) -> Option<Scalar> {
+    let numeric = |scalar: Scalar| is_integer(scalar) || is_float(scalar);
+    match (own, pair) {
+        (Some(own), Some(pair)) if numeric(own) && numeric(pair) => Some(own),
+        _ => pair,
     }
 }
 

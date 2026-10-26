@@ -3491,6 +3491,119 @@ fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
 }
 
 #[test]
+fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners() {
+    let big = "input big = 1\n";
+    let flag = "input flag = false\n";
+    let u8_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "u8(255) + 4")];
+    let i32_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 + 1")];
+    let i32_product: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 * 2")];
+    let rows: &[support::Row] = &[
+        (
+            &[big, "Clip c:\n    Note when big > 2147483647i32 + 1\n"],
+            i32_sum,
+        ),
+        (&[big, "Clip c:\n    Note when big > u8(255) + 4\n"], u8_sum),
+        (&[big, "Clip c:\n    Note when u8(255) + 4 < big\n"], u8_sum),
+        (
+            &[
+                "input k = 1\n",
+                "Clip c:\n    Note when k < 2147483647i32 * 2\n",
+            ],
+            i32_product,
+        ),
+        (
+            &[
+                "input k = 1\n",
+                "let r = k > u8(255) + 4\n",
+                "Clip c:\n    Note when r\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[big, "Clip c:\n    Note when big >= u8(255) + 4\n"],
+            u8_sum,
+        ),
+        (
+            &[big, "Clip c:\n    Note when u8(255) + 4 <= big\n"],
+            u8_sum,
+        ),
+        (
+            &[big, "Clip c:\n    Note when big is u8(255) + 4\n"],
+            u8_sum,
+        ),
+        (
+            &[big, "Clip c:\n    Note when u8(255) + 4 is not big\n"],
+            u8_sum,
+        ),
+        (
+            &[
+                big,
+                "Clip c:\n    Note/(if big > u8(255) + 4 then 60 else 62)\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                big,
+                "Clip c:\n    when:\n        big > u8(255) + 4: Note/60\n        else: Note/62\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                big,
+                "Clip c:\n    when u8(255) + 4 < big:\n        Note/60\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                big,
+                "fn over(x): x > u8(255) + 4\n",
+                "Clip c:\n    Note when over(big)\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                big,
+                "pattern Gated(default on):\n    Note when on\n",
+                "Clip c:\n    Gated/(big > u8(255) + 4)\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                big,
+                flag,
+                "Clip c:\n    Note when big > (if flag then u8(255) + 4 else 0)\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &["Clip c:\n    Note when 1i64 > 2147483647i32 + 1\n"],
+            i32_sum,
+        ),
+        (&["Clip c:\n    Note when u8(255) + 4 > 1i32\n"], u8_sum),
+        (
+            &["input k = 1\n", "Clip c:\n    Note/(k + (u8(255) + 4))\n"],
+            &[],
+        ),
+        (&[big, "Clip c:\n    Note when big > u8(250) + 4\n"], &[]),
+        (&[big, "Clip c:\n    Note when big > 2147483647 + 1\n"], &[]),
+        (
+            &[
+                big,
+                flag,
+                "Clip c:\n    Note when big > (if flag then u8(250) + 4 else 300)\n",
+            ],
+            &[(Code::DoesNotFit, "300")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
     let rows: &[support::Row] = &[
         (
