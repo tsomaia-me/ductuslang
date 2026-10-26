@@ -1,3 +1,4 @@
+use symphonyscript_core::Limits;
 use symphonyscript_fixtures::{native_vocabulary, vocabulary};
 
 use super::Engine;
@@ -17,7 +18,16 @@ fn analyzed<R>(
     text: &str,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> (Vec<Diagnostic>, R) {
-    let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+    analyzed_within(vocabulary, Limits::default(), text, inspect)
+}
+
+fn analyzed_within<R>(
+    vocabulary: &symphonyscript_core::Vocabulary,
+    limits: Limits,
+    text: &str,
+    inspect: impl FnOnce(&Engine<'_>) -> R,
+) -> (Vec<Diagnostic>, R) {
+    let compiler = Compiler::with_limits(vocabulary, limits).expect("the vocabulary compiles");
     let source = Source {
         path: "test.sym".into(),
         text: text.into(),
@@ -128,10 +138,63 @@ fn a_native_function_is_called_at_compile_time_with_compile_time_arguments() {
 
 #[test]
 fn a_bounded_call_yields_its_fallback_nested_inside_its_bound() {
-    let text = "fn count(i) bounded 3 else 100: count(i + 1) + 1\nClip c:\n    Note/(count(0))\n";
-    let (diagnostics, value) = analyzed(&vocabulary(), text, |engine| {
-        attr_value(engine, "pitch", EvalTy::I32)
+    let cases: [(&str, i128); 3] = [
+        ("fn count(i) bounded 3 else 100: count(i + 1) + 1\n", 103),
+        ("fn count(i) bounded 2 else 100: count(i) + 1\n", 102),
+        (
+            "fn count(i) bounded 2 else 0: g(i) + 1\nfn g(i) bounded 2 else 0: count(i) + 10\n",
+            22,
+        ),
+    ];
+    for (functions, expected) in cases {
+        let text = format!("{functions}Clip c:\n    Note/(count(0))\n");
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(expected)), "{functions}");
+    }
+}
+
+fn counted(bound: u64, limits: Limits) -> (Vec<Diagnostic>, Option<CVal>, u64) {
+    let text = format!(
+        "fn count(i) bounded {bound} else 0: count(i + 1) + 1\nClip c:\n    Note/(count(0) - {bound})\n"
+    );
+    let (diagnostics, (value, work)) = analyzed_within(&vocabulary(), limits, &text, |engine| {
+        (
+            attr_value(engine, "pitch", EvalTy::I32),
+            engine.memo.evaluation_work,
+        )
     });
-    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
-    assert_eq!(value, Some(CVal::Int(103)));
+    (diagnostics, value, work)
+}
+
+#[test]
+fn a_bounded_function_evaluates_in_work_linear_in_its_levels() {
+    let (small_diagnostics, small_value, small) = counted(25_000, Limits::default());
+    let (large_diagnostics, large_value, large) = counted(100_000, Limits::default());
+    assert!(
+        errors(&small_diagnostics).is_empty(),
+        "{small_diagnostics:?}"
+    );
+    assert!(
+        errors(&large_diagnostics).is_empty(),
+        "{large_diagnostics:?}"
+    );
+    assert_eq!(
+        (small_value, large_value),
+        (Some(CVal::Int(0)), Some(CVal::Int(0)))
+    );
+    assert!(large <= 4 * small, "{small} {large}");
+    let limits = Limits {
+        recursive_calls: 20_000,
+        ..Limits::default()
+    };
+    let (diagnostics, _, work) = counted(2_000_000, limits);
+    let codes: Vec<_> = errors(&diagnostics)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(codes, vec![crate::diagnostics::Code::RecursionLimit]);
+    assert!(work <= small, "{work} {small}");
 }

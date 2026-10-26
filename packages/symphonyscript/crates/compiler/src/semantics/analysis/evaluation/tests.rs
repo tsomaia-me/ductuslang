@@ -50,6 +50,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             Machine {
                 frames: Vec::new(),
                 work: vec![(0, call, EvalTy::Exact)],
+                open: FastMap::default(),
             },
         );
         assert_eq!(
@@ -80,6 +81,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 unbounded: 1,
             }],
             work: Vec::new(),
+            open: FastMap::default(),
         });
         assert_eq!(engine.frame_arg(0, 0), Err(Internal::missed("argument")));
         assert_eq!(

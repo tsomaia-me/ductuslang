@@ -167,30 +167,24 @@ impl Engine<'_> {
         }
     }
 
-    fn call_nesting(&self, function: FnId, node: NodeId, ctx: Ctx) -> Result<u64, Internal> {
+    fn call_nesting(&mut self, function: FnId, node: NodeId, ctx: Ctx) -> Result<u64, Internal> {
         if self.limit_of(function)?.is_none() {
             return Ok(0);
         }
+        self.memo.evaluation_work += 1;
         let (outer, chain) = match ctx {
             Ctx::Global => (node, 0),
-            Ctx::Frame(frame) => {
+            Ctx::Frame(_) => {
                 let machine = self
                     .active
                     .as_ref()
                     .ok_or(Internal::missed("evaluation machine"))?;
-                let chain = machine
+                let outer = machine
                     .frames
-                    .get(..=frame)
-                    .ok_or(Internal::missed("evaluation frame"))?;
-                let outer = chain
                     .first()
                     .ok_or(Internal::missed("evaluation frame"))?
                     .call;
-                let own = chain
-                    .iter()
-                    .filter(|record| record.function == function)
-                    .count();
-                (outer, u64::try_from(own).unwrap_or(u64::MAX))
+                (outer, machine.open.get(&function).copied().unwrap_or(0))
             }
         };
         let base = self.nesting_in(self.node(outer)?.scope, function)?;
@@ -446,12 +440,14 @@ impl Engine<'_> {
                         unbounded,
                     }],
                     work: vec![(0, root, ty)],
+                    open: [(call.function, 1)].into_iter().collect(),
                 }
             }
         };
         let root_key = call.key;
         self.active = Some(machine);
         loop {
+            self.memo.evaluation_work += 1;
             let &(frame, current, ty) = self
                 .machine_mut()?
                 .work
@@ -474,9 +470,16 @@ impl Engine<'_> {
                         .ok_or(Internal::missed("evaluation frame"))?;
                     record.memo.insert((current, ty), value.clone());
                     if record.root == current && record.ty == ty {
-                        let (key, call, expected) =
-                            (record.key.clone(), record.call, record.expected);
+                        let (key, call, expected, function) = (
+                            record.key.clone(),
+                            record.call,
+                            record.expected,
+                            record.function,
+                        );
                         machine.frames.pop();
+                        if let Some(open) = machine.open.get_mut(&function) {
+                            *open = open.saturating_sub(1);
+                        }
                         let value = self.call_result(call, current, expected, value)?;
                         self.memo.calls.insert(key, value.clone());
                         if frame == 0 {
@@ -565,6 +568,7 @@ impl Engine<'_> {
         let ty = self.body_type(root, own)?;
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
+        *machine.open.entry(call.function).or_insert(0) += 1;
         machine.frames.push(Frame {
             key: call.key,
             function: call.function,

@@ -42,6 +42,7 @@ pub(crate) struct Memo {
     pub bounded_roots: FastMap<(crate::semantics::ir::FnId, super::ids::ScopeId), NodeId>,
     pub fallback_joins: super::fast_hash::FastSet<NodeId>,
     pub capacity_rounds: u64,
+    pub evaluation_work: u64,
     pub string_bytes: FastMap<NodeId, NodeId>,
     pub lengths: FastMap<NodeId, Val>,
     pub from_ends: FastMap<(ExprId, super::ids::ScopeId), NodeId>,
