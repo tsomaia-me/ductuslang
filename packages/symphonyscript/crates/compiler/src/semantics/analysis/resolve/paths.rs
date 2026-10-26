@@ -864,8 +864,8 @@ impl Engine<'_> {
         };
         let loc = self.hir.expr(expr)?.loc;
         let node = match val {
-            Val::Scalar(node) => node,
-            Val::Array(_) => {
+            Val::Scalar(node) if !self.arrays.contains(&node) => node,
+            Val::Scalar(_) | Val::Array(_) => {
                 self.error(
                     Code::DestinationType,
                     loc,

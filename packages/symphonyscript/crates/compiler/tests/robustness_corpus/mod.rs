@@ -5,7 +5,8 @@ use symphonyscript_fixtures::{
 };
 
 const INSERTED: &[&str] = &[
-    "(", ")", "[", "]", ":", ",", "+", "-", "/", "x", "1", "when ", "\n",
+    "(", ")", "[", "]", ":", ",", "+", "-", "/", "x", "1", "when ", "\n", "{", "}", "^", "..",
+    "bounded ", "state ", "u8 ", "to.", "bytes ",
 ];
 
 const ENVELOPE_PROGRAMS: &[&str] = &[

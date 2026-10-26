@@ -1,4 +1,5 @@
 mod robustness_corpus;
+mod support;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -121,4 +122,38 @@ fn no_mutant_of_a_bounded_function_reading_a_cell_through_a_let_draws_an_interna
         }
     }
     assert_eq!(failures, Vec::<String>::new());
+}
+
+#[test]
+fn a_destination_sliced_by_a_cell_is_refused_as_an_array() {
+    let targets = "Clip chorus:\n    Note as hook /72\nClip bridge:\n    Note as hook /67\n";
+    support::assert_rows_in_every_order(
+        &vocabulary(),
+        &[
+            (
+                &[
+                    "input section = 0\n",
+                    "Clip verse:\n    Plays | gain=to.hook.velocity: [chorus, bridge][..section]\n",
+                    targets,
+                ],
+                &[(Code::DestinationType, "[chorus, bridge][..section]")],
+            ),
+            (
+                &[
+                    "input section = 0\n",
+                    "Clip verse:\n    Plays: [chorus, bridge][section..]\n",
+                    targets,
+                ],
+                &[(Code::DestinationType, "[chorus, bridge][section..]")],
+            ),
+            (
+                &[
+                    "input section = 0\n",
+                    "Clip verse:\n    Plays: [chorus, bridge][section]\n",
+                    targets,
+                ],
+                &[],
+            ),
+        ],
+    );
 }
