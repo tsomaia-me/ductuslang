@@ -22,3 +22,4 @@ mod selection;
 mod shaped;
 
 pub(crate) use layout_found::LayoutFound;
+pub(crate) use length_limit::LENGTH_LIMIT;

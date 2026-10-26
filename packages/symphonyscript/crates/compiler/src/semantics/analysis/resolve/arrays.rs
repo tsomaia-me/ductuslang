@@ -688,11 +688,18 @@ impl Engine<'_> {
                         }))
                     } else {
                         match (left.outer(), right.outer()) {
-                            (Some(a), Some(b)) => {
-                                let mut lengths = inner;
-                                lengths.push(a.saturating_add(b));
-                                Ok(Some(Layout::fixed(lengths)))
-                            }
+                            (Some(a), Some(b)) => match a.checked_add(b) {
+                                Some(length) if length < LENGTH_LIMIT => {
+                                    let mut lengths = inner;
+                                    lengths.push(length);
+                                    Ok(Some(Layout::fixed(lengths)))
+                                }
+                                Some(_) | None => Err(Some(ShapeFault {
+                                    node,
+                                    code: Code::LengthLimit,
+                                    message: LENGTH,
+                                })),
+                            },
                             _ => Ok(Some(Layout::variable(inner))),
                         }
                     }

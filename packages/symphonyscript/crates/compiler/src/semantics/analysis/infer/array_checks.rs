@@ -2,6 +2,7 @@ use super::position::Position;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::resolve::LENGTH_LIMIT;
 use crate::semantics::analysis::val::Val;
 
 pub(super) enum ArrayPosition {
@@ -102,6 +103,7 @@ impl Engine<'_> {
             };
             if let Some(holds) = holds
                 && holds > capacity
+                && holds < LENGTH_LIMIT
             {
                 self.error(
                     Code::CapacityExceeded,
@@ -314,6 +316,7 @@ impl Engine<'_> {
             };
             if let Some(holds) = holds
                 && holds > capacity
+                && holds < LENGTH_LIMIT
             {
                 let scope = self.node(record.init)?.scope;
                 self.error(
@@ -406,6 +409,7 @@ impl Engine<'_> {
                 };
                 if let Some(holds) = holds
                     && holds > capacity
+                    && holds < LENGTH_LIMIT
                 {
                     self.error(
                         Code::CapacityExceeded,

@@ -622,3 +622,84 @@ fn a_group_of_states_takes_its_least_capacities_together() {
         assert_ordered_capacity(&ring, state, 8);
     }
 }
+
+#[test]
+fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises() {
+    let big = "input big: i32[..2000000000] = []\n";
+    let rows: &[OrderedRow] = &[
+        (
+            &[
+                NOTE,
+                big,
+                "let x = big + big\n",
+                "Clip c:\n    Note/(len(x))\n",
+            ],
+            &[(Code::LengthLimit, "big + big", 0)],
+        ),
+        (
+            &[
+                NOTE,
+                big,
+                "state s = big + big\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::LengthLimit, "big + big", 0)],
+        ),
+        (
+            &[
+                NOTE,
+                big,
+                "state s = big[^2000000000..] + big\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::LengthLimit, "big[^2000000000..] + big", 0)],
+        ),
+        (
+            &[
+                NOTE,
+                big,
+                "state r = (r{1, []} + [note])[^2147483648..]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[(Code::LengthLimit, "(r{1, []} + [note])[^2147483648..]", 0)],
+        ),
+        (
+            &[
+                NOTE,
+                big,
+                "state r = (r{1, []} + [note])[^2147483647..]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[(Code::LengthLimit, "r{1, []} + [note]", 0)],
+        ),
+        (
+            &[
+                NOTE,
+                big,
+                "let probe: i32[..5] = big + big\n",
+                "Clip c:\n    Note/(len(probe))\n",
+            ],
+            &[(Code::LengthLimit, "big + big", 0)],
+        ),
+    ];
+    for (items, expected) in rows {
+        for text in in_every_order(items) {
+            support::expect_codes(&text, expected);
+        }
+    }
+    assert_ordered_codes(
+        &[
+            NOTE,
+            big,
+            "state r = r{1, []} + [note]\n",
+            "Clip c:\n    Note/(len(r))\n",
+        ],
+        &[Code::UnboundedState],
+    );
+    assert_ordered_capacity(&[NOTE, big], "big + [1]", 2_000_000_001);
+    assert_ordered_capacity(
+        &[NOTE, "state r = (r{1, []} + [note])[^2147483646..]\n"],
+        "r",
+        2_147_483_646,
+    );
+}

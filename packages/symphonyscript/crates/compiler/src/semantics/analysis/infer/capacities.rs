@@ -101,7 +101,24 @@ fn repeating(history: &VecDeque<Vec<i128>>, longest: usize) -> Option<(usize, Ve
 
 enum Solved {
     Capacities(Vec<i128>),
+    Limit(Vec<i128>),
     Unbounded(Vec<bool>),
+}
+
+const HUGE: i128 = 1 << 62;
+
+fn joined(total: i128) -> String {
+    format!(
+        "this join holds up to {total} elements, and an array's length and capacity are below 2³¹"
+    )
+}
+
+fn reaches_limit(extent: Option<&Extent>) -> bool {
+    match extent {
+        Some(Extent::Fixed(length)) => *length >= LIMIT,
+        Some(Extent::Variable(capacity)) => capacity.start().floor() >= LIMIT,
+        None => false,
+    }
 }
 
 impl Engine<'_> {
@@ -140,6 +157,7 @@ impl Engine<'_> {
             targets.dedup();
             edges.push(targets);
         }
+        let mut covered: FastSet<NodeId> = FastSet::default();
         for component in strongly_connected(&edges)? {
             let group: Vec<(StateId, BindingId)> = component
                 .iter()
@@ -157,7 +175,17 @@ impl Engine<'_> {
                         self.memo.binding_capacities.insert(*binding, capacity);
                     }
                 }
+                Solved::Limit(reached) => {
+                    self.limited(&group, &reached, &mut covered)?;
+                    for (_, binding) in &group {
+                        self.memo.binding_capacities.insert(*binding, 0);
+                    }
+                }
                 Solved::Unbounded(growing) => {
+                    for (_, binding) in &group {
+                        let init = self.binding(*binding)?.init;
+                        self.cover(init, &mut covered)?;
+                    }
                     let first = group
                         .iter()
                         .zip(&growing)
@@ -171,6 +199,116 @@ impl Engine<'_> {
                         self.memo.binding_capacities.insert(*binding, 0);
                     }
                 }
+            }
+        }
+        self.length_limits(&covered)
+    }
+
+    fn limited(
+        &mut self,
+        group: &[(StateId, BindingId)],
+        reached: &[i128],
+        covered: &mut FastSet<NodeId>,
+    ) -> Result<(), Internal> {
+        let env: Env = group
+            .iter()
+            .zip(reached)
+            .map(|((_, binding), value)| (*binding, Piecewise::constant(*value)))
+            .collect();
+        let mut done: FastMap<NodeId, Extent> = FastMap::default();
+        for (_, binding) in group {
+            let init = self.binding(*binding)?.init;
+            self.extent_into(init, &env, &mut done)?;
+            self.cover(init, covered)?;
+        }
+        let mut joins: Vec<NodeId> = Vec::new();
+        for (node, extent) in &done {
+            if !reaches_limit(Some(extent)) {
+                continue;
+            }
+            if let Op::Join(lhs, rhs) = self.node(*node)?.op
+                && !reaches_limit(done.get(&lhs))
+                && !reaches_limit(done.get(&rhs))
+            {
+                joins.push(*node);
+            }
+        }
+        joins.sort_unstable();
+        for join in &joins {
+            let total = done
+                .get(join)
+                .map_or(LIMIT, |extent| extent.capacity().start().floor());
+            self.error_at_node(Code::LengthLimit, *join, joined(total))?;
+        }
+        if !joins.is_empty() {
+            return Ok(());
+        }
+        let first = group
+            .iter()
+            .zip(reached)
+            .filter(|(_, value)| **value >= LIMIT)
+            .min_by_key(|((state, _), _)| *state);
+        if let Some(((state, binding), value)) = first {
+            let init = self.binding(*binding)?.init;
+            let name = self
+                .hir
+                .state(*state)?
+                .name
+                .as_ref()
+                .map_or(String::new(), |name| name.text.clone());
+            self.error_at_node(
+                Code::LengthLimit,
+                init,
+                format!(
+                    "`{name}` keeps up to {value} elements, and an array's length and capacity are below 2³¹"
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn cover(&self, init: NodeId, covered: &mut FastSet<NodeId>) -> Result<(), Internal> {
+        let mut stack = vec![init];
+        while let Some(node) = stack.pop() {
+            if !covered.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Read(_) => {}
+                Op::History { fallback, .. } => stack.extend(fallback.iter().copied()),
+                op => stack.extend(op.operands()),
+            }
+        }
+        Ok(())
+    }
+
+    fn length_limits(&mut self, covered: &FastSet<NodeId>) -> Result<(), Internal> {
+        let env = Env::default();
+        let mut done: FastMap<NodeId, Extent> = FastMap::default();
+        for index in 0..self.nodes.len() {
+            let node = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
+            let Op::Join(lhs, rhs) = self.node(node)?.op else {
+                continue;
+            };
+            if covered.contains(&node) {
+                continue;
+            }
+            let variable = matches!(
+                self.known_layout(node)?.shaped,
+                Ok(Some(layout)) if layout.variable
+            );
+            if !variable {
+                continue;
+            }
+            self.extent_into(node, &env, &mut done)?;
+            if reaches_limit(done.get(&node))
+                && !reaches_limit(done.get(&lhs))
+                && !reaches_limit(done.get(&rhs))
+            {
+                let total = done
+                    .get(&node)
+                    .map_or(LIMIT, |extent| extent.capacity().start().floor());
+                self.error_at_node(Code::LengthLimit, node, joined(total))?;
             }
         }
         Ok(())
@@ -210,9 +348,13 @@ impl Engine<'_> {
                 .ok_or(Internal::missed("capacity"))?;
             let next = self.capacity_step(&members, &inits, &current)?;
             if next.iter().any(|value| *value >= LIMIT) {
-                return Ok(Solved::Unbounded(
-                    next.iter().map(|value| *value >= LIMIT).collect(),
-                ));
+                let huge = vec![HUGE; members.len()];
+                let held = self.capacity_step(&members, &inits, &huge)?;
+                return Ok(if held.iter().all(|value| *value <= HUGE) {
+                    Solved::Limit(next)
+                } else {
+                    Solved::Unbounded(next.iter().map(|value| *value >= LIMIT).collect())
+                });
             }
             if next == current {
                 return Ok(Solved::Capacities(current));
@@ -454,6 +596,16 @@ impl Engine<'_> {
 
     fn extent_with(&mut self, root: NodeId, env: &Env) -> Result<Extent, Internal> {
         let mut done: FastMap<NodeId, Extent> = FastMap::default();
+        self.extent_into(root, env, &mut done)?;
+        done.remove(&root).ok_or(Internal::missed("capacity"))
+    }
+
+    fn extent_into(
+        &mut self,
+        root: NodeId,
+        env: &Env,
+        done: &mut FastMap<NodeId, Extent>,
+    ) -> Result<(), Internal> {
         let mut pending: FastSet<NodeId> = FastSet::default();
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
@@ -498,7 +650,7 @@ impl Engine<'_> {
             let value = self.combined_extent(node, &values, extra)?;
             done.insert(node, value);
         }
-        done.remove(&root).ok_or(Internal::missed("capacity"))
+        Ok(())
     }
 
     fn binding_extent(&self, binding: BindingId, env: &Env) -> Option<Extent> {
