@@ -480,6 +480,115 @@ fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
 }
 
 #[test]
+fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() {
+    let a = "input a: i32[..5] = []\n";
+    let flag = "input flag = false\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                a,
+                "let x = if true then a else 5\n",
+                "Clip c:\n    Note/(x[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if true then a else 5")],
+        ),
+        (
+            &[
+                a,
+                "let x = if false then a else 5\n",
+                "Clip c:\n    Note/(x)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then a else 5")],
+        ),
+        (
+            &[
+                a,
+                "let k = 1\n",
+                "let m = match k:\n    1: a\n    else: 5\n",
+                "Clip c:\n    Note/(m[0])\n",
+            ],
+            &[(Code::TypeMismatch, "match k:\n    1: a\n    else: 5\n")],
+        ),
+        (
+            &[
+                a,
+                "let m = match true:\n    true: 5\n    false: a\n",
+                "Clip c:\n    Note/(m)\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match true:\n    true: 5\n    false: a\n",
+            )],
+        ),
+        (
+            &[
+                a,
+                "let w = Wave::Saw\n",
+                "let m = match w:\n    Saw: a\n    else: 5\n",
+                "Clip c:\n    Note/(m[0])\n",
+            ],
+            &[(Code::TypeMismatch, "match w:\n    Saw: a\n    else: 5\n")],
+        ),
+        (
+            &[
+                a,
+                flag,
+                "let x = if flag then a else (if true then a else 5)\n",
+                "Clip c:\n    Note/(x[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if true then a else 5")],
+        ),
+        (
+            &[
+                a,
+                flag,
+                "let x = if true then (if flag then a else 5) else a\n",
+                "Clip c:\n    Note/(x[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then a else 5")],
+        ),
+        (
+            &[
+                a,
+                "let x = if true then a else [[1, 2]]\n",
+                "Clip c:\n    Note/(x[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if true then a else [[1, 2]]")],
+        ),
+        (
+            &[
+                a,
+                flag,
+                "let x = if flag then a else 5\n",
+                "Clip c:\n    Note/(x)\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then a else 5")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let x = if true then [note, note] else 5\n",
+                "Clip c:\n    Note/(x)\n",
+            ],
+            &[(Code::TypeMismatch, "if true then [note, note] else 5")],
+        ),
+        (
+            &[
+                a,
+                "let x = if true then a else [1, 2]\n",
+                "Clip c:\n    Note/(x[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &["let x = if true then 5 else 6\n", "Clip c:\n    Note/(x)\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn an_annotation_holds_only_an_initializer_of_its_rows() {
     let cells = [
         "input a: i32[..5] = []\n",

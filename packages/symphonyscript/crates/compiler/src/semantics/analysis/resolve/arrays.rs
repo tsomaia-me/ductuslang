@@ -637,6 +637,11 @@ impl Engine<'_> {
                 scrutinee: condition,
                 ..
             } => match some!(self.chosen_arm(op, need)?) {
+                Some(_) if !arms_agree(&layouts) => Err(Some(ShapeFault {
+                    node,
+                    code: Code::TypeMismatch,
+                    message: BRANCHES,
+                })),
                 Some(arm) => Ok(layouts.get(arm).cloned().flatten()),
                 None => {
                     let reactive = some!(self.sig(*condition, need)).reactive;
@@ -1023,6 +1028,12 @@ fn fault(fault: Option<ShapeFault>) -> LayoutFound {
         shaped: Err(fault),
         certain: true,
     }
+}
+
+fn arms_agree(layouts: &[Option<Layout>]) -> bool {
+    let inner = |layout: &Option<Layout>| layout.as_ref().map(|layout| layout.inner().to_vec());
+    let first = layouts.first().map(inner).unwrap_or_default();
+    layouts.iter().all(|layout| inner(layout) == first)
 }
 
 const LENGTH: &str = "an array's length and capacity are below 2³¹";
