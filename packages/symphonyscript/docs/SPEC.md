@@ -62,7 +62,7 @@ The enum `Wave` has the variants `Sine`, `Saw` and `Square`. The unit family `be
 
 ### 2.1 Files
 
-A project is a set of `.sym` files compiled together. All files share one namespace (§6.5); no file imports another. Files are ordered by the byte-wise order of their paths, and items within a file by source order. This order is the program's top-level order.
+A project is a set of `.sym` files compiled together. All files share one namespace (§6.5); no file imports another. Files are ordered by the byte-wise order of their paths, and items within a file by source order. This order is the program's top-level order. A source file whose path equals a prelude file's path (§10.1) is an error.
 
 ```ebnf
 File    ::= TopItem*
@@ -273,7 +273,7 @@ The operands of `is` and `is not` give each other their expected type, so in `wa
 
 These implicit widenings exist, and no others: `u8` to `i32`, `i64`, `f32` and `f64`, `i32` to `i64`, `i32` to `f32`, `i32` to `f64`, `i64` to `f64`, `f32` to `f64`. A value never narrows implicitly, and a float never becomes an integer implicitly; conversions are explicit (§5.8). Widening `i32` to `f32` and `i64` to `f64` rounds integers beyond the float's exact range: an `i32` cell holding 16777217 reaches an `f32` attribute as 16777216.
 
-When an operator's operands have different fixed types, both widen to the smallest type both widen into. With no such type, the expression is an error. A flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand and `f32` for an `i32` one, and the integer widens into it: with `input n = 4`, `n * 0.5 > 1` computes in `f64`. Built-ins widen their operands as operators do.
+When an operator's operands have different fixed types, both widen to the smallest type both widen into. With no such type, the expression is an error. A flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand and `f32` for an `i32` one, and the integer widens into it: with `input n = 4`, `n * 0.5 > 1` computes in `f64`. A `u8` operand counts as an `i32` one there, `u8` widening exactly into `f32`. Built-ins widen their operands as operators do.
 
 ### 4.4 Cell types
 
@@ -678,7 +678,7 @@ All top-level names share one namespace across the project: inputs, `let`s, stat
 
 Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern `let` or a `for` variable visible where it is declared is an error, and so is a pattern `let` equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's `let`s do.
 
-A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. So do a parameter default that no call takes and the body of a `for` that runs no iteration, since nothing expands them. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported.
+A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. So do a parameter default that no call takes and the body of a `for` that runs no iteration, since nothing expands them. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported. In all of these, resolving the names draws its errors, a name, path or attribute that resolves to nothing or to what its position cannot hold, and nothing else is checked or computed, in the bodies the code reaches, recursive or not, as in the code itself.
 
 A bare name that is a variant of the enum its position expects resolves to that variant (§3.4). Every other name resolves in scope.
 
@@ -998,7 +998,7 @@ A vocabulary is invalid, and no program compiles against it, when:
 - a count's minimum exceeds its maximum;
 - a declaration refers to a kind of another vocabulary;
 - an enum has no variants or more than 65,536, or an enum attribute's default is not one of its variants;
-- an array attribute has a length or capacity of 0 at any level;
+- an array attribute, a native parameter or a native result has a length or capacity of 0 at any level, or of 2³¹ or more (§3.2);
 - a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `_`, or with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
 - an integer attribute belongs to a family with a unit whose scale is not an integer;
 - a native function's signature holds a type outside §3, or a variable-array result whose capacity it does not state;
