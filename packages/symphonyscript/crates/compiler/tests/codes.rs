@@ -49,3 +49,14 @@ fn the_warnings_are_the_three_the_spec_names_and_every_other_code_is_an_error() 
         assert_eq!(code.to_string(), code.as_str());
     }
 }
+
+#[test]
+fn every_code_carries_a_one_line_help() {
+    for code in Code::ALL {
+        let help = code.help().unwrap_or_default();
+        assert!(
+            !help.trim().is_empty() && !help.contains('\n'),
+            "{code}: {help:?}"
+        );
+    }
+}

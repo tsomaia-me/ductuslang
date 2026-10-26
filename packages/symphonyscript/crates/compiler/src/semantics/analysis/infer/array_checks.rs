@@ -29,15 +29,19 @@ impl Engine<'_> {
                 return Ok(ArrayPosition::Usual);
             }
             if self.is_variable(node)? {
-                let (code, message) = if position.ty.lengths.is_empty() {
-                    self.single_value_fault(position, "a variable array")?
+                if position.ty.lengths.is_empty() {
+                    let (code, message) = self.single_value_fault(position, "a variable array")?;
+                    self.error(code, position.loc, position.scope, message)?;
                 } else {
-                    (
+                    let help = self.fixed_help(&position.ty)?;
+                    self.error_helped(
                         Code::VariableArray,
+                        position.loc,
+                        position.scope,
                         "this value is a variable array, and a fixed array is expected here".into(),
-                    )
-                };
-                self.error(code, position.loc, position.scope, message)?;
+                        help,
+                    )?;
+                }
                 return Ok(ArrayPosition::Faulty);
             }
             return Ok(ArrayPosition::Usual);
@@ -73,6 +77,20 @@ impl Engine<'_> {
             return Ok(ArrayPosition::Faulty);
         }
         Ok(ArrayPosition::Variable)
+    }
+
+    pub(in crate::semantics::analysis) fn capacity_help(capacity: u32) -> String {
+        format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
+    }
+
+    fn fixed_help(&self, ty: &symphonyscript_core::Ty) -> Result<String, Internal> {
+        let mut form = self.scalar_name(ty.scalar)?;
+        for length in &ty.lengths {
+            form.push_str(&format!("[{length}]"));
+        }
+        Ok(format!(
+            "pass a fixed `{form}` here, such as an input annotated `{form}`"
+        ))
     }
 
     pub(super) fn single_value_fault(
@@ -131,13 +149,14 @@ impl Engine<'_> {
                 && holds > capacity
                 && holds < LENGTH_LIMIT
             {
-                self.error(
+                self.error_helped(
                     Code::CapacityExceeded,
                     position.loc,
                     position.scope,
                     format!(
                         "this value holds up to {holds} elements, more than the attribute's capacity {capacity}"
                     ),
+                    Self::capacity_help(capacity),
                 )?;
             }
         }
@@ -189,12 +208,20 @@ impl Engine<'_> {
                 if let Some((Some(limit), _)) = depth
                     && offset > limit
                 {
-                    self.error_at_node(
+                    let name = self
+                        .hir
+                        .state(state)?
+                        .name
+                        .as_ref()
+                        .map_or(String::new(), |name| name.text.clone());
+                    self.error_at_node_helped(
                         Code::HistoryDepth,
                         node,
+                        Vec::new(),
                         format!(
                             "this history read reaches {offset} steps back, deeper than `[{limit}]`; `[{deepest}]` covers every read of this state"
                         ),
+                        format!("declare the state as `state[{deepest}] {name}`, which covers every read of it"),
                     )?;
                 }
                 if let HistoryCell::Let(id) = cell {
@@ -345,7 +372,7 @@ impl Engine<'_> {
                 && holds < LENGTH_LIMIT
             {
                 let scope = self.node(record.init)?.scope;
-                self.error(
+                self.error_helped(
                     Code::CapacityExceeded,
                     record.loc,
                     scope,
@@ -353,6 +380,7 @@ impl Engine<'_> {
                         "`{}` holds up to {holds} elements, more than its annotated capacity {capacity}",
                         record.name
                     ),
+                    Self::capacity_help(capacity),
                 )?;
             }
         }
@@ -406,13 +434,15 @@ impl Engine<'_> {
             }
             if let Some(length) = length {
                 if layout.variable {
-                    self.error(
+                    let help = self.fixed_help(&ty)?;
+                    self.error_helped(
                         Code::VariableArray,
                         loc,
                         scope,
                         format!(
                             "this argument is a variable array, and the parameter takes a fixed array of {length} elements"
                         ),
+                        help,
                     )?;
                 } else if let Some(held) = layout.outer()
                     && held != length
@@ -437,13 +467,14 @@ impl Engine<'_> {
                     && holds > capacity
                     && holds < LENGTH_LIMIT
                 {
-                    self.error(
+                    self.error_helped(
                         Code::CapacityExceeded,
                         loc,
                         scope,
                         format!(
                             "this argument holds up to {holds} elements, more than the parameter's capacity {capacity}"
                         ),
+                        Self::capacity_help(capacity),
                     )?;
                 }
             }

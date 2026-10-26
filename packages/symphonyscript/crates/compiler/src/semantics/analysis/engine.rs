@@ -635,6 +635,24 @@ impl<'a> Engine<'a> {
         self.error_with_chain(code, loc, Vec::new(), scope, message)
     }
 
+    pub(in crate::semantics::analysis) fn error_helped(
+        &mut self,
+        code: Code,
+        loc: Loc,
+        scope: ScopeId,
+        message: String,
+        help: String,
+    ) -> Result<(), Internal> {
+        if self.in_probe(scope)? {
+            return Ok(());
+        }
+        self.error_with_chain(code, loc, Vec::new(), scope, message)?;
+        if let Some(deferred) = self.deferred.last_mut() {
+            deferred.help = Some(help);
+        }
+        Ok(())
+    }
+
     pub(super) fn in_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
         Ok(self
             .template_of(scope)?

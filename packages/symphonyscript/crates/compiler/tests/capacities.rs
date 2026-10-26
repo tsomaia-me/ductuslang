@@ -1,6 +1,8 @@
 mod support;
 
-use symphonyscript::Code;
+use symphonyscript::{Code, Compiler};
+use symphonyscript_core::Vocabulary;
+use symphonyscript_fixtures::vocabulary;
 
 const CELLS: &str = "input a: i32[..5] = []\ninput i = 1\ninput flag = false\ninput note = 60\n";
 
@@ -1223,4 +1225,121 @@ fn an_array_where_a_single_value_is_expected_is_refused_in_the_positions_own_wor
             .any(|diagnostic| diagnostic.code == Code::VariableArray),
         "{fixed:?}"
     );
+}
+
+type Helped = (
+    fn() -> Vocabulary,
+    &'static [&'static str],
+    Code,
+    &'static str,
+);
+
+#[test]
+fn every_diagnostic_carries_a_help_that_states_its_fix() {
+    let rows: &[Helped] = &[
+        (
+            vocabulary,
+            &[
+                "input note = 60\n",
+                "state recent = recent{1, []} + [note]\n",
+                "Clip c:\n    Note/(recent[0])\n",
+            ],
+            Code::UnboundedState,
+            "slice the initializer, as in `(s{1, []} + [x])[^8..]`, to keep its newest elements",
+        ),
+        (
+            vocabulary,
+            &[
+                "input n = 5\n",
+                "fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n",
+                "Clip c:\n    Note/(fib(n))\n",
+            ],
+            Code::ReactiveRecursion,
+            "declare a bound on `fib`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+        ),
+        (
+            vocabulary,
+            &[
+                "input x = 1\n",
+                "state[2] s = x + s{3, 0}\n",
+                "Clip c:\n    Note when s > 0\n",
+            ],
+            Code::HistoryDepth,
+            "declare the state as `state[3] s`, which covers every read of it",
+        ),
+        (
+            vocabulary,
+            &[
+                "input x = 1\n",
+                "state s: i32[..2] = [x, x, x]\n",
+                "Clip c:\n    Note when s[0] > 0\n",
+            ],
+            Code::CapacityExceeded,
+            "slice the value to its newest 2 elements with `[^2..]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input x = 1\n",
+                "Clip c | data=[x, x, x, x, x, x, x, x, x]:\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "slice the value to its newest 8 elements with `[^8..]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &["input h: u8[..3] = []\n", "Clip c | fixed=h:\n    Note\n"],
+            Code::VariableArray,
+            "pass a fixed `u8[3]` here, such as an input annotated `u8[3]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input xs: u8[..3] = []\n",
+                "Clip c:\n    Note/(fixed3(xs))\n",
+            ],
+            Code::VariableArray,
+            "pass a fixed `u8[3]` here, such as an input annotated `u8[3]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &["input f = 1.5\n", "Clip c | three=[f, 2]:\n    Note\n"],
+            Code::FloatToInteger,
+            "convert explicitly, as in `i32(x)`",
+        ),
+        (
+            vocabulary,
+            &[
+                "fn f(x):\n    state s = 1\n    x\n",
+                "Clip c:\n    Note/(f(1))\n",
+            ],
+            Code::StateSyntax,
+            "declare the state at top level as `state`, a name, `=` and its initializer, as in `state count = 1`",
+        ),
+        (
+            vocabulary,
+            &[
+                "input x = 1\n",
+                "state s = x{1, 0.5}\n",
+                "Clip c:\n    Note when s > 0\n",
+            ],
+            Code::TypeMismatch,
+            "give the position a value of the type it expects",
+        ),
+    ];
+    for (vocabulary, items, code, help) in rows {
+        let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::errors(compiler.check(&[support::source(&text)]));
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            assert_eq!(
+                (diagnostic.code, diagnostic.help.as_deref()),
+                (*code, Some(*help)),
+                "{text}"
+            );
+        }
+    }
 }

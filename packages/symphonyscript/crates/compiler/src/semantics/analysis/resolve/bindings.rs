@@ -85,13 +85,14 @@ impl Engine<'_> {
                     && let Some(length) = layout.outer()
                     && length > *capacity
                 {
-                    self.error(
+                    self.error_helped(
                         Code::CapacityExceeded,
                         loc,
                         within,
                         format!(
                             "`{name}` holds {length} elements, more than its annotated capacity {capacity}"
                         ),
+                        Self::capacity_help(*capacity),
                     )?;
                     self.memo.lets.insert((scope, local), BoundVal::Error);
                     return Ok(true);
@@ -516,13 +517,14 @@ impl Engine<'_> {
             return Ok(true);
         }
         if length > capacity {
-            self.error(
+            self.error_helped(
                 Code::CapacityExceeded,
                 loc,
                 global,
                 format!(
                     "the initializer holds {length} elements, more than the capacity {capacity}"
                 ),
+                Self::capacity_help(capacity),
             )?;
             self.memo.inputs.insert(input, BoundVal::Error);
             return Ok(true);
