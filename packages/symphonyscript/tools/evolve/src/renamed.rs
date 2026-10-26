@@ -74,7 +74,7 @@ impl Naming {
         let names: Vec<&String> = identifiers
             .declared
             .iter()
-            .filter(|name| !self.reserved.contains(*name) && is_identifier(name))
+            .filter(|name| !self.reserved.contains(*name) && name.is_ascii() && is_identifier(name))
             .collect();
         for name in names {
             let replacement = self.replacement(name)?;
