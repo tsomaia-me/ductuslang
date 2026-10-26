@@ -632,14 +632,17 @@ impl Engine<'_> {
                     message: "only an array is indexed",
                 })),
             },
-            Op::If(condition, ..) => {
-                let reactive = some!(self.sig(*condition, need)).reactive;
-                self.choice_layout(node, &layouts, reactive)
-            }
-            Op::Match { scrutinee, .. } => {
-                let reactive = some!(self.sig(*scrutinee, need)).reactive;
-                self.choice_layout(node, &layouts, reactive)
-            }
+            Op::If(condition, ..)
+            | Op::Match {
+                scrutinee: condition,
+                ..
+            } => match some!(self.chosen_arm(op, need)?) {
+                Some(arm) => Ok(layouts.get(arm).cloned().flatten()),
+                None => {
+                    let reactive = some!(self.sig(*condition, need)).reactive;
+                    self.choice_layout(node, &layouts, reactive)
+                }
+            },
             Op::Array(elements) => {
                 let first = layouts.first().cloned().flatten();
                 if layouts.iter().any(|layout| *layout != first) {
@@ -847,6 +850,56 @@ impl Engine<'_> {
             .binding_layouts
             .get(&binding)
             .map(|layout| Layout::variable(layout.inner().to_vec()))
+    }
+
+    pub(in crate::semantics::analysis) fn chosen_arm(
+        &self,
+        op: &Op,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<usize>>, Internal> {
+        match op {
+            Op::If(condition, ..) => {
+                let sig = some!(self.sig(*condition, need));
+                if sig.reactive || sig.is_error() || sig.frame || sig.kind != Kind::Bool {
+                    return Ok(Some(None));
+                }
+                Ok(Some(
+                    match some!(self.cval(Query::Eval(*condition, EvalTy::Bool), need)) {
+                        CVal::Bool(true) => Some(0),
+                        CVal::Bool(false) => Some(1),
+                        _ => None,
+                    },
+                ))
+            }
+            Op::Match {
+                scrutinee,
+                arms,
+                otherwise,
+            } => {
+                let sig = some!(self.sig(*scrutinee, need));
+                if sig.reactive || sig.is_error() || sig.frame {
+                    return Ok(Some(None));
+                }
+                let Some(label_ty) = self.scrutinee_ty(*scrutinee, &sig) else {
+                    return Ok(Some(None));
+                };
+                let value = some!(self.cval(Query::Eval(*scrutinee, label_ty), need));
+                if value.is_error() {
+                    return Ok(Some(None));
+                }
+                for (position, (label, _)) in arms.iter().enumerate() {
+                    let label_value = some!(self.cval(Query::Eval(*label, label_ty), need));
+                    if label_value.is_error() {
+                        return Ok(Some(None));
+                    }
+                    if label_value == value {
+                        return Ok(Some(Some(position)));
+                    }
+                }
+                Ok(Some(otherwise.map(|_| arms.len())))
+            }
+            _ => Ok(Some(None)),
+        }
     }
 
     fn choice_layout(&self, node: NodeId, layouts: &[Option<Layout>], reactive: bool) -> Shaped {

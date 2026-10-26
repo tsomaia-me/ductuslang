@@ -511,3 +511,94 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
         }
     }
 }
+
+#[test]
+fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity() {
+    let cells = [
+        "input note = 60\n",
+        "input a: i32[..5] = []\n",
+        "input held: i32[..10] = []\n",
+        "input flag = false\n",
+    ];
+    let rows: &[OrderedRow] = &[
+        (
+            &[
+                "let x = if true then a else [1, 2, 3, 4, 5, 6, 7]\n",
+                "let probe: i32[..5] = x\n",
+                "Clip c:\n    Note/(probe[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let x = if false then a else [note, note]\n",
+                "let probe: i32[2] = x\n",
+                "Clip c:\n    Note/(probe[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let probe: i32[..5] = if true then a else held\n",
+                "Clip c:\n    Note/(probe[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let k = 1\n",
+                "let m = match k:\n    0: a\n    1: [1, 2, 3]\n    else: [1]\n",
+                "let probe: i32[3] = m\n",
+                "Clip c:\n    Note/(probe[2])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state s = if true then a else [1, 2, 3, 4, 5, 6, 7]\n",
+                "let probe: i32[..5] = s\n",
+                "Clip c:\n    Note/(probe[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let probe: i32[3] = if flag then [note, note] else [note, note, note]\n",
+                "Clip c:\n    Note/(probe[0])\n",
+            ],
+            &[(
+                Code::VariableArray,
+                "let probe: i32[3] = if flag then [note, note] else [note, note, note]\n",
+                0,
+            )],
+        ),
+        (
+            &[
+                "let probe: i32[..5] = if true then a else [1.5, true]\n",
+                "Clip c:\n    Note/(probe[0])\n",
+            ],
+            &[(Code::TypeMismatch, "[1.5, true]", 0)],
+        ),
+        (
+            &[
+                "let probe: i32[..5] = if true then a else [[1], 2]\n",
+                "Clip c:\n    Note/(probe[0])\n",
+            ],
+            &[(Code::RaggedArray, "[[1], 2]", 0)],
+        ),
+    ];
+    for (declarations, expected) in rows {
+        let mut items: Vec<&str> = cells.to_vec();
+        items.extend_from_slice(declarations);
+        for text in in_every_order(&items) {
+            support::expect_codes(&text, expected);
+        }
+    }
+    let choices = [
+        ("if flag then a else [1, 2, 3, 4, 5, 6, 7]", 7),
+        ("if flag then [note, note] else [note, note, note]", 3),
+    ];
+    for (value, capacity) in choices {
+        assert_ordered_capacity(&cells, value, capacity);
+    }
+}

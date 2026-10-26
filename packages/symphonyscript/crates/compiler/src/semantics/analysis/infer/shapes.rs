@@ -131,7 +131,10 @@ impl Engine<'_> {
                     .insert((node, ty), Some(layout.lengths.clone()));
                 continue;
             }
-            let parts = shape_parts(self, &op)?;
+            let mut parts = shape_parts(self, &op)?;
+            if matches!(op, Op::If(..) | Op::Match { .. }) {
+                parts = self.known_arms(&op, parts)?;
+            }
             if !self.arrays.contains(&node) || parts.is_empty() {
                 self.typing.shapes.insert((node, ty), Some(Vec::new()));
                 continue;

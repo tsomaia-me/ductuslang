@@ -346,6 +346,30 @@ impl Engine<'_> {
         }
     }
 
+    pub(super) fn known_arms(
+        &mut self,
+        op: &Op,
+        arms: Vec<NodeId>,
+    ) -> Result<Vec<NodeId>, Internal> {
+        let mut previous: Option<Vec<crate::semantics::analysis::query::Query>> = None;
+        loop {
+            let mut need = Vec::new();
+            if let Some(chosen) = self.chosen_arm(op, &mut need)? {
+                return Ok(match chosen.and_then(|arm| arms.get(arm)) {
+                    Some(arm) => vec![*arm],
+                    None => arms,
+                });
+            }
+            if need.is_empty() || previous.as_ref() == Some(&need) {
+                return Err(Internal::missed("chosen arm"));
+            }
+            for query in &need {
+                self.demand(*query)?;
+            }
+            previous = Some(need);
+        }
+    }
+
     fn capacity_with(&mut self, root: NodeId, env: &Env) -> Result<Piecewise, Internal> {
         self.memo.capacity_rounds += 1;
         Ok(match self.extent_with(root, env)? {
@@ -464,13 +488,17 @@ impl Engine<'_> {
             Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => {
                 Parts::Operands(vec![operand], None)
             }
-            Op::If(_, then, otherwise) => Parts::Operands(vec![then, otherwise], None),
+            Op::If(_, then, otherwise) => {
+                Parts::Operands(self.known_arms(&op, vec![then, otherwise])?, None)
+            }
             Op::Match {
-                arms, otherwise, ..
+                ref arms,
+                otherwise,
+                ..
             } => {
                 let mut operands: Vec<NodeId> = arms.iter().map(|(_, value)| *value).collect();
                 operands.extend(otherwise);
-                Parts::Operands(operands, None)
+                Parts::Operands(self.known_arms(&op, operands)?, None)
             }
             Op::Join(lhs, rhs) => Parts::Operands(vec![lhs, rhs], None),
             Op::Slice { base, .. } => Parts::Operands(vec![base], None),

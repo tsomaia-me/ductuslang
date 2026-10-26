@@ -814,7 +814,17 @@ impl Engine<'_> {
                 shapes.insert(node, Ok(layout.lengths.clone()));
                 continue;
             }
-            let parts = shape_parts(self, op)?;
+            let mut parts = shape_parts(self, op)?;
+            if matches!(op, Op::If(..) | Op::Match { .. }) {
+                match self.chosen_arm(op, need)? {
+                    Some(Some(arm)) => parts = parts.get(arm).copied().into_iter().collect(),
+                    Some(None) => {}
+                    None => {
+                        missing = true;
+                        continue;
+                    }
+                }
+            }
             if !self.arrays.contains(&node) || parts.is_empty() {
                 shapes.insert(node, Ok(Vec::new()));
                 continue;
