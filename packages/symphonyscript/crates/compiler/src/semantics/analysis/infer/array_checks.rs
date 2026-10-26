@@ -1,4 +1,5 @@
 use super::position::Position;
+use super::role::Role;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -28,12 +29,15 @@ impl Engine<'_> {
                 return Ok(ArrayPosition::Usual);
             }
             if self.is_variable(node)? {
-                self.error(
-                    Code::VariableArray,
-                    position.loc,
-                    position.scope,
-                    "this value is a variable array, and a fixed array is expected here",
-                )?;
+                let (code, message) = if position.ty.lengths.is_empty() {
+                    self.single_value_fault(position, "a variable array")?
+                } else {
+                    (
+                        Code::VariableArray,
+                        "this value is a variable array, and a fixed array is expected here".into(),
+                    )
+                };
+                self.error(code, position.loc, position.scope, message)?;
                 return Ok(ArrayPosition::Faulty);
             }
             return Ok(ArrayPosition::Usual);
@@ -69,6 +73,28 @@ impl Engine<'_> {
             return Ok(ArrayPosition::Faulty);
         }
         Ok(ArrayPosition::Variable)
+    }
+
+    pub(super) fn single_value_fault(
+        &self,
+        position: &Position,
+        value: &str,
+    ) -> Result<(Code, String), Internal> {
+        let held = self.scalar_name(position.ty.scalar)?;
+        Ok(match (position.role, &position.name) {
+            (Role::Gate, _) => (
+                Code::ConditionType,
+                format!("a gate or a guard is one `bool`, and this value is {value}"),
+            ),
+            (Role::Attribute | Role::Initializer, Some(name)) => (
+                Code::TypeMismatch,
+                format!("`{name}` holds one `{held}`, and this value is {value}"),
+            ),
+            (Role::Attribute | Role::Initializer, None) => (
+                Code::TypeMismatch,
+                format!("this input holds one `{held}`, and this value is {value}"),
+            ),
+        })
     }
 
     fn known_inner(

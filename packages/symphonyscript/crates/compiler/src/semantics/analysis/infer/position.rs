@@ -11,6 +11,7 @@ pub(crate) struct Position {
     pub ty: Ty,
     pub unit: Option<AttrUnit>,
     pub role: Role,
+    pub name: Option<String>,
     pub loc: Loc,
     pub scope: ScopeId,
 }

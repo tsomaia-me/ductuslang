@@ -931,11 +931,85 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             ],
             &[(Code::LengthLimit, "big + big", 0)],
         ),
+        (
+            &[
+                NOTE,
+                "state r = (r{1, []} + [note])[^4611686018427387905..]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[(
+                Code::LengthLimit,
+                "(r{1, []} + [note])[^4611686018427387905..]",
+                0,
+            )],
+        ),
+        (
+            &[
+                NOTE,
+                "state r = (r{1, []} + [note])[^9223372036854775807..]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[(
+                Code::LengthLimit,
+                "(r{1, []} + [note])[^9223372036854775807..]",
+                0,
+            )],
+        ),
+        (
+            &[
+                NOTE,
+                "state r = (r{1, []} + [note])[..9223372036854775807]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[(
+                Code::LengthLimit,
+                "(r{1, []} + [note])[..9223372036854775807]",
+                0,
+            )],
+        ),
+        (
+            &[
+                NOTE,
+                "state r = (r{1, []} + [note])[^9223372036854775808..]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[(Code::IndexOutOfRange, "9223372036854775808", 0)],
+        ),
+        (
+            &[
+                NOTE,
+                "state r = (r{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(len(r))\n",
+            ],
+            &[],
+        ),
     ];
     for (items, expected) in rows {
         for text in in_every_order(items) {
             support::expect_codes(&text, expected);
         }
+    }
+    assert_ordered_codes(
+        &[
+            NOTE,
+            "state a = b{1, []} + [note]\n",
+            "state b = a[^2147483648..]\n",
+            "Clip c:\n    Note/(len(a))\n",
+        ],
+        &[Code::LengthLimit],
+    );
+    for (bound, capacity) in [
+        ("[^4611686018427387905..]", "4611686018427387905"),
+        ("[^9223372036854775807..]", "9223372036854775807"),
+        ("[..9223372036854775807]", "9223372036854775807"),
+    ] {
+        let text =
+            format!("{NOTE}state r = (r{{1, []}} + [note]){bound}\nClip c:\n    Note/(len(r))\n");
+        let found = support::checked(&text);
+        assert!(
+            found.len() == 1 && found[0].summary.contains(capacity),
+            "{text}{found:?}"
+        );
     }
     assert_ordered_codes(
         &[
@@ -1066,5 +1140,87 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
         &format!("input held: i32[..10] = []\ninput gate = false\n{state}"),
         "s",
         10,
+    );
+}
+
+#[test]
+fn an_array_where_a_single_value_is_expected_is_refused_in_the_positions_own_words() {
+    let held = "input a: i32[..5] = []\n";
+    let rows: &[(&[&str], Code, &str, &[&str])] = &[
+        (
+            &[held, "Clip c:\n    Note/(a)\n"],
+            Code::TypeMismatch,
+            "a",
+            &["`pitch`", "one `i32`", "variable array"],
+        ),
+        (
+            &[held, "Clip c:\n    Note/([1, 2])\n"],
+            Code::TypeMismatch,
+            "[1, 2]",
+            &["`pitch`", "one `i32`", "an array"],
+        ),
+        (
+            &[held, "Clip c:\n    Note when a\n"],
+            Code::ConditionType,
+            "a",
+            &["one `bool`", "variable array"],
+        ),
+        (
+            &[held, "Clip c:\n    Note when [true, false]\n"],
+            Code::ConditionType,
+            "[true, false]",
+            &["one `bool`", "an array"],
+        ),
+        (
+            &[held, "let b = a\n", "Clip c:\n    Note | velocity=b\n"],
+            Code::TypeMismatch,
+            "b",
+            &["`velocity`", "one `f32`", "variable array"],
+        ),
+        (
+            &["let b = [1, 2]\n", "Clip c:\n    Note/b\n"],
+            Code::TypeMismatch,
+            "b",
+            &["`pitch`", "one `i32`", "an array"],
+        ),
+    ];
+    for (items, code, spanned, words) in rows {
+        for text in in_every_order(items) {
+            let found = support::checked(&text);
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            let range = &diagnostic.span.range;
+            assert_eq!(
+                (
+                    diagnostic.code,
+                    &text[range.start as usize..range.end as usize]
+                ),
+                (*code, *spanned),
+                "{text}"
+            );
+            for word in *words {
+                assert!(diagnostic.summary.contains(word), "{text}{diagnostic:?}");
+            }
+        }
+    }
+    support::assert_rows_in_every_order(
+        &symphonyscript_fixtures::vocabulary(),
+        &[(&[held, "Clip c:\n    Note/(a[0])\n"], &[])],
+    );
+    let bytes = "input h: u8[..3] = []\n";
+    support::assert_rows_in_every_order(
+        &support::signature_vocabulary(),
+        &[(&[bytes, "Clip c | data=h:\n    Note\n"], &[])],
+    );
+    let fixed = support::checked_with(
+        &support::signature_vocabulary(),
+        &format!("{bytes}Clip c | fixed=h:\n    Note\n"),
+    );
+    assert!(
+        fixed
+            .iter()
+            .any(|diagnostic| diagnostic.code == Code::VariableArray),
+        "{fixed:?}"
     );
 }

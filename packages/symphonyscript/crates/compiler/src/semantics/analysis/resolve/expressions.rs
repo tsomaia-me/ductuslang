@@ -439,12 +439,12 @@ impl Engine<'_> {
         node: NodeId,
         lengths: Vec<u32>,
         code: Code,
-        message: &'static str,
+        message: impl Into<String>,
     ) {
-        self.memo.shapes.entry(node).or_insert(ShapeNeed {
+        self.memo.shapes.entry(node).or_insert_with(|| ShapeNeed {
             lengths,
             code,
-            message,
+            message: message.into(),
         });
     }
 

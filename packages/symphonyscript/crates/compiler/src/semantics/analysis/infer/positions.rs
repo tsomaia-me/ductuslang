@@ -147,6 +147,7 @@ impl Engine<'_> {
             ty,
             unit: None,
             role: Role::Initializer,
+            name: None,
             loc: self.hir.expr(decl.value)?.loc,
             scope: global,
         }))
@@ -195,6 +196,7 @@ impl Engine<'_> {
                     ty: decl.ty.clone(),
                     unit: decl.unit,
                     role: Role::Attribute,
+                    name: Some(decl.name.clone()),
                     loc: self.hir.expr(expr)?.loc,
                     scope,
                 });
@@ -235,6 +237,7 @@ impl Engine<'_> {
             ty: Ty::BOOL,
             unit: None,
             role: Role::Gate,
+            name: None,
             loc: self.hir.expr(expr)?.loc,
             scope,
         })

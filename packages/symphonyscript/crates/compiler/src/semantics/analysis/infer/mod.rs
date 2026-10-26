@@ -52,15 +52,13 @@ impl Engine<'_> {
             let lengths = match &position.val {
                 Val::Array(array) => array.shape.lengths(),
                 Val::Scalar(node) if self.arrays.contains(node) => {
-                    let (code, message) = match position.role {
-                        role::Role::Gate => (
-                            Code::ConditionType,
-                            "a gate or a guard is a `bool`, not an array",
-                        ),
-                        role::Role::Attribute | role::Role::Initializer => (
+                    let (code, message) = if position.ty.lengths.is_empty() {
+                        self.single_value_fault(&position, "an array")?
+                    } else {
+                        (
                             Code::TypeMismatch,
-                            "the value's array shape differs from the attribute's type",
-                        ),
+                            "the value's array shape differs from the attribute's type".into(),
+                        )
                     };
                     self.require_shape(*node, position.ty.lengths.clone(), code, message);
                     position.ty.lengths.clone()
@@ -69,12 +67,15 @@ impl Engine<'_> {
                 Val::Error => continue,
             };
             if lengths != position.ty.lengths {
-                self.error(
-                    Code::TypeMismatch,
-                    position.loc,
-                    position.scope,
-                    "the value's array shape differs from the attribute's type",
-                )?;
+                let (code, message) = if position.ty.lengths.is_empty() {
+                    self.single_value_fault(&position, "an array")?
+                } else {
+                    (
+                        Code::TypeMismatch,
+                        "the value's array shape differs from the attribute's type".into(),
+                    )
+                };
+                self.error(code, position.loc, position.scope, message)?;
                 continue;
             }
             for node in position.val.nodes() {

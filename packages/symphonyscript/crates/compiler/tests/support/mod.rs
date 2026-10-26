@@ -95,6 +95,11 @@ pub fn errors(diagnostics: Vec<Diagnostic>) -> Vec<Diagnostic> {
         .collect()
 }
 
+pub fn checked_with(vocabulary: &Vocabulary, text: &str) -> Vec<Diagnostic> {
+    let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+    errors(compiler.check(&[source(text)]))
+}
+
 pub fn checked_files(files: &[(&str, &str)]) -> Vec<Diagnostic> {
     errors(checked_files_all(files))
 }

@@ -74,6 +74,13 @@ fn fixed_slice(lower: BoundForm, upper: BoundForm, base: &Extent) -> Option<i128
     Some(end.max(start) - start)
 }
 
+fn outside_i64(form: BoundForm) -> bool {
+    match form {
+        BoundForm::Start(value) | BoundForm::End(value) => i64::try_from(value).is_err(),
+        BoundForm::Absent | BoundForm::Reactive => false,
+    }
+}
+
 struct Streak {
     period: usize,
     direction: Vec<i128>,
@@ -105,7 +112,7 @@ enum Solved {
     Unbounded(Vec<bool>),
 }
 
-const HUGE: i128 = 1 << 62;
+const CEILING: i128 = 1 << 120;
 
 fn joined(total: i128) -> String {
     format!(
@@ -347,17 +354,17 @@ impl Engine<'_> {
                 .cloned()
                 .ok_or(Internal::missed("capacity"))?;
             let next = self.capacity_step(&members, &inits, &current)?;
-            if next.iter().any(|value| *value >= LIMIT) {
-                let huge = vec![HUGE; members.len()];
-                let held = self.capacity_step(&members, &inits, &huge)?;
-                return Ok(if held.iter().all(|value| *value <= HUGE) {
-                    Solved::Limit(next)
-                } else {
-                    Solved::Unbounded(next.iter().map(|value| *value >= LIMIT).collect())
-                });
+            if next.iter().any(|value| *value >= CEILING) {
+                return Ok(Solved::Unbounded(
+                    next.iter().map(|value| *value >= LIMIT).collect(),
+                ));
             }
             if next == current {
-                return Ok(Solved::Capacities(current));
+                return Ok(if current.iter().any(|value| *value >= LIMIT) {
+                    Solved::Limit(current)
+                } else {
+                    Solved::Capacities(current)
+                });
             }
             history.push_back(next.clone());
             if history.len() > 2 * longest + 1 {
@@ -757,6 +764,9 @@ impl Engine<'_> {
             Op::Slice { lower, upper, .. } => {
                 let lower = self.bound_form(lower)?;
                 let upper = self.bound_form(upper)?;
+                if outside_i64(lower) || outside_i64(upper) {
+                    return Ok(Extent::Variable(Piecewise::constant(0)));
+                }
                 match (&first, fixed_slice(lower, upper, &first)) {
                     (Extent::Fixed(_), Some(length)) => Extent::Fixed(length),
                     _ => Extent::Variable(Piecewise::compose(
