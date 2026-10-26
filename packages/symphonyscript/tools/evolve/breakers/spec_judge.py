@@ -95,13 +95,15 @@ class SpecJudge:
             "output_config": {"effort": JUDGE_EFFORT, "format": {"type": "json_schema", "schema": ANSWER}},
             "messages": [{"role": "user", "content": f"{instruction}\n\n```sym\n{text}\n```"}]}))
 
-    def decide(self, program_id, text, errors, key):
+    def answers_for(self, text):
         try:
             with ThreadPoolExecutor(max_workers=len(INSTRUCTIONS)) as both:
-                answers = list(both.map(lambda instruction: self.ask(instruction, text), INSTRUCTIONS))
+                return list(both.map(lambda instruction: self.ask(instruction, text), INSTRUCTIONS))
         except ProxyRefused as refused:
             print(f"the proxy refused a judge call: {refused}", file=sys.stderr, flush=True)
-            return False
+            return None
+
+    def conclude(self, program_id, text, errors, key, answers):
         compiler = "reject" if errors else "accept"
         if None in answers or answers[0]["verdict"] != answers[1]["verdict"] or answers[0]["verdict"] == compiler:
             return False
@@ -111,6 +113,10 @@ class SpecJudge:
             "judges": answers[0]["verdict"], "rules": [answer["rule"] for answer in answers],
             "codes": sorted({error["code"] for error in errors}), "diagnostics": errors,
             "sources": [{"path": SOURCE_PATH, "text": text}]})
+
+    def decide(self, program_id, text, errors, key):
+        answers = self.answers_for(text)
+        return answers is not None and self.conclude(program_id, text, errors, key, answers)
 
     def close(self):
         self.pool.shutdown(wait=True)

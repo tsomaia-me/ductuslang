@@ -59,6 +59,28 @@ A worker restarts every `--restart-every` programs on Fuzz4All's own resume, and
 
 Ctrl-C on `start` stops the workers; Ctrl-C on the proxy stops it and prints the spend. Running the same commands again resumes: workers continue from their last program and reuse the seeds and the prompt, and the proxy collects a batch left in flight. When the proxy's cap is passed every call is refused and each worker exits.
 
+## Targeted loop
+
+`targeted.py` aims the same oracle and judges at the SPEC's rules instead of random programs, after WhiteFox (an analyst model writes requirements, a generator writes a test from each, and the requirements that trigger bugs get more budget). It needs the proxy and the setup above.
+
+```sh
+cd scripts/batch-runner
+.venv/bin/python proxy.py runs/targeted --max-usd 50 --batch-seconds 60
+
+cd packages/symphonyscript/tools/evolve/breakers
+.venv/bin/python targeted.py [--run-dir runs/targeted] [--proxy http://127.0.0.1:8787] [--targets targets.yaml] [--requirements 6] [--programs 4] [--rounds 3] [--samples samples] [--evolve-bin ../target/release] [--seed N]
+```
+
+`targets.yaml` lists the targets, each a `name` and the SPEC `sections` it covers. A round runs five steps, each submitting its calls together so the proxy batches them:
+
+1. Requirements: a target none of whose requirements has yielded (every target in round 1) gets one call asking for `--requirements` requirements, each a JSON object `{edge, verdict, rule}`: one tricky edge of the target's rules, the verdict a correct compiler gives (`accept`, `reject`, or `reject <code>`), and the SPEC sentence that decides it. The calls go to `claude-opus-5-5` and `claude-fable-5-1` alternately, with adaptive thinking at effort `high`, `max_tokens` 32000, the reply constrained to a JSON schema, and the whole SPEC alone as the system prompt. A target asked again is shown its earlier edges and told to write different ones.
+2. Programs: each requirement gets `--programs` calls to `claude-sonnet-5-5` (same settings), with the system prompt of § Program generation (the SPEC and the samples) and the requirement in the user turn; the reply is `{program, verdict, rule}`. From round 2 the round's budget, `--programs` times the number of requirements, is shared out in proportion to a Thompson sample of each requirement's yield, every requirement keeping at least one.
+3. Oracle: each program runs through `evolve-check` as `oracle.py` does, so a mechanical signal is shrunk and kept in `findings/` as in the Fuzz4All loop. A program whose compiler verdict (rejected on an error diagnostic, warnings excepted) differs from the verdict it states is a disagreement.
+4. Judge: each disagreement, and nothing else, goes to the two-judge rule of § SPEC judge (`SpecJudge.answers_for` and `conclude`); a `verdict-<hash>.json` finding is kept only when both judges agree with each other and not with the compiler.
+5. Feedback: a requirement's yield is its confirmed findings (verdict findings and signals, summed over rounds) plus half its disagreements, and its posterior is Beta(1 + yield, 1 + max(0, programs - yield)).
+
+`--rounds` bounds the loop. A run directory holds `targets.json`; `requirements.json` (each requirement with its target, the model that wrote it, its programs, disagreements, confirmed findings and yield); `rounds/NN/programs.jsonl` (every program with its requirement, stated and compiler verdicts, codes, judge answers and whether it was confirmed); `rounds/NN/summary.json` (programs, disagreements, judged, confirmed, signals, and the same by target); and `findings/`. A directory that holds a run is refused; a run does not resume.
+
 ## Dry run and tests
 
 ```sh
@@ -66,7 +88,7 @@ Ctrl-C on `start` stops the workers; Ctrl-C on the proxy stops it and prints the
 .venv/bin/python -m unittest -v
 ```
 
-`fake_backend.py` serves the proxy on a fake batch backend answering each call with the next string of `replies.json`. The tests run the adapter, the oracle, the SPEC judge, the seed draw and the workers end to end on it, and need the batch runner's `.venv`.
+`fake_backend.py` serves the proxy on a fake batch backend answering each call with the next string of `replies.json`. The tests run the adapter, the oracle, the SPEC judge, the seed draw, the workers and the targeted loop end to end on it, and need the batch runner's `.venv`.
 
 ## What the adapter changes
 
