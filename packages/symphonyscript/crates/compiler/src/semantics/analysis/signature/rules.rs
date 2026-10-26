@@ -544,7 +544,12 @@ impl Engine<'_> {
             }
             Builtin::Bytes => {
                 let first = operand(sigs, 0)?;
-                if !matches!(first.kind, Kind::Int | Kind::Str | Kind::Any) {
+                let array = operands
+                    .first()
+                    .is_some_and(|operand| self.arrays.contains(operand));
+                if !matches!(first.kind, Kind::Int | Kind::Str | Kind::Any)
+                    || (first.kind != Kind::Str && !array)
+                {
                     self.error_at_node(
                         Code::OperandType,
                         node,

@@ -1,3 +1,6 @@
+mod support;
+
+use support::{Row, signature_vocabulary};
 use symphonyscript::{Code, Compiler, Severity, Source};
 use symphonyscript_fixtures::native_vocabulary;
 
@@ -143,4 +146,72 @@ fn a_variable_array_attribute_accepts_a_value_up_to_its_capacity_and_refuses_a_l
     for (text, expected) in rows {
         assert_eq!(codes(text), *expected, "{text}");
     }
+}
+
+#[test]
+fn a_native_calls_compile_time_arguments_are_typed_and_fit_by_its_signature() {
+    let natives: &[Row] = &[
+        (
+            &["Clip c:\n    Note/(text_length(5))\n"],
+            &[(Code::TypeMismatch, "5")],
+        ),
+        (
+            &["Clip c:\n    Note/(pair_sum([1.5, 2]))\n"],
+            &[(Code::TypeMismatch, "[1.5, 2]")],
+        ),
+        (
+            &["Clip c:\n    Note/(pair_sum([true, false]))\n"],
+            &[(Code::TypeMismatch, "[true, false]")],
+        ),
+        (
+            &["Clip c:\n    Note/(checksum([300]))\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &["Clip c:\n    Note/(text_length(true))\n"],
+            &[(Code::TypeMismatch, "true")],
+        ),
+        (
+            &["Clip c:\n    Note/(checksum([1, 2]) + text_length(1.5))\n"],
+            &[(Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[
+                "Clip c:\n    Note/(checksum(\"GET\") + pair_sum([1, 2]) + first_of([1, 2, 3, 4]) + text_length(\"abc\"))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then text_length(5) else f(n - 1)\n",
+                "Clip c:\n    Note/(f(2))\n",
+            ],
+            &[(Code::TypeMismatch, "5")],
+        ),
+        (
+            &["Clip c:\n    for i in 0..checksum([300]):\n        Note\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &["input f = 1.5\n", "Clip c:\n    Note/(pair_sum([f, 2]))\n"],
+            &[(Code::TypeMismatch, "[f, 2]")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&native_vocabulary(), natives);
+    let plain: &[Row] = &[
+        (
+            &["Clip c:\n    Note/(plain(1.5))\n"],
+            &[(Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &["Clip c:\n    Note/(plain(true))\n"],
+            &[(Code::TypeMismatch, "true")],
+        ),
+        (
+            &["Clip c:\n    Note/(plain(\"a\"))\n"],
+            &[(Code::TypeMismatch, "\"a\"")],
+        ),
+        (&["Clip c:\n    Note/(plain(2))\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&signature_vocabulary(), plain);
 }

@@ -3215,3 +3215,126 @@ fn inconsistent_uses_name_each_use_with_its_calls() {
     both.sort();
     assert_eq!(calls, vec![both]);
 }
+
+#[test]
+fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
+    let rows: &[support::Row] = &[
+        (
+            &["input xs = [1, 2]\n", "Clip c:\n    Note/(bytes(xs)[0])\n"],
+            &[],
+        ),
+        (
+            &[
+                "input i = 300\n",
+                "let b = bytes([i, 2])\n",
+                "Clip c:\n    Note/(b[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input xs: u8[3] = [1, 2, 3]\n",
+                "let b = bytes(xs)\n",
+                "Clip c:\n    Note/(b[2])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input notes: i32[3] = [60, 64, 67]\n",
+                "let a = bytes(notes)\n",
+                "Clip c:\n    Note/(a[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input i = 1\n",
+                "let lit = [i, 2, 3]\n",
+                "Clip c:\n    Note/(bytes(lit)[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input held: i32[..6] = []\n",
+                "let raw = bytes(held)\n",
+                "let second = raw[1]\n",
+                "Clip c:\n    Note/second\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input packet: u8[..6] = []\n",
+                "input offset = 0\n",
+                "pattern P(default v):\n    Note/v\n",
+                "Clip c:\n    P/(bytes(packet)[offset])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input h: i32[..4] = []\n",
+                "Clip c:\n    Note/(bytes(\"GET\")[0] + bytes([1, 2])[1] + len(bytes(h)))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let packed = bytes([300, -5, 70000, 12])\n",
+                "Clip c:\n    Note/(packed[0])\n    Note/(packed[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &["input xs = [1, 2]\n", "Clip c:\n    Note/(bytes(xs)[2])\n"],
+            &[(Code::IndexOutOfRange, "2")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let attribute: &[support::Row] = &[
+        (
+            &[
+                "input xs = [1, 2, 3]\n",
+                "Clip c | fixed=(bytes(xs)):\n    Note\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input xs = [1, 2, 3, 4]\n",
+                "Clip c | fixed=(bytes(xs)):\n    Note\n",
+            ],
+            &[(Code::TypeMismatch, "bytes(xs)")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), attribute);
+}
+
+#[test]
+fn bytes_of_a_single_value_is_an_error() {
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note/(bytes(65)[0])\n"],
+            &[(Code::OperandType, "bytes(65)")],
+        ),
+        (
+            &["let b = bytes(65)\n", "Clip c:\n    Note/b\n"],
+            &[(Code::OperandType, "bytes(65)")],
+        ),
+        (
+            &["Clip c | data=(bytes(65)):\n    Note\n"],
+            &[(Code::OperandType, "bytes(65)")],
+        ),
+        (
+            &["input i = 1\n", "Clip c | data=(bytes(i)):\n    Note\n"],
+            &[(Code::OperandType, "bytes(i)")],
+        ),
+        (
+            &["Clip c | data=(bytes(\"GET\") + bytes([1, 2])):\n    Note\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
+}

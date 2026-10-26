@@ -181,10 +181,13 @@ fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
 
 #[test]
 fn a_native_function_is_called_at_compile_time_with_compile_time_arguments() {
-    let cases: [(&str, i128); 5] = [
+    let cases: [(&str, i128); 8] = [
         ("checksum(\"GET\")", 71 + 69 + 84),
         ("checksum([u8(1), u8(2), u8(3)])", 6),
         ("text_length(\"hello\")", 5),
+        ("text_length(\"abc\")", 3),
+        ("pair_sum([1, 2])", 3),
+        ("first_of([1, 2, 3, 4])", 1),
         ("mirror([5, 6, 7])[0]", 7),
         ("len(mirror([5, 6, 7]))", 3),
     ];
@@ -195,6 +198,25 @@ fn a_native_function_is_called_at_compile_time_with_compile_time_arguments() {
         });
         assert!(errors(&diagnostics).is_empty(), "{call}: {diagnostics:?}");
         assert_eq!(value, Some(CVal::Int(expected)), "{call}");
+    }
+}
+
+#[test]
+fn bytes_converts_each_integer_as_u8_converts() {
+    let cases: [(&str, i128); 4] = [
+        ("packed[0]", 255),
+        ("packed[1]", 0),
+        ("packed[2]", 255),
+        ("packed[3] + len(packed)", 16),
+    ];
+    for (read, expected) in cases {
+        let text =
+            format!("let packed = bytes([300, -5, 70000, 12])\nClip c:\n    Note/({read})\n");
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{read}: {diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(expected)), "{read}");
     }
 }
 

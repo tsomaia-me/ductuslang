@@ -3,13 +3,17 @@ use std::rc::Rc;
 use symphonyscript_core::{NativeArg, NativeId, NativeOut, NativeType, Scalar, Ty, Value};
 
 use super::ctx::Ctx;
+use super::is_int_ty::is_int_ty;
 use super::of_scalar::of_scalar;
 use crate::semantics::Internal;
 use crate::semantics::analysis::c_array::CArray;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::some::some;
+use crate::semantics::analysis::width::Width;
 
 enum Argument {
     Value(Value),
@@ -30,6 +34,9 @@ impl Engine<'_> {
             .native(native)
             .ok_or(Internal::missed("native function"))?;
         let signature = &decl.signature;
+        if !some!(self.native_arguments_fit(args, &signature.params, ctx, need)?) {
+            return Ok(Some(CVal::Error));
+        }
         let mut values = Vec::with_capacity(args.len());
         let mut missing = false;
         for (arg, param) in args.iter().zip(&signature.params) {
@@ -127,6 +134,42 @@ impl Engine<'_> {
                 .collect();
         }
         Ok(Some(CVal::Array(CArray::new(level))))
+    }
+}
+
+impl Engine<'_> {
+    fn native_arguments_fit(
+        &mut self,
+        args: &[NodeId],
+        params: &[NativeType],
+        ctx: Ctx,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<bool>, Internal> {
+        let mut fits = true;
+        for (arg, param) in args.iter().zip(params) {
+            let scalar = native_ty(param).scalar;
+            let Some(leaves) = self.native_argument(*arg, Some(scalar))? else {
+                fits = false;
+                continue;
+            };
+            for leaf in leaves {
+                let sig = some!(self.sig(leaf, need));
+                if sig.is_error() {
+                    fits = false;
+                    continue;
+                }
+                if !self.compatible(leaf, &sig, scalar, false)? {
+                    fits = false;
+                    continue;
+                }
+                let ty = of_scalar(scalar);
+                if sig.kind == Kind::Int && sig.width == Width::Flexible && is_int_ty(ty) {
+                    let value = some!(self.child(leaf, ty, ctx, need)?);
+                    fits &= !self.fit(leaf, value, ty)?.is_error();
+                }
+            }
+        }
+        Ok(Some(fits))
     }
 }
 

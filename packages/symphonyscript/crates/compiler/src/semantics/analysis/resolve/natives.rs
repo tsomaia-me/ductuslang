@@ -60,7 +60,13 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         let mut operands = Vec::with_capacity(arity);
-        for (val, param) in vals.into_iter().flatten().zip(&decl.signature.params) {
+        for ((val, param), value) in vals
+            .into_iter()
+            .flatten()
+            .zip(&decl.signature.params)
+            .zip(values)
+        {
+            let arg_loc = self.hir.expr(*value)?.loc;
             let ty = native_ty(param);
             let array_param =
                 !ty.is_scalar() || !matches!(param, symphonyscript_core::NativeType::Value(_));
@@ -99,7 +105,7 @@ impl Engine<'_> {
                 self.error(Code::TypeMismatch, loc, scope, ARRAY_PARAM)?;
                 return Ok(Some(Val::Error));
             }
-            let Some(node) = self.boxed(&val, loc, scope)? else {
+            let Some(node) = self.boxed(&val, arg_loc, scope)? else {
                 return Ok(Some(Val::Error));
             };
             operands.push(node);

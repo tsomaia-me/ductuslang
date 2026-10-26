@@ -324,8 +324,14 @@ impl Engine<'_> {
                 Op::Native { native, args } => {
                     self.native_arg_checks(native, &args)?;
                     let params = self.native_params(native)?;
+                    let arg_selection = match selection {
+                        Selection::Evaluated => Selection::Chosen,
+                        Selection::Chosen | Selection::PassedOver => selection,
+                    };
                     for (arg, param) in args.into_iter().zip(params) {
-                        stack.push((arg, param, selection));
+                        for leaf in self.native_argument(arg, param)?.unwrap_or_default() {
+                            stack.push((leaf, param, arg_selection));
+                        }
                     }
                 }
                 other => {
@@ -362,6 +368,34 @@ impl Engine<'_> {
             .collect())
     }
 
+    pub(in crate::semantics::analysis) fn native_argument(
+        &mut self,
+        arg: NodeId,
+        param: Option<Scalar>,
+    ) -> Result<Option<Vec<NodeId>>, Internal> {
+        if !matches!(self.node(arg)?.op, Op::Array(_)) {
+            return Ok(Some(vec![arg]));
+        }
+        let sig = self.known_sig(arg)?;
+        if sig.is_error() {
+            return Ok(None);
+        }
+        if let Some(param) = param
+            && !self.compatible(arg, &sig, param, false)?
+        {
+            return Ok(None);
+        }
+        let mut leaves = Vec::new();
+        let mut pending = vec![arg];
+        while let Some(node) = pending.pop() {
+            match &self.node(node)?.op {
+                Op::Array(elements) => pending.extend(elements.iter().rev()),
+                _ => leaves.push(node),
+            }
+        }
+        Ok(Some(leaves))
+    }
+
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
         let sig = self.known_sig(node)?;
         if sig.reactive || sig.is_error() {
@@ -394,7 +428,7 @@ impl Engine<'_> {
         })
     }
 
-    fn compatible(
+    pub(in crate::semantics::analysis) fn compatible(
         &mut self,
         node: NodeId,
         sig: &Sig,
