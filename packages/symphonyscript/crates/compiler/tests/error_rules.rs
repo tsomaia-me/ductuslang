@@ -750,6 +750,12 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
+        "that shares a cycle of calls with one that is not",
+        "reactive-recursion",
+        "input n = 1\nfn a(x) bounded 3 else 0: b(x)\nfn b(x): if x > 0 then a(x - 1) else 0\nClip c:\n    Note/(a(n))\n",
+    ),
+    rule(
+        "6.3",
         "A call to a recursive function reads a cell when one of its arguments does, or when the body of its function, or of a function it calls, does.",
         "reactive-recursion",
         "input i = 1\nfn f(n): if n < 1 then i else f(n - 1)\nClip c:\n    Note/(f(3))\n",

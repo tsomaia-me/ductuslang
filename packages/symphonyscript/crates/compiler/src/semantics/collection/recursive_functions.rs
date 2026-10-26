@@ -7,7 +7,7 @@ use super::strongly_connected::strongly_connected;
 use crate::semantics::Internal;
 use crate::semantics::ir::{ExprId, ExprKind, FnId, Hir};
 
-type Recursion = (Vec<bool>, Vec<bool>, Vec<bool>);
+type Recursion = (Vec<bool>, Vec<bool>, Vec<bool>, Vec<Vec<(usize, ExprId)>>);
 
 pub(crate) fn recursive_functions(
     hir: &Hir,
@@ -15,6 +15,7 @@ pub(crate) fn recursive_functions(
     prelude: &Namespace,
 ) -> Result<Recursion, Internal> {
     let mut edges: Vec<Vec<usize>> = Vec::with_capacity(hir.fns.len());
+    let mut calls: Vec<Vec<(usize, ExprId)>> = Vec::with_capacity(hir.fns.len());
     let mut unresolved = Vec::with_capacity(hir.fns.len());
     for (index, decl) in hir.fns.iter().enumerate() {
         let id = FnId(u32::try_from(index).unwrap_or(u32::MAX));
@@ -39,6 +40,7 @@ pub(crate) fn recursive_functions(
         roots.push(decl.value);
         roots.extend(decl.bound.iter().map(|bound| bound.fallback));
         let mut targets = BTreeSet::new();
+        let mut sites = Vec::new();
         let mut unsure = false;
         let mut stack = roots;
         while let Some(expr) = stack.pop() {
@@ -50,6 +52,7 @@ pub(crate) fn recursive_functions(
                 match namespace.get(name) {
                     Some(Decl::Fn(target)) => {
                         targets.insert(target.index());
+                        sites.push((target.index(), expr));
                     }
                     Some(_) => {}
                     None => unsure = true,
@@ -58,6 +61,8 @@ pub(crate) fn recursive_functions(
             stack.extend(kind.children());
         }
         edges.push(targets.into_iter().collect());
+        sites.sort_by_key(|(_, expr)| *expr);
+        calls.push(sites);
         unresolved.push(unsure);
     }
     let mut recursive = vec![false; hir.fns.len()];
@@ -79,5 +84,5 @@ pub(crate) fn recursive_functions(
             }
         }
     }
-    Ok((recursive, bounded, unresolved))
+    Ok((recursive, bounded, unresolved, calls))
 }

@@ -668,6 +668,7 @@ impl<'a> Engine<'a> {
             before,
             chain,
             message: message.into(),
+            help: None,
             unless_untyped: Vec::new(),
             unless_values: Vec::new(),
         });
@@ -721,16 +722,22 @@ impl<'a> Engine<'a> {
                             deferred.code,
                             deferred.loc,
                             related,
-                            deferred.message.clone(),
+                            (deferred.message.clone(), deferred.help.clone()),
                             depth,
                         ));
                     }
                 }
             }
         }
-        for (code, loc, related, message, _) in chosen {
-            self.report
-                .error_with(self.hir, code, loc, &related, message);
+        for (code, loc, related, (message, help), _) in chosen {
+            match help {
+                Some(help) => self
+                    .report
+                    .hinted(self.hir, code, loc, &related, message, help),
+                None => self
+                    .report
+                    .error_with(self.hir, code, loc, &related, message),
+            }
         }
         if let Some(stop) = stop {
             self.report
@@ -760,6 +767,38 @@ impl<'a> Engine<'a> {
             before: Vec::new(),
             chain,
             message: message.into(),
+            help: None,
+            unless_untyped,
+            unless_values,
+        });
+        Ok(())
+    }
+
+    pub(in crate::semantics::analysis) fn error_at_node_helped(
+        &mut self,
+        code: Code,
+        node: NodeId,
+        before: Vec<(Loc, String)>,
+        message: String,
+        help: String,
+    ) -> Result<(), Internal> {
+        let (loc, scope) = {
+            let record = self.node(node)?;
+            (record.loc, record.scope)
+        };
+        if self.in_probe(scope)? {
+            return Ok(());
+        }
+        let unless_untyped = self.untypable_reads(node)?;
+        let unless_values = self.untypable_values(node)?;
+        let chain = self.chain(scope)?;
+        self.deferred.push(super::deferred::Deferred {
+            code,
+            loc,
+            before,
+            chain,
+            message,
+            help: Some(help),
             unless_untyped,
             unless_values,
         });
@@ -784,6 +823,7 @@ impl<'a> Engine<'a> {
             before: Vec::new(),
             chain,
             message: message.into(),
+            help: None,
             unless_untyped: Vec::new(),
             unless_values,
         });
@@ -982,7 +1022,13 @@ impl<'a> Engine<'a> {
     }
 }
 
-type Chosen = (Code, Loc, Vec<(Loc, String)>, String, usize);
+type Chosen = (
+    Code,
+    Loc,
+    Vec<(Loc, String)>,
+    (String, Option<String>),
+    usize,
+);
 
 #[derive(PartialEq, Eq, Hash)]
 struct Merged {

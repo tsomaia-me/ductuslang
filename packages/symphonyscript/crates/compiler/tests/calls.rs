@@ -161,6 +161,8 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
 
 type Labels<'a> = &'a [(&'a str, &'a str)];
 
+type Recursion<'a> = (&'a [&'a str], &'a str, &'a [&'a str], &'a str, Labels<'a>);
+
 fn labelled(text: &str, diagnostic: &Diagnostic) -> Vec<(String, String)> {
     diagnostic
         .related
@@ -256,6 +258,104 @@ fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
             assert_eq!(labelled(&text, diagnostic), expected, "{text}");
         }
     }
+}
+
+#[test]
+fn reactive_recursion_names_its_chain_of_calls_and_the_functions_that_lack_a_bound() {
+    let input = "input n = 1\n";
+    let a = "fn a(x) bounded 3 else 0: b(x)\n";
+    let rows: &[Recursion] = &[
+        (
+            &[
+                input,
+                a,
+                "fn b(x): if x > 0 then a(x - 1) else 0\n",
+                "Clip c:\n    Note/(a(n))\n",
+            ],
+            "a(n)",
+            &["`a` → `b` → `a`", "`b` has none"],
+            "declare a bound on `b`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            &[
+                ("b(x)", "`a` calls `b` here"),
+                ("a(x - 1)", "`b` calls `a` here"),
+            ],
+        ),
+        (
+            &[
+                input,
+                "fn f(x): if x > 0 then f(x - 1) else 0\n",
+                "Clip c:\n    Note/(f(n))\n",
+            ],
+            "f(n)",
+            &["`f` → `f`", "`f` has none"],
+            "declare a bound on `f`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            &[("f(x - 1)", "`f` calls `f` here")],
+        ),
+        (
+            &[
+                input,
+                "fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n",
+                "Clip c:\n    Note/(fib(n))\n",
+            ],
+            "fib(n)",
+            &["`fib` → `fib`", "`fib` has none"],
+            "declare a bound on `fib`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            &[("fib(k - 1)", "`fib` calls `fib` here")],
+        ),
+        (
+            &[
+                "fn g(x): if x > 0 then g(x - 1) else n\n",
+                input,
+                "Clip c:\n    Note/(g(3))\n",
+            ],
+            "g(3)",
+            &[
+                "the body of the recursive function `g` reads a cell",
+                "`g` → `g`",
+            ],
+            "declare a bound on `g`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            &[("g(x - 1)", "`g` calls `g` here")],
+        ),
+    ];
+    for (items, at, words, help, chain) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::checked(&text);
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            let range = &diagnostic.span.range;
+            assert_eq!(
+                (
+                    diagnostic.code,
+                    &text[range.start as usize..range.end as usize]
+                ),
+                (Code::ReactiveRecursion, *at),
+                "{text}"
+            );
+            for word in *words {
+                assert!(diagnostic.summary.contains(word), "{text}{diagnostic:?}");
+            }
+            assert_eq!(diagnostic.help.as_deref(), Some(*help), "{text}");
+            let expected: Vec<(String, String)> = chain
+                .iter()
+                .map(|(call, label)| (call.to_string(), label.to_string()))
+                .collect();
+            assert_eq!(labelled(&text, diagnostic), expected, "{text}");
+        }
+    }
+    support::assert_rows_in_every_order(
+        &vocabulary(),
+        &[(
+            &[
+                input,
+                a,
+                "fn b(x) bounded 3 else 0: if x > 0 then a(x - 1) else 0\n",
+                "Clip c:\n    Note/(a(n))\n",
+            ],
+            &[],
+        )],
+    );
 }
 
 #[test]

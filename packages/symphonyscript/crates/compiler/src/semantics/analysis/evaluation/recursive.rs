@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
 
 use symphonyscript_core::FamilyId;
@@ -31,7 +32,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::template_key::TemplateKey;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
-use crate::semantics::ir::FnId;
+use crate::semantics::ir::{ExprId, FnId};
 use crate::semantics::reporting::grouped;
 
 struct Argument {
@@ -334,14 +335,11 @@ impl Engine<'_> {
             return Ok(Some(None));
         }
         if sig.reactive {
-            self.error_at_node(
-                Code::ReactiveRecursion,
-                call,
-                format!(
-                    "the body of the recursive function `{}` reads a cell",
-                    self.function_name(function)?
-                ),
-            )?;
+            let reading = format!(
+                "the body of the recursive function `{}` reads a cell",
+                self.function_name(function)?
+            );
+            self.reactive_recursion(call, function, reading)?;
             return Ok(Some(None));
         }
         self.template_units(scope, root)?;
@@ -692,6 +690,109 @@ impl Engine<'_> {
             .name
             .as_ref()
             .map_or(String::new(), |name| name.text.clone()))
+    }
+
+    pub(in crate::semantics::analysis) fn reactive_recursion(
+        &mut self,
+        node: NodeId,
+        function: FnId,
+        reading: String,
+    ) -> Result<(), Internal> {
+        let Some(cycle) = self.unbounded_cycle(function)? else {
+            return self.error_at_node(Code::ReactiveRecursion, node, reading);
+        };
+        let mut chain = vec![format!("`{}`", self.function_name(function)?)];
+        let mut unbounded: Vec<String> = Vec::new();
+        let mut related = Vec::new();
+        for (step, (caller, call)) in cycle.iter().enumerate() {
+            let callee = cycle.get(step + 1).map_or(function, |(next, _)| *next);
+            let caller_name = self.function_name(*caller)?;
+            let callee_name = self.function_name(callee)?;
+            let named = format!("`{caller_name}`");
+            if self.hir.fn_decl(*caller)?.bound.is_none() && !unbounded.contains(&named) {
+                unbounded.push(named);
+            }
+            related.push((
+                self.hir.expr(*call)?.loc,
+                format!("`{caller_name}` calls `{callee_name}` here"),
+            ));
+            chain.push(format!("`{callee_name}`"));
+        }
+        let listed = listed(&unbounded);
+        let has = if unbounded.len() == 1 { "has" } else { "have" };
+        let summary = format!(
+            "{reading}, so the cycle of calls {} needs a bound on each of its functions, and {listed} {has} none",
+            chain.join(" → ")
+        );
+        let help = format!(
+            "declare a bound on {listed}, written `bounded N else fallback`, as in `bounded 10 else 0`"
+        );
+        self.error_at_node_helped(Code::ReactiveRecursion, node, related, summary, help)
+    }
+
+    fn unbounded_cycle(&self, function: FnId) -> Result<Option<Vec<(FnId, ExprId)>>, Internal> {
+        let unbounded = |index: usize| -> Result<bool, Internal> {
+            Ok(self
+                .hir
+                .fns
+                .get(index)
+                .ok_or(Internal::missed("function"))?
+                .bound
+                .is_none())
+        };
+        let start = (function.index(), unbounded(function.index())?);
+        let mut parents: BTreeMap<(usize, bool), ((usize, bool), ExprId)> = BTreeMap::new();
+        let mut queue = VecDeque::from([start]);
+        while let Some(state) = queue.pop_front() {
+            let calls = self
+                .collected
+                .calls
+                .get(state.0)
+                .ok_or(Internal::missed("function"))?;
+            for (target, call) in calls {
+                if !self
+                    .collected
+                    .recursive
+                    .get(*target)
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                let next = (*target, state.1 || unbounded(*target)?);
+                if *target == start.0 && next.1 {
+                    let mut cycle = vec![(state.0, *call)];
+                    let mut current = state;
+                    while let Some((previous, through)) = parents.get(&current) {
+                        cycle.push((previous.0, *through));
+                        current = *previous;
+                    }
+                    cycle.reverse();
+                    return Ok(Some(
+                        cycle
+                            .into_iter()
+                            .map(|(caller, through)| {
+                                (FnId(u32::try_from(caller).unwrap_or(u32::MAX)), through)
+                            })
+                            .collect(),
+                    ));
+                }
+                if *target == start.0 || parents.contains_key(&next) {
+                    continue;
+                }
+                parents.insert(next, (state, *call));
+                queue.push_back(next);
+            }
+        }
+        Ok(None)
+    }
+}
+
+fn listed(names: &[String]) -> String {
+    match names.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
     }
 }
 

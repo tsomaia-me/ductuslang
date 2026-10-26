@@ -108,7 +108,8 @@ pub(crate) fn collect(
             declare(hir, &base, &mut source, &mut first, &name, decl, report);
         }
     }
-    let (recursive, bounded_cycle, unresolved) = recursive_functions(hir, &source, &prelude)?;
+    let (recursive, bounded_cycle, unresolved, calls) =
+        recursive_functions(hir, &source, &prelude)?;
     for (index, decl) in hir.fns.iter().enumerate() {
         let (Some(bound), Some(false), Some(false)) =
             (&decl.bound, recursive.get(index), unresolved.get(index))
@@ -133,6 +134,7 @@ pub(crate) fn collect(
         prelude,
         recursive,
         bounded_cycle,
+        calls,
         inline,
         cyclic_patterns: graph.cyclic,
         stand_ins: graph.stand_ins,

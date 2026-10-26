@@ -243,12 +243,12 @@ impl Engine<'_> {
             Op::Recursive { function, .. } if self.hir.fn_decl(*function)?.faulty_head => {
                 Sig::ERROR
             }
-            Op::Recursive { .. } => {
-                self.error_at_node(
-                    Code::ReactiveRecursion,
-                    node,
-                    "a call to a recursive function has compile-time arguments, and this one reads a cell",
-                )?;
+            Op::Recursive { function, .. } => {
+                let reading = format!(
+                    "this call of `{}` reads a cell",
+                    self.function_name(*function)?
+                );
+                self.reactive_recursion(node, *function, reading)?;
                 Sig::ERROR
             }
             Op::ToRead { attrs, .. } => self.destination_read_sig(node, attrs, extra)?,
