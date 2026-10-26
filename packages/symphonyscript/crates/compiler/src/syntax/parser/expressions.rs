@@ -363,15 +363,15 @@ impl Parser<'_> {
     }
 
     pub(super) fn history_after_offset(&mut self) {
-        let close = Task::Close {
+        let close = |what| Task::Close {
             kind: SyntaxKind::RBrace,
             code: Code::ExpressionSyntax,
-            what: "`,` or `}`",
+            what,
         };
         if self.eat(SyntaxKind::Comma) {
-            self.then([Task::Expr, close]);
+            self.then([Task::Expr, close("`}`")]);
         } else {
-            self.then([close]);
+            self.then([close("`,` or `}`")]);
         }
     }
 

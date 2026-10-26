@@ -1,6 +1,8 @@
 mod support;
 
-use symphonyscript::Code;
+use symphonyscript::{Code, Compiler};
+use symphonyscript_core::Vocabulary;
+use symphonyscript_fixtures::{bounded_vocabulary, vocabulary};
 
 type Case = (&'static str, &'static [(Code, &'static str, usize)]);
 
@@ -411,6 +413,73 @@ fn a_child_wire_or_loop_name_equal_to_a_visible_local_is_refused_naming_both() {
                     .any(|related| related.span.range != diagnostic.span.range
                         && named(&related.span.range) == name),
                 "{text}{diagnostic:?}"
+            );
+        }
+    }
+}
+
+type Summary = (
+    fn() -> Vocabulary,
+    &'static [&'static str],
+    Code,
+    &'static str,
+    &'static str,
+);
+
+#[test]
+fn a_summary_reads_as_a_sentence_in_the_programs_names() {
+    let rows: &[Summary] = &[
+        (
+            vocabulary,
+            &[
+                "Clip verse:\n    Plays | gain=to.hook.nosuch: chorus\n",
+                "Clip chorus:\n    Note as hook /72\n",
+            ],
+            Code::UnknownAttribute,
+            "nosuch",
+            "the destination, the `Note` named `hook`, has no attribute `nosuch`",
+        ),
+        (
+            vocabulary,
+            &[
+                "input x = 1\n",
+                "state s = x{1, 0, 2}\n",
+                "Clip c:\n    Note when s > 0\n",
+            ],
+            Code::ExpressionSyntax,
+            ",",
+            "expected `}`, found `,`",
+        ),
+        (
+            bounded_vocabulary,
+            &[
+                "input i = 0\n",
+                "A one\n",
+                "B two\n",
+                "Root r:\n    Item\n    Link: r\n    Pick | level=to.x: [one, two][i]\n",
+            ],
+            Code::ToCandidates,
+            "to.x",
+            "the destination candidates hold `x` with different types or unit families, and a `to` read takes one",
+        ),
+    ];
+    for (vocabulary, items, code, at, summary) in rows {
+        let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::errors(compiler.check(&[support::source(&text)]));
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            let range = &diagnostic.span.range;
+            assert_eq!(
+                (
+                    diagnostic.code,
+                    &text[range.start as usize..range.end as usize],
+                    diagnostic.summary.as_str()
+                ),
+                (*code, *at, *summary),
+                "{text}"
             );
         }
     }

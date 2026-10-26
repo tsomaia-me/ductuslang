@@ -273,7 +273,7 @@ impl Engine<'_> {
                         code,
                         last.loc,
                         scope,
-                        format!("the destination {owner} has no attribute `{}`", last.text),
+                        format!("the destination, {owner}, has no attribute `{}`", last.text),
                     )?;
                     return Ok(Some(Val::Error));
                 }

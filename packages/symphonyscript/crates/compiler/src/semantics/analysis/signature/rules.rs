@@ -738,7 +738,10 @@ impl Engine<'_> {
                 self.error_at_node(
                     Code::ToCandidates,
                     node,
-                    "every destination candidate has this attribute with one type and unit family",
+                    format!(
+                        "the destination candidates hold `{}` with different types or unit families, and a `to` read takes one",
+                        first.name
+                    ),
                 )?;
                 return Ok(Sig::ERROR);
             }
@@ -747,7 +750,10 @@ impl Engine<'_> {
             self.error_at_node(
                 Code::ToCandidates,
                 node,
-                "`to` reads a single-valued attribute",
+                format!(
+                    "`{}` holds an array, and a `to` read takes a single value",
+                    first.name
+                ),
             )?;
             return Ok(Sig::ERROR);
         }

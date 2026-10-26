@@ -729,7 +729,7 @@ impl<'a> Engine<'a> {
                 let instance = self.instance(id)?;
                 let kind = self.node_decl(instance.kind)?.name.as_str();
                 match &instance.name {
-                    Some(name) => format!("the `{kind}` `{name}`"),
+                    Some(name) => format!("the `{kind}` named `{name}`"),
                     None => format!("the `{kind}`"),
                 }
             }
