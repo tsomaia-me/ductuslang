@@ -3368,3 +3368,123 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
+    let rows: &[support::Row] = &[
+        (
+            &["input i = 300\n", "Clip c | fixed=[i, 2, 3]:\n    Note\n"],
+            &[(Code::DoesNotFit, "i")],
+        ),
+        (
+            &[
+                "input i = 300\n",
+                "let x: u8 = i\n",
+                "Clip c:\n    Note/x\n",
+            ],
+            &[(Code::DoesNotFit, "i")],
+        ),
+        (
+            &["input i = 300\n", "Clip c:\n    Note/(fixed3([i, 1, 2]))\n"],
+            &[(Code::DoesNotFit, "i")],
+        ),
+        (
+            &[
+                "input xs: i64[..4] = [300]\n",
+                "Clip c | data=xs:\n    Note\n",
+            ],
+            &[(Code::DoesNotFit, "xs")],
+        ),
+        (
+            &[
+                "input xs: i64[..4] = [3000000000]\n",
+                "Clip c:\n    Note/(xs[0])\n",
+            ],
+            &[(Code::DoesNotFit, "xs")],
+        ),
+        (
+            &[
+                "input i = 255\n",
+                "input xs: i64[..4] = [255]\n",
+                "let x: u8 = i\n",
+                "Clip c | fixed=[i, 2, 3] data=xs:\n    Note/x\n    Note/(fixed3([i, 1, 2]))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input i = 300\n",
+                "let b = bytes([i, 2])\n",
+                "Clip c:\n    Note/(b[0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
+}
+
+#[test]
+fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
+    let read = "Clip c:\n    Note/v\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "input b: u8 = 3\n",
+                "let v = match b:\n    3u8: 1\n    else: 2\n",
+                read,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input b: u8 = 3\n",
+                "let v = match b:\n    3: 1\n    else: 2\n",
+                read,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input b: u8 = 3\n",
+                "let v = match b:\n    3i32: 1\n    else: 2\n",
+                read,
+            ],
+            &[(Code::MatchLabel, "3i32")],
+        ),
+        (
+            &[
+                "input b = 3\n",
+                "let v = match b:\n    3i64: 1\n    else: 2\n",
+                read,
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let compiler =
+        symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
+    let text = "input b: u8 = 3\nlet v = match b:\n    3i32: 1\n    else: 2\nClip c:\n    Note/v\n";
+    let diagnostics = compiler.check(&[support::source(text)]);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == Code::MatchLabel
+                && diagnostic.summary.contains("`u8`")),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn an_annotation_is_its_initializers_expected_type() {
+    let rows: &[support::Row] = &[
+        (&["input w: Wave = Saw\n", "Osc o | wave=w\n"], &[]),
+        (&["let x: Wave = Saw\n", "Osc o | wave=x\n"], &[]),
+        (&["state s: Wave = Saw\n"], &[]),
+        (
+            &["input w: Wave[2] = [Saw, Sine]\n", "Osc o | wave=(w[1])\n"],
+            &[],
+        ),
+        (&["input w = Saw\n"], &[(Code::UnknownName, "Saw")]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

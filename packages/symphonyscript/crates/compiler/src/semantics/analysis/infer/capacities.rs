@@ -716,10 +716,20 @@ impl Engine<'_> {
                             ty.lengths.last().copied().unwrap_or(0),
                         ))),
                     },
-                    NativeType::CapacityOf(_, position) => match args.get(*position) {
-                        Some(arg) => Parts::Operands(vec![*arg], None),
-                        None => Parts::Leaf(Extent::Fixed(0)),
-                    },
+                    NativeType::CapacityOf(_, position) => {
+                        match (decl.signature.params.get(*position), args.get(*position)) {
+                            (Some(NativeType::Value(ty)), _) => {
+                                let rows = ty.capacity.or_else(|| ty.lengths.last().copied());
+                                Parts::Leaf(Extent::Variable(Piecewise::constant(i128::from(
+                                    rows.unwrap_or(0),
+                                ))))
+                            }
+                            (Some(NativeType::Open(_)), Some(arg)) => {
+                                Parts::Operands(vec![*arg], None)
+                            }
+                            _ => Parts::Leaf(Extent::Fixed(0)),
+                        }
+                    }
                     NativeType::Open(_) => Parts::Leaf(Extent::Fixed(0)),
                 }
             }

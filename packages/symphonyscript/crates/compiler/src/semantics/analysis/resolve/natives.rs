@@ -84,8 +84,10 @@ impl Engine<'_> {
                 }
                 continue;
             }
+            let open = matches!(param, symphonyscript_core::NativeType::Open(_));
+            let dimensions = ty.lengths.len() + usize::from(open || ty.capacity.is_some());
             if ty.scalar == Scalar::U8
-                && ty.lengths.is_empty()
+                && dimensions == 1
                 && let Val::Scalar(node) = val
                 && !self.arrays.contains(&node)
             {
@@ -93,7 +95,7 @@ impl Engine<'_> {
                 if sig.kind == Kind::Str {
                     operands.push(self.push_node(
                         Op::Builtin(Builtin::Bytes, vec![node]),
-                        loc,
+                        arg_loc,
                         scope,
                     )?);
                     continue;

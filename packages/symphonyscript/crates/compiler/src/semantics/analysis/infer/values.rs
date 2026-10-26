@@ -46,14 +46,19 @@ impl Engine<'_> {
                 .get(&binding)
                 .cloned()
                 .unwrap_or_default();
+            let leaves = match &value {
+                CVal::Array(array) => array.leaves(),
+                leaf => vec![leaf.clone()],
+            };
             for (scalar, loc) in expectations {
-                let fits = match (&value, scalar) {
+                let fits = leaves.iter().all(|leaf| match (leaf, scalar) {
+                    (CVal::Int(value), Scalar::U8) => u8::try_from(*value).is_ok(),
                     (CVal::Int(value), Scalar::I32) => i32::try_from(*value).is_ok(),
                     (CVal::F64(value), Scalar::F32) => {
                         value.is_nan() || (*value as f32).is_finite()
                     }
                     _ => true,
-                };
+                });
                 if !fits {
                     let scope = self.node(record.init)?.scope;
                     self.error(

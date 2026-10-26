@@ -384,8 +384,14 @@ impl Engine<'_> {
             return Ok(true);
         }
         let mut bare: Vec<NodeId> = Vec::new();
+        let enum_annotation = annotation
+            .as_ref()
+            .is_some_and(|annotation| matches!(annotation.scalar, Scalar::Enum(_)));
         for (node, sig) in val.nodes().into_iter().zip(&sigs) {
-            if sig.kind == Kind::Bare && !matches!(self.node(node)?.op, Op::Use(_)) {
+            if sig.kind == Kind::Bare
+                && !enum_annotation
+                && !matches!(self.node(node)?.op, Op::Use(_))
+            {
                 bare.push(node);
             }
         }

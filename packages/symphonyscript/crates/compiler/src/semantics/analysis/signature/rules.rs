@@ -116,7 +116,7 @@ impl Engine<'_> {
                 let base = at(0)?;
                 Sig::of(base.kind, base.width, reactive, base.family)
             }
-            Op::Native { native, .. } => self.native_sig(node, *native, sigs)?,
+            Op::Native { native, args } => self.native_sig(node, *native, args, sigs)?,
             Op::Unary(UnaryOp::Neg, _) => {
                 let first = at(0)?;
                 if !first.is_numeric() {
@@ -663,6 +663,7 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         native: symphonyscript_core::NativeId,
+        args: &[NodeId],
         sigs: &[Sig],
     ) -> Result<Sig, Internal> {
         let reactive = sigs.iter().any(|sig| sig.reactive);
@@ -686,6 +687,14 @@ impl Engine<'_> {
                     "`{}` takes or returns a string, so it runs only at compile time, and an argument here reads a cell",
                     decl.name
                 ),
+            )?;
+            return Ok(Sig::ERROR);
+        }
+        if let Some((arg, _)) = args.iter().zip(sigs).find(|(_, sig)| sig.family.is_some()) {
+            self.error_at_node(
+                Code::UnitOperation,
+                *arg,
+                format!("`{}` takes plain values", decl.name),
             )?;
             return Ok(Sig::ERROR);
         }

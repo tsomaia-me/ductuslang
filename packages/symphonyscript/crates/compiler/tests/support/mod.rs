@@ -216,6 +216,8 @@ pub fn signature_vocabulary() -> Vocabulary {
         .attr::<Bounded<u8, 8>>("data")
         .default(Bounded::default())
         .attr::<Bounded<[i32; 2], 2>>("rows")
+        .default(Bounded::default())
+        .attr::<Bounded<i32, 3>>("three")
         .default(Bounded::default());
     v.kind(note)
         .attr::<i32>("pitch")
@@ -255,6 +257,14 @@ pub fn signature_vocabulary() -> Vocabulary {
         NativeSignature::new(
             [NativeType::Open(Ty::I32.array(3))],
             NativeType::CapacityOf(Ty::I32.array(2), 0),
+        ),
+        shrink,
+    );
+    v.native(
+        "squeeze",
+        NativeSignature::new(
+            [NativeType::Value(Ty::I32.variable(4))],
+            NativeType::CapacityOf(Ty::I32, 0),
         ),
         shrink,
     );

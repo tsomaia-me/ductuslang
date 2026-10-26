@@ -156,6 +156,9 @@ impl Engine<'_> {
         while let Some(node) = stack.pop() {
             if reached.insert(node) {
                 stack.extend(self.carried_operands(node)?);
+                if let Op::Native { args, .. } = &self.node(node)?.op {
+                    stack.extend(args.iter().copied());
+                }
             }
         }
         Ok(reached)

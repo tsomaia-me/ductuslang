@@ -6,6 +6,7 @@ use super::branch_width_of::branch_width_of;
 use super::operand::operand;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
@@ -82,8 +83,9 @@ impl Engine<'_> {
         scrutinee: &Sig,
     ) -> Result<bool, Internal> {
         let mut seen: BTreeSet<Label> = BTreeSet::new();
+        let typed = self.scrutinee_scalar(node, scrutinee)?;
         for (label, _) in arms {
-            let Some(value) = self.label(*label, scrutinee)? else {
+            let Some(value) = self.label(*label, scrutinee, typed)? else {
                 return Ok(false);
             };
             if !seen.insert(value) {
@@ -137,7 +139,34 @@ impl Engine<'_> {
         Ok(true)
     }
 
-    fn label(&mut self, label: NodeId, scrutinee: &Sig) -> Result<Option<Label>, Internal> {
+    fn scrutinee_scalar(&self, node: NodeId, scrutinee: &Sig) -> Result<Option<Scalar>, Internal> {
+        if let Width::Fixed(scalar) | Width::Widened(scalar) = scrutinee.width {
+            return Ok(Some(scalar));
+        }
+        let Op::Match {
+            scrutinee: scrutinee_node,
+            ..
+        } = self.node(node)?.op
+        else {
+            return Ok(None);
+        };
+        let Op::Read(binding) = self.node(self.through_uses(scrutinee_node)?)?.op else {
+            return Ok(None);
+        };
+        let record = self.binding(binding)?;
+        Ok(match (record.annotation, &record.kind) {
+            (Some(annotation), _) => Some(annotation),
+            (None, BindingKind::Input { .. }) if scrutinee.kind == Kind::Int => Some(Scalar::I64),
+            (None, _) => None,
+        })
+    }
+
+    fn label(
+        &mut self,
+        label: NodeId,
+        scrutinee: &Sig,
+        typed: Option<Scalar>,
+    ) -> Result<Option<Label>, Internal> {
         let op = self.node(label)?.op.clone();
         let found = match (&op, scrutinee.kind) {
             (Op::Bare(name), Kind::Enum(id)) => {
@@ -147,20 +176,23 @@ impl Engine<'_> {
             (Op::Number(Number::Int(value), suffix), Kind::Int) => {
                 let family = match suffix {
                     Suffix::Unit { family, .. } => Some(*family),
-                    Suffix::Type(scalar) if !matches!(scalar, Scalar::I32 | Scalar::I64) => {
-                        return self.bad_label(label, scrutinee);
+                    Suffix::Type(scalar)
+                        if typed.is_some_and(|typed| typed != *scalar)
+                            || !matches!(scalar, Scalar::U8 | Scalar::I32 | Scalar::I64) =>
+                    {
+                        return self.bad_label(label, scrutinee, typed);
                     }
                     Suffix::None | Suffix::Type(_) => None,
                 };
                 if family.is_some() && family != scrutinee.family {
-                    return self.bad_label(label, scrutinee);
+                    return self.bad_label(label, scrutinee, typed);
                 }
                 self.exact_label(*value, *suffix)?.map(Label::Int)
             }
             _ => None,
         };
         if found.is_none() {
-            return self.bad_label(label, scrutinee);
+            return self.bad_label(label, scrutinee, typed);
         }
         Ok(found)
     }
@@ -178,7 +210,12 @@ impl Engine<'_> {
         })
     }
 
-    fn bad_label(&mut self, label: NodeId, scrutinee: &Sig) -> Result<Option<Label>, Internal> {
+    fn bad_label(
+        &mut self,
+        label: NodeId,
+        scrutinee: &Sig,
+        typed: Option<Scalar>,
+    ) -> Result<Option<Label>, Internal> {
         let message = match scrutinee.kind {
             Kind::Enum(id) => format!(
                 "a label here is a variant of `{}`",
@@ -191,9 +228,15 @@ impl Engine<'_> {
             | Kind::Node
             | Kind::Bare
             | Kind::Any
-            | Kind::Error => {
-                "a label here is an integer literal of the scrutinee's unit family".to_string()
-            }
+            | Kind::Error => match typed {
+                Some(scalar) => format!(
+                    "a label here is an integer literal of the scrutinee's type `{}` and its unit family",
+                    self.scalar_name(scalar)?
+                ),
+                None => {
+                    "a label here is an integer literal of the scrutinee's unit family".to_string()
+                }
+            },
         };
         self.error_at_node(Code::MatchLabel, label, message)?;
         Ok(None)

@@ -474,7 +474,7 @@ impl Engine<'_> {
                 node,
                 format!(
                     "this value has the wrong type here; `{}` is expected",
-                    scalar_name(self, expected)?
+                    self.scalar_name(expected)?
                 ),
             )?;
             return Ok(false);
@@ -489,13 +489,29 @@ impl Engine<'_> {
                 node,
                 format!(
                     "a `{}` value does not widen into `{}`",
-                    scalar_name(self, scalar)?,
-                    scalar_name(self, expected)?
+                    self.scalar_name(scalar)?,
+                    self.scalar_name(expected)?
                 ),
             )?;
             return Ok(false);
         }
         Ok(true)
+    }
+
+    pub(in crate::semantics::analysis) fn scalar_name(
+        &self,
+        scalar: Scalar,
+    ) -> Result<String, Internal> {
+        Ok(match scalar {
+            Scalar::U8 => "u8".into(),
+            Scalar::I32 => "i32".into(),
+            Scalar::I64 => "i64".into(),
+            Scalar::F32 => "f32".into(),
+            Scalar::F64 => "f64".into(),
+            Scalar::Bool => "bool".into(),
+            Scalar::Str => "string".into(),
+            Scalar::Enum(id) => self.enum_decl(id)?.name.clone(),
+        })
     }
 
     fn fixed_cell_index(&mut self, base: NodeId, index: NodeId) -> Result<(), Internal> {
@@ -528,17 +544,4 @@ enum Selection {
     Chosen,
     Evaluated,
     PassedOver,
-}
-
-fn scalar_name(engine: &Engine<'_>, scalar: Scalar) -> Result<String, Internal> {
-    Ok(match scalar {
-        Scalar::U8 => "u8".into(),
-        Scalar::I32 => "i32".into(),
-        Scalar::I64 => "i64".into(),
-        Scalar::F32 => "f32".into(),
-        Scalar::F64 => "f64".into(),
-        Scalar::Bool => "bool".into(),
-        Scalar::Str => "string".into(),
-        Scalar::Enum(id) => engine.enum_decl(id)?.name.clone(),
-    })
 }

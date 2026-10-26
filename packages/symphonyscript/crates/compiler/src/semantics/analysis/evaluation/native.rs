@@ -49,7 +49,12 @@ impl Engine<'_> {
             return Ok(None);
         }
         let mut arguments = Vec::with_capacity(values.len());
+        let mut rows_held = Vec::with_capacity(values.len());
         for (value, param) in values.into_iter().flatten().zip(&signature.params) {
+            rows_held.push(match &value {
+                CVal::Array(array) => array.items().len(),
+                _ => 0,
+            });
             let ty = native_ty(param);
             let array_param = !ty.is_scalar() || !matches!(param, NativeType::Value(_));
             let argument = match value {
@@ -100,10 +105,17 @@ impl Engine<'_> {
         let row: usize = inner.iter().product();
         let slots = match &signature.result {
             NativeType::Value(ty) => ty.element_count(),
-            NativeType::CapacityOf(_, position) => match arguments.get(*position) {
-                Some(Argument::Elements(elements)) => elements.len(),
-                Some(Argument::Value(_) | Argument::Text(_)) | None => 0,
-            },
+            NativeType::CapacityOf(_, position) => {
+                let rows = match signature.params.get(*position) {
+                    Some(NativeType::Value(ty)) => ty
+                        .capacity
+                        .or_else(|| ty.lengths.last().copied())
+                        .map_or(0, |rows| usize::try_from(rows).unwrap_or(usize::MAX)),
+                    Some(NativeType::Open(_)) => rows_held.get(*position).copied().unwrap_or(0),
+                    Some(NativeType::CapacityOf(..)) | None => 0,
+                };
+                rows.saturating_mul(row.max(1))
+            }
             NativeType::Open(_) => 0,
         };
         let mut buffer = vec![zero(result.scalar); slots];

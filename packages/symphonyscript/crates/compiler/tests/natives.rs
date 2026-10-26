@@ -215,3 +215,89 @@ fn a_native_calls_compile_time_arguments_are_typed_and_fit_by_its_signature() {
     ];
     support::assert_rows_in_every_order(&signature_vocabulary(), plain);
 }
+
+#[test]
+fn a_native_argument_in_a_unit_family_is_an_error_at_the_argument() {
+    let rows: &[Row] = &[
+        (
+            &["Clip c:\n    Note/(plain(2bars))\n"],
+            &[(Code::UnitOperation, "2bars")],
+        ),
+        (
+            &["Clip c:\n    Note | length=(half(2bars))\n"],
+            &[(Code::UnitOperation, "2bars")],
+        ),
+        (
+            &["Clip c:\n    Note/(cap4([1bars, 2]))\n"],
+            &[(Code::UnitOperation, "[1bars, 2]")],
+        ),
+        (
+            &["input d = 2bars\n", "Clip c:\n    Note/(plain(d))\n"],
+            &[(Code::UnitOperation, "d")],
+        ),
+        (
+            &["Clip c:\n    Note/(plain(2))\n    Note | length=(half(1.0))\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&signature_vocabulary(), rows);
+}
+
+#[test]
+fn every_one_dimensional_u8_parameter_takes_a_compile_time_string_as_its_bytes() {
+    let rows: &[Row] = &[
+        (&["Clip c:\n    Note/(fixed3(\"GET\"))\n"], &[]),
+        (
+            &["Clip c:\n    Note/(fixed3(\"GETX\"))\n"],
+            &[(Code::TypeMismatch, "\"GETX\"")],
+        ),
+        (
+            &["Clip c:\n    Note/(fixed3([1, 2, 3, 4]))\n"],
+            &[(Code::TypeMismatch, "[1, 2, 3, 4]")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&signature_vocabulary(), rows);
+    support::assert_rows_in_every_order(
+        &native_vocabulary(),
+        &[(&["Clip c:\n    Note/(checksum(\"GET\"))\n"], &[])],
+    );
+}
+
+#[test]
+fn a_capacity_of_result_holds_at_most_its_parameters_capacity_in_rows() {
+    let rows: &[Row] = &[
+        (
+            &["Clip c | rows=(shrink([[1, 2, 3], [4, 5, 6]])):\n    Note\n"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    Note/(shrink([[1, 2, 3], [4, 5, 6]])[1][1])\n"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    Note/(shrink([[1, 2, 3], [4, 5, 6]])[2][0])\n"],
+            &[(Code::IndexOutOfRange, "2")],
+        ),
+        (
+            &[
+                "input xs: i32[..2] = []\n",
+                "Clip c | three=(squeeze(xs)):\n    Note\n",
+            ],
+            &[(Code::CapacityExceeded, "squeeze(xs)")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&signature_vocabulary(), rows);
+    support::assert_rows_in_every_order(
+        &native_vocabulary(),
+        &[
+            (
+                &["Clip c:\n    Note/(mirror([5, 6, 7])[2] + len(mirror([5, 6, 7])))\n"],
+                &[],
+            ),
+            (
+                &["Clip c:\n    Note/(mirror([5, 6, 7])[3])\n"],
+                &[(Code::IndexOutOfRange, "3")],
+            ),
+        ],
+    );
+}
