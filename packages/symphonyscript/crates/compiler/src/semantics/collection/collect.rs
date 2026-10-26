@@ -82,7 +82,15 @@ pub(crate) fn collect(
         let Some(name) = name else {
             continue;
         };
-        variant_name(hir, vocabulary, variants, &name, report)?;
+        if variant_name(hir, vocabulary, variants, &name, report)? {
+            let namespace = if in_prelude {
+                &mut prelude
+            } else {
+                &mut source
+            };
+            namespace.duplicate(&name.text);
+            continue;
+        }
         if in_prelude {
             if let Some(Decl::Native(_)) = prelude.get(&name.text) {
                 report.error(
@@ -189,6 +197,7 @@ fn declare(
             | Decl::Pattern(_)
             | Decl::Instance(_) => "already declared",
         };
+        namespace.duplicate(&name.text);
         report.error(
             hir,
             Code::DuplicateName,
@@ -219,7 +228,7 @@ fn variant_name(
     variants: &Variants,
     name: &Ident,
     report: &mut Report,
-) -> Result<(), Internal> {
+) -> Result<bool, Internal> {
     if let Some(id) = variants.owner(&name.text) {
         let owner = vocabulary
             .enum_decl(id)
@@ -235,6 +244,7 @@ fn variant_name(
                 name.text
             ),
         );
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }

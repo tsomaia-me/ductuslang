@@ -66,6 +66,7 @@ impl Engine<'_> {
                 }
                 Some(Val::Error)
             }
+            Found::Placeholder => Some(Val::Error),
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
                 self.error(
                     Code::NotCallable,
@@ -413,9 +414,12 @@ impl Engine<'_> {
         };
         Ok(match self.find(name, scope)? {
             Found::Decl(Decl::Fn(function)) => !self.is_recursive(function)?,
-            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
-                false
-            }
+            Found::Val(_)
+            | Found::Query(_)
+            | Found::Item(_)
+            | Found::Decl(_)
+            | Found::Placeholder
+            | Found::Nothing => false,
         })
     }
 
@@ -930,6 +934,7 @@ impl Engine<'_> {
                 | Found::Query(_)
                 | Found::Item(_)
                 | Found::Decl(_)
+                | Found::Placeholder
                 | Found::Nothing => Vec::new(),
             },
             ExprKind::Call(_, args) => args
@@ -963,9 +968,12 @@ impl Engine<'_> {
         let name = name.clone();
         Ok(match self.find(&name, scope)? {
             Found::Decl(Decl::Fn(function)) => self.is_recursive(function)?,
-            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
-                false
-            }
+            Found::Val(_)
+            | Found::Query(_)
+            | Found::Item(_)
+            | Found::Decl(_)
+            | Found::Placeholder
+            | Found::Nothing => false,
         })
     }
 

@@ -86,6 +86,22 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
             vec!["fn f(): f()", "let x = f()", "Clip c:\n    Note/60"],
             vec![],
         ),
+        endless("fn f(x = f()): x", "Clip c:\n    Note/(f())"),
+        (
+            vec!["fn f(x = g()): x", "fn g(): f()", "Clip c:\n    Note/(f())"],
+            vec![named(Code::RecursionDepth, &["f", "g"])],
+        ),
+        endless(
+            "fn f(n, x = f(0)): if n < 1 then 7 else x",
+            "Clip c:\n    Note/(f(3))",
+        ),
+        (
+            vec![
+                "fn f(n, x = f(0, 1)): if n < 1 then x else n",
+                "Clip c:\n    Note/(f(3))",
+            ],
+            vec![],
+        ),
         (
             vec![
                 "fn f(n): if n < 1 then f(0) else 1",

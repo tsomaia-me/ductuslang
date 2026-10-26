@@ -8,5 +8,6 @@ pub(crate) enum Found {
     Query(Query),
     Item(ItemRef),
     Decl(Decl),
+    Placeholder,
     Nothing,
 }

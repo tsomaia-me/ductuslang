@@ -256,22 +256,65 @@ fn a_state_settled_as_a_fixed_array_expands_a_loop_over_its_length() {
 }
 
 #[test]
-fn a_for_over_compile_time_values_expands_once_per_element() {
-    let text = "fn g(x): x + 1\nClip c:\n    for i in [1, 2]:\n        Note\n    for i in [g(3)]:\n        Note\n";
-    let (diagnostics, notes) = analyzed(&vocabulary(), text, |engine| {
-        engine
-            .instances
-            .iter()
-            .filter(|instance| {
-                engine
-                    .vocabulary
-                    .node_kind(instance.kind)
-                    .is_some_and(|decl| decl.name == "Note")
-            })
-            .count()
+fn a_for_expands_once_per_element_or_per_value_of_its_computed_range() {
+    let q = "fn q(n): if n < 1 then 0 else q(n - 1)\n";
+    let rows = [
+        (
+            String::from(
+                "fn g(x): x + 1\nClip c:\n    for i in [1, 2]:\n        Note\n    for i in [g(3)]:\n        Note\n",
+            ),
+            3,
+        ),
+        (
+            String::from("let n = 3\nClip c:\n    for t in 0..n:\n        Note\n"),
+            3,
+        ),
+        (
+            String::from(
+                "fn f(n): if n < 1 then 2 else f(n - 1)\nClip c:\n    for i in 0..f(3):\n        Note\n",
+            ),
+            2,
+        ),
+        (
+            String::from("fn z(): 2\nClip c:\n    for i in 0..z():\n        Note\n"),
+            2,
+        ),
+        (
+            format!("{q}Clip c:\n    for i in q(2)..2:\n        Note\n"),
+            2,
+        ),
+        (format!("{q}Clip c:\n    Note/([5, 6, 7][q(2)])\n"), 1),
+    ];
+    for (text, expected) in rows {
+        let (diagnostics, (notes, pitch)) = analyzed(&vocabulary(), &text, |engine| {
+            let notes = engine
+                .instances
+                .iter()
+                .filter(|instance| {
+                    engine
+                        .vocabulary
+                        .node_kind(instance.kind)
+                        .is_some_and(|decl| decl.name == "Note")
+                })
+                .count();
+            (notes, attr_value(engine, "pitch", EvalTy::I32))
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}: {diagnostics:?}");
+        assert_eq!(notes, expected, "{text}");
+        if text.contains("[5, 6, 7]") {
+            assert_eq!(pitch, Some(CVal::Int(5)), "{text}");
+        }
+    }
+}
+
+#[test]
+fn a_recursive_call_evaluates_its_omitted_default_and_yields_its_body() {
+    let text = "fn f(n, x = f(0, 1)): if n < 1 then x else n\nClip c:\n    Note/(f(3))\n";
+    let (diagnostics, pitch) = analyzed(&vocabulary(), text, |engine| {
+        attr_value(engine, "pitch", EvalTy::I32)
     });
     assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
-    assert_eq!(notes, 3);
+    assert_eq!(pitch, Some(CVal::Int(3)));
 }
 
 fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {

@@ -74,6 +74,7 @@ impl Engine<'_> {
                             None => Found::Val(Val::Error),
                         },
                         Some(decl) => Found::Decl(decl),
+                        None if namespace.is_duplicated(name) => Found::Placeholder,
                         None => Found::Nothing,
                     });
                 }
@@ -130,6 +131,27 @@ impl Engine<'_> {
         let message = self.unplaced_message(name.as_deref())?;
         let unless_values = self.untypable_values(node)?;
         self.error_unless_values(Code::UnknownName, loc, scope, message, unless_values)
+    }
+
+    pub(in crate::semantics::analysis) fn unplaced_placeholder(
+        &mut self,
+        node: NodeId,
+    ) -> Result<(), Internal> {
+        let (loc, scope) = {
+            let record = self.node(node)?;
+            (record.loc, record.scope)
+        };
+        let mut source = node;
+        while let Op::Chosen(inner) | Op::Use(inner) = self.node(source)?.op {
+            source = inner;
+        }
+        let name = match &self.node(source)?.op {
+            Op::Bare(name) => Some(name.clone()),
+            _ => None,
+        };
+        self.unplaced_variant_at(name.as_deref(), loc, scope)?;
+        self.typing.untyped_values.insert(source);
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn unplaced_variant_at(
@@ -198,6 +220,7 @@ impl Engine<'_> {
                 Some(val)
             }
             Found::Item(item) => Some(self.scalar(Op::NodeRef(item), loc, scope)?),
+            Found::Placeholder => Some(Val::Error),
             Found::Decl(Decl::Builtin(BuiltinName::Pi)) => Some(self.scalar(Op::Pi, loc, scope)?),
             Found::Decl(decl) => {
                 let what = match decl {

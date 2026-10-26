@@ -302,7 +302,12 @@ impl Engine<'_> {
         };
         let query = match self.find(name, caller)? {
             Found::Query(query @ (Query::Let(..) | Query::Param(..))) => query,
-            Found::Query(_) | Found::Val(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
+            Found::Query(_)
+            | Found::Val(_)
+            | Found::Item(_)
+            | Found::Decl(_)
+            | Found::Placeholder
+            | Found::Nothing => {
                 return Ok(Shared::Declined);
             }
         };

@@ -535,3 +535,98 @@ fn a_bounded_functions_fallback_is_type_checked_against_its_body_at_every_call()
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_range_bound_or_index_holding_a_recursive_call_evaluates_the_call_before_judging_its_kind() {
+    let q = "fn q(n): if n < 1 then 0 else q(n - 1)\n";
+    let operands = |call: &str, code: Code| {
+        vec![
+            (code, "n < 1".to_string(), vec![call.to_string()]),
+            (code, "n - 1".to_string(), vec![call.to_string()]),
+        ]
+    };
+    let depth =
+        |at: &str, call: &str| vec![(Code::RecursionDepth, at.to_string(), vec![call.to_string()])];
+    type Row<'a> = (Vec<&'a str>, Vec<(Code, String, Vec<String>)>);
+    let arrays = operands("q([1, 2])", Code::ArrayOperand);
+    let rows: Vec<Row> = vec![
+        (vec![q, "Clip c:\n    Note/(q([1, 2]))\n"], arrays.clone()),
+        (
+            vec![q, "Clip c:\n    for i in 0..q([1, 2]):\n        Note\n"],
+            arrays.clone(),
+        ),
+        (
+            vec![q, "Clip c:\n    for i in q([1, 2])..3:\n        Note\n"],
+            arrays.clone(),
+        ),
+        (
+            vec![q, "Clip c:\n    for i in q([1, 2]):\n        Note\n"],
+            arrays.clone(),
+        ),
+        (
+            vec![q, "Clip c:\n    [for i in 0..q([1, 2]): Note]\n"],
+            arrays.clone(),
+        ),
+        (
+            vec![q, "Clip c:\n    Note/([1, 2][q([1, 2])])\n"],
+            arrays.clone(),
+        ),
+        (
+            vec![q, "Clip c:\n    Note/([1, 2][^q([1, 2])])\n"],
+            arrays.clone(),
+        ),
+        (
+            vec![q, "Clip c:\n    for i in 0..q(true):\n        Note\n"],
+            operands("q(true)", Code::OperandType),
+        ),
+        (
+            vec![
+                "fn f(n): f(n + 1)\n",
+                "Clip c:\n    for i in 0..f(0):\n        Note\n",
+            ],
+            depth("f(n + 1)", "f(0)"),
+        ),
+        (
+            vec![
+                "fn f(): f()\n",
+                "Clip c:\n    for i in 0..f():\n        Note\n",
+            ],
+            depth("f()", "f()"),
+        ),
+        (
+            vec!["fn f(n): f(n + 1)\n", "Clip c:\n    Note/([1, 2][f(0)])\n"],
+            depth("f(n + 1)", "f(0)"),
+        ),
+        (
+            vec![
+                "fn g(n): if n < 1 then [1, 2] else g(n + 1)\n",
+                "Clip c:\n    for j in g(1):\n        Note\n",
+            ],
+            depth("g(n + 1)", "g(1)"),
+        ),
+        (
+            vec![
+                q,
+                "Clip c:\n    for i in 0..q(2):\n        Note\n    Note/([5, 6, 7][q(2)])\n",
+            ],
+            vec![],
+        ),
+        (
+            vec!["Clip c:\n    for i in 0..2.5:\n        Note\n"],
+            vec![(Code::RangeBound, "2.5".to_string(), vec![])],
+        ),
+    ];
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    for (items, mut expected) in rows {
+        expected.sort();
+        for order in support::permutations(&items) {
+            let text = order.concat();
+            let mut found = spans(
+                &text,
+                &support::errors(compiler.check(&[support::source(&text)])),
+            );
+            found.sort();
+            assert_eq!(found, expected, "{text}");
+        }
+    }
+}

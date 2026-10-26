@@ -420,11 +420,14 @@ impl Engine<'_> {
                         return Ok(Some(CVal::Error));
                     }
                 };
+                let defaults = some!(self.default_work(&call, need)?);
                 if !self.within_call_limit(node, call.function)? {
                     return Ok(Some(CVal::Error));
                 }
                 let ty = self.body_type(root, own)?;
                 let unbounded = u64::from(self.limit_of(call.function)?.is_none());
+                let mut work = vec![(0, root, ty)];
+                work.extend(defaults.into_iter().map(|(node, ty)| (0, node, ty)));
                 Machine {
                     frames: vec![Frame {
                         key: call.key.clone(),
@@ -438,7 +441,7 @@ impl Engine<'_> {
                         memo: FastMap::default(),
                         unbounded,
                     }],
-                    work: vec![(0, root, ty)],
+                    work,
                     open: [(call.function, 1)].into_iter().collect(),
                     open_keys: [call.key.clone()].into_iter().collect(),
                     too_deep: false,
@@ -576,6 +579,7 @@ impl Engine<'_> {
                 return Ok(Some(CVal::Error));
             }
         };
+        let defaults = some!(self.default_work(&call, need)?);
         if !self.within_call_limit(node, call.function)? {
             return Ok(Some(CVal::Error));
         }
@@ -597,8 +601,65 @@ impl Engine<'_> {
             unbounded: depth.saturating_add(u64::from(!bounded)),
         });
         machine.work.push((index, root, ty));
+        machine
+            .work
+            .extend(defaults.into_iter().map(|(node, ty)| (index, node, ty)));
         self.frame_pushed = true;
         Ok(None)
+    }
+
+    fn default_work(
+        &mut self,
+        call: &Call,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Vec<(NodeId, EvalTy)>>, Internal> {
+        let key = TemplateKey {
+            function: call.function,
+            args: call.shapes.clone(),
+            units: unit_set(&call.feeds),
+        };
+        let scope = *self
+            .memo
+            .templates
+            .get(&key)
+            .ok_or(Internal::missed("template"))?;
+        let mut work = Vec::new();
+        let mut pending = false;
+        for (index, shape) in call.shapes.iter().enumerate() {
+            if !matches!(shape, ArgShape::Default) {
+                continue;
+            }
+            let param = Query::Param(
+                scope,
+                u32::try_from(index).map_err(|_| Internal::missed("parameter"))?,
+            );
+            let Some(bound) = self.bound(param, need) else {
+                pending = true;
+                continue;
+            };
+            let values: Vec<NodeId> = match &bound {
+                BoundVal::Scalar(Bound::Value(node)) => vec![*node],
+                BoundVal::Array(array) => array
+                    .1
+                    .iter()
+                    .filter_map(|item| match item {
+                        Bound::Value(node) => Some(*node),
+                        Bound::Cell(_) => None,
+                    })
+                    .collect(),
+                BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Error => Vec::new(),
+            };
+            for node in values {
+                let Some(sig) = self.sig(node, need) else {
+                    pending = true;
+                    continue;
+                };
+                if !sig.is_error() && !sig.reactive {
+                    work.push((node, own_type(&sig, EvalTy::Default)));
+                }
+            }
+        }
+        Ok((!pending).then_some(work))
     }
 
     fn body_type(&self, root: NodeId, expected: EvalTy) -> Result<EvalTy, Internal> {

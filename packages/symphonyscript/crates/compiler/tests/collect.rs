@@ -83,6 +83,43 @@ fn a_source_name_equal_to_a_built_in_or_vocabulary_name_is_a_duplicate() {
 }
 
 #[test]
+fn a_name_that_clashes_with_a_vocabulary_or_built_in_name_is_a_placeholder_at_every_reference() {
+    let rows: &[support::Row] = &[
+        (
+            &["fn abs(x): x * 2\n", "Clip c:\n    Note/(abs(1.5))\n"],
+            &[(Code::DuplicateName, "abs")],
+        ),
+        (
+            &["let max = 5\n", "Clip c:\n    Note/max\n"],
+            &[(Code::DuplicateName, "max")],
+        ),
+        (
+            &[
+                "Clip Note:\n    Note\n",
+                "Clip c:\n    Note\n    Plays: Note\n",
+            ],
+            &[(Code::DuplicateName, "Note")],
+        ),
+        (
+            &[
+                "input Saw = 1\n",
+                "Synth s:\n    Osc | wave=Saw\n",
+                "Clip c:\n    Note/Saw\n",
+            ],
+            &[(Code::VariantName, "Saw")],
+        ),
+        (
+            &[
+                "Clip c:\n    Note/(i32(abs(-1.5)))\n    Plays: c\n",
+                "Synth s:\n    Osc | wave=Saw\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn a_declared_name_equal_to_a_variant_is_an_error() {
     let text = "let Saw = 1\n";
     assert_eq!(support::check_codes(text), vec![(Code::VariantName, 4, 7)]);

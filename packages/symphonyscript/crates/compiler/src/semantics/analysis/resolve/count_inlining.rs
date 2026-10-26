@@ -107,9 +107,12 @@ impl Engine<'_> {
                     Called::Function(function, defaulted(&sources))
                 }
             }
-            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) | Found::Nothing => {
-                Called::Unresolved
-            }
+            Found::Val(_)
+            | Found::Query(_)
+            | Found::Item(_)
+            | Found::Decl(_)
+            | Found::Placeholder
+            | Found::Nothing => Called::Unresolved,
         })
     }
 

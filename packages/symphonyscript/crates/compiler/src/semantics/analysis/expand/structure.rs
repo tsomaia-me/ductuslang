@@ -64,7 +64,7 @@ impl Engine<'_> {
                     if self.demand_sig(*node)?.kind == Kind::Bare
                         && !matches!(self.node(*node)?.op, Op::Use(_))
                     {
-                        self.unplaced_variant(*node)?;
+                        self.unplaced_placeholder(*node)?;
                         bare = true;
                     }
                 }
@@ -187,8 +187,31 @@ impl Engine<'_> {
             )?;
             return Ok(None);
         }
+        if sig.kind == Kind::Any {
+            return Ok(match self.demand_cval(node, EvalTy::Exact)? {
+                CVal::Int(value) => Some(value),
+                CVal::Error => None,
+                CVal::F32(_)
+                | CVal::F64(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Array(_) => {
+                    self.error(Code::RangeBound, loc, scope, "a range bound is an integer")?;
+                    None
+                }
+            });
+        }
         if sig.kind != Kind::Int {
-            self.error(Code::RangeBound, loc, scope, "a range bound is an integer")?;
+            let unless_values = self.untypable_values(node)?;
+            self.error_unless_values(
+                Code::RangeBound,
+                loc,
+                scope,
+                "a range bound is an integer",
+                unless_values,
+            )?;
             return Ok(None);
         }
         Ok(match self.demand_cval(node, EvalTy::Exact)? {

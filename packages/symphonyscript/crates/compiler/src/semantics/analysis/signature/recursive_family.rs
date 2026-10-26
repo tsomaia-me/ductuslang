@@ -133,8 +133,8 @@ impl Engine<'_> {
     }
 
     fn body_in_progress(&self, function: FnId, scope: ScopeId) -> Result<bool, Internal> {
-        let body = self.hir.fn_decl(function)?.value;
-        Ok(self.poisoned(Query::Expr(body, scope)))
+        let body = Query::Expr(self.hir.fn_decl(function)?.value, scope);
+        Ok(self.poisoned(body) || self.in_progress(body))
     }
 
     fn template_root(

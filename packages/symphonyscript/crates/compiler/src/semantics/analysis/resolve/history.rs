@@ -39,7 +39,7 @@ impl Engine<'_> {
             Found::Query(Query::Input(id)) => HistoryCell::Input(id),
             Found::Query(Query::State(id)) => HistoryCell::State(id),
             Found::Query(Query::Let(_, LetRef::Top(id))) => HistoryCell::Let(id),
-            Found::Nothing => return Ok(Some(Val::Error)),
+            Found::Nothing | Found::Placeholder => return Ok(Some(Val::Error)),
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
                 self.error(
                     Code::HistoryTarget,

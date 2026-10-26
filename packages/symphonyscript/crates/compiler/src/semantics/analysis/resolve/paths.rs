@@ -423,12 +423,14 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         if !sig.reactive && !sig.frame {
-            if sig.kind != Kind::Int {
-                self.error(
+            if !matches!(sig.kind, Kind::Int | Kind::Any) {
+                let unless_values = self.untypable_values(index_node)?;
+                self.error_unless_values(
                     Code::IndexType,
                     self.node(index_node)?.loc,
                     scope,
                     "an index is an integer",
+                    unless_values,
                 )?;
                 return Ok(Some(Val::Error));
             }
@@ -440,8 +442,16 @@ impl Engine<'_> {
                 | CVal::Enum(..)
                 | CVal::Str(_)
                 | CVal::Node(_)
-                | CVal::Array(_)
-                | CVal::Error => return Ok(Some(Val::Error)),
+                | CVal::Array(_) => {
+                    self.error(
+                        Code::IndexType,
+                        self.node(index_node)?.loc,
+                        scope,
+                        "an index is an integer",
+                    )?;
+                    return Ok(Some(Val::Error));
+                }
+                CVal::Error => return Ok(Some(Val::Error)),
             };
             if (0..i128::from(outer)).contains(&position) {
                 let position =

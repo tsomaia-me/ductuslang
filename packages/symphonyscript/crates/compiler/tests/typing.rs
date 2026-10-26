@@ -3924,3 +3924,74 @@ fn an_input_whose_initializer_does_not_fit_its_annotation_draws_one_does_not_fit
         ],
     );
 }
+
+#[test]
+fn a_bare_variant_in_a_for_iterable_draws_one_unknown_name_and_is_a_placeholder() {
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    for i in [Saw, 1]:\n        Note\n"],
+            &[(Code::UnknownName, "Saw")],
+        ),
+        (
+            &["Clip c:\n    for i in [1, Saw]:\n        Note\n"],
+            &[(Code::UnknownName, "Saw")],
+        ),
+        (
+            &["Clip c:\n    Note/([Saw, 1][0])\n"],
+            &[(Code::TypeMismatch, "[Saw, 1]")],
+        ),
+        (
+            &["let a = [1, Saw]\n", "Clip c:\n    Note/(a[0])\n"],
+            &[(Code::TypeMismatch, "[1, Saw]")],
+        ),
+        (
+            &["Synth s:\n    for w in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n"],
+            &[],
+        ),
+        (&["Clip c:\n    for i in [1, 2]:\n        Note\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
+fn a_range_bound_or_index_reading_a_diagnosed_let_takes_its_placeholder() {
+    let mismatch = (Code::TypeMismatch, "let x = Saw\n");
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "let x = Saw\n",
+                "Clip c:\n    for t in 0..x:\n        Note\n",
+            ],
+            &[mismatch],
+        ),
+        (
+            &["let x = Saw\n", "Clip c:\n    Note/([1, 2][x])\n"],
+            &[mismatch],
+        ),
+        (
+            &[
+                "let x = Saw\n",
+                "pattern P(n):\n    for t in 0..n:\n        Note\n",
+                "Clip c:\n    P | n=x\n",
+            ],
+            &[mismatch],
+        ),
+        (&["let x = Saw\n", "Clip c:\n    Note/x\n"], &[mismatch]),
+        (
+            &[
+                "let x = Saw\n",
+                "Clip c:\n    for t in [x, x]:\n        Note\n",
+            ],
+            &[mismatch],
+        ),
+        (
+            &["Clip c:\n    for t in 0..Saw:\n        Note\n"],
+            &[(Code::RangeBound, "Saw")],
+        ),
+        (
+            &["let n = 3\n", "Clip c:\n    for t in 0..n:\n        Note\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
