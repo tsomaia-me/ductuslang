@@ -856,6 +856,17 @@ impl Engine<'_> {
             let Some(node) = self.boxed(val, loc, scope)? else {
                 return Ok(Some(None));
             };
+            match self.annotated_rows(node, annotation, need)? {
+                None => return Ok(None),
+                Some(Rows::Agree) => {}
+                Some(Rows::Faulty) => {
+                    return Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))));
+                }
+                Some(Rows::Differ) => {
+                    self.error(Code::TypeMismatch, loc, scope, ANNOTATED_ROWS)?;
+                    return Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))));
+                }
+            }
             return Ok(Some(Some((
                 Val::Scalar(node),
                 Layout::variable(annotation.lengths.clone()),
@@ -889,6 +900,34 @@ impl Engine<'_> {
                 Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))))
             }
         }
+    }
+
+    pub(super) fn annotated_rows(
+        &mut self,
+        node: NodeId,
+        annotation: &Annotation,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Rows>, Internal> {
+        let Some(found) = self.layout_of(node, need)? else {
+            return Ok(None);
+        };
+        Ok(Some(match found.shaped {
+            Ok(Some(layout)) => {
+                let empty = layout.outer() == Some(0) && layout.inner().is_empty();
+                if empty || layout.inner() == annotation.lengths.as_slice() {
+                    Rows::Agree
+                } else {
+                    Rows::Differ
+                }
+            }
+            Ok(None) => Rows::Differ,
+            Err(fault) => {
+                if let Some(fault) = fault {
+                    self.error_at_node(fault.code, fault.node, fault.message)?;
+                }
+                Rows::Faulty
+            }
+        }))
     }
 
     fn note_whole(&mut self, bound: &BoundVal, layout: Option<Layout>, capacity: Option<u32>) {
@@ -1143,7 +1182,15 @@ const ATTRIBUTE_SHAPE: &str = "the value's array shape differs from the attribut
 
 type Lengths = Result<Vec<u32>, Option<ShapeFault>>;
 
-const ANNOTATED_SHAPE: &str = "the value's shape differs from its annotated type";
+pub(super) const ANNOTATED_ROWS: &str = "the value's rows differ from its annotated type";
+
+pub(super) enum Rows {
+    Agree,
+    Differ,
+    Faulty,
+}
+
+pub(super) const ANNOTATED_SHAPE: &str = "the value's shape differs from its annotated type";
 
 const DEFAULT_SHAPE: &str =
     "a use yields this value in another shape than the defaults give its recursive call";

@@ -237,3 +237,63 @@ fn a_history_reads_fallback_takes_the_cells_type() {
         }
     }
 }
+
+#[test]
+fn an_annotation_holds_only_an_initializer_of_its_rows() {
+    let cells = [
+        "input a: i32[..5] = []\n",
+        "input g: i32[3][..10] = []\n",
+        "input note = 60\n",
+    ];
+    let rows: &[(&str, &str, &[Code])] = &[
+        (
+            "let probe: i32[2][..5] = a\n",
+            "Clip c:\n    Note/(probe[0][0])\n",
+            &[Code::TypeMismatch],
+        ),
+        (
+            "let probe: i32[..10] = g\n",
+            "Clip c:\n    Note/(probe[0])\n",
+            &[Code::TypeMismatch],
+        ),
+        (
+            "let probe: i32[2][..10] = g\n",
+            "Clip c:\n    Note/(probe[0][2])\n",
+            &[Code::TypeMismatch],
+        ),
+        (
+            "state s: i32[2][..5] = a\n",
+            "Clip c:\n    Note/(s[0][0])\n",
+            &[Code::TypeMismatch],
+        ),
+        (
+            "state s: i32[2] = [note, note, note]\n",
+            "Clip c:\n    Note/(s[0])\n",
+            &[Code::TypeMismatch],
+        ),
+        ("let b: i32[..6] = a\n", "Clip c:\n    Note/(b[0])\n", &[]),
+        (
+            "let probe: i32[3][..11] = g + [[1, 2, 3]]\n",
+            "Clip c:\n    Note/(probe[0][2])\n",
+            &[],
+        ),
+        (
+            "state s: i32[..8] = (s{1, []} + [note])[^8..]\n",
+            "Clip c:\n    Note/(s[0])\n",
+            &[],
+        ),
+        (
+            "let probe: f32[..5] = a\n",
+            "Clip c | gain=(probe[0]):\n    Note\n",
+            &[],
+        ),
+    ];
+    for (declaration, clip, expected) in rows {
+        let mut items: Vec<&str> = cells.to_vec();
+        items.push(declaration);
+        items.push(clip);
+        for text in in_every_order(&items) {
+            assert_eq!(codes(&text), expected.to_vec(), "{text}");
+        }
+    }
+}

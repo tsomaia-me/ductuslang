@@ -1,3 +1,4 @@
+use super::bindings::{ANNOTATED_ROWS, ANNOTATED_SHAPE, Rows};
 use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -209,6 +210,40 @@ impl Engine<'_> {
             }
             other => other,
         };
+        if let Some(annotation) = annotation.as_ref()
+            && annotation.capacity.is_some()
+        {
+            match self.annotated_rows(init, annotation, need)? {
+                None => return Ok(false),
+                Some(Rows::Agree) => {}
+                Some(Rows::Faulty) => {
+                    self.memo.states.insert(state, BoundVal::Error);
+                    return Ok(true);
+                }
+                Some(Rows::Differ) => {
+                    self.error(Code::TypeMismatch, loc, global, ANNOTATED_ROWS)?;
+                    self.memo.states.insert(state, BoundVal::Error);
+                    return Ok(true);
+                }
+            }
+        }
+        if let Some(annotation) = annotation.as_ref()
+            && annotation.capacity.is_none()
+            && let Some((length, rows)) = annotation.lengths.split_last()
+        {
+            let differs = match &layout {
+                Some(held) => {
+                    held.inner() != rows
+                        || (found.certain && !held.variable && held.outer() != Some(*length))
+                }
+                None => true,
+            };
+            if differs {
+                self.error(Code::TypeMismatch, loc, global, ANNOTATED_SHAPE)?;
+                self.memo.states.insert(state, BoundVal::Error);
+                return Ok(true);
+            }
+        }
         let layout = match annotation.as_ref() {
             Some(annotation) if annotation.capacity.is_some() => {
                 Some(Layout::variable(annotation.lengths.clone()))
