@@ -34,7 +34,7 @@ BACKEND = (
 
 def requirements(name):
     return json.dumps({"requirements": [
-        {"edge": f"{name} one", "verdict": "reject", "rule": "6.6: one"},
+        {"edge": f"{name} one", "verdict": "reject unknown-attribute", "rule": "6.6: one"},
         {"edge": f"{name} two", "verdict": "accept", "rule": "6.6: two"}]})
 
 
@@ -156,6 +156,7 @@ class RoundTest(unittest.TestCase):
                           ("r002-1-0", "reject", "reject", False, False), ("r003-1-0", "accept", "accept", False, False)])
         self.assertEqual(records[0]["program"], "Clip a:\n    Note/60\n")
         self.assertIn("unknown-kind", records[2]["codes"])
+        self.assertEqual([r["code_mismatch"] for r in records], [False, False, True, False])
         findings = list((self.run_dir / "findings").glob("*.json"))
         self.assertEqual([path.name.split("-")[0] for path in findings], ["verdict"])
         self.assertEqual(json.loads(findings[0].read_text())["id"], "r000-1-0")
@@ -164,9 +165,11 @@ class RoundTest(unittest.TestCase):
         self.assertEqual({key: summary[key] for key in counts}, counts)
         self.assertEqual(summary["round"], 1)
         self.assertEqual(summary["by_target"]["alpha"],
-                         {"programs": 2, "disagreements": 2, "judged": 2, "confirmed": 1, "signals": 0})
+                         {"programs": 2, "disagreements": 2, "judged": 2, "confirmed": 1, "signals": 0,
+                          "code_mismatches": 0})
         self.assertEqual(summary["by_target"]["beta"],
-                         {"programs": 2, "disagreements": 0, "judged": 0, "confirmed": 0, "signals": 0})
+                         {"programs": 2, "disagreements": 0, "judged": 0, "confirmed": 0, "signals": 0,
+                          "code_mismatches": 1})
 
     def test_only_disagreements_reach_the_judges(self):
         client = Scripted()

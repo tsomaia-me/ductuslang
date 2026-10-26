@@ -181,8 +181,10 @@ class Loop:
         written = [record for record in records if record["program"] is not None]
         with ThreadPoolExecutor(max_workers=ORACLE_THREADS) as pool:
             checked = list(pool.map(lambda r: self.oracle.verdict_of(r["id"], r["program"]), written))
+        expected = {r["id"]: STATED.fullmatch(r["verdict"]).group(2) for r in self.requirements}
         for record in records:
-            record.update(compiler=None, codes=[], signal=False, disagreement=False, judges=None, confirmed=False)
+            record.update(compiler=None, codes=[], signal=False, disagreement=False, judges=None, confirmed=False,
+                          code_mismatch=False)
         errors = {}
         for record, (result, _, found, _) in zip(written, checked):
             if found is None:
@@ -192,6 +194,9 @@ class Loop:
             record["compiler"] = "reject" if found else "accept"
             record["codes"] = sorted({error["code"] for error in found})
             record["disagreement"] = record["compiler"] != record["stated"]
+            code = expected.get(record["requirement"])
+            record["code_mismatch"] = (record["stated"] == record["compiler"] == "reject" and code is not None
+                                        and code.strip() not in record["codes"])
         return errors
 
     def judge_disagreements(self, records, errors):
@@ -221,7 +226,8 @@ class Loop:
             return {"programs": len(rows), "disagreements": sum(r["disagreement"] for r in rows),
                     "judged": sum(r["judges"] is not None for r in rows),
                     "confirmed": sum(r["confirmed"] + r["signal"] for r in rows),
-                    "signals": sum(r["signal"] for r in rows)}
+                    "signals": sum(r["signal"] for r in rows),
+                    "code_mismatches": sum(r.get("code_mismatch", False) for r in rows)}
         return {"round": number, **tally(records),
                 "by_target": {target["name"]: tally([r for r in records if r["target"] == target["name"]])
                               for target in self.targets}}
