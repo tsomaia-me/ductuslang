@@ -100,6 +100,46 @@ fn a_ring_of_states_takes_its_capacities_in_work_linear_in_it() {
     assert!(large <= 4 * small, "{small} {large}");
 }
 
+fn settlement_visits(states: u32, reversed: bool, read: impl Fn(u32) -> u32) -> u64 {
+    let mut lines: Vec<String> = (0..states)
+        .map(|state| {
+            let target = read(state);
+            format!("state s{state} = (s{target}{{1, []}} + [note])[^8..]\n")
+        })
+        .collect();
+    if reversed {
+        lines.reverse();
+    }
+    let text = format!(
+        "input note = 60\n{}Clip c:\n    Note/(s0[0])\n",
+        lines.concat()
+    );
+    let (diagnostics, visits) =
+        analyzed(&vocabulary(), &text, |engine| engine.memo.settlement_visits);
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    visits
+}
+
+#[test]
+fn settling_a_group_of_states_costs_work_linear_in_it_in_every_declaration_order() {
+    type Shape = fn(u32, u32) -> u32;
+    let shapes: [(&str, Shape); 3] = [
+        ("ring", |state, states| (state + states - 1) % states),
+        ("chain", |state, _| state.saturating_sub(1)),
+        ("independent", |state, _| state),
+    ];
+    for (name, shape) in shapes {
+        for reversed in [false, true] {
+            let small = settlement_visits(250, reversed, |state| shape(state, 250));
+            let large = settlement_visits(1_000, reversed, |state| shape(state, 1_000));
+            assert!(
+                large <= 4 * small + 64,
+                "{name} reversed {reversed}: {small} {large}"
+            );
+        }
+    }
+}
+
 #[test]
 fn states_whose_history_reads_reach_one_another_take_their_least_capacities_together() {
     let text = "input note = 60\nstate p = (q{1, []} + [note])[^3..]\nstate q = p{1, []} + [1]\nClip c:\n    Note/(p[0] + q[0])\n";

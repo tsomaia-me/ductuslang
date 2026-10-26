@@ -47,7 +47,14 @@ impl Engine<'_> {
         let mut unresolved = Vec::new();
         let mut members: Vec<BindingId> = Vec::new();
         let mut reads: Vec<Vec<StateId>> = Vec::new();
+        let mut visited = Vec::new();
         while let Some(current) = reached.pop() {
+            self.memo.settlement_visits += 1;
+            visited.push(current);
+            if let Some(witness) = self.blocking_witness(current) {
+                self.record_blocked(&visited, witness);
+                return Ok(Settling::Blocked);
+            }
             if !self.memo.states.contains_key(&current) {
                 unresolved.push(current);
                 continue;
@@ -72,11 +79,13 @@ impl Engine<'_> {
             reads.push(targets);
         }
         if !unresolved.is_empty() {
-            if self.declaring()
-                || unresolved
-                    .iter()
-                    .any(|state| self.in_progress(Query::State(*state)))
-            {
+            let declaring = self.declaring();
+            let witness = unresolved
+                .iter()
+                .copied()
+                .find(|state| declaring || self.in_progress(Query::State(*state)));
+            if let Some(witness) = witness {
+                self.record_blocked(&visited, witness);
                 return Ok(Settling::Blocked);
             }
             need.extend(unresolved.into_iter().map(Query::State));
@@ -114,6 +123,21 @@ impl Engine<'_> {
             }
         }
         Ok(Settling::Settled)
+    }
+
+    fn blocking_witness(&self, state: StateId) -> Option<StateId> {
+        let (epoch, witness) = self.memo.blocked_walks.get(&state).copied()?;
+        let blocks = epoch == self.memo.settle_epoch
+            && !self.memo.states.contains_key(&witness)
+            && (self.declaring() || self.in_progress(Query::State(witness)));
+        blocks.then_some(witness)
+    }
+
+    fn record_blocked(&mut self, visited: &[StateId], witness: StateId) {
+        let epoch = self.memo.settle_epoch;
+        for state in visited {
+            self.memo.blocked_walks.insert(*state, (epoch, witness));
+        }
     }
 
     fn state_reads(&self, init: NodeId) -> Result<Vec<StateId>, Internal> {
