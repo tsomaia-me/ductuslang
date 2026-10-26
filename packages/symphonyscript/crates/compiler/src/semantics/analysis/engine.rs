@@ -280,6 +280,13 @@ impl<'a> Engine<'a> {
         self.current == Some(query) || self.waiting.contains(&query)
     }
 
+    pub fn declaring(&self) -> bool {
+        self.current
+            .iter()
+            .chain(self.waiting.iter())
+            .any(|query| !matches!(query, Query::Expr(..) | Query::Sig(_) | Query::Eval(..)))
+    }
+
     fn is_done(&self, query: Query) -> bool {
         let memo = &self.memo;
         match query {

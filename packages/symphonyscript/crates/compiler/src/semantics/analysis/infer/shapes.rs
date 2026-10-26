@@ -7,6 +7,7 @@ use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::lengths_of::lengths_of;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::shape_parts::shape_parts;
 use crate::semantics::ir::Loc;
@@ -120,6 +121,16 @@ impl Engine<'_> {
                 continue;
             }
             let op = self.node(node)?.op.clone();
+            if let Op::Read(binding) = op
+                && self.memo.settled.contains(&binding)
+                && let Some(layout) = self.memo.binding_layouts.get(&binding)
+                && !layout.variable
+            {
+                self.typing
+                    .shapes
+                    .insert((node, ty), Some(layout.lengths.clone()));
+                continue;
+            }
             let parts = shape_parts(self, &op)?;
             if !self.arrays.contains(&node) || parts.is_empty() {
                 self.typing.shapes.insert((node, ty), Some(Vec::new()));

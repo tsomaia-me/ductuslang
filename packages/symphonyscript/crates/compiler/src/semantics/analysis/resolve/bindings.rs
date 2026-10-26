@@ -748,6 +748,7 @@ impl Engine<'_> {
             )?;
             return Ok(Some((Val::array(shape, nodes), None)));
         }
+        some!(self.layout_of(node, need)?);
         let lengths = match some!(self.default_shape(node, need)?) {
             Ok(lengths) => lengths,
             Err(fault) => {
@@ -805,6 +806,14 @@ impl Engine<'_> {
                 continue;
             }
             let op = &self.node(node)?.op;
+            if let Op::Read(binding) = op
+                && self.memo.settled.contains(binding)
+                && let Some(layout) = self.memo.binding_layouts.get(binding)
+                && !layout.variable
+            {
+                shapes.insert(node, Ok(layout.lengths.clone()));
+                continue;
+            }
             let parts = shape_parts(self, op)?;
             if !self.arrays.contains(&node) || parts.is_empty() {
                 shapes.insert(node, Ok(Vec::new()));

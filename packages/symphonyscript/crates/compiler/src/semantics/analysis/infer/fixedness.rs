@@ -1,34 +1,86 @@
 use crate::semantics::Internal;
 use crate::semantics::analysis::assumed::Assumed;
-use crate::semantics::analysis::bound::Bound;
-use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::fast_hash::FastMap;
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::op::Op;
-use crate::semantics::analysis::resolve::LayoutFound;
+use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::settling::Settling;
 use crate::semantics::collection::strongly_connected;
 use crate::semantics::ir::StateId;
 
+type Fallbacks = FastMap<BindingId, Vec<Option<Layout>>>;
+
 impl Engine<'_> {
     pub(super) fn settle_states(&mut self) -> Result<(), Internal> {
-        let mut members: Vec<BindingId> = Vec::new();
         for index in 0..self.hir.states.len() {
             let state = StateId(u32::try_from(index).map_err(|_| Internal::missed("state"))?);
-            let Some(BoundVal::Scalar(Bound::Cell(binding))) = self.memo.states.get(&state) else {
+            let mut previous = None;
+            loop {
+                let mut need = Vec::new();
+                if self.settle_from(state, &mut need)? != Settling::Pending {
+                    break;
+                }
+                if need.is_empty() || previous.as_ref() == Some(&need) {
+                    return Err(Internal::missed("state settlement"));
+                }
+                for query in &need {
+                    self.demand(*query)?;
+                }
+                previous = Some(need);
+            }
+        }
+        Ok(())
+    }
+
+    pub(in crate::semantics::analysis) fn settle_from(
+        &mut self,
+        state: StateId,
+        need: &mut Vec<Query>,
+    ) -> Result<Settling, Internal> {
+        let mut reached = vec![state];
+        let mut seen: FastSet<StateId> = FastSet::default();
+        seen.insert(state);
+        let mut unresolved = Vec::new();
+        let mut members: Vec<BindingId> = Vec::new();
+        let mut reads: Vec<Vec<StateId>> = Vec::new();
+        while let Some(current) = reached.pop() {
+            if !self.memo.states.contains_key(&current) {
+                unresolved.push(current);
+                continue;
+            }
+            let Some(binding) = self.state_binding(current) else {
                 continue;
             };
-            let binding = *binding;
             if self.memo.settled.contains(&binding) {
                 continue;
             }
-            if self.memo.binding_layouts.contains_key(&binding) {
-                members.push(binding);
-            } else {
+            if !self.memo.binding_layouts.contains_key(&binding) {
                 self.memo.settled.insert(binding);
+                continue;
             }
+            let targets = self.state_reads(self.binding(binding)?.init)?;
+            for target in &targets {
+                if seen.insert(*target) {
+                    reached.push(*target);
+                }
+            }
+            members.push(binding);
+            reads.push(targets);
+        }
+        if !unresolved.is_empty() {
+            if self.declaring()
+                || unresolved
+                    .iter()
+                    .any(|state| self.in_progress(Query::State(*state)))
+            {
+                return Ok(Settling::Blocked);
+            }
+            need.extend(unresolved.into_iter().map(Query::State));
+            return Ok(Settling::Pending);
         }
         let positions: FastMap<BindingId, usize> = members
             .iter()
@@ -36,16 +88,15 @@ impl Engine<'_> {
             .map(|(position, binding)| (*binding, position))
             .collect();
         let mut edges = Vec::with_capacity(members.len());
-        for binding in &members {
-            let init = self.binding(*binding)?.init;
-            let mut targets: Vec<usize> = self
-                .state_dependencies(init)?
-                .into_iter()
-                .filter_map(|dependency| positions.get(&dependency).copied())
+        for targets in &reads {
+            let mut local: Vec<usize> = targets
+                .iter()
+                .filter_map(|target| self.state_binding(*target))
+                .filter_map(|binding| positions.get(&binding).copied())
                 .collect();
-            targets.sort_unstable();
-            targets.dedup();
-            edges.push(targets);
+            local.sort_unstable();
+            local.dedup();
+            edges.push(local);
         }
         for component in strongly_connected(&edges)? {
             let group: Vec<BindingId> = component
@@ -58,18 +109,55 @@ impl Engine<'_> {
                 })
                 .collect::<Result<_, _>>()?;
             let readers = readers_within(&group, &component, &edges)?;
-            self.settle_group(&group, &readers)?;
+            if !self.settle_group(&group, &readers, need)? {
+                return Ok(Settling::Pending);
+            }
         }
-        self.memo.layouts.retain(|_, found| found.certain);
-        Ok(())
+        Ok(Settling::Settled)
+    }
+
+    fn state_reads(&self, init: NodeId) -> Result<Vec<StateId>, Internal> {
+        let mut found = Vec::new();
+        let mut seen = FastSet::default();
+        let mut stack = vec![init];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Read(binding) => match self.binding(*binding)?.kind {
+                    BindingKind::State { state } => found.push(state),
+                    BindingKind::Input { .. }
+                    | BindingKind::Let
+                    | BindingKind::Param
+                    | BindingKind::Attr { .. } => stack.push(self.binding(*binding)?.init),
+                },
+                Op::History { cell, fallback, .. } => {
+                    match cell {
+                        HistoryCell::State(state) => found.push(*state),
+                        HistoryCell::Input(_) | HistoryCell::Let(_) => {
+                            for binding in self.history_bindings(node)? {
+                                stack.push(self.binding(binding)?.init);
+                            }
+                        }
+                    }
+                    stack.extend(fallback.iter().copied());
+                }
+                op => stack.extend(op.operands()),
+            }
+        }
+        Ok(found)
     }
 
     fn settle_group(
         &mut self,
         group: &[BindingId],
         readers: &[Vec<usize>],
-    ) -> Result<(), Internal> {
-        let fallbacks = self.group_fallbacks(group)?;
+        need: &mut Vec<Query>,
+    ) -> Result<bool, Internal> {
+        let Some(fallbacks) = self.group_fallbacks(group, need)? else {
+            return Ok(false);
+        };
         let mut assumed = Assumed::default();
         for binding in group {
             assumed.members.insert(*binding, false);
@@ -82,7 +170,9 @@ impl Engine<'_> {
                 continue;
             }
             let init = self.binding(binding)?.init;
-            let found = self.assumed_layout(init, &assumed)?;
+            let Some(found) = self.layout_in(init, Some(&assumed), need)? else {
+                return Ok(false);
+            };
             let layout = found.shaped.ok().flatten();
             let own = fallbacks
                 .get(&binding)
@@ -118,14 +208,18 @@ impl Engine<'_> {
             }
             self.memo.settled.insert(*binding);
         }
-        Ok(())
+        self.memo.settle_epoch += 1;
+        Ok(true)
     }
 
     fn group_fallbacks(
         &mut self,
         group: &[BindingId],
-    ) -> Result<FastMap<BindingId, Vec<Option<Layout>>>, Internal> {
-        let mut fallbacks: FastMap<BindingId, Vec<Option<Layout>>> = FastMap::default();
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Fallbacks>, Internal> {
+        let unassumed = Assumed::default();
+        let mut fallbacks: Fallbacks = FastMap::default();
+        let mut missing = false;
         for binding in group {
             let init = self.binding(*binding)?.init;
             for (node, cell) in self.history_reads(init)? {
@@ -142,30 +236,19 @@ impl Engine<'_> {
                     Op::History {
                         fallback: Some(fallback),
                         ..
-                    } => self.known_layout(fallback)?.shaped.ok().flatten(),
+                    } => match self.layout_in(fallback, Some(&unassumed), need)? {
+                        Some(found) => found.shaped.ok().flatten(),
+                        None => {
+                            missing = true;
+                            continue;
+                        }
+                    },
                     _ => None,
                 };
                 fallbacks.entry(target).or_default().push(layout);
             }
         }
-        Ok(fallbacks)
-    }
-
-    fn assumed_layout(&mut self, node: NodeId, assumed: &Assumed) -> Result<LayoutFound, Internal> {
-        let mut previous = None;
-        loop {
-            let mut need = Vec::new();
-            if let Some(found) = self.layout_in(node, Some(assumed), &mut need)? {
-                return Ok(found);
-            }
-            if need.is_empty() || previous.as_ref() == Some(&need) {
-                return Err(Internal::missed("array layout"));
-            }
-            for query in &need {
-                self.demand(*query)?;
-            }
-            previous = Some(need);
-        }
+        Ok((!missing).then_some(fallbacks))
     }
 }
 

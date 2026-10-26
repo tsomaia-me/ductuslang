@@ -450,3 +450,64 @@ fn an_annotation_holds_only_an_initializer_of_its_rows() {
         }
     }
 }
+
+#[test]
+fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
+    let fixed = "state s = (s{1, [0, 0]} + [note])[1..]\n";
+    let variable = "state r = (r{1, []} + [note])[^8..]\n";
+    let rows: &[OrderedRow] = &[
+        (
+            &[
+                NOTE,
+                fixed,
+                "Clip c:\n    for i in 0..len(s):\n        Note/(s[i])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                NOTE,
+                fixed,
+                "let p = s\n",
+                "let probe: i32[2] = p\n",
+                "Clip c:\n    Note/(probe[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                NOTE,
+                fixed,
+                "let p = s + [note]\n",
+                "let probe: i32[3] = p\n",
+                "Clip c:\n    Note/(probe[2])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                NOTE,
+                "let p = s\n",
+                "let probe: i32[2] = p\n",
+                "state s = (z{1, [0, 0]} + [note])[1..]\n",
+                "state z = p\n",
+                "Clip c:\n    Note/(probe[1])\n",
+            ],
+            &[],
+        ),
+        (&[NOTE, variable, "Clip c:\n    Note/(len(r))\n"], &[]),
+        (
+            &[
+                NOTE,
+                variable,
+                "Clip c:\n    for i in 0..len(r):\n        Note/(r[i])\n",
+            ],
+            &[(Code::ReactiveIterable, "len(r)", 0)],
+        ),
+    ];
+    for (items, expected) in rows {
+        for text in in_every_order(items) {
+            support::expect_codes(&text, expected);
+        }
+    }
+}

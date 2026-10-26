@@ -100,6 +100,39 @@ fn a_bounded_call_expands_in_work_linear_in_its_levels() {
     assert_eq!(large - middle, 2 * (middle - small));
 }
 
+#[test]
+fn a_state_settled_as_a_fixed_array_expands_a_loop_over_its_length() {
+    let items = [
+        "input note = 60\n",
+        "state s = (s{1, [0, 0]} + [note])[1..]\n",
+        "Clip c:\n    for i in 0..len(s):\n        Note/(s[i])\n",
+    ];
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let text: String = order.iter().map(|index| items[*index]).collect();
+        let (diagnostics, notes) = analyzed(&vocabulary(), &text, |engine| {
+            engine
+                .instances
+                .iter()
+                .filter(|instance| {
+                    engine
+                        .vocabulary
+                        .node_kind(instance.kind)
+                        .is_some_and(|decl| decl.name == "Note")
+                })
+                .count()
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(notes, 2, "{text}");
+    }
+}
+
 fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
     let instance = engine.instances.last()?;
     let decl = engine.vocabulary.node_kind(instance.kind)?;

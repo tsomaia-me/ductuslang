@@ -22,6 +22,7 @@ use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::settling::Settling;
 use crate::semantics::analysis::shape_fault::ShapeFault;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
@@ -170,8 +171,11 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         let found = some!(self.layout_of(node, need)?);
+        let certain = found.certain;
         let length = self.length_of_layout(node, found, (loc, scope))?;
-        self.memo.lengths.insert(node, length.clone());
+        if certain {
+            self.memo.lengths.insert(node, length.clone());
+        }
         Ok(Some(length))
     }
 
@@ -410,8 +414,31 @@ impl Engine<'_> {
         self.memo
             .layouts
             .get(&node)
-            .filter(|known| assumed.is_none() || known.certain)
-            .cloned()
+            .filter(|(known, epoch)| {
+                known.certain || (assumed.is_none() && *epoch == self.memo.settle_epoch)
+            })
+            .map(|(known, _)| known.clone())
+    }
+
+    fn unsettled_state(&self, op: &Op) -> Result<Option<StateId>, Internal> {
+        Ok(match op {
+            Op::Read(binding) => match self.binding(*binding)?.kind {
+                BindingKind::State { state } if !self.memo.settled.contains(binding) => Some(state),
+                BindingKind::State { .. }
+                | BindingKind::Input { .. }
+                | BindingKind::Let
+                | BindingKind::Param
+                | BindingKind::Attr { .. } => None,
+            },
+            Op::History {
+                cell: HistoryCell::State(state),
+                ..
+            } => match self.state_binding(*state) {
+                Some(binding) if self.memo.settled.contains(&binding) => None,
+                Some(_) | None => Some(*state),
+            },
+            _ => None,
+        })
     }
 
     pub(in crate::semantics::analysis) fn layout_in(
@@ -472,6 +499,14 @@ impl Engine<'_> {
                 continue;
             }
             let op = self.node(node)?.op.clone();
+            if !ready
+                && assumed.is_none()
+                && let Some(state) = self.unsettled_state(&op)?
+                && self.settle_from(state, need)? == Settling::Pending
+            {
+                missing = true;
+                continue;
+            }
             let parts = self.layout_parts(&op, assumed)?;
             if !ready {
                 stack.push((node, true));
@@ -499,7 +534,12 @@ impl Engine<'_> {
             .cloned()
             .ok_or(Internal::missed("layout"))?;
         if assumed.is_none() {
-            self.memo.layouts.extend(found);
+            let epoch = self.memo.settle_epoch;
+            self.memo.layouts.extend(
+                found
+                    .into_iter()
+                    .map(|(node, known)| (node, (known, epoch))),
+            );
         }
         Ok(Some(result))
     }
