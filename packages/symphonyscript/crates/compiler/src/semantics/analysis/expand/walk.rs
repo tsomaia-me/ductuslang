@@ -401,6 +401,25 @@ impl Engine<'_> {
         Ok(sites)
     }
 
+    fn local_visible(&self, scope: ScopeId, name: &str) -> Result<bool, Internal> {
+        let mut current = Some(scope);
+        while let Some(id) = current {
+            let record = self.scope_of(id)?;
+            match &record.kind {
+                ScopeKind::Locals(locals) if locals.names.contains_key(name) => return Ok(true),
+                ScopeKind::ForVar { name: var, .. } if var == name => return Ok(true),
+                ScopeKind::Global { .. } => return Ok(false),
+                ScopeKind::Locals(_)
+                | ScopeKind::ForVar { .. }
+                | ScopeKind::ParamPrefix { .. }
+                | ScopeKind::Body { .. }
+                | ScopeKind::WireClause { .. } => {}
+            }
+            current = record.parent;
+        }
+        Ok(false)
+    }
+
     fn prebuild(
         &mut self,
         sites: &[(Site, Loc)],
@@ -425,7 +444,7 @@ impl Engine<'_> {
             let Some(name) = named else {
                 continue;
             };
-            if names.contains_key(&name.text) {
+            if names.contains_key(&name.text) || self.local_visible(scope, &name.text)? {
                 continue;
             }
             let owner_decl = self.node_decl(owner_kind)?;

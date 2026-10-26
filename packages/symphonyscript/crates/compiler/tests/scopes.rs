@@ -273,3 +273,145 @@ fn a_local_name_equal_to_a_variant_is_an_error() {
         support::expect_codes(text, expected);
     }
 }
+
+#[test]
+fn a_child_wire_or_loop_name_equal_to_a_visible_local_is_refused_naming_both() {
+    let tone_note = "pattern Mk(default root):\n    let tone = root + 2\n    Note as tone /tone\n    Note/(tone + 7)\n";
+    let stand_in = "pattern Mk(default root):\n    let tone = root + 2\n    Clip as tone:\n        Note/tone\n";
+    let named_loop = "Clip c:\n    Note as i /60\n    for i in 0..2:\n        Note/(62 + i)\n";
+    let loop_named = "Clip c:\n    for i in 0..2:\n        Note/(62 + i)\n    Note as i /60\n";
+    let rows: &[support::Row] = &[
+        (
+            &[tone_note, "Clip c:\n    Mk/60\n"],
+            &[(Code::ChildNameClash, "tone")],
+        ),
+        (
+            &[tone_note, "Clip c:\n    Mk/60\n    Mk/62\n"],
+            &[(Code::ChildNameClash, "tone")],
+        ),
+        (&[tone_note], &[(Code::ChildNameClash, "tone")]),
+        (&[stand_in, "Mk m /60\n"], &[(Code::ChildNameClash, "tone")]),
+        (&[stand_in], &[(Code::ChildNameClash, "tone")]),
+        (
+            &[
+                "pattern P(default root, extra):\n    Note as extra /root\n    Note/(root + extra)\n",
+                "Clip c:\n    P/60 | extra=7\n",
+            ],
+            &[(Code::ChildNameClash, "extra")],
+        ),
+        (
+            &[
+                "pattern P(default root):\n    let tone = root\n    Clip:\n        Note as tone /60\n",
+                "P p /60\n",
+            ],
+            &[(Code::ChildNameClash, "tone")],
+        ),
+        (
+            &[
+                "pattern L(default root, again):\n    Clip:\n        Note/root\n        Plays as again: again\n",
+                "Clip x:\n    Note\n",
+                "L l /36 | again=x\n",
+            ],
+            &[(Code::ChildNameClash, "again")],
+        ),
+        (&[named_loop], &[(Code::ForVariableClash, "i")]),
+        (&[loop_named], &[(Code::ForVariableClash, "i")]),
+        (
+            &[
+                "let i = 1\n",
+                "Clip c:\n    for i in 0..2:\n        Note/(60 + i)\n",
+            ],
+            &[(Code::ForVariableClash, "i")],
+        ),
+        (
+            &[
+                "pattern P(default root):\n    for root in 0..2:\n        Note/root\n",
+                "Clip c:\n    P/60\n",
+            ],
+            &[(Code::ForVariableClash, "root")],
+        ),
+        (
+            &["Clip c:\n    for i in 0..2:\n        for i in 0..2:\n            Note/(60 + i)\n"],
+            &[(Code::ForVariableClash, "i")],
+        ),
+        (
+            &["Clip c:\n    Note as i /60\n    [for i in 0..3: Note/(62 + i * 4)]\n"],
+            &[(Code::ForVariableClash, "i")],
+        ),
+        (&["let hook = 1\n", "Clip c:\n    Note as hook /60\n"], &[]),
+        (
+            &[
+                "Clip a:\n    for i in 0..2:\n        Note/(60 + i)\n",
+                "Clip b:\n    for i in 0..2:\n        Note/(60 + i)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern A():\n    for i in 0..2:\n        Note/(60 + i)\n",
+                "pattern B():\n    Note as i /60\n",
+                "Clip c:\n    A\n    B\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let root = 1\n",
+                "pattern P(default root):\n    Note/root\n",
+                "Clip c:\n    P/60\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern Arp(default root, steps = 4, gap = 4):\n    for i in 0..steps:\n        Note/(root + i * gap)\n",
+                "Clip verse:\n    Arp/48\n    Arp/60 | steps=8 gap=3\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern Riff(default root):\n    Clip:\n        Note/root Note/(root + 7) Note/(root + 12)\n",
+                "Riff low /36\n",
+                "Riff high /48\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern Loop(default root, again):\n    Clip:\n        Note/root Note/(root + 7)\n        Plays: again\n",
+                "Loop low /36 | again=low\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(x):\n    let i = x\n    i + 1\n",
+                "let i = 1\n",
+                "Clip c:\n    Note/(f(i))\n",
+            ],
+            &[],
+        ),
+    ];
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    support::assert_rows_in_every_order(&vocabulary, rows);
+    let compiler = symphonyscript::Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (items, _) in rows {
+        let text = items.concat();
+        for diagnostic in support::errors(compiler.check(&[support::source(&text)])) {
+            let named = |range: &std::ops::Range<u32>| {
+                text.get(range.start as usize..range.end as usize)
+                    .unwrap_or_default()
+            };
+            let name = named(&diagnostic.span.range);
+            assert!(
+                diagnostic
+                    .related
+                    .iter()
+                    .any(|related| related.span.range != diagnostic.span.range
+                        && named(&related.span.range) == name),
+                "{text}{diagnostic:?}"
+            );
+        }
+    }
+}

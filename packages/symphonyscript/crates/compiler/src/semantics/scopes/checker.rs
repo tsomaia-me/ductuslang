@@ -395,6 +395,43 @@ impl<'a> Checker<'a> {
         Ok(self.namespace.get(name).is_some() || self.namespace.is_duplicated(name))
     }
 
+    fn visible_at(
+        &self,
+        frame: Option<usize>,
+        name: &str,
+    ) -> Result<Option<Option<Loc>>, Internal> {
+        let mut current = frame;
+        while let Some(index) = current {
+            let frame = self
+                .frames
+                .get(index)
+                .ok_or(Internal::missed("scope frame"))?;
+            if let Some(loc) = frame.names.get(name) {
+                return Ok(Some(Some(*loc)));
+            }
+            current = frame.parent;
+        }
+        Ok(match self.namespace.get(name) {
+            Some(decl) => Some(self.declared_at(decl)?),
+            None => self.namespace.is_duplicated(name).then_some(None),
+        })
+    }
+
+    fn declared_at(&self, decl: Decl) -> Result<Option<Loc>, Internal> {
+        let name = match decl {
+            Decl::Input(id) => &self.hir.input(id)?.name,
+            Decl::Let(id) => &self.hir.let_decl(id)?.name,
+            Decl::State(id) => &self.hir.state(id)?.name,
+            Decl::Fn(id) => &self.hir.fn_decl(id)?.name,
+            Decl::Pattern(id) => &self.hir.pattern(id)?.name,
+            Decl::Instance(id) => &self.hir.placement(id)?.name,
+            Decl::Native(_) | Decl::Builtin(_) | Decl::Node(_) | Decl::Wire(_) | Decl::Enum(_) => {
+                return Ok(None);
+            }
+        };
+        Ok(name.as_ref().map(|name| name.loc))
+    }
+
     fn enclosing_body_name(
         &self,
         frame: Option<usize>,
@@ -723,11 +760,16 @@ impl<'a> Checker<'a> {
             return Ok(frame);
         };
         self.declared(var)?;
-        if self.visible(frame, &var.text)? {
-            self.report.error(
+        if let Some(other) = self.visible_at(frame, &var.text)? {
+            let related: Vec<(Loc, String)> = other
+                .map(|loc| (loc, "the visible name it equals".to_string()))
+                .into_iter()
+                .collect();
+            self.report.error_with(
                 self.hir,
                 Code::ForVariableClash,
                 var.loc,
+                &related,
                 format!("the loop variable `{}` equals a visible name", var.text),
             );
         }
@@ -774,6 +816,23 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
+    fn local_clash(&mut self, parent: Option<usize>, name: &Ident) -> Result<bool, Internal> {
+        let Some(local) = self.visible_local(parent, &name.text)? else {
+            return Ok(false);
+        };
+        self.report.error_with(
+            self.hir,
+            Code::ChildNameClash,
+            name.loc,
+            &[(local, "the name it repeats".to_string())],
+            format!(
+                "`{}` names a pattern parameter, a pattern `let` or a `for` variable visible here",
+                name.text
+            ),
+        );
+        Ok(true)
+    }
+
     fn body_names(
         &mut self,
         block: BlockId,
@@ -789,6 +848,7 @@ impl<'a> Checker<'a> {
                     BodyItem::Placement(id) if Some(*id) == unnamed => {
                         if let Some(name) = &self.hir.placement(*id)?.name {
                             self.declared(name)?;
+                            self.local_clash(parent, name)?;
                         }
                     }
                     BodyItem::Placement(id) => found.extend(self.hir.placement(*id)?.name.clone()),
@@ -811,17 +871,7 @@ impl<'a> Checker<'a> {
         found.sort_by_key(|name| name.loc);
         for name in found {
             self.declared(&name)?;
-            if let Some(local) = self.visible_local(parent, &name.text)? {
-                self.report.error_with(
-                    self.hir,
-                    Code::ChildNameClash,
-                    name.loc,
-                    &[(local, "the name it repeats".to_string())],
-                    format!(
-                        "`{}` names a pattern parameter, a pattern `let` or a `for` variable visible here",
-                        name.text
-                    ),
-                );
+            if self.local_clash(parent, &name)? {
                 continue;
             }
             let clash = match names.get(&name.text) {
