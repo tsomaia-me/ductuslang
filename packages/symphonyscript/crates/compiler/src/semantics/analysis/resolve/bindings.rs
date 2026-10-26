@@ -811,6 +811,16 @@ impl Engine<'_> {
                 shapes.insert(node, shape);
                 continue;
             }
+            if self.arrays.contains(&node)
+                && let Some((found, _)) = self.memo.layouts.get(&node)
+                && let Ok(Some(layout)) = &found.shaped
+                && layout.variable
+            {
+                let mut lengths = layout.inner().to_vec();
+                lengths.push(u32::MAX);
+                shapes.insert(node, Ok(lengths));
+                continue;
+            }
             let op = &self.node(node)?.op;
             if let Op::Read(binding) = op
                 && self.memo.settled.contains(binding)

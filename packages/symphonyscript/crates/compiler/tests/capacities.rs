@@ -953,3 +953,118 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
         2_147_483_646,
     );
 }
+
+#[test]
+fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read() {
+    let held = "input held: i32[..10] = []\n";
+    let gate = "input gate = false\n";
+    let step = "input step = 0\n";
+    let chosen = "let s = if gate then held else [0]\n";
+    let top = "Clip c:\n    Note/(top)\n";
+    let rows: &[support::Row] = &[
+        (&[held, gate, chosen, "let top = s[0]\n", top], &[]),
+        (&[held, gate, step, chosen, "let top = s[step]\n", top], &[]),
+        (&[held, gate, chosen, "let top = s[^1]\n", top], &[]),
+        (
+            &[
+                held,
+                gate,
+                "state s = if gate then held else s{1, [0]}\n",
+                "let top = s[^1]\n",
+                top,
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                gate,
+                "let fb = [0]\n",
+                "state s = if gate then held else fb\n",
+                "let top = s[0]\n",
+                top,
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                "input mode = 0\n",
+                "let s = match mode:\n    0: held\n    else: [0]\n",
+                "let top = s[0]\n",
+                top,
+            ],
+            &[],
+        ),
+        (&[held, gate, chosen, "Clip c:\n    Note/(len(s))\n"], &[]),
+        (
+            &[held, gate, chosen, "Clip c:\n    Note/(s[1..][0])\n"],
+            &[],
+        ),
+        (
+            &[
+                held,
+                gate,
+                "let top = (if gate then [0] else held)[0]\n",
+                top,
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                gate,
+                chosen,
+                "fn first(xs):\n    let x = xs[0]\n    x + 1\n",
+                "Clip c:\n    Note/(first(s))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                gate,
+                chosen,
+                "pattern P(default xs):\n    Note/(xs[0])\n",
+                "Clip c:\n    P/s\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                gate,
+                chosen,
+                "state t = s[0] + t{1, 0}\n",
+                "Clip c:\n    Note/(t)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                gate,
+                "let v = if gate then [60, 64] else [62, 65]\n",
+                "let x = v[1]\n",
+                "Clip c:\n    Note/(x)\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let state = "state s = if gate then held else s{1, [0]}\n";
+    for (value, capacity) in [
+        ("if gate then held else [0]", 10),
+        ("if gate then held else [0, 1, 2]", 10),
+    ] {
+        assert_capacity(
+            &format!("input held: i32[..10] = []\ninput gate = false\nlet s = {value}\n"),
+            "s",
+            capacity,
+        );
+    }
+    assert_capacity(
+        &format!("input held: i32[..10] = []\ninput gate = false\n{state}"),
+        "s",
+        10,
+    );
+}
