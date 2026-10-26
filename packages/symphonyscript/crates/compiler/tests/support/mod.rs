@@ -225,7 +225,9 @@ pub fn signature_vocabulary() -> Vocabulary {
         .default_attr()
         .attr::<f64>("length")
         .default(0.25)
-        .family(&beats, "beats");
+        .family(&beats, "beats")
+        .attr::<u8>("level")
+        .default(0);
     v.native(
         "plain",
         NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Value(Ty::I32)),

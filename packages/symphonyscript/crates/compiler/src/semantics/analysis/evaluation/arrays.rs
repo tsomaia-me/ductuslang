@@ -17,12 +17,12 @@ impl Engine<'_> {
     pub(super) fn join(
         &mut self,
         (lhs, rhs): (NodeId, NodeId),
-        own: EvalTy,
+        typed: (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let left = self.child(lhs, own, ctx, need)?;
-        let right = self.child(rhs, own, ctx, need)?;
+        let left = self.typed_child(lhs, typed, ctx, need)?;
+        let right = self.typed_child(rhs, typed, ctx, need)?;
         let (left, right) = (some!(left), some!(right));
         Ok(Some(match (left, right) {
             (CVal::Array(left), CVal::Array(right)) => {
@@ -38,11 +38,11 @@ impl Engine<'_> {
         &mut self,
         base: NodeId,
         (lower, upper): SliceBounds,
-        own: EvalTy,
+        typed: (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let value = self.child(base, own, ctx, need)?;
+        let value = self.typed_child(base, typed, ctx, need)?;
         let start = self.position_of(lower, ctx, need)?;
         let end = self.position_of(upper, ctx, need)?;
         let (value, start, end) = (some!(value), some!(start), some!(end));

@@ -3352,7 +3352,7 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
         ),
         (
             &["fn g(x): x - u8(5)\n", "Clip c:\n    Note/(g(u8(3)))\n"],
-            &[(Code::ConstantOverflow, "x - u8(5)")],
+            &[],
         ),
         (
             &["fn r(x, n): if n < 1 then x + 300 else r(x, n - 1)\n", call],
@@ -3367,6 +3367,127 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
+fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
+    let rows: &[support::Row] = &[
+        (&["Clip c:\n    Note/(u8(255) + 4)\n"], &[]),
+        (
+            &["Clip c:\n    Note/(u8(250) + 300)\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &["Clip c:\n    Note | level=(u8(255) + 4)\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (
+            &["Clip c:\n    Note when u8(255) + 4 > 0\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (
+            &["Clip c:\n    Note when u8(255) + 4 > 1i32\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (
+            &["let k = u8(255) + 4\n", "Clip c:\n    Note when k > 0\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (
+            &["fn g(x): x - u8(5)\n", "Clip c:\n    Note/(g(u8(3)))\n"],
+            &[],
+        ),
+        (
+            &[
+                "fn g(x): x - u8(5)\n",
+                "Clip c:\n    Note | level=(g(u8(3)))\n",
+            ],
+            &[(Code::ConstantOverflow, "x - u8(5)")],
+        ),
+        (
+            &[
+                "let packed = bytes([300, -5, 70000, 12])\n",
+                "Clip c:\n    Note/(packed[0] + len(packed))\n",
+            ],
+            &[],
+        ),
+        (
+            &["Clip c:\n    Note/(2147483647i32 + 1)\n"],
+            &[(Code::ConstantOverflow, "2147483647i32 + 1")],
+        ),
+        (&["Clip c:\n    Note/(-u8(3))\n"], &[]),
+        (
+            &["Clip c:\n    Note | level=(-u8(3))\n"],
+            &[(Code::ConstantOverflow, "-u8(3)")],
+        ),
+        (
+            &["Clip c:\n    Note/(if true then u8(255) + 4 else 0)\n"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    Note | level=(if true then u8(255) + 4 else 0)\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (
+            &[
+                "let m = match 1:\n    1: u8(255) + 4\n    else: 0\n",
+                "Clip c:\n    Note/m\n",
+            ],
+            &[],
+        ),
+        (
+            &["let xs = [u8(255) + 4, 1]\n", "Clip c:\n    Note/(xs[0])\n"],
+            &[],
+        ),
+        (
+            &[
+                "let xs = [u8(255) + 4, 1]\n",
+                "Clip c:\n    Note | level=(xs[0])\n",
+            ],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (&["Clip c:\n    Note/(max(u8(255) + 4, 0))\n"], &[]),
+        (
+            &["Clip c:\n    Note | level=(max(u8(255) + 4, 0))\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (&["Clip c:\n    Note/((u8(255) + 4) div 2)\n"], &[]),
+        (&["Clip c:\n    Note/(plain(u8(255) + 4))\n"], &[]),
+        (
+            &["Clip c | fixed=[u8(255) + 4, 0, 0]:\n    Note\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
+    let frequencies: &[support::Row] = &[
+        (&["Osc o | freq=(2147483647i32 + 1)\n"], &[]),
+        (&["Osc o | freq=(3.4028235e38f32 * 2)\n"], &[]),
+        (&["Osc o | freq=(u8(250) * 2 / 2)\n"], &[]),
+        (&["Osc o | freq=(sqrt(u8(250) * 2))\n"], &[]),
+        (
+            &["Osc o | freq=(u8(250) / 300)\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                "fn r(x, n): if n < 1 then x else r(x, n - 1)\n",
+                "Osc o | freq=(r(u8(250) * 2 / 2, 1))\n",
+            ],
+            &[(Code::ConstantOverflow, "u8(250) * 2")],
+        ),
+        (
+            &["Osc o | freq=((u8(255) + 4) div 2)\n"],
+            &[(Code::ConstantOverflow, "u8(255) + 4")],
+        ),
+        (
+            &[
+                "let r = u8(250) * 2 / 2\n",
+                "Clip c:\n    Note when r > 1\n",
+            ],
+            &[(Code::ConstantOverflow, "u8(250) * 2")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), frequencies);
 }
 
 #[test]

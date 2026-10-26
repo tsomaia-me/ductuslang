@@ -464,3 +464,62 @@ fn a_compile_time_match_on_a_bare_variant_computes_its_chosen_arm() {
         assert_eq!(value, Some(CVal::Int(6)), "{text}");
     }
 }
+
+#[test]
+fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
+    let pitches: [(&[&str], i128); 9] = [
+        (&["Clip c:\n    Note/(u8(255) + 4)\n"], 259),
+        (
+            &[
+                "let packed = bytes([300, -5, 70000, 12])\n",
+                "Clip c:\n    Note/(packed[0] + len(packed))\n",
+            ],
+            259,
+        ),
+        (
+            &["fn g(x): x - u8(5)\n", "Clip c:\n    Note/(g(u8(3)))\n"],
+            -2,
+        ),
+        (&["Clip c:\n    Note/(-u8(3))\n"], -3),
+        (
+            &["Clip c:\n    Note/(if true then u8(255) + 4 else 0)\n"],
+            259,
+        ),
+        (
+            &[
+                "let m = match 1:\n    1: u8(255) + 4\n    else: 0\n",
+                "Clip c:\n    Note/m\n",
+            ],
+            259,
+        ),
+        (
+            &["let xs = [u8(255) + 4, 1]\n", "Clip c:\n    Note/(xs[0])\n"],
+            259,
+        ),
+        (&["Clip c:\n    Note/(max(u8(255) + 4, 0))\n"], 259),
+        (&["Clip c:\n    Note/((u8(255) + 4) div 2)\n"], 129),
+    ];
+    for (items, expected) in pitches {
+        for text in in_every_order(items) {
+            let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+                attr_value(engine, "pitch", EvalTy::I32)
+            });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            assert_eq!(value, Some(CVal::Int(expected)), "{text}");
+        }
+    }
+    let frequencies: [(&str, f64); 4] = [
+        ("2147483647i32 + 1", 2_147_483_648.0),
+        ("3.4028235e38f32 * 2", f64::from(f32::MAX) * 2.0),
+        ("u8(250) * 2 / 2", 250.0),
+        ("sqrt(u8(250) * 2)", 500.0_f64.sqrt()),
+    ];
+    for (value, expected) in frequencies {
+        let text = format!("Osc o | freq=({value})\n");
+        let (diagnostics, found) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "freq", EvalTy::F64)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(found, Some(CVal::F64(expected)), "{text}");
+    }
+}

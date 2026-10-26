@@ -242,7 +242,7 @@ impl Engine<'_> {
         } else {
             own_type(&sig, own)
         };
-        let value = some!(self.child(arg, ty, ctx, need)?);
+        let value = some!(self.typed_child(arg, (ty, None), ctx, need)?);
         let (lengths, values) = match &value {
             CVal::Array(array) => (array.lengths(), array.leaves()),
             leaf => (Vec::new(), vec![leaf.clone()]),

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use symphonyscript_core::{BinaryOp, Builtin, SpecFloat, UnaryOp, Value};
+use symphonyscript_core::{BinaryOp, Builtin, Scalar, SpecFloat, UnaryOp, Value};
 
 use super::convert::convert;
 use super::convert_to::convert_to;
@@ -38,6 +38,7 @@ use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::some::some;
+use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{FloatLit, Number, Suffix};
 
@@ -68,11 +69,15 @@ impl Engine<'_> {
         if sig.is_error() || sig.reactive {
             return Ok(Some(CVal::Error));
         }
-        let own = own_type(&sig, ty);
+        let own = self.expected_own(node, &sig, ty)?;
+        let partner = (own == ty && expected_scalar(ty).is_some()).then_some(match sig.width {
+            Width::Fixed(scalar) => of_scalar(scalar),
+            Width::Flexible | Width::Widened(_) | Width::Adaptive => own,
+        });
         if let Width::Widened(integer) = sig.width
             && let Some(scale) = self.memo.default_scales.get(&node).copied()
         {
-            let value = some!(self.compute(node, of_scalar(integer), ctx, need)?);
+            let value = some!(self.compute(node, (of_scalar(integer), None), ctx, need)?);
             let value = map_leaves(value, |leaf| {
                 Ok(convert_to(scaled_into(leaf, scale, own)?, ty))
             })?;
@@ -94,7 +99,7 @@ impl Engine<'_> {
                 wide
             }
         } else {
-            let value = some!(self.compute(node, own, ctx, need)?);
+            let value = some!(self.compute(node, (own, partner), ctx, need)?);
             if matches!(self.node(node)?.op, Op::Use(_))
                 && self.memo.default_scales.contains_key(&node)
             {
@@ -115,6 +120,22 @@ impl Engine<'_> {
         }
         let value = map_leaves(value, |leaf| Ok(convert_to(leaf, ty)))?;
         Ok(Some(self.shape_checked(node, value)?))
+    }
+
+    fn expected_own(&self, node: NodeId, sig: &Sig, ty: EvalTy) -> Result<EvalTy, Internal> {
+        let (Width::Fixed(scalar), Some(expected)) = (sig.width, expected_scalar(ty)) else {
+            return Ok(own_type(sig, ty));
+        };
+        Ok(
+            if scalar != expected
+                && widens(scalar, expected)
+                && takes_expected(&self.node(node)?.op)
+            {
+                ty
+            } else {
+                own_type(sig, ty)
+            },
+        )
     }
 
     fn shape_checked(&mut self, node: NodeId, value: CVal) -> Result<CVal, Internal> {
@@ -225,16 +246,16 @@ impl Engine<'_> {
     fn compute(
         &mut self,
         node: NodeId,
-        own: EvalTy,
+        (own, partner): (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let op = self.node(node)?.op.clone();
         Ok(Some(match op {
             Op::Read(_) | Op::History { .. } => CVal::Error,
-            Op::Join(lhs, rhs) => return self.join((lhs, rhs), own, ctx, need),
+            Op::Join(lhs, rhs) => return self.join((lhs, rhs), (own, partner), ctx, need),
             Op::Slice { base, lower, upper } => {
-                return self.sliced(base, (lower, upper), own, ctx, need);
+                return self.sliced(base, (lower, upper), (own, partner), ctx, need);
             }
             Op::Native { native, args } => return self.native(native, &args, ctx, need),
             Op::Builtin(Builtin::Len, args) => {
@@ -256,7 +277,7 @@ impl Engine<'_> {
                     .ok()
                     .and_then(|position| items.get(position).copied());
                 match item {
-                    Some(item) => some!(self.child(item, own, ctx, need)?),
+                    Some(item) => some!(self.typed_child(item, (own, partner), ctx, need)?),
                     None => {
                         self.error_at_node(
                             Code::IndexOutOfRange,
@@ -271,7 +292,7 @@ impl Engine<'_> {
                 }
             }
             Op::Element { base, index } => {
-                let value = self.child(base, own, ctx, need)?;
+                let value = self.typed_child(base, (own, partner), ctx, need)?;
                 let index_sig = some!(self.sig(index, need));
                 let index_ty = own_type(&index_sig, EvalTy::Exact);
                 let position = self.child(index, index_ty, ctx, need)?;
@@ -284,7 +305,7 @@ impl Engine<'_> {
             Op::Array(elements) => {
                 let values: Vec<Option<CVal>> = elements
                     .iter()
-                    .map(|element| self.child(*element, own, ctx, need))
+                    .map(|element| self.typed_child(*element, (own, partner), ctx, need))
                     .collect::<Result<_, _>>()?;
                 let values: Vec<CVal> = some!(values.into_iter().collect::<Option<_>>());
                 if values.iter().any(CVal::is_error) {
@@ -319,7 +340,9 @@ impl Engine<'_> {
                 Value::Enum(id, index) => CVal::Enum(id, index),
                 Value::Str(_) => CVal::Error,
             },
-            Op::Use(target) | Op::Chosen(target) => some!(self.child(target, own, ctx, need)?),
+            Op::Use(target) | Op::Chosen(target) => {
+                some!(self.typed_child(target, (own, partner), ctx, need)?)
+            }
             Op::Bool(value) => CVal::Bool(value),
             Op::Str(text) => CVal::Str(Rc::from(text.as_str())),
             Op::Variant(id, index) => CVal::Enum(id, index),
@@ -391,7 +414,9 @@ impl Engine<'_> {
                     | CVal::Error => CVal::Error,
                 }
             }
-            Op::Binary(op, lhs, rhs) => return self.binary(node, (op, lhs, rhs), own, ctx, need),
+            Op::Binary(op, lhs, rhs) => {
+                return self.binary(node, (op, lhs, rhs), (own, partner), ctx, need);
+            }
             Op::If(condition, then, otherwise) => {
                 let chosen = match some!(self.child(condition, EvalTy::Bool, ctx, need)?) {
                     CVal::Bool(true) => then,
@@ -405,7 +430,7 @@ impl Engine<'_> {
                     | CVal::Array(_)
                     | CVal::Error => return Ok(Some(CVal::Error)),
                 };
-                some!(self.child(chosen, own, ctx, need)?)
+                some!(self.typed_child(chosen, (own, partner), ctx, need)?)
             }
             Op::Match {
                 scrutinee,
@@ -432,7 +457,7 @@ impl Engine<'_> {
                     }
                 }
                 match chosen {
-                    Some(arm) => some!(self.child(arm, own, ctx, need)?),
+                    Some(arm) => some!(self.typed_child(arm, (own, partner), ctx, need)?),
                     None => CVal::Error,
                 }
             }
@@ -459,7 +484,7 @@ impl Engine<'_> {
                 }
             }
             Op::Builtin(builtin, args) => {
-                return self.builtin(node, builtin, &args, own, ctx, need);
+                return self.builtin(node, builtin, &args, (own, partner), ctx, need);
             }
             Op::Recursive { function, args } => {
                 return self.recursive(node, (function, args), own, ctx, need);
@@ -601,7 +626,7 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         (op, lhs, rhs): (BinaryOp, NodeId, NodeId),
-        own: EvalTy,
+        (own, partner): (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
@@ -663,8 +688,8 @@ impl Engine<'_> {
                         }
                     }
                 };
-                let a = self.child(lhs, ty, ctx, need)?;
-                let b = self.child(rhs, ty, ctx, need)?;
+                let a = self.typed_child(lhs, (ty, None), ctx, need)?;
+                let b = self.typed_child(rhs, (ty, None), ctx, need)?;
                 let (a, b) = (some!(a), some!(b));
                 let a = self.operand_fit(lhs, &a_sig, a, ty)?;
                 let b = self.operand_fit(rhs, &b_sig, b, ty)?;
@@ -693,8 +718,8 @@ impl Engine<'_> {
                 })
             }
             BinaryOp::Div => {
-                let a = self.float_operand(lhs, &[rhs], own, ctx, need)?;
-                let b = self.float_operand(rhs, &[lhs], own, ctx, need)?;
+                let a = self.float_operand(lhs, &[rhs], (own, partner), ctx, need)?;
+                let b = self.float_operand(rhs, &[lhs], (own, partner), ctx, need)?;
                 Some(match (some!(a), some!(b)) {
                     (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
                     (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
@@ -707,8 +732,8 @@ impl Engine<'_> {
             | BinaryOp::IntDiv
             | BinaryOp::Rem
             | BinaryOp::Pow => {
-                let a = self.child(lhs, own, ctx, need)?;
-                let b = self.child(rhs, own, ctx, need)?;
+                let a = self.typed_child(lhs, (own, partner), ctx, need)?;
+                let b = self.typed_child(rhs, (own, partner), ctx, need)?;
                 Some(match (some!(a), some!(b)) {
                     (CVal::Int(a), CVal::Int(b)) => {
                         self.integer(node, own, exact_binary(op, a, b))?
@@ -730,7 +755,7 @@ impl Engine<'_> {
         node: NodeId,
         builtin: Builtin,
         args: &[NodeId],
-        own: EvalTy,
+        (own, partner): (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
@@ -766,11 +791,11 @@ impl Engine<'_> {
         }
         let values: Vec<Option<CVal>> = if is_float_builtin(builtin) {
             args.iter()
-                .map(|arg| self.float_operand(*arg, args, own, ctx, need))
+                .map(|arg| self.float_operand(*arg, args, (own, partner), ctx, need))
                 .collect::<Result<_, _>>()?
         } else {
             args.iter()
-                .map(|arg| self.child(*arg, own, ctx, need))
+                .map(|arg| self.typed_child(*arg, (own, partner), ctx, need))
                 .collect::<Result<_, _>>()?
         };
         let values: Vec<CVal> = some!(values.into_iter().collect::<Option<_>>());
@@ -912,6 +937,29 @@ impl Engine<'_> {
         Ok(value)
     }
 
+    pub(super) fn typed_child(
+        &mut self,
+        node: NodeId,
+        (own, partner): (EvalTy, Option<EvalTy>),
+        ctx: Ctx,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<CVal>, Internal> {
+        let sig = some!(self.sig(node, need));
+        let request = match partner {
+            Some(partner) if partner != own && sig.width == Width::Flexible => partner,
+            Some(_) => own,
+            None if expected_scalar(own).is_some() && matches!(sig.width, Width::Fixed(_)) => {
+                EvalTy::Default
+            }
+            None => own,
+        };
+        if request == own || !sig.is_numeric() {
+            return self.child(node, own, ctx, need);
+        }
+        let value = some!(self.child(node, request, ctx, need)?);
+        Ok(Some(map_leaves(value, |leaf| Ok(convert_to(leaf, own)))?))
+    }
+
     fn operand_fit(
         &mut self,
         node: NodeId,
@@ -957,13 +1005,13 @@ impl Engine<'_> {
         &mut self,
         operand: NodeId,
         partners: &[NodeId],
-        own: EvalTy,
+        (own, expectation): (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let sig = some!(self.sig(operand, need));
         if sig.kind != Kind::Int || !is_float_ty(own) {
-            return self.child(operand, own, ctx, need);
+            return self.typed_child(operand, (own, expectation), ctx, need);
         }
         let flexible = sig.width == Width::Flexible;
         let mut partner = None;
@@ -976,9 +1024,16 @@ impl Engine<'_> {
                 Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => {}
             }
         }
+        let widens_into_own = match (sig.width, expected_scalar(own)) {
+            (Width::Fixed(scalar), Some(target)) => widens(scalar, target),
+            _ => false,
+        };
         let ty = match partner {
             Some(scalar) if flexible => of_scalar(scalar),
             _ if flexible && !is_chosen_float(own) => {
+                return self.child(operand, own, ctx, need);
+            }
+            _ if expectation.is_some() && widens_into_own => {
                 return self.child(operand, own, ctx, need);
             }
             _ => own_type(&sig, EvalTy::Exact),
@@ -1222,4 +1277,68 @@ fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
         | BinaryOp::Or => return CVal::Error,
     };
     CVal::Bool(result)
+}
+
+fn expected_scalar(ty: EvalTy) -> Option<Scalar> {
+    match ty {
+        EvalTy::U8 => Some(Scalar::U8),
+        EvalTy::I32 => Some(Scalar::I32),
+        EvalTy::I64 => Some(Scalar::I64),
+        EvalTy::F32 => Some(Scalar::F32),
+        EvalTy::F64 => Some(Scalar::F64),
+        EvalTy::Exact
+        | EvalTy::Default
+        | EvalTy::DefaultF32
+        | EvalTy::DefaultF64
+        | EvalTy::Bool
+        | EvalTy::Enum(_)
+        | EvalTy::Str
+        | EvalTy::Node => None,
+    }
+}
+
+fn takes_expected(op: &Op) -> bool {
+    match op {
+        Op::Unary(UnaryOp::Neg, _)
+        | Op::Use(_)
+        | Op::Chosen(_)
+        | Op::If(..)
+        | Op::Match { .. }
+        | Op::Pick { .. }
+        | Op::Element { .. }
+        | Op::Array(_)
+        | Op::Join(..)
+        | Op::Slice { .. } => true,
+        Op::Binary(op, ..) => matches!(
+            op,
+            BinaryOp::Add
+                | BinaryOp::Sub
+                | BinaryOp::Mul
+                | BinaryOp::Div
+                | BinaryOp::IntDiv
+                | BinaryOp::Rem
+                | BinaryOp::Pow
+        ),
+        Op::Builtin(builtin, _) => {
+            !matches!(builtin, Builtin::Rand | Builtin::Len | Builtin::Bytes)
+        }
+        Op::Number(..)
+        | Op::Const(_)
+        | Op::Bool(_)
+        | Op::Str(_)
+        | Op::Concat(_)
+        | Op::Variant(..)
+        | Op::Bare(_)
+        | Op::Pi
+        | Op::NodeRef(_)
+        | Op::Read(_)
+        | Op::Arg(_)
+        | Op::Unary(UnaryOp::Not, _)
+        | Op::Convert(..)
+        | Op::Annotate(..)
+        | Op::Recursive { .. }
+        | Op::ToRead { .. }
+        | Op::History { .. }
+        | Op::Native { .. } => false,
+    }
 }
