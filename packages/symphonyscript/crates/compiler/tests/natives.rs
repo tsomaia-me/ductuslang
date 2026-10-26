@@ -194,7 +194,7 @@ fn a_native_calls_compile_time_arguments_are_typed_and_fit_by_its_signature() {
         ),
         (
             &["input f = 1.5\n", "Clip c:\n    Note/(pair_sum([f, 2]))\n"],
-            &[(Code::TypeMismatch, "[f, 2]")],
+            &[(Code::FloatToInteger, "f")],
         ),
     ];
     support::assert_rows_in_every_order(&native_vocabulary(), natives);

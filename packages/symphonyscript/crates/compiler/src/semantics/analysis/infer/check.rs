@@ -475,6 +475,25 @@ impl Engine<'_> {
         })
     }
 
+    fn holds_a_float_cell(&mut self, node: NodeId) -> Result<bool, Internal> {
+        let Op::Array(elements) = &self.node(node)?.op else {
+            return Ok(false);
+        };
+        let mut pending = elements.clone();
+        while let Some(element) = pending.pop() {
+            match &self.node(self.through_uses(element)?)?.op {
+                Op::Array(inner) => pending.extend(inner.iter().copied()),
+                Op::Read(_) | Op::History { .. } => {
+                    if self.known_sig(element)?.kind == Kind::Float {
+                        return Ok(true);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(false)
+    }
+
     pub(in crate::semantics::analysis) fn compatible(
         &mut self,
         node: NodeId,
@@ -494,6 +513,9 @@ impl Engine<'_> {
             (Kind::Int, scalar) => is_integer(scalar) || is_float(scalar),
             (Kind::Float, scalar) if is_float(scalar) => true,
             (Kind::Float, scalar) if is_integer(scalar) => {
+                if self.holds_a_float_cell(node)? {
+                    return Ok(true);
+                }
                 if is_cell {
                     self.error_at_node(
                         Code::FloatToInteger,

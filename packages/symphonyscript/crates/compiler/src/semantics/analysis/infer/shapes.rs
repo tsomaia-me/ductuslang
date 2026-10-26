@@ -30,6 +30,9 @@ impl Engine<'_> {
             types.entry(*node).or_default().push(*ty);
         }
         for (node, need) in needs {
+            if self.memo.attribute_projections.contains(&node) && self.is_variable(node)? {
+                continue;
+            }
             if self.memo.defaulted.contains_key(&node) {
                 self.defaulted_uses(node, &need)?;
                 continue;

@@ -239,6 +239,9 @@ impl Parser<'_> {
     pub(super) fn fn_lets(&mut self) {
         if self.at(SyntaxKind::LetKw) {
             self.then([Task::LetDecl(SyntaxKind::LocalLet), Task::FnLets]);
+        } else if self.at(SyntaxKind::StateKw) {
+            self.error(Code::StateSyntax, "a state is declared at top level");
+            self.then([Task::LetDecl(SyntaxKind::StateDecl), Task::FnLets]);
         } else if self.at(SyntaxKind::MatchKw) {
             self.then([Task::MatchBlock, Task::FnBodyBlockEnd]);
         } else {

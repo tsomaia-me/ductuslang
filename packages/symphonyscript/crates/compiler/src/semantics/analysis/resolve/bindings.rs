@@ -1016,6 +1016,7 @@ impl Engine<'_> {
             loc,
             scope,
         )?;
+        self.memo.attribute_projections.insert(node);
         Ok(Val::array(shape, nodes))
     }
 

@@ -3802,3 +3802,68 @@ fn an_annotation_is_its_initializers_expected_type() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn one_fault_draws_one_diagnostic_at_the_fault() {
+    let note = "Clip c:\n    Note\n";
+    support::assert_rows_in_every_order(
+        &support::signature_vocabulary(),
+        &[
+            (
+                &["input f = 1.5\n", "Clip c | three=[f, 2]:\n    Note\n"],
+                &[(Code::FloatToInteger, "f")],
+            ),
+            (
+                &["input f = 1.5\n", "Clip c | three=[1.5, 2]:\n    Note\n"],
+                &[(Code::TypeMismatch, "1.5")],
+            ),
+            (
+                &["input h: u8[..3] = []\n", "Clip c | fixed=h:\n    Note\n"],
+                &[(Code::VariableArray, "h")],
+            ),
+        ],
+    );
+    let state = "input x = 1\n";
+    support::assert_rows_in_every_order(
+        &symphonyscript_fixtures::vocabulary(),
+        &[
+            (
+                &[
+                    "fn f(x):\n    state s = 1\n    x\n",
+                    "Clip c:\n    Note/(f(1))\n",
+                ],
+                &[(Code::StateSyntax, "state")],
+            ),
+            (
+                &[
+                    "fn f(x):\n    let y = 1\n    state s = 1\n    x + y\n",
+                    "Clip c:\n    Note/(f(1))\n",
+                ],
+                &[(Code::StateSyntax, "state")],
+            ),
+            (
+                &[
+                    "pattern P():\n    state s = 1\n    Note\n",
+                    "Clip c:\n    P\n",
+                ],
+                &[(Code::StateSyntax, "state")],
+            ),
+            (
+                &[
+                    state,
+                    "state s = x{1, 0.5}\n",
+                    "Clip c:\n    Note when s > 0\n",
+                ],
+                &[(Code::TypeMismatch, "0.5")],
+            ),
+            (&["input f = 1.5\n", "Osc o | freq=f\n", note], &[]),
+        ],
+    );
+    let text = "input x = 1\nstate s = x{1, 0.5}\nClip c:\n    Note when s > 0\n";
+    assert!(
+        support::checked_all(text)
+            .iter()
+            .all(|diagnostic| diagnostic.code != Code::IntegerInput),
+        "{text}"
+    );
+}
