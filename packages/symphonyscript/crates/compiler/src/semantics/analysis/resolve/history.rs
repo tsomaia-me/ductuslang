@@ -11,7 +11,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::history_cell::HistoryCell;
-use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::let_ref::LetRef;
@@ -197,19 +197,6 @@ impl Engine<'_> {
                 return Ok(true);
             }
         };
-        let layout = match layout {
-            Some(layout) if !layout.variable => {
-                let Some(own) = self.state_fallbacks(init, need)? else {
-                    return Ok(false);
-                };
-                if own.iter().all(|fallback| *fallback == Some(layout.clone())) {
-                    Some(layout)
-                } else {
-                    Some(Layout::variable(layout.inner().to_vec()))
-                }
-            }
-            other => other,
-        };
         if let Some(annotation) = annotation.as_ref()
             && annotation.capacity.is_some()
         {
@@ -268,6 +255,11 @@ impl Engine<'_> {
         if let Some(layout) = layout {
             self.memo.binding_layouts.insert(binding, layout);
         }
+        if annotation.as_ref().is_some_and(|annotation| {
+            annotation.capacity.is_some() || !annotation.lengths.is_empty()
+        }) {
+            self.memo.settled.insert(binding);
+        }
         if let Some(capacity) = annotation
             .as_ref()
             .and_then(|annotation| annotation.capacity)
@@ -278,30 +270,6 @@ impl Engine<'_> {
             .states
             .insert(state, BoundVal::Scalar(Bound::Cell(binding)));
         Ok(true)
-    }
-
-    fn state_fallbacks(
-        &mut self,
-        init: NodeId,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<Vec<Option<Layout>>>, Internal> {
-        let mut fallbacks = Vec::new();
-        for (node, cell) in self.history_reads(init)? {
-            if !matches!(cell, HistoryCell::State(_)) {
-                continue;
-            }
-            let Op::History {
-                fallback: Some(fallback),
-                ..
-            } = self.node(node)?.op
-            else {
-                fallbacks.push(None);
-                continue;
-            };
-            let found = some!(self.layout_of(fallback, need)?);
-            fallbacks.push(found.shaped.ok().flatten());
-        }
-        Ok(Some(fallbacks))
     }
 
     pub(in crate::semantics::analysis) fn history_reads(
@@ -318,13 +286,29 @@ impl Engine<'_> {
             let op = &self.node(node)?.op;
             match op {
                 Op::History { cell, .. } => found.push((node, *cell)),
-                Op::Read(_) => continue,
+                Op::Read(binding) => {
+                    if self.inlined_binding(*binding)? {
+                        stack.push(self.binding(*binding)?.init);
+                    }
+                    continue;
+                }
                 _ => {}
             }
             stack.extend(op.operands());
         }
         found.sort_by_key(|(node, _)| *node);
         Ok(found)
+    }
+
+    fn inlined_binding(&self, binding: BindingId) -> Result<bool, Internal> {
+        let record = self.binding(binding)?;
+        Ok(match record.kind {
+            BindingKind::Param => true,
+            BindingKind::Let => self.node(record.init)?.scope != self.source_global,
+            BindingKind::Input { .. } | BindingKind::State { .. } | BindingKind::Attr { .. } => {
+                false
+            }
+        })
     }
 }
 

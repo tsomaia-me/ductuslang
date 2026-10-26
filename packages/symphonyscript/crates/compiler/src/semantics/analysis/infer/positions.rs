@@ -18,7 +18,7 @@ use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, Top};
 
 impl Engine<'_> {
-    pub(crate) fn positions(&mut self) -> Result<Vec<Position>, Internal> {
+    pub(super) fn declaration_positions(&mut self) -> Result<Vec<Position>, Internal> {
         let mut positions = Vec::new();
         let hir = self.hir;
         for (position, top) in hir.top.iter().enumerate() {
@@ -40,6 +40,13 @@ impl Engine<'_> {
                 Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
             }
         }
+        Ok(positions)
+    }
+
+    pub(super) fn positions(
+        &mut self,
+        mut positions: Vec<Position>,
+    ) -> Result<Vec<Position>, Internal> {
         for index in 0..self.instances.len() {
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
             self.item_positions(ItemRef::Instance(instance), &mut positions)?;

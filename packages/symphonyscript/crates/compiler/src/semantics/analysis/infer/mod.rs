@@ -5,6 +5,7 @@ mod check;
 mod compile_time_enums;
 mod enum_bindings;
 mod expectations;
+mod fixedness;
 mod history_reads;
 mod order;
 mod position;
@@ -29,7 +30,9 @@ use crate::semantics::analysis::val::Val;
 
 impl Engine<'_> {
     pub(crate) fn infer(&mut self) -> Result<(), Internal> {
-        let positions = self.positions()?;
+        let declared = self.declaration_positions()?;
+        self.settle_states()?;
+        let positions = self.positions(declared)?;
         let mut valid = Vec::new();
         let mut variable_positions = Vec::new();
         for position in positions {

@@ -7,12 +7,16 @@ use super::native_layout::native_layout;
 use super::shaped::Shaped;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::assumed::Assumed;
+use crate::semantics::analysis::binding_kind::BindingKind;
+use crate::semantics::analysis::bound::Bound;
+use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::history_cell::HistoryCell;
-use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::lengths_of::lengths_of;
@@ -21,7 +25,7 @@ use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::shape_fault::ShapeFault;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, Loc, Number, SliceBound, Suffix};
+use crate::semantics::ir::{ExprId, Loc, Number, SliceBound, StateId, Suffix};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn join_val(
@@ -399,8 +403,25 @@ impl Engine<'_> {
         root: NodeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<LayoutFound>, Internal> {
-        if let Some(known) = self.memo.layouts.get(&root) {
-            return Ok(Some(known.clone()));
+        self.layout_in(root, None, need)
+    }
+
+    fn cached_layout(&self, node: NodeId, assumed: Option<&Assumed>) -> Option<LayoutFound> {
+        self.memo
+            .layouts
+            .get(&node)
+            .filter(|known| assumed.is_none() || known.certain)
+            .cloned()
+    }
+
+    pub(in crate::semantics::analysis) fn layout_in(
+        &mut self,
+        root: NodeId,
+        assumed: Option<&Assumed>,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<LayoutFound>, Internal> {
+        if let Some(known) = self.cached_layout(root, assumed) {
+            return Ok(Some(known));
         }
         let mut found: FastMap<NodeId, LayoutFound> = FastMap::default();
         let mut stack = vec![(root, false)];
@@ -409,8 +430,8 @@ impl Engine<'_> {
             if found.contains_key(&node) {
                 continue;
             }
-            if let Some(known) = self.memo.layouts.get(&node) {
-                found.insert(node, known.clone());
+            if let Some(known) = self.cached_layout(node, assumed) {
+                found.insert(node, known);
                 continue;
             }
             if !self.arrays.contains(&node) {
@@ -451,7 +472,7 @@ impl Engine<'_> {
                 continue;
             }
             let op = self.node(node)?.op.clone();
-            let parts = self.layout_parts(&op)?;
+            let parts = self.layout_parts(&op, assumed)?;
             if !ready {
                 stack.push((node, true));
                 stack.extend(parts.iter().map(|part| (*part, false)));
@@ -467,7 +488,7 @@ impl Engine<'_> {
             if missing {
                 continue;
             }
-            let result = some!(self.combined_layout(node, &op, &inputs, need)?);
+            let result = some!(self.combined_layout(node, &op, (&inputs, assumed), need)?);
             found.insert(node, result);
         }
         if missing {
@@ -477,14 +498,19 @@ impl Engine<'_> {
             .get(&root)
             .cloned()
             .ok_or(Internal::missed("layout"))?;
-        self.memo.layouts.extend(found);
+        if assumed.is_none() {
+            self.memo.layouts.extend(found);
+        }
         Ok(Some(result))
     }
 
-    fn layout_parts(&self, op: &Op) -> Result<Vec<NodeId>, Internal> {
+    fn layout_parts(&self, op: &Op, assumed: Option<&Assumed>) -> Result<Vec<NodeId>, Internal> {
         Ok(match op {
             Op::Read(binding) => {
-                if self.memo.binding_layouts.contains_key(binding) {
+                let member = assumed.and_then(|assumed| assumed.members.get(binding));
+                if member == Some(&true)
+                    || (member.is_none() && self.memo.binding_layouts.contains_key(binding))
+                {
                     Vec::new()
                 } else {
                     vec![self.binding(*binding)?.init]
@@ -529,7 +555,7 @@ impl Engine<'_> {
         &self,
         node: NodeId,
         op: &Op,
-        parts: &[LayoutFound],
+        (parts, assumed): (&[LayoutFound], Option<&Assumed>),
         need: &mut Vec<Query>,
     ) -> Result<Option<LayoutFound>, Internal> {
         let certain = parts.iter().all(|part| part.certain);
@@ -546,9 +572,13 @@ impl Engine<'_> {
             }
         }
         let shaped = match op {
-            Op::Read(binding) => match self.memo.binding_layouts.get(binding) {
-                Some(layout) => Ok(Some(layout.clone())),
-                None => Ok(layouts.first().cloned().flatten()),
+            Op::Read(binding) => match assumed.and_then(|assumed| assumed.members.get(binding)) {
+                Some(true) => Ok(self.variable_layout(*binding)),
+                Some(false) => Ok(layouts.first().cloned().flatten()),
+                None => match self.memo.binding_layouts.get(binding) {
+                    Some(layout) => Ok(Some(layout.clone())),
+                    None => Ok(layouts.first().cloned().flatten()),
+                },
             },
             Op::Use(_) | Op::Chosen(_) | Op::Annotate(..) => Ok(layouts.first().cloned().flatten()),
             Op::Element { base, .. } => match layouts.first().cloned().flatten() {
@@ -658,6 +688,28 @@ impl Engine<'_> {
                     message: "only an array is sliced",
                 })),
             },
+            Op::History {
+                cell: HistoryCell::State(state),
+                fallback: Some(_),
+                ..
+            } => {
+                let fallback = layouts.first().cloned().flatten();
+                match self.state_binding(*state) {
+                    Some(binding) => {
+                        match assumed.and_then(|assumed| assumed.members.get(&binding)) {
+                            Some(true) => Ok(
+                                fallback.map(|layout| Layout::variable(layout.inner().to_vec()))
+                            ),
+                            Some(false) => Ok(fallback),
+                            None if self.memo.settled.contains(&binding) => {
+                                Ok(self.memo.binding_layouts.get(&binding).cloned())
+                            }
+                            None => Ok(fallback),
+                        }
+                    }
+                    None => Ok(fallback),
+                }
+            }
             Op::History { cell, fallback, .. } => match fallback {
                 Some(_) => Ok(layouts.first().cloned().flatten()),
                 None => match cell {
@@ -715,14 +767,46 @@ impl Engine<'_> {
             | Op::ToRead { .. } => Ok(None),
         };
         let certain = certain
-            && !matches!(
-                op,
+            && match op {
                 Op::History {
-                    cell: HistoryCell::Let(_) | HistoryCell::State(_),
+                    cell: HistoryCell::Let(_),
                     ..
-                }
-            );
+                } => false,
+                Op::History {
+                    cell: HistoryCell::State(state),
+                    ..
+                } => self
+                    .state_binding(*state)
+                    .is_some_and(|binding| self.memo.settled.contains(&binding)),
+                Op::Read(binding) => self.settled_read(*binding)?,
+                _ => true,
+            };
         Ok(Some(LayoutFound { shaped, certain }))
+    }
+
+    pub(in crate::semantics::analysis) fn state_binding(
+        &self,
+        state: StateId,
+    ) -> Option<BindingId> {
+        match self.memo.states.get(&state) {
+            Some(BoundVal::Scalar(Bound::Cell(binding))) => Some(*binding),
+            Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Array(_) | BoundVal::Error)
+            | None => None,
+        }
+    }
+
+    fn settled_read(&self, binding: BindingId) -> Result<bool, Internal> {
+        Ok(
+            !matches!(self.binding(binding)?.kind, BindingKind::State { .. })
+                || self.memo.settled.contains(&binding),
+        )
+    }
+
+    fn variable_layout(&self, binding: BindingId) -> Option<Layout> {
+        self.memo
+            .binding_layouts
+            .get(&binding)
+            .map(|layout| Layout::variable(layout.inner().to_vec()))
     }
 
     fn choice_layout(&self, node: NodeId, layouts: &[Option<Layout>], reactive: bool) -> Shaped {
@@ -787,10 +871,8 @@ impl Engine<'_> {
 
     pub(in crate::semantics::analysis) fn bound_layout(
         &self,
-        bound: &crate::semantics::analysis::bound_val::BoundVal,
+        bound: &BoundVal,
     ) -> Result<Option<Layout>, Internal> {
-        use crate::semantics::analysis::bound::Bound;
-        use crate::semantics::analysis::bound_val::BoundVal;
         Ok(match bound {
             BoundVal::Array(array) => Some(Layout::fixed(array.0.lengths())),
             BoundVal::Scalar(Bound::Cell(binding)) => {
@@ -804,8 +886,6 @@ impl Engine<'_> {
         &self,
         cell: HistoryCell,
     ) -> Result<bool, Internal> {
-        use crate::semantics::analysis::bound::Bound;
-        use crate::semantics::analysis::bound_val::BoundVal;
         Ok(match cell {
             HistoryCell::Input(input) => match self.memo.inputs.get(&input) {
                 Some(BoundVal::Array(_)) => true,

@@ -133,10 +133,16 @@ impl Engine<'_> {
                     }
                 }
                 Solved::Unbounded(growing) => {
-                    for ((state, binding), grows) in group.iter().zip(growing) {
-                        if grows {
-                            self.unbounded(*state)?;
-                        }
+                    let first = group
+                        .iter()
+                        .zip(&growing)
+                        .filter(|(_, grows)| **grows)
+                        .map(|((state, _), _)| *state)
+                        .min();
+                    if let Some(state) = first {
+                        self.unbounded(state)?;
+                    }
+                    for (_, binding) in &group {
                         self.memo.binding_capacities.insert(*binding, 0);
                     }
                 }
@@ -265,7 +271,7 @@ impl Engine<'_> {
         Ok(None)
     }
 
-    fn state_dependencies(&mut self, init: NodeId) -> Result<Vec<BindingId>, Internal> {
+    pub(super) fn state_dependencies(&mut self, init: NodeId) -> Result<Vec<BindingId>, Internal> {
         let mut found = Vec::new();
         let mut seen = FastSet::default();
         let mut stack = vec![init];

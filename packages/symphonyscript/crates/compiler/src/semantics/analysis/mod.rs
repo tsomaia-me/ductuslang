@@ -2,6 +2,7 @@ mod arg_key;
 mod arg_shape;
 mod arg_sig;
 mod array;
+mod assumed;
 mod attr_source;
 mod attr_value_source;
 mod binding;

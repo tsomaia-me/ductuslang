@@ -41,7 +41,7 @@ use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{ExprId, ExprKind, InputId, LetDecl, Loc, TypeBase, TypeRef};
 
-type Whole = (Val, Layout, Option<u32>);
+type Whole = (Val, Option<Layout>, Option<u32>);
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_let(
@@ -133,7 +133,7 @@ impl Engine<'_> {
         }
         self.note_whole(
             &bound,
-            layout.as_ref().map(|(layout, _)| layout.clone()),
+            layout.as_ref().and_then(|(layout, _)| layout.clone()),
             layout.and_then(|(_, capacity)| capacity),
         );
         self.note_defaulted(defaulted, &bound);
@@ -282,7 +282,7 @@ impl Engine<'_> {
         let bound = self.bind(&val, &sigs, &spec)?;
         self.note_whole(
             &bound,
-            layout.as_ref().map(|(layout, _)| layout.clone()),
+            layout.as_ref().and_then(|(layout, _)| layout.clone()),
             layout.and_then(|(_, capacity)| capacity),
         );
         self.note_defaulted(defaulted, &bound);
@@ -859,17 +859,15 @@ impl Engine<'_> {
             match self.annotated_rows(node, annotation, need)? {
                 None => return Ok(None),
                 Some(Rows::Agree) => {}
-                Some(Rows::Faulty) => {
-                    return Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))));
-                }
+                Some(Rows::Faulty) => return Ok(Some(Some((Val::Error, None, None)))),
                 Some(Rows::Differ) => {
                     self.error(Code::TypeMismatch, loc, scope, ANNOTATED_ROWS)?;
-                    return Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))));
+                    return Ok(Some(Some((Val::Error, None, None))));
                 }
             }
             return Ok(Some(Some((
                 Val::Scalar(node),
-                Layout::variable(annotation.lengths.clone()),
+                Some(Layout::variable(annotation.lengths.clone())),
                 annotation.capacity,
             ))));
         }
@@ -889,15 +887,17 @@ impl Engine<'_> {
             return Ok(None);
         };
         match found.shaped {
-            Ok(Some(layout)) if layout.variable || !found.certain => {
-                Ok(Some(Some((val.clone(), layout, None))))
-            }
+            Ok(Some(layout)) if layout.variable || !found.certain => Ok(Some(Some((
+                val.clone(),
+                found.certain.then_some(layout),
+                None,
+            )))),
             Ok(_) => Ok(Some(None)),
             Err(fault) => {
                 if let Some(fault) = fault {
                     self.error_at_node(fault.code, fault.node, fault.message)?;
                 }
-                Ok(Some(Some((Val::Error, Layout::fixed(Vec::new()), None))))
+                Ok(Some(Some((Val::Error, None, None))))
             }
         }
     }

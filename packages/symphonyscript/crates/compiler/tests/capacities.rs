@@ -103,13 +103,166 @@ fn a_state_with_no_capacity_is_an_error() {
     }
 }
 
+fn ordered_codes(items: &[&str]) -> Vec<(String, Vec<Code>)> {
+    in_every_order(items)
+        .into_iter()
+        .map(|text| {
+            let found = codes(&text);
+            (text, found)
+        })
+        .collect()
+}
+
+fn assert_ordered_capacity(items: &[&str], value: &str, capacity: u32) {
+    let mut probes = vec![(capacity, vec![])];
+    if capacity > 1 {
+        probes.push((capacity - 1, vec![Code::CapacityExceeded]));
+    }
+    for (held, expected) in probes {
+        let probe = format!("let probe: i32[..{held}] = {value}\n");
+        let mut all: Vec<&str> = items.to_vec();
+        all.push(&probe);
+        all.push("Clip c:\n    Note/(probe[0])\n");
+        for (text, found) in ordered_codes(&all) {
+            assert_eq!(found, expected, "{text}");
+        }
+    }
+}
+
+fn assert_ordered_codes(items: &[&str], expected: &[Code]) {
+    for (text, found) in ordered_codes(items) {
+        assert_eq!(found, expected, "{text}");
+    }
+}
+
+const NOTE: &str = "input note = 60\n";
+
 #[test]
-fn a_state_that_keeps_its_fallbacks_length_while_reading_a_variable_state_is_an_error() {
-    assert_eq!(
-        codes(&format!(
-            "{CELLS}state p = q{{1, []}} + [note]\nstate q = p{{1, []}}\nClip c:\n    Note/(p[0])\n"
-        )),
-        vec![Code::VariableArray]
+fn the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
+    assert_ordered_codes(
+        &[
+            NOTE,
+            "fn f(x): x + [note]\n",
+            "state s = f(s{1, []})\n",
+            "Clip c:\n    Note/(s[0])\n",
+        ],
+        &[Code::UnboundedState],
+    );
+    let push = [
+        NOTE,
+        "fn push(xs, x): (xs + [x])[^8..]\n",
+        "state recent = push(recent{1, []}, note)\n",
+    ];
+    assert_ordered_capacity(&push, "recent", 8);
+    let keep = [
+        NOTE,
+        "fn keep(xs): xs[^8..]\n",
+        "state s = keep(s{1, []} + [note])\n",
+    ];
+    assert_ordered_capacity(&keep, "s", 8);
+    assert_ordered_codes(
+        &[
+            NOTE,
+            "fn id(x): x\n",
+            "state[1] s = id(s{2, 0}) + note\n",
+            "Clip c:\n    Note/(s)\n",
+        ],
+        &[Code::HistoryDepth],
+    );
+    let step = [
+        NOTE,
+        "fn step(prev, x): prev * 0.5 + x\n",
+        "state s = step(s{1, 0.0}, note)\n",
+    ];
+    let mut gain = step.to_vec();
+    gain.push("Clip c | gain=s:\n    Note\n");
+    assert_ordered_codes(&gain, &[]);
+    let mut pitch = step.to_vec();
+    pitch.push("Clip c:\n    Note/(s)\n");
+    assert_ordered_codes(&pitch, &[Code::FloatToInteger]);
+}
+
+#[test]
+fn a_states_fixed_array_is_settled_over_its_group() {
+    let recent = "state recent = (recent{1, []} + [note])[^8..]\n";
+    let last = [NOTE, recent, "state last = recent{1, []}[^1..]\n"];
+    let mut read = last.to_vec();
+    read.push("Clip c:\n    Note/(last[0])\n");
+    assert_ordered_codes(&read, &[]);
+    assert_ordered_capacity(&last, "last", 1);
+    assert_ordered_capacity(
+        &[NOTE, recent, "state older = recent{2, []}[..4]\n"],
+        "older",
+        4,
+    );
+    assert_ordered_capacity(
+        &[
+            NOTE,
+            "state p = (q{1, []} + [note])[^1000000000..]\n",
+            "state q = p{1, []}\n",
+        ],
+        "q",
+        1_000_000_000,
+    );
+    let ring = "state ring = (ring{1, []} + [note])[^6..]\n";
+    for echo in [
+        "state[3] echo = ring{3, []}[^5..]\n",
+        "state[3] echo = ring{3, [0]}[^5..]\n",
+    ] {
+        assert_ordered_codes(
+            &[
+                NOTE,
+                ring,
+                echo,
+                "Clip c:\n    Note/(echo[len(echo) div 2])\n",
+            ],
+            &[],
+        );
+        assert_ordered_capacity(&[NOTE, ring, echo], "echo", 5);
+    }
+    assert_ordered_codes(
+        &[
+            NOTE,
+            "state recent = recent{1, []} + [note]\n",
+            "Clip c:\n    Note/(recent[0])\n",
+        ],
+        &[Code::UnboundedState],
+    );
+    assert_ordered_codes(
+        &[
+            NOTE,
+            "state p = q{1, []} + [note]\n",
+            "state q = p{1, []}\n",
+            "Clip c:\n    Note/(p[0])\n    Note/(q[0])\n",
+        ],
+        &[Code::UnboundedState],
+    );
+}
+
+#[test]
+fn a_compile_time_index_outside_a_fixed_history_read_is_an_error() {
+    let fixed = "state s = (s{1, [0, 0]} + [note])[1..]\n";
+    let text = format!("{NOTE}{fixed}state t = s{{1, [0, 0]}}[5] + 1\nClip c:\n    Note/(t)\n");
+    support::expect_codes(&text, &[(Code::IndexOutOfRange, "5", 0)]);
+    for index in ["1", "^1"] {
+        assert_ordered_codes(
+            &[
+                NOTE,
+                fixed,
+                &format!("state t = s{{1, [0, 0]}}[{index}] + 1\n"),
+                "Clip c:\n    Note/(t)\n",
+            ],
+            &[],
+        );
+    }
+    assert_ordered_codes(
+        &[
+            NOTE,
+            fixed,
+            "state t = s{1, [0, 0]}[5] + 1\n",
+            "Clip c:\n    Note/(t)\n",
+        ],
+        &[Code::IndexOutOfRange],
     );
 }
 
