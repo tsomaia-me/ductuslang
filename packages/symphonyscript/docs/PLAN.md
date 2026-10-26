@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
+- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2c, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2c, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2c, strings' and records' capacities and bindings (SPEC §3.3, §3.8, §4.4), pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
 ### Decisions
 
@@ -114,13 +114,34 @@ Exit:
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A fixture vocabulary's native functions, one taking a string, are typed by their signatures, called at compile time with compile-time arguments, and refused with an argument that reads a cell where they take a string; a variable-array attribute accepts a value up to its capacity and refuses a larger one.
 
+## M2c: Language additions 2
+
+Runtime strings, records, annotations on every binder, pattern types, inputs and states in patterns, state triggers, the `input` and `const` parameter modifiers, the `children` parameters, wire patterns, and the vocabulary's `takes`, record and string attributes: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
+
+Steps:
+1. The lexer and the parser: `type`, `str`, `const`, `children`, `on`, `node`, `wire`, record literals, annotations on parameters, local `let`s, `for` variables and results, placement types with counts and bundle entries, the `children` parameters and a use's body, the classification of patterns before bodies and wire patterns used as wires (SPEC §7.1), `input` and `state` lines in pattern bodies and string `match` labels, with the tests over SPEC.md's examples and rule sentences passing again.
+2. The vocabulary: `attr_str`, `attr_record`, `attr_record_any`, `takes`, `type` in the prelude, native string signatures, `build()`'s new errors and the stamp.
+3. Collect, Expand and Resolve: record types and their cycles, a pattern's inputs and states under each use's path, a use's body partitioned among its `children` parameters, the parameter modifiers, the name rules of SPEC §6.5 over the new declarations, and triggers.
+4. Infer: strings' capacities, records as bindings, record literals typed by their position, annotations as fixed types, pattern types inferred and checked against their declarations, triggers typed as reactive `let`s, and SPEC §4.6's inline limit of 100,000.
+5. Check and diagnostics: the binding each attribute takes, the string and record attribute rules, the errors of the new rules, a summary and a help on each, and a lesson for every new code.
+
+Exit:
+- M2b's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
+- Each row of SPEC §3.3's capacity table has tests whose capacities are derived by hand.
+- Every pattern in the SPEC's examples has the type SPEC §6.4 gives it, inferred, and a declared type the body breaks is rejected naming the placement; a `children` parameter refuses a use's body outside its counts, and a wire pattern is used as a wire with its name, gate and `to`.
+- A fixture vocabulary with an attribute that takes an input, one that takes a constant, a record attribute of a prelude type, one taking any record, and a runtime string attribute accepts what SPEC §10.2 allows, refuses the rest, and yields a Program whose bindings a host follows to the inputs it writes.
+- Two uses of a pattern that declares an input and a state yield two inputs and two states named by the uses' paths, listed at the uses' positions.
+- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
+- A pattern with `children` used 10,000 times, each with a body, and a record type of 1,000 fields pass every stage through Check on a thread with a 1 MiB stack.
+
 ## M3: Runtime and reload
 
-Lowering, the runtime, `eval`, the `Consumer` trait and reload.
+Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b and M2c leave it.
 
 Steps:
 1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order.
-2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, writes (SPEC §12, ARCHITECTURE §4).
+2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices, bounded calls as expanded, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, native functions at runtime, and writes (SPEC §12, ARCHITECTURE §4).
 3. `eval` and the `Consumer` trait.
 4. Reload: `reload_snapshot`, `prepare` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
 5. Fixture pairs of projects, before and after an edit, for the reload tests.
@@ -137,10 +158,11 @@ Exit:
 - A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
 - A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
+- Golden traces cover states and histories, triggers, variable arrays, strings and records, and a string written past its capacity or in invalid UTF-8 is refused with the capacity in the error.
 
 ## M4a: Language server and editors
 
-The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It runs beside M3 (§ Order).
+The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It needs M2c and runs beside M3 (§ Order).
 
 Steps:
 1. The tool: `Tool::new`, framework commands, `Project`, `new`, `check` and single-file mode (ARCHITECTURE §9), and the `lsp` command.
@@ -150,7 +172,7 @@ Steps:
 
 Exit:
 - End-to-end tests for `new` and `check`, and for single-file mode.
-- Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects.
+- Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects; hover on a pattern and on each of its uses shows the pattern's type (SPEC §6.4).
 - The extension starts the language server for a sample project.
 - The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
 - The language server handles M2's deep sources on a thread with a 1 MiB stack.
@@ -189,4 +211,4 @@ Exit:
 
 ## Order
 
-M1, M2, M2b and M3 run in order. M4a needs M2b and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.
+M1, M2, M2b, M2c and M3 run in order. M4a needs M2c and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.

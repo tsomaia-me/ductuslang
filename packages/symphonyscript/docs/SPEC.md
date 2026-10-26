@@ -578,7 +578,7 @@ A function computes one value from its parameters.
 - A body is one expression, or local `let`s followed by one expression or `match`, the local `let`s visible throughout the body. Two parameters or two local `let`s with one name, or a local `let` named like a parameter, are an error.
 - A call to a non-recursive function evaluates the body in the function's own scope, with each parameter bound to its argument, and the argument evaluated in the caller's scope. The compiler inlines the call and checks the result in place. A parameter is typed as a `let` holding its argument would be: bound to a compile-time argument it is a compile-time value, flexible when the argument is (§4.1), and bound to an argument that reads cells it is typed as a reactive `let` is (§4.4), each use reading it in the use's type. A function never appears in the Program.
 - A call whose arguments read cells yields a reactive value.
-- A parameter with a default follows every parameter without one, and its default may read earlier parameters. A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default.
+- A parameter with a default follows every parameter without one, and its default may read earlier parameters. A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default. A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.
 
 ```sym
 fn db(x): 10 ** (x / 20)
