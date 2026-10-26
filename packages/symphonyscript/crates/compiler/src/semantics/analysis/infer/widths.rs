@@ -4,7 +4,7 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::BindingId;
+use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::kind::Kind;
@@ -124,48 +124,15 @@ impl Engine<'_> {
                 if !seen.insert(node) {
                     continue;
                 }
+                self.memo.read_walk += 1;
+                let read_free = !self.reaches_read(node);
                 let contribution = match &self.node(node)?.op {
+                    _ if read_free => self.read_free_width(node)?,
                     Op::Read(read) => self.natural_of(*read)?,
-                    Op::Number(..)
-                    | Op::Const(_)
-                    | Op::Bool(_)
-                    | Op::Str(_)
-                    | Op::Concat(_)
-                    | Op::Variant(..)
-                    | Op::Bare(_)
-                    | Op::Pi
-                    | Op::NodeRef(_)
-                    | Op::Use(_)
-                    | Op::Chosen(_)
-                    | Op::Arg(_)
-                    | Op::Unary(..)
-                    | Op::Binary(..)
-                    | Op::If(..)
-                    | Op::Match { .. }
-                    | Op::Pick { .. }
-                    | Op::Element { .. }
-                    | Op::Array(_)
-                    | Op::Convert(..)
-                    | Op::Annotate(..)
-                    | Op::Builtin(..)
-                    | Op::Recursive { .. }
-                    | Op::ToRead { .. }
-                    | Op::Join(..)
-                    | Op::Slice { .. }
-                    | Op::History { .. }
-                    | Op::Native { .. } => match self.known_sig(node)?.width {
-                        Width::Fixed(scalar) if is_integer(scalar) => Some(scalar),
-                        Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => {
-                            None
-                        }
-                    },
+                    _ => self.fixed_integer_width(node)?,
                 };
-                if let Some(contribution) = contribution
-                    && widest.is_none_or(|current| rank(contribution) > rank(current))
-                {
-                    widest = Some(contribution);
-                }
-                if !matches!(self.node(node)?.op, Op::Read(_)) {
+                widest = wider(widest, contribution);
+                if !read_free && !matches!(self.node(node)?.op, Op::Read(_)) {
                     nodes.extend(self.node(node)?.op.operands());
                 }
             }
@@ -175,11 +142,58 @@ impl Engine<'_> {
         self.natural_of(root)
     }
 
+    fn fixed_integer_width(&self, node: NodeId) -> Result<Option<Scalar>, Internal> {
+        Ok(match self.known_sig(node)?.width {
+            Width::Fixed(scalar) if is_integer(scalar) => Some(scalar),
+            Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => None,
+        })
+    }
+
+    fn read_free_width(&mut self, root: NodeId) -> Result<Option<Scalar>, Internal> {
+        let mut stack = vec![(root, false)];
+        while let Some((node, ready)) = stack.pop() {
+            if self.memo.read_free_widths.contains_key(&node) {
+                continue;
+            }
+            let operands = self.node(node)?.op.operands();
+            if !ready {
+                stack.push((node, true));
+                stack.extend(operands.into_iter().map(|operand| (operand, false)));
+                continue;
+            }
+            self.memo.read_walk += 1;
+            let mut widest = self.fixed_integer_width(node)?;
+            for operand in operands {
+                let width = self
+                    .memo
+                    .read_free_widths
+                    .get(&operand)
+                    .copied()
+                    .ok_or(Internal::missed("natural width"))?;
+                widest = wider(widest, width);
+            }
+            self.memo.read_free_widths.insert(node, widest);
+        }
+        self.memo
+            .read_free_widths
+            .get(&root)
+            .copied()
+            .ok_or(Internal::missed("natural width"))
+    }
+
     fn natural_of(&self, binding: BindingId) -> Result<Option<Scalar>, Internal> {
         self.typing
             .natural
             .get(&binding)
             .copied()
             .ok_or(Internal::missed("natural width"))
+    }
+}
+
+fn wider(current: Option<Scalar>, other: Option<Scalar>) -> Option<Scalar> {
+    match (current, other) {
+        (Some(current), Some(other)) if rank(other) > rank(current) => Some(other),
+        (None, other) => other,
+        (current, _) => current,
     }
 }

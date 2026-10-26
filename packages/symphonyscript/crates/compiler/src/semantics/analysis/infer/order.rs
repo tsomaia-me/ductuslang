@@ -1,19 +1,22 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::op::Op;
 
 impl Engine<'_> {
-    pub(super) fn reads_of(&self, root: NodeId) -> Result<Vec<BindingId>, Internal> {
+    pub(super) fn reads_of(&mut self, root: NodeId) -> Result<Vec<BindingId>, Internal> {
+        self.mark_reaching_reads()?;
         let mut found = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            if !seen.insert(node) {
+            if !self.reaches_read(node) || !seen.insert(node) {
                 continue;
             }
+            self.memo.read_walk += 1;
             match &self.node(node)?.op {
                 Op::Read(binding) => found.push(*binding),
                 op => stack.extend(op.operands()),
@@ -22,7 +25,55 @@ impl Engine<'_> {
         Ok(found)
     }
 
-    pub(super) fn binding_order(&self) -> Result<Vec<BindingId>, Internal> {
+    pub(super) fn reaches_read(&self, node: NodeId) -> bool {
+        self.memo
+            .reaching_reads
+            .get(node.index())
+            .copied()
+            .unwrap_or(true)
+    }
+
+    fn mark_reaching_reads(&mut self) -> Result<(), Internal> {
+        let marked = self.memo.reaching_reads.len();
+        let mut known: FastMap<NodeId, bool> = FastMap::default();
+        for index in marked..self.nodes.len() {
+            let root = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
+            let mut stack = vec![(root, false)];
+            while let Some((node, ready)) = stack.pop() {
+                if node.index() < marked || known.contains_key(&node) {
+                    continue;
+                }
+                let op = &self.node(node)?.op;
+                if matches!(op, Op::Read(_)) {
+                    known.insert(node, true);
+                    continue;
+                }
+                let operands = op.operands();
+                if !ready {
+                    stack.push((node, true));
+                    stack.extend(operands.into_iter().map(|operand| (operand, false)));
+                    continue;
+                }
+                let reaches = operands.iter().any(|operand| {
+                    self.memo
+                        .reaching_reads
+                        .get(operand.index())
+                        .copied()
+                        .or_else(|| known.get(operand).copied())
+                        .unwrap_or(false)
+                });
+                known.insert(node, reaches);
+            }
+        }
+        for index in marked..self.nodes.len() {
+            let node = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
+            let reaches = known.get(&node).copied().ok_or(Internal::missed("node"))?;
+            self.memo.reaching_reads.push(reaches);
+        }
+        Ok(())
+    }
+
+    pub(super) fn binding_order(&mut self) -> Result<Vec<BindingId>, Internal> {
         let count = self.bindings.len();
         let mut reads: Vec<Vec<BindingId>> = Vec::with_capacity(count);
         let mut readers: HashMap<BindingId, usize> = HashMap::new();

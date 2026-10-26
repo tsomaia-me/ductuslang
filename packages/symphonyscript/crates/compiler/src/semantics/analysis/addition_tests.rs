@@ -198,3 +198,62 @@ fn a_bounded_function_evaluates_in_work_linear_in_its_levels() {
     assert_eq!(codes, vec![crate::diagnostics::Code::RecursionLimit]);
     assert!(work <= small, "{work} {small}");
 }
+
+fn read_walk(text: &str) -> u64 {
+    let (diagnostics, work) = analyzed(&vocabulary(), text, |engine| engine.memo.read_walk);
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    work
+}
+
+fn walk_program(levels: usize, body: &str) -> String {
+    format!(
+        "input held: i32[..4] = []\nfn walk(i) bounded {levels} else 0:\n{body}Clip c:\n    Note/(walk(0))\n"
+    )
+}
+
+fn chain_program(functions: usize) -> String {
+    let mut text = String::from("input held: i32[..4] = []\n");
+    for function in 0..functions {
+        let rest = if function + 1 < functions {
+            format!("a + chain{}(i + 1)", function + 1)
+        } else {
+            String::from("a")
+        };
+        text.push_str(&format!(
+            "fn chain{function}(i):\n    let a = held[i]\n    {rest}\n"
+        ));
+    }
+    text.push_str("Clip c:\n    Note/(chain0(0))\n");
+    text
+}
+
+fn assert_linear(points: [(u64, u64); 3]) {
+    let [(n1, w1), (n2, w2), (n3, w3)] = points;
+    let first = (w2 - w1) * (n3 - n2);
+    let second = (w3 - w2) * (n2 - n1);
+    assert!(4 * second <= 5 * first, "{points:?}");
+}
+
+#[test]
+fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
+    let with_let = "    let a = held[i]\n    if i >= len(held) then a else a + walk(i + 1)\n";
+    let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
+    let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
+    for body in [with_let, unexpected] {
+        assert_linear([800, 1_600, 6_400].map(|levels| {
+            (
+                levels,
+                read_walk(&walk_program(usize::try_from(levels).unwrap_or(0), body)),
+            )
+        }));
+    }
+    let plain = read_walk(&walk_program(6_400, without_let));
+    let held = read_walk(&walk_program(6_400, with_let));
+    assert!(held <= 4 * plain, "{plain} {held}");
+    assert_linear([1_000, 2_000, 4_000].map(|functions| {
+        (
+            functions,
+            read_walk(&chain_program(usize::try_from(functions).unwrap_or(0))),
+        )
+    }));
+}
