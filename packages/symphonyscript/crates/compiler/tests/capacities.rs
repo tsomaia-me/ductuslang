@@ -604,6 +604,59 @@ fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity() {
 }
 
 #[test]
+fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity() {
+    let cell = "input a: i32[..5] = []\n";
+    let probe = "let probe: i32[..5] = m\n";
+    let clip = "Clip c:\n    Note/(probe[0])\n";
+    let rows: &[OrderedRow] = &[
+        (
+            &[
+                "let w = Saw\n",
+                "Osc o | wave=w\n",
+                "let m = match w:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let w = Square\n",
+                "Osc o | wave=w\n",
+                "let m = match w:\n    Saw: [1, 2, 3, 4, 5, 6, 7]\n    else: a\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let w = if true then Square else Saw\n",
+                "Osc o | wave=w\n",
+                "let m = match w:\n    Square: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let w = Square\n",
+                "Osc o | wave=w\n",
+                "let m = match w:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
+            ],
+            &[(Code::CapacityExceeded, "let probe: i32[..5] = m\n", 0)],
+        ),
+    ];
+    for (declarations, expected) in rows {
+        let mut items: Vec<&str> = vec![cell, probe, clip];
+        items.extend_from_slice(declarations);
+        for text in in_every_order(&items) {
+            support::expect_codes(&text, expected);
+        }
+    }
+    assert_ordered_capacity(
+        &[cell, "input v = Wave::Saw\n"],
+        "match v:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]",
+        7,
+    );
+}
+
+#[test]
 fn a_group_of_states_takes_its_least_capacities_together() {
     let pair = [
         NOTE,

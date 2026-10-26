@@ -395,3 +395,72 @@ fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
         )
     }));
 }
+
+fn in_every_order(items: &[&str]) -> Vec<String> {
+    let mut orders: Vec<Vec<&str>> = vec![Vec::new()];
+    for item in items {
+        orders = orders
+            .into_iter()
+            .flat_map(|order| {
+                (0..=order.len()).map(move |position| {
+                    let mut next = order.clone();
+                    next.insert(position, item);
+                    next
+                })
+            })
+            .collect();
+    }
+    orders.into_iter().map(|order| order.concat()).collect()
+}
+
+fn passed_over_expansion_nodes(scrutinee: &[&str], bound: u32) -> Vec<(String, usize)> {
+    let function = format!(
+        "fn pick(i) bounded {bound} else 0:\n    match w:\n        Saw: held[0]\n        else: pick(i + 1) + pick(i + 2)\n"
+    );
+    let mut items = vec!["input held = [1, 2, 3]\n", function.as_str()];
+    items.extend_from_slice(scrutinee);
+    items.push("Clip c:\n    Note/(pick(0))\n");
+    in_every_order(&items)
+        .into_iter()
+        .map(|text| {
+            let (diagnostics, nodes) =
+                analyzed_within(&vocabulary(), Limits::default(), &text, |engine| {
+                    engine.nodes.len()
+                });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            (text, nodes)
+        })
+        .collect()
+}
+
+#[test]
+fn a_compile_time_match_in_an_expansion_expands_only_its_chosen_arm() {
+    let scrutinees: [&[&str]; 2] = [
+        &["let w = Saw\n", "Osc o | wave=w\n"],
+        &["let w = Wave::Saw\n"],
+    ];
+    for scrutinee in scrutinees {
+        let small = passed_over_expansion_nodes(scrutinee, 4);
+        let large = passed_over_expansion_nodes(scrutinee, 12);
+        for ((text, small), (_, large)) in small.iter().zip(&large) {
+            assert_eq!(small, large, "{text}");
+        }
+    }
+}
+
+#[test]
+fn a_compile_time_match_on_a_bare_variant_computes_its_chosen_arm() {
+    let items = [
+        "let w = Sine\n",
+        "Osc o | wave=w\n",
+        "let m = match w:\n    Saw: [1, 2]\n    Sine: [1, 2, 3]\n    else: [1]\n",
+        "Clip c:\n    Note/(len(m) + m[2])\n",
+    ];
+    for text in in_every_order(&items) {
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(6)), "{text}");
+    }
+}

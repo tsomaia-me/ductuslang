@@ -887,7 +887,8 @@ impl Engine<'_> {
                 if sig.reactive || sig.is_error() || sig.frame {
                     return Ok(Some(None));
                 }
-                let Some(label_ty) = self.scrutinee_ty(*scrutinee, &sig) else {
+                let labels: Vec<NodeId> = arms.iter().map(|(label, _)| *label).collect();
+                let Some(label_ty) = self.choice_ty(*scrutinee, &sig, &labels)? else {
                     return Ok(Some(None));
                 };
                 let value = some!(self.cval(Query::Eval(*scrutinee, label_ty), need));

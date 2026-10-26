@@ -848,10 +848,7 @@ impl Engine<'_> {
         let mut label_nodes = Vec::new();
         for (arm, label) in arms.iter().zip(labels) {
             let node = match (&self.hir.expr(arm.label)?.kind, label) {
-                (ExprKind::Name(name), _) => {
-                    let label_loc = self.hir.expr(arm.label)?.loc;
-                    self.push_node(Op::Bare(name.clone()), label_loc, scope)?
-                }
+                (ExprKind::Name(name), _) => self.bare_label(arm.label, name, scope)?,
                 (_, Some(Val::Scalar(node))) => node,
                 _ => return Ok(Some(Val::Error)),
             };

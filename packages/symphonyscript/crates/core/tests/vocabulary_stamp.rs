@@ -165,12 +165,12 @@ fn two(_: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
     out.set(Value::I32(2));
 }
 
-fn native_stamp(name: &str, param: Ty, function: NativeFn) -> VocabularyStamp {
+fn native_stamp(name: &str, (param, result): (Ty, Ty), function: NativeFn) -> VocabularyStamp {
     let mut v = Vocabulary::builder("natives");
     v.node("Note");
     v.native(
         name,
-        NativeSignature::new([NativeType::Value(param)], NativeType::Value(Ty::I32)),
+        NativeSignature::new([NativeType::Value(param)], NativeType::Value(result)),
         function,
     );
     v.build().expect("the vocabulary builds").stamp().clone()
@@ -178,9 +178,10 @@ fn native_stamp(name: &str, param: Ty, function: NativeFn) -> VocabularyStamp {
 
 #[test]
 fn a_natives_name_and_signature_change_the_stamp_and_its_function_does_not() {
-    let base = native_stamp("f", Ty::I32, one);
-    assert_eq!(native_stamp("f", Ty::I32, one), base);
-    assert_eq!(native_stamp("f", Ty::I32, two), base);
-    assert_ne!(native_stamp("g", Ty::I32, one), base);
-    assert_ne!(native_stamp("f", Ty::I64, one), base);
+    let base = native_stamp("f", (Ty::I32, Ty::I32), one);
+    assert_eq!(native_stamp("f", (Ty::I32, Ty::I32), one), base);
+    assert_eq!(native_stamp("f", (Ty::I32, Ty::I32), two), base);
+    assert_ne!(native_stamp("g", (Ty::I32, Ty::I32), one), base);
+    assert_ne!(native_stamp("f", (Ty::I64, Ty::I32), one), base);
+    assert_ne!(native_stamp("f", (Ty::I32, Ty::I64), one), base);
 }

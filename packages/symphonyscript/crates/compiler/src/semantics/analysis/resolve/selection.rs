@@ -2,7 +2,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::ids::ScopeId;
+use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
@@ -48,24 +48,24 @@ impl Engine<'_> {
                 if sig.reactive || sig.is_error() || sig.frame {
                     return Ok(Some(None));
                 }
-                let Some(ty) = self.scrutinee_ty(node, &sig) else {
+                let mut labels = Vec::with_capacity(arms.len());
+                for arm in arms {
+                    labels.push(match &self.hir.expr(arm.label)?.kind {
+                        ExprKind::Name(name) => self.bare_label(arm.label, name, scope)?,
+                        _ => match some!(self.val(Query::Expr(arm.label, scope), need)) {
+                            Val::Scalar(label) => label,
+                            Val::Array(_) | Val::Error => return Ok(Some(None)),
+                        },
+                    });
+                }
+                let Some(ty) = self.choice_ty(node, &sig, &labels)? else {
                     return Ok(Some(None));
                 };
                 let value = some!(self.cval(Query::Eval(node, ty), need));
                 if value.is_error() {
                     return Ok(Some(None));
                 }
-                for arm in arms {
-                    let label = match &self.hir.expr(arm.label)?.kind {
-                        ExprKind::Name(name) => {
-                            let loc = self.hir.expr(arm.label)?.loc;
-                            self.push_node(Op::Bare(name.clone()), loc, scope)?
-                        }
-                        _ => match some!(self.val(Query::Expr(arm.label, scope), need)) {
-                            Val::Scalar(label) => label,
-                            Val::Array(_) | Val::Error => return Ok(Some(None)),
-                        },
-                    };
+                for (arm, label) in arms.iter().zip(labels) {
                     let label_value = some!(self.cval(Query::Eval(label, ty), need));
                     if label_value.is_error() {
                         return Ok(Some(None));
@@ -78,6 +78,21 @@ impl Engine<'_> {
             }
             _ => Ok(Some(None)),
         }
+    }
+
+    pub(super) fn bare_label(
+        &mut self,
+        label: ExprId,
+        name: &str,
+        scope: ScopeId,
+    ) -> Result<NodeId, Internal> {
+        if let Some(node) = self.memo.bare_labels.get(&(label, scope)) {
+            return Ok(*node);
+        }
+        let loc = self.hir.expr(label)?.loc;
+        let node = self.push_node(Op::Bare(String::from(name)), loc, scope)?;
+        self.memo.bare_labels.insert((label, scope), node);
+        Ok(node)
     }
 
     fn known_choice(

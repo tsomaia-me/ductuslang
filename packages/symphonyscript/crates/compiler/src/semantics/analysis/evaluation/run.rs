@@ -413,7 +413,8 @@ impl Engine<'_> {
                 otherwise,
             } => {
                 let scrutinee_sig = some!(self.sig(scrutinee, need));
-                let Some(scrutinee_ty) = self.scrutinee_ty(scrutinee, &scrutinee_sig) else {
+                let labels: Vec<NodeId> = arms.iter().map(|(label, _)| *label).collect();
+                let Some(scrutinee_ty) = self.choice_ty(scrutinee, &scrutinee_sig, &labels)? else {
                     return Ok(Some(CVal::Error));
                 };
                 let value = some!(self.child(scrutinee, scrutinee_ty, ctx, need)?);
