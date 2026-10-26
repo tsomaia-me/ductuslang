@@ -79,7 +79,7 @@ impl ArrayElement for bool {
 
 impl<T: ArrayElement, const N: usize> ArrayElement for [T; N] {
     fn element_ty() -> Ty {
-        T::element_ty().array(N as u32)
+        T::element_ty().array(u32::try_from(N).unwrap_or(u32::MAX))
     }
 
     fn push_elements(self, out: &mut Vec<Value>) {

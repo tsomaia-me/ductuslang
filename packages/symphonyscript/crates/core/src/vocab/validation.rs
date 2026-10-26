@@ -237,6 +237,17 @@ impl Checker<'_> {
 
     fn native(&mut self, native: &NativeDecl) {
         let signature = &native.signature;
+        let long = signature
+            .params
+            .iter()
+            .chain(core::iter::once(&signature.result))
+            .any(|param| has_long_array(native_type_ty(param)));
+        if long {
+            self.errors.push(VocabularyError::LongNativeArray {
+                native: native.name.clone(),
+            });
+            return;
+        }
         let outside = signature.params.iter().any(|param| !param_in_spec(param))
             || !result_in_spec(&signature.result);
         if outside {
@@ -290,6 +301,12 @@ impl Checker<'_> {
             }
             if has_empty_array(&attr.ty) {
                 self.errors.push(VocabularyError::EmptyArrayAttribute {
+                    owner: String::from(owner),
+                    attribute: attr.name.clone(),
+                });
+            }
+            if has_long_array(&attr.ty) {
+                self.errors.push(VocabularyError::LongArrayAttribute {
                     owner: String::from(owner),
                     attribute: attr.name.clone(),
                 });
@@ -404,6 +421,21 @@ fn assemble_attrs(
 fn has_empty_array(ty: &Ty) -> bool {
     ty.lengths.contains(&0) || ty.capacity == Some(0)
 }
+
+fn has_long_array(ty: &Ty) -> bool {
+    ty.lengths
+        .iter()
+        .chain(ty.capacity.iter())
+        .any(|extent| *extent >= LENGTH_LIMIT)
+}
+
+fn native_type_ty(native: &NativeType) -> &Ty {
+    match native {
+        NativeType::Value(ty) | NativeType::Open(ty) | NativeType::CapacityOf(ty, _) => ty,
+    }
+}
+
+const LENGTH_LIMIT: u32 = 1 << 31;
 
 fn is_integer(ty: &Ty) -> bool {
     matches!(ty.scalar, Scalar::U8 | Scalar::I32 | Scalar::I64)

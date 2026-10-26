@@ -32,6 +32,10 @@ pub enum VocabularyError {
         owner: String,
         attribute: String,
     },
+    LongArrayAttribute {
+        owner: String,
+        attribute: String,
+    },
     DuplicateDefaultAttribute {
         owner: String,
     },
@@ -93,6 +97,9 @@ pub enum VocabularyError {
     NativeCapacityUnstated {
         native: String,
     },
+    LongNativeArray {
+        native: String,
+    },
 }
 
 impl fmt::Display for VocabularyError {
@@ -120,6 +127,10 @@ impl fmt::Display for VocabularyError {
             } => write!(
                 f,
                 "enum `{enumeration}` declares two variants named `{variant}`"
+            ),
+            VocabularyError::LongArrayAttribute { owner, attribute } => write!(
+                f,
+                "the array attribute `{owner}.{attribute}` has a length or capacity of 2³¹ or more, and an array's length and capacity are below 2³¹"
             ),
             VocabularyError::EmptyArrayAttribute { owner, attribute } => write!(
                 f,
@@ -200,6 +211,10 @@ impl fmt::Display for VocabularyError {
             VocabularyError::NativeTypeOutsideSpec { native } => write!(
                 f,
                 "the native function `{native}` has a parameter or result whose type is not a SymphonyScript type"
+            ),
+            VocabularyError::LongNativeArray { native } => write!(
+                f,
+                "the native function `{native}` has a parameter or result with a length or capacity of 2³¹ or more, and an array's length and capacity are below 2³¹"
             ),
             VocabularyError::NativeCapacityUnstated { native } => write!(
                 f,

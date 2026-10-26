@@ -564,6 +564,86 @@ fn a_variable_array_attribute_must_not_have_a_capacity_of_zero() {
 }
 
 #[test]
+fn an_array_attribute_must_have_a_length_and_capacity_below_two_to_the_thirty_one() {
+    let mut v = Vocabulary::builder("v");
+    let clip = v.node("Clip");
+    let plays = v.wire("Plays");
+    v.kind(clip)
+        .attr::<Bounded<i32, 2147483647>>("widest")
+        .attr::<Bounded<i32, 2147483648>>("wide")
+        .attr::<Bounded<i32, 4294967296>>("wider")
+        .attr::<[i32; 2147483647]>("longest")
+        .attr::<[i32; 2147483648]>("long")
+        .attr::<[i32; 4294967296]>("longer")
+        .attr::<Bounded<[i32; 2147483648], 1>>("inner");
+    v.wire_kind(plays).attr::<Bounded<f64, 2147483648>>("steps");
+    let long = |owner: &str, attribute: &str| VocabularyError::LongArrayAttribute {
+        owner: s(owner),
+        attribute: s(attribute),
+    };
+    assert_eq!(
+        errors(v),
+        vec![
+            long("Clip", "wide"),
+            long("Clip", "wider"),
+            long("Clip", "long"),
+            long("Clip", "longer"),
+            long("Clip", "inner"),
+            long("Plays", "steps"),
+        ]
+    );
+}
+
+#[test]
+fn a_native_parameter_or_result_must_have_a_capacity_below_two_to_the_thirty_one() {
+    let long = |native: &str| VocabularyError::LongNativeArray { native: s(native) };
+    let rows: Vec<(NativeSignature, Vec<VocabularyError>)> = vec![
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::I32.variable(2147483647))],
+                NativeType::Value(Ty::I32.variable(2147483647)),
+            ),
+            vec![],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::I32.variable(2147483648))],
+                NativeType::Value(Ty::I32),
+            ),
+            vec![long("f")],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::I32)],
+                NativeType::Value(Ty::I32.variable(2147483648)),
+            ),
+            vec![long("f")],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::I32.array(2147483648))],
+                NativeType::Value(Ty::I32),
+            ),
+            vec![long("f")],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Open(Ty::I32.array(2147483648))],
+                NativeType::CapacityOf(Ty::I32, 0),
+            ),
+            vec![long("f")],
+        ),
+    ];
+    for (signature, expected) in rows {
+        let mut v = Vocabulary::builder("v");
+        v.native("f", signature.clone(), nothing);
+        assert_eq!(errors(v), expected, "{signature:?}");
+    }
+    let message = VocabularyError::LongNativeArray { native: s("f") }.to_string();
+    assert!(message.contains("2³¹"), "{message}");
+}
+
+#[test]
 fn a_native_signature_holds_types_of_section_3_and_states_a_variable_results_capacity() {
     let outside = |native: &str| VocabularyError::NativeTypeOutsideSpec { native: s(native) };
     let unstated = |native: &str| VocabularyError::NativeCapacityUnstated { native: s(native) };

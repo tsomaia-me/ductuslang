@@ -1,4 +1,4 @@
-use symphonyscript_core::Limits;
+use symphonyscript_core::{BinaryOp, Limits, Scalar};
 use symphonyscript_fixtures::{native_vocabulary, vocabulary};
 
 use super::Engine;
@@ -7,6 +7,8 @@ use super::bound::Bound;
 use super::bound_val::BoundVal;
 use super::c_val::CVal;
 use super::eval_ty::EvalTy;
+use super::ids::{BindingId, NodeId};
+use super::op::Op;
 use super::val::Val;
 use crate::compiler::Compiler;
 use crate::diagnostics::{Diagnostic, Severity};
@@ -561,5 +563,87 @@ fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
         });
         assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
         assert_eq!(found, Some(CVal::F64(expected)), "{text}");
+    }
+}
+
+fn orders(items: &[&str]) -> Vec<String> {
+    let mut found = vec![items.concat()];
+    let mut order: Vec<&str> = items.to_vec();
+    let mut counters = vec![0; items.len()];
+    let mut level = 0;
+    while level < items.len() {
+        if counters[level] < level {
+            let other = if level % 2 == 0 { 0 } else { counters[level] };
+            order.swap(other, level);
+            found.push(order.concat());
+            counters[level] += 1;
+            level = 0;
+        } else {
+            counters[level] = 0;
+            level += 1;
+        }
+    }
+    found
+}
+
+fn product_types(text: &str) -> (Option<Scalar>, Vec<Option<Scalar>>, Option<Scalar>) {
+    let (diagnostics, found) = analyzed(&vocabulary(), text, |engine| {
+        let product = engine
+            .nodes
+            .iter()
+            .position(|node| matches!(node.op, Op::Binary(BinaryOp::Mul, ..)))
+            .and_then(|index| u32::try_from(index).ok())
+            .map(NodeId)
+            .expect("the program holds the product");
+        let checked: Vec<Option<Scalar>> = engine
+            .typing
+            .checked
+            .iter()
+            .filter(|(node, _)| *node == product)
+            .map(|(_, ty)| *ty)
+            .collect();
+        let own = engine
+            .bindings
+            .iter()
+            .position(|binding| binding.name == "m")
+            .and_then(|index| u32::try_from(index).ok())
+            .and_then(|index| engine.typing.own.get(&BindingId(index)).copied());
+        (
+            engine.typing.synth.get(&product).copied().flatten(),
+            checked,
+            own,
+        )
+    });
+    assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+    found
+}
+
+#[test]
+fn a_flexible_float_meeting_a_fixed_u8_operand_computes_in_f32() {
+    let input = "input b: u8 = 3\n";
+    let rows: &[(&[&str], Scalar)] = &[
+        (
+            &[input, "Clip c:\n    Note when b * 0.5 > 1\n"],
+            Scalar::F32,
+        ),
+        (&["Clip c:\n    Note when u8(3) * 0.5 > 1\n"], Scalar::F32),
+        (
+            &["input n = 4\n", "Clip c:\n    Note when n * 0.5 > 1\n"],
+            Scalar::F64,
+        ),
+    ];
+    for (items, product) in rows {
+        for text in orders(items) {
+            let (synth, _, _) = product_types(&text);
+            assert_eq!(synth, Some(*product), "{text}");
+        }
+    }
+    for text in orders(&[input, "let m = b * 0.5\n", "Clip c:\n    Note when m > 1\n"]) {
+        let (_, _, own) = product_types(&text);
+        assert_eq!(own, Some(Scalar::F32), "{text}");
+    }
+    for text in orders(&[input, "Synth s:\n    Osc | freq=(b * 0.5)\n"]) {
+        let (_, checked, _) = product_types(&text);
+        assert_eq!(checked, vec![Some(Scalar::F64)], "{text}");
     }
 }
