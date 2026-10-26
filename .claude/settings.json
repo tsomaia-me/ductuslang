@@ -100,7 +100,18 @@
       "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__get_issue",
       "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_issues",
       "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_comments",
-      "Bash(git -C /Users/torniketsomaia/projects/@tsomaia.tech/ductuslang push origin main:symphonyscript/progress)"
+      "Bash(git -C /Users/torniketsomaia/projects/@tsomaia.tech/ductuslang push origin main:symphonyscript/progress)",
+      "Bash(rtk ls *)", "Bash(rtk wc *)", "Bash(cargo *)", "Bash(cd *)", "Bash(echo *)", "Bash(date*)",
+      "Bash(find *)", "Bash(awk *)", "Bash(sort*)", "Bash(uniq*)", "Bash(cut *)", "Bash(tr *)", "Bash(file *)",
+      "Bash(du *)", "Bash(ps *)", "Bash(lsof *)", "Bash(tar *)", "Bash(cmp *)", "Bash(diff *)", "Bash(xargs *)",
+      "Bash(rm -rf /private/tmp/claude-501/*)", "Bash(rm -f /private/tmp/claude-501/*)",
+      "Bash(rm -f /Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/.claude/worktrees/*)",
+      "Bash(git -C * worktree remove *)", "Bash(git -C * worktree list*)", "Bash(git -C * branch -d *)",
+      "Bash(git -C * archive *)", "Bash(git -C * show*)", "Bash(git -C * rev-parse*)", "Bash(git -C * check-ignore*)",
+      "Bash(git -C * ls-files*)", "Bash(git show*)", "Bash(git check-ignore*)",
+      "Bash(.venv/bin/python *)", "Bash(*/.venv/bin/python *)", "Bash(/private/tmp/claude-501/*)",
+      "mcp__terminal__run_in_terminal", "mcp__terminal__stop_terminal_tab", "mcp__terminal__read_terminal",
+      "mcp__terminal__list_terminal_tabs", "mcp__terminal__open_terminal_tab"
     ],
     "deny": [
       "Bash(git push --force*)",
