@@ -92,6 +92,9 @@ impl Engine<'_> {
                 && !self.arrays.contains(&node)
             {
                 let sig = some!(self.sig(node, need));
+                if sig.is_error() {
+                    return Ok(Some(Val::Error));
+                }
                 if sig.kind == Kind::Str {
                     operands.push(self.push_node(
                         Op::Builtin(Builtin::Bytes, vec![node]),

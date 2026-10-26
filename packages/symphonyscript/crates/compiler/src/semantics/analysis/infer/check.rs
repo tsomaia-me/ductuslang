@@ -584,7 +584,7 @@ impl Engine<'_> {
     }
 
     fn fixed_cell_index(&mut self, base: NodeId, index: NodeId) -> Result<(), Internal> {
-        if !self.known_sig(base)?.reactive {
+        if !self.known_sig(base)?.reactive || self.memo.projected_indexes.contains(&index) {
             return Ok(());
         }
         let found = self.known_layout(base)?;

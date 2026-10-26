@@ -922,19 +922,39 @@ impl Engine<'_> {
         value: CVal,
         ty: EvalTy,
     ) -> Result<CVal, Internal> {
-        let fits_type = match &value {
-            CVal::Array(array) => array.leaves().iter().all(|leaf| fits_in(leaf, ty)),
-            leaf => fits_in(leaf, ty),
-        };
-        if !fits_type {
+        let mut unfit = Vec::new();
+        let mut parts = vec![(node, value.clone())];
+        while let Some((at, part)) = parts.pop() {
+            match (&self.node(at)?.op, &part) {
+                (Op::Array(elements), CVal::Array(array))
+                    if elements.len() == array.items().len() =>
+                {
+                    parts.extend(elements.iter().copied().zip(array.items().iter().cloned()));
+                }
+                (_, CVal::Array(array)) => {
+                    if !array.leaves().iter().all(|leaf| fits_in(leaf, ty)) {
+                        unfit.push(at);
+                    }
+                }
+                (_, leaf) => {
+                    if !fits_in(leaf, ty) {
+                        unfit.push(at);
+                    }
+                }
+            }
+        }
+        if unfit.is_empty() {
+            return Ok(value);
+        }
+        unfit.sort();
+        for at in unfit {
             self.error_at_node(
                 Code::DoesNotFit,
-                node,
+                at,
                 format!("this value does not fit `{}`", ty_name(ty)),
             )?;
-            return Ok(CVal::Error);
         }
-        Ok(value)
+        Ok(CVal::Error)
     }
 
     pub(super) fn typed_child(

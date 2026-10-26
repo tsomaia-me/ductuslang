@@ -301,3 +301,28 @@ fn a_capacity_of_result_holds_at_most_its_parameters_capacity_in_rows() {
         ],
     );
 }
+
+#[test]
+fn a_cell_reading_string_at_a_u8_array_parameter_draws_one_reactive_string() {
+    let input = "input n = 1\n";
+    support::assert_rows_in_every_order(
+        &native_vocabulary(),
+        &[
+            (
+                &[input, "Clip c:\n    Note/(checksum(\"a{n}\"))\n"],
+                &[(Code::ReactiveString, "n")],
+            ),
+            (&["Clip c:\n    Note/(checksum(\"GET\"))\n"], &[]),
+        ],
+    );
+    support::assert_rows_in_every_order(
+        &signature_vocabulary(),
+        &[
+            (
+                &[input, "Clip c:\n    Note/(fixed3(\"a{n}b\"))\n"],
+                &[(Code::ReactiveString, "n")],
+            ),
+            (&["Clip c:\n    Note/(fixed3(\"GET\"))\n"], &[]),
+        ],
+    );
+}

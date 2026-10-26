@@ -481,6 +481,7 @@ impl Engine<'_> {
                 for position in 0..*length {
                     let index =
                         self.push_node(Op::Const(Value::I64(i64::from(position))), loc, scope)?;
+                    self.memo.projected_indexes.insert(index);
                     next.push(self.push_node(
                         Op::Element {
                             base: *parent,

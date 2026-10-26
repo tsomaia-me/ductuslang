@@ -3867,3 +3867,60 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
         "{text}"
     );
 }
+
+#[test]
+fn a_bytes_result_of_another_shape_than_a_fixed_attributes_draws_the_shape_diagnostic_alone() {
+    let binding = "Clip c | fixed=(bytes(xs)):\n    Note\n";
+    support::assert_rows_in_every_order(
+        &support::signature_vocabulary(),
+        &[
+            (
+                &["input xs: u8[2] = [1, 2]\n", binding],
+                &[(Code::TypeMismatch, "bytes(xs)")],
+            ),
+            (
+                &["input xs = [1, 2]\n", binding],
+                &[(Code::TypeMismatch, "bytes(xs)")],
+            ),
+            (&["input xs = [1, 2, 3]\n", binding], &[]),
+        ],
+    );
+}
+
+#[test]
+fn an_input_whose_initializer_does_not_fit_its_annotation_draws_one_does_not_fit_at_the_value() {
+    support::assert_rows_in_every_order(
+        &support::signature_vocabulary(),
+        &[
+            (
+                &[
+                    "input xs: u8[..3] = [300]\n",
+                    "Clip c | data=xs:\n    Note\n",
+                ],
+                &[(Code::DoesNotFit, "300")],
+            ),
+            (
+                &[
+                    "input xs: i32[..3] = [3000000000]\n",
+                    "Clip c:\n    Note/(xs[0])\n",
+                ],
+                &[(Code::DoesNotFit, "3000000000")],
+            ),
+            (
+                &["input x: i32 = 2147483647 + 1\n", "Clip c:\n    Note/x\n"],
+                &[(Code::DoesNotFit, "2147483647 + 1")],
+            ),
+            (
+                &[
+                    "input xs: u8[3] = [300, 1, 2]\n",
+                    "Clip c | fixed=xs:\n    Note\n",
+                ],
+                &[(Code::DoesNotFit, "300")],
+            ),
+            (
+                &["input i = 300\n", "Clip c | fixed=[i, 2, 3]:\n    Note\n"],
+                &[(Code::DoesNotFit, "i")],
+            ),
+        ],
+    );
+}
