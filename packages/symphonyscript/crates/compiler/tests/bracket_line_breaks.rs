@@ -6,8 +6,9 @@ use symphonyscript::Source;
 use symphonyscript::syntax::{SyntaxKind, lex};
 use symphonyscript_fixtures::{dsp_project, music_project, spec_examples, vocabulary};
 
-const BRACKETS: [SyntaxKind; 7] = [
+const BRACKETS: [SyntaxKind; 8] = [
     SyntaxKind::Bundle,
+    SyntaxKind::History,
     SyntaxKind::Conversion,
     SyntaxKind::ParenPlacement,
     SyntaxKind::ArrayLit,
@@ -48,11 +49,11 @@ fn break_points_in_brackets(text: &str) -> Vec<(usize, usize, usize)> {
             SyntaxKind::StringStart => strings += 1,
             SyntaxKind::StringEnd => strings = strings.saturating_sub(1),
             _ if strings > 0 => {}
-            SyntaxKind::LParen | SyntaxKind::LBracket => {
+            SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::LBrace => {
                 openers.push(start);
                 found.push((end, end, start));
             }
-            SyntaxKind::RParen | SyntaxKind::RBracket => {
+            SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => {
                 if let Some(opener) = openers.pop() {
                     found.push((start, start, opener));
                 }

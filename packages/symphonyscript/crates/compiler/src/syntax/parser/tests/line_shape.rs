@@ -9,6 +9,7 @@ use crate::syntax::{SyntaxKind, Token, lex};
 const ITEM_KEYWORDS: &[SyntaxKind] = &[
     SyntaxKind::InputKw,
     SyntaxKind::LetKw,
+    SyntaxKind::StateKw,
     SyntaxKind::FnKw,
     SyntaxKind::PatternKw,
 ];
@@ -67,9 +68,11 @@ impl LineShape {
         let mut unmatched_closer = false;
         for token in &tokens {
             match token.kind {
-                SyntaxKind::LParen | SyntaxKind::LBracket => depth += 1,
-                SyntaxKind::RParen | SyntaxKind::RBracket if depth == 0 => unmatched_closer = true,
-                SyntaxKind::RParen | SyntaxKind::RBracket => depth -= 1,
+                SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::LBrace => depth += 1,
+                SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace if depth == 0 => {
+                    unmatched_closer = true
+                }
+                SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => depth -= 1,
                 SyntaxKind::ForKw if depth == 0 => header = true,
                 SyntaxKind::Colon if depth == 0 && header => header = false,
                 SyntaxKind::Colon if depth == 0 => stray_colon = true,

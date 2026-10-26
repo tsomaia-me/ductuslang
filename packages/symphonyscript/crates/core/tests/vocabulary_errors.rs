@@ -1,4 +1,7 @@
-use symphonyscript_core::{Count, Vocabulary, VocabularyBuilder, VocabularyError};
+use symphonyscript_core::{
+    Bounded, Count, NativeArg, NativeOut, NativeSignature, NativeType, Ty, Vocabulary,
+    VocabularyBuilder, VocabularyError,
+};
 
 fn errors(builder: VocabularyBuilder) -> Vec<VocabularyError> {
     match builder.build() {
@@ -540,4 +543,94 @@ fn an_array_attribute_must_not_have_a_length_of_zero() {
             empty("Plays", "steps"),
         ]
     );
+}
+
+fn nothing(_: &[NativeArg<'_>], _: &mut NativeOut<'_>) {}
+
+#[test]
+fn a_variable_array_attribute_must_not_have_a_capacity_of_zero() {
+    let mut v = Vocabulary::builder("v");
+    let clip = v.node("Clip");
+    v.kind(clip)
+        .attr::<Bounded<i32, 0>>("none")
+        .attr::<Bounded<i32, 1>>("one");
+    single(
+        v,
+        VocabularyError::EmptyArrayAttribute {
+            owner: s("Clip"),
+            attribute: s("none"),
+        },
+    );
+}
+
+#[test]
+fn a_native_signature_holds_types_of_section_3_and_states_a_variable_results_capacity() {
+    let outside = |native: &str| VocabularyError::NativeTypeOutsideSpec { native: s(native) };
+    let unstated = |native: &str| VocabularyError::NativeCapacityUnstated { native: s(native) };
+    let rows: Vec<(NativeSignature, Vec<VocabularyError>)> = vec![
+        (
+            NativeSignature::new(
+                [NativeType::Open(Ty::I32)],
+                NativeType::CapacityOf(Ty::I32, 0),
+            ),
+            vec![],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::STR.array(2))],
+                NativeType::Value(Ty::I32),
+            ),
+            vec![outside("f")],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::I32.array(0))],
+                NativeType::Value(Ty::I32),
+            ),
+            vec![outside("f")],
+        ),
+        (
+            NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Open(Ty::STR)),
+            vec![outside("f")],
+        ),
+        (
+            NativeSignature::new([NativeType::Open(Ty::I32)], NativeType::Open(Ty::I32)),
+            vec![unstated("f")],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Open(Ty::I32)],
+                NativeType::CapacityOf(Ty::I32, 1),
+            ),
+            vec![unstated("f")],
+        ),
+        (
+            NativeSignature::new(
+                [NativeType::Value(Ty::I32)],
+                NativeType::CapacityOf(Ty::I32, 0),
+            ),
+            vec![unstated("f")],
+        ),
+    ];
+    for (signature, expected) in rows {
+        let mut v = Vocabulary::builder("v");
+        v.native("f", signature.clone(), nothing);
+        assert_eq!(errors(v), expected, "{signature:?}");
+    }
+}
+
+#[test]
+fn a_native_functions_name_is_checked_as_every_declared_name_is() {
+    let signature = NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Value(Ty::I32));
+    let rows: Vec<(&str, VocabularyError)> = vec![
+        ("abs", VocabularyError::BuiltinName { name: s("abs") }),
+        ("match", VocabularyError::ReservedName { name: s("match") }),
+        ("Note", VocabularyError::DuplicateName { name: s("Note") }),
+    ];
+    for (name, expected) in rows {
+        let mut v = Vocabulary::builder("v");
+        v.node("Note");
+        v.native(name, signature.clone(), nothing);
+        single(v, expected);
+    }
 }

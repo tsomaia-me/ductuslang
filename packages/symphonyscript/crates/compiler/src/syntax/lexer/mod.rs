@@ -1036,7 +1036,11 @@ impl<'a> Lexer<'a> {
         matches!(
             SyntaxKind::keyword(word(rest)),
             Some(
-                SyntaxKind::InputKw | SyntaxKind::LetKw | SyntaxKind::FnKw | SyntaxKind::PatternKw
+                SyntaxKind::InputKw
+                    | SyntaxKind::LetKw
+                    | SyntaxKind::StateKw
+                    | SyntaxKind::FnKw
+                    | SyntaxKind::PatternKw
             )
         )
     }

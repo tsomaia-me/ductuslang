@@ -10,6 +10,7 @@ pub(super) fn starts_line(line: &LineStart<'_>, text: &str, vocabulary: &Vocabul
     match line.first.kind {
         SyntaxKind::InputKw
         | SyntaxKind::LetKw
+        | SyntaxKind::StateKw
         | SyntaxKind::FnKw
         | SyntaxKind::PatternKw
         | SyntaxKind::LParen

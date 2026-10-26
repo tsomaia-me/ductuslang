@@ -1,4 +1,7 @@
-use symphonyscript_core::{Count, Vocabulary, VocabularyStamp};
+use symphonyscript_core::{
+    Count, NativeArg, NativeFn, NativeOut, NativeSignature, NativeType, Ty, Value, Vocabulary,
+    VocabularyStamp,
+};
 
 struct Options {
     doc: bool,
@@ -152,4 +155,32 @@ fn nested_and_enum_array_attributes_keep_their_pinned_stamp() {
     let stamp = v.build().expect("the vocabulary is valid").stamp().clone();
     assert_eq!(stamp.name, "arrays");
     assert_eq!(stamp.hash, 0x35f8_efc8_552d_30a7);
+}
+
+fn one(_: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    out.set(Value::I32(1));
+}
+
+fn two(_: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    out.set(Value::I32(2));
+}
+
+fn native_stamp(name: &str, param: Ty, function: NativeFn) -> VocabularyStamp {
+    let mut v = Vocabulary::builder("natives");
+    v.node("Note");
+    v.native(
+        name,
+        NativeSignature::new([NativeType::Value(param)], NativeType::Value(Ty::I32)),
+        function,
+    );
+    v.build().expect("the vocabulary builds").stamp().clone()
+}
+
+#[test]
+fn a_natives_name_and_signature_change_the_stamp_and_its_function_does_not() {
+    let base = native_stamp("f", Ty::I32, one);
+    assert_eq!(native_stamp("f", Ty::I32, one), base);
+    assert_eq!(native_stamp("f", Ty::I32, two), base);
+    assert_ne!(native_stamp("g", Ty::I32, one), base);
+    assert_ne!(native_stamp("f", Ty::I64, one), base);
 }

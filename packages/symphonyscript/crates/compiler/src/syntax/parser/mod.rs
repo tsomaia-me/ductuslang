@@ -395,6 +395,7 @@ impl<'a> Parser<'a> {
                         | SyntaxKind::ArgList
                         | SyntaxKind::IndexExpr
                         | SyntaxKind::Conversion
+                        | SyntaxKind::History
                         | SyntaxKind::Interpolation,
                     ) => Bracket::Expression,
                     Some(SyntaxKind::Bundle) => Bracket::Bundle {

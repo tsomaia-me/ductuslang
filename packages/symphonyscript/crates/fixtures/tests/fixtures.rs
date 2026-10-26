@@ -3,8 +3,8 @@ use symphonyscript_core::{
     Wire, dump,
 };
 use symphonyscript_fixtures::{
-    SPEC_SYM_EXAMPLES, dsp_project, music_project, spec_examples, spec_productions, spec_projects,
-    vocabulary, vocabulary_documented,
+    SPEC_SYM_EXAMPLES, dsp_project, music_project, native_vocabulary, spec_examples,
+    spec_productions, spec_projects, vocabulary, vocabulary_documented,
 };
 
 #[test]
@@ -36,6 +36,11 @@ fn the_vocabulary_stamp_is_pinned() {
     assert_eq!(vocabulary().stamp(), vocabulary().stamp());
     assert_eq!(vocabulary().stamp().name, "example");
     assert_eq!(vocabulary().stamp().hash, 0xb24e_d010_8497_1fb2);
+}
+
+#[test]
+fn the_native_vocabulary_builds_with_one_stamp() {
+    assert_eq!(native_vocabulary().stamp(), native_vocabulary().stamp());
 }
 
 #[test]

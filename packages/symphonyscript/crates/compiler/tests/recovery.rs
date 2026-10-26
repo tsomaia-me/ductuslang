@@ -973,3 +973,43 @@ fn a_missing_closer_names_the_token_it_underlines() {
         );
     }
 }
+
+#[test]
+fn recovery_resynchronizes_at_state_lines_and_treats_a_history_read_as_an_expression_bracket() {
+    let rows: &[(&str, Code, &str, &str)] = &[
+        (
+            "input x = 1\nlet a = (1 +\nstate s = x{1}\nClip c:\n    Note/s\n",
+            Code::ExpressionSyntax,
+            "state",
+            "StateDecl[state s",
+        ),
+        (
+            "input x = 1\nstate s = x{1, 0\nlet y = 2\nClip c:\n    Note/y\n",
+            Code::ExpressionSyntax,
+            "let",
+            "LetDecl[let y",
+        ),
+        (
+            "input x = 1\nstate s = x{1, 0\nClip c:\n    Note/s\n",
+            Code::ExpressionSyntax,
+            "Clip",
+            "Placement[Clip c",
+        ),
+        (
+            "Clip c:\n    Note | velocity=(1\n  state s = 1\nClip d:\n    Note/s\n",
+            Code::DedentMismatch,
+            "s",
+            "StateDecl[state s",
+        ),
+    ];
+    for (text, code, at, item) in rows {
+        let (start, end) = support::at(text, at, 0);
+        assert_eq!(support::codes(text), vec![(*code, start, end)], "{text}");
+        assert!(support::tree(text).contains(item), "{text}");
+        let codes: Vec<Code> = support::checked(text)
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(codes, vec![*code], "{text}");
+    }
+}

@@ -1090,6 +1090,27 @@ const ROWS: &[(Code, Context, Lines, &str, Open)] = &[
         Closed,
     ),
     (
+        Code::ExpressionSyntax,
+        TopBracket,
+        One,
+        "state s = x{1, 0\n",
+        unclosed(Expression, Code::ExpressionSyntax),
+    ),
+    (
+        Code::ExpressionSyntax,
+        TopBracket,
+        Across,
+        "state s = x{1,\n0\n",
+        unclosed(Expression, Code::ExpressionSyntax),
+    ),
+    (
+        Code::ExpressionSyntax,
+        TopBracket,
+        One,
+        "state s = (x{1} +\n",
+        unclosed(Expression, Code::ExpressionSyntax),
+    ),
+    (
         Code::ConversionSyntax,
         TopBracket,
         One,
