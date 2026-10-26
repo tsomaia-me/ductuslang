@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import anthropic
 import httpx
 
-from run import Runner, read_keys, with_cache_control
+from run import Runner, prefix_of, read_keys, with_cache_control
 
 USAGE = {"input_tokens": 10, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 0, "output_tokens": 5}
 
@@ -66,11 +66,11 @@ def fake_client(name, log, errors=()):
     return SimpleNamespace(messages=SimpleNamespace(batches=FakeBatches(name, log, errors)))
 
 
-def requests(n, system=None):
-    params = {"model": "claude-opus-5-5", "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}]}
+def requests(n, system=None, model="claude-opus-5-5", start=0):
+    params = {"model": model, "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}]}
     if system is not None:
         params["system"] = system
-    return [{"custom_id": f"r{i}", "params": params} for i in range(n)]
+    return [{"custom_id": f"r{i}", "params": params} for i in range(start, start + n)]
 
 
 class RunnerTest(unittest.TestCase):
@@ -79,12 +79,19 @@ class RunnerTest(unittest.TestCase):
         self.run_dir = Path(self.dir.name) / "run"
         self.log = []
         self.sleeps = []
+        self.lines = []
+        self.now = 1000.0
 
     def tearDown(self):
         self.dir.cleanup()
 
     def runner(self, clients, **kwargs):
-        return Runner(clients, self.run_dir, poll_seconds=0, sleep=self.sleeps.append, log=lambda _: None, **kwargs)
+        kwargs.setdefault("clock", lambda: self.now)
+        kwargs.setdefault("log", self.lines.append)
+        return Runner(clients, self.run_dir, poll_seconds=0, sleep=self.sleeps.append, **kwargs)
+
+    def creates(self):
+        return [entry[2] for entry in self.log if entry[0] == "create"]
 
     def results(self):
         return [json.loads(line) for line in (self.run_dir / "results.jsonl").read_text().splitlines()]
@@ -172,8 +179,88 @@ class RunnerTest(unittest.TestCase):
 
     def test_max_usd_stops_new_batches(self):
         clients = {1: fake_client("k1", self.log)}
-        self.assertFalse(self.runner(clients, batch_size=1, max_usd=0.0).run(requests(3)))
-        self.assertEqual(len([entry for entry in self.log if entry[0] == "create"]), 1)
+        runner = self.runner(clients, batch_size=1, max_usd=0.0005)
+        self.assertFalse(runner.run(requests(3)))
+        self.assertEqual(self.creates(), [["r0"]])
+        self.assertEqual(runner.held, {"r1", "r2"})
+
+    def test_a_shared_system_prompt_is_warmed_by_one_request_before_the_rest(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients)
+        self.assertTrue(runner.run(requests(5, system="long prompt")))
+        self.assertEqual(self.creates(), [["r0"], ["r1", "r2", "r3", "r4"]])
+        self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1", "r2", "r3", "r4"])
+        self.assertEqual(self.log.index(("results", "k1", "k1-batch-1")), 1)
+        warmings = json.loads((self.run_dir / "state.json").read_text())["warmings"]
+        self.assertEqual([(w["key"], w["model"], w["time"]) for w in warmings], [(1, "claude-opus-5-5", 1000.0)])
+
+    def test_a_second_group_within_the_window_warms_nothing(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients)
+        runner.run(requests(2, system="long prompt"))
+        self.now += 54 * 60
+        runner.run(requests(2, system="long prompt") + requests(2, system="long prompt", start=2))
+        self.assertEqual(self.creates(), [["r0"], ["r1"], ["r2", "r3"]])
+
+    def test_a_prefix_warmed_more_than_55_minutes_ago_is_warmed_again(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients)
+        runner.run(requests(2, system="long prompt"))
+        self.now += 56 * 60
+        runner.run(requests(2, system="long prompt", start=2))
+        self.assertEqual(self.creates(), [["r0"], ["r1"], ["r2"], ["r3"]])
+
+    def test_each_model_and_each_system_text_is_warmed_once(self):
+        clients = {1: fake_client("k1", self.log)}
+        group = (requests(2, system="a") + requests(2, system="b", start=2)
+                 + requests(2, system="a", model="claude-haiku-5-5", start=4) + requests(2, start=6))
+        self.assertTrue(self.runner(clients).run(group))
+        self.assertEqual(self.creates()[0], ["r0", "r2", "r4"])
+        self.assertEqual(self.creates()[1], ["r1", "r3", "r5", "r6", "r7"])
+        self.assertEqual(len(self.creates()), 2)
+
+    def test_a_group_without_a_system_prompt_is_submitted_whole(self):
+        clients = {1: fake_client("k1", self.log)}
+        self.assertTrue(self.runner(clients).run(requests(3)))
+        self.assertEqual(self.creates(), [["r0", "r1", "r2"]])
+
+    def test_a_resumed_runner_reads_its_warmings_from_state(self):
+        first = {1: fake_client("k1", self.log)}
+        self.runner(first).run(requests(2, system="long prompt"))
+        self.log.clear()
+        self.now += 60
+        second = {1: fake_client("k1", self.log)}
+        self.assertTrue(self.runner(second).run(requests(4, system="long prompt")))
+        self.assertEqual(self.creates(), [["r2", "r3"]])
+
+    def test_a_batch_over_the_cap_submits_only_the_requests_that_fit(self):
+        clients = {1: fake_client("k1", self.log)}
+        probe = self.runner(clients)
+        one = probe.estimate(requests(1)[0])
+        runner = self.runner(clients, max_usd=one * 2.5)
+        self.assertFalse(runner.run(requests(5)))
+        self.assertEqual(self.creates(), [["r0", "r1"]])
+        self.assertEqual(runner.held, {"r2", "r3", "r4"})
+        self.assertEqual(len([line for line in self.lines if "holding back 3 of 5" in line]), 1)
+
+    def test_nothing_is_submitted_when_not_even_one_request_fits(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients, max_usd=1e-9)
+        self.assertFalse(runner.run(requests(2)))
+        self.assertEqual(self.creates(), [])
+        self.assertEqual(runner.held, {"r0", "r1"})
+
+    def test_a_warm_prompt_is_priced_as_a_cache_read_and_a_cold_one_as_a_write(self):
+        runner = self.runner({1: fake_client("k1", self.log)})
+        self.run_dir.mkdir()
+        request = {"custom_id": "x", "params": with_cache_control(requests(1, system="s" * 3000)[0]["params"])}
+        cold = runner.estimate(request)
+        runner.record_warming(1, prefix_of(request["params"]))
+        self.assertLess(runner.estimate(request) * 5, cold)
+
+    def test_no_cap_changes_nothing(self):
+        runner = self.runner({1: fake_client("k1", self.log)})
+        self.assertEqual(runner.affordable(requests(50)), 50)
 
 
 class CacheControlTest(unittest.TestCase):

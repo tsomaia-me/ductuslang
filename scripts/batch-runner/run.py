@@ -1,5 +1,6 @@
 import argparse
 import copy
+import hashlib
 import json
 import re
 import sys
@@ -35,6 +36,8 @@ PRICES = {
 }
 LONG_PROMPT_PRICES = {"claude-haiku-5-5": (100_000, (0.50, 1.0, 0.05, 2.50))}
 BATCH_DISCOUNT = 0.5
+WARM_SECONDS = 55 * 60
+BYTES_PER_TOKEN = 3
 TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 
 
@@ -79,6 +82,13 @@ def chunk(requests, max_requests):
     return batches
 
 
+def prefix_of(params):
+    system = params.get("system")
+    if not isinstance(system, list) or not any("cache_control" in block for block in system):
+        return None
+    return params["model"], hashlib.sha256(json.dumps(system, sort_keys=True).encode()).hexdigest()
+
+
 def credit_exhausted(error):
     return isinstance(error, anthropic.APIStatusError) and (
         error.status_code == 402
@@ -104,7 +114,7 @@ def cost(model, usage):
 
 class Runner:
     def __init__(self, clients, run_dir, max_usd=None, batch_size=MAX_BATCH_REQUESTS,
-                 poll_seconds=POLL_SECONDS, sleep=time.sleep, log=print):
+                 poll_seconds=POLL_SECONDS, sleep=time.sleep, log=print, clock=time.time):
         self.clients = clients
         self.run_dir = Path(run_dir)
         self.max_usd = max_usd
@@ -112,9 +122,13 @@ class Runner:
         self.poll_seconds = poll_seconds
         self.sleep = sleep
         self.log = log
+        self.clock = clock
+        self.held = set()
+        self.capped = False
         self.state_path = self.run_dir / "state.json"
         self.results_path = self.run_dir / "results.jsonl"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {"key": 1, "batches": []}
+        self.state.setdefault("warmings", [])
 
     def save(self):
         tmp = self.state_path.with_suffix(".tmp")
@@ -132,6 +146,51 @@ class Runner:
             for entry in self.read_results()
             if entry["result"]["type"] == "succeeded"
         )
+
+    def is_warm(self, prefix):
+        return any(
+            w["key"] == self.state["key"] and (w["model"], w["prefix"]) == prefix
+            and self.clock() - w["time"] < WARM_SECONDS
+            for w in self.state["warmings"]
+        )
+
+    def record_warming(self, key, prefix):
+        self.state["warmings"] = [
+            w for w in self.state["warmings"] if (w["key"], w["model"], w["prefix"]) != (key, *prefix)
+        ]
+        self.state["warmings"].append({"key": key, "model": prefix[0], "prefix": prefix[1], "time": self.clock()})
+        self.save()
+
+    def cold_prefixes(self, group):
+        cold = {}
+        for request in group:
+            prefix = prefix_of(request["params"])
+            if prefix is not None and prefix not in cold and not self.is_warm(prefix):
+                cold[prefix] = request
+        return cold
+
+    def estimate(self, request):
+        params = request["params"]
+        prices = PRICES[params["model"]]
+        total = len(json.dumps(request).encode()) / BYTES_PER_TOKEN
+        system = len(json.dumps(params["system"]).encode()) / BYTES_PER_TOKEN if params.get("system") else 0
+        if params["model"] in LONG_PROMPT_PRICES and total > LONG_PROMPT_PRICES[params["model"]][0]:
+            prices = LONG_PROMPT_PRICES[params["model"]][1]
+        uncached, write, read, output = prices
+        prefix = prefix_of(params)
+        system_price = read if prefix is not None and self.is_warm(prefix) else write
+        usd = (total - system) * uncached + system * system_price + params["max_tokens"] * output
+        return usd * BATCH_DISCOUNT / 1_000_000
+
+    def affordable(self, requests):
+        if self.max_usd is None:
+            return len(requests)
+        budget = self.max_usd - self.spend()
+        for count, request in enumerate(requests):
+            budget -= self.estimate(request)
+            if budget < 0:
+                return count
+        return len(requests)
 
     def collect(self, batch):
         client = self.clients[batch["key"]]
@@ -178,6 +237,37 @@ class Runner:
             self.log(f"submitted batch {created.id} with {len(requests)} requests (key-{key})")
             return batch
 
+    def submit_capped(self, requests):
+        fit = self.affordable(requests)
+        if fit < len(requests):
+            self.capped = True
+            self.log(f"spend cap ${self.max_usd}: holding back {len(requests) - fit} of {len(requests)} requests")
+        if fit == 0:
+            return None, 0
+        return self.submit(requests[:fit]), fit
+
+    def run_group(self, group):
+        cold = self.cold_prefixes(group)
+        if cold:
+            warming = list(cold.values())
+            batch, fit = self.submit_capped(warming)
+            if batch is None:
+                return False
+            for prefix in list(cold)[:fit]:
+                self.record_warming(batch["key"], prefix)
+            self.collect(batch)
+            if fit < len(warming):
+                return False
+            sent = {request["custom_id"] for request in warming}
+            group = [request for request in group if request["custom_id"] not in sent]
+        if not group:
+            return True
+        batch, fit = self.submit_capped(group)
+        if batch is None:
+            return False
+        self.collect(batch)
+        return fit == len(group)
+
     def run(self, requests):
         self.run_dir.mkdir(parents=True, exist_ok=True)
         for batch in self.state["batches"]:
@@ -188,15 +278,16 @@ class Runner:
             {"custom_id": r["custom_id"], "params": with_cache_control(r["params"])}
             for r in requests if r["custom_id"] not in submitted
         ]
+        self.held = set()
+        self.capped = False
         for group in chunk(pending, self.batch_size):
-            if self.max_usd is not None and self.spend() > self.max_usd:
-                self.log(f"spend passed ${self.max_usd}; submitting no more batches")
+            if not self.run_group(group):
+                if self.capped:
+                    sent = {cid for batch in self.state["batches"] for cid in batch["custom_ids"]}
+                    self.held = {r["custom_id"] for r in pending if r["custom_id"] not in sent}
+                else:
+                    self.log("every key's credit is exhausted; submitting no more batches")
                 return False
-            batch = self.submit(group)
-            if batch is None:
-                self.log("every key's credit is exhausted; submitting no more batches")
-                return False
-            self.collect(batch)
         return True
 
     def summary(self, total):
