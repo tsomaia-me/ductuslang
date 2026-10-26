@@ -51,7 +51,7 @@ class Recorder:
 
 
 class AdapterTest(unittest.TestCase):
-    def test_autoprompting_goes_to_each_model_in_turn_with_the_system_message_lifted_and_thinking_off(self):
+    def test_autoprompting_goes_to_each_model_in_turn_with_the_system_message_lifted_and_adaptive_thinking_at_high_effort(self):
         client = Recorder("summary")
         models = itertools.cycle(["claude-opus-5-5", "claude-fable-5-1"])
         config = {"model": "gpt-4", "max_tokens": 500, "temperature": 0.0,
@@ -62,10 +62,10 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(reply.choices[0].message.content, "summary")
         self.assertEqual([sent["model"] for sent in client.sent],
                          ["claude-opus-5-5", "claude-fable-5-1", "claude-opus-5-5"])
-        self.assertEqual(client.sent[0], {"model": "claude-opus-5-5", "max_tokens": 500,
+        self.assertEqual(client.sent[0], {"model": "claude-opus-5-5", "max_tokens": 32000,
                                           "system": "You are an auto-prompting tool",
                                           "messages": [{"role": "user", "content": "doc\nsummarize"}],
-                                          "thinking": {"type": "disabled"}})
+                                          "thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}})
 
     def test_generation_sends_one_call_per_sample_with_effort_high_and_the_eos_as_stop_sequences(self):
         client = Recorder("```sym\nClip a:\n    Note/60\n```")
@@ -74,7 +74,7 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(len(client.sent), 3)
         self.assertEqual(client.sent[0], {
             "model": "claude-sonnet-5-5", "max_tokens": 32000, "system": "the system",
-            "output_config": {"effort": "high"}, "stop_sequences": ["// sep", "<eom>"],
+            "thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}, "stop_sequences": ["// sep", "<eom>"],
             "messages": [{"role": "user", "content": "prompt"}]})
         self.assertEqual(client.sent[1], client.sent[0])
 
@@ -184,7 +184,8 @@ class LoopOnFakeProxyTest(unittest.TestCase):
         self.assertEqual(models.count("claude-fable-5-1"), 2)
         self.assertEqual(models.count("claude-sonnet-5-5"), 4 * 2 + 2 * 6)
         sent = [json.loads(line) for line in self.requests.read_text().splitlines()]
-        autoprompts = [params["model"] for params in sent if params["max_tokens"] == 500]
+        autoprompts = [params["model"] for params in sent if params["model"] in ("claude-opus-5-5", "claude-fable-5-1")
+                       and "format" not in params.get("output_config", {})]
         self.assertEqual(sorted(autoprompts), ["claude-fable-5-1"] * 2 + ["claude-opus-5-5"] * 2)
         generations = [params for params in sent if params["model"] == "claude-sonnet-5-5"]
         self.assertEqual(len(generations), 4 * 2 + 2 * 6)

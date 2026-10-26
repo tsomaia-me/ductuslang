@@ -10,8 +10,10 @@ from Fuzz4All.util.util import simple_parse
 
 RETRY_SECONDS = 5
 RETRIED_STATUSES = {429, 500, 502, 503, 504, 529}
-THINKING_OFF = {"claude-opus-5-5": {"type": "disabled"}, "claude-fable-5-1": {"type": "disabled"}}
+THINKING = {"type": "adaptive"}
 GENERATION_EFFORT = "high"
+REQUIREMENTS_EFFORT = "high"
+REQUIREMENTS_MAX_TOKENS = 32000
 
 
 class ProxyRefused(Exception):
@@ -39,12 +41,6 @@ class ProxyClient:
             time.sleep(RETRY_SECONDS)
 
 
-def with_thinking_off(params):
-    if params["model"] in THINKING_OFF:
-        return {**params, "thinking": THINKING_OFF[params["model"]]}
-    return params
-
-
 def text_of(message):
     return "".join(block.get("text", "") for block in message["content"] if block["type"] == "text")
 
@@ -52,10 +48,11 @@ def text_of(message):
 def request_engine(client, models, config):
     system = "\n".join(m["content"] for m in config["messages"] if m["role"] == "system")
     messages = [m for m in config["messages"] if m["role"] != "system"]
-    params = {"model": next(models), "max_tokens": config["max_tokens"], "messages": messages}
+    params = {"model": next(models), "max_tokens": max(config["max_tokens"], REQUIREMENTS_MAX_TOKENS),
+              "thinking": THINKING, "output_config": {"effort": REQUIREMENTS_EFFORT}, "messages": messages}
     if system:
         params["system"] = system
-    reply = client.create(with_thinking_off(params))
+    reply = client.create(params)
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text_of(reply)))])
 
 
@@ -70,7 +67,7 @@ class ProxyModel:
     def complete(self, prompt):
         reply = self.client.create({
             "model": self.model, "max_tokens": self.max_tokens, "system": self.system,
-            "output_config": {"effort": GENERATION_EFFORT},
+            "thinking": THINKING, "output_config": {"effort": GENERATION_EFFORT},
             "stop_sequences": self.stop_sequences, "messages": [{"role": "user", "content": prompt}]})
         content = text_of(reply)
         return simple_parse(content) or content
