@@ -71,6 +71,35 @@ fn a_state_bounded_by_a_slice_finds_its_capacity_in_work_that_does_not_depend_on
     assert!(found.windows(2).all(|pair| pair[0] == pair[1]), "{found:?}");
 }
 
+fn ring_rounds(states: u32) -> u64 {
+    let mut text = String::from("input note = 60\n");
+    for state in 0..states {
+        let previous = (state + states - 1) % states;
+        text.push_str(&format!(
+            "state s{state} = (s{previous}{{1, []}} + [note])[^8..]\n"
+        ));
+    }
+    text.push_str("Clip c:\n    Note/(s0[0])\n");
+    let (diagnostics, (capacities, rounds)) = analyzed(&vocabulary(), &text, |engine| {
+        let capacities: Vec<Option<u32>> = (0..states)
+            .map(|state| state_capacity(engine, state))
+            .collect();
+        (capacities, engine.memo.capacity_rounds)
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert!(
+        capacities.iter().all(|capacity| *capacity == Some(8)),
+        "{capacities:?}"
+    );
+    rounds
+}
+
+#[test]
+fn a_ring_of_states_takes_its_capacities_in_work_linear_in_it() {
+    let (small, large) = (ring_rounds(250), ring_rounds(1_000));
+    assert!(large <= 4 * small, "{small} {large}");
+}
+
 #[test]
 fn states_whose_history_reads_reach_one_another_take_their_least_capacities_together() {
     let text = "input note = 60\nstate p = (q{1, []} + [note])[^3..]\nstate q = p{1, []} + [1]\nClip c:\n    Note/(p[0] + q[0])\n";

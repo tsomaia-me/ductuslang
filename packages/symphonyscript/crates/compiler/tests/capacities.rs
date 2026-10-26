@@ -602,3 +602,23 @@ fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity() {
         assert_ordered_capacity(&cells, value, capacity);
     }
 }
+
+#[test]
+fn a_group_of_states_takes_its_least_capacities_together() {
+    let pair = [
+        NOTE,
+        "state p = (q{1, []} + [note])[^5..]\n",
+        "state q = (p{1, []} + [note, note])[^7..]\n",
+    ];
+    assert_ordered_capacity(&pair, "p", 5);
+    assert_ordered_capacity(&pair, "q", 7);
+    let ring = [
+        NOTE,
+        "state s0 = (s2{1, []} + [note])[^8..]\n",
+        "state s1 = (s0{1, []} + [note])[^8..]\n",
+        "state s2 = (s1{1, []} + [note])[^8..]\n",
+    ];
+    for state in ["s0", "s1", "s2"] {
+        assert_ordered_capacity(&ring, state, 8);
+    }
+}

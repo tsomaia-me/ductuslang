@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use symphonyscript_core::{Builtin, NativeType};
 
 use crate::diagnostics::Code;
@@ -16,8 +18,6 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::resolve::LayoutFound;
 use crate::semantics::collection::strongly_connected;
 use crate::semantics::ir::StateId;
-
-type Jump = Result<Vec<i128>, Vec<bool>>;
 
 const LIMIT: i128 = 1 << 31;
 
@@ -72,6 +72,31 @@ fn fixed_slice(lower: BoundForm, upper: BoundForm, base: &Extent) -> Option<i128
     let start = position(lower, 0)?;
     let end = position(upper, *length)?;
     Some(end.max(start) - start)
+}
+
+struct Streak {
+    period: usize,
+    direction: Vec<i128>,
+    phases: usize,
+    run: Option<Ratio>,
+}
+
+fn repeating(history: &VecDeque<Vec<i128>>, longest: usize) -> Option<(usize, Vec<i128>)> {
+    let newest = history.len().checked_sub(1)?;
+    (1..=longest).find_map(|period| {
+        let middle = history.get(newest.checked_sub(period)?)?;
+        let oldest = history.get(newest.checked_sub(2 * period)?)?;
+        let last = history.get(newest)?;
+        let direction: Vec<i128> = last.iter().zip(middle).map(|(a, b)| a - b).collect();
+        let repeats = middle
+            .iter()
+            .zip(oldest)
+            .map(|(a, b)| a - b)
+            .eq(direction.iter().copied());
+        let growing =
+            direction.iter().all(|slope| *slope >= 0) && direction.iter().any(|slope| *slope > 0);
+        (repeats && growing).then_some((period, direction))
+    })
 }
 
 enum Solved {
@@ -175,8 +200,14 @@ impl Engine<'_> {
             .map(|(_, binding)| self.binding(*binding).map(|record| record.init))
             .collect::<Result<_, _>>()?;
         let members: Vec<BindingId> = group.iter().map(|(_, binding)| *binding).collect();
-        let mut current = vec![0i128; members.len()];
+        let longest = members.len() + 1;
+        let mut history: VecDeque<Vec<i128>> = VecDeque::from([vec![0i128; members.len()]]);
+        let mut streak: Option<Streak> = None;
         for _ in 0..STEPS {
+            let current = history
+                .back()
+                .cloned()
+                .ok_or(Internal::missed("capacity"))?;
             let next = self.capacity_step(&members, &inits, &current)?;
             if next.iter().any(|value| *value >= LIMIT) {
                 return Ok(Solved::Unbounded(
@@ -186,11 +217,52 @@ impl Engine<'_> {
             if next == current {
                 return Ok(Solved::Capacities(current));
             }
-            match self.accelerated(&members, &inits, &current)? {
-                Some(Ok(jump)) => current = jump,
-                Some(Err(growing)) => return Ok(Solved::Unbounded(growing)),
-                None => current = next,
+            history.push_back(next.clone());
+            if history.len() > 2 * longest + 1 {
+                history.pop_front();
             }
+            let Some((period, direction)) = repeating(&history, longest) else {
+                streak = None;
+                continue;
+            };
+            let run = self.phase_run(&members, &inits, (&current, &next), &direction)?;
+            let found = match streak.take() {
+                Some(mut found) if found.period == period && found.direction == direction => {
+                    found.phases += 1;
+                    found.run = match (found.run, run) {
+                        (Some(left), Some(right)) => Some(left.min(right)),
+                        (left, right) => left.or(right),
+                    };
+                    found
+                }
+                Some(_) | None => Streak {
+                    period,
+                    direction,
+                    phases: 1,
+                    run,
+                },
+            };
+            if found.phases >= found.period {
+                match found.run {
+                    None => {
+                        return Ok(Solved::Unbounded(
+                            found.direction.iter().map(|slope| *slope > 0).collect(),
+                        ));
+                    }
+                    Some(run) if run.floor() >= 2 => {
+                        let jumps = run.floor();
+                        let jumped = next
+                            .iter()
+                            .zip(&found.direction)
+                            .map(|(start, slope)| start.saturating_add(slope.saturating_mul(jumps)))
+                            .collect();
+                        history = VecDeque::from([jumped]);
+                        continue;
+                    }
+                    Some(_) => continue,
+                }
+            }
+            streak = Some(found);
         }
         Ok(Solved::Unbounded(vec![true; members.len()]))
     }
@@ -212,63 +284,28 @@ impl Engine<'_> {
             .collect()
     }
 
-    fn accelerated(
+    fn phase_run(
         &mut self,
         members: &[BindingId],
         inits: &[NodeId],
-        current: &[i128],
-    ) -> Result<Option<Jump>, Internal> {
-        let mut reached = current.to_vec();
-        for rounds in 1..=members.len() + 1 {
-            reached = self.capacity_step(members, inits, &reached)?;
-            let direction: Vec<i128> = reached
-                .iter()
-                .zip(current)
-                .map(|(after, before)| after - before)
-                .collect();
-            if direction.iter().any(|value| *value < 0) || direction.iter().all(|value| *value == 0)
-            {
-                return Ok(None);
-            }
-            let mut values: Vec<Piecewise> = current
-                .iter()
-                .zip(&direction)
-                .map(|(start, slope)| Piecewise::affine(*start, *slope))
-                .collect();
-            for _ in 0..rounds {
-                let env: Env = members
-                    .iter()
-                    .copied()
-                    .zip(values.iter().cloned())
-                    .collect();
-                values = inits
-                    .iter()
-                    .map(|init| self.capacity_with(*init, &env))
-                    .collect::<Result<_, _>>()?;
-            }
-            let mut run: Option<Ratio> = None;
-            for ((function, start), slope) in values.iter().zip(current).zip(&direction) {
-                let shifted = function.add(&Piecewise::affine(start + slope, *slope).neg());
-                if let Some(length) = shifted.zero_run() {
-                    run = Some(run.map_or(length, |shortest: Ratio| shortest.min(length)));
-                }
-            }
-            let Some(run) = run else {
-                return Ok(Some(Err(direction
-                    .iter()
-                    .map(|value| *value > 0)
-                    .collect())));
-            };
-            let jumps = run.floor();
-            if jumps >= 2 {
-                return Ok(Some(Ok(current
-                    .iter()
-                    .zip(&direction)
-                    .map(|(start, slope)| start.saturating_add(slope.saturating_mul(jumps)))
-                    .collect())));
+        (current, next): (&[i128], &[i128]),
+        direction: &[i128],
+    ) -> Result<Option<Ratio>, Internal> {
+        let env: Env = members
+            .iter()
+            .zip(current)
+            .zip(direction)
+            .map(|((binding, start), slope)| (*binding, Piecewise::affine(*start, *slope)))
+            .collect();
+        let mut run: Option<Ratio> = None;
+        for ((init, after), slope) in inits.iter().zip(next).zip(direction) {
+            let function = self.capacity_with(*init, &env)?;
+            let shifted = function.add(&Piecewise::affine(*after, *slope).neg());
+            if let Some(length) = shifted.zero_run() {
+                run = Some(run.map_or(length, |shortest| shortest.min(length)));
             }
         }
-        Ok(None)
+        Ok(run)
     }
 
     pub(super) fn state_dependencies(&mut self, init: NodeId) -> Result<Vec<BindingId>, Internal> {
