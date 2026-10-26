@@ -3338,3 +3338,33 @@ fn bytes_of_a_single_value_is_an_error() {
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
 }
+
+#[test]
+fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
+    let call = "Clip c:\n    Note/(r(u8(3), 1))\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "fn r(x, n): if n < 1 then x - u8(5) else r(x, n - 1)\n",
+                call,
+            ],
+            &[(Code::ConstantOverflow, "x - u8(5)")],
+        ),
+        (
+            &["fn g(x): x - u8(5)\n", "Clip c:\n    Note/(g(u8(3)))\n"],
+            &[(Code::ConstantOverflow, "x - u8(5)")],
+        ),
+        (
+            &["fn r(x, n): if n < 1 then x + 300 else r(x, n - 1)\n", call],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                "fn r(x, n): if n < 1 then x + u8(1) else r(x, n - 1)\n",
+                call,
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

@@ -79,7 +79,7 @@ impl Engine<'_> {
                     self.error_at_node(Code::UnknownName, node, message)?;
                 }
             }
-            let selection = match (sig.reactive, selection) {
+            let selection = match (sig.reactive || sig.frame, selection) {
                 (false, Selection::Chosen) => {
                     roots.push((node, expected));
                     Selection::Evaluated
@@ -398,7 +398,7 @@ impl Engine<'_> {
 
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
         let sig = self.known_sig(node)?;
-        if sig.reactive || sig.is_error() {
+        if sig.reactive || sig.frame || sig.is_error() {
             return Ok(None);
         }
         Ok(Some(self.demand_cval(node, ty)?))

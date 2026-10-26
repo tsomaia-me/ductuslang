@@ -362,7 +362,8 @@ impl Engine<'_> {
         );
         let fits = match kind {
             Kind::Float => {
-                !not_numeric && !matches!(own, EvalTy::Exact | EvalTy::I32 | EvalTy::I64)
+                !not_numeric
+                    && !matches!(own, EvalTy::Exact | EvalTy::U8 | EvalTy::I32 | EvalTy::I64)
             }
             Kind::Int => !not_numeric,
             Kind::Bool => matches!(own, EvalTy::Bool | EvalTy::Default),
@@ -441,6 +442,8 @@ impl Engine<'_> {
                     }],
                     work: vec![(0, root, ty)],
                     open: [(call.function, 1)].into_iter().collect(),
+                    open_keys: [call.key.clone()].into_iter().collect(),
+                    too_deep: false,
                 }
             }
         };
@@ -448,6 +451,16 @@ impl Engine<'_> {
         self.active = Some(machine);
         loop {
             self.memo.evaluation_work += 1;
+            if self.machine_mut()?.too_deep {
+                let machine = self
+                    .active
+                    .take()
+                    .ok_or(Internal::missed("evaluation machine"))?;
+                for frame in machine.frames {
+                    self.memo.calls.insert(frame.key, CVal::Error);
+                }
+                return Ok(Some(CVal::Error));
+            }
             let &(frame, current, ty) = self
                 .machine_mut()?
                 .work
@@ -477,6 +490,7 @@ impl Engine<'_> {
                             record.function,
                         );
                         machine.frames.pop();
+                        machine.open_keys.remove(&key);
                         if let Some(open) = machine.open.get_mut(&function) {
                             *open = open.saturating_sub(1);
                         }
@@ -524,7 +538,8 @@ impl Engine<'_> {
             .frames
             .last()
             .map_or(0, |frame| frame.unbounded);
-        if !bounded && depth >= self.limits.nesting_depth {
+        let repeats = self.machine_mut()?.open_keys.contains(&call.key);
+        if !bounded && (repeats || depth >= self.limits.nesting_depth) {
             let mut names: Vec<String> = Vec::new();
             let functions: Vec<FnId> = self
                 .machine_mut()?
@@ -547,6 +562,7 @@ impl Engine<'_> {
                     names.join(" → ")
                 ),
             )?;
+            self.machine_mut()?.too_deep = true;
             return Ok(Some(CVal::Error));
         }
         let root = match some!(self.template(
@@ -569,6 +585,7 @@ impl Engine<'_> {
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
         *machine.open.entry(call.function).or_insert(0) += 1;
+        machine.open_keys.insert(call.key.clone());
         machine.frames.push(Frame {
             key: call.key,
             function: call.function,
@@ -700,10 +717,10 @@ fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -
             arg_sig(Kind::Int, Width::Flexible),
         ),
         CVal::Int(value) => {
-            let scalar = if ty == EvalTy::I32 {
-                symphonyscript_core::Scalar::I32
-            } else {
-                symphonyscript_core::Scalar::I64
+            let scalar = match ty {
+                EvalTy::U8 => symphonyscript_core::Scalar::U8,
+                EvalTy::I32 => symphonyscript_core::Scalar::I32,
+                _ => symphonyscript_core::Scalar::I64,
             };
             (
                 ArgKey::Int(*value, ty),

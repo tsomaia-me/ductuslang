@@ -4,6 +4,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
@@ -69,6 +70,12 @@ impl Engine<'_> {
                 }
                 if bare {
                     return Ok(None);
+                }
+                for node in &array.elements {
+                    let sig = self.demand_sig(*node)?;
+                    if sig.family.is_none() && !sig.is_error() {
+                        self.demand_cval(*node, own_type(&sig, EvalTy::Default))?;
+                    }
                 }
                 let group = self.value_group(expr, &val, scope)?;
                 let mut values = Vec::with_capacity(array.elements.len());

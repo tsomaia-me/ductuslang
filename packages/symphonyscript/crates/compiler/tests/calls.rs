@@ -156,3 +156,105 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
         .collect();
     assert_ne!(starts.first(), starts.last());
 }
+
+#[test]
+fn an_unbounded_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_recursion() {
+    let call = "Clip c:\n    Note/(lowest(0))\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "input held = [1, 2, 3]\n",
+                "fn lowest(i):\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\n",
+                call,
+            ],
+            &[(Code::ReactiveRecursion, "lowest(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..10] = []\n",
+                "fn lowest(i):\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
+                call,
+            ],
+            &[(Code::ReactiveRecursion, "lowest(0)")],
+        ),
+        (
+            &[
+                "input held = [1, 2, 3]\n",
+                "fn lowest(i)  10 else 127:\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\n",
+                call,
+            ],
+            &[(Code::FnSyntax, "10")],
+        ),
+        (
+            &[
+                "input held: i32[..10] = []\n",
+                "fn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
+                call,
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
+fn every_element_of_a_for_iterable_is_computed_read_or_not() {
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    for i in [[1, 2][5] + 1]:\n        Note\n"],
+            &[(Code::IndexOutOfRange, "5")],
+        ),
+        (
+            &["Clip c:\n    for i in [2 ** 200 + 1]:\n        Note\n"],
+            &[(Code::IntegerOverflow, "2 ** 200")],
+        ),
+        (
+            &[
+                "fn f(n): if n < 1 then 0 else f(n - 1) + 1\n",
+                "Clip c:\n    for i in [f(2000) + 1]:\n        Note\n",
+            ],
+            &[(Code::RecursionDepth, "f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(): f()\n",
+                "Clip c:\n    for i in [f() + 1]:\n        Note\n",
+            ],
+            &[(Code::RecursionDepth, "f()")],
+        ),
+        (
+            &[
+                "fn f(): f()\n",
+                "fn g(x): x + 1\n",
+                "Clip c:\n    for i in [g(f())]:\n        Note\n",
+            ],
+            &[(Code::RecursionDepth, "f()")],
+        ),
+        (
+            &[
+                "fn g(x): x + 1\n",
+                "Clip c:\n    for i in [1, 2]:\n        Note\n    for i in [g(3)]:\n        Note\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
+fn an_endless_recursion_draws_one_recursion_depth() {
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - -1)\n",
+                "Clip c:\n    Note/(fib(6))\n",
+            ],
+            &[(Code::RecursionDepth, "fib(n - -1)")],
+        ),
+        (
+            &["fn g(n): g(n + 1)\n", "Clip c:\n    Note/(g(0))\n"],
+            &[(Code::RecursionDepth, "g(n + 1)")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

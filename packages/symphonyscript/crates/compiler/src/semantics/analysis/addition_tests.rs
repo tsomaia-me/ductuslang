@@ -162,6 +162,25 @@ fn a_state_settled_as_a_fixed_array_expands_a_loop_over_its_length() {
     }
 }
 
+#[test]
+fn a_for_over_compile_time_values_expands_once_per_element() {
+    let text = "fn g(x): x + 1\nClip c:\n    for i in [1, 2]:\n        Note\n    for i in [g(3)]:\n        Note\n";
+    let (diagnostics, notes) = analyzed(&vocabulary(), text, |engine| {
+        engine
+            .instances
+            .iter()
+            .filter(|instance| {
+                engine
+                    .vocabulary
+                    .node_kind(instance.kind)
+                    .is_some_and(|decl| decl.name == "Note")
+            })
+            .count()
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(notes, 3);
+}
+
 fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
     let instance = engine.instances.last()?;
     let decl = engine.vocabulary.node_kind(instance.kind)?;
@@ -238,6 +257,41 @@ fn a_bounded_call_yields_its_fallback_nested_inside_its_bound() {
         assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
         assert_eq!(value, Some(CVal::Int(expected)), "{functions}");
     }
+}
+
+#[test]
+fn a_fixed_u8_argument_computes_in_u8_through_a_recursive_body() {
+    let text =
+        "fn r(x, n): if n < 1 then x + u8(1) else r(x, n - 1)\nClip c:\n    Note/(r(u8(3), 1))\n";
+    let (diagnostics, value) = analyzed(&vocabulary(), text, |engine| {
+        attr_value(engine, "pitch", EvalTy::I32)
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(4)));
+}
+
+fn deepening_work(nesting_depth: u64) -> u64 {
+    let limits = Limits {
+        nesting_depth,
+        ..Limits::default()
+    };
+    let text =
+        "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - -1)\nClip c:\n    Note/(fib(6))\n";
+    let (diagnostics, work) = analyzed_within(&vocabulary(), limits, text, |engine| {
+        engine.memo.evaluation_work
+    });
+    let codes: Vec<_> = errors(&diagnostics)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(codes, vec![crate::diagnostics::Code::RecursionDepth]);
+    work
+}
+
+#[test]
+fn reaching_the_nesting_limit_costs_work_linear_in_the_limit() {
+    let (small, large) = (deepening_work(256), deepening_work(2_048));
+    assert!(large <= 10 * small, "{small} {large}");
 }
 
 fn counted(bound: u64, limits: Limits) -> (Vec<Diagnostic>, Option<CVal>, u64) {

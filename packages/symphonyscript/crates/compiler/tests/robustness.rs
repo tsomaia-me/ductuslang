@@ -92,3 +92,33 @@ fn the_absences_that_are_normal_draw_no_internal_error() {
         );
     }
 }
+
+#[test]
+fn no_mutant_of_a_bounded_function_reading_a_cell_through_a_let_draws_an_internal_error() {
+    let vocabulary = vocabulary();
+    let compiler = Compiler::new(&vocabulary).expect("the example vocabulary compiles");
+    let mut failures = Vec::new();
+    for text in [
+        "input held: i32[..10] = []\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+        "input held = [1, 2, 3]\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+    ] {
+        for mutant in mutants(text, &tokens(text, &vocabulary)) {
+            let sources = [Source {
+                path: "mutant.sym".into(),
+                text: mutant.clone(),
+            }];
+            match catch_unwind(AssertUnwindSafe(|| compiler.check(&sources))) {
+                Ok(diagnostics) => {
+                    if diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.code == Code::InternalError)
+                    {
+                        failures.push(format!("internal-error: {mutant:?}"));
+                    }
+                }
+                Err(_) => failures.push(format!("panic: {mutant:?}")),
+            }
+        }
+    }
+    assert_eq!(failures, Vec::<String>::new());
+}
