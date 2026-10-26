@@ -684,7 +684,8 @@ impl<'a> Engine<'a> {
                 });
             }
         }
-        let mut reported: FastSet<Merged> = FastSet::default();
+        let mut merged: FastMap<Merged, usize> = FastMap::default();
+        let mut chosen: Vec<Chosen> = Vec::new();
         for deferred in std::mem::take(&mut self.deferred) {
             if deferred
                 .unless_untyped
@@ -697,6 +698,7 @@ impl<'a> Engine<'a> {
             {
                 continue;
             }
+            let depth = deferred.chain.depth();
             for path in deferred.chain.outermost_paths() {
                 let key = Merged {
                     code: deferred.code,
@@ -705,19 +707,30 @@ impl<'a> Engine<'a> {
                     message: deferred.message.clone(),
                     outermost: path.last().map(|(loc, _)| *loc),
                 };
-                if !reported.insert(key) {
-                    continue;
-                }
                 let mut related = deferred.before.clone();
                 related.extend(path);
-                self.report.error_with(
-                    self.hir,
-                    deferred.code,
-                    deferred.loc,
-                    &related,
-                    deferred.message.clone(),
-                );
+                match merged.get(&key).and_then(|index| chosen.get_mut(*index)) {
+                    Some(earlier) if earlier.4 < depth => {
+                        earlier.2 = related;
+                        earlier.4 = depth;
+                    }
+                    Some(_) => {}
+                    None => {
+                        merged.insert(key, chosen.len());
+                        chosen.push((
+                            deferred.code,
+                            deferred.loc,
+                            related,
+                            deferred.message.clone(),
+                            depth,
+                        ));
+                    }
+                }
             }
+        }
+        for (code, loc, related, message, _) in chosen {
+            self.report
+                .error_with(self.hir, code, loc, &related, message);
         }
         if let Some(stop) = stop {
             self.report
@@ -968,6 +981,8 @@ impl<'a> Engine<'a> {
         }
     }
 }
+
+type Chosen = (Code, Loc, Vec<(Loc, String)>, String, usize);
 
 #[derive(PartialEq, Eq, Hash)]
 struct Merged {

@@ -1,8 +1,10 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::rc::Rc;
 
 use crate::semantics::ir::Loc;
+use crate::semantics::reporting::grouped;
 
 #[derive(Clone, Default)]
 pub(crate) struct Chain(Option<Rc<Link>>);
@@ -40,14 +42,24 @@ impl Chain {
         locs
     }
 
-    pub fn labelled(&self) -> Vec<(Loc, String)> {
-        let mut locs = Vec::new();
+    pub fn depth(&self) -> usize {
+        let mut depth = 0;
         let mut current = self.0.as_ref();
         while let Some(link) = current {
-            locs.push((link.loc, link.label.to_string()));
+            depth += 1;
             current = link.rest.0.as_ref();
         }
-        locs
+        depth
+    }
+
+    pub fn labelled(&self) -> Vec<(Loc, String)> {
+        let mut links = Vec::new();
+        let mut current = self.0.as_ref();
+        while let Some(link) = current {
+            links.push((link.loc, link.label));
+            current = link.rest.0.as_ref();
+        }
+        repeats_named_once(&links)
     }
 
     pub fn outermost_paths(&self) -> Vec<Vec<(Loc, String)>> {
@@ -55,23 +67,44 @@ impl Chain {
         let mut current = self.0.as_ref();
         while let Some(link) = current {
             match link.rest.0.as_ref() {
-                Some(_) => inner.push((link.loc, link.label.to_string())),
+                Some(_) => inner.push((link.loc, link.label)),
                 None => {
                     let also = link.also.borrow();
                     return std::iter::once(&link.loc)
                         .chain(also.iter())
                         .map(|outermost| {
                             let mut path = inner.clone();
-                            path.push((*outermost, link.label.to_string()));
-                            path
+                            path.push((*outermost, link.label));
+                            repeats_named_once(&path)
                         })
                         .collect();
                 }
             }
             current = link.rest.0.as_ref();
         }
-        vec![inner]
+        vec![repeats_named_once(&inner)]
     }
+}
+
+fn repeats_named_once(links: &[(Loc, &'static str)]) -> Vec<(Loc, String)> {
+    let mut levels: BTreeMap<Loc, u64> = BTreeMap::new();
+    for (loc, _) in links {
+        *levels.entry(*loc).or_insert(0) += 1;
+    }
+    let mut named = Vec::new();
+    for (loc, label) in links {
+        let Some(count) = levels.remove(loc) else {
+            continue;
+        };
+        named.push(match count {
+            1 => (*loc, (*label).to_string()),
+            _ => (
+                *loc,
+                format!("{label}, repeated over {} levels", grouped(count)),
+            ),
+        });
+    }
+    named
 }
 
 impl PartialEq for Chain {

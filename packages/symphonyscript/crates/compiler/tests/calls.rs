@@ -1,6 +1,8 @@
 mod support;
 
-use symphonyscript::{Code, Diagnostic};
+use symphonyscript::{Code, Compiler, Diagnostic};
+use symphonyscript_core::Limits;
+use symphonyscript_fixtures::vocabulary;
 
 fn spans(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, String, Vec<String>)> {
     let piece = |range: &std::ops::Range<u32>| {
@@ -155,6 +157,105 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
         })
         .collect();
     assert_ne!(starts.first(), starts.last());
+}
+
+type Labels<'a> = &'a [(&'a str, &'a str)];
+
+fn labelled(text: &str, diagnostic: &Diagnostic) -> Vec<(String, String)> {
+    diagnostic
+        .related
+        .iter()
+        .map(|related| {
+            let range = &related.span.range;
+            (
+                text.get(range.start as usize..range.end as usize)
+                    .unwrap_or_default()
+                    .to_string(),
+                related.label.clone(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
+    let input = "input n = 1\n";
+    let deep = "fn f(x) bounded 2000000 else 0: if x > 3 then x else f(x + 1)\n";
+    let use_f = "Clip c:\n    Note/(f(n))\n";
+    let limited = |compiler: &Compiler, text: &str, levels: &str| {
+        let found = support::errors(compiler.check(&[support::source(text)]));
+        let [diagnostic] = found.as_slice() else {
+            panic!("{text}{found:?}");
+        };
+        assert_eq!(diagnostic.code, Code::InlineLimit, "{text}");
+        assert_eq!(
+            labelled(text, diagnostic),
+            vec![
+                (
+                    "f(x + 1)".to_string(),
+                    format!("in this call, repeated over {levels} levels")
+                ),
+                ("f(n)".to_string(), "in this call".to_string()),
+            ],
+            "{text}"
+        );
+    };
+    let defaults = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    limited(&defaults, &format!("{input}{deep}{use_f}"), "999,999");
+    let thousand = Compiler::with_limits(
+        &vocabulary(),
+        Limits {
+            inlined_calls: 1000,
+            ..Limits::default()
+        },
+    )
+    .expect("the vocabulary compiles");
+    for order in support::permutations(&[input, deep, use_f]) {
+        limited(&thousand, &order.concat(), "999");
+    }
+    let every_level = "fn g(x) bounded 5 else 0: x div 0.5 + g(x + 1)\n";
+    let wrapped = "fn k(x): g(x) + 1\n";
+    let rows: &[(&[&str], Labels)] = &[
+        (
+            &[input, every_level, "Clip c:\n    Note/(g(n))\n"],
+            &[
+                ("g(x + 1)", "in this call, repeated over 4 levels"),
+                ("g(n)", "in this call"),
+            ],
+        ),
+        (
+            &[input, every_level, wrapped, "Clip c:\n    Note/(k(n))\n"],
+            &[
+                ("g(x + 1)", "in this call, repeated over 4 levels"),
+                ("g(x)", "in this call"),
+                ("k(n)", "in this call"),
+            ],
+        ),
+        (
+            &[
+                input,
+                "fn h(x): x div 0.5\n",
+                "fn w(x): h(x) + 1\n",
+                "Clip c:\n    Note/(w(n))\n",
+            ],
+            &[("h(x)", "in this call"), ("w(n)", "in this call")],
+        ),
+    ];
+    for (items, expected) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::checked(&text);
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            assert_eq!(diagnostic.code, Code::OperandType, "{text}");
+            let expected: Vec<(String, String)> = expected
+                .iter()
+                .map(|(call, label)| (call.to_string(), label.to_string()))
+                .collect();
+            assert_eq!(labelled(&text, diagnostic), expected, "{text}");
+        }
+    }
 }
 
 #[test]
