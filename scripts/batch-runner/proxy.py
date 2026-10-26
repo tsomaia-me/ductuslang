@@ -24,7 +24,8 @@ ERROR_STATUS = {
     "api_error": 500,
     "overloaded_error": 529,
 }
-NOT_SUBMITTED = "the proxy submitted no batch for this call: the spend cap is passed or every key's credit is exhausted"
+NOT_SUBMITTED = "the proxy submitted no batch for this call: every key's credit is exhausted"
+HELD_BACK = "the proxy held this call back: its batch would pass the spend cap; retry once the operator raises it"
 
 
 def error_body(error_type, message):
@@ -112,7 +113,10 @@ class Proxy:
         results = {entry["custom_id"]: entry["result"] for entry in self.runner.read_results()
                    if entry["custom_id"] in wanted}
         for call in calls:
-            answer_with_result(call, results.get(call.custom_id))
+            if call.custom_id in self.runner.held:
+                call.answer(500, error_body("api_error", HELD_BACK))
+            else:
+                answer_with_result(call, results.get(call.custom_id))
 
     def work(self):
         while (calls := self.take()) is not None:

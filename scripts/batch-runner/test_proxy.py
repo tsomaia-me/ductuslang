@@ -89,11 +89,11 @@ class ProxyTest(unittest.TestCase):
                                            "cache_control": {"type": "ephemeral", "ttl": "1h"}}])
         self.assertNotIn("stream", sent)
 
-    def test_calls_after_the_spend_cap_get_a_billing_error(self):
-        self.start(batch_requests=1, max_usd=0.0)
+    def test_calls_held_back_by_the_spend_cap_get_a_500(self):
+        self.start(batch_requests=1, max_usd=6e-6)
         self.assertEqual(post(self.started.url, params("first"))[0], 200)
         status, body = post(self.started.url, params("second"))
-        self.assertEqual((status, body["error"]["type"]), (402, "billing_error"))
+        self.assertEqual((status, body["error"]["type"]), (500, "api_error"))
         self.assertEqual(len(self.started.batches.created), 1)
 
     def test_a_model_without_a_price_is_refused_under_a_spend_cap(self):
