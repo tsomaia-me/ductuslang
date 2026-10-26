@@ -81,11 +81,11 @@ impl Engine<'_> {
                 }
             },
             Op::History { fallback, .. } => match (fallback, extra) {
+                (_, Extra::History(sig)) => sig,
                 (Some(_), _) => {
                     let fallback = at(0)?;
                     Sig::of(fallback.kind, Width::Adaptive, true, fallback.family)
                 }
-                (None, Extra::History(sig)) => sig,
                 (None, Extra::None | Extra::Read(_) | Extra::ToRead { .. }) => {
                     return Err(Internal::missed("history signature"));
                 }

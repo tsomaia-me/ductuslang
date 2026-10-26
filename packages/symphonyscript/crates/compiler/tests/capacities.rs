@@ -174,3 +174,66 @@ fn a_history_read_of_an_input_takes_its_initial_value_as_its_fallback() {
         vec![]
     );
 }
+
+type OrderedRow<'a> = (&'a [&'a str], &'a [(Code, &'a str, usize)]);
+
+fn in_every_order(items: &[&str]) -> Vec<String> {
+    support::permutations(items)
+        .into_iter()
+        .map(|order| order.concat())
+        .collect()
+}
+
+#[test]
+fn a_history_reads_fallback_takes_the_cells_type() {
+    let rows: &[OrderedRow] = &[
+        (
+            &[
+                "input w = Wave::Saw\n",
+                "state s = w{1, Sine}\n",
+                "Clip c:\n    Note when s is Saw\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input w = Wave::Saw\n",
+                "let k = w\n",
+                "state s2 = k{1, Sine}\n",
+                "Clip c:\n    Note when s2 is Saw\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "state s = x{1, 0.5}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::TypeMismatch, "0.5", 0)],
+        ),
+        (
+            &[
+                "input w = Wave::Saw\n",
+                "state s = w{1}\n",
+                "Osc o | wave=s\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "input y = 3000000000\n",
+                "let l = y + 0\n",
+                "state s = x{1, l}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[],
+        ),
+    ];
+    for (items, expected) in rows {
+        for text in in_every_order(items) {
+            support::expect_codes(&text, expected);
+        }
+    }
+}

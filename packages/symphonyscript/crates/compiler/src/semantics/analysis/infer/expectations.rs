@@ -1,6 +1,7 @@
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
 use crate::semantics::Internal;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_float::is_float;
@@ -36,6 +37,19 @@ impl Engine<'_> {
             return Ok(Some(Scalar::Enum(id)));
         }
         self.read_as_float(operand, other)
+    }
+
+    fn history_cell_type(&mut self, node: NodeId) -> Result<Option<Scalar>, Internal> {
+        if let Some(own) = self.history_type(node)? {
+            return Ok(Some(own));
+        }
+        let Some(binding) = self.history_bindings(node)?.first().copied() else {
+            return Ok(None);
+        };
+        if matches!(self.binding(binding)?.kind, BindingKind::Input { .. }) {
+            return self.input_type(binding);
+        }
+        Ok(None)
     }
 
     pub(super) fn expect(
@@ -179,7 +193,13 @@ impl Engine<'_> {
                     );
                 }
                 Op::History { fallback, .. } => {
-                    if !self.memo.own_history.contains(&node) {
+                    let own = self.memo.own_history.contains(&node);
+                    let cell = if own {
+                        expected
+                    } else {
+                        self.history_cell_type(node)?
+                    };
+                    if !own {
                         for binding in self.history_bindings(node)? {
                             self.typing.reads.entry(binding).or_default().push(loc);
                             if let Some(expected) = expected {
@@ -194,7 +214,7 @@ impl Engine<'_> {
                             }
                         }
                     }
-                    stack.extend(fallback.map(|fallback| (fallback, expected)));
+                    stack.extend(fallback.map(|fallback| (fallback, cell)));
                 }
                 Op::Native { native, args } => {
                     let params = self.native_params(native)?;

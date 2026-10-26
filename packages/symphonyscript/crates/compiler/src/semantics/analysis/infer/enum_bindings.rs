@@ -475,7 +475,19 @@ impl Engine<'_> {
     fn value_parts_of(&self, node: NodeId, op: &Op) -> Vec<NodeId> {
         let mut parts = Self::value_parts(op);
         parts.extend(self.memo.groups.get(&node).copied());
+        if let Op::History {
+            fallback: Some(fallback),
+            ..
+        } = op
+            && self.memo.own_history.contains(&node)
+        {
+            parts.push(*fallback);
+        }
         parts
+    }
+
+    fn other_history(&self, node: NodeId, op: &Op) -> bool {
+        matches!(op, Op::History { .. }) && !self.memo.own_history.contains(&node)
     }
 
     fn value_parts(op: &Op) -> Vec<NodeId> {
@@ -536,6 +548,15 @@ impl Engine<'_> {
                 reads.push(Member::Value(*group));
             }
             let op = &self.node(node)?.op;
+            if self.other_history(node, op) {
+                for binding in self.history_bindings(node)? {
+                    let read = Member::Cell(binding);
+                    if read != member && members.contains(&read) {
+                        reads.push(read);
+                    }
+                }
+                continue;
+            }
             let read = match op {
                 Op::Read(binding) => Some(Member::Cell(*binding)),
                 Op::Use(inner) => {
@@ -572,6 +593,7 @@ impl Engine<'_> {
             }
             let op = self.node(node)?.op.clone();
             let leaf = match &op {
+                _ if self.other_history(node, &op) => Some(self.history_type(node)?),
                 Op::Read(binding) => Some(self.typing.own.get(binding).copied()),
                 Op::Use(inner) => {
                     let target = self.through_uses(*inner)?;

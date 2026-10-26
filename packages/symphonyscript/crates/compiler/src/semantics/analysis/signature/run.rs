@@ -43,7 +43,6 @@ impl Engine<'_> {
             Op::ToRead { wire, attrs, .. } => self.destination_read_reactive(*wire, attrs, need),
             Op::History {
                 cell: crate::semantics::analysis::history_cell::HistoryCell::Input(input),
-                fallback: None,
                 ..
             } => match self.bound(Query::Input(*input), need) {
                 Some(bound) => match self.first_binding(&bound) {
