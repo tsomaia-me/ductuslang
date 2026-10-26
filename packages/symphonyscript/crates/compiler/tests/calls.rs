@@ -258,3 +258,79 @@ fn an_endless_recursion_draws_one_recursion_depth() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_bounded_functions_fallback_is_type_checked_against_its_body_at_every_call() {
+    let depth = |fallback: &str| {
+        format!(
+            "fn depth(k) bounded 3 else {fallback}:\n    if k < 1 then 0 else 1 + depth(k - 1)\n"
+        )
+    };
+    let pair = |fallback: &str| {
+        format!(
+            "fn pair(k) bounded 3 else {fallback}:\n    if k < 1 then [k, k] else pair(k - 1)\n"
+        )
+    };
+    let lowest = |fallback: &str| {
+        format!(
+            "fn lowest(i) bounded 10 else {fallback}:\n    if i >= len(held) then 127 else min(held[i], lowest(i + 1))\n"
+        )
+    };
+    let (list, boolean, variant) = (depth("[0, 1]"), depth("true"), depth("Wave::Saw"));
+    let (parameters, zero, parameter) = (depth("[k, k]"), depth("0"), depth("k"));
+    let (rows_fallback, longer) = (pair("[[0, 0]]"), pair("[0, 0, 0]"));
+    let (held_list, held_scalar) = (lowest("[127]"), lowest("127"));
+    let n = "input n = 2\n";
+    let held = "input held: i32[..10] = []\n";
+    let shallow = "Clip c:\n    Note/(60 + depth(2))\n";
+    let deep = "Clip c:\n    Note/(60 + depth(5))\n";
+    let reactive = "Clip c:\n    Note/(60 + depth(n))\n";
+    let lowest_call = "Clip c:\n    Note/(lowest(0))\n";
+    let pair_call = "Clip c:\n    Note/(pair(1)[0])\n";
+    let rows: &[support::Row] = &[
+        (&[&list, shallow], &[(Code::TypeMismatch, "[0, 1]")]),
+        (
+            &[
+                "let v = if true then 0 else [0, 1]\n",
+                "Clip c:\n    Note/(v)\n",
+            ],
+            &[(Code::TypeMismatch, "if true then 0 else [0, 1]")],
+        ),
+        (&[&list, deep], &[(Code::TypeMismatch, "[0, 1]")]),
+        (&[&list, n, reactive], &[(Code::TypeMismatch, "[0, 1]")]),
+        (&[&boolean, n, reactive], &[(Code::TypeMismatch, "true")]),
+        (&[&boolean, shallow], &[(Code::TypeMismatch, "true")]),
+        (
+            &[&variant, n, reactive],
+            &[(Code::TypeMismatch, "Wave::Saw")],
+        ),
+        (&[&variant, shallow], &[(Code::TypeMismatch, "Wave::Saw")]),
+        (&[&parameters, shallow], &[(Code::TypeMismatch, "[k, k]")]),
+        (
+            &[&parameters, n, reactive],
+            &[(Code::TypeMismatch, "[k, k]")],
+        ),
+        (
+            &[&rows_fallback, pair_call],
+            &[(Code::TypeMismatch, "[[0, 0]]")],
+        ),
+        (
+            &[held, &held_list, lowest_call],
+            &[(Code::TypeMismatch, "[127]")],
+        ),
+        (&[&zero, shallow], &[]),
+        (&[&zero, n, reactive], &[]),
+        (&[&parameter, n, reactive], &[]),
+        (&[&longer, pair_call], &[]),
+        (&[held, &held_scalar, lowest_call], &[]),
+        (
+            &[
+                "fn r(n) bounded 3 else []:\n    if n < 1 then [[0, 0]] else r(n - 1) + [[n, n]]\n",
+                "input m = 2\n",
+                "Clip c:\n    Note/(len(r(2)) + len(r(m)))\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

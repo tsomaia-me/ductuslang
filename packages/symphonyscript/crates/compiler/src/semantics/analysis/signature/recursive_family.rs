@@ -100,7 +100,11 @@ impl Engine<'_> {
                             scope: settled,
                         }
                     } else if sig.open || sig.family == family {
-                        RecFamily::Known(kind, family)
+                        if some!(self.fallback_agrees(function, scope, false, need)?) {
+                            RecFamily::Known(kind, family)
+                        } else {
+                            RecFamily::Failed
+                        }
                     } else {
                         self.error_at_node(
                             Code::MixedFamilies,
