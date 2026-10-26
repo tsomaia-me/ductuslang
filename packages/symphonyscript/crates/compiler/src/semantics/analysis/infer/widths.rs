@@ -4,6 +4,7 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
@@ -87,59 +88,97 @@ impl Engine<'_> {
     }
 
     fn natural(&mut self, root: BindingId) -> Result<Option<Scalar>, Internal> {
-        let mut stack = vec![root];
-        while let Some(&binding) = stack.last() {
-            if self.typing.natural.contains_key(&binding) {
-                stack.pop();
-                continue;
-            }
-            let record = self.binding(binding)?.clone();
-            let fixed = match record.kind {
-                BindingKind::Input { .. } => Some(self.input_type(binding)?),
-                BindingKind::Attr { .. } => Some(record.annotation),
-                BindingKind::Let | BindingKind::Param | BindingKind::State { .. } => {
-                    record.annotation.map(Some)
-                }
-            };
-            if let Some(fixed) = fixed {
-                let fixed = fixed.filter(|scalar| is_integer(*scalar));
-                self.typing.natural.insert(binding, fixed);
-                stack.pop();
-                continue;
-            }
-            let reads = self.reads_of(record.init)?;
-            let pending: Vec<BindingId> = reads
-                .iter()
-                .copied()
-                .filter(|read| !self.typing.natural.contains_key(read))
-                .collect();
-            if !pending.is_empty() {
-                stack.extend(pending);
-                continue;
-            }
-            let mut widest: Option<Scalar> = None;
-            let mut nodes = vec![record.init];
-            let mut seen = std::collections::HashSet::new();
-            while let Some(node) = nodes.pop() {
-                if !seen.insert(node) {
-                    continue;
-                }
-                self.memo.read_walk += 1;
-                let read_free = !self.reaches_read(node);
-                let contribution = match &self.node(node)?.op {
-                    _ if read_free => self.read_free_width(node)?,
-                    Op::Read(read) => self.natural_of(*read)?,
-                    _ => self.fixed_integer_width(node)?,
-                };
-                widest = wider(widest, contribution);
-                if !read_free && !matches!(self.node(node)?.op, Op::Read(_)) {
-                    nodes.extend(self.node(node)?.op.operands());
-                }
-            }
-            self.typing.natural.insert(binding, widest);
-            stack.pop();
+        if !self.typing.natural.contains_key(&root) {
+            self.settle_natural(root)?;
         }
         self.natural_of(root)
+    }
+
+    fn settle_natural(&mut self, root: BindingId) -> Result<(), Internal> {
+        let mut parts: FastMap<BindingId, (Option<Scalar>, Vec<BindingId>)> = FastMap::default();
+        let mut members = Vec::new();
+        let mut pending = vec![root];
+        while let Some(binding) = pending.pop() {
+            if self.typing.natural.contains_key(&binding) || parts.contains_key(&binding) {
+                continue;
+            }
+            let found = self.natural_parts(binding)?;
+            pending.extend(found.1.iter().copied());
+            parts.insert(binding, found);
+            members.push(binding);
+        }
+        let mut readers: FastMap<BindingId, Vec<BindingId>> = FastMap::default();
+        let mut current: FastMap<BindingId, Option<Scalar>> = FastMap::default();
+        for member in &members {
+            let (own, cells) = parts.get(member).ok_or(Internal::missed("natural width"))?;
+            current.insert(*member, *own);
+            for cell in cells {
+                readers.entry(*cell).or_default().push(*member);
+            }
+        }
+        let mut work = members.clone();
+        while let Some(member) = work.pop() {
+            let (own, cells) = parts
+                .get(&member)
+                .ok_or(Internal::missed("natural width"))?;
+            let mut widest = *own;
+            for cell in cells {
+                let width = match current.get(cell) {
+                    Some(width) => *width,
+                    None => self.natural_of(*cell)?,
+                };
+                widest = wider(widest, width);
+            }
+            if current.get(&member) != Some(&widest) {
+                current.insert(member, widest);
+                work.extend(readers.get(&member).into_iter().flatten().copied());
+            }
+        }
+        self.typing.natural.extend(current);
+        Ok(())
+    }
+
+    fn natural_parts(
+        &mut self,
+        binding: BindingId,
+    ) -> Result<(Option<Scalar>, Vec<BindingId>), Internal> {
+        let record = self.binding(binding)?.clone();
+        let fixed = match record.kind {
+            BindingKind::Input { .. } => Some(self.input_type(binding)?),
+            BindingKind::Attr { .. } => Some(record.annotation),
+            BindingKind::Let | BindingKind::Param | BindingKind::State { .. } => {
+                record.annotation.map(Some)
+            }
+        };
+        if let Some(fixed) = fixed {
+            return Ok((fixed.filter(|scalar| is_integer(*scalar)), Vec::new()));
+        }
+        self.mark_reaching_reads()?;
+        let mut widest: Option<Scalar> = None;
+        let mut cells = Vec::new();
+        let mut nodes = vec![record.init];
+        let mut seen = FastSet::default();
+        while let Some(node) = nodes.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            self.memo.read_walk += 1;
+            if !self.reaches_read(node) {
+                widest = wider(widest, self.read_free_width(node)?);
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Read(read) => cells.push(*read),
+                Op::History { .. } if !self.memo.own_history.contains(&node) => {
+                    cells.extend(self.history_bindings(node)?);
+                }
+                op => {
+                    nodes.extend(op.operands());
+                    widest = wider(widest, self.fixed_integer_width(node)?);
+                }
+            }
+        }
+        Ok((widest, cells))
     }
 
     fn fixed_integer_width(&self, node: NodeId) -> Result<Option<Scalar>, Internal> {

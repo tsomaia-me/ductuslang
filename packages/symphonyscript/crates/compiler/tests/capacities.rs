@@ -392,6 +392,94 @@ fn a_history_reads_fallback_takes_the_cells_type() {
 }
 
 #[test]
+fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
+    let wide = "Clip c:\n    Note when s > 3000000000\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "input x = 3000000000\n",
+                "state s = x{1, 0}\n",
+                "Clip c:\n    Note when s > 0\n",
+            ],
+            &[],
+        ),
+        (&["input x = 1\n", "state s = x{1, 0}\n", wide], &[]),
+        (
+            &[
+                "input x = 1\n",
+                "state total = total{1, 0} + x{1}\n",
+                "Clip c:\n    Note when total > 3000000000\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "state a = x{1, 0}\n",
+                "state b = a{1, 0}\n",
+                "Clip c:\n    Note when b > 3000000000\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "let l = x + 1\n",
+                "state s = l{1, 0}\n",
+                wide,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "state a = b{1, 0} + x{1}\n",
+                "state b = a{1, 0}\n",
+                "Clip c:\n    Note when b > 3000000000\n",
+            ],
+            &[],
+        ),
+        (&["state s = s{1, 0i64} + 1\n", wide], &[]),
+        (
+            &["state s = s{1, 0} + 1\n", wide],
+            &[(Code::DoesNotFit, "3000000000")],
+        ),
+        (
+            &["input x: i32 = 1\n", "state s = x{1, 0}\n", wide],
+            &[(Code::DoesNotFit, "3000000000")],
+        ),
+        (
+            &[
+                "input x: u8 = 1\n",
+                "state s = x{1, 0}\n",
+                "Clip c:\n    Note when s > 300\n",
+            ],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "state s = x{1, 0} + x\n",
+                "Clip c:\n    Note when s > 0\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input gate = false\n",
+                "input level = 0.0\n",
+                "input note = 60\n",
+                "state rising = gate and not gate{1}\n",
+                "state held = if rising then level else held{1, 0.0}\n",
+                "state recent = (recent{1, []} + [note])[^8..]\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn an_annotation_holds_only_an_initializer_of_its_rows() {
     let cells = [
         "input a: i32[..5] = []\n",

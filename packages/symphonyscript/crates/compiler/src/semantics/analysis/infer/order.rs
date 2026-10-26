@@ -33,7 +33,7 @@ impl Engine<'_> {
             .unwrap_or(true)
     }
 
-    fn mark_reaching_reads(&mut self) -> Result<(), Internal> {
+    pub(super) fn mark_reaching_reads(&mut self) -> Result<(), Internal> {
         let marked = self.memo.reaching_reads.len();
         let mut known: FastMap<NodeId, bool> = FastMap::default();
         for index in marked..self.nodes.len() {
@@ -44,7 +44,7 @@ impl Engine<'_> {
                     continue;
                 }
                 let op = &self.node(node)?.op;
-                if matches!(op, Op::Read(_)) {
+                if matches!(op, Op::Read(_) | Op::History { .. }) {
                     known.insert(node, true);
                     continue;
                 }
