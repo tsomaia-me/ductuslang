@@ -738,9 +738,33 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "6.3",
-        "A positional call may omit trailing parameters that have defaults",
+        "A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default.",
+        "missing-argument",
+        "fn f(a, b): a\nlet x = f(1)\nClip c:\n    Note/x\n",
+    ),
+    rule(
+        "6.3",
+        "A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default.",
+        "missing-argument",
+        "fn f(a, b): a\nlet x = f(a=1)\nClip c:\n    Note/x\n",
+    ),
+    rule(
+        "6.3",
+        "A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.",
         "argument-count",
         "fn f(x): x\nlet a = f(1, 2)\n",
+    ),
+    rule(
+        "6.3",
+        "A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.",
+        "unknown-parameter",
+        "fn f(x): x\nlet a = f(y=1)\n",
+    ),
+    rule(
+        "6.3",
+        "A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.",
+        "duplicate-argument",
+        "fn f(x): x\nlet a = f(x=1, x=2)\n",
     ),
     rule(
         "6.3",

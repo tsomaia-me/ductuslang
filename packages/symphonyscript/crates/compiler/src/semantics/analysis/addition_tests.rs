@@ -142,6 +142,57 @@ fn settling_a_group_of_states_costs_work_linear_in_it_in_every_declaration_order
     }
 }
 
+fn wire_cycle_work(filters: u32, feeds: impl Fn(u32) -> Vec<u32>) -> (usize, u64) {
+    let body: String = (0..filters)
+        .map(|filter| {
+            let wires: String = feeds(filter)
+                .iter()
+                .map(|target| format!("        Feeds: node{target}\n"))
+                .collect();
+            format!("    Filter as node{filter}:\n{wires}")
+        })
+        .collect();
+    let text = format!("Synth s:\n{body}");
+    let (diagnostics, work) = analyzed(&vocabulary(), &text, |engine| engine.memo.cycle_work);
+    (errors(&diagnostics).len(), work)
+}
+
+#[test]
+fn wire_cycles_are_found_in_work_linear_in_the_instances_and_wires() {
+    type Feeds = fn(u32, u32) -> Vec<u32>;
+    type Cycles = fn(u32) -> usize;
+    let shapes: [(&str, Feeds, Cycles); 2] = [
+        (
+            "ring",
+            |filter, filters| vec![(filter + 1) % filters],
+            |_| 1,
+        ),
+        (
+            "chain of two-cycles",
+            |filter, filters| {
+                let partner = filter ^ 1;
+                let next = filter + 2;
+                if filter % 2 == 0 && next < filters {
+                    vec![partner, next]
+                } else {
+                    vec![partner]
+                }
+            },
+            |filters| usize::try_from(filters / 2).unwrap_or(usize::MAX),
+        ),
+    ];
+    for (name, shape, cycles) in shapes {
+        let (small_cycles, small) = wire_cycle_work(250, |filter| shape(filter, 250));
+        let (large_cycles, large) = wire_cycle_work(1_000, |filter| shape(filter, 1_000));
+        assert_eq!(
+            (small_cycles, large_cycles),
+            (cycles(250), cycles(1_000)),
+            "{name}"
+        );
+        assert!(large <= 4 * small + 64, "{name}: {small} {large}");
+    }
+}
+
 #[test]
 fn states_whose_history_reads_reach_one_another_take_their_least_capacities_together() {
     let text = "input note = 60\nstate p = (q{1, []} + [note])[^3..]\nstate q = p{1, []} + [1]\nClip c:\n    Note/(p[0] + q[0])\n";

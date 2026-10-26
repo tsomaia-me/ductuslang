@@ -61,3 +61,38 @@ fn an_error_found_in_a_prelude_body_is_located_in_the_prelude() {
     assert_eq!(found[0].code, Code::OperandType);
     assert_eq!(found[0].span.file, "music.sym");
 }
+
+#[test]
+fn a_declaration_cycle_in_the_prelude_fails_the_compiler() {
+    let rows: [&[&str]; 3] = [
+        &["let a = b\n", "let b = a\n"],
+        &["fn f(): a\n", "let a = f()\n"],
+        &["fn up(n): n + 1\n", "let a = up(b)\n", "let b = up(a)\n"],
+    ];
+    for items in rows {
+        for order in support::permutations(items) {
+            let prelude = order.concat();
+            let found = match Compiler::new(&vocabulary(&prelude)) {
+                Ok(_) => Vec::new(),
+                Err(failed) => failed.diagnostics,
+            };
+            let cycles: Vec<(Code, &str)> = found
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.span.file.as_str()))
+                .collect();
+            assert_eq!(
+                cycles,
+                vec![(Code::DeclarationCycle, "music.sym")],
+                "{prelude}"
+            );
+        }
+    }
+    let prelude = "let C4 = 60\nfn up(n): n + C4\nlet unread = up(1)\n";
+    assert_eq!(check(prelude, "Clip c:\n    Note/72\n"), vec![]);
+    let found = check(
+        prelude,
+        "let a = b + 1\nlet b = a + 1\nClip c:\n    Note/a\n",
+    );
+    let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
+    assert_eq!(codes, vec![Code::DeclarationCycle], "{found:?}");
+}

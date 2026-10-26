@@ -397,3 +397,84 @@ fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
+
+#[test]
+fn wire_cycles_draw_one_diagnostic_per_component_naming_its_shortest_cycle_and_wires() {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let two_cycle =
+        "Synth s:\n    Filter as a:\n        Feeds: b\n    Filter as b:\n        Feeds: a\n";
+    let other_two_cycle =
+        "Synth t:\n    Filter as d:\n        Feeds: e\n    Filter as e:\n        Feeds: d\n";
+    type Row<'a> = (&'a [&'a str], &'a [(&'a str, &'a str)]);
+    let rows: [Row; 7] = [
+        (
+            &[
+                "Synth s:\n    Filter as a:\n        Feeds: b\n        Feeds: c\n    Filter as b:\n        Feeds: a\n    Filter as c:\n        Feeds: a\n",
+            ],
+            &[("a → b → a", "4 wires")],
+        ),
+        (&[two_cycle], &[("a → b → a", "2 wires")]),
+        (
+            &[two_cycle, other_two_cycle],
+            &[("a → b → a", "2 wires"), ("d → e → d", "2 wires")],
+        ),
+        (
+            &["Synth s:\n    Filter as a:\n        Feeds: a\n"],
+            &[("a → a", "1 wire")],
+        ),
+        (
+            &[
+                "input i = 0\n",
+                "Synth s:\n    Filter as a:\n        Feeds: [b, c][i]\n    Filter as b\n    Filter as c:\n        Feeds: a\n",
+            ],
+            &[("a → c → a", "2 wires")],
+        ),
+        (
+            &[
+                "Clip a:\n    Note\n    Plays: b\n",
+                "Clip b:\n    Note\n    Plays: a\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "Synth s:\n    Osc as o:\n        Feeds: f\n    Filter as f:\n        Feeds: m\n    Mixer as m\n",
+            ],
+            &[],
+        ),
+    ];
+    for (items, wanted) in rows {
+        let wanted: Vec<String> = wanted
+            .iter()
+            .map(|(cycle, wires)| {
+                format!("closes the cycle of wires {cycle}, and its group of cycles holds {wires};")
+            })
+            .collect();
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let errors = support::errors(compiler.check(&[support::source(&text)]));
+            let mut found: Vec<String> = errors
+                .iter()
+                .map(|diagnostic| {
+                    let held = diagnostic
+                        .summary
+                        .split_once("closes")
+                        .map_or("", |(_, rest)| rest);
+                    format!("{:?} closes{held}", diagnostic.code)
+                })
+                .collect();
+            found.sort();
+            let mut expected: Vec<String> = wanted
+                .iter()
+                .map(|fragment| format!("WireCycle {fragment}"))
+                .collect();
+            expected.sort();
+            let matches = found.len() == expected.len()
+                && found
+                    .iter()
+                    .zip(&expected)
+                    .all(|(found, expected)| found.starts_with(expected.as_str()));
+            assert!(matches, "{text}expected {expected:?}\nfound {found:?}");
+        }
+    }
+}

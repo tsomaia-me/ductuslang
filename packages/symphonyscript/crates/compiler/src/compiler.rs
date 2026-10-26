@@ -66,7 +66,7 @@ impl Compiler {
                 });
             }
         };
-        analyze::prelude(&hir, vocab, &variants, &mut report);
+        analyze::prelude(&hir, vocab, &variants, limits, &mut report);
         let diagnostics = report.finish(&hir.files);
         if diagnostics
             .iter()

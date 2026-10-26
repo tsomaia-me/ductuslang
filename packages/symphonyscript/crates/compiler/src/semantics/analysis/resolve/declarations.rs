@@ -1,13 +1,24 @@
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::item_ref::ItemRef;
+use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
-use crate::semantics::ir::Loc;
+use crate::semantics::ir::{LetId, Loc};
 
 impl Engine<'_> {
+    pub(crate) fn resolve_prelude_lets(&mut self) -> Result<(), Internal> {
+        for index in 0..self.hir.lets.len() {
+            let id = LetId(u32::try_from(index).map_err(|_| Internal::missed("let"))?);
+            if self.hir.is_prelude_let(id) {
+                self.demand(Query::Let(self.prelude_global, LetRef::Top(id)))?;
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::semantics::analysis) fn declaration(
         &self,
         query: Query,
