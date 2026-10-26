@@ -38,6 +38,9 @@ LONG_PROMPT_PRICES = {"claude-haiku-5-5": (100_000, (0.50, 1.0, 0.05, 2.50))}
 BATCH_DISCOUNT = 0.5
 WARM_SECONDS = 55 * 60
 BYTES_PER_TOKEN = 3
+TRIAL_REQUESTS = 10
+CEILING_FACTOR = 2
+DEFAULT_MAX_BATCH_USD = 2.0
 TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 
 
@@ -55,6 +58,11 @@ def read_keys(env_path):
     if not keys:
         sys.exit("ANTHROPIC_API_KEYS in ~/.env lists no key: set it to <key 1>,<key 2>,...")
     return keys
+
+
+def require_cap(max_usd):
+    if max_usd is None:
+        sys.exit("--max-usd is required: pass the most this run may spend, in USD")
 
 
 def with_cache_control(params):
@@ -114,11 +122,13 @@ def cost(model, usage):
 
 class Runner:
     def __init__(self, clients, run_dir, max_usd=None, batch_size=MAX_BATCH_REQUESTS,
-                 poll_seconds=POLL_SECONDS, sleep=time.sleep, log=print, clock=time.time):
+                 max_batch_usd=DEFAULT_MAX_BATCH_USD, poll_seconds=POLL_SECONDS, sleep=time.sleep, log=print,
+                 clock=time.time):
         self.clients = clients
         self.run_dir = Path(run_dir)
         self.max_usd = max_usd
         self.batch_size = batch_size
+        self.max_batch_usd = max_batch_usd
         self.poll_seconds = poll_seconds
         self.sleep = sleep
         self.log = log
@@ -129,6 +139,7 @@ class Runner:
         self.results_path = self.run_dir / "results.jsonl"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {"key": 1, "batches": []}
         self.state.setdefault("warmings", [])
+        self.state.setdefault("trials", {})
 
     def save(self):
         tmp = self.state_path.with_suffix(".tmp")
@@ -246,27 +257,92 @@ class Runner:
             return None, 0
         return self.submit(requests[:fit]), fit
 
+    def trial_key(self, request):
+        prefix = prefix_of(request["params"])
+        return request["params"]["model"], prefix[1] if prefix else ""
+
+    def measured(self, key):
+        return self.state["trials"].get(":".join(key))
+
+    def batch_estimate(self, request):
+        mean = self.measured(self.trial_key(request))
+        return self.estimate(request) if mean is None else mean * CEILING_FACTOR
+
+    def split(self, requests, estimate):
+        parts, current, total = [], [], 0.0
+        for request in requests:
+            usd = estimate(request)
+            if current and total + usd > self.max_batch_usd:
+                parts.append(current)
+                current, total = [], 0.0
+            current.append(request)
+            total += usd
+        if current:
+            parts.append(current)
+        return parts
+
+    def send(self, requests, estimate, on_submitted=None):
+        for part in self.split(requests, estimate):
+            batch, fit = self.submit_capped(part)
+            if batch is None:
+                return False
+            if on_submitted is not None:
+                on_submitted(batch, part[:fit])
+            self.collect(batch)
+            if fit < len(part):
+                return False
+        return True
+
+    def trial_requests(self, group):
+        taken, trial = {}, []
+        for request in group:
+            key = self.trial_key(request)
+            if self.measured(key) is None and taken.get(key, 0) < TRIAL_REQUESTS:
+                taken[key] = taken.get(key, 0) + 1
+                trial.append(request)
+        return trial
+
+    def record_trials(self, trial, group):
+        keys = {request["custom_id"]: self.trial_key(request) for request in trial}
+        costs = {}
+        for entry in self.read_results():
+            key = keys.get(entry["custom_id"])
+            if key is not None and entry["result"]["type"] == "succeeded":
+                message = entry["result"]["message"]
+                costs.setdefault(key, []).append(cost(message["model"], message["usage"]))
+        for key, values in sorted(costs.items()):
+            mean = sum(values) / len(values)
+            self.state["trials"][":".join(key)] = mean
+            queued = sum(1 for request in group
+                         if request["custom_id"] not in keys and self.trial_key(request) == key)
+            label = f"{key[0]} {key[1][:12]}" if key[1] else f"{key[0]} (no cached prefix)"
+            self.log(f"trial {label}: mean ${mean:.6f} per request, {queued} queued, "
+                     f"projected ${mean * queued:.2f}")
+        self.save()
+
     def run_group(self, group):
         cold = self.cold_prefixes(group)
         if cold:
             warming = list(cold.values())
-            batch, fit = self.submit_capped(warming)
-            if batch is None:
-                return False
-            for prefix in list(cold)[:fit]:
-                self.record_warming(batch["key"], prefix)
-            self.collect(batch)
-            if fit < len(warming):
+            prefixes = {request["custom_id"]: prefix for prefix, request in cold.items()}
+
+            def record(batch, sent):
+                for request in sent:
+                    self.record_warming(batch["key"], prefixes[request["custom_id"]])
+
+            if not self.send(warming, self.estimate, record):
                 return False
             sent = {request["custom_id"] for request in warming}
             group = [request for request in group if request["custom_id"] not in sent]
-        if not group:
-            return True
-        batch, fit = self.submit_capped(group)
-        if batch is None:
-            return False
-        self.collect(batch)
-        return fit == len(group)
+        trial = self.trial_requests(group)
+        if trial:
+            sent = self.send(trial, self.estimate)
+            self.record_trials(trial, group)
+            if not sent:
+                return False
+            ids = {request["custom_id"] for request in trial}
+            group = [request for request in group if request["custom_id"] not in ids]
+        return not group or self.send(group, self.batch_estimate)
 
     def run(self, requests):
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -314,17 +390,19 @@ def main(argv=None):
     parser.add_argument("requests")
     parser.add_argument("run_dir")
     parser.add_argument("--max-usd", type=float)
+    parser.add_argument("--max-batch-usd", type=float, default=DEFAULT_MAX_BATCH_USD)
     parser.add_argument("--batch-size", type=int, default=MAX_BATCH_REQUESTS)
     args = parser.parse_args(argv)
+    require_cap(args.max_usd)
 
     requests = [json.loads(line) for line in Path(args.requests).read_text().splitlines() if line.strip()]
-    if args.max_usd is not None:
-        unknown = sorted({r["params"]["model"] for r in requests} - set(PRICES))
-        if unknown:
-            sys.exit(f"--max-usd needs a price for: {', '.join(unknown)}")
+    unknown = sorted({r["params"]["model"] for r in requests} - set(PRICES))
+    if unknown:
+        sys.exit(f"--max-usd needs a price for: {', '.join(unknown)}")
     keys = read_keys(Path.home() / ".env")
     clients = {n: anthropic.Anthropic(api_key=key) for n, key in enumerate(keys, start=1)}
-    runner = Runner(clients, args.run_dir, max_usd=args.max_usd, batch_size=min(args.batch_size, MAX_BATCH_REQUESTS))
+    runner = Runner(clients, args.run_dir, max_usd=args.max_usd, batch_size=min(args.batch_size, MAX_BATCH_REQUESTS),
+                    max_batch_usd=args.max_batch_usd)
     runner.run(requests)
     print(runner.summary(len(requests)))
 

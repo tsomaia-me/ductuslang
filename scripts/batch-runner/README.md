@@ -21,7 +21,7 @@ ANTHROPIC_API_KEYS=<key 1>,<key 2>,<key 3>
 ## Usage
 
 ```sh
-.venv/bin/python run.py requests.jsonl runs/first [--max-usd 50] [--batch-size 1000]
+.venv/bin/python run.py requests.jsonl runs/first --max-usd 50 [--max-batch-usd 2] [--batch-size 1000]
 ```
 
 Each line of `requests.jsonl` is `{"custom_id": "...", "params": {...Messages API params...}}`.
@@ -32,18 +32,21 @@ Each line of `requests.jsonl` is `{"custom_id": "...", "params": {...Messages AP
 - A system prompt with no `cache_control` gets `{"type": "ephemeral", "ttl": "1h"}` on its last block.
 - Before a group of requests is submitted, each distinct cache-marked system prompt in it (per model and exact system text) not warmed within the last 55 minutes on the key in use is sent as one request in a batch of its own; the runner waits for it to end and records its result, then submits the rest of the group, so the rest read the cache instead of each writing it. Warmings (key, model, prefix hash, time) are kept in `state.json`, so a resumed run does not warm again within the window.
 - `--max-usd` is checked before each batch against the spend from the results so far plus the batch's worst-case cost: each request's input tokens (its JSON bytes divided by 3, which overstates them) and `max_tokens` at the prices in `PRICES` (half the standard prices), every uncached system prompt priced as a 1-hour cache write and every warm one as a cache read. When the total would pass the limit, only the leading requests that fit are submitted, one line says how many were held back, and the run stops; re-run with a higher cap to submit the rest. Spend itself uses the same prices with every cache write at the 1-hour rate.
+- `--max-usd` is required: `run.py` and `proxy.py` print one line and exit with status 1 without it.
+- Trial batch: for each distinct (model, cache-marked prefix) not yet measured, after the warming the runner submits at most 10 requests of it (requests with no cache-marked prefix are grouped by model alone), waits for them to end and records their mean cost per request in `state.json` under `trials` (key: model and prefix hash). No other request of that (model, prefix) is submitted until its trial has ended. Then one line per (model, prefix) prints the measured mean cost per request, the number queued and their projected cost at that mean. A resumed run reads its trials from `state.json` and does not repeat them.
+- `--max-batch-usd` (default 2.0) is a per-batch ceiling. After a trial a batch's estimate is its request count times twice the measured mean of its (model, prefix); before it, the worst-case estimate above applies. A group whose estimate passes the ceiling is split into consecutive batches each under it, submitted one after another, each waiting for the previous to end so it reads the warm cache (a single request over the ceiling goes alone). `--max-usd` still holds back every batch that would cross the cap.
 - The summary prints requests done, failed and not run, tokens per key (uncached input, cache writes, cache reads, output) and the spend.
 
 ## Proxy
 
 ```sh
-.venv/bin/python proxy.py runs/proxy [--max-usd 50] [--batch-requests 1000] [--batch-seconds 60] [--port 8787]
+.venv/bin/python proxy.py runs/proxy --max-usd 50 [--max-batch-usd 2] [--batch-requests 1000] [--batch-seconds 60] [--port 8787]
 ```
 
 A local server that takes Messages API calls (`POST /v1/messages`, the API's JSON, no key) one at a time and answers them from batches, so a client that calls the API concurrently runs on batches unchanged: point it at `http://127.0.0.1:8787` with any key and a timeout as long as a batch takes (up to 24 hours).
 
 - Held calls are submitted through the runner as one batch when `--batch-requests` are queued or `--batch-seconds` have passed since the first; one batch is in flight at a time, and calls that arrive meanwhile wait for the next.
-- The runner's rules apply: key rotation, the 1-hour cache on the system prompt and `--max-usd`, checked before each batch against its worst-case cost. Calls the cap holds back are answered with 500 `api_error`, so a caller retries once the operator raises the cap; once every key is exhausted, calls are answered with 402 `billing_error`.
+- The runner's rules apply: key rotation, the 1-hour cache on the system prompt and `--max-usd`, checked before each batch against its worst-case cost. The trial batch and the per-batch ceiling apply (`--max-batch-usd`). Calls the cap holds back are answered with 500 `api_error`, so a caller retries once the operator raises the cap; once every key is exhausted, calls are answered with 402 `billing_error`.
 - A succeeded request is answered with its message; an errored one with its error and the matching status. Streaming is refused.
 - `<run-dir>` holds the runner's `state.json` and `results.jsonl`; restarting on the same directory collects a batch left in flight before submitting the next.
 - `fake_backend.py <run-dir> <replies.json>` serves the same proxy on a fake batch backend that answers each call with the next string of the JSON array, for a dry run without the API.

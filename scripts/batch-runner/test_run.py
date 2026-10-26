@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import anthropic
 import httpx
 
-from run import Runner, prefix_of, read_keys, with_cache_control
+import run
+from run import Runner, cost, prefix_of, read_keys, with_cache_control
 
 USAGE = {"input_tokens": 10, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 0, "output_tokens": 5}
 
@@ -261,6 +262,89 @@ class RunnerTest(unittest.TestCase):
     def test_no_cap_changes_nothing(self):
         runner = self.runner({1: fake_client("k1", self.log)})
         self.assertEqual(runner.affordable(requests(50)), 50)
+
+
+    def sizes(self):
+        return [len(batch) for batch in self.creates()]
+
+    def test_the_runner_refuses_to_start_without_a_cap(self):
+        with self.assertRaises(SystemExit) as raised:
+            run.main(["requests.jsonl", str(self.run_dir)])
+        self.assertEqual(str(raised.exception), "--max-usd is required: pass the most this run may spend, in USD")
+        self.assertFalse(self.run_dir.exists())
+
+    def test_a_shared_prompt_goes_out_warmed_then_trialled_then_in_batches_under_the_ceiling(self):
+        clients = {1: fake_client("k1", self.log)}
+        mean = cost("claude-opus-5-5", USAGE)
+        runner = self.runner(clients, max_usd=1000.0, max_batch_usd=0.1)
+        self.assertTrue(runner.run(requests(466, system="s" * 91500)))
+        self.assertEqual(self.sizes(), [1, 10, 106, 106, 106, 106, 31])
+        self.assertEqual([entry[0] for entry in self.log], ["create", "results"] * 7)
+        self.assertLessEqual(106 * 2 * mean, 0.1)
+        self.assertGreater(107 * 2 * mean, 0.1)
+        self.assertEqual(len(self.results()), 466)
+
+    def test_the_trial_mean_is_kept_in_state_and_a_projection_line_is_printed(self):
+        clients = {1: fake_client("k1", self.log)}
+        mean = cost("claude-opus-5-5", USAGE)
+        runner = self.runner(clients, max_usd=1000.0)
+        runner.run(requests(466, system="long prompt"))
+        trials = json.loads((self.run_dir / "state.json").read_text())["trials"]
+        (key, value), = trials.items()
+        self.assertTrue(key.startswith("claude-opus-5-5:"))
+        self.assertAlmostEqual(value, mean)
+        lines = [line for line in self.lines if line.startswith("trial ")]
+        self.assertEqual(len(lines), 1)
+        self.assertIn(f"mean ${mean:.6f} per request, 455 queued, projected ${mean * 455:.2f}", lines[0])
+
+    def test_each_model_is_trialled_separately(self):
+        clients = {1: fake_client("k1", self.log)}
+        group = (requests(30, system="long prompt") + requests(30, system="long prompt", model="claude-haiku-5-5", start=30))
+        runner = self.runner(clients, max_usd=1000.0)
+        self.assertTrue(runner.run(group))
+        self.assertEqual(self.sizes(), [2, 20, 38])
+        trial = self.creates()[1]
+        self.assertEqual(sorted(trial), sorted([f"r{i}" for i in range(1, 11)] + [f"r{i}" for i in range(31, 41)]))
+        keys = sorted(json.loads((self.run_dir / "state.json").read_text())["trials"])
+        self.assertEqual([key.split(":")[0] for key in keys], ["claude-haiku-5-5", "claude-opus-5-5"])
+        self.assertEqual(len([line for line in self.lines if line.startswith("trial ")]), 2)
+
+    def test_requests_without_a_cached_prefix_are_trialled_by_model_alone(self):
+        clients = {1: fake_client("k1", self.log)}
+        self.assertTrue(self.runner(clients, max_usd=1000.0).run(requests(25)))
+        self.assertEqual(self.sizes(), [10, 15])
+        self.assertEqual(list(json.loads((self.run_dir / "state.json").read_text())["trials"]), ["claude-opus-5-5:"])
+
+    def test_a_resumed_runner_does_not_trial_again(self):
+        first = {1: fake_client("k1", self.log)}
+        self.runner(first, max_usd=1000.0).run(requests(12, system="long prompt"))
+        self.log.clear()
+        self.lines.clear()
+        self.now += 60
+        second = {1: fake_client("k1", self.log)}
+        self.assertTrue(self.runner(second, max_usd=1000.0).run(requests(30, system="long prompt")))
+        self.assertEqual(self.sizes(), [18])
+        self.assertEqual([line for line in self.lines if line.startswith("trial ")], [])
+
+    def test_before_a_trial_has_ended_the_ceiling_uses_the_worst_case_estimate(self):
+        clients = {1: fake_client("k1", self.log)}
+        runner = self.runner(clients, max_usd=1000.0, max_batch_usd=1e-9)
+        self.assertTrue(runner.run(requests(3)))
+        self.assertEqual(self.creates(), [["r0"], ["r1"], ["r2"]])
+
+    def test_the_cap_still_holds_back_a_batch_split_under_the_ceiling(self):
+        clients = {1: fake_client("k1", self.log)}
+        mean = cost("claude-opus-5-5", USAGE)
+        probe = self.runner(clients, max_usd=1000.0)
+        self.run_dir.mkdir()
+        request = {"custom_id": "x", "params": with_cache_control(requests(1, system="long prompt")[0]["params"])}
+        probe.record_warming(1, prefix_of(request["params"]))
+        one = probe.estimate(request)
+        (self.run_dir / "state.json").unlink()
+        runner = self.runner(clients, max_usd=16 * mean + one * 2.5, max_batch_usd=mean * 2 * 5.5)
+        self.assertFalse(runner.run(requests(25, system="long prompt")))
+        self.assertEqual(self.sizes(), [1, 10, 5, 2])
+        self.assertEqual(len(runner.held), 7)
 
 
 class CacheControlTest(unittest.TestCase):
