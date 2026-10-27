@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2c, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2c, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2c, strings' and records' capacities and bindings (SPEC §3.3, §3.8, §4.4), pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
+- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2c, M2d, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
 ### Decisions
 
@@ -25,7 +25,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 ### Work and checks
 
 - Commits go directly on `main` in the main checkout, one step at a time, each step passing the checks. There are no pull requests. At the end of each milestone the implementer pushes `main` to the branch `symphonyscript/progress` on `origin` with `git push origin main:symphonyscript/progress`, never forced, so no work is lost; the owner pushes `main`.
-- One implementer runs on `main` at a time. M4a's implementer runs beside M3's in a git worktree of its own, committing on a branch that the head merges into `main` with a merge commit; every other rule of this section binds it. The head commits its document edits on `main` only while no implementer runs there.
+- One implementer commits on `main` at a time. Further implementers run beside it in git worktrees of their own, each committing on a branch that the head merges into `main` with a merge commit, where their files are disjoint from the others': M4a beside M3, and the parallel steps a milestone names; every other rule of this section binds them. The head commits its document edits on `main` only while no implementer runs there.
 - The implementer keeps its progress in `.memory/symphonyscript/M<n>.md`: steps done, the gaps it found, and the next step. After a compaction it continues from the repository and that file.
 - Checks, run by the implementer before every commit and by the reviewer at review: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo build -p symphonyscript-core --target thumbv7em-none-eabihf`.
 - The implementer adds no dependency this plan does not name; another dependency is a gap.
@@ -116,32 +116,53 @@ Exit:
 
 ## M2c: Language additions 2
 
-Runtime strings, records, annotations on every binder, pattern types, inputs and states in patterns, state triggers, the `input` and `const` parameter modifiers, the `children` parameters, wire patterns, and the vocabulary's `takes`, record and string attributes: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
+Runtime strings, records, `none` and sums, aliases, arrays with capacities at every level, maps, documents, annotations on every binder, and the vocabulary's `takes`, record, string, map and document attributes: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
 
 Steps:
-1. The lexer and the parser: `type`, `str`, `const`, `children`, `on`, `node`, `wire`, record literals, annotations on parameters, local `let`s, `for` variables and results, placement types with counts and bundle entries, the `children` parameters and a use's body, the classification of patterns before bodies and wire patterns used as wires (SPEC §7.1), `input` and `state` lines in pattern bodies and string `match` labels, with the tests over SPEC.md's examples and rule sentences passing again.
-2. The vocabulary: `attr_str`, `attr_record`, `attr_record_any`, `takes`, `type` in the prelude, native string signatures, `build()`'s new errors and the stamp.
-3. Collect, Expand and Resolve: record types and their cycles, a pattern's inputs and states under each use's path, a use's body partitioned among its `children` parameters, the parameter modifiers, the name rules of SPEC §6.5 over the new declarations, and triggers.
-4. Infer: strings' capacities, records as bindings, record literals typed by their position, annotations as fixed types, pattern types inferred and checked against their declarations, triggers typed as reactive `let`s, and SPEC §4.6's inline limit of 100,000.
-5. Check and diagnostics: the binding each attribute takes, the string and record attribute rules, the errors of the new rules, a summary and a help on each, and a lesson for every new code.
+1. The lexer and the parser: `type` in both forms, `str`, `none`, `|` and `?` in types, capacities at every level, `map`, `json` with the lexer's JSON mode, `without`, record, map and document literals, annotations on parameters, local `let`s, `for` variables and results, and string and sum `match` labels, with the tests over SPEC.md's examples and rule sentences passing again.
+2. The vocabulary: `attr_str`, `attr_record`, `attr_record_any`, `attr_map`, `attr_json`, `attr_json_any`, `takes`, `type` in the prelude, native string signatures, `build()`'s new errors and the stamp.
+3. Core's `document` module: the RFC 8259 parser into a node pool within a budget, iterative, with kinds, views, equality and typed reads, built without `std` for the compiler and the runtime alike (ARCHITECTURE §4, §7).
+4. Collect and Resolve: record types, aliases and sums with their cycles, the name rules of SPEC §6.5 over the new declarations, and the new literals and operators.
+5. Infer: strings' capacities, records as bindings, literals typed by their position, annotations as fixed types, sums (widening, `or`, `match` narrowing, `is`), capacities at every level, maps, documents (views and budgets, typed reads, literals, `typeof`, equality), their compile-time evaluation, and SPEC §4.6's inline limit of 100,000.
+6. Check and diagnostics: the binding each attribute takes, the string, record, map and document attribute rules, a `T?` at an attribute, the errors of the new rules, a summary and a help on each, and a lesson for every new code.
+
+Steps 2 and 3 touch files the others do not and run in worktrees of their own beside step 1 (§ Work and checks), merged before step 4.
 
 Exit:
 - M2b's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
-- Each row of SPEC §3.3's capacity table has tests whose capacities are derived by hand.
+- Each row of SPEC §3.3's capacity table, each inner-level case of §3.7 and each fit rule of §3.11's typed read has tests whose values are derived by hand.
+- Every rule of SPEC §3.9 has its test: widening in and no narrowing, `match` coverage and narrowing per arm, `or`, `is`, a record literal choosing its alternative, and a `T?` refused at an attribute.
+- Every operation of SPEC §3.10 and every rule of §3.11 has its test, `is` between documents and between a document and each value that widens into one among them; core's `document` module accepts every valid document and refuses every invalid one of a conformance corpus with the byte position, refuses a document past its budget naming it, and parses 64 KiB in time linear in its length.
+- A fixture vocabulary with an attribute that takes an input, one that takes a constant, a record attribute of a prelude type, one taking any record, a runtime string attribute, a map attribute and a document attribute accepts what SPEC §10.2 allows, refuses the rest, and yields a Program whose bindings a host follows to the inputs it writes.
+- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
+- A record type of 1,000 fields, a sum of 100 alternatives, an array with capacities at 8 levels and a document literal of 10,000 entries pass every stage through Check on a thread with a 1 MiB stack.
+
+## M2d: Language additions 3
+
+Pattern types, inputs and states in patterns, state triggers, the `input` and `const` parameter modifiers, the `children` parameters and wire patterns: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
+
+Steps:
+1. The lexer and the parser: `const`, `children`, `on`, `node`, `wire`, placement types with counts and bundle entries, the `children` parameters and a use's body, the classification of patterns before bodies and wire patterns used as wires (SPEC §7.1), and `input` and `state` lines in pattern bodies, with the tests over SPEC.md's examples and rule sentences passing again.
+2. Collect, Expand and Resolve: a pattern's inputs and states under each use's path, a use's body partitioned among its `children` parameters, the parameter modifiers, the name rules of SPEC §6.5 over the new declarations, and triggers.
+3. Infer: pattern types inferred and checked against their declarations, and triggers typed as reactive `let`s.
+4. Check and diagnostics: the errors of the new rules, a summary and a help on each, and a lesson for every new code.
+
+Exit:
+- M2c's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
 - Every pattern in the SPEC's examples has the type SPEC §6.4 gives it, inferred, and a declared type the body breaks is rejected naming the placement; a `children` parameter refuses a use's body outside its counts, and a wire pattern is used as a wire with its name, gate and `to`.
-- A fixture vocabulary with an attribute that takes an input, one that takes a constant, a record attribute of a prelude type, one taking any record, and a runtime string attribute accepts what SPEC §10.2 allows, refuses the rest, and yields a Program whose bindings a host follows to the inputs it writes.
 - Two uses of a pattern that declares an input and a state yield two inputs and two states named by the uses' paths, listed at the uses' positions.
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
-- A pattern with `children` used 10,000 times, each with a body, and a record type of 1,000 fields pass every stage through Check on a thread with a 1 MiB stack.
+- A pattern with `children` used 10,000 times, each with a body, passes every stage through Check on a thread with a 1 MiB stack.
 
 ## M3: Runtime and reload
 
-Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b and M2c leave it.
+Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b, M2c and M2d leave it.
 
 Steps:
 1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order.
-2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices, bounded calls as expanded, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, native functions at runtime, and writes (SPEC §12, ARCHITECTURE §4).
+2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices at every level, bounded calls as expanded, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, sums as a tag and slots, maps, documents parsed at the boundary by core's `document` module and read through views and typed reads, native functions at runtime, and writes (SPEC §12, ARCHITECTURE §4).
 3. `eval` and the `Consumer` trait.
 4. Reload: `reload_snapshot`, `prepare` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
 5. Fixture pairs of projects, before and after an edit, for the reload tests.
@@ -158,11 +179,11 @@ Exit:
 - A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
 - A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
-- Golden traces cover states and histories, triggers, variable arrays, strings and records, and a string written past its capacity or in invalid UTF-8 is refused with the capacity in the error.
+- Golden traces cover states and histories, triggers, variable arrays at every level, strings, records, sums, maps and documents; a string written past its capacity or in invalid UTF-8, and a document written past its budget or invalid, are refused with the capacity or the byte position in the error.
 
 ## M4a: Language server and editors
 
-The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It needs M2c and runs beside M3 (§ Order).
+The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It needs M2d and runs beside M3 (§ Order).
 
 Steps:
 1. The tool: `Tool::new`, framework commands, `Project`, `new`, `check` and single-file mode (ARCHITECTURE §9), and the `lsp` command.
@@ -211,4 +232,4 @@ Exit:
 
 ## Order
 
-M1, M2, M2b, M2c and M3 run in order. M4a needs M2c and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.
+M1, M2, M2b, M2c, M2d and M3 run in order. M4a needs M2d and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.
