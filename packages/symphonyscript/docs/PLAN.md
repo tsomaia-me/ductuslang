@@ -7,7 +7,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 ### Roles
 
 - **Owner:** decides direction.
-- **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
+- **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`. The head owns the decisions and the architecture, and the reviewers own the code's correctness against them.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
 - **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2e, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2e, M2c, M2d, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2e, Infer's capacity rules and the `for` expression's evaluation (SPEC §5.10, §7.9, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
@@ -29,6 +29,8 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - The implementer keeps its progress in `.memory/symphonyscript/M<n>.md`: steps done, the gaps it found, and the next step. After a compaction it continues from the repository and that file.
 - Checks, run by the implementer before every commit and by the reviewer at review: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo build -p symphonyscript-core --target thumbv7em-none-eabihf`.
 - The implementer adds no dependency this plan does not name; another dependency is a gap.
+- The workspace's `[profile.dev]` sets `opt-level = 1`, and `cargo test` runs the limit tests under it.
+- A test that asserts a cost counts the work its pass does, queries, nodes or visits, never the clock.
 - `packages/symphonyscript/rust-toolchain.toml` pins Rust 1.94.0 with clippy, rustfmt and the `thumbv7em-none-eabihf` target, so the checks give one result on every machine. A toolchain update is a commit of its own, which regenerates the compile-fail goldens and reads them.
 
 ### Reviews
@@ -59,6 +61,7 @@ A finding, gap, limitation, review note or task that is not built in the round t
 - One public entity per file, the file named after it; modules are folders.
 - No comments in authored files (repository CLAUDE.md).
 - Code follows `.claude/docs/CODING.md` § Good patterns. Where another rule of that file names another product's tools or conflicts with this plan, this plan decides.
+- `Cargo.lock` is committed, as a workspace with binaries commits it.
 - Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; the IntelliJ Platform Gradle Plugin for the JetBrains plugin; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
 
 ## M1: Front end
