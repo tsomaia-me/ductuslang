@@ -1312,6 +1312,69 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
             &[(Code::InlineLimit, "h(60)")],
         ),
         (&[h, "Clip c:\n    Note/(h(h(h(60))))\n"], &[]),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                h,
+                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "state held: i32[..4] = []\n",
+                h,
+                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "state held = (held{1, []} + [note])[^4..]\n",
+                h,
+                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "fn r(i): if i >= len(held) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input fixed: i32[2] = [1, 2]\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input fixed: i32[2] = [1, 2]\n",
+                h,
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "state held = [note, note]\n",
+                h,
+                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
     ];
     for (items, expected) in rows {
         let mut expected: Vec<(Code, String)> = expected

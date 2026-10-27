@@ -755,10 +755,11 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         inlined_calls: 4,
         ..Limits::default()
     };
-    let rows: [(&[&str], Limits); 2] = [
+    let rows: [(&[&str], Limits, i128); 4] = [
         (
             &["fn h(x): x + 1\n", "Clip c:\n    Note/(h(h(h(60))))\n"],
             four,
+            63,
         ),
         (
             &[
@@ -766,15 +767,35 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
                 "Clip c:\n    Note/(60 + r(3))\n",
             ],
             Limits::default(),
+            63,
+        ),
+        (
+            &[
+                "input fixed: i32[2] = [1, 2]\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            62,
+        ),
+        (
+            &[
+                "input fixed: i32[2] = [1, 2]\n",
+                "fn h(x): x + 1\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            67,
         ),
     ];
-    for (items, limits) in rows {
+    for (items, limits, pitch) in rows {
         for text in in_every_order(items) {
             let (diagnostics, value) = analyzed_within(&vocabulary(), limits, &text, |engine| {
                 attr_value(engine, "pitch", EvalTy::I32)
             });
             assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
-            assert_eq!(value, Some(CVal::Int(63)), "{text}");
+            assert_eq!(value, Some(CVal::Int(pitch)), "{text}");
         }
     }
 }

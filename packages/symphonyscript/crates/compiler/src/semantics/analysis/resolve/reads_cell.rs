@@ -10,7 +10,7 @@ use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::collection::{BuiltinName, Decl, Namespace};
-use crate::semantics::ir::{ExprId, ExprKind, FnId};
+use crate::semantics::ir::{ExprId, ExprKind, FnId, StateId, TypeRef};
 
 impl Engine<'_> {
     pub(super) fn body_reads_cell(
@@ -169,7 +169,7 @@ impl Engine<'_> {
                         )
                         | None => {}
                     },
-                    ExprKind::Call(callee, _)
+                    ExprKind::Call(callee, args)
                         if measures_length(
                             &hir.expr(*callee)?.kind,
                             &params,
@@ -177,6 +177,13 @@ impl Engine<'_> {
                             namespace,
                         ) =>
                     {
+                        if self.measures_variable_cell(
+                            args.values(),
+                            (&params, &locals),
+                            namespace,
+                        )? {
+                            return Ok(true);
+                        }
                         continue;
                     }
                     _ => {}
@@ -185,6 +192,53 @@ impl Engine<'_> {
             }
         }
     }
+}
+
+impl Engine<'_> {
+    fn measures_variable_cell(
+        &self,
+        mut stack: Vec<ExprId>,
+        (params, lets): (&BTreeSet<&str>, &BTreeMap<&str, ExprId>),
+        namespace: &Namespace,
+    ) -> Result<bool, Internal> {
+        while let Some(expr) = stack.pop() {
+            let kind = &self.hir.expr(expr)?.kind;
+            if let ExprKind::Name(name) = kind
+                && !params.contains(name.as_str())
+                && !lets.contains_key(name.as_str())
+            {
+                let variable = match namespace.get(name) {
+                    Some(Decl::Input(id)) => annotated_capacity(self.hir.input(id)?.ty.as_ref()),
+                    Some(Decl::State(id)) => {
+                        annotated_capacity(self.hir.state(id)?.ty.as_ref())
+                            || self.settled_variable(id)
+                    }
+                    Some(_) | None => false,
+                };
+                if variable {
+                    return Ok(true);
+                }
+            }
+            stack.extend(kind.children());
+        }
+        Ok(false)
+    }
+
+    fn settled_variable(&self, state: StateId) -> bool {
+        let Some(BoundVal::Scalar(Bound::Cell(binding))) = self.memo.states.get(&state) else {
+            return false;
+        };
+        self.memo.settled.contains(binding)
+            && self
+                .memo
+                .binding_layouts
+                .get(binding)
+                .is_some_and(|layout| layout.variable)
+    }
+}
+
+fn annotated_capacity(ty: Option<&TypeRef>) -> bool {
+    ty.is_some_and(|ty| ty.capacity.is_some())
 }
 
 fn measures_length(
