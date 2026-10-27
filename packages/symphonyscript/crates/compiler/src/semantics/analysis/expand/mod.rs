@@ -1,6 +1,6 @@
 mod conditions;
 mod context;
-mod item_kind;
+pub(in crate::semantics::analysis) mod item_kind;
 mod iteration;
 mod records;
 mod structure;

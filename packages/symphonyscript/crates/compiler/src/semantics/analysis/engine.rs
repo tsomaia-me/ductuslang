@@ -37,7 +37,7 @@ use crate::semantics::reporting::{Report, grouped};
 
 const ID_SPACE: u64 = 1 << 32;
 
-const NAME_CODES: [Code; 8] = [
+const NAME_CODES: [Code; 9] = [
     Code::UnknownName,
     Code::NotAValue,
     Code::NotCallable,
@@ -46,6 +46,7 @@ const NAME_CODES: [Code; 8] = [
     Code::UnknownVariant,
     Code::UnknownType,
     Code::HistoryTarget,
+    Code::DestinationType,
 ];
 
 pub(crate) struct Engine<'a> {

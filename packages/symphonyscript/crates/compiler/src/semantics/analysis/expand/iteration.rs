@@ -15,6 +15,13 @@ pub(in crate::semantics::analysis) enum Iteration {
 }
 
 impl Iteration {
+    pub(in crate::semantics::analysis) fn is_empty(&self) -> bool {
+        match self {
+            Iteration::Range { next, end, .. } => next >= end,
+            Iteration::Values { values, next, .. } => *next >= values.len(),
+        }
+    }
+
     pub(in crate::semantics::analysis) fn loc(&self) -> Loc {
         match self {
             Iteration::Range { loc, .. } | Iteration::Values { loc, .. } => *loc,

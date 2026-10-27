@@ -1,23 +1,29 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::chain::Chain;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::expand::item_kind::ItemKind;
 use crate::semantics::analysis::fast_hash::FastSet;
-use crate::semantics::analysis::ids::ScopeId;
+use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::index::index;
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
+use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::some::some;
+use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
 use crate::semantics::ir::{
-    Attr, AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Iterable, LetId, Loc, Param,
-    PatternId, PlacementId,
+    Attr, AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Ident, Iterable, LetId, Loc, Param,
+    PatternId, PlacementId, WireId,
 };
 
 impl Engine<'_> {
@@ -126,6 +132,7 @@ impl Engine<'_> {
         let mut scanned = 0;
         let mut patterns = FastSet::default();
         self.resolved_owners(&mut scanned, &mut patterns)?;
+        let used = patterns.clone();
         for position in 0..hir.patterns.len() {
             let pattern = PatternId(index(position));
             if hir.is_prelude_pattern(pattern) != prelude || patterns.contains(&pattern) {
@@ -164,6 +171,71 @@ impl Engine<'_> {
                     .chain = Chain::default();
                 for query in self.body_queries(function, scope)? {
                     self.demand(query)?;
+                }
+            }
+        }
+        self.untaken_defaults(prelude, global, &used)
+    }
+
+    fn untaken_defaults(
+        &mut self,
+        prelude: bool,
+        global: ScopeId,
+        patterns: &FastSet<PatternId>,
+    ) -> Result<(), Internal> {
+        let hir = self.hir;
+        let mut taken = FastSet::default();
+        for (expr, scope) in self.memo.exprs.keys() {
+            if !self.in_probe(*scope)? {
+                taken.insert(*expr);
+            }
+        }
+        let untaken = |params: &[Param]| -> Vec<u32> {
+            params
+                .iter()
+                .zip(0..)
+                .filter(|(param, _)| param.default.is_some_and(|expr| !taken.contains(&expr)))
+                .map(|(_, position)| position)
+                .collect()
+        };
+        for position in 0..hir.fns.len() {
+            let function = FnId(index(position));
+            if hir.is_prelude_fn(function) != prelude
+                || !self.memo.named_bodies.contains(&function)
+                || self.memo.named_scopes.contains_key(&function)
+            {
+                continue;
+            }
+            let decl = hir.fn_decl(function)?;
+            let positions = untaken(&decl.params);
+            if positions.is_empty() {
+                continue;
+            }
+            let scope = self.named_scope(function, decl.loc, global)?;
+            for position in positions {
+                self.demand(Query::Param(scope, position))?;
+            }
+        }
+        for position in 0..hir.patterns.len() {
+            let pattern = PatternId(index(position));
+            if hir.is_prelude_pattern(pattern) != prelude || !patterns.contains(&pattern) {
+                continue;
+            }
+            let decl = hir.pattern(pattern)?;
+            let positions = untaken(&decl.params);
+            if positions.is_empty() {
+                continue;
+            }
+            let params = decl
+                .params
+                .iter()
+                .map(|_| ParamSource::Bound(BoundVal::Error))
+                .collect();
+            let scope = self.pattern_locals(pattern, params, Chain::default(), true)?;
+            for position in positions {
+                if let Some(default) = decl.params.get(position as usize).and_then(|p| p.default) {
+                    let prefix = self.prefix_scope(scope, position)?;
+                    self.demand(Query::Expr(default, prefix))?;
                 }
             }
         }
@@ -286,51 +358,246 @@ impl Engine<'_> {
             self.demand(Query::Let(scope, LetRef::Local(local)))?;
         }
         self.demand_defaults(&decl.params, scope)?;
-        let mut exprs = Vec::new();
-        let mut blocks = vec![decl.body];
-        while let Some(block) = blocks.pop() {
-            for item in &hir.block(block)?.items {
-                match item {
-                    BodyItem::Placement(placement) => {
-                        placement_exprs(hir, *placement, &mut exprs, &mut blocks)?;
+        self.names_in(decl.body, scope)
+    }
+
+    pub(in crate::semantics::analysis) fn first_unrun(
+        &mut self,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
+        let outermost = self.chain(scope)?.to_vec().last().copied();
+        Ok(self.memo.unrun_bodies.insert((loc, outermost)))
+    }
+
+    pub(in crate::semantics::analysis) fn name_probe_of(
+        &mut self,
+        var: Option<&Ident>,
+        scope: ScopeId,
+    ) -> Result<ScopeId, Internal> {
+        let mut global = scope;
+        while let Some(parent) = self.scope_of(global)?.parent {
+            global = parent;
+        }
+        let template = Some(self.names_global_of(global));
+        let chain = self.chain(scope)?;
+        let kind = match var {
+            Some(name) => ScopeKind::ForVar {
+                name: name.text.clone(),
+                value: Val::Error,
+            },
+            None => ScopeKind::Body {
+                names: BTreeMap::new(),
+            },
+        };
+        self.scope_in(kind, Some(scope), chain, template)
+    }
+
+    pub(in crate::semantics::analysis) fn names_in(
+        &mut self,
+        block: BlockId,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        self.names_of(vec![Named::Block(block, scope)])
+    }
+
+    pub(in crate::semantics::analysis) fn names_of_members(
+        &mut self,
+        members: &[PlacementId],
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        self.names_of(
+            members
+                .iter()
+                .rev()
+                .map(|member| Named::Placement(*member, scope))
+                .collect(),
+        )
+    }
+
+    pub(in crate::semantics::analysis) fn unbound(
+        &mut self,
+        name: Option<&Ident>,
+        scope: ScopeId,
+    ) -> Result<ScopeId, Internal> {
+        let Some(name) = name else {
+            return Ok(scope);
+        };
+        let chain = self.chain(scope)?;
+        self.scope(
+            ScopeKind::ForVar {
+                name: name.text.clone(),
+                value: Val::Error,
+            },
+            Some(scope),
+            chain,
+        )
+    }
+
+    fn names_of(&mut self, mut work: Vec<Named>) -> Result<(), Internal> {
+        let hir = self.hir;
+        while let Some(next) = work.pop() {
+            match next {
+                Named::Placement(placement, scope) => {
+                    self.placement_names(placement, scope, &mut work)?;
+                }
+                Named::Block(block, scope) => {
+                    let mut scope = scope;
+                    for (site, _) in self.named_sites(block)?.iter() {
+                        let name = match site {
+                            Site::Placement(id) => hir.placement(*id)?.name.as_ref(),
+                            Site::Wire(id) => hir.wire(*id)?.name.as_ref(),
+                        };
+                        scope = self.unbound(name, scope)?;
                     }
-                    BodyItem::Wire(wire) => {
-                        let wire = hir.wire(*wire)?;
-                        exprs.extend(wire.default.iter().chain(wire.gate.iter()));
-                        exprs.extend(attr_exprs(&wire.attrs));
-                        exprs.push(wire.destination);
-                    }
-                    BodyItem::Bundle { members, each, .. } => {
-                        for member in members {
-                            placement_exprs(hir, *member, &mut exprs, &mut blocks)?;
-                        }
-                        if let Some(each) = each {
-                            exprs.extend(iterable_exprs(each.iterable));
-                            for member in &each.members {
-                                placement_exprs(hir, *member, &mut exprs, &mut blocks)?;
-                            }
-                        }
-                    }
-                    BodyItem::For { iterable, body, .. } => {
-                        exprs.extend(iterable_exprs(*iterable));
-                        blocks.push(*body);
-                    }
-                    BodyItem::When {
-                        arms, otherwise, ..
-                    } => {
-                        for arm in arms {
-                            exprs.push(arm.guard);
-                            blocks.push(arm.body);
-                        }
-                        blocks.extend(otherwise.iter());
+                    for item in hir.block(block)?.items.iter().rev() {
+                        self.item_names(item, scope, &mut work)?;
                     }
                 }
             }
         }
-        for expr in exprs {
-            self.demand(Query::Expr(expr, scope))?;
+        Ok(())
+    }
+
+    fn item_names(
+        &mut self,
+        item: &BodyItem,
+        scope: ScopeId,
+        work: &mut Vec<Named>,
+    ) -> Result<(), Internal> {
+        match item {
+            BodyItem::Placement(placement) => work.push(Named::Placement(*placement, scope)),
+            BodyItem::Wire(wire) => self.wire_names(*wire, scope)?,
+            BodyItem::Bundle { members, each, .. } => {
+                if let Some(each) = each {
+                    for expr in iterable_exprs(each.iterable) {
+                        self.demand(Query::Expr(expr, scope))?;
+                    }
+                    let inner = self.unbound(each.var.as_ref(), scope)?;
+                    for member in each.members.iter().rev() {
+                        work.push(Named::Placement(*member, inner));
+                    }
+                }
+                for member in members.iter().rev() {
+                    work.push(Named::Placement(*member, scope));
+                }
+            }
+            BodyItem::For {
+                var,
+                iterable,
+                body,
+                ..
+            } => {
+                for expr in iterable_exprs(*iterable) {
+                    self.demand(Query::Expr(expr, scope))?;
+                }
+                let inner = self.unbound(var.as_ref(), scope)?;
+                work.push(Named::Block(*body, inner));
+            }
+            BodyItem::When {
+                arms, otherwise, ..
+            } => {
+                for arm in arms {
+                    self.demand(Query::Expr(arm.guard, scope))?;
+                }
+                work.extend(otherwise.iter().map(|block| Named::Block(*block, scope)));
+                for arm in arms.iter().rev() {
+                    work.push(Named::Block(arm.body, scope));
+                }
+            }
         }
         Ok(())
+    }
+
+    fn placement_names(
+        &mut self,
+        placement: PlacementId,
+        scope: ScopeId,
+        work: &mut Vec<Named>,
+    ) -> Result<(), Internal> {
+        let site = self.hir.placement(placement)?;
+        if let Some(kind) = &site.kind {
+            match self.kind_decl(scope, &kind.text)? {
+                Some(Decl::Node(kind)) => {
+                    self.attr_sources_of(
+                        ItemKind::Node(kind),
+                        &site.flags,
+                        site.default,
+                        &site.attrs,
+                        site.loc,
+                        scope,
+                    )?;
+                }
+                Some(Decl::Pattern(pattern)) => {
+                    self.use_sources(pattern, placement, scope)?;
+                }
+                Some(_) | None => {}
+            }
+        }
+        let exprs = site.default.iter().chain(site.gate.iter()).copied();
+        for expr in exprs.chain(attr_exprs(&site.attrs)) {
+            self.demand(Query::Expr(expr, scope))?;
+        }
+        work.extend(site.body.map(|body| Named::Block(body, scope)));
+        Ok(())
+    }
+
+    fn wire_names(&mut self, wire: WireId, scope: ScopeId) -> Result<(), Internal> {
+        let decl = self.hir.wire(wire)?;
+        if let Some(Decl::Wire(kind)) = self.kind_decl(scope, &decl.kind.text)? {
+            self.attr_sources_of(
+                ItemKind::Wire(kind),
+                &decl.flags,
+                decl.default,
+                &decl.attrs,
+                decl.loc,
+                scope,
+            )?;
+        }
+        let exprs = decl.default.iter().chain(decl.gate.iter()).copied();
+        for expr in exprs.chain(attr_exprs(&decl.attrs)) {
+            self.demand(Query::Expr(expr, scope))?;
+        }
+        let destination = self.demand_val(Query::Expr(decl.destination, scope))?;
+        let message = match destination {
+            Val::Array(_) => Some("a destination is one instance, not an array"),
+            Val::Scalar(node) if self.holds_no_instance(node)? => {
+                Some("a destination names an instance")
+            }
+            Val::Scalar(_) | Val::Error => None,
+        };
+        if let Some(message) = message {
+            let loc = self.hir.expr(decl.destination)?.loc;
+            self.error(Code::DestinationType, loc, scope, message)?;
+        }
+        Ok(())
+    }
+
+    fn holds_no_instance(&self, node: NodeId) -> Result<bool, Internal> {
+        let mut node = node;
+        loop {
+            node = match &self.node(node)?.op {
+                Op::Chosen(inner) | Op::Use(inner) => *inner,
+                Op::Read(binding) => {
+                    return Ok(matches!(
+                        self.binding(*binding)?.kind,
+                        BindingKind::Input { .. } | BindingKind::State { .. }
+                    ));
+                }
+                op => {
+                    return Ok(matches!(
+                        op,
+                        Op::Number(..)
+                            | Op::Const(_)
+                            | Op::Bool(_)
+                            | Op::Str(_)
+                            | Op::Concat(_)
+                            | Op::Variant(..)
+                            | Op::Pi
+                    ));
+                }
+            };
+        }
     }
 
     pub(in crate::semantics::analysis) fn declaration(
@@ -406,17 +673,9 @@ impl Engine<'_> {
     }
 }
 
-fn placement_exprs(
-    hir: &Hir,
-    placement: PlacementId,
-    exprs: &mut Vec<ExprId>,
-    blocks: &mut Vec<BlockId>,
-) -> Result<(), Internal> {
-    let placement = hir.placement(placement)?;
-    exprs.extend(placement.default.iter().chain(placement.gate.iter()));
-    exprs.extend(attr_exprs(&placement.attrs));
-    blocks.extend(placement.body.iter());
-    Ok(())
+enum Named {
+    Block(BlockId, ScopeId),
+    Placement(PlacementId, ScopeId),
 }
 
 fn attr_exprs(attrs: &[Attr]) -> impl Iterator<Item = ExprId> + '_ {

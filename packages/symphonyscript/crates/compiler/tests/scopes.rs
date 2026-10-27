@@ -6,6 +6,9 @@ use symphonyscript_fixtures::{bounded_vocabulary, vocabulary};
 
 type Case = (&'static str, &'static [(Code, &'static str, usize)]);
 
+type OwnedRow = (Vec<String>, Vec<(Code, &'static str)>);
+
+type BorrowedRow<'a> = (Vec<&'a str>, &'a [(Code, &'static str)]);
 #[test]
 fn a_name_resolves_in_scope_or_is_an_error() {
     let cases: &[Case] = &[
@@ -585,4 +588,150 @@ fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors()
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+    let input = "input k = 1\n";
+    let loud = (Code::UnknownAttribute, "loud");
+    let variant = (Code::UnknownVariant, "Nope");
+    let destination = (Code::DestinationType, "k");
+    let parameter = (Code::UnknownParameter, "nope");
+    let calling = |call: &str| format!("Clip c:\n    Note/({call})\n");
+    let (untaken, taken) = (calling("f(1)"), calling("f()"));
+    let looped =
+        |range: &str, line: &str| format!("Clip c:\n    for i in {range}:\n        {line}\n");
+    let synth =
+        |range: &str| format!("Synth s:\n    for i in {range}:\n        Osc | wave=Wave::Nope\n");
+    let wired = |range: &str| format!("Clip c:\n    for i in {range}:\n        Plays: k\n");
+    let pattern_loop = |range: &str| {
+        format!("pattern Q():\n    for i in {range}:\n        Note | velocity=c.nothing\n")
+    };
+    let defaulted = "pattern P(default r = c.nothing):\n    Note/r\n";
+    let loud_pattern = "pattern Q():\n    Note | loud=1\n";
+    let use_pattern = "pattern Q():\n    R/60 | nope=1\n";
+    let root = "pattern R(default root):\n    Note/root\n";
+    let wire_pattern = "pattern Q():\n    Clip:\n        Plays: k\n";
+    let mut paths: Vec<OwnedRow> = Vec::new();
+    let operand = (Code::OperandType, "1 div 0.5");
+    let range_index = (Code::IndexOutOfRange, "5");
+    let chosen = |range: &str| {
+        format!(
+            "input x = true\nClip c:\n    for i in {range}:\n        when x:\n            Note | loud=1\n        else:\n            Note/(sin)\n"
+        )
+    };
+    let chord = |range: &str| format!("Clip c:\n    [Note for i in {range}: (Note | loud=1)]\n");
+    let joined = (Code::ArrayOperand, "1 + [1, 2]");
+    for (range, reached, unused, sum) in [
+        ("0..0", vec![], vec![], vec![]),
+        ("0..1", vec![operand], vec![range_index], vec![joined]),
+    ] {
+        paths.extend([
+            (vec![looped(range, "Note/(sin)")], vec![value]),
+            (
+                vec![looped(range, "Note | velocity=c.nothing")],
+                vec![attribute],
+            ),
+            (vec![synth(range)], vec![variant]),
+            (vec![looped(range, "Note | loud=1")], vec![loud]),
+            (vec![looped(range, "Note/(i + nothing)")], vec![name]),
+            (vec![input.to_string(), wired(range)], vec![destination]),
+            (
+                vec![pattern_loop(range), "Clip c:\n    Q\n".to_string()],
+                vec![attribute],
+            ),
+            (vec![looped(range, "Note/(1 div 0.5)")], reached),
+            (vec![looped(range, "Note/(i)")], vec![]),
+            (vec![chosen(range)], vec![loud, value]),
+            (vec![chord(range)], vec![loud]),
+            (vec![looped(range, "Note when c.nothing")], vec![attribute]),
+            (
+                vec![root.to_string(), looped(range, "R/(sin)")],
+                vec![value],
+            ),
+            (
+                vec![looped(range, "for j in 0..2:\n            Note | loud=1")],
+                vec![loud],
+            ),
+            (
+                vec![looped(range, "Plays: 3")],
+                vec![(Code::DestinationType, "3")],
+            ),
+            (
+                vec!["let u = [1, 2][5]\n".to_string(), looped(range, "Note/(u)")],
+                unused,
+            ),
+            (
+                vec![
+                    "let u = 1 + [1, 2]\n".to_string(),
+                    looped(range, "Note/(u)"),
+                ],
+                sum,
+            ),
+        ]);
+    }
+    for (call, reached) in [(&untaken, vec![]), (&taken, vec![operand])] {
+        paths.extend([
+            (
+                vec!["fn f(x = sin): x\n".to_string(), call.clone()],
+                vec![value],
+            ),
+            (
+                vec!["fn f(x = c.nothing): x\n".to_string(), call.clone()],
+                vec![attribute],
+            ),
+            (
+                vec!["fn f(x = 1 div 0.5): x\n".to_string(), call.clone()],
+                reached,
+            ),
+        ]);
+    }
+    for placed in ["P/60", "P"] {
+        paths.push((
+            vec![defaulted.to_string(), format!("Clip c:\n    {placed}\n")],
+            vec![attribute],
+        ));
+    }
+    let fit = (Code::DoesNotFit, "2147483647 + 1");
+    for (used, reached) in [(None, vec![]), (Some("Clip c:\n    Q\n"), vec![fit])] {
+        let mut with = |items: &[&str], expected: Vec<(Code, &'static str)>| {
+            let mut items: Vec<String> = items.iter().map(|item| item.to_string()).collect();
+            items.extend(used.map(str::to_string));
+            paths.push((items, expected));
+        };
+        with(&[loud_pattern], vec![loud]);
+        with(&[use_pattern, root], vec![parameter]);
+        with(&["pattern Q():\n    Note/(2147483647 + 1)\n"], reached);
+    }
+    paths.extend([
+        (
+            vec![
+                "Clip n:\n    Note\n".to_string(),
+                "pattern Q():\n    Note as n | velocity=1\n    Note/(n.velocity)\n".to_string(),
+            ],
+            vec![],
+        ),
+        (
+            vec![input.to_string(), wire_pattern.to_string()],
+            vec![destination],
+        ),
+        (
+            vec![
+                input.to_string(),
+                wire_pattern.to_string(),
+                "Q q\n".to_string(),
+            ],
+            vec![destination],
+        ),
+    ]);
+    let items: Vec<BorrowedRow> = paths
+        .iter()
+        .map(|(items, expected)| {
+            (
+                items.iter().map(String::as_str).collect(),
+                expected.as_slice(),
+            )
+        })
+        .collect();
+    let rows: Vec<support::Row> = items
+        .iter()
+        .map(|(items, expected)| (items.as_slice(), *expected))
+        .collect();
+    support::assert_rows_in_every_order(&vocabulary(), &rows);
 }

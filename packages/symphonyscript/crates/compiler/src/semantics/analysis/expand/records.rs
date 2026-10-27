@@ -279,6 +279,18 @@ impl<'a> Engine<'a> {
         placement: PlacementId,
         caller: ScopeId,
     ) -> Result<ScopeId, Internal> {
+        let params = self.use_sources(pattern, placement, caller)?;
+        let loc = self.hir.placement(placement)?.loc;
+        let chain = self.chain(caller)?.push(loc, "in this use of the pattern");
+        self.pattern_locals(pattern, params, chain, false)
+    }
+
+    pub(in crate::semantics::analysis) fn use_sources(
+        &mut self,
+        pattern: PatternId,
+        placement: PlacementId,
+        caller: ScopeId,
+    ) -> Result<Vec<ParamSource>, Internal> {
         let decl = self.hir.pattern(pattern)?;
         let site = self.hir.placement(placement)?;
         let mut sources: Vec<Option<ParamSource>> = vec![None; decl.params.len()];
@@ -381,10 +393,7 @@ impl<'a> Engine<'a> {
                 }
             });
         }
-        let chain = self
-            .chain(caller)?
-            .push(site.loc, "in this use of the pattern");
-        self.pattern_locals(pattern, params, chain, false)
+        Ok(params)
     }
 
     pub(in crate::semantics::analysis) fn pattern_locals(
@@ -581,7 +590,7 @@ impl<'a> Engine<'a> {
         )
     }
 
-    fn attr_sources_of(
+    pub(in crate::semantics::analysis) fn attr_sources_of(
         &mut self,
         kind: ItemKind,
         flags: &[(char, Loc)],

@@ -66,7 +66,9 @@ impl Engine<'_> {
                         Some(Decl::State(state)) => Found::Query(Query::State(state)),
                         Some(Decl::Let(declared)) => {
                             let mut global = self.global_of_let(declared);
-                            if (id == self.names_global || id == self.prelude_names_global)
+                            if (id == self.names_global
+                                || id == self.prelude_names_global
+                                || self.in_name_probe(scope)?)
                                 && !self
                                     .memo
                                     .lets

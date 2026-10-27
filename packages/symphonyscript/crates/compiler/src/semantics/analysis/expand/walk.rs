@@ -361,7 +361,10 @@ impl Engine<'_> {
         })
     }
 
-    fn named_sites(&mut self, root: BlockId) -> Result<Rc<[(Site, Loc)]>, Internal> {
+    pub(in crate::semantics::analysis) fn named_sites(
+        &mut self,
+        root: BlockId,
+    ) -> Result<Rc<[(Site, Loc)]>, Internal> {
         if let Some(sites) = self.memo.named_sites.get(&root) {
             return Ok(sites.clone());
         }
@@ -794,6 +797,12 @@ impl Engine<'_> {
                 inner.bundle = Some(collector);
                 if let Some(each) = each {
                     match self.iteration(each.iterable, scope)? {
+                        Some(iteration) if iteration.is_empty() => {
+                            if self.first_unrun(each.loc, scope)? {
+                                let probe = self.name_probe_of(each.var.as_ref(), scope)?;
+                                self.names_of_members(&each.members, probe)?;
+                            }
+                        }
                         Some(iteration) => frames.push(Frame::For {
                             var: each.var.map(|var| var.text),
                             iteration,
@@ -818,8 +827,14 @@ impl Engine<'_> {
                 var,
                 iterable,
                 body,
-                ..
+                loc,
             } => match self.iteration(iterable, scope)? {
+                Some(iteration) if iteration.is_empty() => {
+                    if self.first_unrun(loc, scope)? {
+                        let probe = self.name_probe_of(var.as_ref(), scope)?;
+                        self.names_in(body, probe)?;
+                    }
+                }
                 Some(iteration) => frames.push(Frame::For {
                     var: var.map(|var| var.text),
                     iteration,
