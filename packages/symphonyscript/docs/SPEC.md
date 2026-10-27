@@ -496,7 +496,7 @@ A compile-time value is computed by the rules of §5, except that a flexible int
 - The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a lambda argument (§6.7) counting by its source position and the values of the names it reads, and a function passed as an argument (§6.7) by its declaration and the values of the names its body reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
+- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a function reference passed as an argument (§6.7), directly or through a `let`, counting by its declaration, a lambda's being its source position, and the values of the names its body reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
 - Every limit that draws an error has a warning value beside it, whose default is half the limit's default and which a project or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming what the limit's error names: the call, the expansion, or for the memory limit the Program; a count that passes the limit draws the error. The reload search bound (§13.3) draws no error and has no warning.
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
@@ -663,7 +663,7 @@ Clip outro | gain=chorus.back.transpose:
 
 ### 5.7 Calls and built-ins
 
-A call invokes a built-in, a prelude function, native functions included (§10.1), a source function (§6.3), a parameter bound to a lambda (§6.7), or a compile-time `let` holding a lambda or a function (§6.2). Arguments are all positional or all named, as in `scale(3, 48)` or `scale(degree=3, root=48)`; mixing them in one call is an error. Built-ins and native functions take positional arguments only. Built-in names are top-level names (§6.5).
+A call invokes a built-in, a prelude function, native functions included (§10.1), a source function (§6.3), a parameter bound to a function reference (§6.7), or a compile-time `let` holding a function reference (§6.7). Arguments are all positional or all named, as in `scale(3, 48)` or `scale(degree=3, root=48)`; mixing them in one call is an error. Built-ins and native functions take positional arguments only. Built-in names are top-level names (§6.5).
 
 | Built-in | Result |
 |---|---|
@@ -773,9 +773,9 @@ input hit: Hit = {}
 LetDecl ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | Lambda NEWLINE | MatchBlock | ForExprBlock)
 ```
 
-A `let` names a value. A `let` that reads no input, directly or through other declarations, is a compile-time value (§4.1). A `let` that reads an input, other than one holding a lambda (below), is reactive: a cell, or for an array an array of bindings (§4.4), recomputed when what it reads changes (§12.2). A declaration that reaches itself through `let`s, inputs, attribute reads, function bodies or the lambda a `let` holds is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`, and in `let f = x: f(x)`, whose recursion is written with `fn`; a function reaching itself through calls follows §6.3.
+A `let` names a value. A `let` that reads no input, directly or through other declarations, is a compile-time value (§4.1). A `let` that reads an input, other than one holding a function reference (§6.7), is reactive: a cell, or for an array an array of bindings (§4.4), recomputed when what it reads changes (§12.2). A declaration that reaches itself through `let`s, inputs, attribute reads, function bodies or the lambda a `let` holds is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`, and in `let f = x: f(x)`, whose recursion is written with `fn`; a function reaching itself through calls follows §6.3.
 
-A compile-time `let` may hold a node reference or an array of them, a lambda (§6.7), or a function: a source function, a native function or a built-in. It holds a function as it holds a node reference (§3.5): a reference to that function with its parameters, annotations, result, bracket parameters and body, which compares with nothing. It stands for its value wherever it is used and never reaches the Program. A `let` holding a lambda is compile-time whatever the lambda's body reads: the lambda is inlined at each use, and a cell its body reads makes that use reactive, as an argument that reads a cell makes a call reactive (§6.3). A call of such a `let` inlines the lambda's or the function's body as §6.3 inlines a call, and a recursive or native function it names is called as §6.3 and §10.1 say. These rules on a lambda or a function cover every `let`, top-level or local: a function's local `let` and a pattern's `let` (§6.3, §6.4) hold one as a top-level `let` does. A `let` holding node references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
+A compile-time `let` may hold a node reference or an array of them, or a function reference (§6.7). It stands for its value wherever it is used and never reaches the Program. Every `let`, top-level or local, a function's local `let` and a pattern's `let` among them (§6.3, §6.4), holds a function reference as §6.7 says. A `let` holding node references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
 
 ```sym
 input section = 0
@@ -1030,7 +1030,7 @@ state recent = recent{1, []} + [note]
 
 This is an error: `recent` grows by one element at every step, so no capacity holds it; `[^8..]` keeps the newest eight.
 
-### 6.7 Lambdas
+### 6.7 Lambdas and function references
 
 ```ebnf
 Lambda       ::= Name ':' Expr | '(' LambdaParams? ')' Result? ':' Expr
@@ -1038,16 +1038,21 @@ LambdaParams ::= LambdaParam (',' LambdaParam)*
 LambdaParam  ::= Name (':' Type)?
 ```
 
-A lambda is a function written as the argument of a call or as the value of a compile-time `let`: `x: x * 2`, `(a, b): a + b`, `(x: i32) -> bool: x > 60`. A single parameter stands without parentheses only when it has no annotation, and each parameter is one name; a lambda never destructures its arguments.
+A lambda is a function written in place: `x: x * 2`, `(a, b): a + b`, `(x: i32) -> bool: x > 60`. A single parameter stands without parentheses only when it has no annotation, and each parameter is one name; a lambda never destructures its arguments.
 
-- A lambda stands only as an argument of a call to a function (§6.3) or a native function (§10.1), or as the value of a compile-time `let` (§6.2); anywhere else it is an error.
-- A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter and of a compile-time `let` holding a lambda or a function, and on any other `let`, an input, a state, an attribute, a record field or an array element it is an error.
-- A parameter of a function type may carry a name, `(x: f64) -> f64`. The name labels the position for the reader and lets the body call the parameter by it, `f(x=seed)`, as named arguments name a source function's parameters (§5.7); the lambda's own parameter names are its own and need not match.
-- Where the body of the function that receives a lambda calls its parameter, the call inlines the lambda's body with the lambda's parameters bound to the call's arguments, as §6.3 inlines a call to a function. A native function that receives a lambda calls it as §10.1 says. The lambda reads the names in scope at its own position.
-- A function, a source function, a native function or a built-in, stands where a function type is expected and wherever a lambda stands, and is received as a lambda is: `each(xs, len)` passes the built-in `len`. Where the receiving parameter has a function type, the type flows into the function as the expected types of its parameters and its result (§4.2), as into a lambda's, an annotation it carries agrees with them or is an error, and its body is checked under those types: `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before` where `sort_by` expects a function type. Where the parameter has none, the function is inlined where the body calls the parameter, its parameters typed by those calls' arguments as §6.3 types a call.
+A function reference is a compile-time value that names one declaration: a source function, a native function, a built-in, or a lambda. It is that declaration, not a copy and not its name: its parameters with their annotations, its result, its bracket parameters, its body, and for a lambda the scope it is written in. Two references from one declaration are one function. A function's name and a lambda, written where a function reference stands, are function references.
+
+- A function reference stands in exactly these positions: the whole value of a compile-time `let`, top-level or local (§6.2, §6.3, §6.4); an argument where the receiving parameter has a function type or is called in the body; and the callee of a call (§5.7). Anywhere else, as an operand, an array element, an `if` or `match` arm, an attribute value, an input, a state, a record field, an interpolation or an `is` operand, it is an error whose summary says a function is not a value.
+- A use substitutes the declaration. With `let baz = bar`, `baz(1.0, inc)` is `bar(1.0, inc)`, inlined and checked at that call as §6.3 says, `bar`'s annotated parameters fixed and its unannotated ones typed per call, and `count(held, baz)` is `count(held, bar)`. A recursive or a native function is called as §6.3 and §10.1 say, and a call through a reference is a call of the function for §6.3's recursion rule: `fn bar(n): if n < 1 then 0 else baz(n - 1)` with `let baz = bar` makes `bar` recursive, evaluated at compile time.
+- Where the body of the function that receives a reference calls its parameter, the call inlines the referenced body with its parameters bound to the call's arguments, as §6.3 inlines a call. Where the receiving parameter has a function type, the type flows into the function's parameters and result as their expected types (§4.2), and an annotation the function carries agrees with them or is an error; where it has none, the function's parameters are typed by those calls' arguments as §6.3 types a call. A native function that receives a reference calls it as §10.1 says. `each(xs, len)` passes the built-in `len`, and `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before`.
+- A `let` holding a lambda holds the lambda expression. A use inlines its body with its parameters bound to the call's arguments, and the body reads the names in scope where the lambda is written, at the `let`, never at the use.
+- A function reference has no type of its own; a use types it as a use types an unannotated function (§6.3). A `let` holding one may carry a function type, `let inc: (f64) -> f64 = x: x + 1`, which fixes the lambda's parameter and result types (§4.5); on a `let` holding a function, the annotation agrees with the function's own annotations or is an error, and fixes its unannotated parameters and result for uses through that `let`.
+- A `let` holding a function reference is a compile-time value whatever the body reads, because the body runs only at a use; a cell read in the body makes that use reactive, as an argument's read does (§6.3). The `let` is never a cell and never reaches the Program. A `let` whose lambda names the `let` itself is §6.2's cycle error.
+- A function type `(T1, T2) -> R` (§3.2) is the type of a function that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter and of a compile-time `let` holding a function reference, and on any other `let`, an input, a state, an attribute, a record field or an array element it is an error.
+- A parameter of a function type may carry a name, `(x: f64) -> f64`. The name labels the position for the reader and lets the body call the parameter by it, `f(x=seed)`, as named arguments name a source function's parameters (§5.7); the referenced function's own parameter names are its own and need not match.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
-- The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
-- A parameter bound to a lambda, written as the argument of a call in the body, passes the lambda on to that call.
+- The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda or a function that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
+- A parameter bound to a function reference, written as the argument of a call in the body, passes the reference on to that call.
 
 ```sym
 fn count(xs, keep: (i32) -> bool):
@@ -1073,7 +1078,7 @@ let local = count_high(held)
 
 `above` reads `threshold` where its lambda is written, so it follows the input. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`, and so does `local`, whose local `let` holds the same lambda.
 
-A compile-time `let` holds a lambda or a function, and a function type may name its parameters:
+A compile-time `let` holds a function reference, and a function type may name its parameters:
 
 ```sym
 fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
@@ -1085,13 +1090,38 @@ let b = twice(1.0, inc)
 let c = inc(2.0)
 ```
 
-`a` and `b` are 4.0, and `c` is 3.0. `bar` calls `f` by the name `x` its function type gives, a name `inc`'s own parameter need not share; `twice` stands for `bar`.
+`a` and `b` are 4.0, and `c` is 3.0. `bar` calls `f` by the name `x` its function type gives, a name `inc`'s own parameter need not share; `twice` is `bar`.
+
+```sym
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+```
+
+`ten` is 10: `dbl`'s body reads the `g` in scope where the lambda is written, never the local `g` of `f`.
 
 ```sym-error
 input g = x: x + 1
 ```
 
-This is an error: a lambda stands only as an argument or as the value of a compile-time `let`, and an input is a cell.
+This is an error: a function reference stands only in the positions above, and an input is a cell.
+
+```sym-error
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Clip c:
+    Note when same
+```
+
+This is an error: `baz` and `bar` are function references, and a function is not a value, so it is no operand of `is`.
 
 ```sym-error
 let f = x: f(x)
@@ -1567,7 +1597,7 @@ A vocabulary is invalid, and no program compiles against it, when:
 
 The prelude's source is ordinary source compiled with the program. It holds `let`, `fn`, `pattern` and `type` declarations only, and its declarations and native functions share the top-level namespace (§6.5). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A source declaration with a prelude declaration's name shadows it in the program's source. Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
 
-A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a lambda. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a lambda among them when it reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a lambda it receives with argument values of the function type's parameter types, and each call runs the lambda's body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A lambda whose body calls a native function with a lambda of its own nests that call in the outer one; the depth of this nesting is fixed by the expressions and counts toward the nesting limit (§6.3), which the compiler checks, so a call at runtime never passes it. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
+A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a function reference. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a function reference among them when its body reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a function reference it receives with argument values of the function type's parameter types, and each call runs the referenced body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A lambda whose body calls a native function with a lambda of its own nests that call in the outer one; the depth of this nesting is fixed by the expressions and counts toward the nesting limit (§6.3), which the compiler checks, so a call at runtime never passes it. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
 
 ### 10.2 Checks against the vocabulary
 
