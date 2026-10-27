@@ -141,9 +141,9 @@ impl Engine<'_> {
             | Op::History { .. }
             | Op::Native { .. } => None,
         };
-        let message = self.unplaced_message(name.as_deref())?;
+        let (message, help) = self.unplaced_message(name.as_deref())?;
         let unless_values = self.untypable_values(node)?;
-        self.error_unless_values(Code::UnknownName, loc, scope, message, unless_values)
+        self.error_unless_values(Code::UnknownName, loc, scope, message, help, unless_values)
     }
 
     pub(in crate::semantics::analysis) fn unplaced_placeholder(
@@ -176,22 +176,34 @@ impl Engine<'_> {
         if self.in_name_probe(scope)? {
             return Ok(());
         }
-        let message = self.unplaced_message(name)?;
-        self.error(Code::UnknownName, loc, scope, message)
+        match self.unplaced_message(name)? {
+            (message, Some(help)) => {
+                self.error_helped(Code::UnknownName, loc, scope, message, help)
+            }
+            (message, None) => self.error(Code::UnknownName, loc, scope, message),
+        }
     }
 
-    fn unplaced_message(&self, name: Option<&str>) -> Result<String, Internal> {
+    fn unplaced_message(&self, name: Option<&str>) -> Result<(String, Option<String>), Internal> {
         Ok(match name {
             Some(name) => {
                 let owner = match self.variants.owner(name) {
                     Some(id) => self.enum_decl(id)?.name.as_str(),
                     None => "",
                 };
-                format!(
-                    "`{name}` names a variant only where `{owner}` is expected; elsewhere it is written `{owner}::{name}`"
+                (
+                    format!(
+                        "`{name}` names a variant only where `{owner}` is expected; elsewhere it is written `{owner}::{name}`"
+                    ),
+                    Some(format!(
+                        "write `{owner}::{name}`, or use `{name}` in a position that expects a `{owner}`"
+                    )),
                 )
             }
-            None => "this value names a variant, and nothing here expects an enum".to_string(),
+            None => (
+                "this value names a variant, and nothing here expects an enum".to_string(),
+                None,
+            ),
         })
     }
 

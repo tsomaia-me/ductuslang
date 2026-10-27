@@ -664,6 +664,7 @@ impl Engine<'_> {
                     self.node(index_node)?.loc,
                     scope,
                     "an index is an integer",
+                    None,
                     unless_values,
                 )?;
                 return Ok(Some(Val::Error));

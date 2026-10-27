@@ -211,6 +211,7 @@ impl Engine<'_> {
                 loc,
                 scope,
                 "a range bound is an integer",
+                None,
                 unless_values,
             )?;
             return Ok(None);

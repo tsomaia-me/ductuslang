@@ -1745,6 +1745,30 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             Code::PlacementSyntax,
             "add the missing `)` that closes the parenthesized placement",
         ),
+        (
+            vocabulary,
+            &["Clip c:\n    for i in [Saw, 1]:\n        Note\n"],
+            Code::UnknownName,
+            "write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`",
+        ),
+        (
+            vocabulary,
+            &["let z = Saw.gain\n", "Clip c | gain=z\n"],
+            Code::UnknownName,
+            "write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`",
+        ),
+        (
+            vocabulary,
+            &["Clip c | gain=Saw(1)\n"],
+            Code::UnknownName,
+            "write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/(nothing)\n"],
+            Code::UnknownName,
+            "declare the name, or correct its spelling",
+        ),
     ];
     for (vocabulary, items, code, help) in rows {
         let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
@@ -1762,6 +1786,21 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         }
     }
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let text = "Clip c:\n    for w in [Saw, Square]:\n        Note\n";
+    let found = support::errors(compiler.check(&[support::source(text)]));
+    let at_saw: Vec<(Code, Option<&str>)> = found
+        .iter()
+        .filter(|diagnostic| diagnostic.span.range == (22..25))
+        .map(|diagnostic| (diagnostic.code, diagnostic.help.as_deref()))
+        .collect();
+    assert_eq!(
+        at_saw,
+        [(
+            Code::UnknownName,
+            Some("write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`")
+        )],
+        "{found:?}"
+    );
     for (call, summary) in [
         ("f(1, 2)", "`f` takes at most 1 argument, not 2"),
         ("g(1, 2, 3)", "`g` takes at most 2 arguments, not 3"),

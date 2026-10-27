@@ -1010,6 +1010,7 @@ impl<'a> Engine<'a> {
         loc: Loc,
         scope: ScopeId,
         message: impl Into<String>,
+        help: Option<String>,
         unless_values: Vec<NodeId>,
     ) -> Result<(), Internal> {
         if self.suppressed(code, scope)? {
@@ -1023,7 +1024,7 @@ impl<'a> Engine<'a> {
             before: Vec::new(),
             chain,
             message: message.into(),
-            help: None,
+            help,
             unless_untyped: Vec::new(),
             unless_values,
             fault,
