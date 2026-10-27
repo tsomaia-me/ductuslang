@@ -26,7 +26,7 @@ impl Engine<'_> {
         }
         needs.sort_by_key(|(node, _)| *node);
         let mut types: FastMap<NodeId, Vec<Option<Scalar>>> = FastMap::default();
-        for (node, ty) in &self.typing.checked {
+        for (node, ty, _) in &self.typing.checked {
             types.entry(*node).or_default().push(*ty);
         }
         for (node, need) in needs {

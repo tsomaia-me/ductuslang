@@ -719,8 +719,8 @@ fn product_types(text: &str) -> (Option<Scalar>, Vec<Option<Scalar>>, Option<Sca
             .typing
             .checked
             .iter()
-            .filter(|(node, _)| *node == product)
-            .map(|(_, ty)| *ty)
+            .filter(|(node, _, _)| *node == product)
+            .map(|(_, ty, _)| *ty)
             .collect();
         let own = engine
             .bindings

@@ -119,14 +119,20 @@ impl Engine<'_> {
         for position in &valid {
             for node in position.val.nodes() {
                 let condition = position.role == role::Role::Gate;
-                self.check(node, Some(position.ty.scalar), condition, &mut roots)?;
+                self.check(
+                    node,
+                    (Some(position.ty.scalar), true),
+                    condition,
+                    &mut roots,
+                )?;
             }
         }
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             if let Some(own) = self.typing.own.get(&binding).copied() {
                 let init = self.binding(binding)?.init;
-                self.check(init, Some(own), false, &mut roots)?;
+                let flows = !self.typing.default_widths.contains(&binding);
+                self.check(init, (Some(own), flows), false, &mut roots)?;
             }
         }
         for index in 0..self.wires.len() {

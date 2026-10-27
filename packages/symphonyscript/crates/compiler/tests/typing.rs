@@ -3644,6 +3644,83 @@ fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners(
 }
 
 #[test]
+fn where_the_flow_stops_an_operand_computes_in_its_own_types_whatever_its_partner() {
+    let k = "input k = 1\n";
+    let flag = "input flag = false\n";
+    let u8_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "u8(255) + 4")];
+    let i32_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 + 1")];
+    let summed = "let r = k + (u8(255) + 4)\n";
+    let rows: &[support::Row] = &[
+        (
+            &[k, "Clip c:\n    Note when k + (u8(255) + 4) > 0\n"],
+            u8_sum,
+        ),
+        (
+            &[k, "Clip c:\n    Note when k + (2147483647i32 + 1) > 0\n"],
+            i32_sum,
+        ),
+        (&[k, summed, "Clip c:\n    Note when r > 0\n"], u8_sum),
+        (
+            &[k, "Clip c:\n    Note/([60, 62][k + (u8(255) + 4)])\n"],
+            u8_sum,
+        ),
+        (
+            &[k, "Synth s:\n    Osc | freq=((k + (u8(255) + 4)) div 2)\n"],
+            u8_sum,
+        ),
+        (
+            &[k, "Clip c:\n    Note when 0 < k + (u8(255) + 4)\n"],
+            u8_sum,
+        ),
+        (
+            &[
+                k,
+                "input held: i32[..4] = []\n",
+                "Clip c:\n    Note/(held[k + (u8(255) + 4)])\n",
+            ],
+            u8_sum,
+        ),
+        (&[k, summed, "Clip c:\n    Note/([60, 62][r])\n"], u8_sum),
+        (
+            &[
+                k,
+                "fn g(x): x + (u8(255) + 4)\n",
+                "Clip c:\n    Note when g(k) > 0\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                k,
+                "pattern Gated(default v):\n    Note when v > 0\n",
+                "Clip c:\n    Gated/(k + (u8(255) + 4))\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[
+                k,
+                flag,
+                "Clip c:\n    Note when (if flag then k + (u8(255) + 4) else k) > 0\n",
+            ],
+            u8_sum,
+        ),
+        (
+            &[k, "Clip c:\n    Note when 1i64 + (u8(255) + 4) > 0\n"],
+            u8_sum,
+        ),
+        (&[k, "Clip c:\n    Note/((k + (u8(255) + 4)) div 2)\n"], &[]),
+        (&[k, summed, "Clip c:\n    Note/r\n"], &[]),
+        (&[k, "Clip c:\n    Note when k + (u8(250) + 4) > 0\n"], &[]),
+        (
+            &[k, "Clip c:\n    Note when k + (2147483647 + 1) > 0\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
     let rows: &[support::Row] = &[
         (

@@ -70,6 +70,9 @@ impl Engine<'_> {
                     .map(|(scalar, _)| *scalar)
                     .filter(|scalar| is_float(*scalar))
                     .max_by_key(|scalar| rank(*scalar));
+                if widest.is_none() {
+                    self.typing.default_widths.insert(binding);
+                }
                 Some(widest.unwrap_or(Scalar::F32))
             }
             Kind::Int => {
@@ -80,7 +83,10 @@ impl Engine<'_> {
                     .max_by_key(|scalar| rank(*scalar));
                 match widest {
                     Some(widest) => Some(widest),
-                    None => Some(self.natural(binding)?.unwrap_or(Scalar::I32)),
+                    None => {
+                        self.typing.default_widths.insert(binding);
+                        Some(self.natural(binding)?.unwrap_or(Scalar::I32))
+                    }
                 }
             }
             Kind::Any | Kind::Error => None,

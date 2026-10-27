@@ -22,21 +22,21 @@ impl Engine<'_> {
     pub(super) fn check(
         &mut self,
         root: NodeId,
-        expected: Option<Scalar>,
+        (expected, flows): (Option<Scalar>, bool),
         condition: bool,
         roots: &mut Vec<(NodeId, Option<Scalar>)>,
     ) -> Result<(), Internal> {
-        let mut stack = vec![(root, expected, Selection::Chosen)];
+        let mut stack = vec![(root, expected, Selection::Chosen, flows)];
         let mut condition_root = condition;
-        while let Some((node, expected, selection)) = stack.pop() {
+        while let Some((node, expected, selection, flows)) = stack.pop() {
             #[cfg(test)]
             {
                 self.typing.checks += 1;
             }
             let fresh = match selection {
-                Selection::Chosen => self.typing.checked.insert((node, expected)),
-                Selection::Evaluated => self.typing.evaluated.insert((node, expected)),
-                Selection::PassedOver => self.typing.passed_over.insert((node, expected)),
+                Selection::Chosen => self.typing.checked.insert((node, expected, flows)),
+                Selection::Evaluated => self.typing.evaluated.insert((node, expected, flows)),
+                Selection::PassedOver => self.typing.passed_over.insert((node, expected, flows)),
             };
             if !fresh {
                 continue;
@@ -64,6 +64,19 @@ impl Engine<'_> {
                 }
                 None => sig,
             };
+            let expected = match (sig.width, expected) {
+                (Width::Fixed(own), Some(target))
+                    if !flows
+                        && !sig.reactive
+                        && !sig.frame
+                        && own != target
+                        && widens(own, target) =>
+                {
+                    Some(own)
+                }
+                _ => expected,
+            };
+            let flows = flows && expected.is_some();
             let as_condition = std::mem::take(&mut condition_root);
             if selection != Selection::Evaluated {
                 if let Some(expected) = expected
@@ -100,22 +113,22 @@ impl Engine<'_> {
                 stack.extend(
                     elements
                         .iter()
-                        .map(|element| (*element, ty, Selection::PassedOver)),
+                        .map(|element| (*element, ty, Selection::PassedOver, flows)),
                 );
             }
             let op = self.node(node)?.op.clone();
             let passed_over = Selection::PassedOver;
             match op {
                 Op::Read(_) | Op::ToRead { .. } | Op::Concat(_) => {}
-                Op::Use(inner) | Op::Chosen(inner) => stack.push((inner, ty, selection)),
-                Op::Unary(UnaryOp::Neg, operand) => stack.push((operand, ty, selection)),
+                Op::Use(inner) | Op::Chosen(inner) => stack.push((inner, ty, selection, flows)),
+                Op::Unary(UnaryOp::Neg, operand) => stack.push((operand, ty, selection, flows)),
                 Op::Unary(UnaryOp::Not, operand) => {
-                    stack.push((operand, Some(Scalar::Bool), selection));
+                    stack.push((operand, Some(Scalar::Bool), selection, true));
                 }
                 Op::Binary(op, lhs, rhs) => match op {
                     BinaryOp::And | BinaryOp::Or => {
-                        stack.push((lhs, Some(Scalar::Bool), selection));
-                        stack.push((rhs, Some(Scalar::Bool), selection));
+                        stack.push((lhs, Some(Scalar::Bool), selection, true));
+                        stack.push((rhs, Some(Scalar::Bool), selection, true));
                     }
                     BinaryOp::Lt
                     | BinaryOp::Le
@@ -132,15 +145,15 @@ impl Engine<'_> {
                         let left = self.synth(lhs)?;
                         let right = self.synth(rhs)?;
                         let pair = self.pair(lhs, rhs)?;
-                        stack.push((lhs, compared(left, pair), selection));
-                        stack.push((rhs, compared(right, pair), selection));
+                        stack.push((lhs, compared(left, pair), selection, false));
+                        stack.push((rhs, compared(right, pair), selection, false));
                     }
                     BinaryOp::IntDiv if ty.is_some_and(is_float) => {
                         self.synth(lhs)?;
                         self.synth(rhs)?;
                         let inner = self.combine(&[lhs, rhs])?;
-                        stack.push((lhs, inner, selection));
-                        stack.push((rhs, inner, selection));
+                        stack.push((lhs, inner, selection, false));
+                        stack.push((rhs, inner, selection, false));
                     }
                     BinaryOp::Add
                     | BinaryOp::Sub
@@ -149,12 +162,12 @@ impl Engine<'_> {
                     | BinaryOp::IntDiv
                     | BinaryOp::Rem
                     | BinaryOp::Pow => {
-                        stack.push((lhs, ty, selection));
-                        stack.push((rhs, ty, selection));
+                        stack.push((lhs, ty, selection, flows));
+                        stack.push((rhs, ty, selection, flows));
                     }
                 },
                 Op::If(condition, then, otherwise) => {
-                    stack.push((condition, Some(Scalar::Bool), selection));
+                    stack.push((condition, Some(Scalar::Bool), selection, true));
                     let chosen = match selection {
                         Selection::Chosen | Selection::Evaluated => {
                             self.chosen(condition, EvalTy::Bool)?
@@ -163,17 +176,17 @@ impl Engine<'_> {
                     };
                     match chosen {
                         Some(CVal::Bool(true)) => {
-                            stack.push((otherwise, ty, passed_over));
-                            stack.push((then, ty, selection));
+                            stack.push((otherwise, ty, passed_over, flows));
+                            stack.push((then, ty, selection, flows));
                         }
                         Some(CVal::Bool(false)) => {
-                            stack.push((then, ty, passed_over));
-                            stack.push((otherwise, ty, selection));
+                            stack.push((then, ty, passed_over, flows));
+                            stack.push((otherwise, ty, selection, flows));
                         }
                         Some(_) => {}
                         None => {
-                            stack.push((then, ty, selection));
-                            stack.push((otherwise, ty, selection));
+                            stack.push((then, ty, selection, flows));
+                            stack.push((otherwise, ty, selection, flows));
                         }
                     }
                 }
@@ -183,7 +196,7 @@ impl Engine<'_> {
                     otherwise,
                 } => {
                     let scrutinee_ty = self.synth(scrutinee)?;
-                    stack.push((scrutinee, scrutinee_ty, selection));
+                    stack.push((scrutinee, scrutinee_ty, selection, false));
                     let scrutinee_sig = self.known_sig(scrutinee)?;
                     if scrutinee_sig.kind == Kind::Int {
                         for (label, _) in &arms {
@@ -211,17 +224,17 @@ impl Engine<'_> {
                             }
                             for value in values {
                                 if Some(value) != chosen {
-                                    stack.push((value, ty, passed_over));
+                                    stack.push((value, ty, passed_over, flows));
                                 }
                             }
-                            stack.extend(chosen.map(|arm| (arm, ty, selection)));
+                            stack.extend(chosen.map(|arm| (arm, ty, selection, flows)));
                         }
-                        None => stack.extend(values.map(|value| (value, ty, selection))),
+                        None => stack.extend(values.map(|value| (value, ty, selection, flows))),
                     }
                 }
                 Op::Pick { index, items } => {
                     let index_ty = self.synth(index)?;
-                    stack.push((index, index_ty, selection));
+                    stack.push((index, index_ty, selection, false));
                     let position_ty = own_type(&self.known_sig(index)?, EvalTy::Exact);
                     let chosen = match selection {
                         Selection::Chosen | Selection::Evaluated => {
@@ -236,11 +249,11 @@ impl Engine<'_> {
                                 .filter(|position| *position < items.len());
                             for (row, item) in items.iter().enumerate() {
                                 if Some(row) != picked {
-                                    stack.push((*item, ty, passed_over));
+                                    stack.push((*item, ty, passed_over, flows));
                                 }
                             }
                             match picked.and_then(|position| items.get(position)) {
-                                Some(item) => stack.push((*item, ty, selection)),
+                                Some(item) => stack.push((*item, ty, selection, flows)),
                                 None if selection == Selection::Evaluated => {}
                                 None => self.error_at_node(
                                     Code::IndexOutOfRange,
@@ -253,19 +266,25 @@ impl Engine<'_> {
                             }
                         }
                         Some(_) => {}
-                        None => stack.extend(items.into_iter().map(|item| (item, ty, selection))),
+                        None => {
+                            stack.extend(items.into_iter().map(|item| (item, ty, selection, flows)))
+                        }
                     }
                 }
                 Op::Element { base, index } => {
                     let index_ty = self.synth(index)?;
-                    stack.push((index, index_ty, selection));
-                    stack.push((base, ty, selection));
+                    stack.push((index, index_ty, selection, false));
+                    stack.push((base, ty, selection, flows));
                     if selection == Selection::Chosen {
                         self.fixed_cell_index(base, index)?;
                     }
                 }
                 Op::Array(elements) => {
-                    stack.extend(elements.into_iter().map(|element| (element, ty, selection)));
+                    stack.extend(
+                        elements
+                            .into_iter()
+                            .map(|element| (element, ty, selection, flows)),
+                    );
                 }
                 Op::Convert(target, operand) => {
                     let operand_ty = if is_float(target) {
@@ -273,9 +292,11 @@ impl Engine<'_> {
                     } else {
                         self.synth(operand)?
                     };
-                    stack.push((operand, operand_ty, selection));
+                    stack.push((operand, operand_ty, selection, is_float(target)));
                 }
-                Op::Annotate(target, operand) => stack.push((operand, Some(target), selection)),
+                Op::Annotate(target, operand) => {
+                    stack.push((operand, Some(target), selection, true))
+                }
                 Op::Builtin(builtin, args) => {
                     let operands = match builtin {
                         Builtin::Rand => Some(Scalar::I64),
@@ -296,21 +317,24 @@ impl Engine<'_> {
                         Builtin::Len | Builtin::Bytes => {
                             for arg in args {
                                 let arg_ty = self.synth(arg)?;
-                                stack.push((arg, arg_ty, selection));
+                                stack.push((arg, arg_ty, selection, false));
                             }
                             continue;
                         }
                     };
-                    stack.extend(args.into_iter().map(|arg| (arg, operands, selection)));
+                    stack.extend(
+                        args.into_iter()
+                            .map(|arg| (arg, operands, selection, flows)),
+                    );
                 }
                 Op::Join(lhs, rhs) => {
-                    stack.push((lhs, ty, selection));
-                    stack.push((rhs, ty, selection));
+                    stack.push((lhs, ty, selection, flows));
+                    stack.push((rhs, ty, selection, flows));
                 }
                 Op::Slice { base, lower, upper } => {
                     for (bound, _) in lower.iter().chain(upper.iter()) {
                         let bound_ty = self.synth(*bound)?;
-                        stack.push((*bound, bound_ty, selection));
+                        stack.push((*bound, bound_ty, selection, false));
                         if selection != Selection::Chosen {
                             continue;
                         }
@@ -321,12 +345,12 @@ impl Engine<'_> {
                             self.error_at_node(Code::IndexOutOfRange, *bound, outside_i64(value))?;
                         }
                     }
-                    stack.push((base, ty, selection));
+                    stack.push((base, ty, selection, flows));
                 }
                 Op::History { fallback, .. } => {
                     if let Some(fallback) = fallback {
                         let cell_ty = self.history_type(node)?.or(ty);
-                        stack.push((fallback, cell_ty, selection));
+                        stack.push((fallback, cell_ty, selection, true));
                     }
                 }
                 Op::Native { native, args } => {
@@ -338,14 +362,14 @@ impl Engine<'_> {
                     };
                     for (arg, param) in args.into_iter().zip(params) {
                         for leaf in self.native_argument(arg, param)?.unwrap_or_default() {
-                            stack.push((leaf, param, arg_selection));
+                            stack.push((leaf, param, arg_selection, true));
                         }
                     }
                 }
                 other => {
                     for operand in other.operands() {
                         let operand_ty = self.synth(operand)?;
-                        stack.push((operand, operand_ty, selection));
+                        stack.push((operand, operand_ty, selection, false));
                     }
                 }
             }
