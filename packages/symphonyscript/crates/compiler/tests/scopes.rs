@@ -523,6 +523,148 @@ fn in_code_that_nothing_expands_a_flag_naming_no_attribute_is_a_name_error_and_a
 }
 
 #[test]
+fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_written_kind() {
+    let clip = "Clip c:\n    Note\n";
+    let used = "Clip c:\n    P\n";
+    let q = "pattern Q():\n    Note\n";
+    let r = "pattern R():\n    Q\n";
+    let v = "pattern V():\n    Note as a\n    Note as b\n";
+    let note = "pattern P():\n    Note as n\n    Note | velocity=n.nothing\n";
+    let named_use = "pattern P():\n    Q as q\n    Note | velocity=q.nothing\n";
+    let wire = "pattern P():\n    Plays as w /0.5: c\n    Note | velocity=w.nothing\n";
+    let child =
+        "pattern P():\n    Clip as k:\n        Note as m\n    Note | velocity=k.m.nothing\n";
+    let group = "pattern P():\n    V as v\n    Note | velocity=v.nothing\n";
+    let member = "pattern P():\n    V as v\n    Note | velocity=v.a.nothing\n";
+    let chained = "pattern P():\n    R as r\n    Note | velocity=r.nothing\n";
+    let arm = "pattern P():\n    when true:\n        Note as m\n    Note | velocity=m.nothing\n";
+    let deeper = "pattern P():\n    Note as n\n    Note | velocity=n.nothing.velocity\n";
+    let looped =
+        "pattern P():\n    Note as n\n    for i in 0..0:\n        Note | velocity=n.nothing\n";
+    let attribute = (Code::UnknownAttribute, "nothing");
+    let anonymous = [(Code::NamedInFor, "n"), (Code::UnknownName, "n")];
+    let rows: &[support::Row] = &[
+        (&[note, clip], &[attribute]),
+        (&[q, named_use, clip], &[attribute]),
+        (&[wire, clip], &[attribute]),
+        (&[child, clip], &[attribute]),
+        (&[v, group, clip], &[attribute]),
+        (&[v, member, clip], &[attribute]),
+        (&[q, r, chained, clip], &[attribute]),
+        (&[arm, clip], &[attribute]),
+        (&[deeper, clip], &[attribute]),
+        (&[looped, clip], &[attribute]),
+        (
+            &[
+                "pattern P():\n    Nope as n\n    Note | velocity=n.nothing\n",
+                clip,
+            ],
+            &[(Code::UnknownKind, "Nope")],
+        ),
+        (
+            &[
+                "pattern P():\n    Note as n\n    Note | velocity=n.velocity\n",
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern P():\n    Plays as w /0.5: c\n    Note | velocity=w.gain\n",
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern P():\n    V as v\n    Note | velocity=v.a.velocity\n",
+                v,
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "pattern P():\n    Clip as k:\n        Note as m\n    Note | velocity=k.m.velocity\n",
+                clip,
+            ],
+            &[],
+        ),
+        (&[note, used], &[attribute]),
+        (&[q, named_use, used], &[attribute]),
+        (&[wire, used], &[attribute]),
+        (&[v, group, used], &[attribute]),
+        (&[v, member, used], &[attribute]),
+        (&[q, r, chained, used], &[attribute]),
+        (
+            &["Clip c:\n    Note as n\n    for i in 0..0:\n        Note | velocity=n.nothing\n"],
+            &[attribute],
+        ),
+        (
+            &[
+                q,
+                "Clip c:\n    Q as q\n    for i in 0..0:\n        Note | velocity=q.nothing\n",
+            ],
+            &[attribute],
+        ),
+        (
+            &[
+                "Clip c:\n    Plays as w /0.5: c\n    for i in 0..0:\n        Note | velocity=w.nothing\n",
+            ],
+            &[attribute],
+        ),
+        (
+            &["Clip c:\n    Note as n\n    for i in 0..0:\n        Note | velocity=n.velocity\n"],
+            &[],
+        ),
+        (
+            &[
+                "Clip c:\n    for i in 0..0:\n        Note as n\n        Note | velocity=n.nothing\n",
+            ],
+            &anonymous,
+        ),
+        (
+            &[
+                "Clip c:\n    for i in 0..0:\n        when true:\n            Note as n\n            Note | velocity=n.nothing\n",
+            ],
+            &anonymous,
+        ),
+        (
+            &[
+                "pattern P():\n    for i in 0..0:\n        Note as n\n        Note | velocity=n.nothing\n",
+                clip,
+            ],
+            &anonymous,
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+    let summaries = |text: String| -> Vec<String> {
+        support::errors(support::checked_with(&vocabulary(), &text))
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code == Code::UnknownAttribute)
+            .map(|diagnostic| diagnostic.summary)
+            .collect()
+    };
+    for (declared, body) in [
+        ("", note),
+        (q, named_use),
+        ("", wire),
+        (v, group),
+        (v, member),
+        (&*format!("{q}{r}"), chained),
+        ("", arm),
+    ] {
+        let unused = summaries(format!("{declared}{body}{clip}"));
+        assert_eq!(unused.len(), 1, "{body}");
+        assert_eq!(
+            unused,
+            summaries(format!("{declared}{body}{used}")),
+            "{body}"
+        );
+    }
+}
+
+#[test]
 fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors() {
     let clip = "Clip c:\n    Note\n";
     let value = (Code::NotAValue, "sin");

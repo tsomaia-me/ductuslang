@@ -832,7 +832,7 @@ impl Engine<'_> {
                 Some(iteration) if iteration.is_empty() => {
                     if self.first_unrun(loc, scope)? {
                         let probe = self.name_probe_of(var.as_ref(), scope)?;
-                        self.names_in(body, probe)?;
+                        self.for_body_names(body, probe)?;
                     }
                 }
                 Some(iteration) => frames.push(Frame::For {
@@ -1069,7 +1069,7 @@ impl Engine<'_> {
 
     fn stand_in_has_body(&self, pattern: PatternId) -> Result<bool, Internal> {
         Ok(match self.stand_in_target(pattern)? {
-            Some(target) => self.hir.placement(target)?.body.is_some(),
+            Some((target, ..)) => self.hir.placement(target)?.body.is_some(),
             None => false,
         })
     }

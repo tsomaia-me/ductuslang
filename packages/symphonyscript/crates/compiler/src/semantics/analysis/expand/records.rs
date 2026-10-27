@@ -28,7 +28,7 @@ use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::wire::Wire;
 use crate::semantics::collection::{Decl, StandIn};
-use crate::semantics::ir::{AttrValue, Loc, PatternId, PlacementId, WireId as HirWireId};
+use crate::semantics::ir::{AttrValue, BlockId, Loc, PatternId, PlacementId, WireId as HirWireId};
 use crate::semantics::reporting::grouped;
 
 impl<'a> Engine<'a> {
@@ -460,12 +460,9 @@ impl<'a> Engine<'a> {
     pub(in crate::semantics::analysis) fn stand_in_target(
         &self,
         mut pattern: PatternId,
-    ) -> Result<Option<PlacementId>, Internal> {
+    ) -> Result<Option<(PlacementId, NodeKind, ScopeId)>, Internal> {
         loop {
-            let placement = match some!(self.stand_in(pattern)?) {
-                StandIn::Node(placement) => return Ok(Some(placement)),
-                StandIn::Use(placement) => placement,
-            };
+            let placement = some!(self.stand_in(pattern)?).placement();
             let kind = some!(self.hir.placement(placement)?.kind.as_ref());
             let global = if self.hir.is_prelude_pattern(pattern) {
                 self.prelude_global
@@ -474,7 +471,7 @@ impl<'a> Engine<'a> {
             };
             match some!(self.kind_decl(global, &kind.text)?) {
                 Decl::Pattern(next) if !self.is_cyclic(next)? => pattern = next,
-                Decl::Node(_) => return Ok(Some(placement)),
+                Decl::Node(node) => return Ok(Some((placement, node, global))),
                 Decl::Input(_)
                 | Decl::Let(_)
                 | Decl::State(_)
@@ -532,6 +529,14 @@ impl<'a> Engine<'a> {
             }
             ItemRef::Wire(_) => return Ok(false),
         };
+        self.body_may_name(body, name)
+    }
+
+    pub(in crate::semantics::analysis) fn body_may_name(
+        &mut self,
+        body: BlockId,
+        name: &str,
+    ) -> Result<bool, Internal> {
         let unknown = match self.memo.unknown_bodies.get(&body) {
             Some(unknown) => unknown.clone(),
             None => {

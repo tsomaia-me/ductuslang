@@ -1,4 +1,4 @@
-use symphonyscript_core::{AttrDecl, AttrId};
+use symphonyscript_core::{AttrDecl, AttrId, NodeKind, WireKind};
 
 use super::found::Found;
 use crate::diagnostics::Code;
@@ -20,14 +20,22 @@ use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::shape::Shape;
+use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, ExprKind, Ident, Loc};
+use crate::semantics::collection::Decl;
+use crate::semantics::ir::{ExprId, ExprKind, Ident, Loc, PatternId, PlacementId};
 
 enum Shortcut<T> {
     Pending,
     Declined,
     Read(T),
+}
+
+enum Written {
+    Node(NodeKind, PlacementId, ScopeId),
+    Wire(WireKind),
+    Use(PatternId, ScopeId),
 }
 
 impl Engine<'_> {
@@ -76,7 +84,10 @@ impl Engine<'_> {
                 )?;
                 return Ok(Some(Val::Error));
             }
-            Val::Error => return Ok(Some(Val::Error)),
+            Val::Error => {
+                self.written_field(base, name, scope)?;
+                return Ok(Some(Val::Error));
+            }
         };
         let item = match &self.node(self.through_uses(node)?)?.op {
             Op::NodeRef(item) => *item,
@@ -177,6 +188,146 @@ impl Engine<'_> {
                 )?;
                 Some(Val::Error)
             }
+        })
+    }
+
+    fn written_field(
+        &mut self,
+        base: ExprId,
+        name: &Ident,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        let Some((site, kinds)) = self.written_base(base, scope)? else {
+            return Ok(());
+        };
+        let Some(written) = self.written(site, kinds)? else {
+            return Ok(());
+        };
+        let (body, inner) = match written {
+            Written::Node(_, placement, inner) => (self.hir.placement(placement)?.body, inner),
+            Written::Use(pattern, inner) => (Some(self.hir.pattern(pattern)?.body), inner),
+            Written::Wire(_) => (None, kinds),
+        };
+        if let Some(body) = body {
+            for (child, _) in self.named_sites(body)?.iter() {
+                if self
+                    .site_name(*child)?
+                    .is_some_and(|child| child.text == name.text)
+                {
+                    self.memo
+                        .site_paths
+                        .insert((name.loc, scope), (*child, inner));
+                    return Ok(());
+                }
+            }
+        }
+        let attrs = match written {
+            Written::Node(kind, ..) => self.node_decl(kind)?.attrs.as_slice(),
+            Written::Wire(kind) => self.wire_decl(kind)?.attrs.as_slice(),
+            Written::Use(..) => &[],
+        };
+        if attrs.iter().any(|attr| attr.name == name.text) {
+            return Ok(());
+        }
+        if let Written::Node(_, placement, _) = written
+            && self
+                .hir
+                .placement(placement)?
+                .skipped_block
+                .holds(&name.text)
+        {
+            return Ok(());
+        }
+        if let Some(body) = body
+            && self.body_may_name(body, &name.text)?
+        {
+            return Ok(());
+        }
+        let owner = match written {
+            Written::Node(kind, ..) => {
+                let own = self.site_name(site)?.map_or("", |own| own.text.as_str());
+                format!("the `{}` named `{own}`", self.node_decl(kind)?.name)
+            }
+            Written::Wire(kind) => format!("the `{}` wire", self.wire_decl(kind)?.name),
+            Written::Use(pattern, _) => {
+                let pattern = self.hir.pattern(pattern)?.name.as_ref();
+                format!(
+                    "the use of `{}`",
+                    pattern.map_or("", |name| name.text.as_str())
+                )
+            }
+        };
+        self.error(
+            Code::UnknownAttribute,
+            name.loc,
+            scope,
+            format!("{owner} has no child, wire or attribute `{}`", name.text),
+        )
+    }
+
+    fn written_base(
+        &self,
+        base: ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<(Site, ScopeId)>, Internal> {
+        let name = match &self.hir.expr(base)?.kind {
+            ExprKind::Name(name) => name,
+            ExprKind::Field(_, segment) => {
+                return Ok(self.memo.site_paths.get(&(segment.loc, scope)).copied());
+            }
+            _ => return Ok(None),
+        };
+        let mut current = Some(scope);
+        while let Some(id) = current {
+            let record = self.scope_of(id)?;
+            match &record.kind {
+                ScopeKind::ForVar { name: var, .. } if var == name => {
+                    return Ok(self.memo.site_scopes.get(&id).map(|site| (*site, id)));
+                }
+                ScopeKind::ForVar { .. } => {}
+                ScopeKind::Body { names } if !names.contains_key(name) => {}
+                ScopeKind::Body { .. }
+                | ScopeKind::Global { .. }
+                | ScopeKind::Locals(_)
+                | ScopeKind::ParamPrefix { .. }
+                | ScopeKind::WireClause { .. } => return Ok(None),
+            }
+            current = record.parent;
+        }
+        Ok(None)
+    }
+
+    fn written(&self, site: Site, kinds: ScopeId) -> Result<Option<Written>, Internal> {
+        let kind = match site {
+            Site::Placement(placement) => self.hir.placement(placement)?.kind.as_ref(),
+            Site::Wire(wire) => Some(&self.hir.wire(wire)?.kind),
+        };
+        let Some(kind) = kind else {
+            return Ok(None);
+        };
+        Ok(match (site, self.kind_decl(kinds, &kind.text)?) {
+            (Site::Placement(placement), Some(Decl::Node(node))) => {
+                Some(Written::Node(node, placement, kinds))
+            }
+            (Site::Placement(_), Some(Decl::Pattern(pattern))) => {
+                match self.stand_in_target(pattern)? {
+                    Some((target, node, inner)) => Some(Written::Node(node, target, inner)),
+                    None if self.is_placeholder(pattern)? || self.is_cyclic(pattern)? => None,
+                    None if self.hir.is_prelude_pattern(pattern) => {
+                        Some(Written::Use(pattern, self.prelude_global))
+                    }
+                    None => Some(Written::Use(pattern, self.source_global)),
+                }
+            }
+            (Site::Wire(_), Some(Decl::Wire(wire))) => Some(Written::Wire(wire)),
+            _ => None,
+        })
+    }
+
+    fn site_name(&self, site: Site) -> Result<Option<&Ident>, Internal> {
+        Ok(match site {
+            Site::Placement(placement) => self.hir.placement(placement)?.name.as_ref(),
+            Site::Wire(wire) => self.hir.wire(wire)?.name.as_ref(),
         })
     }
 

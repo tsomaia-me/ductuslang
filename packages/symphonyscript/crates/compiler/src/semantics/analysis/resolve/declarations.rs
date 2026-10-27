@@ -401,6 +401,14 @@ impl Engine<'_> {
         self.names_of(vec![Named::Block(block, scope)])
     }
 
+    pub(in crate::semantics::analysis) fn for_body_names(
+        &mut self,
+        body: BlockId,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        self.names_of(vec![Named::ForBody(body, scope)])
+    }
+
     pub(in crate::semantics::analysis) fn names_of_members(
         &mut self,
         members: &[PlacementId],
@@ -441,7 +449,8 @@ impl Engine<'_> {
                 Named::Placement(placement, scope) => {
                     self.placement_names(placement, scope, &mut work)?;
                 }
-                Named::Block(block, scope) => {
+                Named::Block(block, scope) | Named::ForBody(block, scope) => {
+                    let named = matches!(next, Named::Block(..));
                     let mut scope = scope;
                     for (site, _) in self.named_sites(block)?.iter() {
                         let name = match site {
@@ -449,9 +458,12 @@ impl Engine<'_> {
                             Site::Wire(id) => hir.wire(*id)?.name.as_ref(),
                         };
                         scope = self.unbound(name, scope)?;
+                        if named && name.is_some() {
+                            self.memo.site_scopes.insert(scope, *site);
+                        }
                     }
                     for item in hir.block(block)?.items.iter().rev() {
-                        self.item_names(item, scope, &mut work)?;
+                        self.item_names(item, scope, named, &mut work)?;
                     }
                 }
             }
@@ -463,6 +475,7 @@ impl Engine<'_> {
         &mut self,
         item: &BodyItem,
         scope: ScopeId,
+        named: bool,
         work: &mut Vec<Named>,
     ) -> Result<(), Internal> {
         match item {
@@ -492,7 +505,7 @@ impl Engine<'_> {
                     self.demand(Query::Expr(expr, scope))?;
                 }
                 let inner = self.unbound(var.as_ref(), scope)?;
-                work.push(Named::Block(*body, inner));
+                work.push(Named::ForBody(*body, inner));
             }
             BodyItem::When {
                 arms, otherwise, ..
@@ -500,9 +513,16 @@ impl Engine<'_> {
                 for arm in arms {
                     self.demand(Query::Expr(arm.guard, scope))?;
                 }
-                work.extend(otherwise.iter().map(|block| Named::Block(*block, scope)));
+                let arm_block = |block| {
+                    if named {
+                        Named::Block(block, scope)
+                    } else {
+                        Named::ForBody(block, scope)
+                    }
+                };
+                work.extend(otherwise.iter().map(|block| arm_block(*block)));
                 for arm in arms.iter().rev() {
-                    work.push(Named::Block(arm.body, scope));
+                    work.push(arm_block(arm.body));
                 }
             }
         }
@@ -675,6 +695,7 @@ impl Engine<'_> {
 
 enum Named {
     Block(BlockId, ScopeId),
+    ForBody(BlockId, ScopeId),
     Placement(PlacementId, ScopeId),
 }
 

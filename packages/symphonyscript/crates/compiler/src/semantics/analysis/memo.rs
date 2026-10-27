@@ -111,6 +111,8 @@ pub(crate) struct Memo {
         crate::semantics::ir::BlockId,
         std::rc::Rc<[(super::site::Site, crate::semantics::ir::Loc)]>,
     >,
+    pub site_scopes: FastMap<ScopeId, super::site::Site>,
+    pub site_paths: FastMap<(crate::semantics::ir::Loc, ScopeId), (super::site::Site, ScopeId)>,
     pub pattern_names: FastMap<
         crate::semantics::ir::PatternId,
         std::rc::Rc<std::collections::BTreeMap<String, super::local_name::LocalName>>,
