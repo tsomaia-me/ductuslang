@@ -357,7 +357,8 @@ impl Engine<'_> {
             | ScopeKind::Locals(_)
             | ScopeKind::ParamPrefix { .. }
             | ScopeKind::ForVar { .. }
-            | ScopeKind::WireClause { .. } => None,
+            | ScopeKind::WireClause { .. }
+            | ScopeKind::WrittenClause { .. } => None,
         })
     }
 
@@ -416,7 +417,8 @@ impl Engine<'_> {
                 | ScopeKind::ForVar { .. }
                 | ScopeKind::ParamPrefix { .. }
                 | ScopeKind::Body { .. }
-                | ScopeKind::WireClause { .. } => {}
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => {}
             }
             current = record.parent;
         }

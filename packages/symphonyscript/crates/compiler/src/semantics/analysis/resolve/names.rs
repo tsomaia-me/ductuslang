@@ -88,7 +88,10 @@ impl Engine<'_> {
                         None => Found::Nothing,
                     });
                 }
-                ScopeKind::ForVar { .. } | ScopeKind::Locals(_) | ScopeKind::WireClause { .. } => {}
+                ScopeKind::ForVar { .. }
+                | ScopeKind::Locals(_)
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => {}
             }
             current = parent;
         }

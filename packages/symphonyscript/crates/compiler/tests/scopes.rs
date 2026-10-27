@@ -665,6 +665,101 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
 }
 
 #[test]
+fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_needs_no_expansion() {
+    let verse = "Clip verse:\n    Note as hook\n";
+    let unknown = |text| (Code::UnknownAttribute, text);
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "Clip verse:\n    Note as hook\n    for i in 0..0:\n        Plays | gain=to.yyy: verse\n        Plays | gain=to.hook.www: verse\n",
+                "pattern Unused():\n    Plays | gain=to.zzz: verse\n    Plays | gain=to.nochild.velocity: verse\n",
+            ],
+            &[
+                unknown("yyy"),
+                unknown("www"),
+                unknown("zzz"),
+                unknown("nochild"),
+            ],
+        ),
+        (
+            &[verse, "pattern Unused():\n    Plays | gain=to.zzz: verse\n"],
+            &[unknown("zzz")],
+        ),
+        (
+            &[
+                verse,
+                "pattern Unused():\n    Plays | gain=to.nochild.velocity: verse\n",
+            ],
+            &[unknown("nochild")],
+        ),
+        (
+            &[
+                "Clip verse:\n    Note as hook\n    for i in 0..0:\n        Plays | gain=to.yyy: verse\n",
+            ],
+            &[unknown("yyy")],
+        ),
+        (
+            &[
+                "Clip verse:\n    Note as hook\n    for i in 0..0:\n        Plays | gain=to.hook.www: verse\n",
+            ],
+            &[unknown("www")],
+        ),
+        (
+            &[
+                verse,
+                "pattern Unused():\n    Plays when to.www > 0 | gain=0.5: verse\n",
+            ],
+            &[unknown("www")],
+        ),
+        (
+            &[verse, "pattern Unused():\n    Plays /(to.www): verse\n"],
+            &[unknown("www")],
+        ),
+        (
+            &[
+                verse,
+                "pattern Unused():\n    Plays | gain=to.zzz: verse.hook\n",
+            ],
+            &[unknown("zzz")],
+        ),
+        (
+            &[
+                verse,
+                "pattern Unused():\n    Plays | gain=to.hook: verse\n",
+            ],
+            &[(Code::MisplacedTo, "hook")],
+        ),
+        (
+            &[
+                verse,
+                "pattern Unused():\n    Plays | gain=to.hook.velocity: verse\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                verse,
+                "pattern P(target):\n    Plays | gain=to.gain: target\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                verse,
+                "Clip c:\n    Plays | gain=to.zzz: verse\n    Plays | gain=to.nochild.velocity: verse\n    Plays | gain=to.hook.www: verse\n    Plays | gain=to.hook: verse\n    Plays | gain=to.hook.velocity: verse\n",
+            ],
+            &[
+                unknown("zzz"),
+                unknown("nochild"),
+                unknown("www"),
+                (Code::MisplacedTo, "hook"),
+            ],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors() {
     let clip = "Clip c:\n    Note\n";
     let value = (Code::NotAValue, "sin");

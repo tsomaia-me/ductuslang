@@ -564,6 +564,8 @@ impl Engine<'_> {
 
     fn wire_names(&mut self, wire: WireId, scope: ScopeId) -> Result<(), Internal> {
         let decl = self.hir.wire(wire)?;
+        let chain = self.chain(scope)?;
+        let clause = self.scope(ScopeKind::WrittenClause { wire }, Some(scope), chain)?;
         if let Some(Decl::Wire(kind)) = self.kind_decl(scope, &decl.kind.text)? {
             self.attr_sources_of(
                 ItemKind::Wire(kind),
@@ -571,12 +573,12 @@ impl Engine<'_> {
                 decl.default,
                 &decl.attrs,
                 decl.loc,
-                scope,
+                clause,
             )?;
         }
         let exprs = decl.default.iter().chain(decl.gate.iter()).copied();
         for expr in exprs.chain(attr_exprs(&decl.attrs)) {
-            self.demand(Query::Expr(expr, scope))?;
+            self.demand(Query::Expr(expr, clause))?;
         }
         let destination = self.demand_val(Query::Expr(decl.destination, scope))?;
         let message = match destination {

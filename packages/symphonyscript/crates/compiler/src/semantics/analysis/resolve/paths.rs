@@ -24,7 +24,9 @@ use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
-use crate::semantics::ir::{ExprId, ExprKind, Ident, Loc, PatternId, PlacementId};
+use crate::semantics::ir::{
+    ExprId, ExprKind, Ident, Loc, PatternId, PlacementId, WireId as HirWireId,
+};
 
 enum Shortcut<T> {
     Pending,
@@ -284,7 +286,7 @@ impl Engine<'_> {
                 ScopeKind::ForVar { name: var, .. } if var == name => {
                     return Ok(self.memo.site_scopes.get(&id).map(|site| (*site, id)));
                 }
-                ScopeKind::ForVar { .. } => {}
+                ScopeKind::ForVar { .. } | ScopeKind::WrittenClause { .. } => {}
                 ScopeKind::Body { names } if !names.contains_key(name) => {}
                 ScopeKind::Body { .. }
                 | ScopeKind::Global { .. }
@@ -355,11 +357,18 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
-        let Some(wire) = self.enclosing_wire(scope)? else {
-            return Ok(Some(Val::Error));
+        let (wire, candidates) = match self.enclosing_wire(scope)? {
+            Some(wire) => {
+                let destination = some!(self.destination(Query::Destination(wire), need));
+                (Some(wire), destination.candidates())
+            }
+            None => match self.written_clause(scope)? {
+                Some((written, outer)) => {
+                    (None, some!(self.written_destination(written, outer, need)?))
+                }
+                None => return Ok(Some(Val::Error)),
+            },
         };
-        let destination = some!(self.destination(Query::Destination(wire), need));
-        let candidates = destination.candidates();
         if candidates
             .iter()
             .any(|candidate| !matches!(candidate, ItemRef::Instance(_)))
@@ -430,6 +439,9 @@ impl Engine<'_> {
                 }
             }
         }
+        let Some(wire) = wire else {
+            return Ok(Some(Val::Error));
+        };
         if attrs.is_empty() {
             return Ok(Some(Val::Error));
         }
@@ -448,6 +460,71 @@ impl Engine<'_> {
             loc,
             scope,
         )?))
+    }
+
+    fn written_clause(&self, scope: ScopeId) -> Result<Option<(HirWireId, ScopeId)>, Internal> {
+        let mut current = Some(scope);
+        while let Some(id) = current {
+            let record = self.scope_of(id)?;
+            match record.kind {
+                ScopeKind::WrittenClause { wire } => {
+                    return Ok(record.parent.map(|outer| (wire, outer)));
+                }
+                ScopeKind::WireClause { .. } | ScopeKind::Global { .. } => return Ok(None),
+                ScopeKind::Locals(_)
+                | ScopeKind::ParamPrefix { .. }
+                | ScopeKind::Body { .. }
+                | ScopeKind::ForVar { .. } => {}
+            }
+            current = record.parent;
+        }
+        Ok(None)
+    }
+
+    fn written_destination(
+        &mut self,
+        wire: HirWireId,
+        outer: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Vec<ItemRef>>, Internal> {
+        let destination = self.hir.wire(wire)?.destination;
+        let Some(val) = self.val(Query::Expr(destination, outer), need) else {
+            return Ok(None);
+        };
+        let Val::Scalar(mut node) = val else {
+            return Ok(Some(Vec::new()));
+        };
+        loop {
+            node = match &self.node(node)?.op {
+                Op::NodeRef(item) => return Ok(Some(vec![*item])),
+                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => *inner,
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::Read(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::If(..)
+                | Op::Match { .. }
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => return Ok(Some(Vec::new())),
+            };
+        }
     }
 
     fn enclosing_wire(&self, scope: ScopeId) -> Result<Option<WireId>, Internal> {

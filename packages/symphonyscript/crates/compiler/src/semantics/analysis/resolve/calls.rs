@@ -606,7 +606,8 @@ impl Engine<'_> {
                 ScopeKind::Global { .. } => break,
                 ScopeKind::Body { .. }
                 | ScopeKind::ForVar { .. }
-                | ScopeKind::WireClause { .. } => {
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => {
                     current = record.parent;
                 }
             }
@@ -731,7 +732,8 @@ impl Engine<'_> {
                 ScopeKind::Global { .. } => return Ok(false),
                 ScopeKind::Body { .. }
                 | ScopeKind::ForVar { .. }
-                | ScopeKind::WireClause { .. } => {
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => {
                     current = record.parent;
                 }
             }
