@@ -2,8 +2,10 @@ use super::position::Position;
 use super::role::Role;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::resolve::LENGTH_LIMIT;
+use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::val::Val;
 
 pub(super) enum ArrayPosition {
@@ -230,8 +232,20 @@ impl Engine<'_> {
 }
 
 impl Engine<'_> {
+    fn bound_drew_error(&self, items: &[Bound]) -> Result<bool, Internal> {
+        for item in items {
+            let node = match item {
+                Bound::Value(node) => *node,
+                Bound::Cell(binding) => self.binding(*binding)?.init,
+            };
+            if self.memo.sigs.get(&node).is_some_and(Sig::is_error) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub(super) fn state_checks(&mut self) -> Result<(), Internal> {
-        use crate::semantics::analysis::bound::Bound;
         use crate::semantics::analysis::bound_val::BoundVal;
         use crate::semantics::analysis::history_cell::HistoryCell;
         use crate::semantics::analysis::op::Op;
@@ -281,18 +295,21 @@ impl Engine<'_> {
                 }
                 if let HistoryCell::Let(id) = cell {
                     let global = self.global_of_let(id);
-                    let reactive = match self
+                    let bound = self
                         .memo
                         .lets
                         .get(&(global, crate::semantics::analysis::let_ref::LetRef::Top(id)))
-                    {
-                        Some(BoundVal::Scalar(Bound::Cell(_))) => true,
-                        Some(BoundVal::Array(array)) => {
-                            array.1.iter().any(|item| matches!(item, Bound::Cell(_)))
-                        }
+                        .cloned();
+                    let items = match &bound {
+                        Some(BoundVal::Scalar(item)) => vec![*item],
+                        Some(BoundVal::Array(array)) => array.1.clone(),
                         Some(BoundVal::Error) => continue,
-                        Some(BoundVal::Scalar(Bound::Value(_))) | None => false,
+                        None => Vec::new(),
                     };
+                    if self.bound_drew_error(&items)? {
+                        continue;
+                    }
+                    let reactive = items.iter().any(|item| matches!(item, Bound::Cell(_)));
                     if !reactive {
                         self.error_at_node(
                             Code::HistoryTarget,
@@ -334,7 +351,6 @@ impl Engine<'_> {
         cell: crate::semantics::analysis::history_cell::HistoryCell,
         fallback: crate::semantics::analysis::ids::NodeId,
     ) -> Result<(), Internal> {
-        use crate::semantics::analysis::bound::Bound;
         use crate::semantics::analysis::bound_val::BoundVal;
         use crate::semantics::analysis::history_cell::HistoryCell;
         let bound = match cell {

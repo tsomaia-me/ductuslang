@@ -694,9 +694,35 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
         ),
         (
             &[
+                "input note = 60\n",
+                "let t = note + true\n",
+                "state s = (t{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::OperandType, "note + true")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let t = zzz + [note]\n",
+                "state s = (t{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::UnknownName, "zzz")],
+        ),
+        (
+            &[
                 "let t = 3\n",
                 "state s = t{1, 0}\n",
                 "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::HistoryTarget, "t{1, 0}")],
+        ),
+        (
+            &[
+                "let t = 3\n",
+                "state s = t{1, 0}\n",
+                "Clip c:\n    Note/(60 + s)\n",
             ],
             &[(Code::HistoryTarget, "t{1, 0}")],
         ),
