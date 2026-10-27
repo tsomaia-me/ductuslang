@@ -4870,6 +4870,139 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
 }
 
 #[test]
+fn the_operand_that_keeps_a_flow_beside_a_placeholder_is_chosen_in_the_expressions_order() {
+    let x = "input x = 1\n";
+    let f = "fn f(v): v * 2\n";
+    let g = "fn g(v): v\n";
+    let rows: &[support::Row] = &[
+        (
+            &[f, "Clip c:\n    Note/(nothing + 1.5 + f(2.5))\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[x, f, "Clip c:\n    Note/(x + 1.5 + f(2.5))\n"],
+            &[(Code::TypeMismatch, "x + 1.5 + f(2.5)")],
+        ),
+        (
+            &[g, "Clip c:\n    Note/(nothing + g(2.5) + 1.5)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "nothing + g(2.5) + 1.5"),
+            ],
+        ),
+        (
+            &[x, g, "Clip c:\n    Note/(x + g(2.5) + 1.5)\n"],
+            &[(Code::TypeMismatch, "x + g(2.5) + 1.5")],
+        ),
+        (
+            &[f, "Clip c:\n    Note/(nothing + f(2.5))\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "nothing + f(2.5)"),
+            ],
+        ),
+        (
+            &[f, "Clip c:\n    Note/(1 + f(2.5))\n"],
+            &[(Code::TypeMismatch, "1 + f(2.5)")],
+        ),
+        (
+            &[f, "Clip c:\n    Note/(nothing + f(2))\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
+fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twins_code() {
+    let x = "input x = 1\n";
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note/(nothing + 1.5 + (2 + true))\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "2 + true"),
+            ],
+        ),
+        (
+            &[x, "Clip c:\n    Note/(x + 1.5 + (2 + true))\n"],
+            &[(Code::OperandType, "2 + true")],
+        ),
+        (
+            &["Clip c:\n    Note/(if (1 + true) then nothing else 2.5)\n"],
+            &[
+                (Code::OperandType, "1 + true"),
+                (Code::UnknownName, "nothing"),
+            ],
+        ),
+        (
+            &[x, "Clip c:\n    Note/(if (1 + true) then x else 2.5)\n"],
+            &[(Code::OperandType, "1 + true")],
+        ),
+        (
+            &["Clip c:\n    Note/((nothing - true) + true)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "nothing - true"),
+            ],
+        ),
+        (
+            &[x, "Clip c:\n    Note/((x - true) + true)\n"],
+            &[(Code::OperandType, "x - true")],
+        ),
+        (
+            &["Clip c:\n    Note when nothing < true\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "nothing < true"),
+            ],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let rows: &[support::Row] = &[
+        (
+            &["Env e | attack=(nothing * 2ms + true)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "nothing * 2ms + true"),
+            ],
+        ),
+        (
+            &[x, "Env e | attack=(x * 2ms + true)\n"],
+            &[(Code::OperandType, "x * 2ms + true")],
+        ),
+    ];
+    let envelope = symphonyscript_fixtures::envelope_vocabulary();
+    support::assert_rows_in_every_order(&envelope, rows);
+    let rows: &[support::Row] = &[
+        (
+            &["Clip as g | three=([nothing, 1.5] + [(2 + true)])\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "2 + true"),
+            ],
+        ),
+        (
+            &[x, "Clip as g | three=([x, 1.5] + [(2 + true)])\n"],
+            &[(Code::OperandType, "2 + true")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
+    let compiler = symphonyscript::Compiler::new(&envelope).expect("it compiles");
+    let text = "Env e | attack=(nothing * 2ms + true)\n";
+    let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == Code::OperandType)
+        .map(|diagnostic| diagnostic.summary)
+        .collect();
+    assert_eq!(
+        summaries,
+        ["`+` takes two numbers or two strings"],
+        "{text}"
+    );
+}
+
+#[test]
 fn an_own_typed_fault_inside_a_position_draws_whether_or_not_the_position_draws_a_type_mismatch() {
     let x = "input x = 1\n";
     let rows: &[support::Row] = &[

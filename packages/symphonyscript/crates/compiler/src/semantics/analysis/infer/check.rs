@@ -591,7 +591,7 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    fn incompatibility(
+    pub(super) fn incompatibility(
         &mut self,
         node: NodeId,
         sig: &Sig,

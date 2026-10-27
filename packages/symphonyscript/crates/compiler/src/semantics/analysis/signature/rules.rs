@@ -384,24 +384,7 @@ impl Engine<'_> {
             }
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Rem | BinaryOp::Pow => {
                 if !numeric {
-                    let message = match op {
-                        BinaryOp::Add => "`+` takes two numbers or two strings",
-                        BinaryOp::Sub
-                        | BinaryOp::Mul
-                        | BinaryOp::Div
-                        | BinaryOp::IntDiv
-                        | BinaryOp::Rem
-                        | BinaryOp::Pow
-                        | BinaryOp::Is
-                        | BinaryOp::IsNot
-                        | BinaryOp::Lt
-                        | BinaryOp::Le
-                        | BinaryOp::Gt
-                        | BinaryOp::Ge
-                        | BinaryOp::And
-                        | BinaryOp::Or => "this operator takes numbers",
-                    };
-                    self.error_at_node(Code::OperandType, node, message)?;
+                    self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
                     return Ok(Sig::ERROR);
                 }
                 let family = match op {
@@ -455,12 +438,7 @@ impl Engine<'_> {
                 let integers = matches!(a.kind, Kind::Int | Kind::Any)
                     && matches!(b.kind, Kind::Int | Kind::Any);
                 if !numeric || (op == BinaryOp::IntDiv && !integers) {
-                    let message = if op == BinaryOp::IntDiv {
-                        "`div` takes integers"
-                    } else {
-                        "`/` takes numbers"
-                    };
-                    self.error_at_node(Code::OperandType, node, message)?;
+                    self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
                     return Ok(Sig::ERROR);
                 }
                 let family = match (a.family, b.family) {
@@ -495,11 +473,7 @@ impl Engine<'_> {
             }
             BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
                 if !numeric {
-                    self.error_at_node(
-                        Code::OperandType,
-                        node,
-                        "`<`, `<=`, `>` and `>=` compare numbers",
-                    )?;
+                    self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
                     return Ok(Sig::ERROR);
                 }
                 if self.one_family(node, &[lhs, rhs])?.is_none() {
@@ -518,11 +492,7 @@ impl Engine<'_> {
                         _ => false,
                     };
                 if !comparable {
-                    self.error_at_node(
-                        Code::OperandType,
-                        node,
-                        "`is` compares two numbers, `bool`s, values of one enum or strings",
-                    )?;
+                    self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
                     return Ok(Sig::ERROR);
                 }
                 if (a.kind == Kind::Str || b.kind == Kind::Str) && reactive {
@@ -542,12 +512,30 @@ impl Engine<'_> {
                 if !matches!(a.kind, Kind::Bool | Kind::Any)
                     || !matches!(b.kind, Kind::Bool | Kind::Any)
                 {
-                    self.error_at_node(Code::OperandType, node, "`and` and `or` take `bool`s")?;
+                    self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
                     return Ok(Sig::ERROR);
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
         })
+    }
+
+    pub(in crate::semantics::analysis) fn operand_type_message(op: BinaryOp) -> &'static str {
+        match op {
+            BinaryOp::Add => "`+` takes two numbers or two strings",
+            BinaryOp::Div => "`/` takes numbers",
+            BinaryOp::IntDiv => "`div` takes integers",
+            BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                "`<`, `<=`, `>` and `>=` compare numbers"
+            }
+            BinaryOp::Is | BinaryOp::IsNot => {
+                "`is` compares two numbers, `bool`s, values of one enum or strings"
+            }
+            BinaryOp::And | BinaryOp::Or => "`and` and `or` take `bool`s",
+            BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Rem | BinaryOp::Pow => {
+                "this operator takes numbers"
+            }
+        }
     }
 
     fn builtin_sig(
