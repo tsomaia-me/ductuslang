@@ -495,8 +495,8 @@ A compile-time value is computed by the rules of §5, except that a flexible int
 - The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a lambda argument (§6.7) counting by its source position and the values of the names it reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
-- Every limit has a warning value beside it, with its own default, which a project or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming the call or the expansion that crossed it, and a count that passes the limit draws the error.
+- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a lambda argument (§6.7) counting by its source position and the values of the names it reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
+- Every limit that draws an error has a warning value beside it, whose default is half the limit's default and which a project or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming what the limit's error names: the call, the expansion, or for the memory limit the Program; a count that passes the limit draws the error. The reload search bound (§13.3) draws no error and has no warning.
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
 
@@ -715,10 +715,10 @@ ForExprHead  ::= LoopHead 'into' Name (':' Type)? 'from' Expr ':'
 A `for` expression folds an iterable (§7.9) into one value. The name after `into` is its accumulator, which starts as the value after `from`. The body runs once per element of the iterable, in order, with the loop names (§7.9) and the accumulator in scope, and the value of each run is the accumulator of the next. The expression's value is the last accumulator, or the start when the iterable is empty.
 
 - The accumulator's type unifies the start and the body as `if` arms do (§4.2), and an annotation fixes it (§4.5).
-- An accumulator that is a variable array has the capacity found by applying the body's capacity rule (§3.7) to the start's capacity once per iteration the iterable can run, stopping when it no longer grows. An array or a map runs at most its capacity of iterations, and a range with a compile-time lower bound at most its upper bound's maximum (§7.9) less the lower bound.
-- The block form is the whole value of a `let`, a local `let` or a function body, never an operand, as `match` is (§5.4); its local `let`s are visible to its final expression. The one-line form stands in parentheses where it is an operand, as `if` does (§5.1).
+- Every capacity in the accumulator's type, an array's at every level, a string's and a map's, is found by applying the body's capacity rule (§3.3, §3.7, §3.10) to the start's capacity once per iteration the iterable can run, stopping when it no longer grows. An array or a map runs at most its capacity of iterations, and a range at most the count its bounds allow (§7.9).
+- The block form is the whole value of a `let`, a local `let` or a function body, never an operand, as `match` is (§5.4); its local `let`s are visible to its final expression. The one-line form stands without parentheses only as the whole value of a `let`, a local `let` or a function body; anywhere else, as an operand, an argument, an attribute value, a gate, a scrutinee, a start or an iterable, it stands in parentheses.
 - A `for` expression whose iterable, start and body read no cell is a compile-time value (§4.6). Any other is one cell (§4.4), evaluated whole each time it is evaluated (§12.2).
-- The loop names follow a `for` variable's scope rules (§6.5).
+- Its loop names, its accumulator and its local `let`s follow §6.5's name rules.
 - The body is inlined once, however many times it runs, and counts once toward §4.6's inline limit.
 
 ```sym
@@ -741,6 +741,14 @@ let total = 1 + for x in held into sum from 0: sum + x
 
 This is an error: a `for` expression that is an operand stands in parentheses.
 
+```sym-error
+input held: i32[..10] = []
+
+let high = len(for x in held into kept from []: if x > 60 then kept + [x] else kept)
+```
+
+This is an error: a `for` expression that is an argument stands in parentheses, although an `if` there needs none (§5.1).
+
 ## 6. Declarations
 
 ### 6.1 Inputs
@@ -749,7 +757,7 @@ This is an error: a `for` expression that is an operand stands in parentheses.
 InputDecl ::= 'input' Name (':' Type)? '=' Expr NEWLINE
 ```
 
-An input is a cell the host writes (§12.1). Its initializer is a compile-time value and gives the input its type (§4.4). An input may be an array, a string or a record; the host then writes single elements or leaf fields, or the whole value. A string input states its capacity (§3.3), and a record input its type (§3.8). An input annotated with a variable array type (§3.7) takes an initializer no longer than its capacity: `input held: i32[..10] = []`.
+An input is a cell the host writes (§12.1). Its initializer is a compile-time value and gives the input its type (§4.4). An input may be an array, a string or a record; the host then writes single elements or leaf fields, or the whole value. A string input states its capacity (§3.3), and a record input its type (§3.8). Inputs are declared at top level and in pattern bodies (§6.4). An input annotated with a variable array type (§3.7) takes an initializer no longer than its capacity: `input held: i32[..10] = []`.
 
 ```sym
 input cutoff = 0.5
@@ -841,26 +849,34 @@ This is an error: `fib` is recursive, and its argument reads the input `n`; the 
 ### 6.4 Patterns
 
 ```ebnf
-PatternDecl   ::= 'pattern' Name GenericParams? '(' PatternParams? ')' ':' NEWLINE INDENT LocalLet* BodyItem+ DEDENT
-PatternParams ::= PatternParam (',' PatternParam)*
-PatternParam  ::= 'default'? Name (':' Type)? ('=' Expr)?
+PatternDecl    ::= 'pattern' Name GenericParams? '(' PatternParams? ')' ('->' PlacementType)? ':' NEWLINE INDENT PatternItem* BodyItem+ DEDENT
+PatternParams  ::= PatternParam (',' PatternParam)*
+PatternParam   ::= 'default'? ('input' | 'const')? Name (':' Type)? ('=' Expr)?
+                 | 'children' Name ':' PlacementType
+PatternItem    ::= InputDecl | LocalLet | StateDecl
+PlacementType  ::= PlacementEntry | '(' PlacementEntry (',' PlacementEntry)* ')'
+PlacementEntry ::= (Name | 'node' | 'wire' | '[' PlacementEntry ']') ('+' | '*' | '{' Count '}')?
+Count          ::= Digits ('+' | '..' Digits)? | '..' Digits
 ```
 
-A pattern is a named, parameterized group of placements.
+A pattern is a named declaration of placements with parameters and a type. A use places them as one node, one wire or a group, with inputs and states of its own, and the pattern's name stands in a `children` type and in the paths of what a use places (§11.1).
 
-- Patterns are declared at top level. The body holds `let` lines first and then any body items (§7.1). Each expansion has its own `let`s, visible throughout the body. Two parameters or two `let`s with one name, or a `let` named like a parameter, are an error.
-- A pattern is used with placement syntax. The attribute clause supplies parameters in every entry form of §7.6, so `name` and `!name` supply a `bool` parameter, and `/expr` supplies the parameter marked `default`, of which there is at most one. `/expr` on a pattern without a `default` parameter is an error. Supplying a parameter twice is an error, and so is omitting a parameter that has no default value. A use carries no flags and no body.
-- A use is replaced by the body's placements at the use's position, with each parameter bound to its argument as in a function call (§6.3), and the result is checked in place. Parameters are typed as a function's are (§6.3), an annotation fixing a parameter's type (§4.5); an argument that needs an expected type, such as a bare variant in `Voice | shape=Saw`, takes it from the annotation or from the parameter's uses in the body. An argument may be a value, a reactive value, a node reference or an array of node references.
+- Patterns are declared at top level. The body holds its declaration lines first, inputs, `let`s and states in any order, then any body items (§7.1). Each expansion has its own inputs, `let`s and states, visible throughout the body. An input or a state of a use is an ordinary input or state of the Program (§11), named by the use's path (§11.1): `Voice as low` with `input gain` in the pattern yields the input `low.gain` under the use's parent, one per use, and one per iteration inside a `for`. An input's initializer is a compile-time value that may read the pattern's compile-time parameters; a state may read the pattern's inputs, parameters and `let`s. Two parameters or two declarations with one name, or a declaration named like a parameter, are an error.
+- A pattern is used with placement syntax, or with wire syntax when it stands in for a wire. The attribute clause supplies parameters in every entry form of §7.6, so `name` and `!name` supply a `bool` parameter, and `/expr` supplies the parameter marked `default`, of which there is at most one and which the clause may supply by name instead. `/expr` on a pattern without a `default` parameter is an error. Supplying a parameter twice is an error, and so is omitting a parameter that has no default value. A use carries no flags, and a body only for `children` parameters.
+- A use is replaced by the body's placements at the use's position, with each parameter bound to its argument as in a function call (§6.3), and the result is checked in place. Parameters are typed as a function's are (§6.3); a parameter's annotation fixes its type (§4.5), and a node kind there names a reference, `Osc[3]` three of them. An argument that needs an expected type, such as a bare variant in `Voice | shape=Saw`, takes it from the parameter's annotation or from the parameter's uses in the body. An argument may be a value, a reactive value, a node reference or an array of node references.
+- A parameter may state the binding it takes. `input` requires an argument that names an input, directly or through a parameter or a `let` that names one; `const` requires a compile-time argument; an argument of another kind is an error at the use naming the parameter. `default` marks the parameter `/expr` supplies. The words stand in the grammar's order; `input` with `const` on one parameter is an error, and an `input` parameter's default value names an input.
+- A placement type lists entries with counts. An entry is a node kind, a wire kind, `node` for any node kind, `wire` for any wire kind, a pattern's name, meaning a use of that pattern, which stands only in a `children` parameter's type, or a bundle `[…]` of one node entry (§7.8). A count follows it: none for exactly one, `+` one or more, `*` zero or more, `{3}` exactly three, `{2+}` two or more, `{..4}` at most four, `{2..4}` two to four, both included. A single entry is written bare; a list is parenthesized.
+- A pattern's type is what a use places. A pattern whose body is a single node or wire placement, or a single use of such a pattern, stands in for that placement: its type is that kind, written bare; a use creates that one instance or wire, and the use's name becomes its name, replacing any `as` name the placement has. Only node stand-ins appear at top level. A stand-in wire placement writes no destination: the use writes it after the colon, as a wire placement does (§8.1), and `to` in the pattern's wire reads it (§8.3); a destination written in the pattern is an error. Every other pattern is a group, whose type is parenthesized and lists what the body places, one entry per node kind, wire kind and bundle shape in order of first placement, with the tightest count the body fixes: a placement written once counts one, inside a `when` arm too (§9.2); a bundle counts one bundle entry of its members' kind and count; a `for` whose count the declaration fixes counts its iterations, and one whose count depends on a parameter counts zero or more; a nested use counts its pattern's entries, and a `children` parameter its declared type; `(Clip)` is a group placing one `Clip` that does not stand in. A type written after `->` is a contract: the body places exactly the entries it names, each count inside the declared one, or the declaration is an error naming the placement that breaks it; a type the declaration leaves out is inferred.
+- A parameter marked `children` takes placements: the use's body, in ordinary body syntax. A pattern may declare several, naming disjoint entries, or the declaration is an error; a wire pattern declares none; `children` stands with no other modifier. The use's one body is partitioned: each item, after its own expansion, goes to the parameter whose type names the pattern it uses; else, when it is a bundle, to the parameter whose type has a bundle entry its members fit; else to the parameter naming its kind, `node` and `wire` naming every kind; each share keeps its relative order. An item no parameter takes is an error at the use, and so is a share outside its parameter's counts. A use with no body supplies nothing, which fits only counts that allow zero; a body on a use of a pattern without a `children` parameter is an error. The parameter's name written as a line in the pattern body, alone or with a gate, places its share there, once, never inside a `for`: as children of the instance whose body holds the line, at that point of its sequence (§7.3), or at the pattern body's top level, where its type joins the pattern's; the gate gates them. Written as a bundle's member, `[notes]`, it makes one bundle of its share, whose type then holds node entries only and takes no bundle (§7.8). The use's body resolves its names where the use is written, as an argument does (§6.3); its `as` names are reachable through the use's name; a wire among its items has as its source the instance whose body holds the line.
 - A wire placed directly in the body has as its source the instance whose body holds the use.
-- A pattern body sees top-level names, its parameters, its `let`s and its own names (§6.5), never the names around its use. A top-level name written in the body resolves as usual, but the body has no name for the instance its own use creates.
+- A pattern body sees top-level names, its parameters, its declarations and its own names (§6.5), never the names around its use. A top-level name written in the body resolves as usual, but the body has no name for the instance its own use creates.
 - Names inside an anonymous use are unreachable and never clash with names outside it. A named use (`Voice as v1`) makes them reachable through its name: `v1.osc`.
 - A pattern may use other patterns, but no pattern reaches itself through uses.
 - The vocabulary checks (§10.2) apply to the expanded placements. A diagnostic points at the use and at the line inside the pattern.
-- A pattern whose body is a single node placement, with or without a body of its own, or a single use of such a pattern, stands in for that placement: a use creates that one instance, and the use's name becomes its name, replacing any `as` name the placement has. Only such uses appear at top level.
 - A `when` on a use gates every placement it expands to.
 
 ```sym
-pattern Arp(default root, steps = 4, gap = 4):
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
     for i in 0..steps:
         Note/(root + i * gap)
 
@@ -870,7 +886,7 @@ Clip verse:
 ```
 
 ```sym
-pattern Riff(default root):
+pattern Riff(default root: i32) -> Clip:
     Clip:
         Note/root Note/(root + 7) Note/(root + 12)
 
@@ -881,12 +897,78 @@ Riff high /48
 A pattern that needs the instance its use creates takes it as an argument:
 
 ```sym
-pattern Loop(default root, again):
+pattern Loop(default root, again: Clip):
     Clip:
         Note/root Note/(root + 7)
         Plays: again
 
 Loop low /36 | again=low
+```
+
+A pattern that stands in for a wire is used as a wire:
+
+```sym
+pattern Up(semis = 12) -> Plays:
+    Plays | transpose=semis
+
+Clip verse:
+    Note/60
+    Up as octave | semis=7: chorus
+```
+
+`octave` is a `Plays` wire from `verse` to `chorus`, and `verse.octave.transpose` is 7. A pattern's inputs are the host's way into each use:
+
+```sym
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    input gain = 1.0
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+```
+
+The Program holds the inputs `verse.low.gain` and `verse.Voice:0.gain`. An `input` parameter takes an input the program declares, and `children` parameters take the use's body, split by what each names:
+
+```sym
+pattern Drum(default input hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit=hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+input kick_hit: Hit = {}
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+```
+
+`bass` is the `Clip` with the notes 36 and 43, a `Plays` wire to `intro` and one to `verse`, both from `bass`; a body with an `Osc` is an error at the use. A bundle entry expects a chord, and a parameter's name inside brackets makes one:
+
+```sym
+pattern Stab(default root: i32, children chords: [Note+]*) -> Clip:
+    Clip:
+        Note/root
+        chords
+
+pattern Chord(children notes: Note{2+}) -> ([Note{2+}]):
+    [notes]
+
+Stab hit /48:
+    [Note/52 Note/55 Note/59]
+    [Note/50 Note/53]
+
+Clip pad:
+    Chord: Note/60 Note/64 Note/67
 ```
 
 Patterns never appear in the Program.
@@ -895,7 +977,7 @@ Patterns never appear in the Program.
 
 All top-level names share one namespace across the project: inputs, `let`s, states, functions, patterns, record types, top-level instances, the built-ins (§5.7), and the vocabulary's kinds, enums and prelude declarations. A duplicate is an error naming both declarations; a source declaration shadows a prelude declaration of its name (§10.1). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
 
-Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern `let` or a `for` variable visible where it is declared is an error, and so is a pattern `let` equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's `let`s do. A record's field names are scoped to its type (§3.8).
+Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern declaration or a `for` variable visible where it is declared is an error, and so is a pattern declaration equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error; so is a `for` expression's loop name (§5.10) or a lambda's parameter (§6.7) equal to a visible name. A `for` expression's loop names, its accumulator and its block form's local `let`s are distinct names, as a function's parameters and local `let`s are (§6.3). A bracket name (§6.8) equal to a top-level name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's declarations do. A record's field names are scoped to its type (§3.8).
 
 A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. So do a parameter default that no call takes and the body of a placement `for` that runs no iteration (§7.9), since nothing expands them. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported. In all of these, resolving the names draws its errors, a name, path or attribute that resolves to nothing or to what its position cannot hold, and nothing else is checked or computed, in the bodies the code reaches, recursive or not, as in the code itself.
 
@@ -904,11 +986,12 @@ A bare name that is a variant of the enum its position expects resolves to that 
 ### 6.6 States
 
 ```ebnf
-StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? '=' (Expr NEWLINE | MatchBlock)
+StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? Steps? '=' (Expr NEWLINE | MatchBlock)
+Steps     ::= 'on' (Atom | '(' Expr (',' Expr)* ')')
 History   ::= Name '{' Expr (',' Expr)? '}'
 ```
 
-A state is a cell that remembers: its initializer may read the past values of cells. `x{k, fallback}` in a state's initializer reads `x` as it was k steps of that state ago, and yields `fallback` until the state has taken k steps. A state takes a step each time it is evaluated (§12.2): at load, and at each commit that changes a cell it reads in the present, a history read being no present read. A history read yields the value its cell held at the end of the commit of that step, so a state that reads its own history, or states that read one another's, form no cycle; a state that reads its own present value does (§6.2).
+A state is a cell that remembers: its initializer may read the past values of cells. `x{k, fallback}` in a state's initializer reads `x` as it was k steps of that state ago, and yields `fallback` until the state has taken k steps. A state takes a step each time it is evaluated (§12.2): at load, and at each commit that changes a cell it reads in the present, a history read being no present read, or the value of one of its triggers. A trigger, written after `on`, is an expression evaluated as a reactive `let` is, whose value never enters the state's; a single trigger that is an atom (§7.5) is written bare, and anything else is parenthesized. A trigger that reads no cell is an error, since it never changes. Whether a trigger `x` changed at this step is `x is not x{1}`. A history read yields the value its cell held at the end of the commit of that step, so a state that reads its own history, or states that read one another's, form no cycle; a state that reads its own present value does (§6.2).
 
 ```sym
 input gate = false
@@ -922,7 +1005,16 @@ state recent = (recent{1, []} + [note])[^8..]
 
 `rising` is true at the commit where `gate` turns true, `held` keeps the `level` of that commit, and `recent` holds the last eight notes, the oldest falling off; `(recent{1, []} + [note])[..8]` keeps the first eight instead.
 
-- States are declared at top level. History reads stand only in a state's initializer, so `let`s and functions stay pure.
+```sym
+input hit: Hit = {}
+input bar = 0
+
+state hits on (hit, bar) = if bar is not bar{1} then 0 else hits{1, -1} + 1
+```
+
+`hits` counts the changes of `hit` since load or since `bar` last changed: it steps at load, at 0, and at each commit that changes `hit` or `bar`, and reads `hit` only as a trigger.
+
+- States are declared at top level and in pattern bodies (§6.4). History reads stand only in a state's initializer, so `let`s and functions stay pure.
 - The offset `k` is a positive integer known at compile time. A history read names an input, a state or a reactive `let`. Its fallback has the cell's type, and is required except for an input, whose fallback is its initial value.
 - `[N]` states the deepest offset the state reads; a deeper offset is an error whose diagnostic gives the N that covers it.
 - A state is typed as a reactive `let` is (§4.4, §4.5); its own history reads count as their fallbacks for its kind and are no uses of it. A state may hold a string (§3.3), a record (§3.8), a sum (§3.9), a map (§3.10) or a document (§3.11), never a node reference.
@@ -947,12 +1039,12 @@ LambdaParam  ::= Name (':' Type)?
 
 A lambda is a function written as the argument of a call: `x: x * 2`, `(a, b): a + b`, `(x: i32) -> bool: x > 60`. A single parameter stands without parentheses only when it has no annotation, and each parameter is one name; a lambda never destructures its arguments.
 
-- A lambda stands only as an argument of a call to a function (§6.3); anywhere else it is an error.
-- A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. It stands only as the type of a function's or a native function's parameter, and on a `let`, an input, a state, an attribute, a record field or an array element it is an error.
-- Where the body of the function that receives a lambda calls its parameter, the call inlines the lambda's body with the lambda's parameters bound to the call's arguments, as §6.3 inlines a call to a function. The lambda reads the names in scope at its own position.
+- A lambda stands only as an argument of a call to a function (§6.3) or a native function (§10.1); anywhere else it is an error.
+- A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter, and on a `let`, an input, a state, an attribute, a record field or an array element it is an error.
+- Where the body of the function that receives a lambda calls its parameter, the call inlines the lambda's body with the lambda's parameters bound to the call's arguments, as §6.3 inlines a call to a function. A native function that receives a lambda calls it as §10.1 says. The lambda reads the names in scope at its own position.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
 - The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
-- A parameter bound to a lambda that is the argument of a call in the body passes the lambda on to that call.
+- A parameter bound to a lambda, written as the argument of a call in the body, passes the lambda on to that call.
 
 ```sym
 fn count(xs, keep: (i32) -> bool):
@@ -996,10 +1088,11 @@ A function, a pattern, a `type` declaration and a native function's signature (�
 
 - A call to a function or a native function, and a use of a pattern, binds every bracket parameter from its arguments' types, where its parameters' types name the bracket parameter, and writes no bracket arguments. A bracket name that none of its declaration's parameter types names is an error.
 - Two mentions of one bracket parameter unify (§4.2), and arguments that bind it differently are an error at the call or use.
-- A function's type parameter binds to value types only (§3.5). A pattern's type parameter may also bind to a node kind, from an argument that is a node reference, and §10.2's checks run on each use's expansion against the kind it binds.
+- A type parameter bound from a flexible argument (§4.1) takes the defaults of §4.5, and a value parameter without a constraint is a flexible integer.
+- A function's type parameter binds to value types only (§3.5). A pattern's type parameter may also bind to a node kind, from an argument that is a node reference, and §10.2's checks run on each use's expansion against the kind it binds; such a parameter takes no constraint, those checks being its check.
 - A bracket parameter's annotation is its constraint. On a type parameter it is a type the parameter must bind to, a sum listing the types it may bind to, one of them at each call or use, or an alias naming that set; on a value parameter it is the integer type of its value. A bracket parameter without a constraint binds to whatever its arguments give, and the body is checked per call or use with that binding.
 - In a type, the first bracket list after a generic type's name is its arguments, one for each bracket parameter in order: a type for a type parameter, and an integer or a value parameter for a value parameter. Later bracket lists are dimensions (§3.2), and after any other name every bracket list is a dimension: `Stack[i32, 8][4]` holds four stacks, and `Chord[4]` four chords.
-- A record literal (§3.8) takes the generic type its position names with its arguments. Where its position names a generic type without arguments, the literal binds the type's parameters from its fields as a call binds them from its arguments: two fields that bind one parameter differently are an error naming both, and a parameter that no field binds is an error whose help says to annotate the type's arguments.
+- A record literal (§3.8) takes the generic type its position names with its arguments. Where its position names a generic type without arguments, the literal binds the type's parameters from its fields as a call binds them from its arguments: two fields that bind one parameter differently are an error naming both, and a parameter that no field binds is an error whose help says to annotate the type's arguments. Anywhere else, a generic type named without its arguments is an error whose help names its parameters.
 - An instantiated record's shape is its fields' shapes, so a reload keeps it as it keeps any record (§13.2, §13.5).
 
 ```sym
@@ -1075,7 +1168,7 @@ Line         ::= Placement (NEWLINE | Body) | '(' Placement ')' NEWLINE | Bundle
                | SelfDelimited SelfDelimited+ NEWLINE
 ```
 
-`DefaultArg` is §7.5's, `Gate` §9.1's and `Attrs` §7.6's. A line whose `Kind` names a wire kind of the vocabulary is a wire placement (§8.1), and a wire kind at top level is an error. Whitespace around `/` is free. In a body, `Note hook/60` reads as two placements, and its diagnostic suggests `as`.
+`DefaultArg` is §7.5's, `Gate` §9.1's and `Attrs` §7.6's. A line whose `Kind` names a wire kind of the vocabulary, or a pattern that stands in for a wire (§6.4), is a wire placement (§8.1), and a wire at top level is an error. Whitespace around `/` is free. In a body, `Note hook/60` reads as two placements, and its diagnostic suggests `as`.
 
 ### 7.2 Top-level placements
 
@@ -1168,19 +1261,20 @@ Clip fill: Note/60 Note/62 (Note/64 | velocity=0.5)
 
 ```ebnf
 Bundle    ::= '[' (Member+ BundleFor? | BundleFor) ']'
-BundleFor ::= 'for' Name (':' Type)? 'in' Iterable ':' Member+
+BundleFor ::= LoopHead ':' Member+
 ```
 
 A bundle is one entry of its parent's sequence whose members are simultaneous: a chord.
 
-- A bundle has at least one member after expansion. Members are node placements, which may be gated and named, and uses of patterns that expand only to node placements, whose placements become members. Wires and bundles are not members, and a member has no body, also when a pattern supplies it.
+- A bundle has at least one member after expansion. Members are node placements, which may be gated and named, uses of patterns that expand only to node placements, whose placements become members, and a `children` parameter's name, whose share becomes members (§6.4). Wires and bundles are not members, and a member has no body, also when a pattern supplies it.
 - Members are children of the bundle's parent.
-- Layout is suspended inside the brackets, so members are self-delimited (§7.7). A `for` inside a bundle extends to the closing bracket.
+- Layout is suspended inside the brackets, so members are self-delimited (§7.7). A `for` inside a bundle takes the loop head of §7.9, one name or two, and extends to the closing bracket.
 
 ```sym
 Clip pad:
     [Note/60 Note/64 Note/67]
     [for i in 0..3: Note/(62 + i * 4)]
+    [for i, p in [60, 64, 67]: (Note/p | velocity=1.0 - i * 0.2)]
 ```
 
 ### 7.9 Compile-time `for`
@@ -1197,9 +1291,9 @@ A placement `for` repeats its body once for each element of its iterable. The it
 - a map (§3.10), entry by entry in insertion order;
 - a range `a..b`, which counts from `a` up to but excluding `b` and is empty when `b` is not above `a`.
 
-A range bound that reads a cell has a compile-time maximum, read from its form: a literal is its own maximum, `len(a)` has `a`'s capacity (§3.7), `min(x, y)` the smaller maximum of those of its operands that have one, and the sum of a literal and a bound of these forms the literal plus that bound's maximum. A range bound that reads a cell and has no maximum by these forms is an error.
+A range's iteration count is at most its upper bound's maximum less its lower bound's minimum, each read from the bound's form: a literal and a compile-time value are their own minimum and maximum; `len(a)` lies between 0 and `a`'s capacity (§3.3, §3.7, §3.10); `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each, an operand with none on a side being unbounded on that side; and `x + c`, `c + x` and `x - c`, with `c` a literal or a compile-time value, shift `x`'s minimum and maximum by `c`. An upper bound that reads a cell and has no maximum by these forms, or a lower bound that reads a cell and has no minimum, is an error.
 
-A loop head binds one name or two. With one name, it is the element over an array and the value over a range. With two names, the first is the element's position and the second the element: over an array the index and the element, the index a flexible integer as a range's value is (§4.6), and over a map the key and the value. A range binds one name, and two are an error. An annotation fixes its name's type (§4.5).
+A loop head binds one name or two. With one name, it is the element over an array, the key over a map and the value over a range. With two names, the first is the element's position and the second the element: over an array the index and the element, the index a flexible integer as a range's value is (§4.6), and over a map the key and the value. A range binds one name, and two are an error. An annotation fixes its name's type (§4.5).
 
 A placement `for`'s iterable is a compile-time value, and its loop names are compile-time values; an iterable there that reads a cell is an error. Placements in a `for` body are anonymous; `as` there is an error.
 
@@ -1219,6 +1313,17 @@ Clip strum:
 ```
 
 In `strum`, `i` is each note's position and `p` its pitch.
+
+```sym
+input held: i32[..10] = []
+input counts: map[str[..16], i32][..8] = map {}
+
+let rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n
+let total = for k, v in counts into sum from 0: sum + v
+let names = for k in counts into all from "": all + k
+```
+
+`rises` runs at most 9 times, the maximum 10 of `len(held)` less the minimum 1. One name over `counts` binds its key, so `names` joins the keys and holds at most 128 characters, 16 for each of at most 8 iterations.
 
 ```sym-error
 Clip c:
@@ -1244,10 +1349,10 @@ This is an error: the bound `n` reads a cell, and its form gives it no maximum; 
 ### 8.1 Wire placements
 
 ```ebnf
-WirePlacement ::= Kind Flags? ('as' Name)? DefaultArg? Gate? Attrs? ':' Destination
+WirePlacement ::= Kind Flags? ('as' Name)? DefaultArg? Gate? Attrs? (':' Destination)?
 ```
 
-A wire connects its source to its destination and carries attributes. Its source is the instance whose body it is written in. A wire may appear anywhere in that body's sequence, and its position is kept (§7.3); what the position means is the consumer's.
+A wire connects its source to its destination and carries attributes. Its source is the instance whose body it is written in. A wire may appear anywhere in that body's sequence, and its position is kept (§7.3); what the position means is the consumer's. A wire placement omits its destination only as the single placement of a pattern that stands in for it (§6.4).
 
 ```sym
 Clip intro:
@@ -1387,7 +1492,7 @@ A vocabulary is invalid, and no program compiles against it, when:
 
 The prelude's source is ordinary source compiled with the program. It holds `let`, `fn`, `pattern` and `type` declarations only, and its declarations and native functions share the top-level namespace (§6.5). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A source declaration with a prelude declaration's name shadows it in the program's source. Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
 
-A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, and the compiler and the runtime rely on it.
+A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a lambda. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a lambda among them when it reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a lambda it receives with argument values of the function type's parameter types, and each call runs the lambda's body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
 
 ### 10.2 Checks against the vocabulary
 
@@ -1425,7 +1530,7 @@ Compilation produces a Program. It contains:
 - every instance: its kind, path, attributes and gate, and its sequence of children, bundles and wires in source order;
 - every wire: its kind, path, source, destination candidates and choice, attributes and gate;
 - every record type an input, a cell or an attribute holds, with its fields, and every compile-time document (§3.11);
-- every input: its name, type, unit family and initial value, in top-level order;
+- every input: its name, type, unit family and initial value, in top-level order, a pattern's inputs at their use's position (§6.4);
 - every reactive cell that something reads, in dependency order;
 - the top-level instances in top-level order (§2.1).
 
@@ -1442,6 +1547,7 @@ Every instance and wire has a path, with segments joined by `.`:
 - An anonymous child or wire extends it with its kind and its position among the parent's anonymous entries of that kind, counted from 0 in sequence order, bundle members included: `verse.Note:2`.
 - A named pattern use contributes its name, and an anonymous use contributes the pattern's name and its position among the parent's anonymous uses of that pattern: `verse.Arp:0.Note:2`. The items a use expands to take their paths under its segment and do not count among the parent's entries, so in `Clip verse: Note/40 Arp/48 Note/41` the last note is `verse.Note:1`.
 - A use that stands in for a single placement (§6.4) gives that placement the use's path.
+- An input or a state declared in a pattern has the path of its use followed by its name: `verse.low.gain`.
 
 ## 12. Runtime semantics
 
@@ -1456,7 +1562,7 @@ A write takes a value of the input's kind (§4.4): `U8`, `I32` or `I64` for an i
 A commit applies staged writes and brings every cell up to date:
 
 1. Each input whose staged value differs bit for bit from its current value changes.
-2. Each cell that reads a changed value is evaluated, in dependency order, at most once per commit.
+2. Each cell that reads a changed value, and each state whose trigger's value changed (§6.6), is evaluated, in dependency order, at most once per commit.
 3. A cell whose new value is bit-for-bit equal to its previous value is unchanged, and its readers are not evaluated because of it.
 4. Each state evaluated in the commit records, for each of its history reads, the value the read's cell holds at the end of the commit (§6.6).
 5. Activation (§9.3) and destination choices (§8.2) are recomputed.
