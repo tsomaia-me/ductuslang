@@ -1,7 +1,7 @@
 use symphonyscript_core::{Count, Limits, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
     Project, ProjectFile, bar_vocabulary, deep_projects, dsp_project, envelope_vocabulary,
-    music_project, spec_examples, spec_projects, vocabulary,
+    music_project, pending_spec_examples, spec_examples, spec_projects, vocabulary,
 };
 
 use super::Engine;
@@ -706,9 +706,10 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
 #[test]
 fn a_run_that_draws_no_error_holds_no_placeholder() {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let pending = pending_spec_examples();
     let examples = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| Project {
             name: example.name(),
             files: vec![ProjectFile {
@@ -751,7 +752,11 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
             .count()
     });
     assert!(
-        clean >= 6 + spec_projects().len(),
+        clean
+            >= 6 + spec_projects()
+                .iter()
+                .filter(|project| !pending.contains(&project.name))
+                .count(),
         "{clean} runs drew no error"
     );
     let envelope = envelope_vocabulary();

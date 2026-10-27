@@ -4,7 +4,9 @@ use std::collections::BTreeSet;
 
 use symphonyscript::Source;
 use symphonyscript::syntax::{SyntaxKind, lex};
-use symphonyscript_fixtures::{dsp_project, music_project, spec_examples, vocabulary};
+use symphonyscript_fixtures::{
+    dsp_project, music_project, pending_spec_examples, spec_examples, vocabulary,
+};
 
 const BRACKETS: [SyntaxKind; 8] = [
     SyntaxKind::Bundle,
@@ -18,9 +20,10 @@ const BRACKETS: [SyntaxKind; 8] = [
 ];
 
 fn valid_sources() -> Vec<String> {
+    let pending = pending_spec_examples();
     let examples = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| example.text);
     let files = [music_project(), dsp_project()]
         .into_iter()

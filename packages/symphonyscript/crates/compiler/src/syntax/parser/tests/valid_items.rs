@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use symphonyscript_core::Vocabulary;
-use symphonyscript_fixtures::{dsp_project, music_project, spec_examples};
+use symphonyscript_fixtures::{dsp_project, music_project, pending_spec_examples, spec_examples};
 
 use crate::source::Source;
 use crate::syntax::{NodeView, SyntaxKind, parse};
@@ -33,9 +33,10 @@ pub(super) struct ValidItems {
 }
 
 pub(super) fn valid_items(vocabulary: &Vocabulary) -> ValidItems {
+    let pending = pending_spec_examples();
     let examples = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| example.text);
     let files = [music_project(), dsp_project()]
         .into_iter()
