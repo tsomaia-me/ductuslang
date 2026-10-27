@@ -10,6 +10,7 @@ from pathlib import Path
 import anthropic
 
 import fake_backend
+import proxy
 
 MODEL = "claude-haiku-5-5"
 
@@ -59,6 +60,17 @@ class ProxyTest(unittest.TestCase):
         for thread in threads:
             thread.join(10)
         return replies
+
+    def test_the_proxy_refuses_to_start_without_a_cap(self):
+        with self.assertRaises(SystemExit) as raised:
+            proxy.main([str(self.run_dir)])
+        self.assertEqual(str(raised.exception), "--max-usd is required: pass the most this run may spend, in USD")
+
+    def test_a_queue_with_a_shared_prompt_goes_out_warmed_then_trialled_then_whole(self):
+        self.start(batch_requests=15, batch_seconds=60, max_usd=1000.0)
+        replies = self.concurrently([params(f"p{index}", system="long prompt") for index in range(15)])
+        self.assertEqual([status for status, _ in replies], [200] * 15)
+        self.assertEqual([len(requests) for requests in self.started.batches.created.values()], [1, 10, 4])
 
     def test_a_full_queue_goes_out_as_one_batch_and_each_call_gets_its_own_result(self):
         self.start(batch_requests=4, batch_seconds=60)

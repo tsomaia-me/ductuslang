@@ -2,6 +2,7 @@ import argparse
 import json
 import threading
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from proxy import Proxy, make_server
@@ -32,13 +33,23 @@ class FakeBatches:
     def __init__(self, respond):
         self.respond = respond
         self.created = {}
+        self.created_at = {}
         self.lock = threading.Lock()
 
     def create(self, requests):
         with self.lock:
             batch_id = f"batch-{len(self.created) + 1}"
             self.created[batch_id] = requests
+            self.created_at[batch_id] = datetime.now(timezone.utc)
         return SimpleNamespace(id=batch_id)
+
+    def list(self, limit):
+        with self.lock:
+            created = list(self.created.items())
+        batches = [SimpleNamespace(id=batch_id, created_at=self.created_at[batch_id], request_counts=SimpleNamespace(
+            processing=0, succeeded=len(requests), errored=0, canceled=0, expired=0))
+            for batch_id, requests in reversed(created)]
+        return SimpleNamespace(data=batches[:limit])
 
     def retrieve(self, batch_id):
         return SimpleNamespace(processing_status="ended")

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import anthropic
 
-from run import MAX_BATCH_REQUESTS, PRICES, Runner, read_keys
+from run import DEFAULT_MAX_BATCH_USD, MAX_BATCH_REQUESTS, PRICES, Runner, read_keys, require_cap
 
 DEFAULT_BATCH_REQUESTS = 1000
 DEFAULT_BATCH_SECONDS = 60.0
@@ -173,15 +173,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir")
     parser.add_argument("--max-usd", type=float)
+    parser.add_argument("--max-batch-usd", type=float, default=DEFAULT_MAX_BATCH_USD)
     parser.add_argument("--batch-requests", type=int, default=DEFAULT_BATCH_REQUESTS)
     parser.add_argument("--batch-seconds", type=float, default=DEFAULT_BATCH_SECONDS)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
     args = parser.parse_args(argv)
+    require_cap(args.max_usd)
 
     keys = read_keys(Path.home() / ".env")
     clients = {n: anthropic.Anthropic(api_key=key) for n, key in enumerate(keys, start=1)}
-    runner = Runner(clients, args.run_dir, max_usd=args.max_usd)
+    runner = Runner(clients, args.run_dir, max_usd=args.max_usd, max_batch_usd=args.max_batch_usd)
     proxy = Proxy(runner, batch_requests=args.batch_requests, batch_seconds=args.batch_seconds)
     server = make_server(proxy, args.host, args.port)
     threading.Thread(target=proxy.work, daemon=True).start()
