@@ -99,7 +99,11 @@ impl Engine<'_> {
         if !self.is_recursive(function)? || self.bounded_cycle(function)? {
             return Ok(false);
         }
-        if self.memo.reads_cell.get(&function) == Some(&true) {
+        let body_reads = match self.memo.reads_cell.get(&function) {
+            Some(known) => *known,
+            None => self.function_reads_cell(function)?,
+        };
+        if body_reads {
             return Ok(true);
         }
         let mut stack = args.values();
@@ -116,9 +120,16 @@ impl Engine<'_> {
                             .get(&(self.source_global, LetRef::Top(id)))
                             .is_some_and(holds_cell),
                         Found::Query(Query::Input(_) | Query::State(_)) => true,
-                        Found::Query(query) => self
-                            .bound(query, &mut Vec::new())
-                            .is_some_and(|bound| holds_cell(&bound)),
+                        Found::Query(query) => match self.bound(query, &mut Vec::new()) {
+                            Some(bound) => holds_cell(&bound),
+                            None => {
+                                if let Query::Let(_, LetRef::Top(id)) = query {
+                                    self.let_reads_cell(id)?
+                                } else {
+                                    false
+                                }
+                            }
+                        },
                         Found::Val(val) => val
                             .nodes()
                             .iter()

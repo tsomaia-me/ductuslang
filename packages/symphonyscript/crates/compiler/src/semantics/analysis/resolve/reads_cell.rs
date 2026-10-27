@@ -1,4 +1,6 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use symphonyscript_core::Builtin;
 
 use crate::semantics::Internal;
 use crate::semantics::analysis::bound::Bound;
@@ -7,8 +9,8 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::collection::Decl;
-use crate::semantics::ir::{ExprKind, FnId};
+use crate::semantics::collection::{BuiltinName, Decl, Namespace};
+use crate::semantics::ir::{ExprId, ExprKind, FnId};
 
 impl Engine<'_> {
     pub(super) fn body_reads_cell(
@@ -86,6 +88,120 @@ impl Engine<'_> {
         self.memo.reads_cell.insert(root, reads);
         Ok(Some(reads))
     }
+
+    pub(in crate::semantics::analysis) fn body_certainly_reads_cell(
+        &self,
+        root: FnId,
+    ) -> Result<bool, Internal> {
+        let hir = self.hir;
+        let mut seen_functions = FastSet::default();
+        let mut seen_lets = FastSet::default();
+        let mut functions = vec![root];
+        let mut lets = Vec::new();
+        let empty_lets = BTreeMap::new();
+        loop {
+            let (namespace, value, params, locals) = if let Some(id) = lets.pop() {
+                if !seen_lets.insert(id) || hir.is_prelude_let(id) {
+                    continue;
+                }
+                let value = hir.let_decl(id)?.value;
+                (
+                    &self.collected.source,
+                    value,
+                    BTreeSet::new(),
+                    empty_lets.clone(),
+                )
+            } else if let Some(function) = functions.pop() {
+                if !seen_functions.insert(function) {
+                    continue;
+                }
+                let decl = hir.fn_decl(function)?;
+                let namespace = if hir.is_prelude_fn(function) {
+                    &self.collected.prelude
+                } else {
+                    &self.collected.source
+                };
+                let params: BTreeSet<&str> = decl
+                    .params
+                    .iter()
+                    .filter_map(|param| param.name.as_ref())
+                    .map(|name| name.text.as_str())
+                    .collect();
+                let locals: BTreeMap<&str, ExprId> = decl
+                    .lets
+                    .iter()
+                    .filter_map(|local| {
+                        local
+                            .name
+                            .as_ref()
+                            .map(|name| (name.text.as_str(), local.value))
+                    })
+                    .collect();
+                (namespace, decl.value, params, locals)
+            } else {
+                return Ok(false);
+            };
+            let mut read_locals = BTreeSet::new();
+            let mut stack = vec![value];
+            while let Some(expr) = stack.pop() {
+                let kind = &hir.expr(expr)?.kind;
+                match kind {
+                    ExprKind::Name(name) if params.contains(name.as_str()) => {}
+                    ExprKind::Name(name) if locals.contains_key(name.as_str()) => {
+                        if read_locals.insert(name.as_str())
+                            && let Some(local) = locals.get(name.as_str())
+                        {
+                            stack.push(*local);
+                        }
+                    }
+                    ExprKind::Name(name) => match namespace.get(name) {
+                        Some(Decl::Input(_) | Decl::State(_)) => return Ok(true),
+                        Some(Decl::Let(id)) => lets.push(id),
+                        Some(Decl::Fn(callee)) => functions.push(callee),
+                        Some(
+                            Decl::Native(_)
+                            | Decl::Pattern(_)
+                            | Decl::Instance(_)
+                            | Decl::Builtin(_)
+                            | Decl::Node(_)
+                            | Decl::Wire(_)
+                            | Decl::Enum(_),
+                        )
+                        | None => {}
+                    },
+                    ExprKind::Call(callee, _)
+                        if measures_length(
+                            &hir.expr(*callee)?.kind,
+                            &params,
+                            &locals,
+                            namespace,
+                        ) =>
+                    {
+                        continue;
+                    }
+                    _ => {}
+                }
+                stack.extend(kind.children());
+            }
+        }
+    }
+}
+
+fn measures_length(
+    callee: &ExprKind,
+    params: &BTreeSet<&str>,
+    lets: &BTreeMap<&str, ExprId>,
+    namespace: &Namespace,
+) -> bool {
+    let ExprKind::Name(name) = callee else {
+        return false;
+    };
+    !params.contains(name.as_str())
+        && !lets.contains_key(name.as_str())
+        && matches!(
+            namespace.get(name),
+            Some(Decl::Builtin(BuiltinName::Function(Builtin::Len)))
+        )
 }
 
 pub(super) fn holds_cell(bound: &BoundVal) -> bool {

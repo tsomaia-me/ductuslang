@@ -1281,6 +1281,33 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
             &[(Code::ReactiveRecursion, "r(n)")],
         ),
         (
+            &[
+                "input x = 1\n",
+                "let n = x + 2\n",
+                h,
+                "fn r(i): if i is 0 then 0 else r(i - 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(r(n))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(n)")],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                h,
+                "fn r(i): if i < 1 then x else r(i - 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(r(3))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(3)")],
+        ),
+        (
+            &[
+                "input held = [1, 2, 3]\n",
+                "fn r(i): if i is 0 then len(held) else r(i - 1)\n",
+                "Clip c:\n    Note/(r(2))\n",
+            ],
+            &[],
+        ),
+        (
             &[h, "Clip c:\n    Note/(h(h(h(h(h(60))))))\n"],
             &[(Code::InlineLimit, "h(60)")],
         ),
