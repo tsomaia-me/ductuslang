@@ -91,6 +91,7 @@ impl Engine<'_> {
         for group in self.memo.group_list.clone() {
             self.demand_sig(group)?;
         }
+        self.settle_provisional_kinds()?;
         self.mark_own_history()?;
         self.units(&valid)?;
         self.read_in_default_units()?;

@@ -109,7 +109,7 @@ pub(crate) struct Engine<'a> {
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
     cycle_members: FastSet<Query>,
-    current: Option<Query>,
+    pub(super) current: Option<Query>,
 }
 
 impl<'a> Engine<'a> {

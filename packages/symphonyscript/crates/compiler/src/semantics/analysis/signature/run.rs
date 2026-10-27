@@ -61,6 +61,10 @@ impl Engine<'_> {
                 },
                 None => None,
             },
+            Op::History { .. } => self.history_sig(node, need)?.map(|found| match found {
+                Some(sig) => Extra::History(sig),
+                None => Extra::None,
+            }),
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
@@ -86,7 +90,6 @@ impl Engine<'_> {
             | Op::Recursive { .. }
             | Op::Join(..)
             | Op::Slice { .. }
-            | Op::History { .. }
             | Op::Native { .. } => Some(Extra::None),
         };
         if sigs.iter().any(Option::is_none) {
@@ -137,6 +140,45 @@ impl Engine<'_> {
         Ok(true)
     }
 
+    fn history_sig(
+        &mut self,
+        node: NodeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<Sig>>, Internal> {
+        if let Some(found) = self.memo.history_kinds.get(&node) {
+            return Ok(Some(*found));
+        }
+        let Op::History { cell, .. } = self.node(node)?.op else {
+            return Ok(Some(None));
+        };
+        let query = self.history_cell_query(cell);
+        let mut missing = Vec::new();
+        if self.bound(query, &mut missing).is_none() {
+            self.memo.provisional_reads.push(node);
+            return Ok(Some(None));
+        }
+        if self.own_read(node, cell)? {
+            return Ok(Some(None));
+        }
+        let Some(group) = self.kind_component(node, &mut missing)? else {
+            self.memo.provisional_reads.push(node);
+            return Ok(Some(None));
+        };
+        if let Some(group) = group {
+            if !self.settle_kinds(group, need)? {
+                return Ok(None);
+            }
+            return Ok(Some(self.memo.history_kinds.get(&node).copied().flatten()));
+        }
+        let Some(binding) = self.history_bindings(node)?.first().copied() else {
+            return Ok(Some(Some(Sig::ERROR)));
+        };
+        let Some(init) = self.sig(self.binding(binding)?.init, need) else {
+            return Ok(None);
+        };
+        Ok(Some(Some(self.read_sig(binding, init)?)))
+    }
+
     fn destination_read_reactive(
         &self,
         wire: crate::semantics::analysis::ids::WireId,
@@ -178,7 +220,7 @@ impl Engine<'_> {
         }
     }
 
-    pub(super) fn read_sig(
+    pub(in crate::semantics::analysis) fn read_sig(
         &self,
         binding: crate::semantics::analysis::ids::BindingId,
         init: Sig,

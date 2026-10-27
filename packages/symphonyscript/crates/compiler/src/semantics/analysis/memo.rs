@@ -47,6 +47,11 @@ pub(crate) struct Memo {
     pub variable_defaults: FastMap<NodeId, (Vec<u32>, u32)>,
     pub default_arrays: FastMap<(ItemRef, AttrId), NodeId>,
     pub passed_over_calls: super::fast_hash::FastSet<(ExprId, ScopeId)>,
+    pub own_marked: super::fast_hash::FastSet<crate::semantics::ir::StateId>,
+    pub kind_components: FastMap<NodeId, Option<u32>>,
+    pub kind_groups: Vec<Vec<NodeId>>,
+    pub history_kinds: FastMap<NodeId, Option<Sig>>,
+    pub provisional_reads: Vec<NodeId>,
     pub unrun_bodies:
         super::fast_hash::FastSet<(crate::semantics::ir::Loc, Option<crate::semantics::ir::Loc>)>,
     pub capacity_rounds: u64,

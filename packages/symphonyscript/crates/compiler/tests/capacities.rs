@@ -394,6 +394,217 @@ fn a_history_reads_fallback_takes_the_cells_type() {
 }
 
 #[test]
+fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "input x = 1.5\n",
+                "let y = x * 2\n",
+                "state s = y{1, 0}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "let y = x * 2\n",
+                "state s = y{1, 0}\n",
+                "Clip k | gain=s:\n    Note/(i32(s))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state f = x + 1\n",
+                "state s = f{1, 0}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state f = x + 1\n",
+                "state s = f{1, 0}\n",
+                "Clip k | gain=s:\n    Note/(i32(s))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state p = q{1, 0} + 1.5\n",
+                "state q = p{1, 0}\n",
+                "Clip c:\n    Note/(q)\n",
+            ],
+            &[(Code::FloatToInteger, "q")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state p = q{1, 0} + 1.5\n",
+                "state q = p{1, 0}\n",
+                "Clip k | gain=q:\n    Note/(i32(q))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state p = q{1, 0}\n",
+                "state q = p{1, 0.5}\n",
+                "Clip c:\n    Note/(p)\n",
+            ],
+            &[(Code::FloatToInteger, "p")],
+        ),
+        (
+            &[
+                "state p = q{1, 0}\n",
+                "state q = p{1, 0.5}\n",
+                "Clip k | gain=p:\n    Note/(i32(p))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "let t = s * x\n",
+                "state s = t{1, 0}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "let t = s * x\n",
+                "state s = t{1, 0}\n",
+                "Clip k | gain=s:\n    Note/(i32(s))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state s = x{1, 0}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state s = x{1, 0}\n",
+                "Clip k | gain=s:\n    Note/(i32(s))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state p = q{1, 0}\n",
+                "state q = p{1, 0.5}\n",
+                "Clip c:\n    Note/(p)\n    Note/(q)\n",
+            ],
+            &[(Code::FloatToInteger, "p"), (Code::FloatToInteger, "q")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state p = q{1, 0} + 1.5\n",
+                "state q = p{1, 0}\n",
+                "let m = match q:\n    1: 2\n    else: 3\n",
+                "Clip c:\n    Note/(m)\n",
+            ],
+            &[(Code::MatchScrutinee, "q")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state p = q{1, 0} + 1.5\n",
+                "state q = p{1, 0}\n",
+                "Clip c:\n    Note/([1, 2, 3][q])\n",
+            ],
+            &[(Code::IndexType, "q")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "state p = q{1, 0} + 1.5\n",
+                "state q = p{1, 0}\n",
+                "state r = q{1, 0} + 1\n",
+                "Clip c:\n    Note/(r)\n",
+            ],
+            &[(Code::FloatToInteger, "r")],
+        ),
+        (
+            &[
+                "input x = 1.5\n",
+                "let t = s * x\n",
+                "state s = t{1, 0}\n",
+                "let u = s + 1\n",
+                "Clip c:\n    Note/(u)\n",
+            ],
+            &[(Code::FloatToInteger, "u")],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "let y = x + 1\n",
+                "state s = y{1, 0.5}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::TypeMismatch, "0.5")],
+        ),
+        (
+            &[
+                "input gate = false\n",
+                "let h = not gate\n",
+                "state s = h{1, 0}\n",
+                "Clip c:\n    Note when s\n",
+            ],
+            &[(Code::TypeMismatch, "0")],
+        ),
+        (
+            &[
+                "state p = q{1, 0}\n",
+                "state q = p{1, 0.5}\n",
+                "Clip c:\n    Note | brightness=p\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state p = q{1, 0}\n",
+                "state q = p{1, 0}\n",
+                "Clip c:\n    Note/(p)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state s = s{1, 0.5}\n",
+                "Clip c:\n    Note | brightness=s\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input gate = false\n",
+                "input level = 0.0\n",
+                "input note = 60\n",
+                "state rising = gate and not gate{1}\n",
+                "state held = if rising then level else held{1, 0.0}\n",
+                "state recent = (recent{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(recent[0]) | brightness=held\n    when rising:\n        Note\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
     let wide = "Clip c:\n    Note when s > 3000000000\n";
     let rows: &[support::Row] = &[
