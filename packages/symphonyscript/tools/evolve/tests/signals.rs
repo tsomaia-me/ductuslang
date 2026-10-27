@@ -232,6 +232,73 @@ fn a_wide_name_keeps_its_column_count_in_a_continued_attribute_clause() {
     );
 }
 
+const WIDE_AND_ASCII: &str = "Clip riff:
+    Note as \u{97f3} /60 | velocity=0.8
+                        brightness=0.7
+    Note as plain /62 | velocity=0.8
+                        brightness=0.7
+";
+
+fn names_after(text: &str, marker: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.split_once(marker))
+        .filter_map(|(_, rest)| rest.split_whitespace().next())
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn a_wide_name_stays_unchanged_in_every_renamed_copy_and_draws_no_rename_signal() {
+    let checker = checker(DEFAULT_BUDGET);
+    let original = program(&[("main.sym", WIDE_AND_ASCII)]);
+    let scaled_text = scaled(&original, checker.vocabulary(), 4).sources[0]
+        .text
+        .clone();
+    let names = names_after(&scaled_text, "Note as ");
+    assert_eq!(names.len(), 8);
+    assert_eq!(names.iter().filter(|name| *name == "\u{97f3}").count(), 4);
+    assert_eq!(checker.finding(&original, Signal::Rename), None);
+}
+
+#[test]
+fn a_name_holding_a_decomposed_character_stays_unchanged_in_every_renamed_copy() {
+    let checker = checker(DEFAULT_BUDGET);
+    let text = "let e\u{301} = 1\nlet b = e\u{301} + 1\n";
+    let scaled_text = scaled(&program(&[("main.sym", text)]), checker.vocabulary(), 3).sources[0]
+        .text
+        .clone();
+    assert_eq!(scaled_text.matches("e\u{301}").count(), 6);
+    assert_eq!(scaled_text.matches("let b").count(), 1);
+}
+
+#[test]
+fn an_ascii_name_is_still_renamed_keeping_its_scalar_count_and_case() {
+    let checker = checker(DEFAULT_BUDGET);
+    let text = "let wobble = 1\nlet Chord = wobble + 1\nlet \u{97f3} = 2\n";
+    let scaled_text = scaled(&program(&[("main.sym", text)]), checker.vocabulary(), 2).sources[0]
+        .text
+        .clone();
+    let copy: Vec<&str> = scaled_text.lines().skip(3).collect();
+    assert_eq!(copy.len(), 3);
+    let declared: Vec<&str> = copy
+        .iter()
+        .filter_map(|line| line.strip_prefix("let "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .collect();
+    assert_eq!(declared.len(), 3);
+    assert_eq!(declared[2], "\u{97f3}");
+    assert_ne!(declared[0], "wobble");
+    assert_eq!(declared[0].chars().count(), 6);
+    assert!(
+        declared[0]
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    );
+    assert_ne!(declared[1], "Chord");
+    assert_eq!(declared[1].chars().count(), 5);
+    assert!(declared[1].starts_with(|c: char| c.is_ascii_uppercase()));
+}
+
 #[test]
 fn an_unused_let_at_the_end_keeps_the_diagnostics_of_equal_programs() {
     let checker = checker(DEFAULT_BUDGET);
