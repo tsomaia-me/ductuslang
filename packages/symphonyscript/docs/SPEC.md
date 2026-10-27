@@ -775,7 +775,7 @@ LetDecl ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | Lambda NEWLINE | MatchBlo
 
 A `let` names a value. A `let` that reads no input, directly or through other declarations, is a compile-time value (§4.1). A `let` that reads an input, other than one holding a lambda (below), is reactive: a cell, or for an array an array of bindings (§4.4), recomputed when what it reads changes (§12.2). A declaration that reaches itself through `let`s, inputs, attribute reads, function bodies or the lambda a `let` holds is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`, and in `let f = x: f(x)`, whose recursion is written with `fn`; a function reaching itself through calls follows §6.3.
 
-A compile-time `let` may hold a node reference or an array of them, a lambda (§6.7), or a function's name: a source function's, a native function's or a built-in's. It stands for its value wherever it is used and never reaches the Program. A `let` holding a lambda is compile-time whatever the lambda's body reads: the lambda is inlined at each use, and a cell its body reads makes that use reactive, as an argument that reads a cell makes a call reactive (§6.3). A call of such a `let` inlines the lambda's or the function's body as §6.3 inlines a call, and a recursive or native function it names is called as §6.3 and §10.1 say. A `let` holding node references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
+A compile-time `let` may hold a node reference or an array of them, a lambda (§6.7), or a function's name: a source function's, a native function's or a built-in's. It stands for its value wherever it is used and never reaches the Program. A `let` holding a lambda is compile-time whatever the lambda's body reads: the lambda is inlined at each use, and a cell its body reads makes that use reactive, as an argument that reads a cell makes a call reactive (§6.3). A call of such a `let` inlines the lambda's or the function's body as §6.3 inlines a call, and a recursive or native function it names is called as §6.3 and §10.1 say. These rules on a lambda or a function's name cover every `let`, top-level or local: a function's local `let` and a pattern's `let` (§6.3, §6.4) hold one as a top-level `let` does. A `let` holding node references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
 
 ```sym
 input section = 0
@@ -796,7 +796,7 @@ Clip outro:
 FnDecl   ::= 'fn' Name GenericParams? '(' Params? ')' Result? ':' (Expr NEWLINE | NEWLINE INDENT FnBody DEDENT)
 Result   ::= '->' Type
 FnBody   ::= LocalLet* (Expr NEWLINE | MatchBlock | ForExprBlock)
-LocalLet ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | MatchBlock | ForExprBlock)
+LocalLet ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | Lambda NEWLINE | MatchBlock | ForExprBlock)
 Params   ::= Param (',' Param)*
 Param    ::= Name (':' Type)? ('=' Expr)?
 ```
@@ -1063,9 +1063,15 @@ let above = count(held, p: p > threshold)
 fn is_high(p): p > 60
 
 let named = count(held, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+let local = count_high(held)
 ```
 
-`above` reads `threshold` where its lambda is written, so it follows the input. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`.
+`above` reads `threshold` where its lambda is written, so it follows the input. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`, and so does `local`, whose local `let` holds the same lambda.
 
 A compile-time `let` holds a lambda or a function's name, and a function type may name its parameters:
 
