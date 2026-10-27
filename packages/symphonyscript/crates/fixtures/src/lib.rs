@@ -3,6 +3,7 @@
 mod bar_vocabulary;
 mod bounded_vocabulary;
 mod deep_projects;
+mod document_examples;
 mod dsp_project;
 mod envelope_vocabulary;
 mod music_project;
@@ -22,6 +23,7 @@ mod vocabulary_documented;
 pub use bar_vocabulary::bar_vocabulary;
 pub use bounded_vocabulary::bounded_vocabulary;
 pub use deep_projects::deep_projects;
+pub use document_examples::document_examples;
 pub use dsp_project::dsp_project;
 pub use envelope_vocabulary::envelope_vocabulary;
 pub use music_project::music_project;
