@@ -1483,6 +1483,26 @@ fn reachability_warnings_cost_work_linear_in_the_instances() {
 }
 
 #[test]
+fn reporting_reachability_warnings_costs_work_linear_in_the_warnings() {
+    for clips in [1_000u64, 2_000, 4_000] {
+        let mut text = String::from("Session s\n");
+        for clip in 0..clips {
+            text.push_str(&format!("Clip c{clip}\n"));
+        }
+        let (diagnostics, reports) =
+            analyzed(&vocabulary(), &text, |engine| engine.memo.reach_reports);
+        let warnings = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == crate::diagnostics::Code::UnreachableInstance)
+            .count();
+        assert_eq!(warnings, usize::try_from(clips).unwrap_or(usize::MAX));
+        assert_eq!(diagnostics.len(), warnings, "{diagnostics:?}");
+        let per_instance = 2;
+        assert!(reports <= per_instance * (clips + 1), "{clips} {reports}");
+    }
+}
+
+#[test]
 fn an_integer_that_would_reach_two_to_the_127_costs_what_its_reference_costs() {
     let work = |text: &str| {
         let (diagnostics, work) =

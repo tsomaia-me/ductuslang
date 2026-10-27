@@ -58,6 +58,7 @@ pub(crate) struct Memo {
     pub kind_visits: u64,
     pub capacity_visits: u64,
     pub reach_work: u64,
+    pub reach_reports: u64,
     pub binding_state_reads:
         FastMap<super::ids::BindingId, std::rc::Rc<[crate::semantics::ir::StateId]>>,
     pub extent_cache: FastMap<NodeId, (bool, super::capacity::Piecewise)>,
