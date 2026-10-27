@@ -50,12 +50,7 @@ impl Engine<'_> {
                             let reads = self.untypable_reads(*element)?;
                             self.typing.read_by_faults.extend(reads);
                         }
-                        self.error(
-                            Code::ReactiveIterable,
-                            loc,
-                            scope,
-                            "a `for` iterates over a compile-time value, and this one reads a cell",
-                        )?;
+                        self.error(Code::ReactiveIterable, loc, scope, REACTIVE)?;
                         return Ok(None);
                     }
                 }
@@ -97,6 +92,12 @@ impl Engine<'_> {
         };
         if !self.arrays.contains(&node) {
             return Ok(Some(val));
+        }
+        if self.demand_sig(node)?.reactive {
+            let reads = self.untypable_reads(node)?;
+            self.typing.read_by_faults.extend(reads);
+            self.error(Code::ReactiveIterable, loc, scope, REACTIVE)?;
+            return Ok(None);
         }
         let array = match self.demand_cval(node, EvalTy::Default)? {
             CVal::Array(array) => array,
@@ -237,3 +238,5 @@ impl Engine<'_> {
 }
 
 const ITERABLE: &str = "a `for` iterates over a range or an array of single values";
+
+const REACTIVE: &str = "a `for` iterates over a compile-time value, and this one reads a cell";

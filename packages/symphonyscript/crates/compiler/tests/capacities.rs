@@ -1444,3 +1444,95 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         }
     }
 }
+
+#[test]
+fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
+    let held = "input held: i32[..4] = [1, 2]\n";
+    let n = "input n = 1\n";
+    let looping = |iterable: &str| format!("Clip c:\n    for w in {iterable}:\n        Note/w\n");
+    let (whole, sliced, joined, stated, cut) = (
+        looping("held"),
+        looping("held[..1]"),
+        looping("held + [1]"),
+        looping("s"),
+        looping("xs[n..]"),
+    );
+    let rows: &[support::Row] = &[
+        (&[held, &whole], &[(Code::ReactiveIterable, "held")]),
+        (&[held, &sliced], &[(Code::ReactiveIterable, "held[..1]")]),
+        (&[held, &joined], &[(Code::ReactiveIterable, "held + [1]")]),
+        (
+            &[n, "state s = (s{1, []} + [n])[^2..]\n", &stated],
+            &[(Code::ReactiveIterable, "s")],
+        ),
+        (
+            &[n, "let xs = [1, 2, 3]\n", &cut],
+            &[(Code::ReactiveIterable, "xs[n..]")],
+        ),
+        (
+            &[held, "Clip c:\n    [for w in held: Note/w]\n"],
+            &[(Code::ReactiveIterable, "held")],
+        ),
+        (
+            &[
+                held,
+                "pattern P(xs):\n    for w in xs:\n        Note/w\n",
+                "Clip c:\n    P | xs=held\n",
+            ],
+            &[(Code::ReactiveIterable, "xs")],
+        ),
+        (
+            &[
+                "input n = [1, 2]\n",
+                "Clip c:\n    for w in n:\n        Note/w\n",
+            ],
+            &[(Code::ReactiveIterable, "n")],
+        ),
+        (
+            &[
+                "let xs = [1, 2, 3]\n",
+                "Clip c:\n    for w in xs[1..]:\n        Note/w\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                n,
+                "state s = [n, n]\n",
+                "Clip c:\n    for i in 0..len(s):\n        Note/i\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+    let native_rows: &[support::Row] = &[
+        (
+            &[n, &looping("mirror([n, 2])")],
+            &[(Code::ReactiveIterable, "mirror([n, 2])")],
+        ),
+        (
+            &[held, &looping("mirror(held)")],
+            &[(Code::ReactiveIterable, "mirror(held)")],
+        ),
+        (&[&looping("mirror([1, 2, 3])")], &[]),
+        (
+            &["Clip c:\n    for i in 0..text_length(\"abc\"):\n        Note/i\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), native_rows);
+    let placing = |values: &str| {
+        format!(
+            "input held: i32[..4] = [{values}]\nRoot r:\n    Link: r\n    for w in held:\n        Item\n"
+        )
+    };
+    let (two, three) = (placing("1, 2"), placing("1, 2, 3"));
+    let bounded_rows: &[support::Row] = &[
+        (&[&two], &[(Code::ReactiveIterable, "held")]),
+        (&[&three], &[(Code::ReactiveIterable, "held")]),
+    ];
+    support::assert_rows_in_every_order(
+        &symphonyscript_fixtures::bounded_vocabulary(),
+        bounded_rows,
+    );
+}
