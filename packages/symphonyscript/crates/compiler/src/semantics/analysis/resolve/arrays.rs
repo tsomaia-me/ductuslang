@@ -20,6 +20,7 @@ use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::lengths_of::lengths_of;
+use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::settling::Settling;
@@ -531,6 +532,8 @@ impl Engine<'_> {
         }
         let mut found: FastMap<NodeId, LayoutFound> = FastMap::default();
         let mut stack = vec![(root, false)];
+        let mut active: FastSet<NodeId> = FastSet::default();
+        let mut expanded: FastMap<NodeId, Vec<NodeId>> = FastMap::default();
         let mut missing = false;
         while let Some((node, ready)) = stack.pop() {
             if found.contains_key(&node) {
@@ -586,12 +589,29 @@ impl Engine<'_> {
                 missing = true;
                 continue;
             }
-            let parts = self.layout_parts(&op, assumed)?;
             if !ready {
+                let mut parts = self.layout_parts(&op, assumed)?;
+                if parts.iter().any(|part| active.contains(part)) {
+                    if let Op::Read(binding) = op {
+                        found.insert(
+                            node,
+                            LayoutFound {
+                                shaped: Ok(self.variable_layout(binding)),
+                                certain: false,
+                            },
+                        );
+                        continue;
+                    }
+                    parts.retain(|part| !active.contains(part));
+                }
+                active.insert(node);
                 stack.push((node, true));
                 stack.extend(parts.iter().map(|part| (*part, false)));
+                expanded.insert(node, parts);
                 continue;
             }
+            active.remove(&node);
+            let parts = expanded.remove(&node).unwrap_or_default();
             let mut inputs = Vec::with_capacity(parts.len());
             for part in &parts {
                 match found.get(part) {
@@ -647,7 +667,16 @@ impl Engine<'_> {
             }
             Op::Array(elements) => elements.clone(),
             Op::Join(lhs, rhs) => vec![*lhs, *rhs],
-            Op::History { fallback, .. } => fallback.iter().copied().collect(),
+            Op::History { cell, fallback, .. } => {
+                let mut parts: Vec<NodeId> = fallback.iter().copied().collect();
+                if let HistoryCell::Let(id) = cell
+                    && let Some(BoundVal::Scalar(Bound::Cell(binding))) = self.let_bound(*id)
+                    && !self.memo.binding_layouts.contains_key(binding)
+                {
+                    parts.push(self.binding(*binding)?.init);
+                }
+                parts
+            }
             Op::Builtin(Builtin::Bytes, args) => args.clone(),
             Op::Number(..)
             | Op::Const(_)
@@ -849,6 +878,22 @@ impl Engine<'_> {
                     None => Ok(fallback),
                 }
             }
+            Op::History {
+                cell: HistoryCell::Let(id),
+                fallback: Some(_),
+                ..
+            } => match self.let_bound(*id) {
+                Some(BoundVal::Scalar(Bound::Cell(binding))) => {
+                    match self.memo.binding_layouts.get(binding) {
+                        Some(layout) => Ok(Some(layout.clone())),
+                        None => Ok(layouts.get(1).or(layouts.first()).cloned().flatten()),
+                    }
+                }
+                Some(bound @ BoundVal::Array(_)) => Ok(self.bound_layout(bound)?),
+                Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => {
+                    Ok(layouts.first().cloned().flatten())
+                }
+            },
             Op::History { cell, fallback, .. } => match fallback {
                 Some(_) => Ok(layouts.first().cloned().flatten()),
                 None => match cell {
@@ -1070,6 +1115,15 @@ impl Engine<'_> {
             }
             BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error => None,
         })
+    }
+
+    pub(in crate::semantics::analysis) fn let_bound(
+        &self,
+        id: crate::semantics::ir::LetId,
+    ) -> Option<&BoundVal> {
+        self.memo
+            .lets
+            .get(&(self.global_of_let(id), LetRef::Top(id)))
     }
 
     pub(in crate::semantics::analysis) fn history_holds_array(

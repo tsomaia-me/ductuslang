@@ -47,6 +47,7 @@ impl Engine<'_> {
         let mut unresolved = Vec::new();
         let mut members: Vec<BindingId> = Vec::new();
         let mut reads: Vec<Vec<StateId>> = Vec::new();
+        let mut unbound = Vec::new();
         let mut visited = Vec::new();
         while let Some(current) = reached.pop() {
             self.memo.settlement_visits += 1;
@@ -69,7 +70,7 @@ impl Engine<'_> {
                 self.memo.settled.insert(binding);
                 continue;
             }
-            let targets = self.state_reads(self.binding(binding)?.init)?;
+            let targets = self.state_reads(self.binding(binding)?.init, &mut unbound)?;
             for target in &targets {
                 if seen.insert(*target) {
                     reached.push(*target);
@@ -77,6 +78,13 @@ impl Engine<'_> {
             }
             members.push(binding);
             reads.push(targets);
+        }
+        if !unbound.is_empty() {
+            if self.declaring() {
+                return Ok(Settling::Blocked);
+            }
+            need.extend(unbound);
+            return Ok(Settling::Pending);
         }
         if !unresolved.is_empty() {
             let declaring = self.declaring();
@@ -140,7 +148,11 @@ impl Engine<'_> {
         }
     }
 
-    fn state_reads(&self, init: NodeId) -> Result<Vec<StateId>, Internal> {
+    fn state_reads(
+        &self,
+        init: NodeId,
+        unbound: &mut Vec<Query>,
+    ) -> Result<Vec<StateId>, Internal> {
         let mut found = Vec::new();
         let mut seen = FastSet::default();
         let mut stack = vec![init];
@@ -159,6 +171,9 @@ impl Engine<'_> {
                 Op::History { cell, fallback, .. } => {
                     match cell {
                         HistoryCell::State(state) => found.push(*state),
+                        HistoryCell::Let(id) if self.let_bound(*id).is_none() => {
+                            unbound.push(self.history_cell_query(*cell));
+                        }
                         HistoryCell::Input(_) | HistoryCell::Let(_) => {
                             for binding in self.history_bindings(node)? {
                                 stack.push(self.binding(binding)?.init);

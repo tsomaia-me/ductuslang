@@ -293,12 +293,26 @@ impl Engine<'_> {
                 .cloned(),
             HistoryCell::State(state) => self.memo.states.get(&state).cloned(),
         };
+        let mut let_cell = None;
         let cell_layout = match &bound {
             Some(BoundVal::Array(array)) => Some(
                 crate::semantics::analysis::layout::Layout::fixed(array.0.lengths()),
             ),
             Some(BoundVal::Scalar(Bound::Cell(binding))) => {
-                self.memo.binding_layouts.get(binding).cloned()
+                if matches!(cell, HistoryCell::Let(_)) {
+                    let_cell = Some(*binding);
+                }
+                match self.memo.binding_layouts.get(binding) {
+                    Some(layout) => Some(layout.clone()),
+                    None if let_cell.is_some() => {
+                        let init = self.binding(*binding)?.init;
+                        let Ok(layout) = self.known_layout(init)?.shaped else {
+                            return Ok(());
+                        };
+                        layout
+                    }
+                    None => None,
+                }
             }
             Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => return Ok(()),
         };
@@ -306,6 +320,31 @@ impl Engine<'_> {
         let Ok(fallback_layout) = found.shaped else {
             return Ok(());
         };
+        if let (Some(binding), Some(cell), Some(held)) = (let_cell, &cell_layout, &fallback_layout)
+            && cell.variable
+            && !held.variable
+            && held.inner() == cell.inner()
+            && let Some(length) = held.outer()
+        {
+            let init = self.binding(binding)?.init;
+            let capacity = match self.memo.binding_capacities.get(&binding) {
+                Some(capacity) => Some(*capacity),
+                None => self.extent(init)?,
+            };
+            if let Some(capacity) = capacity
+                && length > capacity
+            {
+                let name = self.binding(binding)?.name.clone();
+                self.error_at_node(
+                    Code::CapacityExceeded,
+                    fallback,
+                    format!(
+                        "the fallback holds {length} elements, more than the capacity {capacity} of `{name}`"
+                    ),
+                )?;
+                return Ok(());
+            }
+        }
         let agrees = match (&cell_layout, &fallback_layout) {
             (None, None) => true,
             (Some(cell), Some(fallback)) if cell.variable => {

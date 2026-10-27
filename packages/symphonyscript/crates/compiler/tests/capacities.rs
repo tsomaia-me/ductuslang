@@ -605,6 +605,94 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
 }
 
 #[test]
+fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
+    let held = "input held: i32[..10] = []\n";
+    let played = "let played = held + [note]\n";
+    assert_ordered_capacity(
+        &[held, NOTE, played, "state s = (played{1, []})[^20..]\n"],
+        "s",
+        11,
+    );
+    assert_ordered_capacity(
+        &[
+            held,
+            NOTE,
+            played,
+            "let t = s[1..]\n",
+            "state s = (t{1, []} + [note, note])[^8..]\n",
+        ],
+        "s",
+        8,
+    );
+    assert_ordered_capacity(
+        &[NOTE, "state recent = (recent{1, []} + [note])[^8..]\n"],
+        "recent",
+        8,
+    );
+    let first = "Clip c:\n    Note/(s[0])\n";
+    let rows: &[support::Row] = &[
+        (
+            &[held, NOTE, played, "state s = played{1, []}\n", first],
+            &[],
+        ),
+        (
+            &[
+                held,
+                NOTE,
+                played,
+                "fn keep(xs): xs[^8..]\n",
+                "state s = keep(played{1, []})\n",
+                first,
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                NOTE,
+                played,
+                "state s = played{1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}\n",
+                first,
+            ],
+            &[(
+                Code::CapacityExceeded,
+                "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]",
+            )],
+        ),
+        (
+            &[
+                "input held: i32[..10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n",
+                "Clip c:\n    Note/(held[0])\n",
+            ],
+            &[(Code::CapacityExceeded, "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]")],
+        ),
+        (
+            &[held, NOTE, played, "state s = played{1, [[1, 2]]}\n", first],
+            &[(Code::TypeMismatch, "played{1, [[1, 2]]}")],
+        ),
+        (
+            &[
+                NOTE,
+                "let pair = [note, note]\n",
+                "state s = pair{1, [0, 0]}[1..]\n",
+                "Clip c:\n    Note/(s[1])\n",
+            ],
+            &[(Code::IndexOutOfRange, "1")],
+        ),
+        (
+            &[
+                NOTE,
+                "let pair = [note, note]\n",
+                "state s = pair{1, [0]}\n",
+                first,
+            ],
+            &[(Code::TypeMismatch, "pair{1, [0]}")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
     let wide = "Clip c:\n    Note when s > 3000000000\n";
     let rows: &[support::Row] = &[

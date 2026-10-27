@@ -105,9 +105,13 @@ impl Engine<'_> {
         if let HistoryCell::Input(input) = cell {
             some!(self.bound(Query::Input(input), need));
         }
+        let fallback_loc = match fallback {
+            Some(expr) => self.hir.expr(expr)?.loc,
+            None => loc,
+        };
         let fallback = match fallback_val {
             Some(Val::Error) => return Ok(Some(Val::Error)),
-            Some(val) => match self.boxed(&val, loc, scope)? {
+            Some(val) => match self.boxed(&val, fallback_loc, scope)? {
                 Some(node) => Some(node),
                 None => return Ok(Some(Val::Error)),
             },
