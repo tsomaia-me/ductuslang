@@ -4,6 +4,7 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
@@ -378,6 +379,14 @@ impl Engine<'_> {
         let recursive_body = self.template_of(scope)?.is_some();
         if !opaque && !differ {
             return Ok(Some(Branches::Each(vals)));
+        }
+        for val in &vals {
+            if let Val::Scalar(node) = val
+                && !self.arrays.contains(node)
+                && some!(self.sig(*node, need)).kind == Kind::Str
+            {
+                return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
+            }
         }
         let reactive = some!(self.sig(selector, need)).reactive;
         if !opaque {

@@ -4548,6 +4548,103 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
 }
 
 #[test]
+fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatever_the_other_leaves_are()
+ {
+    let f = "input f = false\n";
+    let mixed = "if f then \"GET\" else bytes(\"AB\")";
+    let rows: &[support::Row] = &[
+        (
+            &["Clip as g | data=(if true then \"GET\" else bytes(\"AB\"))\n"],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "Clip as g | data=(if f then \"GET\" else bytes(\"AB\"))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "Clip as g | data=(if f then bytes(\"AB\") else \"GET\")\n",
+            ],
+            &[],
+        ),
+        (
+            &[f, "Clip as g | data=(if f then \"GET\" else [71, 69])\n"],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "fn m(x):\n    match x:\n        true: \"GET\"\n        else: bytes(\"AB\")\n",
+                "Clip as g | data=m(f)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "let d: u8[..3] = if f then \"GET\" else bytes(\"AB\")\n",
+                "Clip as g | data=d\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "let d: u8[..2] = if f then \"GET\" else bytes(\"AB\")\n",
+                "Clip as g | data=d\n",
+            ],
+            &[(
+                Code::CapacityExceeded,
+                "let d: u8[..2] = if f then \"GET\" else bytes(\"AB\")\n",
+            )],
+        ),
+        (
+            &[
+                f,
+                "Clip as g | fixed=(if f then \"GET\" else bytes(\"AB\"))\n",
+            ],
+            &[(Code::VariableArray, mixed)],
+        ),
+        (
+            &["Clip as g | fixed=(if true then \"GET\" else bytes(\"AB\"))\n"],
+            &[],
+        ),
+        (
+            &[f, "Clip as g | data=(if f then \"GET\" else [1.5])\n"],
+            &[(Code::TypeMismatch, "if f then \"GET\" else [1.5]")],
+        ),
+        (
+            &[
+                f,
+                "let p = if f then \"GET\" else bytes(\"AB\")\n",
+                "Clip as g | data=p\n",
+            ],
+            &[(Code::TypeMismatch, mixed)],
+        ),
+        (
+            &[
+                f,
+                "Clip as g | data=(if f then bytes(\"GET\") else bytes(\"AB\"))\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
+    let rows: &[support::Row] = &[(
+        &[
+            f,
+            "Song s:\n    Clip as c:\n        Note/(checksum(if f then \"a\" else bytes(\"bc\")))\n",
+        ],
+        &[],
+    )];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+}
+
+#[test]
 fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute() {
     let f = "input f = false\n";
     let note = "input note = 60\n";

@@ -325,21 +325,24 @@ impl Engine<'_> {
         let Val::Scalar(node) = val else {
             return Ok(Some(val));
         };
-        if !wants_bytes || self.arrays.contains(&node) {
+        if !wants_bytes {
             return Ok(Some(val));
         }
         if let Some(bytes) = self.memo.string_bytes.get(&node) {
             return Ok(Some(Val::Scalar(*bytes)));
         }
-        let sig = some!(self.sig(node, need));
-        if sig.kind != Kind::Str {
-            return Ok(Some(val));
-        }
-        if sig.reactive {
+        if self.reaches_choice(node)? {
             return Ok(Some(match some!(self.choice_bytes(node, need)?) {
                 Some(bytes) => Val::Scalar(bytes),
                 None => val,
             }));
+        }
+        if self.arrays.contains(&node) {
+            return Ok(Some(val));
+        }
+        let sig = some!(self.sig(node, need));
+        if sig.kind != Kind::Str || sig.reactive {
+            return Ok(Some(val));
         }
         let bytes = self.scalar(Op::Builtin(Builtin::Bytes, vec![node]), loc, scope)?;
         if let Val::Scalar(created) = bytes {
@@ -355,6 +358,7 @@ impl Engine<'_> {
     ) -> Result<Option<Option<NodeId>>, Internal> {
         let mut order = Vec::new();
         let mut seen = FastSet::default();
+        let mut strings = FastSet::default();
         let mut stack = vec![(root, false)];
         while let Some((node, expanded)) = stack.pop() {
             if expanded {
@@ -377,13 +381,19 @@ impl Engine<'_> {
                     .collect(),
                 _ => {
                     let sig = some!(self.sig(node, need));
-                    if sig.kind != Kind::Str || sig.reactive || sig.is_error() {
+                    if sig.is_error() || (sig.kind == Kind::Str && sig.reactive) {
                         return Ok(Some(None));
+                    }
+                    if sig.kind == Kind::Str {
+                        strings.insert(node);
                     }
                     Vec::new()
                 }
             };
             stack.extend(arms.into_iter().map(|arm| (arm, false)));
+        }
+        if strings.is_empty() {
+            return Ok(Some(None));
         }
         let mut bytes: FastMap<NodeId, NodeId> = FastMap::default();
         for node in order {
@@ -421,6 +431,7 @@ impl Engine<'_> {
                         record.scope,
                     )?
                 }
+                _ if !strings.contains(&node) => node,
                 _ => match self.memo.string_bytes.get(&node) {
                     Some(created) => *created,
                     None => {
@@ -442,6 +453,19 @@ impl Engine<'_> {
             .ok_or(Internal::missed("the bytes of a choice"))?;
         self.memo.string_bytes.insert(root, created);
         Ok(Some(Some(created)))
+    }
+
+    pub(in crate::semantics::analysis) fn reaches_choice(
+        &self,
+        mut node: NodeId,
+    ) -> Result<bool, Internal> {
+        loop {
+            match &self.node(node)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => node = *inner,
+                Op::If(..) | Op::Match { .. } => return Ok(true),
+                _ => return Ok(false),
+            }
+        }
     }
 
     pub(in crate::semantics::analysis) fn counted_from_end(
