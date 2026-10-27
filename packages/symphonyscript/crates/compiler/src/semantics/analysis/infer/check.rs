@@ -286,14 +286,7 @@ impl Engine<'_> {
                             match picked.and_then(|position| items.get(position)) {
                                 Some(item) => stack.push((*item, ty, selection, flows)),
                                 None if selection == Selection::Evaluated => {}
-                                None => self.error_at_node(
-                                    Code::IndexOutOfRange,
-                                    index,
-                                    format!(
-                                        "the index {position} is outside the array of length {}",
-                                        items.len()
-                                    ),
-                                )?,
+                                None => self.index_outside(index, position, length_of(&items))?,
                             }
                         }
                         Some(_) => {}
@@ -663,14 +656,14 @@ impl Engine<'_> {
         if let Some(CVal::Int(position)) = self.chosen(index, position_ty)?
             && !(0..i128::from(length)).contains(&position)
         {
-            self.error_at_node(
-                Code::IndexOutOfRange,
-                index,
-                format!("the index {position} is outside the array of length {length}"),
-            )?;
+            self.index_outside(index, position, u64::from(length))?;
         }
         Ok(())
     }
+}
+
+fn length_of<T>(items: &[T]) -> u64 {
+    u64::try_from(items.len()).unwrap_or(u64::MAX)
 }
 
 fn compared(own: Option<Scalar>, pair: Option<Scalar>) -> Option<Scalar> {

@@ -17,6 +17,6 @@ mod severity;
 
 pub use code::Code;
 pub use diagnostic::Diagnostic;
-pub(crate) use help::{mismatched_closer_help, stray_closer_help};
+pub(crate) use help::{index_outside_help, mismatched_closer_help, stray_closer_help};
 pub use related::Related;
 pub use severity::Severity;

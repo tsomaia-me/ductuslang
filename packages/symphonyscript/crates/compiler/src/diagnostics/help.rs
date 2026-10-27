@@ -15,6 +15,14 @@ pub(crate) fn mismatched_closer_help(found: char, expected: char) -> Option<Stri
     ))
 }
 
+pub(crate) fn index_outside_help(length: u64) -> Option<String> {
+    (length == 0).then(|| {
+        String::from(
+            "the array is empty: give it elements, or read the element only where `len(…)` is above 0",
+        )
+    })
+}
+
 fn opener_of(closer: char) -> Option<char> {
     Some(match closer {
         ')' => '(',

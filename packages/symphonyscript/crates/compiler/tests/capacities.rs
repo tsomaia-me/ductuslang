@@ -2285,6 +2285,37 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             );
         }
     }
+    let natives = Compiler::new(&symphonyscript_fixtures::native_vocabulary())
+        .expect("the native vocabulary compiles");
+    for (read, summary, help) in [
+        (
+            "Clip a:\n    Note/(b.sequence[0])\n",
+            "the index 0 is outside the array of length 0",
+            "the array is empty: give it elements, or read the element only where `len(…)` is above 0",
+        ),
+        (
+            "Clip a:\n    Note/(b.seq[7])\n",
+            "the index 7 is outside the array of length 2",
+            "keep the index inside the array, from 0 to its length minus one",
+        ),
+    ] {
+        for order in support::permutations(&[read, "Clip b:\n    Note\n"]) {
+            let text = order.concat();
+            let found = support::errors(natives.check(&[support::source(&text)]));
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            assert_eq!(
+                (
+                    diagnostic.code,
+                    diagnostic.summary.as_str(),
+                    diagnostic.help.as_deref()
+                ),
+                (Code::IndexOutOfRange, summary, Some(help)),
+                "{text}"
+            );
+        }
+    }
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let text = "Clip c:\n    for w in [Saw, Square]:\n        Note\n";
     let found = support::errors(compiler.check(&[support::source(text)]));

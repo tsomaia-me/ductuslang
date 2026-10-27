@@ -178,14 +178,8 @@ impl Engine<'_> {
         Ok(match item {
             Some(item) => item,
             None => {
-                self.error_at_node(
-                    Code::IndexOutOfRange,
-                    index,
-                    format!(
-                        "the index {position} is outside the array of length {}",
-                        array.len()
-                    ),
-                )?;
+                let length = u64::try_from(array.len()).unwrap_or(u64::MAX);
+                self.index_outside(index, position, length)?;
                 CVal::Error
             }
         })
@@ -281,14 +275,8 @@ impl Engine<'_> {
                 match item {
                     Some(item) => some!(self.typed_child(item, (own, partner), ctx, need)?),
                     None => {
-                        self.error_at_node(
-                            Code::IndexOutOfRange,
-                            index,
-                            format!(
-                                "the index {position} is outside the array of length {}",
-                                items.len()
-                            ),
-                        )?;
+                        let length = u64::try_from(items.len()).unwrap_or(u64::MAX);
+                        self.index_outside(index, position, length)?;
                         CVal::Error
                     }
                 }
