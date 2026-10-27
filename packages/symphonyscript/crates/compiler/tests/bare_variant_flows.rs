@@ -433,7 +433,10 @@ fn expected(flow: &Flow, vocab: &Vocab, uses: &[&Position], text: &str) -> Found
             .into_iter()
             .min_by_key(|writer| text.find(&format!("{writer}\n")).unwrap_or(usize::MAX))
             .unwrap_or_default();
-        found.push((Code::TypeMismatch, format!("{first}\n")));
+        let value = first
+            .split_once(" = ")
+            .map_or(first.as_str(), |(_, value)| value);
+        found.push((Code::TypeMismatch, value.to_string()));
     }
     found.sort();
     found
@@ -701,7 +704,7 @@ fn a_comparison_across_two_enums_and_a_compile_time_flows_lets_are_located_in_ev
         ),
         (
             vec!["let a = Sine", "let b = a", "K k1 | wave=a color=b"],
-            at(Code::TypeMismatch, "let a = Sine\n", &["let b = a\n"]),
+            at(Code::TypeMismatch, "Sine", &["let b = a\n"]),
         ),
         (
             vec![
@@ -710,11 +713,7 @@ fn a_comparison_across_two_enums_and_a_compile_time_flows_lets_are_located_in_ev
                 "let c = b",
                 "K k1 | wave=a color=c",
             ],
-            at(
-                Code::TypeMismatch,
-                "let a = Sine\n",
-                &["let b = a\n", "let c = b\n"],
-            ),
+            at(Code::TypeMismatch, "Sine", &["let b = a\n", "let c = b\n"]),
         ),
     ] {
         for order in orders(items.len()) {
@@ -735,7 +734,7 @@ fn a_comparison_across_two_enums_and_a_compile_time_flows_lets_are_located_in_ev
 #[test]
 fn two_enums_draw_one_type_mismatch_whatever_their_variants() {
     let compiler = Compiler::new(&distinct_vocabulary()).expect("the vocabulary compiles");
-    let conflict = vec![(Code::TypeMismatch, "let a = Sine\n".to_string())];
+    let conflict = vec![(Code::TypeMismatch, "Sine".to_string())];
     let mut failures = Vec::new();
     for items in [
         vec!["let a = Sine", "K k1 | wave=a color=a"],
@@ -757,11 +756,11 @@ fn two_enums_draw_one_type_mismatch_whatever_their_variants() {
 }
 
 #[test]
-fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_writer_in_every_order() {
+fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_value_in_every_order() {
     let vocab = vocabulary(true);
     let compiler = Compiler::new(&vocab.vocabulary).expect("the vocabulary compiles");
     let written = "let w = Saw";
-    let conflict = vec![(Code::TypeMismatch, format!("{written}\n"))];
+    let conflict = vec![(Code::TypeMismatch, "Saw".to_string())];
     let cases: [(&[&str], Found); 7] = [
         (&["Osc o | wave=w", "Osc p | mode=w"], conflict.clone()),
         (&["Osc o | wave=w", "Osc p | wave=w"], Vec::new()),
@@ -840,9 +839,12 @@ fn a_flows_secondary_spans_never_repeat_its_primary_and_name_each_let_once() {
                 .collect();
             let mut written: Vec<&str> = lets.clone();
             written.sort_by_key(|item| text.find(&format!("{item}\n")));
+            let value = written[0]
+                .split_once(" = ")
+                .map_or(written[0], |(_, value)| value);
             let wanted = vec![(
                 Code::TypeMismatch,
-                format!("{}\n", written[0]),
+                value.to_string(),
                 written[1..]
                     .iter()
                     .map(|item| format!("{item}\n"))

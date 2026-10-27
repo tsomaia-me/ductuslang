@@ -2926,7 +2926,9 @@ fn a_recursive_argument_reads_a_settled_enum() {
     if located(&untyped, &diagnostics)
         != vec![(
             Code::TypeMismatch,
-            untyped.find("let x").unwrap_or(0),
+            untyped
+                .find("let x = Sine")
+                .map_or(0, |at| at + "let x = ".len()),
             vec![],
         )]
     {

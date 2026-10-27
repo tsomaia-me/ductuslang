@@ -552,7 +552,7 @@ fn the_operands_of_is_give_a_reactive_let_its_enum() {
 #[test]
 fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
     let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
-    let the_let = "let x = if f then Sine else Saw\n";
+    let the_value = "if f then Sine else Saw";
     for uses in [
         "Clip c:\n    Note when x is x\n",
         "Clip c:\n    Note when x is Saw\n",
@@ -561,7 +561,7 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
     ] {
         support::expect_codes(
             &format!("{held}{uses}"),
-            &[(Code::TypeMismatch, the_let, 0)],
+            &[(Code::TypeMismatch, the_value, 0)],
         );
     }
     support::expect_codes(
@@ -574,7 +574,7 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
     );
     support::expect_codes(
         &format!("{held}let y = x\nClip c:\n    Note when y is 1\n"),
-        &[(Code::TypeMismatch, the_let, 0)],
+        &[(Code::TypeMismatch, the_value, 0)],
     );
     let named = "let t = if x is Wave::Saw then \"a\" else \"b\"\n";
     support::expect_codes(
@@ -599,75 +599,76 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
 #[test]
 fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
     let held = "Session s\ninput f = true\ninput g = true\nlet x = if f then Sine else Saw\n";
-    let the_let = "let x = if f then Sine else Saw\n";
     let other = "let w = if f then Saw else Square\n";
     let bare = "Session s\ninput f = true\ninput g = true\n";
+    let the_value = "if f then Sine else Saw";
+    let other_value = "if f then Saw else Square";
     let failures: Vec<String> = [
         (
             held,
             "let y = x\n",
             "    Note when y + true\n",
-            vec![(the_let, vec!["let y"])],
+            vec![(the_value, vec!["let y"])],
         ),
         (
             held,
             "let y = x\nlet z = y\n",
             "    Note when z + true\n",
-            vec![(the_let, vec!["let y", "let z"])],
+            vec![(the_value, vec!["let y", "let z"])],
         ),
         (
             held,
             "let y = x\n",
             "    Note when x + true\n    Note when y + true\n",
-            vec![(the_let, vec!["let y"])],
+            vec![(the_value, vec!["let y"])],
         ),
         (
             held,
             "let y = x\nlet z = x\n",
             "    Note when y + true\n    Note when z + true\n",
-            vec![(the_let, vec!["let y", "let z"])],
+            vec![(the_value, vec!["let y", "let z"])],
         ),
         (
             held,
             "let w = if f then Saw else Square\nlet y = if g then x else w\n",
             "    Note when y + true\n",
-            vec![(the_let, vec![other, "let y"])],
+            vec![(the_value, vec![other, "let y"])],
         ),
         (
             held,
             "let y = if f then x else Square\n",
             "    Note when y + true\n",
-            vec![(the_let, vec!["let y"])],
+            vec![(the_value, vec!["let y"])],
         ),
         (
             held,
             "let w = if f then Saw else Square\n",
             "    Note when x is w\n",
-            vec![(the_let, vec![other])],
+            vec![(the_value, vec![other])],
         ),
         (
             held,
             "let w = if f then Saw else Square\n",
             "    Note when x + true\n    Note when w + true\n",
-            vec![(the_let, vec![]), (other, vec![])],
+            vec![(the_value, vec![]), (other_value, vec![])],
         ),
         (
             held,
             "",
             "    Note when x + true\n",
-            vec![(the_let, vec![])],
+            vec![(the_value, vec![])],
         ),
         (
             bare,
             "let v = w\nlet w = if f then Saw else Sine\n",
             "    Note/60\n",
-            vec![("let w", vec!["let v"])],
+            vec![("if f then Saw else Sine", vec!["let v"])],
         ),
         (
             bare,
             "let u = if f then v else v\nlet v = w\nlet w = if f then Saw else Sine\n",
             "    Note/60\n",
-            vec![("let w", vec!["let u", "let v"])],
+            vec![("if f then Saw else Sine", vec!["let u", "let v"])],
         ),
     ]
     .into_iter()
@@ -737,7 +738,7 @@ fn a_let_that_reads_a_typed_enum_takes_its_type() {
     }
     support::expect_codes(
         &format!("{held}let y = x\nClip c:\n    Note when y + true\n"),
-        &[(Code::TypeMismatch, "let x = if f then Sine else Saw\n", 0)],
+        &[(Code::TypeMismatch, "if f then Sine else Saw", 0)],
     );
 }
 
@@ -911,11 +912,11 @@ fn a_match_waits_for_its_scrutinees_enum() {
     let unused = "Synth y:\n    Osc | rate=l\n";
     support::expect_codes(
         &format!("Session s\ninput f = true\nlet a = if f then Sine else Saw\n{arms}{unused}"),
-        &[(Code::TypeMismatch, "let a = if f then Sine else Saw\n", 0)],
+        &[(Code::TypeMismatch, "if f then Sine else Saw", 0)],
     );
     support::expect_codes(
         &format!("Session s\nlet a = Sine\n{arms}{unused}"),
-        &[(Code::TypeMismatch, "let a = Sine\n", 0)],
+        &[(Code::TypeMismatch, "Sine", 0)],
     );
     support::expect_codes(
         &format!("Session s\nlet a = Sine\nlet l = match a:\n    Low: 1.0\n    else: 0.5\n{used}"),
@@ -996,7 +997,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
         for order in support::permutations(&items) {
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
-            if found != [(Code::TypeMismatch, "let x = Sine\n".to_string())] {
+            if found != [(Code::TypeMismatch, "Sine".to_string())] {
                 failures.push(format!("{text}found {found:?}"));
                 break;
             }
@@ -1008,7 +1009,8 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
         let first = order
             .iter()
             .find(|item| item.starts_with("let"))
-            .map(|item| format!("{item}\n"))
+            .and_then(|item| item.split_once(" = "))
+            .map(|(_, value)| value.to_string())
             .unwrap_or_default();
         let found = fixture_errors(&text);
         if found != [(Code::TypeMismatch, first)] {
@@ -4072,7 +4074,7 @@ fn a_bare_variant_in_a_for_iterable_draws_one_unknown_name_and_is_a_placeholder(
 
 #[test]
 fn a_range_bound_or_index_reading_a_diagnosed_let_takes_its_placeholder() {
-    let mismatch = (Code::TypeMismatch, "let x = Saw\n");
+    let mismatch = (Code::TypeMismatch, "Saw");
     let rows: &[support::Row] = &[
         (
             &[

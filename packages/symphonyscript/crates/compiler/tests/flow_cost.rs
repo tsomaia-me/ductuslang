@@ -70,7 +70,7 @@ fn erroneous_flows_report_in_time_linear_in_their_number() {
                 errors.first(),
                 Some(&(
                     Code::TypeMismatch,
-                    "let a = Sine\n".to_string(),
+                    "Sine".to_string(),
                     vec!["P p0".to_string(), "let b = a\n".to_string()]
                 ))
             );

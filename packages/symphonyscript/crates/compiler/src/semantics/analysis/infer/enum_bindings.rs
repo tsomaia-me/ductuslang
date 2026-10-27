@@ -155,7 +155,8 @@ impl Engine<'_> {
         }
         for member in by_uses {
             if self.member_expected(member, &flows, &pushed).len() > 1 {
-                let (loc, scope) = self.member_site(member, &flows.lets)?;
+                let (_, scope) = self.member_site(member, &flows.lets)?;
+                let loc = self.value_loc(member, &flows.lets)?;
                 self.report_flow(member, loc, scope, Vec::new())?;
             }
         }
@@ -309,6 +310,11 @@ impl Engine<'_> {
             Member::Cell(binding) => self.typing.own.get(&binding).copied(),
             Member::Value(node) => self.memo.bare_enums.get(&node).map(|id| Scalar::Enum(*id)),
         }
+    }
+
+    fn value_loc(&self, member: Member, lets: &LetWriters) -> Result<Loc, Internal> {
+        let loc = self.node(self.member_node(member)?)?.loc;
+        Ok(value_of(lets, loc).unwrap_or(loc))
     }
 
     fn member_site(&self, member: Member, lets: &LetWriters) -> Result<(Loc, ScopeId), Internal> {
@@ -777,7 +783,8 @@ impl Engine<'_> {
                 .into_iter()
                 .map(|other| (other, "another use of the value".to_string()))
                 .collect();
-            self.report_flow(*first, *loc, *scope, related)?;
+            let at = self.value_loc(*first, &flows.lets)?;
+            self.report_flow(*first, at, *scope, related)?;
         }
         Ok(())
     }
@@ -856,6 +863,14 @@ impl Engine<'_> {
         values.dedup();
         Ok(LetWriters { aliases, values })
     }
+}
+
+fn value_of(lets: &LetWriters, at: Loc) -> Option<Loc> {
+    let after = lets
+        .values
+        .partition_point(|(value, _)| (value.file, value.start) <= (at.file, at.start));
+    let (value, _) = lets.values.get(after.checked_sub(1)?)?;
+    value.contains(at).then_some(*value)
 }
 
 fn writer_of(lets: &LetWriters, at: Loc) -> Option<Loc> {
