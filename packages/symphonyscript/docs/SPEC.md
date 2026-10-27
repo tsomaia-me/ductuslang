@@ -495,7 +495,7 @@ A compile-time value is computed by the rules of §5, except that a flexible int
 - The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a lambda argument (§6.7) counting by its source position and the values of the names it reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
+- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a lambda argument (§6.7) counting by its source position and the values of the names it reads, and a named function argument by its declaration and the values of the names its body reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
 - Every limit that draws an error has a warning value beside it, whose default is half the limit's default and which a project or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming what the limit's error names: the call, the expansion, or for the memory limit the Program; a count that passes the limit draws the error. The reload search bound (§13.3) draws no error and has no warning.
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
@@ -1042,7 +1042,7 @@ A lambda is a function written as the argument of a call: `x: x * 2`, `(a, b): a
 - A lambda stands only as an argument of a call to a function (§6.3) or a native function (§10.1); anywhere else it is an error.
 - A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter, and on a `let`, an input, a state, an attribute, a record field or an array element it is an error.
 - Where the body of the function that receives a lambda calls its parameter, the call inlines the lambda's body with the lambda's parameters bound to the call's arguments, as §6.3 inlines a call to a function. A native function that receives a lambda calls it as §10.1 says. The lambda reads the names in scope at its own position.
-- A function's name stands where a function type is expected, and the function is then received as a lambda is: the function type flows into it as the expected types of its parameters and its result (§4.2), as into a lambda's, an annotation it carries agrees with them or is an error, and its body is checked under those types. `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before` where `sort_by` expects a function type.
+- A function's name stands as an argument wherever a lambda stands, and the function is received as a lambda is. Where the receiving parameter has a function type, the type flows into the function as the expected types of its parameters and its result (§4.2), as into a lambda's, an annotation it carries agrees with them or is an error, and its body is checked under those types: `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before` where `sort_by` expects a function type. Where the parameter has none, the function is inlined where the body calls the parameter, its parameters typed by those calls' arguments as §6.3 types a call.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
 - The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
 - A parameter bound to a lambda, written as the argument of a call in the body, passes the lambda on to that call.
@@ -1086,17 +1086,17 @@ This is an error: `f` takes one argument, and the lambda takes two.
 GenericParams ::= '[' GenericParam (',' GenericParam)* ']'
 GenericParam  ::= 'const'? Name (':' Type)?
 TypeArgs      ::= '[' TypeArg (',' TypeArg)* ']'
-TypeArg       ::= Type | Digits
+TypeArg       ::= Type | Expr
 ```
 
 A function, a pattern, a `type` declaration and a native function's signature (§10.1) may take bracket parameters after their name: `fn name[T, const N](…)`, `pattern Name[K, const N](…)`, `type Name[A, const N] = …`. A bracket name without `const` is a type parameter, standing for a type. A bracket name with `const` is a value parameter, a compile-time integer that stands in sizes (§3.2) and wherever a compile-time `let` or a parameter bound to a compile-time argument may stand: arithmetic, comparisons, logic, `if` and `when`, indices, range bounds, interpolation, array literals, the default of a parameter after it, calls and conversions, with every operation they allow, computed exactly as §4.6 computes compile-time integers; `/` on it yields a float (§5.2). A value parameter is an integer because it is bound only from the sizes in parameter types, and a size is an integer. A bracket name is visible throughout its declaration.
 
-- A call to a function or a native function, and a use of a pattern, binds every bracket parameter from its arguments' types, where its parameters' types name the bracket parameter, and writes no bracket arguments. A bracket name that none of its declaration's parameter types names is an error.
+- A call to a function or a native function, and a use of a pattern, binds every bracket parameter from its arguments where the bracket parameter stands bare in a parameter's type, as a size, as a type or as a type argument, and writes no bracket arguments. A size that is an expression in a parameter's type is checked against the argument's size once the bracket parameters it reads are bound, as a second mention of one parameter is. A bracket parameter that stands bare in none of its declaration's parameter types is an error whose help says to write the bare name in a parameter's type, since binding reads a size from an argument and solves no equation.
 - Two mentions of one bracket parameter unify (§4.2), and arguments that bind it differently are an error at the call or use.
 - A type parameter bound from a flexible argument (§4.1) takes the defaults of §4.5, and a value parameter without a constraint is a flexible integer.
 - A function's type parameter binds to value types only (§3.5). A pattern's type parameter may also bind to a node kind, from an argument that is a node reference, and §10.2's checks run on each use's expansion against the kind it binds; a constraint written on such a parameter is an error, those checks being its check.
 - A bracket parameter's annotation is its constraint. On a type parameter it is a type the parameter must bind to, a sum listing the types it may bind to, one of them at each call or use, or an alias naming that set; on a value parameter it is the integer type of its value. A bracket parameter without a constraint binds to whatever its arguments give, and the body is checked per call or use with that binding.
-- In a type, the first bracket list after a generic type's name is its arguments, one for each bracket parameter in order: a type for a type parameter, and an integer or a value parameter for a value parameter. Later bracket lists are dimensions (§3.2), and after any other name every bracket list is a dimension: `Stack[i32, 8][4]` holds four stacks, and `Chord[4]` four chords.
+- In a type, the first bracket list after a generic type's name is its arguments, one for each bracket parameter in order and read by the parameter it fills: a type for a type parameter, and for a value parameter a compile-time integer expression, as a size is (§3.2), the enclosing declaration's value parameters among what it reads. Later bracket lists are dimensions (§3.2), and after any other name every bracket list is a dimension: `Stack[i32, 8][4]` holds four stacks, and `Chord[4]` four chords.
 - A record literal (§3.8) takes the generic type its position names with its arguments. Where its position names a generic type without arguments, the literal binds the type's parameters from its fields as a call binds them from its arguments: two fields that bind one parameter differently are an error naming both, and a parameter that no field binds is an error whose help says to annotate the type's arguments. Anywhere else, a generic type named without its arguments is an error whose help names its parameters.
 - An instantiated record's shape is its fields' shapes, so a reload keeps it as it keeps any record (§13.2, §13.5).
 
@@ -1116,6 +1116,7 @@ input note: i32 = 60
 
 let pitches: i32[3] = [60, 64, 67]
 let start: Stack[i32, 8] = {}
+let big: Stack[i32, 4 * 2] = {}
 let pushed = push(start, note)
 let centre = mid(0.25f32, 0.75f32)
 
@@ -1123,7 +1124,7 @@ Clip c:
     Note/(first(pitches))
 ```
 
-`push` binds `T` to `i32` and `N` to 8 from `start`, and `x: T` reads `note` as that `i32`; `first` binds `N` to 3 from `pitches`.
+`push` binds `T` to `i32` and `N` to 8 from `start`, and `x: T` reads `note` as that `i32`; `first` binds `N` to 3 from `pitches`; `big` is a `Stack[i32, 8]`.
 
 ```sym
 fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
@@ -1172,6 +1173,15 @@ Clip c:
 ```
 
 This is an error: `T` binds to `i32` from `a` and to `bool` from `b`.
+
+```sym-error
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+```
+
+This is an error: `N` stands bare in no parameter's type, only in `N + 1`; the help says to write it bare, as `padded` above takes `xs: i32[N]`.
 
 ```sym-error
 type Pair[A, B]:
@@ -1325,7 +1335,7 @@ A placement `for` repeats its body once for each element of its iterable. The it
 - a map (§3.10), entry by entry in insertion order;
 - a range `a..b`, which counts from `a` up to but excluding `b` and is empty when `b` is not above `a`.
 
-A bound of a range or of a slice (§3.7) has a minimum and a maximum read from its form: a literal and a compile-time value are their own minimum and maximum; `len(a)` of an array lies between 0 and `a`'s capacity (§3.7); `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each; `x + y` has the sum of its operands' minimums and the sum of their maximums, and `x - y` has `x`'s minimum less `y`'s maximum and `x`'s maximum less `y`'s minimum. An operand that reads a cell and has none on a side by these forms is unbounded on that side, and these rules carry an unbounded side as they carry a number: `min(n, 16)` with an input `n` has the maximum 16 and no minimum, and `16 - n` has neither. A range's iteration count is at most its upper bound's maximum less its lower bound's minimum. An upper bound of a range that reads a cell and has no maximum, or a lower bound that reads a cell and has no minimum, is an error.
+A bound of a range or of a slice (§3.7) has a minimum and a maximum read from its form: a literal and a compile-time value are their own minimum and maximum; `len(a)` of an array, a string or a map lies between 0 and `a`'s capacity (§3.3, §3.7, §3.10), and a document's `len` has no maximum by its form; `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each; `x + y` has the sum of its operands' minimums and the sum of their maximums, and `x - y` has `x`'s minimum less `y`'s maximum and `x`'s maximum less `y`'s minimum. An operand that reads a cell and has none on a side by these forms is unbounded on that side, and these rules carry an unbounded side as they carry a number: `min(n, 16)` with an input `n` has the maximum 16 and no minimum, and `16 - n` has neither. A range's iteration count is at most its upper bound's maximum less its lower bound's minimum. An upper bound of a range that reads a cell and has no maximum, or a lower bound that reads a cell and has no minimum, is an error.
 
 A loop head binds one name or two. With one name, it is the element over an array, the key over a map and the value over a range. With two names, the first is the element's position and the second the element: over an array the index and the element, the index a flexible integer as a range's value is (§4.6), and over a map the key and the value. A range binds one name, and two are an error. An annotation fixes its name's type (§4.5).
 
