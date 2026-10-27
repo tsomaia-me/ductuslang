@@ -20,6 +20,7 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::UnterminatedString => include_str!("../../lessons/unterminated-string.md"),
         Code::InvalidEscape => include_str!("../../lessons/invalid-escape.md"),
         Code::TopLevelSyntax => include_str!("../../lessons/top-level-syntax.md"),
+        Code::PreludePath => include_str!("../../lessons/prelude-path.md"),
         Code::UnexpectedIndent => include_str!("../../lessons/unexpected-indent.md"),
         Code::TypeSyntax => include_str!("../../lessons/type-syntax.md"),
         Code::ExpressionSyntax => include_str!("../../lessons/expression-syntax.md"),

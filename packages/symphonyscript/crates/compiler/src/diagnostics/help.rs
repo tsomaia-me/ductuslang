@@ -65,6 +65,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::IntegerTooLarge => "write an integer whose magnitude is below 2¹²⁷",
         Code::InvalidEscape => "write one of the escapes `\\\"`, `\\\\`, `\\n`, `\\t` and `\\{`",
         Code::TopLevelSyntax => "declare the value, as in `let five = 5`",
+        Code::PreludePath => "give the source file a path that no prelude file holds",
         Code::TypeSyntax => {
             "write the lengths and the capacity in digits, as in `i32[3]` or `i32[..10]`"
         }

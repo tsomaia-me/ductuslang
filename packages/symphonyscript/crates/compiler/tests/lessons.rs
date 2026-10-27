@@ -49,6 +49,14 @@ fn diagnostics(setup: &str, text: &str) -> Vec<Diagnostic> {
         text: text.into(),
     };
     let vocabulary = match setup {
+        "at-prelude-path" => {
+            return Compiler::new(&prelude_vocabulary(""))
+                .expect("the prelude vocabulary compiles")
+                .check(&[Source {
+                    path: "prelude.sym".into(),
+                    text: text.into(),
+                }]);
+        }
         "prelude" => {
             return match Compiler::new(&prelude_vocabulary(text)) {
                 Ok(_) => Vec::new(),

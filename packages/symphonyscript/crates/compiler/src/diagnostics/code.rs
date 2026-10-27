@@ -34,6 +34,7 @@ codes!(
     UnterminatedString,
     InvalidEscape,
     TopLevelSyntax,
+    PreludePath,
     UnexpectedIndent,
     TypeSyntax,
     ExpressionSyntax,
@@ -179,6 +180,7 @@ impl Code {
             Code::UnterminatedString => "unterminated-string",
             Code::InvalidEscape => "invalid-escape",
             Code::TopLevelSyntax => "top-level-syntax",
+            Code::PreludePath => "prelude-path",
             Code::UnexpectedIndent => "unexpected-indent",
             Code::TypeSyntax => "type-syntax",
             Code::ExpressionSyntax => "expression-syntax",
@@ -321,6 +323,7 @@ impl Code {
             | Code::UnterminatedString
             | Code::InvalidEscape => "2.6",
             Code::TopLevelSyntax => "2.1",
+            Code::PreludePath => "2.1",
             Code::UnexpectedIndent => "2.2",
             Code::TypeSyntax => "3.2",
             Code::ExpressionSyntax | Code::ChainedComparison | Code::UnparenthesizedIf => "5.1",
@@ -474,6 +477,7 @@ impl Code {
             | Code::UnterminatedString
             | Code::InvalidEscape
             | Code::TopLevelSyntax
+            | Code::PreludePath
             | Code::UnexpectedIndent
             | Code::TypeSyntax
             | Code::ExpressionSyntax

@@ -4,6 +4,10 @@ use symphonyscript::{Code, Compiler, Source};
 use symphonyscript_core::{Count, Vocabulary};
 
 fn vocabulary(prelude: &str) -> Vocabulary {
+    vocabulary_at("music.sym", prelude)
+}
+
+fn vocabulary_at(path: &str, prelude: &str) -> Vocabulary {
     let mut v = Vocabulary::builder("preluded");
     let clip = v.node("Clip");
     let note = v.node("Note");
@@ -16,7 +20,7 @@ fn vocabulary(prelude: &str) -> Vocabulary {
         .default_attr()
         .attr::<f32>("velocity")
         .default(1.0);
-    v.prelude("music.sym", prelude);
+    v.prelude(path, prelude);
     v.build().expect("the vocabulary builds")
 }
 
@@ -95,4 +99,39 @@ fn a_declaration_cycle_in_the_prelude_fails_the_compiler() {
     );
     let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
     assert_eq!(codes, vec![Code::DeclarationCycle], "{found:?}");
+}
+
+#[test]
+fn a_source_at_a_prelude_files_path_is_refused() {
+    let compiler = Compiler::new(&vocabulary_at("x.sym", "fn f(x): x div 0.5\n"))
+        .expect("the prelude resolves");
+    let source = |path: &str, text: &str| Source {
+        path: path.into(),
+        text: text.into(),
+    };
+    let calls = "Clip c:\n    Note/(f(1))\n";
+    let found = support::errors(compiler.check(&[source("x.sym", calls)]));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].code, Code::PreludePath);
+    assert_eq!(found[0].span.file, "x.sym");
+    assert!(found[0].summary.contains("`x.sym`"), "{found:?}");
+    let found = support::errors(compiler.check(&[source("y.sym", calls)]));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].code, Code::OperandType);
+    assert_eq!(found[0].span.file, "x.sym");
+    let both = [
+        source("x.sym", calls),
+        source("y.sym", "Clip d:\n    Note/60\n"),
+    ];
+    for order in support::permutations(&[0, 1]) {
+        let sources: Vec<Source> = order.iter().map(|index| both[*index].clone()).collect();
+        let found = support::errors(compiler.check(&sources));
+        let codes: Vec<(Code, &str)> = found
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.span.file.as_str()))
+            .collect();
+        assert_eq!(codes, vec![(Code::PreludePath, "x.sym")], "{found:?}");
+    }
+    let found = support::errors(compiler.check(&[source("y.sym", "Clip d:\n    Note/60\n")]));
+    assert_eq!(found, vec![]);
 }

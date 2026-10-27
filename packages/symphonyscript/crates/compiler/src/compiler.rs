@@ -8,9 +8,9 @@
     )
 )]
 
-use symphonyscript_core::{Limits, Vocabulary};
+use symphonyscript_core::{Limits, Span, Vocabulary};
 
-use crate::diagnostics::{Diagnostic, Severity};
+use crate::diagnostics::{Code, Diagnostic, Severity};
 use crate::failed::Failed;
 use crate::semantics::analysis::Engine;
 use crate::semantics::analyze;
@@ -96,6 +96,25 @@ impl Compiler {
         let mut ordered: Vec<&Source> = sources.iter().collect();
         ordered.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
         for source in ordered {
+            if self
+                .vocabulary
+                .prelude()
+                .iter()
+                .any(|file| file.path == source.path)
+            {
+                report.diagnostics.push(Diagnostic::new(
+                    Code::PreludePath,
+                    Span {
+                        file: source.path.clone(),
+                        range: 0..0,
+                    },
+                    format!(
+                        "the source file `{}` stands at the path of a prelude file, so it is not read",
+                        source.path
+                    ),
+                ));
+                continue;
+            }
             let parsed = parse(source, &self.vocabulary);
             report
                 .diagnostics

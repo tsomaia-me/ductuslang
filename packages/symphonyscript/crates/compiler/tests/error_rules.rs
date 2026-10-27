@@ -11,6 +11,7 @@ enum Setup {
     Prelude,
     Bounded,
     Natives,
+    AtPreludePath,
 }
 
 struct Rule {
@@ -66,6 +67,21 @@ const fn natives(
     }
 }
 
+const fn at_prelude_path(
+    section: &'static str,
+    sentence: &'static str,
+    code: &'static str,
+    program: &'static str,
+) -> Rule {
+    Rule {
+        section,
+        sentence,
+        code,
+        setup: Setup::AtPreludePath,
+        program,
+    }
+}
+
 const fn prelude(
     section: &'static str,
     sentence: &'static str,
@@ -93,6 +109,12 @@ const RULES: &[Rule] = &[
         "TopItem ::= InputDecl | LetDecl | StateDecl | FnDecl | PatternDecl | TopPlacement",
         "top-level-syntax",
         "5\n",
+    ),
+    at_prelude_path(
+        "2.1",
+        "A source file whose path equals a prelude file's path (§10.1) is an error.",
+        "prelude-path",
+        "Clip c:\n    Note/60\n",
     ),
     rule(
         "2.2",
@@ -1425,6 +1447,12 @@ fn diagnostics(rule: &Rule) -> Vec<Diagnostic> {
         Setup::Natives => Compiler::new(&native_vocabulary())
             .expect("the native vocabulary compiles")
             .check(&[source]),
+        Setup::AtPreludePath => Compiler::new(&prelude_vocabulary(""))
+            .expect("the prelude vocabulary compiles")
+            .check(&[Source {
+                path: "prelude.sym".into(),
+                text: rule.program.into(),
+            }]),
         Setup::Prelude => match Compiler::new(&prelude_vocabulary(rule.program)) {
             Ok(_) => Vec::new(),
             Err(failed) => failed.diagnostics,
