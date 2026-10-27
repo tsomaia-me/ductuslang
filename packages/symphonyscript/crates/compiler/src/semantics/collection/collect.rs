@@ -119,9 +119,12 @@ pub(crate) fn collect(
     let (recursive, bounded_cycle, unresolved, calls) =
         recursive_functions(hir, &source, &prelude)?;
     for (index, decl) in hir.fns.iter().enumerate() {
-        let (Some(bound), Some(false), Some(false)) =
-            (&decl.bound, recursive.get(index), unresolved.get(index))
-        else {
+        let (Some(bound), Some(false), Some(false), false) = (
+            &decl.bound,
+            recursive.get(index),
+            unresolved.get(index),
+            decl.cut,
+        ) else {
             continue;
         };
         let name = decl

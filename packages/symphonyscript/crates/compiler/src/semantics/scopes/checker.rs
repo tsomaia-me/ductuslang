@@ -592,6 +592,7 @@ impl<'a> Checker<'a> {
                 }
                 if (in_unknown && self.visible(frame, &kind.text)?)
                     || self.namespace.is_duplicated(&kind.text)
+                    || found.is_none() && self.may_declare(frame, &kind.text)?
                 {
                     return Ok(());
                 }

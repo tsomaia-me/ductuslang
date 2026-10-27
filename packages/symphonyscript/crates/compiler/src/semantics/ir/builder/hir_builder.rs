@@ -89,16 +89,8 @@ impl HirBuilder<'_> {
                     };
                     (value, self.loc(token.range()))
                 });
-                let name = self.ident(node.name());
-                if name.is_none()
-                    && let Some(cut) = node.name()
-                {
-                    self.hir
-                        .skipped_top
-                        .join(&UnknownNames::of(vec![cut.text()]));
-                }
                 let decl = StateDecl {
-                    name,
+                    name: self.ident(node.name()),
                     depth,
                     ty: node.ty().map(|ty| self.type_ref(&ty)),
                     value,
@@ -146,12 +138,19 @@ impl HirBuilder<'_> {
                     }
                 });
                 let regions = param_regions(node.syntax(), SyntaxKind::ParamList);
+                let cut = node
+                    .bounded()
+                    .is_some_and(|bounded| self.faults.touch(bounded.syntax().range()))
+                    || node
+                        .body()
+                        .is_none_or(|body| self.faults.touch(body.syntax().range()));
                 let decl = FnDecl {
                     name: self.ident(node.name()),
                     params,
                     bound,
                     skipped_params: skipped_params(&regions),
                     faulty_head: !regions.is_empty(),
+                    cut,
                     lets,
                     value,
                     loc,
@@ -244,6 +243,26 @@ impl HirBuilder<'_> {
             capacity,
             loc,
         }
+    }
+
+    pub(super) fn header_names(&self, item: &NodeView<'_>) -> Vec<String> {
+        let mut names = Vec::new();
+        let Some(fault) = self.faults.first_in(item.range()) else {
+            return names;
+        };
+        let mut token = item.first_token();
+        while let Some(current) = token {
+            if matches!(current.kind(), SyntaxKind::Newline | SyntaxKind::Indent)
+                || current.range().start >= item.range().end
+            {
+                break;
+            }
+            if current.kind() == SyntaxKind::Ident && current.range().start >= fault {
+                names.push(Name::new(current.clone()).text());
+            }
+            token = current.next_token();
+        }
+        names
     }
 
     pub(super) fn ident(&self, name: Option<Name<'_>>) -> Option<Ident> {
