@@ -1112,6 +1112,46 @@ fn a_name_inside_a_faulty_part_of_a_kept_item_is_a_placeholder_wherever_it_is_us
 }
 
 #[test]
+fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
+    let input = "input a = 0\n";
+    let read = "Clip c:\n    Note/(60 + t)\n";
+    let rows: &[support::Row] = &[
+        (
+            &[input, "state[1 t = t{1, 0} + a\n", read],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (
+            &[input, "state[ t = t{1, 0} + a\n", read],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (
+            &[input, "state[x] t = t{1, 0} + a\n", read],
+            &[(Code::StateSyntax, "x")],
+        ),
+        (
+            &[
+                input,
+                "state[1 t = t{1, 0} + a\n",
+                "Clip c:\n    Note when t > 0\n",
+            ],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (
+            &[
+                input,
+                "state[1 t = t{1, 0} + a\n",
+                "state u = t + 1\n",
+                "Clip c:\n    Note/(60 + u)\n",
+            ],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (&[input, "state[1] t = t{1, 0} + a\n", read], &[]),
+        (&[input, "state t = a{1, 0}\n", read], &[]),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
     let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     type Row<'a> = (&'a [&'a str], &'a [Code], &'a [(Code, &'a str)]);

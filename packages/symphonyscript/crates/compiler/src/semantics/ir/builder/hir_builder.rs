@@ -89,8 +89,16 @@ impl HirBuilder<'_> {
                     };
                     (value, self.loc(token.range()))
                 });
+                let name = self.ident(node.name());
+                if name.is_none()
+                    && let Some(cut) = node.name()
+                {
+                    self.hir
+                        .skipped_top
+                        .join(&UnknownNames::of(vec![cut.text()]));
+                }
                 let decl = StateDecl {
-                    name: self.ident(node.name()),
+                    name,
                     depth,
                     ty: node.ty().map(|ty| self.type_ref(&ty)),
                     value,
