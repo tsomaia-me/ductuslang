@@ -22,11 +22,36 @@ impl Engine<'_> {
     pub(super) fn check(
         &mut self,
         root: NodeId,
-        (expected, flows): (Option<Scalar>, bool),
+        typed: (Option<Scalar>, bool),
         condition: bool,
         roots: &mut Vec<(NodeId, Option<Scalar>)>,
     ) -> Result<(), Internal> {
-        let mut stack = vec![(root, expected, Selection::Chosen, flows)];
+        self.check_from(root, typed, (condition, Selection::Chosen), roots)
+    }
+
+    pub(super) fn check_detached(
+        &mut self,
+        root: NodeId,
+        typed: (Option<Scalar>, bool),
+        passed_over: bool,
+        roots: &mut Vec<(NodeId, Option<Scalar>)>,
+    ) -> Result<(), Internal> {
+        let selection = if passed_over {
+            Selection::PassedOver
+        } else {
+            Selection::Chosen
+        };
+        self.check_from(root, typed, (false, selection), roots)
+    }
+
+    fn check_from(
+        &mut self,
+        root: NodeId,
+        (expected, flows): (Option<Scalar>, bool),
+        (condition, selection): (bool, Selection),
+        roots: &mut Vec<(NodeId, Option<Scalar>)>,
+    ) -> Result<(), Internal> {
+        let mut stack = vec![(root, expected, selection, flows)];
         let mut condition_root = condition;
         while let Some((node, expected, selection, flows)) = stack.pop() {
             #[cfg(test)]
@@ -42,10 +67,15 @@ impl Engine<'_> {
                 continue;
             }
             let sig = self.known_sig(node)?;
-            if sig.is_error() {
+            let placeholder = sig.is_error();
+            if placeholder && !self.holds_placeholder(node)? {
                 continue;
             }
-            let mut group_of = self.memo.groups.get(&node).copied();
+            let mut group_of = if placeholder {
+                None
+            } else {
+                self.memo.groups.get(&node).copied()
+            };
             let sig = match group_of {
                 Some(group) => {
                     let group = self.known_sig(group)?;
@@ -76,9 +106,9 @@ impl Engine<'_> {
                 }
                 _ => expected,
             };
-            let flows = flows && expected.is_some();
+            let flows = flows && expected.is_some() && !placeholder;
             let as_condition = std::mem::take(&mut condition_root);
-            if selection != Selection::Evaluated {
+            if selection != Selection::Evaluated && !placeholder {
                 if let Some(expected) = expected
                     && !self.compatible(node, &sig, expected, as_condition)?
                 {
@@ -95,7 +125,7 @@ impl Engine<'_> {
                     self.error_at_node(Code::UnknownName, node, message)?;
                 }
             }
-            let selection = match (sig.reactive || sig.frame, selection) {
+            let selection = match (sig.reactive || sig.frame || placeholder, selection) {
                 (false, Selection::Chosen) => {
                     roots.push((node, expected));
                     Selection::Evaluated
@@ -103,6 +133,7 @@ impl Engine<'_> {
                 (true, _) | (false, Selection::Evaluated | Selection::PassedOver) => selection,
             };
             let ty = match expected {
+                _ if placeholder => None,
                 Some(expected) => Some(expected),
                 None => self.synth(node)?,
             };
@@ -426,6 +457,15 @@ impl Engine<'_> {
             }
         }
         Ok(Some(leaves))
+    }
+
+    fn holds_placeholder(&self, node: NodeId) -> Result<bool, Internal> {
+        Ok(self
+            .node(node)?
+            .op
+            .operands()
+            .iter()
+            .any(|operand| self.memo.sigs.get(operand).is_some_and(Sig::is_error)))
     }
 
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {

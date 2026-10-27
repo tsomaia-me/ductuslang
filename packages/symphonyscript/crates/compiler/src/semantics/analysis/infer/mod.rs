@@ -21,6 +21,7 @@ mod widths;
 pub(crate) use typing::Typing;
 
 use array_checks::ArrayPosition;
+use position::Position;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -36,7 +37,14 @@ impl Engine<'_> {
         let positions = self.positions(declared)?;
         let mut valid = Vec::new();
         let mut variable_positions = Vec::new();
+        let mut detached = Vec::new();
         for position in positions {
+            if let Val::Error = position.val {
+                let ty = Some(position.ty.scalar);
+                let root = (position.expr, position.scope);
+                self.detached_roots(root, (ty, true), Some(&position), &mut detached)?;
+                continue;
+            }
             match self.array_position(&position)? {
                 ArrayPosition::Usual => {}
                 ArrayPosition::Faulty => continue,
@@ -84,6 +92,9 @@ impl Engine<'_> {
             valid.push(position);
         }
         self.unused_lets()?;
+        for root in self.value_roots()? {
+            self.detached_roots(root, (None, false), None, &mut detached)?;
+        }
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             self.demand_sig(self.binding(binding)?.init)?;
@@ -93,11 +104,25 @@ impl Engine<'_> {
         }
         self.settle_provisional_kinds()?;
         self.mark_own_history()?;
-        self.units(&valid)?;
+        let mut unit_positions = valid.clone();
+        for (node, _, _, origin) in &detached {
+            if let Some(origin) = origin {
+                unit_positions.push(Position {
+                    val: Val::Scalar(*node),
+                    ..origin.clone()
+                });
+            }
+        }
+        self.units(&unit_positions)?;
         self.read_in_default_units()?;
         for position in &valid {
             for node in position.val.nodes() {
                 self.expect(node, Some(position.ty.scalar))?;
+            }
+        }
+        for (node, (ty, _), _, _) in detached.clone() {
+            if ty.is_some() {
+                self.expect(node, ty)?;
             }
         }
         for binding in self.binding_order()? {
@@ -127,6 +152,9 @@ impl Engine<'_> {
                     &mut roots,
                 )?;
             }
+        }
+        for (node, typed, passed_over, _) in detached {
+            self.check_detached(node, typed, passed_over, &mut roots)?;
         }
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));

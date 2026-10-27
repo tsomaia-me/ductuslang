@@ -213,7 +213,9 @@ impl Engine<'_> {
         Ok(count)
     }
 
-    fn value_roots(&mut self) -> Result<Vec<(ExprId, ScopeId)>, Internal> {
+    pub(in crate::semantics::analysis) fn value_roots(
+        &mut self,
+    ) -> Result<Vec<(ExprId, ScopeId)>, Internal> {
         let hir = self.hir;
         let global = self.source_global;
         let mut roots = Vec::new();

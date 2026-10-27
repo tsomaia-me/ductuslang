@@ -4267,3 +4267,145 @@ fn a_to_path_reads_an_array_attribute_as_its_binding() {
     ];
     support::assert_rows_in_every_order(&support::to_array_vocabulary(), rows);
 }
+
+#[test]
+fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note/(nothing + (1 + true))\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "1 + true"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + [1, 2][5])\n"],
+            &[(Code::UnknownName, "nothing"), (Code::IndexOutOfRange, "5")],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + 300000000000)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::DoesNotFit, "300000000000"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + i32(true))\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::ConversionType, "i32(true)"),
+            ],
+        ),
+        (
+            &[
+                "let y: i32[2] = [1, 2, 3]\n",
+                "Clip c:\n    Note/([1, 2][5] + y[0])\n",
+            ],
+            &[
+                (Code::TypeMismatch, "let y: i32[2] = [1, 2, 3]\n"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &[
+                "let y: u8[..2] = \"GET\"\n",
+                "Clip c:\n    Note/([1, 2][5] + i32(y[0]))\n",
+            ],
+            &[
+                (Code::CapacityExceeded, "let y: u8[..2] = \"GET\"\n"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/((nothing + 1) + (1 + true))\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "1 + true"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/((1 + true) + [1, 2][5])\n"],
+            &[
+                (Code::OperandType, "1 + true"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/([nothing, 300000000000][0])\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::DoesNotFit, "300000000000"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(if nothing then 1 + true else 2)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "1 + true"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(if false then nothing else 300000000000)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::DoesNotFit, "300000000000"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(if true then nothing else 300000000000)\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &["Clip c:\n    Note when nothing and (1 + true)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "1 + true"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note | length=(nothing + 2s)\n"],
+            &[(Code::UnknownName, "nothing"), (Code::UnitMismatch, "2s")],
+        ),
+        (
+            &[
+                "fn g(a): a + 300000000000\n",
+                "Clip c:\n    Note/(g(nothing))\n",
+            ],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::DoesNotFit, "300000000000"),
+            ],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "state s = nothing + (1 + true)\n",
+                "Clip c:\n    Note/(s + note)\n",
+            ],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "1 + true"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + 1)\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing[5] + 1)\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &[
+                "let y: i32[2] = [1, 2, 3]\n",
+                "Clip c:\n    Note/(y[0] + 1)\n",
+            ],
+            &[(Code::TypeMismatch, "let y: i32[2] = [1, 2, 3]\n")],
+        ),
+        (
+            &["let y: i32[2] = [1, 2, 3]\n", "Clip c:\n    Note/(y[5])\n"],
+            &[(Code::TypeMismatch, "let y: i32[2] = [1, 2, 3]\n")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
