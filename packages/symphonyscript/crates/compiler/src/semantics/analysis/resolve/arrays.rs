@@ -138,8 +138,8 @@ impl Engine<'_> {
                 | Op::Element { .. }
                 | Op::Convert(..)
                 | Op::Builtin(..)
-                | Op::Recursive { .. }
-                | Op::ToRead { .. } => return Ok(false),
+                | Op::Recursive { .. } => return Ok(false),
+                Op::ToRead { attrs, .. } => return Ok(self.to_read_layout(attrs)?.is_some()),
             }
         }
     }
@@ -902,8 +902,8 @@ impl Engine<'_> {
             | Op::Pick { .. }
             | Op::Convert(..)
             | Op::Builtin(..)
-            | Op::Recursive { .. }
-            | Op::ToRead { .. } => Ok(None),
+            | Op::Recursive { .. } => Ok(None),
+            Op::ToRead { attrs, .. } => Ok(self.to_read_layout(attrs)?),
         };
         let certain = certain
             && match op {
@@ -1085,6 +1085,26 @@ impl Engine<'_> {
                 Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => false,
             },
             HistoryCell::Let(_) | HistoryCell::State(_) => false,
+        })
+    }
+
+    pub(in crate::semantics::analysis) fn to_read_layout(
+        &self,
+        attrs: &[(
+            crate::semantics::analysis::item_ref::ItemRef,
+            symphonyscript_core::AttrId,
+        )],
+    ) -> Result<Option<Layout>, Internal> {
+        let Some((item, attr)) = attrs.first() else {
+            return Ok(None);
+        };
+        let decl = self
+            .attr_decl(*item, *attr)?
+            .ok_or(Internal::missed("attribute"))?;
+        Ok(match decl.ty.capacity {
+            Some(_) => Some(Layout::variable(decl.ty.lengths.clone())),
+            None if decl.ty.lengths.is_empty() => None,
+            None => Some(Layout::fixed(decl.ty.lengths.clone())),
         })
     }
 

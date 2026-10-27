@@ -124,6 +124,16 @@ impl Engine<'_> {
                 continue;
             }
             let op = self.node(node)?.op.clone();
+            if let Op::ToRead { attrs, .. } = &op
+                && let Some(layout) = self.to_read_layout(attrs)?
+            {
+                let mut lengths = layout.lengths.clone();
+                if layout.variable {
+                    lengths.push(u32::MAX);
+                }
+                self.typing.shapes.insert((node, ty), Some(lengths));
+                continue;
+            }
             if let Op::Read(binding) = op
                 && self.memo.settled.contains(&binding)
                 && let Some(layout) = self.memo.binding_layouts.get(&binding)

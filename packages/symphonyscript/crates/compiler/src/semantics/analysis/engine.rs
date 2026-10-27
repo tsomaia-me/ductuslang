@@ -627,8 +627,8 @@ impl<'a> Engine<'a> {
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Convert(..)
-            | Op::Builtin(..)
-            | Op::ToRead { .. } => false,
+            | Op::Builtin(..) => false,
+            Op::ToRead { attrs, .. } => self.to_read_layout(attrs)?.is_some(),
         })
     }
 

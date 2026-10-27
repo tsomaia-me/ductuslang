@@ -748,6 +748,22 @@ impl Engine<'_> {
                     NativeType::Open(_) => Parts::Leaf(Extent::Fixed(0)),
                 }
             }
+            Op::ToRead { ref attrs, .. } => match attrs.first() {
+                Some((item, attr)) => {
+                    let decl = self
+                        .attr_decl(*item, *attr)?
+                        .ok_or(Internal::missed("attribute"))?;
+                    Parts::Leaf(match decl.ty.capacity {
+                        Some(capacity) => {
+                            Extent::Variable(Piecewise::constant(i128::from(capacity)))
+                        }
+                        None => {
+                            Extent::Fixed(i128::from(decl.ty.lengths.last().copied().unwrap_or(0)))
+                        }
+                    })
+                }
+                None => Parts::Leaf(Extent::Fixed(0)),
+            },
             Op::Builtin(Builtin::Bytes, args) => Parts::Operands(args, None),
             Op::Array(elements) => Parts::Leaf(Extent::Fixed(
                 i128::try_from(elements.len()).unwrap_or(i128::MAX),

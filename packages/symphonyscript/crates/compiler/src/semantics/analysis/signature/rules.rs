@@ -736,34 +736,27 @@ impl Engine<'_> {
             let decl = self
                 .attr_decl(*item, *attr)?
                 .ok_or(Internal::missed("attribute"))?;
-            found.push(decl.clone());
+            found.push((*item, decl.clone()));
         }
         let mut decls = found.into_iter();
-        let first = decls.next().ok_or(Internal::missed("attribute"))?;
+        let (first_item, first) = decls.next().ok_or(Internal::missed("attribute"))?;
         let family: Option<FamilyId> = first.unit.map(|unit| unit.family);
-        for decl in decls {
+        for (item, decl) in decls {
             if decl.ty != first.ty || decl.unit.map(|unit| unit.family) != family {
+                let (one, other) = (
+                    self.item_description(first_item)?,
+                    self.item_description(item)?,
+                );
                 self.error_at_node(
                     Code::ToCandidates,
                     node,
                     format!(
-                        "the destination candidates hold `{}` with different types or unit families, and a `to` read takes one",
+                        "the destination candidates hold `{}` with different types or unit families, {one} and {other} among them, and a `to` read takes one",
                         first.name
                     ),
                 )?;
                 return Ok(Sig::ERROR);
             }
-        }
-        if !first.ty.is_scalar() {
-            self.error_at_node(
-                Code::ToCandidates,
-                node,
-                format!(
-                    "`{}` holds an array, and a `to` read takes a single value",
-                    first.name
-                ),
-            )?;
-            return Ok(Sig::ERROR);
         }
         let scalar = first.ty.scalar;
         let width = if reactive {

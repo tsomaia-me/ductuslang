@@ -4114,3 +4114,97 @@ fn a_range_bound_or_index_reading_a_diagnosed_let_takes_its_placeholder() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_to_path_reads_an_array_attribute_as_its_binding() {
+    let declared = [
+        "input sec = 0\n",
+        "Clip b:\n    Note\n",
+        "Clip c:\n    Note\n",
+    ];
+    let reads = "Clip a:\n    Plays | gain=to.steps[0]: b\n    Plays | gain=to.steps[1]: [b, c][sec]\n    Plays | gain=to.seq[0]: b\n    Plays | gain=len(to.steps): [b, c][sec]\n";
+    let lane = "Lane l\n";
+    let rows: &[support::Row] = &[
+        (&[declared[0], declared[1], declared[2], reads], &[]),
+        (
+            &[declared[1], "Clip a:\n    Plays | gain=to.steps: b\n"],
+            &[(Code::TypeMismatch, "to.steps")],
+        ),
+        (
+            &[declared[1], "Clip a:\n    Plays | gain=b.steps: b\n"],
+            &[(Code::TypeMismatch, "b.steps")],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                lane,
+                "Clip a:\n    Cues | gain=to.steps[0]: [b, l][sec]\n",
+            ],
+            &[(Code::ToCandidates, "to.steps")],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                lane,
+                "Clip a:\n    Cues | gain=to.seq[0]: [b, l][sec]\n",
+            ],
+            &[(Code::ToCandidates, "to.seq")],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                declared[2],
+                "Clip a:\n    Plays | gain=to.seq[1] + len(to.seq) + to.steps[1..][0]: [b, c][sec]\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                declared[2],
+                "Clip a:\n    Plays | trio=to.steps: [b, c][sec]\n    Plays | picks=to.seq[..2]: [b, c][sec]\n    Plays | gain=f32(len(to.seq + to.seq)): [b, c][sec]\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                declared[2],
+                "Clip a:\n    Plays | picks=to.seq: [b, c][sec]\n",
+            ],
+            &[(Code::CapacityExceeded, "to.seq")],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                declared[2],
+                "Clip a:\n    Plays | picks=to.seq + to.seq: [b, c][sec]\n",
+            ],
+            &[(Code::CapacityExceeded, "to.seq + to.seq")],
+        ),
+        (
+            &[declared[1], "Clip a:\n    Plays | picks=to.seq: b\n"],
+            &[(Code::CapacityExceeded, "to.seq")],
+        ),
+        (
+            &[declared[1], "Clip a:\n    Plays | picks=b.seq: b\n"],
+            &[(Code::CapacityExceeded, "b.seq")],
+        ),
+        (
+            &[
+                declared[0],
+                declared[1],
+                declared[2],
+                "Clip a:\n    Plays | trio=to.seq: [b, c][sec]\n",
+            ],
+            &[(Code::VariableArray, "to.seq")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::to_array_vocabulary(), rows);
+}

@@ -463,7 +463,19 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
             ],
             Code::ToCandidates,
             "to.x",
-            "the destination candidates hold `x` with different types or unit families, and a `to` read takes one",
+            "the destination candidates hold `x` with different types or unit families, the `A` named `one` and the `B` named `two` among them, and a `to` read takes one",
+        ),
+        (
+            support::to_array_vocabulary,
+            &[
+                "input sec = 0\n",
+                "Clip b:\n    Note\n",
+                "Lane l\n",
+                "Clip a:\n    Cues | gain=to.seq[0]: [b, l][sec]\n",
+            ],
+            Code::ToCandidates,
+            "to.seq",
+            "the destination candidates hold `seq` with different types or unit families, the `Clip` named `b` and the `Lane` named `l` among them, and a `to` read takes one",
         ),
     ];
     for (vocabulary, items, code, at, summary) in rows {

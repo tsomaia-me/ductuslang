@@ -282,6 +282,12 @@ impl Engine<'_> {
         if attrs.is_empty() {
             return Ok(Some(Val::Error));
         }
+        if let [(item, attr)] = attrs.as_slice()
+            && self.to_read_layout(&attrs)?.is_some()
+        {
+            let bound = some!(self.bound(Query::Attr(*item, *attr), need));
+            return Ok(Some(self.read(&bound, loc, scope)?));
+        }
         Ok(Some(self.scalar(
             Op::ToRead {
                 wire,
