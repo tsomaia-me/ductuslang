@@ -29,7 +29,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - The implementer keeps its progress in `.memory/symphonyscript/M<n>.md`: steps done, the gaps it found, and the next step. After a compaction it continues from the repository and that file.
 - Checks, run by the implementer before every commit and by the reviewer at review: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo build -p symphonyscript-core --target thumbv7em-none-eabihf`.
 - The implementer adds no dependency this plan does not name; another dependency is a gap.
-- The workspace's `[profile.dev]` sets `opt-level = 1`, and `cargo test` runs the limit tests under it.
+- The workspace's `[profile.dev]` sets `opt-level = 1` and `debug = "line-tables-only"`, and `cargo test` runs the limit tests under it; an implementer or a reviewer that builds in a copy of the checkout deletes the copy's build directory when it hands back.
 - A test that asserts a cost counts the work its pass does, queries, nodes or visits, never the clock.
 - `packages/symphonyscript/rust-toolchain.toml` pins Rust 1.94.0 with clippy, rustfmt and the `thumbv7em-none-eabihf` target, so the checks give one result on every machine. A toolchain update is a commit of its own, which regenerates the compile-fail goldens and reads them.
 
