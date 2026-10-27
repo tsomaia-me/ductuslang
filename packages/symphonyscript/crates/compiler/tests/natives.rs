@@ -104,6 +104,22 @@ fn a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string() {
     for (text, expected) in rows {
         assert_eq!(codes(text), *expected, "{text}");
     }
+    let clauses: &[Row] = &[
+        (
+            &["input n = 0\n", "Clip c:\n    Note/(tag(\"abc\", n))\n"],
+            &[(Code::CompileTimeNative, "tag(\"abc\", n)")],
+        ),
+        (&["Clip c:\n    Note/(tag(\"abc\", 2))\n"], &[]),
+        (
+            &[
+                "input n = 0\n",
+                "Clip c:\n    Note/(text_length(label(n)))\n",
+            ],
+            &[(Code::CompileTimeNative, "label(n)")],
+        ),
+        (&["Clip c:\n    Note/(text_length(label(2)))\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&native_vocabulary(), clauses);
 }
 
 #[test]

@@ -505,6 +505,10 @@ fn a_bare_variant_where_no_enum_is_expected_draws_unknown_name_wherever_it_stand
             &[saw, (Code::UnknownName, "Square")],
         ),
         (
+            &["let a = [Saw]\n", "Clip c:\n    Note/(60 + len(a))\n"],
+            &[(Code::TypeMismatch, "[Saw]")],
+        ),
+        (
             &[
                 "input w = Wave::Saw\n",
                 "Clip c:\n    Note/(60 + len([w]))\n",

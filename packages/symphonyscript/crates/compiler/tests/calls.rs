@@ -774,6 +774,20 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             &["Clip c:\n    Note/(60 + len([1] - [1]))\n"],
             &[(Code::ArrayOperand, "[1] - [1]")],
         ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note when f(2) < f(1)\n",
+            ],
+            &[(Code::ArrayOperand, "f(2) < f(1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note when len(f(2)) > len(f(1))\n",
+            ],
+            &[],
+        ),
         (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], &[]),
         (
             &[
