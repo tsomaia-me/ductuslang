@@ -803,6 +803,7 @@ impl Engine<'_> {
                 .iter()
                 .skip(1)
                 .fold(first.clone(), |widest, value| widest.choice(value)),
+            Op::Native { .. } => Extent::Variable(first.capacity()),
             Op::History { .. } => {
                 let reading = match extra {
                     Some(extra) => extra,

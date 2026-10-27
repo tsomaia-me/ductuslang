@@ -303,6 +303,113 @@ fn a_capacity_of_result_holds_at_most_its_parameters_capacity_in_rows() {
 }
 
 #[test]
+fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whether_or_not_it_reads_a_cell()
+ {
+    let probe = "Clip c:\n    Note/(probe[0][0])\n";
+    let arguments: [(&[&str], &str, &str); 3] = [
+        (
+            &[],
+            "[[1, 2, 3], [4, 5, 6]]",
+            "[[1, 2, 3], [4, 5, 6], [7, 8, 9]]",
+        ),
+        (
+            &["input x = 1\n"],
+            "[[x, 2, 3], [4, 5, 6]]",
+            "[[x, 2, 3], [4, 5, 6], [7, 8, 9]]",
+        ),
+        (&["input r: i32[3][..2] = []\n"], "r", "r"),
+    ];
+    let vocabulary = signature_vocabulary();
+    for (cells, two, three) in arguments {
+        let wide = if three == "r" {
+            "input r: i32[3][..3] = []\n".to_string()
+        } else {
+            cells.concat()
+        };
+        let cases = [
+            (
+                cells.concat(),
+                format!("let probe: i32[2][..1] = shrink({two})\n"),
+                true,
+            ),
+            (
+                cells.concat(),
+                format!("let probe: i32[2][..2] = shrink({two})\n"),
+                false,
+            ),
+            (
+                wide.clone(),
+                format!("Clip k | rows=(shrink({three})):\n    Note\n"),
+                true,
+            ),
+            (
+                cells.concat(),
+                format!("Clip k | rows=(shrink({two})):\n    Note\n"),
+                false,
+            ),
+            (
+                cells.concat(),
+                format!("state probe: i32[2][..1] = shrink({two})\n"),
+                true,
+            ),
+            (
+                cells.concat(),
+                format!("state probe: i32[2][..2] = shrink({two})\n"),
+                false,
+            ),
+            (
+                cells.concat(),
+                format!("let probe: i32[2][..3] = shrink({two}) + shrink({two})\n"),
+                true,
+            ),
+            (
+                cells.concat(),
+                format!("let probe: i32[2][..4] = shrink({two}) + shrink({two})\n"),
+                false,
+            ),
+            (
+                cells.concat(),
+                format!("let probe: i32[2][..1] = shrink({two})[..2]\n"),
+                true,
+            ),
+            (
+                cells.concat(),
+                format!("let probe: i32[2][..1] = shrink({two})[..1]\n"),
+                false,
+            ),
+        ];
+        for (declared, value, exceeds) in cases {
+            let uses = if value.starts_with("Clip") { "" } else { probe };
+            let items: Vec<&str> = [declared.as_str(), value.as_str(), uses]
+                .into_iter()
+                .filter(|item| !item.is_empty())
+                .collect();
+            for order in support::permutations(&items) {
+                let text = order.concat();
+                let found: Vec<Code> = support::checked_with(&vocabulary, &text)
+                    .iter()
+                    .map(|diagnostic| diagnostic.code)
+                    .collect();
+                let expected = if exceeds {
+                    vec![Code::CapacityExceeded]
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(found, expected, "{text}");
+            }
+        }
+    }
+    let text = "input x = 1\nlet probe: i32[2][..1] = shrink([[x, 2, 3], [4, 5, 6]])\nClip c:\n    Note/(probe[0][0])\n";
+    let found = support::checked_with(&vocabulary, text);
+    assert!(
+        found
+            .iter()
+            .all(|diagnostic| diagnostic.summary.contains("up to 2 elements")),
+        "{found:?}"
+    );
+}
+
+#[test]
 fn a_cell_reading_string_at_a_u8_array_parameter_draws_one_reactive_string() {
     let input = "input n = 1\n";
     support::assert_rows_in_every_order(
