@@ -4331,13 +4331,6 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
             ],
         ),
         (
-            &["Clip c:\n    Note/([nothing, 300000000000][0])\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::DoesNotFit, "300000000000"),
-            ],
-        ),
-        (
             &["Clip c:\n    Note/(if nothing then 1 + true else 2)\n"],
             &[
                 (Code::UnknownName, "nothing"),
@@ -4408,4 +4401,180 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
+fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_every_value() {
+    let x = "input x = 1\n";
+    let flag = "input flag = true\n";
+    let rows: &[support::Row] = &[
+        (
+            &[x, "Clip c:\n    Note/(x + 1.5 + 2.5 + 3.5 + 4.5)\n"],
+            &[(Code::TypeMismatch, "x + 1.5 + 2.5 + 3.5 + 4.5")],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + 1.5 + 2.5 + 3.5 + 4.5)\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[x, "Clip c:\n    Note/(x + 300000000000 + 1.5)\n"],
+            &[(Code::TypeMismatch, "x + 300000000000 + 1.5")],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + 300000000000 + 1.5)\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (&[x, "Clip c:\n    Note/([x, 1.5, 2.5][0])\n"], &[]),
+        (
+            &["Clip c:\n    Note/([nothing, 1.5, 2.5][0])\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (&[x, "Clip c:\n    Note/([x, 1.5, 2.5][^3])\n"], &[]),
+        (
+            &["Clip c:\n    Note/([nothing, 1.5, 2.5][^3])\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (&[x, "Clip c:\n    Note/([x, [1, 2][5]][0])\n"], &[]),
+        (
+            &["Clip c:\n    Note/([nothing, [1, 2][5]][0])\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &[x, "Clip c:\n    Note/([x, 1.5][1])\n"],
+            &[(Code::TypeMismatch, "[x, 1.5][1]")],
+        ),
+        (
+            &["Clip c:\n    Note/([nothing, 1.5][1])\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[flag, "Clip c:\n    Note/(if flag then 1.5 else 2.5)\n"],
+            &[(Code::TypeMismatch, "if flag then 1.5 else 2.5")],
+        ),
+        (
+            &["Clip c:\n    Note/(if nothing then 1.5 else 2.5)\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[x, "Clip c:\n    Note/(if true then x else 1.5)\n"],
+            &[(Code::TypeMismatch, "if true then x else 1.5")],
+        ),
+        (
+            &["Clip c:\n    Note/(if true then nothing else 1.5)\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[flag, "Clip c:\n    Note when flag or 1 or 2\n"],
+            &[(Code::OperandType, "flag or 1"), (Code::TypeMismatch, "2")],
+        ),
+        (
+            &["Clip c:\n    Note when nothing or 1 or 2\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "1"),
+                (Code::TypeMismatch, "2"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note | length=(1bars + 2s + 3s)\n"],
+            &[(Code::MixedFamilies, "1bars + 2s")],
+        ),
+        (
+            &["Clip c:\n    Note | length=(nothing + 2s + 3s)\n"],
+            &[(Code::UnknownName, "nothing"), (Code::UnitMismatch, "2s")],
+        ),
+        (
+            &[x, "fn g(a): a + 1.5 + 2.5\n", "Clip c:\n    Note/(g(x))\n"],
+            &[(Code::TypeMismatch, "a + 1.5 + 2.5")],
+        ),
+        (
+            &[
+                "fn g(a): a + 1.5 + 2.5\n",
+                "Clip c:\n    Note/(g(nothing))\n",
+            ],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[
+                x,
+                "Clip c:\n    Note/((if true then [x, 1.5] else [2.5, 3])[0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "(if true then [x, 1.5] else [2.5, 3])[0]",
+            )],
+        ),
+        (
+            &["Clip c:\n    Note/((if true then [nothing, 1.5] else [2.5, 3])[0])\n"],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "state s = note + 1.5 + 2.5\n",
+                "Clip c:\n    Note/(s + note)\n",
+            ],
+            &[(Code::TypeMismatch, "s + note")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "state s = nothing + 1.5 + 2.5\n",
+                "Clip c:\n    Note/(s + note)\n",
+            ],
+            &[(Code::UnknownName, "nothing")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let rows: &[support::Row] = &[
+        (
+            &["Env e | pitch=(2ms + 1ms)\n"],
+            &[
+                (Code::TypeMismatch, "2ms + 1ms"),
+                (Code::UnitMismatch, "2ms + 1ms"),
+            ],
+        ),
+        (
+            &["Env e | pitch=(nothing + 2ms + 1ms)\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "2ms"),
+                (Code::UnitMismatch, "2ms"),
+            ],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::envelope_vocabulary(), rows);
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "let nothing = \"AB\"\n",
+                "Clip c | data=(nothing + \"GET\")\n",
+            ],
+            &[],
+        ),
+        (
+            &["Clip c | data=(nothing + \"GET\")\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &["Clip c | data=(if nothing then \"GET\" else \"AB\")\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &["Clip c | fixed=(nothing + \"GET\")\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &["Clip c:\n    Note | level=(\"A\" + \"GET\")\n"],
+            &[(Code::TypeMismatch, "\"A\" + \"GET\"")],
+        ),
+        (
+            &["Clip c:\n    Note | level=(nothing + \"GET\")\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "\"GET\""),
+            ],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
 }

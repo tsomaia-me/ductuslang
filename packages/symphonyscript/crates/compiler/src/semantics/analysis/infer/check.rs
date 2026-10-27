@@ -71,28 +71,8 @@ impl Engine<'_> {
             if placeholder && !self.holds_placeholder(node)? {
                 continue;
             }
-            let mut group_of = if placeholder {
-                None
-            } else {
-                self.memo.groups.get(&node).copied()
-            };
-            let sig = match group_of {
-                Some(group) => {
-                    let group = self.known_sig(group)?;
-                    if group.is_error() {
-                        continue;
-                    }
-                    if sig.reactive && sig.is_numeric() && group.is_numeric() {
-                        group_of = None;
-                        sig
-                    } else {
-                        Sig {
-                            kind: group.kind,
-                            ..sig
-                        }
-                    }
-                }
-                None => sig,
+            let Some((sig, group_of)) = self.grouped_sig(node, sig)? else {
+                continue;
             };
             let expected = match (sig.width, expected) {
                 (Width::Fixed(own), Some(target))
@@ -452,6 +432,44 @@ impl Engine<'_> {
         Ok(Some(leaves))
     }
 
+    fn grouped_sig(
+        &self,
+        node: NodeId,
+        sig: Sig,
+    ) -> Result<Option<(Sig, Option<NodeId>)>, Internal> {
+        if sig.is_error() {
+            return Ok(Some((sig, None)));
+        }
+        let Some(group) = self.memo.groups.get(&node).copied() else {
+            return Ok(Some((sig, None)));
+        };
+        let group_sig = self.known_sig(group)?;
+        if group_sig.is_error() {
+            return Ok(None);
+        }
+        if sig.reactive && sig.is_numeric() && group_sig.is_numeric() {
+            return Ok(Some((sig, None)));
+        }
+        Ok(Some((
+            Sig {
+                kind: group_sig.kind,
+                ..sig
+            },
+            Some(group),
+        )))
+    }
+
+    pub(super) fn refuses(&mut self, node: NodeId, expected: Scalar) -> Result<bool, Internal> {
+        let sig = self.known_sig(node)?;
+        if sig.is_error() {
+            return Ok(false);
+        }
+        let Some((sig, _)) = self.grouped_sig(node, sig)? else {
+            return Ok(false);
+        };
+        Ok(self.incompatibility(node, &sig, expected, false)?.is_some())
+    }
+
     fn holds_placeholder(&self, node: NodeId) -> Result<bool, Internal> {
         Ok(self
             .node(node)?
@@ -559,6 +577,20 @@ impl Engine<'_> {
         expected: Scalar,
         condition: bool,
     ) -> Result<bool, Internal> {
+        let Some((code, message)) = self.incompatibility(node, sig, expected, condition)? else {
+            return Ok(true);
+        };
+        self.error_at_node(code, node, message)?;
+        Ok(false)
+    }
+
+    fn incompatibility(
+        &mut self,
+        node: NodeId,
+        sig: &Sig,
+        expected: Scalar,
+        condition: bool,
+    ) -> Result<Option<(Code, String)>, Internal> {
         let is_cell = matches!(
             self.node(self.through_uses(node)?)?.op,
             Op::Read(_) | Op::History { .. }
@@ -572,57 +604,52 @@ impl Engine<'_> {
             (Kind::Float, scalar) if is_float(scalar) => true,
             (Kind::Float, scalar) if is_integer(scalar) => {
                 if self.holds_a_float_cell(node)? {
-                    return Ok(true);
+                    return Ok(None);
                 }
-                if is_cell {
-                    self.error_at_node(
+                return Ok(Some(if is_cell {
+                    (
                         Code::FloatToInteger,
-                        node,
-                        "a float cell is used where an integer is expected; a conversion states the rounding",
-                    )?;
+                        "a float cell is used where an integer is expected; a conversion states the rounding".into(),
+                    )
                 } else {
-                    self.error_at_node(
+                    (
                         Code::TypeMismatch,
-                        node,
-                        "a float value stands where an integer is expected; a conversion states the rounding",
-                    )?;
-                }
-                return Ok(false);
+                        "a float value stands where an integer is expected; a conversion states the rounding".into(),
+                    )
+                }));
             }
             _ => false,
         };
         if !fits_kind && condition {
-            self.error_at_node(Code::ConditionType, node, "a gate or a guard is a `bool`")?;
-            return Ok(false);
+            return Ok(Some((
+                Code::ConditionType,
+                "a gate or a guard is a `bool`".into(),
+            )));
         }
         if !fits_kind {
-            self.error_at_node(
+            return Ok(Some((
                 Code::TypeMismatch,
-                node,
                 format!(
                     "this value has the wrong type here; `{}` is expected",
                     self.scalar_name(expected)?
                 ),
-            )?;
-            return Ok(false);
+            )));
         }
         if let Width::Fixed(scalar) | Width::Widened(scalar) = sig.width
             && !is_cell
             && (is_integer(scalar) || is_float(scalar))
             && !widens(scalar, expected)
         {
-            self.error_at_node(
+            return Ok(Some((
                 Code::TypeMismatch,
-                node,
                 format!(
                     "a `{}` value does not widen into `{}`",
                     self.scalar_name(scalar)?,
                     self.scalar_name(expected)?
                 ),
-            )?;
-            return Ok(false);
+            )));
         }
-        Ok(true)
+        Ok(None)
     }
 
     pub(in crate::semantics::analysis) fn scalar_name(

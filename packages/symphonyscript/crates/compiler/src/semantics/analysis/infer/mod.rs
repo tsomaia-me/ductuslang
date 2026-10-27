@@ -105,7 +105,8 @@ impl Engine<'_> {
         self.settle_provisional_kinds()?;
         self.mark_own_history()?;
         let mut unit_positions = valid.clone();
-        for (node, _, _, origin) in &detached {
+        self.one_fault_per_flow(&mut detached)?;
+        for (node, _, _, origin, _) in &detached {
             if let Some(origin) = origin {
                 unit_positions.push(Position {
                     val: Val::Scalar(*node),
@@ -120,7 +121,7 @@ impl Engine<'_> {
                 self.expect(node, Some(position.ty.scalar))?;
             }
         }
-        for (node, (ty, _), _, _) in detached.clone() {
+        for (node, (ty, _), _, _, _) in detached.clone() {
             if ty.is_some() {
                 self.expect(node, ty)?;
             }
@@ -153,7 +154,7 @@ impl Engine<'_> {
                 )?;
             }
         }
-        for (node, typed, passed_over, _) in detached {
+        for (node, typed, passed_over, _, _) in detached {
             self.check_detached(node, typed, passed_over, &mut roots)?;
         }
         for index in 0..self.bindings.len() {

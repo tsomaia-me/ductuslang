@@ -1,4 +1,6 @@
-use symphonyscript_core::{BinaryOp, Scalar, Ty, UnaryOp};
+use std::collections::BTreeMap;
+
+use symphonyscript_core::{AttrUnit, BinaryOp, Scalar, Ty, UnaryOp};
 
 use super::position::Position;
 use super::role::Role;
@@ -8,6 +10,7 @@ use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::evaluation::own_type;
 use crate::semantics::analysis::ids::{InstanceId, NodeId, ScopeId, WireId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::item_ref::ItemRef;
@@ -18,7 +21,7 @@ use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, ExprKind, Top};
+use crate::semantics::ir::{ExprId, ExprKind, Loc, Top};
 
 impl Engine<'_> {
     pub(super) fn declaration_positions(&mut self) -> Result<Vec<Position>, Internal> {
@@ -256,8 +259,16 @@ impl Engine<'_> {
         if !matches!(self.memo.exprs.get(&(root, scope)), Some(Val::Error)) {
             return Ok(());
         }
-        let mut stack = vec![(root, scope, (expected, flows), false, origin.cloned())];
-        while let Some((expr, scope, typed, passed_over, origin)) = stack.pop() {
+        let mut stack = vec![(
+            root,
+            scope,
+            (expected, flows),
+            false,
+            origin.cloned(),
+            (root, scope),
+            None,
+        )];
+        while let Some((expr, scope, typed, passed_over, origin, group, picked)) = stack.pop() {
             if !self.typing.detached_walks.insert((expr, scope)) {
                 continue;
             }
@@ -269,7 +280,15 @@ impl Engine<'_> {
             {
                 let body = self.hir.fn_decl(function)?.value;
                 if matches!(self.memo.exprs.get(&(body, call_scope)), Some(Val::Error)) {
-                    stack.push((body, call_scope, typed, passed_over, origin.clone()));
+                    stack.push((
+                        body,
+                        call_scope,
+                        typed,
+                        passed_over,
+                        origin.clone(),
+                        group,
+                        picked,
+                    ));
                 }
             }
             let children = kind.children();
@@ -280,35 +299,157 @@ impl Engine<'_> {
                 continue;
             }
             let chosen = self.chosen_child(&kind, scope)?;
+            let read = match kind {
+                ExprKind::Array(_) => picked,
+                _ => None,
+            };
+            let base_picked = self.picked_element(&kind, scope)?;
             for (position, child) in children.iter().enumerate() {
                 let Some(val) = self.memo.exprs.get(&(*child, scope)).cloned() else {
                     continue;
                 };
-                let (child_typed, through) = child_flow(&kind, position, typed);
+                let unread = read.is_some_and(|read| read != position);
+                let (child_typed, through) = match child_flow(&kind, position, typed) {
+                    _ if unread => ((None, false), false),
+                    flow => flow,
+                };
                 let origin = origin.clone().filter(|_| through);
+                let child_group = if through { group } else { (*child, scope) };
+                let child_picked = match kind {
+                    ExprKind::Index(..) | ExprKind::IndexFromEnd(..) if position == 0 => {
+                        base_picked
+                    }
+                    _ if arm_position(&kind, position) => picked,
+                    _ => None,
+                };
                 let passed_over = passed_over
+                    || unread
                     || chosen
                         .is_some_and(|chosen| position != chosen && arm_position(&kind, position));
                 match val {
-                    Val::Error => stack.push((*child, scope, child_typed, passed_over, origin)),
+                    Val::Error => stack.push((
+                        *child,
+                        scope,
+                        child_typed,
+                        passed_over,
+                        origin,
+                        child_group,
+                        child_picked,
+                    )),
                     Val::Scalar(node) => {
-                        self.demand_sig(node)?;
+                        let sig = self.demand_sig(node)?;
                         if self.arrays.contains(&node) {
-                            found.push((node, (None, false), passed_over, None));
+                            found.push((node, (None, false), passed_over, None, child_group));
+                        } else if sig.kind == Kind::Str && reads_bytes(child_typed, origin.as_ref())
+                        {
+                            found.push((node, (None, false), passed_over, origin, child_group));
                         } else {
-                            found.push((node, child_typed, passed_over, origin));
+                            found.push((node, child_typed, passed_over, origin, child_group));
                         }
                     }
                     Val::Array(array) => {
                         for node in array.elements.iter().copied() {
                             self.demand_sig(node)?;
-                            found.push((node, (None, false), passed_over, None));
+                            found.push((node, (None, false), passed_over, None, child_group));
                         }
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    pub(super) fn one_fault_per_flow(&mut self, detached: &mut [Detached]) -> Result<(), Internal> {
+        let mut groups: BTreeMap<(ExprId, ScopeId), Vec<(Loc, usize)>> = BTreeMap::new();
+        for (index, (node, .., group)) in detached.iter().enumerate() {
+            groups
+                .entry(*group)
+                .or_default()
+                .push((self.node(*node)?.loc, index));
+        }
+        for mut members in groups.into_values() {
+            members.sort();
+            let mut refused_kind = None;
+            let mut refused_unit = None;
+            for (_, index) in &members {
+                let (node, (expected, flows), _, origin, _) = detached
+                    .get(*index)
+                    .cloned()
+                    .ok_or(Internal::missed("a detached entry"))?;
+                if refused_kind.is_none()
+                    && flows
+                    && let Some(expected) = expected
+                    && self.refuses(node, expected)?
+                {
+                    refused_kind = Some(*index);
+                }
+                if refused_unit.is_none()
+                    && let Some(origin) = origin
+                    && origin.role == Role::Attribute
+                    && self.refuses_unit(node, origin.unit)?
+                {
+                    refused_unit = Some(*index);
+                }
+            }
+            for (_, index) in &members {
+                let entry = detached
+                    .get_mut(*index)
+                    .ok_or(Internal::missed("a detached entry"))?;
+                if refused_kind.is_some_and(|refused| refused != *index) {
+                    entry.1 = (None, false);
+                }
+                if refused_unit.is_some_and(|refused| refused != *index) {
+                    entry.3 = None;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn refuses_unit(&self, node: NodeId, unit: Option<AttrUnit>) -> Result<bool, Internal> {
+        let sig = self.known_sig(node)?;
+        if sig.is_error() || !sig.is_numeric() {
+            return Ok(false);
+        }
+        Ok(match (sig.family, unit) {
+            (Some(_), None) => true,
+            (Some(family), Some(unit)) => family != unit.family,
+            (None, _) => false,
+        })
+    }
+
+    fn picked_element(
+        &mut self,
+        kind: &ExprKind,
+        scope: ScopeId,
+    ) -> Result<Option<usize>, Internal> {
+        let (base, index, from_end) = match kind {
+            ExprKind::Index(base, index) => (*base, *index, false),
+            ExprKind::IndexFromEnd(base, index) => (*base, *index, true),
+            _ => return Ok(None),
+        };
+        let ExprKind::Array(elements) = &self.hir.expr(base)?.kind else {
+            return Ok(None);
+        };
+        let length = elements.len();
+        let Some(Val::Scalar(node)) = self.memo.exprs.get(&(index, scope)).cloned() else {
+            return Ok(None);
+        };
+        let sig = self.demand_sig(node)?;
+        if sig.reactive || sig.frame || sig.is_error() {
+            return Ok(None);
+        }
+        let CVal::Int(value) = self.demand_cval(node, own_type(&sig, EvalTy::Exact))? else {
+            return Ok(None);
+        };
+        let position = if from_end {
+            i128::try_from(length).ok().map(|length| length - value)
+        } else {
+            Some(value)
+        };
+        Ok(position
+            .and_then(|position| usize::try_from(position).ok())
+            .filter(|position| *position < length))
     }
 
     fn chosen_child(&mut self, kind: &ExprKind, scope: ScopeId) -> Result<Option<usize>, Internal> {
@@ -360,7 +501,21 @@ impl Engine<'_> {
     }
 }
 
-pub(super) type Detached = (NodeId, (Option<Scalar>, bool), bool, Option<Position>);
+pub(super) type Detached = (
+    NodeId,
+    (Option<Scalar>, bool),
+    bool,
+    Option<Position>,
+    (ExprId, ScopeId),
+);
+
+fn reads_bytes(typed: (Option<Scalar>, bool), origin: Option<&Position>) -> bool {
+    typed.0 == Some(Scalar::U8)
+        && origin.is_some_and(|origin| {
+            origin.ty.scalar == Scalar::U8
+                && (!origin.ty.lengths.is_empty() || origin.ty.is_variable())
+        })
+}
 
 fn arm_position(kind: &ExprKind, position: usize) -> bool {
     match kind {
