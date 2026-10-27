@@ -4868,3 +4868,48 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
 }
+
+#[test]
+fn an_own_typed_fault_inside_a_position_draws_whether_or_not_the_position_draws_a_type_mismatch() {
+    let x = "input x = 1\n";
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note/(1.5 + [1, 2][5])\n"],
+            &[
+                (Code::TypeMismatch, "1.5 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &[x, "Clip c:\n    Note/(x + 1.5 + [1, 2][5])\n"],
+            &[
+                (Code::TypeMismatch, "x + 1.5 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(if [1, 2][5] > 0 then 1.5 else 2.5)\n"],
+            &[
+                (Code::TypeMismatch, "if [1, 2][5] > 0 then 1.5 else 2.5"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(1.5 + 300000000000)\n"],
+            &[
+                (Code::TypeMismatch, "1.5 + 300000000000"),
+                (Code::DoesNotFit, "300000000000"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(1.5 + [1, 2][1])\n"],
+            &[(Code::TypeMismatch, "1.5 + [1, 2][1]")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2][5] + 1)\n"],
+            &[(Code::IndexOutOfRange, "5")],
+        ),
+        (&["Clip c:\n    Note/(60 + [1, 2][1])\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

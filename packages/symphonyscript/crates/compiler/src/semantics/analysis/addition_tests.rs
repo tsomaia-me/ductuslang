@@ -736,6 +736,17 @@ fn a_choice_whose_arms_agree_in_shape_computes_its_chosen_arm() {
 }
 
 #[test]
+fn a_compile_time_index_into_a_literal_computes_its_element_in_the_positions_type() {
+    let (diagnostics, value) = analyzed(
+        &vocabulary(),
+        "Clip c:\n    Note/(60 + [1, 2][1])\n",
+        |engine| attr_value(engine, "pitch", EvalTy::I32),
+    );
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(62)));
+}
+
+#[test]
 fn a_qualified_variant_in_an_array_that_only_len_reads_computes_its_length() {
     for text in in_every_order(&[
         "input w = Wave::Saw\n",

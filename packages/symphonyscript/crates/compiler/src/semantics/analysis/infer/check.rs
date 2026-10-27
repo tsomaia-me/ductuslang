@@ -74,7 +74,7 @@ impl Engine<'_> {
             let Some((sig, group_of)) = self.grouped_sig(node, sig)? else {
                 continue;
             };
-            let expected = match (sig.width, expected) {
+            let mut expected = match (sig.width, expected) {
                 (Width::Fixed(own), Some(target))
                     if !flows
                         && !sig.reactive
@@ -86,13 +86,20 @@ impl Engine<'_> {
                 }
                 _ => expected,
             };
-            let flows = flows && expected.is_some() && !placeholder;
+            let mut flows = flows && expected.is_some() && !placeholder;
             let as_condition = std::mem::take(&mut condition_root);
             if selection != Selection::Evaluated && !placeholder {
-                if let Some(expected) = expected
-                    && !self.compatible(node, &sig, expected, as_condition)?
+                if let Some(target) = expected
+                    && !self.compatible(node, &sig, target, as_condition)?
                 {
-                    continue;
+                    if matches!(
+                        self.carried_kind(node, sig.kind)?,
+                        Kind::Enum(_) | Kind::Bare
+                    ) {
+                        continue;
+                    }
+                    expected = None;
+                    flows = false;
                 }
                 if let (Some(Scalar::Enum(id)), Op::Bare(name)) = (expected, &self.node(node)?.op)
                     && self.variants.position(id, name)?.is_none()
