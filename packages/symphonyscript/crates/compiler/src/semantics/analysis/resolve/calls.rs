@@ -673,12 +673,50 @@ impl Engine<'_> {
             .as_ref()
             .map_or(String::new(), |name| name.text.clone());
         let limit = grouped(self.limits.inlined_calls);
+        let help = self.default_calling(function, scope)?;
         self.stop(
             Code::InlineLimit,
             loc,
             Some(scope),
-            format!("this call of `{name}` makes the compilation inline more than {limit} calls"),
+            (
+                format!(
+                    "this call of `{name}` makes the compilation inline more than {limit} calls"
+                ),
+                help,
+            ),
         )
+    }
+
+    pub(in crate::semantics::analysis) fn default_calling(
+        &self,
+        function: FnId,
+        scope: ScopeId,
+    ) -> Result<Option<String>, Internal> {
+        let ScopeKind::ParamPrefix { locals, count } = self.scope_of(scope)?.kind else {
+            return Ok(None);
+        };
+        let ScopeKind::Locals(Locals {
+            owner: LocalsOwner::Fn(owner),
+            ..
+        }) = self.scope_of(locals)?.kind
+        else {
+            return Ok(None);
+        };
+        if owner != function {
+            return Ok(None);
+        }
+        let param = self
+            .hir
+            .fn_decl(function)?
+            .params
+            .get(count as usize)
+            .and_then(|param| param.name.as_ref())
+            .map(|name| name.text.clone())
+            .ok_or(Internal::missed("parameter"))?;
+        let name = self.function_name(function)?;
+        Ok(Some(format!(
+            "pass `{param}` in the call, or give it a default that does not call `{name}`, since `{param}`'s default makes every call of `{name}` another"
+        )))
     }
 
     pub(super) fn inside_function_body(&self, scope: ScopeId) -> Result<bool, Internal> {
@@ -958,6 +996,12 @@ impl Engine<'_> {
                         .ok_or(Internal::missed("local let"))?;
                     vec![(value, self.let_scope(owner, local))]
                 }
+                Found::Query(Query::Param(owner, index)) => {
+                    match self.param_default(owner, index)? {
+                        Some(default) => vec![(default, self.prefix_scope(owner, index)?)],
+                        None => Vec::new(),
+                    }
+                }
                 Found::Val(_)
                 | Found::Query(_)
                 | Found::Item(_)
@@ -984,6 +1028,23 @@ impl Engine<'_> {
                 .map(|child| (child, scope))
                 .collect(),
         })
+    }
+
+    fn param_default(&self, scope: ScopeId, index: u32) -> Result<Option<ExprId>, Internal> {
+        let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
+            return Ok(None);
+        };
+        let (LocalsOwner::Fn(function), Some(ParamSource::Default)) =
+            (locals.owner, locals.params.get(index as usize))
+        else {
+            return Ok(None);
+        };
+        Ok(self
+            .hir
+            .fn_decl(function)?
+            .params
+            .get(index as usize)
+            .and_then(|param| param.default))
     }
 
     fn calls_recursive(&mut self, expr: ExprId, scope: ScopeId) -> Result<bool, Internal> {

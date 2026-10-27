@@ -803,7 +803,8 @@ impl Engine<'_> {
                 let record = self.node(node)?;
                 (record.loc, record.scope)
             };
-            self.stop(Code::RecursionLimit, loc, Some(scope), message)?;
+            let help = self.default_calling(function, scope)?;
+            self.stop(Code::RecursionLimit, loc, Some(scope), (message, help))?;
         }
         Ok(false)
     }

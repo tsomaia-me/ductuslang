@@ -239,7 +239,7 @@ impl<'a> Engine<'a> {
         code: Code,
         loc: Loc,
         scope: Option<ScopeId>,
-        message: String,
+        (message, help): (String, Option<String>),
     ) -> Result<(), Internal> {
         if self.stop.is_some() {
             return Ok(());
@@ -261,6 +261,7 @@ impl<'a> Engine<'a> {
             loc,
             related,
             message,
+            help,
         });
         Ok(())
     }
@@ -651,7 +652,7 @@ impl<'a> Engine<'a> {
             "the compilation needs more than {} {space}, the most its ids number",
             grouped(self.id_space)
         );
-        self.stop(Code::ExpansionLimit, loc, None, message)?;
+        self.stop(Code::ExpansionLimit, loc, None, (message, None))?;
         Err(Internal::missed("id"))
     }
 
@@ -911,8 +912,23 @@ impl<'a> Engine<'a> {
             }
         }
         if let Some(stop) = stop {
-            self.report
-                .error_with(self.hir, stop.code, stop.loc, &stop.related, stop.message);
+            match stop.help {
+                Some(help) => self.report.hinted(
+                    self.hir,
+                    stop.code,
+                    stop.loc,
+                    &stop.related,
+                    stop.message,
+                    help,
+                ),
+                None => self.report.error_with(
+                    self.hir,
+                    stop.code,
+                    stop.loc,
+                    &stop.related,
+                    stop.message,
+                ),
+            }
         }
     }
 

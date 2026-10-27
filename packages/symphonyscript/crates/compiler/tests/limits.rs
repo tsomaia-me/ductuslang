@@ -131,6 +131,8 @@ fn follows(code: Code, rows: &[(Limits, String, Option<String>)]) {
     }
 }
 
+type Helped = (Code, String, Option<String>);
+
 fn sizes_totalling(total: u64) -> Vec<u32> {
     let mut remaining = total;
     let mut levels = Vec::new();
@@ -418,4 +420,113 @@ fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
             .collect();
         assert_eq!(codes, expected, "{limits:?}\n{text}");
     }
+}
+
+#[test]
+fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help() {
+    let thousand = Limits {
+        recursive_calls: 1_000,
+        inlined_calls: 1_000,
+        ..Limits::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), thousand).expect("the vocabulary compiles");
+    let helps = |items: &[&str]| -> Vec<Vec<Helped>> {
+        support::permutations(items)
+            .into_iter()
+            .map(|order| {
+                let text = order.concat();
+                support::errors(compiler.check(&[support::source(&text)]))
+                    .into_iter()
+                    .map(|diagnostic| {
+                        let range = diagnostic.span.range.start as usize
+                            ..diagnostic.span.range.end as usize;
+                        let spanned = text.get(range).unwrap_or_default().to_string();
+                        (diagnostic.code, spanned, diagnostic.help)
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    let named = |code: Code, call: &str| {
+        let param = if call == "f()" { "x" } else { "y" };
+        vec![(
+            code,
+            call.to_string(),
+            Some(format!(
+                "pass `{param}` in the call, or give it a default that does not call `f`, since `{param}`'s default makes every call of `f` another"
+            )),
+        )]
+    };
+    let equal = "fn f(x, y = f(x)) bounded 3 else 0: x\n";
+    let rising = "fn f(x, y = f(x + 1)) bounded 3 else 0: x + y\n";
+    let input = "input i = 1\n";
+    let compile_time = "Clip c:\n    Note/(f(1) + 60)\n";
+    let reactive = "Clip c:\n    Note/(f(i) + 60)\n";
+    let rows: [(&[&str], Vec<Helped>); 8] = [
+        (&[equal, compile_time], named(Code::RecursionLimit, "f(x)")),
+        (
+            &[
+                "fn f(x = f()) bounded 3 else 0: x\n",
+                "Clip c:\n    Note/(f() + 60)\n",
+            ],
+            named(Code::RecursionLimit, "f()"),
+        ),
+        (&[input, equal, reactive], named(Code::InlineLimit, "f(x)")),
+        (
+            &[rising, compile_time],
+            named(Code::RecursionLimit, "f(x + 1)"),
+        ),
+        (
+            &[input, rising, reactive],
+            named(Code::InlineLimit, "f(x + 1)"),
+        ),
+        (&[equal, "Clip c:\n    Note/(f(1, 0) + 60)\n"], vec![]),
+        (
+            &[
+                "fn f(x, y) bounded 3 else 0: f(x, y)\n",
+                "Clip c:\n    Note/(f(1, 0) + 60)\n",
+            ],
+            vec![],
+        ),
+        (
+            &[
+                "fn f(x, y = x + 1) bounded 3 else 0: if x > 0 then f(x - 1) + y else y\n",
+                "Clip c:\n    Note/(f(2) + 60)\n",
+            ],
+            vec![],
+        ),
+    ];
+    for (items, expected) in rows {
+        for found in helps(items) {
+            assert_eq!(found, expected, "{items:?}");
+        }
+    }
+    let varying = |limits: Limits, text: &str, code: Code, help: &str| {
+        let compiler =
+            Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+        let found: Vec<(Code, Option<String>)> =
+            support::errors(compiler.check(&[support::source(text)]))
+                .into_iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.help))
+                .collect();
+        assert_eq!(found, vec![(code, Some(help.to_string()))], "{text}");
+    };
+    varying(
+        Limits {
+            recursive_calls: 5,
+            ..Limits::default()
+        },
+        &recursing(6),
+        Code::RecursionLimit,
+        "reduce the distinct arguments the recursion computes",
+    );
+    varying(
+        Limits {
+            inlined_calls: 10,
+            ..Limits::default()
+        },
+        &inlining(11),
+        Code::InlineLimit,
+        "compute a repeated value once, as in `h0(x) * 10`, or lower the bound",
+    );
 }

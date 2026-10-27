@@ -9,4 +9,5 @@ pub(crate) struct Stop {
     pub loc: Loc,
     pub related: Vec<(Loc, String)>,
     pub message: String,
+    pub help: Option<String>,
 }

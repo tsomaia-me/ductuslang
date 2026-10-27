@@ -309,12 +309,38 @@ fn a_for_expands_once_per_element_or_per_value_of_its_computed_range() {
 
 #[test]
 fn a_recursive_call_evaluates_its_omitted_default_and_yields_its_body() {
-    let text = "fn f(n, x = f(0, 1)): if n < 1 then x else n\nClip c:\n    Note/(f(3))\n";
-    let (diagnostics, pitch) = analyzed(&vocabulary(), text, |engine| {
-        attr_value(engine, "pitch", EvalTy::I32)
-    });
-    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
-    assert_eq!(pitch, Some(CVal::Int(3)));
+    let rows: [(&str, &str, i128); 4] = [
+        (
+            "fn f(n, x = f(0, 1)): if n < 1 then x else n\n",
+            "Note/(f(3))",
+            3,
+        ),
+        (
+            "fn f(x, y = f(x)) bounded 3 else 0: x\n",
+            "Note/(f(1, 0) + 60)",
+            61,
+        ),
+        (
+            "fn f(x, y) bounded 3 else 0: f(x, y)\n",
+            "Note/(f(1, 0) + 60)",
+            60,
+        ),
+        (
+            "fn f(x, y = x + 1) bounded 3 else 0: if x > 0 then f(x - 1) + y else y\n",
+            "Note/(f(2) + 60)",
+            66,
+        ),
+    ];
+    for (function, read, expected) in rows {
+        let clip = format!("Clip c:\n    {read}\n");
+        for text in in_every_order(&[function, &clip]) {
+            let (diagnostics, pitch) = analyzed(&vocabulary(), &text, |engine| {
+                attr_value(engine, "pitch", EvalTy::I32)
+            });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            assert_eq!(pitch, Some(CVal::Int(expected)), "{text}");
+        }
+    }
 }
 
 fn attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {

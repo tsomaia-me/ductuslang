@@ -118,7 +118,7 @@ impl<'a> Engine<'a> {
                 "the expansion yields more than {} instances and wires",
                 grouped(bound)
             );
-            self.stop(Code::ExpansionLimit, loc, Some(scope), message)?;
+            self.stop(Code::ExpansionLimit, loc, Some(scope), (message, None))?;
             return Ok(false);
         }
         Ok(true)
@@ -140,7 +140,7 @@ impl<'a> Engine<'a> {
                 "the expansion runs more than {} `for` iterations and pattern uses",
                 grouped(bound)
             );
-            self.stop(Code::ExpansionLimit, loc, Some(scope), message)?;
+            self.stop(Code::ExpansionLimit, loc, Some(scope), (message, None))?;
             return Ok(false);
         }
         Ok(true)
