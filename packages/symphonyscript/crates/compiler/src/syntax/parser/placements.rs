@@ -26,7 +26,14 @@ impl Parser<'_> {
         self.bump();
         self.flags();
         self.eat(SyntaxKind::AsKw);
-        self.expect_name(Code::PlacementSyntax, "the top-level instance's name");
+        let reported = self.diagnostics.len();
+        if !self.expect_name(Code::PlacementSyntax, "the top-level instance's name") {
+            self.help_since(
+                reported,
+                Code::PlacementSyntax,
+                "name the top-level instance, as in `Clip intro`",
+            );
+        }
         self.then([Task::DefaultArg { kind }, Task::PlacementTail, Task::Finish]);
     }
 
@@ -137,7 +144,13 @@ impl Parser<'_> {
         if self.eat(SyntaxKind::Newline) || self.at_end() || self.at(SyntaxKind::Dedent) {
             return;
         }
-        if self.colon_or_skip(Code::PlacementSyntax, "the end of the line") {
+        let named_late = self.at(SyntaxKind::AsKw);
+        let reported = self.diagnostics.len();
+        let colon = self.colon_or_skip(Code::PlacementSyntax, "the end of the line");
+        if named_late {
+            self.help_since(reported, Code::PlacementSyntax, NAMED_LATE);
+        }
+        if colon {
             self.start(SyntaxKind::Body);
             self.bump();
             self.then([Task::Block { pattern: false }, Task::Finish]);
@@ -348,12 +361,14 @@ impl Parser<'_> {
                 self.bump();
                 self.finish();
                 self.start_at(checkpoint, SyntaxKind::FieldExpr);
+                let reported = self.diagnostics.len();
                 self.expect(
                     SyntaxKind::Dot,
                     Code::DefaultArgSyntax,
                     "`.` and a name after `to`",
                 );
                 self.expect_name(Code::DefaultArgSyntax, "the name after `to.`");
+                self.help_since(reported, Code::DefaultArgSyntax, TO_PATH);
                 self.finish();
                 while self.at(SyntaxKind::Dot) && self.nth(1) == Some(SyntaxKind::Ident) {
                     self.start_at(checkpoint, SyntaxKind::FieldExpr);
@@ -486,6 +501,10 @@ impl Parser<'_> {
         self.finish();
     }
 }
+
+const TO_PATH: &str = "follow `to` with `.` and an attribute name, as in `to.gain`";
+
+const NAMED_LATE: &str = "write `as` and the name right after the kind, as in `Note as n /60`";
 
 const PAREN_CLOSE: Task = Task::Close {
     kind: SyntaxKind::RParen,

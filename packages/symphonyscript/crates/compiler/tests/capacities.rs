@@ -1326,6 +1326,87 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             Code::TypeMismatch,
             "give the position a value of the type it expects",
         ),
+        (
+            vocabulary,
+            &["let a = sin\n", "Clip c:\n    Note/a\n"],
+            Code::NotAValue,
+            "use a value here, such as a number, a `let` or a call",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/(Note)\n"],
+            Code::NotAValue,
+            "use a value here, such as a number, a `let` or a call",
+        ),
+        (
+            vocabulary,
+            &["fn f(x): x\n", "Clip c:\n    Note/(f(y=1))\n"],
+            Code::UnknownParameter,
+            "name a parameter `f` declares: `x`",
+        ),
+        (
+            vocabulary,
+            &[
+                "pattern P(default root):\n    Note/root\n",
+                "Clip c:\n    P/60 | nope=1\n",
+            ],
+            Code::UnknownParameter,
+            "set a parameter the pattern declares",
+        ),
+        (
+            vocabulary,
+            &["fn f(a, b): a\n", "Clip c:\n    Note/(f(1))\n"],
+            Code::MissingArgument,
+            "pass `b` in the call, as in `f(a, b)`",
+        ),
+        (
+            vocabulary,
+            &["pattern P(root):\n    Note/root\n", "Clip c:\n    P\n"],
+            Code::MissingArgument,
+            "supply the parameter, as in `P | root=60`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/60 as n\n"],
+            Code::PlacementSyntax,
+            "write `as` and the name right after the kind, as in `Note as n /60`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/(1 + 2\n"],
+            Code::DefaultArgSyntax,
+            "add the missing `)` that closes the `/(` value",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/to\n"],
+            Code::DefaultArgSyntax,
+            "follow `to` with `.` and an attribute name, as in `to.gain`",
+        ),
+        (
+            vocabulary,
+            &["Clip\n"],
+            Code::PlacementSyntax,
+            "name the top-level instance, as in `Clip intro`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    60\n"],
+            Code::PlacementSyntax,
+            "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Note as n /60 | velocity=0.9`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n"],
+            Code::PlacementSyntax,
+            "indent the body's items on the lines after the `:`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    (Note\n"],
+            Code::PlacementSyntax,
+            "add the missing `)` that closes the parenthesized placement",
+        ),
     ];
     for (vocabulary, items, code, help) in rows {
         let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
@@ -1340,6 +1421,26 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 (*code, Some(*help)),
                 "{text}"
             );
+        }
+    }
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for (call, summary) in [
+        ("f(1, 2)", "`f` takes at most 1 argument, not 2"),
+        ("g(1, 2, 3)", "`g` takes at most 2 arguments, not 3"),
+    ] {
+        let items = [
+            "fn f(x): x\n",
+            "fn g(x, y = 1): x + y\n",
+            &format!("Clip c:\n    Note/({call})\n"),
+        ];
+        for order in support::permutations(&items) {
+            let text = order.concat();
+            let found = support::errors(compiler.check(&[support::source(&text)]));
+            let summaries: Vec<(Code, &str)> = found
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.summary.as_str()))
+                .collect();
+            assert_eq!(summaries, [(Code::ArgumentCount, summary)], "{text}");
         }
     }
 }

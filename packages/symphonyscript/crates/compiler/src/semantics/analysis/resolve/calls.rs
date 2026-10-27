@@ -832,6 +832,7 @@ impl Engine<'_> {
         scope: ScopeId,
     ) -> Result<Option<Vec<ParamSource>>, Internal> {
         let params = decl.params.as_slice();
+        let function = decl.name.as_ref().map_or("", |name| name.text.as_str());
         let sources = match bound_sources(params, args, scope) {
             Ok(sources) => sources,
             Err(BindFault::TooMany { .. }) if !decl.skipped_params.is_empty() => {
@@ -841,23 +842,39 @@ impl Engine<'_> {
                 return Ok(None);
             }
             Err(BindFault::TooMany { given }) => {
+                let count = params.len();
                 self.error(
                     Code::ArgumentCount,
                     loc,
                     scope,
                     format!(
-                        "the function takes at most {} arguments, not {given}",
-                        params.len()
+                        "`{function}` takes at most {count} argument{}, not {given}",
+                        if count == 1 { "" } else { "s" }
                     ),
                 )?;
                 return Ok(None);
             }
             Err(BindFault::Unknown(name)) => {
-                self.error(
+                let declared: Vec<String> = params
+                    .iter()
+                    .filter_map(|param| param.name.as_ref())
+                    .map(|param| format!("`{}`", param.text))
+                    .collect();
+                let help = match declared.as_slice() {
+                    [] => format!(
+                        "call `{function}` with no arguments, since it declares no parameters"
+                    ),
+                    _ => format!(
+                        "name a parameter `{function}` declares: {}",
+                        declared.join(", ")
+                    ),
+                };
+                self.error_helped(
                     Code::UnknownParameter,
                     name.loc,
                     scope,
                     format!("the function has no parameter `{}`", name.text),
+                    help,
                 )?;
                 return Ok(None);
             }
@@ -872,16 +889,27 @@ impl Engine<'_> {
             }
         };
         let mut complete = true;
+        let required: Vec<&str> = params
+            .iter()
+            .filter(|param| param.default.is_none())
+            .filter_map(|param| param.name.as_ref())
+            .map(|name| name.text.as_str())
+            .collect();
         for (param, source) in params.iter().zip(&sources) {
             if matches!(source, ParamSource::Missing) {
                 if let Some(name) = &param.name {
-                    self.error(
+                    self.error_helped(
                         Code::MissingArgument,
                         loc,
                         scope,
                         format!(
                             "the parameter `{}` has no default and no argument",
                             name.text
+                        ),
+                        format!(
+                            "pass `{}` in the call, as in `{function}({})`",
+                            name.text,
+                            required.join(", ")
                         ),
                     )?;
                 }

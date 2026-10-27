@@ -17,9 +17,15 @@ impl Parser<'_> {
                 }
             } else {
                 let found = self.describe();
+                let reported = self.diagnostics.len();
                 self.missing_block(
                     Code::PlacementSyntax,
                     format!("expected an indented block, found {found}"),
+                );
+                self.help_since(
+                    reported,
+                    Code::PlacementSyntax,
+                    "indent the body's items on the lines after the `:`",
                 );
                 self.finish();
             }
@@ -40,9 +46,15 @@ impl Parser<'_> {
     pub(super) fn block_items(&mut self, pattern: bool, items: usize) {
         if self.at_end() || self.at(SyntaxKind::Dedent) {
             if items == 0 {
+                let reported = self.diagnostics.len();
                 self.error(
                     Code::PlacementSyntax,
                     "a block holds at least one body item",
+                );
+                self.help_since(
+                    reported,
+                    Code::PlacementSyntax,
+                    "put a placement, a wire, a `for` or a `when` in the block",
                 );
             }
             self.eat(SyntaxKind::Dedent);

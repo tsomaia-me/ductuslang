@@ -128,7 +128,21 @@ impl<'a> Parser<'a> {
                 self.finish();
             }
             Task::Close { kind, code, what } => {
-                self.expect(kind, code, what);
+                let reported = self.diagnostics.len();
+                let closed = match code {
+                    Code::DefaultArgSyntax => Some("the `/(` value"),
+                    Code::PlacementSyntax => Some("the parenthesized placement"),
+                    _ => None,
+                };
+                if !self.expect(kind, code, what)
+                    && let Some(closed) = closed
+                {
+                    self.help_since(
+                        reported,
+                        code,
+                        &format!("add the missing {what} that closes {closed}"),
+                    );
+                }
                 self.finish();
             }
             Task::File => self.file_step(),
@@ -525,6 +539,14 @@ impl<'a> Parser<'a> {
             Diagnostic::new(code, span, message)
         };
         self.error_with(diagnostic);
+    }
+
+    fn help_since(&mut self, reported: usize, code: Code, help: &str) {
+        if let Some(diagnostic) = self.diagnostics.get_mut(reported)
+            && diagnostic.code == code
+        {
+            diagnostic.help = Some(help.to_string());
+        }
     }
 
     fn missing_block(&mut self, code: Code, message: impl Into<String>) {

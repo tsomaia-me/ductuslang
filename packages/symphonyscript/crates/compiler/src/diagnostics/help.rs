@@ -88,7 +88,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::StateValue => {
             "hold a number, a `bool`, an enum value or an array of them in the state"
         }
-        Code::PlacementSyntax => "name the top-level instance, as in `Clip intro`",
+        Code::PlacementSyntax => {
+            "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Note as n /60 | velocity=0.9`"
+        }
         Code::FlagSyntax => "end the flags before the next name, as in `Note'`",
         Code::AttributeSyntax => "write each entry as `name=value`, `name` or `!name`",
         Code::BundleSyntax => "close the bundle with `]`, as in `[Note Note]`",
@@ -126,7 +128,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         }
         Code::MatchScrutinee => "match on an enum, an integer or a `bool`",
         Code::DeclarationCycle => "break the cycle so that no declaration reads itself",
-        Code::NotAValue => "name an instance as the destination",
+        Code::NotAValue => "use a value here, such as a number, a `let` or a call",
         Code::NotCallable => "call a function, as in `abs(2)`",
         Code::ArgumentCount => "pass one argument for each parameter that has no default",
         Code::UnknownParameter => "set a parameter the pattern declares",
