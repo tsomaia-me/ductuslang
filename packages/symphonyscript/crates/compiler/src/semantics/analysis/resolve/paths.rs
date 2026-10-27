@@ -379,6 +379,10 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         };
         let text: Vec<&str> = path.iter().map(|segment| segment.text.as_str()).collect();
+        if wire.is_none() && candidates.len() > 1 {
+            self.written_choice_read(&candidates, steps, last, &text.join("."), loc, scope)?;
+            return Ok(Some(Val::Error));
+        }
         let mut attrs = Vec::new();
         let missing = if candidates.len() > 1 {
             Code::ToCandidates
@@ -462,6 +466,66 @@ impl Engine<'_> {
         )?))
     }
 
+    fn written_choice_read(
+        &mut self,
+        candidates: &[ItemRef],
+        steps: &[Ident],
+        last: &Ident,
+        text: &str,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        let (mut instances, mut missing) = (0, 0);
+        'candidates: for candidate in candidates {
+            let mut item = *candidate;
+            for step in steps {
+                match self.child_named(item, &step.text)? {
+                    Some(child) => item = child,
+                    None if self.may_name(item, &step.text)? => return Ok(()),
+                    None => {
+                        missing += 1;
+                        continue 'candidates;
+                    }
+                }
+            }
+            if self.child_named(item, &last.text)?.is_some() {
+                instances += 1;
+            } else if self.attr_named(item, &last.text)?.is_some()
+                || self.may_name(item, &last.text)?
+            {
+                return Ok(());
+            } else {
+                missing += 1;
+            }
+        }
+        if instances == candidates.len() {
+            return self.error(
+                Code::MisplacedTo,
+                last.loc,
+                scope,
+                format!(
+                    "`to.{text}` ends at an instance or a wire; a `to` path ends at an attribute"
+                ),
+            );
+        }
+        if missing < candidates.len() {
+            return Ok(());
+        }
+        let (Some(first), Some(second)) = (candidates.first(), candidates.get(1)) else {
+            return Ok(());
+        };
+        let first = self.item_description(*first)?;
+        let second = self.item_description(*second)?;
+        self.error(
+            Code::UnknownAttribute,
+            loc,
+            scope,
+            format!(
+                "no candidate of the destination, {first} and {second} among them, has `to.{text}`"
+            ),
+        )
+    }
+
     fn written_clause(&self, scope: ScopeId) -> Result<Option<(HirWireId, ScopeId)>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
@@ -487,17 +551,50 @@ impl Engine<'_> {
         outer: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Vec<ItemRef>>, Internal> {
-        let destination = self.hir.wire(wire)?.destination;
-        let Some(val) = self.val(Query::Expr(destination, outer), need) else {
-            return Ok(None);
-        };
-        let Val::Scalar(mut node) = val else {
-            return Ok(Some(Vec::new()));
-        };
-        loop {
-            node = match &self.node(node)?.op {
-                Op::NodeRef(item) => return Ok(Some(vec![*item])),
-                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => *inner,
+        let mut exprs = vec![self.hir.wire(wire)?.destination];
+        let mut roots = Vec::new();
+        while let Some(expr) = exprs.pop() {
+            match &self.hir.expr(expr)?.kind {
+                ExprKind::If(_, then, otherwise) => {
+                    exprs.push(*otherwise);
+                    exprs.push(*then);
+                }
+                ExprKind::Match {
+                    arms, otherwise, ..
+                } => {
+                    exprs.extend(otherwise.iter().copied());
+                    exprs.extend(arms.iter().rev().map(|arm| arm.value));
+                }
+                ExprKind::Index(base, _) => exprs.push(*base),
+                ExprKind::Array(items) => exprs.extend(items.iter().rev().copied()),
+                _ => match some!(self.val(Query::Expr(expr, outer), need)) {
+                    Val::Scalar(node) => roots.push(node),
+                    Val::Array(array) => roots.extend(array.elements.iter().copied()),
+                    Val::Error => return Ok(Some(Vec::new())),
+                },
+            }
+        }
+        let mut candidates = Vec::new();
+        let mut stack: Vec<NodeId> = roots.into_iter().rev().collect();
+        while let Some(node) = stack.pop() {
+            match &self.node(node)?.op {
+                Op::NodeRef(item) => {
+                    if !candidates.contains(item) {
+                        candidates.push(*item);
+                    }
+                }
+                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => stack.push(*inner),
+                Op::If(_, then, otherwise) => {
+                    stack.push(*otherwise);
+                    stack.push(*then);
+                }
+                Op::Pick { items, .. } => stack.extend(items.iter().rev().copied()),
+                Op::Match {
+                    arms, otherwise, ..
+                } => {
+                    stack.extend(otherwise.iter().copied());
+                    stack.extend(arms.iter().rev().map(|(_, value)| *value));
+                }
                 Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
@@ -510,9 +607,6 @@ impl Engine<'_> {
                 | Op::Arg(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
-                | Op::If(..)
-                | Op::Match { .. }
-                | Op::Pick { .. }
                 | Op::Element { .. }
                 | Op::Array(_)
                 | Op::Convert(..)
@@ -523,8 +617,9 @@ impl Engine<'_> {
                 | Op::Slice { .. }
                 | Op::History { .. }
                 | Op::Native { .. } => return Ok(Some(Vec::new())),
-            };
+            }
         }
+        Ok(Some(candidates))
     }
 
     fn enclosing_wire(&self, scope: ScopeId) -> Result<Option<WireId>, Internal> {

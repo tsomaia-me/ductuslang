@@ -667,8 +667,104 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
 #[test]
 fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_needs_no_expansion() {
     let verse = "Clip verse:\n    Note as hook\n";
+    let (flag, track, chorus) = (
+        "let x = true\n",
+        "Track verse\n",
+        "Clip chorus:\n    Note as hook\n",
+    );
     let unknown = |text| (Code::UnknownAttribute, text);
     let rows: &[support::Row] = &[
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.label: (if x then verse else chorus)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.zzz: (if x then verse else chorus)\n",
+            ],
+            &[(Code::UnknownAttribute, "to.zzz")],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.label: [verse, chorus][0]\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.zzz: [verse, chorus][0]\n",
+            ],
+            &[(Code::UnknownAttribute, "to.zzz")],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.label: (if x then chorus else [chorus, verse][0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook.zzz: (if x then chorus else [chorus, verse][0])\n",
+            ],
+            &[(Code::UnknownAttribute, "to.hook.zzz")],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook.velocity: (if x then verse else chorus)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: (if x then verse else chorus)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                track,
+                chorus,
+                "Clip bridge:\n    Note as hook\n",
+                "pattern Unused():\n    Plays | gain=to.hook: (if x then bridge else chorus)\n",
+            ],
+            &[(Code::MisplacedTo, "hook")],
+        ),
+        (
+            &[
+                "let ds = [verse, chorus]\n",
+                "Track verse\n",
+                "Clip chorus\n",
+                "pattern Unused():\n    Plays | gain=to.zzz: ds[0]\n",
+            ],
+            &[(Code::UnknownAttribute, "to.zzz")],
+        ),
         (
             &[
                 "Clip verse:\n    Note as hook\n    for i in 0..0:\n        Plays | gain=to.yyy: verse\n        Plays | gain=to.hook.www: verse\n",

@@ -1788,17 +1788,30 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let text = "Clip c:\n    for w in [Saw, Square]:\n        Note\n";
     let found = support::errors(compiler.check(&[support::source(text)]));
-    let at_saw: Vec<(Code, Option<&str>)> = found
+    let helped: Vec<(Code, &str, Option<&str>)> = found
         .iter()
-        .filter(|diagnostic| diagnostic.span.range == (22..25))
-        .map(|diagnostic| (diagnostic.code, diagnostic.help.as_deref()))
+        .map(|diagnostic| {
+            let range = &diagnostic.span.range;
+            let spanned = text
+                .get(range.start as usize..range.end as usize)
+                .unwrap_or_default();
+            (diagnostic.code, spanned, diagnostic.help.as_deref())
+        })
         .collect();
     assert_eq!(
-        at_saw,
-        [(
-            Code::UnknownName,
-            Some("write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`")
-        )],
+        helped,
+        [
+            (
+                Code::UnknownName,
+                "Saw",
+                Some("write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`")
+            ),
+            (
+                Code::UnknownName,
+                "Square",
+                Some("write `Wave::Square`, or use `Square` in a position that expects a `Wave`")
+            ),
+        ],
         "{found:?}"
     );
     for (call, summary) in [
