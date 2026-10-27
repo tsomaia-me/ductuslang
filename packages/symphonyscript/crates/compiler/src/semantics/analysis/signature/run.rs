@@ -65,7 +65,7 @@ impl Engine<'_> {
                 Some(sig) => Extra::History(sig),
                 None => Extra::None,
             }),
-            Op::If(_, then, otherwise) => self.arm_forms(&[*then, *otherwise], need)?,
+            Op::If(_, then, otherwise) => self.arm_forms(node, &[*then, *otherwise], need)?,
             Op::Match {
                 arms, otherwise, ..
             } => {
@@ -74,7 +74,7 @@ impl Engine<'_> {
                     .map(|(_, value)| *value)
                     .chain(*otherwise)
                     .collect();
-                self.arm_forms(&values, need)?
+                self.arm_forms(node, &values, need)?
             }
             Op::Number(..)
             | Op::Const(_)
@@ -151,6 +151,7 @@ impl Engine<'_> {
 
     fn arm_forms(
         &mut self,
+        choice: NodeId,
         arms: &[NodeId],
         need: &mut Vec<Query>,
     ) -> Result<Option<Extra>, Internal> {
@@ -167,6 +168,7 @@ impl Engine<'_> {
             }
         }
         let mut forms = Vec::with_capacity(arms.len());
+        let mut outers = Vec::with_capacity(arms.len());
         for &arm in arms {
             if !self.arrays.contains(&arm) {
                 let settled = self.reaches_recursion(arm)?;
@@ -175,7 +177,10 @@ impl Engine<'_> {
             }
             if let Some(lengths) = self.known_lengths(arm)? {
                 forms.push(match lengths.split_last() {
-                    Some((_, inner)) => (Some(true), inner.iter().copied().collect()),
+                    Some((outer, inner)) => {
+                        outers.push(*outer);
+                        (Some(true), inner.iter().copied().collect())
+                    }
                     None => (Some(false), None),
                 });
                 continue;
@@ -199,11 +204,16 @@ impl Engine<'_> {
                 return Ok(None);
             };
             forms.push(match found.shaped {
-                Ok(Some(layout)) => (Some(true), Some(layout.inner().to_vec())),
+                Ok(Some(layout)) => {
+                    outers.push(layout.outer());
+                    (Some(true), Some(layout.inner().to_vec()))
+                }
                 Ok(None) => (Some(false), None),
                 Err(_) => (None, None),
             });
         }
+        let lengths = agreed_lengths(&forms, &outers);
+        self.memo.choice_lengths.insert(choice, lengths);
         Ok(Some(Extra::Arms(forms)))
     }
 
@@ -415,4 +425,32 @@ fn joins(op: &Op) -> bool {
         | Op::History { .. }
         | Op::Native { .. } => false,
     }
+}
+
+fn agreed_lengths(
+    forms: &[(Option<bool>, Option<Vec<u32>>)],
+    outers: &[Option<u32>],
+) -> Option<Vec<Option<u32>>> {
+    let mut rows = None;
+    for form in forms {
+        let (Some(true), Some(inner)) = form else {
+            return None;
+        };
+        match rows {
+            None => rows = Some(inner),
+            Some(first) if first == inner => {}
+            Some(_) => return None,
+        }
+    }
+    let outer = match outers.split_first() {
+        Some((first, rest))
+            if outers.len() == forms.len() && rest.iter().all(|outer| outer == first) =>
+        {
+            *first
+        }
+        Some(_) | None => None,
+    };
+    let mut lengths: Vec<Option<u32>> = rows?.iter().copied().map(Some).collect();
+    lengths.push(outer);
+    Some(lengths)
 }

@@ -1292,8 +1292,155 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             ],
             &[],
         ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/((if false then bytes(held) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then bytes(held) else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "Clip c:\n    Note/((if false then (if flag then held else held) else [[1]])[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if false then (if flag then held else held) else [[1]]",
+            )],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/((if false then (if true then held else [1, 2]) else [[1]])[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if false then (if true then held else [1, 2]) else [[1]]",
+            )],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "fn g(i): if i > 5 then (if flag then held else [1, 2]) else [[1]]\n",
+                "Clip c:\n    Note/(g(0)[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then (if flag then held else [1, 2]) else [[1]]",
+            )],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn h(i):\n    match i:\n        7: held\n        else: [1, 2]\n",
+                "fn g(i): if i > 5 then h(note) else [[1]]\n",
+                "Clip c:\n    Note/(g(0)[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then h(note) else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "let inner = if flag then held else held\n",
+                "Clip c:\n    Note/((if false then inner else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then inner else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "let b = bytes(held)\n",
+                "Clip c:\n    Note/((if false then b else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then b else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then bytes(held) else 5\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then bytes(held) else 5")],
+        ),
+        (
+            &[
+                held,
+                "state s = (if false then held{1} else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then held{1} else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "state t = held\n",
+                "state s = (if false then t{1, []} else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then t{1, []} else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "Clip c:\n    Note/((if false then (if flag then held else held) else [1, 2])[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                "state s = (if false then held{1} else [1])[0]\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[],
+        ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let rows: &[support::Row] = &[
+        (
+            &[
+                held,
+                "Song s:\n    Clip as c:\n        Note/((if false then mirror(held) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then mirror(held) else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "Song s:\n    Clip as c:\n        Note/((if false then mirror(held) else [1])[0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+    let sec = "input sec = 0\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                sec,
+                "Clip a:\n    Plays | gain=((if false then to.seq else [[1]])[0][0]): [b, c][sec]\n",
+                "Clip b\n",
+                "Clip c\n",
+            ],
+            &[(Code::TypeMismatch, "if false then to.seq else [[1]]")],
+        ),
+        (
+            &[
+                sec,
+                "Clip a:\n    Plays | gain=((if false then to.seq else [1])[0]): [b, c][sec]\n",
+                "Clip b\n",
+                "Clip c\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::to_array_vocabulary(), rows);
 }
 
 #[test]

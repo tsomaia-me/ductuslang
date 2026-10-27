@@ -538,11 +538,42 @@ impl Engine<'_> {
                     ));
                     node = *first;
                 }
-                Op::History { .. }
-                | Op::Native { .. }
-                | Op::If(..)
-                | Op::Match { .. }
-                | Op::Number(..)
+                Op::If(..) | Op::Match { .. } => match self.memo.choice_lengths.get(&node) {
+                    Some(Some(lengths)) => break lengths.clone(),
+                    Some(None) | None => return Ok(None),
+                },
+                Op::Builtin(Builtin::Bytes, args) => match args.first() {
+                    Some(operand) if self.arrays.contains(operand) => node = *operand,
+                    Some(_) => break vec![None],
+                    None => return Ok(None),
+                },
+                Op::Native { native, .. } => {
+                    let decl = self
+                        .vocabulary
+                        .native(*native)
+                        .ok_or(Internal::missed("native function"))?;
+                    break native_layout(&decl.signature.result)
+                        .as_ref()
+                        .map(open_lengths)
+                        .unwrap_or_default();
+                }
+                Op::ToRead { attrs, .. } => {
+                    break self
+                        .to_read_layout(attrs)?
+                        .as_ref()
+                        .map(open_lengths)
+                        .unwrap_or_default();
+                }
+                Op::History { .. } => match self.history_bindings(node)?.as_slice() {
+                    [binding] if self.settled_layout(*binding)? => {
+                        match self.memo.binding_layouts.get(binding) {
+                            Some(layout) => break open_lengths(layout),
+                            None => return Ok(None),
+                        }
+                    }
+                    _ => return Ok(None),
+                },
+                Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
                 | Op::Str(_)
@@ -557,8 +588,7 @@ impl Engine<'_> {
                 | Op::Pick { .. }
                 | Op::Convert(..)
                 | Op::Builtin(..)
-                | Op::Recursive { .. }
-                | Op::ToRead { .. } => return Ok(None),
+                | Op::Recursive { .. } => return Ok(None),
             }
         };
         for step in steps.into_iter().rev() {
@@ -576,6 +606,16 @@ impl Engine<'_> {
             }
         }
         Ok(Some(lengths))
+    }
+
+    fn settled_layout(&self, binding: BindingId) -> Result<bool, Internal> {
+        Ok(match self.binding(binding)?.kind {
+            BindingKind::State { .. } => self.memo.settled.contains(&binding),
+            BindingKind::Input { .. }
+            | BindingKind::Let
+            | BindingKind::Param
+            | BindingKind::Attr { .. } => true,
+        })
     }
 
     fn cached_layout(&self, node: NodeId, assumed: Option<&Assumed>) -> Option<LayoutFound> {
