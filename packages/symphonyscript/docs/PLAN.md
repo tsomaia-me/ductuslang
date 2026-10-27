@@ -197,8 +197,8 @@ Exit:
 Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b, M2e, M2c and M2d leave it.
 
 Steps:
-1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order, the memory figure (SPEC §12.6), and the choice per non-recursive function between inlining and one shared body by Q6's measure (body nodes times call sites less one over a configurable threshold; small and single-site bodies inlined; one shared body per distinct set of argument and result types; a call with only compile-time arguments folded), with a function table and a call node in the Program.
-2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices at every level, `For` nodes, each evaluating its body subtree once per element, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, sums as a tag and slots, maps, documents parsed at the boundary by core's `document` module and read through views and typed reads, native functions at runtime with a callback for each lambda argument, and writes (SPEC §12, ARCHITECTURE §4).
+1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order, the memory figure (SPEC §12.6), and the choice per non-recursive function between inlining and one shared body by Q6's measure over the resolved body instances (body nodes times call sites less one over `shared_body_threshold`; small and single-site bodies inlined; one shared body per distinct set of argument and result types; a call with only compile-time arguments folded; ARCHITECTURE §7), with a function table and a call node in the Program.
+2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices at every level, `For` nodes, each evaluating its body subtree once per element, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, sums as a tag and slots, maps, documents parsed at the boundary by core's `document` module and read through views and typed reads, native functions at runtime with a callback for each lambda argument, taken from the vocabulary `Runtime::new` takes, whose stamp it checks (SPEC §13.1), typed attribute handles, the builder's `Attr<T>` read by `rt.attr` in the attribute's Rust type (ARCHITECTURE §2, §4), and writes (SPEC §12, ARCHITECTURE §4).
 3. `eval` and the `Consumer` trait.
 4. Reload: `reload_snapshot`, `prepare` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
 5. Fixture pairs of projects, before and after an edit, for the reload tests.
@@ -213,6 +213,8 @@ Exit:
 - M2's deep sources lower, load, commit, reload, compare, clone, dump and drop on a thread with a 1 MiB stack.
 - Compiling a fixture project repeatedly, with its sources in any order, gives equal Programs and equal dumps.
 - A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
+- `Runtime::new` refuses a Program compiled against another vocabulary, and calls the vocabulary's native functions at runtime.
+- A fixture consumer reads attributes through their `Attr<T>` handles in their Rust types, and a compile-fail test shows that renaming or retyping an attribute in the vocabulary stops a consumer that reads it from compiling.
 - A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
 - The state shared between the committing thread and a thread preparing a reload holds under loom at a preemption bound of 3 and under Miri with `-Zmiri-many-seeds`.
 - The compiler reports each fixture Program's memory in bytes, equal to what `Runtime::new` allocates under the counting allocator, and refuses a program over `memory_bytes` with the figure in the error (SPEC §12.6).
@@ -226,7 +228,7 @@ Exit:
 The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It needs M2d and runs beside M3 (§ Order).
 
 Steps:
-1. The tool: `Tool::new`, framework commands, `Project`, `new`, `check` and single-file mode (ARCHITECTURE §9), and the `lsp` command.
+1. The tool: `Tool::new`, framework commands, `Project`, `new`, `check` and single-file mode, the diagnostics' rendering with the summary, the help, the lesson under `── why ──`, the spans under `── where ──` and `--brief` (ARCHITECTURE §9), and the `lsp` command.
 2. The language server on `lsp-server`.
 3. The VS Code extension: the static grammar and the language client.
 4. The JetBrains plugin: highlighting from the grammar or the server's semantic tokens, and the language client on the IntelliJ Platform's LSP API.
@@ -236,6 +238,7 @@ Exit:
 - Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects; hover on a pattern and on each of its uses shows the pattern's type (SPEC §6.4).
 - The extension starts the language server for a sample project.
 - The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
+- `check` prints each diagnostic as ARCHITECTURE §9 renders it, the lesson under `── why ──` and the spans under `── where ──`, and `--brief` leaves out the lesson.
 - The language server handles M2's deep sources on a thread with a 1 MiB stack.
 - `symphony.toml`'s `[limits]` and `--limit` reach the compiler and the language server, a flag overriding the file.
 
@@ -244,13 +247,14 @@ Exit:
 Generated Rust, `dump`, the watch loop, and what of the tool needs the runtime.
 
 Steps:
-1. `codegen::generate` and a fixture framework's `build.rs` that uses it.
+1. `codegen::generate` and a fixture framework's `build.rs` that uses it, with a typed write method for each input whose variable-array inputs take core's bounded list type (ARCHITECTURE §8).
 2. The tool's `dump`, and `check` printing the memory figure (SPEC §12.6).
 3. The watch loop: recompile, prepare, consumer acceptance, install.
 
 Exit:
 - Every fixture project compiled through the library and through `codegen` gives equal Programs and equal commit traces.
 - A generated Program builds for `thumbv7em-none-eabihf`.
+- A write through a generated method longer than a variable-array input's capacity does not compile, shown by a compile-fail test.
 - End-to-end tests for `dump`, and for `check` printing the memory figure.
 - `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
 - `symphony.toml`'s `[limits]` and `--limit` reach the runtime, a flag overriding the file.
