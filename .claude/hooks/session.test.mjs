@@ -200,6 +200,21 @@ test('a subagent compacting in the session leaves the main agent note in place a
   assert.ok(existsSync(noteFile));
 });
 
+test('a reading list in the memory checkout joins the note reading list and the no-note output, existing files only', () => {
+  const project = makeProject(LESSONS);
+  writeFileSync(path.join(project, 'SPEC.md'), 'spec');
+  writeFileSync(path.join(project, '.memory', 'READING.md'), '# read whole\nSPEC.md\nmissing.md\n');
+  const spec = path.join(project, 'SPEC.md');
+  const withNote = runHook({ project, source: 'compact', note: { role: 'builder', note: 'n', time: 'now' } });
+  assert.equal(withNote.status, 0);
+  assert.ok(withNote.stdout.includes(`3. ${spec} (whole)\n4. `));
+  assert.ok(!withNote.stdout.includes('missing.md'));
+  const noNote = runHook({ project, source: 'compact' });
+  assert.equal(noNote.status, 0);
+  assert.ok(noNote.stdout.endsWith(`Read whole, in order: ${spec} (whole).\n`));
+  assert.ok(!noNote.stdout.includes('missing.md'));
+});
+
 test('a hook run through a symlinked directory still prints the menu line', () => {
   const project = makeProject(LESSONS);
   const linkedHooks = path.join(mkdtempSync(path.join(os.tmpdir(), 'session-hook-link-')), 'hooks');

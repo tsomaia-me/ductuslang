@@ -8,6 +8,7 @@ import { isEntryPoint, lastMessagesPath, notePath, parseLine, readStdin, roleFil
 
 export const HOOK_OUTPUT_LIMIT = 10000;
 const LESSONS_RELATIVE_PATH = path.join('.memory', 'LESSONS.md');
+const READING_RELATIVE_PATH = path.join('.memory', 'READING.md');
 const COMPACT_SOURCE = 'compact';
 const LINE_BREAK = '\n';
 const HARNESS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -28,6 +29,23 @@ function readNote(file) {
   return typeof stored?.role === 'string' && typeof stored.note === 'string' ? stored : CORRUPT;
 }
 
+function requiredReading(memory) {
+  const file = path.join(memory, READING_RELATIVE_PATH);
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8')
+    .split(LINE_BREAK)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+    .map((line) => path.resolve(memory, line))
+    .filter((listed) => existsSync(listed))
+    .map((listed) => `${listed} (whole)`);
+}
+
+function requiredReadingLine(memory) {
+  const files = requiredReading(memory);
+  return files.length === 0 ? [] : [`Read whole, in order: ${files.join('; ')}.`];
+}
+
 function readingList(memory, { role }, sessionId) {
   const files = [
     roleFile(HARNESS_ROOT, role),
@@ -35,7 +53,7 @@ function readingList(memory, { role }, sessionId) {
     path.join(memory, '.memory', 'lessons', `${role.toUpperCase()}.md`),
   ].filter((file) => file && existsSync(file));
   const lastMessages = `${lastMessagesPath(sessionId)} (the last ${MESSAGE_COUNT} messages)`;
-  return [...files, lastMessages].map((entry, index) => `${index + 1}. ${entry}`);
+  return [...files, ...requiredReading(memory), lastMessages].map((entry, index) => `${index + 1}. ${entry}`);
 }
 
 function groundingParts(memory, stored, sessionId) {
@@ -81,7 +99,7 @@ function buildOutput(input) {
   const stored = compacted ? readNote(noteFile) : null;
   if (stored && stored !== CORRUPT) return { text: render(groundingParts(memory, stored, input.session_id)), usedNote: noteFile };
   const head = compacted ? compactHead(noteFile, stored) : [];
-  const tail = compacted ? [MENU_LINE, lastMessagesLine(input.session_id)] : [MENU_LINE];
+  const tail = compacted ? [MENU_LINE, lastMessagesLine(input.session_id), ...requiredReadingLine(memory)] : [MENU_LINE];
   const roomLeft = HOOK_OUTPUT_LIMIT - render([...head, '', ...tail]).length;
   return { text: render([...head, lessonsPart(path.join(memory, LESSONS_RELATIVE_PATH), roomLeft), ...tail]), usedNote: null };
 }
