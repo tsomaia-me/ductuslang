@@ -162,7 +162,8 @@ A fixed array's contents may change at runtime when its elements are reactive (�
 
 ```ebnf
 Type       ::= FnType | Base ('|' Base)*
-FnType     ::= '(' (Type (',' Type)*)? ')' '->' Type
+FnType     ::= '(' (FnParam (',' FnParam)*)? ')' '->' Type
+FnParam    ::= (Name ':')? Type
 Base       ::= (ScalarType | StrType | MapType | JsonType | Name TypeArgs? | 'none' | '(' Type ')') Dims? '?'?
 Dims       ::= ('[' Size ']' | '[' '..' Size ']')+
 Size       ::= Expr
@@ -662,7 +663,7 @@ Clip outro | gain=chorus.back.transpose:
 
 ### 5.7 Calls and built-ins
 
-A call invokes a built-in, a prelude function, native functions included (§10.1), a source function (§6.3), or a parameter bound to a lambda (§6.7). Arguments are all positional or all named, as in `scale(3, 48)` or `scale(degree=3, root=48)`; mixing them in one call is an error. Built-ins and native functions take positional arguments only. Built-in names are top-level names (§6.5).
+A call invokes a built-in, a prelude function, native functions included (§10.1), a source function (§6.3), a parameter bound to a lambda (§6.7), or a compile-time `let` holding a lambda or a function's name (§6.2). Arguments are all positional or all named, as in `scale(3, 48)` or `scale(degree=3, root=48)`; mixing them in one call is an error. Built-ins and native functions take positional arguments only. Built-in names are top-level names (§6.5).
 
 | Built-in | Result |
 |---|---|
@@ -769,12 +770,12 @@ input hit: Hit = {}
 ### 6.2 Lets
 
 ```ebnf
-LetDecl ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | MatchBlock | ForExprBlock)
+LetDecl ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | Lambda NEWLINE | MatchBlock | ForExprBlock)
 ```
 
-A `let` names a value. A `let` that reads no input, directly or through other declarations, is a compile-time value (§4.1). A `let` that reads an input is reactive: a cell, or for an array an array of bindings (§4.4), recomputed when what it reads changes (§12.2). A declaration that reaches itself through `let`s, inputs, attribute reads or function bodies is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`; a function reaching itself through calls follows §6.3.
+A `let` names a value. A `let` that reads no input, directly or through other declarations, is a compile-time value (§4.1). A `let` that reads an input, other than one holding a lambda (below), is reactive: a cell, or for an array an array of bindings (§4.4), recomputed when what it reads changes (§12.2). A declaration that reaches itself through `let`s, inputs, attribute reads, function bodies or the lambda a `let` holds is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`, and in `let f = x: f(x)`, whose recursion is written with `fn`; a function reaching itself through calls follows §6.3.
 
-A compile-time `let` may hold a node reference or an array of them. It stands for its value wherever it is used and never reaches the Program. A `let` holding node references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
+A compile-time `let` may hold a node reference or an array of them, a lambda (§6.7), or a function's name: a source function's, a native function's or a built-in's. It stands for its value wherever it is used and never reaches the Program. A `let` holding a lambda is compile-time whatever the lambda's body reads: the lambda is inlined at each use, and a cell its body reads makes that use reactive, as an argument that reads a cell makes a call reactive (§6.3). A call of such a `let` inlines the lambda's or the function's body as §6.3 inlines a call, and a recursive or native function it names is called as §6.3 and §10.1 say. A `let` holding node references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
 
 ```sym
 input section = 0
@@ -1037,12 +1038,13 @@ LambdaParams ::= LambdaParam (',' LambdaParam)*
 LambdaParam  ::= Name (':' Type)?
 ```
 
-A lambda is a function written as the argument of a call: `x: x * 2`, `(a, b): a + b`, `(x: i32) -> bool: x > 60`. A single parameter stands without parentheses only when it has no annotation, and each parameter is one name; a lambda never destructures its arguments.
+A lambda is a function written as the argument of a call or as the value of a compile-time `let`: `x: x * 2`, `(a, b): a + b`, `(x: i32) -> bool: x > 60`. A single parameter stands without parentheses only when it has no annotation, and each parameter is one name; a lambda never destructures its arguments.
 
-- A lambda stands only as an argument of a call to a function (§6.3) or a native function (§10.1); anywhere else it is an error.
-- A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter, and on a `let`, an input, a state, an attribute, a record field or an array element it is an error.
+- A lambda stands only as an argument of a call to a function (§6.3) or a native function (§10.1), or as the value of a compile-time `let` (§6.2); anywhere else it is an error.
+- A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter and of a compile-time `let` holding a lambda or a function's name, and on any other `let`, an input, a state, an attribute, a record field or an array element it is an error.
+- A parameter of a function type may carry a name, `(x: f64) -> f64`. The name labels the position for the reader and lets the body call the parameter by it, `f(x=seed)`, as named arguments name a source function's parameters (§5.7); the lambda's own parameter names are its own and need not match.
 - Where the body of the function that receives a lambda calls its parameter, the call inlines the lambda's body with the lambda's parameters bound to the call's arguments, as §6.3 inlines a call to a function. A native function that receives a lambda calls it as §10.1 says. The lambda reads the names in scope at its own position.
-- A function's name stands as an argument wherever a lambda stands, and the function is received as a lambda is. Where the receiving parameter has a function type, the type flows into the function as the expected types of its parameters and its result (§4.2), as into a lambda's, an annotation it carries agrees with them or is an error, and its body is checked under those types: `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before` where `sort_by` expects a function type. Where the parameter has none, the function is inlined where the body calls the parameter, its parameters typed by those calls' arguments as §6.3 types a call.
+- A function's name, a source function's, a native function's or a built-in's, stands wherever a lambda stands, and the function is received as a lambda is: `each(xs, len)` passes the built-in `len`. Where the receiving parameter has a function type, the type flows into the function as the expected types of its parameters and its result (§4.2), as into a lambda's, an annotation it carries agrees with them or is an error, and its body is checked under those types: `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before` where `sort_by` expects a function type. Where the parameter has none, the function is inlined where the body calls the parameter, its parameters typed by those calls' arguments as §6.3 types a call.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
 - The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
 - A parameter bound to a lambda, written as the argument of a call in the body, passes the lambda on to that call.
@@ -1065,11 +1067,34 @@ let named = count(held, is_high)
 
 `above` reads `threshold` where its lambda is written, so it follows the input. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`.
 
-```sym-error
-let twice = x: x * 2
+A compile-time `let` holds a lambda or a function's name, and a function type may name its parameters:
+
+```sym
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
 ```
 
-This is an error: a lambda stands only as an argument.
+`a` and `b` are 4.0, and `c` is 3.0. `bar` calls `f` by the name `x` its function type gives, a name `inc`'s own parameter need not share; `twice` stands for `bar`.
+
+```sym-error
+input g = x: x + 1
+```
+
+This is an error: a lambda stands only as an argument or as the value of a compile-time `let`, and an input is a cell.
+
+```sym-error
+let f = x: f(x)
+
+Clip c:
+    Note/(f(60))
+```
+
+This is an error: `f` reaches itself through the lambda it holds (§6.2); recursion is written with `fn`.
 
 ```sym-error
 fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
