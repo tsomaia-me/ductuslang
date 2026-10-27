@@ -6,6 +6,8 @@ An array has one element type, so its rows share one shape.
 
 ```sym-error
 let a = [1, [2]]
+Clip c:
+    Note/a
 ```
 
 One element is a number and the other an array.

@@ -83,6 +83,7 @@ impl Engine<'_> {
             }
             valid.push(position);
         }
+        self.unused_lets()?;
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             self.demand_sig(self.binding(binding)?.init)?;

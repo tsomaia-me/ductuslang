@@ -8,6 +8,8 @@ A `match` chooses among labels, and enums, integers and `bool`s are the values l
 let l = match 1.5:
     1: 2
     else: 1
+Clip c:
+    Note/l
 ```
 
 The scrutinee is a float.

@@ -19,7 +19,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::fast_hash::FastMap;
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::feed::Feed;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
@@ -152,8 +152,9 @@ impl Engine<'_> {
             units: unit_set(&feeds),
             nesting,
         };
-        if let Some(value) = self.memo.calls.get(&key) {
-            return Ok(Some(value.clone()));
+        if let Some(value) = self.memo.calls.get(&key).cloned() {
+            self.reach_key(&key, node, ctx)?;
+            return Ok(Some(value));
         }
         let call = Call {
             key,
@@ -415,16 +416,17 @@ impl Engine<'_> {
                     need
                 )?) {
                     Some(root) if self.result_fits(root, own, node, call.function)? => root,
-                    _ => {
-                        self.memo.calls.insert(call.key, CVal::Error);
-                        return Ok(Some(CVal::Error));
-                    }
+                    _ => return self.failed_call(&call, node, Ctx::Global),
                 };
                 let defaults = some!(self.default_work(&call, need)?);
                 if !self.within_call_limit(node, call.function)? {
                     return Ok(Some(CVal::Error));
                 }
                 let ty = self.body_type(root, own)?;
+                let templates = self
+                    .template_of(self.node(root)?.scope)?
+                    .into_iter()
+                    .collect();
                 let unbounded = u64::from(self.limit_of(call.function)?.is_none());
                 let mut work = vec![(0, root, ty)];
                 work.extend(defaults.into_iter().map(|(node, ty)| (0, node, ty)));
@@ -440,6 +442,8 @@ impl Engine<'_> {
                         feeds: call.feeds,
                         memo: FastMap::default(),
                         unbounded,
+                        faults: FastSet::default(),
+                        templates,
                     }],
                     work,
                     open: [(call.function, 1)].into_iter().collect(),
@@ -457,9 +461,21 @@ impl Engine<'_> {
                     .active
                     .take()
                     .ok_or(Internal::missed("evaluation machine"))?;
-                for frame in machine.frames {
-                    self.memo.calls.insert(frame.key, CVal::Error);
+                let mut faults = FastSet::default();
+                let mut templates = FastSet::default();
+                for frame in &machine.frames {
+                    faults.extend(frame.faults.iter().copied());
+                    templates.extend(frame.templates.iter().copied());
                 }
+                let reach: (Vec<u32>, Vec<ScopeId>) = (
+                    faults.into_iter().collect(),
+                    templates.into_iter().collect(),
+                );
+                for frame in machine.frames {
+                    self.memo.calls.insert(frame.key.clone(), CVal::Error);
+                    self.memo.key_reach.insert(frame.key, reach.clone());
+                }
+                self.reach(reach, node, Ctx::Global)?;
                 return Ok(Some(CVal::Error));
             }
             let &(frame, current, ty) = self
@@ -474,7 +490,10 @@ impl Engine<'_> {
             self.frame_need.clear();
             self.frame_pushed = false;
             let mut outer = Vec::new();
-            match self.evaluate(current, ty, Ctx::Frame(frame), &mut outer)? {
+            let enclosing = self.fault_frame.replace(frame);
+            let evaluated = self.evaluate(current, ty, Ctx::Frame(frame), &mut outer);
+            self.fault_frame = enclosing;
+            match evaluated? {
                 Some(value) => {
                     let machine = self.machine_mut()?;
                     machine.work.pop();
@@ -490,15 +509,28 @@ impl Engine<'_> {
                             record.expected,
                             record.function,
                         );
-                        machine.frames.pop();
+                        let done = machine
+                            .frames
+                            .pop()
+                            .ok_or(Internal::missed("evaluation frame"))?;
+                        if let Some(parent) = machine.frames.last_mut() {
+                            parent.faults.extend(done.faults.iter().copied());
+                            parent.templates.extend(done.templates.iter().copied());
+                        }
                         machine.open_keys.remove(&key);
                         if let Some(open) = machine.open.get_mut(&function) {
                             *open = open.saturating_sub(1);
                         }
                         let value = self.call_result(call, current, expected, value)?;
-                        self.memo.calls.insert(key, value.clone());
+                        let reach: (Vec<u32>, Vec<ScopeId>) = (
+                            done.faults.into_iter().collect(),
+                            done.templates.into_iter().collect(),
+                        );
+                        self.memo.calls.insert(key.clone(), value.clone());
+                        self.memo.key_reach.insert(key, reach.clone());
                         if frame == 0 {
                             self.active = None;
+                            self.reach(reach, node, Ctx::Global)?;
                             return Ok(Some(value));
                         }
                     }
@@ -575,8 +607,8 @@ impl Engine<'_> {
         )?) {
             Some(root) if self.result_fits(root, own, node, call.function)? => root,
             _ => {
-                self.memo.calls.insert(call.key, CVal::Error);
-                return Ok(Some(CVal::Error));
+                let caller = self.machine_mut()?.frames.len().saturating_sub(1);
+                return self.failed_call(&call, node, Ctx::Frame(caller));
             }
         };
         let defaults = some!(self.default_work(&call, need)?);
@@ -584,6 +616,10 @@ impl Engine<'_> {
             return Ok(Some(CVal::Error));
         }
         let ty = self.body_type(root, own)?;
+        let templates = self
+            .template_of(self.node(root)?.scope)?
+            .into_iter()
+            .collect();
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
         *machine.open.entry(call.function).or_insert(0) += 1;
@@ -599,6 +635,8 @@ impl Engine<'_> {
             feeds: call.feeds,
             memo: FastMap::default(),
             unbounded: depth.saturating_add(u64::from(!bounded)),
+            faults: FastSet::default(),
+            templates,
         });
         machine.work.push((index, root, ty));
         machine
@@ -606,6 +644,68 @@ impl Engine<'_> {
             .extend(defaults.into_iter().map(|(node, ty)| (index, node, ty)));
         self.frame_pushed = true;
         Ok(None)
+    }
+
+    fn failed_call(
+        &mut self,
+        call: &Call,
+        node: NodeId,
+        ctx: Ctx,
+    ) -> Result<Option<CVal>, Internal> {
+        let key = TemplateKey {
+            function: call.function,
+            args: call.shapes.clone(),
+            units: unit_set(&call.feeds),
+        };
+        let templates: Vec<ScopeId> = self.memo.templates.get(&key).copied().into_iter().collect();
+        self.memo.calls.insert(call.key.clone(), CVal::Error);
+        self.memo
+            .key_reach
+            .insert(call.key.clone(), (Vec::new(), templates.clone()));
+        self.reach((Vec::new(), templates), node, ctx)?;
+        Ok(Some(CVal::Error))
+    }
+
+    fn reach_key(&mut self, key: &CallKey, node: NodeId, ctx: Ctx) -> Result<(), Internal> {
+        match self.memo.key_reach.get(key).cloned() {
+            Some(reach) => self.reach(reach, node, ctx),
+            None => Ok(()),
+        }
+    }
+
+    fn reach(
+        &mut self,
+        (faults, templates): (Vec<u32>, Vec<ScopeId>),
+        node: NodeId,
+        ctx: Ctx,
+    ) -> Result<(), Internal> {
+        match ctx {
+            Ctx::Frame(frame) => {
+                let record = self
+                    .machine_mut()?
+                    .frames
+                    .get_mut(frame)
+                    .ok_or(Internal::missed("evaluation frame"))?;
+                record.faults.extend(faults);
+                record.templates.extend(templates);
+            }
+            Ctx::Global => {
+                if self.in_probe(self.node(node)?.scope)? {
+                    return Ok(());
+                }
+                for fault in faults {
+                    self.memo.fault_sites.entry(fault).or_default().push(node);
+                }
+                for template in templates {
+                    self.memo
+                        .template_sites
+                        .entry(template)
+                        .or_default()
+                        .push(node);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn default_work(

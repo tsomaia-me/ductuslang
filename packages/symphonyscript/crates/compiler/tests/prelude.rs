@@ -87,7 +87,7 @@ fn a_declaration_cycle_in_the_prelude_fails_the_compiler() {
             );
         }
     }
-    let prelude = "let C4 = 60\nfn up(n): n + C4\nlet unread = up(1)\n";
+    let prelude = "let C4 = 60\nfn up(n): n + C4\nlet unread = up(1) div 0.5\n";
     assert_eq!(check(prelude, "Clip c:\n    Note/72\n"), vec![]);
     let found = check(
         prelude,

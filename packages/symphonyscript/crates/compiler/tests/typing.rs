@@ -345,7 +345,11 @@ fn an_unused_compile_time_let_is_never_computed() {
     expect(&[
         ("let e = 2 ** 2 ** 2 ** 2 ** 2\n", &[]),
         ("let x = [1, 2][5]\n", &[]),
-        ("let y = 1 + true\n", &[Code::OperandType]),
+        ("let y = 1 + true\n", &[]),
+        (
+            "let y = 1 + true\nClip c:\n    Note/y\n",
+            &[Code::OperandType],
+        ),
         (
             "let e = 2 ** 2 ** 2 ** 2 ** 2\nClip c:\n    Note/e\n",
             &[Code::IntegerOverflow],
@@ -435,7 +439,10 @@ fn a_reactive_let_read_by_another_keeps_the_width_of_the_input_it_reads() {
 #[test]
 fn an_annotation_fixes_a_type_outright() {
     expect(&[
-        ("let x: i32 = 0.5\n", &[Code::TypeMismatch]),
+        (
+            "let x: i32 = 0.5\nClip c:\n    Note/x\n",
+            &[Code::TypeMismatch],
+        ),
         ("let x: f32 = 1\nSynth s:\n    Osc | freq=x\n", &[]),
         (
             "let x: f64 = 1\nClip c:\n    Note | velocity=x\n",
@@ -1225,12 +1232,21 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
 fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands() {
     let rows: [Row; 18] = [
         (
-            &["let a = [1, \"s\"]"],
+            &[
+                "let a = [1, \"s\"]",
+                "Clip c:\n    for e in a:\n        Note",
+            ],
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
-        (&["let a = [Sine, 3]"], &[(Code::TypeMismatch, "[Sine, 3]")]),
         (
-            &["let a = [1bars, 2ms]"],
+            &["let a = [Sine, 3]", "Clip c:\n    Note/(a[1])"],
+            &[(Code::TypeMismatch, "[Sine, 3]")],
+        ),
+        (
+            &[
+                "let a = [1bars, 2ms]",
+                "Clip c:\n    for e in a:\n        Note",
+            ],
             &[(Code::MixedFamilies, "[1bars, 2ms]")],
         ),
         (
@@ -1245,15 +1261,27 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
-            &["let g = [[1, 2], [3, \"s\"]]"],
+            &[
+                "let g = [[1, 2], [3, \"s\"]]",
+                "Clip c:\n    Note/(g[0][0])",
+            ],
             &[(Code::TypeMismatch, "[3, \"s\"]")],
         ),
         (
-            &["let a = [1, 2]", "let b = [\"s\", \"t\"]", "let c = [a, b]"],
+            &[
+                "let a = [1, 2]",
+                "let b = [\"s\", \"t\"]",
+                "let c = [a, b]",
+                "Clip k:\n    Note/(c[0][0])",
+            ],
             &[(Code::TypeMismatch, "[a, b]")],
         ),
         (
-            &["let a = [1, \"s\"]", "let b = [a, a]"],
+            &[
+                "let a = [1, \"s\"]",
+                "let b = [a, a]",
+                "Clip c:\n    Note/(b[0][0])",
+            ],
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
@@ -1288,7 +1316,10 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
-            &["let q = match true:\n    true: [1, \"s\"]\n    false: [1, 2]"],
+            &[
+                "let q = match true:\n    true: [1, \"s\"]\n    false: [1, 2]",
+                "Clip c:\n    for e in q:\n        Note",
+            ],
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (&["let a = [1, 2.5]"], &[]),
@@ -1389,7 +1420,10 @@ fn an_empty_array_has_length_zero_and_a_compile_time_index_into_it_is_outside() 
             &[],
         ),
         (
-            &["let a = [[60], [67, 71]]"],
+            &[
+                "let a = [[60], [67, 71]]",
+                "Clip c:\n    for e in a:\n        Note",
+            ],
             &[(Code::RaggedArray, "[[60], [67, 71]]")],
         ),
         (
@@ -1810,7 +1844,10 @@ fn a_plain_element_of_a_unit_literal_in_an_arm_is_read_in_the_unit_its_family_va
             ],
         ),
         (
-            &["let q = if true then [1bars, 2] else [3ms, 4]"],
+            &[
+                "let q = if true then [1bars, 2] else [3ms, 4]",
+                "Clip k:\n    for e in q:\n        Note",
+            ],
             &[(Code::MixedFamilies, "if true then [1bars, 2] else [3ms, 4]")],
         ),
         (
@@ -2146,9 +2183,12 @@ fn a_literals_family_value_reaches_every_attribute_a_read_of_it_reaches() {
             ],
             &[],
         ),
-        (&[A], &[(Code::PlainInFamily, "2")]),
         (
-            &[Q],
+            &[A, "Clip k:\n    for e in a:\n        Note"],
+            &[(Code::PlainInFamily, "2")],
+        ),
+        (
+            &[Q, "Clip k:\n    for e in q:\n        Note"],
             &[(Code::PlainInFamily, "2"), (Code::PlainInFamily, "4")],
         ),
     ];

@@ -190,6 +190,16 @@ impl Engine<'_> {
         let Some(sources) = self.bind_arguments(decl, args, loc, scope)? else {
             return Ok(Some(Val::Error));
         };
+        if self.in_name_probe(scope)? {
+            let mut pending = false;
+            for source in &sources {
+                if let ParamSource::Arg { expr, scope } = source {
+                    pending |= self.val(Query::Expr(*expr, *scope), need).is_none();
+                }
+            }
+            pending |= self.named_function(function, loc, scope, need)?.is_none();
+            return Ok((!pending).then_some(Val::Error));
+        }
         let recursive = self.is_recursive(function)?;
         if recursive && self.bounded_cycle(function)? {
             match self.call_reads_cell(function, &sources, need)? {
@@ -721,11 +731,14 @@ impl Engine<'_> {
                 names
             }
         };
-        let global = if self.hir.is_prelude_fn(function) {
+        let mut global = if self.hir.is_prelude_fn(function) {
             self.prelude_global
         } else {
             self.source_global
         };
+        if self.in_name_probe(caller)? {
+            global = self.names_global_of(global);
+        }
         let inside_recursion = self.template_of(caller)?.is_some();
         let chain = if recursive && inside_recursion {
             self.chain(caller)?
@@ -744,7 +757,18 @@ impl Engine<'_> {
         } else {
             self.nesting_of(caller)?
         };
-        self.scope_in(
+        let base = match self.template_of(caller)? {
+            Some(outer) if recursive && inside_recursion => {
+                self.memo.template_base.get(&outer).copied()
+            }
+            _ => None,
+        };
+        let base = match base {
+            Some(base) => base,
+            None if recursive => chain.depth(),
+            None => 0,
+        };
+        let created = self.scope_in(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Fn(function),
                 params,
@@ -755,7 +779,11 @@ impl Engine<'_> {
             Some(global),
             chain,
             template,
-        )
+        )?;
+        if recursive {
+            self.memo.template_base.insert(created, base);
+        }
+        Ok(created)
     }
 
     pub(in crate::semantics::analysis) fn bind_arguments(

@@ -11,6 +11,7 @@ use crate::semantics::analysis::attr_source::AttrSource;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::chain::Chain;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{InstanceId, ScopeId, UseId, WireId};
 use crate::semantics::analysis::index::index;
@@ -380,9 +381,23 @@ impl<'a> Engine<'a> {
                 }
             });
         }
+        let chain = self
+            .chain(caller)?
+            .push(site.loc, "in this use of the pattern");
+        self.pattern_locals(pattern, params, chain, false)
+    }
+
+    pub(in crate::semantics::analysis) fn pattern_locals(
+        &mut self,
+        pattern: PatternId,
+        params: Vec<ParamSource>,
+        chain: Chain,
+        names_only: bool,
+    ) -> Result<ScopeId, Internal> {
         let names = match self.memo.pattern_names.get(&pattern) {
             Some(names) => names.clone(),
             None => {
+                let decl = self.hir.pattern(pattern)?;
                 let mut names = BTreeMap::new();
                 for (position, param) in decl.params.iter().enumerate() {
                     if let Some(name) = &param.name {
@@ -401,14 +416,14 @@ impl<'a> Engine<'a> {
                 names
             }
         };
-        let global = if self.hir.is_prelude_pattern(pattern) {
+        let mut global = if self.hir.is_prelude_pattern(pattern) {
             self.prelude_global
         } else {
             self.source_global
         };
-        let chain = self
-            .chain(caller)?
-            .push(site.loc, "in this use of the pattern");
+        if names_only {
+            global = self.names_global_of(global);
+        }
         self.scope(
             ScopeKind::Locals(Locals {
                 owner: LocalsOwner::Pattern(pattern),

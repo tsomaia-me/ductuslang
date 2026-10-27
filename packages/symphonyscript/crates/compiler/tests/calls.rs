@@ -159,6 +159,110 @@ fn a_fault_draws_one_diagnostic_per_outermost_call_or_use() {
     assert_ne!(starts.first(), starts.last());
 }
 
+type Sites<'a> = &'a [(Code, &'a str, &'a str, usize)];
+
+#[test]
+fn a_fault_in_a_recursive_body_draws_one_diagnostic_per_outermost_call_or_use() {
+    let overflow = "2147483647i32 + 1i32";
+    let f = "fn f(n): if n < 1 then 2147483647i32 + 1i32 else f(n - 1)\n";
+    let pick = "fn pick(n): if n < 1 then [1, 2][5] else pick(n - 1)\n";
+    let g = "fn g(n): if n < 1 then 1 div 0.5 else g(n - 1)\n";
+    let fib = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
+    let rows: [(&[&str], Sites); 6] = [
+        (
+            &[
+                f,
+                pick,
+                "Clip c:\n    Note/(f(1))\n    Note/60\n    Note/(f(1))\n    Note/(f(2))\n    Note/(pick(1))\n    Note/(pick(1))\n",
+            ],
+            &[
+                (Code::ConstantOverflow, overflow, "f(1)", 0),
+                (Code::ConstantOverflow, overflow, "f(1)", 1),
+                (Code::ConstantOverflow, overflow, "f(2)", 0),
+                (Code::IndexOutOfRange, "5", "pick(1)", 0),
+                (Code::IndexOutOfRange, "5", "pick(1)", 1),
+            ],
+        ),
+        (
+            &[
+                f,
+                "pattern P():\n    Note/(f(1))\n",
+                "Clip c:\n    P\n    P\n",
+            ],
+            &[
+                (Code::ConstantOverflow, overflow, "P\n", 0),
+                (Code::ConstantOverflow, overflow, "P\n", 1),
+            ],
+        ),
+        (
+            &[
+                g,
+                "Clip c:\n    Note/(g(1))\n    Note/(g(1))\n    Note/(g(2))\n",
+            ],
+            &[
+                (Code::OperandType, "1 div 0.5", "g(1)", 0),
+                (Code::OperandType, "1 div 0.5", "g(1)", 1),
+                (Code::OperandType, "1 div 0.5", "g(2)", 0),
+            ],
+        ),
+        (
+            &[f, "Clip c:\n    Note/(f(1))\n    Note/60\n"],
+            &[(Code::ConstantOverflow, overflow, "f(1)", 0)],
+        ),
+        (
+            &[
+                fib,
+                "Clip c:\n    Note/(fib(10))\n    Note/(fib(10))\n    Note/(fib(12))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn loud(n): n * 2\n",
+                "Clip c:\n    Note/(loud(2000000000))\n    Note/(loud(2000000000))\n",
+            ],
+            &[
+                (Code::DoesNotFit, "n * 2", "loud(2000000000)", 0),
+                (Code::DoesNotFit, "n * 2", "loud(2000000000)", 1),
+            ],
+        ),
+    ];
+    for (items, sites) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let mut expected: Vec<(Code, String, Option<u32>)> = sites
+                .iter()
+                .map(|(code, fault, site, occurrence)| {
+                    (
+                        *code,
+                        fault.to_string(),
+                        Some(support::at(&text, site, *occurrence).0),
+                    )
+                })
+                .collect();
+            expected.sort();
+            let mut found: Vec<(Code, String, Option<u32>)> = support::checked(&text)
+                .iter()
+                .map(|diagnostic| {
+                    let range = &diagnostic.span.range;
+                    (
+                        diagnostic.code,
+                        text.get(range.start as usize..range.end as usize)
+                            .unwrap_or_default()
+                            .to_string(),
+                        diagnostic
+                            .related
+                            .last()
+                            .map(|related| related.span.range.start),
+                    )
+                })
+                .collect();
+            found.sort();
+            assert_eq!(found, expected, "{text}");
+        }
+    }
+}
+
 type Labels<'a> = &'a [(&'a str, &'a str)];
 
 type Recursion<'a> = (&'a [&'a str], &'a str, &'a [&'a str], &'a str, Labels<'a>);

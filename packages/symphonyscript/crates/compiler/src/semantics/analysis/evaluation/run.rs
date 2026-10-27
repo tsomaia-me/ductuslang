@@ -357,6 +357,7 @@ impl Engine<'_> {
             Op::Bare(name) => match own {
                 EvalTy::Enum(id) => match self.variants.position(id, &name)? {
                     Some(index) => CVal::Enum(id, index),
+                    None if self.in_name_probe(self.node(node)?.scope)? => CVal::Error,
                     None => {
                         let enum_name = self.enum_decl(id)?.name.clone();
                         self.error_at_node(

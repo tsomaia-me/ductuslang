@@ -6,6 +6,8 @@ A condition chooses between two ways, so it is true or false.
 
 ```sym-error
 let a = if 1 then 2 else 3
+Clip c:
+    Note/a
 ```
 
 The condition is a number.

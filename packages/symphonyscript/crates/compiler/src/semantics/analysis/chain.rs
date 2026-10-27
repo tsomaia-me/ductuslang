@@ -52,6 +52,22 @@ impl Chain {
         depth
     }
 
+    pub fn rebase(&self, keep: usize, base: &Chain) -> Chain {
+        let mut links = Vec::new();
+        let mut current = self.0.as_ref();
+        while let Some(link) = current {
+            if links.len() == keep {
+                break;
+            }
+            links.push((link.loc, link.label));
+            current = link.rest.0.as_ref();
+        }
+        links
+            .into_iter()
+            .rev()
+            .fold(base.clone(), |chain, (loc, label)| chain.push(loc, label))
+    }
+
     pub fn labelled(&self) -> Vec<(Loc, String)> {
         let mut links = Vec::new();
         let mut current = self.0.as_ref();

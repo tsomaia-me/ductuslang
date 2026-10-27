@@ -64,9 +64,17 @@ impl Engine<'_> {
                     return Ok(match namespace.get(name) {
                         Some(Decl::Input(input)) => Found::Query(Query::Input(input)),
                         Some(Decl::State(state)) => Found::Query(Query::State(state)),
-                        Some(Decl::Let(id)) => {
-                            let global = self.global_of_let(id);
-                            Found::Query(Query::Let(global, LetRef::Top(id)))
+                        Some(Decl::Let(declared)) => {
+                            let mut global = self.global_of_let(declared);
+                            if (id == self.names_global || id == self.prelude_names_global)
+                                && !self
+                                    .memo
+                                    .lets
+                                    .contains_key(&(global, LetRef::Top(declared)))
+                            {
+                                global = self.names_global_of(global);
+                            }
+                            Found::Query(Query::Let(global, LetRef::Top(declared)))
                         }
                         Some(Decl::Instance(placement)) => match self.top_instances.get(&placement)
                         {
@@ -160,6 +168,9 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
     ) -> Result<(), Internal> {
+        if self.in_name_probe(scope)? {
+            return Ok(());
+        }
         let message = self.unplaced_message(name)?;
         self.error(Code::UnknownName, loc, scope, message)
     }

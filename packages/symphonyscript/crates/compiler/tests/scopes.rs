@@ -484,3 +484,105 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         }
     }
 }
+
+#[test]
+fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors() {
+    let clip = "Clip c:\n    Note\n";
+    let value = (Code::NotAValue, "sin");
+    let attribute = (Code::UnknownAttribute, "nothing");
+    let name = (Code::UnknownName, "nothing");
+    let rows: &[support::Row] = &[
+        (&["let u = sin\n"], &[value]),
+        (&["let u = c.nothing\n", clip], &[attribute]),
+        (&["let u = nothing\n"], &[name]),
+        (&["let u = 1 div 0.5\n"], &[]),
+        (&["let u = [1, 2][5]\n"], &[]),
+        (&["fn f(x): sin + x\n", "let u = f(1)\n"], &[value]),
+        (
+            &["fn f(x): c.nothing\n", "let u = f(1)\n", clip],
+            &[attribute],
+        ),
+        (&["fn f(x): nothing + x\n", "let u = f(1)\n"], &[name]),
+        (&["fn f(x): x div 0.5\n", "let u = f(1)\n"], &[]),
+        (
+            &[
+                "fn f(n): if n < 1 then sin else f(n - 1)\n",
+                "let u = f(1)\n",
+            ],
+            &[value],
+        ),
+        (
+            &[
+                "fn g(n): if n < 1 then c.nothing else g(n - 1)\n",
+                "let u = g(1)\n",
+                clip,
+            ],
+            &[attribute],
+        ),
+        (
+            &[
+                "fn g(n): if n < 1 then nothing else g(n - 1)\n",
+                "let u = g(1)\n",
+            ],
+            &[name],
+        ),
+        (
+            &[
+                "fn g(n): if n < 1 then 1 div 0.5 else g(n - 1)\n",
+                "let u = g(1)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn g(n): if n < 1 then [1, 2][5] else g(n - 1)\n",
+                "let u = g(1)\n",
+            ],
+            &[],
+        ),
+        (&["fn f(x): sin + x\n"], &[value]),
+        (&["fn f(x): c.nothing\n", clip], &[attribute]),
+        (&["fn f(x): nothing\n"], &[name]),
+        (&["fn f(x): x div 0.5\n"], &[]),
+        (&["pattern P():\n    Note/(sin)\n"], &[value]),
+        (
+            &["pattern P():\n    Note | velocity=c.nothing\n", clip],
+            &[attribute],
+        ),
+        (&["pattern P():\n    Note/(nothing)\n"], &[name]),
+        (&["pattern P():\n    Note/(1 div 0.5)\n"], &[]),
+        (
+            &["let u = 1 div 0.5\n", "Clip c:\n    Note/u\n"],
+            &[(Code::OperandType, "1 div 0.5")],
+        ),
+        (
+            &["let u = [1, 2][5]\n", "Clip c:\n    Note/u\n"],
+            &[(Code::IndexOutOfRange, "5")],
+        ),
+        (
+            &[
+                "fn f(x): x div 0.5\n",
+                "let u = f(1)\n",
+                "Clip c:\n    Note/u\n",
+            ],
+            &[(Code::OperandType, "x div 0.5")],
+        ),
+        (
+            &[
+                "fn g(n): if n < 1 then 1 div 0.5 else g(n - 1)\n",
+                "let u = g(1)\n",
+                "Clip c:\n    Note/u\n",
+            ],
+            &[(Code::OperandType, "1 div 0.5")],
+        ),
+        (
+            &[
+                "fn g(n): if n < 1 then [1, 2][5] else g(n - 1)\n",
+                "let u = g(1)\n",
+                "Clip c:\n    Note/u\n",
+            ],
+            &[(Code::IndexOutOfRange, "5")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}

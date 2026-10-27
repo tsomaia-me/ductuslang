@@ -6,6 +6,8 @@ It counts elements.
 
 ```sym-error
 let a = [1, 2][true]
+Clip c:
+    Note/a
 ```
 
 The index is a `bool`.

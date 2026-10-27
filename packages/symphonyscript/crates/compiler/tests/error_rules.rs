@@ -218,7 +218,7 @@ const RULES: &[Rule] = &[
         "3.2",
         "Elements may themselves be arrays of equal length",
         "ragged-array",
-        "let a = [1, [2]]\n",
+        "let a = [1, [2]]\nClip c:\n    Note/a\n",
     ),
     rule(
         "3.2",
@@ -494,19 +494,19 @@ const RULES: &[Rule] = &[
         "5.2",
         "`div` takes integers",
         "operand-type",
-        "let a = 1 div 0.5\n",
+        "let a = 1 div 0.5\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.3",
         "`and`, `or` and `not` take and yield `bool`.",
         "operand-type",
-        "let a = 1 and true\n",
+        "let a = 1 and true\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.4",
         "The condition is a `bool`.",
         "condition-type",
-        "let a = if 1 then 2 else 3\n",
+        "let a = if 1 then 2 else 3\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.4",
@@ -518,7 +518,7 @@ const RULES: &[Rule] = &[
         "5.4",
         "A scrutinee of another type is an error.",
         "match-scrutinee",
-        "let l = match 1.5:\n    1: 2\n    else: 1\n",
+        "let l = match 1.5:\n    1: 2\n    else: 1\nClip c:\n    Note/l\n",
     ),
     rule(
         "5.4",
@@ -572,13 +572,13 @@ const RULES: &[Rule] = &[
         "5.5",
         "The index is an integer of either width",
         "index-type",
-        "let a = [1, 2][true]\n",
+        "let a = [1, 2][true]\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.5",
         "`a[i]` reads element `i`, counting from 0.",
         "not-an-array",
-        "let a = 1[0]\n",
+        "let a = 1[0]\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.5",
@@ -590,7 +590,7 @@ const RULES: &[Rule] = &[
         "5.5",
         "Every other operator takes scalars only, and `+` of an array and a scalar is an error.",
         "array-operand",
-        "let a = [1, 2] + 3\n",
+        "let a = [1, 2] + 3\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.6",
@@ -626,13 +626,13 @@ const RULES: &[Rule] = &[
         "5.7",
         "Built-ins and native functions take positional arguments only.",
         "named-builtin-arguments",
-        "let a = sin(x=1)\n",
+        "let a = sin(x=1)\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.7",
         "`lerp(a, b, t)`",
         "argument-count",
-        "let a = lerp(1, 2)\n",
+        "let a = lerp(1, 2)\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.8",
@@ -644,13 +644,13 @@ const RULES: &[Rule] = &[
         "5.8",
         "Converting a `bool` or an enum value is an error.",
         "conversion-type",
-        "let a = f32(true)\n",
+        "let a = f32(true)\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.8",
         "Converting a `bool` or an enum value is an error.",
         "conversion-type",
-        "let a = f32(Wave::Saw)\n",
+        "let a = f32(Wave::Saw)\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.9",
@@ -752,7 +752,7 @@ const RULES: &[Rule] = &[
         "6.3",
         "A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.",
         "argument-count",
-        "fn f(x): x\nlet a = f(1, 2)\n",
+        "fn f(x): x\nlet a = f(1, 2)\nClip c:\n    Note/a\n",
     ),
     rule(
         "6.3",
@@ -764,7 +764,7 @@ const RULES: &[Rule] = &[
         "6.3",
         "A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.",
         "duplicate-argument",
-        "fn f(x): x\nlet a = f(x=1, x=2)\n",
+        "fn f(x): x\nlet a = f(x=1, x=2)\nClip c:\n    Note/a\n",
     ),
     rule(
         "6.3",
@@ -974,7 +974,7 @@ const RULES: &[Rule] = &[
         "5.7",
         "Built-ins and native functions take positional arguments only.",
         "named-builtin-arguments",
-        "let a = checksum(text=\"x\")\n",
+        "let a = checksum(text=\"x\")\nClip c:\n    Note/a\n",
     ),
     rule(
         "6.3",

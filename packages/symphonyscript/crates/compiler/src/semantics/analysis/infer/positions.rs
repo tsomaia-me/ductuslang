@@ -32,10 +32,7 @@ impl Engine<'_> {
                         positions.push(position);
                     }
                 }
-                Top::Let(id) => {
-                    let global = self.source_global;
-                    self.demand(Query::Let(global, LetRef::Top(id)))?;
-                }
+                Top::Let(id) => self.name_let(id)?,
                 Top::State(id) => self.demand(Query::State(id))?,
                 Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
             }

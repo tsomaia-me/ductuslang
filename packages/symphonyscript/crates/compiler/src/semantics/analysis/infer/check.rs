@@ -73,6 +73,7 @@ impl Engine<'_> {
                 }
                 if let (Some(Scalar::Enum(id)), Op::Bare(name)) = (expected, &self.node(node)?.op)
                     && self.variants.position(id, name)?.is_none()
+                    && !self.in_name_probe(self.node(node)?.scope)?
                 {
                     let message = format!(
                         "`{name}` is not a variant of `{}`",

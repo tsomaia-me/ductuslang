@@ -6,6 +6,8 @@ Their parameters have no names in the source.
 
 ```sym-error
 let a = sin(x=1)
+Clip c:
+    Note/a
 ```
 
 The argument of `sin` is named.

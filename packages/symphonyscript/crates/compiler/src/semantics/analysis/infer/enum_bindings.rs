@@ -192,6 +192,9 @@ impl Engine<'_> {
             let Op::Use(inner) = node.op else {
                 continue;
             };
+            if self.in_name_probe(node.scope)? {
+                continue;
+            }
             let target = self.through_uses(inner)?;
             if !self.is_bare_value(target)? {
                 continue;
@@ -408,7 +411,9 @@ impl Engine<'_> {
                     let Op::Bare(name) = &self.node(bare)?.op else {
                         continue;
                     };
-                    if self.variants.position(id, name)?.is_none() {
+                    if self.variants.position(id, name)?.is_none()
+                        && !self.in_name_probe(self.node(bare)?.scope)?
+                    {
                         let message = format!(
                             "`{name}` is not a variant of `{}`",
                             self.enum_decl(id)?.name

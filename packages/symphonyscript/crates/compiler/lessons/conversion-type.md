@@ -6,6 +6,8 @@ A `bool` or a variant has no number to convert.
 
 ```sym-error
 let a = f32(true)
+Clip c:
+    Note/a
 ```
 
 `true` is a `bool`.

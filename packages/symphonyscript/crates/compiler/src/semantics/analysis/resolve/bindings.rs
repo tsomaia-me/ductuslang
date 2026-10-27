@@ -1098,6 +1098,9 @@ impl Engine<'_> {
     ) -> Result<BoundVal, Internal> {
         let (kind, annotation, name, loc, scope) =
             (spec.kind, spec.annotation, spec.name, spec.loc, spec.scope);
+        if sigs.iter().any(|sig| sig.reactive) && self.in_name_probe(scope)? {
+            return Ok(BoundVal::Error);
+        }
         if let Some(annotation) = annotation
             && annotation.lengths != val.shape().lengths()
             && !matches!(val, Val::Error)

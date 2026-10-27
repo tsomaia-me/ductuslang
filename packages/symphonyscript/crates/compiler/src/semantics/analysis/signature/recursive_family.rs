@@ -31,8 +31,49 @@ impl Engine<'_> {
                 .map(|arg| self.family_shape(arg.as_ref()))
                 .collect::<Result<_, _>>()?,
         };
+        let sig = self.family_sig(node, &key, need)?;
+        self.link_family(node, &key)?;
+        Ok(sig)
+    }
+
+    fn link_family(&mut self, node: NodeId, key: &FamilyKey) -> Result<(), Internal> {
+        let Some(scopes) = self.memo.family_scopes.get(key).cloned() else {
+            return Ok(());
+        };
+        let scope = self.node(node)?.scope;
+        if self.in_probe(scope)? {
+            return Ok(());
+        }
+        let caller = self.template_of(scope)?;
+        for settled in scopes {
+            match caller {
+                Some(template) if template == settled => {}
+                Some(template) => {
+                    let parents = self.memo.template_parents.entry(settled).or_default();
+                    if !parents.contains(&template) {
+                        parents.push(template);
+                    }
+                }
+                None => self
+                    .memo
+                    .template_sites
+                    .entry(settled)
+                    .or_default()
+                    .push(node),
+            }
+        }
+        Ok(())
+    }
+
+    fn family_sig(
+        &mut self,
+        node: NodeId,
+        key: &FamilyKey,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Sig>, Internal> {
+        let function = key.function;
         loop {
-            match self.memo.rec_families.get(&key).copied() {
+            match self.memo.rec_families.get(key).copied() {
                 None => {
                     let scope = self.instantiate(function, &key.args, node)?;
                     self.memo.probes.insert(scope);
@@ -46,7 +87,7 @@ impl Engine<'_> {
                         return Ok(Some(Sig::open(false)));
                     }
                     let Some(root) = some!(self.template_root(function, scope, need)?) else {
-                        self.memo.probing_families.remove(&key);
+                        self.memo.probing_families.remove(key);
                         self.memo
                             .rec_families
                             .insert(key.clone(), RecFamily::Known(Kind::Any, None));
@@ -55,14 +96,19 @@ impl Engine<'_> {
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
                         return Ok(self.pending(root, Sig::open(false), need));
                     };
-                    self.memo.probing_families.remove(&key);
+                    self.memo.probing_families.remove(key);
                     if sig.open && !sig.is_error() && !self.memo.probing_families.is_empty() {
-                        self.memo.rec_families.remove(&key);
+                        self.memo.rec_families.remove(key);
                         return Ok(Some(Sig::open(false)));
                     }
                     let family = if sig.open { None } else { sig.family };
                     let kind = if sig.is_error() { Kind::Any } else { sig.kind };
                     let settled = self.instantiate(function, &key.args, node)?;
+                    self.memo
+                        .family_scopes
+                        .entry(key.clone())
+                        .or_default()
+                        .push(settled);
                     self.memo.rec_families.insert(
                         key.clone(),
                         RecFamily::Settling {
@@ -94,6 +140,11 @@ impl Engine<'_> {
                         RecFamily::Failed
                     } else if rises(kind, sig.kind) && (sig.open || sig.family == family) {
                         let settled = self.instantiate(function, &key.args, node)?;
+                        self.memo
+                            .family_scopes
+                            .entry(key.clone())
+                            .or_default()
+                            .push(settled);
                         RecFamily::Settling {
                             kind: sig.kind,
                             family,

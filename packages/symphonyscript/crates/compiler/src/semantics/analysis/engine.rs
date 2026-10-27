@@ -37,6 +37,17 @@ use crate::semantics::reporting::{Report, grouped};
 
 const ID_SPACE: u64 = 1 << 32;
 
+const NAME_CODES: [Code; 8] = [
+    Code::UnknownName,
+    Code::NotAValue,
+    Code::NotCallable,
+    Code::UnknownAttribute,
+    Code::UnknownParameter,
+    Code::UnknownVariant,
+    Code::UnknownType,
+    Code::HistoryTarget,
+];
+
 pub(crate) struct Engine<'a> {
     pub hir: &'a Hir,
     pub vocabulary: &'a Vocabulary,
@@ -59,6 +70,8 @@ pub(crate) struct Engine<'a> {
     pub top_level: Vec<InstanceId>,
     pub source_global: ScopeId,
     pub prelude_global: ScopeId,
+    pub names_global: ScopeId,
+    pub prelude_names_global: ScopeId,
     pub memo: Memo,
     pub prebuilt: FastMap<(Site, ScopeId), ItemRef>,
     pub counters: FastMap<(PathParent, &'a str), u32>,
@@ -79,6 +92,8 @@ pub(crate) struct Engine<'a> {
     pub machines: FastMap<super::call_key::CallKey, super::evaluation::Machine>,
     pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
     pub frame_pushed: bool,
+    pub fault_frame: Option<usize>,
+    pub fault_count: u32,
     pub call_count: u64,
     pub inlined: u64,
     pub evaluated_bodies: FastSet<FnId>,
@@ -126,6 +141,8 @@ impl<'a> Engine<'a> {
             top_level: Vec::new(),
             source_global: ScopeId(0),
             prelude_global: ScopeId(1),
+            names_global: ScopeId(2),
+            prelude_names_global: ScopeId(3),
             memo: Memo::default(),
             prebuilt: FastMap::default(),
             counters: FastMap::default(),
@@ -146,6 +163,8 @@ impl<'a> Engine<'a> {
             machines: FastMap::default(),
             frame_need: Vec::new(),
             frame_pushed: false,
+            fault_frame: None,
+            fault_count: 0,
             call_count: 0,
             inlined: 0,
             evaluated_bodies: FastSet::default(),
@@ -174,6 +193,20 @@ impl<'a> Engine<'a> {
             Chain::default(),
             None,
         );
+        for prelude in [false, true] {
+            let id = ScopeId(index(engine.scopes.len()));
+            engine.push_scope(
+                ScopeKind::Global { prelude },
+                None,
+                Chain::default(),
+                Some(id),
+            );
+            if prelude {
+                engine.prelude_names_global = id;
+            } else {
+                engine.names_global = id;
+            }
+        }
         engine
     }
 
@@ -194,7 +227,11 @@ impl<'a> Engine<'a> {
         }
         self.infer()?;
         self.inferred = true;
-        self.check_program()
+        self.check_program()?;
+        if self.stop.is_some() {
+            return Ok(());
+        }
+        self.unexpanded_names(false)
     }
 
     pub(in crate::semantics::analysis) fn stop(
@@ -629,7 +666,7 @@ impl<'a> Engine<'a> {
         scope: ScopeId,
         message: impl Into<String>,
     ) -> Result<(), Internal> {
-        if self.in_probe(scope)? {
+        if self.suppressed(code, scope)? {
             return Ok(());
         }
         self.error_with_chain(code, loc, Vec::new(), scope, message)
@@ -643,7 +680,7 @@ impl<'a> Engine<'a> {
         message: String,
         help: String,
     ) -> Result<(), Internal> {
-        if self.in_probe(scope)? {
+        if self.suppressed(code, scope)? {
             return Ok(());
         }
         self.error_with_chain(code, loc, Vec::new(), scope, message)?;
@@ -654,9 +691,34 @@ impl<'a> Engine<'a> {
     }
 
     pub(super) fn in_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
+        Ok(self.in_trial(scope)? || self.in_name_probe(scope)?)
+    }
+
+    pub(super) fn in_trial(&self, scope: ScopeId) -> Result<bool, Internal> {
         Ok(self
             .template_of(scope)?
             .is_some_and(|template| self.memo.probes.contains(&template)))
+    }
+
+    pub(super) fn in_name_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
+        Ok(self.template_of(scope)?.is_some_and(|template| {
+            template == self.names_global || template == self.prelude_names_global
+        }))
+    }
+
+    pub(super) fn names_global_of(&self, global: ScopeId) -> ScopeId {
+        if global == self.prelude_global {
+            self.prelude_names_global
+        } else {
+            self.names_global
+        }
+    }
+
+    fn suppressed(&self, code: Code, scope: ScopeId) -> Result<bool, Internal> {
+        if self.in_name_probe(scope)? && !self.in_trial(scope)? {
+            return Ok(!NAME_CODES.contains(&code));
+        }
+        self.in_trial(scope)
     }
 
     pub fn error_with_chain(
@@ -669,7 +731,40 @@ impl<'a> Engine<'a> {
     ) -> Result<(), Internal> {
         let chain = self.chain(scope)?;
         self.defer(code, loc, before, chain, message);
+        let (fault, template) = self.origin(scope)?;
+        if let Some(deferred) = self.deferred.last_mut() {
+            deferred.fault = fault;
+            deferred.template = template;
+        }
         Ok(())
+    }
+
+    fn origin(&mut self, scope: ScopeId) -> Result<(Option<u32>, Option<ScopeId>), Internal> {
+        let Some(template) = self.template_of(scope)? else {
+            return Ok((None, None));
+        };
+        if self.in_probe(scope)? {
+            return Ok((None, None));
+        }
+        let root = match (self.fault_frame, self.active.as_ref()) {
+            (Some(frame), Some(machine)) => machine.frames.get(frame).map(|record| record.root),
+            _ => None,
+        };
+        let Some(root) = root else {
+            return Ok((None, Some(template)));
+        };
+        if self.template_of(self.node(root)?.scope)? != Some(template) {
+            return Ok((None, Some(template)));
+        }
+        let fault = self.fault_count;
+        self.fault_count += 1;
+        if let Some(record) = self.active.as_mut().and_then(|machine| {
+            self.fault_frame
+                .and_then(|frame| machine.frames.get_mut(frame))
+        }) {
+            record.faults.insert(fault);
+        }
+        Ok((Some(fault), Some(template)))
     }
 
     pub fn defer(
@@ -689,7 +784,63 @@ impl<'a> Engine<'a> {
             help: None,
             unless_untyped: Vec::new(),
             unless_values: Vec::new(),
+            fault: None,
+            template: None,
         });
+    }
+
+    fn attributed_chains(&self, deferred: &super::deferred::Deferred) -> Vec<Chain> {
+        let unchanged = || vec![deferred.chain.clone()];
+        let Some(template) = deferred.template else {
+            return unchanged();
+        };
+        let sites = match deferred.fault {
+            Some(fault) => self
+                .memo
+                .fault_sites
+                .get(&fault)
+                .cloned()
+                .unwrap_or_default(),
+            None => self.template_sites(template),
+        };
+        let Some(base) = self.memo.template_base.get(&template) else {
+            return unchanged();
+        };
+        let inner = deferred.chain.depth().saturating_sub(*base);
+        let chains: Vec<Chain> = sites
+            .iter()
+            .filter_map(|site| {
+                let node = self.nodes.get(site.index())?;
+                let scope = self.scopes.get(node.scope.index())?;
+                Some(
+                    deferred
+                        .chain
+                        .rebase(inner, &scope.chain.push(node.loc, "in this call")),
+                )
+            })
+            .collect();
+        if chains.is_empty() {
+            return unchanged();
+        }
+        chains
+    }
+
+    fn template_sites(&self, template: ScopeId) -> Vec<NodeId> {
+        let mut sites = Vec::new();
+        let mut seen = super::fast_hash::FastSet::default();
+        let mut pending = vec![template];
+        while let Some(current) = pending.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            if let Some(direct) = self.memo.template_sites.get(&current) {
+                sites.extend(direct.iter().copied());
+            }
+            if let Some(parents) = self.memo.template_parents.get(&current) {
+                pending.extend(parents.iter().copied());
+            }
+        }
+        sites
     }
 
     pub fn flush_diagnostics(&mut self) {
@@ -717,32 +868,34 @@ impl<'a> Engine<'a> {
             {
                 continue;
             }
-            let depth = deferred.chain.depth();
-            for path in deferred.chain.outermost_paths() {
-                let key = Merged {
-                    code: deferred.code,
-                    loc: deferred.loc,
-                    before: deferred.before.clone(),
-                    message: deferred.message.clone(),
-                    outermost: path.last().map(|(loc, _)| *loc),
-                };
-                let mut related = deferred.before.clone();
-                related.extend(path);
-                match merged.get(&key).and_then(|index| chosen.get_mut(*index)) {
-                    Some(earlier) if earlier.4 < depth => {
-                        earlier.2 = related;
-                        earlier.4 = depth;
-                    }
-                    Some(_) => {}
-                    None => {
-                        merged.insert(key, chosen.len());
-                        chosen.push((
-                            deferred.code,
-                            deferred.loc,
-                            related,
-                            (deferred.message.clone(), deferred.help.clone()),
-                            depth,
-                        ));
+            for chain in self.attributed_chains(&deferred) {
+                let depth = chain.depth();
+                for path in chain.outermost_paths() {
+                    let key = Merged {
+                        code: deferred.code,
+                        loc: deferred.loc,
+                        before: deferred.before.clone(),
+                        message: deferred.message.clone(),
+                        outermost: path.last().map(|(loc, _)| *loc),
+                    };
+                    let mut related = deferred.before.clone();
+                    related.extend(path);
+                    match merged.get(&key).and_then(|index| chosen.get_mut(*index)) {
+                        Some(earlier) if earlier.4 < depth => {
+                            earlier.2 = related;
+                            earlier.4 = depth;
+                        }
+                        Some(_) => {}
+                        None => {
+                            merged.insert(key, chosen.len());
+                            chosen.push((
+                                deferred.code,
+                                deferred.loc,
+                                related,
+                                (deferred.message.clone(), deferred.help.clone()),
+                                depth,
+                            ));
+                        }
                     }
                 }
             }
@@ -773,12 +926,13 @@ impl<'a> Engine<'a> {
             let record = self.node(node)?;
             (record.loc, record.scope)
         };
-        if self.in_probe(scope)? {
+        if self.suppressed(code, scope)? {
             return Ok(());
         }
         let unless_untyped = self.untypable_reads(node)?;
         let unless_values = self.untypable_values(node)?;
         let chain = self.chain(scope)?;
+        let (fault, template) = self.origin(scope)?;
         self.deferred.push(super::deferred::Deferred {
             code,
             loc,
@@ -788,6 +942,8 @@ impl<'a> Engine<'a> {
             help: None,
             unless_untyped,
             unless_values,
+            fault,
+            template,
         });
         Ok(())
     }
@@ -804,12 +960,13 @@ impl<'a> Engine<'a> {
             let record = self.node(node)?;
             (record.loc, record.scope)
         };
-        if self.in_probe(scope)? {
+        if self.suppressed(code, scope)? {
             return Ok(());
         }
         let unless_untyped = self.untypable_reads(node)?;
         let unless_values = self.untypable_values(node)?;
         let chain = self.chain(scope)?;
+        let (fault, template) = self.origin(scope)?;
         self.deferred.push(super::deferred::Deferred {
             code,
             loc,
@@ -819,6 +976,8 @@ impl<'a> Engine<'a> {
             help: Some(help),
             unless_untyped,
             unless_values,
+            fault,
+            template,
         });
         Ok(())
     }
@@ -831,10 +990,11 @@ impl<'a> Engine<'a> {
         message: impl Into<String>,
         unless_values: Vec<NodeId>,
     ) -> Result<(), Internal> {
-        if self.in_probe(scope)? {
+        if self.suppressed(code, scope)? {
             return Ok(());
         }
         let chain = self.chain(scope)?;
+        let (fault, template) = self.origin(scope)?;
         self.deferred.push(super::deferred::Deferred {
             code,
             loc,
@@ -844,6 +1004,8 @@ impl<'a> Engine<'a> {
             help: None,
             unless_untyped: Vec::new(),
             unless_values,
+            fault,
+            template,
         });
         Ok(())
     }
@@ -955,6 +1117,13 @@ impl<'a> Engine<'a> {
             .ok_or(Internal::missed("cycle declaration"))?;
         names.push(first);
         let &loc = locs.first().ok_or(Internal::missed("cycle declaration"))?;
+        let reported = path.iter().any(|query| {
+            matches!(query, Query::Let(scope, LetRef::Top(id))
+                if *scope == self.source_global && self.memo.cyclic_lets.contains(id))
+        });
+        if reported {
+            return Ok(());
+        }
         let message = format!("these declarations reach themselves: {}", names.join(" → "));
         let related: Vec<(Loc, String)> = locs
             .get(1..)
@@ -1022,6 +1191,11 @@ impl<'a> Engine<'a> {
         match query {
             Query::Let(scope, local) => {
                 memo.lets.insert((scope, local), BoundVal::Error);
+                if let LetRef::Top(id) = local
+                    && scope == self.names_global
+                {
+                    memo.cyclic_lets.insert(id);
+                }
             }
             Query::Param(scope, index) => {
                 memo.params.insert((scope, index), BoundVal::Error);
