@@ -804,7 +804,8 @@ Param    ::= Name (':' Type)? ('=' Expr)?
 A function computes one value from its parameters.
 
 - A body is one expression, or local `let`s followed by one expression or `match`, the local `let`s visible throughout the body. Two parameters or two local `let`s with one name, or a local `let` named like a parameter, are an error.
-- A call to a non-recursive function evaluates the body in the function's own scope, with each parameter bound to its argument, and the argument evaluated in the caller's scope. The compiler inlines the call and checks the result in place. A parameter is typed as a `let` holding its argument would be: bound to a compile-time argument it is a compile-time value, flexible when the argument is (§4.1), and bound to an argument that reads cells it is typed as a reactive `let` is (§4.4), each use reading it in the use's type. A function never appears in the Program.
+- A call to a non-recursive function evaluates the body in the function's own scope, with each parameter bound to its argument, and the argument evaluated in the caller's scope. The compiler checks the result in place, as the body inlined at the call. A parameter is typed as a `let` holding its argument would be: bound to a compile-time argument it is a compile-time value, flexible when the argument is (§4.1), and bound to an argument that reads cells it is typed as a reactive `let` is (§4.4), each use reading it in the use's type.
+- Whether a call to a non-recursive function is inlined at its use or invokes the function's body stored once in the Program as a shared body (§11) is the compiler's choice by cost, and changes no value. A call whose arguments are all compile-time values is evaluated by the compiler either way.
 - A parameter's annotation fixes its type (§4.5): a compile-time argument fits it and a reactive one is read in it, as an input is read at a use (§4.4). A parameter annotated with a node kind is an error (§3.5). A result annotation is the body's expected type (§4.2). A local `let`'s annotation is its initializer's expected type.
 - A call whose arguments read cells yields a reactive value.
 - A parameter with a default follows every parameter without one, and its default may read earlier parameters. A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default. A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.
@@ -1637,11 +1638,12 @@ Compilation produces a Program. It contains:
 - every record type an input, a cell or an attribute holds, with its fields, and every compile-time document (§3.11);
 - every input: its name, type, unit family and initial value, in top-level order, a pattern's inputs at their use's position (§6.4);
 - every reactive cell that something reads, in dependency order;
+- every function body the compiler stores once, a shared body (§6.3), with the cells that invoke it through call nodes carrying their arguments;
 - the top-level instances in top-level order (§2.1).
 
 An item's gate combines its own `when` with the conditions of the `when` block arms around it (§9.3). Instances are listed in preorder: each top-level instance in top-level order, each followed by the children and bundle members of its sequence in sequence order, each of those followed in turn by its own. Wires are listed in the order that walk meets them.
 
-Every attribute of every instance and wire is present, with vocabulary defaults filled in. Values are in their family's base unit. Functions and patterns are expanded, and no other source construct remains.
+Every attribute of every instance and wire is present, with vocabulary defaults filled in. Values are in their family's base unit. Patterns are expanded, a function is inlined or stored once as a shared body, and no other source construct remains.
 
 ### 11.1 Paths
 
@@ -1711,7 +1713,7 @@ rand = (z >> 40) / 2^24
 
 ### 12.6 Memory
 
-A Program needs a fixed amount of memory, known when it compiles. Loading it allocates every buffer the runtime uses, and nothing allocates while it runs: variable arrays, joins, slices, strings and histories hold their capacities (§3.3, §3.7, §6.6), a string 4 bytes per character. The compiler reports the memory in bytes, and a program whose memory exceeds the memory limit, 1,073,741,824 bytes by default (§4.6), is an error.
+A Program needs a fixed amount of memory, known when it compiles. Loading it allocates every buffer the runtime uses, and nothing allocates while it runs: variable arrays, joins, slices, strings and histories hold their capacities (§3.3, §3.7, §6.6), a string 4 bytes per character. A shared body's buffers are allocated at load as every other buffer is, one set per shared body, sized for its deepest invocation (§11). The compiler reports the memory in bytes, and a program whose memory exceeds the memory limit, 1,073,741,824 bytes by default (§4.6), is an error.
 
 ## 13. Reload
 
@@ -1758,7 +1760,7 @@ SymphonyScript has none of the following:
 - **Mutation and unbounded loops.** Bindings never change, and a state changes only by taking a step (§6.6). The loops are the placement `for`, which runs at compile time (§7.9), and the `for` expression, which runs at most as often as its iterable allows (§5.10); patterns do not recurse (§6.4), and a function never recurses at runtime (§6.3).
 - **Varying structure.** Gates vary activation (§9), and destinations vary among fixed candidates (§8.2). A different structure is a different Program, loaded by reload (§13).
 - **Node references held at runtime** (§3.5).
-- **Closures.** No function exists at runtime; a lambda is inlined (§6.7).
+- **Closures.** No function is a value at runtime. A function's body is inlined or stored once as a shared body (§11), and a lambda is inlined or evaluated by the native function or the shared body that receives it (§6.7, §10.1); nothing passes or holds a function while the Program runs.
 - **Modules.** There are no imports, exports or visibility levels; one namespace spans the project (§6.5).
 - **Metadata attributes.** No construct attaches metadata to a declaration.
 - **Bitwise operators.** `^` only counts from an array's end (§5.5).
