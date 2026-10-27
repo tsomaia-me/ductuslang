@@ -867,6 +867,14 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
             ],
             68,
         ),
+        (
+            &[
+                "input i = 2\n",
+                bounded,
+                "Clip c:\n    Note/(60 + len(f(i)))\n",
+            ],
+            68,
+        ),
     ];
     for (items, expected) in pitches {
         for text in in_every_order(items) {

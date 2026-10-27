@@ -740,6 +740,8 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
     let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
     let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
     let bounded = "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 1)\n";
+    let held_input = "input i = 2\ninput held: i32[..4] = []\n";
+    let doubled_held = "fn h(n) bounded 3 else held: h(n - 1) + h(n - 1)\n";
     let rows: &[support::Row] = &[
         (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], &[]),
         (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], &[]),
@@ -760,8 +762,52 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             &[],
         ),
         (
-            &["input i = 2\n", bounded, "Clip c:\n    Note/(len(f(i)))\n"],
+            &[
+                "input i = 2\n",
+                bounded,
+                "Clip c:\n    Note/(60 + len(f(i)))\n",
+            ],
             &[],
+        ),
+        (
+            &[
+                "input i = 2\n",
+                bounded,
+                "let p: i32[8] = f(i)\n",
+                "Clip c:\n    Note/(p[7])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input i = 2\n",
+                bounded,
+                "let n: u8 = len(f(i))\n",
+                "Clip c:\n    Note/(n)\n",
+            ],
+            &[],
+        ),
+        (
+            &[held_input, doubled_held, "Clip c:\n    Note/(len(h(i)))\n"],
+            &[],
+        ),
+        (
+            &[
+                held_input,
+                doubled_held,
+                "let q: i32[..32] = h(i)\n",
+                "Clip c:\n    Note/(len(q))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held_input,
+                doubled_held,
+                "let n: u8 = len(h(i))\n",
+                "Clip c:\n    Note/(n)\n",
+            ],
+            &[(Code::TypeMismatch, "len(h(i))")],
         ),
         (
             &[
@@ -923,4 +969,27 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let narrow = [
+        held_input,
+        doubled_held,
+        "let q: i32[..31] = h(i)\n",
+        "Clip c:\n    Note/(len(q))\n",
+    ];
+    for order in support::permutations(&narrow) {
+        let text = order.concat();
+        let found = support::errors(compiler.check(&[support::source(&text)]));
+        let summaries: Vec<(Code, &str)> = found
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.summary.as_str()))
+            .collect();
+        assert_eq!(
+            summaries,
+            [(
+                Code::CapacityExceeded,
+                "`q` holds up to 32 elements, more than its annotated capacity 31"
+            )],
+            "{text}"
+        );
+    }
 }
