@@ -1,3 +1,5 @@
+use symphonyscript_core::Value;
+
 use super::iteration::Iteration;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -9,7 +11,6 @@ use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Iterable, Loc, Number, Suffix};
@@ -34,7 +35,11 @@ impl Engine<'_> {
             Iterable::Values(expr) => {
                 let val = self.demand_val(Query::Expr(expr, scope))?;
                 let loc = self.hir.expr(expr)?.loc;
-                let val = some!(self.iterated(val, loc, scope)?);
+                if let Val::Scalar(node) = val
+                    && self.arrays.contains(&node)
+                {
+                    return self.computed_iteration(node, loc, scope);
+                }
                 let array = match &val {
                     Val::Array(array) if array.shape.depth() == 1 => array.clone(),
                     Val::Error => return Ok(None),
@@ -86,13 +91,12 @@ impl Engine<'_> {
         })
     }
 
-    fn iterated(&mut self, val: Val, loc: Loc, scope: ScopeId) -> Result<Option<Val>, Internal> {
-        let Val::Scalar(node) = val else {
-            return Ok(Some(val));
-        };
-        if !self.arrays.contains(&node) {
-            return Ok(Some(val));
-        }
+    fn computed_iteration(
+        &mut self,
+        node: NodeId,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<Option<Iteration>, Internal> {
         if self.demand_sig(node)?.reactive {
             let reads = self.untypable_reads(node)?;
             self.typing.read_by_faults.extend(reads);
@@ -108,11 +112,43 @@ impl Engine<'_> {
             | CVal::Bool(_)
             | CVal::Enum(..)
             | CVal::Str(_)
-            | CVal::Node(_) => return Ok(Some(val)),
+            | CVal::Node(_) => {
+                self.error(Code::IterableType, loc, scope, ITERABLE)?;
+                return Ok(None);
+            }
         };
-        let shape = Shape::from_lengths(&array.lengths());
-        let nodes = self.projected(node, &shape, (Code::IterableType, ITERABLE), loc, scope)?;
-        Ok(Some(Val::array(shape, nodes)))
+        let lengths = array.lengths();
+        if lengths.len() != 1 {
+            self.error(Code::IterableType, loc, scope, ITERABLE)?;
+            return Ok(None);
+        }
+        self.require_shape(node, lengths, Code::IterableType, ITERABLE);
+        Ok(Some(Iteration::Elements {
+            base: node,
+            length: array.len(),
+            next: 0,
+            loc,
+        }))
+    }
+
+    pub(in crate::semantics::analysis) fn computed_element(
+        &mut self,
+        base: NodeId,
+        position: usize,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<Val, Internal> {
+        let position =
+            i64::try_from(position).map_err(|_| Internal::missed("an element's position"))?;
+        let index = self.push_node(Op::Const(Value::I64(position)), loc, scope)?;
+        self.memo.projected_indexes.insert(index);
+        let element = self.push_node(Op::Element { base, index }, loc, scope)?;
+        self.memo.iterated_elements += 1;
+        let sig = self.demand_sig(element)?;
+        if sig.family.is_none() && !sig.is_error() {
+            self.demand_cval(element, own_type(&sig, EvalTy::Default))?;
+        }
+        Ok(Val::Scalar(self.chosen_read(element, base, loc, scope)?))
     }
 
     fn range_bound(&mut self, expr: ExprId, scope: ScopeId) -> Result<Option<i128>, Internal> {

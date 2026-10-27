@@ -24,6 +24,14 @@ pub(crate) struct CArray(Rc<Repr>);
 enum Repr {
     Items(Vec<CVal>),
     Join(Joined),
+    Slice(Sliced),
+}
+
+struct Sliced {
+    base: CArray,
+    start: usize,
+    length: usize,
+    items: OnceCell<Vec<CVal>>,
 }
 
 struct Joined {
@@ -77,13 +85,34 @@ impl CArray {
         }))))
     }
 
+    pub fn slice(base: &CArray, start: usize, end: usize) -> CArray {
+        let start = start.min(base.len());
+        let length = end.min(base.len()).saturating_sub(start);
+        if start == 0 && length == base.len() {
+            return base.clone();
+        }
+        CArray(Rc::new(Repr::Slice(Sliced {
+            base: base.clone(),
+            start,
+            length,
+            items: OnceCell::new(),
+        })))
+    }
+
+    pub fn sliced(&self) -> Option<(&CArray, usize, usize)> {
+        match &*self.0 {
+            Repr::Slice(sliced) => Some((&sliced.base, sliced.start, sliced.length)),
+            Repr::Items(_) | Repr::Join(_) => None,
+        }
+    }
+
     pub fn identity(&self) -> *const () {
         Rc::as_ptr(&self.0).cast()
     }
 
     pub fn operands(&self) -> Option<(&CArray, &CArray)> {
         match &*self.0 {
-            Repr::Items(_) => None,
+            Repr::Items(_) | Repr::Slice(_) => None,
             Repr::Join(joined) => Some((&joined.left, &joined.right)),
         }
     }
@@ -92,6 +121,7 @@ impl CArray {
         match &*self.0 {
             Repr::Items(items) => items.len(),
             Repr::Join(joined) => joined.length,
+            Repr::Slice(sliced) => sliced.length,
         }
     }
 
@@ -99,6 +129,8 @@ impl CArray {
         match &*self.0 {
             Repr::Items(items) => items.first().map(lengths_of),
             Repr::Join(joined) => joined.row.clone(),
+            Repr::Slice(sliced) if sliced.length == 0 => None,
+            Repr::Slice(sliced) => sliced.base.row(),
         }
     }
 
@@ -118,6 +150,16 @@ impl CArray {
                         index -= joined.left.len();
                         array = &joined.right;
                     }
+                }
+                Repr::Slice(sliced) => {
+                    if let Some(items) = sliced.items.get() {
+                        return items.get(index);
+                    }
+                    if index >= sliced.length {
+                        return None;
+                    }
+                    index += sliced.start;
+                    array = &sliced.base;
                 }
             }
         }
@@ -148,6 +190,19 @@ impl CArray {
                         stack.push((&joined.left, start.min(split), end.min(split)));
                     }
                 },
+                Repr::Slice(sliced) => match sliced.items.get() {
+                    Some(items) => {
+                        out.extend(items.get(start..end).unwrap_or_default().iter().cloned());
+                    }
+                    None => {
+                        let end = end.min(sliced.length);
+                        stack.push((
+                            &sliced.base,
+                            sliced.start.saturating_add(start),
+                            sliced.start.saturating_add(end),
+                        ));
+                    }
+                },
             }
         }
         count_built(out.len());
@@ -158,6 +213,7 @@ impl CArray {
         match &*self.0 {
             Repr::Items(items) => items,
             Repr::Join(joined) => joined.items.get_or_init(|| self.range(0, joined.length)),
+            Repr::Slice(sliced) => sliced.items.get_or_init(|| self.range(0, sliced.length)),
         }
     }
 
@@ -184,24 +240,38 @@ impl CArray {
     }
 
     pub fn all_leaves(&self, mut holds: impl FnMut(&CVal) -> bool) -> bool {
-        let mut seen: FastSet<*const Repr> = FastSet::default();
-        let mut stack: Vec<&CArray> = vec![self];
-        while let Some(array) = stack.pop() {
-            if !seen.insert(Rc::as_ptr(&array.0)) {
+        let mut seen: FastSet<(*const Repr, usize, usize)> = FastSet::default();
+        let mut stack: Vec<(&CArray, usize, usize)> = vec![(self, 0, self.len())];
+        while let Some((array, start, end)) = stack.pop() {
+            if start >= end || !seen.insert((Rc::as_ptr(&array.0), start, end)) {
                 continue;
             }
             CArray::count_visit();
             let items = match &*array.0 {
-                Repr::Items(items) => items,
+                Repr::Items(items) => items.get(start..end).unwrap_or_default(),
                 Repr::Join(joined) => {
-                    stack.push(&joined.right);
-                    stack.push(&joined.left);
+                    let split = joined.left.len();
+                    stack.push((
+                        &joined.right,
+                        start.saturating_sub(split),
+                        end.saturating_sub(split),
+                    ));
+                    stack.push((&joined.left, start.min(split), end.min(split)));
+                    continue;
+                }
+                Repr::Slice(sliced) => {
+                    let end = end.min(sliced.length);
+                    stack.push((
+                        &sliced.base,
+                        sliced.start.saturating_add(start),
+                        sliced.start.saturating_add(end),
+                    ));
                     continue;
                 }
             };
             for item in items {
                 match item {
-                    CVal::Array(inner) => stack.push(inner),
+                    CVal::Array(inner) => stack.push((inner, 0, inner.len())),
                     leaf => {
                         if !holds(leaf) {
                             return false;
@@ -295,6 +365,12 @@ fn take_parts(repr: &mut Rc<Repr>, items: &mut Vec<CVal>, arrays: &mut Vec<CArra
             }
             arrays.push(std::mem::replace(&mut joined.left, CArray::vacant()));
             arrays.push(std::mem::replace(&mut joined.right, CArray::vacant()));
+        }
+        Repr::Slice(sliced) => {
+            if let Some(own) = sliced.items.get_mut() {
+                items.append(own);
+            }
+            arrays.push(std::mem::replace(&mut sliced.base, CArray::vacant()));
         }
     }
 }

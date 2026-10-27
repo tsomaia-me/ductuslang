@@ -1475,6 +1475,37 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+#[test]
+fn a_placement_for_over_a_compile_time_array_builds_its_elements_as_it_iterates() {
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    for depth in [30, 22] {
+        let text = format!("{doubling}Clip c:\n    for x in f({depth}):\n        Note/x\n");
+        let (diagnostics, built) = analyzed(&text, |engine| engine.memo.iterated_elements);
+        assert_eq!(error_codes(&diagnostics), [Code::ExpansionLimit], "{text}");
+        assert!(built <= 1_000_001, "{text}: {built}");
+    }
+    let rows: [(String, usize, Vec<CVal>); 2] = [
+        (
+            format!("{doubling}Clip c:\n    for x in f(3):\n        Note/(60 + x)\n"),
+            8,
+            vec![CVal::Int(61); 8],
+        ),
+        (
+            "Clip c:\n    for x in [60, 64, 67]:\n        Note/x\n".to_string(),
+            3,
+            vec![CVal::Int(60), CVal::Int(64), CVal::Int(67)],
+        ),
+    ];
+    for (text, notes, pitches) in rows {
+        let (diagnostics, found) = analyzed(&text, notes_and_pitches);
+        assert!(errors_of(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(found, (notes, pitches), "{text}");
+    }
+    let range = "Clip c:\n    for i in 0..8388608:\n        Note\n";
+    let (diagnostics, ()) = analyzed(range, |_| ());
+    assert_eq!(error_codes(&diagnostics), [Code::ExpansionLimit], "{range}");
+}
+
 const FIB_FN: &str = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
 
 fn notes_and_pitches(engine: &Engine<'_>) -> (usize, Vec<CVal>) {

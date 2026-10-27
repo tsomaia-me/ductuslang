@@ -490,7 +490,7 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
     ) -> Result<(), Internal> {
-        let (mut instances, mut missing) = (0, 0);
+        let (mut instances, mut lacking) = (0, Vec::new());
         'candidates: for candidate in candidates {
             let mut item = *candidate;
             for step in steps {
@@ -498,7 +498,7 @@ impl Engine<'_> {
                     Some(child) => item = child,
                     None if self.may_name(item, &step.text)? => return Ok(()),
                     None => {
-                        missing += 1;
+                        lacking.push(*candidate);
                         continue 'candidates;
                     }
                 }
@@ -510,7 +510,7 @@ impl Engine<'_> {
             {
                 return Ok(());
             } else {
-                missing += 1;
+                lacking.push(*candidate);
             }
         }
         if instances == candidates.len() {
@@ -523,22 +523,36 @@ impl Engine<'_> {
                 ),
             );
         }
-        if missing < candidates.len() {
-            return Ok(());
+        let mut related = Vec::with_capacity(lacking.len());
+        for candidate in &lacking {
+            let owner = self.item_description(*candidate)?;
+            related.push((
+                self.item_loc(*candidate)?,
+                format!("{owner} has no `to.{text}`"),
+            ));
         }
-        let (Some(first), Some(second)) = (candidates.first(), candidates.get(1)) else {
-            return Ok(());
+        let summary = match (
+            instances,
+            candidates.first(),
+            candidates.get(1),
+            lacking.first(),
+        ) {
+            (0, Some(first), Some(second), _) => {
+                let first = self.item_description(*first)?;
+                let second = self.item_description(*second)?;
+                format!(
+                    "no candidate of the destination, {first} and {second} among them, has `to.{text}`"
+                )
+            }
+            (_, _, _, Some(first)) => {
+                let first = self.item_description(*first)?;
+                format!(
+                    "no candidate of the destination has the attribute `to.{text}`: {first} has no such path, and the others end it at an instance or a wire"
+                )
+            }
+            _ => return Ok(()),
         };
-        let first = self.item_description(*first)?;
-        let second = self.item_description(*second)?;
-        self.error(
-            Code::UnknownAttribute,
-            loc,
-            scope,
-            format!(
-                "no candidate of the destination, {first} and {second} among them, has `to.{text}`"
-            ),
-        )
+        self.error_with_chain(Code::UnknownAttribute, loc, related, scope, summary)
     }
 
     fn written_clause(&self, scope: ScopeId) -> Result<Option<(HirWireId, ScopeId)>, Internal> {

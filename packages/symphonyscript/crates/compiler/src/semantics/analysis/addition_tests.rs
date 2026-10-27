@@ -1114,6 +1114,37 @@ fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_th
 }
 
 #[test]
+fn a_compile_time_slice_holds_its_base_and_its_bounds() {
+    let (_, reference, _, _) = doubling_work("60 + len(f(k))", 30);
+    for (read, expected) in [
+        ("60 + len(f(k)[5..])", 1_073_741_879),
+        ("60 + len(f(k)[5..^9])", 1_073_741_870),
+        ("60 + len(f(k)[5..9])", 64),
+    ] {
+        let (value, built, _, _) = doubling_work(read, 30);
+        assert_eq!(value, Some(CVal::Int(expected)), "{read}");
+        assert_eq!(built, reference, "{read}");
+    }
+    let (element, _, _, _) = doubling_work("f(k)[1..3][1]", 3);
+    assert_eq!(element, Some(CVal::Int(1)));
+    for text in in_every_order(&[
+        "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n",
+        "let p: i32[1073741824] = f(30)\n",
+        "Clip c:\n    Note/(p[0..])\n",
+    ]) {
+        let (built_before, _) = CArray::work();
+        let (diagnostics, ()) = analyzed(&vocabulary(), &text, |_| ());
+        let (built_after, _) = CArray::work();
+        let found: Vec<crate::diagnostics::Code> = errors(&diagnostics)
+            .iter()
+            .map(|found| found.code)
+            .collect();
+        assert_eq!(found, [crate::diagnostics::Code::TypeMismatch], "{text}");
+        assert!(built_after - built_before <= reference, "{text}");
+    }
+}
+
+#[test]
 fn a_bounded_expansion_types_its_passed_over_branches_in_work_linear_in_its_levels() {
     let nodes = |bound: u32| {
         let text = format!(

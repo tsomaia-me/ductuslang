@@ -652,6 +652,25 @@ impl Engine<'_> {
                                 },
                             )
                         }
+                        Iteration::Elements {
+                            base,
+                            length,
+                            next,
+                            loc,
+                        } => {
+                            if next >= length {
+                                continue;
+                            }
+                            (
+                                self.computed_element(base, next, loc, scope)?,
+                                Iteration::Elements {
+                                    base,
+                                    length,
+                                    next: next + 1,
+                                    loc,
+                                },
+                            )
+                        }
                     };
                     if !self.count_step(iteration.loc(), scope)? {
                         return Ok(());

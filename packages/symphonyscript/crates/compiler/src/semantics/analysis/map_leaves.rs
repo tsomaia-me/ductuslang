@@ -18,6 +18,10 @@ pub(crate) fn map_leaves<E>(
         CArray::count_visit();
         if !ready {
             stack.push((array.clone(), true));
+            if let Some((base, ..)) = array.sliced() {
+                stack.push((base.clone(), false));
+                continue;
+            }
             match array.operands() {
                 Some((left, right)) => {
                     stack.push((right.clone(), false));
@@ -30,8 +34,19 @@ pub(crate) fn map_leaves<E>(
             }
             continue;
         }
-        let value = match array.operands() {
-            Some((left, right)) => {
+        let value = match (array.sliced(), array.operands()) {
+            (Some((base, start, length)), _) => match mapped_of(mapped, base) {
+                CVal::Array(new_base) if new_base.identity() == base.identity() => {
+                    CVal::Array(array.clone())
+                }
+                CVal::Array(new_base) => CVal::Array(CArray::slice(
+                    &new_base,
+                    start,
+                    start.saturating_add(length),
+                )),
+                _ => CVal::Error,
+            },
+            (None, Some((left, right))) => {
                 let left_mapped = mapped_of(mapped, left);
                 let right_mapped = mapped_of(mapped, right);
                 match (left_mapped, right_mapped) {
@@ -47,7 +62,7 @@ pub(crate) fn map_leaves<E>(
                     _ => CVal::Error,
                 }
             }
-            None => {
+            (None, None) => {
                 let mut built = Vec::with_capacity(array.len());
                 let mut unchanged = true;
                 for item in array.items() {

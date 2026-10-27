@@ -720,6 +720,7 @@ fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_ne
         "Track verse\n",
         "Clip chorus:\n    Note as hook\n",
     );
+    let plain = "Clip verse:\n    Note\n";
     let unknown = |text| (Code::UnknownAttribute, text);
     let rows: &[support::Row] = &[
         (
@@ -792,7 +793,34 @@ fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_ne
                 chorus,
                 "pattern Unused():\n    Plays | gain=to.hook: (if x then verse else chorus)\n",
             ],
-            &[],
+            &[(Code::UnknownAttribute, "to.hook")],
+        ),
+        (
+            &[
+                flag,
+                plain,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: (if x then chorus else verse)\n",
+            ],
+            &[(Code::UnknownAttribute, "to.hook")],
+        ),
+        (
+            &[
+                flag,
+                plain,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: [chorus, verse][0]\n",
+            ],
+            &[(Code::UnknownAttribute, "to.hook")],
+        ),
+        (
+            &[
+                flag,
+                plain,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: (if x then chorus else chorus)\n",
+            ],
+            &[(Code::MisplacedTo, "hook")],
         ),
         (
             &[
@@ -901,6 +929,28 @@ fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_ne
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for choice in ["(if x then chorus else verse)", "[chorus, verse][0]"] {
+        let text =
+            format!("{flag}{plain}{chorus}pattern Unused():\n    Plays | gain=to.hook: {choice}\n");
+        let found = support::errors(compiler.check(&[support::source(&text)]));
+        let labels: Vec<(&str, &str)> = found
+            .iter()
+            .flat_map(|diagnostic| &diagnostic.related)
+            .map(|related| {
+                let range = &related.span.range;
+                (
+                    &text[range.start as usize..range.end as usize],
+                    related.label.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [("Clip verse", "the `Clip` named `verse` has no `to.hook`")],
+            "{text}"
+        );
+    }
 }
 
 #[test]

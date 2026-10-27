@@ -1,3 +1,4 @@
+use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::Loc;
 
@@ -12,6 +13,12 @@ pub(in crate::semantics::analysis) enum Iteration {
         next: usize,
         loc: Loc,
     },
+    Elements {
+        base: NodeId,
+        length: usize,
+        next: usize,
+        loc: Loc,
+    },
 }
 
 impl Iteration {
@@ -19,12 +26,15 @@ impl Iteration {
         match self {
             Iteration::Range { next, end, .. } => next >= end,
             Iteration::Values { values, next, .. } => *next >= values.len(),
+            Iteration::Elements { length, next, .. } => next >= length,
         }
     }
 
     pub(in crate::semantics::analysis) fn loc(&self) -> Loc {
         match self {
-            Iteration::Range { loc, .. } | Iteration::Values { loc, .. } => *loc,
+            Iteration::Range { loc, .. }
+            | Iteration::Values { loc, .. }
+            | Iteration::Elements { loc, .. } => *loc,
         }
     }
 }

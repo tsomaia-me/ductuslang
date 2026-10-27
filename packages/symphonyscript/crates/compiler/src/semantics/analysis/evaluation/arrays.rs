@@ -118,7 +118,7 @@ impl Engine<'_> {
         let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
             return Ok(Some(CVal::Error));
         };
-        Ok(Some(CVal::Array(CArray::new(array.range(start, end)))))
+        Ok(Some(CVal::Array(CArray::slice(&array, start, end))))
     }
 
     fn position_of(
