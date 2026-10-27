@@ -1098,3 +1098,53 @@ fn a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() {
         }
     }
 }
+
+fn big(args: &[symphonyscript_core::NativeArg<'_>], out: &mut symphonyscript_core::NativeOut<'_>) {
+    if let Some(symphonyscript_core::NativeArg::Value(value)) = args.first() {
+        out.push(*value);
+    }
+}
+
+fn big_vocabulary() -> symphonyscript_core::Vocabulary {
+    use symphonyscript_core::{Count, NativeSignature, NativeType, Ty, Vocabulary};
+    let mut v = Vocabulary::builder("big");
+    let clip = v.node("Clip");
+    let note = v.node("Note");
+    v.kind(clip)
+        .top_level(Count::Any)
+        .children(note, Count::Any);
+    v.kind(note).attr::<i32>("pitch").default(60).default_attr();
+    v.native(
+        "big",
+        NativeSignature::new(
+            [NativeType::Value(Ty::I32)],
+            NativeType::Value(Ty::I32.variable(2_147_483_647)),
+        ),
+        big,
+    );
+    v.build().expect("the big vocabulary builds")
+}
+
+#[test]
+fn a_compile_time_native_call_costs_what_it_writes() {
+    let vocabulary = big_vocabulary();
+    let before = super::evaluation::native_slots();
+    let (diagnostics, pitch) = analyzed(&vocabulary, "Clip c:\n    Note/(big(1)[0])\n", |engine| {
+        attr_value(engine, "pitch", EvalTy::I32)
+    });
+    let slots = super::evaluation::native_slots() - before;
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(pitch, Some(CVal::Int(1)));
+    assert!(slots <= 1 + 8, "{slots}");
+    let text = "Clip c:\n    for i in 0..1000:\n        Note/(big(i)[0])\n";
+    let (diagnostics, notes) = analyzed(&vocabulary, text, |engine| {
+        let note = engine.vocabulary.node_kind_named("Note");
+        engine
+            .instances
+            .iter()
+            .filter(|instance| Some(instance.kind) == note)
+            .count()
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(notes, 1000);
+}

@@ -118,12 +118,22 @@ impl Engine<'_> {
             }
             NativeType::Open(_) => 0,
         };
-        let mut buffer = vec![zero(result.scalar); slots];
+        let mut buffer = if variable {
+            Vec::new()
+        } else {
+            vec![zero(result.scalar); slots]
+        };
         let mut text = String::new();
         let text_out = (result.scalar == Scalar::Str).then_some(&mut text);
-        let mut out = NativeOut::new(&mut buffer, text_out);
+        let mut out = if variable {
+            NativeOut::growing(&mut buffer, slots, text_out)
+        } else {
+            NativeOut::new(&mut buffer, text_out)
+        };
         (decl.function)(&views, &mut out);
         let written = out.len();
+        #[cfg(test)]
+        SLOTS.with(|held| held.set(held.get() + buffer.capacity() as u64));
         if result.scalar == Scalar::Str {
             return Ok(Some(CVal::Str(Rc::from(text.as_str()))));
         }
@@ -228,4 +238,14 @@ fn cval_of(value: &Value) -> CVal {
         Value::Enum(id, index) => CVal::Enum(id, index),
         Value::Str(_) => CVal::Error,
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static SLOTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn native_slots() -> u64 {
+    SLOTS.with(std::cell::Cell::get)
 }

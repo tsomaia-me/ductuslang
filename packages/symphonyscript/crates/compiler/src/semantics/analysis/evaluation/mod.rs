@@ -28,5 +28,7 @@ mod ty_name;
 mod with_point;
 
 pub(crate) use machine::Machine;
+#[cfg(test)]
+pub(crate) use native::native_slots;
 pub(crate) use native::native_ty;
 pub(crate) use own_type::own_type;
