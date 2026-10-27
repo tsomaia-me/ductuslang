@@ -176,6 +176,30 @@ test('compact without a session id keeps the lessons and the menu line', () => {
   assert.ok(!stdout.includes('session hook failed'));
 });
 
+test('a subagent compacting in the session leaves the main agent note in place and gets the lessons and the menu line', () => {
+  const project = makeProject(LESSONS);
+  const harness = mkdtempSync(path.join(os.tmpdir(), 'session-hook-harness-'));
+  mkdirSync(path.join(harness, SESSION_ID));
+  const noteFile = path.join(harness, SESSION_ID, NOTE_FILE);
+  writeFileSync(noteFile, JSON.stringify({ role: 'builder', note: 'kept', time: 'now' }));
+  const stdin = JSON.stringify({
+    session_id: SESSION_ID,
+    agent_id: 'agent-123',
+    transcript_path: path.join(harness, 'transcript.jsonl'),
+    cwd: project,
+    hook_event_name: 'SessionStart',
+    source: 'compact',
+  });
+  const result = spawnSync(process.execPath, [HOOK], {
+    input: stdin,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_PROJECT_DIR: project, CLAUDE_HARNESS_DIR: harness },
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, `${LESSONS}\n${MENU_LINE}\n`);
+  assert.ok(existsSync(noteFile));
+});
+
 test('a hook run through a symlinked directory still prints the menu line', () => {
   const project = makeProject(LESSONS);
   const linkedHooks = path.join(mkdtempSync(path.join(os.tmpdir(), 'session-hook-link-')), 'hooks');

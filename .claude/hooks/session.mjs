@@ -76,7 +76,7 @@ function compactHead(noteFile, stored) {
 
 function buildOutput(input) {
   const memory = mainCheckout(process.env.CLAUDE_PROJECT_DIR || input.cwd);
-  const compacted = input.source === COMPACT_SOURCE && hasSessionId(input);
+  const compacted = input.source === COMPACT_SOURCE && hasSessionId(input) && !input.agent_id;
   const noteFile = compacted ? notePath(input.session_id) : null;
   const stored = compacted ? readNote(noteFile) : null;
   if (stored && stored !== CORRUPT) return { text: render(groundingParts(memory, stored, input.session_id)), usedNote: noteFile };
