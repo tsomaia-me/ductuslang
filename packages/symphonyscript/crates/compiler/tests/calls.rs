@@ -1100,3 +1100,66 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
+
+#[test]
+fn a_bounded_expansion_type_checks_every_branch_and_arm_while_it_expands_the_chosen_one() {
+    let held = "input held: i32[..4] = [1, 2]\n";
+    let read = "Clip c:\n    Note/(f(0))\n";
+    let mismatched_arms = "fn f(i) bounded 3 else 0:\n    match i:\n        0: n + f(i + 1)\n        7: true\n        else: 1\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else 0: if i > 5 then true else held[i] + f(i + 1)\n",
+                read,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then true else held[i] + f(i + 1)",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else 0: if i > 5 then 1.5 else held[i] + f(i + 1)\n",
+                read,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then 1.5 else held[i] + f(i + 1)",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then 1.5 else held[i] + 1\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then 1.5 else held[i] + 1")],
+        ),
+        (
+            &["input n = 0\n", mismatched_arms, read],
+            &[(
+                Code::TypeMismatch,
+                "match i:\n        0: n + f(i + 1)\n        7: true\n        else: 1\n",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else 0: if i > 5 then [1, 2][7] else held[i] + f(i + 1)\n",
+                read,
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else 0: if i > 5 then true else f(i + 1) + 1\n",
+                read,
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then true else f(i + 1) + 1")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}

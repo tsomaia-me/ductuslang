@@ -80,6 +80,33 @@ impl Engine<'_> {
         }
     }
 
+    pub(super) fn pass_over(
+        &mut self,
+        kind: &ExprKind,
+        chosen: ExprId,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        let branches: Vec<ExprId> = match kind {
+            ExprKind::If(_, then, otherwise) => vec![*then, *otherwise],
+            ExprKind::Match {
+                arms, otherwise, ..
+            } => arms.iter().map(|arm| arm.value).chain(*otherwise).collect(),
+            _ => Vec::new(),
+        };
+        let mut stack: Vec<ExprId> = branches
+            .into_iter()
+            .filter(|branch| *branch != chosen)
+            .collect();
+        while let Some(expr) = stack.pop() {
+            let kind = &self.hir.expr(expr)?.kind;
+            if let ExprKind::Call(..) = kind {
+                self.memo.passed_over_calls.insert((expr, scope));
+            }
+            stack.extend(kind.children());
+        }
+        Ok(())
+    }
+
     pub(super) fn bare_label(
         &mut self,
         label: ExprId,

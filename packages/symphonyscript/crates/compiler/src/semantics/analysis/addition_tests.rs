@@ -961,3 +961,17 @@ fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_th
         assert_eq!(value, Some(CVal::Int(1)), "{text}");
     }
 }
+
+#[test]
+fn a_bounded_expansion_types_its_passed_over_branches_in_work_linear_in_its_levels() {
+    let nodes = |bound: u32| {
+        let text = format!(
+            "input held: i32[..4] = [1, 2]\nfn f(i) bounded {bound} else 0: if i > 1000 then f(i + 1) + f(i + 2) else held[0] + f(i + 1)\nClip c:\n    Note/(f(0))\n"
+        );
+        let (diagnostics, nodes) = analyzed(&vocabulary(), &text, |engine| engine.nodes.len());
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        nodes
+    };
+    let counts = [nodes(100), nodes(200), nodes(300)];
+    assert_eq!(counts[2] - counts[1], counts[1] - counts[0], "{counts:?}");
+}

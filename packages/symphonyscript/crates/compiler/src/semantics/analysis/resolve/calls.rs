@@ -279,7 +279,7 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         };
         let nesting = self.nesting_in(scope, function)?;
-        let body = if nesting >= limit {
+        let body = if nesting >= limit || self.memo.passed_over_calls.contains(&(expr, scope)) {
             bound.fallback
         } else {
             decl.value

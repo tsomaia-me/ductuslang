@@ -28,14 +28,7 @@ impl Engine<'_> {
         {
             match self.selected(&node.kind, scope, need)? {
                 None => return Ok(false),
-                Some(Some(branch)) => {
-                    let value = self.val(Query::Expr(branch, scope), need);
-                    let Some(value) = self.held(branch, value, scope, need)? else {
-                        return Ok(false);
-                    };
-                    self.memo.exprs.insert((expr, scope), value);
-                    return Ok(true);
-                }
+                Some(Some(branch)) => self.pass_over(&node.kind, branch, scope)?,
                 Some(None) => {}
             }
         }
