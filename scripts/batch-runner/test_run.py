@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,6 +34,7 @@ class FakeBatches:
         self.log = log
         self.errors = list(errors)
         self.created = {}
+        self.created_at = {}
         self.retrieve_errors = []
         self.result_errors = []
 
@@ -42,11 +44,12 @@ class FakeBatches:
             raise self.errors.pop(0)
         batch_id = f"{self.name}-batch-{len(self.created) + 1}"
         self.created[batch_id] = requests
+        self.created_at[batch_id] = datetime.now(timezone.utc)
         return SimpleNamespace(id=batch_id)
 
     def list(self, limit):
         self.log.append(("list", self.name))
-        batches = [SimpleNamespace(id=batch_id, request_counts=SimpleNamespace(
+        batches = [SimpleNamespace(id=batch_id, created_at=self.created_at[batch_id], request_counts=SimpleNamespace(
             processing=0, succeeded=len(requests), errored=0, canceled=0, expired=0))
             for batch_id, requests in reversed(self.created.items())]
         return SimpleNamespace(data=batches[:limit])
@@ -146,11 +149,14 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(creates, [("create", "k2", ["r2", "r3"])])
         self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1", "r2", "r3"])
 
-    def crashed_after(self, accepted):
+    def crashed_after(self, accepted, created=1005.0, pending=True):
         clients = {1: fake_client("k1", self.log)}
         clients[1].messages.batches.created = {"k1-batch-1": accepted}
+        clients[1].messages.batches.created_at = {"k1-batch-1": datetime.fromtimestamp(created, timezone.utc)}
         self.run_dir.mkdir()
         (self.run_dir / "state.json").write_text(json.dumps({"key": 1, "batches": []}))
+        if pending:
+            (self.run_dir / "pending.json").write_text(json.dumps({"custom_ids": ["r0", "r1"], "time": 1000.0}))
         return clients
 
     def test_a_resumed_run_adopts_a_batch_the_api_accepted_before_the_crash(self):
@@ -160,6 +166,7 @@ class RunnerTest(unittest.TestCase):
         state = json.loads((self.run_dir / "state.json").read_text())
         self.assertEqual(state["batches"], [{"id": "k1-batch-1", "key": 1, "custom_ids": ["r0", "r1"], "done": True}])
         self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1"])
+        self.assertFalse((self.run_dir / "pending.json").exists())
 
     def test_a_resumed_run_does_not_adopt_a_recent_batch_with_other_ids(self):
         clients = self.crashed_after(requests(2, start=5))
@@ -168,11 +175,34 @@ class RunnerTest(unittest.TestCase):
         state = json.loads((self.run_dir / "state.json").read_text())
         self.assertEqual([batch["id"] for batch in state["batches"]], ["k1-batch-2"])
         self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1"])
+        self.assertFalse((self.run_dir / "pending.json").exists())
 
-    def test_a_fresh_run_lists_no_batches(self):
+    def test_a_fresh_run_lists_no_batches_and_leaves_no_marker(self):
         clients = {1: fake_client("k1", self.log)}
         self.assertTrue(self.runner(clients).run(requests(2)))
         self.assertNotIn(("list", "k1"), self.log)
+        self.assertFalse((self.run_dir / "pending.json").exists())
+
+    def test_a_submission_that_fails_unrecorded_leaves_its_marker(self):
+        clients = {1: fake_client("k1", self.log, [self.timeout()])}
+        with self.assertRaises(anthropic.APITimeoutError):
+            self.runner(clients).run(requests(2))
+        self.assertEqual(json.loads((self.run_dir / "pending.json").read_text()),
+                         {"custom_ids": ["r0", "r1"], "time": 1000.0})
+
+    def test_a_resume_without_a_marker_lists_no_batches(self):
+        clients = self.crashed_after(requests(2), pending=False)
+        self.assertTrue(self.runner(clients).run(requests(2)))
+        self.assertNotIn(("list", "k1"), self.log)
+        self.assertEqual(self.creates(), [["r0", "r1"]])
+
+    def test_a_batch_created_before_the_marker_is_not_adopted(self):
+        clients = self.crashed_after(requests(2), created=999.0)
+        self.assertTrue(self.runner(clients).run(requests(2)))
+        self.assertIn(("list", "k1"), self.log)
+        self.assertEqual(self.creates(), [["r0", "r1"]])
+        state = json.loads((self.run_dir / "state.json").read_text())
+        self.assertEqual([batch["id"] for batch in state["batches"]], ["k1-batch-2"])
 
     def timeout(self):
         return anthropic.APITimeoutError(httpx.Request("GET", "https://api.anthropic.com/v1/messages/batches"))
