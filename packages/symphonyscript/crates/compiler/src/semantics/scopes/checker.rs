@@ -271,7 +271,8 @@ impl<'a> Checker<'a> {
                     "an array length or capacity in a type is at least 1",
                 ),
                 Some(length) if *length < LENGTH_LIMIT => {}
-                Some(_) | None => self.report.error(
+                None => {}
+                Some(_) => self.report.error(
                     self.hir,
                     Code::LengthLimit,
                     *loc,

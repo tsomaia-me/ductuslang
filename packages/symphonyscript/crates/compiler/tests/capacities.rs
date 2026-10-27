@@ -1361,6 +1361,48 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
                 &["input g: i32[..1] = [1, 2]\n", read],
                 &[(Code::CapacityExceeded, "[1, 2]")],
             ),
+            (
+                &["input g: i32[..0x10] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "0x10")],
+            ),
+            (
+                &["input g: i32[0b11] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "0b11")],
+            ),
+            (
+                &["input g: i32[3i32] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "3i32")],
+            ),
+            (
+                &["input g: i32[..1.5] = [1]\n", read],
+                &[(Code::TypeSyntax, "1.5")],
+            ),
+            (
+                &["let g: i32[..0x10] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "0x10")],
+            ),
+            (
+                &["let g: i32[0b11] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "0b11")],
+            ),
+            (
+                &["let g: i32[3i32] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "3i32")],
+            ),
+            (
+                &["let g: i32[..1.5] = [1]\n", read],
+                &[(Code::TypeSyntax, "1.5")],
+            ),
+            (
+                &["input g: i32[..99999999999999999999] = [1]\n", read],
+                &[(Code::LengthLimit, "99999999999999999999")],
+            ),
+            (
+                &["input g: i32[..2147483648] = [1]\n", read],
+                &[(Code::LengthLimit, "2147483648")],
+            ),
+            (&["input g: i32[..1_0] = [1, 2]\n", read], &[]),
+            (&["input g: i32[..2147483647] = [1]\n", read], &[]),
         ],
     );
 }

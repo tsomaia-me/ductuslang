@@ -269,6 +269,5 @@ fn digits_value(text: &str) -> Option<u64> {
 }
 
 fn length_value(text: &str) -> Option<u32> {
-    let digits: String = text.chars().filter(|c| *c != '_').collect();
-    digits.parse::<u32>().ok()
+    digits_value(text).map(|value| u32::try_from(value).unwrap_or(u32::MAX))
 }
