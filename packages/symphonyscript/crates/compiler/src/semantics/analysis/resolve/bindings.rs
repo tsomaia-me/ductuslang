@@ -888,6 +888,13 @@ impl Engine<'_> {
                 shapes.insert(node, Ok(lengths));
                 continue;
             }
+            if let Op::Slice { .. } = self.node(node)?.op
+                && let Some((found, _)) = self.memo.layouts.get(&node)
+                && let (Ok(Some(layout)), true) = (&found.shaped, found.certain)
+            {
+                shapes.insert(node, Ok(layout.lengths.clone()));
+                continue;
+            }
             let op = &self.node(node)?.op;
             if let Op::Read(binding) = op
                 && self.memo.settled.contains(binding)

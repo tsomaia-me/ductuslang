@@ -56,6 +56,7 @@ pub(crate) struct Memo {
         super::fast_hash::FastSet<(crate::semantics::ir::Loc, Option<crate::semantics::ir::Loc>)>,
     pub capacity_rounds: u64,
     pub settlement_visits: u64,
+    pub layout_visits: u64,
     pub blocked_walks: FastMap<crate::semantics::ir::StateId, (u32, crate::semantics::ir::StateId)>,
     pub evaluation_work: u64,
     pub conversions: FastMap<EvalTy, FastMap<*const (), (super::c_array::CArray, CVal)>>,

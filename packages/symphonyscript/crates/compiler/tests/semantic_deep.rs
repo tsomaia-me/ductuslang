@@ -180,5 +180,10 @@ fn a_chain_of_100000_slices_passes_check_on_a_small_stack() {
         }
         lets.push_str(&format!("Clip c:\n    Note/(s{DEPTH}[0])\n"));
         assert_eq!(code_counts(&lets), BTreeMap::new());
+        let fixed = format!(
+            "input note = 60\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
+            "[1..]".repeat(DEPTH)
+        );
+        assert_eq!(code_counts(&fixed), BTreeMap::new());
     });
 }

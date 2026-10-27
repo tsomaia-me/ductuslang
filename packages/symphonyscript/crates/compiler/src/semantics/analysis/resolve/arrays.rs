@@ -536,6 +536,7 @@ impl Engine<'_> {
         let mut expanded: FastMap<NodeId, Vec<NodeId>> = FastMap::default();
         let mut missing = false;
         while let Some((node, ready)) = stack.pop() {
+            self.memo.layout_visits += 1;
             if found.contains_key(&node) {
                 continue;
             }
@@ -590,6 +591,10 @@ impl Engine<'_> {
                 continue;
             }
             if !ready {
+                if let Op::Slice { lower, upper, .. } = op {
+                    self.slice_bound_value(lower, 0, need)?;
+                    self.slice_bound_value(upper, 0, need)?;
+                }
                 let mut parts = self.layout_parts(&op, assumed)?;
                 if parts.iter().any(|part| active.contains(part)) {
                     if let Op::Read(binding) = op {

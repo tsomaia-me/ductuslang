@@ -693,6 +693,45 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
 }
 
 #[test]
+fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
+    assert_ordered_capacity(
+        &[NOTE, "state s = (s{1, []} + [note])[^8..][^8..][^8..]\n"],
+        "s",
+        8,
+    );
+    let rows: &[support::Row] = &[
+        (
+            &[
+                NOTE,
+                "state s = [note, note, note]\n",
+                "let t = s[1..][1..][1..]\n",
+                "Clip c:\n    Note/(t[0])\n",
+            ],
+            &[(Code::IndexOutOfRange, "0")],
+        ),
+        (
+            &[
+                NOTE,
+                "state s = [note, note, note]\n",
+                "let t = s[1..]\n",
+                "Clip c:\n    Note/(t[2])\n",
+            ],
+            &[(Code::IndexOutOfRange, "2")],
+        ),
+        (
+            &[
+                NOTE,
+                "state s = [note, note, note]\n",
+                "let t = s[1..]\n",
+                "Clip c:\n    Note/(t[1] + len(t))\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
     let wide = "Clip c:\n    Note when s > 3000000000\n";
     let rows: &[support::Row] = &[

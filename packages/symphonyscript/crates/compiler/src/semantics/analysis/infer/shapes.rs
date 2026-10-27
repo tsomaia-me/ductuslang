@@ -60,7 +60,9 @@ impl Engine<'_> {
             .get(&node)
             .cloned()
             .ok_or(Internal::missed("default shape"))?;
-        let first = *elements.first().ok_or(Internal::missed("default shape"))?;
+        let Some(&first) = elements.first() else {
+            return Ok(());
+        };
         let (name, site) = {
             let binding = self.binding(first)?;
             (binding.name.clone(), binding.loc)
@@ -124,6 +126,17 @@ impl Engine<'_> {
                 continue;
             }
             let op = self.node(node)?.op.clone();
+            if let Op::Slice { .. } = op
+                && let (Ok(Some(layout)), true) = {
+                    let found = self.known_layout(node)?;
+                    (found.shaped, found.certain)
+                }
+            {
+                self.typing
+                    .shapes
+                    .insert((node, ty), Some(layout.lengths.clone()));
+                continue;
+            }
             if let Op::ToRead { attrs, .. } = &op
                 && let Some(layout) = self.to_read_layout(attrs)?
             {

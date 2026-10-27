@@ -1056,3 +1056,45 @@ fn an_unset_variable_array_attribute_reads_as_a_variable_array_holding_its_defau
         }
     }
 }
+
+fn layout_visits(text: &str) -> u64 {
+    let (diagnostics, visits) = analyzed(&vocabulary(), text, |engine| engine.memo.layout_visits);
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    visits
+}
+
+#[test]
+fn a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() {
+    type Chain = fn(usize) -> String;
+    let chains: [Chain; 3] = [
+        |n| {
+            format!(
+                "input note = 60\nstate s = (s{{1, []}} + [note]){}\nClip c:\n    Note/(s[0])\n",
+                "[^8..]".repeat(n)
+            )
+        },
+        |n| {
+            format!(
+                "input note = 60\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
+                "[1..]".repeat(n)
+            )
+        },
+        |n| {
+            format!(
+                "input held = [1, 2, 3]\nstate s = held{{1}}{}\nClip c:\n    Note/(len(s))\n",
+                "[1..]".repeat(n)
+            )
+        },
+    ];
+    for chain in chains {
+        let visits: Vec<u64> = [2_500, 5_000, 10_000]
+            .into_iter()
+            .map(|length| layout_visits(&chain(length)))
+            .collect();
+        for pair in visits.windows(2) {
+            if let [shorter, longer] = pair {
+                assert!(*longer <= 2 * *shorter + 64, "{visits:?}");
+            }
+        }
+    }
+}
