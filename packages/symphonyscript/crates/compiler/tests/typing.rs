@@ -4331,6 +4331,18 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
             ],
         ),
         (
+            &["Clip c:\n    Note/([nothing, 300000000000][0])\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+        (
+            &[
+                "input x = 1\n",
+                "Clip c:\n    Note/([x, 300000000000][0])\n",
+            ],
+            &[],
+        ),
+        (&["Clip c:\n    Note/([1, 300000000000][0])\n"], &[]),
+        (
             &["Clip c:\n    Note/(if nothing then 1 + true else 2)\n"],
             &[
                 (Code::UnknownName, "nothing"),
@@ -4533,6 +4545,55 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
         &[],
     )];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+}
+
+#[test]
+fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute() {
+    let f = "input f = false\n";
+    let note = "input note = 60\n";
+    let choice = "match f:\n    true: \"GET\"\n    else: \"AB\"\n";
+    let reactive = format!("let m = {choice}");
+    let annotated = format!("let m: u8[..8] = {choice}");
+    let rows: &[support::Row] = &[
+        (
+            &[f, &reactive, "Clip as g | data=m\n"],
+            &[(Code::ReactiveString, reactive.as_str())],
+        ),
+        (
+            &[
+                note,
+                "let m = \"GET\" + label(note)\n",
+                "Clip as g | data=m\n",
+            ],
+            &[(Code::CompileTimeNative, "label(note)")],
+        ),
+        (
+            &[note, "let m = note + true\n", "Clip as g | data=m\n"],
+            &[(Code::OperandType, "note + true")],
+        ),
+        (
+            &[note, "let m = note + true\n", "Clip as g | fixed=m\n"],
+            &[(Code::OperandType, "note + true")],
+        ),
+        (
+            &[
+                f,
+                "let m = if f then \"G\" else \"A\"\n",
+                "Clip as g:\n    Note | level=m\n",
+            ],
+            &[(Code::ReactiveString, "let m = if f then \"G\" else \"A\"\n")],
+        ),
+        (&[f, &annotated, "Clip as g | data=m\n"], &[]),
+        (&["let m = \"GET\"\n", "Clip as g | data=m\n"], &[]),
+        (
+            &["Clip as g | fixed=((1 + true) + [1, 2][5])\n"],
+            &[
+                (Code::OperandType, "1 + true"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
 }
 
 #[test]

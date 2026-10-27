@@ -45,6 +45,11 @@ impl Engine<'_> {
                 self.detached_roots(root, (ty, true), Some(&position), &mut detached)?;
                 continue;
             }
+            if let Val::Scalar(node) = position.val
+                && self.refused_cell(node)?
+            {
+                continue;
+            }
             match self.array_position(&position)? {
                 ArrayPosition::Usual => {}
                 ArrayPosition::Faulty => continue,
@@ -69,6 +74,9 @@ impl Engine<'_> {
                         )
                     };
                     self.require_shape(*node, position.ty.lengths.clone(), code, message);
+                    position.ty.lengths.clone()
+                }
+                Val::Scalar(node) if self.demand_sig(*node)?.is_error() => {
                     position.ty.lengths.clone()
                 }
                 Val::Scalar(_) => Vec::new(),

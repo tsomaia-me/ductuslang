@@ -2,8 +2,12 @@ use super::position::Position;
 use super::role::Role;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::resolve::LENGTH_LIMIT;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::val::Val;
@@ -15,6 +19,22 @@ pub(super) enum ArrayPosition {
 }
 
 impl Engine<'_> {
+    pub(super) fn refused_cell(&mut self, node: NodeId) -> Result<bool, Internal> {
+        let Op::Read(binding) = self.node(self.through_uses(node)?)?.op else {
+            return Ok(false);
+        };
+        let record = self.binding(binding)?.clone();
+        if matches!(
+            record.kind,
+            BindingKind::Input { .. } | BindingKind::Attr { .. }
+        ) {
+            return Ok(false);
+        }
+        let init = self.demand_sig(record.init)?;
+        Ok(init.is_error()
+            || record.annotation.is_none() && matches!(init.kind, Kind::Str | Kind::Node))
+    }
+
     pub(super) fn array_position(
         &mut self,
         position: &Position,
