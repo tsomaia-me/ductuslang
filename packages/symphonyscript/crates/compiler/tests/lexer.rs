@@ -1,6 +1,6 @@
 use symphonyscript::syntax::{SyntaxKind, lex};
 use symphonyscript::{Code, Diagnostic, Source};
-use symphonyscript_fixtures::{spec_examples, vocabulary};
+use symphonyscript_fixtures::{pending_spec_examples, spec_examples, vocabulary};
 
 fn source(text: &str) -> Source {
     Source {
@@ -448,8 +448,11 @@ fn every_byte_belongs_to_a_token() {
 
 #[test]
 fn every_sym_example_lexes_without_errors() {
+    let pending = pending_spec_examples();
     for example in spec_examples() {
-        if example.tag == "sym" || example.tag == "sym-error" {
+        if (example.tag == "sym" || example.tag == "sym-error")
+            && !pending.contains(&example.name())
+        {
             let lexed = lex(&source(&example.text), &vocabulary());
             assert_eq!(lexed.diagnostics, vec![], "{}", example.name());
         }
@@ -458,9 +461,12 @@ fn every_sym_example_lexes_without_errors() {
 
 #[test]
 fn every_sym_example_lexes_alike_after_a_history_read() {
+    let pending = pending_spec_examples();
     let prefix = "input x = 1\nstate s = x{1, 0}\n";
     for example in spec_examples() {
-        if example.tag == "sym" || example.tag == "sym-error" {
+        if (example.tag == "sym" || example.tag == "sym-error")
+            && !pending.contains(&example.name())
+        {
             let joined = format!("{prefix}{}", example.text);
             let lexed = lex(&source(&joined), &vocabulary());
             let after: Vec<String> = lexed

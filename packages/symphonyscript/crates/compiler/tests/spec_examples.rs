@@ -1,12 +1,13 @@
 mod support;
 
-use symphonyscript_fixtures::spec_examples;
+use symphonyscript_fixtures::{pending_spec_examples, spec_examples};
 
 #[test]
 fn every_sym_example_parses() {
+    let pending = pending_spec_examples();
     let examples: Vec<_> = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .collect();
     assert!(!examples.is_empty());
     for example in examples {

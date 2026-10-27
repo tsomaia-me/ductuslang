@@ -1,11 +1,18 @@
 mod support;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Source};
-use symphonyscript_fixtures::{Project, dsp_project, music_project, spec_projects, vocabulary};
+use symphonyscript_fixtures::{
+    Project, dsp_project, music_project, pending_spec_examples, spec_projects, vocabulary,
+};
 
 fn projects() -> Vec<Project> {
     let mut projects = vec![music_project(), dsp_project()];
-    projects.extend(spec_projects());
+    let pending = pending_spec_examples();
+    projects.extend(
+        spec_projects()
+            .into_iter()
+            .filter(|project| !pending.contains(&project.name)),
+    );
     projects
 }
 

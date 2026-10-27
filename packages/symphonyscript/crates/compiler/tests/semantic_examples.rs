@@ -1,87 +1,61 @@
 mod support;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use symphonyscript::syntax::lex;
 use symphonyscript::{Code, Compiler, Severity, Source};
 use symphonyscript_fixtures::{
-    SPEC_SYM_EXAMPLES, SpecExample, document_examples, dsp_project, music_project, spec_examples,
-    spec_projects, vocabulary,
+    PENDING_EXAMPLES, SPEC_SYM_EXAMPLES, SpecExample, document_examples, dsp_project,
+    music_project, pending_key, pending_lines, pending_spec_examples, spec_examples, spec_projects,
+    vocabulary,
 };
 
-const PENDING_EXAMPLES: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../docs/pending-examples.txt"
-);
-
-fn keyed(document: &str, examples: Vec<SpecExample>) -> Vec<(String, SpecExample)> {
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    examples
-        .into_iter()
-        .filter(|example| example.tag == "sym" || example.tag == "sym-error")
-        .map(|example| {
-            let ordinal = counts.entry(example.section.clone()).or_default();
-            *ordinal += 1;
-            (
-                format!("{document} §{} {ordinal} {}", example.section, example.tag),
-                example,
-            )
-        })
-        .collect()
-}
-
-fn listed(list: &Path) -> BTreeSet<String> {
-    std::fs::read_to_string(list)
-        .unwrap_or_else(|error| panic!("{} reads: {error}", list.display()))
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(String::from)
-        .collect()
-}
-
-fn pending_spec_examples() -> BTreeSet<String> {
-    let listed = listed(Path::new(PENDING_EXAMPLES));
-    keyed("SPEC.md", spec_examples())
-        .into_iter()
-        .filter(|(key, _)| listed.contains(key))
-        .map(|(_, example)| example.name())
-        .collect()
-}
-
-fn holds(compiler: &Compiler, example: &SpecExample, declared_elsewhere: &[&str]) -> bool {
+fn failure(
+    compiler: &Compiler,
+    example: &SpecExample,
+    declared_elsewhere: &[&str],
+) -> Option<&'static str> {
     let source = Source {
         path: "example.sym".into(),
         text: example.text.clone(),
     };
-    let diagnostics = compiler.check(&[source]);
+    if !lex(&source, &vocabulary()).diagnostics.is_empty() {
+        return Some("does not lex");
+    }
+    let diagnostics = compiler.check(std::slice::from_ref(&source));
     if example.tag == "sym-error" {
-        return !support::errors(diagnostics).is_empty();
+        return support::errors(diagnostics)
+            .is_empty()
+            .then_some("is accepted");
     }
     if !support::parsed(&example.text).diagnostics.is_empty() {
-        return false;
+        return Some("does not parse");
     }
-    if declared_elsewhere.is_empty() {
-        return support::errors(diagnostics).is_empty();
-    }
-    let undeclared: BTreeSet<&str> = diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code == Code::UnknownName)
-        .map(|diagnostic| {
-            &example.text[diagnostic.span.range.start as usize..diagnostic.span.range.end as usize]
-        })
-        .collect();
-    undeclared == declared_elsewhere.iter().copied().collect()
+    let checks = if declared_elsewhere.is_empty() {
+        support::errors(diagnostics).is_empty()
+    } else {
+        let undeclared: BTreeSet<&str> = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == Code::UnknownName)
+            .map(|diagnostic| {
+                &example.text
+                    [diagnostic.span.range.start as usize..diagnostic.span.range.end as usize]
+            })
+            .collect();
+        undeclared == declared_elsewhere.iter().copied().collect()
+    };
+    (!checks).then_some("does not check")
 }
 
-fn spec_example_holds(compiler: &Compiler, example: &SpecExample) -> bool {
+fn spec_example_failure(compiler: &Compiler, example: &SpecExample) -> Option<&'static str> {
     let declared_elsewhere = SPEC_SYM_EXAMPLES
         .iter()
         .find(|(section, ordinal, _)| {
             example.tag == "sym" && *section == example.section && *ordinal == example.ordinal
         })
         .map_or(&[][..], |(_, _, names)| names);
-    holds(compiler, example, declared_elsewhere)
+    failure(compiler, example, declared_elsewhere)
 }
 
 fn pending_list_problems(
@@ -89,13 +63,17 @@ fn pending_list_problems(
     examples: Vec<SpecExample>,
     list: &Path,
     write: bool,
-    holds: impl Fn(&SpecExample) -> bool,
+    failure: impl Fn(&SpecExample) -> Option<&'static str>,
 ) -> Vec<String> {
-    let examples = keyed(document, examples);
+    let examples: Vec<(String, SpecExample)> = examples
+        .into_iter()
+        .filter(|example| example.tag == "sym" || example.tag == "sym-error")
+        .map(|example| (pending_key(document, &example), example))
+        .collect();
     if write {
         let failing: BTreeSet<&String> = examples
             .iter()
-            .filter(|(_, example)| !holds(example))
+            .filter(|(_, example)| failure(example).is_some())
             .map(|(key, _)| key)
             .collect();
         let text: String = failing.iter().map(|key| format!("{key}\n")).collect();
@@ -107,19 +85,19 @@ fn pending_list_problems(
             failing.len()
         )];
     }
-    let listed = listed(list);
+    let listed = pending_lines(list);
     let keys: BTreeSet<&String> = examples.iter().map(|(key, _)| key).collect();
     let mut problems: Vec<String> = examples
         .iter()
         .filter_map(
-            |(key, example)| match (listed.contains(key), holds(example)) {
-                (true, true) => Some(format!(
+            |(key, example)| match (listed.contains(key), failure(example)) {
+                (true, None) => Some(format!(
                     "{} holds the rule: remove the line `{key}` from {}",
                     example.name(),
                     list.display()
                 )),
-                (false, false) => Some(format!(
-                    "{} fails the rule: add the line `{key}` to {}",
+                (false, Some(failure)) => Some(format!(
+                    "{} {failure}: add the line `{key}` to {}",
                     example.name(),
                     list.display()
                 )),
@@ -248,12 +226,12 @@ fn the_pending_list_names_exactly_the_spec_examples_that_fail_the_rule() {
         spec_examples(),
         Path::new(PENDING_EXAMPLES),
         write,
-        |example| spec_example_holds(&compiler, example),
+        |example| spec_example_failure(&compiler, example),
     );
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
-const SMALL_DOCUMENT: &str = "## 1. Small\n\n```sym\ninput x = 1\n```\n\n```sym-error\ninput y = 2\n```\n\n### 1.1 Smaller\n\n```text\nnot an example\n```\n\n```sym\nClip melody:\n    Note/300000000000\n```\n";
+const SMALL_DOCUMENT: &str = "## 1. Small\n\n```sym\ninput x = 1\n```\n\n```sym-error\ninput y = 2\n```\n\n### 1.1 Smaller\n\n```text\nnot an example\n```\n\n```sym\nClip melody:\n    Note/300000000000\n```\n\n### 1.2 Unbuilt\n\n```sym\ninput = 1\n```\n";
 
 fn small_document_problems(list: &Path, write: bool) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
@@ -262,7 +240,7 @@ fn small_document_problems(list: &Path, write: bool) -> Vec<String> {
         document_examples(SMALL_DOCUMENT),
         list,
         write,
-        |example| holds(&compiler, example, &[]),
+        |example| failure(&compiler, example, &[]),
     )
 }
 
@@ -276,7 +254,7 @@ fn list_file(name: &str, text: &str) -> PathBuf {
 fn a_listed_example_that_holds_the_rule_fails_naming_its_line() {
     let list = list_file(
         "pending-listed-holds.txt",
-        "# pending\n\nSMALL.md §1 1 sym\nSMALL.md §1 2 sym-error\nSMALL.md §1.1 1 sym\n",
+        "# pending\n\nSMALL.md §1 1 sym\nSMALL.md §1 1 sym-error\nSMALL.md §1.1 1 sym\nSMALL.md §1.2 1 sym\n",
     );
     assert_eq!(
         small_document_problems(&list, false),
@@ -288,12 +266,45 @@ fn a_listed_example_that_holds_the_rule_fails_naming_its_line() {
 }
 
 #[test]
-fn an_unlisted_example_that_fails_the_rule_fails_naming_its_line() {
-    let list = list_file("pending-unlisted-fails.txt", "SMALL.md §1 2 sym-error\n");
+fn an_unlisted_example_that_fails_check_fails_naming_its_line() {
+    let list = list_file(
+        "pending-unlisted-fails.txt",
+        "SMALL.md §1 1 sym-error\nSMALL.md §1.2 1 sym\n",
+    );
     assert_eq!(
         small_document_problems(&list, false),
         [format!(
-            "spec-1.1-sym-1 fails the rule: add the line `SMALL.md §1.1 1 sym` to {}",
+            "spec-1.1-sym-1 does not check: add the line `SMALL.md §1.1 1 sym` to {}",
+            list.display()
+        )]
+    );
+}
+
+#[test]
+fn an_unlisted_example_that_does_not_parse_fails_naming_its_line() {
+    let list = list_file(
+        "pending-unlisted-unparsed.txt",
+        "SMALL.md §1 1 sym-error\nSMALL.md §1.1 1 sym\n",
+    );
+    assert_eq!(
+        small_document_problems(&list, false),
+        [format!(
+            "spec-1.2-sym-1 does not parse: add the line `SMALL.md §1.2 1 sym` to {}",
+            list.display()
+        )]
+    );
+}
+
+#[test]
+fn an_unlisted_sym_error_example_that_is_accepted_fails_naming_its_line() {
+    let list = list_file(
+        "pending-unlisted-accepted.txt",
+        "SMALL.md §1.1 1 sym\nSMALL.md §1.2 1 sym\n",
+    );
+    assert_eq!(
+        small_document_problems(&list, false),
+        [format!(
+            "spec-1-sym-error-1 is accepted: add the line `SMALL.md §1 1 sym-error` to {}",
             list.display()
         )]
     );
@@ -303,12 +314,12 @@ fn an_unlisted_example_that_fails_the_rule_fails_naming_its_line() {
 fn a_listed_line_that_names_no_example_fails_naming_it() {
     let list = list_file(
         "pending-no-example.txt",
-        "SMALL.md §1 2 sym-error\nSMALL.md §1.1 1 sym\nSMALL.md §1 3 sym\n",
+        "SMALL.md §1 1 sym-error\nSMALL.md §1.1 1 sym\nSMALL.md §1.2 1 sym\nSMALL.md §1 2 sym\n",
     );
     assert_eq!(
         small_document_problems(&list, false),
         [format!(
-            "no example is `SMALL.md §1 3 sym`: remove the line from {}",
+            "no example is `SMALL.md §1 2 sym`: remove the line from {}",
             list.display()
         )]
     );
@@ -318,7 +329,7 @@ fn a_listed_line_that_names_no_example_fails_naming_it() {
 fn a_list_that_names_exactly_the_failing_examples_passes() {
     let list = list_file(
         "pending-exact.txt",
-        "SMALL.md §1.1 1 sym\nSMALL.md §1 2 sym-error\n",
+        "SMALL.md §1.2 1 sym\nSMALL.md §1.1 1 sym\nSMALL.md §1 1 sym-error\n",
     );
     assert_eq!(small_document_problems(&list, false), Vec::<String>::new());
 }
@@ -329,13 +340,13 @@ fn the_write_mode_writes_the_failing_examples_sorted_and_fails() {
     assert_eq!(
         small_document_problems(&list, true),
         [format!(
-            "wrote {} with 2 lines; run again without SYMPHONY_PENDING_EXAMPLES to check it",
+            "wrote {} with 3 lines; run again without SYMPHONY_PENDING_EXAMPLES to check it",
             list.display()
         )]
     );
     assert_eq!(
         std::fs::read_to_string(&list).expect("the list reads"),
-        "SMALL.md §1 2 sym-error\nSMALL.md §1.1 1 sym\n"
+        "SMALL.md §1 1 sym-error\nSMALL.md §1.1 1 sym\nSMALL.md §1.2 1 sym\n"
     );
     assert_eq!(small_document_problems(&list, false), Vec::<String>::new());
 }
