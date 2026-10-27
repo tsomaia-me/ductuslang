@@ -165,12 +165,12 @@ Type       ::= FnType | Base ('|' Base)*
 FnType     ::= '(' (Type (',' Type)*)? ')' '->' Type
 Base       ::= (ScalarType | StrType | MapType | JsonType | Name TypeArgs? | 'none' | '(' Type ')') Dims? '?'?
 Dims       ::= ('[' Size ']' | '[' '..' Size ']')+
-Size       ::= Digits | Name
+Size       ::= Expr
 ScalarType ::= 'u8' | 'i32' | 'i64' | 'f32' | 'f64' | 'bool'
 StrType    ::= 'str' ('[' '..' Size ']')?
 ```
 
-A `Name` in a type is a vocabulary enum, a record type or an alias (§3.8), a node kind (§3.5) or a type parameter (§6.8), and a `Name` as a `Size` is a value parameter (§6.8); `TypeArgs` are §6.8's, a function type `FnType` is §6.7's, `none`, `|` and `?` are §3.9's, and `( )` groups a sum under dimensions: `(i32?)[..4]` holds optional elements, and `i32[..4]?` is an optional array. A capacity written directly after `str` is the string's (§3.3): `str[..32][4]` holds four strings of up to 32 characters each. A length or capacity in a type is at least 1, and a capacity may stand at any level: `i32[3][..10]` holds up to 10 rows of 3, and `i32[..4][..10]` up to 10 rows of up to 4 elements, each row with its own live length.
+A `Name` in a type is a vocabulary enum, a record type or an alias (§3.8), a node kind (§3.5) or a type parameter (§6.8); `TypeArgs` are §6.8's, a function type `FnType` is §6.7's, `none`, `|` and `?` are §3.9's, and `( )` groups a sum under dimensions: `(i32?)[..4]` holds optional elements, and `i32[..4]?` is an optional array. A capacity written directly after `str` is the string's (§3.3): `str[..32][4]` holds four strings of up to 32 characters each. A `Size`, a length or a capacity, is any compile-time integer expression (§4.6), value parameters among what it reads (§6.8): `T[..N + 1]`, `T[N * 2]`. A size lies between 1 and 2³¹ − 1, and one outside that range is an error; where the size reads a value parameter, the error is at the call or use that binds it, naming it, with a secondary span on the type. A float size is an error whose help names `div`. A capacity may stand at any level: `i32[3][..10]` holds up to 10 rows of 3, and `i32[..4][..10]` up to 10 rows of up to 4 elements, each row with its own live length.
 
 ### 3.3 Strings
 
@@ -244,7 +244,7 @@ A variable array holds from 0 up to its capacity of elements, and its live lengt
 | a fixed array | its length |
 | an input or annotation `T[..N]` | N |
 | `a + b` | the sum of the capacities of `a` and `b` |
-| a slice `xs[a..b]` | the most elements it holds for any live length of `xs` up to its capacity and any value of its bounds that read cells: `xs[^8..]` holds at most 8, and `xs[1..]` one fewer than `xs` |
+| a slice `xs[a..b]` | the most elements it holds for any live length of `xs` up to its capacity and any value of its bounds that read cells between their minimum and maximum read from their forms (§7.9), a bound with none by its form taking any value: `xs[^8..]` holds at most 8, `xs[1..]` one fewer than `xs`, and `xs[..min(n, 4)]` at most 4 |
 | `if` and `match` | the largest capacity among the arms |
 | a state | §6.6 |
 
@@ -486,7 +486,7 @@ A cell's kind is its initializer's: `bool`, an enum, integer or float, element b
 
 A reactive `let` whose uses fix no width takes `f32` when it is a float, and the widest integer type among its operands when it is an integer, an operand that is a reactive `let` counting with the widest integer type among its own operands, found the same way, so a `let` reading an `i64` input, directly or through other `let`s, stays `i64`. A flexible value in a position that fixes no type (§4.1) takes `i32`, or `i64` when its value does not fit `i32`, and a flexible float takes `f32`, or `f64` when its value lies outside `f32`'s finite range.
 
-An annotation fixes a type outright: `input fine: f32 = 0` is a float input stored as `f32`, and its uses read it as §4.4 says. A suffix does the same for a literal: `0f64`. An annotation on a function or pattern parameter, a local `let`, a `for` variable, a `for` expression's accumulator, a lambda's parameter or a result fixes its type the same way (§5.10, §6.3, §6.4, §6.7, §7.9), and a node kind there names a reference (§3.5).
+An annotation fixes a type outright: `input fine: f32 = 0` is a float input stored as `f32`, and its uses read it as §4.4 says. A suffix does the same for a literal: `0f64`. An annotation on a function or pattern parameter, a local `let`, a `for` variable, a `for` expression's accumulator, a lambda's parameter or a result fixes its type the same way (§5.10, §6.3, §6.4, §6.7, §7.9), and a node kind there names a reference (§3.5). Annotations are per binder: in a function, a pattern or a lambda, one parameter may be annotated and another inferred, as in `fn shift(x, by: i32): x + by`.
 
 ### 4.6 Compile-time evaluation
 
@@ -715,7 +715,7 @@ ForExprHead  ::= LoopHead 'into' Name (':' Type)? 'from' Expr ':'
 A `for` expression folds an iterable (§7.9) into one value. The name after `into` is its accumulator, which starts as the value after `from`. The body runs once per element of the iterable, in order, with the loop names (§7.9) and the accumulator in scope, and the value of each run is the accumulator of the next. The expression's value is the last accumulator, or the start when the iterable is empty.
 
 - The accumulator's type unifies the start and the body as `if` arms do (§4.2), and an annotation fixes it (§4.5).
-- Every capacity in the accumulator's type, an array's at every level, a string's and a map's, is found by applying the body's capacity rule (§3.3, §3.7, §3.10) to the start's capacity once per iteration the iterable can run, stopping when it no longer grows. An array or a map runs at most its capacity of iterations, and a range at most the count its bounds allow (§7.9).
+- Every capacity or budget in the accumulator's type, an array's at every level, a string's, a map's and a document's, is found by applying the body's capacity or budget rule (§3.3, §3.7, §3.10, §3.11) to the start's once per iteration the iterable can run, stopping when it no longer grows. An array or a map runs at most its capacity of iterations, and a range at most the count its bounds allow (§7.9).
 - The block form is the whole value of a `let`, a local `let` or a function body, never an operand, as `match` is (§5.4); its local `let`s are visible to its final expression. The one-line form stands without parentheses only as the whole value of a `let`, a local `let` or a function body; anywhere else, as an operand, an argument, an attribute value, a gate, a scrutinee, a start or an iterable, it stands in parentheses.
 - A `for` expression whose iterable, start and body read no cell is a compile-time value (§4.6). Any other is one cell (§4.4), evaluated whole each time it is evaluated (§12.2).
 - Its loop names, its accumulator and its local `let`s follow §6.5's name rules.
@@ -977,7 +977,7 @@ Patterns never appear in the Program.
 
 All top-level names share one namespace across the project: inputs, `let`s, states, functions, patterns, record types, top-level instances, the built-ins (§5.7), and the vocabulary's kinds, enums and prelude declarations. A duplicate is an error naming both declarations; a source declaration shadows a prelude declaration of its name (§10.1). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
 
-Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern declaration or a `for` variable visible where it is declared is an error, and so is a pattern declaration equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error; so is a `for` expression's loop name (§5.10) or a lambda's parameter (§6.7) equal to a visible name. A `for` expression's loop names, its accumulator and its block form's local `let`s are distinct names, as a function's parameters and local `let`s are (§6.3). A bracket name (§6.8) equal to a top-level name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's declarations do. A record's field names are scoped to its type (§3.8).
+Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern declaration or a `for` variable visible where it is declared is an error, and so is a pattern declaration equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error; so is a `for` expression's loop name, its accumulator or its block form's local `let` (§5.10), or a lambda's parameter (§6.7), equal to a visible name. A `for` expression's loop names, its accumulator and its block form's local `let`s are distinct names, as a function's parameters and local `let`s are (§6.3). A bracket name (§6.8) equal to a top-level name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's declarations do. A record's field names are scoped to its type (§3.8).
 
 A function or pattern that nothing uses has its names resolved, cycles among its `let`s included (§6.2), and no types checked. So do a parameter default that no call takes and the body of a placement `for` that runs no iteration (§7.9), since nothing expands them. A compile-time `let` that nothing uses is never computed, so no error of its value, such as an index out of range or a value past 2¹²⁷, is reported. In all of these, resolving the names draws its errors, a name, path or attribute that resolves to nothing or to what its position cannot hold, and nothing else is checked or computed, in the bodies the code reaches, recursive or not, as in the code itself.
 
@@ -986,7 +986,7 @@ A bare name that is a variant of the enum its position expects resolves to that 
 ### 6.6 States
 
 ```ebnf
-StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? Steps? '=' (Expr NEWLINE | MatchBlock)
+StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? Steps? '=' (Expr NEWLINE | MatchBlock | ForExprBlock)
 Steps     ::= 'on' (Atom | '(' Expr (',' Expr)* ')')
 History   ::= Name '{' Expr (',' Expr)? '}'
 ```
@@ -1042,6 +1042,7 @@ A lambda is a function written as the argument of a call: `x: x * 2`, `(a, b): a
 - A lambda stands only as an argument of a call to a function (§6.3) or a native function (§10.1); anywhere else it is an error.
 - A function type `(T1, T2) -> R` (§3.2) is the type of a lambda that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter, and on a `let`, an input, a state, an attribute, a record field or an array element it is an error.
 - Where the body of the function that receives a lambda calls its parameter, the call inlines the lambda's body with the lambda's parameters bound to the call's arguments, as §6.3 inlines a call to a function. A native function that receives a lambda calls it as §10.1 says. The lambda reads the names in scope at its own position.
+- A function's name stands where a function type is expected, and the function is then received as a lambda is: the function type flows into it as the expected types of its parameters and its result (§4.2), as into a lambda's, an annotation it carries agrees with them or is an error, and its body is checked under those types. `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before` where `sort_by` expects a function type.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
 - The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
 - A parameter bound to a lambda, written as the argument of a call in the body, passes the lambda on to that call.
@@ -1056,9 +1057,13 @@ input threshold = 60
 let high = count(held, p: p > 60)
 let low = count(held, (p: i32) -> bool: p < 48)
 let above = count(held, p: p > threshold)
+
+fn is_high(p): p > 60
+
+let named = count(held, is_high)
 ```
 
-`above` reads `threshold` where its lambda is written, so it follows the input.
+`above` reads `threshold` where its lambda is written, so it follows the input. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`.
 
 ```sym-error
 let twice = x: x * 2
@@ -1084,12 +1089,12 @@ TypeArgs      ::= '[' TypeArg (',' TypeArg)* ']'
 TypeArg       ::= Type | Digits
 ```
 
-A function, a pattern, a `type` declaration and a native function's signature (§10.1) may take bracket parameters after their name: `fn name[T, const N](…)`, `pattern Name[K, const N](…)`, `type Name[A, const N] = …`. A bracket name without `const` is a type parameter, standing for a type. A bracket name with `const` is a value parameter, a compile-time integer that stands in types, ranges and expressions. A bracket name is visible throughout its declaration.
+A function, a pattern, a `type` declaration and a native function's signature (§10.1) may take bracket parameters after their name: `fn name[T, const N](…)`, `pattern Name[K, const N](…)`, `type Name[A, const N] = …`. A bracket name without `const` is a type parameter, standing for a type. A bracket name with `const` is a value parameter, a compile-time integer that stands in sizes (§3.2) and wherever a compile-time `let` or a parameter bound to a compile-time argument may stand: arithmetic, comparisons, logic, `if` and `when`, indices, range bounds, interpolation, array literals, the default of a parameter after it, calls and conversions, with every operation they allow, computed exactly as §4.6 computes compile-time integers; `/` on it yields a float (§5.2). A value parameter is an integer because it is bound only from the sizes in parameter types, and a size is an integer. A bracket name is visible throughout its declaration.
 
 - A call to a function or a native function, and a use of a pattern, binds every bracket parameter from its arguments' types, where its parameters' types name the bracket parameter, and writes no bracket arguments. A bracket name that none of its declaration's parameter types names is an error.
 - Two mentions of one bracket parameter unify (§4.2), and arguments that bind it differently are an error at the call or use.
 - A type parameter bound from a flexible argument (§4.1) takes the defaults of §4.5, and a value parameter without a constraint is a flexible integer.
-- A function's type parameter binds to value types only (§3.5). A pattern's type parameter may also bind to a node kind, from an argument that is a node reference, and §10.2's checks run on each use's expansion against the kind it binds; such a parameter takes no constraint, those checks being its check.
+- A function's type parameter binds to value types only (§3.5). A pattern's type parameter may also bind to a node kind, from an argument that is a node reference, and §10.2's checks run on each use's expansion against the kind it binds; a constraint written on such a parameter is an error, those checks being its check.
 - A bracket parameter's annotation is its constraint. On a type parameter it is a type the parameter must bind to, a sum listing the types it may bind to, one of them at each call or use, or an alias naming that set; on a value parameter it is the integer type of its value. A bracket parameter without a constraint binds to whatever its arguments give, and the body is checked per call or use with that binding.
 - In a type, the first bracket list after a generic type's name is its arguments, one for each bracket parameter in order: a type for a type parameter, and an integer or a value parameter for a value parameter. Later bracket lists are dimensions (§3.2), and after any other name every bracket list is a dimension: `Stack[i32, 8][4]` holds four stacks, and `Chord[4]` four chords.
 - A record literal (§3.8) takes the generic type its position names with its arguments. Where its position names a generic type without arguments, the literal binds the type's parameters from its fields as a call binds them from its arguments: two fields that bind one parameter differently are an error naming both, and a parameter that no field binds is an error whose help says to annotate the type's arguments. Anywhere else, a generic type named without its arguments is an error whose help names its parameters.
@@ -1119,6 +1124,35 @@ Clip c:
 ```
 
 `push` binds `T` to `i32` and `N` to 8 from `start`, and `x: T` reads `note` as that `i32`; `first` binds `N` to 3 from `pitches`.
+
+```sym
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let notes = padded([60, 64, 67])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+```
+
+`padded` binds `N` to 3 and yields an `i32[4]`; in `mean`, `N` is the integer 3, and `/` yields the `f32` the result expects.
+
+```sym-error
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Clip c:
+    Note/(len(shorter([60])))
+```
+
+This is an error: the call binds `N` to 1, so the size `N - 1` is 0; the diagnostic names the call and points at the type.
+
+```sym-error
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Clip c:
+    Note/(half([60, 64, 67, 72])[0])
+```
+
+This is an error: the size `N / 2` is a float; the help names `div`, as the body's `N div 2` writes it.
 
 ```sym
 type Pair[A, B]:
@@ -1291,7 +1325,7 @@ A placement `for` repeats its body once for each element of its iterable. The it
 - a map (§3.10), entry by entry in insertion order;
 - a range `a..b`, which counts from `a` up to but excluding `b` and is empty when `b` is not above `a`.
 
-A range's iteration count is at most its upper bound's maximum less its lower bound's minimum, each read from the bound's form: a literal and a compile-time value are their own minimum and maximum; `len(a)` lies between 0 and `a`'s capacity (§3.3, §3.7, §3.10); `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each, an operand with none on a side being unbounded on that side; and `x + c`, `c + x` and `x - c`, with `c` a literal or a compile-time value, shift `x`'s minimum and maximum by `c`. An upper bound that reads a cell and has no maximum by these forms, or a lower bound that reads a cell and has no minimum, is an error.
+A bound of a range or of a slice (§3.7) has a minimum and a maximum read from its form: a literal and a compile-time value are their own minimum and maximum; `len(a)` of an array lies between 0 and `a`'s capacity (§3.7); `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each; `x + y` has the sum of its operands' minimums and the sum of their maximums, and `x - y` has `x`'s minimum less `y`'s maximum and `x`'s maximum less `y`'s minimum. An operand that reads a cell and has none on a side by these forms is unbounded on that side, and these rules carry an unbounded side as they carry a number: `min(n, 16)` with an input `n` has the maximum 16 and no minimum, and `16 - n` has neither. A range's iteration count is at most its upper bound's maximum less its lower bound's minimum. An upper bound of a range that reads a cell and has no maximum, or a lower bound that reads a cell and has no minimum, is an error.
 
 A loop head binds one name or two. With one name, it is the element over an array, the key over a map and the value over a range. With two names, the first is the element's position and the second the element: over an array the index and the element, the index a flexible integer as a range's value is (§4.6), and over a map the key and the value. A range binds one name, and two are an error. An annotation fixes its name's type (§4.5).
 
@@ -1492,7 +1526,7 @@ A vocabulary is invalid, and no program compiles against it, when:
 
 The prelude's source is ordinary source compiled with the program. It holds `let`, `fn`, `pattern` and `type` declarations only, and its declarations and native functions share the top-level namespace (§6.5). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A source declaration with a prelude declaration's name shadows it in the program's source. Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
 
-A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a lambda. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a lambda among them when it reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a lambda it receives with argument values of the function type's parameter types, and each call runs the lambda's body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
+A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a lambda. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a lambda among them when it reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a lambda it receives with argument values of the function type's parameter types, and each call runs the lambda's body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A lambda whose body calls a native function with a lambda of its own nests that call in the outer one; the depth of this nesting is fixed by the expressions and counts toward the nesting limit (§6.3), which the compiler checks, so a call at runtime never passes it. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
 
 ### 10.2 Checks against the vocabulary
 

@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`.
 - **Implementer:** one agent per milestone, Opus at effort `high`.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2c, M2d, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
+- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2e, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2e, M2c, M2d, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2e, Infer's capacity rules and the `for` expression's evaluation (SPEC §5.10, §7.9, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
 
 ### Decisions
 
@@ -138,8 +138,8 @@ Steps:
 
 Exit:
 - M2b's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
-- Every `sym` example of SPEC §5.10 and §7.9 compiles, and every `sym-error` example of them is rejected.
-- A `for` expression over a variable array of capacity 10,000 compiles in time and Program size linear in the capacity.
+- Every `sym` example of SPEC §5.10 and §7.9 passes every stage through Check, and every `sym-error` example of them is rejected.
+- For a `for` expression over a variable array, Check's time and Infer's node count grow linearly in the array's capacity, measured up to a capacity of 10,000.
 - Each limit draws its warning at its warning value and its error at its limit.
 - A program written with `bounded` is rejected with a help naming the `for` expression.
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
