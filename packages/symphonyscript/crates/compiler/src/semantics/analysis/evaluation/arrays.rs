@@ -1,5 +1,6 @@
 use super::convert::convert;
 use super::ctx::Ctx;
+use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::c_array::CArray;
 use crate::semantics::analysis::c_val::CVal;
@@ -11,11 +12,18 @@ use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::some::some;
 
+pub(super) fn joined(left: &CArray, right: &CArray) -> CVal {
+    let mut items = left.items().to_vec();
+    items.extend(right.items().iter().cloned());
+    CVal::Array(CArray::new(items))
+}
+
 type SliceBounds = (Option<(NodeId, bool)>, Option<(NodeId, bool)>);
 
 impl Engine<'_> {
     pub(super) fn join(
         &mut self,
+        node: NodeId,
         (lhs, rhs): (NodeId, NodeId),
         typed: (EvalTy, Option<EvalTy>),
         ctx: Ctx,
@@ -25,12 +33,16 @@ impl Engine<'_> {
         let right = self.typed_child(rhs, typed, ctx, need)?;
         let (left, right) = (some!(left), some!(right));
         Ok(Some(match (left, right) {
-            (CVal::Array(left), CVal::Array(right)) => {
-                let mut items = left.items().to_vec();
-                items.extend(right.items().iter().cloned());
-                CVal::Array(CArray::new(items))
+            (CVal::Array(left), CVal::Array(right)) => joined(&left, &right),
+            (CVal::Error, _) | (_, CVal::Error) => CVal::Error,
+            _ => {
+                self.error_at_node(
+                    Code::ArrayOperand,
+                    node,
+                    "`+` joins two arrays, and one of these is a single value",
+                )?;
+                CVal::Error
             }
-            _ => CVal::Error,
         }))
     }
 
@@ -46,8 +58,19 @@ impl Engine<'_> {
         let start = self.position_of(lower, ctx, need)?;
         let end = self.position_of(upper, ctx, need)?;
         let (value, start, end) = (some!(value), some!(start), some!(end));
-        let CVal::Array(array) = value else {
-            return Ok(Some(CVal::Error));
+        let array = match value {
+            CVal::Array(array) => array,
+            CVal::Error => return Ok(Some(CVal::Error)),
+            CVal::Int(_)
+            | CVal::F32(_)
+            | CVal::F64(_)
+            | CVal::Bool(_)
+            | CVal::Enum(..)
+            | CVal::Str(_)
+            | CVal::Node(_) => {
+                self.error_at_node(Code::NotAnArray, base, "only an array is sliced")?;
+                return Ok(Some(CVal::Error));
+            }
         };
         let length = i128::try_from(array.items().len()).unwrap_or(i128::MAX);
         let resolve = |bound: Option<(i128, bool)>, absent: i128| match bound {
@@ -119,14 +142,17 @@ impl Engine<'_> {
                 CVal::Array(array) => {
                     CVal::Int(i128::try_from(array.items().len()).unwrap_or(i128::MAX))
                 }
+                CVal::Error => CVal::Error,
                 CVal::Int(_)
                 | CVal::F32(_)
                 | CVal::F64(_)
                 | CVal::Bool(_)
                 | CVal::Enum(..)
                 | CVal::Str(_)
-                | CVal::Node(_)
-                | CVal::Error => CVal::Error,
+                | CVal::Node(_) => {
+                    self.error_at_node(Code::NotAnArray, operand, "`len` takes an array")?;
+                    CVal::Error
+                }
             },
         ))
     }
@@ -155,13 +181,20 @@ impl Engine<'_> {
                     _ => CVal::Error,
                 })
             })?,
+            CVal::Error => CVal::Error,
             CVal::Int(_)
             | CVal::F32(_)
             | CVal::F64(_)
             | CVal::Bool(_)
             | CVal::Enum(..)
-            | CVal::Node(_)
-            | CVal::Error => CVal::Error,
+            | CVal::Node(_) => {
+                self.error_at_node(
+                    Code::OperandType,
+                    operand,
+                    "`bytes` takes a string or an integer array",
+                )?;
+                CVal::Error
+            }
         }))
     }
 }

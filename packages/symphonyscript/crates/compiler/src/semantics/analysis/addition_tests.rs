@@ -741,3 +741,114 @@ fn a_flexible_float_meeting_a_fixed_u8_operand_computes_in_f32() {
         assert_eq!(checked, vec![Some(Scalar::F64)], "{text}");
     }
 }
+
+#[test]
+fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settle_to() {
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
+    let bounded = "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 1)\n";
+    let pitches: &[(&[&str], i128)] = &[
+        (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], 68),
+        (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], 63),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + g(n)\n",
+                "fn g(n): if n is 0 then [2] else f(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            64,
+        ),
+        (&[bounded, "Clip c:\n    Note/(60 + len(f(0)))\n"], 68),
+        (
+            &[
+                "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 2)\n",
+                "Clip c:\n    Note/(60 + len(f(0)))\n",
+            ],
+            68,
+        ),
+        (
+            &[
+                "fn s(n): if n is 0 then 1 else s(n - 1) + s(n - 1)\n",
+                "Clip c:\n    Note/(60 + s(3))\n",
+            ],
+            68,
+        ),
+        (
+            &[
+                "fn f(n) bounded 3 else 0: f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + f(0))\n",
+            ],
+            60,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(f(n - 1))]\n",
+                "Clip c:\n    Note/(60 + f(3)[3])\n",
+            ],
+            63,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [5] else [f(n - 1)[^1] + 1]\n",
+                "Clip c:\n    Note/(60 + f(3)[0])\n",
+            ],
+            68,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1, 2] else (f(n - 1) + f(n - 1))[1..]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            65,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(bytes(f(n - 1)) + [n])]\n",
+                "Clip c:\n    Note/(60 + f(2)[2])\n",
+            ],
+            63,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [300] else bytes(f(n - 1)) + [n]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            63,
+        ),
+        (
+            &[growing, "Clip c:\n    Note/(60 + len(g(2) + g(1)))\n"],
+            65,
+        ),
+        (
+            &[
+                growing,
+                "let a = g(2) + g(1)\n",
+                "Clip c:\n    Note/(60 + a[2])\n",
+            ],
+            62,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + f(2)[3][1])\n",
+            ],
+            62,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [[1, 2]] else [f(n - 1)[0] + f(n - 1)[0]]\n",
+                "Clip c:\n    Note/(60 + len(f(2)[0]))\n",
+            ],
+            68,
+        ),
+    ];
+    for (items, expected) in pitches {
+        for text in in_every_order(items) {
+            let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+                attr_value(engine, "pitch", EvalTy::I32)
+            });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            assert_eq!(value, Some(CVal::Int(*expected)), "{text}");
+        }
+    }
+}

@@ -734,3 +734,193 @@ fn a_range_bound_or_index_holding_a_recursive_call_evaluates_the_call_before_jud
         }
     }
 }
+
+#[test]
+fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
+    let bounded = "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 1)\n";
+    let rows: &[support::Row] = &[
+        (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], &[]),
+        (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], &[]),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + g(n)\n",
+                "fn g(n): if n is 0 then [2] else f(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            &[],
+        ),
+        (&[bounded, "Clip c:\n    Note/(60 + len(f(0)))\n"], &[]),
+        (
+            &[
+                "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 2)\n",
+                "Clip c:\n    Note/(60 + len(f(0)))\n",
+            ],
+            &[],
+        ),
+        (
+            &["input i = 2\n", bounded, "Clip c:\n    Note/(len(f(i)))\n"],
+            &[],
+        ),
+        (
+            &[
+                "fn s(n): if n is 0 then 1 else s(n - 1) + s(n - 1)\n",
+                "Clip c:\n    Note/(60 + s(3))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n) bounded 3 else 0: f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + f(0))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + 1\n",
+                "Clip c:\n    Note/(len(f(2)))\n",
+            ],
+            &[(Code::ArrayOperand, "f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else [2] + f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(3)))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn h(n): [n, n]\n",
+                "fn f(n): if n is 0 then [1] else f(n - 1) + h(n)\n",
+                "Clip c:\n    Note/(60 + len(f(3)))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(f(n - 1))]\n",
+                "Clip c:\n    Note/(60 + f(3)[3])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [5] else [f(n - 1)[^1] + 1]\n",
+                "Clip c:\n    Note/(60 + f(3)[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1, 2] else (f(n - 1) + f(n - 1))[1..]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(bytes(f(n - 1)) + [n])]\n",
+                "Clip c:\n    Note/(60 + f(2)[2])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [300] else bytes(f(n - 1)) + [n]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            &[],
+        ),
+        (
+            &[growing, "Clip c:\n    Note/(60 + len(g(2) + g(1)))\n"],
+            &[],
+        ),
+        (
+            &[
+                growing,
+                "let a = g(2) + g(1)\n",
+                "Clip c:\n    Note/(60 + a[2])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + f(2)[3][1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [[1, 2]] else [f(n - 1)[0] + f(n - 1)[0]]\n",
+                "Clip c:\n    Note/(60 + len(f(2)[0]))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [true] else f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note when f(2)[3]\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then true else f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note when f(2)\n",
+            ],
+            &[(Code::OperandType, "f(n - 1) + f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + g(n)\n",
+                "fn g(n): if n is 0 then 2 else g(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            &[(Code::ArrayOperand, "f(n - 1) + g(n)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then 1 else f(n - 1) + [n]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            &[(Code::ArrayOperand, "f(n - 1) + [n]")],
+        ),
+        (
+            &[doubling, "Clip c:\n    Note/(f(2) + f(2))\n"],
+            &[(Code::TypeMismatch, "f(2) + f(2)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then 1 else len(f(n - 1))\n",
+                "Clip c:\n    Note/(f(2))\n",
+            ],
+            &[(Code::NotAnArray, "f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then 1 else len(f(n - 1)[1..])\n",
+                "Clip c:\n    Note/(f(2))\n",
+            ],
+            &[(Code::NotAnArray, "f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then 1 else len(bytes(f(n - 1)))\n",
+                "Clip c:\n    Note/(f(2))\n",
+            ],
+            &[(Code::OperandType, "f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then 1 else f(n - 1)\n",
+                "Clip c:\n    Note/(len(f(2)[1..]))\n",
+            ],
+            &[(Code::NotAnArray, "f(2)")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}

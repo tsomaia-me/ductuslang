@@ -14,7 +14,7 @@ use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::fast_hash::FastMap;
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
@@ -144,6 +144,65 @@ impl Engine<'_> {
         }
     }
 
+    pub(in crate::semantics::analysis) fn rests_on_recursion(
+        &self,
+        root: NodeId,
+    ) -> Result<bool, Internal> {
+        let mut stack = vec![root];
+        let mut seen = FastSet::default();
+        while let Some(node) = stack.pop() {
+            if !self.arrays.contains(&node) || !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Recursive { .. } => return Ok(true),
+                Op::Binary(..) => {
+                    if self.memo.deferred_sums.contains(&node) {
+                        return Ok(true);
+                    }
+                }
+                Op::Use(inner)
+                | Op::Chosen(inner)
+                | Op::Annotate(_, inner)
+                | Op::Element { base: inner, .. }
+                | Op::Slice { base: inner, .. } => stack.push(*inner),
+                Op::Join(lhs, rhs) => stack.extend([*lhs, *rhs]),
+                Op::Builtin(Builtin::Bytes, args) => stack.extend(args.iter().copied()),
+                Op::Read(binding) => {
+                    if !self.memo.binding_layouts.contains_key(binding) {
+                        stack.push(self.binding(*binding)?.init);
+                    }
+                }
+                Op::If(_, then, otherwise) => stack.extend([*then, *otherwise]),
+                Op::Match {
+                    arms, otherwise, ..
+                } => {
+                    stack.extend(arms.iter().map(|(_, value)| *value));
+                    stack.extend(otherwise.iter().copied());
+                }
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Pick { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Builtin(..)
+                | Op::ToRead { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => {}
+            }
+        }
+        Ok(false)
+    }
+
     pub(in crate::semantics::analysis) fn length_val(
         &mut self,
         val: Val,
@@ -169,6 +228,13 @@ impl Engine<'_> {
         if !self.arrays.contains(&node) {
             self.error(Code::NotAnArray, loc, scope, NOT_AN_ARRAY)?;
             return Ok(Some(Val::Error));
+        }
+        if some!(self.sig(node, need)).frame && self.rests_on_recursion(node)? {
+            return Ok(Some(self.scalar(
+                Op::Builtin(Builtin::Len, vec![node]),
+                loc,
+                scope,
+            )?));
         }
         let found = some!(self.layout_of(node, need)?);
         let certain = found.certain;

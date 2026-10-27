@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, SpecFloat, UnaryOp, Value};
 
+use super::arrays::joined;
 use super::convert::convert;
 use super::convert_to::convert_to;
 use super::ctx::Ctx;
@@ -253,7 +254,7 @@ impl Engine<'_> {
         let op = self.node(node)?.op.clone();
         Ok(Some(match op {
             Op::Read(_) | Op::History { .. } => CVal::Error,
-            Op::Join(lhs, rhs) => return self.join((lhs, rhs), (own, partner), ctx, need),
+            Op::Join(lhs, rhs) => return self.join(node, (lhs, rhs), (own, partner), ctx, need),
             Op::Slice { base, lower, upper } => {
                 return self.sliced(base, (lower, upper), (own, partner), ctx, need);
             }
@@ -631,6 +632,28 @@ impl Engine<'_> {
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
+        if self.memo.deferred_sums.contains(&node) {
+            let a = self.typed_child(lhs, (own, partner), ctx, need)?;
+            let b = self.typed_child(rhs, (own, partner), ctx, need)?;
+            match (some!(a), some!(b)) {
+                (CVal::Error, _) | (_, CVal::Error) => return Ok(Some(CVal::Error)),
+                (CVal::Array(a), CVal::Array(b)) => return Ok(Some(joined(&a, &b))),
+                (CVal::Array(_), _) | (_, CVal::Array(_)) => {
+                    self.error_at_node(Code::ArrayOperand, node, JOIN_SINGLE)?;
+                    return Ok(Some(CVal::Error));
+                }
+                (CVal::Bool(_) | CVal::Enum(..) | CVal::Node(_), _)
+                | (_, CVal::Bool(_) | CVal::Enum(..) | CVal::Node(_)) => {
+                    self.error_at_node(
+                        Code::OperandType,
+                        node,
+                        "`+` takes two numbers or two strings",
+                    )?;
+                    return Ok(Some(CVal::Error));
+                }
+                (CVal::Int(_) | CVal::F32(_) | CVal::F64(_) | CVal::Str(_), _) => {}
+            }
+        }
         Ok(match op {
             BinaryOp::And | BinaryOp::Or => {
                 let a = self.child(lhs, EvalTy::Bool, ctx, need)?;
@@ -1146,6 +1169,8 @@ impl Engine<'_> {
         })
     }
 }
+
+const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
 
 fn int_position(value: CVal) -> Option<i128> {
     match value {

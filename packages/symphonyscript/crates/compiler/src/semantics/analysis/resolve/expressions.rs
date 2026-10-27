@@ -86,7 +86,7 @@ impl Engine<'_> {
                 let (lhs, rhs) = self.siblings(*lhs, *rhs, scope, need)?;
                 match (lhs, rhs) {
                     (Some(lhs), Some(rhs)) => {
-                        Some(self.binary_val(expr, *op, (lhs, rhs), loc, scope)?)
+                        self.binary_val(expr, *op, (lhs, rhs), (loc, scope), need)?
                     }
                     _ => None,
                 }
@@ -254,11 +254,11 @@ impl Engine<'_> {
         expr: ExprId,
         op: symphonyscript_core::BinaryOp,
         (lhs, rhs): (Val, Val),
-        loc: Loc,
-        scope: ScopeId,
-    ) -> Result<Val, Internal> {
+        (loc, scope): (Loc, ScopeId),
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
         if matches!(lhs, Val::Error) || matches!(rhs, Val::Error) {
-            return Ok(Val::Error);
+            return Ok(Some(Val::Error));
         }
         let arrays = (self.is_array_val(&lhs)?, self.is_array_val(&rhs)?);
         if arrays.0 || arrays.1 {
@@ -269,25 +269,34 @@ impl Engine<'_> {
                     scope,
                     "only `+` takes arrays, which it joins; every other operator takes single values",
                 )?;
-                return Ok(Val::Error);
+                return Ok(Some(Val::Error));
             }
-            let whole = |engine: &Self, val: &Val| -> bool {
-                matches!(val, Val::Scalar(node) if engine.arrays.contains(node))
-            };
-            if !(arrays.0 || whole(self, &lhs)) || !(arrays.1 || whole(self, &rhs)) {
-                self.error(
-                    Code::ArrayOperand,
-                    loc,
-                    scope,
-                    "`+` joins two arrays, and one of these is a single value",
-                )?;
-                return Ok(Val::Error);
+            if !(arrays.0 || self.holds_array(&lhs)) || !(arrays.1 || self.holds_array(&rhs)) {
+                self.error(Code::ArrayOperand, loc, scope, JOIN_SINGLE)?;
+                return Ok(Some(Val::Error));
             }
-            return self.join_val(expr, (lhs, rhs), loc, scope);
+            return Ok(Some(self.join_val(expr, (lhs, rhs), loc, scope)?));
+        }
+        if let (symphonyscript_core::BinaryOp::Add, Val::Scalar(left), Val::Scalar(right)) =
+            (op, &lhs, &rhs)
+            && self.arrays.contains(left)
+            && self.arrays.contains(right)
+            && (self.rests_on_recursion(*left)? || self.rests_on_recursion(*right)?)
+        {
+            let (left, right) = (*left, *right);
+            let left_sig = self.sig(left, need);
+            let right_sig = self.sig(right, need);
+            let (left_sig, right_sig) = (some!(left_sig), some!(right_sig));
+            if !left_sig.reactive && !right_sig.reactive {
+                let sum = self.push_node(Op::Binary(op, left, right), loc, scope)?;
+                self.arrays.insert(sum);
+                self.memo.deferred_sums.insert(sum);
+                return Ok(Some(Val::Scalar(sum)));
+            }
         }
         self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
         self.single_operand(&rhs, Code::ArrayOperand, OPERAND);
-        Ok(match (lhs, rhs) {
+        Ok(Some(match (lhs, rhs) {
             (Val::Scalar(lhs), Val::Scalar(rhs)) => {
                 self.scalar(Op::Binary(op, lhs, rhs), loc, scope)?
             }
@@ -301,7 +310,7 @@ impl Engine<'_> {
                 )?;
                 Val::Error
             }
-        })
+        }))
     }
 
     fn if_val(
@@ -903,6 +912,8 @@ impl Engine<'_> {
 type Zipped = (Shape, Vec<Vec<NodeId>>);
 
 const OPERAND: &str = "operators and conversions apply to single values, not arrays";
+
+const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
 
 const RAGGED: &str = "the elements of an array are arrays of one length, or all single values";
 

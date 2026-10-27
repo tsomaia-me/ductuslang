@@ -363,6 +363,14 @@ impl Engine<'_> {
                 }
                 Sig::of(Kind::Str, Width::Fixed(Scalar::Str), false, None)
             }
+            BinaryOp::Add if !numeric && self.memo.deferred_sums.contains(&node) => {
+                let Some((kind, width, family)) =
+                    self.elements_sig(node, &[lhs.0, rhs.0], &[a, b])?
+                else {
+                    return Ok(Sig::ERROR);
+                };
+                Sig::of(kind, width, reactive, family)
+            }
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Rem | BinaryOp::Pow => {
                 if !numeric {
                     let message = match op {

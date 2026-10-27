@@ -1083,9 +1083,14 @@ impl Engine<'_> {
                         ArmShape::Array(inner) => Some(inner.clone()),
                         ArmShape::Unknown | ArmShape::Single => None,
                     });
+                    let single = types.iter().any(|typed| typed.shape == ArmShape::Single);
                     ArmType {
                         kind: all_kinds(),
-                        shape: array.map_or(ArmShape::Single, ArmShape::Array),
+                        shape: match array {
+                            Some(inner) => ArmShape::Array(inner),
+                            None if single => ArmShape::Single,
+                            None => ArmShape::Unknown,
+                        },
                     }
                 }
                 BinaryOp::Sub
