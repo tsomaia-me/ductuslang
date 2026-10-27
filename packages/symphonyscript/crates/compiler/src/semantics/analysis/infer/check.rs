@@ -597,6 +597,12 @@ impl Engine<'_> {
         ) || matches!(sig.width, Width::Adaptive)
             && matches!(self.node(node)?.op, Op::ToRead { .. });
         let fits_kind = match (self.carried_kind(node, sig.kind)?, expected) {
+            (Kind::Str, Scalar::Str) if sig.reactive => {
+                return Ok(Some((
+                    Code::ReactiveString,
+                    "a string exists only at compile time, and this one reads a cell".into(),
+                )));
+            }
             (Kind::Bool, Scalar::Bool) | (Kind::Str, Scalar::Str) => true,
             (Kind::Enum(id), Scalar::Enum(other)) => id == other,
             (Kind::Bare, Scalar::Enum(_)) | (Kind::Any, _) => true,

@@ -58,13 +58,15 @@ impl Engine<'_> {
                     None => return Ok(ArrayPosition::Faulty),
                 }
             }
-            Val::Scalar(_) => {
-                self.error(
-                    Code::TypeMismatch,
-                    position.loc,
-                    position.scope,
-                    "this attribute holds a variable array, and the value is a single value",
-                )?;
+            Val::Scalar(node) => {
+                if !self.demand_sig(*node)?.is_error() {
+                    self.error(
+                        Code::TypeMismatch,
+                        position.loc,
+                        position.scope,
+                        "this attribute holds a variable array, and the value is a single value",
+                    )?;
+                }
                 return Ok(ArrayPosition::Faulty);
             }
             Val::Error => return Ok(ArrayPosition::Faulty),

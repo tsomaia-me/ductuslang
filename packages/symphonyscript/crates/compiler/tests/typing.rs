@@ -4404,6 +4404,138 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
 }
 
 #[test]
+fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_array_of_their_bytes()
+ {
+    let f = "input f = false\n";
+    let rows: &[support::Row] = &[
+        (
+            &[f, "Clip as g | data=(if f then \"GET\" else \"AB\")\n"],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "Clip as g | data=(if f then \"GET\" else \"ABCDEFGHI\")\n",
+            ],
+            &[(
+                Code::CapacityExceeded,
+                "if f then \"GET\" else \"ABCDEFGHI\"",
+            )],
+        ),
+        (
+            &[
+                f,
+                "fn m(x):\n    match x:\n        true: \"GET\"\n        else: \"AB\"\n",
+                "Clip as g | data=m(f)\n",
+            ],
+            &[],
+        ),
+        (
+            &[f, "Clip as g | data=(if true then \"AB\" else \"CD\")\n"],
+            &[],
+        ),
+        (&["Clip as g | data=\"GET\"\n"], &[]),
+        (
+            &[
+                f,
+                "Clip as g | data=(if f then [71, 69, 84] else [65, 66])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "let s = \"GET\"\n",
+                "Clip as g | data=(if f then s else (if f then s else \"AB\"))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "let d: u8[..8] = if f then \"GET\" else \"AB\"\n",
+                "Clip as g | data=d\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                f,
+                "let d: u8[..2] = if f then \"GET\" else \"AB\"\n",
+                "Clip as g | data=d\n",
+            ],
+            &[(
+                Code::CapacityExceeded,
+                "let d: u8[..2] = if f then \"GET\" else \"AB\"\n",
+            )],
+        ),
+        (
+            &[
+                f,
+                "state d: u8[..8] = if f then \"GET\" else \"AB\"\n",
+                "Clip as g | data=d\n",
+            ],
+            &[],
+        ),
+        (
+            &[f, "Clip as g | fixed=(if f then \"GET\" else \"ABC\")\n"],
+            &[],
+        ),
+        (
+            &[f, "Clip as g | fixed=(if f then \"GET\" else \"AB\")\n"],
+            &[(Code::VariableArray, "if f then \"GET\" else \"AB\"")],
+        ),
+        (
+            &[
+                f,
+                "input n = 1\n",
+                "Clip as g | data=(if f then \"GET\" else \"A{n}\")\n",
+            ],
+            &[(Code::ReactiveString, "n")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
+    let compiler =
+        symphonyscript::Compiler::new(&support::signature_vocabulary()).expect("it compiles");
+    let text = "input f = false\nClip as g | data=(if f then \"GET\" else \"ABCDEFGHI\")\n";
+    let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
+        .into_iter()
+        .map(|diagnostic| diagnostic.summary)
+        .collect();
+    assert_eq!(
+        summaries,
+        ["this value holds up to 9 elements, more than the attribute's capacity 8"],
+        "{text}"
+    );
+    let rows: &[support::Row] = &[
+        (
+            &[
+                f,
+                "Kit k:\n    Sampler | file=(if f then \"a\" else \"b\")\n",
+            ],
+            &[(Code::ReactiveString, "if f then \"a\" else \"b\"")],
+        ),
+        (
+            &[f, "Track t | label=(if f then \"x\" else \"y\")\n"],
+            &[(Code::ReactiveString, "if f then \"x\" else \"y\"")],
+        ),
+        (
+            &["Kit k:\n    Sampler | file=(if true then \"a\" else \"b\")\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let rows: &[support::Row] = &[(
+        &[
+            f,
+            "Song s:\n    Clip as c:\n        Note/(checksum(if f then \"a\" else \"bc\"))\n",
+        ],
+        &[],
+    )];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+}
+
+#[test]
 fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_every_value() {
     let x = "input x = 1\n";
     let flag = "input flag = true\n";

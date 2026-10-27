@@ -332,14 +332,116 @@ impl Engine<'_> {
             return Ok(Some(Val::Scalar(*bytes)));
         }
         let sig = some!(self.sig(node, need));
-        if sig.kind != Kind::Str || sig.reactive {
+        if sig.kind != Kind::Str {
             return Ok(Some(val));
+        }
+        if sig.reactive {
+            return Ok(Some(match some!(self.choice_bytes(node, need)?) {
+                Some(bytes) => Val::Scalar(bytes),
+                None => val,
+            }));
         }
         let bytes = self.scalar(Op::Builtin(Builtin::Bytes, vec![node]), loc, scope)?;
         if let Val::Scalar(created) = bytes {
             self.memo.string_bytes.insert(node, created);
         }
         Ok(Some(bytes))
+    }
+
+    pub(in crate::semantics::analysis) fn choice_bytes(
+        &mut self,
+        root: NodeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<NodeId>>, Internal> {
+        let mut order = Vec::new();
+        let mut seen = FastSet::default();
+        let mut stack = vec![(root, false)];
+        while let Some((node, expanded)) = stack.pop() {
+            if expanded {
+                order.push(node);
+                continue;
+            }
+            if !seen.insert(node) {
+                continue;
+            }
+            stack.push((node, true));
+            let arms = match &self.node(node)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => vec![*inner],
+                Op::If(_, then, otherwise) => vec![*then, *otherwise],
+                Op::Match {
+                    arms, otherwise, ..
+                } => arms
+                    .iter()
+                    .map(|(_, value)| *value)
+                    .chain(*otherwise)
+                    .collect(),
+                _ => {
+                    let sig = some!(self.sig(node, need));
+                    if sig.kind != Kind::Str || sig.reactive || sig.is_error() {
+                        return Ok(Some(None));
+                    }
+                    Vec::new()
+                }
+            };
+            stack.extend(arms.into_iter().map(|arm| (arm, false)));
+        }
+        let mut bytes: FastMap<NodeId, NodeId> = FastMap::default();
+        for node in order {
+            let record = self.node(node)?.clone();
+            let mapped = |inner: &NodeId| {
+                bytes
+                    .get(inner)
+                    .copied()
+                    .ok_or(Internal::missed("the bytes of an arm"))
+            };
+            let created = match &record.op {
+                Op::Use(inner) | Op::Chosen(inner) => mapped(inner)?,
+                Op::If(condition, then, otherwise) => self.push_node(
+                    Op::If(*condition, mapped(then)?, mapped(otherwise)?),
+                    record.loc,
+                    record.scope,
+                )?,
+                Op::Match {
+                    scrutinee,
+                    arms,
+                    otherwise,
+                } => {
+                    let arms = arms
+                        .iter()
+                        .map(|(label, value)| Ok((*label, mapped(value)?)))
+                        .collect::<Result<Vec<_>, Internal>>()?;
+                    let otherwise = otherwise.as_ref().map(mapped).transpose()?;
+                    self.push_node(
+                        Op::Match {
+                            scrutinee: *scrutinee,
+                            arms,
+                            otherwise,
+                        },
+                        record.loc,
+                        record.scope,
+                    )?
+                }
+                _ => match self.memo.string_bytes.get(&node) {
+                    Some(created) => *created,
+                    None => {
+                        let created = self.push_node(
+                            Op::Builtin(Builtin::Bytes, vec![node]),
+                            record.loc,
+                            record.scope,
+                        )?;
+                        self.memo.string_bytes.insert(node, created);
+                        created
+                    }
+                },
+            };
+            bytes.insert(node, created);
+        }
+        let created = bytes
+            .get(&root)
+            .copied()
+            .ok_or(Internal::missed("the bytes of a choice"))?;
+        self.memo.string_bytes.insert(root, created);
+        Ok(Some(Some(created)))
     }
 
     pub(in crate::semantics::analysis) fn counted_from_end(
