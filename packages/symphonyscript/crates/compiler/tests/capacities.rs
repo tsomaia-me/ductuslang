@@ -2418,6 +2418,34 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             "write a string of at most 8 bytes",
         ),
         (
+            support::signature_vocabulary,
+            &[
+                "input f = false\n",
+                "Clip c | data=(if f then \"GET\" else \"ABCDEFGHI\"):\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "write a string of at most 8 bytes",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input f = false\n",
+                "let r: u8[..2] = if f then \"GET\" else \"AB\"\n",
+                "Clip c | data=r:\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "write a string of at most 2 bytes, or annotate a capacity of at least 3, as in `u8[..3]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input held: i32[..9] = []\n",
+                "Clip c | data=held:\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "slice the value to its newest 8 elements with `[^8..]`",
+        ),
+        (
             vocabulary,
             &["input x: i32[..1] = [1, 2]\n", "Clip c:\n    Note/(x[0])\n"],
             Code::CapacityExceeded,
@@ -2550,6 +2578,26 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                     "input a = 0\n",
                     "state[1] t = a{1}\n",
                     "Clip c:\n    Note/(t)\n",
+                ],
+                &[],
+            ),
+        ],
+    );
+    support::assert_rows_in_every_order(
+        &support::signature_vocabulary(),
+        &[
+            (
+                &[
+                    "input f = false\n",
+                    "Clip c | data=(if f then \"GET\" else \"ABCDEFGH\"):\n    Note\n",
+                ],
+                &[],
+            ),
+            (
+                &[
+                    "input f = false\n",
+                    "let r: u8[..3] = if f then \"GET\" else \"AB\"\n",
+                    "Clip c | data=r:\n    Note\n",
                 ],
                 &[],
             ),

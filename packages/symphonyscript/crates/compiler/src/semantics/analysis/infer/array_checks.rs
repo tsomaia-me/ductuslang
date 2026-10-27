@@ -144,17 +144,31 @@ impl Engine<'_> {
         use crate::semantics::analysis::kind::Kind;
         use crate::semantics::analysis::op::Op;
         use symphonyscript_core::Builtin;
-        let Op::Builtin(Builtin::Bytes, operands) = &self.node(node)?.op else {
-            return Ok(false);
-        };
-        Ok(match operands.as_slice() {
-            [operand] => self
-                .memo
-                .sigs
-                .get(operand)
-                .is_some_and(|sig| sig.kind == Kind::Str),
-            _ => false,
-        })
+        let mut leaves = vec![node];
+        while let Some(leaf) = leaves.pop() {
+            match &self.node(leaf)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => leaves.push(*inner),
+                Op::If(_, then, otherwise) => leaves.extend([*then, *otherwise]),
+                Op::Match {
+                    arms, otherwise, ..
+                } => leaves.extend(arms.iter().map(|(_, value)| *value).chain(*otherwise)),
+                Op::Builtin(Builtin::Bytes, operands) => {
+                    let [operand] = operands.as_slice() else {
+                        return Ok(false);
+                    };
+                    if !self
+                        .memo
+                        .sigs
+                        .get(operand)
+                        .is_some_and(|sig| sig.kind == Kind::Str)
+                    {
+                        return Ok(false);
+                    }
+                }
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
     }
 
     fn fixed_help(&self, ty: &symphonyscript_core::Ty) -> Result<String, Internal> {
