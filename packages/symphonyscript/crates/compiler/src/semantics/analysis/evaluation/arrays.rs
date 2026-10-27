@@ -6,21 +6,48 @@ use crate::semantics::analysis::c_array::CArray;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::some::some;
 
-pub(super) fn joined(left: &CArray, right: &CArray) -> CVal {
-    let mut items = left.items().to_vec();
-    items.extend(right.items().iter().cloned());
-    CVal::Array(CArray::new(items))
-}
-
 type SliceBounds = (Option<(NodeId, bool)>, Option<(NodeId, bool)>);
 
 impl Engine<'_> {
+    pub(super) fn joined(
+        &mut self,
+        node: NodeId,
+        left: &CArray,
+        right: &CArray,
+    ) -> Result<CVal, Internal> {
+        match CArray::join(left, right) {
+            Ok(array) => Ok(CVal::Array(array)),
+            Err(Code::LengthLimit) => {
+                let total = u128::try_from(left.len())
+                    .unwrap_or(u128::MAX)
+                    .saturating_add(u128::try_from(right.len()).unwrap_or(u128::MAX));
+                self.error_at_node(
+                    Code::LengthLimit,
+                    node,
+                    format!(
+                        "this join holds {total} elements, and an array's length and capacity are below 2³¹"
+                    ),
+                )?;
+                Ok(CVal::Error)
+            }
+            Err(code) => {
+                self.error_at_node(
+                    code,
+                    node,
+                    "the rows of the joined arrays have different shapes",
+                )?;
+                Ok(CVal::Error)
+            }
+        }
+    }
+
     pub(super) fn join(
         &mut self,
         node: NodeId,
@@ -33,7 +60,7 @@ impl Engine<'_> {
         let right = self.typed_child(rhs, typed, ctx, need)?;
         let (left, right) = (some!(left), some!(right));
         Ok(Some(match (left, right) {
-            (CVal::Array(left), CVal::Array(right)) => joined(&left, &right),
+            (CVal::Array(left), CVal::Array(right)) => self.joined(node, &left, &right)?,
             (CVal::Error, _) | (_, CVal::Error) => CVal::Error,
             _ => {
                 self.error_at_node(
@@ -72,7 +99,7 @@ impl Engine<'_> {
                 return Ok(Some(CVal::Error));
             }
         };
-        let length = i128::try_from(array.items().len()).unwrap_or(i128::MAX);
+        let length = i128::try_from(array.len()).unwrap_or(i128::MAX);
         let resolve = |bound: Option<(i128, bool)>, absent: i128| match bound {
             None => Some(absent),
             Some((value, from_end)) => {
@@ -91,12 +118,7 @@ impl Engine<'_> {
         let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
             return Ok(Some(CVal::Error));
         };
-        let items = array
-            .items()
-            .get(start..end)
-            .ok_or(Internal::missed("slice"))?
-            .to_vec();
-        Ok(Some(CVal::Array(CArray::new(items))))
+        Ok(Some(CVal::Array(CArray::new(array.range(start, end)))))
     }
 
     fn position_of(
@@ -139,9 +161,7 @@ impl Engine<'_> {
     ) -> Result<Option<CVal>, Internal> {
         Ok(Some(
             match some!(self.child(operand, EvalTy::Default, ctx, need)?) {
-                CVal::Array(array) => {
-                    CVal::Int(i128::try_from(array.items().len()).unwrap_or(i128::MAX))
-                }
+                CVal::Array(array) => CVal::Int(i128::try_from(array.len()).unwrap_or(i128::MAX)),
                 CVal::Error => CVal::Error,
                 CVal::Int(_)
                 | CVal::F32(_)
@@ -175,7 +195,7 @@ impl Engine<'_> {
                     .map(|byte| CVal::Int(i128::from(byte)))
                     .collect(),
             )),
-            CVal::Array(_) => map_leaves(value, |leaf| {
+            CVal::Array(_) => map_leaves(value, &mut FastMap::default(), |leaf| {
                 Ok::<CVal, Internal>(match leaf {
                     CVal::Int(_) => convert(leaf, EvalTy::U8),
                     _ => CVal::Error,

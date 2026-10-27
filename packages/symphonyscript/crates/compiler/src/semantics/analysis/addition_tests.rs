@@ -5,6 +5,7 @@ use super::Engine;
 use super::attr_value_source::AttrValueSource;
 use super::bound::Bound;
 use super::bound_val::BoundVal;
+use super::c_array::CArray;
 use super::c_val::CVal;
 use super::eval_ty::EvalTy;
 use super::ids::{BindingId, NodeId};
@@ -884,5 +885,79 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
             assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
             assert_eq!(value, Some(CVal::Int(*expected)), "{text}");
         }
+    }
+}
+
+fn doubling_work(read: &str, depth: u32) -> (Option<CVal>, u64, u64, u64) {
+    let text = format!(
+        "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\nClip c:\n    Note/({})\n",
+        read.replace('k', &depth.to_string())
+    );
+    let (built_before, visited_before) = CArray::work();
+    let (diagnostics, (value, evaluation)) = analyzed(&vocabulary(), &text, |engine| {
+        (
+            attr_value(engine, "pitch", EvalTy::I32),
+            engine.memo.evaluation_work,
+        )
+    });
+    let (built_after, visited_after) = CArray::work();
+    assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+    (
+        value,
+        built_after - built_before,
+        visited_after - visited_before,
+        evaluation,
+    )
+}
+
+#[test]
+fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_them() {
+    for read in ["60 + len(f(k))", "60 + f(k)[5]"] {
+        let first = doubling_work(read, 10).1;
+        for depth in [20, 30] {
+            assert_eq!(doubling_work(read, depth).1, first, "{read} at {depth}");
+        }
+    }
+    let (length, _, _, _) = doubling_work("60 + len(f(k))", 30);
+    assert_eq!(length, Some(CVal::Int(1_073_741_884)));
+    let (element, _, _, _) = doubling_work("60 + f(k)[5]", 30);
+    assert_eq!(element, Some(CVal::Int(61)));
+    let work: Vec<(u64, u64)> = [10, 20, 30]
+        .into_iter()
+        .map(|depth| {
+            let (_, _, visited, evaluation) = doubling_work("60 + len(f(k))", depth);
+            (visited, evaluation)
+        })
+        .collect();
+    for pair in work.windows(2) {
+        let (earlier, later) = (pair[0], pair[1]);
+        assert_eq!(later.0 - earlier.0, work[1].0 - work[0].0, "{work:?}");
+        assert_eq!(later.1 - earlier.1, work[1].1 - work[0].1, "{work:?}");
+    }
+    let ragged_built: Vec<u64> = [3, 30]
+        .into_iter()
+        .map(|bound| {
+            let text = format!(
+                "fn f(n) bounded {bound} else [[1, 2]]: f(n - 1) + [[3]]\nClip c:\n    Note/(60 + len(f(0)))\n"
+            );
+            let (built_before, _) = CArray::work();
+            let (diagnostics, ()) = analyzed(&vocabulary(), &text, |_| ());
+            let (built_after, _) = CArray::work();
+            assert_eq!(errors(&diagnostics).len(), 1, "{text}{diagnostics:?}");
+            built_after - built_before
+        })
+        .collect();
+    assert_eq!(ragged_built[0], ragged_built[1]);
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    for text in in_every_order(&[
+        doubling,
+        "let p: i32[8] = f(3)\n",
+        "Clip c:\n    Note/(p[7])\n",
+    ]) {
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(1)), "{text}");
     }
 }

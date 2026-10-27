@@ -52,7 +52,7 @@ impl Engine<'_> {
         let mut rows_held = Vec::with_capacity(values.len());
         for (value, param) in values.into_iter().flatten().zip(&signature.params) {
             rows_held.push(match &value {
-                CVal::Array(array) => array.items().len(),
+                CVal::Array(array) => array.len(),
                 _ => 0,
             });
             let ty = native_ty(param);

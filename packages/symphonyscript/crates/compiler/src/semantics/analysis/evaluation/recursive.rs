@@ -782,7 +782,7 @@ impl Engine<'_> {
             return Ok(value);
         }
         let flexible = self.known_sig(root)?.width == Width::Flexible;
-        map_leaves(value, |leaf| {
+        map_leaves(value, &mut FastMap::default(), |leaf| {
             self.convert_integer(call, flexible, leaf, expected)
         })
     }

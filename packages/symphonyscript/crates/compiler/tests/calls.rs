@@ -993,3 +993,110 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         );
     }
 }
+
+#[test]
+fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
+    let appending = "fn f(n) bounded 3 else [[1, 2]]: f(n - 1) + [[3]]\n";
+    let unbounded = "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + [[3]]\n";
+    let ragged = &[(Code::RaggedArray, "f(n - 1) + [[3]]")];
+    let rows: &[support::Row] = &[
+        (&[appending, "Clip c:\n    Note/(60 + len(f(0)))\n"], ragged),
+        (
+            &[
+                "fn f(n) bounded 3 else [[1, 2]]: [[3]] + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(0)))\n",
+            ],
+            &[(Code::RaggedArray, "[[3]] + f(n - 1)")],
+        ),
+        (&[unbounded, "Clip c:\n    Note/(60 + len(f(2)))\n"], ragged),
+        (&[unbounded, "Clip c:\n    Note/(60 + len(f(3)))\n"], ragged),
+        (
+            &[
+                "fn f(n) bounded 3 else [[[1, 2]]]: f(n - 1) + [[[3]]]\n",
+                "Clip c:\n    Note/(60 + len(f(0)))\n",
+            ],
+            &[(Code::RaggedArray, "f(n - 1) + [[[3]]]")],
+        ),
+        (
+            &[
+                "fn f(n) bounded 3 else [[1, 2]]: f(n - 1) + g(n)\n",
+                "fn g(n) bounded 3 else [[3]]: g(n - 1) + g(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(0)))\n",
+            ],
+            &[(Code::RaggedArray, "f(n - 1) + g(n)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + g(n)\n",
+                "fn g(n): if n is 0 then [[1, 2, 3]] else g(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(1)))\n",
+            ],
+            &[(Code::RaggedArray, "f(n - 1) + g(n)")],
+        ),
+        (
+            &[
+                appending,
+                "let p: i32[2][4] = f(0)\n",
+                "Clip c:\n    Note/(p[0][0])\n",
+            ],
+            ragged,
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + [[3, 4]]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "let x = [[1, 2]] + [[3]]\n",
+                "Clip c:\n    Note/(x[0][0])\n",
+            ],
+            &[(Code::RaggedArray, "[[1, 2]] + [[3]]")],
+        ),
+        (
+            &[
+                "input i = 1\n",
+                appending,
+                "Clip c:\n    Note/(len(f(i)))\n",
+            ],
+            ragged,
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_before_it_is_built() {
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    let limited = &[(Code::LengthLimit, "f(n - 1) + f(n - 1)")];
+    let rows: &[support::Row] = &[
+        (
+            &[doubling, "Clip c:\n    Note/(60 + len(f(31)))\n"],
+            limited,
+        ),
+        (
+            &[doubling, "Clip c:\n    Note/(60 + len(f(40)))\n"],
+            limited,
+        ),
+        (
+            &[
+                "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(0)))\n",
+            ],
+            limited,
+        ),
+        (&[doubling, "Clip c:\n    Note/(60 + len(f(30)))\n"], &[]),
+        (&[doubling, "Clip c:\n    Note/(60 + f(30)[5])\n"], &[]),
+        (
+            &[
+                doubling,
+                "let p: i32[8] = f(3)\n",
+                "Clip c:\n    Note/(p[7])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}

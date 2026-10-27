@@ -50,6 +50,7 @@ pub(crate) struct Memo {
     pub settlement_visits: u64,
     pub blocked_walks: FastMap<crate::semantics::ir::StateId, (u32, crate::semantics::ir::StateId)>,
     pub evaluation_work: u64,
+    pub conversions: FastMap<EvalTy, FastMap<*const (), (super::c_array::CArray, CVal)>>,
     pub cycle_work: u64,
     pub reaching_reads: Vec<bool>,
     pub read_walk: u64,

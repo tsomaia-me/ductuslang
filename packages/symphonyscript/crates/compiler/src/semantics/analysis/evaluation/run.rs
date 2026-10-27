@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use symphonyscript_core::{BinaryOp, Builtin, Scalar, SpecFloat, UnaryOp, Value};
 
-use super::arrays::joined;
 use super::convert::convert;
 use super::convert_to::convert_to;
 use super::ctx::Ctx;
@@ -29,6 +28,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::kind::Kind;
@@ -79,22 +79,22 @@ impl Engine<'_> {
             && let Some(scale) = self.memo.default_scales.get(&node).copied()
         {
             let value = some!(self.compute(node, (of_scalar(integer), None), ctx, need)?);
-            let value = map_leaves(value, |leaf| {
+            let value = map_leaves(value, &mut FastMap::default(), |leaf| {
                 Ok(convert_to(scaled_into(leaf, scale, own)?, ty))
             })?;
             return Ok(Some(self.shape_checked(node, value)?));
         }
         let value = if own == EvalTy::Default && sig.kind == Kind::Float {
             let wide = some!(self.child(node, EvalTy::DefaultF64, ctx, need)?);
-            let leaves = match &wide {
-                CVal::Array(array) => array.leaves(),
-                leaf => vec![leaf.clone()],
+            let within_f32 = |leaf: &CVal| match leaf {
+                CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
+                _ => false,
             };
-            let outside_f32 = leaves.iter().any(|leaf| {
-                matches!(leaf, CVal::F64(value) if !value.is_nan() && !(*value as f32).is_finite())
-            });
-            let all_f64 = leaves.iter().all(|leaf| matches!(leaf, CVal::F64(_)));
-            if all_f64 && !outside_f32 {
+            let fits_f32 = match &wide {
+                CVal::Array(array) => array.all_leaves(within_f32),
+                leaf => within_f32(leaf),
+            };
+            if fits_f32 {
                 some!(self.child(node, EvalTy::DefaultF32, ctx, need)?)
             } else {
                 wide
@@ -119,7 +119,8 @@ impl Engine<'_> {
             let value = self.shape_checked(node, value)?;
             return Ok(Some(self.fit(node, value, ty)?));
         }
-        let value = map_leaves(value, |leaf| Ok(convert_to(leaf, ty)))?;
+        let conversions = self.memo.conversions.entry(ty).or_default();
+        let value = map_leaves(value, conversions, |leaf| Ok(convert_to(leaf, ty)))?;
         Ok(Some(self.shape_checked(node, value)?))
     }
 
@@ -173,7 +174,7 @@ impl Engine<'_> {
         };
         let item = usize::try_from(position)
             .ok()
-            .and_then(|position| array.items().get(position).cloned());
+            .and_then(|position| array.get(position).cloned());
         Ok(match item {
             Some(item) => item,
             None => {
@@ -182,7 +183,7 @@ impl Engine<'_> {
                     index,
                     format!(
                         "the index {position} is outside the array of length {}",
-                        array.items().len()
+                        array.len()
                     ),
                 )?;
                 CVal::Error
@@ -637,7 +638,7 @@ impl Engine<'_> {
             let b = self.typed_child(rhs, (own, partner), ctx, need)?;
             match (some!(a), some!(b)) {
                 (CVal::Error, _) | (_, CVal::Error) => return Ok(Some(CVal::Error)),
-                (CVal::Array(a), CVal::Array(b)) => return Ok(Some(joined(&a, &b))),
+                (CVal::Array(a), CVal::Array(b)) => return Ok(Some(self.joined(node, &a, &b)?)),
                 (CVal::Array(_), _) | (_, CVal::Array(_)) => {
                     self.error_at_node(Code::ArrayOperand, node, JOIN_SINGLE)?;
                     return Ok(Some(CVal::Error));
@@ -950,13 +951,11 @@ impl Engine<'_> {
         let mut parts = vec![(node, value.clone())];
         while let Some((at, part)) = parts.pop() {
             match (&self.node(at)?.op, &part) {
-                (Op::Array(elements), CVal::Array(array))
-                    if elements.len() == array.items().len() =>
-                {
+                (Op::Array(elements), CVal::Array(array)) if elements.len() == array.len() => {
                     parts.extend(elements.iter().copied().zip(array.items().iter().cloned()));
                 }
                 (_, CVal::Array(array)) => {
-                    if !array.leaves().iter().all(|leaf| fits_in(leaf, ty)) {
+                    if !array.all_leaves(|leaf| fits_in(leaf, ty)) {
                         unfit.push(at);
                     }
                 }
@@ -1001,7 +1000,9 @@ impl Engine<'_> {
             return self.child(node, own, ctx, need);
         }
         let value = some!(self.child(node, request, ctx, need)?);
-        Ok(Some(map_leaves(value, |leaf| Ok(convert_to(leaf, own)))?))
+        Ok(Some(map_leaves(value, &mut FastMap::default(), |leaf| {
+            Ok(convert_to(leaf, own))
+        })?))
     }
 
     fn operand_fit(
@@ -1143,7 +1144,9 @@ impl Engine<'_> {
         let Some(scale) = self.memo.default_scales.get(&node).copied() else {
             return Ok(value);
         };
-        map_leaves(value, |leaf| self.scaled_leaf(node, scale, leaf, target))
+        map_leaves(value, &mut FastMap::default(), |leaf| {
+            self.scaled_leaf(node, scale, leaf, target)
+        })
     }
 
     fn scaled_leaf(
