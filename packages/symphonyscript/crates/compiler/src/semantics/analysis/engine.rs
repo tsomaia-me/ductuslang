@@ -354,6 +354,7 @@ impl<'a> Engine<'a> {
     }
 
     fn run(&mut self, query: Query, need: &mut Vec<Query>) -> Result<bool, Internal> {
+        self.memo.query_runs += 1;
         match query {
             Query::Expr(expr, scope) => self.run_expr(expr, scope, need),
             Query::Let(scope, local) => self.run_let(scope, local, need),

@@ -56,6 +56,7 @@ impl Engine<'_> {
         loop {
             let mut changed = false;
             for &member in &reads_first {
+                self.flow_step();
                 if !waiting.contains(&member) || blocked.contains(&member) {
                     continue;
                 }
@@ -96,6 +97,7 @@ impl Engine<'_> {
                 }
             }
             for &member in &readers_first {
+                self.flow_step();
                 if !waiting.contains(&member)
                     || blocked.contains(&member)
                     || is_input(member, &flows)
@@ -118,6 +120,7 @@ impl Engine<'_> {
             }
             let mut compared = Vec::new();
             for &member in &readers_first {
+                self.flow_step();
                 if !waiting.contains(&member)
                     || blocked.contains(&member)
                     || is_input(member, &flows)
@@ -179,6 +182,7 @@ impl Engine<'_> {
         for cell in pending {
             let mut stack = vec![self.binding(*cell)?.init];
             while let Some(node) = stack.pop() {
+                self.flow_step();
                 if !carried.insert(node) {
                     continue;
                 }
@@ -190,6 +194,7 @@ impl Engine<'_> {
         }
         let mut used = FastSet::default();
         for (index, node) in self.nodes.iter().enumerate() {
+            self.flow_step();
             let Op::Use(inner) = node.op else {
                 continue;
             };
@@ -216,10 +221,12 @@ impl Engine<'_> {
         }
         let mut values = FastMap::default();
         for member in &members {
+            self.flow_step();
             values.insert(*member, self.value_reads(*member, &members)?);
         }
         let mut partners: FastMap<Member, Vec<Member>> = FastMap::default();
         for node in &self.nodes {
+            self.flow_step();
             let Op::Binary(BinaryOp::Is | BinaryOp::IsNot, lhs, rhs) = node.op else {
                 continue;
             };
@@ -246,6 +253,7 @@ impl Engine<'_> {
         for start in sorted {
             let mut stack = vec![(start, false)];
             while let Some((member, expanded)) = stack.pop() {
+                self.flow_step();
                 if done.contains(&member) {
                     continue;
                 }
@@ -312,12 +320,18 @@ impl Engine<'_> {
         }
     }
 
+    fn flow_step(&self) {
+        self.memo.flow_work.set(self.memo.flow_work.get() + 1);
+    }
+
     fn value_loc(&self, member: Member, lets: &LetWriters) -> Result<Loc, Internal> {
+        self.flow_step();
         let loc = self.node(self.member_node(member)?)?.loc;
         Ok(value_of(lets, loc).unwrap_or(loc))
     }
 
     fn member_site(&self, member: Member, lets: &LetWriters) -> Result<(Loc, ScopeId), Internal> {
+        self.flow_step();
         Ok(match member {
             Member::Cell(binding) => {
                 let record = self.binding(binding)?;
@@ -468,6 +482,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            self.flow_step();
             if !seen.insert(node) {
                 continue;
             }
@@ -550,6 +565,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            self.flow_step();
             if !seen.insert(node) {
                 continue;
             }
@@ -680,6 +696,7 @@ impl Engine<'_> {
         read_by_untyped.extend(self.typing.read_by_faults.iter().copied());
         if !self.cycle_spans.is_empty() {
             for node in &self.nodes {
+                self.flow_step();
                 if let Op::Read(binding) = node.op
                     && self.cycle_spans.iter().any(|span| span.contains(node.loc))
                 {
@@ -693,6 +710,7 @@ impl Engine<'_> {
         let mut neighbours: FastMap<Member, Vec<Member>> = FastMap::default();
         let mut read_by_member = FastSet::default();
         for &member in remaining {
+            self.flow_step();
             if self.writes_variant(self.member_node(member)?)? {
                 writers.insert(member);
             }
@@ -718,6 +736,7 @@ impl Engine<'_> {
             }
         }
         for &member in remaining {
+            self.flow_step();
             self.mark_untyped(member)?;
         }
         let mut seen = FastSet::default();
@@ -728,6 +747,7 @@ impl Engine<'_> {
             let mut flow = vec![start];
             let mut stack = vec![start];
             while let Some(member) = stack.pop() {
+                self.flow_step();
                 for other in neighbours.get(&member).into_iter().flatten() {
                     if seen.insert(*other) {
                         flow.push(*other);
@@ -759,6 +779,7 @@ impl Engine<'_> {
             }
             let mut located = Vec::with_capacity(flow.len());
             for member in flow {
+                self.flow_step();
                 let (loc, scope) = self.member_site(member, &flows.lets)?;
                 located.push((!writers.contains(&member), loc, member, scope));
             }
@@ -770,6 +791,7 @@ impl Engine<'_> {
             for (_, writer, member, _) in &located {
                 if let Member::Value(node) = member {
                     for alias in flows.lets.aliases.get(node).into_iter().flatten() {
+                        self.flow_step();
                         if alias != writer && alias != loc {
                             related.push(*alias);
                         }
@@ -813,6 +835,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            self.flow_step();
             if !seen.insert(node) {
                 continue;
             }
@@ -829,6 +852,7 @@ impl Engine<'_> {
         let mut aliases: FastMap<NodeId, Vec<Loc>> = FastMap::default();
         let mut values = Vec::with_capacity(self.memo.lets.len());
         for ((scope, local), bound) in &self.memo.lets {
+            self.flow_step();
             let Some(decl) = self.let_decl(*scope, *local)? else {
                 continue;
             };

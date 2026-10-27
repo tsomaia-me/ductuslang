@@ -57,6 +57,8 @@ pub(crate) struct Memo {
     pub capacity_rounds: u64,
     pub settlement_visits: u64,
     pub layout_visits: u64,
+    pub flow_work: std::cell::Cell<u64>,
+    pub query_runs: u64,
     pub blocked_walks: FastMap<crate::semantics::ir::StateId, (u32, crate::semantics::ir::StateId)>,
     pub evaluation_work: u64,
     pub conversions: FastMap<EvalTy, FastMap<*const (), (super::c_array::CArray, CVal)>>,

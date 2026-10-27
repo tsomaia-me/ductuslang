@@ -1148,3 +1148,47 @@ fn a_compile_time_native_call_costs_what_it_writes() {
     assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
     assert_eq!(notes, 1000);
 }
+
+fn flow_vocabulary() -> symphonyscript_core::Vocabulary {
+    let mut v = symphonyscript_core::Vocabulary::builder("flow cost");
+    let wave = v.enumeration("Wave", ["Sine", "Saw"]);
+    let color = v.enumeration("Color", ["Red", "Blue"]);
+    let both = v.node("K");
+    v.kind(both)
+        .top_level(symphonyscript_core::Count::Any)
+        .attr_enum("wave", &wave, "Sine")
+        .attr_enum("color", &color, "Red");
+    v.build().expect("the flow cost vocabulary builds")
+}
+
+fn flow_program(uses: u64) -> String {
+    let mut text =
+        String::from("pattern P():\n    let a = Sine\n    let b = a\n    K | wave=a color=b\n");
+    for use_ in 0..uses {
+        text.push_str(&format!("P p{use_}\n"));
+    }
+    text
+}
+
+#[test]
+fn erroneous_flows_report_in_work_linear_in_their_number() {
+    let vocabulary = flow_vocabulary();
+    let points = [2_000, 4_000, 8_000].map(|uses| {
+        let (diagnostics, work) = analyzed(&vocabulary, &flow_program(uses), |engine| {
+            (
+                engine.memo.flow_work.get(),
+                engine.memo.query_runs,
+                u64::try_from(engine.nodes.len()).unwrap_or(u64::MAX),
+            )
+        });
+        assert_eq!(
+            u64::try_from(errors(&diagnostics).len()).unwrap_or(u64::MAX),
+            uses,
+            "one diagnostic per use"
+        );
+        (uses, work)
+    });
+    assert_linear(points.map(|(uses, (flow, _, _))| (uses, flow)));
+    assert_linear(points.map(|(uses, (_, queries, _))| (uses, queries)));
+    assert_linear(points.map(|(uses, (_, _, nodes))| (uses, nodes)));
+}
