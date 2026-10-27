@@ -17,7 +17,11 @@ pub fn native_vocabulary() -> Vocabulary {
         .attr::<Bounded<i32, 8>>("sequence")
         .default(Bounded::default())
         .attr::<f32>("gain")
-        .default(1.0);
+        .default(1.0)
+        .attr::<Bounded<i32, 4>>("seq")
+        .default(Bounded::from_items([7, 8]).unwrap_or_default())
+        .attr::<Bounded<[i32; 2], 3>>("rows")
+        .default(Bounded::from_items([[1, 2], [3, 4]]).unwrap_or_default());
     v.kind(note).attr::<i32>("pitch").default(60).default_attr();
     v.native(
         "checksum",

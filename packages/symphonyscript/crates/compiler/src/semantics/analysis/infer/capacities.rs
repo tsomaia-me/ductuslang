@@ -681,6 +681,14 @@ impl Engine<'_> {
                 Some(value) => Parts::Leaf(value),
                 None => Parts::Operands(vec![self.binding(binding)?.init], None),
             },
+            Op::Annotate(..) if self.memo.variable_defaults.contains_key(&node) => {
+                let capacity = self
+                    .memo
+                    .variable_defaults
+                    .get(&node)
+                    .map_or(0, |(_, capacity)| *capacity);
+                Parts::Leaf(Extent::Variable(Piecewise::constant(i128::from(capacity))))
+            }
             Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => {
                 Parts::Operands(vec![operand], None)
             }

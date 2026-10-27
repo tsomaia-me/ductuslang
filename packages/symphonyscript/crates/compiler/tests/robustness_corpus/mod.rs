@@ -49,6 +49,7 @@ const NATIVE_PROGRAMS: &[&str] = &[
     "let a = checksum(\"GET\")\nClip c:\n    Note/a\n",
     "input i = 0\nClip c | sequence=(mirror([1, 2, i])):\n    Note/(text_length(\"abc\"))\n",
     "input held: i32[..4] = []\nClip c | sequence=(mirror(held) + [1]):\n    Note/(checksum([u8(1), u8(2)]))\n",
+    "Clip c | seq=d.seq gain=len(d.sequence):\n    Note/(d.rows[1][0] + d.seq[^1] + len(d.rows))\nClip d:\n    Note/(d.sequence[0])\n",
 ];
 
 pub fn corpora() -> Vec<(Vocabulary, Vec<String>)> {

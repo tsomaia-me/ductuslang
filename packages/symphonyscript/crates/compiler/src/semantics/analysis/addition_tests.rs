@@ -975,3 +975,84 @@ fn a_bounded_expansion_types_its_passed_over_branches_in_work_linear_in_its_leve
     let counts = [nodes(100), nodes(200), nodes(300)];
     assert_eq!(counts[2] - counts[1], counts[1] - counts[0], "{counts:?}");
 }
+
+fn set_attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
+    engine.instances.iter().find_map(|instance| {
+        let decl = engine.vocabulary.node_kind(instance.kind)?;
+        let source = instance.attrs.iter().find(|source| {
+            decl.attrs
+                .get(source.attr.index())
+                .is_some_and(|attr| attr.name == name)
+        })?;
+        let AttrValueSource::Expr(expr, scope) = source.value else {
+            return None;
+        };
+        let Some(Val::Scalar(node)) = engine.memo.exprs.get(&(expr, scope)) else {
+            return None;
+        };
+        engine.memo.evals.get(&(*node, ty)).cloned()
+    })
+}
+
+#[test]
+fn an_unset_variable_array_attribute_reads_as_a_variable_array_holding_its_default() {
+    let rows: [(&[&str], &str, EvalTy, CVal); 7] = [
+        (
+            &[
+                "Clip c:\n    Note/(len(d.sequence))\n",
+                "Clip d:\n    Note\n",
+            ],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(0),
+        ),
+        (
+            &["Clip c:\n    Note/(d.sequence[0])\n", "Clip d:\n    Note\n"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(0),
+        ),
+        (
+            &[
+                "Clip a | gain=len(b.seq):\n    Note\n",
+                "Clip b:\n    Note\n",
+            ],
+            "gain",
+            EvalTy::F32,
+            CVal::F32(2.0),
+        ),
+        (
+            &["Clip a:\n    Note/(b.seq[1])\n", "Clip b:\n    Note\n"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(8),
+        ),
+        (
+            &["Clip a:\n    Note/(len(b.rows))\n", "Clip b:\n    Note\n"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(2),
+        ),
+        (
+            &["Clip a:\n    Note/(b.rows[1][0])\n", "Clip b:\n    Note\n"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(3),
+        ),
+        (
+            &["Clip c | sequence=[1, 2]:\n    Note/(len(c.sequence))\n"],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(2),
+        ),
+    ];
+    for (items, name, ty, expected) in rows {
+        for text in in_every_order(items) {
+            let (diagnostics, value) = analyzed(&native_vocabulary(), &text, |engine| {
+                set_attr_value(engine, name, ty)
+            });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            assert_eq!(value, Some(expected.clone()), "{text}");
+        }
+    }
+}

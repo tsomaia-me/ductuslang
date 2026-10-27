@@ -326,3 +326,38 @@ fn a_cell_reading_string_at_a_u8_array_parameter_draws_one_reactive_string() {
         ],
     );
 }
+
+#[test]
+fn an_unset_variable_array_attribute_is_bound_to_its_default_as_a_variable_array() {
+    let unset = "Clip b:\n    Note\n";
+    let rows: &[Row] = &[
+        (&["Clip c:\n    Note/(len(b.sequence))\n", unset], &[]),
+        (&["Clip c | sequence=b.sequence:\n    Note\n", unset], &[]),
+        (&["Clip c:\n    Note/(b.sequence[0])\n", unset], &[]),
+        (&["Clip a | gain=len(b.seq):\n    Note\n", unset], &[]),
+        (&["Clip a | seq=b.seq:\n    Note\n", unset], &[]),
+        (&["Clip a:\n    Note/(b.seq[1])\n", unset], &[]),
+        (&["Clip a:\n    Note/(b.seq[7])\n", unset], &[]),
+        (
+            &["Clip a | gain=b.seq:\n    Note\n", unset],
+            &[(Code::TypeMismatch, "b.seq")],
+        ),
+        (
+            &["Clip a | gain=[7, 8]:\n    Note\n"],
+            &[(Code::TypeMismatch, "[7, 8]")],
+        ),
+        (
+            &["Clip a:\n    Note/(len(b.rows) + b.rows[1][0])\n", unset],
+            &[],
+        ),
+        (
+            &["Clip a | seq=b.sequence:\n    Note\n", unset],
+            &[(Code::CapacityExceeded, "b.sequence")],
+        ),
+        (
+            &["Clip c | sequence=[1, 2]:\n    Note/(len(c.sequence))\n"],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&native_vocabulary(), rows);
+}

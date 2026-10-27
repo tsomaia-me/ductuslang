@@ -476,6 +476,19 @@ impl Engine<'_> {
         self.layout_in(root, None, need)
     }
 
+    fn reads_variable_default(&self, root: NodeId) -> Result<bool, Internal> {
+        let mut node = root;
+        loop {
+            if self.memo.variable_defaults.contains_key(&node) {
+                return Ok(true);
+            }
+            match self.node(node)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => node = inner,
+                _ => return Ok(false),
+            }
+        }
+    }
+
     fn cached_layout(&self, node: NodeId, assumed: Option<&Assumed>) -> Option<LayoutFound> {
         self.memo
             .layouts
@@ -539,7 +552,7 @@ impl Engine<'_> {
                 found.insert(node, fault(None));
                 continue;
             }
-            if !sig.reactive && !sig.frame {
+            if !sig.reactive && !sig.frame && !self.reads_variable_default(node)? {
                 let Some(value) = self.cval(Query::Eval(node, EvalTy::Default), need) else {
                     missing = true;
                     continue;
@@ -686,6 +699,11 @@ impl Engine<'_> {
                     None => Ok(layouts.first().cloned().flatten()),
                 },
             },
+            Op::Annotate(..) if self.memo.variable_defaults.contains_key(&node) => Ok(self
+                .memo
+                .variable_defaults
+                .get(&node)
+                .map(|(inner, _)| Layout::variable(inner.clone()))),
             Op::Use(_) | Op::Chosen(_) | Op::Annotate(..) => Ok(layouts.first().cloned().flatten()),
             Op::Element { base, .. } => match layouts.first().cloned().flatten() {
                 Some(layout) => {

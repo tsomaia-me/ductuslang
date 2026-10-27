@@ -1087,6 +1087,14 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
             ],
             limited,
         ),
+        (
+            &[
+                "input i = 0\n",
+                "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
+                "Clip c:\n    Note/(len(f(i)))\n",
+            ],
+            &[(Code::InlineLimit, "f(n - 1)")],
+        ),
         (&[doubling, "Clip c:\n    Note/(60 + len(f(30)))\n"], &[]),
         (&[doubling, "Clip c:\n    Note/(60 + f(30)[5])\n"], &[]),
         (

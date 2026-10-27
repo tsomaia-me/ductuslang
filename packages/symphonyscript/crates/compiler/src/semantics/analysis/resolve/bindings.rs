@@ -625,6 +625,12 @@ impl Engine<'_> {
                 BoundVal::Scalar(Bound::Value(node))
             }
             None => match &decl.default {
+                Some(AttrDefault::Elements(values)) if decl.ty.capacity.is_some() => {
+                    match self.variable_default(values, &decl, (item, attr), need)? {
+                        Some(bound) => bound,
+                        None => return Ok(false),
+                    }
+                }
                 Some(AttrDefault::Elements(values)) => {
                     let nodes: Vec<Bound> = values
                         .iter()
@@ -650,6 +656,60 @@ impl Engine<'_> {
         };
         self.memo.attrs.insert((item, attr), bound);
         Ok(true)
+    }
+
+    fn variable_default(
+        &mut self,
+        values: &[symphonyscript_core::Value],
+        decl: &symphonyscript_core::AttrDecl,
+        (item, attr): (ItemRef, AttrId),
+        need: &mut Vec<Query>,
+    ) -> Result<Option<BoundVal>, Internal> {
+        let (loc, scope) = (self.item_loc(item)?, self.item_scope(item)?);
+        let row = decl.ty.lengths.iter().fold(1usize, |count, length| {
+            count.saturating_mul(usize::try_from(*length).unwrap_or(usize::MAX))
+        });
+        let rows = u32::try_from(values.len() / row.max(1)).unwrap_or(u32::MAX);
+        let node = match self.memo.default_arrays.get(&(item, attr)) {
+            Some(node) => *node,
+            None => {
+                let mut lengths = decl.ty.lengths.clone();
+                lengths.push(rows);
+                let elements = values
+                    .iter()
+                    .map(|value| self.push_node(Op::Const(*value), loc, scope))
+                    .collect::<Result<_, _>>()?;
+                let val = Val::array(Shape::from_lengths(&lengths), elements);
+                let Some(node) = self.boxed(&val, loc, scope)? else {
+                    return Ok(Some(BoundVal::Error));
+                };
+                self.memo.default_arrays.insert((item, attr), node);
+                node
+            }
+        };
+        let Some(sig) = self.sig(node, need) else {
+            return Ok(None);
+        };
+        let annotation = Annotation {
+            scalar: decl.ty.scalar,
+            lengths: decl.ty.lengths.clone(),
+            capacity: decl.ty.capacity,
+        };
+        let spec = BindSpec {
+            kind: BindingKind::Attr { item, attr },
+            annotation: Some(&annotation),
+            name: &decl.name,
+            loc,
+            scope,
+        };
+        let bound = self.bind_attr(&Val::Scalar(node), &[sig], &spec)?;
+        if let (BoundVal::Scalar(Bound::Value(value)), Some(capacity)) = (&bound, decl.ty.capacity)
+        {
+            self.memo
+                .variable_defaults
+                .insert(*value, (decl.ty.lengths.clone(), capacity));
+        }
+        Ok(Some(bound))
     }
 
     fn variable_attr(
