@@ -20,3 +20,4 @@ symphonyscript-fixtures = { path = "crates/fixtures" }
 
 [profile.dev]
 opt-level = 1
+debug = "line-tables-only"
