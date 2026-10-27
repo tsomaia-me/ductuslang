@@ -1,6 +1,7 @@
 {
   "env": {
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"
+    "NODE_USE_ENV_PROXY": "1",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"
   },
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "idleCompaction": false,
@@ -148,16 +149,6 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/infra/session/sandbox-net.sh",
-            "timeout": 120
-          }
-        ]
-      },
-      {
         "hooks": [
           {
             "type": "command",
@@ -180,15 +171,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/infra/session/sandbox-net.sh",
-            "timeout": 120
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context-watch.mjs"
           }
         ]
@@ -200,17 +182,6 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context-watch.mjs"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/proof-shots.mjs"
           }
         ]
       }
