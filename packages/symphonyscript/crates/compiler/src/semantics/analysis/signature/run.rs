@@ -154,7 +154,9 @@ impl Engine<'_> {
         arms: &[NodeId],
         need: &mut Vec<Query>,
     ) -> Result<Option<Extra>, Internal> {
-        let mut forms = Vec::with_capacity(arms.len());
+        if !arms.iter().any(|arm| self.arrays.contains(arm)) {
+            return Ok(Some(Extra::None));
+        }
         let single = arms.iter().any(|arm| !self.arrays.contains(arm));
         let mut array = false;
         for arm in arms {
@@ -164,23 +166,32 @@ impl Engine<'_> {
                 array = true;
             }
         }
-        if !(single && array) {
-            return Ok(Some(Extra::None));
-        }
+        let mut forms = Vec::with_capacity(arms.len());
         for &arm in arms {
             if !self.arrays.contains(&arm) {
                 let settled = self.reaches_recursion(arm)?;
                 forms.push((if settled { None } else { Some(false) }, None));
                 continue;
             }
-            if self.definite_array(arm)? && !self.rests_on_recursion(arm)? {
-                forms.push((Some(true), self.known_rows(arm)?));
+            if let Some(lengths) = self.known_lengths(arm)? {
+                forms.push(match lengths.split_last() {
+                    Some((_, inner)) => (Some(true), inner.iter().copied().collect()),
+                    None => (Some(false), None),
+                });
+                continue;
+            }
+            if !self.rests_on_recursion(arm)? {
+                forms.push((self.definite_array(arm)?.then_some(true), None));
+                continue;
+            }
+            if !(single && array) {
+                forms.push((None, None));
                 continue;
             }
             let Some(sig) = self.sig(arm, need) else {
                 return Ok(None);
             };
-            if sig.reactive || sig.frame || sig.is_error() || !self.rests_on_recursion(arm)? {
+            if sig.reactive || sig.frame || sig.is_error() {
                 forms.push((None, None));
                 continue;
             }

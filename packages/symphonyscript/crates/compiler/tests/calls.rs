@@ -1224,6 +1224,37 @@ fn a_bounded_expansion_type_checks_every_branch_and_arm_while_it_expands_the_cho
                 "if i > 5 then held else note + f(i + 1)",
             )],
         ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else [0]: if i > 5 then [[1]] else [held[i]] + f(i + 1)\n",
+                "Clip c:\n    Note/(f(0)[0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then [[1]] else [held[i]] + f(i + 1)",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else [0]: if i > 5 then [[1]] else [held[i]] + f(i + 1)\n",
+                "let a = f(0)\n",
+                "Clip c:\n    Note/(a[0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then [[1]] else [held[i]] + f(i + 1)",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else [0]: if i > 5 then [1, 2, 3] else [held[i]] + f(i + 1)\n",
+                "Clip c:\n    Note/(f(0)[0])\n",
+            ],
+            &[],
+        ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }

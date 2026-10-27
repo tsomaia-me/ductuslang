@@ -498,34 +498,45 @@ impl Engine<'_> {
         self.layout_in(root, None, need)
     }
 
-    pub(in crate::semantics::analysis) fn known_rows(
+    pub(in crate::semantics::analysis) fn known_lengths(
         &self,
         root: NodeId,
-    ) -> Result<Option<Vec<u32>>, Internal> {
+    ) -> Result<Option<Vec<Option<u32>>>, Internal> {
+        let mut steps = Vec::new();
         let mut node = root;
-        loop {
+        let mut lengths = loop {
+            if !self.arrays.contains(&node) {
+                break Vec::new();
+            }
             if let Some(found) = self.cached_layout(node, None) {
-                return Ok(match found.shaped {
-                    Ok(Some(layout)) => Some(layout.inner().to_vec()),
-                    Ok(None) | Err(_) => None,
-                });
+                match found.shaped {
+                    Ok(Some(layout)) => break open_lengths(&layout),
+                    Ok(None) => break Vec::new(),
+                    Err(_) => return Ok(None),
+                }
             }
             match &self.node(node)?.op {
-                Op::Use(inner)
-                | Op::Chosen(inner)
-                | Op::Annotate(_, inner)
-                | Op::Slice { base: inner, .. }
-                | Op::Join(inner, _) => node = *inner,
+                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
                 Op::Read(binding) => match self.memo.binding_layouts.get(binding) {
-                    Some(layout) => return Ok(Some(layout.inner().to_vec())),
+                    Some(layout) => break open_lengths(layout),
                     None => node = self.binding(*binding)?.init,
                 },
+                Op::Element { base, .. } => {
+                    steps.push(Step::Indexed);
+                    node = *base;
+                }
+                Op::Slice { base, .. } | Op::Join(base, _) => {
+                    steps.push(Step::Resized);
+                    node = *base;
+                }
                 Op::Array(elements) => {
-                    let single = !elements.is_empty()
-                        && elements
-                            .iter()
-                            .all(|element| !self.arrays.contains(element));
-                    return Ok(single.then(Vec::new));
+                    let Some(first) = elements.first() else {
+                        return Ok(None);
+                    };
+                    steps.push(Step::Wrapped(
+                        u32::try_from(elements.len()).unwrap_or(u32::MAX),
+                    ));
+                    node = *first;
                 }
                 Op::History { .. }
                 | Op::Native { .. }
@@ -544,13 +555,27 @@ impl Engine<'_> {
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::Pick { .. }
-                | Op::Element { .. }
                 | Op::Convert(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
                 | Op::ToRead { .. } => return Ok(None),
             }
+        };
+        for step in steps.into_iter().rev() {
+            match step {
+                Step::Indexed => {
+                    if lengths.pop().is_none() {
+                        return Ok(None);
+                    }
+                }
+                Step::Resized => match lengths.last_mut() {
+                    Some(outer) => *outer = None,
+                    None => return Ok(None),
+                },
+                Step::Wrapped(length) => lengths.push(Some(length)),
+            }
         }
+        Ok(Some(lengths))
     }
 
     fn cached_layout(&self, node: NodeId, assumed: Option<&Assumed>) -> Option<LayoutFound> {
@@ -1235,6 +1260,18 @@ impl Engine<'_> {
             .ok_or(Internal::missed("native function"))?;
         Ok(native_layout(&decl.signature.result).is_some())
     }
+}
+
+enum Step {
+    Indexed,
+    Resized,
+    Wrapped(u32),
+}
+
+fn open_lengths(layout: &Layout) -> Vec<Option<u32>> {
+    let mut lengths: Vec<Option<u32>> = layout.inner().iter().copied().map(Some).collect();
+    lengths.push(layout.outer());
+    lengths
 }
 
 fn scalar_found() -> LayoutFound {

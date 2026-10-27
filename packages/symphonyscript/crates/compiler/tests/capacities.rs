@@ -1123,6 +1123,151 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let flag = "input flag = true\n";
+    let grid = "input rows: i32[3][..10] = [[1, 2, 3]]\n";
+    let first = "Clip c:\n    Note/(g(0)[0])\n";
+    let read_a = "Clip c:\n    Note/(a[0])\n";
+    let rows: &[support::Row] = &[
+        (
+            &[held, "fn g(i): if i > 5 then [[1]] else held\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else held")],
+        ),
+        (
+            &[held, "fn g(i): if i > 5 then held else [[1]]\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then held else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/((if false then [[1]] else held)[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then [[1]] else held")],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then [[1]] else [held[i]] + [1]\n",
+                first,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then [[1]] else [held[i]] + [1]",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then [held[i]] + [1] else [[1]]\n",
+                first,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then [held[i]] + [1] else [[1]]",
+            )],
+        ),
+        (
+            &[grid, "fn g(i): if i > 5 then rows else [1, 2]\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then rows else [1, 2]")],
+        ),
+        (
+            &[grid, "Clip c:\n    Note/(if false then rows[0] else 5)\n"],
+            &[(Code::TypeMismatch, "if false then rows[0] else 5")],
+        ),
+        (
+            &[
+                grid,
+                note,
+                "Clip c:\n    Note/(if false then rows[0] else note)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then rows[0] else note")],
+        ),
+        (
+            &[held, "let a = if false then [[1]] else held\n", read_a],
+            &[(Code::TypeMismatch, "if false then [[1]] else held")],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then [[1]] else held\n",
+                "let a = g(0)\n",
+                read_a,
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else held")],
+        ),
+        (
+            &[
+                grid,
+                "let x = if false then rows[0] else 5\n",
+                "Clip c:\n    Note/(x)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then rows[0] else 5")],
+        ),
+        (
+            &["Clip c:\n    Note/((if false then [[1]] else [1, 2])[0])\n"],
+            &[(Code::TypeMismatch, "if false then [[1]] else [1, 2]")],
+        ),
+        (
+            &["fn g(i): if i > 5 then [[1]] else [1, 2]\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else [1, 2]")],
+        ),
+        (
+            &["let a = if false then [[1]] else [1, 2]\n", read_a],
+            &[(Code::TypeMismatch, "if false then [[1]] else [1, 2]")],
+        ),
+        (
+            &[
+                "fn g(i): if i > 5 then [[1]] else [1, 2]\n",
+                "let a = g(0)\n",
+                read_a,
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else [1, 2]")],
+        ),
+        (
+            &[
+                "fn g(i):\n    match i:\n        7: [[1]]\n        else: [1, 2]\n",
+                first,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match i:\n        7: [[1]]\n        else: [1, 2]\n",
+            )],
+        ),
+        (
+            &[flag, "fn g(i): if flag then [[1]] else [1, 2]\n", first],
+            &[(Code::TypeMismatch, "if flag then [[1]] else [1, 2]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "Clip c:\n    Note/((if flag then [[1]] else held)[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then [[1]] else held")],
+        ),
+        (
+            &[
+                held,
+                "input other: i32[..6] = [1]\n",
+                "Clip c:\n    Note/((if false then held else other)[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                "Clip c:\n    Note/((if flag then [1, 2] else [3, 4])[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                "Clip c:\n    Note/((if flag then [1, 2] else [1, 2, 3])[0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
 
 #[test]
