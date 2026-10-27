@@ -41,6 +41,18 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - A milestone gets at most two cold reviews: the first, and a second when the head judges the fixes need fresh eyes. Warm reviews, in which the reviewer that found an issue checks its fix, are unlimited.
 - A milestone is done when its exit criteria pass and its last review's accepted findings are fixed and checked. The head then records it in the head notes and starts the next one.
 
+### Carried findings
+
+A finding, gap, limitation, review note or task that is not built in the round that found it is a carried item, and the ledger `.memory/symphonyscript/CARRY.md` is the one record of every carried item. Nothing else records a carry: a triage entry in the head notes, a brief, a progress file or a message names the ledger entry's id and nothing more.
+
+- Entry. The head writes a carried item into the ledger in the same step as the triage that carries it, before the brief of that round launches, with the item's id, its source (the review or hand-back, the tip, the date), its severity, its full text copied from the report (the defect, the rule it breaks with the document section, the case, the fix the reviewer proposed), the head's triage line, and its state. A hand-back's open note, gap left unanswered or limitation recorded in a progress file is a carried item too, and the head enters it when it reads the hand-back. An item that is the owner's to decide is entered with the state `owner` and the question as asked.
+- States. `open`, with the round or milestone it is carried to and the reason; `taken` by a brief, with the round; `done`, with the commit on main that built it and the test or document line that shows it, written when the round's hand-back is read; `cancelled`, with the ruling that cancels it cited by its date or the owner's words; `owner`, waiting for the owner's decision, with the date it was asked. A state changes only forward, in a `State` line that names the record it rests on; the newest `State` line is the entry's state.
+- Briefs. Every fix-round brief ends with a section § Ledger listing every open entry of the ledger by id, each marked `taken` or `carried` with the reason and the round or milestone it goes to. A brief that lists no § Ledger does not launch. A review brief, cold or warm, lists the open entries whose case the reviewer re-runs on its tip, and the reviewer's report says for each whether the case still reproduces; an entry whose case no longer reproduces is marked `done` only with the commit found.
+- Milestones. A milestone is done when every ledger entry opened before its last cold review is `done` or `cancelled`, so a minor found by the last cold review carries into the next milestone's first fix round and nothing else carries across a milestone. The next milestone's first fix round takes every open entry as its first items. The milestone's exit line here and its Milestone log line in the head notes state the ledger's open count at its close.
+- Check. `packages/symphonyscript/tools/carry/check.py` reads the ledger, the newest brief under `work/` and main's log, and fails when an open or taken entry is missing from that brief's § Ledger, a `done` entry's commit is not on main, a `cancelled` entry cites no ruling, or a state moves backwards. The head runs it before every launch and before it writes a milestone done, and records its summary line in the head notes.
+- Grounding. The head's Status in the head notes names the ledger and its open count, and the grounding note after every compaction lists the open entries' ids.
+- Words. The head writes no "later", "carry", "queue", "defer", "follow-up", "after M<n>" or "when room allows" about a finding without the ledger entry's id beside it.
+
 ### Code conventions
 
 - Rust edition 2024. Every crate forbids `unsafe` code, and a clippy warning fails the checks.
@@ -161,7 +173,7 @@ Exit:
 Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b, M2c and M2d leave it.
 
 Steps:
-1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order.
+1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order, the memory figure (SPEC §12.6), and the choice per non-recursive function between inlining and one shared body by Q6's measure (body nodes times call sites less one over a configurable threshold; small and single-site bodies inlined; one shared body per distinct set of argument and result types; a call with only compile-time arguments folded), with a function table and a call node in the Program.
 2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices at every level, bounded calls as expanded, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, sums as a tag and slots, maps, documents parsed at the boundary by core's `document` module and read through views and typed reads, native functions at runtime, and writes (SPEC §12, ARCHITECTURE §4).
 3. `eval` and the `Consumer` trait.
 4. Reload: `reload_snapshot`, `prepare` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
@@ -178,6 +190,9 @@ Exit:
 - Compiling a fixture project repeatedly, with its sources in any order, gives equal Programs and equal dumps.
 - A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
 - A reload prepared on another thread while the runtime keeps committing installs with the writes made meanwhile applied at the next commit.
+- The state shared between the committing thread and a thread preparing a reload holds under loom at a preemption bound of 3 and under Miri with `-Zmiri-many-seeds`.
+- The compiler reports each fixture Program's memory in bytes, equal to what `Runtime::new` allocates under the counting allocator, and refuses a program over `memory_bytes` with the figure in the error (SPEC §12.6).
+- A benchmark over the fixture projects records compile time and Program size with and without shared bodies in the progress file.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
 - Golden traces cover states and histories, triggers, variable arrays at every level, strings, records, sums, maps and documents; a string written past its capacity or in invalid UTF-8, and a document written past its budget or invalid, are refused with the capacity or the byte position in the error.
 
@@ -214,6 +229,8 @@ Exit:
 - End-to-end tests for `dump`, and for `check` printing the memory figure.
 - `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
 - `symphony.toml`'s `[limits]` and `--limit` reach the runtime, a flag overriding the file.
+- `codegen` emits the Program's function table and call nodes, and a generated Program's shared bodies run as the library's do.
+- A CI job on an x86_64 Linux runner asserts the pinned vocabulary stamp 0x35f8efc8552d30a7, so the stamp's encoding is machine-independent (SPEC §13.1).
 
 ## M5: Kernel adapter
 
@@ -229,6 +246,7 @@ Exit:
 - An input write and a commit become visible to the consumer thread, and the adapter publishes only when a meta-plane or array value changed. A vocabulary with a large array attribute leaves the stride of nodes without arrays unchanged.
 - A reload keeps the slots and serials of matched instances, and moving a kept instance re-creates none of its synapses.
 - The kernel's own test suite passes with the move operations added.
+- The adapter's publish and the consumer thread's reads hold under loom at a preemption bound of 3 and under Miri with `-Zmiri-many-seeds`.
 
 ## Order
 
