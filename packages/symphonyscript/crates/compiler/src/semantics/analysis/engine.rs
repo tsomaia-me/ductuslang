@@ -37,7 +37,7 @@ use crate::semantics::reporting::{Report, grouped};
 
 const ID_SPACE: u64 = 1 << 32;
 
-const NAME_CODES: [Code; 9] = [
+const NAME_CODES: [Code; 10] = [
     Code::UnknownName,
     Code::NotAValue,
     Code::NotCallable,
@@ -47,6 +47,7 @@ const NAME_CODES: [Code; 9] = [
     Code::UnknownType,
     Code::HistoryTarget,
     Code::DestinationType,
+    Code::UnknownFlag,
 ];
 
 pub(crate) struct Engine<'a> {
@@ -731,6 +732,9 @@ impl<'a> Engine<'a> {
         scope: ScopeId,
         message: impl Into<String>,
     ) -> Result<(), Internal> {
+        if self.suppressed(code, scope)? {
+            return Ok(());
+        }
         let chain = self.chain(scope)?;
         self.defer(code, loc, before, chain, message);
         let (fault, template) = self.origin(scope)?;

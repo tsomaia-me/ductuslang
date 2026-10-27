@@ -501,6 +501,28 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
 }
 
 #[test]
+fn in_code_that_nothing_expands_a_flag_naming_no_attribute_is_a_name_error_and_a_repeated_one_is_not()
+ {
+    let clip = "Clip c:\n    Note\n";
+    let flag = (Code::UnknownFlag, "'");
+    let rows: &[support::Row] = &[
+        (&["Clip c:\n    for i in 0..0:\n        Note''\n"], &[]),
+        (&["pattern P():\n    Note'''\n", clip], &[]),
+        (&["pattern P():\n    Synth:\n        Osc'\n", clip], &[flag]),
+        (&["Synth s:\n    for i in 0..0:\n        Osc'\n"], &[flag]),
+        (
+            &["Clip c:\n    for i in 0..1:\n        Note''\n"],
+            &[(Code::DuplicateAttribute, "'")],
+        ),
+        (
+            &["pattern P():\n    Synth:\n        Osc'\n", "P p\n"],
+            &[flag],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors() {
     let clip = "Clip c:\n    Note\n";
     let value = (Code::NotAValue, "sin");
