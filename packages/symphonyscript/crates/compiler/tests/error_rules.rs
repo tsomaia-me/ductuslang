@@ -1344,7 +1344,7 @@ const RULES: &[Rule] = &[
         "10.1",
         "a native function with a string parameter or result runs only at compile time, and a call to one with an argument that reads a cell is an error",
         "compile-time-native",
-        "input i = 0\nClip c:\n    Note/(text_length(i))\n",
+        "input n = 0\nClip c:\n    Note/(tag(\"abc\", n))\n",
     ),
     rule(
         "10.2",

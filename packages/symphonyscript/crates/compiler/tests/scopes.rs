@@ -541,6 +541,11 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
     let deeper = "pattern P():\n    Note as n\n    Note | velocity=n.nothing.velocity\n";
     let looped =
         "pattern P():\n    Note as n\n    for i in 0..0:\n        Note | velocity=n.nothing\n";
+    let voice = "pattern Voice():\n    Note\n    Note as m\n";
+    let verse = "Clip verse:\n    Note\n";
+    let past_note = "pattern P():\n    Note as n\n    Note | velocity=n.velocity.x\n";
+    let past_member = "pattern P():\n    Voice as k\n    Note | velocity=k.m.velocity.x\n";
+    let past_wire = "pattern P():\n    Plays as w: verse\n    Note | velocity=w.gain.x\n";
     let attribute = (Code::UnknownAttribute, "nothing");
     let anonymous = [(Code::NamedInFor, "n"), (Code::UnknownName, "n")];
     let rows: &[support::Row] = &[
@@ -589,6 +594,46 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
                 clip,
             ],
             &[],
+        ),
+        (
+            &[past_note, clip],
+            &[(Code::UnknownAttribute, "n.velocity.x")],
+        ),
+        (
+            &[voice, past_member, clip],
+            &[(Code::UnknownAttribute, "k.m.velocity.x")],
+        ),
+        (
+            &[verse, past_wire, clip],
+            &[(Code::UnknownAttribute, "w.gain.x")],
+        ),
+        (
+            &[
+                voice,
+                "pattern P():\n    Voice as k\n    Note | velocity=k.m.velocity\n",
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[
+                verse,
+                "pattern P():\n    Plays as w: verse\n    Note | velocity=w.gain\n",
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[past_note, used],
+            &[(Code::UnknownAttribute, "n.velocity.x")],
+        ),
+        (
+            &[voice, past_member, used],
+            &[(Code::UnknownAttribute, "k.m.velocity.x")],
+        ),
+        (
+            &[verse, past_wire, used],
+            &[(Code::UnknownAttribute, "w.gain.x")],
         ),
         (&[note, used], &[attribute]),
         (&[q, named_use, used], &[attribute]),
@@ -653,6 +698,9 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
         (v, member),
         (&*format!("{q}{r}"), chained),
         ("", arm),
+        ("", past_note),
+        (voice, past_member),
+        (verse, past_wire),
     ] {
         let unused = summaries(format!("{declared}{body}{clip}"));
         assert_eq!(unused.len(), 1, "{body}");

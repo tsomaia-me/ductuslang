@@ -580,9 +580,9 @@ impl Engine<'_> {
                 .iter()
                 .map(|frame| frame.function)
                 .collect();
-            for function in functions {
+            for function in functions.into_iter().chain([call.function]) {
                 let name = self.function_name(function)?;
-                if names.last() != Some(&name) {
+                if !names.contains(&name) {
                     names.push(name);
                 }
             }

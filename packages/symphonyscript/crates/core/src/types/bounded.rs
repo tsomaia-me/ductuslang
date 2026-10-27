@@ -1,6 +1,9 @@
 use alloc::vec::Vec;
 
-#[derive(Clone, PartialEq, Debug)]
+use crate::types::Value;
+use crate::vocab::ArrayElement;
+
+#[derive(Clone, Debug)]
 pub struct Bounded<T, const N: usize> {
     items: Vec<T>,
 }
@@ -11,8 +14,14 @@ impl<T, const N: usize> Bounded<T, N> {
     }
 
     pub fn from_items(items: impl IntoIterator<Item = T>) -> Option<Self> {
-        let items: Vec<T> = items.into_iter().collect();
-        (items.len() <= N).then_some(Self { items })
+        let mut held = Vec::new();
+        for item in items {
+            if held.len() == N {
+                return None;
+            }
+            held.push(item);
+        }
+        Some(Self { items: held })
     }
 
     pub fn items(&self) -> &[T] {
@@ -37,3 +46,18 @@ impl<T, const N: usize> Default for Bounded<T, N> {
         Self::new()
     }
 }
+
+impl<T: ArrayElement + Copy, const N: usize> PartialEq for Bounded<T, N> {
+    fn eq(&self, other: &Self) -> bool {
+        let values = |items: &[T]| {
+            let mut values: Vec<Value> = Vec::new();
+            for item in items {
+                item.push_elements(&mut values);
+            }
+            values
+        };
+        self.items.len() == other.items.len() && values(&self.items) == values(&other.items)
+    }
+}
+
+impl<T: ArrayElement + Copy, const N: usize> Eq for Bounded<T, N> {}

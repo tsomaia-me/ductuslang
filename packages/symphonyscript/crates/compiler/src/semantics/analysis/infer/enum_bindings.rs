@@ -167,7 +167,7 @@ impl Engine<'_> {
             .into_iter()
             .filter(|member| waiting.contains(member))
             .collect();
-        self.flows_without_enum(&remaining, &flows)
+        self.flows_without_enum(&remaining, &flows, &blocked)
     }
 
     fn flows(&self, pending: &[BindingId], valid: &[Position]) -> Result<Flows, Internal> {
@@ -687,7 +687,12 @@ impl Engine<'_> {
         })
     }
 
-    fn flows_without_enum(&mut self, remaining: &[Member], flows: &Flows) -> Result<(), Internal> {
+    fn flows_without_enum(
+        &mut self,
+        remaining: &[Member],
+        flows: &Flows,
+        blocked: &FastSet<Member>,
+    ) -> Result<(), Internal> {
         let mut read_by_untyped = FastSet::default();
         let untyped: Vec<BindingId> = self.typing.untyped.iter().copied().collect();
         for binding in &untyped {
@@ -763,6 +768,17 @@ impl Engine<'_> {
                 Member::Value(node) => flows.used.contains(node),
             });
             let written = flow.iter().any(|member| writers.contains(member));
+            let unread = flow.iter().all(|member| {
+                !blocked.contains(member)
+                    && !matches!(member, Member::Cell(binding) if read_by_untyped.contains(binding))
+                    && self
+                        .member_expected(*member, flows, &FastMap::default())
+                        .is_empty()
+            });
+            if written && !live && unread {
+                self.unplaced_flow(&flow)?;
+                continue;
+            }
             let inherited = flow.iter().any(|member| {
                 flows
                     .values
@@ -807,6 +823,31 @@ impl Engine<'_> {
                 .collect();
             let at = self.value_loc(*first, &flows.lets)?;
             self.report_flow(*first, at, *scope, related)?;
+        }
+        Ok(())
+    }
+
+    fn unplaced_flow(&mut self, flow: &[Member]) -> Result<(), Internal> {
+        let mut bares = Vec::new();
+        for member in flow {
+            if let Member::Value(node) = member {
+                for bare in self.value_bares(*node)? {
+                    let record = self.node(bare)?;
+                    if let Op::Bare(name) = &record.op {
+                        bares.push((bare, name.clone(), record.loc, record.scope));
+                    }
+                }
+            }
+        }
+        bares.sort_by_key(|(bare, ..)| *bare);
+        bares.dedup_by_key(|(bare, ..)| *bare);
+        for (_, name, loc, scope) in bares {
+            if !self.in_trial(scope)? {
+                self.unplaced_variant_at(Some(&name), loc, scope)?;
+            }
+        }
+        for member in flow {
+            self.mark_untyped(*member)?;
         }
         Ok(())
     }

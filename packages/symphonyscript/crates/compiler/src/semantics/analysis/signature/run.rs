@@ -65,6 +65,17 @@ impl Engine<'_> {
                 Some(sig) => Extra::History(sig),
                 None => Extra::None,
             }),
+            Op::If(_, then, otherwise) => self.arm_forms(&[*then, *otherwise], need)?,
+            Op::Match {
+                arms, otherwise, ..
+            } => {
+                let values: Vec<NodeId> = arms
+                    .iter()
+                    .map(|(_, value)| *value)
+                    .chain(*otherwise)
+                    .collect();
+                self.arm_forms(&values, need)?
+            }
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
@@ -79,8 +90,6 @@ impl Engine<'_> {
             | Op::Arg(_)
             | Op::Unary(..)
             | Op::Binary(..)
-            | Op::If(..)
-            | Op::Match { .. }
             | Op::Pick { .. }
             | Op::Element { .. }
             | Op::Array(_)
@@ -138,6 +147,76 @@ impl Engine<'_> {
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);
         Ok(true)
+    }
+
+    fn arm_forms(
+        &mut self,
+        arms: &[NodeId],
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Extra>, Internal> {
+        let mut forms = Vec::with_capacity(arms.len());
+        let single = arms.iter().any(|arm| !self.arrays.contains(arm));
+        let mut array = false;
+        for arm in arms {
+            if self.definite_array(*arm)?
+                || (self.arrays.contains(arm) && self.bounded_recursion(*arm)?)
+            {
+                array = true;
+            }
+        }
+        if !(single && array) {
+            return Ok(Some(Extra::None));
+        }
+        for &arm in arms {
+            if !self.arrays.contains(&arm) {
+                let settled = self.reaches_recursion(arm)?;
+                forms.push((if settled { None } else { Some(false) }, None));
+                continue;
+            }
+            if self.definite_array(arm)? && !self.rests_on_recursion(arm)? {
+                forms.push((Some(true), self.known_rows(arm)?));
+                continue;
+            }
+            let Some(sig) = self.sig(arm, need) else {
+                return Ok(None);
+            };
+            if sig.reactive || sig.frame || sig.is_error() || !self.rests_on_recursion(arm)? {
+                forms.push((None, None));
+                continue;
+            }
+            let Some(found) = self.layout_of(arm, need)? else {
+                return Ok(None);
+            };
+            forms.push(match found.shaped {
+                Ok(Some(layout)) => (Some(true), Some(layout.inner().to_vec())),
+                Ok(None) => (Some(false), None),
+                Err(_) => (None, None),
+            });
+        }
+        Ok(Some(Extra::Arms(forms)))
+    }
+
+    fn bounded_recursion(&self, node: NodeId) -> Result<bool, Internal> {
+        let Op::Recursive { function, .. } = self.node(node)?.op else {
+            return Ok(false);
+        };
+        self.bounded_cycle(function)
+    }
+
+    fn reaches_recursion(&self, root: NodeId) -> Result<bool, Internal> {
+        let mut stack = vec![root];
+        let mut seen = crate::semantics::analysis::fast_hash::FastSet::default();
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Recursive { .. } => return Ok(true),
+                Op::Use(_) | Op::Read(_) => {}
+                op => stack.extend(op.operands()),
+            }
+        }
+        Ok(false)
     }
 
     fn history_sig(

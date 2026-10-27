@@ -80,7 +80,57 @@ impl Engine<'_> {
     }
 
     pub(in crate::semantics::analysis) fn capacity_help(capacity: u32) -> String {
+        if capacity == 1 {
+            return String::from("slice the value to its newest element with `[^1..]`");
+        }
         format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
+    }
+
+    pub(in crate::semantics::analysis) fn capacity_fix(
+        &self,
+        value: crate::semantics::analysis::ids::NodeId,
+        (capacity, holds): (u32, u32),
+        annotated: bool,
+    ) -> Result<String, Internal> {
+        if !self.is_string_bytes(value)? {
+            return Ok(Self::capacity_help(capacity));
+        }
+        Ok(Self::string_capacity_help(capacity, holds, annotated))
+    }
+
+    pub(in crate::semantics::analysis) fn string_capacity_help(
+        capacity: u32,
+        holds: u32,
+        annotated: bool,
+    ) -> String {
+        let bytes = if capacity == 1 { "byte" } else { "bytes" };
+        if annotated {
+            format!(
+                "write a string of at most {capacity} {bytes}, or annotate a capacity of at least {holds}, as in `u8[..{holds}]`"
+            )
+        } else {
+            format!("write a string of at most {capacity} {bytes}")
+        }
+    }
+
+    fn is_string_bytes(
+        &self,
+        node: crate::semantics::analysis::ids::NodeId,
+    ) -> Result<bool, Internal> {
+        use crate::semantics::analysis::kind::Kind;
+        use crate::semantics::analysis::op::Op;
+        use symphonyscript_core::Builtin;
+        let Op::Builtin(Builtin::Bytes, operands) = &self.node(node)?.op else {
+            return Ok(false);
+        };
+        Ok(match operands.as_slice() {
+            [operand] => self
+                .memo
+                .sigs
+                .get(operand)
+                .is_some_and(|sig| sig.kind == Kind::Str),
+            _ => false,
+        })
     }
 
     fn fixed_help(&self, ty: &symphonyscript_core::Ty) -> Result<String, Internal> {
@@ -149,6 +199,10 @@ impl Engine<'_> {
                 && holds > capacity
                 && holds < LENGTH_LIMIT
             {
+                let help = match &position.val {
+                    Val::Scalar(node) => self.capacity_fix(*node, (capacity, holds), false)?,
+                    Val::Array(_) | Val::Error => Self::capacity_help(capacity),
+                };
                 self.error_helped(
                     Code::CapacityExceeded,
                     position.loc,
@@ -156,7 +210,7 @@ impl Engine<'_> {
                     format!(
                         "this value holds up to {holds} elements, more than the attribute's capacity {capacity}"
                     ),
-                    Self::capacity_help(capacity),
+                    help,
                 )?;
             }
         }
@@ -219,7 +273,8 @@ impl Engine<'_> {
                         node,
                         Vec::new(),
                         format!(
-                            "this history read reaches {offset} steps back, deeper than `[{limit}]`; `[{deepest}]` covers every read of this state"
+                            "this history read reaches {offset} {}, deeper than `[{limit}]`; `[{deepest}]` covers every read of this state",
+                            if offset == 1 { "step back" } else { "steps back" }
                         ),
                         format!("declare the state as `state[{deepest}] {name}`, which covers every read of it"),
                     )?;
@@ -235,7 +290,8 @@ impl Engine<'_> {
                         Some(BoundVal::Array(array)) => {
                             array.1.iter().any(|item| matches!(item, Bound::Cell(_)))
                         }
-                        Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => false,
+                        Some(BoundVal::Error) => continue,
+                        Some(BoundVal::Scalar(Bound::Value(_))) | None => false,
                     };
                     if !reactive {
                         self.error_at_node(
@@ -411,6 +467,7 @@ impl Engine<'_> {
                 && holds < LENGTH_LIMIT
             {
                 let scope = self.node(record.init)?.scope;
+                let help = self.capacity_fix(record.init, (capacity, holds), true)?;
                 self.error_helped(
                     Code::CapacityExceeded,
                     record.loc,
@@ -419,7 +476,7 @@ impl Engine<'_> {
                         "`{}` holds up to {holds} elements, more than its annotated capacity {capacity}",
                         record.name
                     ),
-                    Self::capacity_help(capacity),
+                    help,
                 )?;
             }
         }
@@ -506,6 +563,7 @@ impl Engine<'_> {
                     && holds > capacity
                     && holds < LENGTH_LIMIT
                 {
+                    let help = self.capacity_fix(*arg, (capacity, holds), false)?;
                     self.error_helped(
                         Code::CapacityExceeded,
                         loc,
@@ -513,7 +571,7 @@ impl Engine<'_> {
                         format!(
                             "this argument holds up to {holds} elements, more than the parameter's capacity {capacity}"
                         ),
-                        Self::capacity_help(capacity),
+                        help,
                     )?;
                 }
             }

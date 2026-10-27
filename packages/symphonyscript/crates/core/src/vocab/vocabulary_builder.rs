@@ -124,7 +124,10 @@ impl VocabularyBuilder {
         signature: NativeSignature,
         function: NativeFn,
     ) -> NativeId {
-        let id = NativeId::new(self.natives.len() as u32);
+        let id = NativeId::new(
+            self.token,
+            u32::try_from(self.natives.len()).unwrap_or(u32::MAX),
+        );
         let types = signature
             .params
             .iter()

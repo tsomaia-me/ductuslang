@@ -204,6 +204,24 @@ impl Engine<'_> {
         Ok(false)
     }
 
+    fn bare_leaves(&self, roots: &[NodeId]) -> Result<Vec<NodeId>, Internal> {
+        let mut found = Vec::new();
+        let mut seen = FastSet::default();
+        let mut stack = roots.to_vec();
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Bare(_) => found.push(node),
+                Op::Use(_) | Op::Read(_) => {}
+                op => stack.extend(op.operands()),
+            }
+        }
+        found.sort();
+        Ok(found)
+    }
+
     pub(in crate::semantics::analysis) fn length_val(
         &mut self,
         val: Val,
@@ -213,6 +231,9 @@ impl Engine<'_> {
     ) -> Result<Option<Val>, Internal> {
         let node = match &val {
             Val::Array(array) => {
+                for bare in self.bare_leaves(&array.elements)? {
+                    self.unplaced_placeholder(bare)?;
+                }
                 let length = array.shape.outer().unwrap_or(0);
                 return Ok(Some(self.scalar(
                     Op::Number(Number::Int(i128::from(length)), Suffix::None),
@@ -477,15 +498,57 @@ impl Engine<'_> {
         self.layout_in(root, None, need)
     }
 
-    fn reads_variable_default(&self, root: NodeId) -> Result<bool, Internal> {
+    pub(in crate::semantics::analysis) fn known_rows(
+        &self,
+        root: NodeId,
+    ) -> Result<Option<Vec<u32>>, Internal> {
         let mut node = root;
         loop {
-            if self.memo.variable_defaults.contains_key(&node) {
-                return Ok(true);
+            if let Some(found) = self.cached_layout(node, None) {
+                return Ok(match found.shaped {
+                    Ok(Some(layout)) => Some(layout.inner().to_vec()),
+                    Ok(None) | Err(_) => None,
+                });
             }
-            match self.node(node)?.op {
-                Op::Use(inner) | Op::Chosen(inner) => node = inner,
-                _ => return Ok(false),
+            match &self.node(node)?.op {
+                Op::Use(inner)
+                | Op::Chosen(inner)
+                | Op::Annotate(_, inner)
+                | Op::Slice { base: inner, .. }
+                | Op::Join(inner, _) => node = *inner,
+                Op::Read(binding) => match self.memo.binding_layouts.get(binding) {
+                    Some(layout) => return Ok(Some(layout.inner().to_vec())),
+                    None => node = self.binding(*binding)?.init,
+                },
+                Op::Array(elements) => {
+                    let single = !elements.is_empty()
+                        && elements
+                            .iter()
+                            .all(|element| !self.arrays.contains(element));
+                    return Ok(single.then(Vec::new));
+                }
+                Op::History { .. }
+                | Op::Native { .. }
+                | Op::If(..)
+                | Op::Match { .. }
+                | Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Convert(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. } => return Ok(None),
             }
         }
     }
@@ -556,7 +619,7 @@ impl Engine<'_> {
                 found.insert(node, fault(None));
                 continue;
             }
-            if !sig.reactive && !sig.frame && !self.reads_variable_default(node)? {
+            if !sig.reactive && !sig.frame {
                 let Some(value) = self.cval(Query::Eval(node, EvalTy::Default), need) else {
                     missing = true;
                     continue;
@@ -733,11 +796,6 @@ impl Engine<'_> {
                     None => Ok(layouts.first().cloned().flatten()),
                 },
             },
-            Op::Annotate(..) if self.memo.variable_defaults.contains_key(&node) => Ok(self
-                .memo
-                .variable_defaults
-                .get(&node)
-                .map(|(inner, _)| Layout::variable(inner.clone()))),
             Op::Use(_) | Op::Chosen(_) | Op::Annotate(..) => Ok(layouts.first().cloned().flatten()),
             Op::Element { base, .. } => match layouts.first().cloned().flatten() {
                 Some(layout) => {

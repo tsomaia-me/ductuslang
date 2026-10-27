@@ -270,10 +270,9 @@ impl Engine<'_> {
             }
             return Ok(Some(self.join_val(expr, (lhs, rhs), loc, scope)?));
         }
-        if let (symphonyscript_core::BinaryOp::Add, Val::Scalar(left), Val::Scalar(right)) =
-            (op, &lhs, &rhs)
-            && self.arrays.contains(left)
-            && self.arrays.contains(right)
+        let joins = op == symphonyscript_core::BinaryOp::Add;
+        if let (Val::Scalar(left), Val::Scalar(right)) = (&lhs, &rhs)
+            && (!joins || self.arrays.contains(left) && self.arrays.contains(right))
             && (self.rests_on_recursion(*left)? || self.rests_on_recursion(*right)?)
         {
             let (left, right) = (*left, *right);
@@ -281,10 +280,12 @@ impl Engine<'_> {
             let right_sig = self.sig(right, need);
             let (left_sig, right_sig) = (some!(left_sig), some!(right_sig));
             if !left_sig.reactive && !right_sig.reactive {
-                let sum = self.push_node(Op::Binary(op, left, right), loc, scope)?;
-                self.arrays.insert(sum);
-                self.memo.deferred_sums.insert(sum);
-                return Ok(Some(Val::Scalar(sum)));
+                let settled = self.push_node(Op::Binary(op, left, right), loc, scope)?;
+                if joins {
+                    self.arrays.insert(settled);
+                }
+                self.memo.deferred_sums.insert(settled);
+                return Ok(Some(Val::Scalar(settled)));
             }
         }
         self.single_operand(&lhs, Code::ArrayOperand, OPERAND);

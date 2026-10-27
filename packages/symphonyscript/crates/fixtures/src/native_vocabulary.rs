@@ -57,6 +57,19 @@ pub fn native_vocabulary() -> Vocabulary {
         ),
         first_of,
     );
+    v.native(
+        "tag",
+        NativeSignature::new(
+            [NativeType::Value(Ty::STR), NativeType::Value(Ty::I32)],
+            NativeType::Value(Ty::I32),
+        ),
+        tag,
+    );
+    v.native(
+        "label",
+        NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Value(Ty::STR)),
+        label,
+    );
     v.build().expect("the native vocabulary builds")
 }
 
@@ -106,4 +119,26 @@ fn first_of(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
         Some(NativeArg::Value(_) | NativeArg::Text(_)) | None => None,
     };
     out.set(first.unwrap_or(Value::I32(0)));
+}
+
+fn tag(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let length = match args.first() {
+        Some(NativeArg::Text(text)) => i32::try_from(text.chars().count()).unwrap_or(i32::MAX),
+        Some(NativeArg::Value(_) | NativeArg::Elements(_)) | None => 0,
+    };
+    let offset = match args.get(1) {
+        Some(NativeArg::Value(Value::I32(offset))) => *offset,
+        Some(NativeArg::Value(_) | NativeArg::Elements(_) | NativeArg::Text(_)) | None => 0,
+    };
+    out.set(Value::I32(length.saturating_add(offset)));
+}
+
+fn label(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let text = match args.first() {
+        Some(NativeArg::Value(Value::I32(number))) => number.to_string(),
+        Some(NativeArg::Value(_) | NativeArg::Elements(_) | NativeArg::Text(_)) | None => {
+            String::new()
+        }
+    };
+    out.set_text(&text);
 }

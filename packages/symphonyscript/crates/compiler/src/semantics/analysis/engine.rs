@@ -321,6 +321,13 @@ impl<'a> Engine<'a> {
         self.current == Some(query) || self.waiting.contains(&query)
     }
 
+    fn signing(&self) -> Option<NodeId> {
+        let Some(Query::Sig(node)) = self.current else {
+            return None;
+        };
+        Some(node)
+    }
+
     pub fn declaring(&self) -> bool {
         self.current
             .iter()
@@ -794,6 +801,7 @@ impl<'a> Engine<'a> {
             unless_values: Vec::new(),
             fault: None,
             template: None,
+            signing: self.signing(),
         });
     }
 
@@ -967,6 +975,7 @@ impl<'a> Engine<'a> {
             unless_values,
             fault,
             template,
+            signing: self.signing(),
         });
         Ok(())
     }
@@ -1001,6 +1010,7 @@ impl<'a> Engine<'a> {
             unless_values,
             fault,
             template,
+            signing: self.signing(),
         });
         Ok(())
     }
@@ -1030,6 +1040,7 @@ impl<'a> Engine<'a> {
             unless_values,
             fault,
             template,
+            signing: self.signing(),
         });
         Ok(())
     }
@@ -1178,7 +1189,7 @@ impl<'a> Engine<'a> {
         let mut names: Vec<String> = Vec::with_capacity(calls.len());
         for (_, function) in calls {
             let name = self.function_name(function)?;
-            if names.last() != Some(&name) {
+            if !names.contains(&name) {
                 names.push(name);
             }
         }

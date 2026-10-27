@@ -14,4 +14,5 @@ pub(crate) struct Deferred {
     pub unless_values: Vec<NodeId>,
     pub fault: Option<u32>,
     pub template: Option<ScopeId>,
+    pub signing: Option<NodeId>,
 }

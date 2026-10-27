@@ -74,7 +74,10 @@ impl Parser<'_> {
         self.start(kind);
         self.bump();
         if state && self.eat(SyntaxKind::LBracket) {
-            self.digits(code, "the deepest offset in digits");
+            let reported = self.diagnostics.len();
+            if !self.digits(code, "the deepest offset in digits") {
+                self.help_since(reported, code, STATE_DEPTH);
+            }
             self.expect(SyntaxKind::RBracket, code, "`]`");
         }
         if state {
@@ -317,10 +320,16 @@ impl Parser<'_> {
                 self.digits(Code::TypeSyntax, "a capacity in digits");
                 self.expect(SyntaxKind::RBracket, Code::TypeSyntax, "`]`");
                 if self.at(SyntaxKind::LBracket) {
+                    let reported = self.diagnostics.len();
                     self.error(
                         Code::TypeSyntax,
                         "only the last, outermost length of a type may be a capacity",
                     );
+                    self.help_since(reported, Code::TypeSyntax, CAPACITY_LAST);
+                    while self.eat(SyntaxKind::LBracket) {
+                        self.eat(SyntaxKind::Number);
+                        self.eat(SyntaxKind::RBracket);
+                    }
                 }
                 break;
             }
@@ -331,5 +340,10 @@ impl Parser<'_> {
         self.finish();
     }
 }
+
+const STATE_DEPTH: &str = "write the depth in digits, as in `state[N] name = …` with N the deepest offset the state reads";
+
+const CAPACITY_LAST: &str =
+    "write the capacity as the last, outermost length, as in `i32[3][..10]`";
 
 const FN_COLON: &str = "write `:` before a function's body, as in `fn double(x): x * 2`";

@@ -25,7 +25,7 @@ use self::tree_builder::TreeBuilder;
 use super::lexer::{Lexer, LineStart};
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
-use crate::diagnostics::{Code, Diagnostic};
+use crate::diagnostics::{Code, Diagnostic, mismatched_closer_help, stray_closer_help};
 use crate::source::Source;
 
 pub(crate) struct Parser<'a> {
@@ -37,6 +37,7 @@ pub(crate) struct Parser<'a> {
     builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
     detached: Vec<Range<u32>>,
+    stray_reports: Vec<usize>,
     line_error: bool,
     previous_line_error: bool,
     tasks: Vec<Task>,
@@ -53,6 +54,7 @@ impl<'a> Parser<'a> {
             builder: TreeBuilder::new(),
             diagnostics: Vec::new(),
             detached: Vec::new(),
+            stray_reports: Vec::new(),
             line_error: false,
             previous_line_error: false,
             tasks: Vec::new(),
@@ -529,19 +531,39 @@ impl<'a> Parser<'a> {
 
     fn error(&mut self, code: Code, message: impl Into<String>) {
         let span = self.current_span();
-        let diagnostic = if self.at(SyntaxKind::Caret) {
-            Diagnostic::new(
+        let (diagnostic, stray) = if self.at(SyntaxKind::Caret) {
+            let diagnostic = Diagnostic::new(
                 Code::MisplacedCaret,
                 span,
                 "`^` counts from an array's end and stands only at the start of an index or a slice bound",
-            )
+            );
+            (diagnostic, false)
         } else {
-            Diagnostic::new(code, span, message)
+            let diagnostic = Diagnostic::new(code, span, message);
+            match self.unopened_closer() {
+                Some(help) => (diagnostic.with_help(help), true),
+                None => (diagnostic, false),
+            }
         };
+        let reported = self.diagnostics.len();
         self.error_with(diagnostic);
+        if stray && self.diagnostics.len() > reported {
+            self.stray_reports.push(reported);
+        }
+    }
+
+    fn unopened_closer(&mut self) -> Option<String> {
+        let index = self.significant(0)?;
+        if self.lexer.depth_at(index) != Some(0) {
+            return None;
+        }
+        stray_closer_help(closer_char(self.kind_at(index)?)?)
     }
 
     fn help_since(&mut self, reported: usize, code: Code, help: &str) {
+        if self.stray_reports.contains(&reported) {
+            return;
+        }
         if let Some(diagnostic) = self.diagnostics.get_mut(reported)
             && diagnostic.code == code
         {
@@ -636,8 +658,18 @@ impl<'a> Parser<'a> {
             SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace
         ) && (self.at_end()
             || self.at_any(&[SyntaxKind::Newline, SyntaxKind::Indent, SyntaxKind::Dedent]));
+        let mismatched = match (self.peek().and_then(closer_char), closer_char(kind)) {
+            (Some(found), Some(expected)) => mismatched_closer_help(found, expected),
+            _ => None,
+        };
         let reported = self.diagnostics.len();
         self.error(code, format!("expected {what}, found {found}"));
+        if let Some(help) = mismatched
+            && let Some(diagnostic) = self.diagnostics.get_mut(reported)
+        {
+            diagnostic.help = Some(help);
+            self.stray_reports.push(reported);
+        }
         if ended_by_line
             && let Some(diagnostic) = self.diagnostics.get(reported..).and_then(<[_]>::first)
         {
@@ -803,6 +835,15 @@ impl<'a> Parser<'a> {
         self.bump();
         self.finish();
     }
+}
+
+fn closer_char(kind: SyntaxKind) -> Option<char> {
+    Some(match kind {
+        SyntaxKind::RParen => ')',
+        SyntaxKind::RBracket => ']',
+        SyntaxKind::RBrace => '}',
+        _ => return None,
+    })
 }
 
 fn holds_stray_colon(line: &LineStart<'_>, depth: u32, mut header: bool) -> bool {

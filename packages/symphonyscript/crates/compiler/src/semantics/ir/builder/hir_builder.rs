@@ -213,7 +213,7 @@ impl HirBuilder<'_> {
     pub(super) fn type_ref(&mut self, node: &ast::TypeRef<'_>) -> TypeRef {
         let loc = self.loc(node.syntax().range());
         let base = match node.base() {
-            Some(token) if self.faults.touch(token.range()) => TypeBase::Error,
+            _ if self.faults.touch(node.syntax().range()) => TypeBase::Error,
             Some(token) => match scalar_type(&token) {
                 Some(scalar) => TypeBase::Scalar(scalar),
                 None => match self.ident(node.enum_name()) {

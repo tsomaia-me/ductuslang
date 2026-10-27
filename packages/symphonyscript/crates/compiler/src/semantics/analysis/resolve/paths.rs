@@ -87,7 +87,7 @@ impl Engine<'_> {
                 return Ok(Some(Val::Error));
             }
             Val::Error => {
-                self.written_field(base, name, scope)?;
+                self.written_field(base, name, loc, scope)?;
                 return Ok(Some(Val::Error));
             }
         };
@@ -197,8 +197,22 @@ impl Engine<'_> {
         &mut self,
         base: ExprId,
         name: &Ident,
+        loc: Loc,
         scope: ScopeId,
     ) -> Result<(), Internal> {
+        if let ExprKind::Field(_, segment) = &self.hir.expr(base)?.kind
+            && self.memo.site_values.contains(&(segment.loc, scope))
+        {
+            return self.error(
+                Code::UnknownAttribute,
+                loc,
+                scope,
+                format!(
+                    "`.{}` reads an attribute of an instance or a wire, and this is a value",
+                    name.text
+                ),
+            );
+        }
         let Some((site, kinds)) = self.written_base(base, scope)? else {
             return Ok(());
         };
@@ -229,6 +243,7 @@ impl Engine<'_> {
             Written::Use(..) => &[],
         };
         if attrs.iter().any(|attr| attr.name == name.text) {
+            self.memo.site_values.insert((name.loc, scope));
             return Ok(());
         }
         if let Written::Node(_, placement, _) = written

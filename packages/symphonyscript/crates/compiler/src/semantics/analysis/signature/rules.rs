@@ -76,7 +76,7 @@ impl Engine<'_> {
             Op::Arg(_) => return Err(Internal::missed("argument signature")),
             Op::Read(binding) => match extra {
                 Extra::Read(init) => self.read_sig(*binding, init)?,
-                Extra::None | Extra::ToRead { .. } | Extra::History(_) => {
+                Extra::None | Extra::ToRead { .. } | Extra::History(_) | Extra::Arms(_) => {
                     return Err(Internal::missed("read signature"));
                 }
             },
@@ -86,7 +86,7 @@ impl Engine<'_> {
                     let fallback = at(0)?;
                     Sig::of(fallback.kind, Width::Adaptive, true, fallback.family)
                 }
-                (None, Extra::None | Extra::Read(_) | Extra::ToRead { .. }) => {
+                (None, Extra::None | Extra::Read(_) | Extra::ToRead { .. } | Extra::Arms(_)) => {
                     return Err(Internal::missed("history signature"));
                 }
             },
@@ -165,6 +165,10 @@ impl Engine<'_> {
                 else {
                     return Ok(Sig::ERROR);
                 };
+                if !self.memo.fallback_joins.contains(&node) && !arms_alike(&extra) {
+                    self.error_at_node(Code::TypeMismatch, node, ARM_SHAPES)?;
+                    return Ok(Sig::ERROR);
+                }
                 let width = branch_width(kind, &second, &third);
                 Sig::of(kind, width, reactive, family)
             }
@@ -172,7 +176,14 @@ impl Engine<'_> {
                 scrutinee,
                 arms,
                 otherwise,
-            } => self.match_sig(node, (*scrutinee, arms, *otherwise), sigs)?,
+            } => {
+                let sig = self.match_sig(node, (*scrutinee, arms, *otherwise), sigs)?;
+                if !sig.is_error() && !arms_alike(&extra) {
+                    self.error_at_node(Code::TypeMismatch, node, ARM_SHAPES)?;
+                    return Ok(Sig::ERROR);
+                }
+                sig
+            }
             Op::Pick { index, items } => {
                 let first = at(0)?;
                 if !matches!(first.kind, Kind::Int | Kind::Any) {
@@ -772,3 +783,20 @@ fn concatenates(a: &Sig, b: &Sig) -> bool {
     let string_or_open = |sig: &Sig| sig.kind == Kind::Str || sig.open;
     string_or_open(a) && string_or_open(b) && (a.kind == Kind::Str || b.kind == Kind::Str)
 }
+
+pub(super) fn arms_alike(extra: &Extra) -> bool {
+    let Extra::Arms(forms) = extra else {
+        return true;
+    };
+    let arrays: Vec<bool> = forms.iter().filter_map(|(array, _)| *array).collect();
+    if arrays.iter().any(|array| *array) && arrays.iter().any(|array| !*array) {
+        return false;
+    }
+    let mut rows = forms.iter().filter_map(|(_, rows)| rows.as_ref());
+    let Some(first) = rows.next() else {
+        return true;
+    };
+    rows.all(|other| other == first)
+}
+
+const ARM_SHAPES: &str = "the branches hold arrays of different shapes";

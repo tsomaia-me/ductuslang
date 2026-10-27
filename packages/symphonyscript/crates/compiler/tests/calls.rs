@@ -742,8 +742,38 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
     let bounded = "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 1)\n";
     let held_input = "input i = 2\ninput held: i32[..4] = []\n";
     let doubled_held = "fn h(n) bounded 3 else held: h(n - 1) + h(n - 1)\n";
+    let read_one = "Clip c:\n    Note/(60 + len(f(1)))\n";
     let rows: &[support::Row] = &[
         (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], &[]),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) - f(n - 1)\n",
+                read_one,
+            ],
+            &[(Code::ArrayOperand, "f(n - 1) - f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) * f(n - 1)\n",
+                read_one,
+            ],
+            &[(Code::ArrayOperand, "f(n - 1) * f(n - 1)")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) div f(n - 1)\n",
+                read_one,
+            ],
+            &[(Code::ArrayOperand, "f(n - 1) div f(n - 1)")],
+        ),
+        (
+            &["fn f(n): if n is 0 then [1] else f(n - 1) - 1\n", read_one],
+            &[(Code::ArrayOperand, "f(n - 1) - 1")],
+        ),
+        (
+            &["Clip c:\n    Note/(60 + len([1] - [1]))\n"],
+            &[(Code::ArrayOperand, "[1] - [1]")],
+        ),
         (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], &[]),
         (
             &[
@@ -1168,6 +1198,114 @@ fn a_bounded_expansion_type_checks_every_branch_and_arm_while_it_expands_the_cho
             ],
             &[(Code::TypeMismatch, "if i > 5 then true else f(i + 1) + 1")],
         ),
+        (
+            &[
+                held,
+                "input note = 60\n",
+                "fn f(i) bounded 3 else 0: if i > 5 then held else note + f(i + 1)\n",
+                read,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then held else note + f(i + 1)",
+            )],
+        ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
+    let four = Compiler::with_limits(
+        &vocabulary(),
+        Limits {
+            inlined_calls: 4,
+            ..Limits::default()
+        },
+    )
+    .expect("the vocabulary compiles");
+    let h = "fn h(x): x + 1\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "input n = 0\n",
+                h,
+                "fn r(i): if i is 0 then 0 else r(i - 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(r(n))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(n)")],
+        ),
+        (
+            &[h, "Clip c:\n    Note/(h(h(h(h(h(60))))))\n"],
+            &[(Code::InlineLimit, "h(60)")],
+        ),
+        (&[h, "Clip c:\n    Note/(h(h(h(60))))\n"], &[]),
+    ];
+    for (items, expected) in rows {
+        let mut expected: Vec<(Code, String)> = expected
+            .iter()
+            .map(|(code, text)| (*code, (*text).to_string()))
+            .collect();
+        expected.sort();
+        for order in support::permutations(items) {
+            let text = order.concat();
+            assert_eq!(support::error_texts(&four, &text), expected, "{text}");
+        }
+    }
+}
+
+#[test]
+fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let rows: &[(&[&str], &[&str])] = &[
+        (
+            &[
+                "fn f(i): g(i)\n",
+                "fn g(i): f(i + 1) + 1\n",
+                "Clip c:\n    Note/(f(0))\n",
+            ],
+            &["f", "g"],
+        ),
+        (
+            &["fn f(i): f(i + 1)\n", "Clip c:\n    Note/(f(0))\n"],
+            &["f"],
+        ),
+        (
+            &[
+                "fn f(i): g(i)\n",
+                "fn g(i): h(i)\n",
+                "fn h(i): f(i + 1)\n",
+                "Clip c:\n    Note/(f(0))\n",
+            ],
+            &["f", "g", "h"],
+        ),
+    ];
+    for (items, names) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::errors(compiler.check(&[support::source(&text)]));
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            assert_eq!(diagnostic.code, Code::RecursionDepth, "{text}");
+            assert!(
+                diagnostic.summary.lines().count() <= 3,
+                "{text}{diagnostic:?}"
+            );
+            let (_, chain) = diagnostic.summary.rsplit_once(": ").unwrap_or_default();
+            let mut named: Vec<&str> = chain.split(" → ").collect();
+            named.sort_unstable();
+            assert_eq!(named, *names, "{text}{diagnostic:?}");
+        }
+    }
+    let bounded = [
+        "fn f(i) bounded 500 else 0: g(i)\n",
+        "fn g(i): f(i + 1) + 1\n",
+        "Clip c:\n    Note/(60 + f(0))\n",
+    ];
+    for order in support::permutations(&bounded) {
+        let text = order.concat();
+        let found = support::errors(compiler.check(&[support::source(&text)]));
+        assert!(found.is_empty(), "{text}{found:?}");
+    }
 }

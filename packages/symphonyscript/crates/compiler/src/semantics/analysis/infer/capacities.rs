@@ -602,6 +602,11 @@ impl Engine<'_> {
     }
 
     fn extent_with(&mut self, root: NodeId, env: &Env) -> Result<Extent, Internal> {
+        let stamp = (self.memo.settle_epoch, self.memo.binding_layouts.len());
+        if self.memo.extent_stamp != stamp {
+            self.memo.extent_cache.clear();
+            self.memo.extent_stamp = stamp;
+        }
         let mut done: FastMap<NodeId, Extent> = FastMap::default();
         self.extent_into(root, env, &mut done)?;
         done.remove(&root).ok_or(Internal::missed("capacity"))
@@ -614,9 +619,20 @@ impl Engine<'_> {
         done: &mut FastMap<NodeId, Extent>,
     ) -> Result<(), Internal> {
         let mut pending: FastSet<NodeId> = FastSet::default();
+        let mut dependent: FastSet<NodeId> = FastSet::default();
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
+            self.memo.capacity_visits += 1;
             if done.contains_key(&node) {
+                continue;
+            }
+            if let Some((variable, capacity)) = self.memo.extent_cache.get(&node) {
+                let cached = if *variable {
+                    Extent::Variable(capacity.clone())
+                } else {
+                    Extent::Fixed(capacity.start().floor())
+                };
+                done.insert(node, cached);
                 continue;
             }
             let found = self.known_layout(node)?;
@@ -631,8 +647,14 @@ impl Engine<'_> {
                 done.insert(node, Extent::Fixed(i128::from(layout.outer().unwrap_or(0))));
                 continue;
             }
+            let from_env = self.reads_env(node, env)?;
             let (operands, extra) = match self.extent_parts(node, env)? {
                 Parts::Leaf(value) => {
+                    if from_env {
+                        dependent.insert(node);
+                    } else {
+                        self.cache_extent(node, &value);
+                    }
                     done.insert(node, value);
                     continue;
                 }
@@ -655,9 +677,38 @@ impl Engine<'_> {
                 })
                 .collect::<Result<_, _>>()?;
             let value = self.combined_extent(node, &values, extra)?;
+            if from_env || operands.iter().any(|operand| dependent.contains(operand)) {
+                dependent.insert(node);
+            } else {
+                self.cache_extent(node, &value);
+            }
             done.insert(node, value);
         }
         Ok(())
+    }
+
+    fn reads_env(&self, node: NodeId, env: &Env) -> Result<bool, Internal> {
+        let op = &self.node(node)?.op;
+        let binding = if let Op::Read(binding) = op {
+            Some(*binding)
+        } else if let Op::History { cell, .. } = op {
+            self.history_cell_binding(*cell)?
+        } else {
+            None
+        };
+        let Some(binding) = binding else {
+            return Ok(false);
+        };
+        Ok(env.contains_key(&binding)
+            || self.is_state(binding)? && !self.memo.binding_capacities.contains_key(&binding))
+    }
+
+    fn cache_extent(&mut self, node: NodeId, value: &Extent) {
+        let entry = match value {
+            Extent::Fixed(length) => (false, Piecewise::constant(*length)),
+            Extent::Variable(capacity) => (true, capacity.clone()),
+        };
+        self.memo.extent_cache.insert(node, entry);
     }
 
     fn binding_extent(&self, binding: BindingId, env: &Env) -> Option<Extent> {
@@ -681,14 +732,6 @@ impl Engine<'_> {
                 Some(value) => Parts::Leaf(value),
                 None => Parts::Operands(vec![self.binding(binding)?.init], None),
             },
-            Op::Annotate(..) if self.memo.variable_defaults.contains_key(&node) => {
-                let capacity = self
-                    .memo
-                    .variable_defaults
-                    .get(&node)
-                    .map_or(0, |(_, capacity)| *capacity);
-                Parts::Leaf(Extent::Variable(Piecewise::constant(i128::from(capacity))))
-            }
             Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => {
                 Parts::Operands(vec![operand], None)
             }

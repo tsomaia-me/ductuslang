@@ -88,7 +88,7 @@ impl Engine<'_> {
     }
 }
 
-fn holds_cell(bound: &BoundVal) -> bool {
+pub(super) fn holds_cell(bound: &BoundVal) -> bool {
     match bound {
         BoundVal::Scalar(Bound::Cell(_)) => true,
         BoundVal::Array(array) => array.1.iter().any(|item| matches!(item, Bound::Cell(_))),

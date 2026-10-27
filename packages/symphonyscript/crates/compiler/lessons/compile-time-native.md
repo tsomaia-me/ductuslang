@@ -5,14 +5,14 @@ A native function with a string parameter or result runs only at compile time, a
 Strings exist only at compile time.
 
 ```sym-error natives
-input i = 0
+input n = 0
 Clip c:
-    Note/(text_length(i))
+    Note/(tag("abc", n))
 ```
 
-The argument reads the input `i`.
+`tag` takes a string, and its second argument reads the input `n`.
 
 ```sym natives
 Clip c:
-    Note/(text_length("abc"))
+    Note/(tag("abc", 2))
 ```

@@ -1,5 +1,29 @@
 use super::code::Code;
 
+pub(crate) fn stray_closer_help(closer: char) -> Option<String> {
+    let opener = opener_of(closer)?;
+    Some(format!(
+        "remove the `{closer}`, or match it with an opening `{opener}`"
+    ))
+}
+
+pub(crate) fn mismatched_closer_help(found: char, expected: char) -> Option<String> {
+    let opener = opener_of(expected)?;
+    opener_of(found)?;
+    Some(format!(
+        "remove the `{found}`, or replace it with the `{expected}` that closes the open `{opener}`"
+    ))
+}
+
+fn opener_of(closer: char) -> Option<char> {
+    Some(match closer {
+        ')' => '(',
+        ']' => '[',
+        '}' => '{',
+        _ => return None,
+    })
+}
+
 pub(super) fn help(code: Code) -> Option<&'static str> {
     Some(match code {
         Code::TabIndentation => "indent with spaces",

@@ -496,6 +496,46 @@ fn enums_strings_and_bools_take_their_own_types() {
 }
 
 #[test]
+fn a_bare_variant_where_no_enum_is_expected_draws_unknown_name_wherever_it_stands() {
+    let saw = (Code::UnknownName, "Saw");
+    let rows: &[support::Row] = &[
+        (&["Clip c:\n    Note/(60 + len([Saw]))\n"], &[saw]),
+        (
+            &["Clip c:\n    Note/(60 + len([Saw, Square]))\n"],
+            &[saw, (Code::UnknownName, "Square")],
+        ),
+        (
+            &[
+                "input w = Wave::Saw\n",
+                "Clip c:\n    Note/(60 + len([w]))\n",
+            ],
+            &[],
+        ),
+        (&["Synth s:\n    Osc | wave=Saw\n"], &[]),
+        (
+            &["Synth s:\n    for w in [Saw, Square]:\n        Osc | wave=w\n"],
+            &[saw, (Code::UnknownName, "Square")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let text = "Clip c:\n    Note/(60 + len([Saw]))\n";
+    let found = support::errors(compiler.check(&[support::source(text)]));
+    let helps: Vec<Option<&str>> = found
+        .iter()
+        .map(|diagnostic| diagnostic.help.as_deref())
+        .collect();
+    assert_eq!(
+        helps,
+        [Some(
+            "write `Wave::Saw`, or use `Saw` in a position that expects a `Wave`"
+        )],
+        "{text}"
+    );
+}
+
+#[test]
 fn a_bare_variant_stands_only_where_an_enum_is_expected() {
     expect(&[
         ("Clip c | gain=Saw(1)\n", &[Code::UnknownName]),
@@ -4122,10 +4162,14 @@ fn a_to_path_reads_an_array_attribute_as_its_binding() {
         "Clip b:\n    Note\n",
         "Clip c:\n    Note\n",
     ];
-    let reads = "Clip a:\n    Plays | gain=to.steps[0]: b\n    Plays | gain=to.steps[1]: [b, c][sec]\n    Plays | gain=to.seq[0]: b\n    Plays | gain=len(to.steps): [b, c][sec]\n";
+    let reads = "Clip a:\n    Plays | gain=to.steps[0]: b\n    Plays | gain=to.steps[1]: [b, c][sec]\n    Plays | gain=len(to.seq): b\n    Plays | gain=len(to.steps): [b, c][sec]\n";
     let lane = "Lane l\n";
     let rows: &[support::Row] = &[
         (&[declared[0], declared[1], declared[2], reads], &[]),
+        (
+            &[declared[1], "Clip a:\n    Plays | gain=to.seq[0]: b\n"],
+            &[(Code::IndexOutOfRange, "0")],
+        ),
         (
             &[declared[1], "Clip a:\n    Plays | gain=to.steps: b\n"],
             &[(Code::TypeMismatch, "to.steps")],
@@ -4190,10 +4234,21 @@ fn a_to_path_reads_an_array_attribute_as_its_binding() {
         ),
         (
             &[declared[1], "Clip a:\n    Plays | picks=to.seq: b\n"],
-            &[(Code::CapacityExceeded, "to.seq")],
+            &[],
         ),
         (
-            &[declared[1], "Clip a:\n    Plays | picks=b.seq: b\n"],
+            &[
+                "Clip b | seq=[1, 2, 3]:\n    Note\n",
+                "Clip a:\n    Plays | picks=to.seq: b\n",
+            ],
+            &[(Code::CapacityExceeded, "to.seq")],
+        ),
+        (&[declared[1], "Clip a:\n    Plays | picks=b.seq: b\n"], &[]),
+        (
+            &[
+                "Clip b | seq=[1, 2, 3]:\n    Note\n",
+                "Clip a:\n    Plays | picks=b.seq: b\n",
+            ],
             &[(Code::CapacityExceeded, "b.seq")],
         ),
         (

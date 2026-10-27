@@ -2083,31 +2083,19 @@ fn doubled_calls(levels: usize, body: &str) -> String {
 #[test]
 fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
     let measure = |text: &str| {
-        let start = std::time::Instant::now();
-        let (diagnostics, sizes) = analyzed(text, |engine| {
+        analyzed(text, |engine| {
             (
                 engine.nodes.len(),
                 engine.scopes.len(),
                 engine.bindings.len(),
+                engine.memo.query_runs,
             )
-        });
-        (start.elapsed(), diagnostics, sizes)
+        })
     };
     let faulty = doubled_calls(18, "x div 0.5");
     let clean = doubled_calls(18, "x div 2");
-    let mut faulty_time = std::time::Duration::MAX;
-    let mut clean_time = std::time::Duration::MAX;
-    let mut runs = Vec::new();
-    for _ in 0..5 {
-        let (elapsed, diagnostics, faulty_sizes) = measure(&faulty);
-        faulty_time = faulty_time.min(elapsed);
-        let (elapsed, clean_diagnostics, clean_sizes) = measure(&clean);
-        clean_time = clean_time.min(elapsed);
-        runs.push((diagnostics, faulty_sizes, clean_diagnostics, clean_sizes));
-    }
-    let Some((diagnostics, faulty_sizes, clean_diagnostics, clean_sizes)) = runs.pop() else {
-        return;
-    };
+    let (diagnostics, faulty_sizes) = measure(&faulty);
+    let (clean_diagnostics, clean_sizes) = measure(&clean);
     assert_eq!(error_codes(&clean_diagnostics), Vec::<Code>::new());
     let errors = errors_of(&diagnostics);
     assert_eq!(error_codes(&diagnostics), vec![Code::OperandType]);
@@ -2126,10 +2114,7 @@ fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
     let mut expected: Vec<String> = (0..18).map(|level| format!("g{level}(x)")).collect();
     expected.push("g18(i)".into());
     assert_eq!(chain, expected);
-    assert!(
-        faulty_time <= clean_time * 2,
-        "{faulty_time:?} against {clean_time:?}"
-    );
+    assert!(faulty_sizes.3 <= clean_sizes.3 * 2, "queries");
     assert!(faulty_sizes.0 <= clean_sizes.0 * 2, "nodes");
     assert!(faulty_sizes.1 <= clean_sizes.1 * 2, "scopes");
     assert!(faulty_sizes.2 <= clean_sizes.2 * 2, "bindings");

@@ -109,16 +109,22 @@ impl Vocabulary {
     }
 
     pub fn native(&self, id: NativeId) -> Option<&NativeDecl> {
+        if id.vocabulary() != self.token {
+            return None;
+        }
         self.natives.get(id.index())
     }
 
     pub fn native_at(&self, index: usize) -> Option<NativeId> {
-        (index < self.natives.len()).then(|| NativeId::new(index as u32))
+        let index = u32::try_from(index)
+            .ok()
+            .filter(|index| (*index as usize) < self.natives.len())?;
+        Some(NativeId::new(self.token, index))
     }
 
     pub fn native_named(&self, name: &str) -> Option<NativeId> {
         let index = *self.native_names.get(name)?;
-        Some(NativeId::new(index))
+        Some(NativeId::new(self.token, index))
     }
 
     pub fn node_kind(&self, kind: NodeKind) -> Option<&NodeKindDecl> {
