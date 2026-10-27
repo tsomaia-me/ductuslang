@@ -368,7 +368,7 @@ impl Engine<'_> {
                     self.error_at_node(
                         Code::ReactiveString,
                         node,
-                        "a string expression reads no cell",
+                        "a string exists only at compile time, and this one reads a cell",
                     )?;
                     return Ok(Sig::ERROR);
                 }
@@ -499,7 +499,7 @@ impl Engine<'_> {
                     self.error_at_node(
                         Code::ReactiveString,
                         node,
-                        "a string expression reads no cell",
+                        "a string exists only at compile time, and this comparison of strings reads a cell",
                     )?;
                     return Ok(Sig::ERROR);
                 }

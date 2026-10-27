@@ -477,7 +477,55 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
             "to.seq",
             "the destination candidates hold `seq` with different types or unit families, the `Clip` named `b` and the `Lane` named `l` among them, and a `to` read takes one",
         ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input f = false\n",
+                "Clip as g | data=(if f then \"GET\" else \"AB\") + \"C\"\n",
+            ],
+            Code::ReactiveString,
+            "(if f then \"GET\" else \"AB\") + \"C\"",
+            "a string exists only at compile time, and this one reads a cell",
+        ),
+        (
+            vocabulary,
+            &[
+                "input f = false\n",
+                "Track t | label=(\"x\" + (if f then \"a\" else \"b\"))\n",
+            ],
+            Code::ReactiveString,
+            "\"x\" + (if f then \"a\" else \"b\")",
+            "a string exists only at compile time, and this one reads a cell",
+        ),
+        (
+            vocabulary,
+            &[
+                "input f = false\n",
+                "Clip c:\n    Note when (if f then \"a\" else \"b\") is \"a\"\n",
+            ],
+            Code::ReactiveString,
+            "(if f then \"a\" else \"b\") is \"a\"",
+            "a string exists only at compile time, and this comparison of strings reads a cell",
+        ),
+        (
+            vocabulary,
+            &[
+                "input f = false\n",
+                "Track t | label=(if f then \"x\" else \"y\")\n",
+            ],
+            Code::ReactiveString,
+            "if f then \"x\" else \"y\"",
+            "a string exists only at compile time, and this one reads a cell",
+        ),
+        (
+            vocabulary,
+            &["input n = 1\n", "Track t | label=\"x{n}\"\n"],
+            Code::ReactiveString,
+            "n",
+            "a string exists only at compile time, and this interpolation reads a cell",
+        ),
     ];
+    support::assert_rows_in_every_order(&vocabulary(), &[(&["Track t | label=\"x\"\n"], &[])]);
     for (vocabulary, items, code, at, summary) in rows {
         let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
         for order in support::permutations(items) {
