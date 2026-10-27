@@ -43,6 +43,7 @@ CEILING_FACTOR = 2
 DEFAULT_MAX_BATCH_USD = 2.0
 TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 RECENT_BATCHES = 20
+CLOCK_SKEW_SECONDS = 600
 
 
 def read_keys(env_path):
@@ -241,7 +242,7 @@ class Runner:
         for listed in client.messages.batches.list(limit=RECENT_BATCHES).data:
             counts = listed.request_counts
             total = counts.processing + counts.succeeded + counts.errored + counts.canceled + counts.expired
-            if (listed.id in known or listed.created_at.timestamp() < pending["time"] or total != len(ids)
+            if (listed.id in known or listed.created_at.timestamp() < pending["time"] - CLOCK_SKEW_SECONDS or total != len(ids)
                     or self.accepted_ids(client, listed.id) != sorted(ids)):
                 continue
             self.state["batches"].append({"id": listed.id, "key": key, "custom_ids": ids, "done": False})

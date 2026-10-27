@@ -197,7 +197,7 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(self.creates(), [["r0", "r1"]])
 
     def test_a_batch_created_before_the_marker_is_not_adopted(self):
-        clients = self.crashed_after(requests(2), created=999.0)
+        clients = self.crashed_after(requests(2), created=399.0)
         self.assertTrue(self.runner(clients).run(requests(2)))
         self.assertIn(("list", "k1"), self.log)
         self.assertEqual(self.creates(), [["r0", "r1"]])
