@@ -44,6 +44,13 @@ class FakeBatches:
         self.created[batch_id] = requests
         return SimpleNamespace(id=batch_id)
 
+    def list(self, limit):
+        self.log.append(("list", self.name))
+        batches = [SimpleNamespace(id=batch_id, request_counts=SimpleNamespace(
+            processing=0, succeeded=len(requests), errored=0, canceled=0, expired=0))
+            for batch_id, requests in reversed(self.created.items())]
+        return SimpleNamespace(data=batches[:limit])
+
     def retrieve(self, batch_id):
         if self.retrieve_errors:
             raise self.retrieve_errors.pop(0)
@@ -138,6 +145,34 @@ class RunnerTest(unittest.TestCase):
         creates = [entry for entry in self.log if entry[0] == "create"]
         self.assertEqual(creates, [("create", "k2", ["r2", "r3"])])
         self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1", "r2", "r3"])
+
+    def crashed_after(self, accepted):
+        clients = {1: fake_client("k1", self.log)}
+        clients[1].messages.batches.created = {"k1-batch-1": accepted}
+        self.run_dir.mkdir()
+        (self.run_dir / "state.json").write_text(json.dumps({"key": 1, "batches": []}))
+        return clients
+
+    def test_a_resumed_run_adopts_a_batch_the_api_accepted_before_the_crash(self):
+        clients = self.crashed_after(requests(2))
+        self.assertTrue(self.runner(clients).run(requests(2)))
+        self.assertEqual(self.creates(), [])
+        state = json.loads((self.run_dir / "state.json").read_text())
+        self.assertEqual(state["batches"], [{"id": "k1-batch-1", "key": 1, "custom_ids": ["r0", "r1"], "done": True}])
+        self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1"])
+
+    def test_a_resumed_run_does_not_adopt_a_recent_batch_with_other_ids(self):
+        clients = self.crashed_after(requests(2, start=5))
+        self.assertTrue(self.runner(clients).run(requests(2)))
+        self.assertEqual(self.creates(), [["r0", "r1"]])
+        state = json.loads((self.run_dir / "state.json").read_text())
+        self.assertEqual([batch["id"] for batch in state["batches"]], ["k1-batch-2"])
+        self.assertEqual(sorted(entry["custom_id"] for entry in self.results()), ["r0", "r1"])
+
+    def test_a_fresh_run_lists_no_batches(self):
+        clients = {1: fake_client("k1", self.log)}
+        self.assertTrue(self.runner(clients).run(requests(2)))
+        self.assertNotIn(("list", "k1"), self.log)
 
     def timeout(self):
         return anthropic.APITimeoutError(httpx.Request("GET", "https://api.anthropic.com/v1/messages/batches"))

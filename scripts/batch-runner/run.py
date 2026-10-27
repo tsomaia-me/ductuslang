@@ -42,6 +42,7 @@ TRIAL_REQUESTS = 10
 CEILING_FACTOR = 2
 DEFAULT_MAX_BATCH_USD = 2.0
 TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+RECENT_BATCHES = 20
 
 
 def read_keys(env_path):
@@ -135,6 +136,7 @@ class Runner:
         self.clock = clock
         self.held = set()
         self.capped = False
+        self.resuming = self.run_dir.exists()
         self.state_path = self.run_dir / "state.json"
         self.results_path = self.run_dir / "results.jsonl"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {"key": 1, "batches": []}
@@ -224,7 +226,37 @@ class Runner:
         self.save()
         self.log(f"batch {batch['id']} done (key-{batch['key']})")
 
+    def accepted_ids(self, client, batch_id):
+        while client.messages.batches.retrieve(batch_id).processing_status != "ended":
+            self.sleep(self.poll_seconds)
+        return sorted(entry.custom_id for entry in client.messages.batches.results(batch_id))
+
+    def adopt(self, requests):
+        key = self.state["key"]
+        if key not in self.clients:
+            return None
+        client = self.clients[key]
+        ids = [r["custom_id"] for r in requests]
+        known = {batch["id"] for batch in self.state["batches"]}
+        for listed in client.messages.batches.list(limit=RECENT_BATCHES).data:
+            counts = listed.request_counts
+            total = counts.processing + counts.succeeded + counts.errored + counts.canceled + counts.expired
+            if listed.id in known or total != len(ids) or self.accepted_ids(client, listed.id) != sorted(ids):
+                continue
+            batch = {"id": listed.id, "key": key, "custom_ids": ids, "done": False}
+            self.state["batches"].append(batch)
+            self.save()
+            self.log(f"adopted batch {listed.id} with {len(ids)} requests (key-{key}): "
+                     f"the API accepted it before the last run stopped")
+            return batch
+        return None
+
     def submit(self, requests):
+        if self.resuming:
+            self.resuming = False
+            adopted = self.adopt(requests)
+            if adopted is not None:
+                return adopted
         while True:
             key = self.state["key"]
             if key not in self.clients:

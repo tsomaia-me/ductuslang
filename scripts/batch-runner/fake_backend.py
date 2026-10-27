@@ -40,6 +40,14 @@ class FakeBatches:
             self.created[batch_id] = requests
         return SimpleNamespace(id=batch_id)
 
+    def list(self, limit):
+        with self.lock:
+            created = list(self.created.items())
+        batches = [SimpleNamespace(id=batch_id, request_counts=SimpleNamespace(
+            processing=0, succeeded=len(requests), errored=0, canceled=0, expired=0))
+            for batch_id, requests in reversed(created)]
+        return SimpleNamespace(data=batches[:limit])
+
     def retrieve(self, batch_id):
         return SimpleNamespace(processing_status="ended")
 
