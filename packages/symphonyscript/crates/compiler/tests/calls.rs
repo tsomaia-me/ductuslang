@@ -1465,6 +1465,108 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
             ],
             &[],
         ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input note = 60\n",
+                "input gate = false\n",
+                "let pick = if gate then held else []\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input note = 60\n",
+                "input gate = false\n",
+                "let pick = if gate then held else held[1..]\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input note = 60\n",
+                "input gate = false\n",
+                "let pick = match note:\n    60: held\n    else: []\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input note = 60\n",
+                "input gate = false\n",
+                "let pick = if false then held else held + [note]\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input note = 60\n",
+                "input gate = false\n",
+                "let pick = if gate then [1] else [1, 2]\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input gate = false\n",
+                "let pick = if false then held else [1, 2]\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::InlineLimit, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input gate = false\n",
+                "let pick = if false then held else [1, 2]\n",
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input gate = false\n",
+                "let pick = if gate then [1, 2] else [3, 4]\n",
+                h,
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::InlineLimit, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = [1, 2]\n",
+                "input gate = false\n",
+                "let pick = if gate then [1, 2] else [3, 4]\n",
+                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
     ];
     for (items, expected) in rows {
         let mut expected: Vec<(Code, String)> = expected
@@ -1533,4 +1635,79 @@ fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
         let found = support::errors(compiler.check(&[support::source(&text)]));
         assert!(found.is_empty(), "{text}{found:?}");
     }
+}
+
+#[test]
+fn a_recursive_call_whose_array_argument_grows_finishes_within_the_limits() {
+    let mut rows: Vec<[String; 2]> = Vec::new();
+    for bound in [3, 30, 300] {
+        let grows = format!("fn f(xs): if len(xs) > {bound} then xs else f(xs + [1])\n");
+        rows.push([grows.clone(), "Clip c:\n    Note/(f([1])[0])\n".into()]);
+        rows.push([grows, "Clip c:\n    Note/(60 + len(f([1])))\n".into()]);
+    }
+    let finishing = [
+        (
+            "fn f(xs, n): if n > 3 then xs else f(xs + [1], n + 1)\n",
+            "Clip c:\n    Note/(f([1], 0)[0])\n",
+        ),
+        (
+            "fn f(xs, n): if n > 3 then xs else f([1] + xs, n + 1)\n",
+            "Clip c:\n    Note/(f([1], 0)[0])\n",
+        ),
+        (
+            "fn f(xs, n): if n > 3 then xs else f(xs + [[1]], n + 1)\n",
+            "Clip c:\n    Note/(f([[1]], 0)[0][0])\n",
+        ),
+        (
+            "fn f(xs) bounded 8 else xs: if len(xs) > 3 then xs else f(xs + [1])\n",
+            "Clip c:\n    Note/(f([1])[0])\n",
+        ),
+        (
+            "fn f(xs): if len(xs) > 0 then xs else f(xs + [1])\n",
+            "Clip c:\n    Note/(f([1])[0])\n",
+        ),
+        (
+            "fn f(xs, n): if n > 3 then xs else f(xs + [n], n + 1)\n",
+            "Clip c:\n    Note/(f([], 0)[3])\n",
+        ),
+        (
+            "fn f(xs): if len(xs) > 1 then f(xs[1..]) else xs\n",
+            "Clip c:\n    Note/(f([1, 2, 3])[0])\n",
+        ),
+    ];
+    for (function, clip) in finishing {
+        rows.push([function.into(), clip.into()]);
+    }
+    let items: Vec<[&str; 2]> = rows
+        .iter()
+        .map(|[function, clip]| [function.as_str(), clip.as_str()])
+        .collect();
+    let rows: Vec<support::Row> = items
+        .iter()
+        .map(|items| (items.as_slice(), [].as_slice()))
+        .collect();
+    support::assert_rows_in_every_order(&vocabulary(), &rows);
+}
+
+#[test]
+fn a_recursive_call_whose_array_argument_deepens_finishes_on_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(|| {
+            let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+            for text in [
+                "fn f(xs, n): if n > 3 then 0 else f([xs], n + 1)\nClip c:\n    Note/(f([1], 0))\n",
+                "Clip c:\n    Note/(f([1], 0))\nfn f(xs, n): if n > 3 then 0 else f([xs], n + 1)\n",
+            ] {
+                let errors = support::errors(compiler.check(&[support::source(text)]));
+                assert!(errors.len() <= 1, "{text}{errors:?}");
+                for error in &errors {
+                    assert_eq!(error.code, Code::RecursionDepth, "{text}{errors:?}");
+                    assert!(error.summary.ends_with(": f"), "{text}{errors:?}");
+                }
+            }
+        })
+        .expect("the thread starts")
+        .join()
+        .expect("the check finishes without overflowing");
 }

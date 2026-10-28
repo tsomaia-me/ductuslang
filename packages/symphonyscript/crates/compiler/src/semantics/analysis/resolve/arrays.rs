@@ -14,7 +14,6 @@ use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
@@ -839,13 +838,10 @@ impl Engine<'_> {
         if !typed {
             return Ok(None);
         }
-        let key = FamilyKey {
-            function,
-            args: args
-                .iter()
-                .map(|arg| self.family_shape(arg.as_ref()))
-                .collect::<Result<_, _>>()?,
-        };
+        let (key, shapes) = self.family_key(function, args)?;
+        if self.memo.family_shapes.get(&key) != Some(&shapes) {
+            return Ok(None);
+        }
         let Some(&scope) = self
             .memo
             .family_scopes

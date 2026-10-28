@@ -47,10 +47,15 @@ impl Engine<'_> {
             let Some(node) = whole else {
                 return Ok(ArrayPosition::Usual);
             };
-            if !self.definite_array(node)? {
-                return Ok(ArrayPosition::Usual);
-            }
-            if self.is_variable(node)? {
+            let variable = if self.definite_array(node)? {
+                self.is_variable(node)?
+            } else if position.ty.lengths.is_empty() {
+                false
+            } else {
+                let found = self.known_layout(node)?;
+                found.certain && matches!(found.shaped, Ok(Some(layout)) if layout.variable)
+            };
+            if variable {
                 if position.ty.lengths.is_empty() {
                     let (code, message) = self.single_value_fault(position, "a variable array")?;
                     self.error(code, position.loc, position.scope, message)?;

@@ -334,18 +334,17 @@ impl Engine<'_> {
             }
             Val::Error => return Ok(Some(Val::Error)),
         };
-        let vals =
-            match some!(self.branches(vec![then, otherwise], condition, (loc, scope), need)?) {
-                Branches::Whole(nodes) => {
-                    let &[then, otherwise] = nodes.as_slice() else {
-                        return Ok(Some(Val::Error));
-                    };
-                    let choice = self.push_node(Op::If(condition, then, otherwise), loc, scope)?;
-                    self.record_choice_arrays(choice, &nodes)?;
-                    return Ok(Some(Val::Scalar(choice)));
-                }
-                Branches::Each(vals) => vals,
-            };
+        let vals = match some!(self.branches(vec![then, otherwise], (loc, scope), need)?) {
+            Branches::Whole(nodes) => {
+                let &[then, otherwise] = nodes.as_slice() else {
+                    return Ok(Some(Val::Error));
+                };
+                let choice = self.push_node(Op::If(condition, then, otherwise), loc, scope)?;
+                self.record_choice_arrays(choice, &nodes)?;
+                return Ok(Some(Val::Scalar(choice)));
+            }
+            Branches::Each(vals) => vals,
+        };
         let Some((shape, pairs)) = self.zip_shapes(&vals, loc, scope)? else {
             return Ok(Some(Val::Error));
         };
@@ -364,7 +363,6 @@ impl Engine<'_> {
     fn branches(
         &mut self,
         vals: Vec<Val>,
-        selector: NodeId,
         (loc, scope): (Loc, ScopeId),
         need: &mut Vec<Query>,
     ) -> Result<Option<Branches>, Internal> {
@@ -386,7 +384,6 @@ impl Engine<'_> {
                 return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
             }
         }
-        let reactive = some!(self.sig(selector, need)).reactive;
         if !opaque {
             let rows_agree = vals.iter().all(|val| match val {
                 Val::Array(array) => array.shape.inner() == first.inner(),
@@ -395,40 +392,8 @@ impl Engine<'_> {
             if !rows_agree && !recursive_body {
                 return Ok(Some(Branches::Each(vals)));
             }
-            return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
         }
-        let mut definite = false;
-        for val in &vals {
-            if let Val::Scalar(node) = val
-                && self.definite_array(*node)?
-            {
-                definite = true;
-            }
-        }
-        if !reactive || definite {
-            return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
-        }
-        let Some(shape) = vals
-            .iter()
-            .find(|val| !self.holds_array(val))
-            .map(Val::shape)
-        else {
-            return Ok(Some(Branches::Each(vals)));
-        };
-        let mut each = Vec::new();
-        for val in vals {
-            let Val::Scalar(node) = val else {
-                each.push(val);
-                continue;
-            };
-            if !self.arrays.contains(&node) {
-                each.push(val);
-                continue;
-            }
-            let nodes = self.projected(node, &shape, (Code::TypeMismatch, BRANCHES), loc, scope)?;
-            each.push(self.shaped(shape.clone(), nodes));
-        }
-        Ok(Some(Branches::Each(each)))
+        Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)))
     }
 
     fn boxed_all(
@@ -870,7 +835,7 @@ impl Engine<'_> {
         if let Some(Some(value)) = otherwise_val {
             all.push(value);
         }
-        let all = match some!(self.branches(all, scrutinee_node, (loc, scope), need)?) {
+        let all = match some!(self.branches(all, (loc, scope), need)?) {
             Branches::Whole(nodes) => {
                 let mut values = nodes.clone();
                 let otherwise = if has_otherwise { values.pop() } else { None };

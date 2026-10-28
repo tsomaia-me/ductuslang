@@ -1701,3 +1701,117 @@ fn variant_lookups_cost_constant_work_per_name() {
     assert_eq!(wide, narrow);
     assert!(wide <= 8 * 20_001, "{wide}");
 }
+
+fn grown(bound: u32, read: &str) -> (Option<CVal>, usize) {
+    let text = format!(
+        "fn f(xs): if len(xs) > {bound} then xs else f(xs + [1])\nClip c:\n    Note/({read})\n"
+    );
+    let (diagnostics, found) = analyzed(&vocabulary(), &text, |engine| {
+        (
+            attr_value(engine, "pitch", EvalTy::I32),
+            engine
+                .memo
+                .family_scopes
+                .values()
+                .map(Vec::len)
+                .sum::<usize>(),
+        )
+    });
+    assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+    found
+}
+
+#[test]
+fn a_recursive_call_whose_array_argument_grows_instantiates_families_independent_of_its_length() {
+    let mut scopes = Vec::new();
+    for bound in [3u32, 30, 300] {
+        let (first, counted) = grown(bound, "f([1])[0]");
+        assert_eq!(first, Some(CVal::Int(1)), "{bound}");
+        let (length, _) = grown(bound, "60 + len(f([1]))");
+        assert_eq!(
+            length,
+            Some(CVal::Int(60 + i128::from(bound) + 1)),
+            "{bound}"
+        );
+        scopes.push(counted);
+    }
+    assert!(
+        scopes.iter().all(|counted| *counted == scopes[0]),
+        "{scopes:?}"
+    );
+}
+
+#[test]
+fn a_recursive_call_over_a_growing_or_shrinking_array_computes_its_element() {
+    for text in [
+        "fn f(xs, n): if n > 3 then xs else f(xs + [n], n + 1)\nClip c:\n    Note/(f([], 0)[3])\n",
+        "fn f(xs): if len(xs) > 1 then f(xs[1..]) else xs\nClip c:\n    Note/(f([1, 2, 3])[0])\n",
+    ] {
+        let (diagnostics, value) = analyzed(&vocabulary(), text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(3)), "{text}");
+    }
+}
+
+fn nested_call_steps(depth: usize) -> u64 {
+    let text = format!(
+        "fn f(v): v\nlet c = {}1{}\nClip m:\n    Note/(c)\n",
+        "f(".repeat(depth),
+        ")".repeat(depth)
+    );
+    let (diagnostics, (value, steps)) = analyzed(&vocabulary(), &text, |engine| {
+        (
+            attr_value(engine, "pitch", EvalTy::I32),
+            engine.memo.use_steps.get(),
+        )
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(1)));
+    steps
+}
+
+#[test]
+fn a_chain_of_nested_calls_costs_work_linear_in_its_depth() {
+    let steps: Vec<u64> = [25_000, 50_000, 100_000]
+        .into_iter()
+        .map(nested_call_steps)
+        .collect();
+    for pair in steps.windows(2) {
+        assert!(pair[1] <= 2 * pair[0], "{steps:?}");
+    }
+}
+
+#[test]
+fn a_fixed_type_operand_widens_and_the_literals_beside_it_take_the_flowing_type() {
+    for (read, pitch) in [
+        ("u8(250) * 2 - 400", 100),
+        ("u8(200) + 100", 300),
+        ("u8(250) + 300", 550),
+    ] {
+        let text = format!("Clip c:\n    Note/({read})\n");
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(pitch)), "{text}");
+    }
+}
+
+#[test]
+fn a_recursive_call_over_a_fixed_choice_computes_its_count() {
+    for pick in [
+        "let pick = if false then held else [1, 2]\n",
+        "let pick = if gate then [1, 2] else [3, 4]\n",
+    ] {
+        let text = format!(
+            "input held: i32[..4] = [1, 2]\ninput gate = false\n{pick}fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"
+        );
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(62)), "{text}");
+    }
+}

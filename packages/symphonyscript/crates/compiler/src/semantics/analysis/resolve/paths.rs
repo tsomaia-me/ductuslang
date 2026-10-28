@@ -1352,6 +1352,7 @@ impl Engine<'_> {
         mut node: NodeId,
     ) -> Result<NodeId, Internal> {
         while let Op::Use(inner) = self.node(node)?.op {
+            self.memo.use_steps.set(self.memo.use_steps.get() + 1);
             node = inner;
         }
         Ok(node)

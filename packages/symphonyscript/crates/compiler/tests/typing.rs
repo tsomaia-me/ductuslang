@@ -3456,13 +3456,29 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
 }
 
 #[test]
+fn a_literal_beside_a_fixed_type_operand_takes_the_flowing_type() {
+    let rows: &[support::Row] = &[
+        (&["Clip c:\n    Note/(u8(250) * 2 - 400)\n"], &[]),
+        (&["Clip c:\n    Note/(u8(250) - 400)\n"], &[]),
+        (&["Clip c:\n    Note/(u8(100) * 2 - 400)\n"], &[]),
+        (&["Clip c:\n    Note/(u8(200) + 100)\n"], &[]),
+        (
+            &["Clip c:\n    Note when u8(250) < 400\n"],
+            &[(Code::DoesNotFit, "400")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2, 3][u8(2) + 300])\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
     let rows: &[support::Row] = &[
         (&["Clip c:\n    Note/(u8(255) + 4)\n"], &[]),
-        (
-            &["Clip c:\n    Note/(u8(250) + 300)\n"],
-            &[(Code::DoesNotFit, "300")],
-        ),
+        (&["Clip c:\n    Note/(u8(250) + 300)\n"], &[]),
         (
             &["Clip c:\n    Note | level=(u8(255) + 4)\n"],
             &[(Code::ConstantOverflow, "u8(255) + 4")],

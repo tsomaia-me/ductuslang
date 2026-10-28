@@ -1496,6 +1496,71 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             ],
             &[],
         ),
+        (
+            &[
+                flag,
+                "Clip c:\n    Note/((if flag then [1] else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then [1] else [[1]]")],
+        ),
+        (
+            &[
+                a,
+                flag,
+                "Clip c:\n    Note/((if flag then a else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then a else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "fn f(i) bounded 3 else [0]: [held[i]] + f(i + 1)\n",
+                "Clip c:\n    Note/((if flag then f(0) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then f(0) else [[1]]")],
+        ),
+        (
+            &[
+                flag,
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/((if flag then f(0) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then f(0) else [[1]]")],
+        ),
+        (
+            &[
+                flag,
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/((if flag then [[1]] else f(0))[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then [[1]] else f(0)")],
+        ),
+        (
+            &[
+                flag,
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "let r = f(0)\n",
+                "Clip c:\n    Note/((if flag then r else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then r else [[1]]")],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "let r = f(0)\n",
+                "Clip c:\n    Note/((if false then r else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then r else [[1]]")],
+        ),
+        (
+            &[
+                flag,
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/((if flag then f(0) else [2])[0])\n",
+            ],
+            &[],
+        ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let rows: &[support::Row] = &[

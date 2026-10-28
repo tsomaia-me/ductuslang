@@ -71,10 +71,7 @@ impl Engine<'_> {
             return Ok(Some(CVal::Error));
         }
         let own = self.expected_own(node, &sig, ty)?;
-        let partner = (own == ty && expected_scalar(ty).is_some()).then_some(match sig.width {
-            Width::Fixed(scalar) => of_scalar(scalar),
-            Width::Flexible | Width::Widened(_) | Width::Adaptive => own,
-        });
+        let partner = (own == ty && expected_scalar(ty).is_some()).then_some(own);
         if let Width::Widened(integer) = sig.width
             && let Some(scale) = self.memo.default_scales.get(&node).copied()
         {
@@ -1000,7 +997,6 @@ impl Engine<'_> {
     ) -> Result<Option<CVal>, Internal> {
         let sig = some!(self.sig(node, need));
         let request = match partner {
-            Some(partner) if partner != own && sig.width == Width::Flexible => partner,
             Some(_) => own,
             None if expected_scalar(own).is_some() && matches!(sig.width, Width::Fixed(_)) => {
                 EvalTy::Default
