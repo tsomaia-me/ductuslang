@@ -819,7 +819,7 @@ fn scale(degree: i32, root: i32 = 60) -> i32:
     root + [0, 2, 4, 5, 7, 9, 11][degree % 7] + 12 * octave
 ```
 
-A function that reaches itself through calls, directly or through other functions, is recursive. A call to a recursive function reads a cell when one of its arguments does, or when the body of its function, or of a function it calls, does. A call that reads no cell is evaluated by the compiler to a value (§4.6), and evaluation deeper than the nesting limit, 1,024 nested calls by default (§4.6), is an error. A call to a recursive function that reads a cell is an error whose help says to write a `for` expression (§5.10). These diagnostics name the chain of calls.
+A function that reaches itself through calls, directly or through other functions, is recursive. A call to a recursive function reads a cell when one of its arguments does, or when the body of its function, or of a function it calls, names a cell anywhere, an arm the evaluation never takes included. A call that reads no cell is evaluated by the compiler to a value (§4.6), and evaluation deeper than the nesting limit, 1,024 nested calls by default (§4.6), is an error. A call to a recursive function that reads a cell is an error whose help says to write a `for` expression (§5.10). These diagnostics name the chain of calls.
 
 ```sym
 fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
