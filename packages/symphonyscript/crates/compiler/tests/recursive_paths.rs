@@ -382,6 +382,73 @@ impl Chooser {
         }
     }
 
+    fn indices(self) -> &'static [usize] {
+        match self {
+            Chooser::FromEnd | Chooser::SliceFromEnd => &[2, 1],
+            Chooser::SliceTo | Chooser::IfOnDepth => &[1],
+            Chooser::IfOnParameter
+            | Chooser::ParameterArray
+            | Chooser::LiteralOfParameters
+            | Chooser::LiteralOfInstances
+            | Chooser::TopLevelLet
+            | Chooser::NestedIf
+            | Chooser::IndexedChoice
+            | Chooser::SliceFrom
+            | Chooser::TopLevelLetSlice
+            | Chooser::LocalMatch
+            | Chooser::MatchHelper
+            | Chooser::IfHelper
+            | Chooser::RecursiveHelper
+            | Chooser::MatchOfArrays
+            | Chooser::IfInMatch => &[0, 1],
+        }
+    }
+
+    fn depths(self) -> &'static [i32] {
+        match self {
+            Chooser::IfOnDepth | Chooser::NestedIf | Chooser::IfInMatch => &[-1, 1, 3, 30],
+            Chooser::IfOnParameter
+            | Chooser::ParameterArray
+            | Chooser::LiteralOfParameters
+            | Chooser::LiteralOfInstances
+            | Chooser::TopLevelLet
+            | Chooser::FromEnd
+            | Chooser::IndexedChoice
+            | Chooser::SliceFrom
+            | Chooser::SliceTo
+            | Chooser::SliceFromEnd
+            | Chooser::TopLevelLetSlice
+            | Chooser::LocalMatch
+            | Chooser::MatchHelper
+            | Chooser::IfHelper
+            | Chooser::RecursiveHelper
+            | Chooser::MatchOfArrays => &[1, 3, 30],
+        }
+    }
+
+    fn chooses_other(self, index: usize, depth: i32) -> bool {
+        let negative = depth < 0;
+        match self {
+            Chooser::IfOnDepth => !negative,
+            Chooser::NestedIf | Chooser::IfInMatch => index > 0 && !negative,
+            Chooser::FromEnd | Chooser::SliceFromEnd => index == 1,
+            Chooser::SliceTo => true,
+            Chooser::IfOnParameter
+            | Chooser::ParameterArray
+            | Chooser::LiteralOfParameters
+            | Chooser::LiteralOfInstances
+            | Chooser::TopLevelLet
+            | Chooser::IndexedChoice
+            | Chooser::SliceFrom
+            | Chooser::TopLevelLetSlice
+            | Chooser::LocalMatch
+            | Chooser::MatchHelper
+            | Chooser::IfHelper
+            | Chooser::RecursiveHelper
+            | Chooser::MatchOfArrays => index > 0,
+        }
+    }
+
     fn locals(self) -> &'static str {
         match self {
             Chooser::LocalMatch => "    let m = match i:\n        0: c\n        else: d\n",
@@ -497,8 +564,8 @@ fn chosen_function(chooser: Chooser, (local, read): (&str, &str), recursive: boo
 
 fn chosen_program(
     (chooser, consumer, binding): (Chooser, Consumer, Binding),
-    scale: i32,
-    (depth, reversed, recursive): (u32, bool, bool),
+    (scale, index): (i32, usize),
+    (depth, reversed, recursive): (i32, bool, bool),
 ) -> String {
     let chosen = chooser.expression();
     let local = consumer.local(chosen);
@@ -518,19 +585,33 @@ fn chosen_program(
     ];
     items.extend(HELPERS.iter().map(|helper| helper.to_string()));
     items.push(chosen_function(chooser, (&local, &read), recursive));
-    let call = format!("h(verse, other, [verse, other], 1, {depth})");
+    let call = format!("h(verse, other, [verse, other], {index}, {depth})");
     let read = match scale {
         1 => call,
         _ => format!("{call} * {scale}"),
     };
     items.push(format!(
         "Clip k:\n    Note/([60][i32({read}) - {}])\n",
-        chosen_value(binding) * scale
+        if chooser.chooses_other(index, depth) {
+            chosen_value(binding) * scale
+        } else {
+            5 * scale
+        }
     ));
     if reversed {
         items.reverse();
     }
     items.concat()
+}
+
+fn frame_values(chooser: Chooser) -> Vec<(usize, i32)> {
+    let mut values = Vec::new();
+    for index in chooser.indices() {
+        for depth in chooser.depths() {
+            values.push((*index, *depth));
+        }
+    }
+    values
 }
 
 fn twin_failure(text: &str, twin: &str) -> Option<String> {
@@ -556,15 +637,16 @@ fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_refere
         for consumer in CONSUMERS {
             for binding in CHOSEN_BINDINGS {
                 for scale in [1, 2] {
-                    for depth in DEPTHS {
+                    for (index, depth) in frame_values(chooser) {
                         for reversed in [false, true] {
                             let case = (chooser, consumer, binding);
-                            let text = chosen_program(case, scale, (depth, reversed, true));
-                            let twin = chosen_program(case, scale, (depth, reversed, false));
+                            let frame = (scale, index);
+                            let text = chosen_program(case, frame, (depth, reversed, true));
+                            let twin = chosen_program(case, frame, (depth, reversed, false));
                             programs += 1;
                             if let Some(failure) = twin_failure(&text, &twin) {
                                 failures.push(format!(
-                                    "{chooser:?} {consumer:?} {binding:?} {scale} {depth} {reversed}\n{failure}"
+                                    "{chooser:?} {consumer:?} {binding:?} {scale} {index} {depth} {reversed}\n{failure}"
                                 ));
                             }
                         }
@@ -579,7 +661,7 @@ fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_refere
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 3_192);
+    assert_eq!(programs, 6_328);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -687,8 +769,27 @@ impl ArrayAttribute {
         }
     }
 
-    fn expected(self, read: ArrayRead) -> Option<i32> {
-        let rows = self.rows();
+    fn verse_rows(self) -> Vec<Vec<i32>> {
+        match self {
+            ArrayAttribute::VariableSet
+            | ArrayAttribute::VariableDefault
+            | ArrayAttribute::FixedSet
+            | ArrayAttribute::FixedDefault => vec![vec![4], vec![5], vec![6]],
+            ArrayAttribute::VariableWithDefaultSet | ArrayAttribute::VariableWithDefault => {
+                vec![vec![4], vec![5], vec![6], vec![7]]
+            }
+            ArrayAttribute::RowsSet | ArrayAttribute::RowsDefault => {
+                vec![vec![4, 5], vec![6, 7], vec![8, 9]]
+            }
+        }
+    }
+
+    fn expected(self, read: ArrayRead, other: bool) -> Option<i32> {
+        let rows = if other {
+            self.rows()
+        } else {
+            self.verse_rows()
+        };
         let leaf = |row: &Vec<i32>| row.get(usize::from(self.nested())).copied();
         match read {
             ArrayRead::Length => i32::try_from(rows.len()).ok(),
@@ -706,7 +807,7 @@ fn array_program(
     chooser: Chooser,
     consumer: Consumer,
     (attribute, read): (ArrayAttribute, ArrayRead),
-    (depth, reversed, recursive): (u32, bool, bool),
+    (index, depth, reversed, recursive): (usize, i32, bool, bool),
     expected: i32,
 ) -> String {
     let chosen = chooser.expression();
@@ -736,7 +837,7 @@ fn array_program(
             .to_string(),
         chosen_function(chooser, (&local, &read), recursive),
         format!(
-            "Song s:\n    Clip:\n        Note/([60][h(verse, other, [verse, other], 1, {depth}) - {expected}])\n"
+            "Song s:\n    Clip:\n        Note/([60][h(verse, other, [verse, other], {index}, {depth}) - {expected}])\n"
         ),
     ];
     if reversed {
@@ -763,17 +864,18 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
         for consumer in ARRAY_CONSUMERS {
             for attribute in ARRAY_ATTRIBUTES {
                 for read in ARRAY_READS {
-                    let Some(expected) = attribute.expected(read) else {
-                        continue;
-                    };
-                    for depth in DEPTHS {
+                    for (index, depth) in frame_values(chooser) {
+                        let other = chooser.chooses_other(index, depth);
+                        let Some(expected) = attribute.expected(read, other) else {
+                            continue;
+                        };
                         for reversed in [false, true] {
                             let program = |recursive| {
                                 array_program(
                                     chooser,
                                     consumer,
                                     (attribute, read),
-                                    (depth, reversed, recursive),
+                                    (index, depth, reversed, recursive),
                                     expected,
                                 )
                             };
@@ -787,7 +889,7 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
                                 || drawn != twin_drawn
                             {
                                 failures.push(format!(
-                                    "{chooser:?} {consumer:?} {attribute:?} {read:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n"
+                                    "{chooser:?} {consumer:?} {attribute:?} {read:?} {index} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n"
                                 ));
                             }
                         }
@@ -802,7 +904,7 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 8_208);
+    assert_eq!(programs, 17_168);
 }
 
 #[test]
