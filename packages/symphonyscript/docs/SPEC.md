@@ -644,7 +644,7 @@ Clip arp:
 
 `x.name` reads attribute `name` of the instance or wire `x`. The read is the same binding the attribute holds: a constant, an input, a cell, or the vocabulary default when the source sets none.
 
-- A path starts at a name in scope (§6.5), a node-reference parameter or `let` included, or at a node reference chosen at compile time by an index or an `if`: `sections[0].gain`. It steps through children, named wires and the names inside named pattern uses: `chorus.back`, `lead.v1.osc`.
+- A path starts at a name in scope (§6.5), a node-reference parameter or `let` included, or at a node reference chosen at compile time by an index, an `if`, a `match` or a call: `sections[0].gain`. It steps through children, named wires and the names inside named pattern uses: `chorus.back`, `lead.v1.osc`.
 - A path whose start is chosen at runtime is an error; `to.path` reads an attribute along a path from a wire's destination, which may be chosen at runtime (§8.3).
 - Reading an attribute the kind does not declare is an error.
 - Reads that form a cycle are an error naming the cycle.
