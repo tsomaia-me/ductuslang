@@ -977,9 +977,16 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
     if found == expected {
         return;
     }
-    if taken.is_some() && case.relation == Relation::Widening && codes(&found) == codes(&expected) {
-        outcome.landing_apart += 1;
-        return;
+    if taken.is_some() && case.relation == Relation::Widening {
+        let (start, end) = landing(case, taken_content.dimensions(), &built);
+        let at_landing: Spans = codes(&expected)
+            .into_iter()
+            .map(|code| (code, start, end))
+            .collect();
+        if found == at_landing {
+            outcome.landing_apart += 1;
+            return;
+        }
     }
     {
         outcome.failures.push(format!(
@@ -992,6 +999,48 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
             shown(&found, &built.text),
             shown(&expected, &built.text)
         ));
+    }
+}
+
+fn landing(case: &Case, dimensions: usize, built: &Built) -> (usize, usize) {
+    let indexes = "[0]".len() * dimensions.max(1);
+    let named = |name: &str| {
+        let text = format!("({name})");
+        let start = built
+            .text
+            .find(&format!("Note/({text}"))
+            .map_or(0, |at| at + "Note/(".len());
+        (start, start + text.len() + indexes)
+    };
+    match (case.position, case.chooser.is_match()) {
+        (Position::TopLet, _) => named("x"),
+        (Position::IndexBase, true) => named("ch"),
+        (Position::IndexBase, false) => (built.start - 1, built.end + 1 + indexes),
+        (Position::Attribute, true) => {
+            let start = built
+                .text
+                .find("three=(ch)")
+                .map_or(0, |at| at + "three=(".len());
+            (start, start + "ch".len())
+        }
+        (
+            Position::LocalLet
+            | Position::Scalar
+            | Position::JoinLeft
+            | Position::JoinRight
+            | Position::SliceBase
+            | Position::Len
+            | Position::Iterable
+            | Position::Attribute
+            | Position::Native
+            | Position::Argument
+            | Position::Result
+            | Position::RecursiveArgument
+            | Position::RecursiveResult
+            | Position::StateInit
+            | Position::OuterArm,
+            _,
+        ) => (built.start, built.end),
     }
 }
 
